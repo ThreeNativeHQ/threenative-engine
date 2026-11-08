@@ -1,5 +1,5 @@
 {
-  "passed": 180,
+  "passed": 183,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -177,9 +177,12 @@
     "PRD-849/media|variant|any-pointer-fine",
     "PRD-847/motion|variant|motion-safe",
     "PRD-847/motion|variant|motion-reduce",
+    "PRD-849/media|variant|contrast-more",
     "PRD-849/media|variant|2xl",
     "PRD-849/media|variant|portrait",
     "PRD-849/selectors|variant|dark",
-    "PRD-849/media|variant|pointer-coarse"
+    "PRD-849/media|variant|forced-colors",
+    "PRD-849/media|variant|pointer-coarse",
+    "PRD-849/media|variant|any-pointer-coarse"
   ]
 }

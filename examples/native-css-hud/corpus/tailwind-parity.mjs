@@ -698,27 +698,30 @@ const VARIANT_STAGE = {
       why: "@starting-style needs a transition to sample, which the motion bar drives",
     },
   },
-  "contrast-more": {
-    class: "contrast-more:bg-red-500",
-    exempt: {
-      owner: P849,
-      why: "the engine's device descriptor has no prefers-contrast input yet",
-    },
-  },
+  "contrast-more": { class: "contrast-more:bg-red-500", env: { contrast: "more" } },
+  // `prefers-contrast: less` is a value Playwright's `emulateMedia` does not offer, and the DevTools
+  // feature list that does offer it only applies with an empty `media`, which breaks the viewport
+  // queries in the same run (measured). The engine answers the query; the reference browser cannot be
+  // put in that environment, so the cell is a named exemption.
   "contrast-less": {
     class: "contrast-less:bg-red-500",
-    exempt: {
-      owner: P849,
-      why: "the engine's device descriptor has no prefers-contrast input yet",
-    },
+    exempt: { owner: P849, why: "Chromium offers no prefers-contrast: less emulation" },
   },
-  "forced-colors": {
-    class: "forced-colors:bg-red-500",
-    exempt: { owner: P849, why: "the engine's device descriptor has no forced-colors input yet" },
-  },
+  // Forced colours rewrite every *painted* colour (`Canvas`, `CanvasText`, borders), so a colour
+  // utility cannot discriminate in that mode and neither can opacity — the probe and the page become
+  // the same colour. The staged unit moves the box instead, which forced colours leave alone: an
+  // engine that resolves the query to the wrong value moves nothing.
+  "forced-colors": { class: "forced-colors:mt-8", env: { forcedColors: true } },
+  // The engine answers `inverted-colors` now, but the reference browser cannot be put in that
+  // environment: neither Playwright's `emulateMedia` nor the DevTools media emulation has an
+  // `inverted-colors` feature (measured — Chromium ignores it), so there is no "on" arm to compare
+  // against and the cell stays a named exemption rather than a pass.
   "inverted-colors": {
     class: "inverted-colors:bg-red-500",
-    exempt: { owner: P849, why: "the engine's device descriptor has no inverted-colors input yet" },
+    exempt: {
+      owner: P849,
+      why: "Chromium has no inverted-colors emulation, so the on arm cannot be compared",
+    },
   },
   max: { class: "max-2xl:bg-red-500" },
   sm: { class: "sm:bg-red-500" },
@@ -1588,6 +1591,18 @@ async function chromiumPanel(browser, base, panel, { strip = false, drive = [], 
   });
   const page = await context.newPage();
   await page.goto(`${base}/parity.html?panel=${panel.index}${strip ? "&strip=1" : ""}`);
+  // The two axes Playwright models as options are set here, in the same call as the two the context
+  // takes, so nothing is applied twice. The DevTools route is deliberately not used: its feature
+  // list is only honoured with an empty `media`, and that empty `media` disturbs the viewport
+  // queries (`sm:`, `max-2xl:`) — measured, not assumed. The two axes neither interface can set
+  // (`prefers-contrast: less`, `inverted-colors`) are named exemptions instead.
+  if (process.env.TN_PARITY_DEBUG === "env") console.log(`debug ${panel.id} env=${JSON.stringify(panel.env)}`);
+  await page.emulateMedia({
+    colorScheme: panel.env?.dark === true ? "dark" : "light",
+    reducedMotion: panel.env?.reducedMotion === true ? "reduce" : "no-preference",
+    contrast: panel.env?.contrast === "more" ? "more" : "no-preference",
+    forcedColors: panel.env?.forcedColors === true ? "active" : "none",
+  });
   await page.evaluate(async () => {
     await document.fonts.ready;
   });

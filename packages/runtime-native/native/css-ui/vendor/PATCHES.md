@@ -89,7 +89,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
   previous vendor sources.
 
-## `blitz-dom-0.3.0-beta.2` — 638 added code lines
+## `blitz-dom-0.3.0-beta.2` — 674 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -371,7 +371,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   scroll` stops reporting the 140 px lie: 30 of 31 cells are now honestly "does not discriminate"
   (they need a `scrollIntoView` driver or a snap implementation) instead of a false failure.
 
-## `stylo-0.20.0` — 44 added code lines, and `stylo_atoms-0.20.0` — 1 added line
+## `stylo-0.20.0` — 118 added code lines, and `stylo_atoms-0.20.0` — 4 added lines
 
 ### 1. the servo build had no `prefers-reduced-motion`, and no way to carry the preference
 
@@ -392,10 +392,42 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   previous vendor sources. The parity meter's `--family PRD-847` moves from 1/5 to **3/5**:
   `motion-safe:bg-red-500` and `motion-reduce:bg-red-500` go from 0.6492 to 1.0.
 
+### 2. the same for `prefers-contrast`, `forced-colors` and `inverted-colors`
+
+* **Where:** the three hunks above, repeated for three more features: `queries/values.rs`
+  (`PrefersContrast`, `InvertedColors`), `device/servo.rs` (three fields, their accessors, and
+  `forced_colors()` returning the field instead of a hardcoded `ForcedColors::None`),
+  `servo/media_features.rs` (three evaluators and entries, `MEDIA_FEATURES` 16 → 19), and three
+  atoms in `stylo_atoms`' list.
+* **Why:** Tailwind's `contrast-more:`, `contrast-less:`, `forced-colors:` and `inverted-colors:`
+  compile to those queries and none of them could match, so all four variants were dead on the
+  engine and the parity meter carried them as pending exemptions.
+* **Proves it:**
+  `tests/interaction.rs::contrast_forced_and_inverted_colours_are_media_queries_the_stylesheet_sees`
+  (contrast more/less and inverted invert by colour; forced colours are proved by geometry, because
+  that mode rewrites every painted colour the way a browser does — Canvas is white — and a colour
+  cannot show it). The meter's `--family PRD-849 --group media` moves 13/24 → **15/22**, with
+  `contrast-more:` and `forced-colors:` passing and both leaving the exemption list; `contrast-less:`
+  and `inverted-colors:` stay exemptions for a reason that is the *reference browser's*, recorded
+  there.
+
 `blitz-dom` hunk 17 in this same change carries the device flag through
 (`BaseDocument::set_reduced_motion`, `make_device` takes it), and `css-ui`'s `set_env` now sets it
 instead of injecting the `transition-duration: 0s !important` sheet — the workaround the PRD asked
 to delete once the query worked.
+
+### 19. `any-pointer` was a platform guess, not the device's own pointer
+
+* **Where:** `src/document.rs` (`make_device` passes the primary's `PointerCapabilities` as the
+  all-pointer union instead of `PointerCapabilities::default()`).
+* **Why:** `default()` is compiled per platform and answers `COARSE` on this build, so a desktop
+  reported `(any-pointer: coarse)` and not `(any-pointer: fine)` — Tailwind's `any-pointer-coarse:`
+  variant fired on a mouse-only host and `any-pointer-fine:` did not. A device with one pointer has
+  the same union as its primary, which is what this engine models.
+* **Proves it:** `tests/interaction.rs::any_pointer_mirrors_the_device_it_is_driven_by` — a mouse
+  box is `(40, 20)` (fine, not coarse) and the same document on a finger is `(20, 40)`; it fails
+  against the previous vendor sources. The parity meter's `any-pointer-coarse:` cell stops reporting
+  a real mismatch.
 
 ## `parley-0.11.1` — 240 added code lines
 

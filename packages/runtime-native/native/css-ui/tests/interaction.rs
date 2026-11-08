@@ -838,6 +838,88 @@ fn reduced_motion_is_a_media_query_the_stylesheet_sees() {
     assert_eq!(rgb(&ui, 32, 32), [37, 99, 235], "and back to the safe arm");
 }
 
+/// A document whose colour is chosen by the three environment queries Tailwind has variants for.
+fn environment_variants() -> CssUi {
+    ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:64px;height:64px;background:#2563eb}}\n\
+                     @media (prefers-contrast: more){{#a{{background:#ef4444}}}}\n\
+                     @media (prefers-contrast: less){{#a{{background:#22c55e}}}}\n\
+                     @media (forced-colors: active){{#a{{width:32px}}}}\n\
+                     @media (inverted-colors: inverted){{#a{{background:#a855f7}}}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    )
+}
+
+#[test]
+fn contrast_forced_and_inverted_colours_are_media_queries_the_stylesheet_sees() {
+    let mut ui = environment_variants();
+    assert_eq!(rgb(&ui, 32, 32), [37, 99, 235], "no preference on any axis");
+
+    ui.set_media_preferences(Some("more"), None, None).unwrap();
+    ui.render();
+    assert_eq!(rgb(&ui, 32, 32), [239, 68, 68], "prefers-contrast: more");
+
+    ui.set_media_preferences(Some("less"), None, None).unwrap();
+    ui.render();
+    assert_eq!(rgb(&ui, 32, 32), [34, 197, 94], "prefers-contrast: less");
+
+    // Forced colours adjust the *painted* colours themselves (Canvas is white, as in Chromium), so
+    // the query is proved by geometry: a forced-colours rule that changes the box is not a colour
+    // the mode rewrites.
+    ui.set_media_preferences(None, Some(true), None).unwrap();
+    ui.render();
+    assert_eq!(ui.node_box(1).map(|b| b[2]), Some(32.0), "forced-colors: active");
+
+    ui.set_media_preferences(None, Some(false), Some(true)).unwrap();
+    ui.render();
+    assert_eq!(rgb(&ui, 32, 32), [168, 85, 247], "inverted-colors: inverted");
+
+    // A value the CSS grammar does not define fails closed rather than meaning "no preference".
+    assert!(ui.set_media_preferences(Some("heavy"), None, None).is_err());
+}
+
+#[test]
+fn any_pointer_mirrors_the_device_it_is_driven_by() {
+    // A mouse-only device reports `(pointer: fine)` and `(any-pointer: fine)`; reporting `coarse`
+    // for the union of pointers would make Tailwind's `any-pointer-coarse:` fire on a desktop and
+    // `any-pointer-fine:` stop firing on one.
+    let mut ui = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:40px;height:40px}}\n\
+                     @media (any-pointer: coarse){{#a{{width:20px}}}}\n\
+                     @media (any-pointer: fine){{#a{{height:20px}}}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    let mouse = ui.node_box(1).expect("the box");
+    assert_eq!((mouse[2], mouse[3]), (40.0, 20.0), "a mouse: fine, not coarse");
+
+    ui.set_pointer_kind(true);
+    ui.render();
+    let finger = ui.node_box(1).expect("the box");
+    assert_eq!((finger[2], finger[3]), (20.0, 40.0), "a finger: coarse, not fine");
+}
+
 #[test]
 fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
     let mut ui = ui(

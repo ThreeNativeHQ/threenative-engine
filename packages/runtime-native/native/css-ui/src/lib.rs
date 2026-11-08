@@ -409,6 +409,10 @@ pub struct CssUi {
     /// `prefers-reduced-motion: reduce`, which the engine reports to the stylesheet as a media
     /// query (`@media (prefers-reduced-motion: reduce)`), the same way a browser does.
     reduced_motion: bool,
+    /// `forced-colors: active`, as the host reported it.
+    forced_colors: bool,
+    /// `inverted-colors: inverted`, as the host reported it.
+    inverted_colors: bool,
     /// Whether the pointer is a finger rather than a mouse: it does not hover, and the device
     /// reports `(hover: none)` and `(pointer: coarse)`.
     touch: bool,
@@ -483,6 +487,8 @@ impl CssUi {
             time: 0.0,
             dark: false,
             reduced_motion: false,
+            forced_colors: false,
+            inverted_colors: false,
             touch: false,
             ua_css: String::new(),
             redraw,
@@ -884,6 +890,46 @@ impl CssUi {
         self.doc.set_reduced_motion(reduced_motion);
         self.dirty = true;
         self.sync_dirty();
+    }
+
+    /// The rest of the device's media preferences: `prefers-contrast`, `forced-colors` and
+    /// `inverted-colors`, each `None` when the caller has nothing to say about it.
+    ///
+    /// `contrast` is the CSS keyword (`"more"`, `"less"`, `"custom"`, `"no-preference"`); anything
+    /// else is refused by name, because a typo that silently meant "no preference" would measure as
+    /// a correct engine that resolved the wrong query.
+    pub fn set_media_preferences(
+        &mut self,
+        contrast: Option<&str>,
+        forced_colors: Option<bool>,
+        inverted_colors: Option<bool>,
+    ) -> Result<(), String> {
+        let contrast = match contrast {
+            None => 0,
+            Some("no-preference") => 0,
+            Some("more") => 1,
+            Some("less") => 2,
+            Some("custom") => 3,
+            Some(other) => return Err(format!("prefers-contrast: unknown value \"{other}\"")),
+        };
+        let mut preferences = blitz_dom::MediaPreferences {
+            reduced_motion: self.reduced_motion,
+            contrast,
+            forced_colors: self.forced_colors,
+            inverted_colors: self.inverted_colors,
+        };
+        if let Some(value) = forced_colors {
+            preferences.forced_colors = value;
+        }
+        if let Some(value) = inverted_colors {
+            preferences.inverted_colors = value;
+        }
+        self.forced_colors = preferences.forced_colors;
+        self.inverted_colors = preferences.inverted_colors;
+        self.doc.set_media_preferences(preferences);
+        self.dirty = true;
+        self.sync_dirty();
+        Ok(())
     }
 
     /// Whether the pointer is a finger rather than a mouse.

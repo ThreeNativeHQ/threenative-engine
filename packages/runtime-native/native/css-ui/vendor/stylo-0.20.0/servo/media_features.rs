@@ -6,8 +6,11 @@
 
 use crate::derives::*;
 use crate::queries::feature::{AllowsRanges, Evaluator, FeatureFlags, QueryFeatureDescription};
-use crate::queries::values::{Orientation, PrefersColorScheme, PrefersReducedMotion};
+use crate::queries::values::{
+    InvertedColors, Orientation, PrefersColorScheme, PrefersContrast, PrefersReducedMotion,
+};
 use crate::values::computed::{CSSPixelLength, Context, Ratio, Resolution};
+use crate::values::specified::color::ForcedColors;
 use std::fmt::Debug;
 
 /// https://drafts.csswg.org/mediaqueries-4/#width
@@ -83,6 +86,40 @@ fn eval_prefers_reduced_motion(
     match query_value {
         Some(v) => context.device().prefers_reduced_motion() == v,
         None => true,
+    }
+}
+
+/// https://drafts.csswg.org/mediaqueries-5/#prefers-contrast
+///
+/// VENDOR HUNK (threenative/css-ui): Tailwind's `contrast-more:` / `contrast-less:` compile to these
+/// queries, and the servo build had no such feature.
+fn eval_prefers_contrast(context: &Context, query_value: Option<PrefersContrast>) -> bool {
+    let prefers_contrast = context.device().prefers_contrast();
+    match query_value {
+        Some(v) => v == prefers_contrast,
+        None => prefers_contrast != PrefersContrast::NoPreference,
+    }
+}
+
+/// https://drafts.csswg.org/mediaqueries-5/#forced-colors
+///
+/// VENDOR HUNK (threenative/css-ui): Tailwind's `forced-colors:` compiles to this query.
+fn eval_forced_colors(context: &Context, query_value: Option<ForcedColors>) -> bool {
+    let forced = context.device().forced_colors();
+    match query_value {
+        Some(query_value) => query_value == forced,
+        None => forced != ForcedColors::None,
+    }
+}
+
+/// https://drafts.csswg.org/mediaqueries-5/#inverted
+///
+/// VENDOR HUNK (threenative/css-ui): Tailwind's `inverted-colors:` compiles to this query.
+fn eval_inverted_colors(context: &Context, query_value: Option<InvertedColors>) -> bool {
+    let inverted = context.device().inverted_colors();
+    match query_value {
+        Some(v) => v == inverted,
+        None => inverted == InvertedColors::Inverted,
     }
 }
 
@@ -176,7 +213,7 @@ fn eval_aspect_ratio(context: &Context) -> Ratio {
 }
 
 /// A list with all the media features that Servo supports.
-pub static MEDIA_FEATURES: [QueryFeatureDescription; 16] = [
+pub static MEDIA_FEATURES: [QueryFeatureDescription; 19] = [
     feature!(
         atom!("width"),
         AllowsRanges::Yes,
@@ -271,6 +308,24 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 16] = [
         atom!("prefers-reduced-motion"),
         AllowsRanges::No,
         keyword_evaluator!(eval_prefers_reduced_motion, PrefersReducedMotion),
+        FeatureFlags::empty(),
+    ),
+    feature!(
+        atom!("prefers-contrast"),
+        AllowsRanges::No,
+        keyword_evaluator!(eval_prefers_contrast, PrefersContrast),
+        FeatureFlags::empty(),
+    ),
+    feature!(
+        atom!("forced-colors"),
+        AllowsRanges::No,
+        keyword_evaluator!(eval_forced_colors, ForcedColors),
+        FeatureFlags::empty(),
+    ),
+    feature!(
+        atom!("inverted-colors"),
+        AllowsRanges::No,
+        keyword_evaluator!(eval_inverted_colors, InvertedColors),
         FeatureFlags::empty(),
     ),
 ];

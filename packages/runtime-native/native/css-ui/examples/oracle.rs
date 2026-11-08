@@ -43,6 +43,13 @@ fn main() -> Result<(), String> {
         if env.get("touch").and_then(Value::as_bool) == Some(true) {
             ui.set_pointer_kind(true);
         }
+        // The rest of the descriptor: a media variant is measured in the environment it names, so
+        // `contrast-more:`/`forced-colors:`/`inverted-colors:` panels carry their own value here.
+        ui.set_media_preferences(
+            env.get("contrast").and_then(Value::as_str),
+            env.get("forcedColors").and_then(Value::as_bool),
+            env.get("invertedColors").and_then(Value::as_bool),
+        )?;
     }
     let batch = std::fs::read_to_string(dir.join("batch.json")).map_err(|e| e.to_string())?;
     let max_id = max_id(&batch)?;

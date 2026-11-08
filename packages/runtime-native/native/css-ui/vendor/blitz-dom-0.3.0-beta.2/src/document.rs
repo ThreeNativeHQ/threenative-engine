@@ -208,9 +208,9 @@ pub struct BaseDocument {
     /// Whether the device this document is rendered on is driven by touch alone,
     /// which is what `@media (hover: none)` and `(pointer: coarse)` report.
     pub(crate) touch: bool,
-    /// Whether the user asked for reduced motion, which is what
-    /// `@media (prefers-reduced-motion: reduce)` reports. Defaults to no preference.
-    pub(crate) reduced_motion: bool,
+    /// The user's media preferences, which is what the `prefers-*` and `forced-colors` media
+    /// queries report. Defaults to no preference on every axis.
+    pub(crate) preferences: MediaPreferences,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document.
@@ -358,12 +358,25 @@ pub struct BaseDocument {
     pub(crate) abort_signal: Option<AbortSignal>,
 }
 
+/// The user's media preferences, as the `prefers-*` / `forced-colors` media queries report them.
+///
+/// `contrast` is `0` for no preference, `1` for more and `2` for less, which is the CSS keyword
+/// order the engine's stylo build reads; the numbers keep this type out of the public API of the
+/// dependency, where a re-export would otherwise have to track Stylo's enum.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MediaPreferences {
+    pub reduced_motion: bool,
+    pub contrast: u8,
+    pub forced_colors: bool,
+    pub inverted_colors: bool,
+}
+
 pub(crate) fn make_device(
     viewport: &Viewport,
     media_type: MediaType,
     font_ctx: Arc<Mutex<FontContext>>,
     touch: bool,
-    reduced_motion: bool,
+    preferences: MediaPreferences,
 ) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
@@ -393,14 +406,32 @@ pub(crate) fn make_device(
             ColorScheme::Dark => PrefersColorScheme::Dark,
         },
         pointer_capabilities,
-        PointerCapabilities::default(),
+        // The union of every pointer's capabilities is the primary's on a device with one pointer,
+        // which is what this engine models. `PointerCapabilities::default()` is a *platform* guess
+        // (it answers COARSE on this build), and Tailwind's `any-pointer-coarse:` variant fired on a
+        // desktop because of it.
+        pointer_capabilities,
     );
-    // What `@media (prefers-reduced-motion: reduce)` reports. Set on the device the stylist
-    // evaluates queries against, rather than approximated with a spurious sheet: a game's own
-    // media queries have to answer the same way the engine's do.
-    device.set_prefers_reduced_motion(match reduced_motion {
-        true => style::queries::values::PrefersReducedMotion::Reduce,
-        false => style::queries::values::PrefersReducedMotion::NoPreference,
+    // What the `prefers-*` and `forced-colors` queries report. Set on the device the stylist
+    // evaluates queries against, rather than approximated with a spurious sheet: a game's own media
+    // queries have to answer the same way the engine's do.
+    use style::queries::values::{InvertedColors, PrefersContrast, PrefersReducedMotion};
+    device.set_prefers_reduced_motion(match preferences.reduced_motion {
+        true => PrefersReducedMotion::Reduce,
+        false => PrefersReducedMotion::NoPreference,
+    });
+    device.set_prefers_contrast(match preferences.contrast {
+        1 => PrefersContrast::More,
+        2 => PrefersContrast::Less,
+        _ => PrefersContrast::NoPreference,
+    });
+    device.set_forced_colors(match preferences.forced_colors {
+        true => style::values::specified::color::ForcedColors::Active,
+        false => style::values::specified::color::ForcedColors::None,
+    });
+    device.set_inverted_colors(match preferences.inverted_colors {
+        true => InvertedColors::Inverted,
+        false => InvertedColors::None,
     });
     device
 }
@@ -452,7 +483,13 @@ impl BaseDocument {
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, media_type.clone(), font_ctx.clone(), false, false);
+        let device = make_device(
+        &viewport,
+        media_type.clone(),
+        font_ctx.clone(),
+        false,
+        MediaPreferences::default(),
+    );
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(NodeTree::new());
@@ -493,7 +530,7 @@ impl BaseDocument {
             nodes_to_id,
             viewport,
             media_type,
-            reduced_motion: false,
+            preferences: MediaPreferences::default(),
             touch: false,
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
@@ -1996,7 +2033,7 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
-            self.reduced_motion,
+            self.preferences,
         ));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
@@ -2023,24 +2060,34 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
-            self.reduced_motion,
+            self.preferences,
         ));
     }
 
     /// Whether the user asked for reduced motion, which is what
-    /// `@media (prefers-reduced-motion: reduce)` reports and `(no-preference)` denies. Rebuilds the
-    /// stylist device, like [`Self::set_touch`], so the next restyle re-evaluates every query.
+    /// `@media (prefers-reduced-motion: reduce)` reports and `(no-preference)` denies.
     pub fn set_reduced_motion(&mut self, reduced_motion: bool) {
-        if self.reduced_motion == reduced_motion {
+        self.set_media_preferences(MediaPreferences {
+            reduced_motion,
+            ..self.preferences
+        });
+    }
+
+    /// The user's contrast, forced-colors and inverted-colors preferences, which is what
+    /// `@media (prefers-contrast: more)`, `(forced-colors: active)` and `(inverted-colors: inverted)`
+    /// report. Rebuilds the stylist device, like [`Self::set_touch`], so the next restyle
+    /// re-evaluates every query.
+    pub fn set_media_preferences(&mut self, preferences: MediaPreferences) {
+        if self.preferences == preferences {
             return;
         }
-        self.reduced_motion = reduced_motion;
+        self.preferences = preferences;
         self.set_stylist_device(make_device(
             &self.viewport,
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
-            self.reduced_motion,
+            self.preferences,
         ));
     }
 
@@ -2056,7 +2103,7 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
-            self.reduced_motion,
+            self.preferences,
         ));
     }
 

@@ -12,7 +12,9 @@ use crate::logical_geometry::WritingMode;
 use crate::media_queries::MediaType;
 use crate::properties::style_structs::Font;
 use crate::properties::ComputedValues;
-use crate::queries::values::{PrefersColorScheme, PrefersReducedMotion};
+use crate::queries::values::{
+    InvertedColors, PrefersColorScheme, PrefersContrast, PrefersReducedMotion,
+};
 use crate::servo::media_features::PointerCapabilities;
 use crate::values::computed::font::GenericFontFamily;
 use crate::values::computed::{
@@ -73,6 +75,15 @@ pub(super) struct ExtraDeviceData {
     /// VENDOR HUNK (threenative/css-ui): see `queries/values.rs`'s `PrefersReducedMotion`.
     #[ignore_malloc_size_of = "Pure stack type"]
     prefers_reduced_motion: PrefersReducedMotion,
+    /// The user's contrast preference. VENDOR HUNK (threenative/css-ui), see `PrefersContrast`.
+    #[ignore_malloc_size_of = "Pure stack type"]
+    prefers_contrast: PrefersContrast,
+    /// Whether the page is in a forced-colors mode. VENDOR HUNK (threenative/css-ui).
+    #[ignore_malloc_size_of = "Pure stack type"]
+    forced_colors: ForcedColors,
+    /// Whether the display inverts colours. VENDOR HUNK (threenative/css-ui).
+    #[ignore_malloc_size_of = "Pure stack type"]
+    inverted_colors: InvertedColors,
     /// The capabilities of the primary pointer input
     #[ignore_malloc_size_of = "Pure stack type"]
     primary_pointer_capabilities: PointerCapabilities,
@@ -124,6 +135,9 @@ impl Device {
                 quirks_mode,
                 prefers_color_scheme,
                 prefers_reduced_motion: PrefersReducedMotion::NoPreference,
+                prefers_contrast: PrefersContrast::NoPreference,
+                forced_colors: ForcedColors::None,
+                inverted_colors: InvertedColors::None,
                 primary_pointer_capabilities,
                 all_pointer_capabilities,
                 font_metrics_provider,
@@ -283,7 +297,32 @@ impl Device {
 
     /// Returns whether document colors are enabled.
     pub fn forced_colors(&self) -> ForcedColors {
-        ForcedColors::None
+        self.extra.forced_colors
+    }
+
+    /// Set the [`ForcedColors`] value on this [`Device`]. VENDOR HUNK (threenative/css-ui).
+    pub fn set_forced_colors(&mut self, new: ForcedColors) {
+        self.extra.forced_colors = new;
+    }
+
+    /// Returns the contrast preference of this [`Device`].
+    pub fn prefers_contrast(&self) -> PrefersContrast {
+        self.extra.prefers_contrast
+    }
+
+    /// Set the [`PrefersContrast`] value on this [`Device`]. VENDOR HUNK (threenative/css-ui).
+    pub fn set_prefers_contrast(&mut self, new: PrefersContrast) {
+        self.extra.prefers_contrast = new;
+    }
+
+    /// Returns whether the display inverts colours.
+    pub fn inverted_colors(&self) -> InvertedColors {
+        self.extra.inverted_colors
+    }
+
+    /// Set the [`InvertedColors`] value on this [`Device`]. VENDOR HUNK (threenative/css-ui).
+    pub fn set_inverted_colors(&mut self, new: InvertedColors) {
+        self.extra.inverted_colors = new;
     }
 
     /// Returns the default background color.

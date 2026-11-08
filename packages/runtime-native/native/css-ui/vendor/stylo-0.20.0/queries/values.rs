@@ -45,6 +45,32 @@ pub enum PrefersColorScheme {
     Dark,
 }
 
+/// Values for the prefers-contrast media feature.
+///
+/// VENDOR HUNK (threenative/css-ui): Gecko declares this privately; the servo build had no such
+/// feature, so `@media (prefers-contrast: more)` — Tailwind's `contrast-more:` — never matched.
+#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum PrefersContrast {
+    More,
+    Less,
+    Custom,
+    NoPreference,
+}
+
+/// Values for the inverted-colors media feature.
+///
+/// VENDOR HUNK (threenative/css-ui): see `PrefersContrast`; Tailwind's `inverted-colors:` compiles
+/// to `@media (inverted-colors: inverted)`.
+#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum InvertedColors {
+    None,
+    Inverted,
+}
+
 /// Values for the prefers-reduced-motion media feature.
 ///
 /// VENDOR HUNK (threenative/css-ui): Gecko's media-feature list has declared this value for years
