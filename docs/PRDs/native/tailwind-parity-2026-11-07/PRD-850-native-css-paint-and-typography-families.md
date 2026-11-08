@@ -142,6 +142,20 @@ delay or an easing change at all. Measured, that changes no verdict today — th
 has no driver — and `animate-ping` reads 0.9917 rather than a bare 1.0000, i.e. the fine samples see a
 difference in the first 150 ms that the coarse grid could not.
 
+## Decisions
+
+**Seven misc cells were staged so that nothing could move.** A margin on the *end* side (bottom, right,
+inline-end, block-end) moves the *next* box, not this one, so `mb-40`, `mbe-40`, `mr-40` and `me-40`
+read "does nothing" with the probe alone in its stage; an inline-direction margin also needs something
+sharing its line. `order-*` needs a second item to be ordered against, `z-index` two overlapping boxes
+and a positioned probe of its own — with `relative` only in the contrast, *neither* arm ordered anything
+and the cell read "does nothing" for that reason alone. `outline-offset-*` needs a line to offset.
+
+Each cell now stages what its declaration moves: a trailing sibling (`.stage-trail`, inline-block for the
+inline axis, overlapping with a `z-index` of its own for the stacking units), `relative` as a companion
+for `z-*`, and an outline for `outline-offset-*`. Measured: the misc group 137 → **144 of 182**, the
+scene 295 → **303 of 503 (60.2 %)**, non-discriminating 124 → 117.
+
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **143 of

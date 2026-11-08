@@ -141,6 +141,14 @@ const PANEL_CSS = `
 /* A space or divide unit puts a gap between the probe's children; with children as wide as the
    probe, the second one lands outside the measured region and the unit measures nothing. */
 .stage-items{display:flex;width:100%}
+/* A trailing sibling is what an end margin moves: a bottom margin on an only child shifts nothing.
+   The -over form overlaps the probe so a z-index unit has two boxes to order. */
+.stage-trail{width:24px;height:24px;flex:none;background:#f59e0b}
+/* An inline margin only moves something that shares its line. */
+.stage-inline{display:inline-block}
+/* A z-index unit needs a stack to sit in: the trail takes 20, so a unit above 20 paints over it and a
+   contrast below 20 paints under it, which is what makes the declaration visible at all. */
+.stage-trail-over{position:relative;margin-left:40px;margin-top:-40px;z-index:20}
 .stage-items > .stage-fill{width:40px;height:20px;flex:none}
 /* A colour-only border unit needs a border to colour; the dashed grey is what the unit must beat. */
 .stage-border{border-width:2px;border-style:dashed;border-color:#52525b}
@@ -925,6 +933,12 @@ const CONTRAST_EXTRAS = [
   [/(^|-)outline-color$/u, "outline-width:6px;outline-style:solid"],
   [/^border-color$/u, "border-width:6px;border-style:solid"],
   [/^outline$/u, "outline-width:6px;outline-offset:2px"],
+  // An offset moves a line that is already drawn: without one, `outline-offset-8` shifts nothing.
+  [/^outline-offset/u, "outline-width:4px;outline-style:solid"],
+  // `z-index` applies to a positioned box: unpositioned, the declaration orders nothing. This is a
+  // companion, not only a contrast — with `relative` in the contrast alone, the class-less arm keeps
+  // its stack and the cell reads "does nothing" because neither arm orders anything.
+  [/^z-/u, "relative"],
   [
     /^background-(size|position|repeat|attachment|origin|clip)$/u,
     "background-image:repeating-linear-gradient(45deg,#f59e0b 0 6px,#2563eb 6px 12px);background-size:24px 24px",
@@ -1336,8 +1350,9 @@ function cellTree(cell) {
   // A transition cell is hovered by a pointer, and a sibling cell's `position: fixed` probe paints
   // above every non-positioned box: a positioned probe is painted in DOM order instead, so the pointer
   // reaches the one it was aimed at.
+  const inline = /^m(r|e)-/u.test(cell.unit?.probe ?? "") ? " stage-inline" : "";
   const classes =
-    probeClass(cell.companions ?? [], cell.class) + container + border + items + contain;
+    probeClass(cell.companions ?? [], cell.class) + container + border + items + contain + inline;
   const probe = el(
     /^(transition|duration|delay|ease)/u.test(cell.unit?.probe ?? "")
       ? "button"
@@ -1348,6 +1363,10 @@ function cellTree(cell) {
   // A positioned probe gets an absolutely-placed child: it fills the probe when the probe is
   // positioned and escapes to the nearest positioned ancestor when it is not.
   if (cell.escape === true) probe.children.push(el("div", { class: "stage-escape" }));
+  if (cell.trail === true)
+    probe.after = el("div", {
+      class: `stage-trail${cell.zOverlap === true ? " stage-trail-over" : ""}`,
+    });
   let children;
   if (cell.classOn === "scroller") {
     // The scroller is the element the unit styles, so it is the probe; the target the driver scrolls
@@ -1400,6 +1419,8 @@ function cellTree(cell) {
       blanks(stage.before ?? 0),
       blanks(stage.after ?? 0),
     );
+
+  if (probe.after !== undefined) children.push(probe.after);
 
   return el(
     "div",
@@ -1538,7 +1559,16 @@ function utilityEntry(unit, classCss, byProperty) {
     classOn: /^scroll-p/u.test(unit.probe) ? "scroller" : undefined,
     borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
     // The children a spacing unit separates are boxed to stay inside the measured region.
-    items: /^(space|divide)$/u.test(unit.root) || undefined,
+    items: /^(space|divide)$/u.test(unit.root) || /^order-/u.test(unit.probe) || undefined,
+    // An *end* margin (bottom, right, inline-end, block-end) moves the next box, not this one: with
+    // the probe alone in its stage the declaration has nothing to shift and the cell reads "does
+    // nothing". `order` needs a second item to be ordered against, and `z-index` two boxes to order.
+    trail:
+      /^m(r|e|b|be|bs|block|inline)-/u.test(unit.probe) ||
+      /^order-/u.test(unit.probe) ||
+      /^z-/u.test(unit.probe) ||
+      undefined,
+    zOverlap: /^z-/u.test(unit.probe) || undefined,
     // `contain: paint` (and `strict`, which implies it) clips the element's contents to its padding
     // box — a probe with nothing overflowing cannot show that, so a contain cell's probe gets a child
     // larger than itself.
