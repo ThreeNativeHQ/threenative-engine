@@ -125,6 +125,10 @@ const PANEL_CSS = `
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
 .stage-fill{width:120px;height:40px;background:#27272a}
 .stage-flex{display:flex}
+/* A space or divide unit puts a gap between the probe's children; with children as wide as the
+   probe, the second one lands outside the measured region and the unit measures nothing. */
+.stage-items{display:flex;width:100%}
+.stage-items > .stage-fill{width:40px;height:20px;flex:none}
 /* A colour-only border unit needs a border to colour; the dashed grey is what the unit must beat. */
 .stage-border{border-width:2px;border-style:dashed;border-color:#52525b}
 /* A backdrop filter needs something to filter and something translucent to see it through: a
@@ -1249,8 +1253,9 @@ function cellTree(cell) {
   // A container unit's probe carries the display its property needs, so the children the staging
   // gives it are laid out the way the unit is defined to act on them.
   const container = cell.container === undefined ? "" : ` stage-${cell.container}`;
+  const items = cell.items === true ? " stage-items" : "";
   const border = cell.borderProbe === true ? " stage-border" : "";
-  const classes = probeClass(cell.companions ?? [], cell.class) + container + border;
+  const classes = probeClass(cell.companions ?? [], cell.class) + container + border + items;
   const probe = el(
     stage.tag ?? (CONTROL_UNIT.test(cell.unit?.probe ?? "") ? "textarea" : "div"),
     { class: classes, ...stage.attrs },
@@ -1414,6 +1419,8 @@ function utilityEntry(unit, classCss, byProperty) {
     // scroll padding is.
     classOn: /^scroll-p/u.test(unit.probe) ? "scroller" : undefined,
     borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
+    // The children a spacing unit separates are boxed to stay inside the measured region.
+    items: /^(space|divide)$/u.test(unit.root) || undefined,
     container: unit.props.some((p) => CONTAINER_PROPS.has(p))
       ? /grid|^justify-items/u.test(unit.props.join(" ")) || /^grid-/u.test(unit.probe)
         ? "grid"

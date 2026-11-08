@@ -53,13 +53,17 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 228/503 (45.3 %)  [171 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 232/503 (46.1 %)  [166 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 171 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 166 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The 4 units after 228 are a spacing unit's children: `space-*`/`divide-*` put a gap *between* the
+probe's children, and with children as wide as the probe the second one landed outside the measured
+region — the unit measured nothing because its effect painted elsewhere.
 
 The 5 units after 222 are three staging rules: a gradient needs stops (its `background-image` reads
 `var(--tw-gradient-stops)`, which only `from-*`/`via-*`/`to-*` define), `place-*` acts on children like
