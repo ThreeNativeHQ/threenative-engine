@@ -1096,7 +1096,14 @@ function maskCompanions(probe) {
   }
   const edge = /^mask-(t|b|l|r|x|y|tl|tr|bl|br)-(from|to)(-|$)/u.exec(probe);
   if (edge !== null) {
-    const opposite = `mask-${edge[1]}-${edge[2] === "from" ? "to" : "from"}-transparent`;
+    // A `to` unit sets only the *end position*; the end colour keeps its initial `transparent`, so a
+    // transparent companion leaves both stops transparent and the probe invisible in both arms. The
+    // opposite end has to be opaque for the fade to exist at all.
+    // A *colour* unit supplies its own colour, so a transparent opposite end is what pairs with it; a
+    // *position* unit supplies none, and there the opposite end has to be opaque.
+    const shade = colour || edge[2] === "from" ? "transparent" : "black";
+    const other = edge[2] === "from" ? "to" : "from";
+    const opposite = `mask-${edge[1]}-${other}-${shade}`;
     return colour ? [opposite, "mask-luminance"] : [opposite];
   }
   // A functional mask unit modifies an image it does not create: `mask-cover`, `mask-top`,

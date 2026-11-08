@@ -37,6 +37,29 @@ the commit that turns their units green.
 | --- | --- | --- | --- |
 | Blend, mask, clip on native | game Tailwind class → `css-ui` paint → vello_cpu layer | Rows deleted from `native-css-compat.ts` | AC-1 to AC-3 |
 
+## Decisions
+
+**A `mask-<axis>-to-*` unit sets only the end *position*, and the end colour keeps its initial
+`transparent`.** With a transparent companion both stops were transparent, so the probe was invisible in
+both arms and six cells read "does nothing" — the mask never existed. The opposite end is now opaque
+(`from-black`) for the position units, and stays transparent for the colour units, which supply their own
+colour; measured, the family's non-discriminating count falls 19 → 13 with nothing lost (23/50 either
+way).
+
+**Every one of those six cells now measures a real engine difference, and the cause is single: this engine
+paints no mask at all for Tailwind's composition.** Measured on `mask-t-to-40`: the browser's column fades
+`(34,81,183)` → `(36,95,225)` as the masked blue composites over the page colour, while the engine's is
+the unmasked `(37,99,235)` at every row. Tailwind emits
+
+```
+mask-image: var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic);
+mask-composite: intersect;
+```
+
+— a **three-layer** mask intersected. A single-layer mask paints (the `mask-*` cells at 0.99+), so what is
+missing is multi-image `mask-image` with `mask-composite`. That is a feature in the mask paint path, not a
+staging defect, and it is why the family's remaining cells sit between 0.78 and 0.98.
+
 ## Open: the eight colour-mask cells differ by a mask *curve*, measured (2026-11-07)
 
 `mask-mode: luminance` now paints (gradient stops rewritten so their alpha carries their luminance,
