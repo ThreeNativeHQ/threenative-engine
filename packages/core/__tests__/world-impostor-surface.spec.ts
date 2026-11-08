@@ -103,11 +103,23 @@ describe("WorldImpostorSurface material", () => {
     // A crown's aoNode and emissiveNode sample its own texture through attribute("uv"): on the quad the
     // owned engine lost its renderer (TN_NATIVE_ATTRIBUTE_MISSING: uv) and three sampled texel (0, 0).
     const source = new MeshStandardNodeMaterial({ alphaTest: 0.42, roughness: 0.6 });
-    for (const key of ["aoNode", "emissiveNode", "roughnessNode", "metalnessNode", "maskNode"] as const)
+    for (const key of [
+      "aoNode",
+      "emissiveNode",
+      "roughnessNode",
+      "metalnessNode",
+      "maskNode",
+    ] as const)
       Reflect.set(source, key, uniform(0));
     const { surface, atlas } = makeSurface(source);
     const material = surface.material as MeshStandardNodeMaterial;
-    for (const key of ["aoNode", "emissiveNode", "roughnessNode", "metalnessNode", "maskNode"] as const)
+    for (const key of [
+      "aoNode",
+      "emissiveNode",
+      "roughnessNode",
+      "metalnessNode",
+      "maskNode",
+    ] as const)
       expect(Reflect.get(material, key), key).toBeNull();
     expect(material.roughness).toBeCloseTo(0.6, 6);
     surface.dispose();

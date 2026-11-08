@@ -151,7 +151,13 @@ const GEOMETRY_MAPS = [
  * emissive sample its texture through `attribute("uv")`), which the quad does not have. Its scalar
  * roughness and metalness stay; colour, normal, coverage and the cutout are the atlas's own nodes.
  */
-const SURFACE_NODES = ["aoNode", "emissiveNode", "roughnessNode", "metalnessNode", "maskNode"] as const;
+const SURFACE_NODES = [
+  "aoNode",
+  "emissiveNode",
+  "roughnessNode",
+  "metalnessNode",
+  "maskNode",
+] as const;
 
 /** One `mat4` node per CPU instance-matrix attribute, derived once and kept live with its source. */
 const INSTANCE_COLUMNS = new WeakMap<InstancedBufferAttribute, InstancedInterleavedBuffer>();
