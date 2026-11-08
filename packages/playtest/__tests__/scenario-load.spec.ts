@@ -65,14 +65,4 @@ describe("scenario load characterization", () => {
     const projectPath = await writeScenario(body);
     await expect(loadPlaytestScenario(projectPath, "scenario.json")).rejects.toThrow(message);
   });
-
-  test("a reachability assertion whose artifact is missing fails at load", async () => {
-    const projectPath = await writeScenario({
-      ...CANONICAL,
-      assert: { reachability: { artifact: "artifacts/absent.json", entities: ["a", "b"] } },
-    });
-    await expect(loadPlaytestScenario(projectPath, "scenario.json")).rejects.toThrow(
-      /Reachability artifact 'artifacts\/absent\.json' could not be read as JSON\./u,
-    );
-  });
 });

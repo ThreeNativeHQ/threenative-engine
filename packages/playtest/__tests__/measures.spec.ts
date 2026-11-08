@@ -16,16 +16,12 @@ import {
   hasFinalComponentExpectation,
   hasFinalPathExpectation,
   hasNativeReadinessSamples,
-  horizontalRadius,
   matchingSignals,
-  movementEnvelopeHorizontalLimit,
-  overlayNodeObservationKey,
   physicsDebugBodyPositions,
   physicsDebugContactEvidence,
   physicsDebugMeanPoseDistance,
   physicsDebugOmittedBodies,
   physicsDebugSleepStates,
-  platformTop,
   pathValuePass,
   projectedOffscreenRatio,
   projectedPixelsFromNdcBounds,
@@ -55,21 +51,6 @@ function report(overrides: Record<string, unknown> = {}): never {
 }
 
 describe("playtest evaluator measures", () => {
-  test("computes horizontal radii, platform tops, and movement envelope limits", () => {
-    expect(horizontalRadius(undefined, [1, 0])).toBe(0);
-    expect(horizontalRadius({ halfExtents: [2, 0, 3] }, [-1, 2])).toBe(8);
-    expect(horizontalRadius({ scale: [-4, 2, 6] }, [1, -1])).toBe(5);
-    expect(platformTop({ position: [0, 2, 0], halfExtents: [1, 3, 1] })).toBe(5);
-    expect(platformTop({ position: [0, 2, 0], scale: [1, -4, 1] })).toBe(4);
-    expect(platformTop({})).toBe(0);
-    const envelope = { fallDistanceToGround: 2, forwardReach: 4, maxRise: 1 };
-    expect(movementEnvelopeHorizontalLimit(envelope, 2)).toBeUndefined();
-    expect(movementEnvelopeHorizontalLimit(envelope, -2)).toBeUndefined();
-    expect(movementEnvelopeHorizontalLimit(envelope, 1)).toBe(4);
-    expect(movementEnvelopeHorizontalLimit({ fallDistanceToGround: 0, forwardReach: 4, maxRise: 0 }, 0)).toBe(4);
-    expect(movementEnvelopeHorizontalLimit({ fallDistanceToGround: 0, forwardReach: 4, maxRise: 0 }, 1)).toBeUndefined();
-  });
-
   test("extracts physics contact, sleep, overflow, and pose evidence safely", () => {
     const observations = {
       ...emptyObservations,
@@ -127,7 +108,6 @@ describe("playtest evaluator measures", () => {
       code: "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
       message: "Declared assertion 'assert.resources' was not evaluated: no provider.",
     });
-    expect(overlayNodeObservationKey("hud", "#score")).toBe("hud:#score");
   });
 
   test("evaluates path comparators, change guards, and resource alternatives", () => {

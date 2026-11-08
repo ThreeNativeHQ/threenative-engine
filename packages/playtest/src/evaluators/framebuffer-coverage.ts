@@ -1,8 +1,7 @@
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
-import { platformTop, horizontalRadius, movementEnvelopeHorizontalLimit } from "./helpers.js";
 
-export function emitDisplayFamilies(ctx: IEvaluationContext): void {
+export function emitFramebufferCoverage(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
   const { input, scenarioAssertions } = ctx;
   if (scenarioAssertions.framebufferCoverage !== undefined) {
@@ -70,41 +69,6 @@ export function emitDisplayFamilies(ctx: IEvaluationContext): void {
         observedRuntimePath: "observations.json/framebufferCoverage/firstViolation/grid",
         severity: "error",
         suggestion: "Inspect the violating-frame screenshot and RGB sample grid; fix the render pass that drew during the loading-covered window.",
-      });
-    }
-  }
-  if (scenarioAssertions.reachability !== undefined) {
-    const { entities, envelope } = scenarioAssertions.reachability;
-    for (let index = 0; index < entities.length - 1; index += 1) {
-      const fromId = entities[index]!;
-      const toId = entities[index + 1]!;
-      const from = input.report.observations?.entityTransforms?.[fromId];
-      const to = input.report.observations?.entityTransforms?.[toId];
-      const rise = from?.position === undefined || to?.position === undefined ? undefined : platformTop(to) - platformTop(from);
-      const horizontalDelta = from?.position === undefined || to?.position === undefined
-        ? undefined
-        : [to.position[0] - from.position[0], to.position[2] - from.position[2]] as const;
-      const centerGap = horizontalDelta === undefined ? undefined : Math.hypot(...horizontalDelta);
-      const direction = horizontalDelta === undefined || centerGap === 0
-        ? undefined
-        : [horizontalDelta[0] / centerGap!, horizontalDelta[1] / centerGap!] as const;
-      const edgeGap = centerGap === undefined || direction === undefined
-        ? centerGap
-        : Math.max(0, centerGap - horizontalRadius(from, direction) - horizontalRadius(to, direction));
-      const horizontalLimit = envelope === undefined || rise === undefined ? undefined : movementEnvelopeHorizontalLimit(envelope, rise);
-      const pass = horizontalLimit !== undefined && edgeGap !== undefined && edgeGap <= horizontalLimit;
-      assertions.push({
-        details: { constraint: "static-movement-envelope-fit", edgeGap: edgeGap ?? null, envelope: envelope ?? null, from: fromId, horizontalLimit: horizontalLimit ?? null, rise: rise ?? null, to: toId },
-        id: `reachability.${index}.${fromId}.${toId}`,
-        pass,
-      });
-      if (!pass) diagnostics.push({
-        code: "TN_PLAYTEST_REACHABILITY_ASSERTION_FAILED",
-        message: `Static platform fit '${fromId}' to '${toId}' is outside the measured character envelope.`,
-        path: `/assert/reachability/entities/${index + 1}`,
-        severity: "error",
-        ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
-        suggestion: "Reduce the platform rise or edge-to-edge gap, regenerate the envelope after changing movement, then use a traversal playtest to prove walls, ceilings, run-up, and air control.",
       });
     }
   }

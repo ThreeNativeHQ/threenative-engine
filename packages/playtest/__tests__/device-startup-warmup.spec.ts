@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { PLAYTEST_PROTOCOL_LIMITS, PLAYTEST_PROTOCOL_VERSION, playtestDiagnostic } from "../src/index.js";
-import { runDevicePlaytest } from "../src/runner/androidRunner.js";
+import { runDevicePlaytest } from "../src/runner/deviceRunner.js";
 import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 import type { IDevicePlaytestTransport } from "../src/runner/deviceTransport.js";
 

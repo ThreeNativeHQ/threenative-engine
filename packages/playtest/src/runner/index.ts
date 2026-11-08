@@ -80,6 +80,14 @@ export * from "./android.js";
  */
 export * from "./androidRunner.js";
 /**
+ * Run a playtest on any device lane (Android, desktop or iOS) through its driver and transport.
+ * @situation execute a scenario on a device target with a custom driver
+ * @constraint the driver must prepare the app bundle and the transport must answer the handshake
+ * @example await runDevicePlaytest(config, { name: "android", driver, transport, processName, mailboxPaths });
+ */
+export { runDevicePlaytest } from "./deviceRunner.js";
+export type { IDevicePlaytestDriver, IDevicePlaytestTarget } from "./deviceRunner.js";
+/**
  * Parse standalone playtest runner configuration.
  * @situation invoke the playtest CLI from a scaffold
  * @situation validate runner flags before launching a browser

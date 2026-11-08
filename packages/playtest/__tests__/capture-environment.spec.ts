@@ -15,7 +15,7 @@ import {
   childEnvForDisplay,
   decideDisplayStrategy,
   provideDisplay,
-  runNeedsPixels,
+  requiresPixels,
 } from "../src/runner/captureEnvironment.js";
 
 const socketPresent = () => true;
@@ -153,18 +153,22 @@ test("childEnvForDisplay never mutates the parent environment", () => {
   expect(parent).toEqual({ DISPLAY: undefined, WAYLAND_DISPLAY: "wayland-0" });
 });
 
-test("runs that produce pixels need a display; pure assertion runs do not", () => {
-  expect(runNeedsPixels({ headless: true }, pixelScenario)).toBe(true);
-  expect(runNeedsPixels({ headless: false }, { artifacts: { screenshots: false }, steps: [] })).toBe(true);
-  expect(
-    runNeedsPixels(
-      { headless: true },
-      { artifacts: { screenshots: false }, steps: [{ release: true, screenshot: "mid" }] },
-    ),
-  ).toBe(true);
+test("one predicate says whether a scenario produces pixels", () => {
+  expect(requiresPixels(pixelScenario)).toBe(true);
+  expect(requiresPixels({ artifacts: { screenshots: false }, steps: [{ release: true, screenshot: "mid" }] })).toBe(true);
   // Screenshots are on by default: only an explicit opt-out removes the pixel requirement.
-  expect(runNeedsPixels({ headless: true }, { artifacts: undefined, steps: [] })).toBe(true);
-  expect(runNeedsPixels({ headless: true }, { artifacts: { screenshots: false }, steps: [] })).toBe(false);
+  expect(requiresPixels({ artifacts: undefined, steps: [] })).toBe(true);
+  expect(requiresPixels({ artifacts: { screenshots: false }, steps: [] })).toBe(false);
+  // Every assertion family that reads a frame counts, so provenance, the display and the
+  // preflight advice can no longer disagree about which runs they apply to.
+  const frameReaders = [
+    { visual: [{ frameDiff: { minChangedPixelRatio: 0.01 } }] },
+    { tone: [{ mean: { min: 1 } }] },
+    { framebufferCoverage: { backdrop: [0, 0, 0], tolerance: 1, window: { endStep: "b", startStep: "a" } } },
+  ];
+  for (const assert of frameReaders) {
+    expect(requiresPixels({ artifacts: { screenshots: false }, assert, steps: [] } as never)).toBe(true);
+  }
 });
 
 test("without Xvfb installed a pixel run fails closed naming the cause", async () => {

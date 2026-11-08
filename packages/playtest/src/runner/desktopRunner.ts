@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-import { runDevicePlaytest, type IDevicePlaytestDriver } from "./androidRunner.js";
+import { runDevicePlaytest, type IDevicePlaytestDriver } from "./deviceRunner.js";
 import { provideDisplay, type IProvidedDisplay } from "./captureEnvironment.js";
 import {
   DesktopPlaytestDriver,

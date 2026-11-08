@@ -29,7 +29,7 @@ import {
   type IAndroidDriver,
   type IAndroidLifecycleOperation,
 } from "../src/runner/android.js";
-import { runDevicePlaytest } from "../src/runner/androidRunner.js";
+import { runDevicePlaytest } from "../src/runner/deviceRunner.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { androidMailboxPaths, DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";

@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import type { Page } from "playwright";
 
 import { PLAYTEST_PROTOCOL_LIMITS, PLAYTEST_PROTOCOL_VERSION } from "../src/index.js";
-import { runDevicePlaytest, type IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
+import { runDevicePlaytest, type IDevicePlaytestDriver } from "../src/runner/deviceRunner.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import type { IDevicePlaytestTransport } from "../src/runner/deviceTransport.js";
 import { runStep } from "../src/runner/steps.js";

@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { PlaytestScenarioError, invalidScenario } from "./scenario/errors.js";
 import { validatePlaytestScenario } from "./scenario/schema-validate.js";
 import { isRecord } from "./scenario/schema-accessors.js";
-import type { IPlaytestReachabilityAssertion, IPlaytestScenario } from "./scenario/schema-base.js";
+import type { IPlaytestScenario } from "./scenario/schema-base.js";
 
 export * from "./scenario/schema-base.js";
 export * from "./scenario/schema-validate.js";
@@ -39,16 +39,14 @@ export async function loadPlaytestScenario(projectPath: string, scenarioPath: st
     });
   }
   const scenario = validatePlaytestScenario(parsed, scenarioPath, absolutePath);
-  const withReachability = await hydrateReachabilityArtifact(projectPath, scenario, scenarioPath);
-  return hydrateParityReference(projectPath, withReachability, scenarioPath);
+  return hydrateParityReference(projectPath, scenario, scenarioPath);
 }
 
 /**
  * Reads the other half of a parity pair out of its saved run report, at load.
  *
- * Same shape as the reachability hydration: the assertion names an external artifact, the load
- * step reads it once, and a file that cannot be read or does not carry a measurable series is a
- * load failure naming the defect — never a run that evaluates parity against nothing.
+ * The assertion names an external artifact, the load step reads it once, and a file that cannot be
+ * read or does not carry a measurable series is a load failure naming the defect — never a run that evaluates parity against nothing.
  */
 async function hydrateParityReference(projectPath: string, scenario: IPlaytestScenario, scenarioPath: string): Promise<IPlaytestScenario> {
   const assertion = scenario.assert?.parity;
@@ -126,31 +124,3 @@ async function hydrateParityReference(projectPath: string, scenario: IPlaytestSc
   };
 }
 
-async function hydrateReachabilityArtifact(projectPath: string, scenario: IPlaytestScenario, scenarioPath: string): Promise<IPlaytestScenario> {
-  const assertion = scenario.assert?.reachability;
-  if (assertion === undefined) return scenario;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(resolve(projectPath, assertion.artifact), "utf8"));
-  } catch {
-    throw invalidScenario(scenarioPath, `Reachability artifact '${assertion.artifact}' could not be read as JSON.`);
-  }
-  const envelope = reachabilityEnvelope(parsed);
-  if (envelope === undefined) {
-    throw invalidScenario(scenarioPath, `Reachability artifact '${assertion.artifact}' must contain finite non-negative maxRise, forwardReach, and fallDistanceToGround measurements.`);
-  }
-  return {
-    ...scenario,
-    assert: { ...scenario.assert, reachability: { ...assertion, envelope } },
-  };
-}
-
-function reachabilityEnvelope(value: unknown): IPlaytestReachabilityAssertion["envelope"] | undefined {
-  if (!isRecord(value)) return undefined;
-  const measurement = isRecord(value.jump) ? value.jump : value;
-  return typeof measurement.maxRise === "number" && Number.isFinite(measurement.maxRise) && measurement.maxRise >= 0
-    && typeof measurement.forwardReach === "number" && Number.isFinite(measurement.forwardReach) && measurement.forwardReach >= 0
-    && typeof measurement.fallDistanceToGround === "number" && Number.isFinite(measurement.fallDistanceToGround) && measurement.fallDistanceToGround >= measurement.maxRise
-    ? { fallDistanceToGround: measurement.fallDistanceToGround, forwardReach: measurement.forwardReach, maxRise: measurement.maxRise }
-    : undefined;
-}

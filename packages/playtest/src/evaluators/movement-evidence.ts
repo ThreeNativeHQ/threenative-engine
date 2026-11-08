@@ -3,7 +3,7 @@ import { consoleErrors, resolveDiagnosticsPolicy, runtimeDiagnostics, parseMovem
 import { perfWarnings } from "./perf-warnings.js";
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
-import { evaluateDiagnosticsPolicy, maxResolvedAxisDelta, rotationDelta, tiltDegrees, finalTiltDegrees, minimumResolvedDistance, movementFacingEvidence, finalFacingAngleToEntity, finalFacingAngleToPosition, evaluateVisibilityAssertion, runtimeGameplayAtStep, mergeEffectLogs, countMatchingEntries, countRuntimeContacts, physicsDebugContactEvidence, runtimeContactEvidence, summarizeMatchingEntries, settledCandidate, physicsDebugOmittedBodies, physicsDebugMeanPoseDistance, initialPhysicsDebugSnapshot, matchingOccludedRaycasts, initialEffectLog, runtimeAnimationObservations, runtimeGameplayBefore, animationObservationPass, footSlideRatio, strideFailure, strideReading, assertionEvaluatedByBaseProbe, assertionNotEvaluatedDiagnostic, allTrivialityEligibleAssertionsWaived } from "./helpers.js";
+import { evaluateDiagnosticsPolicy, maxResolvedAxisDelta, rotationDelta, tiltDegrees, finalTiltDegrees, minimumResolvedDistance, movementFacingEvidence, finalFacingAngleToEntity, finalFacingAngleToPosition, evaluateVisibilityAssertion, runtimeGameplayAtStep, mergeEffectLogs, countMatchingEntries, countRuntimeContacts, physicsDebugContactEvidence, runtimeContactEvidence, summarizeMatchingEntries, settledCandidate, physicsDebugOmittedBodies, physicsDebugMeanPoseDistance, initialPhysicsDebugSnapshot, initialEffectLog, runtimeAnimationObservations, runtimeGameplayBefore, animationObservationPass, footSlideRatio, strideFailure, strideReading, assertionEvaluatedByBaseProbe, assertionNotEvaluatedDiagnostic, allTrivialityEligibleAssertionsWaived } from "./helpers.js";
 
 export function emitMovementEvidence(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
@@ -481,45 +481,6 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
       suggestion: trivial && typeof assertion.allowTrivial !== "string"
         ? "Drive the asserted bodies from an awake initial state, or provide allowTrivial with the reason the rest state is intentionally held."
         : "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake.",
-    });
-  }
-  for (const assertion of scenarioAssertions.occluded ?? []) {
-    const matches = matchingOccludedRaycasts(input.report.effectLog, assertion.entity, assertion.target);
-    const id = `occluded.${assertion.entity ?? "ray"}`;
-    const initialMatches = matchingOccludedRaycasts(
-      initialEffectLog(input.report.observations),
-      assertion.entity,
-      assertion.target,
-    );
-    const comparisonPass = matches > 0;
-    const trivial = comparisonPass && initialMatches > 0;
-    const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
-    assertions.push({
-      details: {
-        count: matches,
-        entity: assertion.entity,
-        expected: assertion,
-        initialMatches,
-        target: assertion.target,
-        trivial,
-        ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
-      },
-      id,
-      pass,
-    });
-    if (!pass) diagnostics.push({
-      artifactPath: "effect-log.json",
-      code: trivial && typeof assertion.allowTrivial !== "string"
-        ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
-        : "TN_PLAYTEST_OCCLUSION_NOT_OBSERVED",
-      message: trivial && typeof assertion.allowTrivial !== "string"
-        ? `Assertion '${id}' was already satisfied before the scenario ran.`
-        : "Expected a render scene-ray query or physics raycast result with hit=true, but no matching occlusion evidence was observed.",
-      observedRuntimePath: "effect-log.json/entries[service=render.sceneRayQuery|physics.raycast]/payload/result/hit",
-      severity: "error",
-      suggestion: trivial && typeof assertion.allowTrivial !== "string"
-        ? "Drive the asserted occlusion from a non-occluded initial state, or provide allowTrivial with the reason the occlusion is intentionally held."
-        : "Check the listener/emitter entity ids and rendered occluder geometry, then inspect effect-log.json for the scene-query request and hit result.",
     });
   }
   for (const assertion of scenarioAssertions.animation ?? []) {

@@ -33,33 +33,6 @@ import {
   vectorDistance,
 } from "../assertion-report.js";
 
-export function horizontalRadius(
-  transform: { halfExtents?: Vec3; scale?: Vec3 } | undefined,
-  direction: readonly [number, number],
-): number {
-  const halfExtents = transform?.halfExtents
-    ?? (transform?.scale === undefined ? undefined : transform.scale.map((value) => Math.abs(value) * 0.5) as Vec3);
-  return halfExtents === undefined
-    ? 0
-    : Math.abs(direction[0]) * Math.abs(halfExtents[0]) + Math.abs(direction[1]) * Math.abs(halfExtents[2]);
-}
-
-export function platformTop(transform: { halfExtents?: Vec3; position?: Vec3; scale?: Vec3 }): number {
-  const halfHeight = transform.halfExtents?.[1] ?? (transform.scale === undefined ? 0 : Math.abs(transform.scale[1]) * 0.5);
-  return (transform.position?.[1] ?? 0) + halfHeight;
-}
-
-export function movementEnvelopeHorizontalLimit(
-  envelope: { fallDistanceToGround: number; forwardReach: number; maxRise: number },
-  rise: number,
-): number | undefined {
-  if (rise > envelope.maxRise) return undefined;
-  const dropFromApex = envelope.maxRise - rise;
-  if (dropFromApex > envelope.fallDistanceToGround) return undefined;
-  if (envelope.maxRise === 0) return rise === 0 ? envelope.forwardReach : undefined;
-  return envelope.forwardReach * (1 + Math.sqrt(dropFromApex / envelope.maxRise));
-}
-
 export interface IContactEvidence {
   candidates: string[];
   count: number;
@@ -186,10 +159,6 @@ export function assertionNotEvaluatedDiagnostic(id: string, reason: string): IPl
     severity: "error",
     suggestion: "Run this assertion on a supported target or add its evaluator before treating the scenario as proof.",
   };
-}
-
-export function overlayNodeObservationKey(overlayId: string, selector: string): string {
-  return `${overlayId}:${selector}`;
 }
 
 

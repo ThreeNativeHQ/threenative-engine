@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { runDevicePlaytest, type IDevicePlaytestDriver } from "./androidRunner.js";
+import { runDevicePlaytest, type IDevicePlaytestDriver } from "./deviceRunner.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import { withTargetAbortSignal } from "./deviceSignal.js";
 import { deviceMailboxPaths, type IDevicePlaytestTransport } from "./deviceTransport.js";

@@ -1,12 +1,13 @@
 import { TONE_METRICS } from "../tone.js";
 import type { IToneRegion } from "../tone.js";
 import type { IPlaytestToneAssertion } from "./schema-base.js";
+import { ASSERTION_BINDINGS } from "../assertion-bindings.js";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
 import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateFootSlipAssertion, validateSightLineAssertion, validateHudAuditAssertion, validateEngineCostAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
-import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestNetworkProfile, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
+import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestNetworkProfile, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestSettledAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestResourceWait } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
   "artifacts",
@@ -1086,27 +1087,33 @@ export function playtestStepWaitTicks(step: IPlaytestStep): number {
 }
 
 export function validateAssertions(value: Record<string, unknown>, scenarioPath: string): IPlaytestScenarioAssertions {
-  // `geometry` is a capture request, not a comparison assertion, so it carries no registry entry
-  // and no result id; it is still a valid `assert` key and is validated fail-closed below.
-  rejectUnknownKeys(value, [...PLAYTEST_ASSERTION_REGISTRY.map((entry) => entry.kind), "geometry"], scenarioPath, "assert");
+  rejectUnknownKeys(value, PLAYTEST_ASSERTION_REGISTRY.map((entry) => entry.kind), scenarioPath, "assert");
   validateAssertionShapes(value, scenarioPath);
   validateAssertionKeys(value, scenarioPath);
-  if (Array.isArray(value.signals) && value.signals.length === 0) {
-    throw invalidScenario(scenarioPath, "Assertion 'assert.signals' must contain at least one signal assertion.");
+  // One loop over the registry. The validator for each kind lives in ASSERTION_BINDINGS, so a kind
+  // added to the registry without a validator fails to compile instead of being dropped here.
+  const validated: Record<string, unknown> = {};
+  for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
+    const raw = value[entry.kind];
+    if (raw === undefined) continue;
+    const { nonEmpty, validate: bound } = ASSERTION_BINDINGS[entry.kind];
+    const validate = bound as (value: unknown, scenarioPath: string, objectPath: string) => unknown;
+    if (entry.cardinality === "object") {
+      validated[entry.kind] = validate(raw, scenarioPath, `assert.${entry.kind}`);
+      continue;
+    }
+    const items = raw as unknown[];
+    if (items.length === 0 && nonEmpty !== undefined) {
+      throw invalidScenario(scenarioPath, `Assertion 'assert.${entry.kind}' must contain at least one ${nonEmpty} assertion.`);
+    }
+    validated[entry.kind] = items.map((item, index) => validate(item, scenarioPath, `assert.${entry.kind}[${index}]`));
   }
-  if (Array.isArray(value.footSlip) && value.footSlip.length === 0) {
-    throw invalidScenario(scenarioPath, "Assertion 'assert.footSlip' must contain at least one foot-slip assertion.");
-  }
-  if (Array.isArray(value.tone) && value.tone.length === 0) {
-    throw invalidScenario(scenarioPath, "Assertion 'assert.tone' must contain at least one tone assertion.");
-  }
-  const movement = isRecord(value.movement) ? value.movement : undefined;
-  if (movement !== undefined) {
-    validateMovementBounds(movement, scenarioPath);
-  }
-  const camera = isRecord(value.camera) ? value.camera : undefined;
+  return validated as IPlaytestScenarioAssertions;
+}
+
+export function validateCameraAssertion(value: unknown, scenarioPath: string, objectPath: string): NonNullable<IPlaytestScenarioAssertions["camera"]> {
+  const camera = requireRecord(value, scenarioPath, objectPath);
   if (
-    camera !== undefined &&
     !(
       (typeof camera.within === "number" && Number.isFinite(camera.within)) ||
       camera.targetInViewport === true
@@ -1119,48 +1126,23 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
       "Assertion 'assert.camera' must declare 'within' or 'targetInViewport: true'; a camera assertion with neither passes without consulting any observation.",
     );
   }
-  const diagnostics = isRecord(value.diagnostics) ? value.diagnostics : undefined;
-  const performance = isRecord(value.performance)
-    ? validatePerformanceAssertion(value.performance, scenarioPath, "assert.performance")
-    : undefined;
-  // Present-but-not-an-object is a validation failure, not a dropped assertion: a scenario that
-  // says `"deviceMetrics": "cool"` must never run with the thermal check silently missing.
-  const deviceMetrics = value.deviceMetrics === undefined
-    ? undefined
-    : validateDeviceMetricsAssertion(value.deviceMetrics, scenarioPath, "assert.deviceMetrics");
-  const parity = value.parity === undefined
-    ? undefined
-    : validateParityAssertion(value.parity, scenarioPath, "assert.parity");
-  const framebufferCoverage = isRecord(value.framebufferCoverage)
-    ? validateFramebufferCoverageAssertion(
-        value.framebufferCoverage,
-        scenarioPath,
-        "assert.framebufferCoverage",
-      )
-    : undefined;
-  const renderChain = value.renderChain === undefined
-    ? undefined
-    : validateRenderChainAssertion(value.renderChain, scenarioPath, "assert.renderChain");
-  const startup = value.startup === undefined
-    ? undefined
-    : validateStartupAssertion(value.startup, scenarioPath, "assert.startup");
-  const pipelineCensus = value.pipelineCensus === undefined
-    ? undefined
-    : validatePipelineCensusAssertion(value.pipelineCensus, scenarioPath, "assert.pipelineCensus");
-  const scene = value.scene === undefined
-    ? undefined
-    : validateSceneAssertion(value.scene, scenarioPath, "assert.scene");
-  const geometry = value.geometry === undefined
-    ? undefined
-    : validateGeometryCaptureRequest(value.geometry, scenarioPath, "assert.geometry");
-  const world = isRecord(value.world) ? value.world : undefined;
+  return {
+    ...(typeof camera.entity === "string" ? { entity: camera.entity } : {}),
+    ...(typeof camera.follows === "string" ? { follows: camera.follows } : {}),
+    ...(typeof camera.targetInViewport === "boolean" ? { targetInViewport: camera.targetInViewport } : {}),
+    ...(typeof camera.within === "number" && Number.isFinite(camera.within) ? { within: camera.within } : {}),
+  };
+}
+
+export function validateDiagnosticsAssertion(value: unknown, scenarioPath: string, objectPath: string): NonNullable<IPlaytestScenarioAssertions["diagnostics"]> {
+  const diagnostics = requireRecord(value, scenarioPath, objectPath);
   const optOuts = [
     ["noConsoleErrors", "consoleErrorsOptOutReason"],
     ["noNetworkErrors", "networkErrorsOptOutReason"],
     ["noRuntimeDiagnostics", "runtimeDiagnosticsOptOutReason"],
   ] as const;
   for (const [policyKey, reasonKey] of optOuts) {
-    if (diagnostics?.[policyKey] === false
+    if (diagnostics[policyKey] === false
       && (typeof diagnostics[reasonKey] !== "string" || diagnostics[reasonKey].trim() === "")) {
       throw invalidScenario(
         scenarioPath,
@@ -1169,157 +1151,59 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
     }
   }
   return {
-    ...(Array.isArray(value.aerodynamics) ? { aerodynamics: value.aerodynamics.map((entry, index) => validateAerodynamicsAssertion(entry, scenarioPath, `assert.aerodynamics[${index}]`)) } : {}),
-    ...(Array.isArray(value.animation) ? { animation: value.animation.map((entry, index) => validateAnimationAssertion(entry, scenarioPath, `assert.animation[${index}]`)) } : {}),
-    ...(Array.isArray(value.audio) ? { audio: value.audio.map((entry, index) => validateAudioAssertion(entry, scenarioPath, `assert.audio[${index}]`)) } : {}),
-    ...(camera === undefined
-      ? {}
-      : {
-          camera: {
-            ...(typeof camera.entity === "string" ? { entity: camera.entity } : {}),
-            ...(typeof camera.follows === "string" ? { follows: camera.follows } : {}),
-            ...(typeof camera.targetInViewport === "boolean" ? { targetInViewport: camera.targetInViewport } : {}),
-            ...(typeof camera.within === "number" && Number.isFinite(camera.within) ? { within: camera.within } : {}),
-          },
-        }),
-    ...(Array.isArray(value.components)
+    ...(typeof diagnostics.noConsoleErrors === "boolean" ? { noConsoleErrors: diagnostics.noConsoleErrors } : {}),
+    ...(typeof diagnostics.noNetworkErrors === "boolean" ? { noNetworkErrors: diagnostics.noNetworkErrors } : {}),
+    ...(typeof diagnostics.noRuntimeDiagnostics === "boolean" ? { noRuntimeDiagnostics: diagnostics.noRuntimeDiagnostics } : {}),
+    ...(typeof diagnostics.consoleErrorsOptOutReason === "string" ? { consoleErrorsOptOutReason: diagnostics.consoleErrorsOptOutReason } : {}),
+    ...(typeof diagnostics.networkErrorsOptOutReason === "string" ? { networkErrorsOptOutReason: diagnostics.networkErrorsOptOutReason } : {}),
+    ...(typeof diagnostics.runtimeDiagnosticsOptOutReason === "string" ? { runtimeDiagnosticsOptOutReason: diagnostics.runtimeDiagnosticsOptOutReason } : {}),
+    ...(typeof diagnostics.runtimeReady === "boolean" ? { runtimeReady: diagnostics.runtimeReady } : {}),
+  };
+}
+
+export function validateMovementAssertion(value: unknown, scenarioPath: string, objectPath: string): NonNullable<IPlaytestScenarioAssertions["movement"]> {
+  const movement = requireRecord(value, scenarioPath, objectPath);
+  validateMovementBounds(movement, scenarioPath);
+  return {
+    ...(typeof movement.axis === "string" ? { axis: movement.axis } : {}),
+    ...(isRecord(movement.closesDistanceToPosition) && validateNumberTuple(movement.closesDistanceToPosition.position, 3) !== undefined && typeof movement.closesDistanceToPosition.min === "number" && Number.isFinite(movement.closesDistanceToPosition.min)
+      ? { closesDistanceToPosition: { position: validateNumberTuple(movement.closesDistanceToPosition.position, 3)!, min: movement.closesDistanceToPosition.min } }
+      : {}),
+    ...(typeof movement.entity === "string" ? { entity: movement.entity } : {}),
+    ...(typeof movement.facesMovementWithinDegrees === "number" && Number.isFinite(movement.facesMovementWithinDegrees)
+      ? { facesMovementWithinDegrees: movement.facesMovementWithinDegrees }
+      : {}),
+    ...(isRecord(movement.minAxisDelta) && typeof movement.minAxisDelta.axis === "string" && typeof movement.minAxisDelta.min === "number" && Number.isFinite(movement.minAxisDelta.min)
+      ? { minAxisDelta: { axis: movement.minAxisDelta.axis, min: movement.minAxisDelta.min } }
+      : {}),
+    ...(isRecord(movement.minResolvedAxisDelta) && typeof movement.minResolvedAxisDelta.axis === "string" && typeof movement.minResolvedAxisDelta.min === "number" && Number.isFinite(movement.minResolvedAxisDelta.min)
+      ? { minResolvedAxisDelta: { axis: movement.minResolvedAxisDelta.axis, min: movement.minResolvedAxisDelta.min } }
+      : {}),
+    ...(typeof movement.maxTiltDegrees === "number" && Number.isFinite(movement.maxTiltDegrees) && movement.maxTiltDegrees >= 0 && movement.maxTiltDegrees <= 180
+      ? { maxTiltDegrees: movement.maxTiltDegrees }
+      : {}),
+    ...(typeof movement.minDistance === "number" && Number.isFinite(movement.minDistance) ? { minDistance: movement.minDistance } : {}),
+    ...(typeof movement.maxDistance === "number" && Number.isFinite(movement.maxDistance) && movement.maxDistance >= 0 ? { maxDistance: movement.maxDistance } : {}),
+    ...(typeof movement.minVelocity === "number" && Number.isFinite(movement.minVelocity) ? { minVelocity: movement.minVelocity } : {}),
+    ...(typeof movement.pathLength === "number" && Number.isFinite(movement.pathLength) && movement.pathLength >= 0 ? { pathLength: movement.pathLength } : {}),
+    ...(isRecord(movement.notFacing) && typeof movement.notFacing.entity === "string" && typeof movement.notFacing.minDegrees === "number" && Number.isFinite(movement.notFacing.minDegrees)
+      ? { notFacing: { entity: movement.notFacing.entity, minDegrees: movement.notFacing.minDegrees } }
+      : {}),
+    ...(isRecord(movement.notFacingPosition) && validateNumberTuple(movement.notFacingPosition.position, 3) !== undefined && typeof movement.notFacingPosition.minDegrees === "number" && Number.isFinite(movement.notFacingPosition.minDegrees)
+      ? { notFacingPosition: { position: validateNumberTuple(movement.notFacingPosition.position, 3)!, minDegrees: movement.notFacingPosition.minDegrees } }
+      : {}),
+    ...(isRecord(movement.reachesPositionWithin) && validateNumberTuple(movement.reachesPositionWithin.position, 3) !== undefined && typeof movement.reachesPositionWithin.maxDistance === "number" && Number.isFinite(movement.reachesPositionWithin.maxDistance)
       ? {
-          components: value.components.map((entry, index) =>
-            validateComponentAssertion(entry, scenarioPath, `assert.components[${index}]`),
-          ),
-        }
+        reachesPositionWithin: {
+          ...(typeof movement.reachesPositionWithin.atStep === "string"
+            ? { atStep: movement.reachesPositionWithin.atStep }
+            : {}),
+          position: validateNumberTuple(movement.reachesPositionWithin.position, 3)!,
+          maxDistance: movement.reachesPositionWithin.maxDistance,
+        },
+      }
       : {}),
-    ...(Array.isArray(value.contacts) ? { contacts: value.contacts.map((entry, index) => validateContactAssertion(entry, scenarioPath, `assert.contacts[${index}]`)) } : {}),
-    ...(diagnostics === undefined
-      ? {}
-      : {
-          diagnostics: {
-            ...(typeof diagnostics.noConsoleErrors === "boolean" ? { noConsoleErrors: diagnostics.noConsoleErrors } : {}),
-            ...(typeof diagnostics.noNetworkErrors === "boolean" ? { noNetworkErrors: diagnostics.noNetworkErrors } : {}),
-            ...(typeof diagnostics.noRuntimeDiagnostics === "boolean" ? { noRuntimeDiagnostics: diagnostics.noRuntimeDiagnostics } : {}),
-            ...(typeof diagnostics.consoleErrorsOptOutReason === "string" ? { consoleErrorsOptOutReason: diagnostics.consoleErrorsOptOutReason } : {}),
-            ...(typeof diagnostics.networkErrorsOptOutReason === "string" ? { networkErrorsOptOutReason: diagnostics.networkErrorsOptOutReason } : {}),
-            ...(typeof diagnostics.runtimeDiagnosticsOptOutReason === "string" ? { runtimeDiagnosticsOptOutReason: diagnostics.runtimeDiagnosticsOptOutReason } : {}),
-            ...(typeof diagnostics.runtimeReady === "boolean" ? { runtimeReady: diagnostics.runtimeReady } : {}),
-          },
-        }),
-    ...(Array.isArray(value.hud)
-      ? {
-          hud: value.hud
-            .map((entry, index) => validatePathAssertion(entry, scenarioPath, `assert.hud[${index}]`)),
-        }
-      : {}),
-    ...(performance === undefined ? {} : { performance }),
-    ...(renderChain === undefined ? {} : { renderChain }),
-    ...(startup === undefined ? {} : { startup }),
-    ...(pipelineCensus === undefined ? {} : { pipelineCensus }),
-    ...(scene === undefined ? {} : { scene }),
-    ...(geometry === undefined ? {} : { geometry }),
-    ...(hasKey(value, "causedBy")
-      ? {
-          causedBy: requireArray(value, "causedBy", scenarioPath, "assert.causedBy").map((entry, index) =>
-            validateCausedByAssertion(entry, scenarioPath, `assert.causedBy[${index}]`)),
-        }
-      : {}),
-    ...(hasKey(value, "footSlip")
-      ? {
-          footSlip: requireArray(value, "footSlip", scenarioPath, "assert.footSlip").map((entry, index) =>
-            validateFootSlipAssertion(entry, scenarioPath, `assert.footSlip[${index}]`)),
-        }
-      : {}),
-    ...(hasKey(value, "sightLine")
-      ? { sightLine: validateSightLineAssertion(value.sightLine, scenarioPath, "assert.sightLine") }
-      : {}),
-    ...(hasKey(value, "hudAudit")
-      ? { hudAudit: validateHudAuditAssertion(value.hudAudit, scenarioPath, "assert.hudAudit") }
-      : {}),
-    ...(hasKey(value, "engineCost")
-      ? { engineCost: validateEngineCostAssertion(value.engineCost, scenarioPath, "assert.engineCost") }
-      : {}),
-    ...(hasKey(value, "sceneNodes")
-      ? {
-          sceneNodes: requireArray(value, "sceneNodes", scenarioPath, "assert.sceneNodes").map((entry, index) =>
-            validateSceneNodesAssertion(entry, scenarioPath, `assert.sceneNodes[${index}]`)),
-        }
-      : {}),
-    ...(deviceMetrics === undefined ? {} : { deviceMetrics }),
-    ...(parity === undefined ? {} : { parity }),
-    ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
-    ...(movement === undefined
-      ? {}
-      : {
-          movement: {
-            ...(typeof movement.axis === "string" ? { axis: movement.axis } : {}),
-            ...(isRecord(movement.closesDistanceToPosition) && validateNumberTuple(movement.closesDistanceToPosition.position, 3) !== undefined && typeof movement.closesDistanceToPosition.min === "number" && Number.isFinite(movement.closesDistanceToPosition.min)
-              ? { closesDistanceToPosition: { position: validateNumberTuple(movement.closesDistanceToPosition.position, 3)!, min: movement.closesDistanceToPosition.min } }
-              : {}),
-            ...(typeof movement.entity === "string" ? { entity: movement.entity } : {}),
-            ...(typeof movement.facesMovementWithinDegrees === "number" && Number.isFinite(movement.facesMovementWithinDegrees)
-              ? { facesMovementWithinDegrees: movement.facesMovementWithinDegrees }
-              : {}),
-            ...(isRecord(movement.minAxisDelta) && typeof movement.minAxisDelta.axis === "string" && typeof movement.minAxisDelta.min === "number" && Number.isFinite(movement.minAxisDelta.min)
-              ? { minAxisDelta: { axis: movement.minAxisDelta.axis, min: movement.minAxisDelta.min } }
-              : {}),
-            ...(isRecord(movement.minResolvedAxisDelta) && typeof movement.minResolvedAxisDelta.axis === "string" && typeof movement.minResolvedAxisDelta.min === "number" && Number.isFinite(movement.minResolvedAxisDelta.min)
-              ? { minResolvedAxisDelta: { axis: movement.minResolvedAxisDelta.axis, min: movement.minResolvedAxisDelta.min } }
-              : {}),
-            ...(typeof movement.maxTiltDegrees === "number" && Number.isFinite(movement.maxTiltDegrees) && movement.maxTiltDegrees >= 0 && movement.maxTiltDegrees <= 180
-              ? { maxTiltDegrees: movement.maxTiltDegrees }
-              : {}),
-            ...(typeof movement.minDistance === "number" && Number.isFinite(movement.minDistance) ? { minDistance: movement.minDistance } : {}),
-            ...(typeof movement.maxDistance === "number" && Number.isFinite(movement.maxDistance) && movement.maxDistance >= 0 ? { maxDistance: movement.maxDistance } : {}),
-            ...(typeof movement.minVelocity === "number" && Number.isFinite(movement.minVelocity) ? { minVelocity: movement.minVelocity } : {}),
-            ...(typeof movement.pathLength === "number" && Number.isFinite(movement.pathLength) && movement.pathLength >= 0 ? { pathLength: movement.pathLength } : {}),
-            ...(isRecord(movement.notFacing) && typeof movement.notFacing.entity === "string" && typeof movement.notFacing.minDegrees === "number" && Number.isFinite(movement.notFacing.minDegrees)
-              ? { notFacing: { entity: movement.notFacing.entity, minDegrees: movement.notFacing.minDegrees } }
-              : {}),
-            ...(isRecord(movement.notFacingPosition) && validateNumberTuple(movement.notFacingPosition.position, 3) !== undefined && typeof movement.notFacingPosition.minDegrees === "number" && Number.isFinite(movement.notFacingPosition.minDegrees)
-              ? { notFacingPosition: { position: validateNumberTuple(movement.notFacingPosition.position, 3)!, minDegrees: movement.notFacingPosition.minDegrees } }
-              : {}),
-            ...(isRecord(movement.reachesPositionWithin) && validateNumberTuple(movement.reachesPositionWithin.position, 3) !== undefined && typeof movement.reachesPositionWithin.maxDistance === "number" && Number.isFinite(movement.reachesPositionWithin.maxDistance)
-              ? {
-                reachesPositionWithin: {
-                  ...(typeof movement.reachesPositionWithin.atStep === "string"
-                    ? { atStep: movement.reachesPositionWithin.atStep }
-                    : {}),
-                  position: validateNumberTuple(movement.reachesPositionWithin.position, 3)!,
-                  maxDistance: movement.reachesPositionWithin.maxDistance,
-                },
-              }
-              : {}),
-            ...(typeof movement.rotationChanged === "boolean" ? { rotationChanged: movement.rotationChanged } : {}),
-          },
-    }),
-    ...(Array.isArray(value.occluded) ? { occluded: value.occluded.map((entry, index) => validateOccludedAssertion(entry, scenarioPath, `assert.occluded[${index}]`)) } : {}),
-    ...(Array.isArray(value.overlayNodes)
-      ? {
-          overlayNodes: value.overlayNodes.map((entry, index) =>
-            validateOverlayNodeAssertion(entry, scenarioPath, `assert.overlayNodes[${index}]`),
-          ),
-        }
-      : {}),
-    ...(isRecord(value.reachability) ? { reachability: validateReachabilityAssertion(value.reachability, scenarioPath) } : {}),
-    ...(Array.isArray(value.resources) ? { resources: value.resources.map((item, index) => validateResourcePathAssertion(item, scenarioPath, `assert.resources[${index}]`)) } : {}),
-    ...(Array.isArray(value.settled)
-      ? {
-          settled: value.settled.map((entry, index) =>
-            validateSettledAssertion(entry, scenarioPath, `assert.settled[${index}]`),
-          ),
-        }
-      : {}),
-    ...(Array.isArray(value.signals)
-      ? {
-          signals: value.signals.map((entry, index) =>
-            validateSignalAssertion(entry, scenarioPath, `assert.signals[${index}]`),
-          ),
-        }
-      : {}),
-    ...(Array.isArray(value.states) ? { states: value.states.map((entry, index) => validateStateAssertion(entry, scenarioPath, `assert.states[${index}]`)) } : {}),
-    ...(Array.isArray(value.tags) ? { tags: value.tags.map((entry, index) => validateTagCountAssertion(entry, scenarioPath, `assert.tags[${index}]`)) } : {}),
-    ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map((entry, index) => validateVisibilityAssertion(entry, scenarioPath, `assert.visibility[${index}]`)) } : {}),
-    ...(Array.isArray(value.tone) ? { tone: value.tone.map((entry, index) => validateToneAssertion(entry, scenarioPath, `assert.tone[${index}]`)) } : {}),
-    ...(Array.isArray(value.visual) ? { visual: value.visual.map((entry, index) => validateVisualAssertion(entry, scenarioPath, `assert.visual[${index}]`)) } : {}),
-    ...(world === undefined ? {} : { world: validateWorldAssertion(world, scenarioPath) }),
+    ...(typeof movement.rotationChanged === "boolean" ? { rotationChanged: movement.rotationChanged } : {}),
   };
 }
 
@@ -1414,24 +1298,6 @@ export function validateWorldAssertion(value: Record<string, unknown>, scenarioP
   };
 }
 
-export function validateReachabilityAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestReachabilityAssertion {
-  if (typeof value.artifact !== "string" || value.artifact.trim() === "") {
-    throw invalidScenario(scenarioPath, "Assertion 'assert.reachability.artifact' must be a non-empty project-relative path.");
-  }
-  if (!Array.isArray(value.entities) || value.entities.length < 2
-    || value.entities.some((entity) => typeof entity !== "string" || entity.trim() === "")) {
-    throw invalidScenario(scenarioPath, "Assertion 'assert.reachability.entities' must contain at least two non-empty entity ids.");
-  }
-  const entities = value.entities as string[];
-  if (entities.some((entity, index) => index > 0 && entity === entities[index - 1])) {
-    throw invalidScenario(scenarioPath, "Assertion 'assert.reachability.entities' must not repeat a consecutive entity id.");
-  }
-  return {
-    artifact: value.artifact,
-    entities,
-  };
-}
-
 export function validateSettledAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestSettledAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   rejectUnknownKeys(record, ["allowTrivial", "atStep", "compareToStep", "entity", "minBodies", "minMeanPoseDistance", "requiredOn"], scenarioPath, objectPath);
@@ -1443,21 +1309,6 @@ export function validateSettledAssertion(value: unknown, scenarioPath: string, o
     ...present("minBodies", optionalPositiveInteger(record, "minBodies", scenarioPath, objectPath)),
     ...present("minMeanPoseDistance", optionalPositiveNumber(record, "minMeanPoseDistance", scenarioPath, objectPath)),
     ...present("requiredOn", optionalTargetArray(record, "requiredOn", scenarioPath, objectPath)),
-  };
-}
-
-export function validateOverlayNodeAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestOverlayNodeAssertion {
-  const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["attribute", "equals", "overlayId", "selector", "textIncludes", "visible"], scenarioPath, objectPath);
-  return {
-    ...present("attribute", optionalString(record, "attribute", scenarioPath, objectPath)),
-    // `equals` is deliberately untyped: an overlay node may be compared against any
-    // JSON value, so presence is the only check that can be made here.
-    ...(hasKey(record, "equals") ? { equals: record.equals } : {}),
-    overlayId: requireString(record, "overlayId", scenarioPath, objectPath),
-    selector: requireString(record, "selector", scenarioPath, objectPath),
-    ...present("textIncludes", optionalString(record, "textIncludes", scenarioPath, objectPath)),
-    ...present("visible", optionalBoolean(record, "visible", scenarioPath, objectPath)),
   };
 }
 
@@ -1554,16 +1405,6 @@ export function validateAerodynamicsAssertion(value: unknown, scenarioPath: stri
   };
 }
 
-export function validateOccludedAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestOccludedAssertion {
-  const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["allowTrivial", "entity", "target"], scenarioPath, objectPath);
-  return {
-    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
-    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
-    ...present("target", optionalString(record, "target", scenarioPath, objectPath)),
-  };
-}
-
 /**
  * One armed per-object geometry capture request. Fail-closed like every other key path: an unknown
  * key, a limit outside 1..500, a sort outside the three literals, or a non-positive timeout throws
@@ -1592,7 +1433,7 @@ export function validateGeometryCaptureRequest(
   };
 }
 
-function validateToneAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestToneAssertion {
+export function validateToneAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestToneAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   rejectUnknownKeys(record, ["atStep", "region", "compare", ...TONE_METRICS], scenarioPath, objectPath);
   const result: IPlaytestToneAssertion = {};

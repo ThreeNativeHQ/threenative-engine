@@ -7381,18 +7381,17 @@
     },
     {
       "aliases": [],
-      "constraints": ["the app bundle and device transport must be prepared"],
-      "example": "await runAndroidPlaytest(options);",
+      "constraints": [
+        "the driver must prepare the app bundle and the transport must answer the handshake"
+      ],
+      "example": "await runDevicePlaytest(config, { name: \"android\", driver, transport, processName, mailboxPaths });",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export async function runDevicePlaytest( config: IStandalonePlaytestConfig, target: IDevicePlaytestTarget, ): Promise<IStandalonePlaytestReport> { … }",
-      "situations": [
-        "execute a scenario on an Android target",
-        "collect Android playtest artifacts"
-      ],
-      "summary": "Run a playtest on Android through the configured device transport.",
+      "situations": ["execute a scenario on a device target with a custom driver"],
+      "summary": "Run a playtest on any device lane (Android, desktop or iOS) through its driver and transport.",
       "supersedes": [],
       "symbol": "runDevicePlaytest"
     },

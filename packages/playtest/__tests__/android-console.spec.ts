@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import { AdbAndroidDriver, parseAndroidConsole } from "../src/runner/android.js";
-import { runDevicePlaytest } from "../src/runner/androidRunner.js";
+import { runDevicePlaytest } from "../src/runner/deviceRunner.js";
 import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 import {
   androidMailboxPaths,
