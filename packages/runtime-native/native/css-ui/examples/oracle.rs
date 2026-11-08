@@ -122,6 +122,13 @@ fn drive_steps(ui: &mut CssUi, drive: &str, width: u32, height: u32) -> Result<(
                     .ok_or_else(|| "advance: no \"ms\"".to_string())?;
                 ui.set_time(ui.time() + ms);
             }
+            "focus" => {
+                let id = step
+                    .get("id")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| "focus: no \"id\"".to_string())?;
+                ui.focus(id as u32);
+            }
             "scrollIntoView" => {
                 let id = step
                     .get("id")

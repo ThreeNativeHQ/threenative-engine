@@ -1339,7 +1339,9 @@ function cellTree(cell) {
   const classes =
     probeClass(cell.companions ?? [], cell.class) + container + border + items + contain;
   const probe = el(
-    stage.tag ?? (CONTROL_UNIT.test(cell.unit?.probe ?? "") ? "textarea" : "div"),
+    /^(transition|duration|delay|ease)/u.test(cell.unit?.probe ?? "")
+      ? "button"
+      : (stage.tag ?? (CONTROL_UNIT.test(cell.unit?.probe ?? "") ? "textarea" : "div")),
     { class: classes, ...stage.attrs },
     ...probeInner(stage, cell, stage.inner ?? cell.inner),
   );
@@ -1494,6 +1496,15 @@ function utilityEntry(unit, classCss, byProperty) {
     contrast: contrastDeclarations(unit, classCss, byProperty),
     companions: [
       ...companionsFor(unit),
+      // A transition only shows when something changes: the cell focuses a button probe, which flips a
+      // colour, and the motion bar samples the blend on a clock fine enough to see a 75ms duration.
+      // `outline-none` takes the UA focus ring out of the frame — it is painted by one subject's
+      // user agent, not by the utility under measurement.
+      ...(/^(duration|delay|ease)/u.test(unit.probe)
+        ? ["transition", "focus:bg-red-500", "outline-none"]
+        : /^transition/u.test(unit.probe)
+          ? ["focus:bg-red-500", "outline-none"]
+          : []),
       ...EXTRA_STAGING.filter(([pattern]) => pattern.test(unit.probe)).flatMap(
         ([, classes]) => classes,
       ),
@@ -1561,13 +1572,15 @@ function utilityEntry(unit, classCss, byProperty) {
     // `scroll-m*` moves a scroller only when something scrolls *to* the element, so the cell is
     // captured after a `scrollIntoView` on the probe — the same step on both subjects. The rest of
     // the scroll family changes under a wheel.
-    drive: /^scroll-[mp]/u.test(unit.probe)
-      ? [{ t: "scrollIntoView", id: undefined }]
-      : layout === "scroll"
-        ? [{ t: "wheel", at: "probe", dy: 140 }]
-        : CONTROL_UNIT.test(unit.probe)
-          ? [{ t: "key", key: "Tab" }]
-          : undefined,
+    drive: /^(transition|duration|delay|ease)/u.test(unit.probe)
+      ? [{ t: "focus", at: "probe" }]
+      : /^scroll-[mp]/u.test(unit.probe)
+        ? [{ t: "scrollIntoView", id: undefined }]
+        : layout === "scroll"
+          ? [{ t: "wheel", at: "probe", dy: 140 }]
+          : CONTROL_UNIT.test(unit.probe)
+            ? [{ t: "key", key: "Tab" }]
+            : undefined,
     prose: unit.props.some((p) => PROSE_PROPS.has(p)),
     unit,
   };
@@ -1842,6 +1855,29 @@ async function driveStep(page, step) {
     );
     return void (await settleScroll(page));
   }
+  if (step.t === "focus") {
+    // By id, not by Tab: both engines move focus to the *first* stop in the document, so a Tab lands
+    // on whatever the page holds before the element the cell named.
+    //
+    // The style change this focus causes is what *starts* the transition, and a finished transition
+    // is dropped from `document.getAnimations()` — a pin applied after the drive, in its own task,
+    // reaches a list that no longer holds it, so every sample of the cell showed the end state and
+    // `transition` measured "does nothing". The pin therefore rides in the same task as the focus,
+    // after a forced style flush.
+    await page.evaluate(
+      ({ id, at }) => {
+        document.querySelector(`[data-n="${id}"]`)?.focus({ focusVisible: false });
+        if (at === undefined) return;
+        void document.body.getBoundingClientRect();
+        for (const animation of document.getAnimations()) {
+          animation.pause();
+          animation.currentTime = at;
+        }
+      },
+      { id: step.id, at: step.sample },
+    );
+    return undefined;
+  }
   if (step.t === "advance") return void (await page.waitForTimeout(step.ms));
   if (step.t === "wheel") {
     // A real wheel needs the pointer over the scroller first: Chromium routes it to the element
@@ -1896,13 +1932,13 @@ async function settleScroll(page) {
 }
 
 /** Playwright steps for a cell's driver, at coordinates the caller measured on the engine's behalf. */
-async function driveWeb(page, steps) {
+async function driveWeb(page, steps, sample) {
   // A pointer that has never moved has no hover state to update: the first `mouse.move` to the
   // probe's centre sets the position but does not always repaint `:hover` for the element under it
   // (measured: the hovered chain still named the cell label after a move to the probe). One move to
   // the corner first gives the next move a previous position to move *from*.
   if (steps.some((step) => step.t === "pointer")) await page.mouse.move(0, 0);
-  for (const step of steps) await driveStep(page, step);
+  for (const step of steps) await driveStep(page, { ...step, sample });
 }
 
 /**
@@ -1969,7 +2005,7 @@ async function chromiumPanel(browser, base, panel, { strip = false, drive = [], 
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
-  for (const steps of drive) await driveWeb(page, steps);
+  for (const steps of drive) await driveWeb(page, steps, sample);
   if (sample !== undefined) {
     // A CSS animation is driven by the compositor, not by a JS timer, so the clock is moved through
     // its own interface: pause every animation the document has and pin it to the sample. The pin
@@ -2351,6 +2387,7 @@ function driverFor(cell, boxes) {
   const x = Math.round(box.x + box.w / 2);
   const y = Math.round(box.y + box.h / 2);
   return cell.drive.map((step) => {
+    if (step.t === "focus") return { t: "focus", id: cell.probe };
     if (step.t === "scrollIntoView")
       return {
         t: "scrollIntoView",

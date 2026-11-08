@@ -160,6 +160,32 @@ fn tab_stops_at_focusable_elements_in_document_order() {
     }
 }
 
+/// A programmatic focus paints the `:focus` state — not just the document's focus id. A focus that
+/// only reports itself is a focus a stylesheet never sees.
+#[test]
+fn a_programmatic_focus_paints_the_focus_state() {
+    let mut ui = ui(
+        360,
+        220,
+        &[
+            sheet(
+                "s",
+                &format!("{BASE}\n.b{{display:block;width:100px;height:30px;margin:4px;background:#334155;border:0}}\n.b:focus{{background:#f59e0b}}"),
+            ),
+            create(1, "button"),
+            attr(1, "class", "b"),
+            text(10, "one"),
+            append(1, 10),
+            append(0, 1),
+        ],
+    );
+    // The middle of the button: 4px margin, half its 30px height, half its 100px width.
+    assert_eq!(rgb(&ui, 54, 19), [0x33, 0x41, 0x55], "unfocused");
+    assert!(ui.focus(1), "a button is focusable");
+    ui.render();
+    assert_eq!(rgb(&ui, 54, 19), [0xf5, 0x9e, 0x0b], "focused: :focus applies");
+}
+
 /// Every element a Tab visits from outside the document, until focus leaves it again.
 fn tab_order(ui: &mut CssUi) -> Vec<u32> {
     let mut seen = Vec::new();
@@ -170,6 +196,28 @@ fn tab_order(ui: &mut CssUi) -> Vec<u32> {
             None => return seen,
         }
     }
+}
+
+/// A host focuses a control by id: a dialog's first field, a form activated from code, or a driver
+/// that must reach a specific element. Tab cannot stand in for it — both browsers and this engine
+/// move focus to the *first* stop in the document, so a single Tab lands on whatever the page happens
+/// to hold before the element the caller named.
+#[test]
+fn focus_moves_to_the_named_element_and_refuses_one_that_is_not_focusable() {
+    let mut ui = focusable();
+    assert_eq!(ui.focused_id(), None);
+    assert!(ui.focus(4), "a tabindex div is focusable");
+    assert_eq!(ui.focused_id(), Some(4), "focus is on the element that was named");
+    assert!(ui.focus(6), "a later element takes focus from an earlier one");
+    assert_eq!(ui.focused_id(), Some(6));
+
+    // A stretch of the same path a browser refuses: no tabindex, or a disabled control.
+    assert!(!ui.focus(5), "tabindex=-1 is not a tab stop, and a programmatic focus is a stop");
+    assert_eq!(ui.focused_id(), Some(6), "a refused focus moves nothing");
+    assert!(!ui.focus(2), "a disabled button cannot take focus");
+    assert_eq!(ui.focused_id(), Some(6));
+    assert!(!ui.focus(99), "an unknown id moves nothing");
+    assert_eq!(ui.focused_id(), Some(6));
 }
 
 #[test]

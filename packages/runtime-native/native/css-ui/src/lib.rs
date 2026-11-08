@@ -1207,6 +1207,28 @@ impl CssUi {
         }
     }
 
+    /// Move focus to a caller's element by id, the way a host does when a dialog opens, a form's
+    /// first field is activated from code, or a test wants a control focused without a pointer.
+    ///
+    /// Returns whether the id named a focusable element: a `<div>` with no `tabindex` is not one, so
+    /// a host that asks for it learns that nothing moved rather than believing the address worked.
+    /// The ring is not shown — this is a programmatic focus, and a browser paints `:focus` without
+    /// `:focus-visible` for one.
+    pub fn focus(&mut self, id: u32) -> bool {
+        let Some(node) = self.ids.get(&id).copied() else {
+            return false;
+        };
+        if !is_focusable(&self.doc, node) {
+            return false;
+        }
+        self.doc.set_focus_visible(node, false);
+        // Focusing restyles the node, and the document's redraw flag is not what makes that paint:
+        // a host that only asks for the next frame would get the previous one.
+        self.dirty = true;
+        self.sync_dirty();
+        true
+    }
+
     /// Move focus one element forwards (`shift` for backwards), or out of the document when
     /// there is nowhere left to go. Returns whether the document had a use for the key: nothing
     /// to focus and no focus to move is a game that owns its own Tab, not a UI that swallowed one.

@@ -65,6 +65,25 @@ reaches the first panel's control and never the cell's probe, and the engine has
 The staged companion did flip the colour (`ease-in` read 0.9596 that way), which is what proved the
 driver can work and the addressing cannot.
 
+**Solved, and it exposed a real engine difference.** The engine gained `CssUi::focus(id)` — a host
+capability, not a test hook: a dialog's first field or a form activated from code needs it, and both
+`tests/interaction.rs` cases prove it (`focus` moves to the named element and refuses one that is not
+focusable; a programmatic focus *paints* `:focus`, which needed an explicit `dirty` flag because the
+document's redraw request is not what restyles it).
+
+With the driver in place, a second measurement defect surfaced: the pin that seeks the clock ran in its
+own task *after* the drive, and a finished transition is dropped from `document.getAnimations()`, so
+every sample of every transition cell showed the end state and read "does nothing". The pin now rides in
+the same task as the focus, after a forced style flush. Measured effect: the group's five inert cells
+became real measurements — `transition` 0.9198, `duration-initial` 0.9198, `delay-75` 0.8787, `ease-in`
+0.9596, `ease-initial` 0.6511 — and non-discriminating cells across the scene fell 130 → 126.
+
+Those numbers are now a real engine gap rather than a staging one: the engine's transition interpolation
+departs from Chromium's part-way through a 150 ms `background-color` change, with the size of the
+departure tracking the timing curve (a `linear` curve agreeing, both `cubic-bezier` curves not), which is
+what a wrong easing solve looks like. Next step: compare the engine's bezier solve against Chromium's at
+the sampled instants for one cell.
+
 The motion clock now samples 0, 50, 100, 150, 250, 500, 750 and 1000 ms instead of 0, 250, 500, 750 and
 1000: a Tailwind transition is 0–200 ms (the default is 150), so the old grid could not see a duration, a
 delay or an easing change at all. Measured, that changes no verdict today — the transition group still
