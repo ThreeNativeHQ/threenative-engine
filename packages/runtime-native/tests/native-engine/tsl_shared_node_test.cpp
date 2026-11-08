@@ -4,6 +4,7 @@
 #include "engine/shader/tsl/tsl.h"
 #include "engine/shader/wgsl.h"
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 using namespace tn::engine::shader;
@@ -131,6 +132,31 @@ void normalSharesSlots() {
     CHECK(wgsl.ok());
     CHECK(occurrences(wgsl.code, "for (") == 1);
 }
+// A variable made outside any Fn is declared at the top of the program, its inputs first: a hoisted variable that
+// lowers a loop which reads another hoisted variable must not declare that one inside the loop. The world impostor's
+// march mip level (derivatives included) was evaluated on each of 33 steps instead of once (PRD-858).
+void hoistedInputsFirst() {
+    const auto hoist = [](g::Node value) {
+        g::Block scratch;
+        auto declared = std::make_shared<g::NodeData>(*scratch.var(value).declaration);
+        declared->bits = 1;
+        return g::Node(declared);
+    };
+    const auto level = hoist(g::mul(g::uniform("x", Type::f32()), g::float_(2)));
+    g::Block inner;
+    const auto acc = inner.var(g::float_(0));
+    inner.Loop(4, [&](g::Node) { inner.assign(acc, g::add(acc, level)); });
+    auto march = std::make_shared<g::NodeData>(*inner.node());
+    march->args = {acc};
+    const auto result = hoist(march);
+    Program p(Stage::Compute); tsl::Build build(p);
+    g::lower(g::add(result, g::float_(1)), p);
+    CHECK(p.ok());
+    const auto dump = p.dump();
+    if (std::getenv("TN_TEST_DUMP")) std::fprintf(stderr, "%s\n", dump.c_str());
+    CHECK(dump.find("mul(") != std::string::npos && dump.find("mul(") < dump.find("loop"));
+    CHECK(WgslEmitter::emit(p).ok());
+}
 // Live TSL compares like r185 OperatorNode: a uint index against a float uniform is promoted, not
 // refused (PRD-857: the GPU world scene's `instanceIndex.greaterThanEqual(counts.w)`).
 void mixedCompare() {
@@ -162,4 +188,4 @@ void mixedCompare() {
         CHECK(WgslEmitter::emit(p).ok());
     }
 }
-TN_TEST_MAIN({"shared", [] { shared(); probe(); mixedCompare(); callOnce(); normalSharesSlots(); }}, {"scopes", scopes})
+TN_TEST_MAIN({"shared", [] { shared(); probe(); mixedCompare(); callOnce(); normalSharesSlots(); hoistedInputsFirst(); }}, {"scopes", scopes})

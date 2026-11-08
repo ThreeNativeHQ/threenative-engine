@@ -154,13 +154,17 @@ ExprId Lowerer::index(const Node& element) {
 }
 
 // Node.analyze r185 counts each incoming use, descending into children only on the first.
+// A hoisted variable is listed after the ones its value reads (post-order), so declareHoisted declares an input before
+// the variable whose value lowers a loop that reads it; listed first, the input was declared inside that loop.
 void Lowerer::analyze(Node node) {
     if (!node || ++uses_[node.get()] != 1) return;
-    if (node->kind == Kind::Var && node->bits == 1) hoisted_.push_back(node);
-    if (node->kind == Kind::Call) return; // each invocation owns its analysis and early returns
-    for (const auto& arg : node->args) analyze(arg);
-    for (const auto& child : node->body) analyze(child);
-    for (const auto& child : node->otherwise) analyze(child);
+    const bool hoisted = node->kind == Kind::Var && node->bits == 1;
+    if (node->kind != Kind::Call) { // each invocation owns its analysis and early returns
+        for (const auto& arg : node->args) analyze(arg);
+        for (const auto& child : node->body) analyze(child);
+        for (const auto& child : node->otherwise) analyze(child);
+    }
+    if (hoisted) hoisted_.push_back(node);
 }
 
 ExprId Lowerer::expression(Node node) {
