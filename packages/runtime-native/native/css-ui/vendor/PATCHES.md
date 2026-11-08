@@ -493,6 +493,12 @@ to delete once the query worked.
   and the ops that follow carry their own world transforms, so the child's clip is transformed by the
   layer's transform before it is pushed — the first attempt pushed it untransformed and the child
   clipped every pixel away (measured: 0 opaque pixels, and the element's paint was lost).
+* **The backdrop half is written and does not land.** A backdrop filter needs a copy of what is
+  painted *under* the layer, which means rendering the parent — and `vello_cpu` panics ("some layers
+  haven't been popped yet") when that is asked of a context with an open layer, which blitz has (it
+  wraps some elements in a clip-path or mask layer). A depth counter refuses the capture there instead
+  of crashing, so the eight `backdrop-*` cells keep the values they had; the next attempt needs a
+  capture that does not require closing the parent's layers.
 * **Proves it:** `tests/interaction.rs::a_colour_filter_transforms_the_layer_it_wraps` —
   `brightness(50%)` on `#2563eb` gives `#13327` and `grayscale(100%)` gives `#606060`, the CSS values.
   The parity meter's filter family moves 2/19 → **9/19**: brightness, contrast, grayscale,

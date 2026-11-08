@@ -15,11 +15,17 @@ pub struct VelloCpuScenePainter {
     pub(crate) resources: vello_cpu::Resources,
     pub(crate) image_cache: ImageCache,
     colour_layer: Option<ColourLayer>,
+    /// How many layers are open on the current context. A backdrop capture renders the parent, and
+    /// `vello_cpu` refuses that while a layer is still open.
+    layer_depth: usize,
 }
 
 struct ColourLayer {
     parent: vello_cpu::RenderContext,
-    filter: crate::filters::ColourFilter,
+    /// The per-pixel function applied to the layer's own pixels, if the layer has one.
+    filter: Option<crate::filters::ColourFilter>,
+    /// The per-pixel function applied to what lies *under* the layer, if it has one.
+    backdrop: Option<crate::filters::ColourFilter>,
     blend: peniko::Mix,
     alpha: f32,
     ops: usize,
@@ -36,6 +42,7 @@ impl VelloCpuScenePainter {
             resources: vello_cpu::Resources::new(),
             image_cache: ImageCache::new(config),
             colour_layer: None,
+            layer_depth: 0,
         }
     }
 
@@ -87,26 +94,60 @@ impl PaintScene for VelloCpuScenePainter {
         transform: Affine,
         clip: &impl Shape,
         filter: Option<Arc<Filter>>,
-        _backdrop_filter: Option<Arc<Filter>>,
+        backdrop_filter: Option<Arc<Filter>>,
     ) {
         // A filter that is exactly one per-pixel colour function (a colour matrix or a component
         // transfer) is rendered offscreen and transformed, because `vello_common` 0.1.0 has no such
-        // primitive (see `ColourLayer`).
-        if let Some(colour) = filter
+        // primitive (see `ColourLayer`). The same is true of a *backdrop* filter: the layer then
+        // starts with a copy of what is under it, filtered.
+        let own = filter
             .as_deref()
-            .and_then(crate::filters::colour_filter_only)
-        {
+            .and_then(crate::filters::colour_filter_only);
+        let backdrop = backdrop_filter
+            .as_deref()
+            .and_then(crate::filters::colour_filter_only);
+        if own.is_some() || backdrop.is_some() {
             let (width, height) = (self.render_ctx.width(), self.render_ctx.height());
+            // A backdrop filter needs the pixels already painted under the layer: render what the
+            // parent has recorded so far into a pixmap and filter it. `render` rasterises the
+            // accumulated ops into a *fresh* target, so the parent's own frame at `finish` is
+            // unaffected.
+            // A backdrop capture renders the parent, which `vello_cpu` refuses while one of its
+            // layers is open. Nested inside one (blitz pushes a clip-path or mask layer around some
+            // elements) the backdrop filter is left dropped, which is the state it was in before this
+            // hunk — a refusal, not a crash.
+            let can_capture = self.layer_depth == 0;
+            let base = backdrop.as_ref().filter(|_| can_capture).map(|function| {
+                self.render_ctx.flush();
+                let mut captured = Pixmap::new(width, height);
+                self.render_ctx
+                    .render(captured.as_mut(), &mut self.resources);
+                apply_colour_filter(&mut captured, function);
+                captured
+            });
+
             let mut child = vello_cpu::RenderContext::new(width, height);
             // `push_clip_path` takes a path in *device* space: the parent's `push_layer` applies its
             // own `transform` to the clip, so the child must too, and then draw at identity.
             let mut clip_path = clip.into_path(DEFAULT_TOLERANCE);
             clip_path.apply_affine(transform);
             child.push_clip_path(&clip_path);
+            if let Some(base) = base {
+                let image = vello_common::paint::ImageSource::opaque_id_with_transparency_hint(
+                    self.resources.register_image(std::sync::Arc::new(base)),
+                    true,
+                );
+                child.set_paint(vello_common::paint::PaintType::Image(peniko::ImageBrush {
+                    image,
+                    sampler: peniko::ImageSampler::default(),
+                }));
+                child.fill_rect(&Rect::new(0.0, 0.0, width as f64, height as f64));
+            }
             let parent = std::mem::replace(&mut self.render_ctx, child);
             self.colour_layer = Some(ColourLayer {
                 parent,
-                filter: colour,
+                filter: own,
+                backdrop,
                 blend: BlendMode::from(blend.into()).mix,
                 alpha,
                 ops: 0,
@@ -125,6 +166,7 @@ impl PaintScene for VelloCpuScenePainter {
             None
         };
 
+        self.layer_depth += 1;
         self.render_ctx.set_transform(transform);
         self.render_ctx.push_layer(
             Some(&clip.into_path(DEFAULT_TOLERANCE)),
@@ -136,6 +178,7 @@ impl PaintScene for VelloCpuScenePainter {
     }
 
     fn push_clip_layer(&mut self, transform: Affine, clip: &impl Shape) {
+        self.layer_depth += 1;
         self.render_ctx.set_transform(transform);
         self.render_ctx
             .push_clip_layer(&clip.into_path(DEFAULT_TOLERANCE));
@@ -143,6 +186,7 @@ impl PaintScene for VelloCpuScenePainter {
 
     fn pop_layer(&mut self) {
         let Some(layer) = self.colour_layer.take() else {
+            self.layer_depth = self.layer_depth.saturating_sub(1);
             self.render_ctx.pop_layer();
             return;
         };
@@ -153,7 +197,9 @@ impl PaintScene for VelloCpuScenePainter {
         let mut pixmap = Pixmap::new(width, height);
         child.render(pixmap.as_mut(), &mut self.resources);
         let opaque = pixmap.data().iter().filter(|p| p.a > 0).count();
-        apply_colour_filter(&mut pixmap, &layer.filter);
+        if let Some(function) = layer.filter.as_ref() {
+            apply_colour_filter(&mut pixmap, function);
+        }
         if std::env::var("TN_FILTER_DEBUG").is_ok() {
             let centre = pixmap.data()[((height as usize / 2) * width as usize) + width as usize / 2];
             eprintln!(
@@ -166,6 +212,7 @@ impl PaintScene for VelloCpuScenePainter {
             self.resources.register_image(std::sync::Arc::new(pixmap)),
             true,
         );
+        self.layer_depth = self.layer_depth.saturating_sub(1);
         self.render_ctx
             .push_blend_layer(peniko::BlendMode::new(layer.blend, peniko::Compose::SrcOver));
         self.render_ctx.push_opacity_layer(layer.alpha);
