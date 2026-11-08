@@ -27,7 +27,7 @@ export type GameRendererConfig = Omit<IRendererOptions, "resolutionScale" | "sca
 export function assertNoLegacyRenderKey(config: object): void {
   if ("render" in config && (config as { render?: unknown }).render !== undefined)
     throw new Error(
-      "TN_GAME_RENDER_KEY_RENAMED: defineGame({ render }) is now defineGame({ renderer }). Move the object to `renderer`; it takes the same keys, and `config.renderer` from threenative.config.ts passes through unchanged.",
+      'TN_GAME_RENDER_KEY_RENAMED: defineGame({ render }) is now defineGame({ renderer }). Move the object to `renderer` with no other change: preferWebGPU, antialias, alphaAntialiasing, resolutionScale (a number in (0, 1] or "auto"), the android block, matrixWorld, projection and minimumProjectedPixels keep their names and meaning, and `config.renderer` from threenative.config.ts passes through unchanged. `scaleSource` is reported by the engine and is not an input. Where a game set both keys, `render` won, so merge them with the `render` values on top.',
     );
 }
 

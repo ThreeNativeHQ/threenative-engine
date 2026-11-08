@@ -139,6 +139,12 @@ describe("assertNoLegacyRenderKey", () => {
     );
   });
 
+  it("states the field mapping, including the scale type and the engine-owned scaleSource", () => {
+    expect(() => assertNoLegacyRenderKey({ render: {} })).toThrow(
+      /resolutionScale \(a number in \(0, 1\] or "auto"\).*android block.*scaleSource.*not an input/su,
+    );
+  });
+
   it("accepts a config with `renderer` and one with neither key", () => {
     expect(() => assertNoLegacyRenderKey({ renderer: { preferWebGPU: true } })).not.toThrow();
     expect(() => assertNoLegacyRenderKey({})).not.toThrow();
