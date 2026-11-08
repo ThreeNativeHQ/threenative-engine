@@ -22,6 +22,15 @@
 #include <android/log.h>
 #endif
 
+#if defined(__ANDROID__)
+namespace mystral::platform {
+// PRD-859, defined in android_main.cpp: the game thread's ADPF session hears each frame's work time. Weak, so an
+// Android target without that host entry point (the engine player) links and skips the report.
+void noteGameFrameWork(int64_t targetNs) __attribute__((weak));
+void noteGameFrameWaitEnded() __attribute__((weak));
+}  // namespace mystral::platform
+#endif
+
 namespace mystral::webgpu {
 
 // ---------------------------------------------------------------------------
@@ -207,6 +216,11 @@ bool setPresentationCapHz(uint32_t hz) {
  * catch up, because a game running below the cap must not then be asked to present a burst.
  */
 PresentationPacingPath paceToPresentationCap() {
+#if defined(__ANDROID__)
+    // The frame's work ends here; the wait below is not work. Uncapped frames report against 60 Hz.
+    if (platform::noteGameFrameWork) platform::noteGameFrameWork(1000000000ll / (g_presentationCapHz == 0 ? 60 : g_presentationCapHz));
+    struct WaitEnded { ~WaitEnded() { if (platform::noteGameFrameWaitEnded) platform::noteGameFrameWaitEnded(); } } waitEnded;
+#endif
     if (g_presentationCapHz == 0) return PresentationPacingPath::Uncapped;
     const auto interval = std::chrono::nanoseconds(1000000000ull / g_presentationCapHz);
 
