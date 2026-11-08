@@ -1000,9 +1000,25 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(1);
         return toTexture(arg(0));
     }
+    // r185's storageTexture(t).toReadOnly() / .toWriteOnly() / .toReadWrite() / .setSampler(false) pick how a kernel
+    // uses the texture (prd249); the engine reads one with textureLoad and writes with textureStore, so each leaves
+    // the node as it is.
+    if (method && (name == "toReadOnly" || name == "toWriteOnly" || name == "toReadWrite" || name == "setSampler")) {
+        arity(name == "setSampler" ? 1 : 0);
+        if (receiver->kind != TslArg::Kind::Node || !receiver->node || receiver->node->kind != g::Kind::StorageTexture)
+            throw std::runtime_error(name + " requires a storage buffer or a storage texture");
+        if (name == "setSampler" && (args[0].kind != TslArg::Kind::Number || args[0].number != 0))
+            throw std::runtime_error("setSampler(true) on a storage texture is not supported: the engine reads it with textureLoad");
+        return receiver->node;
+    }
     if (name == "sample") {
         arity(1);
         const auto source = lhs();
+        if (source->kind == g::Kind::StorageTexture) {  // .sample(uvec2) on a storage texture loads that texel
+            auto loaded = std::make_shared<g::NodeData>(*source);
+            loaded->args = {arg(0)};
+            return loaded;
+        }
         if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture && source->kind != g::Kind::Reflector)
             throw std::runtime_error("sample requires a texture node");
         auto sampled = std::make_shared<g::NodeData>(*source);
@@ -1490,8 +1506,10 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         node->kind = g::Kind::Body;
         node->body = std::move(closed.statements);
         // A callback that runs statements and returns a value (Fn(() => { a.addAssign(b); return a; }))
-        // keeps the value: the Body lowers its statements, then yields args[0].
-        if (!args.empty()) node->args = {input(args[0])};
+        // keeps the value: the Body lowers its statements, then yields args[0]. A returned store target (a whole
+        // storage texture, `return textureStore(...)`) is the statement itself, not a value.
+        if (!args.empty())
+            if (auto value = input(args[0]); !(value->kind == g::Kind::StorageTexture && value->args.empty())) node->args = {value};
         out = node;
         // A Fn called inside another body runs its statements at the call, before what follows it reads the variables
         // they assign (GLSL's `out` arguments); its value is read where it is used, without running them again.

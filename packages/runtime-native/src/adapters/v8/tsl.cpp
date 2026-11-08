@@ -154,6 +154,8 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
         return object != nullptr ? abi::TslArg::objectOf(object->cls, object->ptr) : abi::TslArg::other();
     }
     if (value->IsNumber()) return abi::TslArg::of(value.As<v8::Number>()->Value());
+    // setSampler(false) on a storage texture: its flag crosses as 0 or 1.
+    if (name == "setSampler" && value->IsBoolean()) return abi::TslArg::of(value->BooleanValue(isolate_) ? 1.0 : 0.0);
     if (value->IsString()) return abi::TslArg::of(text(isolate_, value));
     if (!value->IsObject()) return abi::TslArg::other();
     const auto object = value.As<v8::Object>();
@@ -301,7 +303,8 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         return result(self->storage.element(arg(0)));
     }
     // r185's toReadOnly()/toReadWrite() pick the buffer's access; the engine reads what a stage reads.
-    if (name == "toAtomic" || name == "toReadOnly" || name == "toReadWrite") {
+    // On a node (a storage texture) they fall through to the shared table.
+    if (name == "toAtomic" || ((name == "toReadOnly" || name == "toReadWrite") && !self->node)) {
         arity(0);
         if (self->node)
             throw std::runtime_error(name + " requires a storage buffer");
@@ -634,7 +637,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "assign",
                              "element",
                              "toAtomic",
-                             "toReadOnly",
+                             "toReadOnly", "toWriteOnly", "setSampler",
                              "toReadWrite",
                              "Else",
                              "abs",

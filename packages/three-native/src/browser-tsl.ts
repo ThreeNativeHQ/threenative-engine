@@ -273,6 +273,10 @@ const CONSTANTS = [
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
   "element",
+  "toReadOnly",
+  "toWriteOnly",
+  "toReadWrite",
+  "setSampler",
   "compute",
   "add",
   "sub",
@@ -460,6 +464,9 @@ export function defineTsl(
       return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
+    // setSampler(false) on a storage texture: its flag crosses as 0 or 1.
+    if (name === "setSampler" && typeof value === "boolean")
+      return { kind: "number", number: value ? 1 : 0 };
     // texture(engineTexture, uv) samples that texture itself; a plain object names a material map,
     // and textureLoad also takes a texture node.
     if (

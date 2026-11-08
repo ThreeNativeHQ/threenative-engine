@@ -1572,6 +1572,32 @@ void skeletal() {
         mixer2.addEventListener('finished', () => mixer2.uncacheAction(nativeClip));
         mixer2.update(1.5);
         check(mixer2.existingAction(nativeClip) === null && Math.abs(looping.time - 0.5) < 1e-9, 'uncache on finished');
+        // three's track getValueSize / getInterpolation / setInterpolation and clip.toJSON (PRD-854): core's
+        // AnimationComposer reads them, and the animation-composition example fingerprints its clips.
+        const turn = new QuaternionKeyframeTrack('hip.quaternion', [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]);
+        const shift = new VectorKeyframeTrack('hip.position', [0, 1], [0, 0, 0, 1, 2, 3]);
+        check(turn.getValueSize() === 4 && shift.getValueSize() === 3, 'getValueSize');
+        check(turn.getInterpolation() === 2301 && shift.getInterpolation() === 2301, 'default interpolation');
+        check(shift.setInterpolation(2300) === shift && shift.getInterpolation() === 2300, 'setInterpolation chains');
+        let badMode=false; try { shift.setInterpolation(7); } catch (e) { badMode=true; }
+        check(badMode && shift.getInterpolation() === 2300, 'setInterpolation refuses a non-three mode');
+        const held = new AnimationClip('held', 1, [turn, shift]);
+        held.tracks[0].setInterpolation(2300);
+        check(held.tracks[0].getInterpolation() === 2300 && turn.getInterpolation() === 2301, 'a held track is the clip own');
+        const json = held.toJSON();
+        check(json.name === 'held' && json.duration === 1 && json.blendMode === 2500 && json.tracks.length === 2, 'clip toJSON');
+        check(json.tracks[0].type === 'quaternion' && json.tracks[0].interpolation === 2300 && json.tracks[1].type === 'vector', 'track toJSON');
+        check(JSON.stringify(json.tracks[1].values) === '[0,0,0,1,2,3]' && Array.isArray(json.tracks[1].times), 'track toJSON arrays');
+        check(!('interpolation' in new AnimationClip('plain', 1, [turn]).toJSON().tracks[0]), 'default interpolation is left out');
+        const named = shift.clone(); named.name = 'uuid.position';
+        check(named.name === 'uuid.position' && shift.name === 'hip.position', 'a track name writes');
+        const edited = Float32Array.from(named.values); edited.set([4, 5, 6], 3); named.values = edited;
+        check(JSON.stringify(named.values) === '[0,0,0,4,5,6]', 'track values write back whole');
+        let shortValues=false; try { named.values = [1, 2, 3]; } catch (e) { shortValues=true; }
+        check(shortValues, 'values must keep one value per time');
+        check(held.blendMode === 2500, 'blendMode reads three NormalAnimationBlendMode');
+        held.blendMode = 2501;
+        check(held.blendMode === 2501 && held.toJSON().blendMode === 2501, 'blendMode writes');
         return 'ok';
       })()
     )JS";

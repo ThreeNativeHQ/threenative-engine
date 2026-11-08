@@ -7,7 +7,7 @@ import {
 } from "../../../../three-native/src/object-surface.ts";
 import { definePropertyBinding } from "../../../../three-native/src/property-binding.ts";
 import { defineGridHelper } from "../../../../three-native/src/grid-helper.ts";
-import { AnimationUtils } from "../../../../three-native/src/animation-utils.ts";
+import { AnimationUtils, defineCreateInterpolant } from "../../../../three-native/src/animation-utils.ts";
 import { defineBox2 } from "../../../../three-native/src/box2.ts";
 import { defineTypedBufferAttribute } from "../../../../three-native/src/buffer-attributes.ts";
 import { defineEdgesGeometry } from "../../../../three-native/src/edges-geometry.ts";
@@ -184,6 +184,8 @@ export const Uint8BufferAttribute = defineTypedBufferAttribute(BufferAttribute, 
 export const Uint16BufferAttribute = defineTypedBufferAttribute(BufferAttribute, Uint16Array);
 export const Uint32BufferAttribute = defineTypedBufferAttribute(BufferAttribute, Uint32Array);
 export { AnimationUtils };
+// three's track.createInterpolant over the engine tracks (shared with the Wasm entry, PRD-854).
+defineCreateInterpolant(globalThis);
 // three's flags on the engine's layered texture, as the Wasm entry sets them (texture-sources.ts).
 Object.assign(DataArrayTexture.prototype, { isArrayTexture: true, isDataArrayTexture: true });
 // three exports the engine does not provide: refused at use, by name, as on Wasm (unsupportedExport).

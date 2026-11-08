@@ -3,6 +3,7 @@ import {
   type AnimationAction,
   AnimationClip,
   AnimationMixer,
+  AnimationUtils,
   InterpolateDiscrete,
   InterpolateLinear,
   Quaternion,
@@ -337,6 +338,41 @@ describe("single masked/additive animation owner", () => {
     expect(JSON.stringify(a.clips.map((clip) => clip.toJSON()))).toBe(before);
     ca.dispose();
     cb.dispose();
+  });
+
+  // The owned engine's AnimationUtils.makeClipAdditive returns a new clip and leaves its argument as it was
+  // (PRD-854); three's edits the argument and returns it. The layer must play the returned clip.
+  it("plays the clip makeClipAdditive returns when the port returns a copy", () => {
+    const r = compositionRig();
+    const make = AnimationUtils.makeClipAdditive;
+    const copying = vi
+      .spyOn(AnimationUtils, "makeClipAdditive")
+      .mockImplementation((clip, ...rest) => make(clip.clone(), ...rest));
+    try {
+      const composer = new AnimationComposer({
+        root: r.root,
+        clips: r.clips,
+        samples: ["walk"],
+        layers: [
+          {
+            name: "recoil",
+            clip: "recoil",
+            mode: "additive",
+            mask: { bones: ["Hand"] },
+            // recoil turns 0.4 rad over 1 s: against its own 0.25 s pose (0.1 rad), the additive delta at 0.5 s
+            // is 0.1 rad; the same clip played as an override would turn the hand 0.2 rad.
+            reference: { clip: r.clips[3], time: 0.25 },
+          },
+        ],
+      });
+      expect(copying).toHaveBeenCalledOnce();
+      composer.setLayerWeight("recoil", 1);
+      composer.update(0.5);
+      expect(r.hand.quaternion.angleTo(new Quaternion())).toBeCloseTo(0.1, 5);
+      composer.dispose();
+    } finally {
+      copying.mockRestore();
+    }
   });
 
   it("refuses missing bones, root masks and missing references before binding actions", () => {

@@ -205,7 +205,8 @@ export function prepareAnimationLayers(
         )
           throw new Error(`AnimationComposer: reference pose lacks compatible '${track.name}'.`);
       }
-      AnimationUtils.makeClipAdditive(clip, time * 30, reference, 30);
+      // three edits `clip` and returns it; the owned engine's port returns a new clip.
+      return { options, clip: AnimationUtils.makeClipAdditive(clip, time * 30, reference, 30) };
     }
     return { options, clip };
   });
@@ -222,8 +223,11 @@ export function prepareAnimationLayers(
           property === "position"
             ? consumedRoot.position.toArray()
             : consumedRoot.quaternion.toArray();
-        for (let offset = 0; offset < track.values.length; offset += reference.length)
-          track.values.set(reference, offset);
+        // Written back whole: the owned engine's `values` reads as a copy (three's is the array itself).
+        const values = Float32Array.from(track.values);
+        for (let offset = 0; offset < values.length; offset += reference.length)
+          values.set(reference, offset);
+        track.values = values;
       }
     }
     const groups: AnimationClip[] = [];

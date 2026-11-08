@@ -617,3 +617,29 @@ describe("one uniform crossing a sync (PRD-828)", () => {
     ]);
   });
 });
+
+// prd249's splat loop reads `uniformArray(values).element(i)` at the loop's node index (PRD-854).
+describe("uniformArray at a node index", () => {
+  it("selects among the constant elements with the index node", () => {
+    const made: string[] = [];
+    const node = (label: string) => ({
+      label,
+      onRenderUpdate: () => node(label),
+      equal: (k: number) => ({
+        select: (a: { label: string }, b: { label: string }) => {
+          made.push(`${label}==${k}?${a.label}:${b.label}`);
+          return node(`(${label}==${k}?${a.label}:${b.label})`);
+        },
+      }),
+    });
+    let serial = 0;
+    const live = liveUniforms<ReturnType<typeof node>>(
+      () => node(`u${serial++}`),
+      () => {},
+    );
+    const picked = live.uniformArray([1, 2, 3]).element(node("i")) as unknown as { label: string };
+    expect(picked.label).toBe("(i==0?u2:(i==1?u1:u0))");
+    expect(made).toHaveLength(2);
+    expect(() => live.uniformArray([1]).element(1.5)).toThrow(/TN_TSL_UNIFORM_ARRAY/u);
+  });
+});

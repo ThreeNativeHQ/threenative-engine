@@ -1826,6 +1826,20 @@ std::vector<double> keyNumbers(const Value& v, const char* what) {
     return v.numbers;
 }
 
+/** three's InterpolateDiscrete 2300, InterpolateLinear 2301 and InterpolateSmooth 2302. */
+tn::engine::animation::Interpolation interpolationMode(const Value& v) {
+    using tn::engine::animation::Interpolation;
+    const double m = number(v);
+    if (m != 2300 && m != 2301 && m != 2302) throw Unsupported{"interpolation must be InterpolateDiscrete, InterpolateLinear or InterpolateSmooth"};
+    return m == 2300 ? Interpolation::Discrete : m == 2302 ? Interpolation::Smooth : Interpolation::Linear;
+}
+
+/** The three constant of a mode; a quaternion track's QuaternionLinear is three's InterpolateLinear. */
+double interpolationConstant(tn::engine::animation::Interpolation mode) {
+    using tn::engine::animation::Interpolation;
+    return mode == Interpolation::Discrete ? 2300 : mode == Interpolation::Smooth ? 2302 : 2301;
+}
+
 // three's Quaternion-, Vector- and NumberKeyframeTrack(name, times, values, interpolation). Values
 // that are not a whole number of keys of the type's size are refused; three would read past them.
 void registerKeyframeTrack(ClassBinding& b, tn::engine::animation::TrackType type) {
@@ -1837,20 +1851,37 @@ void registerKeyframeTrack(ClassBinding& b, tn::engine::animation::TrackType typ
         const size_t size = type == TrackType::Quaternion ? 4 : type == TrackType::Number ? 1 : 0;
         if (times.empty() || values.size() % times.size() != 0 || (size != 0 && values.size() != times.size() * size))
             throw Unsupported{"a keyframe track's values must be one value per time"};
-        Interpolation mode = Interpolation::Linear;
-        if (a.size() > 3 && a.at(3).kind != Value::Kind::Undefined) {
-            const double m = number(a.at(3));  // InterpolateDiscrete 2300, InterpolateLinear 2301, InterpolateSmooth 2302
-            if (m != 2300 && m != 2301 && m != 2302) throw Unsupported{"interpolation must be InterpolateDiscrete, InterpolateLinear or InterpolateSmooth"};
-            mode = m == 2300 ? Interpolation::Discrete : m == 2302 ? Interpolation::Smooth : Interpolation::Linear;
-        }
+        const Interpolation mode = a.size() > 3 && a.at(3).kind != Value::Kind::Undefined ? interpolationMode(a.at(3)) : Interpolation::Linear;
         return std::static_pointer_cast<void>(std::make_shared<KeyframeTrack>(a.at(0).text, type, times, values, mode));
+    };
+    // three's getValueSize, getInterpolation and setInterpolation; the constructor's rule picks each type's mode.
+    b.methods["getValueSize"] = [](void* self, const Args&, Store&) { return Value::of(double(as<KeyframeTrack>(self)->valueSize())); };
+    b.methods["getInterpolation"] = [](void* self, const Args&, Store&) { return Value::of(interpolationConstant(as<KeyframeTrack>(self)->interpolation)); };
+    b.methods["setInterpolation"] = [](void* self, const Args& a, Store&) {
+        if (a.empty()) throw Unsupported{"setInterpolation needs an interpolation"};
+        auto* track = as<KeyframeTrack>(self);
+        track->interpolation = KeyframeTrack(track->name, track->type, {0}, {}, interpolationMode(a.at(0))).interpolation;
+        return chain();
     };
     b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<KeyframeTrack>(self)->name}; };
     b.getters["ValueTypeName"] = [type](void*) {
         return Value{Value::Kind::String, 0, type == TrackType::Quaternion ? "quaternion" : type == TrackType::Vector ? "vector" : "number"};
     };
+    // three's track.name and track.values are plain fields (core renames a cloned track to its node's uuid path and
+    // writes the consumed root pose into its values). `values` reads as a copy, so an edit is written back whole.
+    b.setters["name"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::String) throw Unsupported{"a keyframe track's name must be a string"};
+        as<KeyframeTrack>(self)->name = v.text;
+    };
     b.getters["times"] = [](void* self) { return Value::list(as<KeyframeTrack>(self)->times); };
     b.getters["values"] = [](void* self) { return Value::list(as<KeyframeTrack>(self)->values); };
+    b.setters["values"] = [](void* self, const Value& v) {
+        auto* track = as<KeyframeTrack>(self);
+        std::vector<double> values = keyNumbers(v, "values");
+        if (values.size() != track->values.size()) throw Unsupported{"a keyframe track's new values must keep one value per time"};
+        for (double& value : values) value = double(float(value));  // stored as three stores them: float32
+        track->values = std::move(values);
+    };
     b.methods["clone"] = [](void* self, const Args&, Store& store) {
         const auto* track = as<KeyframeTrack>(self);
         return store.adopt(trackClass(track->type), std::make_shared<KeyframeTrack>(*track));
@@ -1885,10 +1916,37 @@ void registerAnimationClip(ClassBinding& b) {
     };
     b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<AnimationClip>(self)->name}; };
     b.getters["duration"] = [](void* self) { return Value::of(as<AnimationClip>(self)->duration); };
+    // three's NormalAnimationBlendMode 2500 and AdditiveAnimationBlendMode 2501.
+    b.getters["blendMode"] = [](void* self) { return Value::of(as<AnimationClip>(self)->blendMode == BlendMode::Additive ? 2501.0 : 2500.0); };
+    b.setters["blendMode"] = [](void* self, const Value& v) {
+        const double m = number(v);
+        if (m != 2500 && m != 2501) throw Unsupported{"blendMode must be a three AnimationBlendMode"};
+        as<AnimationClip>(self)->blendMode = m == 2501 ? BlendMode::Additive : BlendMode::Normal;
+    };
     b.members["tracks"] = [](void* self, const Args&, Store& store) {
         std::vector<Value> tracks;
         for (auto& track : as<AnimationClip>(self)->tracks) tracks.push_back(store.adoptAlias(trackClass(track.type), &track, self));
         return Value::array(std::move(tracks));
+    };
+    // three's clip.toJSON: KeyframeTrack.toJSON per track, the interpolation only where it is not the default.
+    // ponytail: no uuid or userData; the engine clip carries neither.
+    b.methods["toJSON"] = [](void* self, const Args&, Store&) {
+        const auto* clip = as<AnimationClip>(self);
+        std::vector<Value> tracks;
+        for (const auto& track : clip->tracks) {
+            std::vector<std::pair<std::string, Value>> fields{
+                {"name", Value{Value::Kind::String, 0, track.name}},
+                {"times", Value::array({})}, {"values", Value::array({})}};
+            for (double t : track.times) fields[1].second.items.push_back(Value::of(t));
+            for (double v : track.values) fields[2].second.items.push_back(Value::of(v));
+            if (const double mode = interpolationConstant(track.interpolation); mode != 2301) fields.emplace_back("interpolation", Value::of(mode));
+            fields.emplace_back("type", Value{Value::Kind::String, 0,
+                track.type == TrackType::Quaternion ? "quaternion" : track.type == TrackType::Vector ? "vector" : "number"});
+            tracks.push_back(Value::record(std::move(fields)));
+        }
+        return Value::record({{"name", Value{Value::Kind::String, 0, clip->name}}, {"duration", Value::of(clip->duration)},
+                              {"tracks", Value::array(std::move(tracks))},
+                              {"blendMode", Value::of(clip->blendMode == BlendMode::Additive ? 2501.0 : 2500.0)}});
     };
 }
 

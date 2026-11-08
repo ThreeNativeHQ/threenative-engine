@@ -10,7 +10,7 @@
 import catalogJson from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
 import { DataUtils } from "./addons/data-utils.js";
-import { AnimationUtils } from "./animation-utils.js";
+import { AnimationUtils, defineCreateInterpolant } from "./animation-utils.js";
 import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import { BlendMode } from "./blend-mode.js";
 import { defineBox2 } from "./box2.js";
@@ -242,6 +242,8 @@ export async function bindWebEngine(
   bound.Uint16BufferAttribute = defineTypedBufferAttribute(attribute, Uint16Array);
   bound.Uint32BufferAttribute = defineTypedBufferAttribute(attribute, Uint32Array);
   bound.AnimationUtils = AnimationUtils;
+  // three's track.createInterpolant over the engine tracks, shared with V8 (PRD-854).
+  defineCreateInterpolant(classes);
   // three's viewportCoordinate is screenCoordinate minus viewport.xy, which is (0, 0) on a full-target pass.
   if (bound.screenCoordinate !== undefined) bound.viewportCoordinate = bound.screenCoordinate;
   // three/webgpu's BlendMode, the record mrt().setBlendMode takes (data only, as on the engine's scene pass).

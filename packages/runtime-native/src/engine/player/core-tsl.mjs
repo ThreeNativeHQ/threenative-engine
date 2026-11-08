@@ -31,7 +31,9 @@ export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const Fn = withFnBuilder(globalThis.tsl.Fn);
 // three's compute(node, count, workgroupSize) is node.compute(...), which the engine binds (PRD-784 P5-9).
-export const compute = (node, count, workgroupSize) => node.compute(count, workgroupSize);
+// An absent workgroup size stays absent: the engine refuses an undefined argument.
+export const compute = (node, count, workgroupSize) =>
+  workgroupSize === undefined ? node.compute(count) : node.compute(count, workgroupSize);
 // three's lights([...]) takes one array; each light crosses as its own engine object.
 export const lights = (list = []) => globalThis.tsl.lights(...list);
 export const {

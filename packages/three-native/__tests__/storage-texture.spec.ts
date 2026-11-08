@@ -125,4 +125,26 @@ describe("native storage textures", () => {
     expect(calls.at(-1)?.name).toBe("level");
     expect(() => textureStore(texture, uvec2(0), vec4(1))).toThrow(/outside Fn|Fn/u);
   });
+
+  // prd249's read form (PRD-854): storageTexture(t).toReadOnly().setSampler(false).sample(uvec2).
+  it("sends the read form of a storage texture to the shared table, the flag as a number", () => {
+    const { classes, tsl, calls } = facade();
+    const texture = new (classes.StorageTexture as new (w: number, h: number) => object)(4, 4);
+    const storageTexture = tsl.storageTexture as (...args: unknown[]) => INode & {
+      toReadOnly(): INode & { setSampler(flag: boolean): { sample(uv: unknown): object } };
+    };
+    storageTexture(texture)
+      .toReadOnly()
+      .setSampler(false)
+      .sample((tsl.uvec2 as (...args: unknown[]) => INode)(1, 2));
+    expect(calls.map((call) => call.name).slice(-4)).toEqual([
+      "toReadOnly",
+      "setSampler",
+      "uvec2",
+      "sample",
+    ]);
+    expect(calls.find((call) => call.name === "setSampler")?.args).toEqual([
+      { kind: "number", number: 0 },
+    ]);
+  });
 });

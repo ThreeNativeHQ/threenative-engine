@@ -1,6 +1,6 @@
 # PRD-854 — The engine binds the three.js names four examples still miss
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P3 — four examples do not package or run on the owned engine; no shipped kit imports these names
 **Complexity:** 6 (MEDIUM-HIGH) — new engine texture and render-target kinds, a TSL adapter change and keyframe track methods, each on V8 and Wasm
 **Owner:** unassigned
@@ -29,17 +29,19 @@ Two examples package and then stop at run time on the desktop V8 player:
 ## Execution Phases
 
 #### Phase 1: Run-time fixes for the two examples that already package
-**Status:** NOT STARTED
-**Files:** `packages/runtime-native/src/engine/adapters/v8/tsl.cpp`, `packages/core/src/animation-layers.ts`, the keyframe track bindings
-- [ ] `toReadOnly` accepts a storage texture; prd249 starts on the desktop player. proof: red-green spec, then AC-2 for prd249
-- [ ] `animation-layers.ts:208` keeps the returned clip; tracks answer `getValueSize` and `setInterpolation`; animation-composition starts. proof: red-green spec, then AC-2 for animation-composition
+**Status:** DONE (2026-11-08)
+**Files:** `packages/runtime-native/src/adapters/v8/tsl.cpp`, `packages/runtime-native/src/engine/abi/tsl_call.cpp`, `packages/runtime-native/src/engine/abi/bindings_scene.cpp`, `packages/runtime-native/src/engine/player/core-tsl.mjs`, `packages/three-native/src/{browser-tsl,tsl-uniforms,animation-utils,browser-entry}.ts`, `packages/core/src/animation-layers.ts`
+- [x] `toReadOnly` accepts a storage texture; prd249 starts on the desktop player. proof: ABI `tsl_storage_texture_read` red (`CHECK failed: readOnly == target`), then green. The shared TSL table now takes `toReadOnly`, `toWriteOnly`, `toReadWrite` and `setSampler(false)` on a storage texture and `.sample(uvec2)` as a texel load, and a kernel that returns its `textureStore` keeps no value. `storage-texture.spec.ts` red (`toReadOnly is not a function`), then green, on the Wasm TSL. The player run found three more stops, each fixed: `compute(node, count)` passed `undefined` as the workgroup size (`core-tsl.mjs`), `uniformArray(...).element(i)` at a Loop index (`tsl-uniforms.spec.ts` red `TN_TSL_UNIFORM_ARRAY`, then green), and the returned store. AC-2: `fluid-field-desktop.playtest.json --target desktop --executable build/tn-engine-ui/tn-native-engine-player-v8` passes, with 0 `TN_TSL` or `TN_NATIVE_UNSUPPORTED` lines. The `settled-native-splat` frame shows both looks with their splats.
+- [x] `animation-layers.ts:208` keeps the returned clip; tracks answer `getValueSize` and `setInterpolation`; animation-composition starts. proof: `vq-masked-additive-animation.spec.ts` red (0.2 rad, the override result), then green (0.1 rad). The V8 `skeletal` case is red (`turn.getValueSize is not a function`), then green. It covers the track methods `getValueSize`, `getInterpolation` and `setInterpolation`, the `name` and `values` setters, the clip `blendMode` getter and setter, and `clip.toJSON()`. `animation-utils.spec.ts` covers the shared `track.createInterpolant` port, which core root motion samples. It matches three's own interpolant for linear and discrete keys on all three track types (red: `defineCreateInterpolant is not a function`). `animation-layers.ts` writes the consumed root pose back with `track.values = ...`, because the engine `values` getter returns a copy. AC-2: the desktop player starts and draws the rig with 0 `TN_TSL` or `TN_NATIVE_UNSUPPORTED` lines (`after.png`). Open, outside this box: the browser `composition.playtest.json` run on the desktop target fails 5 assertions: `history.cycles`, `history.exitActions`, `history.exitOwnedBytes`, `history.clipsUnchanged`, and `lowerError` (up to 0.18 against 1e-5). The cause is unverified.
 
 #### Phase 2: Texture and render-target kinds
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/src/engine/` (texture and render-target bindings), `core-three.mjs`, `core-webgpu.mjs`, `packages/three-native/src/browser-entry.ts`
 - [ ] `Storage3DTexture`; prd476 packages and starts. proof: AC-1 and AC-2 for prd476
 - [ ] `CubeCamera`, `CubeRenderTarget`, `RenderTarget3D` and a `three-mesh-bvh/webgpu` facade; prd268 packages and starts. proof: AC-1 and AC-2 for prd268
-- [ ] `CompressedArrayTexture`, `InstancedInterleavedBuffer` and the rest of prd493's names; prd493 packages and starts. proof: AC-1 and AC-2 for prd493
+- [ ] prd493's TSL names: `element`, `instancedBufferAttribute`, `instancedDynamicBufferAttribute`, `positionView`, `transformNormal`, `varyingProperty`. proof: red-green spec, then the bundler on prd493
+- [ ] prd493's `three/webgpu` names: `BundleGroup`, `EventNode`, `IndirectStorageBufferAttribute`. proof: red-green spec, then the bundler on prd493
+- [ ] `CompressedArrayTexture`, `InstancedInterleavedBuffer` and `TextureUtils`; prd493 packages and starts. proof: AC-1 and AC-2 for prd493
 
 ## Decisions
 

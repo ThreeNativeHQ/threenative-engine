@@ -3385,6 +3385,59 @@ void tsl_texture_store() {
     CHECK(refused);
 }
 
+// three's read form of a storage texture (prd249): storageTexture(t).toReadOnly().setSampler(false), then
+// .sample(uvec2) loads one texel. The engine reads a storage texture with textureLoad already.
+void tsl_storage_texture_read() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto texture = std::make_shared<tn::engine::Texture>();
+    texture->storageTexture = true;
+    texture->width = 16; texture->height = 8;
+    const auto target = tn::abi::tslCall("storageTexture", nullptr, {TslArg::objectOf("StorageTexture", texture)}, serial);
+    const TslArg self = TslArg::of(target);
+    const auto readOnly = tn::abi::tslCall("toReadOnly", &self, {}, serial);
+    CHECK(readOnly == target);
+    CHECK(tn::abi::tslCall("toWriteOnly", &self, {}, serial) == target);
+    const TslArg readOnlyArg = TslArg::of(readOnly);
+    const auto unsampled = tn::abi::tslCall("setSampler", &readOnlyArg, {TslArg::of(0.0)}, serial);
+    CHECK(unsampled && unsampled->kind == g::Kind::StorageTexture);
+    const auto coord = tn::abi::tslCall("uvec2", nullptr, {TslArg::of(3.0), TslArg::of(5.0)}, serial);
+    const TslArg unsampledArg = TslArg::of(unsampled);
+    const auto texel = tn::abi::tslCall("sample", &unsampledArg, {TslArg::of(coord)}, serial);
+    CHECK(texel->kind == g::Kind::StorageTexture && texel->args.size() == 1 && texel->args[0] == coord);
+    CHECK(target->args.empty());  // sample copies; the receiver still names the whole texture
+    // The texel feeds a store into a second storage texture, so the lowered kernel reads the first.
+    const auto out = std::make_shared<tn::engine::Texture>();
+    out->storageTexture = true;
+    out->width = 16; out->height = 8;
+    tn::abi::TslScopes scopes;
+    g::Node made, body;
+    CHECK(scopes.call("scope:open", nullptr, {}, made));
+    CHECK(scopes.call("textureStore", nullptr, {TslArg::objectOf("StorageTexture", out), TslArg::of(coord), TslArg::of(texel)}, made));
+    // prd249's kernels return the store (`return textureStore(...).toWriteOnly()`): a statement, not a value to read.
+    const TslArg stored = TslArg::of(made);
+    CHECK(tn::abi::tslCall("toWriteOnly", &stored, {}, serial) == made);
+    CHECK(scopes.call("scope:close", nullptr, {stored}, body));
+    CHECK(body->kind == g::Kind::Body && body->args.empty());
+    Program p(Stage::Compute);
+    g::lower(body, p);
+    CHECK(p.ok());
+    const auto module = buildStage(p);
+    CHECK(module.wgsl.ok());
+    CHECK(module.wgsl.code.find("textureLoad(t_" + target->name) != std::string::npos);
+    bool refused = false;
+    try { tn::abi::tslCall("setSampler", &readOnlyArg, {TslArg::of(1.0)}, serial); }
+    catch (const std::runtime_error& e) { refused = std::string(e.what()).find("setSampler(true)") != std::string::npos; }
+    CHECK(refused);
+    refused = false;
+    const TslArg number = TslArg::of(g::float_(1));
+    try { tn::abi::tslCall("toReadOnly", &number, {}, serial); }
+    catch (const std::runtime_error& e) { refused = std::string(e.what()).find("requires a storage buffer or a storage texture") != std::string::npos; }
+    CHECK(refused);
+}
+
 void tsl_mat4_element() {
     namespace g = tn::engine::shader::graph;
     using namespace tn::engine::shader;
@@ -3453,7 +3506,7 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
