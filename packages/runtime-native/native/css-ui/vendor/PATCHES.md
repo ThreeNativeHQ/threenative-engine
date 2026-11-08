@@ -43,7 +43,7 @@ old `inline_fragment_rects` loop moved into `inline_fragments` so paint can shar
 hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
 `draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 320 added code lines
+## `blitz-paint-0.3.0-beta.2` — 324 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -590,6 +590,18 @@ to delete once the query worked.
   keeps its layout width because a perspective row still needs a projective rasterisation this backend
   does not have. The parity meter's `transform3d` family goes 1/9 → **3/9** (both rotations 0.9991 and
   0.9996) and the whole scene 272 → **274/503 (54.5 %)**.
+
+### 10. a wavy decoration's wavelength was four pixels where Chromium's is six
+
+* **Where:** `src/text.rs` (`draw_decoration_line`: `half_wave` is three thicknesses, not two).
+* **Why:** measured on the parity scene's `decoration-wavy` cell — the decoration's lowest lit row per
+  column cycles `47, 47, 48, 49, 50, 50, 49` in Chromium (a period of six at a one-pixel thickness) and
+  `46, 46, 46, 47, 47` here (a period of four). The squiggle was therefore twice as dense as the
+  browser's, which a 0.99 SSIM bar sees as a different pattern whatever the amplitude does.
+* **Proves it:** the engine's period is now six, matching Chromium's (re-measured the same way:
+  `46, 46, 45, 46, 47, 47, 47`). The cell's score barely moves (0.8472 → 0.8487) because a second
+  difference remains and is recorded in PRD-850: the squiggle sits **2–2.5 px higher** than Chromium's
+  (lit rows 45..47 against 47..50), so its centreline placement is the next thing to measure.
 
 ## `parley-0.11.1` — 240 added code lines
 

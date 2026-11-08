@@ -315,8 +315,13 @@ fn draw_decoration_line(
         }
         // A squiggle built from alternating quadratic Béziers.
         TextDecorationStyle::Wavy => {
+            // VENDOR HUNK (threenative/css-ui): Chromium's squiggle has a wavelength of six device
+            // pixels at a one-pixel thickness (measured on the parity scene's `decoration-wavy` cell:
+            // the decoration's lowest row per column cycles 47, 47, 48, 49, 50, 50, 49 — a period of
+            // six — while this crate cycled every four). `half_wave` is half a wavelength, so three
+            // thicknesses.
             let amplitude = size;
-            let half_wave = (2.0 * size).max(1.0);
+            let half_wave = (3.0 * size).max(1.0);
             let mut path = BezPath::new();
             path.move_to((x, y));
             let mut px = x;
