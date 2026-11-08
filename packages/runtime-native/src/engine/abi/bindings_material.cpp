@@ -382,8 +382,6 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
         std::vector<shader::MrtOutput> slots;
         slots.reserve(v.fields.size());
         for (const auto& [slot, field] : v.fields) {
-            if (shader::engineTargetName(slot))
-                throw Unsupported{"TN_NATIVE_MRT_UNSUPPORTED: '" + slot + "' is an engine pass target, not a custom slot"};
             if (field.kind != Value::Kind::ShaderNode || !field.node)
                 throw Unsupported{"mrtNode." + slot + " must be a shader node"};
             slots.push_back({slot, field.node});

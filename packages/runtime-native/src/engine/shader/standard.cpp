@@ -650,6 +650,21 @@ static void materialInputs(Program& f, const VertexVariant& variant,
             else if (name == "roughness" && variant.reads(kRoughnessMap))
                 inputs.emplace(key, pinned(Type::f32(), f.mul(f.uniform("roughness", Type::f32()),
                                                              f.swizzle(pbrTexel(f, variant, kRoughnessMap), "y"))));
+            else if (name == "diffuseColor") {
+                // three's diffuseColor (NodeMaterial.setupDiffuseColor): the colour times its map and vertex colour,
+                // the opacity times the map's alpha. A colorNode or opacityNode would replace those terms first.
+                if (nodes.colorNode || nodes.opacityNode)
+                    throw std::runtime_error("TN_NATIVE_DIFFUSE_COLOR: diffuseColor beside a colorNode or opacityNode is not lowered natively");
+                const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
+                const ExprId texel = variant.map && !variant.background ? mapTexel(f, variant) : kInvalid;
+                ExprId rgb = materialColor(f, variant, diffuse), alpha = f.swizzle(diffuse, "w");
+                if (texel != kInvalid) {
+                    rgb = f.mul(rgb, f.swizzle(texel, "xyz"));
+                    alpha = f.mul(alpha, f.swizzle(texel, "w"));
+                }
+                if (variant.vertexColors) alpha = f.mul(alpha, f.swizzle(f.varying("instanceColor", tintType(variant)), "w"));
+                inputs.emplace(key, pinned(Type::vec(4), f.construct(Type::vec(4), {rgb, alpha})));
+            }
         }
 }
 

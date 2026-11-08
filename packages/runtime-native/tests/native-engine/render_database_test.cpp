@@ -2258,6 +2258,21 @@ void arrayRenderTarget() {
     CHECK(readRenderTarget(*target, 0, 0, 1, 1, [](GpuStatus, std::vector<uint8_t>) {}, 2, 0) == GpuStatus::OutOfRange);
     const auto plain = RenderTarget::make(8, 8, kTextureHalfFloatType);  // one layer: only layer 0 draws
     CHECK(!renderToTarget(renderer, *plain, empty, camera, {0, 0, 1, 1}, false, false, true, true, 1).empty());
+    // The bake's capture material: mrtNode `output` is three's diffuseColor, the colour and opacity after the map,
+    // written into the target texture named "output".
+    const auto baked = RenderTarget::make(8, 8, kTextureHalfFloatType);
+    baked->texture->name = "output";
+    auto standard = std::make_shared<Material>(MaterialType::Standard);
+    standard->color.setRGB(0.5, 0.25, 1);
+    standard->nodes.mrt.push_back({"output", shader::graph::materialInput("diffuseColor", shader::Type::vec(4))});
+    Mesh card(makePlaneGeometry(2, 2), standard);
+    Scene captured;
+    captured.add(card);
+    captured.updateMatrixWorld(true);
+    CHECK(renderToTarget(renderer, *baked, captured, camera, {0, 0, 0, 0}, false).empty());
+    const auto diffuse = texel(*baked, 0, 0);
+    std::fprintf(stderr, "diffuseColor into output: %.3f %.3f %.3f\n", diffuse[0], diffuse[1], diffuse[2]);
+    CHECK(std::abs(diffuse[0] - 0.5f) < 2e-3f && std::abs(diffuse[1] - 0.25f) < 2e-3f && std::abs(diffuse[2] - 1.0f) < 2e-3f);
 }
 
 void renderTarget() {

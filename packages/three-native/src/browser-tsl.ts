@@ -252,6 +252,7 @@ const CONSTANTS = [
   "materialEmissive",
   "materialMetalness",
   "materialRoughness",
+  "diffuseColor",
   "time",
   "deltaTime",
   "normalView",
