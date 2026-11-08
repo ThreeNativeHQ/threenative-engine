@@ -1,6 +1,6 @@
 # PRD-842 — Native tests check behaviour, not source text
 
-**Status:** PARTIAL — Phase 1 and Phase 2 box 1 done. Phase 2 box 2 and AC-2 stay open: the iOS WebUI order tests and the `ui_overlay.cpp` and `window.cpp` slices in `ui-layer-host-contract.test.mjs` still read source as text. The other text readers are named wire contracts. AC-1 passed.
+**Status:** PARTIAL — Phase 1 and Phase 2 box 1 done. Phase 2 box 2 and AC-2 stay open until the macOS `build-ios-simulator` job passes with the new launch checks, and until the `ui-layer-host-contract` tests listed in the last table are converted. AC-1 passed.
 **Priority:** P2 — the open box replaces regex assertions over `runtime.cpp`, `bindings.cpp` and platform sources, which go red on renames and stay green on behaviour regressions.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -57,11 +57,11 @@ real wire. Both timer implementations stay (see the Decision below).
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: The native host runs with timers and shims intact. proof: `pnpm native:verify:desktop` exit 0 (2026-11-08): `native contract lane passed: 54 of 54 targets` (includes `threenative-timer-delivery-test`, `-timer-engine-first-test`, `-shim-bootstrap-test` in 3 modes, `-webgpu-wrapper-bag-test`, `-image-decode-teardown-test`, `-worker-production-test`), desktop core gate 300 frames at 1280x720 with a screenshot, `tests/external-bundle-discovery`, `host-cli` and `host-window` 18 of 18 tests
-- [ ] AC-2 [local]: Source-text tests remain only for the ABI digest and the named wire contracts. Not met: 18 readers before, 4 now (the ABI spec, 2 other named wire contracts, and `ui-layer-host-contract` with its open tests), see Phase 2. proof: `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists only the ABI spec and the named wire contracts
+- [ ] AC-2 [local]: Source-text tests remain only for the ABI digest and the named wire contracts. Not met yet: 2 readers (the ABI spec and `ui-layer-host-contract`, which still has open tests), see Phase 2. proof: `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists only the ABI spec and `ui-layer-host-contract`, whose remaining tests are the named wires, and the macOS `build-ios-simulator` job (native-release.yml, `release-proof` label) is green with the launch checks in the Decision
 
 ## Integration Ledger
 
-Integration: tests, five new native test targets and host-run vitest files. Four small seams in runtime source, with no behaviour change: `vfs::resolveFetchPath` (same mapping, in `embedded_bundle.h`), the `TN_WINDOW_MODE` host marker, `buffer_map_state.h` (the buffer-map state moved out of `context.cpp`), `platform/resize_plan.h` (the resize decision) and `canvas/font_backend.h` (platform to font backend, dispatched through `makeFontMgr<Backend>()`).
+Integration: tests, five new native test targets and host-run vitest files. Five small seams in runtime source, with no behaviour change: `vfs::resolveFetchPath` (same mapping, in `embedded_bundle.h`), the `TN_WINDOW_MODE` host marker, `buffer_map_state.h` (the buffer-map state moved out of `context.cpp`), `platform/resize_plan.h` (the resize decision) `canvas/font_backend.h` (platform to font backend, dispatched through `makeFontMgr<Backend>()`) and `platform::drainUiFramesToGame` (the split between hit regions and game frames). Two NSLog changes for the iOS launch checks: `TN_IOS_GAME_EVAL` in `ios/main.mm`, and a `parent` field in `ios/ui_overlay_ios.mm`.
 
 ## Execution Phases
 
@@ -78,7 +78,7 @@ Integration: tests, five new native test targets and host-run vitest files. Four
 
 - [x] Shim bootstrap and fast-path selection are asserted by running the host, and the 7 historical block names are gone. `tests/js-engine-fast-path.test.mjs` is deleted. proof: `threenative-shim-bootstrap-test` passes in three modes (default, `--worker-rollback`, `--callback-retention`), `threenative-webgpu-wrapper-bag-test` passes, and `rg SCRIPT_FOR_BLOCK packages/runtime-native/tests` returns nothing. Red checks: skipping the streams shim makes `Runtime::create` fail (`Web Streams not available`), and passing the borrowed `document.addEventListener` handle makes `--callback-retention` fail (`listener:0`). `embedded_bundle_test` tests the VFS container only, so it does not carry this claim.
 - [ ] The remaining text specs on `bindings.cpp`, `runtime.cpp` and `browser-renderer.ts` are replaced by behaviour checks or deleted when a behaviour test already covers them. proof: AC-2
-  Done: 14 of the 18 `.cpp|.mm` readers are gone. Left: the ABI spec, `ios-packaging`, `ios-contract` and `ui-layer-host-contract` (wire contracts by the Decision below). Open: the iOS WebUI order tests and the `ui_overlay.cpp` and `window.cpp` slices in `ui-layer-host-contract.test.mjs`. `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists them.
+  Done: 16 of the 18 `.cpp|.mm` readers are gone (`ios-contract` and `ios-packaging` joined them, with the iOS launch checks in the Decision as their replacement). Left: the ABI spec and `ui-layer-host-contract`. Proof still owed: the macOS `build-ios-simulator` job green on a `release-proof` run, and the open rows of the last table.
 
 Every removed assertion and the test that covers it:
 
@@ -134,30 +134,43 @@ Limit of the font check: the factories share one return type, `sk_sp<SkFontMgr>`
 
 So an Android game that uses canvas text gets an estimated width and no pixels. The earlier emulator run in this lane (a `RefEmpty` mutation that read 48 for both strings) hit the same stub. It proved nothing about fonts, and its result is withdrawn. The finding is not fixed here. The owner decides whether Android should ship Skia canvas. The V8 build could not run on this machine (`third_party/v8-android/build-receipt.json` is missing), so the numbers come from QuickJS. The canvas path does not depend on the JS engine, but no V8 run confirms it.
 
-## Decision (2026-11-08): cross-language wire contracts
+## Decision (2026-11-08, revised after the lead chose behaviour routes): wire contracts and the iOS simulator proof
 
-A wire contract is a test that compares two source files, written in different languages or built for different platforms, that must agree on one name or value. Neither side has a seam to call from a desktop test, because the other side runs on a device. These tests stay as text checks beside the ABI digest. Each names its wire and the evidence that it is one:
+A wire contract is a test that compares source files, written in different languages or built for different platforms, that must agree on one name or value. Neither side has a seam to call from a desktop test, because the other side runs on a device. These stay as text checks beside the ABI digest. Each names its wire:
 
 | Wire | Between | Evidence |
 | --- | --- | --- |
-| `TNMaxFps` plist key (`ios-packaging.test.mjs`) | `scripts/package-ios.mjs:186` writes it into `Info.plist`, and `ios/main.mm:97` reads it | `rg TNMaxFps scripts ios` finds exactly these two sites. The key is a string in two languages, and a rename in one breaks the frame cap on iOS only |
-| UI bridge names (`ui-layer-host-contract.test.mjs`, tests 1-4) | `core/src/ui-bridge.ts` (`UI_BRIDGE_GLOBALS`), `TnUiOverlay.java`, `ui_overlay_ios.mm`, the Rust `abi.rs` and `offscreen.rs`, and `ui_overlay.cpp` | The page-facing object `tnHost` and the inbound global `__tnUiReceive` must be the same string in five sources. The test reads the names from `ui-bridge.ts` instead of restating them |
-| No web view in the iOS app shell (`ios-contract.test.mjs`) | `ios/main.mm` and `ios/ui_overlay_ios.mm` | `rg -c WebView ios/` finds 12 hits, all in `ui_overlay_ios.mm`, and none in `main.mm`. The shell draws through the owned renderer, and the web UI reaches the page only through the bridge above. This is the weakest case: its form is a single-file lint. The lead classed it as a wire, and the boundary is the shell and overlay split |
+| UI bridge names `tnHost` and `__tnUiReceive` (`ui-layer-host-contract`, tests 1-2) | `core/src/ui-bridge.ts` (`UI_BRIDGE_GLOBALS`), `TnUiOverlay.java`, `ui_overlay_ios.mm`, the Rust `abi.rs` and `offscreen.rs` | One string in five sources. The test reads the names from `ui-bridge.ts` and does not restate them. A host that spells one differently has no bridge, silently |
+| Message name `tn:hit-regions` (test 3) | `HIT_REGIONS_MESSAGE` in `ui-bridge.ts`, `TnUiOverlay.java`, `kHitRegions` in `ui_overlay_ios.mm`, and the match in `ui_overlay.cpp` | One string in four sources. The routing of that frame is no longer text: `threenative-platform-policy-test` drains the real queue through `platform::drainUiFramesToGame`, the function `runtime.cpp` uses |
+| Page origin each host serves, with the `file://` ban (test 4) | Android `appassets.androidplatform.net`; iOS and desktop `threenative://localhost` | The page resolves its relative imports and `fetch` against that origin, so a host that serves another one changes module and fetch behaviour on that platform only. The `file://` ban is a lint on the same origin choice, and the pair stays together |
 
-The Decision does not cover the other tests in `ui-layer-host-contract.test.mjs`: the iOS WebUI order tests on `ui_overlay_ios.mm` and `main.mm`, and the slices of `ui_overlay.cpp` and `window.cpp`. They compare one platform's own source with itself and stay open.
+The iOS web view ban (`ios-contract`) and the `TNMaxFps` read in `ios/main.mm` (`ios-packaging`) are no longer wires or text. A launch proves them (next section). `ios-packaging` keeps its `Info.plist` regex, which checks what the packager writes and reads no `.mm` file.
 
-iOS removals in this lane (the `jsc_engine.mm` text match and the `ios-contract` text tests) are covered only by the macOS `build-ios-simulator` job. Unverified here.
+### What the macOS `build-ios-simulator` job must prove
 
-The `build-ios-simulator` job is in `native-release.yml`, not `ci.yml`. It runs for a pull request into `main` or for a pull request that carries the `release-proof` label. An ordinary PR into `develop` does not run it. `verify-ios-simulator.mjs` drives four `device-smoke` scenarios. None starts a WebUI game, and the script has no `TN_UI_OVERLAY` or `TN_UI_PAGE` check. So a behaviour check for the iOS UI tests needs a new WebUI scenario in that script, and it earns proof only after a labelled macOS run is green.
+The job is in `native-release.yml`. It runs for a PR into `main` or a PR that carries the `release-proof` label, and the lead adds that label when pushing. `verify-ios-simulator.mjs` now judges these launch logs with `scripts/ios-webui-log.mjs`, which `tests/ios-webui-log.test.mjs` pins on Linux (10 cases, green and red):
+
+| Check | Replaces the text test | Log evidence |
+| --- | --- | --- |
+| The plain smoke launch logs no `TN_UI_OVERLAY` and no `TN_UI_PAGE` | `ios-contract`: `main.mm` has no `WebView` | No web view exists in the native-renderer shell |
+| A copy of the app with `TNMaxFps` 30 logs `Presentation cap: 30 fps` | `ios-packaging`: the `config.maxFps` regex on `main.mm` | The plist key reaches the host |
+| A copy with `TNUIRenderer` `web` and the built smoke page logs `TN_UI_OVERLAY` `attached:true` before `TN_IOS_GAME_EVAL` | `ui-layer-host-contract`: attach after window creation and before the game starts, and the `TNUIRenderer` read | `attached:true` needs the SDL window, so it follows window creation |
+| The same launch logs `loaded:true` and no `loaded:false` | page load finish and failure logs | `didFinishNavigation` ran |
+| The same launch logs `TN_UI_PAGE` `ready` and `first-state`, and no `[error]` | bridge registered before the web view copies its configuration; scheme handler answers 200 with CORS and a JavaScript MIME; the page probe | The staged page marks its module script `crossorigin`, so `ready` means the module ran after a 200, a JavaScript MIME and the CORS header. A handler added late leaves `webkit.messageHandlers.tnHost` undefined, and the probe posts nothing |
+| The same launch logs `firstState` with `frame` equal to `parent` and a size above zero | overlay frame on first state; layout constraints | The overlay follows the parent bounds through layout |
+| A web renderer copy with no `ui/index.html` logs `TN_UI_BUNDLE_MISSING` | `TN_UI_BUNDLE_MISSING` between create and evaluate | The refusal runs before the game |
+
+Markers added for this: `TN_IOS_GAME_EVAL` in `main.mm`, and a `parent` field on the `loaded` and `firstState` lines in `ui_overlay_ios.mm`. Variants run on a copy of the app under `artifacts/ios/variant`, so the zipped release app keeps its own `Info.plist` and files. None of this ran here: Objective-C++ and `xcrun` need macOS. The proof is the job going green.
+
+### What still reads source as text
+
+| File and test | Class | Why |
+| --- | --- | --- |
+| `web-host-abi.spec.ts` | wire | The ABI digest, by design |
+| `ui-layer-host-contract`, tests 1-4 | wire | See the table above |
+| `ui-layer-host-contract`, "iOS detaches the UI before either exit" | open | A launch cannot end the app through `return 2` or after `run()`, so no log shows the order |
+| `ui-layer-host-contract`, "the MRC iOS bridge keeps a non-owning overlay link" | open | A memory-management property of `ui_overlay_ios.mm` with no log evidence |
+| `ui-layer-host-contract`, "iOS scheme paths remain inside the UI directory" | open | Runs on macOS only. It extracts `resolveUiFile` by regex and compiles it |
+| `ui-layer-host-contract`, "non-Linux keyboard routing", "UI gestures finish outside the window", "keyboard ownership survives focus changes", "native CSS scroll traces" | open | Each slices `ui_overlay.cpp` or `window.cpp` by regex and compiles the slice. The fix is a header seam per function |
 
 `web-host-refusal.test.mjs` no longer reads source. It needs `pnpm wasm:build` and Chromium with WebGPU, so it skips when `build/wasm` is absent. No CI job builds the Wasm host and runs it yet. That wiring is open.
-
-Files that still read `.cpp` or `.mm` as text:
-
-| File | Class |
-| --- | --- |
-| `web-host-abi.spec.ts` | wire (ABI digest, by design) |
-| `ios-packaging.test.mjs` | wire (`TNMaxFps`) |
-| `ios-contract.test.mjs` | wire (shell and overlay split) |
-| `ui-layer-host-contract.test.mjs` | wire for tests 1-4. Open for the iOS WebUI order tests and the `ui_overlay.cpp` and `window.cpp` slices |
-

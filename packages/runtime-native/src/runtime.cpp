@@ -2775,29 +2775,26 @@ private:
      * platform. Fail closed: a malformed publication leaves the previous rectangles in place and
      * every later click is decided against rectangles that no longer exist, so it is named.
      */
-    bool applyUiHitRegions(const std::string& frame) { return platform::applyUiHitRegionsFrame(frame); }
-
     void drainUiMessages() {
         if (!jsEngine_) return;
-        std::string frame;
-        while (platform::takeUiMessage(frame)) {
-            // Hit regions stop at the host: it owns the hit test, and forwarding them to the
-            // game would put a process hop in the input path for a reader that does not exist.
-            // Same rule as the Android host, which applies them in Java for the same reason.
-            if (applyUiHitRegions(frame)) continue;
+        // Hit regions stop at the host: it owns the hit test, and forwarding them to the game
+        // would put a process hop in the input path for a reader that does not exist. Same rule
+        // as the Android host, which applies them in Java for the same reason. The split lives in
+        // `platform::drainUiFramesToGame`, where a desktop test pins it.
+        platform::drainUiFramesToGame([this](const std::string& frame) {
             js::JSValueHandle receive = jsEngine_->getGlobalProperty("__tnUiGameReceive");
             if (!jsEngine_->isFunction(receive)) {
                 // The game has not connected its end yet. Dropping is correct and must be
                 // visible: a UI whose intents vanish looks exactly like a dead button.
                 std::cout << "TN_UI_BRIDGE:{\"dropped\":\"no __tnUiGameReceive\"}" << std::endl;
-                continue;
+                return;
             }
             jsEngine_->call(receive, jsEngine_->getGlobal(), {jsEngine_->newString(frame.c_str())});
             if (jsEngine_->hasException()) {
                 std::cerr << "[Mystral] UI bridge frame threw: " << jsEngine_->getException()
                           << std::endl;
             }
-        }
+        });
     }
 
     void drainLifecycleMarkers() {

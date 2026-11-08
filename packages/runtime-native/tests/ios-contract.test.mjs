@@ -84,13 +84,8 @@ test('the verifier selects through the pinned iOS selector, not a flattened devi
 
 test('iOS scaffold is root-linked to the exact shared core proof', () => {
   const cmake = readFileSync(join(root, 'CMakeLists.txt'), 'utf8');
-  const main = readFileSync(join(root, 'ios/main.mm'), 'utf8');
   assert.match(cmake, /add_executable\(threenative-ios MACOSX_BUNDLE/u);
   assert.match(cmake, /examples\/native-smoke\/dist\/native-smoke\.js/u);
-  // Open (PRD-842): a source-ban lint with no behaviour to check; the macOS job compiles and runs the
-  // app but does not look for the absence of a web view. The mailbox bridge in `main.mm` is exercised
-  // by the simulator scenarios below, which fail with TN_PLAYTEST_BRIDGE_MISSING without it.
-  assert.doesNotMatch(main, /WebView|WKWebView|React Native/u);
   const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
   for (const scenario of [
     'device-smoke.playtest.json',
