@@ -69,7 +69,7 @@ const STAGE = join(
 const requireAssets = createRequire(join(REPO, "packages/assets/package.json"));
 const sharp = requireAssets("sharp");
 const { NodeIO } = requireAssets("@gltf-transform/core");
-const { dedup, join: joinMeshes, weld, normals } = requireAssets("@gltf-transform/functions");
+const { dedup, join: joinMeshes, weld } = requireAssets("@gltf-transform/functions");
 const { compileAssets, thinFoliageCards } = await import(
   pathToFileURL(join(REPO, "packages/assets/dist/index.js"))
 );
@@ -314,17 +314,6 @@ async function prepare(source, pack, logical) {
       );
       image.setMimeType("image/png");
     }
-  // One full-spruce import contains all-zero normals; do not preserve them into every cook/LOD.
-  let repair = false;
-  for (const mesh of document.getRoot().listMeshes())
-    for (const primitive of mesh.listPrimitives()) {
-      const normal = primitive.getAttribute("NORMAL");
-      if (!normal || normal.getArray().every((value) => value === 0)) {
-        primitive.setAttribute("NORMAL", null);
-        repair = true;
-      }
-    }
-  if (repair) await document.transform(normals());
   await document.transform(dedup(), joinMeshes(), weld());
   return io.writeBinary(document);
 }
