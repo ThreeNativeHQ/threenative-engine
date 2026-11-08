@@ -937,6 +937,9 @@ function contrastExtras(unit) {
 const PREFERRED_CONTRAST = {
   display: ["inline", "inline-block", "flow-root", "contents"],
   position: ["absolute", "fixed", "relative"],
+  // `nowrap` preserves a run of spaces as `pre` does, so a `white-space` unit measured against it
+  // changed nothing; `normal` is the value that collapses, and it is the initial one.
+  "white-space": ["normal"],
 };
 
 /**
@@ -1103,6 +1106,9 @@ function probeInner(stage, cell, innerCount) {
   if (cell.unit?.props.some((p) => TEXT_PROPS.has(p)) !== true) return [];
   // A wrapping, clamping or breaking unit needs a run long enough to wrap; a numeric variant needs
   // digits to vary (`tabular-nums` on letters is the same frame as `normal-nums`); a tab needs a tab.
+  // `white-space` comes first: it changes how a *run* of spaces is treated, and `LOREM` has single
+  // spaces, which is one space under every value of it.
+  if (cell.unit.props.includes("white-space")) return [text("Abc    123      fgh    456")];
   if (cell.unit.props.some((p) => WRAPPING_PROPS.has(p))) return [text(LOREM)];
   if (cell.unit.props.includes("tab-size")) return [text("\tAbc 123")];
   return [text("Abc 123 fgh 456 ooo")];
