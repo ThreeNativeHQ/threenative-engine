@@ -1,6 +1,6 @@
 import path from "node:path";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
-import { type IWebEnginePlugin, createWebEnginePlugin } from "./web-engine.js";
+import { type IWebEnginePlugin, WEB_ENGINE_ID, createWebEnginePlugin } from "./web-engine.js";
 
 export interface IWebBrandVitePlugin {
   readonly name: string;
@@ -10,7 +10,10 @@ export interface IWebBrandVitePlugin {
   >;
   resolveId(source: string, importer?: string): string | null;
   load(id: string): Promise<string | null>;
-  configResolved(config: { readonly root: string }): Promise<void>;
+  configResolved(config: {
+    readonly root: string;
+    readonly command?: "build" | "serve";
+  }): Promise<void>;
   transformIndexHtml(html: string): string;
   configureServer(server: IMiddlewareServer): void;
   configurePreviewServer(server: IMiddlewareServer): void;
@@ -33,7 +36,7 @@ interface IMiddlewareServer {
  * Cross-origin isolation (PRD-752 phase 4): the threaded web engine runs on shared memory, which a
  * browser gives only to a page served with both headers. Every asset a kit loads is same-origin, so
  * `require-corp` blocks nothing; a game that loads cross-origin assets without CORP headers switches
- * to `credentialless`. A host that cannot set headers serves the game single-threaded, unchanged.
+ * to `credentialless`. A host that cannot set headers gets them from the build's service worker.
  */
 export const ISOLATION_HEADERS: Readonly<Record<string, string>> = {
   "Cross-Origin-Embedder-Policy": "require-corp",
@@ -53,6 +56,56 @@ export function renderIsolationHeaders(): string {
     .map(([key, value]) => `  ${key}: ${value}\n`)
     .join("")}`;
 }
+
+/**
+ * A host that cannot set headers (itch.io, GitHub Pages, a plain static server) still gets isolation:
+ * the build ships this service worker, which adds the headers to every response it serves. The page
+ * registers it and reloads once; a page the worker cannot isolate starts the engine, which refuses.
+ */
+export const ISOLATION_WORKER_FILE = "tn-isolation-sw.js";
+export function renderIsolationWorker(): string {
+  return `self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.cache === "only-if-cached" && request.mode !== "same-origin") return;
+  event.respondWith(
+    fetch(request).then((response) => {
+      if (response.status === 0) return response;
+      const headers = new Headers(response.headers);
+${Object.entries({ ...ISOLATION_HEADERS, "Cross-Origin-Resource-Policy": "cross-origin" })
+  .map(
+    ([key, value]) => `      headers.set("${key}", "${value}");
+`,
+  )
+  .join(
+    "",
+  )}      return new Response(response.body, { headers, status: response.status, statusText: response.statusText });
+    }),
+  );
+});
+`;
+}
+
+/**
+ * Runs before the game module: registers the worker and reloads once under it. `__tnIsolation`
+ * settles only when that cannot help, so the engine's refusal waits for it and never races a reload.
+ * The session flag stops a reload loop on a host the worker cannot isolate.
+ */
+const ISOLATION_BOOT = `<script>(() => {
+  const key = "tnIsolationReload";
+  const store = (use) => { try { return use(sessionStorage); } catch { return null; } };
+  if (globalThis.crossOriginIsolated) return void store((s) => s.removeItem(key));
+  if (!isSecureContext || !("serviceWorker" in navigator) || /[?&]tnIsolation=0(?:&|$)/.test(location.search)) return;
+  globalThis.__tnIsolation = navigator.serviceWorker.register("${ISOLATION_WORKER_FILE}")
+    .then(() => navigator.serviceWorker.ready)
+    .then(() => {
+      if (store((s) => s.getItem(key)) !== null) return void store((s) => s.removeItem(key));
+      if (store((s) => (s.setItem(key, "1"), true)) !== true) return;
+      location.reload();
+      return new Promise(() => {});
+    }, () => {});
+})();</script>`;
 
 function htmlAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
@@ -148,6 +201,13 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
   let root = process.cwd();
   let config: IResolvedThreeNativeConfig | undefined;
   let engine: IWebEnginePlugin | undefined;
+  // Set once the threaded engine is in the bundle: only then does the page need isolation at boot.
+  let threaded = false;
+  const load = async (id: string): Promise<string | null> => {
+    const code = (await engine?.load(id)) ?? null;
+    if (id === WEB_ENGINE_ID && code !== null) threaded = true;
+    return code;
+  };
   return {
     name: "threenative-web-brand",
     enforce: "pre",
@@ -168,7 +228,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
                 enforce: "pre",
                 resolveId: (source: string, importer?: string) =>
                   engine?.resolveId(source, importer) ?? null,
-                load: async (id: string) => engine?.load(id) ?? null,
+                load,
               },
             ],
           },
@@ -178,9 +238,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     resolveId(source, importer) {
       return engine?.resolveId(source, importer) ?? null;
     },
-    async load(id) {
-      return engine?.load(id) ?? null;
-    },
+    load,
     async configResolved(resolved) {
       root = resolved.root;
       config = await loadConfig(root);
@@ -189,11 +247,17 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
       // script inside a non-async function, which the engine module's top-level await cannot parse
       // in, and its host brings its own engine.
       if (config.engine === "threenative" && process.env.THREENATIVE_NATIVE_BUNDLE === undefined)
-        engine = createWebEnginePlugin({ root, engine: config.engine });
+        engine = createWebEnginePlugin({
+          root,
+          engine: config.engine,
+          strict: resolved.command !== "build",
+        });
     },
     transformIndexHtml(html) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
-      return updateLaunchMarkup(root, config, html);
+      const output = updateLaunchMarkup(root, config, html);
+      // Before the first script, so it runs ahead of the game module.
+      return threaded ? output.replace(/<script/iu, `${ISOLATION_BOOT}\n    <script`) : output;
     },
     // Every page links the manifest, and only a build emits it: in dev Vite would answer the link
     // with index.html, which the browser reports as a manifest syntax error on each load.
@@ -218,6 +282,12 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
       });
       if (config.engine === "threenative")
         this.emitFile({ fileName: "_headers", source: renderIsolationHeaders(), type: "asset" });
+      if (threaded)
+        this.emitFile({
+          fileName: ISOLATION_WORKER_FILE,
+          source: renderIsolationWorker(),
+          type: "asset",
+        });
     },
   };
 }
