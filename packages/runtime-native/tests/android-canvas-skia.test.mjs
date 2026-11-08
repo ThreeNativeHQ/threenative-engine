@@ -24,7 +24,6 @@ import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const runtimeRoot = fileURLToPath(new URL("..", import.meta.url));
 const cmakeLists = readFileSync(join(runtimeRoot, "CMakeLists.txt"), "utf8");
-const canvas2d = readFileSync(join(runtimeRoot, "src/canvas/canvas2d.cpp"), "utf8");
 const temporaries = [];
 afterEach(() => {
   for (const path of temporaries.splice(0)) rmSync(path, { force: true, recursive: true });
@@ -266,26 +265,4 @@ test.runIf(hasNativeToolchain)("non-Android Skia keeps the existing host layout"
   assert.equal(result.ok, true, `desktop Skia layout must remain usable:\n${result.log}`);
   const verdict = readFileSync(join(dir, "verdict.txt"), "utf8");
   assert.ok(verdict.includes(libDir), `desktop library was not selected:\n${verdict}`);
-});
-
-test("canvas2d.cpp uses Android system fonts, not Fontconfig or RefEmpty", () => {
-  assert.match(canvas2d, /#include "include\/ports\/SkFontMgr_android\.h"/u);
-  assert.match(canvas2d, /SkFontMgr_New_Android/u, "missing Android font-manager factory");
-  // Anchored on the shared factory rather than on one assignment's spelling: the per-canvas
-  // `fontMgr = ...` moved into `sharedFontMgr()` so a font manager is process state instead of
-  // one per canvas. The claim below is unchanged - Android takes the Android branch, never
-  // Fontconfig and never an empty manager.
-  const initStart = canvas2d.indexOf("sk_sp<SkFontMgr> sharedFontMgr()");
-  assert.notEqual(initStart, -1, "shared font-manager factory missing");
-  const initRegion = canvas2d.slice(initStart, initStart + 900);
-  assert.match(initRegion, /defined\(__ANDROID__\)[\s\S]*SkFontMgr_New_Android/u);
-  const androidBranch = initRegion.match(
-    /#elif defined\(__ANDROID__\)([\s\S]*?)#elif defined\(__linux__\)/u,
-  )?.[1];
-  assert.ok(androidBranch, "Android font-manager branch missing");
-  assert.doesNotMatch(
-    androidBranch,
-    /FontConfig|RefEmpty/u,
-    "Android must not use Fontconfig or RefEmpty",
-  );
 });

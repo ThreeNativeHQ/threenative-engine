@@ -267,6 +267,13 @@ bool createWindow(
     flags |= SDL_WINDOW_VULKAN;
 #endif
 
+    // The mode the host asked SDL for, after the fullscreen-wins rule above. A machine-readable
+    // line so a launch test can read the resolved window mode without a window manager.
+    std::cout << "TN_WINDOW_MODE:{\"fullscreen\":" << ((flags & SDL_WINDOW_FULLSCREEN) ? "true" : "false")
+              << ",\"maximized\":" << ((flags & SDL_WINDOW_MAXIMIZED) ? "true" : "false")
+              << ",\"resizable\":" << ((flags & SDL_WINDOW_RESIZABLE) ? "true" : "false") << "}"
+              << std::endl;
+
     g_window.sdlWindow = SDL_CreateWindow(title, width, height, flags);
 
     if (!g_window.sdlWindow) {

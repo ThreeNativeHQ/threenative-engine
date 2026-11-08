@@ -157,6 +157,22 @@ std::string normalizeBundlePath(const std::string& path) {
     return normalized;
 }
 
+std::string resolveFetchPath(std::string path, FetchPathPlatform platform) {
+    const bool fileUrl = path.rfind("file://", 0) == 0;
+    if (fileUrl) {
+        path = path.substr(7);
+    }
+    if (platform == FetchPathPlatform::Android && !fileUrl) {
+        const std::string normalized = normalizeBundlePath(path);
+        if (normalized.rfind("game/", 0) == 0) return normalized;
+        return "game/" + normalized;
+    }
+    if (platform == FetchPathPlatform::Ios && !fileUrl && !path.empty() && path.front() == '/') {
+        return normalizeBundlePath(path);
+    }
+    return path;
+}
+
 std::string getExecutablePath() {
 #ifdef _WIN32
     char buffer[MAX_PATH] = {};

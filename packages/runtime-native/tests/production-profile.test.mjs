@@ -2056,7 +2056,6 @@ test('slow-path control is bounded and returns the intended exit-1 budget failur
 
 test('desktop screenshot evidence uses the host post-present mailbox protocol', () => {
   const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  const runtime = readFileSync(new URL('../src/runtime.cpp', import.meta.url), 'utf8');
   assert.doesNotMatch(profile, /runNativeScreenshot/u);
   assert.doesNotMatch(profile, /spawnNative\([^\n]+,\s*true\)/u);
   assert.match(profile, /tn-playtest-screenshot-request\.txt/u);
@@ -2064,16 +2063,12 @@ test('desktop screenshot evidence uses the host post-present mailbox protocol', 
   assert.match(profile, /rm\(join\(root, 'tn-playtest-screenshot-request\.txt'\), \{ force: true \}\)/u);
   assert.match(profile, /screenshot: async \(path\)/u);
   assert.doesNotMatch(profile, /tn-production-screenshot-request\.json|nativeHost\?\.playtest\?\.receive|captureScreenshot/u);
-  assert.match(runtime, /tn-playtest-screenshot-request\.txt/u);
+  // The host side of the protocol (it consumes that file and saves the frame) runs in
+  // host-window.test.mjs: "a screenshot request in the playtest mailbox saves the presented frame".
 });
 
-test('native screenshot mapping keeps asynchronous callback state alive after a timeout', () => {
-  const context = readFileSync(new URL('../src/webgpu/context.cpp', import.meta.url), 'utf8');
-  assert.match(context, /using BufferMapDataPtr = std::shared_ptr<BufferMapData>/u);
-  assert.match(context, /new BufferMapDataPtr\(mapData\)/u);
-  assert.match(context, /WGPUCallbackMode_AllowSpontaneous/u);
-  assert.doesNotMatch(context, /userdata1 = &mapData/u);
-});
+// The screenshot map's callback state outliving a timed-out wait is the native contract target
+// threenative-buffer-map-lifetime-test (buffer_map_lifetime_test.cpp), which runs in the desktop lane.
 
 test('desktop production profiling keeps mailbox operations shorter than the scenario budget', () => {
   const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');

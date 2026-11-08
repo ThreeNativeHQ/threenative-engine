@@ -216,21 +216,5 @@ test('iOS stages a web-renderer UI and refuses both mismatches', () => {
   assert.throws(() => stageIosUi(ui, 'native', join(root, 'b')), /TN_UI_BUNDLE_UNEXPECTED/u);
 });
 
-// A web renderer is a game requirement: attach or ready timeout must fail closed. The explicit
-// bypass exists for scene-only diagnostics on machines where the UI host is unavailable.
-test('web UI startup fails closed unless --bypass-ui-loading is explicit', () => {
-  const source = readFileSync(new URL('../src/cli/main.cpp', import.meta.url), 'utf8');
-  const signature = /\bstatic bool attachUiOverlayIfConfigured\s*\([^;]*?\)\s*\{/su.exec(source);
-  assert.ok(signature, 'attachUiOverlayIfConfigured must be defined');
-  const end = source.indexOf('\n}\n', signature.index);
-  assert.notEqual(end, -1, 'attachUiOverlayIfConfigured has no closing brace');
-  const body = source.slice(signature.index, end + 2);
-
-  assert.match(body, /TN_UI_LOAD_FAILED/u);
-  assert.match(body, /attachDesktopUiOverlay\(uiRoot\.string\(\)\)/u);
-  assert.match(source, /--bypass-ui-loading/u);
-  assert.match(source, /uiReadyIntentReceived/u);
-  assert.match(source, /TN_UI_LOAD_FAILED[\s\S]*?return 1;/u);
-  assert.match(body, /TN_UI_BUNDLE_MISSING/u);
-  assert.match(body, /TN_UI_BUNDLE_MISSING[\s\S]*?return false;/u);
-});
+// Fail-closed UI startup (TN_UI_BUNDLE_MISSING, --bypass-ui-loading) is proved by running the
+// host in `tests/host-cli.test.mjs`.

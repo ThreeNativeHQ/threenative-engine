@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,17 +69,6 @@ for (const [mode, description] of [
 }
 
 
-test("bindings invalidate image-decode ownership before engine teardown", () => {
-  const stateSource = readFileSync(join(root, "src/webgpu/bindings_state.h"), "utf8");
-  const bindingsSource = readFileSync(join(root, "src/webgpu/bindings.cpp"), "utf8");
-  assert.match(stateSource, /std::shared_ptr<AsyncImageDecodeOwner> imageDecodeOwner/u);
-  const destroy = bindingsSource.indexOf("void destroyBindingsState");
-  const invalidate = bindingsSource.indexOf("imageDecodeOwner->alive.store(false", destroy);
-  const engineNull = bindingsSource.indexOf("state->engine = nullptr", destroy);
-  assert.ok(destroy >= 0 && invalidate > destroy && engineNull > invalidate);
-  const callback = bindingsSource.indexOf("[owner, callback](DecodedImage image)");
-  const gate = bindingsSource.indexOf("if (!owner->alive.load", callback);
-  const engineUse = bindingsSource.indexOf("auto* engine = owner->engine", callback);
-  assert.ok(callback >= 0 && gate > callback && engineUse > gate);
-  assert.equal(bindingsSource.indexOf("[state, callback](DecodedImage image)"), -1);
-});
+// The binding-side lifetime (a completion queued by one Runtime never reaches a destroyed engine,
+// across Runtime recreation) is proved by running the real bindings:
+// `tests/image_decode_teardown_test.cpp`, built and run by `scripts/verify-native-contracts.mjs`.

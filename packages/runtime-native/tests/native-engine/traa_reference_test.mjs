@@ -49,54 +49,5 @@ assert.notDeepEqual(native[31], native[0]);
 effect.dispose();
 console.log("TRAA jitter equals pinned three across 96 frames (three's 32-frame wrap)");
 
-// Check the actual production resolve expressions on a greyscale 3x3 neighbourhood.
-// Null validates WGSL, but cannot execute pixels; scalar greyscale makes vector math exact.
-const source = readFileSync(new URL("../../src/engine/renderer/post/traa.cpp", import.meta.url), "utf8");
-// Null cannot execute pixels. Pin the production copy boundary here; traa_reset_seed
-// separately checks the copied bytes on a rendering backend.
-const rendererSource = readFileSync(new URL("../../src/engine/renderer/renderer.cpp", import.meta.url), "utf8");
-const render = rendererSource.slice(rendererSource.indexOf("uint64_t Renderer::render("));
-// r187 TRAANode.updateBefore resets the history from the beauty buffer of the frame it resolves, so the seed belongs in
-// the resolve, after the scene pass drew, not ahead of it: a resolved reset frame must not carry an older frame.
-assert.doesNotMatch(render, /seedHistory/);
-const resolve = source.slice(source.indexOf("void TraaPass::resolve("));
-assert.match(resolve, /if \(needsSeed\(\) && width_ == outputWidth_ && height_ == outputHeight_\)\s*\n\s*copy\(beauty, historyColor_\[historySlot_\]/);
-assert.ok(resolve.indexOf("copy(beauty, historyColor_[historySlot_]") <
-  resolve.indexOf("beginTimedRenderPass(encoder, &desc, 2, {\"traaResolve\""),
-  "the reset seed must be recorded before the resolve reads its history");
-console.log("TRAA reset seeds the resolved frame's own beauty before the resolve reads it");
-assert.match(source, /textureSampleLevel\(beauty, linearSampler, input\.uv, 0\.0\)/);
-assert.match(source, /textureSampleLevel\(history, linearSampler, historyUV, 0\.0\)/);
-// The high-quality upsampling path has its own bounds; this oracle pins Three's full-resolution variance branch.
-const varianceBranch = source.match(/if \(highClamp\) \{[\s\S]*?\} else \{([\s\S]*?)\n\s*\}/)?.[1];
-assert.ok(varianceBranch, "missing full-resolution variance branch");
-function expression(name, values, scope = source) {
-  const match = scope.match(new RegExp(`(?:let |var )?${name} = ([^;]+);`));
-  assert.ok(match, `missing resolve expression: ${name}`);
-  return evaluate(match[1], values);
-}
-function evaluate(body, values) {
-  const scalar = body.replaceAll("vec4(0.0)", "0").replaceAll(/\.(?:rgb|r|g|b)\b/g, "");
-  return Function(...Object.keys(values), "max", "sqrt", "mix", "dot", "clamp", "select", `return ${scalar}`)(
-    ...Object.values(values), Math.max, Math.sqrt, (a, b, t) => a + (b - a) * t, (a) => a,
-    (x, low, high) => Math.min(high, Math.max(low, x)), (a, b, condition) => condition ? b : a,
-  );
-}
-function blend(current, old, neighbours) {
-  const values = { current, old, motion: 0, valid: true, currentWeight: expression("currentWeight", {}) };
-  for (const [, body] of source.matchAll(/^\s*currentWeight = ([^;]+);/gm)) values.currentWeight = evaluate(body, values);
-  values.gamma = expression("gamma", values);
-  values.moment1 = current + neighbours.reduce((a, b) => a + b, 0);
-  values.moment2 = current * current + neighbours.reduce((a, b) => a + b * b, 0);
-  for (const name of ["mean", "variance", "low", "high"]) values[name] = expression(name, values, varianceBranch);
-  values.clipped = Math.min(values.high, Math.max(values.low, old));
-  for (const name of ["compressedCurrent", "compressedHistory", "historyWeight"]) values[name] = expression(name, { ...values, luminance: 1 });
-  values.currentWeight /= values.compressedCurrent + 1;
-  const result = source.match(/let resolved = (\(current \* currentWeight \+ clipped \* historyWeight\) \/ max\(currentWeight \+ historyWeight, 0\.00001\));/);
-  assert.ok(result, "production flicker reduction changed");
-  return evaluate(result[1], values);
-}
-assert.equal(blend(0.5, 0.5, Array(8).fill(0.5)), 0.5);
-assert.ok(Math.abs(blend(0.8, 0.2, [0, 1, 0, 1, 0, 1, 0, 1]) - 578 / 2575) < 1e-12);
-assert.ok(Math.abs(blend(0.5, 4, Array(8).fill(0.5)) - 0.5) < 1e-7);
-console.log("TRAA production variance/flicker blend passes synthetic 3x3 history checks");
+// The resolve's own arithmetic (variance clamp, luminance-compressed weights) and its reset seed are pixel
+// behaviour: renderer_test.cpp's traa_resolve_blend and traa_reset_seed read them back from the GPU.
