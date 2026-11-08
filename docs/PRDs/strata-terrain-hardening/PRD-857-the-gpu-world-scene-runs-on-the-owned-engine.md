@@ -25,14 +25,14 @@ Without gap 4, turning the scene on draws `capacity` instances from a partly fil
 ### Phase 1 — the facade and the device answer truthfully
 
 - [ ] `renderer.backend.hasFeature` answers `core-features-and-limits` (true) and `indirect-first-instance` (the device's own answer), and the Wasm host requests `indirect-first-instance` when the adapter has it (web host ABI bump). proof: a facade spec, `web-host-abi.spec.ts`, and `TN_WORLD_GPU_SCENE` in the sandbox no longer reads `backend=webgpu-without-hasFeature`
-  2026-11-08: code in — `hasFeature` on `backend`, `tnw_web_device_feature`, `IndirectFirstInstance` requested, web host ABI 13 pinned `9334aa80ff32775c`; `browser-renderer.spec.ts` red (`hasFeature is not a function`) then green. Open: the sandbox reading.
+  2026-11-08: code in — `hasFeature` on `backend`, `tnw_web_device_feature`, web host ABI 13 pinned `9334aa80ff32775c`; `browser-renderer.spec.ts` red (`hasFeature is not a function`) then green. Open: the sandbox reading. The host does not request `IndirectFirstInstance` until Phase 2's indirect draw lands, so the scene reads `feature=indirect-first-instance` and stays off instead of drawing from a partly filled buffer; Phase 2 adds the request.
 - [x] `IndirectStorageBufferAttribute` and `BufferGeometry.setIndirect` / `indirect` / `indirectOffset` exist on the facade and in `api/native-registry.json`. proof: a facade spec against a fake runtime — 2026-11-08: `indirect-storage.spec.ts` red (`Indirect is not a constructor`) then green; the pair crosses the ABI (`bindings_geometry.cpp`, `geometry.h`), registry and catalog on `BufferGeometry` and its 19 generator classes; `three-native/__tests__` 540/540, `tsc` 0, `pnpm wasm:build` 0.
 - [ ] A storage buffer bound as storage and as vertex or indirect data carries every usage it is bound with. proof: a native renderer test
   2026-11-08: `GeometryCache` keeps each entry's usage and re-creates with the union when a later sync needs more (one AND on the common path); compiles in `pnpm wasm:build`. Open: the native test (`renderer_caches_test.cpp`, needs `pnpm native:build`). A re-create re-uploads the CPU copy, so a GPU-written buffer shows CPU data for the first frame after it widens.
 
 ### Phase 2 — the engine draws indirect
 
-- [ ] An `InstancedMesh` whose geometry carries an indirect record draws with `DrawIndexedIndirect` from that record, on the bundle and the pass paths, and a replaced record re-records the bundle. proof: a native renderer test that asserts the encoded command
+- [ ] An `InstancedMesh` whose geometry carries an indirect record draws with `DrawIndexedIndirect` from that record, on the bundle and the pass paths, a replaced record re-records the bundle, and the Wasm host then requests `IndirectFirstInstance`. proof: a native renderer test that asserts the encoded command
 - [ ] The cull kernel's placements reach the owned engine without a struct-typed storage element (repack `GpuPlacement` to `vec4` rows in core). proof: `world-gpu-scene.spec.ts` and the existing world GPU specs green
 
 ### Phase 3 — proof

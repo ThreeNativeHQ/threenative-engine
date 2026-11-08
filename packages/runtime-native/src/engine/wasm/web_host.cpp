@@ -229,14 +229,14 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     callback.callback = onDevice;
     // The features the desktop host asks for (webgpu/context.cpp buildRequiredFeatures), each when
     // the adapter has it: without float32-filterable a linear-filtered FloatType texture is refused.
-    // indirect-first-instance is what core's GPU world scene gates on (world-gpu-scene.ts), so a device
-    // that has it must be asked for it here: a feature not requested is a feature wgpuDeviceHasFeature
-    // answers false for, whatever the adapter holds (PRD-857).
+    // indirect-first-instance is what core's GPU world scene gates on (world-gpu-scene.ts). It is not
+    // requested until the renderer draws a geometry's own indirect record (PRD-857 phase 2): until then
+    // the device answers false, and the scene stays off with `feature=indirect-first-instance` instead
+    // of drawing `capacity` instances from a partly filled buffer.
     std::vector<WGPUFeatureName> features;
     for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable, WGPUFeatureName_Float32Blendable,
                                     WGPUFeatureName_RG11B10UfloatRenderable, WGPUFeatureName_TextureCompressionBC,
-                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC,
-                                    WGPUFeatureName_IndirectFirstInstance})
+                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC})
         if (wgpuAdapterHasFeature(adapter, feature)) features.push_back(feature);
     WGPUDeviceDescriptor desc = {};
     desc.requiredFeatureCount = features.size();
