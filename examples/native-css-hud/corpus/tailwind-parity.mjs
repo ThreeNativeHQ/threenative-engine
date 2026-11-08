@@ -117,6 +117,8 @@ const PANEL_CSS = `
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
 .stage-fill{width:120px;height:40px;background:#27272a}
 .stage-flex{display:flex}
+/* A colour-only border unit needs a border to colour; the dashed grey is what the unit must beat. */
+.stage-border{border-width:2px;border-style:dashed;border-color:#52525b}
 /* A backdrop filter needs something to filter and something translucent to see it through: a
    saturated band behind the cell and a see-through probe over it. */
 .stage-backdrop{width:100%;height:100%;color:#fafafa;font-size:13px;line-height:16px;padding:2px;
@@ -1138,6 +1140,17 @@ function layoutStage(cell, probe, classes, before, after) {
  * unit on a box that had no children to lay out. A container unit's probe is the container, with two
  * children and the matching display, so dropping the class moves them.
  */
+/**
+ * A colour-only border unit needs a border to colour.
+ *
+ * `border-e-red-50` emits `border-inline-end-color` and nothing else, so on a probe with no border
+ * width it changes no pixel — the engine cannot be told apart from one that dropped it. The staging
+ * gives those probes a dashed 2px border in a colour the unit must beat, which is what a badge with
+ * a coloured edge is.
+ */
+const BORDER_COLOR_PROPS =
+  /^border(-(top|right|bottom|left|inline|block|start|end))?-(color|.*-color)$/u;
+
 const CONTAINER_PROPS = new Set([
   "justify-content",
   "justify-items",
@@ -1163,7 +1176,8 @@ function cellTree(cell) {
   // A container unit's probe carries the display its property needs, so the children the staging
   // gives it are laid out the way the unit is defined to act on them.
   const container = cell.container === undefined ? "" : ` stage-${cell.container}`;
-  const classes = probeClass(cell.companions ?? [], cell.class) + container;
+  const border = cell.borderProbe === true ? " stage-border" : "";
+  const classes = probeClass(cell.companions ?? [], cell.class) + container + border;
   const probe = el(
     stage.tag ?? (CONTROL_UNIT.test(cell.unit?.probe ?? "") ? "textarea" : "div"),
     { class: classes, ...stage.attrs },
@@ -1265,6 +1279,7 @@ function utilityEntry(unit, classCss, byProperty) {
         ? 2
         : undefined,
     // A grid container property needs a grid; everything else in `CONTAINER_PROPS` is flex.
+    borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
     container: unit.props.some((p) => CONTAINER_PROPS.has(p))
       ? /grid|^justify-items/u.test(unit.props.join(" ")) || /^grid-/u.test(unit.probe)
         ? "grid"
