@@ -270,6 +270,16 @@ Two things were learned that a later pass can use:
   breaks. That is a gap to investigate, not a staging defect, and it was reverted with the rest because
   it costs `oldstyle` and neither cell passes yet.
 
+## Documented limit (owner decision, 2026-11-07): no SVG element support
+
+`fill`, `stroke` and `stroke-width` paint a shape, and this engine creates no SVG nodes and paints none.
+Staged on an `<svg><rect>` probe the crate refuses the whole panel — **24 paint-family cells come back as
+`the engine refused this stage`** — so the three cells stay inert and are a *documented limit* rather than
+an open staging gap. Closing it means an SVG element and paint path (an `usvg`-class integration inside
+`blitz-dom`/`blitz-paint`), which the owner has kept out of this batch; it is named here as the follow-up.
+Measured with `parity:tailwind --family PRD-850 --group paint`: `fill-red-50`, `stroke-red-50` and
+`stroke-3` do not discriminate, and the panel-level refusal is why the probe was reverted.
+
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **143 of
