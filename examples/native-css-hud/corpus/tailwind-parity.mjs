@@ -125,6 +125,7 @@ const PANEL_CSS = `
   background:repeating-linear-gradient(45deg,#e11d48 0 10px,#2563eb 10px 20px,#22c55e 20px 30px,#f59e0b 30px 40px)}
 .probe-translucent{background:rgba(24,24,27,0.35)}
 .stage-list{margin:0;padding-left:18px;list-style:disc}
+.stage-list-none{list-style:none}
 `;
 
 // -------------------------------------------------------------------------------------------------
@@ -993,6 +994,9 @@ const COMPANIONS = [
   [/^--tw-ordinal|^--tw-slashed-zero|^--tw-numeric/u, "tabular-nums"],
   [/^--tw-text-shadow/u, "text-shadow-sm"],
   [/^--tw-duration|^--tw-ease|^--tw-delay/u, "transition"],
+  // A decoration's thickness, style and colour paint nothing unless something is underlined: the
+  // four `decoration-*`/`underline-offset-*` units were inert on a probe with no line to style.
+  [/^text-decoration-(thickness|style|color)$|^text-underline-offset$/u, "underline"],
 ];
 /** The companion classes a unit needs: one per custom-property family it only sets. */
 function companionsFor(unit) {
@@ -1074,10 +1078,10 @@ function probeInner(stage, cell, innerCount) {
 }
 
 /** The list variant's probe is the `<li>`, so the marker it paints is the one being measured. */
-function listStage(count, probe, classes, attrs) {
+function listStage(count, probe, classes, attrs, listClass = "stage-list") {
   const prepared = el(
     "ul",
-    { class: "stage-list" },
+    { class: listClass },
     el("li", { class: classes, ...attrs }, ...probe.children),
   );
   for (let i = 0; i < count - 1; i++) {
@@ -1184,7 +1188,19 @@ function cellTree(cell) {
     ...probeInner(stage, cell, stage.inner ?? cell.inner),
   );
   let children;
-  if (stage.list !== undefined) children = listStage(stage.list, probe, classes, stage.attrs);
+  // `list-style-*` paints the list item's own marker, so the probe *is* the item: on a `<div>` the
+  // property has nothing to mark, and `list-disc` measured "does nothing" for that reason.
+  const listUnit = cell.unit?.props?.some((p) => p.startsWith("list-style")) === true;
+  if (stage.list !== undefined || listUnit)
+    children = listStage(
+      stage.list ?? 3,
+      probe,
+      classes,
+      stage.attrs,
+      // A `list-style-*` unit *supplies* the marker, so the list itself starts with none — otherwise
+      // `list-disc` is the disc the staging already drew and the cell cannot tell.
+      listUnit ? "stage-list stage-list-none" : "stage-list",
+    );
   else if (stage.peer === true) {
     children = [el("input", { type: "checkbox", checked: "", class: "stage-fill peer" }), probe];
   } else if (stage.wrap !== undefined) children = [el("div", { class: stage.wrap }, probe)];

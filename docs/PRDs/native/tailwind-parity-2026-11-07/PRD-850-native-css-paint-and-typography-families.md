@@ -50,8 +50,8 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Open
 
-Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **138 of
-262 units pass** (misc 116/182, paint 10/39, type 12/41).
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **139 of
+262 units pass** (misc 116/182, paint 10/39, type 13/41).
 
 - **The container staging rule earned 12 units** (`misc` 99 → 111): a unit whose emitted properties
   are container properties (`justify-content`, `justify-items`, `align-items`, `align-content`, the
@@ -68,7 +68,14 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
   `me-40`/`mbe-40` need a following sibling in block flow; `aspect-square` needs the probe's height
   to stop being fixed by the staging; `z-40` needs stacked siblings.
-- **`paint` (10/39) and `type` (12/41) are mostly real engine gaps**, not staging: `bg-clip-text`
+- **Text decoration is now measured rather than vacuous, and it is a real paint gap.** Giving the
+  decoration-only units an `underline` companion turned four cells from "does nothing" into 0.8431
+  (`underline-offset-8`), 0.9144 (`decoration-2`), 0.96 (`decoration-red-50`) and 0.8597
+  (`decoration-wavy`): the engine paints the line, its thickness, its style and its offset
+  differently from Chromium. `list-style-*` units now stage the probe as the `<li>` (and the list
+  carries no marker of its own), so `list-disc` passes and `list-inside` measures 0.6762 — the
+  engine's marker placement.
+- **`paint` (10/39) and `type` (13/41) are mostly real engine gaps**, not staging: `bg-clip-text`
   0.41, `bg-repeat`/`bg-origin-border`/`bg-fixed` 0.22, `bg-top` 0.22, `text-shadow-*`, and the
   `contain-*`/`will-change`/`color-scheme`/`scrollbar-*` family, which needs a painted consumer
   before it can discriminate at all.
