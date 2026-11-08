@@ -93,6 +93,7 @@ export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object
     "erosion",
     "deposition",
     "evaporation",
+    "rain",
   ],
   terrace: ["step", "softness", "strength", "offset"],
   materials: ["base", "rules", "reset"],
@@ -439,6 +440,7 @@ export function validateLayer(layer: Layer): void {
     "value",
     "waterWidth",
     "maxGrade",
+    "rain",
   ])
     if (params[key] !== undefined) num(params[key], key, 0, 1);
   if (params.spacing !== undefined) num(params.spacing, "spacing", 0.01, 2);
@@ -502,7 +504,7 @@ export function validateLayer(layer: Layer): void {
     }
   }
   if (params.method !== undefined)
-    enumeration(params.method, "method", ["thermal", "hydraulic", "fluvial"]);
+    enumeration(params.method, "method", ["thermal", "hydraulic", "fluvial", "gully", "scree"]);
   if (params.mode !== undefined) enumeration(params.mode, "mode", ["fbm", "ridged", "billow"]);
   if (params.shape !== undefined)
     enumeration(

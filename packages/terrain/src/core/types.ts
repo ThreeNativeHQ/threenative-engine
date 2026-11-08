@@ -177,10 +177,13 @@ export interface IStampParams extends IOperationBase {
 export interface IPasteParams extends Omit<IStampParams, "shape" | "roughness" | "amplitude"> {}
 
 export interface IErodeParams extends IBrushParams {
-  readonly method?: "thermal" | "hydraulic" | "fluvial";
-  /** Thermal passes, or fluvial time steps (default 40). */
+  readonly method?: "thermal" | "hydraulic" | "fluvial" | "gully" | "scree";
+  /** Erosion passes: thermal, scree, hydraulic, gully (default 200), or fluvial time steps (default 40). */
   readonly iterations?: number;
-  /** Maximum stable slope in degrees; `fluvial` also enforces it as its landslide threshold. */
+  /**
+   * Maximum stable slope in degrees. `fluvial` enforces it as its landslide threshold, `scree`
+   * slides anything steeper (default 35; upstream's scree angle defaults to 90, which is "off").
+   */
   readonly talus?: number;
   /** `fluvial`: rock uplift at the highest input point, m/yr (default 1e-3). Relief scales with uplift / erodibility. */
   readonly uplift?: number;
@@ -190,14 +193,18 @@ export interface IErodeParams extends IBrushParams {
   readonly timeStep?: number;
   /** `fluvial`: metres; rescales the eroded surface to this highest-minus-lowest. Omit to keep the natural relief. */
   readonly relief?: number;
+  /** `thermal`: share of the excess a pass moves (default 0.22). `scree`: the same, default 0.05. */
   readonly rate?: number;
   readonly droplets?: number;
   readonly maxSteps?: number;
   readonly inertia?: number;
+  /** `hydraulic`: sediment capacity (default 4). `gully`: transport capacity Kc (default 0.05). */
   readonly capacity?: number;
   readonly erosion?: number;
   readonly deposition?: number;
   readonly evaporation?: number;
+  /** `gully`: metres of rain per step (default 0.0005, upstream `rain`). */
+  readonly rain?: number;
 }
 
 export interface ITerraceParams extends IOperationBase {

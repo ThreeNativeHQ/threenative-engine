@@ -20,7 +20,7 @@ Owner, 2026-11-07: the mountains need to improve. The request does not name the 
 ### Phase 2 — shape and erosion
 
 - [x] Domain warp in the TS `fbm` (algorithm only, no new dependency), used by the landform presets in `packages/terrain/src/core/presets.ts`. proof: a determinism spec on the warped `fbm` — already shipped (checked 2026-11-08): `packages/terrain/src/core/operations.ts:368-375` warps each noise sample by two offset noises, every landform preset passes `warp` (`presets.ts:125-207`), and `terrain-consumer.spec.ts` "pins seeded noise" hashes a warped seeded evaluation: 1/1 pass.
-- [ ] The heightmap-level-generator scree and gully passes (MIT) ported to the CPU bake beside `fluvial.ts` and `erosion.ts`, with the bake time recorded before and after. proof: a spec per pass and the timed alpine bake
+- [x] The heightmap-level-generator scree and gully passes (MIT) ported to the CPU bake beside `fluvial.ts` and `erosion.ts`, with the bake time recorded before and after. proof: a spec per pass and the timed alpine bake — 2026-11-08: `erode` methods `gully` (virtual-pipe rain, flux/water/erode/carry/finish) and `scree` (thermal slide) in `packages/terrain/src/core/gully.ts` and `scree.ts`, from upstream `43a525473` (MIT notice in each header). `erosion-gully-scree.spec.ts` red (missing module) then 14/14; terrain 598/598, `tsc` 0. Alpine 513²: preset evaluate 1 432 ms; gully +7 509 ms at its 200-step default (+2 232 ms at 60), scree +1 929 ms. Alpine 60 gully steps: hollows 3 303 → 15 483. Opt-in only; no preset uses them until a judge passes.
 - [ ] The far mountain silhouettes can come from a real-world heightmap (PRD-854). proof: a cook with a survey backdrop
 
 ### Phase 3 — material and proof
