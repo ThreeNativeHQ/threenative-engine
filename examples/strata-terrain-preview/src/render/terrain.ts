@@ -943,12 +943,23 @@ export async function createGroundMaterial(
           : steep;
         // Talus at the feet of cliff bands: the same rock, finer and paler.
         const scree = collar ? collar.scree.mul(reliefWeight) : float(0);
-        // Bedding: warped strata about 30 m thick on the steep rock, each a cliff under a ledge,
-        // as the goal frame's faces break into bands (owner, 2026-11-04). The phase is antialiased by
-        // its own screen derivative, so a band thinner than a pixel greys out instead of crawling.
-        const bedding = positionWorld.y
-          .add(bakedFractalNoise(positionWorld.mul(0.004), 2).mul(45))
-          .div(30);
+        // Bedding: strata on the steep rock, each a cliff under a ledge, as the goal frame's faces
+        // break into bands (owner, 2026-11-04). Real beds dip about 20 degrees, thin and thicken, and
+        // break along the strike; level, evenly spaced, unbroken rings read as artificial contour
+        // lines (owner, 2026-11-07). The phase is antialiased by its own screen derivative, so a band
+        // thinner than a pixel greys out instead of crawling.
+        const dipped = positionWorld.y
+          .add(positionWorld.x.mul(0.3))
+          .sub(positionWorld.z.mul(0.18))
+          .add(bakedFractalNoise(positionWorld.mul(0.004), 2).mul(45));
+        const bedding = dipped
+          .add(
+            bakedFractalNoise(
+              vec3(positionWorld.x.mul(0.002), dipped.mul(0.02), positionWorld.z.mul(0.002)),
+              2,
+            ).mul(14),
+          )
+          .div(34);
         const phase = fract(bedding);
         const blur = fwidth(bedding).min(0.25);
         const ledge = smoothstep(float(0.8).sub(blur), float(0.88).add(blur), phase).mul(
@@ -957,11 +968,17 @@ export async function createGroundMaterial(
         const wall = smoothstep(float(0.08).sub(blur), float(0.2).add(blur), phase).mul(
           oneMinus(smoothstep(float(0.66).sub(blur), float(0.8).add(blur), phase)),
         );
+        // A bed runs a few hundred metres along the face and pinches out under scree and couloirs.
+        const runs = smoothstep(
+          -0.05,
+          0.3,
+          bakedFractalNoise(positionWorld.mul(vec3(0.006, 0.03, 0.006)), 2),
+        );
         // Not every face is bedded: kilometre patches carry bands, the rest stays massive rock.
         const bedded = collar
-          ? smoothstep(-0.15, 0.25, bakedFractalNoise(positionWorld.mul(0.0018), 2)).mul(
-              reliefWeight,
-            )
+          ? smoothstep(-0.15, 0.25, bakedFractalNoise(positionWorld.mul(0.0018), 2))
+              .mul(runs)
+              .mul(reliefWeight)
           : float(0);
         // Crag ribs that the prefiltered 10 m backdrop mesh cannot carry: 35 m across and 90 m down
         // the fall line, as couloirs and buttresses run. Their gradient tilts the normal and their
@@ -1012,6 +1029,12 @@ export async function createGroundMaterial(
                 )
               : vec3(1),
           );
+        // Runoff and lichen stain steep rock in streaks down the fall line, metres wide and tens long.
+        const streaks = smoothstep(
+          -0.35,
+          0.35,
+          bakedFractalNoise(positionWorld.mul(vec3(0.045, 0.006, 0.045)), 3),
+        );
         const rubble = triplanarAlbedo(layer("rock").diffuse, "rock", 1.2)
           .rgb.mul(vec3(0.66, 0.65, 0.62))
           .mul(mix(0.85, 1.1, bakedNoise(positionWorld.mul(0.08)).add(0.5)));
@@ -1045,7 +1068,7 @@ export async function createGroundMaterial(
             ),
           )
           // Ledges on the bedded faces hold snow the face itself sheds.
-          .max(snowline.mul(ledge).mul(bands).mul(0.9))
+          .max(snowline.mul(ledge).mul(bands).mul(runs).mul(0.55))
           // Gullies and hollows hold snow on steeper ground than open faces do.
           .max(
             collar
@@ -1057,7 +1080,9 @@ export async function createGroundMaterial(
           );
         const snow = triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
         // Each band is a darker wall under a paler ledge.
-        const banded = crag.mul(mix(float(1), mix(float(1.12), float(0.72), wall), bands));
+        const banded = crag
+          .mul(mix(float(1), mix(float(1.08), float(0.8), wall), bands))
+          .mul(mix(float(1), mix(float(0.78), float(1.04), streaks), face));
         const mountain = mix(
           mix(forest, mix(banded, rubble, scree), max(max(treeline, face), scree)),
           snow,

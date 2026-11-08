@@ -1,6 +1,6 @@
 # PRD-856: The mountains carry real silhouettes, erosion and rock
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — the level bedding stripes are gone from the forest backdrop (2026-11-08, PR #635). Shape, erosion and baked masks are open.
 **Priority:** P2 — the mountains need visible improvement; Phase 1 names the defects first.
 **Complexity:** 6 (MEDIUM-HIGH)
 **Depends on:** [PRD-854](PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) (real-world backdrop), [PRD-855](PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) (ground layers)
@@ -26,6 +26,7 @@ Owner, 2026-11-07: the mountains need to improve. The request does not name the 
 ### Phase 3 — material and proof
 
 - [ ] Rock on high slope or curvature, snow from slope and height, strata banding: the look lives in `render/`, the masks come from the bake. proof: the mountain frames in the judge set
+  Partial (2026-11-08, PR #635): the owner called the backdrop's level 30 m bedding stripes "artificial lines". `src/render/terrain.ts` now dips the beds about 20 degrees, varies their spacing, breaks them along the face, weakens ledge snow and adds fall-line runoff streaks. Fresh judge (owned engine, headed WebGPU, RTX 2080, 2 runs per arm): IMPROVEMENT; the stripes are gone. The judge's remaining defects, in rank order: soft clay-like faces with no crags or gullies, cloud-like snow blobs that ignore slope, and a fine grain that does not scale with distance. Masks still come from the shader, not the bake.
 - [ ] The edge and walk playtests stay green and the player still climbs the surveyed hills (`edgeOvershoot` ≥ 20). proof: the edge and walk playtests
 
 ## Acceptance Criteria
