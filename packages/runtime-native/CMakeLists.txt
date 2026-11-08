@@ -2846,6 +2846,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-timer-delivery-test)
     tn_register_contract_test(threenative-timer-engine-first-test)
     tn_register_contract_test(threenative-shim-bootstrap-test)
+    # The two extra modes the contract lane runs. `verify-native-contracts.mjs` lists three
+    # invocations for this target, and the coverage lane builds its execution list from the CTest
+    # inventory, so a missing registration reads as `CTest registered 1 invocation(s), expected 3`.
+    foreach(mode worker-rollback callback-retention)
+        add_test(NAME threenative-shim-bootstrap-test-${mode}
+            COMMAND $<TARGET_FILE:threenative-shim-bootstrap-test> --${mode})
+        set_tests_properties(threenative-shim-bootstrap-test-${mode}
+            PROPERTIES LABELS "native-contract")
+    endforeach()
     tn_register_contract_test(threenative-webgpu-wrapper-bag-test)
     tn_register_contract_test(threenative-image-decode-teardown-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
