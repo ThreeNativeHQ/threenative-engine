@@ -1319,6 +1319,100 @@ fn a_colour_filter_transforms_the_layer_it_wraps() {
 /// A gradient with `in oklab` interpolates its stops in Oklab, and peniko — this crate's gradient
 /// painter — interpolates in sRGB. Left alone the two agree at both ends and differ most in the middle,
 /// which is where every parity sample of a Tailwind gradient sits.
+/// Tailwind 4 masks a box with three layers intersected, and two of them come from `@property`
+/// registered variables whose *initial value* is an opaque gradient:
+///
+/// ```css
+/// mask-image: var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic);
+/// mask-composite: intersect;
+/// @property --tw-mask-radial { syntax: "*"; inherits: false; initial-value: linear-gradient(#fff, #fff) }
+/// ```
+///
+/// A registered property that is never set has to read as its declared initial value; if it reads as
+/// nothing, `var()` leaves the whole `mask-image` invalid and the box is painted unmasked.
+/// The same composition as Tailwind's `mask-t-to-40`, with the stops' *positions and colours* coming
+/// from `@property` registered variables whose initial values the engine must supply: the gradient is
+/// `linear-gradient(to top, black var(--from-position), transparent var(--to-position))` and only two
+/// of the four variables are set by a class.
+#[test]
+fn a_mask_gradient_whose_stops_come_from_registered_variables_paints() {
+    let mut ui = ui(
+        160,
+        80,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "@property --tw-mask-left{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-right{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-bottom{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-radial{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-conic{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-top{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-top-from-color{{syntax:\"*\";inherits:false;initial-value:black}} \n\
+                     @property --tw-mask-top-to-color{{syntax:\"*\";inherits:false;initial-value:transparent}} \n\
+                     @property --tw-mask-top-from-position{{syntax:\"*\";inherits:false;initial-value:0%}} \n\
+                     @property --tw-mask-top-to-position{{syntax:\"*\";inherits:false;initial-value:100%}} \n\
+                     {BASE} \n\
+                     @layer utilities {{ \n\
+                     #a{{width:120px;height:40px;margin:10px;background:#2563eb; \
+                     mask-image:var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic); \
+                     mask-composite:intersect; \
+                     --tw-mask-linear:var(--tw-mask-left), var(--tw-mask-right), var(--tw-mask-bottom), var(--tw-mask-top); \
+                     --tw-mask-top:linear-gradient(to top, var(--tw-mask-top-from-color) var(--tw-mask-top-from-position), var(--tw-mask-top-to-color) var(--tw-mask-top-to-position))}} \n\
+                     }}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    // What matters is that the mask *paints* with its stops taken from the registered variables: the
+    // mask fades, so the blue is stronger at one end of the box than at the other.
+    let low = rgb(&ui, 70, 44);
+    let high = rgb(&ui, 70, 16);
+    assert!(
+        low[2] > high[2] + 20,
+        "the mask fades across the box: {low:?} at one end, {high:?} at the other"
+    );
+}
+
+#[test]
+fn a_tailwind_three_layer_mask_composition_paints() {
+    let mut ui = ui(
+        160,
+        80,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "@property --tw-mask-radial{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-conic{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-left{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-right{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-bottom{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     @property --tw-mask-top{{syntax:\"*\";inherits:false;initial-value:linear-gradient(#fff,#fff)}} \n\
+                     {BASE} \n\
+                     #a{{width:120px;height:40px;margin:10px;background:#2563eb; \
+                     mask-image:var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic); \
+                     mask-composite:intersect; \
+                     --tw-mask-linear:var(--tw-mask-left), var(--tw-mask-right), var(--tw-mask-bottom), var(--tw-mask-top); \
+                     --tw-mask-top:linear-gradient(to top, transparent 0%, transparent 40%)}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    // The mask is transparent across the whole 40px box, so the box must not paint its blue anywhere.
+    let middle = rgb(&ui, 70, 30);
+    assert_eq!(middle, [24, 24, 27], "fully masked out, got {middle:?}");
+}
+
 #[test]
 fn a_gradient_named_oklab_interpolates_in_oklab() {
     let mut ui = ui(

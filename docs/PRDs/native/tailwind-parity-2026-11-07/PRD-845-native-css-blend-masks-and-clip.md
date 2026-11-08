@@ -57,8 +57,18 @@ mask-composite: intersect;
 ```
 
 — a **three-layer** mask intersected. A single-layer mask paints (the `mask-*` cells at 0.99+), so what is
-missing is multi-image `mask-image` with `mask-composite`. That is a feature in the mask paint path, not a
-staging defect, and it is why the family's remaining cells sit between 0.78 and 0.98.
+missing looked like multi-image `mask-image` with `mask-composite`.
+
+**It is not that feature.** Three crate tests now build the *exact* Tailwind shape — six layers
+(`--tw-mask-linear` expands to four more), `mask-composite: intersect`, the stops' colours and positions
+taken from `@property` registered variables, inside `@layer utilities` — and the engine paints a correct
+fade in every one. So the mask paint path is complete for what Tailwind emits, and the panel's flat blue
+comes from something in that panel's stylesheet rather than from the feature. The next experiment is to
+bisect the panel sheet against the passing test: the two differ only in the rest of the 100-odd rules and
+in the probe's staging, and the cell is worth six more.
+
+The three tests stay: they are what turned "multi-layer masks are unimplemented" into a statement that
+was false, and they pin the shape for whoever bisects the sheet.
 
 ## Open: the eight colour-mask cells differ by a mask *curve*, measured (2026-11-07)
 
