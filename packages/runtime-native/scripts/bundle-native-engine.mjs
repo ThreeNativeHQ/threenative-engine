@@ -27,8 +27,26 @@ const packageImports = { name: "native-player-packages", setup(builder) {
   });
 } };
 
-function rejectUpstream(metafile) {
-  const upstream = Object.keys(metafile.inputs).filter((file) => /(?:^|\/)node_modules\/three\//.test(file));
+/**
+ * The source file behind one `@threenative/core/<subpath>` import.
+ *
+ * The native player bundles source, so the subpath maps through the package's own `exports`: the
+ * published target `./dist/render-environment.js` is written from `src/render-environment.ts`.
+ * Reading the last path segment as the file name is what broke every kit that imports
+ * `@threenative/core/render/environment` after PRD-833 moved the module: it asked for
+ * `src/environment.ts`, which does not exist, and the desktop build died on that read.
+ */
+export function coreSourcePath(specifier, root = core) {
+  const subpath = specifier.replace(/^@threenative\/core\//u, "");
+  const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+  const exported = manifest.exports?.[`./${subpath}`];
+  const target = typeof exported === "string" ? exported : exported?.import;
+  if (typeof target !== "string")
+    throw new Error(`TN_NATIVE_ENGINE_CORE_SUBPATH: @threenative/core/${subpath} is not exported.`);
+  return resolve(root, "src", target.replace(/^\.\/dist\//u, "").replace(/\.js$/u, ".ts"));
+}
+
+function rejectUpstream(metafile) {  const upstream = Object.keys(metafile.inputs).filter((file) => /(?:^|\/)node_modules\/three\//.test(file));
   if (upstream.length) throw new Error(`TN_NATIVE_ENGINE_UPSTREAM: ${upstream.join(", ")}`);
 }
 
@@ -221,7 +239,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
       builder.onResolve({ filter: /^@threenative\/core$/ }, () => ({ path: "core", namespace: "native-core" }));
       builder.onLoad({ filter: /.*/, namespace: "native-core" }, () => ({ contents: coreExports, resolveDir: repo }));
       builder.onResolve({ filter: /^@threenative\/core\// }, (args) => ({
-        path: resolve(core, "src", `${args.path.split("/").at(-1)}.ts`),
+        path: coreSourcePath(args.path),
       }));
       builder.onResolve({ filter: /^(three(?:\/|$)|three-mesh-bvh(?:\/|$))/ }, async (args) => {
         const source = args.namespace === "native-game" ? code : await readFile(args.importer, "utf8");
