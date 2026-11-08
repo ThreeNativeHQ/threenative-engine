@@ -32,9 +32,9 @@ inventory and the meter and judge contract.
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: the scene has a discriminating cell for each unit, and each unit has one owner PRD. proof: `pnpm --filter threenative-native-css-hud parity:tailwind --check`
-  Evidence: 507 units (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the discrimination guard is red on 185 cells (see `## Open`), and 31 variant cells name a pending exemption owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions). Two of the 11 cells that stopped being vacuous this round were the engine's, not the scene's: a client rect that ignored `transform` and an animation that held the previous iteration at its boundary (blitz-dom hunks 15 and 16).
+  Evidence: 507 units (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the discrimination guard is red on 178 cells (see `## Open`), and 31 variant cells name a pending exemption owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions). Two of the 11 cells that stopped being vacuous this round were the engine's, not the scene's: a client rect that ignored `transform` and an animation that held the previous iteration at its boundary (blitz-dom hunks 15 and 16).
 - [ ] AC-2 [local]: the meter prints a baseline score from the crate subject and from the host subject, and `--ratchet` fails below the committed floor. proof: `parity:tailwind` and `parity:tailwind --host`
-  Evidence: the crate subject prints `tailwind-parity: 222/503 (44.1 %)  [185 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]`, and `--floor` writes the ratchet baseline from the same run. The host subject exists (`corpus/host.mjs`): each selected panel becomes its own generated project through `corpus/project.mjs`, is built and packaged against the checkout's `TN_ENABLE_CSS_UI=1` host, photographed by `packages/playtest --target desktop --executable`, and scored by the same bars against the same Chromium render — `--host --family PRD-848 --group logical` scores 18/18. NOT met, in two named parts rather than one missing flag: (a) the host's input seam has no `advance`, so a motion panel is refused by name instead of being compared at rest, and (b) the host reports pixels, not per-node boxes, so the geometry bar is `geometryMeasured: false` and only the pixel bar scores — a host cell is a weaker claim than a crate cell and the report says so. Panels carrying a device descriptor are refused too: the host has no `colorScheme`/`reducedMotion` seam yet.
+  Evidence: the crate subject prints `tailwind-parity: 227/503 (45.1 %)  [178 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]`, and `--floor` writes the ratchet baseline from the same run. The host subject exists (`corpus/host.mjs`): each selected panel becomes its own generated project through `corpus/project.mjs`, is built and packaged against the checkout's `TN_ENABLE_CSS_UI=1` host, photographed by `packages/playtest --target desktop --executable`, and scored by the same bars against the same Chromium render — `--host --family PRD-848 --group logical` scores 18/18. NOT met, in two named parts rather than one missing flag: (a) the host's input seam has no `advance`, so a motion panel is refused by name instead of being compared at rest, and (b) the host reports pixels, not per-node boxes, so the geometry bar is `geometryMeasured: false` and only the pixel bar scores — a host cell is a weaker claim than a crate cell and the report says so. Panels carrying a device descriptor are refused too: the host has no `colorScheme`/`reducedMotion` seam yet.
 - [ ] AC-3 [local]: the starter kit builds for `ui.renderer: "native-css"` with zero findings. proof: `threenative build --target desktop` on a scaffolded starter with `ui.renderer: "native-css"`, then an empty `.threenative/build/native-css-compat.json`
   Evidence: NOT run. The source-scan fix is in all 14 Tailwind kits and a Tailwind oxide scan shows the starter's incidental `.blur`, `.filter` and `.table` rules gone, but the scaffolded build itself was not executed.
 
@@ -54,7 +54,7 @@ inventory and the meter and judge contract.
 - [x] The generator reports one unit per (root, emitted property set, at-rule) plus one per variant, each with an owner PRD. proof: `parity:tailwind --check`
   Evidence: `507 units (419 utility, 88 variant), 0 unowned`, with a descriptor block (`@property`) contributing no properties (see Decisions).
 - [ ] The discrimination guard fails a cell that cannot tell a correct engine from one that dropped the declaration, and every unit has a cell that can. proof: `parity:tailwind --check`
-  Evidence: the guard works — it caught a scene with 439 identical-crop cells and the staging fixes brought the non-discriminating count to 185 — but it is still red; `## Open` names what is left. On a *motion* panel the guard now judges the cell over the clock rather than per sample: `animate-ping` rests at the probe's own look at 0 % by construction, so a per-sample test failed every keyframe animation that starts from the element's own style.
+  Evidence: the guard works — it caught a scene with 439 identical-crop cells and the staging fixes brought the non-discriminating count to 178 — but it is still red; `## Open` names what is left. On a *motion* panel the guard now judges the cell over the clock rather than per sample: `animate-ping` rests at the probe's own look at 0 % by construction, so a per-sample test failed every keyframe animation that starts from the element's own style.
 
 #### Phase 2: Meter, ratchet and judge sheets
 **Status:** PARTIAL
@@ -65,7 +65,7 @@ descriptor (`dark`, `touch`, reduced motion, viewport) and both subjects apply i
 context options in Chromium, `env.json` in the engine. There is no `--env <input|all>` CLI switch.
 
 - [x] The crate subject prints the score and writes `report.json` by family, and the baseline goes in the batch README. proof: `parity:tailwind`
-  Evidence: `tailwind-parity: 222/503 (44.1 %)  [185 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]`, and `## Meter status` in the batch README. The score counts evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four permanently inactive units leave the denominator.
+  Evidence: `tailwind-parity: 227/503 (45.1 %)  [178 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]`, and `## Meter status` in the batch README. The score counts evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four permanently inactive units leave the denominator.
 - [x] The host subject runs the same panels on the CSS-enabled desktop host and prints its own N. proof: `parity:tailwind --host` (needs `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build`)
   Evidence: `corpus/host.mjs`, and `--host --family PRD-848 --group logical` → `18/18 (100 %)`, which is the
   host painting those panels as Chromium does. Four things it refuses by name rather than scoring on a weaker
@@ -104,7 +104,7 @@ counts only as evidence: a pending exemption counts as a failure, a non-discrimi
 and only the four permanently inactive units leave the denominator.
 
 ```
-tailwind-parity: 222/503 (44.1 %)  [185 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 227/503 (45.1 %)  [178 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
 | Family | pass | non-discriminating |
@@ -122,7 +122,7 @@ tailwind-parity: 222/503 (44.1 %)  [185 do not discriminate, 29 exempt, 4 perman
 | `PRD-849/media` | 13/22 | 1 |
 | `PRD-849/pseudo` | 2/8 | 2 |
 | `PRD-849/selectors` | 10/32 | 19 |
-| `PRD-850/misc` | 116/182 | 55 |
+| `PRD-850/misc` | 120/182 | 50 |
 | `PRD-850/paint` | 10/39 | 23 |
 | `PRD-850/type` | 12/41 | 16 |
 | `PRD-851/paint` | 0/5 | 5 |
@@ -133,7 +133,7 @@ tailwind-parity: 222/503 (44.1 %)  [185 do not discriminate, 29 exempt, 4 perman
   pixels matched (`animate-ping` at 250/500/750 ms: 0.999, 0.9959, 1.0 against a 0.99 bar). The
   vendored hunk is the composition paint and hit testing already do; it took `misc` from 85 to 95
   passing units on its own.
-- **The dominant gap (185 of 503 scored cells) is scene staging, not engine work.** A cell
+- **The dominant gap (178 of 503 scored cells) is scene staging, not engine work.** A cell
   discriminates when dropping its unit class takes the measured region below its own bar or moves an
   element's box by more than 1 px. Staging already in place: a contrast default in Tailwind's `base`
   layer, companion utilities for custom-property-only units, a positioned probe, cell-scoped rules, a

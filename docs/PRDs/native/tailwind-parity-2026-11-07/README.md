@@ -53,13 +53,18 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 222/503 (44.1 %)  [185 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 227/503 (45.1 %)  [178 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 185 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 178 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The 5 units after 222 are three staging rules: a gradient needs stops (its `background-image` reads
+`var(--tw-gradient-stops)`, which only `from-*`/`via-*`/`to-*` define), `place-*` acts on children like
+the longhands those shorthands stand for, and the border staging covers style and width units as well
+as colour ones.
 
 The 16 units after 206 are one staging key: `cellTree` looked its staging up by the cell's *class*
 while the table is keyed by the variant's *name*, so every `attrs`/`wrap`/`inner`/`before`/`after` in
