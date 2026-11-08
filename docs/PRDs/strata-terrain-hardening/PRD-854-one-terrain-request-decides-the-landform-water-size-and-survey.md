@@ -1,6 +1,6 @@
 # PRD-854: One terrain request decides the landform, water, size and a real survey
 
-**Status:** PARTIAL — Phase 1 landed (2026-11-07). Phases 2 and 3 are open.
+**Status:** PARTIAL — Phases 1 to 3 landed (2026-11-07). The two acceptance boxes are open.
 **Priority:** P1 — `terrain_generate` drops every request word except the biome word, so "a forest with mountains and a river" cooks a flat default forest (Phase 1).
 **Complexity:** 5 (MEDIUM)
 **Depends on:** [PRD-762](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (same MCP tool, path must start first)
@@ -25,14 +25,14 @@ All work is bake time. No network call at runtime.
 
 ### Phase 2 — the tool picks the ground source
 
-- [ ] A curated survey table: one or more real locations per landform, each with lat, lon, zoom and attribution. The cook picks a row from the landform. proof: a spec asserts every landform has a row and every row an attribution
-- [ ] The cook fetches AWS terrarium tiles, caches them on disk, decodes `height = R·256 + G + B/256 − 32768` and feeds the `heightmap` layer. The kit README gets the attribution. proof: a spec on a checked-in tile fixture, plus one real cook from "alpine mountains"
-- [ ] Without network the cook fails closed and names the missing tile, unless `ground: "procedural"`. No silent switch to procedural. proof: a spec with the fetch stubbed to fail
+- [x] A curated survey table: one or more real locations per landform, each with lat, lon, zoom and attribution. The cook picks a row from the landform. proof: a spec asserts every landform has a row and every row an attribution — 2026-11-07: `packages/terrain/src/core/surveys.ts`, one real place per landform (Matterhorn, Rocky Mountain NP, Driftless WI, Monument Valley, Étretat, Trail Ridge, Mount Fuji), each with its joerd source attribution and a measured range; `terrain-survey.spec.ts` asserts every row and attribution.
+- [x] The cook fetches AWS terrarium tiles, caches them on disk, decodes `height = R·256 + G + B/256 − 32768` and feeds the `heightmap` layer. The kit README gets the attribution. proof: a spec on a checked-in tile fixture, plus one real cook from "alpine mountains" — 2026-11-07: `packages/terrain/src/mcp/survey.ts` (Node zlib decoder, no new dependency), cache in `TN_TERRAIN_TILE_CACHE`; fixture Mount Fuji z12 tile; a real `{"kit":"forest","request":"alpine mountains"}` cook fetched 4 Matterhorn tiles, 6.1 s, and wrote the EU-DEM attribution into the kit README. Look not judged yet (PRD-762 Phase 3 frames).
+- [x] Without network the cook fails closed and names the missing tile, unless `ground: "procedural"`. No silent switch to procedural. proof: a spec with the fetch stubbed to fail — 2026-11-07: the spec stubs `fetch` to fail; the cook throws naming the tile URL and `ground: "procedural"`.
 
 ### Phase 3 — named overrides
 
-- [ ] `ground: "procedural" | { heightmap: <16-bit PNG or .r16 path> } | { location: { lat, lon } }` overrides the automatic choice, and the result names the override. proof: a spec per variant
-- [ ] A PNG over 4 097 px or an 8-bit file throws and names the field. proof: a spec per refusal
+- [x] `ground: "procedural" | { heightmap: <16-bit PNG or .r16 path> } | { location: { lat, lon } }` overrides the automatic choice, and the result names the override. proof: a spec per variant — 2026-11-07: `terrain-survey.spec.ts` covers each variant and `decided.ground`.
+- [x] A PNG over 4 097 px or an 8-bit file throws and names the field. proof: a spec per refusal — 2026-11-07: both refusals name `ground.heightmap`; a `.r16` without `min`/`max` and a PNG without an embedded range also throw. Terrain specs 591/591, `tsc` 0.
 
 ## Acceptance Criteria
 

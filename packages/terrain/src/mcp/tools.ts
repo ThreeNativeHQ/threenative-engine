@@ -13,6 +13,8 @@ import {
   SIZE_WORD_ROWS,
   WATER_WORD_ROWS,
 } from "../core/request-words.js";
+import { locationSurvey } from "../core/surveys.js";
+import type { IGroundChoice, IGroundRequest } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
 import type { LayerPatch, PatchCommand } from "../core/terrain.js";
 import type { ITerrainDocument, Layer } from "../core/types.js";
@@ -29,6 +31,8 @@ export interface IGenerateInput {
   seed?: number;
   /** Replaces the water bodies the biome declares: what the world floods. */
   water?: readonly IBiomeWaterBody[];
+  /** Where the ground comes from; a landform preset's own survey unless this names another source. */
+  ground?: IGroundRequest;
   out?: string;
 }
 
@@ -47,6 +51,7 @@ export interface IGenerateDecided {
   readonly landform: IChoice<LandformKind | null>;
   readonly water: IChoice<readonly IBiomeWaterBody[] | null>;
   readonly sizeMeters: IChoice<number | null>;
+  readonly ground: IChoice<IGroundChoice>;
 }
 
 /** A parsed request: the cook's own input, and the record of what its words and arguments decided. */
@@ -59,11 +64,49 @@ export interface IGenerateRequest {
 
 const PATCH_OPS: readonly string[] = ["upsert", "update", "remove", "move", "toggle"];
 
+/**
+ * The `ground` argument, shared by both cook tools: the same three sources, the same closed shape.
+ * A landform preset is grounded on its kind's survey unless this names another source.
+ */
+const GROUND_SCHEMA = {
+  description:
+    'Where the ground comes from. "procedural" keeps the landform preset\'s own noise; { heightmap } names a 16-bit grayscale PNG or a square .r16 file (min and max in metres, needed when the file carries no range); { location } cuts a survey at that latitude and longitude. Omitted, a landform preset is grounded on the real survey its kind names, and the result reports it as `ground` with its attribution.',
+  anyOf: [
+    { type: "string", enum: ["procedural"] },
+    {
+      type: "object",
+      properties: {
+        heightmap: {
+          type: "string",
+          description: "Path to a .png or .r16 height file, relative to the project.",
+        },
+        min: { type: "number", description: "Lowest elevation in the file, metres." },
+        max: { type: "number", description: "Highest elevation in the file, metres." },
+      },
+      required: ["heightmap"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        location: {
+          type: "object",
+          properties: { lat: { type: "number" }, lon: { type: "number" } },
+          required: ["lat", "lon"],
+          additionalProperties: false,
+        },
+      },
+      required: ["location"],
+      additionalProperties: false,
+    },
+  ],
+} as const;
+
 export const TERRAIN_TOOLS = [
   {
     name: "terrain_generate",
     description:
-      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. A landform preset's ground is a real survey of the place its kind names, fetched from the AWS terrain tiles, resampled onto the recipe's grid, cooked with the attribution its source requires, and reported as `ground`; the preset's erosion and grain still run on top of it. `ground` replaces that choice: \"procedural\" cooks the preset's own noise, { heightmap } reads a 16-bit grayscale PNG or a square .r16 grid, { location } cuts a survey at a latitude and longitude. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
     inputSchema: {
       type: "object",
       properties: {
@@ -88,6 +131,7 @@ export const TERRAIN_TOOLS = [
           description:
             "IBiomeWaterBody rows that replace the biome's declared water: river (width), lake (radius), ocean (level).",
         },
+        ground: GROUND_SCHEMA,
         out: {
           type: "string",
           description:
@@ -101,7 +145,7 @@ export const TERRAIN_TOOLS = [
   {
     name: "terrain_biome_new",
     description:
-      "Make a new biome from a shipped one and cook it: copies the base biome's biome.data.json into <assets.source>/biomes/<name>/, applies the overrides, validates the file with validateBiome, then cooks it with the base kit's surface and assets and the biome's own landform preset. One call writes only under <assets.source>/biomes/<name>/, its cooked world included. Returns the same cook result as terrain_generate plus the biome file path and the biome's resolved `bands`. No code changes anywhere: the biome is data.",
+      "Make a new biome from a shipped one and cook it: copies the base biome's biome.data.json into <assets.source>/biomes/<name>/, applies the overrides, validates the file with validateBiome, then cooks it with the base kit's surface and assets and the biome's own landform preset. One call writes only under <assets.source>/biomes/<name>/, its cooked world included. Its ground comes from the biome's landform, the real survey that kind names unless `ground` names another source. Returns the same cook result as terrain_generate plus the biome file path and the biome's resolved `bands`. No code changes anywhere: the biome is data.",
     inputSchema: {
       type: "object",
       properties: {
@@ -116,6 +160,7 @@ export const TERRAIN_TOOLS = [
           description:
             "IBiomeSpec fields to change on the base file (landform, foliage, grass, layers, water, spawn, species, aliases, bake). An unknown field fails.",
         },
+        ground: GROUND_SCHEMA,
         out: {
           type: "string",
           description:
@@ -179,15 +224,18 @@ const GENERATE_FIELDS = [
   "sizeMeters",
   "seed",
   "water",
+  "ground",
   "out",
 ];
-const BIOME_NEW_FIELDS = ["from", "name", "overrides", "out"];
+const BIOME_NEW_FIELDS = ["from", "name", "overrides", "ground", "out"];
 
 /** A new biome's folder name, and the look it will resolve under the game it is baked for. */
 export interface IBiomeNewInput {
   from: TerrainKit;
   name: string;
   overrides?: Record<string, unknown>;
+  /** The ground the cooked world starts from, as on `terrain_generate`. */
+  ground?: IGroundRequest;
   out?: string;
 }
 
@@ -241,6 +289,56 @@ function parseWater(water: unknown): readonly IBiomeWaterBody[] | undefined {
     throw new TypeError("terrain_generate: water must be an array of water body objects.");
   }
   return water as readonly IBiomeWaterBody[];
+}
+
+/**
+ * The `ground` argument: "procedural", a heightmap file, or a latitude and longitude. Closed to those
+ * three forms, so a misspelt source fails here instead of cooking the default it did not ask for.
+ */
+function parseGround(value: unknown, tool: string): IGroundRequest | undefined {
+  if (value === undefined) return undefined;
+  if (value === "procedural") return "procedural";
+  const forms = `${tool}: ground must be "procedural", { heightmap } or { location }.`;
+  if (!isRecord(value)) throw new TypeError(forms);
+  for (const key of Object.keys(value)) {
+    if (!["heightmap", "location", "min", "max"].includes(key)) {
+      throw new TypeError(`${tool}: ground field '${key}' is not a ground source.`);
+    }
+  }
+  const { heightmap, location, min, max } = value;
+  if (heightmap !== undefined) {
+    if (typeof heightmap !== "string" || !/\.(png|r16)$/iu.test(heightmap)) {
+      throw new TypeError(`${tool}: ground.heightmap must name a .png or .r16 file.`);
+    }
+    if ((min === undefined) !== (max === undefined)) {
+      throw new TypeError(`${tool}: ground.heightmap needs min and max together, in metres.`);
+    }
+    if (min !== undefined && max !== undefined) {
+      if (
+        typeof min !== "number" ||
+        typeof max !== "number" ||
+        !Number.isFinite(min) ||
+        !Number.isFinite(max)
+      )
+        throw new TypeError(`${tool}: ground.heightmap min and max must be finite metres.`);
+      if (max <= min) throw new TypeError(`${tool}: ground.heightmap max must exceed min.`);
+      return { heightmap, min, max };
+    }
+    return { heightmap };
+  }
+  if (location !== undefined) {
+    if (!isRecord(location) || Object.keys(location).some((key) => !["lat", "lon"].includes(key))) {
+      throw new TypeError(`${tool}: ground.location must be { lat, lon }.`);
+    }
+    const { lat, lon } = location;
+    if (typeof lat !== "number" || typeof lon !== "number") {
+      throw new TypeError(`${tool}: ground.location lat and lon must be numbers.`);
+    }
+    // The row a bare coordinate builds is validated here too, so a bad coordinate never reaches a fetch.
+    locationSurvey(lat, lon);
+    return { location: { lat, lon } };
+  }
+  throw new TypeError(forms);
 }
 
 /**
@@ -352,6 +450,19 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
     parsed.sizeMeters = Math.round(own.sizeMeters * sizeWord.row);
     size = { value: parsed.sizeMeters, source: { word: sizeWord.word } };
   }
+  // The ground a preset cooks, unless the request names another source: a preset is grounded on its
+  // kind's survey, and a starter keeps the crop it authored (which is a survey of its own). The kind
+  // is the cook's own rule, not the word that named it: a word naming the biome's authored landform
+  // leaves the starter's recipe alone, so its ground is the starter's crop, not a fetched survey.
+  const groundArgument = parseGround(args.ground, "terrain_generate");
+  const presetKind = parsed.landform ?? (spec === undefined ? undefined : spec.landform);
+  let ground: IChoice<IGroundChoice>;
+  if (groundArgument !== undefined) {
+    parsed.ground = groundArgument;
+    ground = { value: groundArgument, source: "argument" };
+  } else {
+    ground = { value: presetKind === undefined ? "starter" : "survey", source: "default" };
+  }
   if (seed !== undefined) {
     if (typeof seed !== "number" || !Number.isSafeInteger(seed)) {
       throw new TypeError("terrain_generate: seed must be a safe integer.");
@@ -369,6 +480,7 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
       landform,
       water,
       sizeMeters: size,
+      ground,
     },
     // What is left is what the tool could not act on: a retry names a word, not a guess.
     unused: [...new Set(words)].filter(
@@ -404,6 +516,8 @@ export function parseBiomeNewInput(input: unknown): IBiomeNewInput {
     throw new TypeError("terrain_biome_new: overrides must be an object.");
   const parsed: IBiomeNewInput = { from: from as TerrainKit, name };
   if (overrides !== undefined) parsed.overrides = { ...overrides };
+  const ground = parseGround(args.ground, "terrain_biome_new");
+  if (ground !== undefined) parsed.ground = ground;
   if (args.out !== undefined) parsed.out = relativeDirectory(args.out);
   return parsed;
 }

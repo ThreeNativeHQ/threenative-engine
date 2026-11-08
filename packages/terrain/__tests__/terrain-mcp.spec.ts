@@ -15,6 +15,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { decodeRAW16 } from "../src/core/io.js";
 import type { LandformKind } from "../src/core/presets.js";
 import { BIOME_OWN } from "../src/core/request-words.js";
+import type { IGroundRequest } from "../src/core/surveys.js";
 import type { ITerrainDocument } from "../src/core/types.js";
 import { IsolatedKillError, childExecArgv, runIsolated } from "../src/mcp/child.js";
 import { cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
@@ -976,6 +977,7 @@ describe("terrain_generate overrides", () => {
     landform?: LandformKind;
     seed?: number;
     sizeMeters?: number;
+    ground?: IGroundRequest;
   }) {
     const project = await realpath(await makeTempDir("tn-terrain-overrides-"));
     await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
@@ -1011,7 +1013,13 @@ describe("terrain_generate overrides", () => {
   }, 120_000);
 
   it("cooks a landform preset the five starters do not ship", async () => {
-    const { recipe, result, remove } = await cook({ kit: "forest", landform: "rollingHills" });
+    // PRD-854 phase 2: a preset is grounded on a real survey by default, which would need the
+    // network; this case proves the preset's own chain, so it asks for the procedural ground.
+    const { recipe, result, remove } = await cook({
+      kit: "forest",
+      landform: "rollingHills",
+      ground: "procedural",
+    });
     try {
       // The preset's own chain, not the starter's heightmap crop.
       expect(recipe.layers.some((layer: { type: string }) => layer.type === "heightmap")).toBe(
@@ -1104,7 +1112,11 @@ describe("terrain_generate biome cooks", () => {
       sizeMeters: 256,
       water: [{ kind: "ocean", level: 3 }],
     });
-    const { recipe, result, remove } = await cook({ kit: "forest", spec });
+    const { recipe, result, remove } = await cook({
+      kit: "forest",
+      spec,
+      ground: "procedural",
+    });
     try {
       expect(result.biome).toBe("savanna");
       // A preset carries no river or lake layer and a spec's rows are its declaration, so this
@@ -1290,6 +1302,8 @@ describe("terrain_generate request words", () => {
       landform: { value: "rollingHills", source: "argument" },
       water: { value: water, source: "argument" },
       sizeMeters: { value: 300, source: "argument" },
+      // PRD-854 phase 2: the argument's landform is grounded on its kind's real survey.
+      ground: { value: "survey", source: "default" },
     });
     // A word that named a row is spent even when an argument overruled it, so it is not unused.
     expect(unused).toEqual([]);
@@ -1313,6 +1327,7 @@ describe("terrain_generate request words", () => {
       landform: { value: "alpine", source: { word: "mountains" } },
       water: { value: [{ kind: "river", width: 5.32 }], source: { word: "river" } },
       sizeMeters: { value: 1024, source: { word: "huge" } },
+      ground: { value: "survey", source: "default" },
     });
     // "create", "with", "and", "a" are scaffolding; only the words that named nothing are listed.
     expect(unused).toEqual(["floating", "castles"]);
@@ -1325,6 +1340,8 @@ describe("terrain_generate request words", () => {
       landform: { value: null, source: "default" },
       water: { value: null, source: "default" },
       sizeMeters: { value: null, source: "default" },
+      // No landform preset, so the ground is the crop the starter authored, not a fetched survey.
+      ground: { value: "starter", source: "default" },
     });
     expect(unused).toEqual([]);
   });
@@ -1361,7 +1378,11 @@ describe("terrain_generate request words", () => {
         request: "create a huge forest with rolling hills",
       });
       const out = join(project, "assets", "worlds", "world");
-      const result = JSON.parse(await cookKit({ ...input, out, projectRoot: project }));
+      // PRD-854 phase 2: the words' landform would ground itself on a real survey, which needs the
+      // network; this case is about the words reaching the recipe, so it cooks procedural ground.
+      const result = JSON.parse(
+        await cookKit({ ...input, ground: "procedural", out, projectRoot: project }),
+      );
       const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
       const manifest = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
       // The words reached the recipe the cook evaluates, not a field beside it.
@@ -1423,7 +1444,11 @@ describe("every landform under every biome", () => {
           'export default { assets: { source: "assets" } };',
         );
         const out = join(project, "assets", "worlds", `${kit}-${landform}`);
-        const result = JSON.parse(await cookKit({ kit, landform, out, projectRoot: project }));
+        // PRD-854 phase 2: this matrix proves the preset's own chain under each kit, so it asks
+        // for the procedural ground rather than the survey a preset is grounded on by default.
+        const result = JSON.parse(
+          await cookKit({ kit, landform, ground: "procedural", out, projectRoot: project }),
+        );
         const manifest = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
         expect(result.biome).toBe(kit);
         expect(result.triangles).toBeGreaterThan(0);
@@ -1501,6 +1526,8 @@ describe("terrain_biome_new", () => {
         from: "forest",
         name: "savanna",
         overrides: { landform: "rollingHills", seed: 11 },
+        // PRD-854 phase 2: the retry below cooks the landform, and a real survey needs the network.
+        ground: "procedural",
       });
       expect(failed.result?.isError).toBe(true);
       expect(failed.result?.content?.[0]?.text).not.toMatch(/already exists/);
@@ -1515,6 +1542,7 @@ describe("terrain_biome_new", () => {
         from: "forest",
         name: "savanna",
         overrides: { landform: "rollingHills", seed: 11 },
+        ground: "procedural",
       });
       expect(retry.result?.isError, retry.result?.content?.[0]?.text).toBe(false);
     } finally {
@@ -1561,6 +1589,9 @@ describe("terrain_biome_new", () => {
         from: "forest",
         name: "savanna",
         overrides,
+        // PRD-854 phase 2: the biome's landform is grounded on a real survey by default; this case
+        // measures the cook of the preset's own chain, so it asks for procedural ground.
+        ground: "procedural",
       });
       const wall = Math.round(performance.now() - started);
       const text = response.result?.content?.[0]?.text;

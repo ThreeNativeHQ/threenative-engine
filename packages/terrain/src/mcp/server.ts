@@ -106,7 +106,15 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
       let text: string;
       try {
         text = await cookInChild(
-          { assetSource, biome: input.name, kit: input.from, out, projectRoot, spec },
+          {
+            assetSource,
+            biome: input.name,
+            kit: input.from,
+            out,
+            projectRoot,
+            spec,
+            ground: input.ground,
+          },
           out,
         );
       } catch (error) {

@@ -1,18 +1,21 @@
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type IBakeBiomeOptions, bakeBiome, foliageScatterRules } from "../core/bake-biome.js";
 import { type IBiomeSpec, type IBiomeWaterBody, validateBiome } from "../core/biome.js";
-import { decodeRAW16 } from "../core/io.js";
+import { decodeHeightPNG, decodeRAW16 } from "../core/io.js";
 import { finalizeState } from "../core/operations.js";
 import { applyPlacementOverrides } from "../core/placements.js";
-import { landform } from "../core/presets.js";
+import { LANDFORMS, landform } from "../core/presets.js";
 import type { LandformKind } from "../core/presets.js";
+import { SURVEYS, locationSurvey } from "../core/surveys.js";
+import type { IGroundDecision, IGroundRequest } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
-import type { ITerrainState } from "../core/types.js";
+import type { ITerrainState, Layer } from "../core/types.js";
 import { starterAssetsDir } from "../kit-assets.js";
 import { measureGlb } from "./glb-stats.js";
+import { surveyHeights } from "./survey.js";
 import { TERRAIN_KITS, resolveAssetSource } from "./tools.js";
 
 /** One cook request, passed as the child's only argument. The parent validates every field first. */
@@ -32,6 +35,8 @@ export interface ICookRequest {
   biome?: string;
   /** Water bodies that replace the biome's declared ones, `IBiomeWaterBody` rows. */
   water?: readonly IBiomeWaterBody[];
+  /** The ground the recipe starts from; omitted, a landform preset is grounded on its kind's survey. */
+  ground?: IGroundRequest;
 }
 
 export interface IBounds {
@@ -278,6 +283,155 @@ function scatterFoliage(
   });
 }
 
+/** One decoded ground grid in metres: a survey row, or the caller's own heightmap. */
+interface IGroundGrid {
+  readonly width: number;
+  readonly height: number;
+  readonly values: ArrayLike<number>;
+}
+
+/**
+ * A caller's own ground. A 16-bit grayscale PNG written by `encodeHeightPNG` carries its elevation
+ * range in the file; a `.r16` grid carries none, so its range must be named. Both fail closed and
+ * name `ground.heightmap`: a wrongly scaled ground is a silently wrong world, not a small loss.
+ */
+async function readGroundHeightmap(
+  projectRoot: string,
+  asked: { readonly heightmap: string; readonly min?: number; readonly max?: number },
+): Promise<IGroundGrid> {
+  const file = isAbsolute(asked.heightmap)
+    ? asked.heightmap
+    : resolve(projectRoot, asked.heightmap);
+  const bytes = await readFile(file).catch(() => {
+    throw new Error(`terrain_generate: ground.heightmap '${asked.heightmap}' cannot be read.`);
+  });
+  const range =
+    asked.min === undefined || asked.max === undefined
+      ? undefined
+      : { min: asked.min, max: asked.max };
+  try {
+    if (file.toLowerCase().endsWith(".r16")) {
+      const side = Math.sqrt(bytes.length / 2);
+      if (!Number.isInteger(side)) {
+        throw new TypeError("a .r16 grid has no width of its own, so it must be square");
+      }
+      if (range === undefined) {
+        throw new TypeError("a .r16 grid carries no elevation range; name min and max in metres");
+      }
+      return decodeRAW16(bytes, { width: side, height: side, ...range });
+    }
+    const decoded = await decodeHeightPNG(bytes, range ?? {});
+    if (decoded.bitDepth !== 16) {
+      throw new TypeError(`it is ${decoded.bitDepth}-bit; export a 16-bit grayscale PNG`);
+    }
+    if (!decoded.hasEmbeddedRange && range === undefined) {
+      throw new TypeError("it carries no elevation range; name min and max in metres");
+    }
+    return decoded;
+  } catch (error) {
+    throw new TypeError(
+      `terrain_generate: ground.heightmap '${asked.heightmap}': ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+/**
+ * Puts one decoded grid where the recipe's ground layer is: the macro `noise` layer a preset authors,
+ * or the authored crop a starter ships. A preset's shape stamps are dropped with it, because the real
+ * ground already has the massif, cone or crater they would duplicate; the finishing passes (erosion,
+ * terrace, talus, grain) still run on top, in the order the preset calibrated them.
+ */
+function applyGroundLayer(layers: Layer[], grid: IGroundGrid, scale: number, offset: number): void {
+  const at = layers.findIndex((layer) => layer.type === "heightmap" || layer.type === "noise");
+  const replaced = layers[at];
+  if (replaced === undefined)
+    throw new Error("cook: the recipe authors no ground layer to replace.");
+  const preset = replaced.type === "noise";
+  layers[at] = {
+    id: "ground",
+    type: "heightmap",
+    enabled: replaced.enabled ?? true,
+    opacity: replaced.opacity ?? 1,
+    params: {
+      // The recipe inlines its heights, so they are plain numbers on a 0.1 m lattice like the
+      // starters' own crops: the same precision, and the same size of recipe.json.
+      data: {
+        width: grid.width,
+        height: grid.height,
+        values: Array.from(grid.values, (value) => Math.round(value * 10) / 10),
+      },
+      scale,
+      offset,
+    },
+  };
+  if (!preset) return;
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    const layer = layers[index] as Layer;
+    const shape = layer.type === "stamp" ? layer.params.shape : undefined;
+    if (shape === "mountain" || shape === "crater") layers.splice(index, 1);
+  }
+}
+
+/** What the cook put under the world, and the attribution a survey requires beside it. */
+interface IGroundResult {
+  readonly ground: IGroundDecision;
+  readonly readme?: string;
+}
+
+/**
+ * The ground the world starts from, and what it came from. A landform preset is grounded on the real
+ * survey its kind names unless the request says otherwise, scaled to the preset's own relief so the
+ * world keeps the slopes it was calibrated for; a survey a request located is scaled the same way. A
+ * starter that no landform replaced keeps its authored crop, which is already a real survey.
+ */
+async function applyGround(
+  document: { config: { resolution: number; size: number }; layers: Layer[] },
+  request: ICookRequest,
+  kind: LandformKind | undefined,
+): Promise<IGroundResult> {
+  const asked = request.ground;
+  if (asked === "procedural") return { ground: { source: "procedural" } };
+  if (asked !== undefined && "heightmap" in asked) {
+    // The caller's own metres, as the starters' authored crops are: no rescale of data we did not pick.
+    applyGroundLayer(document.layers, await readGroundHeightmap(request.projectRoot, asked), 1, 0);
+    return { ground: { source: "heightmap", heightmap: asked.heightmap } };
+  }
+  const survey =
+    asked !== undefined
+      ? locationSurvey(asked.location.lat, asked.location.lon)
+      : kind === undefined
+        ? undefined
+        : SURVEYS[kind];
+  if (survey === undefined) return { ground: { source: "procedural" } };
+  const grid = await surveyHeights(survey, document.config.resolution);
+  const relief =
+    kind === undefined ? undefined : LANDFORMS[kind].reliefRatio * document.config.size;
+  // Without a preset the survey keeps its own metres; with one, its range fills that preset's relief.
+  const scale = relief === undefined ? 1 : relief / (grid.max - grid.min || 1);
+  applyGroundLayer(document.layers, grid, scale, -grid.min * scale);
+  return {
+    ground: {
+      source: "survey",
+      name: survey.name,
+      lat: survey.lat,
+      lon: survey.lon,
+      attribution: survey.attribution,
+    },
+    // The attribution rides with the kit: the data source requires it wherever the world is shipped.
+    readme: [
+      "# Cooked terrain world",
+      "",
+      `The ground is a real survey: ${survey.name} at ${survey.lat}, ${survey.lon},`,
+      `${survey.extentMeters} m across at zoom ${survey.zoom}, resampled onto the recipe's grid.`,
+      "",
+      "## Data attribution",
+      "",
+      survey.attribution,
+      "",
+    ].join("\n"),
+  };
+}
+
 async function cookInto(
   request: ICookRequest,
   cooker: ICooker,
@@ -313,6 +467,9 @@ async function cookInto(
   // `fromJSON` reads `config`, so an override written beside it would be accepted and then ignored.
   if (request.sizeMeters !== undefined) recipe.recipe.config.size = request.sizeMeters;
   if (request.seed !== undefined) recipe.recipe.config.seed = request.seed;
+  // Before any evaluation: the ground is what the preset's later layers reshape, and a survey that
+  // cannot be read fails here rather than after a long bake.
+  const ground = await applyGround(recipe.recipe, request, kind);
   // shortcut: starter heights use a 0.1 m lattice; revise decoding if their precision changes.
   for (const layer of recipe.recipe.layers) {
     const data = layer.params?.data;
@@ -365,6 +522,8 @@ async function cookInto(
     out: request.out,
     extraLayers: { table: "terrain-table.json" },
   });
+
+  if (ground.readme !== undefined) await writeFile(join(request.out, "README.md"), ground.readme);
 
   await writeFile(
     join(request.out, "water.json"),
@@ -450,6 +609,7 @@ async function cookInto(
     ...measureGlb(cooked.worldGlb),
     placementCounts: cooked.placementCounts,
     biome: biome.look,
+    ground: ground.ground,
     water: floodedBodies(state),
     bands,
     worldGlbBytes: cooked.worldGlb.length,
