@@ -64,3 +64,25 @@ template caller were not added. Removing this bounded graph would restore the pr
 `connect()` no-op, so the retained code is cheaper than exposing a platform-specific API lie.
 The Android evidence added no runtime path; it only made the existing proof source a classic
 script and locked that portability constraint in the contract test.
+
+## The game thread wins the CPU (PRD-859) — 2026-11-08
+
+The Linux engine player now gives its frame-critical threads (the game thread, `tn-gpu` and
+`tn-render`, which name themselves at creation) nice −10, Unreal's `TPri_AboveNormal` on Unix. It
+uses `setpriority` when `RLIMIT_NICE` allows it, else rtkit's `MakeThreadHighPriority` over the
+system bus through `libsystemd.so.0` loaded at run time. Every other player thread and every child
+process yields at nice +10 (`TPri_Lowest`), which needs no privilege. SDL's own audio device threads
+keep what SDL set. A refused raise prints `TN_PROCESS_PRIORITY_RAISE_REFUSED` once and the player runs
+on. `TN_PLAYER_PRIORITY=normal` (`display.priority: "normal"`) turns both levers off. Each change
+prints one line read back from the OS, for example:
+
+```text
+TN_PROCESS_PRIORITY game=-10 render=-10 present=-10 background=16 source=rtkit override=none
+```
+
+`tests/native-engine/player-thread-placement.mjs <player> --x11` under `scripts/xvfb.sh` passed four
+arms on the Linux desktop (Ryzen, 24 CPUs): the default (`source=setpriority`), `prlimit --nice=0`
+(`source=rtkit`), `prlimit --nice=0` with no system bus (`source=none reason=EACCES`, nice values
+unchanged, the player still runs) and the override. Background threads read 16, not 10, on this host
+because ananicy-cpp files `node` (the test parent) as `BG_CPUIO`; the player only lowers, never raises,
+a background thread. Windows, macOS and Android are not covered by this record.
