@@ -1,6 +1,6 @@
 # PRD-854: One terrain request decides the landform, water, size and a real survey
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 landed (2026-11-07). Phases 2 and 3 are open.
 **Priority:** P1 — `terrain_generate` drops every request word except the biome word, so "a forest with mountains and a river" cooks a flat default forest (Phase 1).
 **Complexity:** 5 (MEDIUM)
 **Depends on:** [PRD-762](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (same MCP tool, path must start first)
@@ -20,8 +20,8 @@ All work is bake time. No network call at runtime.
 
 ### Phase 1 — request words pick the landform, water and size
 
-- [ ] Request words pick the landform ("mountains" → `alpine` or `temperateMountains`), the water rows ("river", "lake", "island" → `coastalCliffs` plus an ocean row) and the size ("huge", "small"). An explicit argument wins over a word. proof: a red-green case per word row in `packages/terrain/__tests__/terrain-mcp.spec.ts`
-- [ ] The result carries `decided` (each choice with the word that made it, or `"argument"`) and `unused` (request words that matched nothing). proof: the same spec asserts both fields
+- [x] Request words pick the landform ("mountains" → `alpine` or `temperateMountains`), the water rows ("river", "lake", "island" → `coastalCliffs` plus an ocean row) and the size ("huge", "small"). An explicit argument wins over a word. proof: a red-green case per word row in `packages/terrain/__tests__/terrain-mcp.spec.ts` — 2026-11-07: `-t "request words"` 30 failed before the change, 43 passed after; whole file 144/144; word tables in `packages/terrain/src/core/request-words.ts`.
+- [x] The result carries `decided` (each choice with the word that made it, or `"argument"`) and `unused` (request words that matched nothing). proof: the same spec asserts both fields — 2026-11-07: unit cases plus the built server's reply (`-t "savanna in a game project"` asserts `decided.water.source` and `unused: ["zeppelin"]`), 1/1 pass.
 
 ### Phase 2 — the tool picks the ground source
 
@@ -35,6 +35,8 @@ All work is bake time. No network call at runtime.
 - [ ] A PNG over 4 097 px or an 8-bit file throws and names the field. proof: a spec per refusal
 
 ## Acceptance Criteria
+
+Open gap (2026-11-07): "create a forest with mountains and a river" now fails loudly with `cook: water row 'river' has no river layer in the recipe to take it`. A landform preset authors no river or lake layer, and `applyWaterRows` only re-shapes an existing layer. The AC needs the presets to grow the body a water word asks for. That changes the cooked look, so it needs a visual judge.
 
 - [ ] "create a forest with mountains and a river" cooks a forest kit on a mountain landform with a river, and the result lists every choice and the word behind it. proof: one real `terrain_generate` cook, result JSON in the PR
 - [ ] The MCP surface snapshot and the capability manifest name the new fields. proof: `pnpm build` and the terrain MCP surface snapshot spec

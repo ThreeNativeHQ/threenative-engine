@@ -5,6 +5,14 @@ import { type IBiomeSpec, type IBiomeWaterBody, validateBiome } from "../core/bi
 import { TERRAIN_KITS, type TerrainKit } from "../core/kits.js";
 import { OPERATION_TYPES } from "../core/operations.js";
 import { LANDFORMS, type LandformKind } from "../core/presets.js";
+import {
+  BIOME_OWN,
+  LANDFORM_WORD_ROWS,
+  REQUEST_KNOWN_WORDS,
+  REQUEST_STOP_WORDS,
+  SIZE_WORD_ROWS,
+  WATER_WORD_ROWS,
+} from "../core/request-words.js";
 import { Terrain } from "../core/terrain.js";
 import type { LayerPatch, PatchCommand } from "../core/terrain.js";
 import type { ITerrainDocument, Layer } from "../core/types.js";
@@ -24,13 +32,38 @@ export interface IGenerateInput {
   out?: string;
 }
 
+/** What decided a choice: an argument the request carried, a word, or nothing at all. */
+export type IRequestSource = "argument" | "default" | { readonly word: string };
+
+/** One choice the request made, with the argument or the word that made it. */
+export interface IChoice<T> {
+  readonly value: T;
+  readonly source: IRequestSource;
+}
+
+/** Each choice a request decides, in the order the tool reads them; `null` is "the biome's own". */
+export interface IGenerateDecided {
+  readonly biome: IChoice<TerrainKit>;
+  readonly landform: IChoice<LandformKind | null>;
+  readonly water: IChoice<readonly IBiomeWaterBody[] | null>;
+  readonly sizeMeters: IChoice<number | null>;
+}
+
+/** A parsed request: the cook's own input, and the record of what its words and arguments decided. */
+export interface IGenerateRequest {
+  readonly input: IGenerateInput;
+  readonly decided: IGenerateDecided;
+  /** Request words of three letters or more that named no row, in request order. */
+  readonly unused: readonly string[];
+}
+
 const PATCH_OPS: readonly string[] = ["upsert", "update", "remove", "move", "toggle"];
 
 export const TERRAIN_TOOLS = [
   {
     name: "terrain_generate",
     description:
-      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
     inputSchema: {
       type: "object",
       properties: {
@@ -41,7 +74,12 @@ export const TERRAIN_TOOLS = [
           anyOf: [{ type: "string", minLength: 1 }, { type: "object" }],
         },
         landform: { type: "string", enum: Object.keys(LANDFORMS) },
-        request: { type: "string", minLength: 1 },
+        request: {
+          type: "string",
+          minLength: 1,
+          description:
+            "What the world should be, in words: a biome, a landform (mountains, hills, ...), water (river, lake, ...) and a size (huge, small); an explicit argument wins over a word.",
+        },
         sizeMeters: { type: "number", exclusiveMinimum: 0 },
         seed: { type: "integer" },
         water: {
@@ -180,6 +218,22 @@ function parseBiomeArgument(biome: unknown): { kit?: TerrainKit; spec?: IBiomeSp
   );
 }
 
+/** The `landform` argument: one of the seven presets, or nothing. */
+function parseLandform(value: unknown): LandformKind | undefined {
+  if (value === undefined) return undefined;
+  if (!LANDFORM_KINDS.includes(value as LandformKind))
+    throw new TypeError(`terrain_generate: landform must be one of ${LANDFORM_KINDS.join(", ")}.`);
+  return value as LandformKind;
+}
+
+/** The `sizeMeters` argument: the world's own size in metres, or nothing. */
+function parseSize(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    throw new TypeError("terrain_generate: sizeMeters must be a positive finite number.");
+  return value;
+}
+
 /** `water` replaces the biome's declared bodies; the rows themselves are checked at the bake. */
 function parseWater(water: unknown): readonly IBiomeWaterBody[] | undefined {
   if (water === undefined) return undefined;
@@ -189,7 +243,41 @@ function parseWater(water: unknown): readonly IBiomeWaterBody[] | undefined {
   return water as readonly IBiomeWaterBody[];
 }
 
-export function parseGenerateInput(input: unknown): IGenerateInput {
+/**
+ * The first row a request names, in table order, with the word that named it: the tables decide
+ * ties, and the record names the word the caller wrote first, so it reads back like the request.
+ */
+function rowHit<ROW>(
+  rows: readonly (readonly [ROW, readonly string[]])[],
+  words: readonly string[],
+): { readonly row: ROW; readonly word: string } | undefined {
+  for (const [row, names] of rows) {
+    const word = words.find((candidate) => names.includes(candidate));
+    if (word !== undefined) return { row, word };
+  }
+  return undefined;
+}
+
+/** Whether the biome already declares this body, kind and measurement alike. */
+function declaredWater(rows: readonly IBiomeWaterBody[], row: IBiomeWaterBody): boolean {
+  return rows.some(
+    (own) =>
+      own.kind === row.kind &&
+      own.width === row.width &&
+      own.radius === row.radius &&
+      own.level === row.level,
+  );
+}
+
+/**
+ * One `terrain_generate` request, read whole: the cook's input, and the record of what decided each
+ * choice. The biome comes from a word as it always has; the request's words also name the landform,
+ * the water and the size, in the order `request-words.ts` lists them.
+ *
+ * An argument always wins over a word. A spec is argued too, because it is the biome's whole
+ * declaration: a word fills a choice the caller left open, never one an argument already made.
+ */
+export function parseGenerateRequest(input: unknown): IGenerateRequest {
   const args = closedRecord(input, "terrain_generate", GENERATE_FIELDS);
   const { request, sizeMeters, seed, out } = args;
   if (request !== undefined && (typeof request !== "string" || request.trim() === "")) {
@@ -197,15 +285,12 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
   }
   const words = typeof request === "string" ? request.toLowerCase().split(/[^a-z]+/u) : [];
   const { kit: biomeKit, spec } = parseBiomeArgument(args.biome);
+  const biomeWord = rowHit(BIOME_WORD_ROWS, words);
+  const arguedKit = args.kit ?? biomeKit;
   const kit =
-    args.kit ??
-    biomeKit ??
+    arguedKit ??
     // A spec carries no appearance, so it cooks with the forest starter's surface and assets.
-    (spec === undefined
-      ? TERRAIN_KITS[
-          BIOME_WORD_ROWS.findIndex(([, names]) => names.some((name) => words.includes(name)))
-        ]
-      : "forest");
+    (spec === undefined ? biomeWord?.row : "forest");
   if (typeof kit !== "string" || !(TERRAIN_KITS as readonly string[]).includes(kit)) {
     // A request that matched nothing names what it could have matched, so the caller can retry
     // without guessing: every biome and the words it answers to, never a silent default.
@@ -217,18 +302,55 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
   }
   const parsed: IGenerateInput = { kit: kit as TerrainKit };
   if (spec !== undefined) parsed.spec = spec;
-  if (args.landform !== undefined) {
-    if (!LANDFORM_KINDS.includes(args.landform as LandformKind))
-      throw new TypeError(
-        `terrain_generate: landform must be one of ${LANDFORM_KINDS.join(", ")}.`,
-      );
-    parsed.landform = args.landform as LandformKind;
+  const own = BIOME_OWN[kit as TerrainKit];
+  // The three choices, read in the order `request-words.ts` lists them. An argument wins over a
+  // word, a spec declares all three, and a word that names what the biome already declares leaves
+  // the starter's own ground, water and size alone: only a different choice replaces them.
+  const landformArgument = parseLandform(args.landform);
+  const landformWord = rowHit(LANDFORM_WORD_ROWS, words);
+  let landform: IChoice<LandformKind | null>;
+  if (landformArgument !== undefined) {
+    parsed.landform = landformArgument;
+    landform = { value: landformArgument, source: "argument" };
+  } else if (spec !== undefined) {
+    landform = { value: spec.landform, source: "argument" };
+  } else if (landformWord === undefined) {
+    landform = { value: null, source: "default" };
+  } else {
+    landform = { value: landformWord.row, source: { word: landformWord.word } };
+    if (landformWord.row !== own.landform) parsed.landform = landformWord.row;
   }
-  if (sizeMeters !== undefined) {
-    if (typeof sizeMeters !== "number" || !Number.isFinite(sizeMeters) || sizeMeters <= 0) {
-      throw new TypeError("terrain_generate: sizeMeters must be a positive finite number.");
-    }
-    parsed.sizeMeters = sizeMeters;
+  const waterWord = rowHit(WATER_WORD_ROWS, words);
+  const waterArgument = parseWater(args.water);
+  let water: IChoice<readonly IBiomeWaterBody[] | null>;
+  if (waterArgument !== undefined) {
+    parsed.water = waterArgument;
+    water = { value: waterArgument, source: "argument" };
+  } else if (spec !== undefined) {
+    water = { value: spec.water, source: "argument" };
+  } else if (waterWord === undefined) {
+    water = { value: null, source: "default" };
+  } else if (parsed.landform === undefined && declaredWater(own.water, waterWord.row)) {
+    // The biome's authored recipe is the world, and it already floods this body: the word names it.
+    water = { value: own.water, source: { word: waterWord.word } };
+  } else {
+    parsed.water = [waterWord.row];
+    water = { value: parsed.water, source: { word: waterWord.word } };
+  }
+  const sizeArgument = parseSize(sizeMeters);
+  const sizeWord = rowHit(SIZE_WORD_ROWS, words);
+  let size: IChoice<number | null>;
+  if (sizeArgument !== undefined) {
+    parsed.sizeMeters = sizeArgument;
+    size = { value: sizeArgument, source: "argument" };
+  } else if (spec !== undefined) {
+    size = { value: spec.sizeMeters, source: "argument" };
+  } else if (sizeWord === undefined) {
+    size = { value: null, source: "default" };
+  } else {
+    // A size word scales the biome's own size, so the word never invents a world size of its own.
+    parsed.sizeMeters = Math.round(own.sizeMeters * sizeWord.row);
+    size = { value: parsed.sizeMeters, source: { word: sizeWord.word } };
   }
   if (seed !== undefined) {
     if (typeof seed !== "number" || !Number.isSafeInteger(seed)) {
@@ -236,10 +358,28 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
     }
     parsed.seed = seed;
   }
-  const water = parseWater(args.water);
-  if (water !== undefined) parsed.water = water;
   if (out !== undefined) parsed.out = relativeDirectory(out);
-  return parsed;
+  let biomeSource: IRequestSource = "default";
+  if (arguedKit !== undefined) biomeSource = "argument";
+  else if (biomeWord !== undefined) biomeSource = { word: biomeWord.word };
+  return {
+    input: parsed,
+    decided: {
+      biome: { value: kit as TerrainKit, source: biomeSource },
+      landform,
+      water,
+      sizeMeters: size,
+    },
+    // What is left is what the tool could not act on: a retry names a word, not a guess.
+    unused: [...new Set(words)].filter(
+      (word) => word.length >= 3 && !REQUEST_STOP_WORDS.has(word) && !REQUEST_KNOWN_WORDS.has(word),
+    ),
+  };
+}
+
+/** The cook's own input, without the record of what decided it. */
+export function parseGenerateInput(input: unknown): IGenerateInput {
+  return parseGenerateRequest(input).input;
 }
 
 /**

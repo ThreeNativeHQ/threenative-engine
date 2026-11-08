@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { decodeRAW16 } from "../src/core/io.js";
 import type { LandformKind } from "../src/core/presets.js";
+import { BIOME_OWN } from "../src/core/request-words.js";
 import type { ITerrainDocument } from "../src/core/types.js";
 import { IsolatedKillError, childExecArgv, runIsolated } from "../src/mcp/child.js";
 import { cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
@@ -26,6 +27,7 @@ import {
   newBiomeSpec,
   parseBiomeNewInput,
   parseGenerateInput,
+  parseGenerateRequest,
   parsePatchInput,
   patchRecipe,
   resolveAssetSource,
@@ -1184,6 +1186,197 @@ describe("terrain_generate biome cooks", () => {
   }, 120_000);
 });
 
+// PRD-854 phase 1: a request's words decide the landform, the water and the size, not only the
+// biome. Each word row is its own case, so a row that stops matching fails here rather than
+// dropping the word on the floor. The base biome is one whose own declaration differs from the row,
+// so the case proves the word replaced it; a word that names the biome's own row is its own case.
+describe("terrain_generate request words", () => {
+  it.each([
+    ["alpine", "alpine", "forest"],
+    ["mountain", "alpine", "forest"],
+    ["mountains", "alpine", "forest"],
+    ["peaks", "alpine", "forest"],
+    ["foothills", "temperateMountains", "desert"],
+    ["valley", "temperateMountains", "desert"],
+    ["hill", "rollingHills", "desert"],
+    ["hills", "rollingHills", "desert"],
+    ["rolling", "rollingHills", "desert"],
+    ["butte", "desertMesa", "forest"],
+    ["canyon", "desertMesa", "forest"],
+    ["mesa", "desertMesa", "forest"],
+    ["cliff", "coastalCliffs", "forest"],
+    ["cliffs", "coastalCliffs", "forest"],
+    ["coast", "coastalCliffs", "forest"],
+    ["island", "coastalCliffs", "forest"],
+    ["arctic", "tundra", "forest"],
+    ["tundra", "tundra", "forest"],
+    ["volcano", "volcanic", "forest"],
+    ["volcanic", "volcanic", "forest"],
+  ])("reads '%s' as the %s landform", (word, landform, biome) => {
+    const { input, decided } = parseGenerateRequest({ request: `a ${biome} world with ${word}` });
+    expect(input.landform).toBe(landform);
+    expect(decided.landform).toEqual({ value: landform, source: { word } });
+  });
+
+  it.each([
+    ["creek", { kind: "river", width: 5.32 }, "desert"],
+    ["river", { kind: "river", width: 5.32 }, "desert"],
+    ["lake", { kind: "lake", radius: 105 }, "desert"],
+    ["pond", { kind: "lake", radius: 105 }, "desert"],
+    ["island", { kind: "ocean", level: 1.5 }, "forest"],
+    ["ocean", { kind: "ocean", level: 1.5 }, "forest"],
+    ["sea", { kind: "ocean", level: 1.5 }, "forest"],
+  ])("reads '%s' as the water the world floods", (word, row, biome) => {
+    const { input, decided } = parseGenerateRequest({ request: `a ${biome} world with a ${word}` });
+    expect(input.water).toEqual([row]);
+    expect(decided.water).toEqual({ value: [row], source: { word } });
+  });
+
+  it.each([
+    ["big", 1024],
+    ["huge", 1024],
+    ["large", 1024],
+    ["small", 256],
+    ["tiny", 256],
+  ])("scales the biome's own size for '%s'", (word, sizeMeters) => {
+    const { input, decided } = parseGenerateRequest({ request: `a ${word} forest` });
+    expect(input.sizeMeters).toBe(sizeMeters);
+    expect(decided.sizeMeters).toEqual({ value: sizeMeters, source: { word } });
+  });
+
+  it.each(TERRAIN_KITS)("mirrors %s's own landform, size and water", async (kit) => {
+    const spec = JSON.parse(
+      await readFile(new URL(`../starter/${kit}/biome.data.json`, import.meta.url), "utf8"),
+    ) as { landform: string; sizeMeters: number; water: unknown };
+    expect(BIOME_OWN[kit]).toEqual({
+      landform: spec.landform,
+      sizeMeters: spec.sizeMeters,
+      water: spec.water,
+    });
+  });
+
+  it("leaves the starter's own world alone when a word names what it already is", () => {
+    // The alpine starter authors its own ground and floods nothing, so "peaks" adds no preset and
+    // no water row: the authored world is what the request asked for. The word still decided it.
+    const { input, decided } = parseGenerateRequest({ request: "a snowy world with peaks" });
+    expect(input).toEqual({ kit: "alpine" });
+    expect(decided.landform).toEqual({ value: "alpine", source: { word: "peaks" } });
+    // The forest authors its own recipe, and that recipe already floods a river and a lake, so the
+    // word names the water instead of replacing it. A landform word that replaced the ground would
+    // leave those layers behind, and then the row is the request's own (the cook fails closed).
+    const forest = parseGenerateRequest({ request: "a forest with a river" });
+    expect(forest.input).toEqual({ kit: "forest" });
+    expect(forest.decided.water).toEqual({
+      value: [
+        { kind: "river", width: 5.32 },
+        { kind: "lake", radius: 105 },
+      ],
+      source: { word: "river" },
+    });
+  });
+
+  it("keeps every explicit argument over the request's words", () => {
+    const water = [{ kind: "ocean", level: 4 }];
+    const { input, decided, unused } = parseGenerateRequest({
+      request: "a huge alpine forest with mountains, hills and a river",
+      kit: "desert",
+      landform: "rollingHills",
+      sizeMeters: 300,
+      water,
+    });
+    expect(input).toEqual({ kit: "desert", landform: "rollingHills", sizeMeters: 300, water });
+    expect(decided).toEqual({
+      biome: { value: "desert", source: "argument" },
+      landform: { value: "rollingHills", source: "argument" },
+      water: { value: water, source: "argument" },
+      sizeMeters: { value: 300, source: "argument" },
+    });
+    // A word that named a row is spent even when an argument overruled it, so it is not unused.
+    expect(unused).toEqual([]);
+  });
+
+  it("reports each choice with its word and the words nothing answered", () => {
+    const { input, decided, unused } = parseGenerateRequest({
+      request: "create a huge forest with mountains, a river and floating castles",
+    });
+    // The record and the cook's input agree: every choice a word made is on the input the cook
+    // reads. The ground is the alpine preset here, so the river row is the request's own: a preset
+    // carries no river or lake layer, and the cook fails closed rather than flood nothing silently.
+    expect(input).toEqual({
+      kit: "forest",
+      landform: "alpine",
+      water: [{ kind: "river", width: 5.32 }],
+      sizeMeters: 1024,
+    });
+    expect(decided).toEqual({
+      biome: { value: "forest", source: { word: "forest" } },
+      landform: { value: "alpine", source: { word: "mountains" } },
+      water: { value: [{ kind: "river", width: 5.32 }], source: { word: "river" } },
+      sizeMeters: { value: 1024, source: { word: "huge" } },
+    });
+    // "create", "with", "and", "a" are scaffolding; only the words that named nothing are listed.
+    expect(unused).toEqual(["floating", "castles"]);
+  });
+
+  it("reports a choice it did not make as the default the biome file keeps", () => {
+    const { decided, unused } = parseGenerateRequest({ kit: "forest" });
+    expect(decided).toEqual({
+      biome: { value: "forest", source: "argument" },
+      landform: { value: null, source: "default" },
+      water: { value: null, source: "default" },
+      sizeMeters: { value: null, source: "default" },
+    });
+    expect(unused).toEqual([]);
+  });
+
+  it("takes an inline spec's own landform, size and water over a request word", async () => {
+    const spec = newBiomeSpec(await starterBiome("forest"), "savanna", {
+      landform: "rollingHills",
+      sizeMeters: 256,
+    });
+    const { input, decided } = parseGenerateRequest({
+      biome: spec,
+      request: "a huge forest with mountains and a lake",
+    });
+    // The spec is the biome's whole declaration: the words are spent, and nothing replaces its rows.
+    expect(input).toEqual({ kit: "forest", spec });
+    expect(decided.landform).toEqual({ value: "rollingHills", source: "argument" });
+    expect(decided.sizeMeters).toEqual({ value: 256, source: "argument" });
+    expect(decided.water).toEqual({ value: spec.water, source: "argument" });
+  });
+
+  it("cooks the words' landform and size into the world", async () => {
+    const project = await realpath(await makeTempDir("tn-terrain-words-cook-"));
+    try {
+      await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+      await symlink(
+        new URL("../../assets/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "assets"),
+      );
+      await writeFile(
+        join(project, "threenative.config.ts"),
+        'export default { assets: { source: "assets" } };',
+      );
+      const { input } = parseGenerateRequest({
+        request: "create a huge forest with rolling hills",
+      });
+      const out = join(project, "assets", "worlds", "world");
+      const result = JSON.parse(await cookKit({ ...input, out, projectRoot: project }));
+      const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
+      const manifest = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
+      // The words reached the recipe the cook evaluates, not a field beside it.
+      expect(recipe.config.size).toBe(1024);
+      expect(manifest.extent.sizeX).toBe(1024);
+      expect(recipe.layers.some((layer: { type: string }) => layer.type === "heightmap")).toBe(
+        false,
+      );
+      expect(result.triangles).toBeGreaterThan(0);
+    } finally {
+      await rm(project, { recursive: true, force: true });
+    }
+  }, 180_000);
+});
+
 // PRD-793 AC-1: every landform cooks under every shipped biome. The kit supplies the surface, the
 // assets and the biome file; the preset supplies the ground, so the pair needs no new starter.
 const LANDFORMS_IN_MATRIX = [
@@ -1419,14 +1612,19 @@ describe("terrain_biome_new", () => {
       // a tool call, so both numbers are a first cook inside a fresh process; an in-process
       // `cookKit` would run already-warmed code from the cooks earlier in this file, not comparable.
       const forestStarted = performance.now();
+      // The forest's own river word changes no recipe, so the baseline stays the forest; the reply
+      // still names the choice and the word nothing answered to (PRD-854).
       const baseline = await askServer(project, "terrain_generate", {
         kit: "forest",
+        request: "a forest with a river and a zeppelin",
         out: "assets/worlds/forest-baseline",
       });
       const forestWall = Math.round(performance.now() - forestStarted);
       const baselineText = baseline.result?.content?.[0]?.text;
       expect(baseline.result?.isError, baselineText).toBe(false);
       const forestCook = JSON.parse(baselineText as string);
+      expect(forestCook.decided.water.source).toEqual({ word: "river" });
+      expect(forestCook.unused).toEqual(["zeppelin"]);
       console.log(
         `TN_TERRAIN_BIOME_NEW savanna: cook ${result.ms} ms, tool call ${wall} ms; forest baseline cook ${forestCook.ms} ms (tool call ${forestWall} ms)`,
       );
