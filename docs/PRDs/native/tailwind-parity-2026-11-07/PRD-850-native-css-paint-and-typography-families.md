@@ -97,8 +97,10 @@ probe is already `#fb2c36` (Tailwind's `red-500`), while the browser is part-way
 the engine reports `focused_id = Some(33)` for the cell, so the focus is not the missing piece. The two
 differences left between the test and the panel are that the panel's rules sit in `@layer theme` /
 `base` / `utilities` blocks and that the probe is a `<button>` with the theme's `:root, :host` variables.
-Next step: bisect the panel's own stylesheet — flat versus layered — with the same probe, which is a
-one-run experiment now that the utility is known good in a flat sheet.
+Bisected, and not it: the same declarations wrapped in `@layer theme` for the variables and
+`@layer utilities` for the utility still animate correctly, so the panel's cascade layers are not the
+cause. That leaves the `<button>` probe and the theme's `:root, :host` selector list, both of which the
+next run can vary one at a time.
 
 So the remaining difference is in *when* each subject starts the clock, not in the curve or the chain:
 at 0 ms and at every sample from 150 ms on, the two agree exactly, and only the two mid-flight samples

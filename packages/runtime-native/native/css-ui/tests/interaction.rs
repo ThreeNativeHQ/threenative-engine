@@ -902,7 +902,7 @@ fn the_tailwind_transition_utility_animates() {
             sheet(
                 "s",
                 &format!(
-                    ":root{{--default-transition-duration:150ms;--default-transition-timing-function:cubic-bezier(0.4,0,0.2,1)}}\n{BASE}\n.a{{width:100px;height:40px;margin:10px;background:#2563eb;transition-property:color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}}\n.a:focus{{background:#fb2c36}}"
+                    "@layer theme{{:root{{--default-transition-duration:150ms;--default-transition-timing-function:cubic-bezier(0.4,0,0.2,1)}}}}\n{BASE}\n@layer utilities{{\n.a{{width:100px;height:40px;margin:10px;background:#2563eb;transition-property:color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}}\n.a:focus{{background:#fb2c36}}\n}}"
                 ),
             ),
             create(1, "div"),
