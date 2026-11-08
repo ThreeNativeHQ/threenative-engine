@@ -12,7 +12,15 @@
  * the geometry bar are therefore refused by name rather than scored on a weaker bar.
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { writeProject } from "./project.mjs";
@@ -106,6 +114,24 @@ export default config;
     existsSync(sheets);
   if (!built)
     return { refused: `the consumer build produced no bundle: ${build.output.slice(-400)}` };
+  // The host subject is the *packaged* path, so it is bound by the build's own profile: a panel whose
+  // stylesheet carries a property outside the Core profile is refused by the scanner, not by this
+  // driver, and the first findings are the reason. That is the batch's subject in miniature — the
+  // crate arm feeds CSS straight to the engine and measures the engine; the host arm also has to get
+  // past the build, and until a family PRD lands the build says no.
+  const unsupported = build.output
+    .split("\n")
+    .filter((line) => /^\s+assets\/.*—/u.test(line))
+    .slice(0, 3);
+  if (unsupported.length > 0) {
+    return {
+      refused: `the build refuses this panel's CSS: ${unsupported.join(" | ").slice(0, 400)}`,
+    };
+  }
+  if (!readdirSync(sheets).some((file) => file.endsWith(".css")))
+    return {
+      refused: `the build extracted no stylesheet for the engine: ${build.output.slice(-400)}`,
+    };
   for (const image of IMAGE_FILES) copyFileSync(join(imageDir, image), join(sheets, image));
 
   const executable = join(dir, "dist-native", `tn-parity-${panel.id.replaceAll(/-/gu, "")}`);

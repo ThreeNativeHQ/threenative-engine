@@ -34,7 +34,7 @@ inventory and the meter and judge contract.
 - [ ] AC-1 [local]: the scene has a discriminating cell for each unit, and each unit has one owner PRD. proof: `pnpm --filter threenative-native-css-hud parity:tailwind --check`
   Evidence: 507 units (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the discrimination guard is red on 230 cells (see `## Open`), and 31 variant cells name a pending exemption owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions). Two of the 11 cells that stopped being vacuous this round were the engine's, not the scene's: a client rect that ignored `transform` and an animation that held the previous iteration at its boundary (blitz-dom hunks 15 and 16).
 - [ ] AC-2 [local]: the meter prints a baseline score from the crate subject and from the host subject, and `--ratchet` fails below the committed floor. proof: `parity:tailwind` and `parity:tailwind --host`
-  Evidence: the crate subject prints `tailwind-parity: 175/503 (34.8 %)  [230 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `--floor` writes the ratchet baseline from the same run. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is no host subject, and a flag that silently scored the crate instead would be worse than none. What the host subject needs is established: `packages/runtime-native/build/tn-linux/mystral` on this checkout is built with `TN_ENABLE_CSS_UI=ON`/`TN_ENABLE_UI_OVERLAY=OFF` and boots the game's `native-css` UI (`TN_UI_OVERLAY:{"attached":true,"renderer":"native-css"}` in the host log), and `corpus/project.mjs` already turns one tree plus one stylesheet into a project the desktop oracle runs — a panel is exactly that shape. The missing piece is the loop: one generated project per selected panel, `packages/playtest --target desktop --executable` for the capture, then the meter's own bars on it, since the host's per-node boxes arrive through the same scenario JSON `desktop.mjs` reads.
+  Evidence: the crate subject prints `tailwind-parity: 175/503 (34.8 %)  [230 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `--floor` writes the ratchet baseline from the same run. The host subject exists (`corpus/host.mjs`): each selected panel becomes its own generated project through `corpus/project.mjs`, is built and packaged against the checkout's `TN_ENABLE_CSS_UI=1` host, photographed by `packages/playtest --target desktop --executable`, and scored by the same bars against the same Chromium render — `--host --family PRD-848 --group logical` scores 18/18. NOT met, in two named parts rather than one missing flag: (a) the host's input seam has no `advance`, so a motion panel is refused by name instead of being compared at rest, and (b) the host reports pixels, not per-node boxes, so the geometry bar is `geometryMeasured: false` and only the pixel bar scores — a host cell is a weaker claim than a crate cell and the report says so. Panels carrying a device descriptor are refused too: the host has no `colorScheme`/`reducedMotion` seam yet.
 - [ ] AC-3 [local]: the starter kit builds for `ui.renderer: "native-css"` with zero findings. proof: `threenative build --target desktop` on a scaffolded starter with `ui.renderer: "native-css"`, then an empty `.threenative/build/native-css-compat.json`
   Evidence: NOT run. The source-scan fix is in all 14 Tailwind kits and a Tailwind oxide scan shows the starter's incidental `.blur`, `.filter` and `.table` rules gone, but the scaffolded build itself was not executed.
 
@@ -66,7 +66,20 @@ context options in Chromium, `env.json` in the engine. There is no `--env <input
 
 - [x] The crate subject prints the score and writes `report.json` by family, and the baseline goes in the batch README. proof: `parity:tailwind`
   Evidence: `tailwind-parity: 175/503 (34.8 %)  [230 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `## Meter status` in the batch README. The score counts evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four permanently inactive units leave the denominator.
-- [ ] The host subject runs the same panels on the CSS-enabled desktop host and prints its own N. proof: `parity:tailwind --host` (needs `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build`)
+- [x] The host subject runs the same panels on the CSS-enabled desktop host and prints its own N. proof: `parity:tailwind --host` (needs `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build`)
+  Evidence: `corpus/host.mjs`, and `--host --family PRD-848 --group logical` → `18/18 (100 %)`, which is the
+  host painting those panels as Chromium does. Four things it refuses by name rather than scoring on a weaker
+  bar or a false failure: a motion panel (the driver does not pin the clock), a panel with a device
+  descriptor (it does not set one), a panel whose cells ask for pointer/key/wheel input (it applies none), and
+  a panel whose stylesheet the build itself refuses — `--host --family PRD-846` reports
+  `the build refuses this panel's CSS: assets/index-*.css … perspective — 3D transforms are not in the Core
+  paint profile`. The geometry bar is reported unmeasured on this subject (`geometryMeasured: false`), so a
+  host cell is a pixel claim. **The refusal is the batch in miniature**: the crate arm feeds CSS straight to
+  the engine, the host arm also has to get past `threenative build`, so a family cannot show host coverage
+  until its own PRD deletes the scanner rows. The host already carries the seams the two refusals need —
+  `uiOverlaySetEnvironment(dark, reducedMotion)` (the playtest `media` step) and
+  `TN_CSS_UI_FIXED_STEP_MS` with `uiOverlayAdvanceClock(ticks)` — so wiring them is request plumbing, not a
+  host change.
 - [x] `--sheet <PRD-id>` writes WEB|NATIVE contact sheets with burned-in labels to `~/Downloads/tailwind-parity/<PRD-id>/`. proof: `parity:tailwind --sheet PRD-845`
   Evidence: 7 sheets, one row per unit with the class burned in at 32 px. The two-capture rule is a byte-equality assertion inside the same run rather than a second sheet.
 
@@ -153,10 +166,10 @@ tailwind-parity: 175/503 (34.8 %)  [230 do not discriminate, 31 exempt, 4 perman
   `prefers-contrast`/forced-colors/inverted-colors/`pointer-none`/`any-pointer-none` (PRD-849), and
   `@starting-style` (PRD-847). Four more — `print:`, `noscript:`, `visited:`, `target:` — are
   permanently inactive on both subjects by the batch's decisions and are out of the denominator.
-- **`--host`.** Not implemented; the flag exits `TN_PARITY_HOST_UNSUPPORTED`. The host side itself is
-  ready and was run: the CSS-enabled desktop host on this checkout boots `examples/native-css-hud`
-  with `TN_UI_OVERLAY:{"attached":true,"renderer":"native-css"}` and zero console errors. The
-  build-once-per-panel loop described in AC-2 is the work left, not the host.
+- **`--host`.** Implemented (see AC-2). It is slower than the crate subject — one build, one package
+  and one host launch per panel, about a minute — so a whole-scene host run is a manual gate rather
+  than a per-PR one; a family run is a minute per panel. The two limits it reports by name (no
+  animation clock, pixels without boxes) are the host seam's, not the meter's.
 - **The example's own desktop verify.** `scripts/verify-desktop.mjs` runs end to end until the
   playtest's `diagnostics` assertion, which reports one network "error": a `GET assets.manifest.json`
   from the packaged bundle. It is not from this batch's changes (the same run reaches packaging and

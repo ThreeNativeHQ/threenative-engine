@@ -1985,12 +1985,25 @@ async function writeSheet(browser, panel, cells, dir, outDir) {
   return shot;
 }
 
-/** A panel the host subject cannot stage, as a reported refusal. */
+/**
+ * A panel the host subject cannot stage, as a reported refusal.
+ *
+ * The host has seams for all three of these — `media(dark, reducedMotion)` and a fixed CSS clock
+ * (`TN_CSS_UI_FIXED_STEP_MS`, one playtest tick per step) are wired through the playtest host — but
+ * this subject does not drive them yet, and a capture taken without the input a cell asks for is a
+ * false failure rather than a parity finding. So each is refused by name until the driver reaches
+ * it.
+ */
 function refusedOnHost(panel) {
-  if (panel.env === undefined) return undefined;
-  return {
-    refused: `the host subject has no device descriptor for ${JSON.stringify(panel.env)}`,
-  };
+  if (panel.env !== undefined) {
+    return {
+      refused: `the host subject does not drive the device descriptor yet: ${JSON.stringify(panel.env)}`,
+    };
+  }
+  if (panel.cells.some((cell) => (cell.drive ?? []).length > 0)) {
+    return { refused: "the host subject does not drive pointer, key or wheel input yet" };
+  }
+  return undefined;
 }
 
 // -------------------------------------------------------------------------------------------------
