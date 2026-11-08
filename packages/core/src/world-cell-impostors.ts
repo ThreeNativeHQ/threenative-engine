@@ -1097,6 +1097,12 @@ export class CellImpostors {
     const mesh = new InstancedMesh(surface.geometry, surface.material, capacity);
     mesh.count = capacity;
     mesh.frustumCulled = false;
+    // Every nearer draw occludes the far tier, so it draws after them and depth rejects its hidden
+    // quads. three sorts opaques front to back anyway; the owned engine orders a pass's rows by state
+    // with no depth prepass, where drawn first the far quads shaded every pixel the trees then covered
+    // (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/BasePassRendering.cpp:333-341 orders by
+    // occlusion class for the same reason when there is no early-Z pass).
+    mesh.renderOrder = 1;
     // Three's default usage uploads by version; grow/write/zero announce every matrix change through
     // needsUpdate. DynamicDrawUsage would upload the same whole-map buffer on every settled draw.
     mesh.name = `tn-far:${assetId}`;
