@@ -28,8 +28,8 @@ list. The UI bridge moves to `game-ui.ts`.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: Start, scene change and stop keep their order and leak nothing. proof: `pnpm --filter @threenative/core exec vitest run __tests__/game.spec.ts __tests__/game-stop-order.spec.ts`
-- [ ] AC-2 [local]: The starter boots and plays its golden scenario. proof: `pnpm test:templates` (starter)
+- [x] AC-1 [local]: Start, scene change and stop keep their order and leak nothing. proof: `npx vitest run packages/core/__tests__/game.spec.ts packages/core/__tests__/game-stop-order.spec.ts` → 93 passed (2026-11-08, worktree `.worktrees/untangle-841` at `a8c7990f2`). The order spec pins loop, scene exit, plugin `dispose`, cleanup, input, store, renderer, and a case with several plugins in setup order; deleting the store's push fails 2 cases.
+- [x] AC-2 [local]: The starter boots and plays its golden scenario. proof: `TN_PLAYTEST_ALLOW_SOFTWARE=1 TN_GOLDEN_PATH_SCENARIOS=1 TN_GOLDEN_PATH_TEMPLATES=starter pnpm verify:golden-path` → **EXIT=0** (2026-11-08, RTX 2080, `--browser-recipe webgpu`), the CI configuration of this lane: pack, scaffold, install, MCP, dev, test (drove 1 of 14 non-visual scenarios, `assets`, `pass: true`), build web, assert artifact, then the packed-mutation control. ⚠️ Without `TN_PLAYTEST_ALLOW_SOFTWARE` the scaffolder's own `pnpm test` drives all 26 scenarios including the two visual ones, and there `boot-failure` (blank capture: 1 distinct colour) and `play` (`maxFrameMsP95` 21.91 ms against 16.7) fail — the playtest runner provisions its own Xvfb, whose frame rate and composited capture the harness documents as not evidence; the two scenarios CI routes to the visual lanes, which this lane did not run. No `TN_PLAYTEST_BRIDGE_MISSING` appeared in any run; `starter-assets` returned 846 frames.
 
 ## Integration Ledger
 
