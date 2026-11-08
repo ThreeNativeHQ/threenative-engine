@@ -53,13 +53,18 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 247/503 (49.1 %)  [152 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 248/503 (49.3 %)  [152 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
 A cell is evidence only when it discriminates (see Meter, item 3). The 152 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The unit after 247 is a decoration's pixel alignment: a 1px underline drawn from a stroke centred at a
+fractional y covers two rows at 50 % each, where a browser pixel-aligns the rectangle. Measured on the
+cell's two frames (Chromium one crisp row at y=52, the engine rows 52 and 53), it took `line-through`
+green and moved `underline`/`decoration-*` from 0.96 to 0.977.
 
 The 15 units after 232 are masks: Tailwind assembles one mask image from per-axis sub-masks whose
 `@property` defaults are transparent (axis) or opaque (edge), so a mask unit on its own masks nothing —
