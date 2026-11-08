@@ -7,7 +7,6 @@
 #include "engine/renderer/aux_targets.h"
 #include "engine/renderer/aux_bundle_key.h"
 #include "engine/renderer/texture_copy.h"
-#include "engine/renderer/aux_depth.h"
 #include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
@@ -5145,14 +5144,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (namedTargets > 0) target.colorWrite = false;
                 if (namedTargets > 1) target.moreWrites = uint8_t(0xffu << (namedTargets - 1));
             }
-            target.depthCompare = auxDepthLessEqual(item.depthWrite, sampleCount_) ? WGPUCompareFunction_LessEqual
-                                                                                  : WGPUCompareFunction_Equal;
-            target.frontFace = item.frontFace();
+            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             // At 4x the pass draws single-sampled against the colour pass's resolved depth, one sample taken at a
             // sample position, while this pass interpolates at the pixel centre: they differ by up to half a pixel of
-            // depth slope, so Equal fails on every surface that is not square to the camera. Test LessEqual (aux_depth.h)
-            // with the bias pulling this pass nearer by that slope instead: the nearest surface passes, a surface behind it does not.
+            // depth slope, so Equal fails on every surface that is not square to the camera. Test LessEqual with the
+            // bias pulling this pass nearer by that slope instead: the nearest surface passes, a surface behind it does not.
             if (sampleCount_ == 4) {
+                target.depthCompare = WGPUCompareFunction_LessEqual;
                 target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
             }
             // ponytail: one depth bias for every aux draw, a transparent MRT draw included; a custom slot behind an
