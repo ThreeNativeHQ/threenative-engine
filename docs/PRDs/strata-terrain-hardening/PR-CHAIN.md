@@ -29,7 +29,7 @@ Decisions:
 
 | Candidate | Decision | Why | Rating |
 |---|---|---|---|
-| Real-world elevation as an MCP input (new PR-5) | **Adopt** | The decoder and the layer exist, so the gap is one MCP argument plus attribution. An agent can then build terrain around Mount Fuji or the Rockies. Global data is about 30 m/px, so it fits mountains and the backdrop. A walkable 512 m square needs the erosion and grain layers on top, or 1 m lidar. | ⭐⭐⭐⭐⭐ |
+| Real-world elevation chosen by the MCP itself (new PR-5) | **Adopt** | The decoder and the layer exist. The tool picks a real survey from the request words, with attribution, so a request for mountains gets real mountain shapes. Global data is about 30 m/px, so it fits mountains and the backdrop. A walkable 512 m square needs the erosion and grain layers on top, or 1 m lidar. | ⭐⭐⭐⭐⭐ |
 | [heightmap-level-generator](https://github.com/m-w-marker/heightmap-level-generator) (MIT, WGSL rain and scree erosion) | **Port the algorithm** into PR-7 | Erosion is about 80% of the bake, and its gullies and scree fans are the mountain detail we lack. The GPU path needs WebGPU in Node, so PR-7 first ports the scree and gully passes to the CPU bake, and measures a GPU path only if the bake time requires it. | ⭐⭐⭐⭐ |
 | [Unreal Heightmap](https://github.com/manticorp/unrealheightmap) (MIT, browser, 16-bit PNG and EXR up to 8 129 px, Mapterhorn Copernicus GLO-30 plus lidar) | **Recommend as the user-side tool** | It exports the 16-bit PNG that `decodeHeightPNG` reads. Exports over 4 097 px must fail closed or downsample. Its MIT code is a reference for the georeferencing and the water mask. | ⭐⭐⭐⭐ |
 | AWS Terrain Tiles ([tilezen/joerd](https://github.com/tilezen/joerd)) | **Adopt as the optional fetch source** | Public, no key, measured above. Each source carries its own attribution (USGS, Copernicus EU-DEM, LINZ CC BY, and others), so the import writes the attribution into the kit. | ⭐⭐⭐⭐ |
@@ -50,7 +50,7 @@ flowchart TD
   S2["PR-2 PRD-585<br/>Strata proof in CI"]
   S3["Step 3 — direct to develop<br/>one test:terrain:web run<br/>closes PRD-595, PRD-798"]
   S4["PR-4 PRD-591<br/>loadTerrainSplat + measured height bands"]
-  S5["PR-5 NEW-4<br/>real-world heightmap into terrain_generate"]
+  S5["PR-5 NEW-4<br/>one request decides the whole terrain"]
   S6["PR-6 NEW-1<br/>ground vegetation revamp"]
   S7["PR-7 NEW-2<br/>mountain improvement"]
   S8["PR-8 PRD-583<br/>layered PBR in the cook"]
@@ -84,7 +84,7 @@ Two lanes can run at the same time: **A** engine, CI and MCP (Step 0, PR-1, PR-2
 | 2 | A | PR-2 | PRD-585: the `strata` CI job is green | 0 | 0.5–1 day | ⭐⭐⭐⭐ |
 | 3 | A | direct | One web run closes PRD-595 AC-3 and the Strata half of PRD-798 | 2 | 2–3 h | ⭐⭐⭐⭐ |
 | 4 | A | PR-4 | PRD-591: `loadTerrainSplat` plumbing and measured height bands | 3 | 0.5 day | ⭐⭐⭐⭐ |
-| 5 | A | PR-5 | NEW-4: `terrain_generate` takes a real-world heightmap | 1 | 0.5–1 day | ⭐⭐⭐⭐⭐ |
+| 5 | A | PR-5 | NEW-4: one request decides landform, water, size and a real survey | 1 | 0.5–1 day | ⭐⭐⭐⭐⭐ |
 | 6 | B | PR-6 | NEW-1: ground vegetation revamp | 4 | 2–3 days | ⭐⭐⭐⭐⭐ |
 | 7 | B | PR-7 | NEW-2: mountain improvement | 5, 6 | 2–3 days | ⭐⭐⭐⭐ |
 | 8 | B | PR-8 | PRD-583: layered PBR surface in the cook, headed judge | 6 | 1 day | ⭐⭐⭐ |
@@ -125,14 +125,19 @@ Run `pnpm --filter strata-terrain-preview test:terrain:web` once on the owned en
 
 AC-4: the ground uses `loadTerrainSplat`, and the height bands come from the world's measured range. AC-5: a five-kit judge, NEUTRAL or better.
 
-## PR-5 — NEW-4: a real-world heightmap into `terrain_generate`
+## PR-5 — NEW-4: one sentence decides the whole terrain
+
+**Owner direction (2026-11-07):** the terrain MCP receives a request such as "create a forest with mountains and a river" and decides everything itself. Real elevation is one of its internal choices, not an input the agent prepares.
+
+**Today:** `terrain_generate` already takes `request`, but it reads only the biome words (`BIOME_WORD_ROWS`, `packages/terrain/src/mcp/tools.ts:198`). "Mountains", "river", "island", "huge" and every other word are dropped silently, and `landform`, `water` and `sizeMeters` come only from explicit arguments.
 
 Scope (bake-time only, no network call at runtime):
 
-1. `terrain_generate` takes `heightmap: <path>` (a 16-bit grayscale PNG or `.r16`), plus `sizeMeters` and `attribution`. It builds the `heightmap` layer with the existing `decodeHeightPNG` or `decodeRAW16`, then the biome's erosion and grain layers. Proof: a red-green spec in `packages/terrain/__tests__/terrain-mcp.spec.ts`.
-2. Fail closed: a PNG over 4 097 px, an 8-bit or RGB file, or a missing `attribution` throws and names the field. Proof: the same spec.
-3. Optional `location: { lat, lon, zoom }` fetches AWS terrarium tiles at cook time, decodes them (`height = R·256 + G + B/256 − 32768`) and writes the source attribution into the kit README. Proof: a spec on a checked-in tile fixture, plus one real cook of Mount Fuji.
-4. Kit docs: link Unreal Heightmap as the user-side export tool, and state that global data is about 30 m/px.
+1. The request words also pick the landform, the water bodies and the size (for example "mountains" → `alpine` or `temperateMountains`, "river" → a river row, "island" → `coastalCliffs` plus an ocean row). An explicit argument wins over a word. Proof: a red-green spec in `packages/terrain/__tests__/terrain-mcp.spec.ts`, one case per word row.
+2. The result reports each choice and the word that made it, plus the words it did not use, so the calling agent can correct one argument instead of guessing. Proof: the same spec asserts the `decided` and `unused` fields.
+3. The tool picks the ground source by itself: a real survey from a curated location table (one or more per landform, each with its attribution), or the procedural landform. It fetches AWS terrarium tiles at cook time, caches them, decodes them (`height = R·256 + G + B/256 − 32768`) and writes the attribution into the kit README. Global data is about 30 m/px, so the real survey sets the macro shape and the backdrop silhouettes, and the biome's erosion and grain layers add the walkable detail. Proof: a spec on a checked-in tile fixture, plus one real cook from "alpine mountains".
+4. A named override for each automatic choice: `landform`, `water`, `sizeMeters`, and `ground: "procedural" | { heightmap: <16-bit PNG or .r16 path> } | { location: { lat, lon } }`. The result names the override when one is used. A PNG over 4 097 px or an 8-bit file throws and names the field. Proof: the same spec.
+5. No network at cook time: the cook fails closed and names the missing tile, unless `ground: "procedural"` is passed. A silent switch to procedural is not allowed. Proof: the same spec with the fetch stubbed to fail.
 
 ## PR-6 — NEW-1: ground vegetation revamp
 
