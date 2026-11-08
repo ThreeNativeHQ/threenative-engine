@@ -344,10 +344,12 @@ tn_native_engine_test(tn-native-engine-aux-fragment-test tests/native-engine/aux
     native_engine_aux_fragment_small=fits_without_slots
     native_engine_aux_fragment_custom_slot=refused_with_a_slot)
 
-# Which colour attachments a draw writes: a draw that masks its named targets still writes its own MRT slot.
+# Which colour attachments a draw writes, and the depth test the aux pass runs for it: a draw that masks its named
+# targets still writes its own MRT slot, and one that wrote no depth is not tested for equality.
 tn_native_engine_test(tn-native-engine-attachment-mask-test tests/native-engine/attachment_mask_test.cpp
     native_engine_attachment_mask=custom_slot
-    native_engine_attachment_mask_material=material_mask)
+    native_engine_attachment_mask_material=material_mask
+    native_engine_attachment_mask_depth=depth_test)
 
 # The aux pass's bundle key: a bundle follows the pass's colour-target count, a custom MRT slot included.
 tn_native_engine_test(tn-native-engine-aux-bundle-key-test tests/native-engine/aux_bundle_key_test.cpp
