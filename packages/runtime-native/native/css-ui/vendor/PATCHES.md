@@ -401,6 +401,26 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   scroll` stops reporting the 140 px lie: 30 of 31 cells are now honestly "does not discriminate"
   (they need a `scrollIntoView` driver or a snap implementation) instead of a false failure.
 
+### 18. a table's row and row group never received a layout
+
+* **Where:** `src/layout/table.rs` — `TableContext` gains `cell_rows` and `row_boxes`, `TableRow` gains
+  its `group`, `collect_table_cells` threads the row and the group through, and
+  `TableTreeWrapper::set_unrounded_layout` grows each row, and each row its group, as taffy reports the
+  cells.
+* **Why:** a table is mapped onto taffy's grid and the wrapper exposes the *cells* only. A `tr` and a
+  `tbody` are in the box tree but not in the grid, so neither was ever laid out: both stayed as
+  zero-width boxes at the table's origin. A browser gives `tr` the row's area and `tbody` the union of
+  its rows, spanning the table's content width — and the parity meter reads exactly those boxes for its
+  1-px edge bar, so `border-collapse`, `table-fixed` and the three `border-spacing` cells each failed on
+  a `tbody` miss of 300 px and more.
+* **Proves it:** `tests/table_boxes.rs` (`a_row_and_its_group_span_the_table_instead_of_collapsing_to_nothing`):
+  before this hunk `tbody` reads `[0.0, 0.0, 0.0, 0.0]` against a 200 px table, after it
+  `[0.0, 0.0, 190.0, 62.0]` covering both rows. Measured on the parity meter,
+  `--family PRD-848 --group flow`: the `tbody` edge miss on `border-collapse` falls from 309.5 px to
+  34.5 px and on `table-fixed` from 308 px to 36 px. The group stays at 2 of 15 because the remaining
+  misses are elsewhere (a `<caption>` is still never laid out — see below — and the table's own bottom
+  edge is short); no cell was lost.
+
 ## `stylo-0.20.0` — 118 added code lines and 22 TOML lines, and `stylo_atoms-0.20.0` — 4 added lines
 
 ### 1. a colour transition to an `oklch()` value interpolated in sRGB
