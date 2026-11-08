@@ -36,7 +36,6 @@ import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
   Fn,
-  If,
   color,
   convertToTexture,
   cross,
@@ -1026,11 +1025,10 @@ export class WorldEnvironment {
           ...(renderer.raw as { info?: { engine?: { temporal?: object } } }).info?.engine?.temporal,
         })
       : undefined;
-    // Contact occlusion dims the light that comes from around. With the world cache baked the frame's indirect
-    // diffuse is known per pixel, so only that share takes the occlusion and the sun keeps its light, as
-    // Unreal's AO (indirect light only) leaves it. Without a cache (the three.js engine) the whole frame is dimmed.
-    const indirectOcclusion =
-      ownedEngine && giCache.irradiance !== undefined && options.gtaoIndirectOnly;
+    // Contact occlusion dims the light that comes from around. The owned engine writes each pixel's indirect diffuse
+    // light to its own target, so only that share takes the occlusion and the sun keeps its light, as Unreal's AO
+    // (indirect light only) leaves it. Upstream three has no such target, so there the whole frame is dimmed.
+    const indirectOcclusion = ownedEngine && options.gtaoIndirectOnly;
     // Both screen-space stages below darken the frame with an occlusion gathered at the opaque surface's depth, so both
     // must leave the draws composited over it alone (see the MRT's `translucent` output and `translucentFrame`).
     // `TN_TRANSLUCENT=0` or `?tnTranslucent=0` keeps the target off the frame — the occlusion then darkens the sheets
@@ -1315,14 +1313,17 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
-          // The reach form occludes indirect light only, so a frame without a baked world cache cannot run it:
-          // the whole-frame multiply it would fall back to darkens the sun, and the threejs arm drops the stage.
+          // The reach form occludes indirect light only, so a frame that cannot tell its indirect share apart (upstream
+          // three with no baked world cache) cannot run it: the whole-frame multiply it would fall back to darkens the sun.
           const refusal = aoRefusal({
             reach: options.gtaoRadius === undefined,
             indirectOnly: options.gtaoIndirectOnly,
             // The preset's own declaration covers the frame whose bake has not finished when the chain is built:
             // the gather's fallback reads the cache at render time, and the registration is the other signal.
-            hasIndirect: options.finalGatherMethod !== "none" || giCache.irradiance !== undefined,
+            hasIndirect:
+              ownedEngine ||
+              options.finalGatherMethod !== "none" ||
+              giCache.irradiance !== undefined,
           });
           if (refusal !== undefined) throw new Error(refusal);
           // GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
@@ -1491,60 +1492,22 @@ export class WorldEnvironment {
           const composited = input
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
             .add(vec4(emitted.mul(float(1).sub(occlusion.r)), 0));
-          const cache = indirectOcclusion ? cacheFallback(view) : undefined;
-          if (cache === undefined) return composited;
-          // The pixel's view-space position from its depth and the camera's projection terms, read live each
-          // render: the engine has no getViewPosition, and a post quad's own camera nodes are the quad's.
-          const term = (index: number) =>
-            uniform(view.projectionMatrix.elements[index] ?? 0).onRenderUpdate(
-              () => view.projectionMatrix.elements[index] ?? 0,
-            );
-          const [p0, p5, p8, p9, p10, p14] = [
-            term(0),
-            term(5),
-            term(8),
-            term(9),
-            term(10),
-            term(14),
-          ];
-          const compose = Fn(() => {
-            const coordinate = uv();
-            const result = vec3(composited.rgb).toVar();
-            const sceneDepth = depth().sample(coordinate).r;
-            const sceneNormal = normal().sample(coordinate).xyz;
-            // The sky and a draw the normal pass skips (an unlit material) keep the whole-frame multiply.
-            If(sceneDepth.lessThan(1).and(sceneNormal.dot(sceneNormal).greaterThan(0.25)), () => {
-              const viewZ = p14.negate().div(sceneDepth.add(p10));
-              const ndc = vec2(
-                coordinate.x.mul(2).sub(1),
-                float(1).sub(coordinate.y).mul(2).sub(1),
-              );
-              const position = vec3(
-                viewZ.negate().mul(ndc.x.add(p8)).div(p0),
-                viewZ.negate().mul(ndc.y.add(p9)).div(p5),
-                viewZ,
-              );
-              // The indirect diffuse the material added: the cache's irradiance times the albedo, in the frame's
-              // units (the gather's own fallback reads it the same way). Only it takes the occlusion, and the
-              // result is never darker than the whole-frame multiply.
-              const indirect = albedo()
-                .rgb.mul(float(1).sub(metal().r))
-                .mul(cache(position, sceneNormal.normalize()))
-                .mul(frameGain);
-              // Only the opaque part of the frame carries that indirect light: a draw composited over it did not receive it.
-              const opaque = input.rgb.sub(translucentFrame);
-              result.assign(
-                max(
-                  opaque
-                    .sub(indirect.mul(float(1).sub(keeps ?? occlusion.r)))
-                    .add(translucentFrame),
-                  composited.rgb,
-                ),
-              );
-            });
-            return vec4(result, input.a);
-          });
-          return compose();
+          if (!indirectOcclusion) return composited;
+          // The indirect diffuse light the materials added, from the engine's own target (hemisphere, ambient,
+          // environment and baked irradiance, never a direct light), in the frame's units. Only it takes the
+          // occlusion, as Unreal's composite multiplies only the indirect term by the AO (UE 5.8.3:
+          // Engine/Shaders/Private/DiffuseIndirectComposite.usf:195). An unlit draw and the sky add none, so
+          // they keep their colour. The result is never darker than the whole-frame multiply.
+          const indirect = textureNode("indirectDiffuse").rgb.mul(frameGain);
+          // Only the opaque part of the frame carries that indirect light: a draw composited over it did not receive it.
+          const opaque = input.rgb.sub(translucentFrame);
+          return vec4(
+            max(
+              opaque.sub(indirect.mul(float(1).sub(keeps ?? occlusion.r))).add(translucentFrame),
+              composited.rgb,
+            ),
+            input.a,
+          );
         },
       }),
       stage({

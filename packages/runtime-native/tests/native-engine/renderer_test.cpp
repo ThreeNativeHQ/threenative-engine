@@ -3118,6 +3118,82 @@ void emissivePass(bool requirePixels) {
     }
 }
 
+// PRD-635: the indirectDiffuse target holds each lit draw's indirect diffuse light alone, so a screen-space occlusion can
+// darken that share and leave the sun. A plane lit by an ambient light writes the colour-shaped ambient share; adding a
+// directional light brightens the frame but leaves the target unchanged; an unlit draw writes nothing.
+void indirectTarget() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    WGPUAdapterInfo info{};
+    wgpuAdapterGetInfo(context.getAdapter(), &info);
+    const bool rendersPixels = info.backendType != WGPUBackendType_Null;
+    wgpuAdapterInfoFreeMembers(info);
+    CHECK(rendersPixels);
+    if (!rendersPixels) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    namespace g = shader::graph;
+    renderer.setPostGraph(g::bloom(g::texture("indirectDiffuse", g::uv()), 0, 0, 0));
+    CHECK(renderer.readIndirectPixels([](GpuStatus, std::vector<uint8_t>) {}) == GpuStatus::InvalidHandle);
+    const auto geometry = plane(4, 4);
+    const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};  // plane() carries no normals
+    geometry->normals.resize(12);
+    geometry->normals.write(0, facing, sizeof facing);
+    shader::StandardMaterial material;
+    material.color = {0.25f, 0.5f, 1};
+    material.metalness = 0; material.roughness = 1;
+    DrawItem item;
+    item.key = item.id = 1;
+    item.kind = MaterialKind::Standard;
+    item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
+    item.material = &material;
+    item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    const auto centre = [&](LightState lights) {
+        for (int frame = 0; frame < 2; ++frame)
+            renderer.render(std::span<const DrawItem>(&item, 1), camera(1), lights, {0,0,0,0});
+        std::vector<uint8_t> pixels;
+        bool done = false;
+        CHECK(renderer.readIndirectPixels([&](GpuStatus status, std::vector<uint8_t> bytes) {
+            CHECK(status == GpuStatus::Ok);
+            pixels = std::move(bytes); done = true;
+        }) == GpuStatus::Ok);
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer.poll(); events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        std::array<float, 3> value{-1, -1, -1};
+        CHECK(done && pixels.size() == 16 * 16 * 8);
+        if (pixels.size() != 16 * 16 * 8) return value;
+        for (int l = 0; l < 3; ++l) {
+            const size_t offset = (8 * 16 + 8) * 8 + l * 2;
+            const uint16_t half = uint16_t(pixels[offset]) | uint16_t(pixels[offset + 1] << 8);
+            const int exponent = (half >> 10) & 31, mantissa = half & 1023;
+            value[l] = exponent ? std::ldexp(1.f + mantissa / 1024.f, exponent - 15) : std::ldexp(mantissa / 1024.f, -14);
+        }
+        return value;
+    };
+    LightState ambient;
+    ambient.ambient = {2, 2, 2};
+    const auto alone = centre(ambient);
+    std::printf("indirect target, ambient only: %g %g %g\n", alone[0], alone[1], alone[2]);
+    CHECK(alone[0] > 0.01f);
+    // Lambert of the albedo: the channels keep the colour's 1 : 2 : 4 ratio.
+    CHECK(std::abs(alone[1] / alone[0] - 2) < 0.05f);
+    CHECK(std::abs(alone[2] / alone[0] - 4) < 0.05f);
+    LightState sunlit = ambient;
+    sunlit.direct.push_back(DirectLight::directional({0, 0, 1}, {3, 3, 3}));
+    const auto lit = centre(sunlit);
+    std::printf("indirect target, ambient and sun: %g %g %g\n", lit[0], lit[1], lit[2]);
+    for (int l = 0; l < 3; ++l) CHECK(std::abs(lit[l] - alone[l]) < 0.01f * alone[l] + 0.001f);
+    item.kind = MaterialKind::Basic;
+    const auto unlit = centre(sunlit);
+    for (int l = 0; l < 3; ++l) CHECK(unlit[l] == 0);
+}
+
 // PRD-754: in depth order (three's painterSortStable) the main pass's bundle key follows each origin's depth, so a
 // camera turn that swaps two boxes' depths re-records the bundle for its order and names that cause; the state-first
 // order holds the bundle across the turn, and a held pose records nothing either way. Renderer::recordCause tells order, offsets and count apart.
@@ -3605,7 +3681,7 @@ void auxTargetsAlphaTested() {
 }
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

@@ -362,6 +362,90 @@ function shIrradiance(coefficient: (index: number) => V3, n: V3): V3 {
     .max(0) as V3;
 }
 
+/**
+ * The octahedral cell of a unit direction in an R x R map: the sphere folded onto a square through the z axis, the layout
+ * Unreal's radiance cache stores per probe (UE 5.8.3: Engine/Shaders/Private/Lumen/LumenRadianceCacheCommon.ush,
+ * GetProbeTexelCoordFromDirection, and UnitVectorToOctahedron in Engine/Shaders/Private/OctahedralCommon.ush).
+ * Returns `row * R + column`.
+ */
+export function octahedralCell(x: number, y: number, z: number, resolution: number): number {
+  const l1 = Math.abs(x) + Math.abs(y) + Math.abs(z) || 1;
+  let u = x / l1;
+  let v = y / l1;
+  if (z < 0) {
+    const fu = (1 - Math.abs(v)) * (u >= 0 ? 1 : -1);
+    v = (1 - Math.abs(u)) * (v >= 0 ? 1 : -1);
+    u = fu;
+  }
+  const column = Math.min(resolution - 1, Math.floor((u * 0.5 + 0.5) * resolution));
+  const row = Math.min(resolution - 1, Math.floor((v * 0.5 + 0.5) * resolution));
+  return row * resolution + column;
+}
+
+/** The unit direction at the centre of an octahedral cell (the inverse fold of `octahedralCell`). */
+function octahedralCellCentre(cell: number, resolution: number): [number, number, number] {
+  let u = (((cell % resolution) + 0.5) / resolution) * 2 - 1;
+  let v = ((Math.floor(cell / resolution) + 0.5) / resolution) * 2 - 1;
+  const z = 1 - Math.abs(u) - Math.abs(v);
+  if (z < 0) {
+    const fu = (1 - Math.abs(v)) * (u >= 0 ? 1 : -1);
+    v = (1 - Math.abs(u)) * (v >= 0 ? 1 : -1);
+    u = fu;
+  }
+  const length = Math.hypot(u, v, z) || 1;
+  return [u / length, v / length, z / length];
+}
+
+/**
+ * Which rays fill each octahedral cell: `rays` lists ray indices cell by cell (one per vec4, in x) and `ranges` holds each
+ * cell's first entry and count (x, y). A cell no ray lands in takes the ray nearest its centre, so a map from few rays
+ * has no hole.
+ */
+export function octahedralRayTable(
+  directions: Float32Array,
+  count: number,
+  resolution: number,
+): { readonly rays: Float32Array; readonly ranges: Float32Array } {
+  const cells = resolution * resolution;
+  const members: number[][] = Array.from({ length: cells }, () => []);
+  for (let ray = 0; ray < count; ray += 1) {
+    const cell = octahedralCell(
+      directions[ray * 4] ?? 0,
+      directions[ray * 4 + 1] ?? 0,
+      directions[ray * 4 + 2] ?? 0,
+      resolution,
+    );
+    members[cell]?.push(ray);
+  }
+  members.forEach((list, cell) => {
+    if (list.length > 0) return;
+    const [cx, cy, cz] = octahedralCellCentre(cell, resolution);
+    let best = 0;
+    let bestDot = Number.NEGATIVE_INFINITY;
+    for (let ray = 0; ray < count; ray += 1) {
+      const d =
+        cx * (directions[ray * 4] ?? 0) +
+        cy * (directions[ray * 4 + 1] ?? 0) +
+        cz * (directions[ray * 4 + 2] ?? 0);
+      if (d > bestDot) [best, bestDot] = [ray, d];
+    }
+    list.push(best);
+  });
+  const total = members.reduce((sum, list) => sum + list.length, 0);
+  const rays = new Float32Array(total * 4);
+  const ranges = new Float32Array(cells * 4);
+  let next = 0;
+  members.forEach((list, cell) => {
+    ranges[cell * 4] = next;
+    ranges[cell * 4 + 1] = list.length;
+    for (const ray of list) {
+      rays[next * 4] = ray;
+      next += 1;
+    }
+  });
+  return { rays, ranges };
+}
+
 /** The per-volume inputs of the kernels. */
 export interface IProbeTraceGrid {
   readonly min: Vector3;
@@ -394,6 +478,13 @@ export interface IProbeTraceKernels {
   readonly bounce: { value: number };
   readonly raysPerProbe: number;
   readonly maxBatch: number;
+  /**
+   * Cells per side of each probe's octahedral radiance map, 0 for none. The map holds the mean radiance of the rays in
+   * each cell (`probeCount * R * R` vec4, probe-major), written by `octahedral` after `project`.
+   */
+  readonly octahedralResolution: number;
+  readonly octahedral?: AnyNode;
+  readonly radianceMap?: StorageBufferAttribute;
   dispose(): void;
 }
 
@@ -404,6 +495,7 @@ export function createProbeTraceKernels(
   raysPerProbe: number,
   maxBatch: number,
   pointCount = 0,
+  octahedralResolution = 0,
 ): IProbeTraceKernels {
   const attributes: StorageBufferAttribute[] = [];
   const buffer = (array: Float32Array | Int32Array, itemSize: number) => {
@@ -548,10 +640,13 @@ export function createProbeTraceKernels(
       const irradiance = direct.add(previousIrradiance(point, facing).mul(bounce));
       result.assign(emission.add(albedo.mul(irradiance).mul(INV_PI)));
     });
-    // w: 1 when the ray first met a surface from behind (the probe's rejection share, `BACKFACE_REJECTION_SHARE`).
+    // w: the hit distance (`far` on a miss), negative when the ray first met a surface from behind (the probe's rejection
+    // share, `BACKFACE_REJECTION_SHARE`). The octahedral map keeps the distance as its depth, as Unreal's radiance cache
+    // keeps a depth atlas beside its radiance (UE 5.8.3: Engine/Shaders/Private/Lumen/LumenRadianceCacheInterpolation.ush:215).
+    const distance = select(hit.triangle.greaterThanEqual(0), max(hit.t, 0.0001), float(far));
     radianceNode
       .element(instanceIndex)
-      .assign(vec4(result, select(back.lessThan(hit.t), float(1), float(0))));
+      .assign(vec4(result, select(back.lessThan(hit.t), distance.negate(), distance)));
   })().compute(maxBatch * raysPerProbe);
 
   const project = Fn(() => {
@@ -566,7 +661,7 @@ export function createProbeTraceKernels(
       ({ i }: { i: AnyNode }) => {
         const sample = radianceNode.element(slot.mul(int(raysPerProbe)).add(i));
         const value = sample.xyz;
-        backfaces.addAssign(sample.w);
+        backfaces.addAssign(select(sample.w.lessThan(0), float(1), float(0)));
         const d = directions.element(i);
         add(0, value.mul(0.282095));
         add(1, value.mul(d.y.mul(0.488603)));
@@ -587,6 +682,43 @@ export function createProbeTraceKernels(
     });
   })().compute(maxBatch);
 
+  // Each probe's octahedral radiance map: one work item per (probe, cell) averages the rays the table puts in that cell.
+  const cells = octahedralResolution * octahedralResolution;
+  let octahedral: AnyNode | undefined;
+  let radianceMap: StorageBufferAttribute | undefined;
+  if (cells > 0) {
+    const table = octahedralRayTable(
+      probeRayDirections(raysPerProbe),
+      raysPerProbe,
+      octahedralResolution,
+    );
+    const cellRays = read(table.rays, "vec4");
+    const cellRanges = read(table.ranges, "vec4");
+    radianceMap = buffer(new Float32Array(grid.probeCount * cells * 4), 4);
+    const mapNode = storage(radianceMap, "vec4", grid.probeCount * cells) as AnyNode;
+    octahedral = Fn(() => {
+      const slot = int(instanceIndex).div(int(cells));
+      const cell = int(instanceIndex).sub(slot.mul(int(cells)));
+      If(slot.greaterThanEqual(batchSize), () => Return());
+      const probe = probes.element(slot);
+      const range = cellRanges.element(cell);
+      const first = int(range.x);
+      const count = int(range.y);
+      const sum = vec3(0).toVar();
+      const depth = float(0).toVar();
+      Loop({ start: int(0), end: count, type: "int", condition: "<" }, ({ i }: { i: AnyNode }) => {
+        const ray = int(cellRays.element(first.add(i)).x);
+        const sample = radianceNode.element(slot.mul(int(raysPerProbe)).add(ray));
+        sum.addAssign(sample.xyz);
+        depth.addAssign(abs(sample.w));
+      });
+      // w: the cell's mean hit distance, the depth `ProbeVolume`'s visibility test reads.
+      mapNode
+        .element(probe.mul(int(cells)).add(cell))
+        .assign(vec4(sum.div(float(count)), depth.div(float(count))));
+    })().compute(maxBatch * cells);
+  }
+
   return {
     batchSize,
     bounce,
@@ -596,6 +728,9 @@ export function createProbeTraceKernels(
     },
     materials: materialNode.value as StorageBufferAttribute,
     maxBatch,
+    octahedralResolution: cells > 0 ? octahedralResolution : 0,
+    ...(octahedral === undefined ? {} : { octahedral }),
+    ...(radianceMap === undefined ? {} : { radianceMap }),
     probeList,
     project,
     points,
@@ -616,6 +751,8 @@ export function fillRejectedProbes(
   coefficients: Float32Array,
   shares: Float32Array,
   resolution: { readonly x: number; readonly y: number; readonly z: number },
+  /** Other per-probe arrays to fill the same way (an octahedral radiance map), each with its floats per probe. */
+  alongside: readonly { readonly data: Float32Array; readonly stride: number }[] = [],
 ): number {
   const { x: nx, y: ny, z: nz } = resolution;
   const open = Uint8Array.from(shares, (share) => (share > BACKFACE_REJECTION_SHARE ? 0 : 1));
@@ -626,7 +763,8 @@ export function fillRejectedProbes(
     for (let probe = 0; probe < open.length; probe += 1) {
       const neighbours = open[probe] === 1 ? [] : openNeighbours(probe, open, nx, ny, nz);
       if (neighbours.length === 0) continue;
-      meanInto(coefficients, probe, neighbours);
+      meanInto(coefficients, probe, neighbours, 27);
+      for (const { data, stride } of alongside) meanInto(data, probe, neighbours, stride);
       filled.push(probe);
     }
     for (const probe of filled) open[probe] = 1;
@@ -634,9 +772,13 @@ export function fillRejectedProbes(
   return rejected;
 }
 
-/** One probe's 27 coefficients become the mean of its neighbours'. */
-function meanInto(coefficients: Float32Array, probe: number, neighbours: readonly number[]): void {
-  const stride = 27;
+/** One probe's `stride` floats (27 SH coefficients, or a radiance map) become the mean of its neighbours'. */
+function meanInto(
+  coefficients: Float32Array,
+  probe: number,
+  neighbours: readonly number[],
+  stride: number,
+): void {
   for (let k = 0; k < stride; k += 1) {
     let sum = 0;
     for (const n of neighbours) sum += coefficients[n * stride + k] ?? 0;
@@ -692,10 +834,14 @@ const ratioStepped = (from: number, to: number): boolean => {
   return ratio > LIGHTING_STEP_RATIO || ratio < 1 / LIGHTING_STEP_RATIO;
 };
 
-/** True when `to` differs from `from` by more than the field may serve as a small drift. */
+/**
+ * True when `to` differs from `from` by more than the field may serve as a small drift. The direction counts only while
+ * the sun lights the scene: an unlit sun has none, and three's `angleTo` reads a zero vector as 90 degrees, so a scene
+ * with no sun would restart its bake every frame.
+ */
 export function lightingStepped(from: ILightingKey, to: ILightingKey): boolean {
   return (
-    from.direction.angleTo(to.direction) > LIGHTING_STEP_RADIANS ||
+    (from.sun > 0 && to.sun > 0 && from.direction.angleTo(to.direction) > LIGHTING_STEP_RADIANS) ||
     ratioStepped(from.sun, to.sun) ||
     ratioStepped(from.sky, to.sky)
   );

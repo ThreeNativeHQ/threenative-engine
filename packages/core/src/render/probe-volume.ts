@@ -17,14 +17,17 @@ import {
 } from "three";
 import {
   Fn,
+  abs,
   clamp,
   cubeTexture,
   float,
   floor,
   int,
+  length,
   normalWorld,
   normalize,
   positionWorld,
+  select,
   texture,
   texture3D,
   uniform,
@@ -37,6 +40,7 @@ import {
   ClampToEdgeWrapping,
   CubeRenderTarget,
   Data3DTexture,
+  DataTexture,
   FloatType,
   HalfFloatType,
   LinearFilter,
@@ -50,6 +54,7 @@ import type { Node, TextureNode } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import type { IRendererLike } from "../renderer.js";
 import {
+  BACKFACE_REJECTION_SHARE,
   type ILightingKey,
   type IProbeTraceKernels,
   type IProbeTraceLighting,
@@ -150,6 +155,22 @@ export interface IProbeVolumeOptions {
    * ProbeResolution). A small emitter far from a probe needs the larger value to be hit at all.
    */
   readonly probeResolution?: number;
+  /**
+   * Cells per side of an octahedral radiance map per probe, beside the SH: the traced rays binned by direction, as
+   * Unreal's radiance cache stores 32 x 32 radiance per probe (UE 5.8.3:
+   * Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:641, GRadianceCacheProbeResolution).
+   * `sampleRadianceNode` then reads the map, sharp where SH L2 smears a coloured wall across the sphere. 0 (the default)
+   * keeps SH only. Traced refresh only.
+   */
+  readonly radianceProbeResolution?: number;
+  /**
+   * Weight each of the eight probes a read blends by Unreal's depth test: a probe whose map depth toward the read point is
+   * shorter than the point's distance sees a surface first, so it sits behind a wall and drops out (UE 5.8.3:
+   * Engine/Shaders/Private/Lumen/LumenRadianceCacheInterpolation.ush:390, `StepHitDistanceFromProbe` against
+   * `StepRayDistanceFromProbeSq`). Stops light leaking through a wall thinner than a probe spacing. Needs
+   * `radianceProbeResolution`. Off by default.
+   */
+  readonly probeVisibility?: boolean;
 }
 
 /** What a traced refresh reads. Every value is the game's: the volume owns no light and no colour. */
@@ -381,6 +402,9 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   /** The last four batch sizes: a timestamp arrives frames late, so a reading is charged to the smallest of them. */
   #recentBatches: number[] = [];
   readonly #raysPerProbe: number;
+  readonly #mapResolution: number;
+  readonly #visibility: boolean;
+  #radianceMapTexture?: DataTexture;
   #kernels: IProbeTraceKernels | undefined;
   #kernelVersion = -1;
   #ignoredTextureMaterials = 0;
@@ -443,6 +467,15 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     );
     const probeResolution = positiveInteger(options.probeResolution ?? 8, "probeResolution");
     this.#raysPerProbe = probeResolution * probeResolution;
+    this.#mapResolution =
+      options.radianceProbeResolution === undefined || options.radianceProbeResolution === 0
+        ? 0
+        : positiveInteger(options.radianceProbeResolution, "radianceProbeResolution");
+    this.#visibility = options.probeVisibility === true;
+    if (this.#visibility && this.#mapResolution === 0)
+      throw new Error(
+        "ProbeVolume probeVisibility needs radianceProbeResolution (the map holds the depth).",
+      );
 
     const normalizedBounds = normalizeBounds(options.bounds);
     this.boundingBox = normalizedBounds;
@@ -699,15 +732,28 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   }
 
   sampleIrradiance(position: Vector3, normal: Vector3): Vector3 {
+    return this.#evaluateCpu(position, normal, SH_IRRADIANCE_WEIGHTS, "sampleIrradiance");
+  }
+
+  /**
+   * The radiance arriving along `direction` (the SH itself, not convolved with a cosine lobe), clamped at zero. A
+   * screen gather subtracts this per ray, because a hit replaces the cache's radiance along that ray: Lumen reads its
+   * radiance cache per ray direction (UE 5.8.3: Engine/Shaders/Private/Lumen/LumenScreenProbeTracing.usf:831).
+   */
+  sampleRadiance(position: Vector3, direction: Vector3): Vector3 {
+    return this.#evaluateCpu(position, direction, SH_RADIANCE_WEIGHTS, "sampleRadiance");
+  }
+
+  #evaluateCpu(position: Vector3, normal: Vector3, weights: IShWeights, name: string): Vector3 {
     if (!(position instanceof Vector3) || !(normal instanceof Vector3)) {
-      throw new Error("ProbeVolume.sampleIrradiance requires Vector3 position and normal values.");
+      throw new Error(`ProbeVolume.${name} requires Vector3 position and normal values.`);
     }
     const coefficients = this.#samplePackedCoefficients(position);
     const direction = normal.clone().normalize();
     const result = new Vector3();
-    result.x = evaluateShChannel(coefficients, 0, direction);
-    result.y = evaluateShChannel(coefficients, 1, direction);
-    result.z = evaluateShChannel(coefficients, 2, direction);
+    result.x = evaluateShChannel(coefficients, 0, direction, weights);
+    result.y = evaluateShChannel(coefficients, 1, direction, weights);
+    result.z = evaluateShChannel(coefficients, 2, direction, weights);
     return result.max(new Vector3());
   }
 
@@ -760,8 +806,159 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     position: Node<"vec3"> = positionWorld,
     normal: Node<"vec3"> = normalWorld,
   ): Node<"vec3"> {
+    return this.#shNode(position, normal, SH_IRRADIANCE_WEIGHTS);
+  }
+
+  /** The GPU graph of `sampleRadiance`: the radiance arriving along `direction`, clamped at zero. */
+  sampleRadianceNode(
+    position: Node<"vec3"> = positionWorld,
+    direction: Node<"vec3"> = normalWorld,
+  ): Node<"vec3"> {
+    return this.#mapResolution > 0
+      ? this.#radianceMapNode(position, direction)
+      : this.#shNode(position, direction, SH_RADIANCE_WEIGHTS);
+  }
+
+  /**
+   * The octahedral maps laid out as one 2D texture: probe (x, y, z) holds the R x R block at column x and row z * ny + y.
+   * Rejected probes hold their open neighbours' maps (`fillRejectedProbes`), so a reader weights all eight corners.
+   */
+  #packRadianceMap(map: Float32Array, shares: Float32Array): void {
+    const r = this.#mapResolution;
+    // A rejected probe sits inside a solid: depth 0, so the visibility test never weights it.
+    for (let probe = 0; probe < this.#probeCount; probe += 1)
+      if ((shares[probe] ?? 0) > BACKFACE_REJECTION_SHARE)
+        for (let cell = 0; cell < r * r; cell += 1) map[(probe * r * r + cell) * 4 + 3] = 0;
+    const { x: nx, y: ny } = this.resolution;
+    const width = nx * r;
+    const texture = this.#ensureRadianceMapTexture();
+    const data = texture.image.data as Float32Array;
+    for (let probe = 0; probe < this.#probeCount; probe += 1) {
+      const ix = probe % nx;
+      const iy = Math.floor(probe / nx) % ny;
+      const iz = Math.floor(probe / (nx * ny));
+      for (let cell = 0; cell < r * r; cell += 1) {
+        const column = ix * r + (cell % r);
+        const row = (iz * ny + iy) * r + Math.floor(cell / r);
+        const source = (probe * r * r + cell) * 4;
+        data.set(map.subarray(source, source + 4), (row * width + column) * 4);
+      }
+    }
+    texture.needsUpdate = true;
+  }
+
+  #ensureRadianceMapTexture(): DataTexture {
+    if (this.#radianceMapTexture !== undefined) return this.#radianceMapTexture;
+    const r = this.#mapResolution;
+    const { x: nx, y: ny, z: nz } = this.resolution;
+    const map = new DataTexture(
+      new Float32Array(nx * r * ny * nz * r * 4),
+      nx * r,
+      ny * nz * r,
+      RGBAFormat,
+      FloatType,
+    );
+    map.minFilter = NearestFilter;
+    map.magFilter = NearestFilter;
+    map.generateMipmaps = false;
+    map.needsUpdate = true;
+    this.#radianceMapTexture = map;
+    return map;
+  }
+
+  /** The (column, row) of a direction's cell in an R x R octahedral map, as `octahedralCell` folds it on the CPU. */
+  #octahedralCellNode(direction: Node<"vec3">): Node<"vec2"> {
+    const r = this.#mapResolution;
+    const d = normalize(vec3(direction));
+    const flat = d.xy.div(abs(d.x).add(abs(d.y)).add(abs(d.z)));
+    const sign = (v: Node<"float">) => select(v.greaterThanEqual(0), float(1), float(-1));
+    const folded = vec2(
+      float(1).sub(abs(flat.y)).mul(sign(flat.x)),
+      float(1).sub(abs(flat.x)).mul(sign(flat.y)),
+    );
+    const octahedron = select(d.z.lessThan(0), folded, flat);
+    return clamp(floor(octahedron.mul(0.5).add(0.5).mul(r)), vec2(0), vec2(r - 1));
+  }
+
+  /** The map texel of `cell` in probe `probe` (grid index), as a texture coordinate. */
+  #mapTexelNode(probe: Node<"vec3">, cell: Node<"vec2">): Node<"vec2"> {
+    const r = this.#mapResolution;
+    const { x: nx, y: ny, z: nz } = this.resolution;
+    return vec2(probe.x.mul(r).add(cell.x), probe.z.mul(ny).add(probe.y).mul(r).add(cell.y))
+      .add(0.5)
+      .div(vec2(nx * r, ny * nz * r));
+  }
+
+  /**
+   * The eight probes around `position`: each one's grid index and weight, trilinear and, with `probeVisibility`, times
+   * the depth test (a floor of 1e-3 keeps a point that every probe fails lit by plain trilinear). `total` is the sum.
+   */
+  #cornersNode(position: Node<"vec3">): {
+    readonly corners: readonly { readonly probe: Node<"vec3">; readonly weight: Node<"float"> }[];
+    readonly total: Node<"float">;
+  } {
+    const { x: nx, y: ny, z: nz } = this.resolution;
+    const min = this.boundingBox.min;
+    const size = this.#boundsSize;
+    const spacing = [
+      size.x / Math.max(1, nx - 1),
+      size.y / Math.max(1, ny - 1),
+      size.z / Math.max(1, nz - 1),
+    ] as const;
+    const step = vec3(...spacing);
+    const origin = vec3(min.x, min.y, min.z);
+    const top = vec3(Math.max(0, nx - 1), Math.max(0, ny - 1), Math.max(0, nz - 1));
+    const local = clamp(vec3(position).sub(origin).div(step), vec3(0), top);
+    const base = clamp(
+      floor(local),
+      vec3(0),
+      vec3(Math.max(0, nx - 2), Math.max(0, ny - 2), Math.max(0, nz - 2)),
+    );
+    const fraction = clamp(local.sub(base), vec3(0), vec3(1));
+    // The depth test's soft band: a quarter of the smallest spacing past the stored depth fades the probe out.
+    const band = 0.25 * Math.max(1e-4, Math.min(...spacing));
+    const map = this.#visibility ? this.#ensureRadianceMapTexture() : undefined;
+    let total: Node<"float"> = float(0);
+    const corners = Array.from({ length: 8 }, (_, corner) => {
+      const dx = corner & 1;
+      const dy = (corner >> 1) & 1;
+      const dz = (corner >> 2) & 1;
+      const probe = clamp(base.add(vec3(dx, dy, dz)), vec3(0), top);
+      let weight: Node<"float"> = (dx ? fraction.x : float(1).sub(fraction.x))
+        .mul(dy ? fraction.y : float(1).sub(fraction.y))
+        .mul(dz ? fraction.z : float(1).sub(fraction.z));
+      if (map !== undefined) {
+        const toPoint = vec3(position).sub(origin.add(probe.mul(step)));
+        const distance = length(toPoint);
+        const depth = texture(
+          map,
+          this.#mapTexelNode(probe, this.#octahedralCellNode(toPoint.add(vec3(1e-5, 2e-5, 3e-5)))),
+        ).a;
+        const visible = clamp(depth.add(band).sub(distance).div(band), 0, 1);
+        weight = weight.mul(visible.max(1e-3));
+      }
+      total = total.add(weight);
+      return { probe, weight };
+    });
+    return { corners, total };
+  }
+
+  /** The map's radiance along `direction`: the direction's cell in each of the eight probes around `position`. */
+  #radianceMapNode(position: Node<"vec3">, direction: Node<"vec3">): Node<"vec3"> {
+    const map = this.#ensureRadianceMapTexture();
+    const cell = this.#octahedralCellNode(direction);
+    const { corners, total } = this.#cornersNode(position);
+    let sum: Node<"vec3"> = vec3(0);
+    for (const { probe, weight } of corners)
+      sum = sum.add(texture(map, this.#mapTexelNode(probe, cell)).rgb.mul(weight));
+    return sum.div(total.max(1e-6)).max(0);
+  }
+
+  #shNode(position: Node<"vec3">, normal: Node<"vec3">, w: IShWeights): Node<"vec3"> {
     const atlasAt = this.#atlasAt(position);
-    const packed = (subVolume: number) => this.#atlasNode.sample(atlasAt(subVolume));
+    const packed = this.#visibility
+      ? this.#visiblePacked(position)
+      : (subVolume: number) => this.#atlasNode.sample(atlasAt(subVolume));
     const packedValues = Array.from({ length: PACKED_SUB_VOLUME_COUNT }, (_, index) =>
       packed(index),
     );
@@ -779,21 +976,50 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     ];
     const direction = normalize(vec3(normal));
     const coefficientAt = (index: number) => valueAt(coefficients, index, "SH coefficient");
-    const irradiance = coefficientAt(0)
-      .mul(0.886227)
-      .add(coefficientAt(1).mul(direction.y).mul(1.023328))
-      .add(coefficientAt(2).mul(direction.z).mul(1.023328))
-      .add(coefficientAt(3).mul(direction.x).mul(1.023328))
-      .add(coefficientAt(4).mul(direction.x.mul(direction.y)).mul(0.858086))
-      .add(coefficientAt(5).mul(direction.y.mul(direction.z)).mul(0.858086))
-      .add(coefficientAt(6).mul(direction.z.mul(direction.z).mul(0.743125).sub(0.247708)))
-      .add(coefficientAt(7).mul(direction.x.mul(direction.z)).mul(0.858086))
+    const value = coefficientAt(0)
+      .mul(w.l0)
+      .add(coefficientAt(1).mul(direction.y).mul(w.l1))
+      .add(coefficientAt(2).mul(direction.z).mul(w.l1))
+      .add(coefficientAt(3).mul(direction.x).mul(w.l1))
+      .add(coefficientAt(4).mul(direction.x.mul(direction.y)).mul(w.l2))
+      .add(coefficientAt(5).mul(direction.y.mul(direction.z)).mul(w.l2))
+      .add(coefficientAt(6).mul(direction.z.mul(direction.z).mul(w.l20).sub(w.l20Offset)))
+      .add(coefficientAt(7).mul(direction.x.mul(direction.z)).mul(w.l2))
       .add(
         coefficientAt(8)
           .mul(direction.x.mul(direction.x).sub(direction.y.mul(direction.y)))
-          .mul(0.429043),
+          .mul(w.l22),
       );
-    return irradiance.max(0);
+    return value.max(0);
+  }
+
+  /**
+   * The packed SH at `position` blended over the eight corner probes with the depth-tested weights: each corner's texel
+   * centre (where the atlas's linear filter returns that probe alone), weighted and renormalised.
+   */
+  #visiblePacked(position: Node<"vec3">): (subVolume: number) => Node<"vec4"> {
+    const { x: nx, y: ny, z: nz } = this.resolution;
+    const sliceStride = nz + 2 * SAMPLE_ATLAS_PADDING;
+    const { corners, total } = this.#cornersNode(position);
+    const inverse = float(1).div(total.max(1e-6));
+    return (subVolume) => {
+      let sum: Node<"vec4"> = vec4(0);
+      for (const { probe, weight } of corners)
+        sum = sum.add(
+          this.#atlasNode
+            .sample(
+              vec3(
+                probe.x.add(0.5).div(nx),
+                probe.y.add(0.5).div(ny),
+                probe.z
+                  .add(SAMPLE_ATLAS_PADDING + 0.5 + subVolume * sliceStride)
+                  .div(this.#atlasDepth),
+              ),
+            )
+            .mul(weight),
+        );
+      return sum.mul(inverse);
+    };
   }
 
   /** Internal data seam used by unit/conformance fixtures to seed a known SH atlas without a GPU. */
@@ -986,12 +1212,17 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       this.#raysPerProbe,
       Math.min(this.#traceBudget, this.#probeCount),
       trace.points?.length ?? 0,
+      this.#mapResolution,
     );
     // Carry the field across a scene rebuild, so the new kernels bounce from the old light.
     if (previous !== undefined) {
       (this.#kernels.coefficients.array as Float32Array).set(
         previous.coefficients.array as Float32Array,
       );
+      if (previous.radianceMap !== undefined)
+        (this.#kernels.radianceMap?.array as Float32Array | undefined)?.set(
+          previous.radianceMap.array as Float32Array,
+        );
       previous.dispose();
     }
     if (this.#kernelVersion >= 0 && this.#status !== "unbaked")
@@ -1001,6 +1232,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#kernels.batchSize.value = 0;
     renderer.compute(this.#kernels.trace);
     renderer.compute(this.#kernels.project);
+    if (this.#kernels.octahedral !== undefined) renderer.compute(this.#kernels.octahedral);
     return this.#kernels;
   }
 
@@ -1086,6 +1318,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       kernels.bounce.value = this.#generations > 0 ? 1 : 0;
       renderer.compute(kernels.trace);
       renderer.compute(kernels.project);
+      if (kernels.octahedral !== undefined) renderer.compute(kernels.octahedral);
       for (const probe of batch) {
         this.#traceStale[probe] = 0;
         this.#lastTraced[probe] = this.#frame;
@@ -1112,11 +1345,18 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (this.#readbackInFlight || this.#readbackSerial >= this.#dispatchSerial) return;
     const serial = this.#dispatchSerial;
     this.#readbackInFlight = true;
-    renderer.readback(kernels.coefficients).then(
-      (bytes) => {
+    Promise.all([
+      renderer.readback(kernels.coefficients),
+      kernels.radianceMap === undefined ? undefined : renderer.readback(kernels.radianceMap),
+    ]).then(
+      ([bytes, map]) => {
         this.#readbackInFlight = false;
         if (this.#released || this.#kernels !== kernels) return;
-        this.#acceptReadback(new Float32Array(bytes), serial);
+        this.#acceptReadback(
+          new Float32Array(bytes),
+          serial,
+          map === undefined ? undefined : new Float32Array(map),
+        );
       },
       (error: unknown) => {
         this.#readbackInFlight = false;
@@ -1125,7 +1365,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     );
   }
 
-  #acceptReadback(field: Float32Array, serial: number): void {
+  #acceptReadback(field: Float32Array, serial: number, map?: Float32Array): void {
     for (let index = 0; index < this.#probeCount * SH_COEFFICIENT_COUNT; index += 1) {
       for (let channel = 0; channel < SH_CHANNEL_COUNT; channel += 1) {
         this.#coefficients[index * SH_CHANNEL_COUNT + channel] = field[index * 4 + channel] ?? 0;
@@ -1135,7 +1375,15 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     const shares = new Float32Array(this.#probeCount);
     for (let probe = 0; probe < this.#probeCount; probe += 1)
       shares[probe] = field[probe * SH_COEFFICIENT_COUNT * 4 + 3] ?? 0;
-    this.#probesRejected = fillRejectedProbes(this.#coefficients, shares, this.resolution);
+    const cells = this.#mapResolution * this.#mapResolution;
+    const radianceMap = map?.slice(0, this.#probeCount * cells * 4);
+    this.#probesRejected = fillRejectedProbes(
+      this.#coefficients,
+      shares,
+      this.resolution,
+      radianceMap === undefined ? [] : [{ data: radianceMap, stride: cells * 4 }],
+    );
+    if (radianceMap !== undefined) this.#packRadianceMap(radianceMap, shares);
     this.#packCpuAtlas();
     this.#readbackSerial = serial;
     if (this.#passSerial < 0 || serial < this.#passSerial || this.#status !== "baking") return;
@@ -1181,6 +1429,8 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     for (const material of this.#repackMaterials ?? []) material.dispose();
     this.#quadMesh?.geometry.dispose();
     this.#atlasTexture.dispose();
+    this.#radianceMapTexture?.dispose();
+    this.#radianceMapTexture = undefined;
     this.#cubeRenderTarget = undefined;
     this.#projectionTarget = undefined;
     this.#batchTarget = undefined;
@@ -1968,18 +2218,53 @@ function cubeFaceCoordinate(face: number, col: number, row: number): IVector3Lik
   return { x: -col, y: row, z: -1 };
 }
 
-function evaluateShChannel(coefficients: Float32Array, channel: number, normal: Vector3): number {
+/** The SH L2 basis constants per band, times each band's lobe weight. */
+interface IShWeights {
+  readonly l0: number;
+  readonly l1: number;
+  readonly l2: number;
+  readonly l20: number;
+  readonly l20Offset: number;
+  readonly l22: number;
+}
+
+/** The basis convolved with a cosine lobe (bands times pi, 2 pi / 3 and pi / 4): irradiance E for a normal. */
+const SH_IRRADIANCE_WEIGHTS: IShWeights = {
+  l0: 0.886227,
+  l1: 1.023328,
+  l2: 0.858086,
+  l20: 0.743125,
+  l20Offset: 0.247708,
+  l22: 0.429043,
+};
+
+/** The bare basis: the radiance arriving along a direction. */
+const SH_RADIANCE_WEIGHTS: IShWeights = {
+  l0: 0.282095,
+  l1: 0.488603,
+  l2: 1.092548,
+  l20: 0.946176,
+  l20Offset: 0.315392,
+  l22: 0.546274,
+};
+
+function evaluateShChannel(
+  coefficients: Float32Array,
+  channel: number,
+  normal: Vector3,
+  w: IShWeights,
+): number {
   const c = (index: number) => coefficients[index * SH_CHANNEL_COUNT + channel] ?? 0;
   return (
-    c(0) * 0.886227 +
-    c(1) * normal.y * 1.023328 +
-    c(2) * normal.z * 1.023328 +
-    c(3) * normal.x * 1.023328 +
-    c(4) * normal.x * normal.y * 0.858086 +
-    c(5) * normal.y * normal.z * 0.858086 +
-    c(6) * (normal.z * normal.z * 0.743125 - 0.247708) +
-    c(7) * normal.x * normal.z * 0.858086 +
-    c(8) * (normal.x * normal.x - normal.y * normal.y) * 0.429043
+    c(0) * w.l0 +
+    c(1) * normal.y * w.l1 +
+    c(2) * normal.z * w.l1 +
+    c(3) * normal.x * w.l1 +
+    c(4) * normal.x * normal.y * w.l2 +
+    c(5) * normal.y * normal.z * w.l2 +
+    c(6) * (normal.z * normal.z * w.l20 - w.l20Offset) +
+    c(7) * normal.x * normal.z * w.l2 +
+    c(8) * (normal.x * normal.x - normal.y * normal.y) * w.l22
   );
 }
 
