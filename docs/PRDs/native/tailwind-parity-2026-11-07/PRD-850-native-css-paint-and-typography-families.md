@@ -68,6 +68,12 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
   `me-40`/`mbe-40` need a following sibling in block flow; `aspect-square` needs the probe's height
   to stop being fixed by the staging; `z-40` needs stacked siblings.
+- **Two decoration defects left, measured row by row.** `underline-offset-8` puts the line on row
+  60 where Chromium puts it on 59 (the auto position matches to the row, so the difference is how an
+  explicit offset is rounded: this crate rounds the line's top, Chromium's rasteriser does not).
+  `decoration-wavy` is worse (0.8472): Chromium spreads the wave over three rows at ~70 px each, this
+  crate paints one 111 px row, so the amplitude/period constants in `draw_decoration_line` are not
+  Chromium's. Both are single functions in `text.rs` and neither is a staging question.
 - **The 0.9593 text cells are glyph anti-aliasing, not line breaking (measured).** `break-normal`,
   `text-wrap`, `hyphens-manual` and `wrap-anywhere` all score exactly 0.9593; the two frames for that
   cell put side by side are visually identical, same breaks in the same places ("Lorem ipsum / dolor

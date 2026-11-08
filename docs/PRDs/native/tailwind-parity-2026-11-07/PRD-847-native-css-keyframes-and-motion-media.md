@@ -88,9 +88,11 @@ infinite animation's period** — the sampling instant is both the end of the fi
 start of the second, and the compositor resolves it either way across runs. The engine's frame is
 deterministic (its iteration boundary is pinned by blitz-dom hunk 15).
 
-Consequences, recorded rather than papered over: the ratchet's floor is written from a run where that
-cell failed, so the gate does not depend on it, and the family's reported score is 2–3 of 5 depending
-on the run. Sampling an infinite animation at its period boundary needs a decision from the owner
+Consequences, recorded rather than papered over: the ratchet's floor omits that one cell (it is still
+scored, so a run where it passes reports 256 rather than 255), and the family's reported score is 2–3
+of 5 depending on the run. Two consecutive runs compared frame for frame gave **zero differing
+pixels** on both subjects when the cell passed, which is what makes this a sampling ambiguity rather
+than an engine nondeterminism. Sampling an infinite animation at its period boundary needs a decision from the owner
 (sample 999 ms, sample a finite animation instead, or accept the ambiguity as a known flake).
 
 ## Open
