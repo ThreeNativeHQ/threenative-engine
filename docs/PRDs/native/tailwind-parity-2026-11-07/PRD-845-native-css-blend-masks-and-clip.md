@@ -70,6 +70,19 @@ The parity scene's blend cells still do not move, and the reason is upstream: th
 `Normal` in exactly those cases. `isolate`/`isolation-auto` are a scene question on top of it: both
 need a blended child to isolate, which the staging does not give them.
 
+## Open: the seven `mask-*-to-*` cells need an *opaque* other end, and that change cost more than it won
+
+Measured in Chromium, the staged `mask-b-to-40` probe computes
+`mask-image: …, linear-gradient(rgba(0,0,0,0) 0%, rgba(0,0,0,0) 160px), …` — both ends transparent,
+because the companion that completes a `-to-*` unit is `mask-b-from-transparent`. The mask is therefore
+transparent in *both* arms (the stripped arm keeps the companion), which is why those cells measure
+"does nothing" rather than a mismatch.
+
+Giving a `-to-*` unit an opaque other end (`mask-b-from-black`) does wake them — and costs six cells
+elsewhere in the family (23/50 → 17/50), measured on the same run, so it was reverted. The next attempt
+should change the companion for `-to-*` units and the *contrast* together: those cells' contrast is what
+sets `mask-image: none`, and it has to keep doing so once the companion is opaque.
+
 ## Execution Phases
 
 #### Phase 1: Blend modes
