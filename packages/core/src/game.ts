@@ -1,10 +1,7 @@
-import type { Scene as ThreeScene } from "three";
 import type { IAssetLoaderOptions } from "./assets.js";
-import type { AutoBatch, IAutoBatchConfig } from "./auto-batch.js";
-import type { ComputeDrivenRegistry } from "./compute-driven.js";
+import type { IAutoBatchConfig } from "./auto-batch.js";
 import type { IThreeNativeConfig } from "./config.js";
-import type { Registry } from "./entities.js";
-import type { FrameBudget, IFrameBudgetOptions, IFrameBudgetWindow } from "./frame-budget.js";
+import type { IFrameBudgetOptions, IFrameBudgetWindow } from "./frame-budget.js";
 import {
   type IBootGame,
   clearScene,
@@ -14,49 +11,27 @@ import {
 } from "./game-boot-phase.js";
 import { startFrameLoop } from "./game-frame-loop.js";
 import { startGameWorld, startScenes } from "./game-startup.js";
+import { type IGameUiSeam, createGameUi } from "./game-ui.js";
 import { assertCarry, validateCameraConfig } from "./game-validate.js";
-import type {
-  GeometryCapture,
-  IGeometryCaptureReport,
-  IGeometryCaptureRequest,
-} from "./geometry-capture.js";
+import type { IGeometryCaptureReport, IGeometryCaptureRequest } from "./geometry-capture.js";
 import type { ContextMenuPolicy, InputBindings, InputMap } from "./input.js";
-import type { PhysicsInterpolation } from "./interpolation.js";
 import { reportLaunchFailure, reportSceneLoadFailure } from "./launch-diagnostics.js";
-import type { IAfterPhysicsPhase, IRenderPerformanceSample } from "./loop.js";
-import type { MatrixWorldPass } from "./matrix-world.js";
-import type { ScenePicker } from "./picking.js";
+import type { IRenderPerformanceSample } from "./loop.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
-import type { PointerEvents3D } from "./pointer-events.js";
 import { installQuietMarkers, uninstallQuietMarkers } from "./quiet-markers.js";
 import type { IRandom } from "./random.js";
-import type { RenderCameraCull } from "./render-camera-cull.js";
-import type { SceneRenderProjection } from "./renderProjection.js";
-import type { IRendererLike, IRendererOptions } from "./renderer.js";
+import type { IRendererOptions } from "./renderer.js";
 import {
   SCENE_ENTRY_INSPECTORS,
   type SceneEntryInspector,
   inspectSceneEntry,
 } from "./scene-entry-inspectors.js";
-import type { ICtx, IStartupTimeline, Scene, SceneConstructor, SceneFrame } from "./scene.js";
-import type { Scheduler } from "./schedule.js";
+import type { ICtx, IStartupTimeline, Scene, SceneConstructor } from "./scene.js";
 import type { IStartupOffscreenBytes } from "./startup-offscreen-bytes.js";
 import { STARTUP_COMPILE_BUDGET_MS } from "./startup-readiness.js";
 import { type GameStore, createGameStore } from "./state.js";
-import {
-  type IUiBridge,
-  UI_READY_INTENT,
-  UI_STARTUP_MESSAGE,
-  connectUiBridge,
-} from "./ui-bridge.js";
-import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
-import type { IViewportOptions, Viewport } from "./viewport.js";
-import {
-  type IWarmUpOptions,
-  prepareSceneEnvironment,
-  warmUpComputeNodes,
-  warmUpScene,
-} from "./warmup.js";
+import type { IViewportOptions } from "./viewport.js";
+import { type IWarmUpOptions, prepareSceneEnvironment, warmUpComputeNodes } from "./warmup.js";
 
 export type PluginCleanup = () => void;
 
@@ -429,7 +404,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
   /** The scene-entry audits this game runs, in order. The engine's are the default. */
   #sceneEntryInspectors: readonly SceneEntryInspector[] = SCENE_ENTRY_INSPECTORS;
-  #uiPublisher: IUiStatePublisher | undefined;
+  readonly #ui: IGameUiSeam;
 
   constructor(config: IGameConfig<TState, TPhysics>) {
     validateCameraConfig(config.camera);
@@ -447,14 +422,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#boot = createBootGame({
       config,
       state: createGameStore(initialState, config.stateFlushMs),
-      connectUi: () => this.#connectUi(),
+      connectUi: () => this.#ui.connect(),
       enterScene: (scene, ctx) => this.#enterScene(scene, ctx),
       goto: (name, ctx) => this.#goto(name, ctx),
-      postUiStartup: () => this.#postUiStartup(),
+      postUiStartup: () => this.#ui.postStartup(),
       teardown: () => this.#teardown(),
       warmUpConfiguredExplicitly: () => this.#warmUpConfiguredExplicitly(),
       warmUpOptions: () => this.#warmUpOptions(),
     });
+    this.#ui = createGameUi(this.#boot);
   }
 
   get ctx(): ICtx<TState, TPhysics> | undefined {
@@ -488,7 +464,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // The updated module may have connected its UI already and told a waiting HUD to hide.
     if (options?.revealed !== true) return;
     this.#boot.uiRevealed = true;
-    if (this.#boot.uiBridge?.hasPeer()) this.#postUiStartup();
+    if (this.#boot.uiBridge?.hasPeer()) this.#ui.postStartup();
   }
 
   get state(): GameStore<TState> {
@@ -500,53 +476,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
    * connects early so the game can register intents. No state is serialized without a UI peer.
    */
   get ui(): IGameUi {
-    const bridge = this.#connectUi();
-    const ready = () => this.#boot.uiReady;
-    return {
-      get connected() {
-        return bridge.hasPeer() && ready();
-      },
-      onIntent: (listener) => onUiIntent(bridge, listener),
-      publish: () => this.#uiPublisher?.publish(),
-    };
-  }
-
-  #connectUi(): IUiBridge {
-    if (this.#boot.uiBridge !== undefined) return this.#boot.uiBridge;
-    const bridge = connectUiBridge({ end: "game" });
-    this.#boot.uiBridge = bridge;
-    // The store already coalesces writes at flush. Deferring this again waits for the native
-    // host's next microtask pump, after that frame's WebView event pump has already passed.
-    // Ahead of the first state, which `publishUiState` sends at once when a UI is already waiting.
-    if (bridge.hasPeer()) this.#postUiStartup();
-    this.#uiPublisher = publishUiState(bridge, this.#boot.state, { schedule: (flush) => flush() });
-    onUiIntent(bridge, (intent) => {
-      if (intent !== UI_READY_INTENT) return;
-      this.#boot.uiReady = true;
-      // Before the state: a UI that mounts after the reveal must learn the cover is gone, and one
-      // that mounts before it must learn to hide.
-      this.#postUiStartup();
-      // Publish immediately: the UI has just rendered against nothing, and waiting for the store's
-      // next change would leave a HUD showing its initial values for up to a tick.
-      this.#uiPublisher?.publish();
-    });
-    return bridge;
-  }
-
-  #postUiStartup(): void {
-    this.#boot.uiBridge?.post({
-      type: UI_STARTUP_MESSAGE,
-      phase: this.#boot.uiRevealed ? "ready" : "covered",
-    });
-  }
-
-  #disconnectUi(): void {
-    this.#boot.uiRevealed = false;
-    this.#uiPublisher?.stop();
-    this.#uiPublisher = undefined;
-    this.#boot.uiReady = false;
-    this.#boot.uiBridge?.close();
-    this.#boot.uiBridge = undefined;
+    return this.#ui.facade();
   }
 
   goto(name: string, options?: IGotoOptions<TState>): Promise<void> {
@@ -729,7 +659,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#boot.aborted = false;
     installQuietMarkers();
     const pendingStart = this.#launch().catch((error: unknown) => {
-      this.#disconnectUi();
+      this.#ui.disconnect();
       throw error;
     });
     this.#pendingStart = pendingStart;
@@ -787,7 +717,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const boot = this.#boot;
     boot.onStartSceneEntered = undefined;
     const ctx = boot.ctx;
-    this.#disconnectUi();
+    this.#ui.disconnect();
     // Failure-atomic: one throwing release does not strand the ones after it. The first failure,
     // the original cause, is thrown once all have run and the leak check has completed.
     const failures = drainCleanup(boot.cleanup);

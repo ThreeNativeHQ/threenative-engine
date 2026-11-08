@@ -1,8 +1,5 @@
 import { flushAnimationTicks } from "./animation-batch.js";
-import type { AutoBatch } from "./auto-batch.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
-import type { ComputeDrivenRegistry } from "./compute-driven.js";
-import type { Registry } from "./entities.js";
 import { FrameBudget } from "./frame-budget.js";
 import { isDevLaunch } from "./game-dev-tools.js";
 import {
@@ -13,17 +10,10 @@ import {
 } from "./game-renderer-metrics.js";
 import { STARTUP_HANDOFF_FRAMES } from "./game-startup.js";
 import type { IGameStartup } from "./game-startup.js";
-import type { IGameConfig, IGamePlatformSource, IGamePluginHooks, PluginCleanup } from "./game.js";
 import { GeometryCapture, rendererBackendIdentity } from "./geometry-capture.js";
-import type { InputMap } from "./input.js";
-import type { PhysicsInterpolation } from "./interpolation.js";
-import type { IAfterPhysicsPhase } from "./loop.js";
 import { FixedStepLoop, type IRenderPerformanceMetrics } from "./loop.js";
-import type { MatrixWorldPass } from "./matrix-world.js";
 import { updateModelLods } from "./model-lod.js";
-import type { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
-import type { PointerEvents3D } from "./pointer-events.js";
 import {
   FrameCounters,
   counterDeviceOf,
@@ -60,18 +50,12 @@ import {
 } from "./profiling/scene-warning.js";
 import { installSpanProbes } from "./profiling/span-probes.js";
 import { formatProjectionWindow } from "./projection-marker.js";
-import type { RenderCameraCull } from "./render-camera-cull.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
 import type { VirtualShadowNode } from "./render/virtual-shadow.js";
-import type { SceneRenderProjection } from "./renderProjection.js";
 import { resolvePlatformResolutionFloor } from "./renderer-config.js";
-import type { IRendererLike } from "./renderer.js";
 import { rendererFrameGateSkips, rendererWorldPresented } from "./renderer.js";
 import { RESOLUTION_SCALER, ResolutionScaler } from "./resolution-scaler.js";
-import type { ICtx, Scene, SceneFrame } from "./scene.js";
-import type { Scheduler } from "./schedule.js";
 import { STARTUP_STABLE_WINDOW_MS } from "./startup-readiness.js";
-import type { GameStore } from "./state.js";
 import {
   STATIC_TRANSFORM_MARKER,
   refreshStaticTransforms,
@@ -79,10 +63,7 @@ import {
   staticTransformCensus,
 } from "./static-transform.js";
 import { resolveTargetFps } from "./target-fps.js";
-import type { IUiBridge } from "./ui-bridge.js";
 import { UI_DEV_METRICS_MESSAGE } from "./ui-bridge.js";
-import type { Viewport } from "./viewport.js";
-import type { IWarmUpOptions } from "./warmup.js";
 
 /** The frame loop, and the instruments that only exist while it runs. */
 export interface IGameFrameLoop {

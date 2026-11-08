@@ -1,11 +1,9 @@
-import { type Camera, type Object3D, Scene as ThreeScene, Vector2 } from "three";
+import { type Object3D, Scene as ThreeScene, Vector2 } from "three";
 import { createAssetLoader } from "./assets.js";
 import { AutoBatch } from "./auto-batch.js";
 import { CanvasLayer } from "./canvas-layer.js";
-import type { ComputeDrivenRegistry } from "./compute-driven.js";
 import { isComputeDriven } from "./compute-driven.js";
 import { Registry } from "./entities.js";
-import type { FrameBudget } from "./frame-budget.js";
 import {
   type IBootPhase,
   type ILoopPhase,
@@ -17,15 +15,12 @@ import { type DevToolsHost, installDevTools } from "./game-dev-tools.js";
 import type { IGameFrameLoop } from "./game-frame-loop.js";
 import { createCamera } from "./game-validate.js";
 import type {
-  IGameConfig,
   IGameObservationContribution,
-  IGamePlatformSource,
   IGamePluginHooks,
   IGamePluginRuntime,
   IGameRuntimeObservations,
   PluginCleanup,
 } from "./game.js";
-import type { GeometryCapture } from "./geometry-capture.js";
 import { InputMap } from "./input.js";
 import { PhysicsInterpolation } from "./interpolation.js";
 import {
@@ -34,7 +29,6 @@ import {
   watchDeviceLoss,
   watchStartupStall,
 } from "./launch-diagnostics.js";
-import type { IAfterPhysicsPhase } from "./loop.js";
 import { type FixedStepLoop, createAfterPhysicsPhase } from "./loop.js";
 import { MatrixWorldPass } from "./matrix-world.js";
 import { ScenePicker } from "./picking.js";
@@ -46,7 +40,7 @@ import {
   formatUnlitFoliageWarning,
   unlitFoliageWarning,
 } from "./profiling/unlit-foliage-warning.js";
-import { type IRandom, createRandom } from "./random.js";
+import { createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
 import type { VirtualShadowNode } from "./render/virtual-shadow.js";
 import { SceneRenderProjection } from "./renderProjection.js";
@@ -57,8 +51,8 @@ import {
   resolveRendererScaleSetting,
 } from "./renderer-config.js";
 import { rendererFacts } from "./renderer-facts.js";
-import { type IRendererLike, createRenderer } from "./renderer.js";
-import type { ICtx, IStartupStatus, IStartupTimeline, Scene, SceneFrame } from "./scene.js";
+import { createRenderer } from "./renderer.js";
+import type { ICtx, IStartupStatus, IStartupTimeline } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import {
   type IStartupOffscreenBytes,
@@ -72,8 +66,6 @@ import {
   type StartupCompile,
   StartupReadiness,
 } from "./startup-readiness.js";
-import type { GameStore } from "./state.js";
-import type { IUiBridge } from "./ui-bridge.js";
 import { Viewport } from "./viewport.js";
 import {
   type IWarmUpOptions,
