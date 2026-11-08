@@ -1,5 +1,5 @@
 {
-  "passed": 249,
+  "passed": 255,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -200,9 +200,15 @@
     "PRD-848/scroll|scroll|scroll-margin-top|",
     "PRD-848/scroll|scroll|scroll-margin-inline|",
     "PRD-848/scroll|scroll|scroll-margin-block|",
-    "PRD-847/motion|animate|animation|",
     "PRD-844/filter|backdrop|--tw-backdrop-opacity,-webkit-backdrop-filter,backdrop-filter|",
     "PRD-844/filter|blur|--tw-blur,filter|",
+    "PRD-844/filter|brightness|--tw-brightness,filter|",
+    "PRD-844/filter|contrast|--tw-contrast,filter|",
+    "PRD-844/filter|grayscale|--tw-grayscale,filter|",
+    "PRD-844/filter|hue|--tw-hue-rotate,filter|",
+    "PRD-844/filter|invert|--tw-invert,filter|",
+    "PRD-844/filter|saturate|--tw-saturate,filter|",
+    "PRD-844/filter|sepia|--tw-sepia,filter|",
     "PRD-848/flow|table|display|",
     "PRD-849/selectors|variant|*",
     "PRD-849/selectors|variant|**",

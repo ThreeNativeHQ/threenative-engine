@@ -480,6 +480,25 @@ to delete once the query worked.
 * **Proves it:** the parity scene's `hidden` cell passes (1.0 pixels, 0 edge misses). The crate test
   suite and the 32-fixture browser oracle are unchanged.
 
+### 2. a colour matrix and a component transfer were dropped, so every CSS colour filter painted nothing
+
+* **Where:** `src/scene.rs` (the new `ColourLayer`: a filter that is exactly one per-pixel colour
+  function renders its layer into its own `RenderContext`, the pixels are transformed, and the result
+  is composited back as a registered image), `src/filters.rs` (`colour_filter_only`).
+* **Why:** `vello_common` 0.1.0 `unimplemented!`s on both primitives, so `grayscale()`,
+  `saturate()`, `hue-rotate()`, `sepia()`, `brightness()`, `contrast()`, `invert()` and `opacity()`
+  were dropped — 15 of the parity meter's filter cells measured a real difference for that reason.
+  Both primitives are per-pixel functions of the layer's own pixels, which is exactly what an
+  offscreen render makes available. The clip passed to `push_layer` is in the element's *local* space
+  and the ops that follow carry their own world transforms, so the child's clip is transformed by the
+  layer's transform before it is pushed — the first attempt pushed it untransformed and the child
+  clipped every pixel away (measured: 0 opaque pixels, and the element's paint was lost).
+* **Proves it:** `tests/interaction.rs::a_colour_filter_transforms_the_layer_it_wraps` —
+  `brightness(50%)` on `#2563eb` gives `#13327` and `grayscale(100%)` gives `#606060`, the CSS values.
+  The parity meter's filter family moves 2/19 → **9/19**: brightness, contrast, grayscale,
+  hue-rotate, invert, saturate and sepia go from 0.20–0.88 to **1.0000**, and the two cells that
+  already passed (blur, backdrop-opacity) are unchanged. The 32-fixture browser oracle stays 28/28.
+
 ## `parley-0.11.1` — 240 added code lines
 
 Hunk 1 is the one over the guideline and it is separable in three pieces, each of which a fixture
@@ -620,7 +639,7 @@ fails on its own: the strut (`box-model-and-sizing`), the order and scale of the
   Arial`, and with this hunk its 21px line box is the one Chromium measures on Liberation Sans;
   without it the button is 3.09px tall at the bottom and the column above it with it (2 edge misses).
 
-## `anyrender_vello_cpu-0.17.0` — 6 added code lines
+## `anyrender_vello_cpu-0.17.0` — 250 added code lines
 
 ### 1. a filter primitive the backend cannot paint aborted the whole frame
 

@@ -14,6 +14,15 @@ pub struct VelloCpuScenePainter {
     pub(crate) render_ctx: vello_cpu::RenderContext,
     pub(crate) resources: vello_cpu::Resources,
     pub(crate) image_cache: ImageCache,
+    colour_layer: Option<ColourLayer>,
+}
+
+struct ColourLayer {
+    parent: vello_cpu::RenderContext,
+    filter: crate::filters::ColourFilter,
+    blend: peniko::Mix,
+    alpha: f32,
+    ops: usize,
 }
 
 impl VelloCpuScenePainter {
@@ -26,6 +35,7 @@ impl VelloCpuScenePainter {
             render_ctx: vello_cpu::RenderContext::new(width, height),
             resources: vello_cpu::Resources::new(),
             image_cache: ImageCache::new(config),
+            colour_layer: None,
         }
     }
 
@@ -79,6 +89,31 @@ impl PaintScene for VelloCpuScenePainter {
         filter: Option<Arc<Filter>>,
         _backdrop_filter: Option<Arc<Filter>>,
     ) {
+        // A filter that is exactly one per-pixel colour function (a colour matrix or a component
+        // transfer) is rendered offscreen and transformed, because `vello_common` 0.1.0 has no such
+        // primitive (see `ColourLayer`).
+        if let Some(colour) = filter
+            .as_deref()
+            .and_then(crate::filters::colour_filter_only)
+        {
+            let (width, height) = (self.render_ctx.width(), self.render_ctx.height());
+            let mut child = vello_cpu::RenderContext::new(width, height);
+            // `push_clip_path` takes a path in *device* space: the parent's `push_layer` applies its
+            // own `transform` to the clip, so the child must too, and then draw at identity.
+            let mut clip_path = clip.into_path(DEFAULT_TOLERANCE);
+            clip_path.apply_affine(transform);
+            child.push_clip_path(&clip_path);
+            let parent = std::mem::replace(&mut self.render_ctx, child);
+            self.colour_layer = Some(ColourLayer {
+                parent,
+                filter: colour,
+                blend: BlendMode::from(blend.into()).mix,
+                alpha,
+                ops: 0,
+            });
+            return;
+        }
+
         #[cfg(feature = "filters")]
         let filter = filter
             .and_then(crate::filters::convert_filter)
@@ -107,6 +142,42 @@ impl PaintScene for VelloCpuScenePainter {
     }
 
     fn pop_layer(&mut self) {
+        let Some(layer) = self.colour_layer.take() else {
+            self.render_ctx.pop_layer();
+            return;
+        };
+        let mut child = std::mem::replace(&mut self.render_ctx, layer.parent);
+        child.pop_clip_path();
+        child.flush();
+        let (width, height) = (child.width(), child.height());
+        let mut pixmap = Pixmap::new(width, height);
+        child.render(pixmap.as_mut(), &mut self.resources);
+        let opaque = pixmap.data().iter().filter(|p| p.a > 0).count();
+        apply_colour_filter(&mut pixmap, &layer.filter);
+        if std::env::var("TN_FILTER_DEBUG").is_ok() {
+            let centre = pixmap.data()[((height as usize / 2) * width as usize) + width as usize / 2];
+            eprintln!(
+                "TN_FILTER_DEBUG child {width}x{height} ops={} opaque={opaque} centre={:?}",
+                layer.ops,
+                (centre.r, centre.g, centre.b, centre.a)
+            );
+        }
+        let image = vello_common::paint::ImageSource::opaque_id_with_transparency_hint(
+            self.resources.register_image(std::sync::Arc::new(pixmap)),
+            true,
+        );
+        self.render_ctx
+            .push_blend_layer(peniko::BlendMode::new(layer.blend, peniko::Compose::SrcOver));
+        self.render_ctx.push_opacity_layer(layer.alpha);
+        self.render_ctx.reset_transform();
+        self.render_ctx
+            .set_paint(vello_common::paint::PaintType::Image(peniko::ImageBrush {
+                image,
+                sampler: peniko::ImageSampler::default(),
+            }));
+        self.render_ctx
+            .fill_rect(&Rect::new(0.0, 0.0, width as f64, height as f64));
+        self.render_ctx.pop_layer();
         self.render_ctx.pop_layer();
     }
 
@@ -142,6 +213,9 @@ impl PaintScene for VelloCpuScenePainter {
         self.render_ctx.set_paint(paint);
         self.render_ctx
             .set_paint_transform(brush_transform.unwrap_or(Affine::IDENTITY));
+        if let Some(layer) = self.colour_layer.as_mut() {
+            layer.ops += 1;
+        }
         self.render_ctx
             .fill_path(&shape.into_path(DEFAULT_TOLERANCE));
     }
@@ -209,5 +283,100 @@ impl PaintScene for VelloCpuScenePainter {
         self.render_ctx.set_paint(PaintType::Solid(color));
         self.render_ctx
             .fill_blurred_rounded_rect(&rect, radius as f32, std_dev as f32, false);
+    }
+}
+
+/// Apply a per-pixel colour filter to a premultiplied RGBA8 pixmap.
+///
+/// CSS filters transform *unpremultiplied* colour and this backend's pixmap is premultiplied, so each
+/// pixel is divided by its alpha, transformed, clamped, and multiplied back.
+fn apply_colour_filter(pixmap: &mut Pixmap, filter: &crate::filters::ColourFilter) {
+    use anyrender::filters::component_transfer::{ComponentTransferFilter, TransferFunction};
+
+    /// One channel's transfer function (Filter Effects section feComponentTransfer).
+    fn transfer(function: &TransferFunction, value: f32) -> f32 {
+        let value = match function {
+            TransferFunction::Identity => return value,
+            TransferFunction::Table(values) if values.len() >= 2 => {
+                let position = value * (values.len() - 1) as f32;
+                let index = (position.floor() as usize).min(values.len() - 2);
+                let fraction = position - index as f32;
+                values[index] * (1.0 - fraction) + values[index + 1] * fraction
+            }
+            TransferFunction::Table(_) => value,
+            TransferFunction::Discrete(values) if !values.is_empty() => {
+                let index = ((value * values.len() as f32).floor() as usize).min(values.len() - 1);
+                values[index]
+            }
+            TransferFunction::Discrete(_) => value,
+            TransferFunction::Linear(linear) => linear.slope * value + linear.intercept,
+            TransferFunction::Gamma(gamma) => {
+                gamma.amplitude * value.max(0.0).powf(gamma.exponent) + gamma.offset
+            }
+        };
+        value.clamp(0.0, 1.0)
+    }
+
+    let matrix = match filter {
+        crate::filters::ColourFilter::Matrix(matrix) => Some(*matrix),
+        crate::filters::ColourFilter::Transfer(_) => None,
+    };
+    let channels = match filter {
+        crate::filters::ColourFilter::Transfer(ComponentTransferFilter {
+            red_function,
+            green_function,
+            blue_function,
+            alpha_function,
+        }) => Some([red_function, green_function, blue_function, alpha_function]),
+        crate::filters::ColourFilter::Matrix(_) => None,
+    };
+
+    for pixel in pixmap.data_mut() {
+        let alpha = pixel.a as f32 / 255.0;
+        let straight = if alpha > 0.0 {
+            [
+                pixel.r as f32 / 255.0 / alpha,
+                pixel.g as f32 / 255.0 / alpha,
+                pixel.b as f32 / 255.0 / alpha,
+                alpha,
+            ]
+        } else {
+            [0.0, 0.0, 0.0, alpha]
+        };
+        let out = if let Some(matrix) = matrix {
+            let row = |channel: usize| {
+                [
+                    matrix[channel * 5],
+                    matrix[channel * 5 + 1],
+                    matrix[channel * 5 + 2],
+                    matrix[channel * 5 + 3],
+                    matrix[channel * 5 + 4],
+                ]
+            };
+            let mut out = [0.0_f32; 4];
+            for (channel, slot) in out.iter_mut().enumerate() {
+                let coefficients = row(channel);
+                *slot = (coefficients[0] * straight[0]
+                    + coefficients[1] * straight[1]
+                    + coefficients[2] * straight[2]
+                    + coefficients[3] * straight[3]
+                    + coefficients[4])
+                    .clamp(0.0, 1.0);
+            }
+            out
+        } else {
+            let channels = channels.expect("a transfer filter has four functions");
+            [
+                transfer(channels[0], straight[0]),
+                transfer(channels[1], straight[1]),
+                transfer(channels[2], straight[2]),
+                transfer(channels[3], straight[3]),
+            ]
+        };
+        let alpha_out = out[3];
+        pixel.r = (out[0] * alpha_out * 255.0).round() as u8;
+        pixel.g = (out[1] * alpha_out * 255.0).round() as u8;
+        pixel.b = (out[2] * alpha_out * 255.0).round() as u8;
+        pixel.a = (alpha_out * 255.0).round() as u8;
     }
 }

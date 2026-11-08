@@ -6,6 +6,31 @@ use anyrender::{
 };
 use vello_common::filter_effects::FilterPrimitive;
 
+/// A filter that is exactly one per-pixel colour function, if that is all it is.
+///
+/// VENDOR HUNK (threenative/css-ui): `vello_common` 0.1.0 can paint neither a colour matrix nor a
+/// component transfer, so every CSS `grayscale()`, `sepia()`, `saturate()`, `hue-rotate()`,
+/// `brightness()`, `contrast()`, `invert()` and `opacity()` filter was dropped. Both are per-pixel
+/// functions of the layer's own pixels, so this backend renders such a layer offscreen and applies
+/// the function to its pixels.
+#[derive(Clone, Debug)]
+pub(crate) enum ColourFilter {
+    Matrix([f32; 20]),
+    Transfer(anyrender::filters::component_transfer::ComponentTransferFilter),
+}
+
+pub(crate) fn colour_filter_only(filter: &Filter) -> Option<ColourFilter> {
+    let nodes = filter.nodes();
+    if nodes.len() != 1 {
+        return None;
+    }
+    match &nodes[0].effect {
+        FilterEffect::ColorMatrix(matrix) => Some(ColourFilter::Matrix(matrix.0)),
+        FilterEffect::ComponentTransfer(transfer) => Some(ColourFilter::Transfer(transfer.clone())),
+        _ => None,
+    }
+}
+
 pub(crate) fn convert_filter(filter: Arc<Filter>) -> Option<vello_common::filter_effects::Filter> {
     let nodes = filter.nodes();
     if nodes.is_empty() {

@@ -991,6 +991,57 @@ fn any_pointer_mirrors_the_device_it_is_driven_by() {
 }
 
 #[test]
+fn a_colour_filter_transforms_the_layer_it_wraps() {
+    // The CSS filter functions are defined as an SVG filter with `color-interpolation-filters: sRGB`,
+    // so `brightness(50%)` halves each channel of the *stored* sRGB value (#2563eb -> #13327) and
+    // `grayscale(100%)` maps it to #606060. `vello_common` 0.1.0 can paint neither a colour matrix
+    // nor a component transfer, so this is what the vendored offscreen path has to reproduce.
+    let mut bright = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!("{BASE}\n#a{{width:64px;height:64px;background:#2563eb;filter:brightness(50%)}}"),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    bright.render();
+    let pixel = rgb(&bright, 32, 32);
+    assert!(
+        (pixel[0] as i32 - 19).abs() <= 2
+            && (pixel[1] as i32 - 50).abs() <= 2
+            && (pixel[2] as i32 - 118).abs() <= 2,
+        "half of #2563eb is #13327, got {pixel:?}"
+    );
+
+    let mut grey = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!("{BASE}\n#a{{width:64px;height:64px;background:#2563eb;filter:grayscale(100%)}}"),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    grey.render();
+    let pixel = rgb(&grey, 32, 32);
+    assert!(
+        (pixel[0] as i32 - pixel[1] as i32).abs() <= 2
+            && (pixel[1] as i32 - pixel[2] as i32).abs() <= 2
+            && (pixel[0] as i32 - 96).abs() <= 3,
+        "grayscale maps #2563eb to #606060, got {pixel:?}"
+    );
+}
+
+#[test]
 fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
     let mut ui = ui(
         64,
