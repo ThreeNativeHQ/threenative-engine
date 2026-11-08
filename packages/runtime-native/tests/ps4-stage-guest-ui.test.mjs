@@ -1,18 +1,15 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, test } from 'vitest';
+import { test } from 'vitest';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { stageGuestUi } from '../scripts/ps4/stage-guest-ui.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const temps = [];
-afterEach(() => { for (const dir of temps.splice(0)) rmSync(dir, { force: true, recursive: true }); });
 
 function scene(files) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'tn-ps4-ui-'));
-  temps.push(dir);
+  const dir = makeTempDirSync('tn-ps4-ui-');
   const built = path.join(dir, 'scene', '.threenative', 'build', 'ui-css');
   mkdirSync(built, { recursive: true });
   for (const [name, text] of Object.entries(files)) writeFileSync(path.join(built, name), text);

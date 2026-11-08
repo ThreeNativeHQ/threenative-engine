@@ -2,11 +2,11 @@
 // process-group kill missed it; it kept the runner's stdout pipe open and node waited for 2 h 20 min.
 // This runs the real launch script with a fake emulator that leaves the group the same way.
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const runner = readFileSync(path.join(here, '..', 'scripts', 'ps4', 'run-experiment.mjs'), 'utf8');
@@ -39,7 +39,7 @@ describe('PS4 E5 failure line', () => {
 
 describe('PS4 runner stop', () => {
   it('stops an emulator that left the process group', async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'tn-ps4-stop-'));
+    const dir = makeTempDirSync('tn-ps4-stop-');
     const pidFile = path.join(dir, 'emulator.pid');
     const fake = path.join(dir, 'fake-emulator.sh');
     writeFileSync(fake, `#!/bin/sh\necho $$ > "${pidFile}"\nexec setsid sleep 300\n`);
