@@ -710,13 +710,24 @@ impl BaseDocument {
     /// scroller by them.
     ///
     /// Returns whether anything scrolled.
-    pub fn scroll_node_into_view(&mut self, node_id: NodeId) -> bool {
+    /// `block_end` and `inline_end` pick the alignment, as `scrollIntoView({ block, inline })` does:
+    /// `start` aligns the element's start edge with the scrollport's start edge (minus its
+    /// `scroll-margin` and the scroller's `scroll-padding`), and `end` aligns the *end* edges — which
+    /// is what an end-side `scroll-margin`/`scroll-padding` moves.
+    pub fn scroll_node_into_view(
+        &mut self,
+        node_id: NodeId,
+        block_end: bool,
+        inline_end: bool,
+    ) -> bool {
         let Some(style) = self.get_node(node_id).and_then(|n| n.primary_styles()) else {
             return false;
         };
         let px = |value: &style::values::computed::Length| value.px() as f64;
         let margin_top = px(&style.clone_scroll_margin_top());
         let margin_left = px(&style.clone_scroll_margin_left());
+        let margin_bottom = px(&style.clone_scroll_margin_bottom());
+        let margin_right = px(&style.clone_scroll_margin_right());
         drop(style);
 
         let mut moved = false;
@@ -751,8 +762,6 @@ impl BaseDocument {
                 let container_pos = container.absolute_position(0.0, 0.0);
                 let element = self.get_node(node_id)?;
                 let element_pos = element.absolute_position(0.0, 0.0);
-                // The element's box in the scroller's *content* coordinates: client coordinates
-                // carry the scroller's own scroll, so add it back and start from the padding edge.
                 // The element's position in the scroller's *content* coordinates: client coordinates
                 // carry the scroller's own scroll, so add it back. `absolute_position` reports boxes
                 // from the scroller's padding edge already (a child's layout location is relative to
@@ -761,8 +770,26 @@ impl BaseDocument {
                 // against a content origin two pixels too high).
                 let content_x = element_pos.x as f64 - container_pos.x as f64 + offset.x;
                 let content_y = element_pos.y as f64 - container_pos.y as f64 + offset.y;
-                let want_x = (content_x - margin_left - pad_left).clamp(0.0, max.x);
-                let want_y = (content_y - margin_top - pad_top).clamp(0.0, max.y);
+                // The element's extent, so an end alignment can be computed from it: the size is
+                // read in the same unscrolled content coordinates as the position.
+                let size = element.final_layout().size;
+                let pad_right = pad(&container_style.clone_scroll_padding_right());
+                let pad_bottom = pad(&container_style.clone_scroll_padding_bottom());
+                let container_size = container.final_layout().size;
+                let want_x = if inline_end {
+                    content_x + size.width as f64 + margin_right + pad_right
+                        - container_size.width as f64
+                } else {
+                    content_x - margin_left - pad_left
+                }
+                .clamp(0.0, max.x);
+                let want_y = if block_end {
+                    content_y + size.height as f64 + margin_bottom + pad_bottom
+                        - container_size.height as f64
+                } else {
+                    content_y - margin_top - pad_top
+                }
+                .clamp(0.0, max.y);
                 Some((want_x, want_y))
             })();
             let Some((want_x, want_y)) = computed else {

@@ -1470,6 +1470,20 @@ function utilityEntry(unit, classCss, byProperty) {
         : undefined,
     // A grid container property needs a grid; everything else in `CONTAINER_PROPS` is flex.
     scrollInto: /^scroll-[mp]/u.test(unit.probe) || undefined,
+    // An end-side margin or padding only moves a scroller that aligns to the *end*: `scroll-pr-*` and
+    // `scroll-pb-*` measured "does nothing" against a `scrollIntoView({ block: "start", inline:
+    // "start" })` driver, while their start-side siblings passed.
+    scrollAlign: /^scroll-[mp]/u.test(unit.probe)
+      ? (() => {
+          // `scroll-mb-40` is `scroll-m` + `b` + `40`, so the axis is what sits between the unit's
+          // first two segments and its value — a `-b-` search missed every one of them.
+          const axis = /^scroll-[mp]([a-z-]+)-\d/u.exec(unit.probe)?.[1] ?? "";
+          return {
+            block: ["b", "be", "block-end"].includes(axis) ? "end" : "start",
+            inline: ["e", "end", "inline-end"].includes(axis) ? "end" : "start",
+          };
+        })()
+      : undefined,
     // `scroll-p*` sets the *scroller's* padding, so the unit's class goes on the scroller — the probe
     // becomes that element and the scroll target is a filler inside it, which is what a scroller with
     // scroll padding is.
@@ -1631,6 +1645,7 @@ async function makePanel(bucket, slice, index) {
       ...(entry.classOn === "scroller"
         ? { scrollTarget: findClass(tree[0].children[cellIndex], "scroll-target") }
         : {}),
+      ...(entry.scrollAlign === undefined ? {} : { scrollAlign: entry.scrollAlign }),
     });
   }
   return panel;
@@ -1772,11 +1787,11 @@ async function driveStep(page, step) {
     // ancestor's scroll-padding edge. `block: "start"` is the alignment both sides implement; the
     // scene's `scroll-m*` units are what it is measuring.
     await page.evaluate(
-      (id) =>
+      (options) =>
         document
-          .querySelector(`[data-n="${id}"]`)
-          ?.scrollIntoView({ block: "start", inline: "start" }),
-      step.id,
+          .querySelector(`[data-n="${options.id}"]`)
+          ?.scrollIntoView({ block: options.block, inline: options.inline }),
+      { id: step.id, block: step.block ?? "start", inline: step.inline ?? "start" },
     );
     return void (await settleScroll(page));
   }
@@ -2287,7 +2302,11 @@ function driverFor(cell, boxes) {
   const y = Math.round(box.y + box.h / 2);
   return cell.drive.map((step) => {
     if (step.t === "scrollIntoView")
-      return { t: "scrollIntoView", id: cell.scrollTarget ?? cell.probe };
+      return {
+        t: "scrollIntoView",
+        id: cell.scrollTarget ?? cell.probe,
+        ...(cell.scrollAlign === undefined ? {} : cell.scrollAlign),
+      };
     if (step.at !== "probe") return step;
     if (step.t === "wheel") return { t: "wheel", x, y, dx: step.dx ?? 0, dy: step.dy };
     // The probe's own id travels with the step: `page.hover()` on the element is what actually

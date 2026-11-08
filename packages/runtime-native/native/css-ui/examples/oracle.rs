@@ -127,7 +127,8 @@ fn drive_steps(ui: &mut CssUi, drive: &str, width: u32, height: u32) -> Result<(
                     .get("id")
                     .and_then(Value::as_u64)
                     .ok_or_else(|| "scrollIntoView: no \"id\"".to_string())?;
-                ui.scroll_into_view(id as u32);
+                let end = |name: &str| step.get(name).and_then(Value::as_str) == Some("end");
+                ui.scroll_into_view(id as u32, end("block"), end("inline"));
             }
             "wheel" => {
                 ui.wheel(

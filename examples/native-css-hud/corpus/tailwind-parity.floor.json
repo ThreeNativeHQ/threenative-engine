@@ -1,5 +1,5 @@
 {
-  "passed": 265,
+  "passed": 271,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -197,7 +197,10 @@
     "PRD-845/mask|mask|--tw-mask-bottom,--tw-mask-bottom-to-color,--tw-mask-linear,--tw-mask-top,--tw-mask-top-to-color,mask-composite,mask-image|",
     "PRD-846/transform3d|rotate|--tw-rotate-z,transform|",
     "PRD-848/scroll|scroll|scroll-margin|",
+    "PRD-848/scroll|scroll|scroll-margin-bottom|",
+    "PRD-848/scroll|scroll|scroll-margin-block-end|",
     "PRD-848/scroll|scroll|scroll-margin-block-start|",
+    "PRD-848/scroll|scroll|scroll-margin-inline-end|",
     "PRD-848/scroll|scroll|scroll-margin-left|",
     "PRD-848/scroll|scroll|scroll-margin-inline-start|",
     "PRD-848/scroll|scroll|scroll-margin-top|",
@@ -214,7 +217,10 @@
     "PRD-844/filter|sepia|--tw-sepia,filter|",
     "PRD-848/flow|table|display|",
     "PRD-848/scroll|scroll|scroll-padding|",
+    "PRD-848/scroll|scroll|scroll-padding-bottom|",
+    "PRD-848/scroll|scroll|scroll-padding-block-end|",
     "PRD-848/scroll|scroll|scroll-padding-block-start|",
+    "PRD-848/scroll|scroll|scroll-padding-inline-end|",
     "PRD-848/scroll|scroll|scroll-padding-left|",
     "PRD-848/scroll|scroll|scroll-padding-inline-start|",
     "PRD-848/scroll|scroll|scroll-padding-top|",

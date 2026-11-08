@@ -56,11 +56,13 @@ the scroller's padding edge and then the scroller's own border and padding were 
 every `scroll-p*` cell stopped two pixels high (measured: target rows 188..221 against Chromium's
 186..221). Every block-axis `scroll-m*` and `scroll-p*` cell passes at **1.0000**.
 
-What is left in the group, with its reason: the eight **inline-axis** `scroll-m*`/`scroll-p*` cells do
-not discriminate (the scroll happens on the block axis even though the content overflows inline, so a
-horizontal margin or padding moves nothing), `overscroll-*` and `scroll-smooth` need a scroller at its
-limit or a second frame, `snap-*` needs a snap implementation, and `sticky` measures 0.6215 — a real
-difference, and the largest single one left in this PRD.
+Alignment is per axis: an end-side `scroll-margin`/`scroll-padding` only moves a scroller that aligns
+to the *end*, so `scroll_node_into_view` takes `block_end`/`inline_end` and the scene's driver carries
+the alignment each unit needs. The group is **20/31**.
+
+What is left: `overscroll-*` (3) and `scroll-smooth` (1) need a scroller at its limit or a second
+frame, `snap-*` (4) needs a snap implementation, two axis cells still do not discriminate, and
+`sticky` measures 0.6215 — a real difference, and the largest single one left in this PRD.
 
 ## Execution Phases
 

@@ -454,6 +454,11 @@ to delete once the query worked.
   an item 200px down a scroller aligns at 200 with nothing declared, and at 110 with
   `scroll-margin-top: 60px` plus `scroll-padding-top: 30px`; the test fails against the previous
   vendor sources. The meter's scroll group goes 0/31 → 7/31.
+* **Alignment is per axis:** `scroll_node_into_view` takes `block_end`/`inline_end`, because an
+  end-side `scroll-margin` or `scroll-padding` only moves a scroller that aligns to the *end* —
+  `scroll-pr-*`/`scroll-pb-*` measured "does nothing" against a start-only driver. The end alignment
+  is computed from the element's extent plus its end margin and the scroller's end padding, against
+  the scroller's own size. The group goes **14/31 → 20/31**.
 * **A follow-up fixed the last 2 px:** the element's position was taken relative to the scroller's
   *padding edge* and then the scroller's own border and padding were subtracted again, so every
   `scroll-p*` cell stopped two pixels high (measured against Chromium: target rows 188..221 against
