@@ -206,6 +206,16 @@ export interface IAbiHelpers {
   view(): DataView;
 }
 
+/** `tnw_web_load_gltf`'s handles: the default scene, the clips, then every scene in file order. */
+function splitModel(refs: IEngineRef[], scenes: number) {
+  const clipsEnd = refs.length - scenes;
+  return {
+    scene: refs[0] as IEngineRef,
+    animations: refs.slice(1, clipsEnd),
+    scenes: refs.slice(clipsEnd),
+  };
+}
+
 /** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
 export function gltfOf(
   abi: TnAbiModule,
@@ -260,16 +270,11 @@ export function gltfOf(
             const out = h.alloc(HANDLE * capacity);
             const status = load(context, data, bytes.byteLength, out, capacity, count, sceneCount);
             const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
-            if (status === 0) {
-              const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
-              // [default scene, ...clips, ...every scene in file order]
-              const clipsEnd = needed - new DataView(abi.HEAPU8.buffer).getUint32(sceneCount, true);
-              return {
-                scene: refs[0] as IEngineRef,
-                animations: refs.slice(1, clipsEnd),
-                scenes: refs.slice(clipsEnd),
-              };
-            }
+            if (status === 0)
+              return splitModel(
+                Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE)),
+                new DataView(abi.HEAPU8.buffer).getUint32(sceneCount, true),
+              );
             const reason = abi.UTF8ToString(error());
             if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
             capacity = needed;
