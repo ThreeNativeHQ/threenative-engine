@@ -1260,7 +1260,10 @@ function cellTree(cell) {
       el("div", { class: "cell-label" }, text(cell.class)),
       el(
         "div",
-        { class: `stage-scroll probe ${cell.class}` },
+        // `probe` leads the list: the vacuity arm strips the last class of every element whose class
+        // list *starts* with `probe`, so a scroller spelled `stage-scroll probe …` was never stripped
+        // and both arms measured the same frame.
+        { class: `probe stage-scroll ${cell.class}` },
         el(
           "div",
           { class: "stage-scroll-body stage-scroll-deep" },
