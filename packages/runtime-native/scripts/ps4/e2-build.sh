@@ -553,6 +553,9 @@ git apply "$SCRIPTS/patches/0069-vk-ps4-pipeline-depth-bias.patch"
 # A depth view's array layer reaches DB_DEPTH_VIEW.SLICE_START: every point-lamp cube face rendered into face 0,
 # so PS4 drew no lamp shadow (gap sweep).
 git apply "$SCRIPTS/patches/0070-vk-ps4-depth-array-layer.patch"
+# A volume's row copy wrote packed rows into its linear-aligned surface: a 3D texture whose width is not
+# already aligned read skewed rows, and the cornell GI volume drew blocky streaks (Unreal calibration on PS4).
+git apply "$SCRIPTS/patches/0072-vk-ps4-volume-upload-pitch.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
