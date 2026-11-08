@@ -135,7 +135,9 @@ const PANEL_CSS = `
    is something to clip. */
 .stage-contain > .stage-fill{width:200px;height:120px}
 /* A positioned probe's child: it fills the probe only if the probe establishes a containing block. */
-.stage-escape{position:absolute;inset:0;background:#e11d48}
+/* A box painted outside its parent proves overflow: visible; it must never eat a pointer that the
+   drive meant for another cell's probe. */
+.stage-escape{position:absolute;inset:0;background:#e11d48;pointer-events:none}
 /* A space or divide unit puts a gap between the probe's children; with children as wide as the
    probe, the second one lands outside the measured region and the unit measures nothing. */
 .stage-items{display:flex;width:100%}
@@ -1331,6 +1333,9 @@ function cellTree(cell) {
   const contain = cell.contain === true ? " stage-contain" : "";
   const light = cell.lightStage === true ? " light-stage" : "";
   const border = cell.borderProbe === true ? " stage-border" : "";
+  // A transition cell is hovered by a pointer, and a sibling cell's `position: fixed` probe paints
+  // above every non-positioned box: a positioned probe is painted in DOM order instead, so the pointer
+  // reaches the one it was aimed at.
   const classes =
     probeClass(cell.companions ?? [], cell.class) + container + border + items + contain;
   const probe = el(
