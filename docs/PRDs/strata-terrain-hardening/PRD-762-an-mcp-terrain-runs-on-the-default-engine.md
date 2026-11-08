@@ -1,6 +1,6 @@
 # PRD-762: An MCP-generated terrain runs on the default engine
 
-**Status:** IN PROGRESS
+**Status:** IN PROGRESS — Phase 1: the MCP path starts on the default engine (2026-11-08); its world draws 97x too many triangles there.
 **Priority:** P0. An agent that follows the shipped path gets a game that does not start.
 **Epic:** [Strata terrain hardening](README.md). Delivered with PR #483.
 
@@ -36,8 +36,11 @@ spec.
 - [x] A model whose dev cook adds the optional `TN_virtual_geometry` loads on the engine loader, which hosts no cluster plugin (was `TN_NATIVE_GLTF_PLUGIN_UNSUPPORTED` on fir.glb). proof: new `model-lod-engine-loader.spec.ts` case red (the sandbox error verbatim), green after; 111/111 with the asset and LOD specs; core `tsc` 0.
 - [x] A material `normalNode` (the terrain splat) writes its shading normal to the post normal target instead of `TN_POST_NORMAL_UNSUPPORTED` losing the renderer (42d68e353). proof: `material_test` `emissive_output` normal case red (2 CHECK failures) then green; sandbox on the RTX 2080 Wasm engine runs past it with no `TN_POST_NORMAL_*`.
 - [x] A fragment program over 16 samplers (the splat's 14 stacked-layer reads plus env, dfg, shadow) shares samplers of equal state instead of losing the renderer (`TN_WASM_RENDERER_LOST`, 17 samplers). proof: `shader_ir_test` `types` case red without sharing (4 CHECK failures), green with it; `limits.playtest.json` 17-texture read sums 153 on the RTX 2080 (red: renderer lost with `TN_PROGRAM_SAMPLERS`); sandbox boot has no `RENDERER_LOST` for 60 s.
-- [ ] Every later refusal on this path, each with its own box as it is found. proof: the sandbox log names the next refusal, or none
-- [ ] The sandbox game starts on the default engine from the MCP snippet, with no game edit. proof: headed WebGPU, adapter checked, `TN_STARTUP_READY`.
+- [x] Every later refusal on this path, each with its own box as it is found. proof: the sandbox log names the next refusal, or none — 2026-11-08: none left. A fresh `pnpm sandbox --genre open-world` game (tarball installs, PR #635 head `396bfe94b`) called `terrain_generate {"request":"a pine forest valley with a lake for a third-person sandbox game"}` (5.1 s, 34 720 instances, 29 draws) and loaded the pasted snippet with no refusal and no console or runtime error.
+- [x] The sandbox game starts on the default engine from the MCP snippet, with no game edit. proof: headed WebGPU, adapter checked, `TN_STARTUP_READY`. — 2026-11-08: `playtests/play.playtest.json` on the default engine, headed WebGPU, adapter `nvidia`/`turing` hardware: the game plays (score 1), 0 console errors, 0 runtime errors. The starter emits no `TN_STARTUP_READY` line, so the proof is the scenario's own play state. The only edit was the pasted snippet plus `void loadCells;`.
+
+- [ ] On the default engine the world's CPU path draws about 97 times the triangles its cull selected: 202 726 561 renderer triangles against `wideTris=2088459`, about 9 presented FPS. The `engine: "threejs"` arm draws 151 546 with the GPU world scene on (`dressed=44/44`). The owned engine reports `TN_WORLD_GPU_SCENE off reason=backend=webgpu-without-hasFeature` (`packages/core/src/world-gpu-scene.ts:247`). proof: the same sandbox scenario reports at most the threejs arm's triangle count on the default engine
+  Also seen (2026-11-08): the `engine: "threejs"` arm logs 4 `GPUValidationError: [Buffer "bindingBuffer101_render_..."] used in submit while destroyed`. The starter arena sits inside the cooked hill, so the hillside shows as a grazing streak above the walls on both arms (game placement, not an engine fault).
 
 ### Phase 2 — the forest starter kit starts on the default engine
 
