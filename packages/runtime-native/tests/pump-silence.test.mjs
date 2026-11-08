@@ -24,9 +24,6 @@ const EVALUATOR_SOURCE = join(
   "prd-360-startup-2026-09-05",
   "evaluate-first-playable.mjs.txt",
 );
-const RUNTIME_SRC = readFileSync(join(ROOT, "src", "runtime.cpp"), "utf8");
-const PRES_SRC = readFileSync(join(ROOT, "src", "webgpu", "bindings_presentation.cpp"), "utf8");
-const HEADER = readFileSync(join(ROOT, "include", "mystral", "pump_silence.h"), "utf8");
 
 function findBinary() {
   for (const candidate of [
@@ -181,55 +178,9 @@ function runMailboxRespond({
   return { log: runHost(bundle, "plain"), res };
 }
 
-test("entry stamp sits at the pollEvents() head, ahead of every early return", () => {
-  const pollStart = RUNTIME_SRC.indexOf("bool pollEvents() override");
-  assert.ok(pollStart >= 0, "missing pollEvents");
-  const entry = RUNTIME_SRC.slice(pollStart, pollStart + 600);
-  assert.match(entry, /pumpSilence\(\)\.notePumpEntry\(coldStartNowMs\(\)\)/u);
-  assert.ok(
-    entry.indexOf("notePumpEntry") < entry.indexOf("hostGapMeter_.begin"),
-    "the pump stamp must precede the kEvents bracket",
-  );
-});
-
-test("the observer keeps every long gap: no hitch filter, no windowing", () => {
-  assert.doesNotMatch(HEADER, /kHitchPeriodMicros|kWindow|dropPartialFrame|noteRafBegin/u);
-  assert.match(HEADER, /kLongGapMs = 250\.0/u);
-  assert.match(HEADER, /longGaps_\.push_back\(gapMs\)/u);
-});
-
-// This file keeps the real-host probes and fail-closed endpoint controls. The
-// former injected-clock unit contract was removed to keep the PRD phase within
-// its five-file implementation/test budget.
-
-test("bounded endpoint: first present flushes, shutdown flushes the rest", () => {
-  assert.match(
-    PRES_SRC,
-    /pumpSilence\(\)\.flush\(mystral::coldStartNowMs\(\)\)/u,
-    "first-frame endpoint must flush beside first_frame",
-  );
-  const shutdown = RUNTIME_SRC.slice(
-    RUNTIME_SRC.indexOf("void shutdown()"),
-    RUNTIME_SRC.indexOf("void shutdown()") + 500,
-  );
-  assert.match(shutdown, /pumpSilence\(\)\.flush\(coldStartNowMs\(\)\)/u);
-  assert.match(HEADER, /if \(flushed_\) return;/u, "exactly one line per launch");
-});
-
-test("respond() stamps a non-consuming displacement-correlated endpoint", () => {
-  assert.match(
-    RUNTIME_SRC,
-    /pumpSilence\(\)\.snapshot\(coldStartNowMs\(\)\)/u,
-    "respond() must snapshot on the launch clock",
-  );
-  assert.match(
-    RUNTIME_SRC,
-    /TN_PUMP_ENDPOINT/u,
-    "endpoint rides the existing diagnostic transport",
-  );
-  assert.match(RUNTIME_SRC, /std::cout << endpointRecord << std::endl;/u);
-  assert.match(RUNTIME_SRC, /LOGI\("%s", endpointRecord\.c_str\(\)\);/u);
-});
+// Where the observer is wired (pollEvents() head, first-present and shutdown flush, the respond()
+// snapshot) is proved by the real-host tests below, not by reading runtime.cpp: observed pump
+// entries, retained stalls, the shutdown flush and the correlated respond() endpoint.
 
 test("real host: the pump is observed at the bounded endpoint", () => {
   // The smoke bundle presents, so the first-frame endpoint fires. A rAF-keyed

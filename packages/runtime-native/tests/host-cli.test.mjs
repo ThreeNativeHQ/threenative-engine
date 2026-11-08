@@ -21,10 +21,10 @@ const hostTest = existsSync(mystral) ? test : test.skip;
 const scratch = mkdtempSync(join(tmpdir(), "tn-host-cli-"));
 afterAll(() => rmSync(scratch, { force: true, recursive: true }));
 
-function runGame(source, env = {}) {
+function runGame(source, env = {}, extraArgs = []) {
   const script = join(scratch, `game-${Math.random().toString(36).slice(2)}.js`);
   writeFileSync(script, source);
-  const result = spawnSync(mystral, ["run", script, "--no-sdl", "--quiet"], {
+  const result = spawnSync(mystral, ["run", script, "--no-sdl", "--quiet", ...extraArgs], {
     encoding: "utf8",
     env: { ...process.env, ...env },
     timeout: 60_000,
@@ -99,4 +99,20 @@ hostTest("host gap: only the exact value 1 turns detail on", () => {
     const gap = hostGap({ TN_HOST_GAP_DETAIL: value });
     assert.deepEqual(Object.keys(gap.samples[0]), ["frame", "webtransportMs"], `value ${value}`);
   }
+});
+
+// A web UI is a game requirement: a UI root that is not a directory fails the launch closed with a
+// named diagnostic, and only the explicit scene-diagnostics flag lets the game run without it.
+hostTest("web UI startup fails closed unless --bypass-ui-loading is explicit", () => {
+  const game = "console.log('TN_GAME_RAN'); process.exit(0);";
+  const missing = join(scratch, "no-such-ui");
+
+  const refused = runGame(game, {}, ["--ui", missing]);
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  assert.match(refused.stderr, /TN_UI_BUNDLE_MISSING/u);
+  assert.doesNotMatch(refused.stdout, /TN_GAME_RAN/u, "the game must not start without its UI");
+
+  const bypassed = runGame(game, {}, ["--ui", missing, "--bypass-ui-loading"]);
+  assert.equal(bypassed.status, 0, bypassed.stdout + bypassed.stderr);
+  assert.match(bypassed.stdout, /TN_GAME_RAN/u);
 });
