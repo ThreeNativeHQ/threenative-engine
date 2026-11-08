@@ -101,11 +101,11 @@ test("should fail when a declared test target is not executed", () => {
   // screenshot capture-gate ordering contract; +1 for PRD-329's surface-format selection
   // diagnostic contract; +5 for the comprehensive coverage contracts; +1 for PRD-368's pipeline
   // cache contract; +1 for PRD-399's presentation-pacing contract; +1 for PRD-465 Phase 2's
-  // MetaHuman facial rig bindings contract; +1 for VQ07's surface acquisition status contract.; +1 for the desktop CSS UI overlay contract.; +1 for PRD-645's ray-batch probe contract. +2 for PRD-842's host shim bootstrap and WebGPU wrapper contracts.
+  // MetaHuman facial rig bindings contract; +1 for VQ07's surface acquisition status contract.; +1 for the desktop CSS UI overlay contract.; +1 for PRD-645's ray-batch probe contract. +2 for PRD-842's host shim bootstrap, WebGPU wrapper and image decode teardown contracts.
   // Bump alongside any new add_executable contract target.
-  // 53 targets include the transient attachment host contract.
+  // 54 targets include the transient attachment host contract.
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 53);
+  assert.equal(discovered.length, 54);
   const missingExposure = { ...executionContracts };
   Reflect.deleteProperty(missingExposure, "threenative-exposure-graph-test");
   assert.throws(() => validateExecutionContracts(discovered, missingExposure),

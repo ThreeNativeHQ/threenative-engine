@@ -6,7 +6,8 @@
 // shim -> probe: fetch-polyfill (fetch, Headers, Request, Response, AbortController, TextEncoder),
 // streams-polyfill (ReadableStream, WritableStream, TransformStream), url-worker-polyfill (URL,
 // URLSearchParams, Worker), event-constructors-setup (Event, KeyboardEvent, PointerEvent),
-// storage-polyfill (localStorage, sessionStorage), create-element-setup (a canvas element).
+// storage-polyfill (localStorage, sessionStorage), create-element-setup (a canvas element),
+// scheduler-yield (scheduler.yield, reachable as self.scheduler).
 // The host also exposes the playtest mailbox (`__THREENATIVE_NATIVE__.playtest`), whose `network`
 // is the fetch shim's observation reader.
 //
@@ -47,6 +48,11 @@ constexpr const char* kScript = R"JS((() => {
   const canvas = typeof document === "object" ? document.createElement("canvas") : null;
   if (!canvas || String(canvas.tagName).toLowerCase() !== "canvas" || typeof canvas.toDataURL !== "function") {
     missing.push("document.createElement(canvas)");
+  }
+  // scheduler-yield: three probes `self.scheduler`, so both names must reach one object.
+  if (typeof globalThis.scheduler !== "object" || typeof scheduler.yield !== "function" ||
+      globalThis.self.scheduler !== scheduler) {
+    missing.push("scheduler.yield");
   }
   const mailbox = globalThis.__THREENATIVE_NATIVE__ && __THREENATIVE_NATIVE__.playtest;
   if (!mailbox || mailbox.network !== fetch.network ||

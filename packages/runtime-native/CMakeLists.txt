@@ -2504,6 +2504,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/webgpu_wrapper_bag_test.cpp)
     target_link_libraries(threenative-webgpu-wrapper-bag-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-image-decode-teardown-test EXCLUDE_FROM_ALL
+        tests/image_decode_teardown_test.cpp)
+    target_link_libraries(threenative-image-decode-teardown-test PRIVATE mystral-runtime)
+
     # WebTransport contracts. The wire test includes webtransport.cpp textually
     # because its helpers live in an anonymous namespace; it links quiche alone
     # — mystral-runtime already defines the same TU, and linking both would
@@ -2830,6 +2834,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-timer-engine-first-test)
     tn_register_contract_test(threenative-shim-bootstrap-test)
     tn_register_contract_test(threenative-webgpu-wrapper-bag-test)
+    tn_register_contract_test(threenative-image-decode-teardown-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
     tn_register_contract_test(threenative-pipeline-cache-api-test)
     tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)

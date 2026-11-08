@@ -219,6 +219,9 @@ export const executionContracts = {
   "threenative-webgpu-wrapper-bag-test": {
     invocations: [{ args: [], passLine: "native webgpu wrapper bag contract " }],
   },
+  "threenative-image-decode-teardown-test": {
+    invocations: [{ args: [], passLine: "native image decode teardown contract passed" }],
+  },
   "threenative-shim-bootstrap-test": {
     invocations: [
       { args: [], passLine: "native shim bootstrap contract passed" },
