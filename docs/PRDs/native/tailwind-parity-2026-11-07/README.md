@@ -53,13 +53,23 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 288/503 (57.3 %)  [132 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 315/503 (62.6 %)  [103 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 152 non-discriminating cells
-are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
-removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
-not finish.
+A cell is evidence only when it discriminates (see Meter, item 3). The 103 non-discriminating cells are
+the scene's own staging gaps or units this engine cannot show on a 120×40 box at all; the 29 pending
+exemptions are unproven units their owner PRD removes; the 1 refused stage is a multicolumn panel the
+engine does not finish.
+
+Per family, measured on the full run above:
+
+```
+152/182 misc        23/50 mask          18/41 type          20/39 paint
+  0/16 PRD-851      22/31 scroll         2/15 flow          25/34 selectors
+ 11/19 filter       17/24 media          3/9 transform3d     2/8 pseudo
+  0/5 grid-and-query 0/5 PRD-851 paint   0/4 blend           3/5 motion
+  0/2 clip          18/18 logical
+```
 
 The 3 units after 256 are an inset box shadow's spread: `ring-inset` plus a ring width is
 `box-shadow: inset 0 0 0 4px …`, and the inset path cut the shadow out with the border box itself, so a

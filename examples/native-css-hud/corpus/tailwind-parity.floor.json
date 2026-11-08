@@ -1,5 +1,5 @@
 {
-  "passed": 315,
+  "passed": 316,
   "units": [
     "PRD-850/paint|bg|--tw-gradient-position,background-image|",
     "PRD-850/paint|bg|background-size|",
@@ -240,6 +240,7 @@
     "PRD-848/scroll|scroll|scroll-margin-top|",
     "PRD-848/scroll|scroll|scroll-margin-inline|",
     "PRD-848/scroll|scroll|scroll-margin-block|",
+    "PRD-847/motion|animate|animation|",
     "PRD-844/filter|backdrop|--tw-backdrop-opacity,-webkit-backdrop-filter,backdrop-filter|",
     "PRD-844/filter|blur|--tw-blur,filter|",
     "PRD-844/filter|brightness|--tw-brightness,filter|",
