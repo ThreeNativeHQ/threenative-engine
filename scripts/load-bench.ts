@@ -174,8 +174,10 @@ async function visit(
     const page = await context.newPage();
     const stages: Record<string, number> = {};
     let started = 0;
+    const marks: string[] = [];
     page.on("console", (message) => {
       const text = message.text();
+      if (text.startsWith("TN_")) marks.push(`${Date.now() - started} ${text.slice(0, 240)}`);
       for (const marker of STAGE_MARKERS)
         if (text.startsWith(marker) && stages[marker] === undefined)
           stages[marker] = Date.now() - started;
@@ -206,6 +208,8 @@ async function visit(
     if (cpuProfile !== undefined) {
       const { profile } = await cdp.send("Profiler.stop");
       await writeFile(cpuProfile, JSON.stringify(profile));
+      // Every TN_ line with its time since navigation, beside the profile it explains.
+      await writeFile(`${cpuProfile}.marks.txt`, `${marks.join("\n")}\n`);
     }
     const readyMs = await page.evaluate(() => Math.round(performance.now()));
     const adapter = await page.evaluate(async () => {

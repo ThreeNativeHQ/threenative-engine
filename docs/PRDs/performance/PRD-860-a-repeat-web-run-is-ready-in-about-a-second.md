@@ -41,8 +41,8 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: a repeat run of the collectathon kit, browser relaunched, is ready in at most 1.2 s median at 20 Mbit/s and 40 ms on the laptop (baseline 2.37 s, at least 2x faster). proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — Evidence: pending.
-- [ ] AC-2 [local]: the first visit of the same kit is ready in at most 3.5 s median under the same conditions (baseline 5.05 s, at least 30% faster). proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — Evidence: pending.
+- [ ] AC-1 [local]: a repeat run of the collectathon kit, browser relaunched, is ready in at most 1.2 s median at 20 Mbit/s and 40 ms on the laptop (bench baseline 2.51 s, at least 2x faster). proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — Evidence: pending.
+- [ ] AC-2 [local]: the first visit of the same kit is ready in at most 2.7 s median under the same conditions (bench baseline 3.90 s, at least 30% faster). proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — Evidence: pending.
 - [ ] AC-3 [local]: the control, the minimal kit, which uses none of the new caches, is no slower than its develop baseline on either arm, within the spread of three runs. It charges the levers' own bookkeeping to a game that gains nothing. proof: `pnpm bench:load --kit minimal --network 20000:40 --runs 5` — Evidence: pending.
 - [ ] AC-4 [local]: a fresh visual judge rates the spawn frame NEUTRAL or IMPROVEMENT against the develop baseline, two headed WebGPU captures per arm. proof: visual judge subagent on the bench captures — Evidence: pending.
 
@@ -57,6 +57,9 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 
 ## Decisions
 
+- 2026-11-08 (agent): AC-2 moves from "at most 3.5 s against 5.05 s" to "at most 2.7 s against 3.90 s". The spike served no Brotli; the bench does, as a production host does, and its first-visit baseline is 3.90 s. The bar stays at least 30% faster.
+- 2026-11-08 (agent): the minimal kit, with almost no scene, repeats in 2.25 s, so most of a repeat run is startup every kit shares (the sky's cloud noise first), not the collectathon's world. The levers start there. The collectathon's course placement shares one seeded random stream with the rest of the course, so it is not cached: skipping it on a hit would change the world.
+
 - 2026-11-08 (agent, from the spike): the goal machine is the quiet laptop, not the desktop, because desktop runs at host load 50+ read 4x high and vary by 40% between runs.
 - 2026-11-08 (agent): the cache stores bytes in TypeScript in core, next to the PRD-743 asset cache. It is I/O, not compute, and core must not carry Wasm. Generation that stays per run moves into C++ through the PRD-828 bulk calls only when the bench shows that the cache alone misses AC-2.
 - 2026-11-08 (agent): native relaunch (pipeline cache on the owned engine, V8 code cache) stays with PRD-368 and PRD-335. This PRD reports native as `memo` disabled with its reason and changes nothing else there.
@@ -64,14 +67,17 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 ## Execution Phases
 
 #### Phase 1: The benchmark and its baseline
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `scripts/load-bench.ts` (new), `package.json` (the `bench:load` script).
 
-- [ ] `pnpm bench:load` reports median first-visit and repeat `readyMs`, the adapter and bytes on the wire for one kit. proof: `pnpm bench:load --kit collectathon --runs 5` on the laptop.
-- [ ] The develop baseline is recorded here: three bench runs on the laptop for collectathon and for the minimal control, 20 Mbit/s and 40 ms. proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5`.
+- [x] `pnpm bench:load` reports median first-visit and repeat `readyMs`, the adapter and bytes on the wire for one kit. proof: `pnpm bench:load --dist <kit>/dist --network 20000:40 --runs 5` on the laptop — 2026-11-08, `3ebe059ed`: adapter `intel/gen-12lp`, 5 first and 10 repeat visits per run, `.br` served (2805 KB first visit), `scripts/__tests__/load-bench.spec.ts` 2 passed.
+- [x] The develop baseline is recorded here: three bench runs on the laptop for collectathon and for the minimal control, 20 Mbit/s and 40 ms. proof: `pnpm bench:load --dist <kit>/dist --network 20000:40 --runs 5` — packages from `origin/develop` `4dd50f4c2`, laptop load under 2, 74-98 °C:
+  - collectathon first visit 3846 / 3902 / 3907 ms, repeat 2433 / 2512 / 2568 ms.
+  - minimal first visit 3507 / 3555 / 3596 ms, repeat 2249 / 2292 / 2284 ms.
+  - Unthrottled repeat-visit CPU profile (unminified build): in the minimal kit `cloudTextures()` (`templates/*/src/render/clouds.ts`, shared by six kits) runs about 0.6 s of main-thread JS before the first frame, and `bakedRadiance` about 0.12 s.
 
 #### Phase 2: A repeat run does not redo the last run's work
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/create-threenative/src/` (the `_headers` writer), `packages/core/src/asset-cache.ts` and `assets.ts` (`memo`), the collectathon template `src/level/` and `src/render/`, the warm-up path in `packages/core/src/warmup.ts`.
 
 - [ ] Hashed assets ship `Cache-Control: public, max-age=31536000, immutable`, and a repeat run makes no revalidation request. proof: `pnpm exec vitest run packages/create-threenative/__tests__` plus the bench request count.
