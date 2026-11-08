@@ -53,7 +53,7 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 163/503 (32.4 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
 ```
 
 A cell is evidence only when it discriminates (see Meter, item 3). The 233 non-discriminating cells
@@ -63,7 +63,7 @@ not finish.
 
 For comparison, `427/507` cells have matching pixels *and* boxes, but 309 of those do not
 discriminate, so a pixel comparison overstates what is proven; a pixel-only discrimination test
-understates it, because it misses a unit that only moves a box. `163/503` is what this meter can
+understates it, because it misses a unit that only moves a box. `162/503` is what this meter can
 defend.
 
 ## PRDs

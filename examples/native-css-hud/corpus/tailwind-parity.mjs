@@ -1231,7 +1231,12 @@ function utilityEntry(unit, classCss, byProperty) {
       layout === "table" || /^(accent|caret|appearance|field-sizing|resize)/u.test(unit.probe),
     // A multicolumn cell beside a float is the one case the engine does not finish; giving each
     // flow cell its own panel means a slow one costs one cell instead of a whole panel's evidence.
-    alone: layout === "prose" || layout === "float",
+    // One wheel per frame: twelve wheels in one capture is not the same input on the two subjects,
+    // because the first one moves the layout under the coordinates the others would aim at.
+    alone: layout === "prose" || layout === "float" || layout === "scroll",
+    // `scroll-m*`/`scroll-p*`/`snap-*`/`sticky` change nothing until something scrolls, so the cell
+    // is captured after one wheel of the same size on both subjects.
+    drive: layout === "scroll" ? [{ t: "wheel", at: "probe", dy: 140 }] : undefined,
     prose: unit.props.some((p) => PROSE_PROPS.has(p)),
     unit,
   };
@@ -1485,6 +1490,12 @@ async function serveWeb() {
 async function driveStep(page, step) {
   if (step.t === "key") return void (await page.keyboard.press(step.key));
   if (step.t === "advance") return void (await page.waitForTimeout(step.ms));
+  if (step.t === "wheel") {
+    // A real wheel needs the pointer over the scroller first: Chromium routes it to the element
+    // under the cursor, which is how the engine's `wheel` takes its position too.
+    await page.mouse.move(step.x, step.y);
+    return void (await page.mouse.wheel(step.dx ?? 0, step.dy));
+  }
   if (step.t !== "pointer") return undefined;
   if (step.type === "move") return void (await page.mouse.move(step.x, step.y));
   if (step.type === "down") return void (await page.mouse.down());
@@ -1863,9 +1874,11 @@ function driverFor(cell, boxes) {
   if (box === undefined) return [];
   const x = Math.round(box.x + box.w / 2);
   const y = Math.round(box.y + box.h / 2);
-  return cell.drive.map((step) =>
-    step.at === "probe" ? { t: "pointer", type: step.type, x, y } : step,
-  );
+  return cell.drive.map((step) => {
+    if (step.at !== "probe") return step;
+    if (step.t === "wheel") return { t: "wheel", x, y, dx: step.dx ?? 0, dy: step.dy };
+    return { t: "pointer", type: step.type, x, y };
+  });
 }
 
 // -------------------------------------------------------------------------------------------------

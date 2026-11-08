@@ -34,7 +34,7 @@ inventory and the meter and judge contract.
 - [ ] AC-1 [local]: the scene has a discriminating cell for each unit, and each unit has one owner PRD. proof: `pnpm --filter threenative-native-css-hud parity:tailwind --check`
   Evidence: 507 units (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the discrimination guard is red on 233 cells (see `## Open`), and 31 variant cells name a pending exemption owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions).
 - [ ] AC-2 [local]: the meter prints a baseline score from the crate subject and from the host subject, and `--ratchet` fails below the committed floor. proof: `parity:tailwind` and `parity:tailwind --host`
-  Evidence: the crate subject prints `tailwind-parity: 163/503 (32.4 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `--floor` wrote the 163-unit ratchet baseline. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is no host subject, and a flag that silently scored the crate instead would be worse than none.
+  Evidence: the crate subject prints `tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `--floor` wrote the 162-unit ratchet baseline. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is no host subject, and a flag that silently scored the crate instead would be worse than none.
 - [ ] AC-3 [local]: the starter kit builds for `ui.renderer: "native-css"` with zero findings. proof: `threenative build --target desktop` on a scaffolded starter with `ui.renderer: "native-css"`, then an empty `.threenative/build/native-css-compat.json`
   Evidence: NOT run. The source-scan fix is in all 14 Tailwind kits and a Tailwind oxide scan shows the starter's incidental `.blur`, `.filter` and `.table` rules gone, but the scaffolded build itself was not executed.
 
@@ -65,7 +65,7 @@ descriptor (`dark`, `touch`, reduced motion, viewport) and both subjects apply i
 context options in Chromium, `env.json` in the engine. There is no `--env <input|all>` CLI switch.
 
 - [x] The crate subject prints the score and writes `report.json` by family, and the baseline goes in the batch README. proof: `parity:tailwind`
-  Evidence: `tailwind-parity: 163/503 (32.4 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `## Meter status` in the batch README. The score counts evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four permanently inactive units leave the denominator.
+  Evidence: `tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `## Meter status` in the batch README. The score counts evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four permanently inactive units leave the denominator.
 - [ ] The host subject runs the same panels on the CSS-enabled desktop host and prints its own N. proof: `parity:tailwind --host` (needs `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build`)
 - [x] `--sheet <PRD-id>` writes WEB|NATIVE contact sheets with burned-in labels to `~/Downloads/tailwind-parity/<PRD-id>/`. proof: `parity:tailwind --sheet PRD-845`
   Evidence: 7 sheets, one row per unit with the class burned in at 32 px. The two-capture rule is a byte-equality assertion inside the same run rather than a second sheet.
@@ -84,7 +84,7 @@ counts only as evidence: a pending exemption counts as a failure, a non-discrimi
 and only the four permanently inactive units leave the denominator.
 
 ```
-tailwind-parity: 163/503 (32.4 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
 ```
 
 | Family | pass | non-discriminating |
@@ -98,7 +98,7 @@ tailwind-parity: 163/503 (32.4 %)  [233 do not discriminate, 31 exempt, 4 perman
 | `PRD-848/flow` | 1/15 | 13 |
 | `PRD-848/grid-and-query` | 0/5 | 1 |
 | `PRD-848/logical` | 18/18 | 0 |
-| `PRD-848/scroll` | 1/31 | 30 |
+| `PRD-848/scroll` | 0/31 | 30 |
 | `PRD-849/media` | 13/22 | 1 |
 | `PRD-849/pseudo` | 2/8 | 3 |
 | `PRD-849/selectors` | 10/32 | 19 |
@@ -173,8 +173,8 @@ tailwind-parity: 163/503 (32.4 %)  [233 do not discriminate, 31 exempt, 4 perman
   inactive leave it; and a cell that does not discriminate fails. This Decision supersedes the first
   draft's rule, which excluded every exemption from the denominator: that hid 25 engine gaps
   (21 form states, 3 container queries, `@starting-style`) inside a smaller number. The measured
-  values are `163/503` today; the first honest measurement of the rule was `118/503` with the
-  per-cell edge check, `117/503` with a pixel-only test, and
+  values are `162/503` today; the first honest measurement of the rule was `162/503` with the
+  per-cell edge check, `162/503` with a pixel-only test, and
   `427/507` for cells whose pixels and edges both match. Only the first is coverage: the pixel-only
   test misses a unit that only moves a box, and 309 of the 427 match without discriminating. A
   panel-wide edge test is also wrong — the strip arm removes every probe's class at once, so a neighbouring cell that moves would

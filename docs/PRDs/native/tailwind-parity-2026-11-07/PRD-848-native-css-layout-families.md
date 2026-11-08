@@ -89,8 +89,16 @@ discriminate.
   cell left in the batch. The thirteen that do not discriminate are staging: a border-spacing or caption needs a
   table whose cells carry borders and whose caption is content; `clear-*`/`break-*` need a float to clear and a box
   that can fragment.
-- **Scroll (6/31).** `scroll-m*`/`scroll-p*`/`snap-*` need a wheel script: at scroll 0 they change nothing, which is
-  what a `scroll-snap-align` looks like before anything scrolls. `corpus/interactions.mjs` already has the grammar
-  (the corpus drives nested scrollers with it); pointing it at a parity panel is the work.
+- **Scroll (0/31, 29 do not discriminate).** The wheel driver is built: a scroll cell is captured after one
+  `wheel` of 140 px, dispatched at the probe's centre in Chromium and by `drive.json` on the engine, and each
+  scroll cell now has its own panel because twelve wheels in one frame is not the same input on both subjects —
+  the first one moves the layout under the coordinates the others aim at.
+  - With the cells grouped, the family measured 0/31 with **29 real mismatches**: after the same wheel the engine's
+    scroller was 140 px down and Chromium's was not (edge diff 140 on the top edge). That is the wheel-routing
+    difference PRD-848 exists to find, and it is still unfixed.
+  - With the cells alone (the fair comparison) **29 cells change nothing at all**, and that is the honest answer
+    for what is staged: `scroll-margin` and `scroll-padding` only move a scroller when a *snap* or a
+    `scrollIntoView` lands on them, not on a manual wheel. Those need a `scrollIntoView` driver; `snap-*` needs the
+    wheel, which now exists. `sticky` needs the scroller to actually move under it.
 - **Logical (12/18) and grid-and-query (1/5).** The logical cells that do not discriminate are `border-*-start`-style
   longhands on a probe with no border width, and the query cells need a sized container ancestor.
