@@ -9,8 +9,10 @@ import {
   instanceIndex,
   int,
   length,
+  mat4,
   max,
   storage,
+  uint,
   vec3,
 } from "three/tsl";
 import { biasedLodDistance } from "./model-lod.js";
@@ -24,7 +26,7 @@ import type {
   IKernelResult,
   IRegion,
 } from "./world-gpu-types.js";
-import { PlacementStruct, nodes } from "./world-gpu-types.js";
+import { PLACEMENT_ROWS, nodes } from "./world-gpu-types.js";
 import { DRAW_ARGS_WORDS, LIVE_MATRIX, LOCAL_WORDS, compose } from "./world-gpu-validation.js";
 
 /**
@@ -402,7 +404,7 @@ export interface ICullKernelInput {
  */
 export function buildCullKernel(input: ICullKernelInput): IGpuKernel {
   const { buffers } = input;
-  const source = nodes(storage(buffers.source, PlacementStruct, buffers.source.count));
+  const source = nodes(storage(buffers.source, "vec4", buffers.source.count));
   const drawn = nodes(storage(buffers.drawn, "mat4", buffers.drawn.count));
   const argsPlain = nodes(storage(buffers.args, "uint", buffers.args.count));
   const argsAtomic = nodes(storage(buffers.args, "uint", buffers.args.count).toAtomic());
@@ -436,10 +438,19 @@ export function buildCullKernel(input: ICullKernelInput): IGpuKernel {
   })().compute(Math.max(1, buffers.keys.count * clearWidth));
   const cull = Fn(() => {
     If(instanceIndex.greaterThanEqual(counts.x), () => Return());
-    const placement = source.element(instanceIndex);
-    const centre = placement.get("centre");
-    const matrix = placement.get("matrix");
-    const slot = placement.get("info").x;
+    // One placement is `PLACEMENT_ROWS` consecutive `vec4` rows: the world matrix's four columns,
+    // then the sphere, then `info`. Read as rows rather than as a struct element, which the owned
+    // engine refuses; the words are the ones `#writePlacement` wrote either way.
+    const base = instanceIndex.mul(uint(PLACEMENT_ROWS));
+    const matrix = mat4(
+      source.element(base),
+      source.element(base.add(uint(1))),
+      source.element(base.add(uint(2))),
+      source.element(base.add(uint(3))),
+    );
+    const centre = source.element(base.add(uint(4)));
+    const info = source.element(base.add(uint(5)));
+    const slot = info.x;
     If(slot.lessThan(0.0), () => Return());
     If(slot.greaterThanEqual(counts.y), () => Return());
     const radius = centre.w;
@@ -459,7 +470,7 @@ export function buildCullKernel(input: ICullKernelInput): IGpuKernel {
     // gate is the base projected distance and is scaled by it. A mirrored placement's scale is
     // negative, and the extent it reaches is the same, so the kernel takes the magnitude exactly as
     // `levelAtGates` does; `info.y` is already finite-sanitised when the record is written.
-    const scale = abs(placement.get("info").y);
+    const scale = abs(info.y);
     Loop({ start: int(1), end: gate.y, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
       const candidate = levels.element(gate.x.add(i as never));
       const threshold = nodes(candidate.x).toVar();
@@ -503,7 +514,10 @@ export function buildCullKernel(input: ICullKernelInput): IGpuKernel {
         drawn.element(key.x.add(taken)).assign(matrix.mul(locals.element(keyIndex)));
       });
     });
-  })().compute(Math.max(1, buffers.source.count));
+  })().compute(
+    // One thread per placement record, not per `vec4` row of the source buffer.
+    Math.max(1, Math.ceil(buffers.source.count / PLACEMENT_ROWS)),
+  );
   clear.setName("worldGpuSceneClear");
   cull.setName("worldGpuSceneCull");
   return { clear, cull };

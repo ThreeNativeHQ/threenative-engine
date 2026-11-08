@@ -33,8 +33,8 @@ Without gap 4, turning the scene on draws `capacity` instances from a partly fil
 ### Phase 2 — the engine draws indirect
 
 - [ ] An `InstancedMesh` whose geometry carries an indirect record draws with `DrawIndexedIndirect` from that record, on the bundle and the pass paths, a replaced record re-records the bundle, and the Wasm host then requests `IndirectFirstInstance`. proof: a native renderer test that asserts the encoded command
-  2026-11-08: draws from the record on the pass, shadow and retained-row bundle paths (`renderer.cpp`, `render_database.cpp`), keyed so a new or grown record re-records. `renderer_test indirect_record` red on the old renderer (`one 52|52`: capacity drawn) then green on both stable modes (`one 52|0, two 52|52, direct 52|52`); 70 built renderer ctests pass, 3 more need unbuilt binaries; `pnpm wasm:build` 0. Open: the `IndirectFirstInstance` request waits for the repack below.
-- [ ] The cull kernel's placements reach the owned engine without a struct-typed storage element (repack `GpuPlacement` to `vec4` rows in core). proof: `world-gpu-scene.spec.ts` and the existing world GPU specs green
+  2026-11-08: draws from the record on the pass, shadow and retained-row bundle paths (`renderer.cpp`, `render_database.cpp`), keyed so a new or grown record re-records. `renderer_test indirect_record` red on the old renderer (`one 52|52`: capacity drawn) then green on both stable modes (`one 52|0, two 52|52, direct 52|52`); 70 built renderer ctests pass, 3 more need unbuilt binaries; `pnpm wasm:build` 0. The Wasm host now requests `IndirectFirstInstance`.
+- [x] The cull kernel's placements reach the owned engine without a struct-typed storage element (repack `GpuPlacement` to `vec4` rows in core). proof: `world-gpu-scene.spec.ts` and the existing world GPU specs green — 2026-11-08: six `vec4` rows per placement, `mat4` from four columns (both backends build it: three `JoinNode`, engine `tsl_call.cpp` `Kind::Join`); `world-gpu-source-rows.spec.ts` red with the struct then 3/3; `world-*` specs 62 files 934 passed, core `tsc` 0.
 
 ### Phase 3 — proof
 

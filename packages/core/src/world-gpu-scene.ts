@@ -103,8 +103,8 @@ export type {
 export {
   DRAW_ARGS_BYTES,
   NO_LOCAL,
+  PLACEMENT_ROWS,
   PLACEMENT_WORDS,
-  PlacementStruct,
   SLOT_NONE,
   SOURCE_FLOOR,
   STORAGE_PLAIN,
@@ -165,8 +165,8 @@ import {
   type IValidationReadbacks,
   type IValidationSnapshot,
   NO_LOCAL,
+  PLACEMENT_ROWS,
   PLACEMENT_WORDS,
-  PlacementStruct,
   SLOT_NONE,
   SOURCE_FLOOR,
   STORAGE_PLAIN,
@@ -1016,7 +1016,10 @@ export class WorldGpuScene {
       keys: storageAttribute(StorageBufferAttribute, "vec4", 1),
       levels: storageAttribute(StorageBufferAttribute, "vec4", 1),
       locals: storageAttribute(StorageBufferAttribute, "mat4", 1),
-      source: storageAttribute(StorageBufferAttribute, "GpuPlacement", SOURCE_FLOOR),
+      // Six `vec4` rows per placement, so the count is the rows the kernels index by rather than
+      // the placements: one placement record is 24 words either way, and the CPU's `Float32Array`
+      // stays the GPU's buffer with no repacking.
+      source: storageAttribute(StorageBufferAttribute, "vec4", SOURCE_FLOOR * PLACEMENT_ROWS),
     };
     this.#version += 1;
     return this.#buffers;
@@ -1061,8 +1064,11 @@ export class WorldGpuScene {
   }
 
   #reserve(count: number): boolean {
-    // A ring-sized floor, so the first few placements do not each pay a reallocation.
-    return this.#growOf("source", Math.max(SOURCE_FLOOR, count));
+    // A ring-sized floor, so the first few placements do not each pay a reallocation. The count is
+    // `vec4` rows, the type the kernels bind the source buffer as: `PLACEMENT_ROWS` of them hold
+    // one placement, and the buffer stays a whole number of placements because the floor and every
+    // doubling of it are whole ones.
+    return this.#growOf("source", Math.max(SOURCE_FLOOR, count) * PLACEMENT_ROWS);
   }
 
   #writePlacement(index: number): void {
