@@ -1,6 +1,6 @@
 # PRD-842 — Native tests check behaviour, not source text
 
-**Status:** PARTIAL — Phase 1 and Phase 2 box 1 done. Phase 2 box 2 and AC-2 stay open for 8 platform-bound files (see the table in Phase 2). AC-1 passed.
+**Status:** PARTIAL — Phase 1 and Phase 2 box 1 done. Phase 2 box 2 and AC-2 stay open: 5 test files still read `.cpp` or `.mm` as text beyond the ABI spec, 2 of them by decision (wire contracts). See the tables in Phase 2. AC-1 passed.
 **Priority:** P2 — the open box replaces regex assertions over `runtime.cpp`, `bindings.cpp` and platform sources, which go red on renames and stay green on behaviour regressions.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -57,11 +57,11 @@ real wire. Both timer implementations stay (see the Decision below).
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: The native host runs with timers and shims intact. proof: `pnpm native:verify:desktop` exit 0 (2026-11-08): `native contract lane passed: 54 of 54 targets` (includes `threenative-timer-delivery-test`, `-timer-engine-first-test`, `-shim-bootstrap-test` in 3 modes, `-webgpu-wrapper-bag-test`, `-image-decode-teardown-test`, `-worker-production-test`), desktop core gate 300 frames at 1280x720 with a screenshot, `tests/external-bundle-discovery`, `host-cli` and `host-window` 18 of 18 tests
-- [ ] AC-2 [local]: The source-text test count drops to the ABI digest only. Not met: 18 readers before, 9 now (8 platform-bound files plus the ABI spec), see Phase 2. proof: `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists only the ABI spec
+- [ ] AC-2 [local]: The source-text test count drops to the ABI digest only. Not met: 18 readers before, 6 now (the ABI spec plus 5 files: 2 classed as wire contracts by the Decision of 2026-11-08, 3 open), see Phase 2. proof: `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists only the ABI spec
 
 ## Integration Ledger
 
-Integration: unchanged — tests, three new native test targets and two new host-run vitest files. No runtime source changes.
+Integration: tests, four new native test targets and host-run vitest files. Three small runtime seams for testing: `vfs::resolveFetchPath` (same mapping, moved into `embedded_bundle.h`), the `TN_WINDOW_MODE` host marker, and `buffer_map_state.h` (the buffer-map state moved out of `context.cpp`). No behaviour change.
 
 ## Execution Phases
 
@@ -78,7 +78,7 @@ Integration: unchanged — tests, three new native test targets and two new host
 
 - [x] Shim bootstrap and fast-path selection are asserted by running the host, and the 7 historical block names are gone. `tests/js-engine-fast-path.test.mjs` is deleted. proof: `threenative-shim-bootstrap-test` passes in three modes (default, `--worker-rollback`, `--callback-retention`), `threenative-webgpu-wrapper-bag-test` passes, and `rg SCRIPT_FOR_BLOCK packages/runtime-native/tests` returns nothing. Red checks: skipping the streams shim makes `Runtime::create` fail (`Web Streams not available`), and passing the borrowed `document.addEventListener` handle makes `--callback-retention` fail (`listener:0`). `embedded_bundle_test` tests the VFS container only, so it does not carry this claim.
 - [ ] The remaining text specs on `bindings.cpp`, `runtime.cpp` and `browser-renderer.ts` are replaced by behaviour checks or deleted when a behaviour test already covers them. proof: AC-2
-  Done: 10 of the 18 `.cpp|.mm` readers are gone. Open: 8 files, each platform-bound (second table). `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists them plus the ABI spec.
+  Done: 12 of the 18 `.cpp|.mm` readers are gone. Left: 5 files plus the ABI spec (second table). `ios-packaging` and the bridge-name tests of `ui-layer-host-contract` are wire contracts by Decision. `android-canvas-skia`, `resize-event-no-reconfigure` and `ios-contract` are open, as are the iOS and slice tests of `ui-layer-host-contract`. `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists them.
 
 Every removed assertion and the test that covers it:
 
@@ -101,21 +101,46 @@ Every removed assertion and the test that covers it:
 | `async-image-decode`: bindings invalidate the owner before engine teardown | `image_decode_teardown_test.cpp`. Limit: three independent guards protect the teardown, so removing one does not fail the test. The test fails on a crash or hang across Runtime recreation |
 | `mobile-assets`: mobile fetch path mapping | none on this machine. The Android emulator and iOS simulator lanes load the packaged game through that path. This lane did not run them |
 
-Not covered by any behaviour test (the assertions are gone, so these are open risks):
+Restored on 2026-11-08 (the lead ruled that a deleted check must be converted, not dropped):
 
-- `desktop-assets`: the `fullscreen`, `maximized` and `maxFps` config keys, and the `--windowed`, `--maximized` and `--fullscreen` overrides. They need a window manager, and this machine has none. A `maxFps` frame-rate check may work and was not tried.
-- `mobile-assets`: the Android and iOS path mapping in `resolveFetchFilePath`.
-- `pump-silence`: the `pollEvents()` head stamp ahead of the paused and lifecycle early returns. The real-host tests cover the normal path only.
+| Behaviour | Test | Red check |
+| --- | --- | --- |
+| `fullscreen`, `maximized` and `resizable` config keys, fullscreen wins over maximized | `host-window.test.mjs`. The host prints `TN_WINDOW_MODE:{...}`, the mode it hands to SDL. No window manager needed | with fullscreen no longer winning, and with the embedded keys ignored when a flag is set, 3 tests fail |
+| `--windowed`, `--maximized`, `--fullscreen` override the embedded mode | `host-window.test.mjs`, same marker | same run |
+| `display.maxFps` reaches the presentation cap | `host-window.test.mjs` reads `Presentation cap: N fps` (30, 144, and the 60 default) | skipping the `maxFps` parse fails it |
+| mobile fetch path mapping (`resolveFetchFilePath`) | the mapping moved to `vfs::resolveFetchPath(path, platform)` and `embedded_bundle_test.cpp` asserts all three platforms, so Linux runs the Android and iOS branches | dropping the Android `game/` prefix fails 3 asserts |
+| `pollEvents()` head stamp ahead of the paused return | `host-window.test.mjs`: unmap the X window, wait 1.5 s, map it; `TN_PUMP_SILENCE.maxGapMs` must stay under 250 ms | stamping after the paused return reads 1511 ms and fails |
+| `production-profile`: screenshot mailbox protocol in `runtime.cpp` | `host-window.test.mjs`: a game clears to magenta, the test writes `tn-playtest-screenshot-request.txt`, and the saved PNG is magenta and the request file is gone | renaming the request file in `runtime.cpp` fails it |
+| `production-profile`: `BufferMapDataPtr` outlives a timed-out wait | `buffer_map_state.h` holds the state; `threenative-buffer-map-lifetime-test` (contract lane, 55 targets now) drops the waiter's share before the late callback | a callback that holds no share fails 3 asserts |
+| `traa_reference_test`: resolve arithmetic and reset seed | `traa_resolve_blend` in `renderer_test.cpp` reads the resolved pixel back on the RTX 2080: still 0.5, noisy neighbourhood 0.22437 (worked by hand 0.22447), stale history clipped to 0.5. The seed order is already read back by `traa_reset_seed` | raising the base current weight 0.05 to 0.10 gives 0.2493 and fails it |
+| `web-host-refusal` | `web-host-refusal.test.mjs` runs the built Wasm host in Chromium (WebGPU, private Xvfb) through `fixtures/web-host-refusal-probe.mjs`: the read returns 0, the error names the slot, the host is still Ready after two reads | replacing `refuse()` with `fail()` in `tnw_web_read_mrt` leaves the host Failed and fails it |
 
-Files that still read `.cpp` or `.mm` as text, and why each stays:
 
-| File | Why it stays |
-| --- | --- |
-| `web-host-refusal.test.mjs` | `web_host.cpp` is Wasm-only. A refused MRT read needs the browser and the Wasm build. No web playtest reads a slot the frame never wrote |
-| `resize-event-no-reconfigure.test.mjs` | The abort happened on a Pixel 8 only. Linux reconfigures the surface without harm, so only a device run can show the regression |
-| `ios-contract.test.mjs`, `ios-packaging.test.mjs` | `.mm` sources need macOS. The iOS simulator lane runs on the hosted macOS runner, not here |
-| `ui-layer-host-contract.test.mjs` | Compares Java, Objective-C, Rust and C++ host sources for one bridge contract, and compiles slices of `ui_overlay.cpp` and `window.cpp`. Needs a seam per slice plus device lanes |
-| `android-canvas-skia.test.mjs` | Android font manager text in `canvas2d.cpp`. Needs the Android lane |
-| `production-profile.test.mjs` | Two tests: the `runtime.cpp` screenshot mailbox name, and the `BufferMapDataPtr` lifetime in `context.cpp`. Neither has a behaviour test yet |
-| `native-engine/traa_reference_test.mjs` | Evaluates the WGSL resolve expressions from `traa.cpp` text and checks the seed order in `renderer.cpp`. Needs a GPU resolve readback |
-| `web-host-abi.spec.ts` | The ABI digest. It stays by design |
+Still not covered by a behaviour test (the text assertion stays in the file; each one is an open item):
+
+- `android-canvas-skia`: `sharedFontMgr()` must use `SkFontMgr_New_Android` under `__ANDROID__`. Tried on 2026-11-08 on the local `threenative_api35` emulator (QuickJS build, because `third_party/v8-android/build-receipt.json` is missing and `verifyV8Dependency` stops the V8 build). With the Android branch changed to `SkFontMgr::RefEmpty()`, `measureText` still returned 48 for both `"iiii"` and `"MMMM"`, and `getImageData` returned no ink even after a `fillRect`. No width or pixel marker tells the two font managers apart, so the text test stays.
+- `resize-event-no-reconfigure`: `dispatchResizeEvent` must not call `resizeSurface`, `configureSurface` or `resize(`. Tried on the same emulator: adding `resize(e.width, e.height)` aborted with SIGABRT in 1 of 3 runs with two display flips during launch and 1 of 3 with six flips. The other runs passed or timed out. An abort that shows in 1 run of 3 cannot gate a merge, so the text test stays. No wired CI job rotates the display during launch either: `android-emulator-parity` runs conformance only.
+
+Files that still read `.cpp` or `.mm` as text:
+
+| File | Class | Why it stays |
+| --- | --- | --- |
+| `android-canvas-skia.test.mjs` | open | The `canvas2d.cpp` font manager text test (see above). The rest of the file runs the Android build checks |
+| `resize-event-no-reconfigure.test.mjs` | open | The `runtime.cpp` resize text test (see above) |
+| `ios-contract.test.mjs` | open | One lint: `ios/main.mm` must not mention `WebView`, `WKWebView` or `React Native`. The macOS `build-ios-simulator` job compiles and runs the app and does not look for the absence of a web view. This lane could not run macOS |
+| `ios-packaging.test.mjs` | wire | `TNMaxFps` is written by `package-ios.mjs` into `Info.plist` and read by `ios/main.mm`. See the Decision below |
+| `ui-layer-host-contract.test.mjs` | wire and open | Tests 1-4 compare the bridge names across the Java, Objective-C, Rust and C++ hosts and `core/src/ui-bridge.ts`. That is one wire (see the Decision below). The iOS tests on `ui_overlay_ios.mm` and `main.mm`, and the slices of `ui_overlay.cpp` and `window.cpp`, are open: they need macOS or a device |
+| `web-host-abi.spec.ts` | wire | The ABI digest. It stays by design |
+
+`web-host-refusal.test.mjs` no longer reads source. It needs `pnpm wasm:build` and Chromium with WebGPU, so it skips when `build/wasm` is absent. No CI job builds the Wasm host and runs it yet. That wiring is open.
+
+## Decision (2026-11-08): cross-language wire contracts
+
+A test that compares two source files, written in two languages, that must agree on one name or key checks a wire. It has no seam to call, because the other side runs on another platform. These tests stay as text checks and are classed with the ABI digest:
+
+- The UI bridge names (page-facing object, inbound global, hit-region handling) across the four hosts and `ui-bridge.ts`.
+- The `TNMaxFps` key from `package-ios.mjs` to `ios/main.mm`.
+
+This Decision does not cover single-file lints (the `ios-contract` web view ban) or slices of one C++ file. Those stay open.
+
+iOS removals in this lane (the `jsc_engine.mm` text match and the `ios-contract` text tests) are covered only by the macOS `build-ios-simulator` job. Unverified here.
