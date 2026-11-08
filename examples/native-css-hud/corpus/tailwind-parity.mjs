@@ -822,7 +822,11 @@ const VARIANT_STAGE = {
   // A portrait viewport is the state `portrait:` describes; the first cell is still in frame.
   portrait: { class: "portrait:bg-red-500", viewport: { width: 720, height: 1280 } },
   landscape: { class: "landscape:bg-red-500" },
-  ltr: { class: "ltr:bg-red-500" },
+  // Tailwind compiles `ltr:` to `:where(:dir(ltr), [dir="ltr"], [dir="ltr"] *)`. This build of Stylo's
+  // servo selector parser is the one without a `:dir()` pseudo-class (the gecko build has it), so the
+  // first alternative is dropped and the other two are attribute selectors a staged `dir` matches.
+  // Without the attribute the cell compares against nothing and reads 0.6492.
+  ltr: { class: "ltr:bg-red-500", attrs: { dir: "ltr" } },
   rtl: { class: "rtl:bg-red-500", attrs: { dir: "rtl" } },
   dark: { class: "dark:bg-red-500", env: { dark: true } },
   print: {
