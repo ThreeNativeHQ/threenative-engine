@@ -1,7 +1,7 @@
 # PRD-859 — The game thread wins the CPU against everything else on the machine
 
-**Status:** IN PROGRESS
-**Priority:** P2 — Linux raises and lowers (AC-1, AC-2); the contended Midway run, Windows, macOS, Android and the override plumbing remain (AC-3 to AC-8).
+**Status:** BLOCKED — owner decision (AC-3 needs the real display `:0`)
+**Priority:** P2 — Linux, Android, the override and the starter kit ship (AC-1, AC-2, AC-6 to AC-8); the contended Midway run (AC-3), Windows and macOS (AC-4, AC-5) are in Blocked on.
 **Complexity:** 4 (MEDIUM)
 **Owner:** João (owner); an agent executes
 **Depends on:** None
@@ -65,7 +65,7 @@ Risks:
 
 - [x] AC-1 [local]: The player starts on Linux. Every background thread and child process reads nice +10 or more, and the game, render and present threads keep a nice value ≤ 0. proof: `sh scripts/xvfb.sh node packages/runtime-native/tests/native-engine/player-thread-placement.mjs <build>/tn-native-engine-player-v8 --x11` (reads field 19 of `/proc/<pid>/task/<tid>/stat`) — Evidence: 2026-11-08, Linux desktop: `PASS default: game=-10 render=-10 present=-10 background=16 source=setpriority override=none`; the dummy-driver run (no presenter, ctest form) passes too. Red first: the unchanged player fails `default: no TN_PROCESS_PRIORITY line`. Background reads 16 here because ananicy-cpp renices the `node` parent to 16 and the player only lowers; a host without a renice daemon reads 10. HUD WebKit children: the code lowers every descendant, but this build had no UI overlay, so that path is unverified.
 - [x] AC-2 [local]: With rtkit running and no `RLIMIT_NICE`, the game thread reads nice −10 and `TN_PROCESS_PRIORITY` reports `source=rtkit`. With rtkit not reachable, the game thread keeps its nice value and the line reports `source=none reason=<errno>`. The player does not fail. proof: same test; the second arm runs under `prlimit --nice=0`, the third adds `DBUS_SYSTEM_BUS_ADDRESS=unix:path=/nonexistent/…` (masking rtkit needs root, which this lane lacks) — Evidence: 2026-11-08: `PASS RLIMIT_NICE=0 raises through rtkit: game=-10 render=-10 present=-10 … source=rtkit` and `PASS no raise route: game=16 … source=none reason=EACCES rtkit=no-system-bus:2`, the player reached its 90th frame in both.
-- [ ] AC-3 [local]: Under contention (one busy loop per CPU, `nice 0`, from a Node child process), the p95 presented frame time on Midway is at least 10% lower with the default than with `priority: "normal"`. Uncontended, the two arms differ by at most 2%. Five paired runs per arm. proof: `node packages/playtest/dist/runner/cli.js perf --executable <player> …` paired arms from one code state — Evidence: pending.
+- AC-3 moved to `## Blocked on` (2026-11-08).
 
 #### Phase 2 — Windows and macOS desktop
 
@@ -83,6 +83,8 @@ Risks:
 
 ## Blocked on
 
+- AC-3 (contended Midway p95, moved 2026-11-08): a presented-frame p95 is valid only on the real display `:0`; the private Xvfb throttles presents (about 94 ms p95 in the trial flight) and `perf` refuses its FPS. Using `:0` needs João's approval in each session, and none came in this one. Unblocked by João approving `:0` for about 1.5 hours (20 alternating flights, contended and uncontended, under `gpu-slot.sh --exclusive`); the original box text is in this PRD's history. Assets: `flight.sh` and the packaged Midway player are reproducible from this checkout.
+
 - AC-4 (Windows) and AC-5 (macOS), moved 2026-11-08 as the Phase 2 clause asks: the Windows and macOS legs of `.github/workflows/native-platforms.yml` build only the legacy `mystral` host, not the engine player that `ThreadPlacement` lives in; only `native-release.yml` builds the player there. This machine has no Windows or macOS toolchain, so code for those bodies would ship unrun. The `run.cpp` non-Linux stub stays as it was. Unblocked by a player build and placement-test step on those legs; then restore both boxes with their original text from this PRD's history.
 
 - ADPF on physical hardware: the emulator can return no hint manager, so AC-6 proves only the fallback path. The proof that ADPF raises clocks needs the Pixel 8 attached over Wi-Fi ADB (`adpf=on` plus a contended p95 run). Unblocked by João attaching the device; then add this as a box.
@@ -99,6 +101,7 @@ Risks:
 
 - 2026-11-08 (agent): the override lives at `display.priority` (`"game"` default, `"normal"`), beside `keepScreenOn` and `maxFps`; the desktop launcher exports it as `TN_PLAYER_PRIORITY`. An unknown value stops the player by name, as `TN_PLAYER_VSYNC` does.
 - 2026-11-08 (agent): the sweep only lowers a background thread (sets +10 while it reads lower). A thread that is already lower (V8, a renice daemon) keeps its value, so AC-1 reads "+10 or more". SDL's audio device threads (`SDLAudio*`) are left as SDL set them (time-critical playback).
+- 2026-11-08 (agent, owner away): AC-3 is filed under Blocked on rather than re-scoped to CPU time under Xvfb. CPU time cannot show the compositor and present cost the AC exists to measure, and re-scoping an AC is the owner's call.
 - 2026-11-08 (agent): Android keeps nice -4 for the game thread. SDL's `SDLMain` already sets `THREAD_PRIORITY_DISPLAY` (-4), so the Android gain is the `SCHED_BATCH` sweep and ADPF, not the raise. A stronger raise (`THREAD_PRIORITY_URGENT_DISPLAY`, -8) waits for a device measurement that shows the game thread losing CPU.
 - 2026-11-08 (agent): AC-8 reads the report line from the run's `console.json` instead of a scenario assertion. No assertion kind reads host stdout on desktop (`engineCost` reads the console on web only), and a new playtest assertion kind is harness work outside this PRD. The line is in the scenario run's own captured console, so the proof is the same run.
 - 2026-11-08 (agent): the game thread is identified by its thread ID, not a name: renaming the main thread would rename the process for `ps` and `pgrep`.
