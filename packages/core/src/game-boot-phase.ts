@@ -1,3 +1,4 @@
+import type { Scene as ThreeScene } from "three";
 import type { AutoBatch } from "./auto-batch.js";
 import { ComputeDrivenRegistry } from "./compute-driven.js";
 import type { Registry } from "./entities.js";
@@ -230,4 +231,39 @@ export function createBootGame<TState extends Record<string, unknown>, TPhysics>
     uiRevealed: false,
     viewport: undefined,
   };
+}
+
+/** Runs every release even after one throws, and returns the failures in the order they came. */
+export function runAll(releases: Iterable<() => void>): unknown[] {
+  const failures: unknown[] = [];
+  for (const release of releases) {
+    try {
+      release();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  return failures;
+}
+
+/** The first failure is the original cause; a release throws that one after all have run. */
+export function throwFirst(failures: readonly unknown[]): void {
+  if (failures.length > 0) throw failures[0];
+}
+
+/**
+ * Drains the cleanups, newest first, so a resource is released before anything it was built on.
+ * Each release that throws is collected and the rest still run.
+ */
+export function drainCleanup(cleanup: Array<() => void>): unknown[] {
+  return runAll(cleanup.splice(0).reverse());
+}
+
+/** Empties the authored scene and everything it was reading from. */
+export function clearScene(scene: ThreeScene, computeDriven: ComputeDrivenRegistry): void {
+  computeDriven.clear();
+  scene.clear();
+  scene.background = null;
+  scene.environment = null;
+  scene.fog = null;
 }

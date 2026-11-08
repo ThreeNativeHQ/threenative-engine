@@ -5,7 +5,13 @@ import type { ComputeDrivenRegistry } from "./compute-driven.js";
 import type { IThreeNativeConfig } from "./config.js";
 import type { Registry } from "./entities.js";
 import type { FrameBudget, IFrameBudgetOptions, IFrameBudgetWindow } from "./frame-budget.js";
-import { type IBootGame, createBootGame } from "./game-boot-phase.js";
+import {
+  type IBootGame,
+  clearScene,
+  createBootGame,
+  drainCleanup,
+  throwFirst,
+} from "./game-boot-phase.js";
 import { startFrameLoop } from "./game-frame-loop.js";
 import { startGameWorld, startScenes } from "./game-startup.js";
 import { assertCarry, validateCameraConfig } from "./game-validate.js";
@@ -378,14 +384,6 @@ export interface IGame<
   stop(): void;
 }
 
-function clearScene(scene: ThreeScene, computeDriven: ComputeDrivenRegistry): void {
-  computeDriven.clear();
-  scene.clear();
-  scene.background = null;
-  scene.environment = null;
-  scene.fog = null;
-}
-
 class GameImpl<TState extends Record<string, unknown>, TPhysics>
   implements IGame<TState, TPhysics>
 {
@@ -422,12 +420,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       : configured;
   }
   #initialState: TState;
-  #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
   #pendingStart: Promise<void> | undefined;
-  /** Releases the frame loop and its instruments, in the place `#teardown` always released them. */
-  #frameLoopDispose: PluginCleanup | undefined;
-  /** Releases what the startup phase started, in `#teardown`'s cleanups step. */
-  #startupDispose: PluginCleanup | undefined;
   /**
    * What the boot phases read and assign. One plain object: a field a phase needs and this object
    * lacks is a type error, never an `undefined` read at run time.
@@ -760,9 +753,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   async #launch(): Promise<void> {
     const startup = await startGameWorld(this.#boot);
     if (startup === undefined) return;
-    this.#startupDispose = startup.dispose;
     const frameLoop = startFrameLoop(startup);
-    this.#frameLoopDispose = frameLoop.dispose;
     await startScenes(startup, frameLoop);
   }
 
@@ -783,104 +774,33 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     uninstallQuietMarkers();
   }
 
-  #disposePlugin(plugin: IGamePluginHooks<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): void {
-    if (this.#disposedPlugins.has(plugin)) return;
-    this.#disposedPlugins.add(plugin);
-    plugin.dispose?.(ctx);
-  }
-
+  /**
+   * Releases everything the boot acquired. Each phase pushed its own release onto `cleanup` as it
+   * acquired the resource, and they run newest first (`drainCleanup`), so nothing is released while
+   * something built on it is still alive. The order the specs pin falls out of the push order:
+   * loop, scene exit, plugin `dispose`, plugin cleanups, input, store, renderer.
+   *
+   * The UI goes first and is not on the stack: its lifetime is the game's, not a boot's, and the
+   * scene exit and plugin `dispose` after it must not publish to a page that is leaving.
+   */
   #teardown(): void {
-    this.#boot.onStartSceneEntered = undefined;
-    const ctx = this.#boot.ctx;
-    // Teardown is failure-atomic: one throwing release must not strand the resources after it.
-    // Every attempt runs, errors are collected, and the first — the original cause — is thrown
-    // once all attempts and the final leak check have completed.
-    const failures: unknown[] = [];
+    const boot = this.#boot;
+    boot.onStartSceneEntered = undefined;
+    const ctx = boot.ctx;
     this.#disconnectUi();
-    this.#frameLoopDispose?.();
-    this.#frameLoopDispose = undefined;
-    // After the loop that reports into it, and reached on every path: the field is set the moment
-    // the budget exists, so a launch that threw inside the frame-loop phase before it could answer
-    // still loses nothing here. This is the release the un-split `#teardown` performed.
-    this.#boot.frameBudget?.dispose();
-    this.#boot.afterPhysicsPhase?.clear();
-    this.#boot.beforeRenderCallbacks.clear();
-    this.#boot.interpolation?.clear();
-    this.#boot.interpolation = undefined;
-    if (this.#boot.sceneEntered && ctx !== undefined) {
-      try {
-        this.#boot.scene?.exit(ctx);
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    this.#boot.sceneFrame = undefined;
-    this.#boot.sceneEntered = false;
-    this.#boot.scheduler?.clear();
-    this.#boot.entities?.clear();
-    this.#boot.entities = undefined;
-    if (ctx !== undefined)
-      for (const plugin of this.#boot.activePlugins) {
-        try {
-          this.#disposePlugin(plugin, ctx);
-        } catch (error) {
-          failures.push(error);
-        }
-      }
-    this.#boot.activePlugins = [];
-    if (this.#startupDispose !== undefined) {
-      const release = this.#startupDispose;
-      this.#startupDispose = undefined;
-      try {
-        release();
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    for (const cleanup of this.#boot.cleanup.splice(0)) {
-      try {
-        cleanup();
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    this.#boot.autoBatch?.reset();
-    if (ctx !== undefined) clearScene(ctx.scene, this.#boot.computeDriven);
-    this.#boot.cameraCull?.dispose();
-    this.#boot.cameraCull = undefined;
-    this.#boot.matrixWorld?.dispose();
-    this.#boot.matrixWorld = undefined;
-    this.#boot.input?.dispose();
-    this.#boot.state.stop();
-    ctx?.canvasLayer.dispose();
-    this.#boot.viewport?.dispose();
-    const renderer = this.#boot.renderer;
-    renderer?.dispose();
-    if (renderer !== undefined) {
-      const platform = this.#boot.platform;
-      if (platform === undefined) renderer.domElement.remove?.();
-      else platform.unmountCanvas(renderer.domElement);
-    }
-    this.#boot.renderer = undefined;
-    this.#boot.viewport = undefined;
-    this.#boot.input = undefined;
-    this.#boot.scene = undefined;
-    this.#boot.ctx = undefined;
-    this.#boot.hasDepthCoupledOutput = false;
-    this.#boot.pointerEvents?.dispose();
-    this.#boot.pointerEvents = undefined;
-    this.#boot.picker?.dispose();
-    this.#boot.picker = undefined;
-    this.#boot.scheduler = undefined;
-    this.#boot.afterPhysicsPhase = undefined;
-    this.#disposedPlugins.clear();
-    this.#boot.paused = false;
-    this.#boot.started = false;
+    // Failure-atomic: one throwing release does not strand the ones after it. The first failure,
+    // the original cause, is thrown once all have run and the leak check has completed.
+    const failures = drainCleanup(boot.cleanup);
+    boot.scene = undefined;
+    boot.ctx = undefined;
+    boot.hasDepthCoupledOutput = false;
+    boot.paused = false;
+    boot.started = false;
     // Runs even when releases above failed; its verdict loses to a real cleanup error, which is
     // the more actionable diagnosis of what went wrong while stopping.
     if ((ctx?.scene.children.length ?? 0) > 0)
       failures.push(new Error("IGame teardown leaked scene objects."));
-    if (failures.length > 0) throw failures[0];
+    throwFirst(failures);
   }
 }
 

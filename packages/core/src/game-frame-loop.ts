@@ -86,8 +86,6 @@ import type { IWarmUpOptions } from "./warmup.js";
 
 /** The frame loop, and the instruments that only exist while it runs. */
 export interface IGameFrameLoop {
-  /** Stops the loop, where `#teardown` always stopped it. Its frame budget is `game.frameBudget`. */
-  readonly dispose: PluginCleanup;
   readonly geometryCapture: GeometryCapture;
   readonly loop: FixedStepLoop;
 }
@@ -306,6 +304,8 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
           },
         });
   game.frameBudget = frameBudget;
+  // The loop that reports into it stops first: `startScenes` pushes the loop's stop after this.
+  if (frameBudget !== undefined) game.cleanup.push(() => frameBudget.dispose());
   // Per-pass draws and triangles ride the frame budget's window by default. The same property
   // that makes `info.render` an aggregate — one reset per frame before the world render, and
   // nested shadow/reflection renders sharing that counter — is what this recorder unwinds.
@@ -947,7 +947,6 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
   loopState.current = gameLoop;
 
   return {
-    dispose: () => gameLoop.stop(),
     geometryCapture,
     loop: gameLoop,
   };
