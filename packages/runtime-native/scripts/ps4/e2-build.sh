@@ -547,6 +547,12 @@ git apply "$SCRIPTS/patches/0067-vk-ps4-128bpp-textures-thin-tiling.patch"
 # scene pass lost its background colour. Repair the blob at load, mask colour writes in the depth clear, and
 # give the colour clear its own target mask, CB mode and depth state (P5-5).
 git apply "$SCRIPTS/patches/0068-vk-ps4-clear-keeps-its-colour.patch"
+# Dawn bakes WebGPU's depth bias into the pipeline, which the driver never read, and the slope register is in
+# 1/16 units: polygonOffset and the lamp shadow bias were no-ops on PS4 (gap sweep).
+git apply "$SCRIPTS/patches/0069-vk-ps4-pipeline-depth-bias.patch"
+# A depth view's array layer reaches DB_DEPTH_VIEW.SLICE_START: every point-lamp cube face rendered into face 0,
+# so PS4 drew no lamp shadow (gap sweep).
+git apply "$SCRIPTS/patches/0070-vk-ps4-depth-array-layer.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

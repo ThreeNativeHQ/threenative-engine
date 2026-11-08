@@ -1,0 +1,80 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -453,14 +453,23 @@
+  * encodings). Without it every draw kept the reset value, no culling, so a FrontSide mesh drew its
+  * back faces too (PRD-784 P5-8). The rest of the register keeps that reset value: solid fill, first
+  * provoking vertex. A clear draw (a RECTLIST) passes VK_CULL_MODE_NONE; the next bind restores. */
+-static void vk_ps4_emit_primitive_setup(VkPs4CommandBuffer *cmd, VkCullModeFlags cull, VkFrontFace face) {
++static void vk_ps4_emit_primitive_setup(VkPs4CommandBuffer *cmd, const VkPipelineRasterizationStateCreateInfo *rs) {
+     GnmPrimitiveSetup ps;
+     memset(&ps, 0, sizeof(ps));
+-    ps.cullmode = (GnmCullMode)(cull & VK_CULL_MODE_FRONT_AND_BACK);
+-    ps.frontface = face == VK_FRONT_FACE_CLOCKWISE ? GNM_FACE_CW : GNM_FACE_CCW;
++    ps.cullmode = rs ? (GnmCullMode)(rs->cullMode & VK_CULL_MODE_FRONT_AND_BACK) : GNM_CULL_NONE;
++    ps.frontface = rs && rs->frontFace == VK_FRONT_FACE_CLOCKWISE ? GNM_FACE_CW : GNM_FACE_CCW;
+     ps.frontmode = GNM_FILL_SOLID;
+     ps.backmode = GNM_FILL_SOLID;
++    /* The pipeline's static depth bias (Dawn bakes WebGPU's depthBias* into it, never vkCmdSetDepthBias):
++     * without the offset-enable bits and the PA_SU_POLY_OFFSET_* values, polygonOffset and the shadow
++     * bias were no-ops on PS4 (PRD-784 gap sweep). */
++    const bool bias = rs && rs->depthBiasEnable;
++    ps.frontoffsetmode = bias;
++    ps.backoffsetmode = bias;
+     sceGnmDrawCmdSetPrimitiveSetup(&cmd->gnm_cmd, &ps);
++    if (bias)
++        vk_ps4_CmdSetDepthBias((VkCommandBuffer)cmd, rs->depthBiasConstantFactor, rs->depthBiasClamp,
++                               rs->depthBiasSlopeFactor);
+ }
+ 
+ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+@@ -474,7 +483,7 @@
+         vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc, level);
+         return;
+     }
+-    vk_ps4_emit_primitive_setup(cmd, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
++    vk_ps4_emit_primitive_setup(cmd, NULL);
+     /* The clear inherits CB_TARGET_MASK, CB_COLOR_CONTROL and DB_DEPTH_CONTROL from the last pipeline: a
+      * depth-only pass (shadow map) left mask 0, which drops the colour export (PRD-784 P5-5). The next
+      * CmdBindPipeline or rebind restores all three. */
+@@ -632,7 +641,7 @@
+  * turns depth writes off (`SetDepthWriteEnabled(... && !depth_clear_enable)`)
+  * -- no depth test at all, the symptom this path exists to fix. */
+ static void vk_ps4_clear_depth_draw(VkPs4CommandBuffer *cmd, VkPs4Image *img) {
+-    vk_ps4_emit_primitive_setup(cmd, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
++    vk_ps4_emit_primitive_setup(cmd, NULL);
+     /* Temporarily enable depth write so the draw accesses the depth buffer.
+      * This guarantees the lazy clear fires regardless of the bound pipeline's
+      * depth state. DB_DEPTH_CONTROL is restored by the next CmdBindPipeline. */
+@@ -887,7 +896,7 @@
+     }
+ 
+     vk_ps4_emit_aa_config(cmd, (uint32_t)pipe->multisample_state.rasterizationSamples);
+-    vk_ps4_emit_primitive_setup(cmd, pipe->rasterization_state.cullMode, pipe->rasterization_state.frontFace);
++    vk_ps4_emit_primitive_setup(cmd, &pipe->rasterization_state);
+ }
+ 
+ /* === MSAA resolve: the GCN colour-buffer ROP ===============================
+@@ -1521,7 +1530,7 @@
+ 
+         /* Sample-rate state for the target this draw rasterizes into. */
+         vk_ps4_emit_aa_config(cmd, (uint32_t)pipe->multisample_state.rasterizationSamples);
+-        vk_ps4_emit_primitive_setup(cmd, pipe->rasterization_state.cullMode, pipe->rasterization_state.frontFace);
++        vk_ps4_emit_primitive_setup(cmd, &pipe->rasterization_state);
+ 
+         /* SPI_SHADER_COL_FORMAT: shadPS4's PS translator drops a colour export
+          * outright when the format reads Zero (export.cpp:62), which is what the
+@@ -1680,9 +1689,11 @@
+     if (!commandBuffer) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+ 
+-    /* GCN polygon offset: scale and offset are in fixed-point format.
+-     * The hardware expects the float values converted to uint32 bit patterns
+-     * (the GPU interprets them as floats). */
++    /* The registers hold floats. The slope scale is in 1/16 units, as RADV writes it (slope * 16) and
++     * shadPS4 reads it (front_scale / 16).
++     * ponytail: the constant is written as Vulkan units with no PA_SU_POLY_OFFSET_DB_FMT_CNTL, which
++     * shadPS4 ignores; set it from the depth format before a hardware run. */
++    depthBiasSlopeFactor *= 16.0f;
+     vk_ps4_emit_context_reg(&cmd->gnm_cmd,
+         R_028B80_PA_SU_POLY_OFFSET_FRONT_SCALE,
+         vk_ps4_fui(depthBiasSlopeFactor));
