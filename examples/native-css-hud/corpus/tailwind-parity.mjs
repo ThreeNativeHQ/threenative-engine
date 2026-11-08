@@ -1042,20 +1042,23 @@ const COMPANIONS = [
  * that reason, and the transparency has to come from another utility on the same axis.
  */
 function maskCompanions(probe) {
-  const axis = /^mask-(linear|conic|radial)(-\d+)?$/u.exec(probe);
-  if (axis !== null) return [`mask-${axis[1]}-from-transparent`];
+  const colour =
+    /-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|black|white|transparent)-\d*$/u.test(
+      probe,
+    );
+  // An axis unit (`mask-linear-45`, `mask-conic-from-40`) builds one gradient from the axis' stops,
+  // and both of that gradient's ends are transparent by default — so the image is a mask that hides
+  // everything, in both arms. One end has to be *opaque*, and the other is what the unit places.
+  const axis = /^mask-(linear|conic|radial)(-(\d+))?$/u.exec(probe);
+  if (axis !== null) return [`mask-${axis[1]}-from-transparent`, `mask-${axis[1]}-to-black`];
+  const stop = /^mask-(linear|conic|radial)-(from|to)(-|$)/u.exec(probe);
+  if (stop !== null) {
+    const other = `mask-${stop[1]}-${stop[2] === "from" ? "to" : "from"}-black`;
+    return colour ? [other, "mask-luminance"] : [other];
+  }
   const edge = /^mask-(t|b|l|r|x|y|tl|tr|bl|br)-(from|to)(-|$)/u.exec(probe);
   if (edge !== null) {
     const opposite = `mask-${edge[1]}-${edge[2] === "from" ? "to" : "from"}-transparent`;
-    // A colour stop is invisible to an alpha mask — `match-source` on a gradient reads its alpha
-    // channel, and black and red are both opaque — so a colour unit also needs the mask evaluated in
-    // luminance, where the colour *is* the mask.
-    // A *colour* stop, not a position: the palette names are the ones Tailwind emits, and a position
-    // utility ends in a bare number (`mask-b-from-40`) that must keep its alpha-mask staging.
-    const colour =
-      /-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|black|white|transparent)-\d*$/u.test(
-        probe,
-      );
     return colour ? [opposite, "mask-luminance"] : [opposite];
   }
   // A functional mask unit modifies an image it does not create: `mask-cover`, `mask-top`,
@@ -1065,7 +1068,7 @@ function maskCompanions(probe) {
       probe,
     )
   )
-    return ["mask-linear-from-transparent"];
+    return ["mask-linear-from-transparent", "mask-linear-to-black"];
   return [];
 }
 
