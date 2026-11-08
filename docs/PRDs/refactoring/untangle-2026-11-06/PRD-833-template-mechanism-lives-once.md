@@ -1,7 +1,7 @@
 # PRD-833 — Template mechanism lives once
 
-**Status:** PARTIAL — all three phases landed; AC-1 (`pnpm test:templates`) and AC-2 (the visual judge on starter, racing and snow) run on the PR.
-**Priority:** P1 — all phases landed; what is open is verification: AC-1 and AC-2 run on the PR, so the tier rates that run rather than a copy count.
+**Status:** PARTIAL — all three phases landed and AC-1 is green; AC-2 (the visual judge on starter, racing and snow) is open.
+**Priority:** P1 — all phases landed; AC-1 is green and AC-2 is the one open verification (a before/after visual judge), so the tier rates that judge rather than a copy count.
 **Complexity:** 6 (MEDIUM); risk override: the moved files measure the environment and wire the backlight, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-832 (its Phase 1 drift spec guards the copies until this PRD deletes them)
@@ -34,7 +34,7 @@ Report ids B1, F1, F2, F3, F4, F8, B2. Root `AGENTS.md` puts "plumbing every gam
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A freshly scaffolded starter builds and passes its golden playtest. proof: `pnpm test:templates` (starter and platformer)
+- [x] AC-1 [local]: A freshly scaffolded starter builds and passes its golden playtest. proof: `TN_GOLDEN_PATH_SCENARIOS=1 TN_PLAYTEST_ALLOW_SOFTWARE=1 TN_GOLDEN_PATH_TEMPLATES=starter,platformer pnpm verify:golden-path` → **EXIT=0**, every layer reached for both kits (`scaffold, install, mcp, dev, driving, test, driving, build, assert`) with `TN_GOLDEN_PATH_FAILED` absent. That is the lane CI's `golden-path-template` job runs for these two kits; starter and platformer are the two kits `pnpm test:templates` excludes because that job already boots them (`ALREADY_BOOTED_TEMPLATES`). The same command **unfiltered** (`TN_GOLDEN_PATH_SCENARIOS` unset, so each project's own `pnpm test` — eslint included — runs) found a real defect that CI's lane cannot see: eleven kits shipped an orphaned `import type { QualityTier }` after Phase 1 deleted its last reader, and a freshly scaffolded `action-rpg` failed `pnpm test` on `@typescript-eslint/no-unused-vars`. Fixed here, re-pinned, and proven green in a scaffolded project (`pnpm exec eslint src` → 0 errors, 4 pre-existing warnings).
 - [ ] AC-2 [local]: The visual judge returns NEUTRAL or better on starter, racing and snow, same pose before and after. proof: judge verdict recorded on this box
 
 ## Integration Ledger

@@ -1,7 +1,7 @@
 # PRD-838 — Scripts share one runtime layer
 
-**Status:** PARTIAL — both phases landed; AC-1 (the golden path and one visual gate end to end) runs on the PR.
-**Priority:** P2 — both phases landed; only AC-1 (the golden path and one visual gate end to end) is open, so the tier rates that run rather than a copy count.
+**Status:** PARTIAL — both phases landed; AC-1's golden-path half is green and its visual half is not machine-satisfiable in this checkout (`pnpm visuals` requires a `--framework-frame`/`--vanilla-frame` pair that no script writes).
+**Priority:** P2 — both phases landed; AC-1's visual half is the one open item, so the tier rates that gate rather than a copy count.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-832 (its Phase 1 creates `scripts/lib/repo-inventory.ts`, the first shared module)
@@ -31,6 +31,8 @@ each orphan gate is wired into `pnpm budgets` or deleted.
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The golden path and one visual gate still run end to end. proof: `pnpm tsx scripts/verify-golden-path.ts` plus `pnpm visuals` on the starter
+  - **Golden path: green.** `TN_GOLDEN_PATH_SCENARIOS=1 TN_PLAYTEST_ALLOW_SOFTWARE=1 TN_GOLDEN_PATH_TEMPLATES=starter,platformer pnpm verify:golden-path` → **EXIT=0**, all nine layers for both kits. Both the golden path and `visual-gate.ts` drive their servers through this PRD's `waitForServer` (`scripts/lib/dev-server.ts`), so the helper the phase introduced is the one that ran.
+  - **`pnpm visuals`: not satisfiable here.** With no argument the gate captures all sixteen kits and then demands `docs/verification/visuals/parity-framework.png` and `parity-vanilla.png`; nothing in the repository writes that pair (only `visual-gate.ts` reads it, as `--framework-frame`/`--vanilla-frame`), so the run is red at the input, not at a frame. It also needs a human score file, which `docs/verification/visuals/scores.json` supplies — the pair is the gap. Run it on an operator machine with the A/B pair to close this box.
 
 ## Decisions
 

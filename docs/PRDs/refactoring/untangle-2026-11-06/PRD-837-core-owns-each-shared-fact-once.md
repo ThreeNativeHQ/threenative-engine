@@ -1,7 +1,7 @@
 # PRD-837 — Core owns each shared fact once
 
-**Status:** PARTIAL — Phase 2 and Phase 3 landed, and Phase 1's three boxes are down to one: the near-plane default, whose code is landed and whose visual judge is open.
-**Priority:** P2 — the boxes are landed but for one; what is open is a visual judge on the near-plane value, so the tier rates that verification rather than a copy count.
+**Status:** PARTIAL — Phase 2 and Phase 3 landed, AC-2 is green (4607 core tests), and Phase 1's three boxes are down to one: the near-plane default, whose code is landed and whose visual judge is open alongside AC-1.
+**Priority:** P2 — the boxes are landed but for one; what is open is the before/after visual judge on the near-plane value and on the strata forest/abyss pair, so the tier rates that verification rather than a copy count.
 **Complexity:** 6 (MEDIUM); risk override: LOD selection and the renderer facts decide what is drawn, so the owner's visual-judge rule applies to Phases 1 and 2
 **Owner:** ThreeNative maintainers
 **Depends on:** None
