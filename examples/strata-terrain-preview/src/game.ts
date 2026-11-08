@@ -2,6 +2,7 @@ import {
   type IGamePluginRuntime,
   Scene,
   VirtualShadowNode,
+  addInSlices,
   defineGame,
   markStatic,
 } from "@threenative/core";
@@ -51,6 +52,7 @@ import {
   forestStageArm,
   forestStageTerrainTargets,
 } from "./world/forestStage.js";
+import { walkBandSlices } from "./world/walkBand.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
 import { START_WORLD, WORLD_ORDER, WORLD_SELECT, loadBakedWorld } from "./worlds.js";
 
@@ -76,6 +78,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #fallbackParts: Variants | undefined;
     #stage: ForestStageWorld | undefined;
     #stageLoad = 0;
+    /** Bumped when a scene is left, so a band build still slicing stops instead of joining the next scene. */
+    #bandLoad = 0;
     #mannequin: IMannequin | undefined;
     #swimClips: readonly AnimationClip[] = [];
     #rig: IPlayerRig | undefined;
@@ -137,6 +141,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       leaveScene();
       ctx.state.set({ currentViewWindows: 0 });
       this.#stageLoad++;
+      this.#bandLoad++;
       const stage = this.#stage;
       this.#stage = undefined;
       if (!stage) return;
@@ -246,13 +251,39 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // the drawn triangles, so feet meet what the eye sees. Four fixed walls 2 m inside the band's
         // outer edge are the level's blocking volumes; past them is only scenery.
         const band = collar.walk;
-        const surroundings = new RigidBody3D({
-          physics: ctx.physics,
-          type: "fixed",
-          entity: "terrain",
-          collisionLayer: 4 | 8,
-          position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
-          shape: CollisionShape3D.fromMesh(new Mesh(band.geometry), "trimesh"),
+        const bandBodies: RigidBody3D[] = [];
+        // That band is 188 416 triangles, and the player spawns at least 256 m inside it, so no foot
+        // touches it in the frames it is missing: it is not built in `enter`. One fixed body per ring
+        // slice is built on this scene's own first frames instead, with the loading curtain held up
+        // until the last one exists. From a frame and not from `load()`: `deterministicRestart`
+        // replaces the simulation at the outgoing scene's exit, so a body built before that would be
+        // a body in a world that no longer exists.
+        const bandLoad = this.#bandLoad;
+        let bandStarted = false;
+        ctx.afterPhysics(() => {
+          if (bandStarted) return;
+          bandStarted = true;
+          const work = addInSlices(
+            walkBandSlices(band, collar.perimeter),
+            (slice) =>
+              bandBodies.push(
+                new RigidBody3D({
+                  physics: ctx.physics,
+                  type: "fixed",
+                  entity: "terrain",
+                  collisionLayer: 4 | 8,
+                  position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
+                  shape: CollisionShape3D.trimesh(slice.vertices, slice.indices),
+                }),
+              ),
+            // One slice a frame, and not one slice more once this scene is left: a body must never
+            // land in the simulation that replaced this one.
+            { sliceSize: 1, while: () => bandLoad === this.#bandLoad },
+          );
+          if (ctx.startup.phase !== "ready") ctx.startup.hold("strata-collar", work);
+          void work.catch((error) => {
+            if (!released) gate.fail(error);
+          });
         });
         const edge = data.size / 2 + band.extent;
         const walls = [-1, 1].flatMap((side) =>
@@ -274,7 +305,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           mesh,
           dispose: () => {
             for (const wall of walls) wall.dispose();
-            surroundings.dispose();
+            for (const body of bandBodies.splice(0)) body.dispose();
             ground.dispose();
             mesh.geometry.dispose();
             (mesh.material as MeshStandardMaterial).dispose();
