@@ -50,6 +50,29 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Decisions
 
+**`fill`, `stroke` and `stroke-width` need a shape, and this crate has no SVG.** Staged on an
+`<svg><rect>` probe the engine refuses the whole panel — 24 cells of the paint family come back as
+`the engine refused this stage` — because `threenative-css-ui`'s element list creates no SVG nodes and
+nothing paints them. Reverted: three paint cells stay "does nothing" because there is no shape to paint,
+and the real fix is SVG element support, not a staging change.
+
+**Gradient stops interpolate in sRGB here and in Oklab in every current browser.** Measured on
+`bg-linear-60`: the two subjects differ at 0.9642 while the *class* does not discriminate at all — so
+the cell is reporting an engine difference, not a staging one. Tailwind 4 emits
+`linear-gradient(<angle> in oklab, …)` inside an `@supports` block, and Chromium takes that branch while
+this engine ignores the interpolation method.
+
+The fix is contained and named for the next run: `vendor/blitz-paint-0.3.0-beta.2/src/gradient.rs`
+builds peniko stops from stylo's items and peniko interpolates in sRGB, so the stops for a gradient whose
+method is explicit (`GradientFlags::HAS_DEFAULT_COLOR_INTERPOLATION_METHOD` **unset**) have to be
+resampled in Oklab before they are pushed — insert k intermediate stops per pair, converting through
+`AbsoluteColor::to_color_space(ColorSpace::Oklab)` and back. Not shipped this turn because stylo's
+gradient variant keeps only that one flag and not *which* space was named, so an explicit `in srgb`
+gradient would be mis-sampled; the honest order is to carry the method through stylo first, then
+resample. Every gradient cell in the scene sits between 0.96 and 0.99 for the same reason.
+
+## Decisions
+
 **Seven misc cells needed a second item, one dimension, or something to transform.** `flex`, `gap-40`,
 `shrink`, `self-end` and `justify-self-end` are decided against a *sibling*, so those cells now stage a
 flex row with a trailing item; `aspect-square` was ignored because the staged probe sets both width and
