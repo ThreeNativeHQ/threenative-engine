@@ -331,7 +331,8 @@ tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame
     native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
     native_engine_tsl_math=math native_engine_tsl_spell_port=spell_port native_engine_tsl_compute_texture_load=compute_texture_load
-    native_engine_tsl_compute_int_literals=compute_int_literals native_engine_tsl_ivec_bool=tsl_ivec_bool)
+    native_engine_tsl_compute_int_literals=compute_int_literals native_engine_tsl_ivec_bool=tsl_ivec_bool
+    native_engine_tsl_mat3_of_mat4=tsl_mat3_of_mat4)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
 
 # The ROI crop every attachment read hands back (a PassNode MRT slot, a render target): no device needed.

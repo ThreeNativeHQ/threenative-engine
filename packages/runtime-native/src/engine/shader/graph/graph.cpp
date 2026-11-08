@@ -132,6 +132,17 @@ ExprId Lowerer::convert(ExprId value, Type target) {
         if (target.rows == 4) part = program_.construct(Type::vec(4), {part, program_.constant(1.0f)});
         return convert(part, target);
     }
+    // three's mat3(mat4) (Matrix3.setFromMatrix4): the upper-left 3x3, column c being (m * e_c).xyz. WGSL has no
+    // matrix-to-matrix constructor of another size, and no column index in this IR.
+    if (source == Type::mat(4, 4) && target == Type::mat(3, 3)) {
+        std::vector<ExprId> columns;
+        for (int c = 0; c < 3; ++c) {
+            std::vector<ExprId> unit;
+            for (int r = 0; r < 4; ++r) unit.push_back(program_.constant(r == c ? 1.0f : 0.0f));
+            columns.push_back(program_.swizzle(program_.mul(value, program_.construct(Type::vec(4), unit)), "xyz"));
+        }
+        return program_.construct(target, columns);
+    }
     return program_.construct(target, {value});
 }
 
