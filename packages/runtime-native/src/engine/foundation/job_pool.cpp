@@ -1,4 +1,5 @@
 #include "job_pool.h"
+#include "engine/foundation/flags.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -68,7 +69,7 @@ JobPool::~JobPool() {
 unsigned JobPool::defaultWorkers() {
     if constexpr (!kThreads) return 0;
 #ifndef __EMSCRIPTEN__
-    if (const char* named = std::getenv("TN_JOB_WORKERS"); named != nullptr && *named != '\0') {
+    if (const char* named = flags::read<flags::JobWorkers>(); named != nullptr && *named != '\0') {
         char* end = nullptr;
         const unsigned long value = std::strtoul(named, &end, 10);
         // Worker threads are on everywhere (owner, 2026-10-29: "force on native too"): no count turns them off.

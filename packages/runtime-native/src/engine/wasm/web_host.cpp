@@ -66,8 +66,9 @@ WGPUSurface surface = nullptr;
 WGPUTextureFormat surfaceFormat = WGPUTextureFormat_Undefined;
 EventQueue events;
 std::unique_ptr<Renderer> renderer;
-RenderDatabase database;
-RenderDatabase overlayDatabase;  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
+// PRD-840: the web host's render choices, the ones the web engine drew with before they were values (render_features.h).
+RenderDatabase database{RenderFeatures::web()};
+RenderDatabase overlayDatabase{RenderFeatures::web()};  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
 // The startup environment bake's own records: preparation runs beside the frame loop and must not overwrite the
 // draws the frame database keeps for the frame it plans next.
 RenderDatabase environmentDatabase;
@@ -200,7 +201,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     device = result;
     queue = wgpuDeviceGetQueue(device);
     setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
-    renderer = std::make_unique<Renderer>(instance, device, queue, events);
+    renderer = std::make_unique<Renderer>(instance, device, queue, events, RenderFeatures::web());
     renderer->setGpuTimer(timestampTracking);
     if (presentationHeld) renderer->deferUncompiledDraws(true);
     configureWebSurface();
