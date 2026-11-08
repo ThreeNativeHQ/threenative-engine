@@ -1154,6 +1154,9 @@ extern "C" double tnw_web_frame(int field) {
         case 81: return database.rendererMs();
         case 82: return hostDatabaseMs;
         case 83: return hostTargetMs;
+        // 87 (PRD-762): the levels the virtual shadows still owe a render after the last one, -1 with none. Core's
+        // VirtualShadowNode reads it as `deferred`, so a game waiting for its shadow to cover new terrain sees it settle.
+        case 87: return double(renderer->virtualShadowPendingLevels());
         case 84: return Renderer::cpuMeters() ? 1 : 0;  // the stage meters on (the page lists the totals only while they run)
         // 78: the address of the array above, as a number; the page reads 18 doubles from it after each render.
         case 78: return double(reinterpret_cast<uintptr_t>(stageTotals));

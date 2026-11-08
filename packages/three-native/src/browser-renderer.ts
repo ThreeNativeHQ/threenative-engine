@@ -20,7 +20,7 @@ import type { PassDraw } from "./pass-node.js";
 import { frameAttachmentName } from "./pass-node.js";
 import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
-import { syncVirtualShadowLods } from "./shadow-node.js";
+import { reportVirtualShadowFrame, syncVirtualShadowLods } from "./shadow-node.js";
 import { defineSphereReflectionCapture } from "./sphere-reflection-capture.js";
 import { readStorageBytes } from "./storage.js";
 import type { INodeFrame } from "./temp-node.js";
@@ -660,6 +660,7 @@ export function defineWebRenderer(
         ),
       );
       this.info.frame += 1;
+      if (!this.#overlay) reportVirtualShadowFrame(module);
       if (this.#bakingEnvironment !== undefined && module._tnw_web_frame(12) === 0) {
         // An overlay draw has no environment and says nothing; another sky ends the watch.
         const drawnEnvironment = (scene as { environment?: unknown }).environment;

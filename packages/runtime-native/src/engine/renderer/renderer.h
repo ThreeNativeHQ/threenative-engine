@@ -507,6 +507,13 @@ public:
             if (!shadow.atlas.initialized()) return false;
         return true;
     }
+    /** Levels every virtual shadow still owes a render (PageAtlas::pendingLevels), or -1 with none. */
+    int virtualShadowPendingLevels() const {
+        if (virtualShadows_.empty()) return -1;
+        int pending = 0;
+        for (const auto& [light, shadow] : virtualShadows_) pending += shadow.atlas.pendingLevels();
+        return pending;
+    }
     /** The page plan of light `light`'s virtual shadow, or null. */
     const shadows::PageAtlas* virtualShadowAtlas(std::size_t light) const {
         const auto it = virtualShadows_.find(light);

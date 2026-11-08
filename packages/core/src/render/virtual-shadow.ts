@@ -213,8 +213,11 @@ interface IRenderingShadowNode {
 
 /** The slot the native bridge fills with its command sink on a core shadow node. */
 const COMMAND_KEY = Symbol.for("threenative.virtualShadowCommand");
+/** The owned engine runs the clipmap and never calls updateBefore: it answers `settled` here each world render. */
+const ENGINE_SETTLED_KEY = Symbol.for("threenative.virtualShadowSettled");
 interface ICommandSlot {
   [COMMAND_KEY]?: (value: object) => void;
+  [ENGINE_SETTLED_KEY]?: boolean;
 }
 
 /**
@@ -302,6 +305,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** Every map is present and no requested/delayed invalidation remains. */
   get settled(): boolean {
+    const engine = (this as ICommandSlot)[ENGINE_SETTLED_KEY];
+    if (engine !== undefined) return engine;
     return (
       this.#initialised &&
       this.#levels.length > 0 &&

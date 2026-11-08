@@ -113,6 +113,12 @@ public:
             if (!level.mapped) return false;
         return true;
     }
+    /** Levels still owed a render: unmapped, or dirty and waiting for their grant (one level a frame). */
+    int pendingLevels() const {
+        int pending = 0;
+        for (const Level& level : levels_) pending += !level.mapped || level.dirty ? 1 : 0;
+        return pending;
+    }
     const AtlasOptions& options() const { return options_; }
     const DirectionalClipmap& clipmap() const { return *clipmap_; }
     const std::vector<float>& table() const { return table_; }
