@@ -17,6 +17,7 @@ import {
   CylinderGeometry,
   DataTexture,
   DoubleSide,
+  Euler,
   Group,
   InstancedMesh,
   LatheGeometry,
@@ -24,7 +25,6 @@ import {
   type Material,
   Matrix4,
   Mesh,
-  Object3D,
   OctahedronGeometry,
   PlaneGeometry,
   Quaternion,
@@ -83,9 +83,16 @@ export interface IPlantingSite {
   readonly surfaces: ISurfaces;
 }
 
-const dummy = new Object3D();
+// Plain math, not a scratch Object3D: an engine object's position, scale, rotation and matrix each
+// cross into the engine, five crossings an instance (~90 ms of a load); these stay in JavaScript.
 // Yaw last: a placement leans or droops about X, then turns to face its way round Y.
-dummy.rotation.order = "YXZ";
+const turn = new Euler(0, 0, 0, "YXZ");
+const placed = {
+  at: new Vector3(),
+  matrix: new Matrix4(),
+  size: new Vector3(),
+  spin: new Quaternion(),
+};
 
 function instanced(
   geometry: BufferGeometry,
@@ -97,11 +104,9 @@ function instanced(
   const mesh = new InstancedMesh(geometry, material, Math.max(1, placements.length));
   mesh.count = placements.length;
   placements.forEach(([x, y, z, sx, sy, sz, rx, ry, rz], i) => {
-    dummy.position.set(x, y, z);
-    dummy.scale.set(sx, sy, sz);
-    dummy.rotation.set(rx, ry, rz);
-    dummy.updateMatrix();
-    mesh.setMatrixAt(i, dummy.matrix);
+    placed.spin.setFromEuler(turn.set(rx, ry, rz, "YXZ"));
+    placed.matrix.compose(placed.at.set(x, y, z), placed.spin, placed.size.set(sx, sy, sz));
+    mesh.setMatrixAt(i, placed.matrix);
     const tint = tints?.[i];
     if (tint !== undefined) mesh.setColorAt(i, tint);
   });

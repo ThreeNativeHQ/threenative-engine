@@ -134,11 +134,16 @@ export function buildTerrain(plan: ITerrainPlan): ITerrain {
     field,
     flatness: (x, z) => (inside(x, z) ? field.normalAt(x, z).y : 1),
     ground: (x, z) => (inside(x, z) ? field.heightAt(x, z) : seaFloor),
-    pathDistance: (x, z) =>
-      Math.min(
-        ...plan.paths.flatMap((path) =>
-          path.slice(1).map((corner, i) => segmentDistance(x, z, path[i] ?? corner, corner)),
-        ),
-      ),
+    // A plain loop: planting asks this thousands of times a load, and the array-building form cost
+    // ~65 ms of a repeat visit. Same segments, same order, same minimum.
+    pathDistance: (x, z) => {
+      let nearest = Number.POSITIVE_INFINITY;
+      for (const path of plan.paths)
+        for (let i = 1; i < path.length; i += 1) {
+          const corner = path[i] as readonly [number, number];
+          nearest = Math.min(nearest, segmentDistance(x, z, path[i - 1] ?? corner, corner));
+        }
+      return nearest;
+    },
   };
 }
