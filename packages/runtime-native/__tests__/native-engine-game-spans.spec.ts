@@ -83,11 +83,13 @@ describe("native engine game spans", () => {
     );
   });
 
-  it("reports the submitted frame id, captured at submission, in renderer.cpp", () => {
-    const renderer = readFileSync(
-      path.resolve("packages/runtime-native/src/engine/renderer/renderer.cpp"),
-      "utf8",
-    );
+  it("reports the submitted frame id, captured at submission, in the renderer", () => {
+    // PRD-840: renderPrepared (renderer_frame.cpp) captures the id, and encodeFrame (renderer.cpp) reports it.
+    const renderer = ["renderer.cpp", "renderer_frame.cpp"]
+      .map((file) =>
+        readFileSync(path.resolve("packages/runtime-native/src/engine/renderer", file), "utf8"),
+      )
+      .join("\n");
     expect(renderer).toMatch(/job\.source = sourceFrame_;/u);
     expect(renderer).toMatch(/\[[^\]]*\bsource\b[^\]]*\][^\n]*\(GpuStatus status/u);
     expect(renderer).toMatch(/t->source = source;[^\n]*\n\s*\+\+t->samples;/u);
