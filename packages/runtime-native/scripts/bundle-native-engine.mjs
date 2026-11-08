@@ -206,6 +206,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     "three-mesh-bvh": resolve(threeNative, "src/addons/mesh-bvh.ts"),
     "three/addons/utils/BufferGeometryUtils.js": resolve(threeNative, "src/addons/buffer-geometry-utils.ts"),
     "three/addons/geometries/DecalGeometry.js": resolve(threeNative, "src/addons/decal-geometry.ts"),
+    "three/addons/animation/CCDIKSolver.js": resolve(threeNative, "src/addons/ccd-ik-solver.ts"),
   };
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
     // A facade's own exports; `three` inside one (an addon over the engine) is the facade above.

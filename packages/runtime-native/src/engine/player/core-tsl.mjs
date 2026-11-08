@@ -51,6 +51,9 @@ export const {
   atan, mod, fwidth, saturation, mat2, hash, time, deltaTime, transformDirection, normalWorldGeometry,
   getViewPosition, frameGroup, renderGroup, objectGroup, transformNormalToView, property,
 } = globalThis.tsl;
+// three's viewportCoordinate is screenCoordinate.sub(viewport.xy) (ScreenNode.js). Every native pass
+// draws the full target, so viewport.xy is (0, 0) and the two are equal.
+export const viewportCoordinate = screenCoordinate;
 
 export const { storageTexture, textureStore } = defineStorageTextures(globalThis.tsl);
 
