@@ -1,5 +1,5 @@
 {
-  "passed": 258,
+  "passed": 265,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -213,6 +213,13 @@
     "PRD-844/filter|saturate|--tw-saturate,filter|",
     "PRD-844/filter|sepia|--tw-sepia,filter|",
     "PRD-848/flow|table|display|",
+    "PRD-848/scroll|scroll|scroll-padding|",
+    "PRD-848/scroll|scroll|scroll-padding-block-start|",
+    "PRD-848/scroll|scroll|scroll-padding-left|",
+    "PRD-848/scroll|scroll|scroll-padding-inline-start|",
+    "PRD-848/scroll|scroll|scroll-padding-top|",
+    "PRD-848/scroll|scroll|scroll-padding-inline|",
+    "PRD-848/scroll|scroll|scroll-padding-block|",
     "PRD-849/selectors|variant|*",
     "PRD-849/selectors|variant|**",
     "PRD-849/selectors|variant|not",

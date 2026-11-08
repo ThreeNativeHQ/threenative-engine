@@ -454,6 +454,12 @@ to delete once the query worked.
   an item 200px down a scroller aligns at 200 with nothing declared, and at 110 with
   `scroll-margin-top: 60px` plus `scroll-padding-top: 30px`; the test fails against the previous
   vendor sources. The meter's scroll group goes 0/31 → 7/31.
+* **A follow-up fixed the last 2 px:** the element's position was taken relative to the scroller's
+  *padding edge* and then the scroller's own border and padding were subtracted again, so every
+  `scroll-p*` cell stopped two pixels high (measured against Chromium: target rows 188..221 against
+  186..221). `absolute_position` already reports boxes from that edge — a child's layout location is
+  relative to its parent's content box — so neither is subtracted now, and the group goes **7/31 →
+  14/31** (every block-axis `scroll-m*` and `scroll-p*` cell passes at 1.0000).
 
 ### 4. a decoration line was drawn half a pixel off, so a 1px underline covered two rows
 

@@ -120,8 +120,9 @@ const PANEL_CSS = `
    offset to subtract from: at x = 0 every inline margin clamps to the same zero. */
 .stage-scroll-deep{padding-left:240px}
 /* The target a scroll driver seeks is a distinct colour: with uniform fillers, a scroller stopped
-   160px apart looks the same, and a scroll-padding unit would measure "does nothing". */
-.scroll-target{background:#e11d48}
+   160px apart looks the same, and a scroll-padding unit would measure "does nothing". Two classes,
+   because the stage-fill rule is declared below and an equal-specificity rule there would win. */
+.stage-fill.scroll-target{background:#e11d48}
 .stage-table{border-collapse:separate;border-spacing:0;width:100%}
 .stage-table td,.stage-table th{border:1px solid #52525b;padding:3px 5px;color:#e4e4e7;font-size:13px}
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}

@@ -49,6 +49,19 @@ each refused row from `native-css-compat.ts` in the commit that turns its group 
 | --- | --- | --- | --- |
 | Layout families on native | game Tailwind class → `css-ui` layout (blitz-dom, taffy) | Table, float, column, sticky, subgrid, snap and container rows deleted from `native-css-compat.ts` | AC-1 to AC-4 |
 
+## Open: the scroll group is 14 of 31, and the offset arithmetic is settled (2026-11-07)
+
+`scrollIntoView` now aligns with Chromium to the pixel: the element's position was taken relative to
+the scroller's padding edge and then the scroller's own border and padding were subtracted again, so
+every `scroll-p*` cell stopped two pixels high (measured: target rows 188..221 against Chromium's
+186..221). Every block-axis `scroll-m*` and `scroll-p*` cell passes at **1.0000**.
+
+What is left in the group, with its reason: the eight **inline-axis** `scroll-m*`/`scroll-p*` cells do
+not discriminate (the scroll happens on the block axis even though the content overflows inline, so a
+horizontal margin or padding moves nothing), `overscroll-*` and `scroll-smooth` need a scroller at its
+limit or a second frame, `snap-*` needs a snap implementation, and `sticky` measures 0.6215 — a real
+difference, and the largest single one left in this PRD.
+
 ## Execution Phases
 
 #### Phase 1: Flow layout

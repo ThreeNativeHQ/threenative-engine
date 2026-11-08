@@ -753,12 +753,14 @@ impl BaseDocument {
                 let element_pos = element.absolute_position(0.0, 0.0);
                 // The element's box in the scroller's *content* coordinates: client coordinates
                 // carry the scroller's own scroll, so add it back and start from the padding edge.
-                let content_x = element_pos.x as f64 - container_pos.x as f64 + offset.x
-                    - layout.border.left as f64
-                    - layout.padding.left as f64;
-                let content_y = element_pos.y as f64 - container_pos.y as f64 + offset.y
-                    - layout.border.top as f64
-                    - layout.padding.top as f64;
+                // The element's position in the scroller's *content* coordinates: client coordinates
+                // carry the scroller's own scroll, so add it back. `absolute_position` reports boxes
+                // from the scroller's padding edge already (a child's layout location is relative to
+                // its parent's content box), so neither the border nor the padding is subtracted
+                // again — doing that put every `scroll-p*` cell 2px off (`scroll-padding` resolved
+                // against a content origin two pixels too high).
+                let content_x = element_pos.x as f64 - container_pos.x as f64 + offset.x;
+                let content_y = element_pos.y as f64 - container_pos.y as f64 + offset.y;
                 let want_x = (content_x - margin_left - pad_left).clamp(0.0, max.x);
                 let want_y = (content_y - margin_top - pad_top).clamp(0.0, max.y);
                 Some((want_x, want_y))
