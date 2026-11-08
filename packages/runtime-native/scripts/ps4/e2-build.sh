@@ -209,6 +209,9 @@ git apply "$SCRIPTS/patches/0073-opengnm-psbc-no-s-bfm-brev-b64.patch"
 # A gather cleared TRUNC_COORD in its sampler, which the driver never sets, and shadPS4 cannot trace a sampler
 # built that way: the TRAA resolve asserted (resource_discover_pass.cpp:289) on every run (Unreal calibration).
 git apply "$SCRIPTS/patches/0074-opengnm-psbc-no-tg4-trunc-coord-clear.patch"
+# psbc keyed SPI_SHADER_COL_FORMAT for target 0 only, so ACO dropped every MRT1..7 export: the TRAA resolve never
+# wrote its history target, read zeros, and drew dark 1 px rims round bright edges on PS4 (Unreal calibration L1/L7).
+git apply "$SCRIPTS/patches/0078-opengnm-psbc-fp16-export-every-mrt.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
