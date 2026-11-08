@@ -117,6 +117,9 @@ const PANEL_CSS = `
 /* A scrollIntoView cell's content starts right of the scrollport, so an inline scroll-margin has an
    offset to subtract from: at x = 0 every inline margin clamps to the same zero. */
 .stage-scroll-deep{padding-left:240px}
+/* The target a scroll driver seeks is a distinct colour: with uniform fillers, a scroller stopped
+   160px apart looks the same, and a scroll-padding unit would measure "does nothing". */
+.scroll-target{background:#e11d48}
 .stage-table{border-collapse:separate;border-spacing:0;width:100%}
 .stage-table td,.stage-table th{border:1px solid #52525b;padding:3px 5px;color:#e4e4e7;font-size:13px}
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
@@ -1195,11 +1198,29 @@ function layoutStage(cell, probe, classes, before, after) {
  * a coloured edge is.
  */
 const BORDER_COLOR_PROPS =
-  /^border(-(top|right|bottom|left|inline|block|start|end))?-(color|.*-color)$/u;
+  /^border(-(top|right|bottom|left|inline|block|start|end|s|e|b|t|x|y))?(-(color|style|width))?$|^border(-(top|right|bottom|left|inline|block|start|end))?-(color|.*-color)$/u;
+
+/**
+ * Companions a unit needs that its *properties* cannot name.
+ *
+ * A gradient's `background-image` reads `var(--tw-gradient-stops)`, which only `from-*`, `via-*` and
+ * `to-*` define: `bg-linear-60` on its own is an image with no stops, so it paints nothing and
+ * measured "does nothing" on both subjects. A blend mode needs two background layers to blend.
+ */
+const EXTRA_STAGING = [
+  [/^bg-(linear|conic|radial)/u, ["from-red-500", "to-blue-500"]],
+  [/^bg-blend-/u, ["bg-linear-to-r", "from-red-500", "to-blue-500"]],
+  [/^via-/u, ["bg-linear-to-r", "from-red-500"]],
+  [/^from-/u, ["bg-linear-to-r", "to-blue-500"]],
+  [/^to-/u, ["bg-linear-to-r", "from-red-500"]],
+];
 
 const CONTAINER_PROPS = new Set([
   "justify-content",
   "justify-items",
+  "place-content",
+  "place-items",
+  "place-self",
   "align-items",
   "align-content",
   "row-gap",
@@ -1230,6 +1251,25 @@ function cellTree(cell) {
     ...probeInner(stage, cell, stage.inner ?? cell.inner),
   );
   let children;
+  if (cell.classOn === "scroller") {
+    // The scroller is the element the unit styles, so it is the probe; the target the driver scrolls
+    // to is a filler inside it, below the fold and right of the scrollport so both axes can move.
+    return el(
+      "div",
+      { class: `cell ${cell.classes ?? ""}` },
+      el("div", { class: "cell-label" }, text(cell.class)),
+      el(
+        "div",
+        { class: `stage-scroll probe ${cell.class}` },
+        el(
+          "div",
+          { class: "stage-scroll-body stage-scroll-deep" },
+          ...fillers(4),
+          el("div", { class: "stage-fill scroll-target" }),
+        ),
+      ),
+    );
+  }
   // `list-style-*` paints the list item's own marker, so the probe *is* the item: on a `<div>` the
   // property has nothing to mark, and `list-disc` measured "does nothing" for that reason.
   const listUnit = cell.unit?.props?.some((p) => p.startsWith("list-style")) === true;
@@ -1278,6 +1318,23 @@ function numberPanel(tree) {
   };
   for (const root of tree) walk(root);
   return { count, ranges };
+}
+
+/** The first element under `node` whose class list contains `name`, as its scene id. */
+function findClass(node, name) {
+  const stack = [node];
+  while (stack.length > 0) {
+    const current = stack.shift();
+    if (current.text !== undefined) continue;
+    if (
+      String(current.attrs.class ?? "")
+        .split(/\s+/u)
+        .includes(name)
+    )
+      return current.n;
+    stack.push(...current.children);
+  }
+  return undefined;
 }
 
 /** The probe's element id inside a cell, for a driver's coordinates. */
@@ -1331,13 +1388,22 @@ function utilityEntry(unit, classCss, byProperty) {
     label: unit.probe,
     class: unit.probe,
     contrast: contrastDeclarations(unit, classCss, byProperty),
-    companions: companionsFor(unit),
+    companions: [
+      ...companionsFor(unit),
+      ...EXTRA_STAGING.filter(([pattern]) => pattern.test(unit.probe)).flatMap(
+        ([, classes]) => classes,
+      ),
+    ],
     inner:
       /^(space|divide)$/u.test(unit.root) || unit.props.some((p) => CONTAINER_PROPS.has(p))
         ? 2
         : undefined,
     // A grid container property needs a grid; everything else in `CONTAINER_PROPS` is flex.
-    scrollInto: /^scroll-m/u.test(unit.probe) || undefined,
+    scrollInto: /^scroll-[mp]/u.test(unit.probe) || undefined,
+    // `scroll-p*` sets the *scroller's* padding, so the unit's class goes on the scroller — the probe
+    // becomes that element and the scroll target is a filler inside it, which is what a scroller with
+    // scroll padding is.
+    classOn: /^scroll-p/u.test(unit.probe) ? "scroller" : undefined,
     borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
     container: unit.props.some((p) => CONTAINER_PROPS.has(p))
       ? /grid|^justify-items/u.test(unit.props.join(" ")) || /^grid-/u.test(unit.probe)
@@ -1358,7 +1424,7 @@ function utilityEntry(unit, classCss, byProperty) {
     // `scroll-m*` moves a scroller only when something scrolls *to* the element, so the cell is
     // captured after a `scrollIntoView` on the probe — the same step on both subjects. The rest of
     // the scroll family changes under a wheel.
-    drive: /^scroll-m/u.test(unit.probe)
+    drive: /^scroll-[mp]/u.test(unit.probe)
       ? [{ t: "scrollIntoView", id: undefined }]
       : layout === "scroll"
         ? [{ t: "wheel", at: "probe", dy: 140 }]
@@ -1486,6 +1552,9 @@ async function makePanel(bucket, slice, index) {
       exempt: entry.exempt,
       probe: probeId(tree[0].children[cellIndex], entry),
       ...range,
+      ...(entry.classOn === "scroller"
+        ? { scrollTarget: findClass(tree[0].children[cellIndex], "scroll-target") }
+        : {}),
     });
   }
   return panel;
@@ -2129,7 +2198,8 @@ function driverFor(cell, boxes) {
   const x = Math.round(box.x + box.w / 2);
   const y = Math.round(box.y + box.h / 2);
   return cell.drive.map((step) => {
-    if (step.t === "scrollIntoView") return { t: "scrollIntoView", id: cell.probe };
+    if (step.t === "scrollIntoView")
+      return { t: "scrollIntoView", id: cell.scrollTarget ?? cell.probe };
     if (step.at !== "probe") return step;
     if (step.t === "wheel") return { t: "wheel", x, y, dx: step.dx ?? 0, dy: step.dy };
     // The probe's own id travels with the step: `page.hover()` on the element is what actually
