@@ -94,7 +94,14 @@ cells are the driver gaps above, and 2 of the 5 grid-and-query cells are exempt.
   cell left in the batch. The thirteen that do not discriminate are staging: a border-spacing or caption needs a
   table whose cells carry borders and whose caption is content; `clear-*`/`break-*` need a float to clear and a box
   that can fragment.
-- **`scroll-p*` staging is right and still does not discriminate (measured).** The unit's class now goes
+- **`scroll-p*` cells discriminate now and measure a real difference (0.92 to 0.98).** The vacuity arm
+  strips the last class of an element whose class list *starts* with `probe`, and the scroller was spelled
+  `stage-scroll probe scroll-p-40` — so both arms rendered the same document and the staging looked inert.
+  With `probe` first they discriminate, and the remaining mismatch is the engine's offset against
+  Chromium's: the browser stops at 176 for a 160px `scroll-padding` with the target 336px down (checked in
+  isolation) and the crate's own test pins the same arithmetic, so the difference is in the scene's staged
+  geometry — the next thing to measure there.
+- **Superseded note:** The unit's class now goes
   on the *scroller* — which becomes the probe — with a distinct target inside it that the driver seeks, so
   the cell measures 0.9984 against a 0.99 bar. Both arms stop within 160px of each other and the frame
   they show is too similar to tell: the next attempt needs a marker at a fixed offset inside the scroll
