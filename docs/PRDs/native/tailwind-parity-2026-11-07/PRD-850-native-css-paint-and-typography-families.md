@@ -68,6 +68,15 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
   `me-40`/`mbe-40` need a following sibling in block flow; `aspect-square` needs the probe's height
   to stop being fixed by the staging; `z-40` needs stacked siblings.
+- **The 0.9593 text cells are glyph anti-aliasing, not line breaking (measured).** `break-normal`,
+  `text-wrap`, `hyphens-manual` and `wrap-anywhere` all score exactly 0.9593; the two frames for that
+  cell put side by side are visually identical, same breaks in the same places ("Lorem ipsum / dolor
+  sit amet / consectetur"), and the difference is the glyph edges — white text on a saturated blue
+  probe, where FreeType and vello_cpu disagree most. The corpus's own text fixtures score 0.988 on
+  the same pair of rasterisers; the parity scene's high-contrast text is simply denser. That is a bar
+  question rather than an engine one and the bar is not relaxed here: these cells stay red and are
+  recorded as such.
+
 - **Text decoration is now measured rather than vacuous, and it is a real paint gap.** Giving the
   decoration-only units an `underline` companion turned four cells from "does nothing" into 0.8431
   (`underline-offset-8`), 0.9144 (`decoration-2`), 0.96 (`decoration-red-50`) and 0.8597
