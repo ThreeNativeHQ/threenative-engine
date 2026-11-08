@@ -20,6 +20,22 @@ These are the two most-changed native files, and 35 test files read them as text
 | `js-engine-fast-path.test.mjs` loads 3 engine sources as text | `packages/runtime-native/tests/js-engine-fast-path.test.mjs:12-20` |
 | `MYSTRAL_USE_LIBUV_TIMERS` is defined in no build, yet its timer twin ships and a test locks its shape | `packages/runtime-native/src/runtime.cpp:1969,2871-2983` |
 
+## Correction (2026-11-07, measured)
+
+The Context row claims `MYSTRAL_USE_LIBUV_TIMERS` "is defined in no build". It is **not** dead, and
+Phase 1 cannot be executed as written:
+
+- the macro is derived, not defined by a build: `runtime.cpp:73-76` sets it when
+  `MYSTRAL_HAS_LIBUV` is defined and the target is not Android or iOS;
+- `packages/runtime-native/CMakeLists.txt:1320,1359` adds `MYSTRAL_HAS_LIBUV` on desktop, so the
+  libuv timer path is the one every desktop build runs;
+- its twin under `#ifndef` is the path Wasm, Android and iOS compile.
+
+So there is no undefined-macro branch to delete, and deleting either implementation would break a
+platform. What the phase should claim instead: timer ordering is proved by `timer_delivery_test.cpp`
+and `timer-contract.test.mjs` stops slicing `runtime.cpp` as text. That rewording is the owner's or
+the next agent's call, not a silent edit of the box.
+
 ## Solution
 
 Each asserted behaviour gets a callable seam: timer semantics through `timer_delivery_test.cpp`,
