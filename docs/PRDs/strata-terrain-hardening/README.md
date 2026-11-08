@@ -18,7 +18,8 @@ Ordered by priority (the `**Priority:**` header of each PRD), then by the chain 
 
 | Priority | PRD | State | Progress (`prd:progress`) | What is open |
 |---|---|---|---|---|
-| P0 | [PRD-762 — An MCP-generated terrain runs on the default engine](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) | IN PROGRESS | `prd:25%` — boxes 6/14 | Sandbox start with no game edit. Sky and kit gaps. Playtest, perf and judge. Chain step PR-1. |
+| P0 | [PRD-762 — An MCP-generated terrain runs on the default engine](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) | IN PROGRESS | `prd:50%` — boxes 11/16 | Sandbox start with no game edit. Sky and kit gaps. Playtest, perf and judge. Chain step PR-1. |
+| P1 | [PRD-858 — World impostors bake on the owned web engine](PRD-858-world-impostors-bake-on-the-owned-web-engine.md) | OPEN | `prd:0%` — boxes 0/6 | Layered MRT bake seam on the facade and engine. Kit overview at 60 fps. Judge. Blocks PRD-762's kit verifier. |
 | P1 | [PRD-585 — Strata's proof runs in CI, not only by hand](PRD-585-strata-proof-runs-in-ci.md) | PARTIAL | `prd:50%` — boxes 3/6, AC 3/5 | `strata` CI job green on web, consumer and editor scripts. Current-head required CI. Chain step PR-2. |
 | P1 | [PRD-583 — A Strata world bakes headlessly into an instanced GLB](PRD-583-a-strata-world-bakes-headlessly-into-an-instanced-glb.md) | PARTIAL | `prd:75%` — boxes 6/8, AC 5/5 | Layered PBR surface in the cook. Headed render plus visual judge. Chain step PR-8. |
 | P1 | [PRD-594 — The engine changes that rode in with #381 get native and visual proof](PRD-594-engine-changes-from-381-get-native-and-visual-proof.md) | PARTIAL | `prd:75%` — boxes 5/6, AC 5/6 | Judge with visible cast-shadow coverage (AC-4). Chain step PR-9. |

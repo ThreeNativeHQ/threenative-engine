@@ -113,6 +113,8 @@ Why this order:
 
 Open boxes: the sandbox game starts from the MCP snippet with no game edit, sky gaps 1–4, the kit gaps (`VirtualShadowNode`, world prewarm, `TN_virtual_geometry`, the reflector hook), `verify-starter-kit.mjs` exit 0, a playtest scenario, load and presented FPS on the real display, and a judge against the `engine: "threejs"` arm. Each refusal found on the path gets its own box.
 
+Sub-blockers on the same PR: [PRD-857](PRD-857-the-gpu-world-scene-runs-on-the-owned-engine.md) (the GPU world scene, Acceptance open) and [PRD-858](PRD-858-world-impostors-bake-on-the-owned-web-engine.md) (impostor bake; the kit's overview runs at 15 fps without it, so `verify-starter-kit.mjs` waits on it).
+
 ## PR-2 — PRD-585
 
 Do this first: check the `strata` job on the current `develop` head again, because most boxes still name PR #483. Open: `test:terrain:web`, `test:consumer` and `test:terrain:editor` green in CI, and the relative layer lookup fix (`../leafy_grass/...`) without weaker manifest validation.
