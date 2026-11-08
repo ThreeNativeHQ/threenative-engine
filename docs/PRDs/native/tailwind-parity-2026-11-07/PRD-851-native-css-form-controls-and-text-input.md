@@ -1,6 +1,6 @@
 # PRD-851 — native-css renders and drives form controls and text input like Chromium
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — about 20 Tailwind units (AC-1 to AC-3) style only form controls, and the engine has none: no `<input>`, `<textarea>`, `<select>`, text input or IME.
 **Complexity:** 9 (HIGH) — 6 to 10 files (+2), new input subsystem (+2), focus, caret and IME state (+2), Rust crate plus C++ host plus platform text input (+2), host ABI (+1).
 **Owner:** ThreeNative maintainers
@@ -47,19 +47,42 @@ Platform IME on Android and iOS is outside the batch (see the README scope limit
 ## Execution Phases
 
 #### Phase 1: Control paint
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `vendor/blitz-paint-0.3.0-beta.2/src/render/form_controls.rs`, `vendor/PATCHES.md`.
 
+- [x] The engine admits the control elements, so a control unit is a question it can answer. proof: `parity:tailwind --family PRD-851`
+  Evidence: `native/css-ui/src/lib.rs`'s `TAGS` refused `input`, `textarea`, `select`, `option`, `details` and `summary`; they
+  are allowed now, and a control utility (`accent-*`, `caret-*`, `appearance-*`, `field-sizing-*`, `resize-*`) is staged on a
+  real `<textarea>` focused by the Tab both subjects receive, instead of on a `div` the property cannot apply to.
 - [ ] All control types paint, and the paint units pass. proof: AC-1
+  Evidence: NOT met — all five paint units measure a real mismatch (SSIM 0.7354 against Chromium's user-agent control) and
+  none of them discriminates yet, because a bare field shows no accent, caret or resizer without the state its own driver
+  would set.
 
 #### Phase 2: Text input
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `native/css-ui/src/{lib,abi}.rs`, `include/mystral/platform/ui_overlay.h`, the desktop host input seam, `packages/playtest` text injector.
 
 - [ ] Typing and IME composition reach React on the desktop host. proof: AC-2
 
 #### Phase 3: Form states
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `vendor/blitz-dom-0.3.0-beta.2/src/stylo.rs`, the guide, the floor.
 
 - [ ] Form-state variants pass, and the floor rises. proof: AC-3 plus `parity:tailwind --ratchet`
+
+## Open
+
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-851`: **0 of 21 units pass**, 5 do not
+discriminate and 16 are pending exemptions.
+
+- **The gate is open; nothing paints.** The control elements are admitted and every control unit is staged on a focused
+  `<textarea>`, so the family is measured rather than refused — and all five measure 0.7354 against Chromium's own control
+  paint. That is the real starting point: `blitz-paint` has `render/form_controls.rs` for checkboxes and radios only.
+- **Five cells still do not discriminate** because a field with no user state shows no accent, no caret and no resizer.
+  `caret-color` needs a focused field with a caret (Tab is driven); `accent-color` needs a checked control; `resize` needs
+  the UA resizer, which Chromium paints and the engine does not.
+- **The 16 state variants stay pending**: `checked:`, `invalid:`, `in-range:` and the rest need a control that can *be* in
+  that state, which is the same missing paint plus the input plumbing.
+- **Text input and IME are untouched**: `native/css-ui` has no editing model, no caret, no selection and no ABI call, and
+  the desktop host has no `SDL_StartTextInput` seam into it.

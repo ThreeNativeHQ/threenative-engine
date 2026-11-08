@@ -53,10 +53,10 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 162/503 (32.2 %)  [232 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 233 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 232 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.

@@ -58,7 +58,7 @@ each refused row from `native-css-compat.ts` in the commit that turns its group 
 - [x] The tag gate admits the table family, so the flow group can be measured at all. proof: `parity:tailwind --family PRD-848 --group flow`
   Evidence: `native/css-ui/src/lib.rs`'s closed `TAGS` list refused `table`, `tbody`, `tr`, `td`, `th`, `caption`,
   `colgroup` and `col`, so six flow cells could not even be staged; they are allowed now and the group measures
-  1/15 with 233 non-discriminating and 1 refused.
+  1/15 with 232 non-discriminating and 1 refused.
 - [ ] Tables, floats and columns pass, and their rows leave the denylist. proof: AC-1
   Evidence: NOT met — 1 of 15. `columns-12` beside a float is the one stage the engine does not finish in 60 s;
   each flow cell now has its own panel so that costs one cell instead of nine. The rest are staging gaps:

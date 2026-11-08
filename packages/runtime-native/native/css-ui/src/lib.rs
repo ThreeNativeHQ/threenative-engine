@@ -69,6 +69,10 @@ const TAGS: &[&str] = &[
     // than unsupported. PRD-848 is what proves the layout, so the tag is allowed and the fixtures
     // decide whether it is right.
     "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col",
+    // The controls a HUD settings panel needs, and the only elements an `accent-*`, `caret-*`,
+    // `appearance-*`, `field-sizing-*` or `resize-*` utility can apply to. What they *paint* is
+    // PRD-851's subject; refusing the tag would make the question unaskable.
+    "input", "textarea", "select", "option", "details", "summary",
 ];
 
 /// The attribute names an `attr` op may set, besides any `data-*` or `aria-*`. Everything else

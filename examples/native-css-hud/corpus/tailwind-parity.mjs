@@ -1125,12 +1125,15 @@ function layoutStage(cell, probe, classes, before, after) {
   return siblings;
 }
 
+/** A control utility needs a control: `caret-color` on a `div` is not a question. */
+const CONTROL_UNIT = /^(accent|caret|appearance|field-sizing|resize)/u;
+
 /** One cell's tree: the label and the staged probe. */
 function cellTree(cell) {
   const stage = VARIANT_STAGE[cell.label] ?? {};
   const classes = probeClass(cell.companions ?? [], cell.class);
   const probe = el(
-    stage.tag ?? "div",
+    stage.tag ?? (CONTROL_UNIT.test(cell.unit?.probe ?? "") ? "textarea" : "div"),
     { class: classes, ...stage.attrs },
     ...probeInner(stage, cell, stage.inner ?? cell.inner),
   );
@@ -1235,8 +1238,14 @@ function utilityEntry(unit, classCss, byProperty) {
     // because the first one moves the layout under the coordinates the others would aim at.
     alone: layout === "prose" || layout === "float" || layout === "scroll",
     // `scroll-m*`/`scroll-p*`/`snap-*`/`sticky` change nothing until something scrolls, so the cell
-    // is captured after one wheel of the same size on both subjects.
-    drive: layout === "scroll" ? [{ t: "wheel", at: "probe", dy: 140 }] : undefined,
+    // is captured after one wheel of the same size on both subjects. A caret only paints in a
+    // focused field, so a control unit is captured after the Tab that focuses it.
+    drive:
+      layout === "scroll"
+        ? [{ t: "wheel", at: "probe", dy: 140 }]
+        : CONTROL_UNIT.test(unit.probe)
+          ? [{ t: "key", key: "Tab" }]
+          : undefined,
     prose: unit.props.some((p) => PROSE_PROPS.has(p)),
     unit,
   };

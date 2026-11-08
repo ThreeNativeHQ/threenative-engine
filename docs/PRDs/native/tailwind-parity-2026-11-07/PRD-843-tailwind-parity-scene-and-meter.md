@@ -32,9 +32,9 @@ inventory and the meter and judge contract.
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: the scene has a discriminating cell for each unit, and each unit has one owner PRD. proof: `pnpm --filter threenative-native-css-hud parity:tailwind --check`
-  Evidence: 507 units (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the discrimination guard is red on 233 cells (see `## Open`), and 31 variant cells name a pending exemption owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions).
+  Evidence: 507 units (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the discrimination guard is red on 232 cells (see `## Open`), and 31 variant cells name a pending exemption owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions).
 - [ ] AC-2 [local]: the meter prints a baseline score from the crate subject and from the host subject, and `--ratchet` fails below the committed floor. proof: `parity:tailwind` and `parity:tailwind --host`
-  Evidence: the crate subject prints `tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `--floor` wrote the 162-unit ratchet baseline. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is no host subject, and a flag that silently scored the crate instead would be worse than none.
+  Evidence: the crate subject prints `tailwind-parity: 162/503 (32.2 %)  [232 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `--floor` wrote the 162-unit ratchet baseline. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is no host subject, and a flag that silently scored the crate instead would be worse than none.
 - [ ] AC-3 [local]: the starter kit builds for `ui.renderer: "native-css"` with zero findings. proof: `threenative build --target desktop` on a scaffolded starter with `ui.renderer: "native-css"`, then an empty `.threenative/build/native-css-compat.json`
   Evidence: NOT run. The source-scan fix is in all 14 Tailwind kits and a Tailwind oxide scan shows the starter's incidental `.blur`, `.filter` and `.table` rules gone, but the scaffolded build itself was not executed.
 
@@ -54,7 +54,7 @@ inventory and the meter and judge contract.
 - [x] The generator reports one unit per (root, emitted property set, at-rule) plus one per variant, each with an owner PRD. proof: `parity:tailwind --check`
   Evidence: `507 units (419 utility, 88 variant), 0 unowned`, with a descriptor block (`@property`) contributing no properties (see Decisions).
 - [ ] The discrimination guard fails a cell that cannot tell a correct engine from one that dropped the declaration, and every unit has a cell that can. proof: `parity:tailwind --check`
-  Evidence: the guard works — it caught a scene with 439 identical-crop cells and the staging fixes brought the non-discriminating count to 233 — but it is still red; `## Open` names what is left.
+  Evidence: the guard works — it caught a scene with 439 identical-crop cells and the staging fixes brought the non-discriminating count to 232 — but it is still red; `## Open` names what is left.
 
 #### Phase 2: Meter, ratchet and judge sheets
 **Status:** PARTIAL
@@ -65,7 +65,7 @@ descriptor (`dark`, `touch`, reduced motion, viewport) and both subjects apply i
 context options in Chromium, `env.json` in the engine. There is no `--env <input|all>` CLI switch.
 
 - [x] The crate subject prints the score and writes `report.json` by family, and the baseline goes in the batch README. proof: `parity:tailwind`
-  Evidence: `tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `## Meter status` in the batch README. The score counts evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four permanently inactive units leave the denominator.
+  Evidence: `tailwind-parity: 162/503 (32.2 %)  [232 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]`, and `## Meter status` in the batch README. The score counts evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four permanently inactive units leave the denominator.
 - [ ] The host subject runs the same panels on the CSS-enabled desktop host and prints its own N. proof: `parity:tailwind --host` (needs `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build`)
 - [x] `--sheet <PRD-id>` writes WEB|NATIVE contact sheets with burned-in labels to `~/Downloads/tailwind-parity/<PRD-id>/`. proof: `parity:tailwind --sheet PRD-845`
   Evidence: 7 sheets, one row per unit with the class burned in at 32 px. The two-capture rule is a byte-equality assertion inside the same run rather than a second sheet.
@@ -84,7 +84,7 @@ counts only as evidence: a pending exemption counts as a failure, a non-discrimi
 and only the four permanently inactive units leave the denominator.
 
 ```
-tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 162/503 (32.2 %)  [232 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
 ```
 
 | Family | pass | non-discriminating |
@@ -108,7 +108,7 @@ tailwind-parity: 162/503 (32.2 %)  [233 do not discriminate, 31 exempt, 4 perman
 | `PRD-851/paint` | 0/5 | 5 |
 | `PRD-851/states` | 0/16 | 0 |
 
-- **The dominant gap (233 of 503 scored cells) is scene staging, not engine work.** A cell
+- **The dominant gap (232 of 503 scored cells) is scene staging, not engine work.** A cell
   discriminates when dropping its unit class takes the measured region below its own bar or moves an
   element's box by more than 1 px. Staging already in place: a contrast default in Tailwind's `base`
   layer, companion utilities for custom-property-only units, a positioned probe, cell-scoped rules, a
