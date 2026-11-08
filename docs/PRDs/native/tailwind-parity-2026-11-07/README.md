@@ -53,7 +53,7 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 315/503 (62.6 %)  [103 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 318/503 (63.2 %)  [100 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
 A cell is evidence only when it discriminates (see Meter, item 3). The 103 non-discriminating cells are
@@ -64,7 +64,7 @@ engine does not finish.
 Per family, measured on the full run above:
 
 ```
-152/182 misc        23/50 mask          18/41 type          20/39 paint
+152/182 misc        23/50 mask          18/41 type          23/39 paint
   0/16 PRD-851      22/31 scroll         2/15 flow          25/34 selectors
  11/19 filter       17/24 media          3/9 transform3d     2/8 pseudo
   0/5 grid-and-query 0/5 PRD-851 paint   0/4 blend           3/5 motion

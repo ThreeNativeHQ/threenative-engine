@@ -50,6 +50,16 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Decisions
 
+**A `scrollbar-*` unit styles a scrollbar, so the probe has to be a scroll container.** `scrollbar-width`,
+`scrollbar-gutter` and `scrollbar-color` (which is what `scrollbar-thumb-*`/`scrollbar-track-*` set) paint
+nothing on a box that cannot scroll, and the four cells read "does nothing" for that reason alone. The probe
+is now `overflow: auto` with one oversized child. Measured: the paint group 20 → **23 of 39**, three cells
+passing at 1.0000 (`scrollbar-width`, `scrollbar-thumb-*`, `scrollbar-track-*`) and the scene 315 →
+**318 of 503** — `scrollbar-gutter-both` becomes a real 0.9159, which is a layout difference (gutter space)
+rather than a staging one.
+
+## Decisions
+
 **A gradient *position* unit sets no colour of its own.** `from-40%` positions a stop that has to exist: the
 companion was `bg-linear-to-r` + `to-blue-500`, which leaves `--tw-gradient-from` unset, so
 `--tw-gradient-stops` resolved to nothing and the cell painted the same frame with and without the unit.

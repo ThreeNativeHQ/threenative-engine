@@ -156,6 +156,10 @@ const PANEL_CSS = `
 .stage-border{border-width:2px;border-style:dashed;border-color:#52525b}
 /* An aspect ratio loses to an explicit height, so the probe states one dimension only. */
 .stage-aspect{height:auto}
+/* A scrollbar unit styles the scrollbar of a scroll container: without overflow there is no
+   scrollbar, and the unit paints nothing in either arm. */
+.stage-scrollbar{overflow:auto}
+.stage-scrollbar > .stage-fill{width:220px;height:160px;flex:none}
 /* A backdrop filter needs something to filter and something translucent to see it through: a
    saturated band behind the cell and a see-through probe over it. */
 .stage-backdrop{width:100%;height:100%;color:#fafafa;font-size:13px;line-height:16px;padding:2px;
@@ -1379,6 +1383,7 @@ function cellTree(cell) {
   // reaches the one it was aimed at.
   const inline = /^m(r|e)-/u.test(cell.unit?.probe ?? "") ? " stage-inline" : "";
   const aspect = cell.aspect === true ? " stage-aspect" : "";
+  const scrollbar = cell.scrollbar === true ? " stage-scrollbar" : "";
   const classes =
     probeClass(cell.companions ?? [], cell.class) +
     container +
@@ -1386,7 +1391,8 @@ function cellTree(cell) {
     items +
     contain +
     inline +
-    aspect;
+    aspect +
+    scrollbar;
   const probe = el(
     /^(transition|duration|delay|ease)/u.test(cell.unit?.probe ?? "")
       ? "button"
@@ -1397,6 +1403,7 @@ function cellTree(cell) {
   // A positioned probe gets an absolutely-placed child: it fills the probe when the probe is
   // positioned and escapes to the nearest positioned ancestor when it is not.
   if (cell.escape === true) probe.children.push(el("div", { class: "stage-escape" }));
+  if (cell.scrollbar === true) probe.children.push(el("div", { class: "stage-fill" }));
   if (cell.trail === true)
     probe.after = el("div", {
       class: `stage-trail${cell.zOverlap === true ? " stage-trail-over" : ""}`,
@@ -1641,6 +1648,11 @@ function utilityEntry(unit, classCss, byProperty) {
       undefined,
     // `aspect-ratio` is ignored when both dimensions are set, and the staged probe sets both.
     aspect: unit.props.includes("aspect-ratio") || undefined,
+    // `scrollbar-width`, `scrollbar-gutter` and `scrollbar-color` style a scrollbar, so the probe has to
+    // be a scroll container with something to scroll.
+    scrollbar:
+      unit.props.some((p) => p === "scrollbar-width" || p === "scrollbar-gutter" || p === "scrollbar-color") ||
+      undefined,
     // `transform-origin` and `transform-box` move nothing until something transforms.
     origin: unit.props.some((p) => p === "transform-origin" || p === "transform-box") || undefined,
     // A flex or grid child's size and alignment are decided against its siblings.
