@@ -43,7 +43,7 @@ old `inline_fragment_rects` loop moved into `inline_fragments` so paint can shar
 hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
 `draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 231 added code lines
+## `blitz-paint-0.3.0-beta.2` — 254 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -533,6 +533,21 @@ to delete once the query worked.
   the white space a line ends with (measured on `underline`: 103 px against Chromium's 93, and
   Chromium trims it). `GlyphRun` exposes `glyphs()` and the run's `clusters()`, not per-line clusters,
   so trimming needs the line's portion of the run — that is the next measurement here.
+
+### 7. an inset box shadow ignored its spread, so a ring with no blur painted nothing
+
+* **Where:** `src/render/box_shadow.rs` (`draw_inset_box_shadow`: the `DestOut` cut-out is the border
+  box deflated by the shadow's `spread`).
+* **Why:** the spread is the width of an inset shadow's band, and the cut-out was the border box
+  itself — so an inset shadow with a spread and no blur covered the whole box and then erased itself.
+  Tailwind's `ring-inset` plus a ring width is exactly `box-shadow: inset 0 0 0 4px …`: measured, the
+  parity scene's cell showed no ring where Chromium paints one, and a 48×48 box with
+  `inset 0 0 0 4px #ffffff` stayed entirely blue.
+* **Proves it:** `tests/interaction.rs::an_inset_box_shadow_paints_inside_the_box` fails against the
+  previous vendor sources. The parity meter's `ring-inset` and `inset-ring-red-50` go from 0.747 to
+  **1.0000**, the `misc` group 125 → 127 of 182, and the 32-fixture browser oracle is unchanged
+  (28/28). `inset-shadow-red-50` now discriminates for the first time and measures 0.9809 — its blur
+  kernel is the next question there.
 
 ## `parley-0.11.1` — 240 added code lines
 

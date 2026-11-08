@@ -1071,6 +1071,35 @@ fn a_zero_degree_gradient_runs_to_the_top() {
 }
 
 #[test]
+fn an_inset_box_shadow_paints_inside_the_box() {
+    // Tailwind's `ring-inset` plus a ring width is `box-shadow: inset 0 0 0 4px <colour>`; the parity
+    // scene's cell showed no ring at all in the engine's frame where Chromium paints one.
+    let mut ui = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:48px;height:48px;margin:8px;background:#2563eb;box-shadow:inset 0 0 0 4px #ffffff}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    let edge = rgb(&ui, 10, 10);
+    let centre = rgb(&ui, 32, 32);
+    assert!(
+        edge.iter().all(|channel| *channel > 200),
+        "the inset shadow paints a white ring inside the box, got {edge:?}"
+    );
+    assert_eq!(centre, [37, 99, 235], "and leaves the middle alone");
+}
+
+#[test]
 fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
     let mut ui = ui(
         64,

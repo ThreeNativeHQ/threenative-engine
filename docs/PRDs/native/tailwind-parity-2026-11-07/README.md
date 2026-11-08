@@ -53,13 +53,18 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 256/503 (50.9 %)  [152 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 259/503 (51.5 %)  [152 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
 A cell is evidence only when it discriminates (see Meter, item 3). The 152 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The 3 units after 256 are an inset box shadow's spread: `ring-inset` plus a ring width is
+`box-shadow: inset 0 0 0 4px …`, and the inset path cut the shadow out with the border box itself, so a
+spread with no blur covered the box and then erased itself. Measured on a 48×48 box that stayed
+entirely blue where Chromium paints a white ring.
 
 The 6 units after 249 are seven CSS colour filters painting at all: `vello_common` cannot render a
 colour matrix or a component transfer, so every `grayscale()`, `saturate()`, `hue-rotate()`, `sepia()`,
