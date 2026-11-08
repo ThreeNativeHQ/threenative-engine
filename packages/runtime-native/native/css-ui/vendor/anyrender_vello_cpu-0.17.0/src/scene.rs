@@ -96,6 +96,7 @@ impl PaintScene for VelloCpuScenePainter {
         filter: Option<Arc<Filter>>,
         backdrop_filter: Option<Arc<Filter>>,
     ) {
+        let blend_mode = BlendMode::from(blend.into());
         // A filter that is exactly one per-pixel colour function (a colour matrix or a component
         // transfer) is rendered offscreen and transformed, because `vello_common` 0.1.0 has no such
         // primitive (see `ColourLayer`). The same is true of a *backdrop* filter: the layer then
@@ -148,7 +149,7 @@ impl PaintScene for VelloCpuScenePainter {
                 parent,
                 filter: own,
                 backdrop,
-                blend: BlendMode::from(blend.into()).mix,
+                blend: blend_mode.mix,
                 alpha,
                 ops: 0,
             });
@@ -170,7 +171,7 @@ impl PaintScene for VelloCpuScenePainter {
         self.render_ctx.set_transform(transform);
         self.render_ctx.push_layer(
             Some(&clip.into_path(DEFAULT_TOLERANCE)),
-            Some(blend.into()),
+            Some(blend_mode),
             Some(alpha),
             None,
             filter,

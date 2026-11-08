@@ -159,6 +159,7 @@ impl ElementCx<'_, '_> {
                 &background_clip_path,
                 None,
                 None,
+                peniko::Mix::Normal,
                 |scene| {
                     self.draw_image_layer(scene, &layer, false);
                 },

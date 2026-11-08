@@ -57,6 +57,19 @@ space before taking luminance or applies a different transfer. The next attempt 
 table, and `tests/interaction.rs::a_zero_degree_gradient_runs_to_the_top` already pins the direction
 (a flipped `0deg` was the first hypothesis and it was wrong).
 
+## Open: blend modes, threaded and half-painted (2026-11-07)
+
+`mix-blend-mode` is now read and threaded into the element's paint layer, so a *separable* mode
+composites: `tests/interaction.rs::mix_blend_mode_composites_the_element_against_its_backdrop` proves
+`multiply` (blue over red is black) and fails against the previous vendor sources.
+
+The parity scene's blend cells still do not move, and the reason is upstream: they are all `hue`
+(`mix-blend-hue`, `bg-blend-hue`), and `vello_cpu` 0.1's layer blend has a u8 fast path that returns
+`None` for the non-separable modes — `hue`, `saturation`, `color`, `luminosity`, `color-dodge`,
+`color-burn`, `soft-light` — and no float fallback for layers. So the blend is threaded and painted as
+`Normal` in exactly those cases. `isolate`/`isolation-auto` are a scene question on top of it: both
+need a blended child to isolate, which the staging does not give them.
+
 ## Execution Phases
 
 #### Phase 1: Blend modes

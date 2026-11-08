@@ -1100,6 +1100,36 @@ fn an_inset_box_shadow_paints_inside_the_box() {
 }
 
 #[test]
+fn mix_blend_mode_composites_the_element_against_its_backdrop() {
+    // A blue square with `mix-blend-mode: multiply` over white is still blue, but over a red
+    // backdrop it is black (`multiply` multiplies each channel): the layer has to be composited with
+    // the mode rather than painted normally, which is what threading `mix-blend-mode` into the paint
+    // layer is for.
+    let mut ui = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#back{{position:absolute;left:0;top:0;width:64px;height:64px;background:#ff0000}}\n\
+                     #top{{position:absolute;left:0;top:0;width:32px;height:32px;background:#0000ff;mix-blend-mode:multiply}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "back"),
+            create(2, "div"),
+            attr(2, "id", "top"),
+            append(0, 1),
+            append(0, 2),
+        ],
+    );
+    ui.render();
+    assert_eq!(rgb(&ui, 16, 16), [0, 0, 0], "blue multiplied over red is black");
+    assert_eq!(rgb(&ui, 48, 48), [255, 0, 0], "the backdrop outside it is untouched");
+}
+
+#[test]
 fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
     let mut ui = ui(
         64,

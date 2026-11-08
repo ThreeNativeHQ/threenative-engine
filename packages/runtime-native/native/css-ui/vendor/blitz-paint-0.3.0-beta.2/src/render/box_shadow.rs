@@ -43,6 +43,7 @@ impl ElementCx<'_, '_> {
             &self.frame.shadow_clip(max_shadow_rect),
             None,
             None,
+            Mix::Normal,
             |scene| {
                 for shadow in box_shadow.iter().filter(|s| !s.inset).rev() {
                     let shadow_color = shadow

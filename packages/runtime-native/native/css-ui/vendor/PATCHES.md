@@ -43,7 +43,7 @@ old `inline_fragment_rects` loop moved into `inline_fragments` so paint can shar
 hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
 `draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 254 added code lines
+## `blitz-paint-0.3.0-beta.2` — 320 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -548,6 +548,23 @@ to delete once the query worked.
   **1.0000**, the `misc` group 125 → 127 of 182, and the 32-fixture browser oracle is unchanged
   (28/28). `inset-shadow-red-50` now discriminates for the first time and measures 0.9809 — its blur
   kernel is the next question there.
+
+### 9. `mix-blend-mode` was never read, so every blend painted as `Normal`
+
+* **Where:** `src/render.rs` (`peniko_mix` maps the computed `mix-blend-mode`; the element's effect
+  layer is pushed when the mode is not `Normal`), `src/layers.rs` (`maybe_with_layer` /
+  `maybe_push_layer` take the mode and pass it to `push_layer`, and the clip-only fast path is not
+  taken for a non-normal mode), `src/render/background.rs` and `src/render/box_shadow.rs` (their layer
+  calls pass `Normal`).
+* **Why:** `maybe_push_layer` hardcoded `Mix::Normal`, and blitz's `is_stacking_context` does not
+  consider the property, so an element with `mix-blend-mode` painted as if it had none.
+* **Proves it:** `tests/interaction.rs::mix_blend_mode_composites_the_element_against_its_backdrop` —
+  a blue square with `multiply` over red is black and the backdrop outside it is untouched; the test
+  fails against the previous vendor sources. **The parity scene's blend cells do not move**: they are
+  all `hue` (Tailwind's `mix-blend-hue`, `bg-blend-hue`), and `vello_cpu` 0.1's `try_u8_mix` returns
+  `None` for the non-separable modes (`hue`, `saturation`, `color`, `luminosity`, `color-dodge`,
+  `color-burn`, `soft-light`), so the layer is composited as `Normal` anyway. Separable modes work;
+  the non-separable ones are a `vello_cpu` limitation, not this crate's.
 
 ## `parley-0.11.1` — 240 added code lines
 
