@@ -107,10 +107,11 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
 - **Two decoration defects left, measured row by row.** `underline-offset-8` puts the line on row
   60 where Chromium puts it on 59 (the auto position matches to the row, so the difference is how an
   explicit offset is rounded: this crate rounds the line's top, Chromium's rasteriser does not).
-  `decoration-wavy`'s **wavelength** is now Chromium's six pixels (it was four, measured column by
-  column) — and the cell still measures 0.8487 because the squiggle sits 2–2.5 px higher than
-  Chromium's (lit rows 45..47 against 47..50): its centreline placement is the next thing to measure,
-  and both cells are single functions in `text.rs`, not staging questions.
+  `decoration-wavy` improved from 0.8472 to **0.9067** in three measured steps: the wavelength is
+  Chromium's six pixels (was four), the centreline is `y + 2.5 * size` (the squiggle sat 2.5 px high)
+  and the amplitude `1.5 * size`. Chromium's lit rows are 47..50 and the engine's now match them; what
+  remains under the 0.98 bar is the wave's *phase* and the stroke's shape. Both cells are single
+  functions in `text.rs`, not staging questions.
 - **The 0.9593 text cells are glyph anti-aliasing, not line breaking (measured).** `break-normal`,
   `text-wrap`, `hyphens-manual` and `wrap-anywhere` all score exactly 0.9593; the two frames for that
   cell put side by side are visually identical, same breaks in the same places ("Lorem ipsum / dolor

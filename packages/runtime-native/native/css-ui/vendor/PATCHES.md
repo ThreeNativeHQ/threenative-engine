@@ -599,9 +599,13 @@ to delete once the query worked.
   `46, 46, 46, 47, 47` here (a period of four). The squiggle was therefore twice as dense as the
   browser's, which a 0.99 SSIM bar sees as a different pattern whatever the amplitude does.
 * **Proves it:** the engine's period is now six, matching Chromium's (re-measured the same way:
-  `46, 46, 45, 46, 47, 47, 47`). The cell's score barely moves (0.8472 → 0.8487) because a second
-  difference remains and is recorded in PRD-850: the squiggle sits **2–2.5 px higher** than Chromium's
-  (lit rows 45..47 against 47..50), so its centreline placement is the next thing to measure.
+  `46, 46, 45, 46, 47, 47, 47`). The squiggle then sat **2–2.5 px higher** than Chromium's (lit rows
+  45..47 against 47..50) and its wave was shallower, so the same measurement fitted two more
+  constants: the centre is `y + 2.5 * size` and the amplitude `1.5 * size`, which puts the engine's lit
+  rows at 47..50–ish against Chromium's 47..50. The cell goes 0.8472 → **0.9067** and still fails the
+  0.98 glyph bar — the remainder is the wave's phase and the stroke's shape, not the period, the depth
+  or the position. Both constants are fitted to a measurement, and the hunk says so because Chromium
+  does not document the squiggle's geometry.
 
 ## `parley-0.11.1` — 240 added code lines
 

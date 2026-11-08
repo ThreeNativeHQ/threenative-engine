@@ -320,10 +320,16 @@ fn draw_decoration_line(
             // the decoration's lowest row per column cycles 47, 47, 48, 49, 50, 50, 49 — a period of
             // six — while this crate cycled every four). `half_wave` is half a wavelength, so three
             // thicknesses.
-            let amplitude = size;
+            // Chromium's squiggle sits above the underline's own line and is a little deeper than
+            // this crate's was: measured on the parity scene's cell, Chromium's lit rows span 47..50
+            // where its solid underline is row 52 (a centre three and a half pixels above it), and
+            // this crate's centre was six above. The offset and the depth below are fitted to that
+            // measurement — Chromium does not document the squiggle's geometry.
+            let amplitude = 1.5 * size;
             let half_wave = (3.0 * size).max(1.0);
+            let centre = y + 2.5 * size;
             let mut path = BezPath::new();
-            path.move_to((x, y));
+            path.move_to((x, centre));
             let mut px = x;
             let mut up = true;
             while px < x + w {
@@ -331,11 +337,11 @@ fn draw_decoration_line(
                 // A quad Bézier reaches half the control-point offset at its
                 // midpoint, so use `2 * amplitude` to hit the target peak.
                 let ctrl_y = if up {
-                    y - 2.0 * amplitude
+                    centre - 2.0 * amplitude
                 } else {
-                    y + 2.0 * amplitude
+                    centre + 2.0 * amplitude
                 };
-                path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
+                path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, centre));
                 px = nx;
                 up = !up;
             }
