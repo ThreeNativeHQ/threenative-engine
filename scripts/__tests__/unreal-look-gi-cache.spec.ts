@@ -9,6 +9,7 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  PerspectiveCamera,
   PlaneGeometry,
   Raycaster,
   SphereGeometry,
@@ -16,7 +17,9 @@ import {
   Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
+import { vec3 } from "three/tsl";
 import {
+  cacheFallback,
   giCache,
   gridOver,
   installGi,
@@ -901,5 +904,30 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     const room = sunlitRoom();
     room.updateMatrixWorld(true);
     expect(gridOver(room).cell).toBe(0.5);
+  });
+
+  it("the gather's per-ray fallback reads the bake from the receiver's side: normal for the offset, ray for the face (PRD-831)", () => {
+    // The sunlit room's black corner lines: the ray stood in for the normal, so a corner read half a cell inside the other
+    // wall and the gather's hit - cache fell far below zero (near-black pixels 27,087 -> 0 on sun15-window).
+    const saved = { irradiance: giCache.irradiance, radiance: giCache.radiance };
+    const calls: unknown[][] = [];
+    try {
+      giCache.radiance = undefined;
+      giCache.irradiance = (...args) => {
+        calls.push(args);
+        return vec3(0, 0, 0);
+      };
+      const camera = new PerspectiveCamera();
+      const [position, direction, normal] = [vec3(0, 0, -1), vec3(1, 0, 0), vec3(0, 0, 1)];
+      cacheFallback(camera, "ray")?.(position, direction, normal);
+      expect(calls[0]).toHaveLength(3);
+      expect(calls[0]?.every((arg) => arg !== undefined)).toBe(true);
+      // The irradiance read of a surface (normal mode) still takes the direction as its normal.
+      cacheFallback(camera)?.(position, direction, normal);
+      expect(calls[1]?.[2]).toBeUndefined();
+    } finally {
+      giCache.irradiance = saved.irradiance;
+      giCache.radiance = saved.radiance;
+    }
   });
 });
