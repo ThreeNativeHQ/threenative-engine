@@ -35,7 +35,9 @@ revisit later is the engine's job, not yours.
   page is cross-origin isolated and loads the threaded engine: the world-matrix walk splits over up
   to 8 workers. `TN_FRAME_BUDGET` reports `threads: "on (N)"`. The page always loads the threaded
   engine and fails closed with `TN_WEB_THREADS_OFF` when it is not cross-origin isolated or the pool
-  starts no worker, so a host must send the two headers; `TN_WASM_THREADS_MISSING` names a missing
+  starts no worker. A host that sends no headers (itch.io, GitHub Pages, a plain static server) gets
+  them from the build's `tn-isolation-sw.js` service worker, which reloads the page once; it needs
+  https or localhost. `TN_WASM_THREADS_MISSING` names a missing
   threaded build. A cross-origin asset without a `Cross-Origin-Resource-Policy` header needs
   `credentialless` in place of `require-corp`. `?tnIsolation=0` serves a page without the headers.
 - **Per-pass culling.** The main camera, each shadow and each reflection pass cull their own way,

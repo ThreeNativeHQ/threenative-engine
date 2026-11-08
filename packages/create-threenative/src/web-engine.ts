@@ -303,8 +303,11 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       // sends them from the dev and preview servers; a static host must send them too).
       return [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
-        "if (globalThis.crossOriginIsolated !== true)",
-        `  throw new Error("${THREADS_OFF}: this page is not cross-origin isolated, so the engine cannot start its worker threads; serve it with the headers Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.");`,
+        // `__tnIsolation` (web-brand's boot script) is pending while its service worker reloads the page isolated.
+        "if (globalThis.crossOriginIsolated !== true) {",
+        "  await globalThis.__tnIsolation;",
+        `  throw new Error("${THREADS_OFF}: this page is not cross-origin isolated, so the engine cannot start its worker threads; serve it with the headers Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp, over https or localhost so the build's service worker can add them.");`,
+        "}",
         `const createModule = (await import(${JSON.stringify(threads)})).default;`,
         `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
         'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
