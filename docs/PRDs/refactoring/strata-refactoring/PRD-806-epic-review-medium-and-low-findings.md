@@ -14,9 +14,10 @@ The per-finding facts, the cited `file:line` and a one-line fix sketch are in [t
 #### Phase 1: Engine and asset pipeline
 
 - [x] E09 and E11 `packages/assets/src/compile.ts`: the pre-scan fails odd GLBs even with `models: "none"` (:339), and the terrain-world cache key ignores `PIPELINE_VERSION` (:584). proof: red-green specs in `packages/assets/__tests__/` — FIXED 2026-11-05: E09 in `32bcc9244`, E11 in `f6bd216f6` (DeepSeek arm, reviewed; red at `b1e89ac2a`, green after). `packages/assets/__tests__` 55 files, 868 tests pass.
-- [ ] E46 `packages/assets/src/lod/generate.ts:982`: scaled far cards clamp at the quantized POSITION bounds. proof: a red-green spec in `packages/assets/__tests__/`
+- [x] E46 `packages/assets/src/lod/generate.ts:982`: scaled far cards clamp at the quantized POSITION bounds. proof: a red-green spec in `packages/assets/__tests__/` — FIXED 2026-11-07 on PR #635 (`5ba984939`, from `c2a06bdfc`): `card-copies-quantized.spec.ts` 1 failed without the fix, passes with it. The forest golden `world.glb` hash moves with it (`9000247e1`); the 25 MiB budget holds. Visual judge (headed WebGPU, RTX 2080, 2 runs per arm, 5 worlds): NEUTRAL, no visible change at the capture poses.
 - [ ] E49 `packages/runtime-native/src/engine/scene/texture.h:138`: a Texture copy copies its listeners. proof: a red-green case in the engine texture test
 - [ ] E73 `packages/runtime-native/src/engine/renderer/renderer.cpp:4999`: the custom MRT slot of a `depthWrite=false` draw is not written at 1x. proof: a red-green case in the engine renderer test
+  Open: the fix in `f4a6fd358` (LessEqual for every `depthWrite=false` aux draw) is a REGRESSION. On PR #635 the visual judge found the alpine boulders lose their cast shadows in both AFTER runs. Isolation: the same build with only E73 reverted brings the shadows back (`~/Downloads/strata-chain-step0/sheets/alpine-e73-isolation.png`). The transparent `depthWrite=false` cloud dome (`examples/strata-terrain-preview/src/render/atmosphere.ts:236`) is the likely new writer of the aux custom slots. Reverted in `d55471289`. The next fix must keep the shadow frames unchanged.
 
 #### Phase 2: Game, editor and scripts
 
@@ -24,7 +25,7 @@ The per-finding facts, the cited `file:line` and a one-line fix sketch are in [t
 - [x] E39, E40 and E41 (terrain editor): the ortho extent subtracts `target[0]` from every axis (`cameras.ts:185`), the picker shows `assets[0]` but scatter paints `"pine"` (`tools.ts:112`), and the CSS ids do not match the camera rows (`cameras.ts:158`). proof: red-green specs in `packages/terrain/__tests__/` — FIXED 2026-11-05: E39 in `5b2d7cfdb`, E40 in `1695544a6`, E41 in `5ab0ba340` (DeepSeek arm, reviewed; red at `b1e89ac2a`, green after).
 - [x] E52 and E59 (one finding) `scripts/ci-runner-admission.mjs:82`: rain goes to the GPU runner but is admitted as a CPU slot. proof: a red-green spec in `scripts/__tests__/` — FIXED 2026-11-05 in `6c526a522` (DeepSeek arm, reviewed; red at `b1e89ac2a`, green after). The `ci-*` script specs pass: 24 files, 838 tests.
 - [ ] E56 and E62 (terrain package): `bendCrownNormals` is not idempotent (`starter/forest/world.ts:154`), and the matrix pins 35 empty worlds as success (`__tests__/terrain-mcp.spec.ts:1173`). proof: `pnpm exec vitest run packages/terrain/__tests__/`
-  Open: E62 has a fix in `7e957d126` (worktree `strata-ref-walk`, not merged). It makes a landform cook plant the kit's fir for the biome's tree row, so it changes what generated worlds draw and waits for the visual judge. E56 is not started.
+  Open: E56 FIXED 2026-11-07 on PR #635 (`b8f6c9db0`): `forest-crown-normals.spec.ts` 1 failed without the fix, passes with it; the five preview worlds judge NEUTRAL. E62 is on PR #635 (`b41bfaa61`) and `packages/terrain/__tests__/` passes 531/531, but it changes what a landform cook draws (firs on forest and coastal presets), so the box waits for the judge on an MCP-cooked world (PRD-762 Phase 3 frames).
 
 #### Phase 3: The 45 low findings
 
