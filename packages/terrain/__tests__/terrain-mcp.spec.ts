@@ -607,6 +607,7 @@ async function runEmittedLoad(
   let collider: IHeightfieldCollider | undefined;
   let streamedFollow: { position: Object3D["position"] } | undefined;
   let streamedInvalidate: ((region?: object) => void) | undefined;
+  let streamedWorld: Object3D | undefined;
   const modules = {
     "@threenative/core/world": {
       Heightfield,
@@ -623,7 +624,8 @@ async function runEmittedLoad(
             expect(options.surface).toMatchObject({ surface: "terrain" });
             streamedFollow = options.follow;
             streamedInvalidate = options.shadows.invalidate;
-            return Object.assign(new Object3D(), { dispose: worldDispose });
+            streamedWorld = Object.assign(new Object3D(), { dispose: worldDispose });
+            return streamedWorld;
           },
         ),
       },
@@ -685,8 +687,9 @@ async function runEmittedLoad(
   player.position.z -= 10;
   expect(streamedFollow?.position.z).toBe(-3);
   expect(scene.children).toHaveLength(2);
-  if (body === undefined || collider === undefined)
+  if (body === undefined || collider === undefined || streamedWorld === undefined)
     throw new Error("The snippet created no terrain collider.");
+  const world = streamedWorld;
   expect(dispose).not.toHaveBeenCalled();
   scene.clear();
   expect(dispose).toHaveBeenCalledOnce();
@@ -707,6 +710,7 @@ async function runEmittedLoad(
   return {
     body,
     collider,
+    world,
     streaming: modules["@threenative/core/world"].WorldCells.load.mock.calls[0]?.[0],
   };
 }
@@ -765,8 +769,10 @@ describe("terrain_generate result", () => {
         );
         const served = `data:application/octet-stream;base64,${Buffer.from(heightmapBytes).toString("base64")}`;
         const resolved: string[] = [];
-        const { body, collider, streaming } = await runEmittedLoad(result.load, served, (path) =>
-          resolved.push(path),
+        const { body, collider, streaming, world } = await runEmittedLoad(
+          result.load,
+          served,
+          (path) => resolved.push(path),
         );
         expect(resolved).toEqual(Array(3).fill(`worlds/forest/${manifest.terrain.heightmap}`));
         // Exact record budgets are non-restrictive only while this export has no charged proxies.
@@ -808,6 +814,14 @@ describe("terrain_generate result", () => {
           min: manifest.terrain.heightMin,
           width: manifest.terrain.columns,
         });
+        // The cooked centre pad meets the game's floor (y = 0) a hair below it, on the collider and
+        // the streamed world alike: at the cooked heights the starter arena sat 11 m inside the hill.
+        const centre = decoded.values[
+          Math.floor(manifest.terrain.rows / 2) * manifest.terrain.columns +
+            Math.floor(manifest.terrain.columns / 2)
+        ] as number;
+        expect(body.object?.position.y).toBeCloseTo(-centre - 0.05, 3);
+        expect(world.position.y).toBe(body.object?.position.y);
         expect(collider.heights).toHaveLength(manifest.terrain.rows * manifest.terrain.columns);
         for (let column = 0; column < manifest.terrain.columns; column += 1)
           for (let row = 0; row < manifest.terrain.rows; row += 1)
