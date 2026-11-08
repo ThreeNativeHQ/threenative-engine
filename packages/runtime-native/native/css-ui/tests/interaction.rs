@@ -1515,7 +1515,6 @@ fn a_mask_gradient_whose_stops_come_from_registered_variables_paints() {
 // mask layers paint nothing at all. With `Compose::SrcIn` (correct) the box is fully hidden; with
 // `SrcOver` (experiment) it is fully visible — the accumulated mask is uniform either way, so the fade
 // layer's alpha never reaches the composite. Ignored so the suite stays green while PRD-845 tracks it.
-#[ignore = "six intersected mask layers paint nothing: PRD-845"]
 #[test]
 fn a_tailwind_three_layer_mask_composition_paints() {
     let mut ui = ui(
@@ -1536,7 +1535,7 @@ fn a_tailwind_three_layer_mask_composition_paints() {
                      mask-image:var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic); \
                      mask-composite:intersect; \
                      --tw-mask-linear:var(--tw-mask-left), var(--tw-mask-right), var(--tw-mask-bottom), var(--tw-mask-top); \
-                     --tw-mask-top:linear-gradient(to top, transparent 0%, transparent 40%)}}"
+                     --tw-mask-top:linear-gradient(to top, black 0%, transparent 40%)}}"
                 ),
             ),
             create(1, "div"),

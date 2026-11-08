@@ -114,9 +114,22 @@ fade layer's alpha never reaches the composite — the bug is in how the per-lay
 not in the gradient, the variables, the clip, the layers' `@property` initial values (each proved correct
 by its own test) or the sheet's size.
 
-`a_tailwind_three_layer_mask_composition_paints` now asserts the fade instead of "fully masked out" — the
-earlier version of that test **passed on the bug**, which is why three turns of bisecting could not see it.
-It is `#[ignore]`d with this measurement so the suite stays green while the fix is written.
+**Fixed.** Two faults, both in `draw_css_mask`: a layer pushed with `SrcIn`/`DestIn` *inside* the mask's
+own `DestIn` layer erases the whole mask, and the bottom-most test used the *list index* rather than the
+first layer actually drawn — so the one real layer ended up composited `SrcIn` against an empty mask. The
+fix skips identity layers (one opaque colour repeated — intersecting with an opaque mask changes nothing)
+and composites `SrcOver` for the first layer *drawn*.
+
+Measured effect: every mask cell now measures instead of reading "does nothing", and the family's honest
+score is 22 of 50 rather than 23 — the engine paints masks now, and the differences that appear
+(0.58–0.93, `mask-add` worst at 0.588, the `-red-50` luminance cells around 0.87–0.89) are real
+mask-rendering gaps that were previously invisible behind a mask that did nothing. Scene 313 → 311 for the
+same reason: one point of apparent score was a mask that was not being painted at all.
+
+Two tests pin it: `a_tailwind_three_layer_mask_composition_paints` (six layers, intersected, fading) and
+`a_mask_gradient_whose_stops_come_from_registered_variables_paints`. The earlier version of the first one
+asserted "fully masked out" and **passed on the bug** — which is why three turns of bisecting found
+nothing.
 
 Also learned and worth keeping: a registered property that is never set *does* read as its declared
 `initial-value` (`an_unset_registered_property_is_its_initial_value`).

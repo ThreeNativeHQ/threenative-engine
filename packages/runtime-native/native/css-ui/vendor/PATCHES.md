@@ -88,6 +88,21 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   bordered span sliced across two lines), plus
   `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
   previous vendor sources.
+### 4. a multi-layer mask painted nothing: an identity layer took the composite
+
+* **Where:** `src/render/mask.rs` (`draw_css_mask`, plus `is_uniform_opaque`).
+* **Why:** Tailwind 4's `mask-image` names six layers, five of which are the registered initial value
+  `linear-gradient(#fff, #fff)`. Two things broke this: a layer pushed with `SrcIn`/`DestIn` *inside* the
+  mask's own `DestIn` layer erases the whole mask (measured: `SrcIn` hides everything, `SrcOver` shows
+  everything), and the bottom-most-layer test used the *list index* rather than the first layer actually
+  drawn, so skipping an identity layer left the one real layer composited `SrcIn` against an empty mask.
+  Identity layers (one opaque colour repeated) are now skipped — intersecting with an opaque mask is the
+  identity — and the first layer drawn is the one that composites `SrcOver`.
+* **Proves it:** `a_tailwind_three_layer_mask_composition_paints` (a six-layer intersected composition
+  fades across the box) and `a_mask_gradient_whose_stops_come_from_registered_variables_paints`, both of
+  which failed before this hunk. `parity:tailwind --family PRD-845 --group mask` now measures every cell
+  instead of reporting "does nothing" for ten of them.
+
 
 ## `blitz-dom-0.3.0-beta.2` — 760 added code lines
 
