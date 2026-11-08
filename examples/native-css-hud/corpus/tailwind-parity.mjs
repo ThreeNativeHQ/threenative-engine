@@ -952,7 +952,7 @@ const CONTRAST_EXTRAS = [
   // was another unit that removes the mask — and the contrast rule lands *after* the utilities in the
   // sheet, so at equal specificity it disabled the mask for the very cell it was comparing. The contrast
   // has to be a mask, just not this one.
-  [/^mask-/u, "mask-image:linear-gradient(to top,#000,#fff)"],
+  [/^mask-/u, "mask-image:linear-gradient(to top,transparent,#000)"],
   // The contrast for a `transform` unit came from another class in the set that also composes
   // Tailwind's transform variables (`transform: translateZ(0) var(--tw-rotate-x,) …`), so both arms
   // rotated once the staged variable supplied a function. A contrast that *replaces* the chain is what

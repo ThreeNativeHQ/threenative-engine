@@ -134,9 +134,16 @@ same reason: one point of apparent score was a mask that was not being painted a
 **A mask cell's contrast was `mask-image: none`.** The contrast for those cells was the "different value"
 of the property taken from `mask-none`, i.e. no mask at all — so the arm that is supposed to differ by being
 *dropped* differed by having no mask, and the cell compared a mask against nothing. The contrast now names a
-gradient of its own (`to top, #000, #fff`). Score-neutral (the contrast only decides whether a cell
-discriminates, not the two-subject SSIM) and measured, the family is unchanged at 23 of 50 with 13 inert —
-which means the `-to-40` cells' 0.78–0.93 is a rendering difference, not that staging fault.
+gradient of its own (`to top, #000, #fff`). The gradient also has to mask something: `#000 → #fff` is opaque throughout and masks nothing, so the
+contrast now ends transparent (`transparent → #000`). Measured: the family 23 → **24 of 50** in a
+mask-only run with inert cells 13 → 11 (the full run reads 23 and the floor is unchanged at 312 — one cell
+is marginal between runs).
+
+A blanket fix — dropping every custom property from the contrast, since a `--tw-*` is never the property
+under test — costs **eight** cells (`--tw-duration`, `--tw-ease`, `--tw-ring-color`, `--tw-gradient-via-stops`,
+`--tw-outline-style`, `--tw-numeric-figure`, `--tw-numeric-fraction`, `--tw-drop-shadow`), because a unit that
+*only* sets a custom property needs its contrast on that property. Reverted. The mask clobbering has to be
+fixed in the mask path or by naming the variables, not by a blanket rule.
 
 **What is left in the family, measured.** The `-to-40` position units and the combined `x`/`y` axes paint
 *no mask at all* in this engine — the probe is the plain blue `235` where the browser fades `79…108` — while
