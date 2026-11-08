@@ -1,6 +1,6 @@
 # PRD-835 — One registry entry per assertion
 
-**Status:** IN PROGRESS — Phases 1 to 3 done on 2026-11-08; AC-1 and AC-2 open (see their notes)
+**Status:** DONE 2026-11-08 — Phases 1 to 3, AC-1 and AC-2 proven (see each note)
 **Priority:** P1 — open Phase 1 removes the 17-file hand edit per assertion kind that already shipped 3 kinds no runner can produce, and Phase 2 fixes a lane vocabulary that cannot name android or ios.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -29,8 +29,14 @@ producer on any lane fails the generator. The shared device flow moves to `devic
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: The starter and platformer scenarios give the same verdicts before and after on the browser lane. proof: `pnpm test:templates` (starter, platformer)
-- [ ] AC-2 [local]: An android scenario with a `tone` assertion runs on the emulator. proof: `node packages/playtest/dist/runner/cli.js <scenario> --target android` on the emulator
+- [x] AC-1 [local]: The starter and platformer scenarios give the same verdicts before and after on the browser lane. proof: `pnpm verify:golden-path` on the Debian laptop (Intel Iris Xe, real display), run with `TN_GOLDEN_PATH_SCENARIOS=1 TN_PLAYTEST_ALLOW_SOFTWARE=1 TN_GOLDEN_PATH_TEMPLATES=starter,platformer`. BEFORE is commit `5bd45931a` (lane `u835-before`), AFTER is commit `587b90f99` (lane `u835-after`). Both runs exit 0. The scaffolded starter drives `starter-assets` and the scaffolded platformer drives `platformer-air-jump` through the built runner. Both give `pass: true` in both arms: 6 and 3 assertion results. The verdict lines (37 per arm, run-specific ports and hashes removed) are identical: `diff` prints nothing. Logs: `~/Downloads/prd-835-ac1/before-golden-path.log`, `~/Downloads/prd-835-ac1/after-golden-path.log`.
+
+**Decision 2026-11-08, why the golden path replaces `pnpm test:templates`.** `pnpm test:templates` runs every kit's scenarios, including the ones that capture frames, and needs hardware pixels for the whole matrix. The golden path packs the workspace tarballs, scaffolds the kit, and drives its first non-visual scenario through the same built runner and the same `--browser-recipe webgpu`. That fits the question of this AC: the browser lane gives the same verdict before and after. `pnpm test:templates` was not run.
+
+**Run notes, 2026-11-08.** (1) The Wasm engine is built, not committed, and no Emscripten exists here. Both arms used the `build/web` pair of the sibling lane `.worktrees/untangle-visuals`; `web-engine-stamp.mjs --check` accepted it for this tree (engine sources `717c0ec88372`, which this PRD does not change). (2) A first BEFORE attempt on the laptop with the private Xvfb and the software adapter finished the `starter-assets` scenario with `pass: false` on the `diagnostics` assertion (34 console errors, 32 runtime diagnostics). That is the software adapter and not the code under test, so it is not a baseline; the real-display run above is the baseline for both arms.
+- [x] AC-2 [local]: An android scenario with a `tone` assertion runs on the emulator. proof: `node packages/playtest/dist/runner/cli.js examples/native-smoke/playtests/tone-android.playtest.json --target android --package com.threenative.game --activity com.threenative.runtime.MystralActivity` on the emulator `threenative_api35` (Android 35, x86_64, `-gpu swiftshader_indirect`, KVM) of the Debian laptop, commit `587b90f99`. Exit 0, `pass: true`. `tone.0.mean` passes with observed mean 15.51 against a minimum of 8, read from a `TN_TONE` capture of `after.png` (`observations.tone`, p99 181, black fraction 0.89). The APK is the x86_64 QuickJS debug build of `examples/native-smoke`; `verify-android-first-proof.mjs` passed first (`4/4 PASS: 300 frames, clean logs, screenshot captured`). This is an emulator result, not a device result. Logs: `~/Downloads/prd-835-ac2/`. The emulator was stopped and its disk image deleted when the job ended. The new scenario `examples/native-smoke/playtests/tone-android.playtest.json` is the proof input.
+
+**Run notes, 2026-11-08.** The laptop had the Rust target `aarch64-linux-android` only, and the native physics step needs `x86_64-linux-android`. `rustup target add x86_64-linux-android` (user space) fixed the first failed attempt (`E0463: can't find crate for std`). `download-deps.mjs --android` also builds V8 from source (3,519 build steps), so the job fetched only `sdl3`, `wgpu-android`, `sdl3-android`, `quiche-android`, `webp-source`, `stb` and `quickjs`. A negative control (a tone bound that must fail on the emulator) was not run: the unit case in `runner-lanes.spec.ts` covers the refusal side, and `tone-runner.spec.ts` covers a failing bound on the android driver.
 
 ## Integration Ledger
 
