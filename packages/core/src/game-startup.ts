@@ -6,8 +6,9 @@ import type { ComputeDrivenRegistry } from "./compute-driven.js";
 import { isComputeDriven } from "./compute-driven.js";
 import { Registry } from "./entities.js";
 import type { FrameBudget } from "./frame-budget.js";
+import type { IBootPhase, ILoopPhase } from "./game-boot-phase.js";
 import { type DevToolsHost, installDevTools } from "./game-dev-tools.js";
-import type { IGameBootGame, IGameFrameLoop } from "./game-frame-loop.js";
+import type { IGameFrameLoop } from "./game-frame-loop.js";
 import { createCamera } from "./game-validate.js";
 import type {
   IGameConfig,
@@ -108,7 +109,7 @@ function createRuntimeObservations(): IGameRuntimeObservations {
 /** The first phase of `#boot`: everything up to the entered start scene. */
 
 export async function startGameWorld<TState extends Record<string, unknown>, TPhysics>(
-  game: IGameBootGame<TState, TPhysics>,
+  game: IBootPhase<TState, TPhysics>,
 ) {
   const releases: Array<() => void> = [];
   const dispose = (): void => {
@@ -727,6 +728,8 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   game.scene = new SceneType();
   game.sceneName = bootSceneName;
 
+  // The frame loop and scene entry see the narrower view; the compiler holds `IBootPhase` to it.
+  const loopPhase: ILoopPhase<TState, TPhysics> = game;
   return Object.assign(progress, {
     afterPhysicsPhase,
     autoBatch,
@@ -735,7 +738,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     ctx,
     debug,
     dispose,
-    game,
+    game: loopPhase,
     input,
     interpolation,
     loopState,
@@ -842,20 +845,20 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
     try {
       cleanup = typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
     } catch (error) {
-      game.teardown(ctx);
+      game.teardown();
       throw error;
     }
     if (typeof plugin !== "function") game.activePlugins.push(plugin);
     if (game.aborted) {
       if (cleanup !== undefined) game.cleanup.push(cleanup);
-      game.teardown(ctx);
+      game.teardown();
       return;
     }
     if (cleanup !== undefined) game.cleanup.push(cleanup);
   }
   const scene = game.scene;
   if (scene === undefined) {
-    game.teardown(ctx);
+    game.teardown();
     return;
   }
   // Held: the loop renders every frame from here but steps nothing. On native the render loop
@@ -876,11 +879,11 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
   } catch (error) {
     reportSceneLoadFailure(error);
     settleLoaded(error);
-    game.teardown(ctx);
+    game.teardown();
     throw error;
   }
   if (game.aborted) {
-    game.teardown(ctx);
+    game.teardown();
     return;
   }
   // Plugins that need to mutate scene-load placeholders hold here. Setup must land before
@@ -890,13 +893,13 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
       await Promise.all(startGates.map(({ gate }) => gate));
     } catch (error) {
       for (const startGate of startGates) startGate.rejectEntered(error);
-      game.teardown(ctx);
+      game.teardown();
       throw error;
     }
     if (game.aborted) {
       const error = new Error("Game start was aborted before the start scene entered.");
       for (const startGate of startGates) startGate.rejectEntered(error);
-      game.teardown(ctx);
+      game.teardown();
       return;
     }
   }
@@ -913,11 +916,11 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
     });
   } catch (error) {
     for (const startGate of startGates) startGate.rejectEntered(error);
-    game.teardown(ctx);
+    game.teardown();
     throw error;
   }
   if (game.aborted) {
-    game.teardown(ctx);
+    game.teardown();
     return;
   }
   // The scene is built and the loop is still held, which is the only window where compiling can
@@ -989,7 +992,7 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
     );
     startup.explicitWarmUpSettled = true;
     if (game.aborted) {
-      game.teardown(ctx);
+      game.teardown();
       return;
     }
   }

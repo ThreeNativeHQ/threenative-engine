@@ -84,64 +84,6 @@ import { UI_DEV_METRICS_MESSAGE } from "./ui-bridge.js";
 import type { Viewport } from "./viewport.js";
 import type { IWarmUpOptions } from "./warmup.js";
 
-/**
- * The game's own state, as a boot phase sees it: every member is the private field of the same
- * name, so a phase assigns and reads exactly what it did inside the class.
- */
-export interface IGameBootGame<TState extends Record<string, unknown>, TPhysics> {
-  /** The cleanups `#teardown` drains in its own release step, in the order they were pushed. */
-  readonly cleanup: Array<() => void>;
-  readonly computeDriven: ComputeDrivenRegistry;
-  readonly config: IGameConfig<TState, TPhysics>;
-  readonly platform: IGamePlatformSource | undefined;
-  readonly state: GameStore<TState>;
-  readonly beforeRenderCallbacks: Set<() => void>;
-  readonly activePlugins: Array<IGamePluginHooks<TState, TPhysics>>;
-  readonly uiBridge: IUiBridge | undefined;
-  readonly sceneFrame: SceneFrame<TState, TPhysics> | undefined;
-  readonly sceneEntered: boolean;
-  readonly sceneGeneration: number;
-  readonly pendingSceneEnter: Promise<void> | undefined;
-  readonly paused: boolean;
-  readonly aborted: boolean;
-  readonly uiReady: boolean;
-  // Assigned by a phase, exactly as the field was.
-  renderer: IRendererLike | undefined;
-  scene: Scene<TState, TPhysics> | undefined;
-  sceneName: string | undefined;
-  ctx: ICtx<TState, TPhysics> | undefined;
-  input: InputMap | undefined;
-  viewport: Viewport | undefined;
-  picker: ScenePicker | undefined;
-  pointerEvents: PointerEvents3D | undefined;
-  matrixWorld: MatrixWorldPass | undefined;
-  projection: SceneRenderProjection | undefined;
-  autoBatch: AutoBatch | undefined;
-  cameraCull: RenderCameraCull | undefined;
-  entities: Registry | undefined;
-  scheduler: Scheduler | undefined;
-  afterPhysicsPhase: IAfterPhysicsPhase | undefined;
-  frameBudget: FrameBudget | undefined;
-  interpolation: PhysicsInterpolation | undefined;
-  geometryCapture: GeometryCapture | undefined;
-  beforeRenderSnapshots: Array<Array<() => void>>;
-  beforeRenderDepth: number;
-  hasDepthCoupledOutput: boolean;
-  startupGateStarted: boolean;
-  onStartSceneEntered: (() => void) | undefined;
-  renderMetricsEnabled: boolean;
-  uiRevealed: boolean;
-  started: boolean;
-  resumeScene: string | undefined;
-  connectUi(): IUiBridge;
-  enterScene(scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): boolean;
-  goto(name: string, ctx: ICtx<TState, TPhysics>): Promise<void>;
-  postUiStartup(): void;
-  teardown(ctx?: ICtx<TState, TPhysics>): void;
-  warmUpConfiguredExplicitly(): boolean;
-  warmUpOptions(): IWarmUpOptions;
-}
-
 /** The frame loop, and the instruments that only exist while it runs. */
 export interface IGameFrameLoop {
   /** Stops the loop, where `#teardown` always stopped it. Its frame budget is `game.frameBudget`. */

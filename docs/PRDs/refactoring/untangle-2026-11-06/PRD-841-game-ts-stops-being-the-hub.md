@@ -41,10 +41,10 @@ list. The UI bridge moves to `game-ui.ts`.
 ## Execution Phases
 
 #### Phase 1: Narrow phase interfaces
-**Status:** NOT STARTED
-**Files:** `packages/core/src/game.ts`, `game-startup.ts`, `game-frame-loop.ts`.
+**Status:** DONE
+**Files:** `packages/core/src/game.ts`, `game-startup.ts`, `game-frame-loop.ts`, new `game-boot-phase.ts`.
 
-- [ ] Phases take `IBootPhase` / `ILoopPhase`, and `Object.defineProperties` is gone from `game.ts`. proof: `pnpm --filter @threenative/core exec vitest run __tests__/game.spec.ts` plus `pnpm typecheck`
+- [x] Phases take `IBootPhase` / `ILoopPhase`, and `Object.defineProperties` is gone from `game.ts`. `game-boot-phase.ts` declares `IBootState` (the data a phase owns), `IBootHost` (the game's seven calls), `IBootPhase` (what `startGameWorld` reads) and `ILoopPhase` (what the frame loop and `startScenes` read, a `Pick` the startup result hands on). `GameImpl` keeps one `#boot` object built by `createBootGame`, and its 40 private fields became members of that object. A forgotten field is now a compile error: removing `viewport` from `createBootGame` fails with TS2322 naming `viewport`. proof: `npx vitest run packages/core/__tests__/game.spec.ts packages/core/__tests__/game-stop-order.spec.ts` → 92 passed; `pnpm --filter @threenative/core exec tsc --noEmit -p .` → 0 errors. Root `pnpm typecheck` runs at the end of the lane (the worktree needs built `dist` first).
 
 #### Phase 2: Disposers on acquisition
 **Status:** NOT STARTED
