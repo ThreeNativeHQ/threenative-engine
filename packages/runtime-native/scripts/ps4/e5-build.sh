@@ -77,6 +77,16 @@ if grep -q '^TN_ENABLE_CSS_UI:BOOL=ON' "$BUILD/CMakeCache.txt" 2>/dev/null; then
   [ -f "$CSS_UI_LIB" ] || die "no CSS UI archive at $CSS_UI_LIB (node scripts/build-native-css-ui.mjs --ps4)"
 fi
 
+# libwebp: the tn-ps4 tree builds it from third_party/webp-source when that source is present, and
+# cmake/NativeEngineCore.cmake then turns on TN_ENGINE_WEBP in the glTF decoder. The archive has to
+# ride the link, or a glTF that carries EXT_texture_webp has no decoder behind it.
+WEBP_LIB=""
+WEBP_SHARPYUV_LIB=""
+if [ -f "$BUILD/libwebp-build/libwebp.a" ]; then
+  WEBP_LIB="$BUILD/libwebp-build/libwebp.a"
+  [ -f "$BUILD/libwebp-build/libsharpyuv.a" ] && WEBP_SHARPYUV_LIB="$BUILD/libwebp-build/libsharpyuv.a"
+fi
+
 # The Rust archives speak musl's libc ABI (struct dirent, struct stat, Linux O_* flags); OpenOrbis'
 # libc speaks FreeBSD's. Their copies call ps4-guest-libcxx.cc's tn_musl_* converters instead; the
 # C/C++ objects keep libc's own. Without it Rust's read_dir returned names cut by 11 bytes.
@@ -172,6 +182,8 @@ CORES="${JOBS}" nice -n 19 ld.lld -m elf_x86_64 -pie --script "$OO/link.x" --eh-
     "$E2/src/opengnm-psbc/libpsbc.orbis.a" \
     ${PHYSICS_LIB:+"$PHYSICS_LIB"} \
     ${CSS_UI_LIB:+"$CSS_UI_LIB"} \
+    ${WEBP_LIB:+"$WEBP_LIB"} \
+    ${WEBP_SHARPYUV_LIB:+"$WEBP_SHARPYUV_LIB"} \
   --end-group \
   -lkernel -lc -lc++ -lc++abi -lunwind -lSceGnmDriver -lSceVideoOut -lScePad -lSceUserService \
   "$OO/lib/crtn.o" \

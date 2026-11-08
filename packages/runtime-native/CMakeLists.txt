@@ -351,7 +351,7 @@ set(SDL3_FOUND OFF)
 file(GLOB SDL3_SOURCE_DIRS ${SDL3_DIR}/SDL3-*)
 if(SDL3_SOURCE_DIRS)
     list(GET SDL3_SOURCE_DIRS 0 SDL3_SOURCE_DIR)
-    if(EXISTS ${SDL3_SOURCE_DIR}/CMakeLists.txt)
+    if(EXISTS ${SDL3_SOURCE_DIR}/CMakeLists.txt AND NOT TN_PS4)
         message(STATUS "Building SDL3 from source: ${SDL3_SOURCE_DIR}")
 
         # Configure SDL3 build options - static library only
@@ -391,7 +391,7 @@ if(SDL3_SOURCE_DIRS)
         else()
             message(WARNING "SDL3 static target not found after add_subdirectory")
         endif()
-    else()
+    elseif(NOT TN_PS4)
         message(WARNING "SDL3 CMakeLists.txt not found in ${SDL3_SOURCE_DIR}")
     endif()
 else()
@@ -1016,7 +1016,9 @@ if(ANDROID)
     else()
         message(STATUS "libwebp not found - WebP texture support disabled. Run 'node scripts/download-deps.mjs --only webp-source' to enable.")
     endif()
-elseif(EXISTS ${WEBP_DIR} AND NOT IOS)
+elseif(EXISTS ${WEBP_DIR} AND NOT IOS AND NOT TN_PS4)
+    # PS4 takes no host prebuilt: the .a under webp/ is a Linux binary, and the guest links no
+    # libc it was built against. TN_PS4 keeps WebP off, as it was before the desktop deps landed.
     # libwebp prebuilt structure: webp/libwebp-{version}-{platform}/lib/libwebp.a
     file(GLOB WEBP_SUBDIRS ${WEBP_DIR}/libwebp-*)
     if(WEBP_SUBDIRS)
@@ -1329,7 +1331,7 @@ set(LIBUV_SOURCE_DIR ${THIRD_PARTY_DIR}/libuv-src/libuv-1.51.0)
 #      download-deps.mjs fetches the arch-independent libuv-source there instead.
 # The prebuilt stays first choice whenever it exists, so x64/macOS/Windows linking is unchanged.
 set(LIBUV_SOURCE_AVAILABLE FALSE)
-if(EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID)
+if(EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID AND NOT TN_PS4)
     set(LIBUV_SOURCE_AVAILABLE TRUE)
 endif()
 if(LIBUV_SOURCE_AVAILABLE AND (TN_ENABLE_SANITIZERS OR NOT EXISTS ${LIBUV_DIR}))
@@ -1350,7 +1352,7 @@ if(LIBUV_SOURCE_AVAILABLE AND (TN_ENABLE_SANITIZERS OR NOT EXISTS ${LIBUV_DIR}))
             "libuv source at ${LIBUV_SOURCE_DIR} defined no libuv::libuv target; the build must "
             "not fall back to the prebuilt and silently lose async I/O (or sanitizer coverage)")
     endif()
-elseif(EXISTS ${LIBUV_DIR} AND NOT IOS AND NOT ANDROID)
+elseif(EXISTS ${LIBUV_DIR} AND NOT IOS AND NOT ANDROID AND NOT TN_PS4)
     # Headers are directly in include/
     if(EXISTS ${LIBUV_DIR}/include)
         set(LIBUV_INCLUDE_DIR ${LIBUV_DIR}/include)
