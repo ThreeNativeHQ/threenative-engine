@@ -80,26 +80,8 @@ record the measured gap and ask the owner under `## Blocked on`. Do not lower th
 
 ## Open
 
-Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-844` on the crate subject:
-**2 of 19 units pass**, 232 do not discriminate and 0 stages are refused.
-
-- **Painting is on for one node.** The `filters` feature is enabled, so `vello_cpu`'s own primitives — gaussian blur,
-  drop shadow, offset, flood — paint. `blur-3xl` matches at 0.9951.
-- **A colour matrix paints nothing.** `vello_common` 0.1.0 `unimplemented!`s on it, and so on Blend and
-  ComponentTransfer. The vendored backend now drops those primitives so a frame is not aborted (seven cells used to be
-  unmeasurable because of it), which is why the eight colour-matrix cells report a real 0.20 to 0.87 SSIM instead of a
-  refusal. Painting them is a CPU colour-matrix pass over the layer, inside `vello_cpu`.
-- **The chain is truncated.** `anyrender_vello_cpu::convert_filter` takes `nodes[0]` only and `vello_common` refuses a
-  graph of more than one primitive, so a Tailwind filter chain with two live functions paints one.
-- **The backdrop is ignored.** `push_layer`'s `_backdrop_filter` argument is unused upstream, so `backdrop-*` paints
-  nothing. `backdrop-opacity-40` passes only because its alpha also applies to the layer itself.
-- **`drop-shadow-*` cannot be proven at this scene's size**: its whole effect is a soft edge and the counterfactual
-  scores 0.997 against the 0.99 bar. A larger or higher-contrast probe is the scene's fix, not the engine's.
-
-## Open: what a colour-matrix pass needs, measured (2026-11-07)
-
-The vendored offscreen path was written and **reverted unproven**, and this is the measurement that
-reverted it.
+**A colour-matrix pass is written and works in isolation; it is not landed** (2026-11-07). This is
+the measurement that reverted it.
 
 - A per-pixel colour filter is implementable in this backend: `RenderContext::new(w, h)` +
   `render(pixmap, resources)` + `register_image` + `PaintType::Image` is enough to render a layer
@@ -117,6 +99,22 @@ reverted it.
   whether vello evaluates a clip path at push time or at render time.
 - `backdrop-filter` is a second, independent gap: `push_layer`'s backdrop argument is still ignored
   upstream.
+
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-844` on the crate subject:
+**2 of 19 units pass**, 232 do not discriminate and 0 stages are refused.
+
+- **Painting is on for one node.** The `filters` feature is enabled, so `vello_cpu`'s own primitives — gaussian blur,
+  drop shadow, offset, flood — paint. `blur-3xl` matches at 0.9951.
+- **A colour matrix paints nothing.** `vello_common` 0.1.0 `unimplemented!`s on it, and so on Blend and
+  ComponentTransfer. The vendored backend now drops those primitives so a frame is not aborted (seven cells used to be
+  unmeasurable because of it), which is why the eight colour-matrix cells report a real 0.20 to 0.87 SSIM instead of a
+  refusal. Painting them is a CPU colour-matrix pass over the layer, inside `vello_cpu`.
+- **The chain is truncated.** `anyrender_vello_cpu::convert_filter` takes `nodes[0]` only and `vello_common` refuses a
+  graph of more than one primitive, so a Tailwind filter chain with two live functions paints one.
+- **The backdrop is ignored.** `push_layer`'s `_backdrop_filter` argument is unused upstream, so `backdrop-*` paints
+  nothing. `backdrop-opacity-40` passes only because its alpha also applies to the layer itself.
+- **`drop-shadow-*` cannot be proven at this scene's size**: its whole effect is a soft edge and the counterfactual
+  scores 0.997 against the 0.99 bar. A larger or higher-contrast probe is the scene's fix, not the engine's.
 
 ## Decisions
 
