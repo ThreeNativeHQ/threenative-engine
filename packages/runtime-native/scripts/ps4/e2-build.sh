@@ -562,6 +562,10 @@ git apply "$SCRIPTS/patches/0070-vk-ps4-depth-array-layer.patch"
 # A volume's row copy wrote packed rows into its linear-aligned surface: a 3D texture whose width is not
 # already aligned read skewed rows, and the cornell GI volume drew blocky streaks (Unreal calibration on PS4).
 git apply "$SCRIPTS/patches/0072-vk-ps4-volume-upload-pitch.patch"
+# Present flipped from the CPU at once while the GPU still drew the frame: a frame showed with a black band
+# over its top whenever the last full-screen pass had not finished (4 of 16 frames with virtual shadows on).
+# The flip now rides the GPU queue behind the frame (sceGnmSubmitAndFlipCommandBuffers), so the CPU never waits.
+git apply "$SCRIPTS/patches/0077-vk-ps4-present-flips-on-gpu.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

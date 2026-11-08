@@ -1,0 +1,88 @@
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -730,6 +730,7 @@
+ void vk_ps4_free(const VkAllocationCallbacks *alloc, void *ptr);
+ 
+ /* === Clock helpers (vk_ps4_sync.c) === */
++int32_t vk_ps4_queue_submit_flip(VkPs4Device *dev, uint32_t vo_handle, uint32_t index, int64_t flip_arg);
+ uint64_t vk_ps4_now_ns(void);
+ void vk_ps4_sleep_us(uint32_t us);
+ 
+--- a/src/vk_ps4_device.c
++++ b/src/vk_ps4_device.c
+@@ -25,7 +25,8 @@
+ /* Size of the epilogue command buffer used for EOP fence/semaphore writes.
+  * An EVENT_WRITE_EOP packet is 6 dwords on GFX6-8; 64 dwords is plenty for
+  * one EOP write plus NOP padding. */
+-#define VK_PS4_GNM_EPILOGUE_CMD_DWORDS 64u
++/* 80: a flip slot is a 5-dword retire plus the 64-dword prepareFlip packet. */
++#define VK_PS4_GNM_EPILOGUE_CMD_DWORDS 80u
+ 
+ /* Submit the GNM default-hardware-state preamble and mark the device as
+  * GNM-initialized.  Returns VK_SUCCESS on success, an error otherwise.
+--- a/src/vk_ps4_queue.c
++++ b/src/vk_ps4_queue.c
+@@ -75,6 +75,28 @@
+     return result;
+ }
+ 
++/* Queue a flip of `index` behind every submitted command buffer.  A CPU sceVideoOutSubmitFlip shows the buffer
++ * at the next vblank even while the GPU still draws into it, so a frame showed with a black band over its top
++ * (PRD-784 gap sweep).  sceGnmSubmitAndFlipCommandBuffers flips when the GPU reaches this slice, and the CPU
++ * does not wait.  The slice ends in the 64-dword prepareFlip NOP the GNM driver patches into the flip. */
++int32_t vk_ps4_queue_submit_flip(VkPs4Device *dev, uint32_t vo_handle, uint32_t index, int64_t flip_arg) {
++    uint32_t *slot = vk_ps4_queue_next_epilogue(dev);
++    GnmCommandBuffer cmd = sceGnmCmdInit(slot, dev->gnm_epilogue_cmd_dwords * sizeof(uint32_t), NULL, NULL);
++    vk_ps4_queue_emit_retire(dev, &cmd, slot);
++    if ((uint32_t)(cmd.endptr - cmd.cmdptr) < 64) return -1;
++    memset(cmd.cmdptr, 0, 64 * sizeof(uint32_t));
++    cmd.cmdptr[0] = PKT3(PKT3_NOP, 62, 0); /* 0xc03e1000 */
++    cmd.cmdptr[1] = 0x68750777u;            /* prepareFlip */
++    cmd.cmdptr += 64;
++    uint32_t bytes = (uint32_t)(cmd.cmdptr - cmd.beginptr) * sizeof(uint32_t);
++    void *addr = slot;
++    int32_t result = sceGnmSubmitAndFlipCommandBuffers(1, &addr, &bytes, NULL, NULL, vo_handle, index,
++                                                       1 /* SCE_VIDEO_OUT_FLIP_MODE_VSYNC */, flip_arg);
++    if (result != 0) vk_ps4_queue_retired(dev)[(uint32_t)(slot - dev->gnm_epilogue_cmd) / dev->gnm_epilogue_cmd_dwords] =
++        dev->gnm_epilogue_ticket[(uint32_t)(slot - dev->gnm_epilogue_cmd) / dev->gnm_epilogue_cmd_dwords];
++    return result;
++}
++
+ /* Emit an EOP event write into `slot`, writing signal_value to the GPU label
+  * at gpuaddr.  Returns the number of bytes written. */
+ static uint32_t vk_ps4_queue_emit_eop_at(
+--- a/src/vk_ps4_swapchain.c
++++ b/src/vk_ps4_swapchain.c
+@@ -21,9 +21,11 @@
+  * the CPU records the next frame while the display works. */
+ 
+ /* Queue one flip for buffer `index`.  Returns 0 (GNM_ERROR_OK) on success. */
+-static int32_t vk_ps4_flip_submit(GnmVideoOut *vo, uint32_t index, int64_t flip_arg) {
++static int32_t vk_ps4_flip_submit(VkPs4Swapchain *sc, uint32_t index, int64_t flip_arg) {
++    GnmVideoOut *vo = &sc->video_out;
+ #ifdef __ORBIS__
+-    return sceVideoOutSubmitFlip(vo->handle, (int32_t)index, GNM_VIDEO_OUT_FLIP_VSYNC, flip_arg);
++    /* On the GPU queue, behind the frame's work: see vk_ps4_queue_submit_flip. */
++    return vk_ps4_queue_submit_flip(sc->device, (uint32_t)vo->handle, index, flip_arg);
+ #else
+     /* The host has no display: keep the old call, which reports UNSUPPORTED. */
+     return (int32_t)sceGnmVideoOutSubmitFlipAndWait(
+@@ -373,8 +375,7 @@
+ 
+     /* Wait on semaphores.  On host, semaphores are CPU-tracked and
+      * signaled synchronously by QueueSubmit, so we just reset them.
+-     * On Orbis, the GPU-side WaitMem in QueueSubmit ensures the GPU
+-     * has completed the semaphore's signaling work before we present. */
++     * On Orbis, the flip itself is queued on the GPU behind the frame's work. */
+     for (uint32_t s = 0; s < pPresentInfo->waitSemaphoreCount; s++) {
+         VkPs4Semaphore *sem = (VkPs4Semaphore *)pPresentInfo->pWaitSemaphores[s];
+         if (sem) {
+@@ -393,7 +394,7 @@
+         if (image_index < sc->image_count) {
+             vk_ps4_log("QueuePresent: flip img=%u frame=%lld",
+                        image_index, (long long)sc->video_out.frame);
+-            if (vk_ps4_flip_submit(&sc->video_out, image_index,
++            if (vk_ps4_flip_submit(sc, image_index,
+                                    (int64_t)sc->video_out.frame) == 0) {
+                 sc->flip_seq[image_index] = ++sc->flips_submitted;
+             }
