@@ -1375,7 +1375,9 @@ describe("WorldCells automatic impostors", () => {
     expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
     expect(world.stats().failures).toBeGreaterThan(0);
     // The line names the cause, so a failed bake is not a bare reason (PRD-858).
-    const line = info.mock.calls.map(([text]) => String(text)).find((text) => text.includes("reason=bake-failed"));
+    const line = info.mock.calls
+      .map(([text]) => String(text))
+      .find((text) => text.includes("reason=bake-failed"));
     expect(line).toMatch(/ error=\S/);
     info.mockRestore();
     world.dispose();

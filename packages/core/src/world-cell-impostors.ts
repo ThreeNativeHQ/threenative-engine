@@ -1432,7 +1432,7 @@ export class CellImpostors {
         `switch=${(asset.distances.at(-1) ?? 0).toFixed(1)} ` +
         `views=${String(atlas === undefined ? 0 : IMPOSTOR_VIEWS)} ` +
         `bytes=${String(atlas?.bytes ?? 0)} reason=${reason}` +
-        (error === undefined ? "" : ` error=${error instanceof Error ? error.message : String(error)}`),
+        `${error === undefined ? "" : ` error=${error instanceof Error ? error.message : String(error)}`}`,
     );
   }
 }

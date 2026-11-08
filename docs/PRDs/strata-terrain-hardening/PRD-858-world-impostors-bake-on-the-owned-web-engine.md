@@ -30,14 +30,15 @@ The native gpu scene already has the terminal impostor level and `DataArrayTextu
 
 ### Phase 1 — the facade has the bake seam
 
-- [ ] `getClearColor`, `getMRT`, `setMRT` and `initRenderTarget` on the facade renderer, and `impostorRawRenderer` accepts it. proof: a facade spec red then green
-- [ ] A layered render target draws the layer `setRenderTarget(target, layer)` names, and a two-attachment `mrtNode` writes both. proof: a native renderer test that reads back two layers and both attachments
-- [ ] Each layer gets its mips when the bake's last view is drawn. proof: the same native test reads a mip of two layers
+- [x] `getClearColor`, `getMRT`, `setMRT` and `initRenderTarget` on the facade renderer, and `impostorRawRenderer` accepts it. proof: a facade spec red then green — `render-target.spec.ts` (2 new tests) and `browser-surface.spec.ts` (own `output`/`normal` MRT nodes) red then green; `browser-tsl.spec.ts` red then green for free `element` and `transformNormal`, which the impostor surface reads
+- [x] A layered render target draws the layer `setRenderTarget(target, layer)` names, and a two-attachment `mrtNode` writes both. proof: a native renderer test that reads back two layers and both attachments — `array_render_target` reads both layers and both attachments; `diffuseColor` into `output` reads 0.500 0.250 1.000 (red run 0, 0, 0)
+- [x] Each layer gets its mips when the bake's last view is drawn. proof: the same native test reads a mip of two layers — `array_render_target` reads the mip tip of two layers
 
 ### Phase 2 — the kit draws impostors
 
-- [ ] `TN_WORLD_IMPOSTOR` reports a baked atlas for the fir on the default engine, not `reason=unsupported`. proof: Chrome DevTools on the kit
+- [x] `TN_WORLD_IMPOSTOR` reports a baked atlas for the fir on the default engine, not `reason=unsupported`. proof: Chrome DevTools on the kit, 2026-11-08 — `asset=fir level=4 views=16 bytes=2796160 reason=ready`, the same for fir-c, fern-a and fern-b, no console error. The kit needed four more engine fixes on the way, each red then green: `mat3(mat4)` lowers to the upper-left 3x3 (`tsl_mat3_of_mat4`), a positionNode caster with a geometry `boundingBox` is placed by it under auto-depth virtual shadows (`virtual_shadow_bounds_cache`), a shadow cutoff samples the node's own textures, and those textures join the cached sun map's signature (`alpha_test_node`)
 - [ ] The overview view's `wideTris` and frame p95 on the default engine are at most the threejs arm's numbers above. proof: Chrome DevTools, the same build on both arms
+  - 2026-11-08, default engine, overview: `wideTris` 266 243 (was 26 186 069; threejs 256 402, +4 %), instances 7 308 (was 14 624). `TN_FRAME_BUDGET` frame p95 14.6 ms (mainPass 9.9 ms of Wasm CPU, 60 draws, 5.09 M main-pass triangles), rAF p95 33.3 ms (was 73.5 ms). Open: frame p95 is not yet at the threejs arm's 4.95 ms, and `wideTris` is 4 % over.
 
 ### Phase 3 — proof
 
