@@ -542,6 +542,11 @@ git apply "$SCRIPTS/patches/0066-vk-ps4-cull-mode.patch"
 # shadPS4 v0.21.0 detiles DISPLAY micro tiling at 128 bpp in the thin order, so an RGBA32F texture read zero at
 # every odd texel (procedural-animals' pose texture). 16-byte texels take thin tiling, ordered alike by both (P5-6).
 git apply "$SCRIPTS/patches/0067-vk-ps4-128bpp-textures-thin-tiling.patch"
+# The clear PS zeroed the four SGPRs of its colour V# before loading through them (and declared USER_SGPR 3),
+# and the depth clear's dummy PS exported zeros into the colour target the colour clear left bound: every PS4
+# scene pass lost its background colour. Repair the blob at load, mask colour writes in the depth clear, and
+# give the colour clear its own target mask, CB mode and depth state (P5-5).
+git apply "$SCRIPTS/patches/0068-vk-ps4-clear-keeps-its-colour.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
