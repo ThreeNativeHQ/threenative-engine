@@ -427,8 +427,21 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Swizzle: return program_.swizzle(expression(d.args[0]), d.lanes);
         case Kind::Join: {
             std::vector<ExprId> ids;
+            // three r185 JoinNode: an input that runs past the vector's length is cut to the components
+            // left, and any input after it is dropped (three logs the overflow and still builds).
+            const unsigned length = d.type.isMatrix() ? 0u : d.type.rows;
+            unsigned used = 0;
             for (const Node& part : d.args) {
-                const auto value = expression(part);
+                if (length != 0 && used >= length) break;
+                auto value = expression(part);
+                if (length != 0 && value != kInvalid && !program_.expr(value).type.isMatrix()) {
+                    const auto type = program_.expr(value).type;
+                    if (used + type.rows > length) {
+                        const unsigned left = length - used;
+                        value = convert(value, left == 1 ? Type{type.scalar, 1, 1} : Type::vec(left, type.scalar));
+                    }
+                    used += program_.expr(value).type.rows;
+                }
                 ids.push_back(d.type.scalar == Type::Scalar::U32 && value != kInvalid
                     ? convert(value, Type::vec(program_.expr(value).type.rows, Type::Scalar::U32)) : value);
             }
