@@ -154,6 +154,14 @@ export interface IGiOptions {
    * under a brick map). Unset, every hit returns the flat colour. `true` takes the cache's defaults.
    */
   readonly surfaceCache?: boolean | ISurfaceCacheOptions;
+  /**
+   * PRD-831: a GPU-traced field (`giTraced.ts`, a `RadianceCache`) that replaces the CPU bake's irradiance read: a material
+   * reads `irradiance` (E / pi at the pixel) and takes it as unoccluded. The CPU bake still runs for the sky shares, the
+   * emitters and the mean read. Unset, the bake answers.
+   */
+  readonly field?: {
+    readonly irradiance: (position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">;
+  };
 }
 
 export interface IGiReport {
@@ -1932,7 +1940,15 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     solid: cut.solid,
     walls: cut.walls,
   };
-  const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid, cut.walls);
+  const bakedRead = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid, cut.walls);
+  const traceField = options.field;
+  const read: typeof bakedRead =
+    traceField === undefined
+      ? bakedRead
+      : (position, normal) => ({
+          irradiance: traceField.irradiance(position, normal),
+          visibility: float(1),
+        });
   // The screen-space gather's tier below reads the same as a material does, emitters included, so a ray that hits
   // the emitter on screen replaces its direct light instead of adding it twice.
   giCache.irradiance = (position, normal) => {

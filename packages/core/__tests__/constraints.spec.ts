@@ -154,6 +154,10 @@ describe("core constraints", () => {
           // appearance inputs without constructing or choosing any visual output.
           file !== "pipeline-census.ts" &&
           file !== "render/probe-volume.ts" &&
+          // PRD-603 reads each game material's colour and emission into a flat table that the probe trace
+          // shades from. It constructs no material or light and writes no look property; the only colours it
+          // makes are table values (black, and grey for a material with no colour). The tighter check is below.
+          file !== "render/probe-trace.ts" &&
           // PRD-633 captures the game's sky; its only authored surface masks the lower hemisphere
           // with black when requested. It supplies no sky, scattering coefficient or lighting look.
           file !== "render/sky-capture.ts" &&
@@ -185,6 +189,9 @@ describe("core constraints", () => {
           file !== "look/exposure-readback.ts" &&
           file !== "look/exposure-settings.ts" &&
           file !== "look/filmic-tone-mapping.ts" &&
+          // The look passes above draw their own materials through one quad each (PRD-828); it takes the
+          // material it is given and constructs or configures none.
+          file !== "look/quad-pass.ts" &&
           // PRD-653 swaps the Lambert term of three's own lighting model for Unreal's published EON fit when the game marks
           // a material. Albedo, roughness, lights and a lamp's radius come from the game's own materials and lamps, and
           // the game chooses which materials take it. It constructs no material, light or colour and sets no appearance
@@ -446,6 +453,19 @@ describe("core constraints", () => {
       );
     }
 
+    // The probe trace copies the game's material colours into a table. Its `Color` values are table entries,
+    // so the check drops `Color` from the constructor list and keeps the rest.
+    const probeTrace = withoutComments(
+      readFileSync(path.join(sourceDirectory, "render/probe-trace.ts"), "utf8"),
+    );
+    expect(probeTrace).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(probeTrace).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
+    expect(probeTrace.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
     // The surface cache reads the game's maps and colours and writes none of them.
     const surfaceCacheRaw = readFileSync(
       path.join(sourceDirectory, "render/surface-cache.ts"),
@@ -695,10 +715,13 @@ describe("core constraints", () => {
     // `render/probe-volume.ts` is the one render-mechanism exception admitted by PRD-268: the
     // WebGPU bake needs a TSL projection node and a render target, but all lighting and surface
     // inputs still come from the game scene. It must never construct a light or choose a visible
-    // property, and the port must stay on common WebGPU render targets.
+    // property, and the port must stay on common WebGPU render targets. The PRD-603 trace reads the game's
+    // sun colour into its lighting record, so the check rejects a write of a look property, not a read.
     const probeVolume = readFileSync(path.join(sourceDirectory, "render/probe-volume.ts"), "utf8");
     expect(probeVolume).not.toMatch(/new\s+\w*Light|new\s+Color|\.wgsl/iu);
-    expect(probeVolume).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(probeVolume).not.toMatch(
+      /\.(color|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
     expect(probeVolume).toMatch(/RenderTarget3D|texture3D|ATLAS_PADDING/u);
   });
 

@@ -492,17 +492,26 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     if (camera !== undefined && !this.castShadow && this.#authoredVisible) {
       const bounds = this.measuredBounds;
       if (bounds !== undefined && this.#graceSeconds !== Number.POSITIVE_INFINITY) {
-        if (camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
-        this.updateWorldMatrix(true, false);
-        viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-        frustum.setFromProjectionMatrix(
-          viewProjection,
-          camera.coordinateSystem,
-          camera.reversedDepth,
-        );
-        worldBox.copy(bounds).applyMatrix4(this.matrixWorld).expandByScalar(this.#worldPadding);
+        // The native engine folds the same test in one call (PRD-828); a NaN padding asks for the default.
+        const engine = (this as { __boundsInView?: (c: Camera, b: Box3, p: number) => boolean })
+          .__boundsInView;
+        let inView: boolean;
+        if (typeof engine === "function")
+          inView = engine.call(this, camera, bounds, this.#padding ?? Number.NaN);
+        else {
+          if (camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
+          this.updateWorldMatrix(true, false);
+          viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+          frustum.setFromProjectionMatrix(
+            viewProjection,
+            camera.coordinateSystem,
+            camera.reversedDepth,
+          );
+          worldBox.copy(bounds).applyMatrix4(this.matrixWorld).expandByScalar(this.#worldPadding);
+          inView = frustum.intersectsBox(worldBox);
+        }
         // ponytail: bounds lag by boundsEveryFrames; grace delays culling and paused clouds do not move.
-        if (frustum.intersectsBox(worldBox)) this.#outsideSince = undefined;
+        if (inView) this.#outsideSince = undefined;
         else {
           // Wall time is only for callers without a loop clock.
           const now = simulatedSeconds ?? performance.now() / 1000;

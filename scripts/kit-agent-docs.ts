@@ -142,6 +142,7 @@ export async function kitFragments(templateDirectory: string): Promise<Map<strin
       "```sh",
       ...commands.map(([, command, comment]) => `${command.padEnd(width)}# ${comment}`),
       `${"npx threenative doctor".padEnd(width)}# build, import, device or blank-frame failure`,
+      `${"npx threenative doctor --fix".padEnd(width)}# refresh agent files`,
       "```",
     ].join("\n"),
   );

@@ -19,6 +19,9 @@ export default defineConfig([
     // .wasm sidecars and Node globals against their own module url. Inlining rewrites that
     // context to this ESM CLI bundle and breaks packed-project asset compilation.
     external: [
+      // threenative.js loads the scaffolder as its own module: inlined, the scaffolder's entry check
+      // would see threenative.js as its own path and scaffold a project named after the command.
+      "./index.js",
       "@threenative/assets",
       "@gltf-transform/core",
       "@gltf-transform/extensions",

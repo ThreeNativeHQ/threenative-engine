@@ -439,6 +439,14 @@
       "override": "`engine: \"threejs\"` only when the user asks",
       "marker": "TN_NATIVE_ENGINE_UNBOUND",
       "kits": "all"
+    },
+    {
+      "id": "engine-catalog",
+      "name": "Refused imports",
+      "default": "refused `three` imports fail at their line",
+      "override": "`createEngineCatalogPlugin({ mode: \"warn\" })`",
+      "marker": "TN_ENGINE_CATALOG",
+      "kits": "all"
     }
   ]
 }

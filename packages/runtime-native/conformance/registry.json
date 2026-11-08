@@ -1469,6 +1469,21 @@
       "required": true
     },
     {
+      "id": "probe-volume-trace",
+      "title": "off-screen irradiance probe volume refreshed by tracing the packed scene",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/probe-volume-trace.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "translucency-gi",
       "title": "translucent surface reads the probe volume without a facing",
       "category": "lighting-gi",

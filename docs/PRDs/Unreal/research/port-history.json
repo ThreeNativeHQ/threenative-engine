@@ -169,10 +169,18 @@
   },
   {
     "date": "2026-11-07",
-    "done": 417,
-    "total": 1142,
-    "lookDone": 163,
-    "lookTotal": 491,
-    "open": 86
+    "done": 420,
+    "total": 1141,
+    "lookDone": 166,
+    "lookTotal": 490,
+    "open": 85
+  },
+  {
+    "date": "2026-11-08",
+    "done": 426,
+    "total": 1141,
+    "lookDone": 172,
+    "lookTotal": 490,
+    "open": 85
   }
 ]

@@ -384,6 +384,8 @@ public:
      */
     void prepareCompute(const shader::graph::Node& node);
     void dispatchCompute(const ComputeDispatch& dispatch);
+    /** Records `dispatches` into one compute pass and one submission; a dispatch that throws goes to `failed`, records nothing, and the rest still run. */
+    void dispatchCompute(std::span<const ComputeDispatch> dispatches, const std::function<void(const std::string&)>& failed);
     GpuStatus readStorage(const BufferAttribute& attribute, ReadbackCallback done);
     void releaseStorage(const BufferAttribute& attribute);
 

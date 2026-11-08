@@ -235,10 +235,13 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured on the merge of develop into the Strata hardening branch: the develop tree moved
 // every no-install scaffold (three 0.187.0, the rts kit and the dropped Blender server), so no value
 // from either parent applies to the merged bytes.
-// Recomputed 2026-11-06 (PRD-635): the `ao-indirect` convention row adds one line and one section to the AGENTS.md and
-// CLAUDE.md of the twelve kits that run the screen-reach AO (every kit but action-rpg, rain, rts and shooter, which keep
-// their own occlusion options); those four trees did not change. No other scaffold byte moved. Measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-829 (2026-11-06): all sixteen trees move, measured by this test. Each kit AGENTS/CLAUDE pair
+  // gains the `npx threenative doctor --fix` command line. The new `.threenative/agent-files.json`
+  // stamp does not hash: it records bytes this test already reads.
+  // PRD-830 (2026-11-06): all sixteen trees move, measured by this test. Each kit `vite.config.ts`
+  // adds `createEngineCatalogPlugin()`, and each kit AGENTS/CLAUDE pair gains the "Refused imports"
+  // convention row.
   // PRD-825 (2026-11-05): all sixteen trees move, measured by this test. Each kit AGENTS/CLAUDE pair
   // becomes a generated router (flow, MCP servers, kit files, commands, convention index, stuck);
   // the `threenative-capabilities` skill follows the router's step order, and the ponytail hook
@@ -375,7 +378,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
   // 2026-11-04 (PRD-777 on PRD-632): action-rpg AGENTS/CLAUDE name the spell factories in one line. Measured by this test.
-  "action-rpg": "9f8318901b385a1181eb2e005da0eeb77fd6436939780d1f33998e979282b4b4",
+  "action-rpg": "c8584454d8cc657761f4701c509173794f154a1a54bb2c93bee4f263e6963f8d",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -389,7 +392,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "82002e5099c10d5c972362bb753aee56fee9006e08ff6b5709c02d3ddcfdfa96",
+  collectathon: "2b927afc0062f6949fdacf7d17c743f4b72f59113d693a637b00edc0afb28769",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -398,14 +401,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "454d002cf27173d789015c547eb1e14a9425da153af3d5911813f67155cba98a",
+  adventure: "6f5c9672e0026911426b29ece46e208842a1ecae5a34dcffbe75a1d4a848dce5",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "594977d8574c81014976d5f866bcabfa359b9641b0a3c1530a75aa965d753f20",
-  minimal: "e3ecbc2cb5dfabddc8ba49bf26bfdc856aa59f3e488c66dd6427abb014657727",
-  platformer: "d0de78df39f52618cb97ee9017214c9b4faf42f1b90f70a36532ba750d05cb09",
-  puzzle: "e96262f9d0403f433efa22919116a190068d2304991561facf305ba518f98b55",
-  racing: "fd075a1a11e8f8118ca45060df3aab679dd210a16a65dbaa2a09643dd7ce90c8",
-  rain: "db0eacb64f103baf178eaf6135e5f25534ae6087e7aef8881008d9c96ffa49e1",
+  kart: "373ec68e1c1612b8f0f89fa2cf15dc6ac83d412e50641fadf6999be6b48d4e82",
+  minimal: "419068e84373e45042a58764412fee7b9de9321f6d1bfc528e22374307ea5630",
+  platformer: "bc0f76a612bdd1768b20132ddc1ca6a0638890cea65aa411838df03d160a50d3",
+  puzzle: "b82cb16d26f6588b4a71ebe1553f38e55aa5f4f04c425204996e55cbf4bbbab0",
+  racing: "914c37de7829491436cb50714e455ef28a19b2976501ca4695dc8379f2a275da",
+  rain: "85669ce4009f190dbd9832303d47b332456398282bc4c3125348918ad50871e8",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -422,18 +425,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
   // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
   // Measured by this test.
-  rts: "7da721e1b8f308a8043c01d0214a79a07edb521fdfb9c3fe323b86193adc90c3",
-  runner: "6a8342610cf6776ef5dbd5fda699d7177c3c174071d95fab75c7b7e96fa87081",
+  rts: "8b5db0c2644c8b523ac7ac76638db70bcd7acba4d38ef45f74d95f229a8d5243",
+  runner: "3190ae41a7c54aaf9f66279c4344bbb33261af0324a6ec55877944e13a97da05",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   // Re-measured 2026-11-03 (PRD-617): its AGENTS/CLAUDE engine section no longer claims an engine
   // pin the template does not carry. Measured by this test.
   // Re-measured 2026-11-03 (PRD-617): `sails.playtest.json` sets `drawEvery: 60`, so the scenario
   // asks the runner for 30 drawn frames per 1,800-tick hold instead of taking as many readback
   // samples as the adapter happens to draw. Only this tree moves.
-  sailing: "030aa72cf26018e8bce0a16ea29e9effc8d36cc76d803df431c9cb18222d23ef",
+  sailing: "43237f9ed860f319fcea9097e6db57087bf99d4dc8e638d025824d70f53df9f8",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "256093857202816f5507509d03df399b11ccb6304c1ecc87c1ab4054567c99b3",
-  snow: "5230a275ec46c32d227f486d57b04e9818e7bc4b692a0bbfcf7e56057d9c5ab6",
+  shooter: "5a0e1d6ca7bf6e5ecc2c0fcbcb9d26e41a52db28743557c0a1b295b3b74e9167",
+  snow: "1b47c4861ac11474587e6fcc2397420a9f5464eecc711a260325000d5b7e2e2b",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -446,12 +449,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Play.ts's motion samples between presented frames and fixed steps, and moved two native
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
-  starter: "d7692edd2eae975fafd5a9f9ed08ff5b63ea8d581d8ad06f2f01f89c0752ca03",
-  "tower-defense": "58eebecebc973d9bb952ad1468bb425681adb1075c21d94fe3d8c94f45d6b757",
+  starter: "6733a41cd997c8c47c5e014c129c4695c342e5f218f332a7831ffb9afcf3058c",
+  "tower-defense": "f2d470c75ae32e6e394077f0474d39fd93c90980d4687ba4940368cf940eef5f",
 };
 
+// The authoring stamp (PRD-829) hashes files this tree hash already reads, plus the cohort version.
 const GENERATED_SCAFFOLD_METADATA =
-  /^(?:node_modules(?:\/|$)|dist(?:\/|$)|\.vite(?:\/|$)|coverage(?:\/|$)|pnpm-lock\.yaml$|package-lock\.json$|yarn\.lock$)/u;
+  /^(?:node_modules(?:\/|$)|dist(?:\/|$)|\.vite(?:\/|$)|coverage(?:\/|$)|pnpm-lock\.yaml$|package-lock\.json$|yarn\.lock$|\.threenative\/agent-files\.json$)/u;
 
 /** Stages a broken template in a throwaway copy of the template tree and hands the body its
  * root, so a negative control never edits the shipped templates. It used to edit them in place
@@ -471,7 +475,8 @@ async function withBrokenTemplateFile<T>(
     // reaches up to (template-assets, agent-docs, agent-files). The copied tree
     // is the templates dir; the siblings ride along so a test breaks exactly the file it names.
     const packageDirectory = path.dirname(TEMPLATE_ROOT);
-    for (const sibling of ["template-assets", "agent-docs", "agent-files"]) {
+    // package.json: the authoring stamp records the package version (PRD-829).
+    for (const sibling of ["template-assets", "agent-docs", "agent-files", "package.json"]) {
       await cp(path.join(packageDirectory, sibling), path.join(root, sibling), {
         recursive: true,
       });
@@ -852,6 +857,48 @@ describe("create-threenative", () => {
       }
     },
   );
+
+  it("stamps the authoring layer it wrote, and doctor reports it ok (PRD-829)", async () => {
+    const root = await makeTempDir("threenative-scaffold-stamp-");
+    try {
+      const { target } = await createProject(
+        { install: false, target: "stamped", template: "shooter" },
+        root,
+      );
+      const stamp = JSON.parse(
+        await readFile(path.join(target, ".threenative/agent-files.json"), "utf8"),
+      ) as { createThreenative: string; kit: string; files: Record<string, string> };
+      const own = JSON.parse(
+        await readFile(path.resolve("packages/create-threenative/package.json"), "utf8"),
+      ) as { version: string };
+      expect({ version: stamp.createThreenative, kit: stamp.kit }).toEqual({
+        version: own.version,
+        kit: "shooter",
+      });
+      for (const file of [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/settings.json",
+        ".claude/hooks/discovery-gate.mjs",
+        ".agents/skills/threenative-capabilities/SKILL.md",
+      ])
+        expect(Object.keys(stamp.files)).toContain(file);
+      for (const [file, hash] of Object.entries(stamp.files))
+        expect(
+          createHash("sha256")
+            .update(await readFile(path.join(target, file)))
+            .digest("hex"),
+          file,
+        ).toBe(hash);
+      const { diagnoseProject, readProject } = await import("../src/doctor.js");
+      const report = diagnoseProject(await readProject(target));
+      expect(report.checks.find(({ name }) => name === "authoring layer")).toMatchObject({
+        status: "ok",
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
 
   it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
