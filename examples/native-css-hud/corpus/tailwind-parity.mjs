@@ -116,6 +116,7 @@ const PANEL_CSS = `
 .stage-table td,.stage-table th{border:1px solid #52525b;padding:3px 5px;color:#e4e4e7;font-size:13px}
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
 .stage-fill{width:120px;height:40px;background:#27272a}
+.stage-flex{display:flex}
 /* A backdrop filter needs something to filter and something translucent to see it through: a
    saturated band behind the cell and a see-through probe over it. */
 .stage-backdrop{width:100%;height:100%;color:#fafafa;font-size:13px;line-height:16px;padding:2px;
@@ -1129,13 +1130,40 @@ function layoutStage(cell, probe, classes, before, after) {
   return siblings;
 }
 
+/**
+ * Properties that act on an element's *children*, not on the element's own box.
+ *
+ * `justify-end` is `justify-content: flex-end` on a flex container: on the probe as a plain block it
+ * is inert, which is why twelve flex and grid units measured "does nothing" — the cell staged the
+ * unit on a box that had no children to lay out. A container unit's probe is the container, with two
+ * children and the matching display, so dropping the class moves them.
+ */
+const CONTAINER_PROPS = new Set([
+  "justify-content",
+  "justify-items",
+  "align-items",
+  "align-content",
+  "row-gap",
+  "column-gap",
+  "grid-template-columns",
+  "grid-template-rows",
+  "grid-auto-flow",
+  "grid-auto-columns",
+  "grid-auto-rows",
+  "flex-direction",
+  "flex-wrap",
+]);
+
 /** A control utility needs a control: `caret-color` on a `div` is not a question. */
 const CONTROL_UNIT = /^(accent|caret|appearance|field-sizing|resize)/u;
 
 /** One cell's tree: the label and the staged probe. */
 function cellTree(cell) {
   const stage = VARIANT_STAGE[cell.label] ?? {};
-  const classes = probeClass(cell.companions ?? [], cell.class);
+  // A container unit's probe carries the display its property needs, so the children the staging
+  // gives it are laid out the way the unit is defined to act on them.
+  const container = cell.container === undefined ? "" : ` stage-${cell.container}`;
+  const classes = probeClass(cell.companions ?? [], cell.class) + container;
   const probe = el(
     stage.tag ?? (CONTROL_UNIT.test(cell.unit?.probe ?? "") ? "textarea" : "div"),
     { class: classes, ...stage.attrs },
@@ -1232,7 +1260,16 @@ function utilityEntry(unit, classCss, byProperty) {
     class: unit.probe,
     contrast: contrastDeclarations(unit, classCss, byProperty),
     companions: companionsFor(unit),
-    inner: /^(space|divide)$/u.test(unit.root) ? 2 : undefined,
+    inner:
+      /^(space|divide)$/u.test(unit.root) || unit.props.some((p) => CONTAINER_PROPS.has(p))
+        ? 2
+        : undefined,
+    // A grid container property needs a grid; everything else in `CONTAINER_PROPS` is flex.
+    container: unit.props.some((p) => CONTAINER_PROPS.has(p))
+      ? /grid|^justify-items/u.test(unit.props.join(" ")) || /^grid-/u.test(unit.probe)
+        ? "grid"
+        : "flex"
+      : undefined,
     layout,
     needsRefusedTag:
       layout === "table" || /^(accent|caret|appearance|field-sizing|resize)/u.test(unit.probe),
