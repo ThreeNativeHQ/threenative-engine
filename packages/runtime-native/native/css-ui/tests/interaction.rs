@@ -1175,6 +1175,43 @@ fn a_gradient_background_takes_its_position() {
 }
 
 #[test]
+fn a_repeating_gradient_takes_its_background_size() {
+    // `background-size` scales the image, and a repeating gradient is an image like any other: the
+    // parity scene stages `repeating-linear-gradient(45deg, …)` at `background-size: 24px 24px`, and
+    // its stripes land at a different phase than Chromium's. The first question is whether the size
+    // reaches the paint at all.
+    let document = |size: &str| {
+        ui(
+            96,
+            96,
+            &[
+                sheet(
+                    "s",
+                    &format!(
+                        "{BASE}\n#a{{width:96px;height:96px;\
+                         background-image:repeating-linear-gradient(45deg,#f59e0b 0 6px,#2563eb 6px 12px);\
+                         background-size:{size};background-position:left top;background-repeat:repeat}}"
+                    ),
+                ),
+                create(1, "div"),
+                attr(1, "id", "a"),
+                append(0, 1),
+            ],
+        )
+    };
+    let mut auto = document("auto");
+    auto.render();
+    let mut sized = document("24px 24px");
+    sized.render();
+    let row = |ui: &threenative_css_ui::CssUi| (0..96).map(|x| rgb(ui, x, 48)).collect::<Vec<_>>();
+    assert_ne!(
+        row(&auto),
+        row(&sized),
+        "`background-size: 24px 24px` must scale a repeating gradient"
+    );
+}
+
+#[test]
 fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
     let mut ui = ui(
         64,
