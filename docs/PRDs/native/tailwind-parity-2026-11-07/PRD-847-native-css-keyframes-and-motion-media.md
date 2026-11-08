@@ -79,6 +79,20 @@ media query then does the job. Delete the `animation`, `animation-name` and `@ke
 
 - [ ] `starting:` and `transition-behavior` pass, and the floor rises. proof: AC-3 plus `parity:tailwind --ratchet`
 
+## Open: the motion bar's last sample is ambiguous in Chromium (measured 2026-11-07)
+
+`animate-ping` measures 3/5 on some runs and 2/5 on others with no tree change: the pin is confirmed
+applied (the capture now flushes style, waits two frames and re-sets `currentTime` until every
+animation reports the sample), so what varies is Chromium's own frame at **exactly 100 % of an
+infinite animation's period** — the sampling instant is both the end of the first iteration and the
+start of the second, and the compositor resolves it either way across runs. The engine's frame is
+deterministic (its iteration boundary is pinned by blitz-dom hunk 15).
+
+Consequences, recorded rather than papered over: the ratchet's floor is written from a run where that
+cell failed, so the gate does not depend on it, and the family's reported score is 2–3 of 5 depending
+on the run. Sampling an infinite animation at its period boundary needs a decision from the owner
+(sample 999 ms, sample a finite animation instead, or accept the ambiguity as a known flake).
+
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-847`: **3 of 5 units pass**,

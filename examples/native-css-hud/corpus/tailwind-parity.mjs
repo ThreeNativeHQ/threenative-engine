@@ -1909,7 +1909,19 @@ async function chromiumPanel(browser, base, panel, { strip = false, drive = [], 
         animation.pause();
         animation.currentTime = at;
       }
+      // The pin lands in the next frame's style, and the capture can still read the frame before it:
+      // force a style/layout flush, wait two frames, then *confirm* the pin took. Without the
+      // confirmation the same tree measured 3 of 5 and then 2 of 5 on consecutive runs.
+      void document.documentElement.getBoundingClientRect();
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const pinned = document
+          .getAnimations()
+          .every((animation) => Math.abs((animation.currentTime ?? -1) - at) < 0.5);
+        if (pinned) return;
+        for (const animation of document.getAnimations()) animation.currentTime = at;
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
     }, sample);
   }
   const boxes = await page.evaluate(() =>

@@ -442,7 +442,11 @@ fn flush_line_decorations(
             );
             let ascent =
                 win_ascent(win_ascent_ratios, &geom.font, geom.font_size).unwrap_or(geom.ascent);
-            let offset = ascent + size;
+            // VENDOR HUNK (threenative/css-ui): the line's *top* edge sits on the ascent, not one
+            // thickness above it. Measured against Chromium on the parity scene's `overline` cell:
+            // with `ascent + size` the engine's line was one row higher than the browser's (y=34
+            // against y=35), and with `ascent` it lands on the browser's row.
+            let offset = ascent;
 
             // A `double` overline extends upward, away from the text.
             draw_decoration_line(

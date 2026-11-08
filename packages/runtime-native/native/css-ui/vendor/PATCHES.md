@@ -43,7 +43,7 @@ old `inline_fragment_rects` loop moved into `inline_fragments` so paint can shar
 hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
 `draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 214 added code lines
+## `blitz-paint-0.3.0-beta.2` — 231 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -521,6 +521,18 @@ to delete once the query worked.
   (still failing the 0.99 bar, so the family stays at 23 of 50 — what is left is the mask geometry,
   not the mode). The 32-fixture browser oracle is unchanged (28/28) and the crate's 57 tests are
   green. Raster and SVG image masks are still alpha-only, which the hunk says.
+
+### 6. an overline's top edge was one thickness above the ascent
+
+* **Where:** `src/text.rs` (the overline's offset is `ascent`, not `ascent + size`).
+* **Why:** measured against Chromium on the parity scene's `overline` cell, the engine's line was one
+  row higher than the browser's (y=34 against y=35). The line's *top* edge sits on the ascent; the
+  engine put its top one thickness above it and the pixel snap then locked the error in.
+* **Proves it:** the cell goes 0.8949 → **0.9793** against a 0.98 glyph bar — still 0.0007 short, and
+  what is left is the line's *length*: a decoration is drawn across the run's advance, which includes
+  the white space a line ends with (measured on `underline`: 103 px against Chromium's 93, and
+  Chromium trims it). `GlyphRun` exposes `glyphs()` and the run's `clusters()`, not per-line clusters,
+  so trimming needs the line's portion of the run — that is the next measurement here.
 
 ## `parley-0.11.1` — 240 added code lines
 
