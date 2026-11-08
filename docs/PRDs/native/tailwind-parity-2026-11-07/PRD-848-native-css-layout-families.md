@@ -74,6 +74,12 @@ compared identical frames and read "does nothing" (7 of the group's 15 cells). W
 `border-spacing-40` is 0.9997, a thousandth under the bar. `caption-top` still does not discriminate: the
 staged table has no `<caption>`.
 
+A `border-spacing` cell stages a table that sizes to its content instead of the stage's width — a
+160px spacing on a 302px stage leaves a negative content box, and the two engines clamp that
+differently. Measured, that did not help (`border-spacing-40` stayed 0.9997 with six edge misses and
+`-y` got worse), so it was reverted; the edge misses are on the **tbody** box (worst 412 px) and the
+table's right/bottom edges, which is this engine's table layout rather than a staging choice.
+
 The flow group therefore stays at 1/15 while its *measurement* becomes honest, and the batch's
 non-discriminating count drops by 5.
 
