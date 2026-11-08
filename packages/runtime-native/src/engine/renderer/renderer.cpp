@@ -291,7 +291,7 @@ BufferStore* vertexSourceOf(const DrawItem& item, const shader::VertexAttribute&
                           : a.name == "uv"            ? item.uvs
                           : a.name == "color"         ? item.colors
                           : a.name == "instanceColor" ? item.instanceColors
-                          : a.name == "skinIndex"     ? item.skinIndices
+                          : a.name == "skinIndex" && a.type.scalar == shader::Type::Scalar::U32 ? item.skinIndices
                           : a.name == "skinWeight"    ? item.skinWeights
                           : column                   ? item.instanceMatrices : nullptr;
     // Any other name is one of the geometry's own attributes (TSL attribute(name)).
@@ -1836,6 +1836,9 @@ void Renderer::copyTextureToTexture(const Texture& source, const Texture& destin
     wgpuCommandEncoderRelease(encoder);
     if (copy.dstLevel != 0) return;
     if (!copyRebuildsMipmaps(destination.volume, to->key.levels)) return;
+    // ponytail: a CPU-built chain is not a render target, so a copy refreshes level 0 only; read the level back
+    // and rebuild on the CPU if a PS4 game copies into a mipmapped texture.
+    if (kCpuMipChain && !destination.external) return;
     generateMipmaps(to->texture, textureFormat(destination), to->key.levels, to->key.array ? to->key.depth : 1);
     flushMipmaps();
 }
@@ -1881,7 +1884,8 @@ Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& textu
         // copyExternalImageToTexture writes through a render pass, as the mip chain does. `CopySrc` because
         // `copyTextureToTexture` reads a level back out of this texture (three's texture atlas copies).
         key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc |
-                    (key.levels > 1 || texture.external ? WGPUTextureUsage_RenderAttachment : WGPUTextureUsage_None);
+                    ((key.levels > 1 && !kCpuMipChain) || texture.external ? WGPUTextureUsage_RenderAttachment
+                                                                           : WGPUTextureUsage_None);
     } else {
         key.texelBytes = 0;  // nothing is created until the texture has an image
     }
@@ -1955,6 +1959,28 @@ void Renderer::uploadMaterialTexture(WGPUTexture destination, const Texture& tex
             gpu_.sync();  // the upload is queue work: ordered after any submit still on the GPU thread
             wgpuQueueWriteTexture(queue_, &image, pixels, texture.data.size(), &layout, &extent);
             counted();
+            if (kCpuMipChain && key.levels > 1) {
+                const bool srgb = key.format == WGPUTextureFormat_RGBA8UnormSrgb;
+                const size_t layerBytes = size_t(texture.width) * texture.height * 4;
+                for (uint32_t layer = 0; layer < layers; ++layer) {
+                    std::vector<uint8_t> level(pixels + layer * layerBytes, pixels + (layer + 1) * layerBytes);
+                    uint32_t w = texture.width, h = texture.height;
+                    for (uint32_t l = 1; l < key.levels; ++l) {
+                        level = downsampleRgba8(level.data(), w, h, srgb);
+                        w = w > 1 ? w / 2 : 1;
+                        h = h > 1 ? h / 2 : 1;
+                        WGPUImageCopyTexture_Compat mip = image;
+                        mip.mipLevel = l;
+                        mip.origin = {0, 0, layer};
+                        WGPUTextureDataLayout_Compat mipLayout = {};
+                        mipLayout.bytesPerRow = w * 4;
+                        mipLayout.rowsPerImage = h;
+                        const WGPUExtent3D mipExtent = {w, h, 1};
+                        wgpuQueueWriteTexture(queue_, &mip, level.data(), level.size(), &mipLayout, &mipExtent);
+                    }
+                }
+                return;
+            }
         }
     }
     // A texture whose texels are written on the GPU (dataReady false) has none to build a chain from yet.

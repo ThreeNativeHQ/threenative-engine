@@ -1,0 +1,66 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -1827,11 +1827,11 @@
+     uint32_t n = (vi && vi->pVertexAttributeDescriptions)
+                      ? vi->vertexAttributeDescriptionCount
+                      : 0;
+-    /* The semantic table is ordered by location, not by the order the
+-     * descriptions were declared in, so walk the attributes in location order.
+-     * ponytail: selection sort over <=16 attributes; the GNM V# table the user
+-     * data points at has VK_PS4_MAX_VERTEX_BINDINGS entries. */
+-    bool used[VK_PS4_MAX_VERTEX_BINDINGS] = {false};
++    /* V# i is the attribute whose location is semantic i: psbc names each VS input by its
++     * location and lists only the locations the shader reads. A pipeline that declares an
++     * attribute its VS does not read (the cloth pennant's position) shifted every later V#
++     * when the table was dense over the declared attributes (PRD-784 visuals). */
++    const uint32_t inputs = pipe ? pipe->vs_input_semantic_count : 0;
+ 
+     if (n > VK_PS4_MAX_VERTEX_BINDINGS) n = VK_PS4_MAX_VERTEX_BINDINGS;
+     GnmBuffer *table = vk_ps4_vertex_buffer_table_slot(cmd);
+@@ -1839,18 +1839,15 @@
+      * zero the whole table first, as the shared scratch did. */
+     memset(table, 0, sizeof(cmd->gnm_vertex_buffers));
+ 
+-    for (uint32_t i = 0; i < n; i++) {
++    for (uint32_t i = 0; i < inputs && i < VK_PS4_MAX_VERTEX_BINDINGS; i++) {
+         uint32_t pick = VK_PS4_MAX_VERTEX_BINDINGS;
+         for (uint32_t j = 0; j < n; j++) {
+-            if (used[j]) continue;
+-            if (pick == VK_PS4_MAX_VERTEX_BINDINGS ||
+-                vi->pVertexAttributeDescriptions[j].location <
+-                    vi->pVertexAttributeDescriptions[pick].location) {
++            if (vi->pVertexAttributeDescriptions[j].location == pipe->vs_input_semantics[i].semantic) {
+                 pick = j;
++                break;
+             }
+         }
+-        if (pick == VK_PS4_MAX_VERTEX_BINDINGS) break;
+-        used[pick] = true;
++        if (pick == VK_PS4_MAX_VERTEX_BINDINGS) continue;
+ 
+         const VkVertexInputAttributeDescription *attrib =
+             &vi->pVertexAttributeDescriptions[pick];
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -617,11 +617,19 @@
+             uint32_t num_inst_modes = 0;
+             if (ci->pVertexInputState) {
+                 const VkPipelineVertexInputStateCreateInfo *vi = ci->pVertexInputState;
+-                num_inst_modes = vi->vertexAttributeDescriptionCount;
++                /* One mode per VS input, in semantic order: input a is the attribute at location
++                 * semantic a, as the V# table is built (PRD-784 visuals). */
++                num_inst_modes = pipe->vs_input_semantic_count;
+                 if (num_inst_modes > VK_PS4_MAX_VERTEX_BINDINGS) num_inst_modes = VK_PS4_MAX_VERTEX_BINDINGS;
+                 for (uint32_t a = 0; a < num_inst_modes; a++) {
+                     VkVertexInputRate rate = VK_VERTEX_INPUT_RATE_VERTEX;
+-                    const uint32_t binding = vi->pVertexAttributeDescriptions[a].binding;
++                    uint32_t binding = UINT32_MAX;
++                    for (uint32_t d = 0; d < vi->vertexAttributeDescriptionCount; d++) {
++                        if (vi->pVertexAttributeDescriptions[d].location == pipe->vs_input_semantics[a].semantic) {
++                            binding = vi->pVertexAttributeDescriptions[d].binding;
++                            break;
++                        }
++                    }
+                     if (vi->pVertexBindingDescriptions) {
+                         for (uint32_t b = 0; b < vi->vertexBindingDescriptionCount; b++) {
+                             if (vi->pVertexBindingDescriptions[b].binding == binding) {

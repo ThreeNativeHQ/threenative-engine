@@ -1,0 +1,34 @@
+// PS4 shim: OpenOrbis libc++ 11's <bit> predates the C++20 names it ships under old
+// ones — std::bit_cast (libc++ 13), std::has_single_bit (libc++ 14; this header
+// only has the pre-standard std::ispow2) and std::bit_width (libc++ 14). Chain to the
+// real header, then add those three. Put this dir BEFORE .../include/c++/v1 on -isystem so it wins.
+#ifndef _PS4_SHIM_BIT
+#define _PS4_SHIM_BIT
+#include_next <bit>
+
+namespace std {
+
+template <class To, class From>
+constexpr To bit_cast(const From& from) noexcept {
+    static_assert(sizeof(To) == sizeof(From), "bit_cast requires same-size types");
+    return __builtin_bit_cast(To, from);
+}
+
+template <class T>
+constexpr bool has_single_bit(T t) noexcept {
+    return t != 0 && (t & static_cast<T>(t - 1)) == 0;
+}
+
+// libc++ 14: the bit width of an unsigned integer, i.e. 32 - countl_zero for uint32_t.
+template <class T>
+constexpr int bit_width(T t) noexcept {
+    int width = 0;
+    while (t != 0) {
+        t >>= 1;
+        ++width;
+    }
+    return width;
+}
+
+}  // namespace std
+#endif  // _PS4_SHIM_BIT

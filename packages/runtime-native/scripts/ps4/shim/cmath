@@ -1,0 +1,22 @@
+// PS4 shim: OpenOrbis libc++ 11's <cmath> ends with `using ::abs;` and nothing else, so
+// `std::abs(double)` resolves to the C library's `int abs(int)` — the floating-point overloads
+// arrived in libc++ 14. The engine takes absolute values of doubles in the raycaster and the shadow
+// clipmap, where truncating to int is a wrong answer, not a warning.
+// The integer overloads have to come with them: this shim stands in front of <cstdlib> too, so
+// without `abs(long)` an integer `std::abs` is ambiguous between `int abs(int)` and `abs(double)`
+// (Dawn's tint calls it on a `Number<long>`: tint/lang/core/constant/eval.cc:1966).
+// Put this dir BEFORE .../include/c++/v1 on -isystem so it wins.
+#ifndef _PS4_SHIM_CMATH
+#define _PS4_SHIM_CMATH
+#include_next <cmath>
+
+namespace std {
+
+inline constexpr float abs(float __x) noexcept { return __builtin_fabsf(__x); }
+inline constexpr double abs(double __x) noexcept { return __builtin_fabs(__x); }
+inline constexpr long double abs(long double __x) noexcept { return __builtin_fabsl(__x); }
+inline constexpr long abs(long __x) noexcept { return __x < 0 ? -__x : __x; }
+inline constexpr long long abs(long long __x) noexcept { return __x < 0 ? -__x : __x; }
+
+}  // namespace std
+#endif  // _PS4_SHIM_CMATH

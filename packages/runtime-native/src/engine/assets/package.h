@@ -85,9 +85,11 @@ bool verifyPackage(const Package& package, uint32_t availableDecoders, PackageEr
 
 /**
  * The decoders this build qualifies (PRD-515): a decoder joins only once it passes on the target's
- * own artifact, and none has yet on any target, so every compressed format is refused everywhere,
- * mobile included, with the product's codes: TN_NATIVE_KTX2_UNSUPPORTED for KTX2/Basis textures and
- * TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED for Meshopt and Draco geometry.
+ * own artifact. Meshopt has: the meshoptimizer codecs are compiled into every engine target and the
+ * glTF loader decodes EXT/KHR_meshopt_compression with them, so a cooked package may keep
+ * meshopt-compressed geometry everywhere the engine builds. KTX2/Basis and Draco are still refused
+ * with the product's codes (TN_NATIVE_KTX2_UNSUPPORTED, TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED) on
+ * every target.
  */
 uint32_t targetDecoders();
 

@@ -1,0 +1,195 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -1461,6 +1461,31 @@
+     }
+ }
+ 
++/* A table the GPU reads by pointer has to live in memory the GPU reads when it
++ * EXECUTES the command, which is long after the CPU recorded it: every queued
++ * draw shares one command buffer, so one scratch table per command buffer is
++ * filled by the last draw that ran during recording and the GPU resolves all
++ * of them against THAT one (measured: draws 1-3 of a frame all emit table
++ * 0x20009d544). The 1-attribute fullscreen pass then left slot 1 zeroed, its
++ * dfmt 0 became VK_FORMAT_UNDEFINED in the emulator, and the host faulted on
++ * SET_VERTEX_ATTRIBUTE_A(1) with no component widths -- Xid 69 -- so the mesh
++ * lost its normal. Each draw now takes its own immutable copy from the command
++ * buffer's own storage, where the clear shader's colour already lives
++ * (vk_ps4_clear_color_draw, sceGnmCmdAllocInside): embeds the table in the
++ * command stream as a NOP packet, so it is GPU-visible, unique per draw, and
++ * released with the command buffer. */
++static GnmBuffer *vk_ps4_vertex_buffer_table_slot(VkPs4CommandBuffer *cmd) {
++    GnmBuffer *table = sceGnmCmdAllocInside(&cmd->gnm_cmd,
++                                           sizeof(cmd->gnm_vertex_buffers), 16);
++    if (!table) {
++        /* Out of command-buffer space: the shared scratch is wrong in exactly
++         * the way above, so say so rather than lose the geometry silently. */
++        vk_ps4_log("V# table: no room inside the command buffer, sharing one table");
++        return cmd->gnm_vertex_buffers;
++    }
++    return table;
++}
++
+ /* The PTR_VERTEXBUFFERTABLE user data points at one V# per vertex input, in
+  * semantic order: sceGnmCreateFetchShader loads the V# for input i from
+  * dword offset i*4 of that table (opengnm src/shader.c, "s_load_dwordx4 ...,
+@@ -1471,7 +1496,7 @@
+  * do) described neither a vec3 colour at offset 8 nor its per-vertex stride,
+  * so the fetch shader read four R32 floats per attribute and the geometry
+  * arrived folded onto one point. */
+-static void vk_ps4_build_vertex_buffer_table(VkPs4CommandBuffer *cmd) {
++static GnmBuffer *vk_ps4_build_vertex_buffer_table(VkPs4CommandBuffer *cmd) {
+     VkPs4Pipeline *pipe = cmd->current_pipeline;
+     const VkPipelineVertexInputStateCreateInfo *vi =
+         pipe ? &pipe->vertex_input_state : NULL;
+@@ -1485,7 +1510,10 @@
+     bool used[VK_PS4_MAX_VERTEX_BINDINGS] = {false};
+ 
+     if (n > VK_PS4_MAX_VERTEX_BINDINGS) n = VK_PS4_MAX_VERTEX_BINDINGS;
+-    memset(cmd->gnm_vertex_buffers, 0, sizeof(cmd->gnm_vertex_buffers));
++    GnmBuffer *table = vk_ps4_vertex_buffer_table_slot(cmd);
++    /* An attribute the loop below skips reads V# 0, which is FormatInvalid:
++     * zero the whole table first, as the shared scratch did. */
++    memset(table, 0, sizeof(cmd->gnm_vertex_buffers));
+ 
+     for (uint32_t i = 0; i < n; i++) {
+         uint32_t pick = VK_PS4_MAX_VERTEX_BINDINGS;
+@@ -1524,9 +1552,10 @@
+         const uint32_t num_records =
+             stride ? (uint32_t)(remaining / stride) : (uint32_t)remaining;
+ 
+-        cmd->gnm_vertex_buffers[i] = sceGnmCreateVertexBuffer(
++        table[i] = sceGnmCreateVertexBuffer(
+             gpu_addr, vk_ps4_attribute_gnm_format(attrib->format), stride, num_records);
+     }
++    return table;
+ }
+ 
+ /* Emit the V# table pointer the fetch shader reads: it holds a pointer in its
+@@ -1537,10 +1566,9 @@
+     if (!pipe || !pipe->has_vb_table_slot) return;
+     if (!cmd->vertex_binding_count && !pipe->vertex_input_state.vertexAttributeDescriptionCount)
+         return;
+-    vk_ps4_build_vertex_buffer_table(cmd);
++    GnmBuffer *table = vk_ps4_build_vertex_buffer_table(cmd);
+     sceGnmDrawCmdSetPointerUserData(&cmd->gnm_cmd, GNM_STAGE_VS,
+-                                    pipe->vertex_buffer_table_slot,
+-                                    cmd->gnm_vertex_buffers);
++                                    pipe->vertex_buffer_table_slot, table);
+     cmd->vertex_buffers_dirty = false;
+ }
+ 
+--- a/src/vk_ps4_descriptor.c
++++ b/src/vk_ps4_descriptor.c
+@@ -443,18 +443,34 @@
+  * V#/S#, 32 for a T#, 48 for an image+sampler with the sampler at +32) copied
+  * there are exactly the bytes the shader loads -- the field layouts are the
+  * hardware ones on both sides. Dynamic offsets shift a buffer's base address in
+- * the copy, leaving the binding's own descriptor untouched. */
+-static void compose_set_memory(VkPs4DescriptorSet *set, uint32_t set_index,
++ * the copy, leaving the binding's own descriptor untouched.
++ *
++ * The copy is per BIND, not per set: the GPU reads it when it executes the draw,
++ * so one mutable buffer per set saw every queued bind of that set resolve
++ * against the last composition (the same defect as the V# table in
++ * vk_ps4_command.c). The copy comes out of the command buffer itself
++ * (sceGnmCmdAllocInside), which is GPU-visible, unique per bind, and released
++ * with the command buffer. Returns the address the shader must read, or NULL. */
++static void *compose_set_memory(VkPs4CommandBuffer *cmd, VkPs4DescriptorSet *set,
++                               uint32_t set_index,
+                                const struct vk_ps4_dyn_offset *dyn, uint32_t dyn_count) {
+-    if (!set || !set->memory) return;
++    if (!set || !set->memory || !set->memory_size) return NULL;
+ 
+-    memset(set->memory, 0, set->memory_size);
++    void *memory = sceGnmCmdAllocInside(&cmd->gnm_cmd, set->memory_size, 16);
++    if (!memory) {
++        /* Out of command-buffer space: the set's own buffer is wrong in exactly
++         * the way above, so say so rather than render stale descriptors. */
++        vk_ps4_log("descriptor set %u: no room inside the command buffer, sharing one copy",
++                   set_index);
++        memory = set->memory;
++    }
++    memset(memory, 0, set->memory_size);
+ 
+     for (uint32_t bi = 0; bi < set->binding_count; bi++) {
+         VkPs4DescriptorBinding *b = &set->bindings[bi];
+         if (b->count == 0) continue;
+ 
+-        uint8_t *slot = (uint8_t *)set->memory +
++        uint8_t *slot = (uint8_t *)memory +
+                         (size_t)b->binding_number * VK_PS4_DESCRIPTOR_SET_STRIDE;
+ 
+         switch (b->type) {
+@@ -498,6 +514,7 @@
+             break;
+         }
+     }
++    return memory;
+ }
+ 
+ /* === vkCmdBindDescriptorSets === */
+@@ -521,6 +538,17 @@
+     const GnmInputUsageSlot *slots = NULL;
+     uint32_t slot_count = 0;
+ 
++    /* One composed copy per bound set, this bind's dynamic offsets baked in.
++     * psbc reports at most four sets (patch 0022), so eight covers any legal
++     * bind; a larger one is clipped instead of reading past the table. */
++#define VK_PS4_MAX_BOUND_SETS 8u
++    void *composed[VK_PS4_MAX_BOUND_SETS] = {NULL};
++    if (setCount > VK_PS4_MAX_BOUND_SETS) {
++        vk_ps4_log("CmdBindDescriptorSets: %u sets bound at once, using the first %u",
++                   setCount, VK_PS4_MAX_BOUND_SETS);
++        setCount = VK_PS4_MAX_BOUND_SETS;
++    }
++
+     /* Pre-compute dynamic offsets per (set_idx, binding_number, array_element).
+      * Vulkan spec: offsets are consumed set-major, binding-number-ascending,
+      * with one offset per dynamic descriptor (not per binding).
+@@ -558,10 +586,12 @@
+     }
+ 
+     /* Compose each bound set's descriptor memory once with this bind's dynamic
+-     * offsets; the stage loops below then only write base pointers. */
++     * offsets; the stage loops below then only write base pointers to the copy
++     * this bind owns inside the command buffer. */
+     for (uint32_t si = 0; si < setCount; si++) {
+-        compose_set_memory((VkPs4DescriptorSet *)pDescriptorSets[si], firstSet + si,
+-                           dyn_map, dyn_map_count);
++        composed[si] = compose_set_memory(
++            cmd, (VkPs4DescriptorSet *)pDescriptorSets[si], firstSet + si,
++            dyn_map, dyn_map_count);
+     }
+ 
+     if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+@@ -589,12 +619,11 @@
+                  * hi, the 64-bit convention radv's set args expect. */
+                 if (slot->usagetype == GNM_SHINPUTUSAGE_PTR_INDIRECTRESOURCETABLE) {
+                     if (apislot < firstSet || apislot >= firstSet + setCount) continue;
+-                    VkPs4DescriptorSet *want =
+-                        (VkPs4DescriptorSet *)pDescriptorSets[apislot - firstSet];
+-                    if (!want || !want->memory) continue;
++                    void *set_memory = composed[apislot - firstSet];
++                    if (!set_memory) continue;
+                     sceGnmDrawCmdSetPointerUserData(&cmd->gnm_cmd, stage,
+                                                     slot->startregister,
+-                                                    want->memory);
++                                                    set_memory);
+                     continue;
+                 }
+ 
+@@ -735,11 +764,10 @@
+              * loop above): write that set's base pointer and nothing else. */
+             if (slot->usagetype == GNM_SHINPUTUSAGE_PTR_INDIRECTRESOURCETABLE) {
+                 if (apislot < firstSet || apislot >= firstSet + setCount) continue;
+-                VkPs4DescriptorSet *want =
+-                    (VkPs4DescriptorSet *)pDescriptorSets[apislot - firstSet];
+-                if (!want || !want->memory) continue;
++                void *set_memory = composed[apislot - firstSet];
++                if (!set_memory) continue;
+                 sceGnmDrawCmdSetPointerUserData(&cmd->gnm_cmd, stage,
+-                                                slot->startregister, want->memory);
++                                                slot->startregister, set_memory);
+                 continue;
+             }
+ 

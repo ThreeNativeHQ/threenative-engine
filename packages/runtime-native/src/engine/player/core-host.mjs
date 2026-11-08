@@ -69,7 +69,21 @@ globalThis.__tnDispatchInput = (event) => {
   for (const callback of [...(listeners.get(event.type) ?? [])]) callback(dom);
 };
 
-// The player has no fetch, so a run it hosts makes no request. The runner's desktop network check needs the
+// `assets.resolve()` answers `tnpk:<path>` on the player, and a game reads that URL with fetch (procedural-animals
+// loads its `.animal` packs so). This fetch serves the installed package's Buffer entries and nothing else: a
+// network URL is refused by name, so the player still makes no request.
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : String(input?.url ?? input);
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url))
+    throw new TypeError(`TN_NATIVE_FETCH_NETWORK_UNSUPPORTED: ${url} (the native player reads only its installed package)`);
+  init?.signal?.throwIfAborted?.();
+  // core-textures' logicalPath, inlined: that module reads engine globals at import, which this host precedes.
+  const hash = url.indexOf("#");
+  const path = url.startsWith("tnpk:") ? url.slice(5) : hash < 0 ? url : url.slice(hash + 1);
+  return new Response(globalThis.tn.loadAsset("buffer", path).value, { url });
+};
+
+// The player makes no network request. The runner's desktop network check needs the
 // `runtime.network` capability and a `network` observation from the bridge core installs: report the honest
 // zero, as playtest/src/three/device.ts does for the legacy host's retained fetch failures.
 {
@@ -124,7 +138,8 @@ globalThis.tn.onUpdate((dt) => {
 
 const readSize = () => ({ width: canvas.width, height: canvas.height, aspect: canvas.width / canvas.height });
 export const platform = {
-  input: () => [],
+  // The player's navigator.getGamepads (v8_main.cpp: scePad on PS4, SDL3 on desktop) in the W3C standard mapping.
+  input: () => globalThis.navigator?.getGamepads?.() ?? [],
   inputTarget: canvas,
   renderer: { createCanvas: () => canvas, hasWebGPU: () => true, readSize: () => [1280, 720], observeResize: () => () => {} },
   viewport: { readSize, observeResize: () => () => {} },

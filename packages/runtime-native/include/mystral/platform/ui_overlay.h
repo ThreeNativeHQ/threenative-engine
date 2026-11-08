@@ -46,6 +46,13 @@ bool uiReadyIntentReceived();
  */
 bool postUiMessage(const std::string& frame);
 
+/**
+ * Hold `postUiMessage` frames until `attachDesktopCssUi` runs, which then replays them in order.
+ * A host calls it before the game boots when a CSS UI will attach: the game's first commit comes
+ * before the window the UI attaches to. A no-op in a build without the CSS backend.
+ */
+void holdUiPostsUntilCssAttach();
+
 /** Whether an overlay attached itself on this run. Reported, never assumed. */
 bool uiOverlayAttached();
 

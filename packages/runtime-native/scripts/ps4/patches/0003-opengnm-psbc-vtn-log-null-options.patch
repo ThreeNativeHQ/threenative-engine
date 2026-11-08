@@ -1,0 +1,17 @@
+diff --git a/src/compiler/spirv/spirv_to_nir.c b/src/compiler/spirv/spirv_to_nir.c
+index 2f9a0d0..c2e6f4a 100644
+--- a/src/compiler/spirv/spirv_to_nir.c
++++ b/src/compiler/spirv/spirv_to_nir.c
+@@ -276,7 +276,10 @@ vtn_default_log_level(void)
+ void
+ vtn_log(struct vtn_builder *b, enum nir_spirv_debug_level level,
+         size_t spirv_offset, const char *message)
+ {
+-   if (b->options->debug.func) {
++   /* A header check in vtn_create_builder() reports through here before
++    * b->options exists, so a rejected module dereferenced NULL instead of
++    * printing why it was rejected. */
++   if (b->options && b->options->debug.func) {
+       b->options->debug.func(b->options->debug.private_data,
+                              level, spirv_offset, message);
+    }

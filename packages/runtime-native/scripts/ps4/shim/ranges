@@ -1,0 +1,62 @@
+// PS4 shim: OpenOrbis libc++ 11 has no <ranges> (ranges landed in libc++ 15). The engine uses
+// exactly two algorithms over a whole range — std::ranges::equal (a plain range comparison) and
+// std::ranges::find with a projection — so this header provides those two and nothing else. A
+// third use must come here and be added, which is the point: this is not a ranges implementation.
+// Put this dir BEFORE .../include/c++/v1 on -isystem so it wins.
+//
+// Deliberately does NOT define __cpp_lib_ranges: this is not a ranges library, and a feature test
+// macro would send code that checks it into paths these two algorithms cannot serve.
+#ifndef _PS4_SHIM_RANGES
+#define _PS4_SHIM_RANGES
+#include <concepts>
+#include <functional>
+#include <iterator>
+
+namespace std {
+namespace ranges {
+
+// The two customization points V8's v8-memory-span.h specializes (it reaches them through
+// __has_include(<ranges>), which this header makes true).
+struct view_base {};
+template <class _Tp>
+inline constexpr bool enable_borrowed_range = false;
+template <class _Tp>
+inline constexpr bool enable_view = derived_from<_Tp, view_base>;
+
+// ranges::equal(r1, r2): same length, element-wise ==. The standard's two-range overload.
+template <class _R1, class _R2>
+constexpr bool equal(_R1&& __r1, _R2&& __r2) {
+    auto __f1 = std::begin(__r1);
+    auto __l1 = std::end(__r1);
+    auto __f2 = std::begin(__r2);
+    auto __l2 = std::end(__r2);
+    for (; __f1 != __l1 && __f2 != __l2; ++__f1, ++__f2) {
+        if (!(*__f1 == *__f2)) return false;
+    }
+    return __f1 == __l1 && __f2 == __l2;
+}
+
+// ranges::find(r, value, proj): the iterator (not a subrange) of the first projected match.
+template <class _R, class _T>
+constexpr auto find(_R&& __r, const _T& __value) -> decltype(std::begin(__r)) {
+    auto __first = std::begin(__r);
+    const auto __last = std::end(__r);
+    for (; __first != __last; ++__first) {
+        if (*__first == __value) break;
+    }
+    return __first;
+}
+
+template <class _R, class _T, class _Proj>
+constexpr auto find(_R&& __r, const _T& __value, _Proj __proj) -> decltype(std::begin(__r)) {
+    auto __first = std::begin(__r);
+    const auto __last = std::end(__r);
+    for (; __first != __last; ++__first) {
+        if (std::invoke(__proj, *__first) == __value) break;
+    }
+    return __first;
+}
+
+}  // namespace ranges
+}  // namespace std
+#endif  // _PS4_SHIM_RANGES
