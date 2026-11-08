@@ -1,6 +1,6 @@
 # PRD-806 — Fix the medium and low findings of the PR #483 epic review
 
-**Status:** PARTIAL — 4 of 8 Phase 1 and 2 boxes are fixed (lane B, 2026-11-05). Open: E46, E49, E73 and E56/E62 (visual judge or native build), and the 45 low findings (lane C running). Scope: the 14 medium findings (13 after one duplicate) and 45 low findings verified on HEAD `21c713b7d` on 2026-11-05. The high findings are in [PRD-805](../../done/PRD-805-epic-review-findings.md). No fix has started.
+**Status:** PARTIAL — 5 of 8 Phase 1 and 2 boxes are fixed (E46 added on PR #635, 2026-11-07). Open: E49 (on develop; its V8 texture test was not run here), E73 (on PR #635, waits for an owned-engine judge), E56/E62 (E56 fixed, E62 waits for an MCP-cooked world judge), and the 45 low findings. Scope: the 14 medium findings (13 after one duplicate) and 45 low findings verified on HEAD `21c713b7d` on 2026-11-05. The high findings are in [PRD-805](../../done/PRD-805-epic-review-findings.md).
 **Priority:** P2 — each open finding below is a real defect, and none makes the board red at HEAD
 **Complexity:** 5 (MEDIUM); many small fixes in independent files
 **Owner:** ThreeNative maintainers
