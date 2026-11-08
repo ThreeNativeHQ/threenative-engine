@@ -53,13 +53,20 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 247/503 (49.1 %)  [158 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 247/503 (49.1 %)  [152 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 158 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 152 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The 15 units after 232 are masks: Tailwind assembles one mask image from per-axis sub-masks whose
+`@property` defaults are transparent (axis) or opaque (edge), so a mask unit on its own masks nothing —
+verified in Chromium, where the computed `mask-image` for the angle utilities was literally `none` and
+for the edge ones a full white gradient. Each mask unit now gets the transparency, the opaque end and
+(for a colour) the luminance mode it needs to be a mask at all; eight further cells now measure a real
+difference, which is PRD-845's engine work.
 
 The 4 units after 228 are a spacing unit's children: `space-*`/`divide-*` put a gap *between* the
 probe's children, and with children as wide as the probe the second one landed outside the measured
