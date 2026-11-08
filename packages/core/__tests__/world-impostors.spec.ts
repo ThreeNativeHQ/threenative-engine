@@ -1367,12 +1367,17 @@ describe("WorldCells automatic impostors", () => {
     const loader = treeLoader();
     const world = await loadPine(loader);
     await flushed(world);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     runBake(world, rendererStub({ throwOnRender: true }));
     await flushed(world);
 
     expect(partsOf(world, "pine", 2, 0).length).toBe(0);
     expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
     expect(world.stats().failures).toBeGreaterThan(0);
+    // The line names the cause, so a failed bake is not a bare reason (PRD-858).
+    const line = info.mock.calls.map(([text]) => String(text)).find((text) => text.includes("reason=bake-failed"));
+    expect(line).toMatch(/ error=\S/);
+    info.mockRestore();
     world.dispose();
   });
 

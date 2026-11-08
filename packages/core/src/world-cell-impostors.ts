@@ -601,9 +601,9 @@ export class CellImpostors {
           const staged: IImpostorPart[] = impostorParts(parts);
           try {
             this.#baker.begin(asset.id, staged, { pixels: IMPOSTOR_FRAME_PIXELS });
-          } catch {
+          } catch (error) {
             this.#host.addFailure();
-            this.#reportImpostor(asset, "begin-failed");
+            this.#reportImpostor(asset, "begin-failed", error);
             continue;
           }
           this.#impostorReservedBytes = IMPOSTOR_ATLAS_BYTES;
@@ -623,11 +623,11 @@ export class CellImpostors {
           atlas = this.#baker.step(raw);
           if (atlas !== undefined || this.#baker.pending?.view === view) break;
         }
-      } catch {
+      } catch (error) {
         this.#host.addFailure();
         this.#impostorBaking = undefined;
         this.#impostorReservedBytes = 0;
-        this.#reportImpostor(baking, "bake-failed");
+        this.#reportImpostor(baking, "bake-failed", error);
         return;
       }
       if (atlas === undefined) return;
@@ -725,9 +725,9 @@ export class CellImpostors {
         radius: record.radius,
         source: source.source,
       });
-    } catch {
+    } catch (error) {
       this.#host.addFailure();
-      this.#reportImpostor(asset, "surface-failed");
+      this.#reportImpostor(asset, "surface-failed", error);
       return;
     }
     // The terminal gate is stored as the BASE-sphere projected distance — the distance at which the
@@ -1421,7 +1421,8 @@ export class CellImpostors {
    * `TN_WORLD_IMPOSTOR`, one bounded line per asset: its terminal level, the metres it takes over at,
    * the views the atlas holds, its GPU bytes, and — when the world can name it — why it did not land.
    */
-  #reportImpostor(asset: IAssetState, reason: string): void {
+  /** One line per asset; a failure carries its error, so the cause is on the line and not swallowed. */
+  #reportImpostor(asset: IAssetState, reason: string, error?: unknown): void {
     if (this.#impostorReported.has(asset.id)) return;
     this.#impostorReported.add(asset.id);
     const impostor = asset.impostor;
@@ -1430,7 +1431,8 @@ export class CellImpostors {
       `${WORLD_IMPOSTOR_MARKER} asset=${asset.id} level=${String(asset.levels.length - 1)} ` +
         `switch=${(asset.distances.at(-1) ?? 0).toFixed(1)} ` +
         `views=${String(atlas === undefined ? 0 : IMPOSTOR_VIEWS)} ` +
-        `bytes=${String(atlas?.bytes ?? 0)} reason=${reason}`,
+        `bytes=${String(atlas?.bytes ?? 0)} reason=${reason}` +
+        (error === undefined ? "" : ` error=${error instanceof Error ? error.message : String(error)}`),
     );
   }
 }
