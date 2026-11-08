@@ -50,11 +50,15 @@ export const isolationMiddleware: Middleware = (req, res, next) => {
   next();
 };
 
-/** The same headers for a static host that reads a `_headers` file (Netlify, Cloudflare Pages). */
+/**
+ * The same headers for a static host that reads a `_headers` file (Netlify, Cloudflare Pages), plus
+ * a year-long immutable cache for Vite's content-hashed `assets/` files (PRD-860): a repeat visit
+ * then reads them from disk with no revalidation round trip, and a new build has new names.
+ */
 export function renderIsolationHeaders(): string {
   return `/*\n${Object.entries(ISOLATION_HEADERS)
     .map(([key, value]) => `  ${key}: ${value}\n`)
-    .join("")}`;
+    .join("")}/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n`;
 }
 
 /**
@@ -106,6 +110,22 @@ const ISOLATION_BOOT = `<script>(() => {
       return new Promise(() => {});
     }, () => {});
 })();</script>`;
+
+/**
+ * The build identity `ctx.assets.memo` keys on (PRD-860): the hashed entry script, which changes
+ * whenever any of the game's code does. Only a production page has one; the dev server's entry is
+ * `src/main.ts`, so a dev page writes none and generated content rebuilds every run there.
+ */
+export function withBuildId(html: string): string {
+  const entry = /<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]*\/assets\/[^"]+\.js)"/iu.exec(
+    html,
+  )?.[1];
+  if (entry === undefined) return html;
+  return html.replace(
+    /<script/iu,
+    `<script>globalThis.__TN_BUILD_ID__ = ${JSON.stringify(entry).replaceAll("<", "\\u003c")};</script>\n    <script`,
+  );
+}
 
 function htmlAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
@@ -255,7 +275,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     },
     transformIndexHtml(html) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
-      const output = updateLaunchMarkup(root, config, html);
+      const output = withBuildId(updateLaunchMarkup(root, config, html));
       // Before the first script, so it runs ahead of the game module.
       return threaded ? output.replace(/<script/iu, `${ISOLATION_BOOT}\n    <script`) : output;
     },

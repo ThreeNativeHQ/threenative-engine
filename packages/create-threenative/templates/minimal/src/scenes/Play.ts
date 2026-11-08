@@ -39,6 +39,7 @@ import {
 import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { SKY_OPTIONS, setupSky } from "../render/sky.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
@@ -62,6 +63,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
       SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",

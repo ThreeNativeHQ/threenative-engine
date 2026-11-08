@@ -555,8 +555,14 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
     steepShare: steep / landCells,
   };
 
+  let audit: ICourse["audit"] | undefined;
   return {
-    audit: { ...auditCourse(group, pickups, ground), ...world },
+    // Measured on first read, not on every load: only the debug snapshot and the layout
+    // playtests read it, and walking every solid's bounds cost a run ~0.1 s.
+    get audit() {
+      audit ??= { ...auditCourse(group, pickups, ground), ...world };
+      return audit;
+    },
     checkpoints: [
       new Vector3(...COURSE.spawn),
       new Vector3(...onGround(sx + 9, 0, sz + 13)),

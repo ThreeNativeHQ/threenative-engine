@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { createWebBrandPlugin } from "../src/web-brand.js";
+import { createWebBrandPlugin, withBuildId } from "../src/web-brand.js";
 
 const roots: string[] = [];
 
@@ -186,7 +186,8 @@ describe("web branding adapter", () => {
       },
     });
     expect(emitted._headers).toBe(
-      "/*\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Opener-Policy: same-origin\n",
+      "/*\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Opener-Policy: same-origin\n" +
+        "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
     );
   });
   it("leaves upstream three alone in a native bundle, whose host is not a browser (PRD-637)", async () => {
@@ -259,5 +260,17 @@ describe("web branding adapter", () => {
     expect(html).toContain('<link rel="icon" href="data:," />');
     expect(html.match(/rel="icon"/gu)).toHaveLength(1);
     expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
+  });
+
+  it("writes the hashed entry script as the build id ctx.assets.memo keys on, and none in dev (PRD-860)", () => {
+    const built = withBuildId(
+      '<head>\n    <script type="module" crossorigin src="/assets/index-DsA_BRqT.js"></script>\n</head>',
+    );
+    expect(built).toContain(
+      '<script>globalThis.__TN_BUILD_ID__ = "/assets/index-DsA_BRqT.js";</script>',
+    );
+    expect(built.indexOf("__TN_BUILD_ID__")).toBeLessThan(built.indexOf('type="module"'));
+    const dev = '<script type="module" src="/src/main.ts"></script>';
+    expect(withBuildId(dev)).toBe(dev);
   });
 });

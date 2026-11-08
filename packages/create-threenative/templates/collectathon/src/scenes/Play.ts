@@ -25,7 +25,7 @@ import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { postTier, setupPost } from "../render/postprocessing.js";
 import { GRASS_SHARE } from "../render/quality.js";
-import { setupSky, skyTexture } from "../render/sky.js";
+import { setupSky, skyPixels, skyTexture } from "../render/sky.js";
 import { loadSurfaces, updateSurfaceSampling } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, HUD_PILL } from "../state.js";
@@ -91,8 +91,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // The HUD is page UI the cover cannot hide, so it waits for the same readiness.
     void ctx.startup.whenReady().then(() => ctx.state.set({ loaded: true }));
     const surfaces = await loadSurfaces(ctx.assets);
-    this.#sky = skyTexture();
-    this.#fill = skyTexture(0.3, 128);
+    // The sky is the same every run of this build: paint it once, then read the pixels back.
+    const painted = await ctx.assets.memo("sky", () => ({
+      fill: skyPixels(0.3, 128),
+      sky: skyPixels(),
+    }));
+    this.#sky = skyTexture(1, 2048, painted.sky);
+    this.#fill = skyTexture(0.3, 128, painted.fill);
     setupSky(ctx.scene, this.#sky, this.#fill);
     const tier = postTier({
       gpuClass: ctx.renderer.gpuClass?.class,

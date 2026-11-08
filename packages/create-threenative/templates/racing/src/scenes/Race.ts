@@ -24,6 +24,7 @@ import {
   materialLightingEnabled,
 } from "../render/quality.js";
 import { SKY_OPTIONS, SUN_DIRECTION, setupSky } from "../render/sky.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, type RaceStatus, resolveRaceStatus } from "../state.js";
 import { Lap } from "../track/Lap.js";
@@ -119,6 +120,8 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     this.#sky = texture;
     const scene = ctx.scene;
     if (scene === undefined) return;
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(scene, texture, ctx.renderer.softwareAdapter !== undefined);
     // The measurement is not awaited: it reads the GPU back and must not hold the first frame.
     void this.#sampleSky(ctx, scene, generation);

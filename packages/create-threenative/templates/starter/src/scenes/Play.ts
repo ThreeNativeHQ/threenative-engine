@@ -34,6 +34,7 @@ import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { ball, block, spike, tube } from "../render/shapes.js";
 import { SKY_OPTIONS, setupSky } from "../render/sky.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { STARTER_MIST, createVolumetricFog } from "../render/volumetricFog.js";
 import type { GameState } from "../state.js";
@@ -84,6 +85,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ]);
     this.#playerModel = playerModel;
     this.#sky = sky;
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(ctx.scene, sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",

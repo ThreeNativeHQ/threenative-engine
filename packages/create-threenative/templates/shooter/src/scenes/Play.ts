@@ -51,6 +51,7 @@ import {
 } from "../render/quality.js";
 import { scale } from "../render/scale.js";
 import { SKY_OPTIONS, setupSky } from "../render/sky.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { loadSurfaces } from "../render/surface.js";
 import { TOWN_HALF, type Town, type TownCollider, buildTown } from "../render/town.js";
 import { createTownMaterials } from "../render/townMaterials.js";
@@ -143,6 +144,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // The town's five generated surfaces (`render/surface.ts`), before `enter` builds the town.
     await loadSurfaces(ctx.assets);
     this.#assets = { enemy, viewmodel, sky };
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(ctx.scene, this.#assets.sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",

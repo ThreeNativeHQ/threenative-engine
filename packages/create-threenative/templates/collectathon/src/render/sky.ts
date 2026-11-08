@@ -92,7 +92,7 @@ const smooth = (from: number, to: number, value: number): number => {
  * flatten toward the horizon. Each is lit by where its density climbs: a texel whose deck is
  * denser toward the sun, or above it on screen, is on the cloud's shaded side or its flat base.
  */
-export function skyTexture(saturation = 1, width = 2048): DataTexture {
+export function skyPixels(saturation = 1, width = 2048): Uint8Array {
   // three's PMREM sizes its cube from width / 4 and needs at least 16: keep width >= 64.
   const height = width / 2;
   const data = new Uint8Array(width * height * 4);
@@ -231,6 +231,21 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
       data[i + 3] = 255;
     }
   }
+  return data;
+}
+
+/**
+ * The sky as a texture. `data` is `skyPixels(saturation, width)`; the scene passes the copy it kept
+ * from the last run (`ctx.assets.memo`), because painting four million texels costs a run ~0.3 s.
+ */
+export function skyTexture(
+  saturation = 1,
+  width = 2048,
+  data: Uint8Array = skyPixels(saturation, width),
+): DataTexture {
+  const height = width / 2;
+  if (data.length !== width * height * 4)
+    throw new Error(`sky pixels are ${data.length} bytes, expected ${width * height * 4}.`);
   const sky = new DataTexture(data, width, height, RGBAFormat, UnsignedByteType);
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;

@@ -20,6 +20,7 @@ import {
   canonicalUrl,
   createAssetCache,
 } from "./asset-cache.js";
+import { type AssetMemo, createAssetMemo } from "./asset-memo.js";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import { attachInstancedLod } from "./instanced-batch-lod.js";
@@ -218,6 +219,16 @@ export interface IAssetLoader {
    * a game that drives a loader outside `defineGame` may call it after its own reveal.
    */
   startBackgroundFill(): Promise<void>;
+  /**
+   * Generated content kept between runs (PRD-860): returns what `build` returned the last time this
+   * build of the game ran, read from disk, and calls `build` only when nothing is stored. Use it for
+   * seeded work that is the same every run, such as placement lists, painted sky pixels or terrain
+   * heights. The value is named typed arrays. A new build regenerates. On the dev server and on a
+   * native host `build` runs every time, and `TN_ASSET_MEMO` says why.
+   *
+   * @example const { pixels } = await ctx.assets.memo("sky", () => ({ pixels: paintSky() }));
+   */
+  memo: AssetMemo;
   /**
    * How many loads this loader has been asked for and how many have settled (resolved or
    * rejected). A loading view reads the ratio; the runtime folds it into `ctx.startup.progress`
@@ -1514,6 +1525,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     get progress() {
       return { pending: [...pending], requested, requestedBytes, settled, settledBytes };
     },
+    memo: createAssetMemo(canonicalUrl(manifestUrl)),
     prefetch: prefetchPaths,
     resolve: async (path) => (await resolveCandidates(path)).urls,
     startBackgroundFill: () => {
