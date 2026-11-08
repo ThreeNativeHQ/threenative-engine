@@ -23,7 +23,7 @@ Verified by the coordinator (re-ran the command): B1/F2 (7 render files, 12 copi
 | --- | --- | --- | --- |
 | [PRD-832](../../done/PRD-832-urgent-single-sources.md) | Q1-Q5, R2 slice | Urgent single sources: kit inventory, render drift guard, launch flags, tone curve, core version, named `tnw_web_frame` fields | P1 |
 | [PRD-833](../../done/PRD-833-template-mechanism-lives-once.md) | R1 | Template mechanism lives once | P1 |
-| [PRD-835](PRD-835-one-registry-entry-per-assertion.md) | R3 | One registry entry per assertion | P1 |
+| [PRD-835](../../done/PRD-835-one-registry-entry-per-assertion.md) | R3 | One registry entry per assertion | P1 |
 | [PRD-840](PRD-840-platform-difference-is-a-value.md) | N3 | Platform difference is a value, not a scattered `#ifdef` | P1 |
 | [PRD-834](PRD-834-cross-language-contracts-are-generated.md) | R2 | Cross-language contracts are generated | P2 |
 | [PRD-836](../../done/PRD-836-one-committed-capability-manifest.md) | R4 | One committed capability manifest | P2 |
