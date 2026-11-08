@@ -536,6 +536,12 @@ git apply "$SCRIPTS/patches/0060-vk-ps4-vertex-table-by-semantic.patch"
 # radv's GFX7/8 VS reads InstanceID from v1 = InstanceID / VGT_INSTANCE_STEP_RATE_0, which nothing set: at its
 # cleared 0 every instance read 0, so instanced meshes and GPU particles drew instance 0 only (PRD-784 sweep).
 git apply "$SCRIPTS/patches/0065-vk-ps4-instance-step-rate.patch"
+# Nothing wrote PA_SU_SC_MODE_CNTL, so every draw kept the reset value, no culling: a FrontSide mesh drew its
+# back faces too. Bind and rebind now emit the pipeline's cull mode and front face; clears draw unculled (P5-8).
+git apply "$SCRIPTS/patches/0066-vk-ps4-cull-mode.patch"
+# shadPS4 v0.21.0 detiles DISPLAY micro tiling at 128 bpp in the thin order, so an RGBA32F texture read zero at
+# every odd texel (procedural-animals' pose texture). 16-byte texels take thin tiling, ordered alike by both (P5-6).
+git apply "$SCRIPTS/patches/0067-vk-ps4-128bpp-textures-thin-tiling.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
