@@ -801,26 +801,41 @@ fn a_tap_leaves_no_hover_behind() {
     assert_eq!(rgb(&ui, 50, 30), [0, 0, 255]);
 }
 
-#[test]
-fn reduced_motion_makes_a_transition_arrive_at_once() {
-    let mut ui = environment();
-    ui.set_env(false, true);
-    hover(&mut ui, 50.0, 130.0);
-    ui.set_time(50.0);
-    ui.render();
-    assert_eq!(
-        rgb(&ui, 50, 130),
-        [255, 0, 0],
-        "a quarter of the way through 200ms would be a blend; reduced motion is not that"
-    );
+/// The document Chromium gets for Tailwind's `motion-safe:` / `motion-reduce:`, which compile to
+/// exactly these two queries.
+fn motion_variants() -> CssUi {
+    ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:64px;height:64px;background:#2563eb}}\n\
+                     @media (prefers-reduced-motion: reduce){{#a{{background:#ef4444}}}}\n\
+                     @media (prefers-reduced-motion: no-preference){{#a{{background:#2563eb}}}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    )
+}
 
-    // Turning it back off restores the animation.
-    let mut ui = environment();
-    ui.set_env(false, false);
-    hover(&mut ui, 50.0, 130.0);
-    ui.set_time(50.0);
+#[test]
+fn reduced_motion_is_a_media_query_the_stylesheet_sees() {
+    let mut ui = motion_variants();
+    assert_eq!(rgb(&ui, 32, 32), [37, 99, 235], "no preference: the safe arm");
+
+    ui.set_env(false, true);
     ui.render();
-    assert_eq!(rgb(&ui, 50, 130), [64, 0, 191], "a quarter of the way to red");
+    assert_eq!(rgb(&ui, 32, 32), [239, 68, 68], "reduce: the reduce arm");
+
+    // Back off again: the preference is a state, not a one-way switch.
+    ui.set_env(false, false);
+    ui.render();
+    assert_eq!(rgb(&ui, 32, 32), [37, 99, 235], "and back to the safe arm");
 }
 
 #[test]

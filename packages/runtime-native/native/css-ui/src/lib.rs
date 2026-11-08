@@ -406,14 +406,13 @@ pub struct CssUi {
     time: f64,
     /// `prefers-color-scheme: dark`.
     dark: bool,
-    /// `prefers-reduced-motion: reduce`, as the [`REDUCED_MOTION_CSS`] sheet implements it.
+    /// `prefers-reduced-motion: reduce`, which the engine reports to the stylesheet as a media
+    /// query (`@media (prefers-reduced-motion: reduce)`), the same way a browser does.
     reduced_motion: bool,
     /// Whether the pointer is a finger rather than a mouse: it does not hover, and the device
     /// reports `(hover: none)` and `(pointer: coarse)`.
     touch: bool,
     ua_css: String,
-    /// The reduced-motion sheet, while it is applied (see [`REDUCED_MOTION_CSS`]).
-    motion_css: String,
     redraw: Arc<Redraw>,
     assets: Arc<Assets>,
     dirty: bool,
@@ -486,7 +485,6 @@ impl CssUi {
             reduced_motion: false,
             touch: false,
             ua_css: String::new(),
-            motion_css: String::new(),
             redraw,
             assets,
             dirty: true,
@@ -862,13 +860,13 @@ impl CssUi {
     /// The device the UI is styled for: `dark` drives `prefers-color-scheme`, and
     /// `reduced_motion` drives `prefers-reduced-motion`.
     ///
-    /// The reduced-motion half is a sheet rather than a media query: Stylo's media features are
-    /// Gecko's or Servo's, and Servo's list has no `prefers-reduced-motion` at all (the Gecko
-    /// one reads it through gecko bindings this crate has no way to reach), so
-    /// `@media (prefers-reduced-motion: reduce)` can never match here. What that query asks for
-    /// is honoured directly instead: while it is set, nothing animates — see
-    /// [`REDUCED_MOTION_CSS`]. A game's own `!important` still wins, which is the same
-    /// precedence a browser gives it.
+    /// Both halves are media queries the stylesheet answers on its own: `prefers-color-scheme` and
+    /// `prefers-reduced-motion`. The second one is a vendored Stylo hunk rather than an
+    /// approximation — Servo's media-feature list had no `prefers-reduced-motion` at all, so
+    /// `@media (prefers-reduced-motion: reduce)` and `(no-preference)` both failed to match, which
+    /// is exactly what Tailwind's `motion-reduce:` and `motion-safe:` compile to. Nothing else
+    /// changes: a stylesheet that asks for reduce and does nothing about it keeps its transitions,
+    /// as it does in a browser.
     pub fn set_env(&mut self, dark: bool, reduced_motion: bool) {
         if dark == self.dark && reduced_motion == self.reduced_motion {
             // Nothing the stylesheet can see has changed, so nothing is repainted: a host states its
@@ -883,14 +881,7 @@ impl CssUi {
             self.scale,
             self.color_scheme(),
         ));
-        if !self.motion_css.is_empty() {
-            self.doc.remove_user_agent_stylesheet(&self.motion_css);
-            self.motion_css.clear();
-        }
-        if reduced_motion {
-            self.doc.add_user_agent_stylesheet(REDUCED_MOTION_CSS);
-            self.motion_css = REDUCED_MOTION_CSS.to_string();
-        }
+        self.doc.set_reduced_motion(reduced_motion);
         self.dirty = true;
         self.sync_dirty();
     }
@@ -1568,16 +1559,6 @@ fn root_box_css(width: u32, height: u32) -> String {
 /// the same substitution (see `vendor/PATCHES.md`), so both sides measure one face.
 const UA_CSS: &str = "button { box-sizing: border-box; border-width: 2px; border-style: outset; \
      font: 400 13.3333px Arial; }";
-
-/// What `prefers-reduced-motion: reduce` asks for, as a user-agent sheet: no transition and no
-/// animation takes any time, delays included (a transition that keeps its delay is still a
-/// transition the user asked not to see). It is `!important`, which outranks every author
-/// declaration that is not itself `!important` — the same precedence the cascade gives it in a
-/// browser.
-///
-/// See [`CssUi::set_env`] for why this is a sheet and not a media query.
-const REDUCED_MOTION_CSS: &str = "* { transition-duration: 0s !important; transition-delay: 0s !important; \
-     animation-duration: 0s !important; animation-delay: 0s !important; }";
 
 fn qual(tag: &str) -> QualName {
     QualName::new(None, ns!(html), LocalName::from(tag))

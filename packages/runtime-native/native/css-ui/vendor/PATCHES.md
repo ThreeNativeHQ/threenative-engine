@@ -371,6 +371,32 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   scroll` stops reporting the 140 px lie: 30 of 31 cells are now honestly "does not discriminate"
   (they need a `scrollIntoView` driver or a snap implementation) instead of a false failure.
 
+## `stylo-0.20.0` — 44 added code lines, and `stylo_atoms-0.20.0` — 1 added line
+
+### 1. the servo build had no `prefers-reduced-motion`, and no way to carry the preference
+
+* **Where:** `servo/media_features.rs` (a new `eval_prefers_reduced_motion` and its
+  `feature!` entry, `MEDIA_FEATURES` 15 → 16), `device/servo.rs` (`ExtraDeviceData` gains
+  `prefers_reduced_motion`, plus `set_prefers_reduced_motion`/`prefers_reduced_motion`),
+  `queries/values.rs` (the `PrefersReducedMotion` value, which the Gecko build declares privately),
+  and `stylo_atoms-0.20.0/static_atoms.txt` (the feature's name has to be a static atom).
+* **Why:** Stylo's Servo media-feature list had no `prefers-reduced-motion` at all, so
+  `@media (prefers-reduced-motion: reduce)` **and** `(no-preference)` both failed to match. That is
+  exactly what Tailwind's `motion-reduce:` and `motion-safe:` compile to, so both variants resolved
+  to nothing and the parity meter measured identical wrong frames (SSIM 0.6492 for both, against a
+  0.99 bar). No public API reaches the media-feature table, which is what makes this a vendored
+  hunk rather than a crate change.
+* **Proves it:** `tests/interaction.rs::reduced_motion_is_a_media_query_the_stylesheet_sees` — a
+  document whose colour is chosen by the two queries is blue with no preference and red after
+  `set_env(false, true)`, and blue again when the preference is cleared; it fails against the
+  previous vendor sources. The parity meter's `--family PRD-847` moves from 1/5 to **3/5**:
+  `motion-safe:bg-red-500` and `motion-reduce:bg-red-500` go from 0.6492 to 1.0.
+
+`blitz-dom` hunk 17 in this same change carries the device flag through
+(`BaseDocument::set_reduced_motion`, `make_device` takes it), and `css-ui`'s `set_env` now sets it
+instead of injecting the `transition-duration: 0s !important` sheet — the workaround the PRD asked
+to delete once the query worked.
+
 ## `parley-0.11.1` — 240 added code lines
 
 Hunk 1 is the one over the guideline and it is separable in three pieces, each of which a fixture

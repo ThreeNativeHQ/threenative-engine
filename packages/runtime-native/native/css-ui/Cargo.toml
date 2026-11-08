@@ -62,3 +62,10 @@ fontique = { path = "vendor/fontique-0.11.1" }
 # is one of them. One hunk drops what the backend cannot paint so a filter is a visible
 # difference rather than an aborted frame; `vendor/PATCHES.md` carries it.
 anyrender_vello_cpu = { path = "vendor/anyrender_vello_cpu-0.17.0" }
+# Servo's media-feature list had no `prefers-reduced-motion` (so Tailwind's `motion-safe:` and
+# `motion-reduce:` both failed to match) and its device had no way to carry the preference. Three
+# hunks add the value, the device field and the feature; `vendor/PATCHES.md` carries them.
+stylo = { path = "vendor/stylo-0.20.0" }
+# The media feature's name has to be a static atom, and the atom set is a generated list in its own
+# crate: one line in `static_atoms.txt` is the whole hunk.
+stylo_atoms = { path = "vendor/stylo_atoms-0.20.0" }

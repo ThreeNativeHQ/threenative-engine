@@ -208,6 +208,9 @@ pub struct BaseDocument {
     /// Whether the device this document is rendered on is driven by touch alone,
     /// which is what `@media (hover: none)` and `(pointer: coarse)` report.
     pub(crate) touch: bool,
+    /// Whether the user asked for reduced motion, which is what
+    /// `@media (prefers-reduced-motion: reduce)` reports. Defaults to no preference.
+    pub(crate) reduced_motion: bool,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document.
@@ -360,6 +363,7 @@ pub(crate) fn make_device(
     media_type: MediaType,
     font_ctx: Arc<Mutex<FontContext>>,
     touch: bool,
+    reduced_motion: bool,
 ) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
@@ -376,7 +380,7 @@ pub(crate) fn make_device(
         PointerCapabilities::FINE | PointerCapabilities::HOVER
     };
 
-    Device::new(
+    let mut device = Device::new(
         media_type,
         selectors::matching::QuirksMode::NoQuirks,
         viewport_size,
@@ -390,7 +394,15 @@ pub(crate) fn make_device(
         },
         pointer_capabilities,
         PointerCapabilities::default(),
-    )
+    );
+    // What `@media (prefers-reduced-motion: reduce)` reports. Set on the device the stylist
+    // evaluates queries against, rather than approximated with a spurious sheet: a game's own
+    // media queries have to answer the same way the engine's do.
+    device.set_prefers_reduced_motion(match reduced_motion {
+        true => style::queries::values::PrefersReducedMotion::Reduce,
+        false => style::queries::values::PrefersReducedMotion::NoPreference,
+    });
+    device
 }
 
 impl BaseDocument {
@@ -440,7 +452,7 @@ impl BaseDocument {
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, media_type.clone(), font_ctx.clone(), false);
+        let device = make_device(&viewport, media_type.clone(), font_ctx.clone(), false, false);
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(NodeTree::new());
@@ -481,6 +493,7 @@ impl BaseDocument {
             nodes_to_id,
             viewport,
             media_type,
+            reduced_motion: false,
             touch: false,
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
@@ -1983,6 +1996,7 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
+            self.reduced_motion,
         ));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
@@ -2009,6 +2023,24 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
+            self.reduced_motion,
+        ));
+    }
+
+    /// Whether the user asked for reduced motion, which is what
+    /// `@media (prefers-reduced-motion: reduce)` reports and `(no-preference)` denies. Rebuilds the
+    /// stylist device, like [`Self::set_touch`], so the next restyle re-evaluates every query.
+    pub fn set_reduced_motion(&mut self, reduced_motion: bool) {
+        if self.reduced_motion == reduced_motion {
+            return;
+        }
+        self.reduced_motion = reduced_motion;
+        self.set_stylist_device(make_device(
+            &self.viewport,
+            self.media_type.clone(),
+            self.font_ctx.clone(),
+            self.touch,
+            self.reduced_motion,
         ));
     }
 
@@ -2024,6 +2056,7 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
+            self.reduced_motion,
         ));
     }
 
