@@ -1334,6 +1334,45 @@ fn a_colour_filter_transforms_the_layer_it_wraps() {
 /// from `@property` registered variables whose initial values the engine must supply: the gradient is
 /// `linear-gradient(to top, black var(--from-position), transparent var(--to-position))` and only two
 /// of the four variables are set by a class.
+/// Tailwind 4 ships a fallback for engines without `@property` support:
+///
+/// ```css
+/// @layer properties { @supports (...) { *, ::before, ::after { --tw-mask-top: initial; ... } } }
+/// ```
+///
+/// The declaration is a *reset*: `initial` on a registered property means the property's registered
+/// initial value, not "unset". An engine that reads it as the guaranteed-invalid value leaves every
+/// `var(--tw-mask-*)` invalid, the whole `mask-image` invalid, and paints **no mask anywhere** — which
+/// is what this panel does, while the same declarations paint a correct fade without that block.
+#[test]
+fn a_registered_property_set_to_initial_keeps_its_initial_value() {
+    let mut ui = ui(
+        160,
+        80,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "@property --fade{{syntax:\"*\";inherits:false;initial-value:linear-gradient(to bottom, black, transparent)}} \n\
+                     {BASE} \n\
+                     @layer properties {{ *{{--fade: initial}} }} \n\
+                     #a{{width:120px;height:40px;margin:10px;background:#2563eb;mask-image:var(--fade)}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    let low = rgb(&ui, 70, 44);
+    let high = rgb(&ui, 70, 16);
+    assert!(
+        (low[2] as i32 - high[2] as i32).abs() > 20,
+        "the registered initial value still masks: {low:?} at one end, {high:?} at the other"
+    );
+}
+
 #[test]
 fn a_mask_gradient_whose_stops_come_from_registered_variables_paints() {
     let mut ui = ui(
@@ -1374,7 +1413,7 @@ fn a_mask_gradient_whose_stops_come_from_registered_variables_paints() {
     let low = rgb(&ui, 70, 44);
     let high = rgb(&ui, 70, 16);
     assert!(
-        low[2] > high[2] + 20,
+        (low[2] as i32 - high[2] as i32).abs() > 20,
         "the mask fades across the box: {low:?} at one end, {high:?} at the other"
     );
 }

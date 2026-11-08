@@ -70,6 +70,15 @@ in the probe's staging, and the cell is worth six more.
 The three tests stay: they are what turned "multi-layer masks are unimplemented" into a statement that
 was false, and they pin the shape for whoever bisects the sheet.
 
+**The panel now reproduces standalone, which is the instrument for that bisect.** Copying the panel's own
+`batch.json` and running the crate's `oracle` example on it paints the same flat blue as the meter, so the
+difference can be bisected rule by rule without a browser in the loop. Two candidates are already ruled
+out this way: removing the companion rule from the sheet changes nothing, and the `@property` fallback
+block (`@layer properties { @supports (…) { * { --tw-mask-top: initial } } }`) is harmless — a registered
+property set to `initial` keeps its registered initial value, and a fourth test proves the mask still
+paints through that reset. What is left is the rest of the panel's ~36 KB of rules, and a half-split over
+`batch.json` is a two-minute experiment.
+
 ## Open: the eight colour-mask cells differ by a mask *curve*, measured (2026-11-07)
 
 `mask-mode: luminance` now paints (gradient stops rewritten so their alpha carries their luminance,
