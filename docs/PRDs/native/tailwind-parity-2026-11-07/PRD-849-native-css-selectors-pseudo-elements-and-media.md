@@ -70,3 +70,14 @@ the `:has()` row from `native-css-compat.ts` when its units pass.
 **Files:** `native/css-ui/src/lib.rs` (device descriptor), `corpus/tailwind-parity.mjs` (`--env`), the guide, the floor.
 
 - [ ] Media variants pass with each input on and off, and the floor rises. proof: AC-3 plus `parity:tailwind --ratchet`
+  Evidence: NOT met, but the scaffold this needs now exists and PRD-847 used it end to end. The vendored
+  `stylo-0.20.0` + `stylo_atoms-0.20.0` (see `vendor/PATCHES.md`) took `prefers-reduced-motion` from "no such
+  media feature" to a passing variant in five small edits, and `contrast-more:`/`contrast-less:`,
+  `forced-colors:` and `inverted-colors:` are the same five each: a value in `queries/values.rs`, a field plus
+  setter/getter in `device/servo.rs` (`forced_colors()` currently returns a hardcoded `ForcedColors::None` and
+  has to become the field), an evaluator and `feature!` entry in `servo/media_features.rs` with
+  `MEDIA_FEATURES` bumped, the feature's name in `stylo_atoms`' `static_atoms.txt`, and the device input.
+  The input is the one piece that is *not* a copy: `css-ui`'s `set_env` carries two booleans and would either
+  grow (`set_env` is the C ABI the host calls, so that is a host change too) or take a second setter read from
+  the oracle's `env.json` for the crate subject first. The scene's three cells already exist and carry their
+  exemption text, so the work is the engine feature plus a device descriptor, then deleting each exemption.
