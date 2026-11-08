@@ -1,5 +1,5 @@
 {
-  "passed": 311,
+  "passed": 312,
   "units": [
     "PRD-850/paint|bg|--tw-gradient-position,background-image|",
     "PRD-850/paint|bg|background-size|",
@@ -204,6 +204,7 @@
     "PRD-848/logical|rounded|border-start-start-radius|",
     "PRD-845/mask|mask|--tw-mask-conic,--tw-mask-conic-position,mask-composite,mask-image|",
     "PRD-845/mask|mask|--tw-mask-linear,--tw-mask-linear-position,mask-composite,mask-image|",
+    "PRD-845/mask|mask|mask-composite|",
     "PRD-845/mask|mask|--tw-mask-bottom,--tw-mask-bottom-from-position,--tw-mask-linear,mask-composite,mask-image|",
     "PRD-845/mask|mask|--tw-mask-bottom,--tw-mask-bottom-from-color,--tw-mask-linear,mask-composite,mask-image|",
     "PRD-845/mask|mask|--tw-mask-bottom,--tw-mask-bottom-to-color,--tw-mask-linear,mask-composite,mask-image|",

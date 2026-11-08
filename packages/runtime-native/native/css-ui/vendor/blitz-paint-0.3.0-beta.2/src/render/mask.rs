@@ -162,7 +162,15 @@ impl ElementCx<'_, '_> {
                     }
                     _ => false,
                 };
-                if identity {
+                // Only `intersect` has an identity: `add`, `subtract` and `exclude` change their
+                // result when an opaque layer is dropped, and Tailwind's own `mask-add` cell is exactly
+                // that (the browser unions the opaque initial values, so its mask is fully opaque).
+                let composite = if drawn == 0 {
+                    StyloMaskComposite::Add
+                } else {
+                    *get_cyclic(&svg_styles.mask_composite.0, idx)
+                };
+                if identity && matches!(composite, StyloMaskComposite::Intersect) {
                     continue;
                 }
             }

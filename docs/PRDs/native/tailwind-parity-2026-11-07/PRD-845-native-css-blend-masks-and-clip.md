@@ -120,11 +120,22 @@ first layer actually drawn — so the one real layer ended up composited `SrcIn`
 fix skips identity layers (one opaque colour repeated — intersecting with an opaque mask changes nothing)
 and composites `SrcOver` for the first layer *drawn*.
 
+**Only `intersect` has an identity.** Skipping the opaque layers unconditionally broke `mask-composite:
+add`, whose browser result *is* the union with those opaque layers (fully opaque); conditioning the skip on
+the layer's composite operator restored it — `mask-add` 0.588 → **1.0000** — and the family is 23 of 50
+again, now with every cell measuring real pixel work.
+
 Measured effect: every mask cell now measures instead of reading "does nothing", and the family's honest
 score is 22 of 50 rather than 23 — the engine paints masks now, and the differences that appear
 (0.58–0.93, `mask-add` worst at 0.588, the `-red-50` luminance cells around 0.87–0.89) are real
 mask-rendering gaps that were previously invisible behind a mask that did nothing. Scene 313 → 311 for the
 same reason: one point of apparent score was a mask that was not being painted at all.
+
+**What is left in the family, measured.** The `-to-40` position units and the combined `x`/`y` axes paint
+*no mask at all* in this engine — the probe is the plain blue `235` where the browser fades `79…108` — while
+the `-to-red-50` colour units work at 0.9966. The difference between them is which variable the unit sets
+(`-to-position` versus `-to-color`) and, for `x`/`y`, that two real layers must be intersected rather than
+one. That is the next experiment, and the debug print that found this turn's bug is the tool for it.
 
 Two tests pin it: `a_tailwind_three_layer_mask_composition_paints` (six layers, intersected, fading) and
 `a_mask_gradient_whose_stops_come_from_registered_variables_paints`. The earlier version of the first one
