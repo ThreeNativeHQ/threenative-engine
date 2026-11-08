@@ -148,6 +148,8 @@ The Decision does not cover the other tests in `ui-layer-host-contract.test.mjs`
 
 iOS removals in this lane (the `jsc_engine.mm` text match and the `ios-contract` text tests) are covered only by the macOS `build-ios-simulator` job. Unverified here.
 
+The `build-ios-simulator` job is in `native-release.yml`, not `ci.yml`. It runs for a pull request into `main` or for a pull request that carries the `release-proof` label. An ordinary PR into `develop` does not run it. `verify-ios-simulator.mjs` drives four `device-smoke` scenarios. None starts a WebUI game, and the script has no `TN_UI_OVERLAY` or `TN_UI_PAGE` check. So a behaviour check for the iOS UI tests needs a new WebUI scenario in that script, and it earns proof only after a labelled macOS run is green.
+
 `web-host-refusal.test.mjs` no longer reads source. It needs `pnpm wasm:build` and Chromium with WebGPU, so it skips when `build/wasm` is absent. No CI job builds the Wasm host and runs it yet. That wiring is open.
 
 Files that still read `.cpp` or `.mm` as text:
