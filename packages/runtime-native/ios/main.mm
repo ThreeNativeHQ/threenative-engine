@@ -148,6 +148,7 @@ int main(int, char**) {
                 javascriptString(root + "/tn-playtest-response.json") + "};";
             runtime->evalScript(mailbox, "threenative-playtest-mailbox.js");
         }
+        NSLog(@"TN_IOS_GAME_EVAL");
         if (!runtime->evalScript(script, scriptPath.UTF8String)) {
             NSLog(@"TN_IOS_PROOF_FAILED: JavaScript evaluation failed");
             mystral::platform::detachIosUiOverlay();

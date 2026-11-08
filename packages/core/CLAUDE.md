@@ -118,6 +118,8 @@ particular, Godot-borrowed node names stay unchanged.
   reverse `start()`: loop stopped, scene exited, registry cleared, plugin `dispose` called,
   cleanups drained, input disposed, store stopped, renderer disposed. A throwing scene exit must
   still reach every plugin/setup cleanup and renderer release; the original failure is retained.
+  Every boot phase pushes its own release onto `cleanup` as it acquires a resource, and `#teardown`
+  only drains that stack, newest first. A new acquisition pushes its release at the acquisition.
 - A `Scene` is a class with five optional methods — `load`, `enter`, `update`, `exit`,
   `render`. Do not add a sixth.
 - `ICtx` hands out the real objects: `ctx.scene` is a `THREE.Scene`, `ctx.camera` is a real

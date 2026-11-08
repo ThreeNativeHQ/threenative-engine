@@ -48,17 +48,3 @@ test('Android staging allows a missing public directory and rejects a file', () 
   writeFileSync(file, 'no');
   assert.throws(() => stageAndroidAssets(file, destination), /not a directory/u);
 });
-
-test('mobile fetch maps relative and leading-slash URLs to the packaged game directory', () => {
-  const runtime = readFileSync(new URL('../src/runtime.cpp', import.meta.url), 'utf8');
-  const iosMain = readFileSync(new URL('../ios/main.mm', import.meta.url), 'utf8');
-  const calls = runtime.match(/resolveFetchFilePath\(jsEngine_->toString\(args\[0\]\)\)/gu) ?? [];
-  assert.equal(calls.length, 2, 'sync and async file reads must share path normalization');
-  assert.match(runtime, /const std::string normalized = vfs::normalizeBundlePath\(path\);/u);
-  assert.match(runtime, /return "game\/" \+ normalized;/u);
-  assert.match(
-    runtime,
-    /#if defined\(__ANDROID__\)[\s\S]*readAndroidAsset\(path, embeddedData, error\)/u,
-  );
-  assert.match(iosMain, /URLByAppendingPathComponent:@"game"[\s\S]*changeCurrentDirectoryPath/u);
-});

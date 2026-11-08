@@ -159,6 +159,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_mipmaps_share_one_submit=mipmaps_share_one_submit
         native_engine_traa_alpha=traa_alpha
         native_engine_traa_reset_seed=traa_reset_seed
+        native_engine_traa_resolve_blend=traa_resolve_blend
         native_engine_traa_camera_velocity=traa_camera_velocity
         native_engine_traa_skinned_velocity=traa_skinned_velocity
         native_engine_traa_camera_held_skinned_velocity=traa_camera_held_skinned_velocity

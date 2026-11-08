@@ -6,6 +6,7 @@
 #include "mystral/console_markers.h"
 #include "mystral/platform/window.h"
 #include "mystral/platform/input.h"
+#include "mystral/platform/resize_plan.h"
 #include "mystral/platform/crash_policy.h"
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/context.h"
@@ -160,22 +161,14 @@ static js::JSValueHandle evalRuntimeScriptWithResult(
 }
 
 static std::string resolveFetchFilePath(std::string path) {
-    const bool fileUrl = path.rfind("file://", 0) == 0;
-    if (fileUrl) {
-        path = path.substr(7);
-    }
 #if defined(__ANDROID__)
-    if (!fileUrl) {
-        const std::string normalized = vfs::normalizeBundlePath(path);
-        if (normalized.rfind("game/", 0) == 0) return normalized;
-        return "game/" + normalized;
-    }
+    constexpr auto platform = vfs::FetchPathPlatform::Android;
 #elif defined(__APPLE__) && TARGET_OS_IPHONE
-    if (!fileUrl && !path.empty() && path.front() == '/') {
-        return vfs::normalizeBundlePath(path);
-    }
+    constexpr auto platform = vfs::FetchPathPlatform::Ios;
+#else
+    constexpr auto platform = vfs::FetchPathPlatform::Desktop;
 #endif
-    return path;
+    return vfs::resolveFetchPath(std::move(path), platform);
 }
 
 #if defined(__ANDROID__)
@@ -2775,29 +2768,26 @@ private:
      * platform. Fail closed: a malformed publication leaves the previous rectangles in place and
      * every later click is decided against rectangles that no longer exist, so it is named.
      */
-    bool applyUiHitRegions(const std::string& frame) { return platform::applyUiHitRegionsFrame(frame); }
-
     void drainUiMessages() {
         if (!jsEngine_) return;
-        std::string frame;
-        while (platform::takeUiMessage(frame)) {
-            // Hit regions stop at the host: it owns the hit test, and forwarding them to the
-            // game would put a process hop in the input path for a reader that does not exist.
-            // Same rule as the Android host, which applies them in Java for the same reason.
-            if (applyUiHitRegions(frame)) continue;
+        // Hit regions stop at the host: it owns the hit test, and forwarding them to the game
+        // would put a process hop in the input path for a reader that does not exist. Same rule
+        // as the Android host, which applies them in Java for the same reason. The split lives in
+        // `platform::drainUiFramesToGame`, where a desktop test pins it.
+        platform::drainUiFramesToGame([this](const std::string& frame) {
             js::JSValueHandle receive = jsEngine_->getGlobalProperty("__tnUiGameReceive");
             if (!jsEngine_->isFunction(receive)) {
                 // The game has not connected its end yet. Dropping is correct and must be
                 // visible: a UI whose intents vanish looks exactly like a dead button.
                 std::cout << "TN_UI_BRIDGE:{\"dropped\":\"no __tnUiGameReceive\"}" << std::endl;
-                continue;
+                return;
             }
             jsEngine_->call(receive, jsEngine_->getGlobal(), {jsEngine_->newString(frame.c_str())});
             if (jsEngine_->hasException()) {
                 std::cerr << "[Mystral] UI bridge frame threw: " << jsEngine_->getException()
                           << std::endl;
             }
-        }
+        });
     }
 
     void drainLifecycleMarkers() {
@@ -4069,26 +4059,14 @@ private:
     }
 
     void dispatchResizeEvent(const platform::ResizeEventData& e) {
-        // Update internal dimensions
-        width_ = e.width;
-        height_ = e.height;
-
-        // Touch coordinates are normalized by SDL and scaled back up with getWindowSize(), so
-        // the platform window has to track the canvas. A landscape-locked Android activity on
-        // a portrait display resizes to 2400x1080 through this path while the platform size
-        // stayed 1080x2400, which scaled every finger into the wrong half of the screen and
-        // made a two-finger gesture read as two contacts on the same side.
-        platform::syncWindowSize(e.width, e.height);
-
-        // The swapchain is deliberately NOT reconfigured here, and `Runtime::resize()` — which
-        // would — is still unreachable. Calling it from this path was tried and aborts the
-        // process: a launch rotates the display twice before the first frame, and reconfiguring
-        // the surface from inside the resize callback tears it down under the frame in flight.
-        // A Pixel 8 died with signal 6 immediately after TN_NATIVE_SMOKE_FIRST_FRAME.
-        //
-        // Doing this correctly means deferring the reconfigure to a frame boundary, where no
-        // surface texture is acquired. That is real work and is not attempted here; what is
-        // recorded is that the obvious version is wrong.
+        // The decision lives in platform/resize_plan.h, where a desktop test pins it: sync the
+        // platform window (a landscape-locked Android activity on a portrait display otherwise
+        // scales every finger into the wrong half of the screen) and do NOT reconfigure the surface.
+        const auto plan = platform::planResizeEvent(e.width, e.height);
+        width_ = plan.width;
+        height_ = plan.height;
+        if (plan.syncPlatformWindow) platform::syncWindowSize(plan.width, plan.height);
+        if (plan.reconfigureSurface) resize(plan.width, plan.height);
 
         // Update window.innerWidth/innerHeight
         auto window = jsEngine_->getGlobal();

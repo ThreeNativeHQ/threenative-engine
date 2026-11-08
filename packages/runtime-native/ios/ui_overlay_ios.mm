@@ -27,9 +27,10 @@
  *   gets from returning false out of `dispatchTouchEvent`, and the same rule X11 gets from an
  *   input shape. `pointer-events: none` is not the mechanism on any of the three.
  *
- * **UNPROVEN WebUI execution.** Native-only simulator smoke does not exercise this overlay.
- * The packaged React pixel proof must pass before claiming visible iOS UI; simulator screenshots
- * still do not establish physical-device input or presentation latency.
+ * **Proof.** `scripts/verify-ios-simulator.mjs` launches a web-renderer variant of the smoke app and
+ * judges the markers this file logs (`scripts/ios-webui-log.mjs`): attach, load, page ready, first
+ * state, and the overlay frame against its parent. Simulator runs do not establish physical-device
+ * input or presentation latency.
  */
 
 namespace {
@@ -253,7 +254,8 @@ static NSString* resolveUiFile(NSString* root, NSURL* url) {
  */
 - (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation {
     (void)navigation;
-    NSLog(@"TN_UI_OVERLAY:{\"loaded\":true,\"frame\":\"%@\"}", NSStringFromCGRect(webView.frame));
+    NSLog(@"TN_UI_OVERLAY:{\"loaded\":true,\"frame\":\"%@\",\"parent\":\"%@\"}",
+          NSStringFromCGRect(webView.frame), NSStringFromCGRect(webView.superview.bounds));
 }
 
 - (void)webView:(WKWebView*)webView
@@ -415,7 +417,8 @@ bool postIosUiMessage(const std::string& frame) {
         g_uiFirstStateLogged = true;
         // The frame at first state delivery, next to the one at navigation finish: together they
         // say whether the overlay tracked the parent through rotation or froze at attach size.
-        NSLog(@"TN_UI_OVERLAY:{\"firstState\":true,\"frame\":\"%@\"}", NSStringFromCGRect(g_overlay.frame));
+        NSLog(@"TN_UI_OVERLAY:{\"firstState\":true,\"frame\":\"%@\",\"parent\":\"%@\"}",
+              NSStringFromCGRect(g_overlay.frame), NSStringFromCGRect(g_overlay.superview.bounds));
     }
     @autoreleasepool {
         NSString* payload = [NSString stringWithUTF8String:frame.c_str()];

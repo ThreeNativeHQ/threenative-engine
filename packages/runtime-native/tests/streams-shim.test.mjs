@@ -3,9 +3,8 @@ import { test } from "vitest";
 import vm from "node:vm";
 import {
   createGuestContext,
-  extractEmbeddedJs,
   guest,
-  readRuntimeCpp,
+  readRuntimeScript,
 } from "./embedded-js.mjs";
 
 // The WHATWG streams shim backs Response bodies, GLTF streaming loaders and
@@ -15,8 +14,8 @@ import {
 
 function setupStreamsContext() {
   const context = createGuestContext();
-  vm.runInContext(extractEmbeddedJs(readRuntimeCpp(), "fetchPolyfill"), context);
-  vm.runInContext(extractEmbeddedJs(readRuntimeCpp(), "streamsPolyfill"), context);
+  vm.runInContext(readRuntimeScript("fetch-polyfill"), context);
+  vm.runInContext(readRuntimeScript("streams-polyfill"), context);
   return context;
 }
 

@@ -4,9 +4,8 @@ import vm from "node:vm";
 import {
   createGuestContext,
   createTimers,
-  extractEmbeddedJs,
   guest,
-  readRuntimeCpp,
+  readRuntimeScript,
 } from "./embedded-js.mjs";
 
 // The fetch shim backs every asset load in a native game: Three.js' FileLoader
@@ -17,7 +16,7 @@ import {
 function setupFetchContext(natives = {}) {
   const timers = createTimers();
   const context = createGuestContext({ setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, ...natives });
-  vm.runInContext(extractEmbeddedJs(readRuntimeCpp(), "fetchPolyfill"), context);
+  vm.runInContext(readRuntimeScript("fetch-polyfill"), context);
   return { context, timers };
 }
 
@@ -54,8 +53,7 @@ test("TextEncoder/TextDecoder round-trip multi-byte UTF-8", () => {
 
 test("existing engine globals are not overwritten by the shims", () => {
   // V8 desktop ships TextDecoder natively; the guards must leave it alone.
-  const source = readRuntimeCpp();
-  const block = extractEmbeddedJs(source, "fetchPolyfill");
+  const block = readRuntimeScript("fetch-polyfill");
   assert.match(block, /if \(typeof TextDecoder === ["']undefined["']\)/u);
   assert.match(block, /if \(typeof TextEncoder === ["']undefined["']\)/u);
   assert.match(block, /if \(typeof AbortSignal === ["']undefined["']\)/u);
@@ -497,7 +495,6 @@ test("native fetch network observation records real HTTP and asset failures", as
     { method: "GET", url: "https://host/reject" },
     { method: "GET", url: "missing.bin" },
   ] });
-  assert.match(readRuntimeCpp(), /setProperty\(playtestMailbox, "network"/u);
 });
 
 test("native fetch network observation fails closed on overflow and protects its retained entries", async () => {

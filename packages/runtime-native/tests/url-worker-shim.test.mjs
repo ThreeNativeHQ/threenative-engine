@@ -5,9 +5,8 @@ import {
   createGuestContext,
   createRecordingConsole,
   createTimers,
-  extractEmbeddedJs,
   guest,
-  readRuntimeCpp,
+  readRuntimeScript,
 } from "./embedded-js.mjs";
 
 // URL/URLSearchParams and the standard Worker facade over the native worker
@@ -23,14 +22,13 @@ function setupUrlWorkerContext(natives = {}) {
     console: consoleShim,
     ...natives,
   });
-  const source = readRuntimeCpp();
   // All blocks land in one global, as in RuntimeImpl; the event constructors
   // are included because the Worker polyfill's failed-load path constructs an
   // ErrorEvent when its deferred callback fires.
-  vm.runInContext(extractEmbeddedJs(source, "fetchPolyfill"), context);
-  vm.runInContext(extractEmbeddedJs(source, "streamsPolyfill"), context);
-  vm.runInContext(extractEmbeddedJs(source, "urlPolyfill"), context);
-  vm.runInContext(extractEmbeddedJs(source, "eventConstructorsSetup"), context);
+  vm.runInContext(readRuntimeScript("fetch-polyfill"), context);
+  vm.runInContext(readRuntimeScript("streams-polyfill"), context);
+  vm.runInContext(readRuntimeScript("url-worker-polyfill"), context);
+  vm.runInContext(readRuntimeScript("event-constructors-setup"), context);
   return { context, timers };
 }
 
