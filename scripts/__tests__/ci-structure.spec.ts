@@ -4802,6 +4802,8 @@ describe("a CI-configuration-only pull request", () => {
     ".github/workflows/ci.yml",
     ".github/workflows/integration.yml",
     "scripts/ci-change-scope.mjs",
+    "scripts/ci/classify.mjs",
+    "scripts/ci/reuse.mjs",
     "scripts/ci-local.sh",
     "scripts/ci-workflow.ts",
     "scripts/__tests__/ci-needs.spec.ts",
