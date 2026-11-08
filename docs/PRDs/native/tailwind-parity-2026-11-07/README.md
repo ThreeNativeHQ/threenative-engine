@@ -53,13 +53,20 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 200/503 (39.8 %)  [210 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 206/503 (41 %)  [203 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 210 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 203 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The 6 units after 200 are `scroll-margin`/`scroll-padding`: Stylo's servo build never parsed them
+(`engine = "gecko"` in its property table) and `scrollIntoView` scrolled only the viewport and read
+neither, so 21 `scroll-m*` units had no consumer at all. Both halves are in, and the scroll group is
+7 of 31 with the rest needing drivers for a scroller at its limit (`overscroll-*`), a snap
+implementation (`snap-*`) and a `scroll-p*` stage that puts the class on the scroller rather than the
+probe.
 
 The 12 units after 183 are one staging rule: a *container* unit's probe is the container. `justify-end`
 is `justify-content: flex-end` on a flex container, and the scene staged it on a plain block, where it
