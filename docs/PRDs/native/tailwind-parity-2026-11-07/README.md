@@ -66,9 +66,12 @@ than in the scene: an animation sampled at the exact end of an iteration kept th
 iteration's frame (blitz-dom hunk 15, `animate-ping`), a client rect reported the element's
 *untransformed* box so every transform unit measured as an edge miss while its pixels matched
 (blitz-dom hunk 16), and the motion arm tested each cell's discrimination per sample, which fails
-every keyframe that starts from the element's own style (meter, motion bar). Three scroll cells
-moved the other way and now measure a real mismatch: the client rect began reporting the box the
-engine paints, which is what exposed the wheel-routing difference PRD-848 owns.
+every keyframe that starts from the element's own style (meter, motion bar). Between the first and
+the last full run, six scroll cells moved from "matches vacuously" to "measures a real mismatch" —
+the client rect began reporting the box the engine paints, which exposed the wheel-routing
+difference PRD-848 owns. Three of those six moved with no engine change between two runs, so the
+vacuity arm is not yet run-to-run deterministic: that must be fixed before `--ratchet` can be the CI
+gate PRD-852 asks for, and it is recorded in PRD-843's `## Open`.
 
 70 cells now measure a real difference (pixels or an edge) rather than a vacuous match. They are the
 engine gaps the family PRDs exist for: `bg-clip-text`, `bg-repeat`/`bg-origin-border`/`bg-fixed`

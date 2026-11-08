@@ -143,6 +143,11 @@ tailwind-parity: 174/503 (34.6 %)  [227 do not discriminate, 31 exempt, 4 perman
   Closing it means either a vendored Stylo hunk (5.6 MB of source for one table entry plus a device
   input) or a stylesheet rewrite in `css-ui` that turns the two queries into `all`/`not all`; the
   first is the honest one and it is not in this increment.
+- **The meter is not yet run-to-run deterministic.** Two consecutive full runs of the same tree
+  differed by three cells (227 against 230 non-discriminating, no engine change between them), all in
+  the scroll group. `--ratchet` compares a run against a floor, so a cell that flips costs a red gate
+  on an unchanged head; the vacuity arm has to be pinned (the wheel driver's settle is the first
+  suspect) before PRD-852's CI job can rely on it.
 - **Pending exemptions (31 variant cells).** Each names its owner PRD and stays in the denominator:
   form states and `peer-*` (PRD-851, 21 cells), container queries (PRD-848, 3),
   `prefers-contrast`/forced-colors/inverted-colors/`pointer-none`/`any-pointer-none` (PRD-849), and
