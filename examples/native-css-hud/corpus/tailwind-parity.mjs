@@ -1596,7 +1596,6 @@ async function chromiumPanel(browser, base, panel, { strip = false, drive = [], 
   // list is only honoured with an empty `media`, and that empty `media` disturbs the viewport
   // queries (`sm:`, `max-2xl:`) — measured, not assumed. The two axes neither interface can set
   // (`prefers-contrast: less`, `inverted-colors`) are named exemptions instead.
-  if (process.env.TN_PARITY_DEBUG === "env") console.log(`debug ${panel.id} env=${JSON.stringify(panel.env)}`);
   await page.emulateMedia({
     colorScheme: panel.env?.dark === true ? "dark" : "light",
     reducedMotion: panel.env?.reducedMotion === true ? "reduce" : "no-preference",
