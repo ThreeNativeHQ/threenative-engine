@@ -465,10 +465,26 @@ export function defineValueViews(host: IValueViewHost): IValueViews {
             const memory = read(address, count) as number[];
             for (let i = 0; i < count; i++) values[i] = memory[i] as number;
           };
+      // Shared memory (the threads build) never detaches when it grows, so a view onto it is the
+      // matrix itself: three's compose wrote 16 trapped elements a call, 49 ms of a laptop load (PRD-860).
+      const shared = new WeakMap<object, Float64Array>();
       Object.defineProperty(accessors, "elements", {
         configurable: true,
         get(this: object): number[] {
           const address = addressOf(this) + offset;
+          const memory = heap?.();
+          if (
+            typeof SharedArrayBuffer !== "undefined" &&
+            memory?.buffer instanceof SharedArrayBuffer
+          ) {
+            let view = shared.get(this);
+            if (view === undefined) {
+              view = memory.subarray(address / 8, address / 8 + count);
+              shared.set(this, view);
+            }
+            // quality-allow: three's elements are an indexable number list; a Float64Array is one.
+            return view as unknown as number[];
+          }
           let mirror = mirrors.get(this);
           if (mirror === undefined) {
             const values = new Array<number>(count);

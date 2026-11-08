@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { Euler, Quaternion } from "three";
+import { Euler, Matrix4, Quaternion, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -471,6 +471,45 @@ describe("three's math values on the browser back end", () => {
     expect([...matrix.elements]).toEqual(values);
     heap[(64 + offset) / 8 + 12] = 7; // the engine moved it: the next read sees it
     expect(matrix.elements[12]).toBe(7);
+  });
+
+  it("writes a matrix's elements straight into shared engine memory, with no per-element call (PRD-860)", () => {
+    // Collectathon composes ~6k instance matrices at load: 16 trapped writes each cost a laptop 49 ms.
+    const { runtime } = memoryRuntime();
+    const heap = new Float64Array(new SharedArrayBuffer(1024 * 8));
+    let writes = 0;
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      heapF64: () => heap,
+      writeDouble(address, value) {
+        writes++;
+        heap[address / 8] = value;
+      },
+      get(self, property) {
+        if (property === "matrixWorld") {
+          const matrix = runtime.construct("Matrix4", []);
+          runtime.construct("Object3D", []); // the spacer: a matrix is 16 doubles, an object 8
+          return matrix;
+        }
+        return runtime.get(self, property);
+      },
+    });
+    const matrix = new (
+      classes.Group as new () => {
+        matrixWorld: { elements: number[]; compose(p: object, q: object, s: object): unknown };
+      }
+    )().matrixWorld;
+    const [offset = 0] = registry.classes.Matrix4?.fields?.elements ?? [];
+    const at = (64 + offset) / 8;
+    const held = matrix.elements;
+    writes = 0;
+    const turn = new Quaternion().setFromEuler(new Euler(0.3, -0.7, 0.2));
+    matrix.compose({ x: 1, y: 2, z: 3 }, turn, { x: 2, y: 2, z: 2 });
+    expect(writes).toBe(0);
+    const expected = new Matrix4().compose(new Vector3(1, 2, 3), turn, new Vector3(2, 2, 2));
+    expect([...heap.subarray(at, at + 16)]).toEqual(expected.elements);
+    heap[at + 12] = 9; // the engine moved it: an elements array the game kept sees it
+    expect(held[12]).toBe(9);
   });
 
   it("binds the host projection report as one engine call, which core's projection takes (web cut 3)", () => {
