@@ -64,6 +64,19 @@ What is left: `overscroll-*` (3) and `scroll-smooth` (1) need a scroller at its 
 frame, `snap-*` (4) needs a snap implementation, two axis cells still do not discriminate, and
 `sticky` measures 0.6215 — a real difference, and the largest single one left in this PRD.
 
+## Open: the table stage was never stripped either (2026-11-07)
+
+A table stage's class list was `stage-table probe …`, and the vacuity arm strips the last class of an
+element whose list *starts* with `probe` — so `border-spacing-*`, `border-collapse` and `table-fixed`
+compared identical frames and read "does nothing" (7 of the group's 15 cells). With `probe` first they
+**discriminate**, and what they measure is a real difference in this engine's table painting:
+`border-collapse` 0.5444, `border-spacing-x` 0.6812, `table-fixed` 0.7259, `border-spacing-y` 0.9879 —
+`border-spacing-40` is 0.9997, a thousandth under the bar. `caption-top` still does not discriminate: the
+staged table has no `<caption>`.
+
+The flow group therefore stays at 1/15 while its *measurement* becomes honest, and the batch's
+non-discriminating count drops by 5.
+
 ## Execution Phases
 
 #### Phase 1: Flow layout

@@ -1218,7 +1218,11 @@ function layoutStage(cell, probe, classes, before, after) {
     return [
       el(
         "table",
-        { class: `stage-table ${classes}` },
+        // `probe` leads the list, as it does for the scroller stage: the vacuity arm strips the last
+        // class of an element whose class list *starts* with `probe`, and a table spelled
+        // `stage-table probe …` was never stripped — so every table unit measured identical frames
+        // (`border-spacing` and `border-collapse` were "does nothing" for that reason).
+        { class: `probe stage-table ${classes}` },
         el(
           "tbody",
           {},
@@ -1310,7 +1314,8 @@ function cellTree(cell) {
   const contain = cell.contain === true ? " stage-contain" : "";
   const light = cell.lightStage === true ? " light-stage" : "";
   const border = cell.borderProbe === true ? " stage-border" : "";
-  const classes = probeClass(cell.companions ?? [], cell.class) + container + border + items + contain;
+  const classes =
+    probeClass(cell.companions ?? [], cell.class) + container + border + items + contain;
   const probe = el(
     stage.tag ?? (CONTROL_UNIT.test(cell.unit?.probe ?? "") ? "textarea" : "div"),
     { class: classes, ...stage.attrs },
