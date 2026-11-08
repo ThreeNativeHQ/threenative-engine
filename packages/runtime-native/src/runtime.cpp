@@ -167,22 +167,14 @@ static js::JSValueHandle evalRuntimeScriptWithResult(
 }
 
 static std::string resolveFetchFilePath(std::string path) {
-    const bool fileUrl = path.rfind("file://", 0) == 0;
-    if (fileUrl) {
-        path = path.substr(7);
-    }
 #if defined(__ANDROID__)
-    if (!fileUrl) {
-        const std::string normalized = vfs::normalizeBundlePath(path);
-        if (normalized.rfind("game/", 0) == 0) return normalized;
-        return "game/" + normalized;
-    }
+    constexpr auto platform = vfs::FetchPathPlatform::Android;
 #elif defined(__APPLE__) && TARGET_OS_IPHONE
-    if (!fileUrl && !path.empty() && path.front() == '/') {
-        return vfs::normalizeBundlePath(path);
-    }
+    constexpr auto platform = vfs::FetchPathPlatform::Ios;
+#else
+    constexpr auto platform = vfs::FetchPathPlatform::Desktop;
 #endif
-    return path;
+    return vfs::resolveFetchPath(std::move(path), platform);
 }
 
 #if defined(__ANDROID__)

@@ -18,7 +18,7 @@ import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
 const mystral = process.env.TN_NATIVE_MYSTRAL_BIN ?? nativeTestExecutable(desktopBuildDirectory(), "mystral");
 const xvfb = fileURLToPath(new URL("../../../scripts/xvfb.sh", import.meta.url));
 const have = (tool) => spawnSync("sh", ["-c", `command -v ${tool}`]).status === 0;
-const available = process.platform === "linux" && existsSync(mystral) && ["Xvfb", "xwininfo", "xprop"].every(have);
+const available = process.platform === "linux" && existsSync(mystral) && ["Xvfb", "xwininfo", "xprop", "xdotool"].every(have);
 if (process.env.npm_lifecycle_event === "native:verify:desktop") {
   assert.ok(available, `the desktop verify lane needs ${mystral}, Xvfb, xwininfo and xprop`);
 }
@@ -52,7 +52,7 @@ function launch(name, config, extraArgs = []) {
   // The host retitles an idle window ("no frames presented") after a few seconds, so poll for the
   // configured title while the window is young, then read its size and size hints.
   const script = `
-    ${JSON.stringify(game)} ${extraArgs.join(" ")} >/dev/null 2>&1 &
+    ${JSON.stringify(game)} ${extraArgs.join(" ")} >${JSON.stringify(`${game}.log`)} 2>&1 &
     pid=$!
     for i in $(seq 1 60); do
       sleep 0.1
@@ -62,6 +62,8 @@ function launch(name, config, extraArgs = []) {
     id=$(xwininfo -root -tree | grep '("game" "game")' | awk '{print $1}' | head -1)
     xprop -id "$id" WM_NORMAL_HINTS WM_NAME _NET_WM_NAME _NET_WM_ICON
     kill $pid
+    wait $pid 2>/dev/null
+    cat ${JSON.stringify(`${game}.log`)}
   `;
   const run = spawnSync("sh", [xvfb, "sh", "-c", script], { encoding: "utf8", timeout: 90_000 });
   return run.stdout;
@@ -116,4 +118,78 @@ hostTest("the embedded uiRenderer decides whether the host requires a UI bundle"
   const native = run("ui-native", {});
   assert.equal(native.status, 0, native.stdout + native.stderr);
   assert.match(native.stdout, /TN_GAME_RAN/u);
+});
+
+/** The resolved window mode the host asked SDL for, from its TN_WINDOW_MODE line. */
+function mode(out) {
+  const line = out.split("\n").find((entry) => entry.startsWith("TN_WINDOW_MODE:"));
+  assert.ok(line, `no TN_WINDOW_MODE line\n${out.slice(-600)}`);
+  return JSON.parse(line.slice("TN_WINDOW_MODE:".length));
+}
+
+// No window manager is needed: the host prints the mode it passes to SDL after resolving the
+// embedded config, the command-line override and the fullscreen-wins rule.
+hostTest("embedded fullscreen, maximized and resizable keys reach the window mode", () => {
+  const win = (window) => mode(launch(`mode-${JSON.stringify(window)}`, { window: { height: 300, width: 300, ...window } }));
+  assert.deepEqual(win({}), { fullscreen: false, maximized: false, resizable: true });
+  assert.deepEqual(win({ fullscreen: true }), { fullscreen: true, maximized: false, resizable: true });
+  assert.deepEqual(win({ maximized: true }), { fullscreen: false, maximized: true, resizable: true });
+  assert.deepEqual(win({ resizable: false }), { fullscreen: false, maximized: false, resizable: false });
+  // Fullscreen is authoritative when both are configured.
+  assert.deepEqual(win({ fullscreen: true, maximized: true }), {
+    fullscreen: true,
+    maximized: false,
+    resizable: true,
+  });
+});
+
+hostTest("--windowed, --maximized and --fullscreen override the embedded window mode", () => {
+  const forced = (flag) =>
+    mode(launch(`flag${flag}`, { window: { fullscreen: true, height: 300, width: 300 } }, [flag]));
+  assert.deepEqual(forced("--windowed"), { fullscreen: false, maximized: false, resizable: true });
+  assert.deepEqual(forced("--maximized"), { fullscreen: false, maximized: true, resizable: true });
+  assert.deepEqual(forced("--fullscreen"), { fullscreen: true, maximized: false, resizable: true });
+  // And a flag beats an embedded maximized the other way round.
+  const windowed = mode(
+    launch("flagwin2", { window: { height: 300, maximized: true, width: 300 } }, ["--windowed"]),
+  );
+  assert.deepEqual(windowed, { fullscreen: false, maximized: false, resizable: true });
+});
+
+hostTest("display.maxFps reaches the presentation cap", () => {
+  const cap = (display) =>
+    /Presentation cap: (\d+) fps/u.exec(launch(`fps-${display?.maxFps}`, { display, window: { height: 300, width: 300 } }))?.[1];
+  assert.equal(cap({ maxFps: 30 }), "30");
+  assert.equal(cap({ maxFps: 144 }), "144");
+  assert.equal(cap(undefined), "60", "a game that states nothing gets the 60 fps default");
+});
+
+// The pump-silence observer stamps every `pollEvents()` entry, including the ones that return early
+// because the window is hidden and the loop is paused. If the stamp sat after that early return, a
+// 1.5 s hide would read as one 1.5 s silence. X unmap pauses the loop without a window manager.
+hostTest("the pump keeps stamping while the loop is paused, so a hidden window is no silence", () => {
+  const game = packageGame("paused-pump", { window: { height: 300, width: 300 } }, "setTimeout(() => process.exit(0), 6000);");
+  const script = `
+    ${JSON.stringify(game)} >${JSON.stringify(`${game}.log`)} 2>&1 &
+    pid=$!
+    for i in $(seq 1 60); do
+      sleep 0.1
+      xwininfo -root -tree | grep -q '("game" "game")' && break
+    done
+    sleep 1
+    id=$(xwininfo -root -tree | grep '("game" "game")' | awk '{print $1}' | head -1)
+    xdotool windowunmap "$id"
+    sleep 1.5
+    xdotool windowmap "$id"
+    wait $pid
+    cat ${JSON.stringify(`${game}.log`)}
+  `;
+  const out = spawnSync("sh", [xvfb, "sh", "-c", script], { encoding: "utf8", timeout: 90_000 }).stdout;
+  assert.match(out, /TN_LIFECYCLE:\{"event":"paused"[^\n]*"applied":true/u, "hiding the window pauses the loop");
+  assert.match(out, /TN_LIFECYCLE:\{"event":"resumed"/u, "showing it resumes the loop");
+  const line = out.split("\n").find((entry) => entry.startsWith("TN_PUMP_SILENCE:"));
+  assert.ok(line, `no TN_PUMP_SILENCE line\n${out.slice(-600)}`);
+  const pump = JSON.parse(line.slice("TN_PUMP_SILENCE:".length));
+  assert.equal(pump.observed, true);
+  assert.ok(pump.maxGapMs < 250, `the paused 1.5 s read as a ${pump.maxGapMs} ms pump silence`);
 });
