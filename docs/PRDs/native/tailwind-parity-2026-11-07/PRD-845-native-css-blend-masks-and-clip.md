@@ -102,8 +102,24 @@ else fails regardless of what is dropped — halving the 39 utility rules either
 hypothesis is the sheet's size: 36 KB of CSS parses to no mask while 17 KB with the same staging and one
 mask rule works. A reduce-from-the-end test would confirm a threshold in one pass.
 
-A single-layer alpha mask is confirmed correct on its own (`a_single_layer_alpha_mask_fades_the_box`), so
-the mask pipeline is not in question — only what this panel's sheet does to it.
+**Found it, by instrumenting rather than bisecting.** A temporary print in
+`vendor/blitz-paint-0.3.0-beta.2/src/render/mask.rs` shows the working configuration with **one** mask
+layer and the broken one with **six**; a single-layer alpha mask fades correctly
+(`a_single_layer_alpha_mask_fades_the_box`), and a six-layer `mask-composite: intersect` composition paints
+**nothing at all**.
+
+Two experiments pin the shape: with `Compose::SrcIn` (what the code uses for `intersect`) the box is fully
+hidden; with `Compose::SrcOver` it is fully visible. The accumulated mask is uniform either way, so the
+fade layer's alpha never reaches the composite — the bug is in how the per-layer compositing accumulates,
+not in the gradient, the variables, the clip, the layers' `@property` initial values (each proved correct
+by its own test) or the sheet's size.
+
+`a_tailwind_three_layer_mask_composition_paints` now asserts the fade instead of "fully masked out" — the
+earlier version of that test **passed on the bug**, which is why three turns of bisecting could not see it.
+It is `#[ignore]`d with this measurement so the suite stays green while the fix is written.
+
+Also learned and worth keeping: a registered property that is never set *does* read as its declared
+`initial-value` (`an_unset_registered_property_is_its_initial_value`).
 
 ## Open: the eight colour-mask cells differ by a mask *curve*, measured (2026-11-07)
 
