@@ -1571,12 +1571,17 @@ async function chromiumPanel(browser, base, panel, { strip = false, drive = [], 
   for (const steps of drive) await driveWeb(page, steps);
   if (sample !== undefined) {
     // A CSS animation is driven by the compositor, not by a JS timer, so the clock is moved through
-    // its own interface: pause every animation the document has and pin it to the sample.
-    await page.evaluate((at) => {
+    // its own interface: pause every animation the document has and pin it to the sample. The pin
+    // lands in the style of the *next* frame, so the capture waits for two animation frames: without
+    // that wait the screenshot is occasionally one sample stale (measured: the 500 ms capture of
+    // `animate-ping` scored 0.5984 on one run and 0.9959 on the next, the first being the 0 ms
+    // frame), which reads as an engine difference the engine does not have.
+    await page.evaluate(async (at) => {
       for (const animation of document.getAnimations()) {
         animation.pause();
         animation.currentTime = at;
       }
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     }, sample);
   }
   const boxes = await page.evaluate(() =>
@@ -1732,14 +1737,35 @@ function cellScore(cell, web, native) {
 }
 
 /**
+ * The motion cells that no sample can tell from the class-less arm, with the counterfactual of the
+ * sample that came closest.
+ */
+function blindCells(panel, samples) {
+  const blind = new Map();
+  for (const cell of panel.cells) {
+    const scores = samples.map((sample) => sample.vacuous.get(cell.unit));
+    if (scores.some((score) => score === undefined)) continue;
+    blind.set(cell.unit, Math.max(...scores.map((score) => score ?? 0)));
+  }
+  return blind;
+}
+
+/**
  * The motion bar: every cell at each step of the clock, on both subjects.
  *
  * A keyframe animation cannot be proven by one frame — two renderers can agree at rest and disagree
  * halfway — so a motion panel is captured at 0, 25, 50, 75 and 100 % and a cell passes only when
  * every sample passes both bars. The report keeps the *worst* sample, which is the one to read.
+ *
+ * The vacuity arm is the exception to "every sample": whether a cell can distinguish a dropped
+ * declaration at all is a fact about the clock, not about one instant. `animate-ping` rests at the
+ * probe's own look at 0 % — its `from` keyframe is the element's style — and is only visibly
+ * scaled and faded part-way through, so a per-sample test would fail every keyframe animation that
+ * starts from the element's own style, which is most of them. The cell is a scene defect only when
+ * *no* sample tells it from the class-less arm.
  */
 async function measureMotion(panel, dir, drive) {
-  const cells = new Map();
+  const samples = [];
   for (const sample of MOTION_SAMPLES) {
     const web = await webPanel(panel, { drive, sample });
     const native = cratePanel(panel, join(dir, `native-t${sample}`), { drive, sample });
@@ -1751,7 +1777,17 @@ async function measureMotion(panel, dir, drive) {
       }));
     }
     const stripped = await webPanel(panel, { drive, strip: true, sample });
-    for (const cell of comparePanel(panel, web, native, vacuityOf(panel, web, stripped))) {
+    samples.push({ sample, web, native, vacuous: vacuityOf(panel, web, stripped) });
+    if (sample === MOTION_SAMPLES.at(-1)) {
+      writeFileSync(join(dir, "web", "frame.png"), PNG.sync.write(web.png));
+      writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
+    }
+  }
+
+  const blind = blindCells(panel, samples);
+  const cells = new Map();
+  for (const { sample, web, native, vacuous } of samples) {
+    for (const cell of comparePanel(panel, web, native, vacuous, blind)) {
       const seen = cells.get(cell.unit);
       const one = { at: sample, ssim: cell.ssim, pass: cell.pass };
       if (seen === undefined) {
@@ -1764,10 +1800,6 @@ async function measureMotion(panel, dir, drive) {
         Object.assign(seen, { ssim: cell.ssim, edgeMisses: cell.edgeMisses, why: cell.why });
       }
     }
-    if (sample === MOTION_SAMPLES.at(-1)) {
-      writeFileSync(join(dir, "web", "frame.png"), PNG.sync.write(web.png));
-      writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
-    }
   }
   return [...cells.values()];
 }
@@ -1779,7 +1811,7 @@ async function measureMotion(panel, dir, drive) {
  * it is counted separately and never as a pass. A cell whose unit class changes nothing (the vacuity
  * arm) is a scene defect and fails, because a cell that proves nothing must not lift the score.
  */
-function comparePanel(panel, web, native, vacuous) {
+function comparePanel(panel, web, native, vacuous, blind = vacuous) {
   return panel.cells.map((cell) => {
     if (cell.exempt !== undefined) {
       // A *pending* exemption stays in the denominator: it is an unproven unit, not a pass, and the
@@ -1804,16 +1836,16 @@ function comparePanel(panel, web, native, vacuous) {
     );
     const misses = edgeMisses(elements, native.rects, EDGE_PX);
     const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
-    if (vacuous.has(cell.unit)) {
+    if (blind.has(cell.unit)) {
       return {
         ...cell,
         ...measured,
         edgeMisses: misses,
         ssim: Number(measured.score.toFixed(4)),
         ssimMin: min,
-        counterfactual: vacuous.get(cell.unit),
+        counterfactual: blind.get(cell.unit),
         pass: false,
-        why: `does not discriminate: dropping the class leaves the region at ${vacuous.get(cell.unit)}, at or above the ${min} bar`,
+        why: `does not discriminate: dropping the class leaves the region at ${blind.get(cell.unit)}, at or above the ${min} bar`,
       };
     }
     return {

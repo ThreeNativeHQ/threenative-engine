@@ -89,7 +89,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
   previous vendor sources.
 
-## `blitz-dom-0.3.0-beta.2` — 493 added code lines
+## `blitz-dom-0.3.0-beta.2` — 610 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -317,6 +317,43 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   the previous vendor sources. Known limits: a click on a span's padding hits the inline root rather
   than the span (parley's cluster hit test skips inline boxes), and RTL is implemented but no
   fixture measures it.
+
+### 15. an animation at the exact end of an iteration held the previous iteration's last frame
+
+* **Where:** `src/stylo.rs` (`resolve_stylist`, the per-animation tick in the restyle loop).
+* **Why:** CSS Animations defines `iterationProgress = (localTime / duration) mod 1`, so a
+  one-second animation sampled at exactly 1000 ms is at the *start* of its second iteration and
+  paints its `from` keyframe. Stylo's `iterate_if_necessary` wraps on a strict `>` (`iteration_over`),
+  so at that one instant the frame stayed on the previous iteration's `to` value — animated
+  invisibly, and measurably wrong. The parity meter samples 100 % of a one-second clock, which is
+  exactly that instant: `animate-ping` (Tailwind's `ping 1s … infinite`) measured SSIM 0.5111 at
+  1000 ms while its 0, 250, 500 and 750 ms samples were 1.0, 0.999, 0.9959 and 1.0. One ulp past
+  the instant (`now.next_up()`) puts the boundary on the iteration after it and moves no other
+  frame; a finite animation's `has_ended`/`forwards` fill is untouched because it reads `now`.
+* **Proves it:** `tests/animation.rs` — `an_infinite_animation_wraps_at_the_exact_iteration_boundary`
+  fails against the previous vendor sources (`rgb(0,0,255)` at 1000 ms instead of Chromium's
+  `rgb(255,0,0)`) and passes with it, and `a_finished_animation_holds_its_last_frame` pins the
+  `forwards` fill the hunk must not disturb. The meter's `--family PRD-847` sample moves from
+  0.5111 to the bar.
+
+### 16. a client rect ignored `transform`, so a rotated or animated box reported its untransformed size
+
+* **Where:** `src/document.rs` (`get_client_bounding_rect` now composes the element's and its
+  ancestors' transforms over the box's four corners; the old body is `untransformed_client_rect`,
+  and the viewport-scroll subtraction moved to the caller so it happens once, after the transform).
+* **Why:** CSSOM client rects are *transformed* — `rotate(45deg)` on a 100x40 box reports 99x99 —
+  and this returned the layout box. Paint and hit testing already apply the same composition (each
+  node's `transform` about its own origin, stored in device-pixel space by `resolve_2d_transform`,
+  which also folds in `transform-origin`, `translate`, `rotate` and `scale`), so a transformed
+  element was painted and clicked where it was, but *reported* where it was laid out. The parity
+  meter's geometry bar is that rectangle, so every transform unit measured as a 56 px edge miss
+  while its pixels matched: `animate-ping`'s 250/500/750 ms samples scored 0.999, 0.9959 and 1.0
+  against a 0.99 bar and failed on the box alone.
+* **Proves it:** `tests/interaction.rs::a_transformed_element_reports_its_transformed_box` (a
+  `rotate(45deg)` 100x40 box is 98.99 square and a `translate(30px,20px)` box moves to `[40, 30]`)
+  fails against the previous vendor sources, and `a_transformed_element_is_hit_where_it_is_painted`
+  still passes, which is the composition this shares with hit testing. The 32-fixture browser
+  oracle (`corpus/oracle.mjs`) is unchanged.
 
 ## `parley-0.11.1` — 240 added code lines
 

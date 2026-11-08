@@ -2218,8 +2218,21 @@ impl BaseDocument {
 
     /// Computes the size and position of the `Node` relative to the viewport
     pub fn get_client_bounding_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
-        // Non-atomic inline elements have no layout box of their own: return
-        // the union of their per-line-box fragment rects.
+        let rect = self.untransformed_client_rect(node_id)?;
+        let rect = self.apply_transforms(node_id, rect);
+        Some(BoundingRect {
+            x: rect.x - self.viewport_scroll.x,
+            y: rect.y - self.viewport_scroll.y,
+            width: rect.width,
+            height: rect.height,
+        })
+    }
+
+    /// The element's border box in page coordinates, before any `transform` is applied.
+    ///
+    /// Non-atomic inline elements have no layout box of their own, so their rect is the union of
+    /// their per-line-box fragment rects.
+    fn untransformed_client_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         if let Some(rects) = self.inline_fragment_rects(node_id) {
             let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
             let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
@@ -2231,11 +2244,13 @@ impl BaseDocument {
                 .iter()
                 .map(|r| r.y + r.height)
                 .fold(f64::NEG_INFINITY, f64::max);
+            // The fragment rects are unsplit page coordinates: the viewport scroll and the
+            // transforms are applied by the caller, which has the element and its ancestors.
             return match rects.is_empty() {
                 true => None,
                 false => Some(BoundingRect {
-                    x: x0,
-                    y: y0,
+                    x: x0 + self.viewport_scroll.x,
+                    y: y0 + self.viewport_scroll.y,
                     width: x1 - x0,
                     height: y1 - y0,
                 }),
@@ -2246,11 +2261,67 @@ impl BaseDocument {
         let pos = node.absolute_position(0.0, 0.0);
 
         Some(BoundingRect {
-            x: pos.x as f64 - self.viewport_scroll.x,
-            y: pos.y as f64 - self.viewport_scroll.y,
+            x: pos.x as f64,
+            y: pos.y as f64,
             width: node.unrounded_layout().size.width as f64,
             height: node.unrounded_layout().size.height as f64,
         })
+    }
+
+    /// A page-space rectangle after the element's own and its ancestors' `transform`s: a browser's
+    /// `getBoundingClientRect()` is the *transformed* border box reduced to its axis-aligned
+    /// bounding box, so `rotate-45` on a 100x40 box reports 99x99, not 100x40.
+    ///
+    /// The walk composes from the element outwards, each transform about its own origin, which is
+    /// the same composition paint applies and hit testing inverts (each node's `transform` is
+    /// stored in device-pixel space, so a CSS-pixel offset is scaled in and back out) — a rect, a
+    /// pixel and a click therefore agree. `transform-origin`, `translate`, `rotate` and `scale` are
+    /// already folded into the stored matrix by `resolve_2d_transform`.
+    fn apply_transforms(&self, node_id: NodeId, rect: BoundingRect) -> BoundingRect {
+        let scale = self.viewport.scale_f64();
+        let mut corners = [
+            (rect.x, rect.y),
+            (rect.x + rect.width, rect.y),
+            (rect.x, rect.y + rect.height),
+            (rect.x + rect.width, rect.y + rect.height),
+        ];
+        let mut any = false;
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let node = &self.nodes[id];
+            current = node.parent;
+            let Some(t) = *node.transform() else {
+                continue;
+            };
+            any = true;
+            let origin = node.absolute_position(0.0, 0.0);
+            let [m11, m12, m21, m22, m41, m42] = t.as_coeffs();
+            for point in corners.iter_mut() {
+                let x = (point.0 - origin.x as f64) * scale;
+                let y = (point.1 - origin.y as f64) * scale;
+                point.0 = origin.x as f64 + (m11 * x + m21 * y + m41) / scale;
+                point.1 = origin.y as f64 + (m12 * x + m22 * y + m42) / scale;
+            }
+        }
+        if !any {
+            return rect;
+        }
+        let x0 = corners.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+        let y0 = corners.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+        let x1 = corners
+            .iter()
+            .map(|p| p.0)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let y1 = corners
+            .iter()
+            .map(|p| p.1)
+            .fold(f64::NEG_INFINITY, f64::max);
+        BoundingRect {
+            x: x0,
+            y: y0,
+            width: x1 - x0,
+            height: y1 - y0,
+        }
     }
 
     /// Computes the sizes and positions of the `Node`'s box fragments relative to the

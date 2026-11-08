@@ -53,17 +53,24 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 162/503 (32.2 %)  [232 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 174/503 (34.6 %)  [230 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 232 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 230 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
 
+The last 12 units came from three engine defects the meter found, each fixed where it lives rather
+than in the scene: an animation sampled at the exact end of an iteration kept the previous
+iteration's frame (blitz-dom hunk 15, `animate-ping`), a client rect reported the element's
+*untransformed* box so every transform unit measured as an edge miss while its pixels matched
+(blitz-dom hunk 16), and the motion arm tested each cell's discrimination per sample, which fails
+every keyframe that starts from the element's own style (meter, motion bar).
+
 For comparison, `427/507` cells have matching pixels *and* boxes, but 309 of those do not
 discriminate, so a pixel comparison overstates what is proven; a pixel-only discrimination test
-understates it, because it misses a unit that only moves a box. `162/503` is what this meter can
+understates it, because it misses a unit that only moves a box. `174/503` is what this meter can
 defend.
 
 ## PRDs

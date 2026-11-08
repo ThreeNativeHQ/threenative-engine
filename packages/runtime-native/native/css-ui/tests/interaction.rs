@@ -487,6 +487,40 @@ fn a_transformed_element_is_hit_where_it_is_painted() {
 }
 
 #[test]
+fn a_transformed_element_reports_its_transformed_box() {
+    let mut ui = ui(
+        320,
+        200,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n.r{{position:absolute;left:50px;top:50px;width:100px;height:40px;transform:rotate(45deg)}}\n\
+                     .t{{position:absolute;left:10px;top:10px;width:100px;height:40px;transform:translate(30px,20px)}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "r"),
+            create(2, "div"),
+            attr(2, "class", "t"),
+            append(0, 1),
+            append(0, 2),
+        ],
+    );
+    // Chromium's `getBoundingClientRect()` is the transformed border box's axis-aligned bounding
+    // box: a 100x40 box at 45 degrees is (100 + 40) / sqrt(2) = 99.0 square, and a translated box
+    // moves its edges with it. The parity meter's edge bar is that rectangle, so a transform the
+    // engine paints but does not report is a unit it measures as wrong while painting it right.
+    let rotated = ui.node_box(1).expect("the rotated box");
+    assert!(
+        (rotated[2] - 98.99).abs() < 0.05 && (rotated[3] - 98.99).abs() < 0.05,
+        "a 100x40 box rotated 45 degrees is 99x99, got {rotated:?}"
+    );
+    let translated = ui.node_box(2).expect("the translated box");
+    assert_eq!(translated, [40.0, 30.0, 100.0, 40.0]);
+}
+
+#[test]
 fn pointer_events_none_hands_the_point_to_what_is_behind() {
     let mut ui = ui(
         320,
