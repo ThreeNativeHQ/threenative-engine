@@ -33,6 +33,7 @@ import {
 } from "../src/render/depth-pyramid.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
+import { CellRender } from "../src/world-cell-render.js";
 import {
   COARSEST_SHADOW_LEVEL,
   DRAW_ARGS_BYTES,
@@ -1144,6 +1145,38 @@ describe("the CPU reference's pyramid occlusion test", () => {
  * hardware draw.
  */
 describe("WorldCells with the GPU-driven main pass", () => {
+  // PRD-857 judge: a camera 180 m from the player drew ferns the CPU path left out, because the CPU
+  // eye is pulled to within the first gate of `follow` and the dispatch measured from the raw camera.
+  it("grades levels and maxDistance from the CPU path's own LOD eye", async () => {
+    stubManifestFetch(true);
+    const follow = { position: { ...cellCentre(1, 1), y: 0 } };
+    const graded = vi.spyOn(WorldGpuScene.prototype, "lodEye");
+    const cpuEye = vi.spyOn(CellRender.prototype, "updateLodEye");
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => multiPartModel(),
+      prefetchSeconds: 0,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    const camera = playerCamera([1, 1]);
+    camera.position.x += 500;
+    camera.updateMatrixWorld();
+    world.update(gpuRendererStub(), camera);
+    await flushed(world);
+    // The CPU path's eye, pulled toward the player, and not the camera 500 m out.
+    const cpu = cpuEye.mock.calls.at(-1) as [number, number, number];
+    expect(graded.mock.calls.at(-1)).toEqual(cpu);
+    expect(Math.hypot(cpu[0] - camera.position.x, cpu[2] - camera.position.z)).toBeGreaterThan(1);
+    graded.mockRestore();
+    cpuEye.mockRestore();
+    world.dispose();
+  });
+
   it("keeps every multi-part placement drawable after partial eviction and readmission", async () => {
     stubManifestFetch(true);
     const follow = { position: { ...cellCentre(0, 1), y: 0 } };

@@ -1314,6 +1314,7 @@ export class CellRender {
 
   updateLodEye(x: number, y: number, z: number): void {
     this.#dress.updateLodEye(x, y, z);
+    this.#gpuScene.lodEye(x, y, z);
   }
 
   refreshLodMaterials(asset: IAssetState): void {

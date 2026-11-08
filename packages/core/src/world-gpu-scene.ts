@@ -264,7 +264,6 @@ function cameraPlanes(camera: Camera, out: Float32Array): void {
 }
 
 const _proj = new Matrix4();
-const _eye = new Vector3();
 
 /** Camera travel in one dispatch that the occlusion test reads as a cut rather than a turn. */
 const OCCLUSION_CUT_METRES = 2;
@@ -848,6 +847,19 @@ export class WorldGpuScene {
    * One frame of the main pass: zero every key's instance count, then cull and LOD-select every
    * resident placement into the shared drawn buffer. Nothing else is written.
    */
+  /**
+   * The LOD eye `WorldCells` grades its CPU path from (`updateLodEye`): the camera, pulled to within
+   * the first gate of `follow`. Levels and `maxDistance` then read one eye on both paths (PRD-857).
+   * Unset, the dispatch measures from the camera.
+   */
+  lodEye(x: number, y: number, z: number): void {
+    this.#lodEye.set(x, y, z);
+    this.#lodEyeSet = true;
+  }
+
+  readonly #lodEye = new Vector3();
+  #lodEyeSet = false;
+
   dispatch(renderer: IRendererLike, camera: Camera): void {
     if (this.#on === false) return;
     if (this.#buffers === undefined) return;
@@ -861,8 +873,8 @@ export class WorldGpuScene {
         this.#planes[at + 3] as number,
       );
     }
-    _eye.setFromMatrixPosition(camera.matrixWorld);
-    this.#eye.value.copy(_eye);
+    if (this.#lodEyeSet) this.#eye.value.copy(this.#lodEye);
+    else this.#eye.value.setFromMatrixPosition(camera.matrixWorld);
     // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
     // one thread per key.
     if (this.#readback.measuring) this.#readback.measure(renderer, camera);
