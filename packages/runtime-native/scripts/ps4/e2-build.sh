@@ -203,6 +203,9 @@ git apply "$SCRIPTS/patches/0061-opengnm-psbc-base-vertex-slot.patch"
 # InstanceIndex = instance_id + start_instance, and the driver writes start_instance only for an apislot 0xFF
 # slot: psbc emitted none, so instanced draws read a stale SGPR as firstInstance (PRD-784 capability sweep).
 git apply "$SCRIPTS/patches/0064-opengnm-psbc-start-instance-slot.patch"
+# The same emulator gap for S_BFM_B64 and S_BREV_B64: the soft lamp-shadow shader logged "Unknown opcode
+# S_BFM_B64" and aborted shadPS4 (Unreal calibration on PS4). A 64-bit SGPR constant takes two s_mov_b32 halves.
+git apply "$SCRIPTS/patches/0073-opengnm-psbc-no-s-bfm-brev-b64.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
