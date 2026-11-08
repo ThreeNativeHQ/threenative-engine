@@ -111,6 +111,18 @@ describe("createWebEnginePlugin", () => {
     const output = await bundle(root, false, true);
     expect(output).toContain("is not available on the Wasm engine");
     expect(output).not.toContain(UPSTREAM_OBJECT3D);
+    // A host that sends no COOP/COEP headers (itch.io, GitHub Pages, a plain static server) still
+    // starts the engine with threads: the build ships a worker that adds them, registered before
+    // the game module runs. The legacy build below ships neither.
+    const worker = await readFile(path.join(root, "dist/tn-isolation-sw.js"), "utf8");
+    expect(worker).toContain('headers.set("Cross-Origin-Embedder-Policy", "require-corp")');
+    expect(worker).toContain('headers.set("Cross-Origin-Opener-Policy", "same-origin")');
+    const html = await readFile(path.join(root, "dist/index.html"), "utf8");
+    expect(html.indexOf('register("tn-isolation-sw.js")')).toBeGreaterThan(-1);
+    expect(html.indexOf('register("tn-isolation-sw.js")')).toBeLessThan(
+      html.indexOf('type="module"'),
+    );
+    expect(output).toContain("await globalThis.__tnIsolation;");
     const server = await createServer({
       root,
       configFile: false,

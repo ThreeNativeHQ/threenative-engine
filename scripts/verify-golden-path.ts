@@ -14,7 +14,8 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
+import { type AddressInfo, createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1118,6 +1119,82 @@ async function runDev(target: string, template: string, port: number): Promise<v
   }
 }
 
+const STATIC_TYPES: Readonly<Record<string, string>> = {
+  ".css": "text/css",
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".json": "application/json",
+  ".mjs": "text/javascript",
+  ".svg": "image/svg+xml",
+  ".wasm": "application/wasm",
+  ".webmanifest": "application/manifest+json",
+};
+
+/**
+ * A shipped game must start the engine with its worker threads on a host that sends no COOP/COEP
+ * headers (itch.io, GitHub Pages, a plain static server). `vite preview` sends them, so the `test`
+ * layer cannot see this: serve `dist/` with none and read the engine's thread report.
+ */
+export async function assertStaticHostThreads(dist: string, timeoutMs = 180_000): Promise<string> {
+  const server = createHttpServer((request, response) => {
+    const pathname = decodeURIComponent(new URL(request.url ?? "/", "http://host").pathname);
+    const file = path.join(dist, pathname.endsWith("/") ? `${pathname}index.html` : pathname);
+    readFile(file).then(
+      (body) => {
+        response.setHeader(
+          "Content-Type",
+          STATIC_TYPES[path.extname(file)] ?? "application/octet-stream",
+        );
+        response.end(body);
+      },
+      () => {
+        response.statusCode = 404;
+        response.end();
+      },
+    );
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  const { chromium } = await import("@playwright/test");
+  const { WEBGPU_BROWSER_ARGS } = await import("../packages/playtest/dist/runner/index.js");
+  const browser = await chromium.launch({ headless: false, args: [...WEBGPU_BROWSER_ARGS] });
+  try {
+    const page = await browser.newPage();
+    const threads = new Promise<string>((resolve, reject) => {
+      const refuse = (text: string): void => {
+        if (text.includes("TN_WEB_THREADS_OFF")) reject(new Error(text));
+      };
+      page.on("pageerror", (error) => refuse(error.message));
+      page.on("console", (message) => {
+        const text = message.text();
+        refuse(text);
+        const report = /^TN_FRAME_BUDGET:.*"threads":"([^"]*)"/u.exec(text)?.[1];
+        if (report !== undefined) resolve(report);
+      });
+      setTimeout(
+        () =>
+          reject(new Error(`no TN_FRAME_BUDGET window with a thread report in ${timeoutMs} ms`)),
+        timeoutMs,
+      ).unref();
+    });
+    await page.goto(`http://127.0.0.1:${port}/`);
+    const report = await threads;
+    if (!report.startsWith("on"))
+      throw new Error(
+        `TN_WEB_THREADS_OFF: the engine reported threads "${report}" on a header-less host.`,
+      );
+    if ((await page.evaluate(() => globalThis.crossOriginIsolated)) !== true)
+      throw new Error(
+        "TN_WEB_THREADS_OFF: the page is not cross-origin isolated on a header-less host.",
+      );
+    return report;
+  } finally {
+    await browser.close();
+    server.close();
+  }
+}
+
 async function assertArtifact(target: string, template: string): Promise<void> {
   const artifact = path.join(target, "dist", "index.html");
   const info = await stat(artifact).catch(() => undefined);
@@ -1126,6 +1203,13 @@ async function assertArtifact(target: string, template: string): Promise<void> {
   }
   if (!info.isFile() || info.size === 0) {
     throw new Error(`template '${template}' produced an empty web artifact at '${artifact}'.`);
+  }
+  // Every kit runs the threaded Wasm engine unless it names `engine: "threejs"`, whose build emits no `_headers`.
+  if (existsSync(path.join(target, "dist", "_headers"))) {
+    const threads = await assertStaticHostThreads(path.join(target, "dist"));
+    process.stdout.write(
+      `golden-path ${template}: header-less static host started threads ${threads}\n`,
+    );
   }
 }
 
