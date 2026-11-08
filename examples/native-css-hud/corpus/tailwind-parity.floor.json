@@ -1,5 +1,5 @@
 {
-  "passed": 318,
+  "passed": 319,
   "units": [
     "PRD-850/paint|bg|--tw-gradient-position,background-image|",
     "PRD-850/paint|bg|background-size|",
@@ -131,6 +131,7 @@
     "PRD-850/misc|opacity|opacity|",
     "PRD-850/misc|origin|transform-origin|",
     "PRD-850/misc|outline|outline-color|",
+    "PRD-850/misc|overflow|overflow|",
     "PRD-850/misc|p|padding|",
     "PRD-850/misc|pb|padding-bottom|",
     "PRD-850/misc|pbe|padding-block-end|",

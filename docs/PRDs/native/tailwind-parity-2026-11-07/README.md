@@ -53,7 +53,7 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 318/503 (63.2 %)  [100 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 319/503 (63.4 %)  [99 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
 A cell is evidence only when it discriminates (see Meter, item 3). The 103 non-discriminating cells are

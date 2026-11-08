@@ -1575,10 +1575,14 @@ function utilityEntry(unit, classCss, byProperty) {
         : []),
       ...maskCompanions(unit.probe),
     ],
-    inner:
-      /^(space|divide)$/u.test(unit.root) ||
-      unit.props.includes("contain") ||
-      unit.props.some((p) => CONTAINER_PROPS.has(p))
+    // Two children for the units that separate or align siblings, and one for a clip unit: `overflow:
+    // clip` cuts a child at the padding box, so a probe with nothing overflowing cannot show it — and
+    // only the `clip` variants get a child, because the other overflow units passed without one.
+    inner: /^overflow-(x-|y-)?clip$/u.test(unit.probe)
+      ? 1
+      : /^(space|divide)$/u.test(unit.root) ||
+          unit.props.includes("contain") ||
+          unit.props.some((p) => CONTAINER_PROPS.has(p))
         ? 2
         : undefined,
     // A grid container property needs a grid; everything else in `CONTAINER_PROPS` is flex.
@@ -1648,11 +1652,15 @@ function utilityEntry(unit, classCss, byProperty) {
       undefined,
     // `aspect-ratio` is ignored when both dimensions are set, and the staged probe sets both.
     aspect: unit.props.includes("aspect-ratio") || undefined,
+    // `overflow: clip` cuts a child at the padding box, so a probe with nothing overflowing cannot show
+    // it. Only the `overflow` units get the child: giving one to the `contain` cells as well costs eight
+    // misc cells, because those already passed without it.
     // `scrollbar-width`, `scrollbar-gutter` and `scrollbar-color` style a scrollbar, so the probe has to
     // be a scroll container with something to scroll.
     scrollbar:
-      unit.props.some((p) => p === "scrollbar-width" || p === "scrollbar-gutter" || p === "scrollbar-color") ||
-      undefined,
+      unit.props.some(
+        (p) => p === "scrollbar-width" || p === "scrollbar-gutter" || p === "scrollbar-color",
+      ) || undefined,
     // `transform-origin` and `transform-box` move nothing until something transforms.
     origin: unit.props.some((p) => p === "transform-origin" || p === "transform-box") || undefined,
     // A flex or grid child's size and alignment are decided against its siblings.

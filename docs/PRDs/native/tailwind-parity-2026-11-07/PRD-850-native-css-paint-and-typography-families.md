@@ -50,6 +50,19 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Decisions
 
+**`overflow: clip` needs a child that overflows — and a duplicate object key silently lost ten cells.**
+`overflow-clip`, `-x-clip` and `-y-clip` clip a child at the padding box, so a probe with nothing inside
+painted the same frame either way. Adding a child fixed `overflow-clip` (0.9993) — but the new `inner:` key
+was added *after* an existing `inner:` in the same object literal, so the earlier one (which gives the
+`container`/`align-*`/`contain` cells their two fillers) was silently dropped: **ten cells** fell from the
+floor in one run. Merged into one expression, the floor is back with one cell more.
+
+The lesson is mechanical and worth keeping: this entry object has one `inner`, one `layout`, one `classes`
+field, and JavaScript accepts a duplicate key without a word. A `--check` rule for duplicate keys in that
+literal would prevent the whole class of mistake.
+
+## Decisions
+
 **A `scrollbar-*` unit styles a scrollbar, so the probe has to be a scroll container.** `scrollbar-width`,
 `scrollbar-gutter` and `scrollbar-color` (which is what `scrollbar-thumb-*`/`scrollbar-track-*` set) paint
 nothing on a box that cannot scroll, and the four cells read "does nothing" for that reason alone. The probe
