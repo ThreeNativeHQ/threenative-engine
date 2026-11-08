@@ -48,6 +48,18 @@ Run the meter per group and fix what fails. Expected engine work:
 | Paint and type utilities on native | game Tailwind class → `css-ui` paint and text | Proven in the guide; nothing removed | AC-1, AC-2 |
 | Inline SVG and cursor | game `<svg>` / `cursor-*` → `css-ui` → desktop host SDL cursor | New | AC-3 |
 
+## Decisions
+
+**The transition group needs a changing property, and staging it broke on a pointer.** `transition`,
+`transition-none`, `transition-discrete`, `duration-*`, `delay-*` and `ease-*` (8 cells) all measure
+"does nothing" because a static frame contains no change for a transition to interpolate. The staged
+recipe — a `hover:bg-red-500` companion plus a pointer move onto the probe, sampled by the motion bar at
+five points — does not run yet: the hover drive is intercepted by a sibling cell's `position: fixed`
+probe (Playwright refuses after 60 s), and a positioned probe does not lift above it. Attempted and
+reverted; `.stage-escape` now carries `pointer-events:none` so an overflow decoration can never eat a
+drive's pointer again. Next step: a pointer drive by coordinates with a `matches(':hover')` check, or a
+panel where no unit is `position: fixed`.
+
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **143 of
