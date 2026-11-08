@@ -68,6 +68,13 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
   `me-40`/`mbe-40` need a following sibling in block flow; `aspect-square` needs the probe's height
   to stop being fixed by the staging; `z-40` needs stacked siblings.
+- **Faux italic is applied, so `italic`'s 0.790 is a *degree*, not a missing feature.** The corpus
+  ships Noto Sans Regular and Bold only, so CSS `italic` asks for a synthetic oblique: fontique reports
+  a skew, blitz passes it as a glyph transform and the painter applies it.
+  `tests/interaction.rs::an_italic_run_is_slanted_when_the_family_has_no_italic_face` proves the run
+  is slanted; what differs from Chromium is therefore the angle (fontique suggests 14°, Skia's faux
+  oblique is `tan = 0.25`) or how the slant composes with the line box. Recorded with that split so the
+  next attempt measures the angle rather than re-testing whether italic works.
 - **`bg-top`, `bg-repeat` and `bg-origin-border` all measure exactly 0.2243: a tiling *phase* (open).**
   One cause, not three — all three units move a repeating gradient image, none changes its stops. The
   contrast that stages these cells is `repeating-linear-gradient(45deg, …)` at `background-size: 24px

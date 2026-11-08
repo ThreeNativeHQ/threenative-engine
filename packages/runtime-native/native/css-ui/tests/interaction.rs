@@ -1212,6 +1212,43 @@ fn a_repeating_gradient_takes_its_background_size() {
 }
 
 #[test]
+fn an_italic_run_is_slanted_when_the_family_has_no_italic_face() {
+    // The corpus ships Noto Sans Regular and Bold only, so CSS `italic` asks the engine for a *faux*
+    // oblique: fontique reports a skew, blitz passes it as a glyph transform and the painter applies
+    // it. The parity scene's `italic` cell measured 0.790 against Chromium, which is what an upright
+    // run looks like next to a slanted one.
+    let document = |style: &str| {
+        ui(
+            96,
+            40,
+            &[
+                sheet(
+                    "s",
+                    &format!("{BASE}\n#a{{width:96px;height:40px;font-size:20px;font-family:Noto;font-style:{style}}}"),
+                ),
+                create(1, "div"),
+                attr(1, "id", "a"),
+                text(2, "Abc"),
+                append(0, 1),
+                append(1, 2),
+            ],
+        )
+    };
+    let mut roman = document("normal");
+    roman.render();
+    let mut italic = document("italic");
+    italic.render();
+    let column = |ui: &threenative_css_ui::CssUi, x: u32| {
+        (0..40).map(|y| rgb(ui, x, y)).collect::<Vec<_>>()
+    };
+    assert_ne!(
+        (0..96).map(|x| column(&roman, x)).collect::<Vec<_>>(),
+        (0..96).map(|x| column(&italic, x)).collect::<Vec<_>>(),
+        "an italic run with no italic face must be slanted"
+    );
+}
+
+#[test]
 fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
     let mut ui = ui(
         64,
