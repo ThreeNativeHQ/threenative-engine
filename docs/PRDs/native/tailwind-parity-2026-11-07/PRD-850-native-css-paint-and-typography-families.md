@@ -48,6 +48,28 @@ Run the meter per group and fix what fails. Expected engine work:
 | Paint and type utilities on native | game Tailwind class → `css-ui` paint and text | Proven in the guide; nothing removed | AC-1, AC-2 |
 | Inline SVG and cursor | game `<svg>` / `cursor-*` → `css-ui` → desktop host SDL cursor | New | AC-3 |
 
+## Open
+
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **133 of
+262 units pass** (misc 111/182, paint 10/39, type 12/41).
+
+- **The container staging rule earned 12 units** (`misc` 99 → 111): a unit whose emitted properties
+  are container properties (`justify-content`, `justify-items`, `align-items`, `align-content`, the
+  gaps, the grid track and auto properties, `flex-direction`, `flex-wrap`) stages the probe *as* that
+  container, with two children and the matching display. Before it, twelve units were inert by
+  construction: `justify-end` on a plain block asks a box with nothing to lay out.
+- **What the rest of the group needs, in short-list order.** Colour-only `border-*` (6) need a border
+  width on the probe; `touch-*` (4) and `overflow-clip` (3) change nothing a single frame can see
+  (`touch-action` is an input policy, and a clipped overflow needs content to clip); `space-*` and
+  `divide-*` (4) put the unit on the *parent*, which the staging does for `divide-x` only; `object-*`
+  (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
+  `me-40`/`mbe-40` need a following sibling in block flow; `aspect-square` needs the probe's height
+  to stop being fixed by the staging; `z-40` needs stacked siblings.
+- **`paint` (10/39) and `type` (12/41) are mostly real engine gaps**, not staging: `bg-clip-text`
+  0.41, `bg-repeat`/`bg-origin-border`/`bg-fixed` 0.22, `bg-top` 0.22, `text-shadow-*`, and the
+  `contain-*`/`will-change`/`color-scheme`/`scrollbar-*` family, which needs a painted consumer
+  before it can discriminate at all.
+
 ## Execution Phases
 
 #### Phase 1: Backgrounds and effects

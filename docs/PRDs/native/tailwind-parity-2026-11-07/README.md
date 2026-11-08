@@ -53,13 +53,18 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 183/503 (36.4 %)  [232 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 195/503 (38.8 %)  [219 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 232 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 219 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The 12 units after 183 are one staging rule: a *container* unit's probe is the container. `justify-end`
+is `justify-content: flex-end` on a flex container, and the scene staged it on a plain block, where it
+is inert by definition — twelve flex and grid units measured "does nothing" because the cell asked a
+box with no children to lay them out.
 
 The 8 units after 175 are the four preference media features and the pointer fix behind them: the
 reduced-motion pair (2: PRD-847 AC-2, the first AC in the batch to tick), `contrast-more:` and
