@@ -14,7 +14,7 @@ const starterAssets = join(packageRoot, "starter-assets");
 // Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
   forest: {
-    "world.glb": "9b7920162a3b25f98e4e7d4b077c758fb32e829c04fae5c9b89ce351ada8a28d",
+    "world.glb": "0a05950b3eda8c42a31375c97897407e8688b0fc814aa44aba9aec095eb5f5a2",
     "heightmap.u16": "800715834e5db9a414ef7207495948bae231923fdfd82bc36b44e51131f06968",
     "placements.bin": "0853ed2486043db7287b5e98676bc9894f057ea43fb09258cc26d8416518fc8a",
     "splat.rgba": "46b2dee04b232ed6ab36a64402463cb15b0288318f694206acaf3d2f8068da7e",
