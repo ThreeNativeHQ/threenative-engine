@@ -188,6 +188,31 @@ tailwind-parity: 247/503 (49.1 %)  [152 do not discriminate, 29 exempt, 4 perman
 - **The ratchet.** `--ratchet` and `--floor` both refuse a filtered (`--family`/`--group`) run, and a
   floor unit missing from a run fails.
 
+### The remaining 152 non-discriminating cells, classified (2026-11-07, measured)
+
+Every one is now one of four kinds, and the kind decides who owns it:
+
+- **A corpus limit — the font or the platform cannot tell the values apart (≈13).** `tabular-nums`,
+  `proportional-nums`, `normal-nums`, `ordinal`, `slashed-zero`, `font-stretch-50%` need a font whose
+  digits or width axis differ (Noto Sans' digits are tabular and its static faces have no width
+  axis); `antialiased`/`subpixel-antialiased` set `-webkit-font-smoothing`, which Chromium ignores on
+  Linux. Proving these is a corpus-font change, not a scene one.
+- **A painted consumer is needed and the engine has none (≈20).** `contain-*` (5), `scrollbar-*` (4),
+  `will-change-scroll`, `color-scheme`, `pointer-events-auto`, `touch-*` (4), `overflow-clip` (3):
+  these change behaviour, not pixels, in a single frame, or need the engine to paint something it does
+  not paint (scrollbars, a color-scheme surface). Each would have to be measured through an input
+  script and a second frame, which is a different bar than this scene's.
+- **A driver the scene does not have (≈15).** `snap-*` (4) needs snap implemented, `overscroll-*` (3)
+  needs a scroller at its limit chaining to a parent, `break-*` (3) and `box-decoration-clone` need
+  fragmented content, `transition*`/`duration*` need a staged property change, `drop-shadow-*` (3)
+  needs a probe whose counterfactual clears the bar (its own bar is 0.99 and the shadow's edge scores
+  0.997).
+- **A mask staging detail (19) and one scene fault.** The mask group's own list is in PRD-845; the
+  selector group's `has-[:checked]` renders no box in Chromium at all.
+
+Of the 247 passing cells, 73 of the failures are *real* differences — those are the engine gaps the
+family PRDs own.
+
 ## Decisions
 
 - 2026-11-07 (agent): **the denominator is measured, not the exploration's 490.** The stated method —
