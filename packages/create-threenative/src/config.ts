@@ -49,6 +49,7 @@ export interface IResolvedThreeNativeConfig {
     readonly orientation: ThreeNativeOrientation;
     readonly fullscreen: boolean;
     readonly keepScreenOn: boolean;
+    readonly priority: "game" | "normal";
     readonly maxFps: number;
   };
   readonly window: {
@@ -289,6 +290,14 @@ function positiveInteger(value: unknown, fallback: number, code: string, label: 
     fail(code, `${label} must be a positive integer.`);
   }
   return value as number;
+}
+
+function priorityValue(value: unknown): "game" | "normal" {
+  if (value === undefined) return "game";
+  if (value !== "game" && value !== "normal") {
+    fail("TN_CONFIG_PRIORITY_INVALID", 'display.priority must be "game" or "normal".');
+  }
+  return value;
 }
 
 function maxFpsValue(value: unknown): number {
@@ -850,7 +859,13 @@ async function validateIconVariants(
 
 function validateDisplay(raw: unknown): IResolvedThreeNativeConfig["display"] {
   const display = assertRecord(raw, "display");
-  assertKeys(display, "display", ["orientation", "fullscreen", "keepScreenOn", "maxFps"]);
+  assertKeys(display, "display", [
+    "orientation",
+    "fullscreen",
+    "keepScreenOn",
+    "priority",
+    "maxFps",
+  ]);
   const orientation = display.orientation === undefined ? "landscape" : display.orientation;
   if (
     typeof orientation !== "string" ||
@@ -875,6 +890,7 @@ function validateDisplay(raw: unknown): IResolvedThreeNativeConfig["display"] {
       "TN_CONFIG_KEEP_SCREEN_ON_INVALID",
       "display.keepScreenOn",
     ),
+    priority: priorityValue(display.priority),
     maxFps: maxFpsValue(display.maxFps),
   };
 }

@@ -1635,6 +1635,8 @@ async function buildEngineDesktop(
     String(config.window.height),
     "--title",
     config.window.title,
+    "--priority",
+    config.display.priority,
     "--output",
     output,
   ]);
