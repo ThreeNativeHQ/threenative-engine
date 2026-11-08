@@ -1865,10 +1865,14 @@ async function driveStep(page, step) {
     // `transition` measured "does nothing". The pin therefore rides in the same task as the focus,
     // after a forced style flush.
     await page.evaluate(
-      ({ id, at }) => {
+      async ({ id, at }) => {
         document.querySelector(`[data-n="${id}"]`)?.focus({ focusVisible: false });
         if (at === undefined) return;
+        // A transition is created at the next *rendering opportunity*, not by a forced style flush, so
+        // the document's animation list is still empty in this task. One frame later it exists and has
+        // barely moved; pause and pin it there, before the compositor advances it.
         void document.body.getBoundingClientRect();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
         for (const animation of document.getAnimations()) {
           animation.pause();
           animation.currentTime = at;

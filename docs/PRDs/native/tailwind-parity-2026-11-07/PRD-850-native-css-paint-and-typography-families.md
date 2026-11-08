@@ -88,6 +88,18 @@ than from this engine's output:
 - `@property`-registered `--tw-*` reading a `:root` theme variable (`var(--tw-duration,
   var(--default-transition-duration))`) resolves to 150 ms and times identically.
 
+A fourth test copies Tailwind 4's `transition` utility **verbatim** — the long property list that names
+two custom properties, the var chain for the timing function and the var chain for the duration — and it
+animates correctly: mid-flight at 50 ms, arrived at 150 ms.
+
+Yet the panel itself jumps. Measured on the engine's own frame of panel 18: at 50 ms and at 100 ms the
+probe is already `#fb2c36` (Tailwind's `red-500`), while the browser is part-way along the same change;
+the engine reports `focused_id = Some(33)` for the cell, so the focus is not the missing piece. The two
+differences left between the test and the panel are that the panel's rules sit in `@layer theme` /
+`base` / `utilities` blocks and that the probe is a `<button>` with the theme's `:root, :host` variables.
+Next step: bisect the panel's own stylesheet — flat versus layered — with the same probe, which is a
+one-run experiment now that the utility is known good in a flat sheet.
+
 So the remaining difference is in *when* each subject starts the clock, not in the curve or the chain:
 at 0 ms and at every sample from 150 ms on, the two agree exactly, and only the two mid-flight samples
 differ (50 ms 0.9711, 100 ms 0.9198). Next step: log both arms' computed colour at 50 ms for this cell

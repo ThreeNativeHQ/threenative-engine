@@ -889,6 +889,41 @@ fn a_var_chain_timing_function_resolves_to_its_fallback() {
     );
 }
 
+/// Tailwind 4's `transition` utility, verbatim: a long property list that names two custom properties,
+/// and var chains for the timing function and the duration. A declaration this engine cannot parse
+/// falls back to the initial value, and `transition-property: all` still animates the background — so
+/// what a dropped piece looks like here is a transition that does not run at all.
+#[test]
+fn the_tailwind_transition_utility_animates() {
+    let mut ui = ui(
+        320,
+        200,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    ":root{{--default-transition-duration:150ms;--default-transition-timing-function:cubic-bezier(0.4,0,0.2,1)}}\n{BASE}\n.a{{width:100px;height:40px;margin:10px;background:#2563eb;transition-property:color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}}\n.a:focus{{background:#fb2c36}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "a"),
+            attr(1, "tabindex", "0"),
+            append(0, 1),
+        ],
+    );
+    assert!(ui.focus(1), "the box takes focus");
+    ui.render();
+    assert_eq!(rgb(&ui, 50, 30), [0x25, 0x63, 0xeb], "the focus has not moved it yet");
+    ui.set_time(50.0);
+    ui.render();
+    let mid = rgb(&ui, 50, 30);
+    assert_ne!(mid, [0xfb, 0x2c, 0x36], "a third of the way, not the end: {mid:?}");
+    assert_ne!(mid, [0x25, 0x63, 0xeb], "and not the start either: {mid:?}");
+    ui.set_time(150.0);
+    ui.render();
+    assert_eq!(rgb(&ui, 50, 30), [0xfb, 0x2c, 0x36], "arrived");
+}
+
 #[test]
 fn a_transition_keeps_its_delay() {
     let mut ui = transitions();
