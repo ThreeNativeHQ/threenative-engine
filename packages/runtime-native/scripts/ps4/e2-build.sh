@@ -206,6 +206,9 @@ git apply "$SCRIPTS/patches/0064-opengnm-psbc-start-instance-slot.patch"
 # The same emulator gap for S_BFM_B64 and S_BREV_B64: the soft lamp-shadow shader logged "Unknown opcode
 # S_BFM_B64" and aborted shadPS4 (Unreal calibration on PS4). A 64-bit SGPR constant takes two s_mov_b32 halves.
 git apply "$SCRIPTS/patches/0073-opengnm-psbc-no-s-bfm-brev-b64.patch"
+# A gather cleared TRUNC_COORD in its sampler, which the driver never sets, and shadPS4 cannot trace a sampler
+# built that way: the TRAA resolve asserted (resource_discover_pass.cpp:289) on every run (Unreal calibration).
+git apply "$SCRIPTS/patches/0074-opengnm-psbc-no-tg4-trunc-coord-clear.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
