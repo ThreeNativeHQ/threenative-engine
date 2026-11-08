@@ -68,6 +68,14 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
   `me-40`/`mbe-40` need a following sibling in block flow; `aspect-square` needs the probe's height
   to stop being fixed by the staging; `z-40` needs stacked siblings.
+- **`bg-top`, `bg-repeat` and `bg-origin-border` all measure exactly 0.2243 (open).** Three different
+  units with one identical score, no edge misses and a measured region of 148×68 at the probe: that is
+  one cause, not three, and it is in how the probe's *gradient image* is tiled and positioned (all three
+  units move the image, none of them changes its stops). The frames were compared and the regions carry
+  the same few flat colours on both sides with different arrangements, which is the signature of a
+  shifted/inverted tiling rather than a missing feature. Not resolved: the investigation stopped at
+  "same palette, different arrangement", and the next attempt should read the computed
+  `background-position`/`background-size` the engine resolves for one of them the way the mask work did.
 - **A box shadow's blur is already Chromium's, and a spec-based "fix" broke a reference frame.**
   CSS defines the blur radius as twice the standard deviation, so the outset path was changed to pass
   `blur * 0.5`. The parity scene's `shadow-red-50` cell improved (0.9661 → 0.9756) — and the crate's
