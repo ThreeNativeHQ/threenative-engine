@@ -63,6 +63,13 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   less` is not a Playwright value and the DevTools feature list that offers it applies only with an
   empty `media`, which breaks the viewport queries in the same run; Chromium's emulation ignores
   `inverted-colors` entirely. `pointer-none`/`any-pointer-none` need a device with no pointer.
+- **Selectors are 25 of 34, from 10.** The variant staging was keyed by class instead of by variant
+  name, so every structural variant asked for a document the scene never built; four more faults
+  followed the first measurement that could see them (the engine's attribute allowlist, React's
+  boolean attributes, the UA focus ring, `focus-within:`'s focusable child). What is left is
+  `last:`/`last-of-type:` (the probe is the only child either way), `active:` (0.6492 — the engine
+  keeps the pressed state while the browser's capture does not), `focus-within:` (0.7411) and
+  `has-[:checked]:` (the panel renders no box in Chromium, which is a scene fault to find).
 - **`:dir()` does not match.** `ltr:bg-red-500` measures a real mismatch (0.6492) and the cause is
   narrowed: `:dir(ltr)` on an element whose computed direction is the initial `ltr` does not match in
   the engine (measured with a two-rule stylesheet), while Chromium matches it. That is the selector

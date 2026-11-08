@@ -53,13 +53,21 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 206/503 (41 %)  [203 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 222/503 (44.1 %)  [185 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 203 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 185 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The 16 units after 206 are one staging key: `cellTree` looked its staging up by the cell's *class*
+while the table is keyed by the variant's *name*, so every `attrs`/`wrap`/`inner`/`before`/`after` in
+`VARIANT_STAGE` was dead and the structural variants (`nth-*`, `has:`, `in-*`, `disabled:`,
+`aria-*`, `data-*`) asked for a document the scene never built. Three more faults fell out of seeing
+them: the engine's `attr` allowlist refused `inert`/`checked`/`dir` and poisoned whole panels, React
+does not render a boolean attribute from `""` (so a staged control reached the browser *enabled*), and
+a focused button's UA ring is painted by the browser and not the engine.
 
 The 6 units after 200 are `scroll-margin`/`scroll-padding`: Stylo's servo build never parsed them
 (`engine = "gecko"` in its property table) and `scrollIntoView` scrolled only the viewport and read
