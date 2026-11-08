@@ -487,6 +487,12 @@ public:
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
+    /** An array render target's storage: `layers` 2D images of the scene colour's size and format, `levels` mips each. */
+    WGPUTexture createLayerArray(uint32_t width, uint32_t height, uint32_t layers, uint32_t levels);
+    /** Copies the scene colour into mip 0 of `layer`, then builds every layer's mip chain when `mipmaps`. */
+    void copySceneColorToLayer(WGPUTexture array, uint32_t layer, uint32_t layers, uint32_t levels, bool mipmaps);
+    /** Mip `level` of `layer` of an array made by createLayerArray, as readProbePixels rows. */
+    GpuStatus readLayerPixels(WGPUTexture array, uint32_t layer, uint32_t level, ReadbackCallback done);
     /** The RGBA8 output frame a render() with no present target draws, and blitTo copies to the window. */
     WGPUTextureView outputColorView() const { return colorView_; }
     /** The format the scene colour is drawn and read in: RGBA16Float, RGBA32Float for a FloatType render target, RG16Float/RG32Float for an RGFormat one (a 32-bit target is never multisampled). */
@@ -1190,7 +1196,8 @@ private:
     bool ensureVirtualShadowMap(std::size_t light);
     void releaseTargets();
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
-    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
+    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8, uint32_t layer = 0,
+                         uint32_t level = 0);
     void releaseOutputGroup();
     // The output pass's groups for its last two binding sets: a post graph texture that ping-pongs between two
     // render targets (an exposure history) finds its group again. outputGroup_ is borrowed from here.

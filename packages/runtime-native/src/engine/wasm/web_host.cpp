@@ -598,6 +598,7 @@ extern "C" int tnw_web_compile_status(uint32_t id) {
  * target, the linear scene colour, as r185 writes a target. Fails, naming the first refusal, when the
  * target's render refused or skipped anything. `flags` bit 1 plans the draw now and records it in the frame that
  * samples the target (Renderer::deferTarget); bit 2 is three's autoClear false (draw over the target's contents).
+ * Bits 8 and up name the layer of an array target the draw writes (three's setRenderTarget(target, layer)).
  */
 extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_handle_t* rootHandle,
                                      const tn_handle_t* cameraHandle, double r, double g, double b, double a,
@@ -619,7 +620,7 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
         {
             const HostMeter targetMeter(hostTargetMs, true);
             refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, (flags & 1) != 0, true,
-                                     (flags & 2) == 0);
+                                     (flags & 2) == 0, uint32_t(flags) >> 8);
         }
         if (!refused.empty()) return refuse(refused.front());
         return 0;

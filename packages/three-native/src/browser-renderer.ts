@@ -818,7 +818,13 @@ export function defineWebRenderer(
      * render() while a render target is set (render-target.ts): draws into the target. `deferred` (an offscreen PassNode)
      * plans the draw and has the engine record it in the frame that samples the target.
      */
-    [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
+    [DRAW_TARGET](
+      target: unknown,
+      root: unknown,
+      camera: unknown,
+      deferred = false,
+      layer = 0,
+    ): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       if (this.#lost) return;
@@ -834,7 +840,8 @@ export function defineWebRenderer(
           handles,
           handles + 12,
           ...this.#clear,
-          (deferred ? 1 : 0) | (this.autoClear ? 0 : 2),
+          // Bits 8 and up: the layer of an array target (tnw_web_render_target).
+          (deferred ? 1 : 0) | (this.autoClear ? 0 : 2) | (layer << 8),
         ),
       );
     }
@@ -1228,12 +1235,12 @@ export function defineWebRenderer(
       ),
     });
   defineRenderTargets(Renderer.prototype, (renderer) => ({
-    draw: (target, root, camera) =>
-      (renderer as { [DRAW_TARGET](t: unknown, r: unknown, c: unknown): void })[DRAW_TARGET](
-        target,
-        root,
-        camera,
-      ),
+    draw: (target, root, camera, layer) =>
+      (
+        renderer as {
+          [DRAW_TARGET](t: unknown, r: unknown, c: unknown, d: boolean, l: number): void;
+        }
+      )[DRAW_TARGET](target, root, camera, false, layer),
     clear: (target, color, depth) =>
       (renderer as { [CLEAR_TARGET](t: unknown, c: boolean, d: boolean): void })[CLEAR_TARGET](
         target,

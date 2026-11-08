@@ -53,8 +53,11 @@ export function pixelsOfType(
 
 /** The engine's two calls for a back end's render targets. */
 export interface IRenderTargetEngine {
-  /** Draws `root` through `camera` into `target` (over its contents when the renderer's autoClear is false); throws the engine's refusal. */
-  draw(target: unknown, root: unknown, camera: unknown): void;
+  /**
+   * Draws `root` through `camera` into `layer` of `target` (over its contents when the renderer's autoClear is false);
+   * throws the engine's refusal, which names a layer outside the target's `depth`.
+   */
+  draw(target: unknown, root: unknown, camera: unknown, layer: number): void;
   /** Clears `target`'s colour (to the renderer's clear colour) and/or depth. */
   clear(target: unknown, color: boolean, depth: boolean): void;
   /**
@@ -72,8 +75,8 @@ export interface IRenderTargetEngine {
 }
 
 /**
- * Adds three's setRenderTarget, getRenderTarget, getActiveCubeFace, getActiveMipmapLevel, clear,
- * clearColor, clearDepth, clearStencil and readRenderTargetPixelsAsync to a renderer facade's prototype,
+ * Adds three's setRenderTarget, getRenderTarget, getActiveCubeFace, getActiveMipmapLevel, getMRT, setMRT,
+ * initRenderTarget, clear, clearColor, clearDepth, clearStencil and readRenderTargetPixelsAsync to a renderer facade's prototype,
  * and routes its render() into the current target. `engineOf(renderer)` reaches the engine for that renderer.
  */
 export function defineRenderTargets(
@@ -81,6 +84,9 @@ export function defineRenderTargets(
   engineOf: (renderer: object) => IRenderTargetEngine,
 ): void {
   const targets = new WeakMap<object, unknown>();
+  // three's activeCubeFace, which is also the layer of an array target (`depth` > 1) a draw writes.
+  const layers = new WeakMap<object, number>();
+  const mrts = new WeakMap<object, unknown>();
   const render = prototype.render;
   Object.assign(prototype, {
     setRenderTarget(
@@ -89,17 +95,22 @@ export function defineRenderTargets(
       activeCubeFace = 0,
       activeMipmapLevel = 0,
     ): void {
-      if (activeCubeFace !== 0 || activeMipmapLevel !== 0)
+      if (activeMipmapLevel !== 0)
         throw new Error(
-          "TN_NATIVE_RENDER_TARGET_UNSUPPORTED: a cube face or mip level other than 0 is not drawn natively",
+          "TN_NATIVE_RENDER_TARGET_UNSUPPORTED: a mip level other than 0 is not drawn natively",
+        );
+      if (!Number.isInteger(activeCubeFace) || activeCubeFace < 0 || activeCubeFace > 255)
+        throw new Error(
+          `TN_NATIVE_RENDER_TARGET_UNSUPPORTED: layer ${activeCubeFace} is not 0 to 255 natively`,
         );
       targets.set(this, target);
+      layers.set(this, activeCubeFace);
     },
     getRenderTarget(this: object): unknown {
       return targets.get(this) ?? null;
     },
-    getActiveCubeFace(): number {
-      return 0;
+    getActiveCubeFace(this: object): number {
+      return layers.get(this) ?? 0;
     },
     getActiveMipmapLevel(): number {
       return 0;
@@ -107,8 +118,22 @@ export function defineRenderTargets(
     render(this: object, scene: unknown, camera: unknown): void {
       const target = targets.get(this);
       if (target === null || target === undefined) render.call(this, scene, camera);
-      else engineOf(this).draw(target, scene, camera);
+      else engineOf(this).draw(target, scene, camera, layers.get(this) ?? 0);
     },
+    // three's renderer-wide MRT. A material's own mrtNode draws natively; a renderer-wide one is refused by name.
+    getMRT(this: object): unknown {
+      return mrts.get(this) ?? null;
+    },
+    setMRT(this: object, mrt: unknown): object {
+      if (mrt !== null && mrt !== undefined)
+        throw new Error(
+          "TN_NATIVE_MRT_UNSUPPORTED: renderer.setMRT takes null natively; set mrtNode on the material or the pass",
+        );
+      mrts.set(this, null);
+      return this;
+    },
+    // three allocates the target's textures here; the engine allocates them on the first draw.
+    initRenderTarget(): void {},
     // ponytail: on the canvas clear() is a no-op, because the canvas render clears every frame. A target has no stencil.
     clear(this: object, color = true, depth = true): void {
       const target = targets.get(this);

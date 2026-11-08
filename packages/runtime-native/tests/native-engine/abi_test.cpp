@@ -3104,6 +3104,25 @@ void starter_post_bindings() {
         tn_handle_t none{};
         CHECK(tn_construct(context, "RenderTarget", rejected, 3, &none, &diagnostic) == TN_ERROR_UNSUPPORTED);
         tn_diagnostic_release(&diagnostic);
+        // The same filter on an array target (three's `depth`, the impostor bake's atlas, PRD-858) keeps a mip chain.
+        const tn_value_t layered[]{
+            {TN_VALUE_STRING, 0, 0, {}, 0, "minFilter", 9, {}}, num(1008.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "depth", 5, {}}, num(16.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "count", 5, {}}, num(2.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "generateMipmaps", 15, {}}, boolean(true)};
+        tn_value_t arrayOptions{};
+        arrayOptions.kind = TN_VALUE_RECORD;
+        arrayOptions.count = 4;
+        arrayOptions.values = layered;
+        const tn_value_t arrayArgs[]{num(8.0), num(8.0), arrayOptions};
+        tn_handle_t array{};
+        CHECK(tn_construct(context, "RenderTarget", arrayArgs, 3, &array, &diagnostic) == TN_OK);
+        if (array.type) {
+            const auto made = std::static_pointer_cast<tn::engine::RenderTarget>(tn::abi::objectOf(array)->ptr);
+            CHECK(made->layers == 16 && made->more.size() == 1 && made->more[0]->layers == 16);
+            for (const auto& texture : tn::engine::RenderTarget::texturesOf(*made))
+                CHECK(texture->array && texture->depth == 16 && texture->generateMipmaps && texture->minFilter == 1008);
+        }
     }
     CHECK(tn_context_destroy(context, &diagnostic) == TN_OK);
     std::string authoredSource = "fn authoredArea(sample: u32, lo: vec2<f32>, hi: vec2<f32>) -> f32 { return f32(sample) + dot(hi-lo, hi-lo); }";

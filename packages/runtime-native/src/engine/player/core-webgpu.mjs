@@ -62,11 +62,11 @@ class NativeBackend {
   }
 }
 
-function drawTarget(renderer, target, root, camera, deferred) {
+function drawTarget(renderer, target, root, camera, deferred, layer = 0) {
   syncUniforms();
   renderer.library.apply(renderer.toneMapping);
   globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
-  globalThis.tn.renderTarget(target, root, camera, deferred === true, renderer.autoClear !== false);
+  globalThis.tn.renderTarget(target, root, camera, deferred === true, renderer.autoClear !== false, layer);
 }
 
 // Every offscreen PassNode plans its draw into its own target; the player records it in this frame, after the post
@@ -220,7 +220,7 @@ export class WebGPURenderer {
 // three's render targets (shared with the Wasm back end): render() while a target is set draws into
 // it at the call, and readRenderTargetPixelsAsync reads it back once the GPU copy lands.
 defineRenderTargets(WebGPURenderer.prototype, (renderer) => ({
-  draw: (target, root, camera) => drawTarget(renderer, target, root, camera),
+  draw: (target, root, camera, layer) => drawTarget(renderer, target, root, camera, false, layer),
   clear: (target, color, depth) => {
     globalThis.tn.setRendererState(renderer);  // the clear colour
     globalThis.tn.clearTarget(target, color, depth);
