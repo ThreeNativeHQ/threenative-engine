@@ -572,6 +572,12 @@ git apply "$SCRIPTS/patches/0072-vk-ps4-volume-upload-pitch.patch"
 # over its top whenever the last full-screen pass had not finished (4 of 16 frames with virtual shadows on).
 # The flip now rides the GPU queue behind the frame (sceGnmSubmitAndFlipCommandBuffers), so the CPU never waits.
 git apply "$SCRIPTS/patches/0077-vk-ps4-present-flips-on-gpu.patch"
+# The driver reported a 4096 framebuffer and viewport limit; GCN addresses 16384, and the virtual-shadow atlas
+# is about 6500 texels square, so the engine refused it (P5-16).
+git apply "$SCRIPTS/patches/0080-vk-ps4-16k-framebuffer-limits.patch"
+# A full 256 KB PM4 buffer dropped every later packet without a word: a frame of virtual-shadow pages lost
+# its page draws, and those pages read as full shadow. The buffer now continues in chained 1 MB chunks (P5-16).
+git apply "$SCRIPTS/patches/0082-vk-ps4-pm4-chunks-grow.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
