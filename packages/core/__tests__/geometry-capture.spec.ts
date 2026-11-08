@@ -207,6 +207,32 @@ describe("GeometryCapture", () => {
     expect(main?.unattributedTriangles).toBe(0);
   });
 
+  // The native V8 player's render() records the frame and draws it after the frame callback, so the
+  // engine runs onBeforeRender then. Removing the hooks at finishFrame counted no submission at all.
+  it("keeps the hooks until a host that draws after the frame has drawn it", async () => {
+    const scene = new Scene();
+    const drawn = namedMesh("drawn", 3);
+    scene.add(drawn);
+    const collector = new GeometryCapture();
+    const pending = collector.request();
+    scene.updateMatrixWorld(true);
+    collector.beginFrame({
+      camera: defaultCamera(),
+      generation: 1,
+      root: scene,
+      viewportHeight: 720,
+      viewportWidth: 1280,
+    });
+    collector.finishFrame([{ draws: 1, kind: "main", triangles: 3 }], { drawsAfterFrame: true });
+    submitOnce(drawn); // the host's deferred draw
+    collector.settleDeferred();
+    const report = await pending;
+    const row = (report.objects ?? []).find((candidate) => candidate.name === "drawn");
+    expect(row?.visibility).toBe("submitted");
+    expect(row?.draws).toBe(1);
+    expect(Object.hasOwn(drawn, "onBeforeRender")).toBe(false);
+  });
+
   it("attributes a submission to the pass that was running", async () => {
     const scene = new Scene();
     const caster = namedMesh("caster", 4);

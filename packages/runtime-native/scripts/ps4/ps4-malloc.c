@@ -59,6 +59,85 @@ __attribute__((used, aligned(32))) _Thread_local char tn_ps4_tls_align32;
 // object is the override.
 #undef USE_DL_PREFIX
 
+// The heap's segments come from direct memory, not from an anonymous mmap. An anonymous mapping
+// takes the 448 MiB flexible pool (the retail limit, shadps4-src/src/core/memory.cpp:100), and
+// procedural-animals filled it at its first frames: 3 521 mappings, std::bad_alloc (PRD-784 P5-10).
+// Direct memory is the rest of the console's RAM, the pool a PS4 game keeps its data in.
+// dlmalloc maps a whole segment or a large chunk, and unmaps all of one or, on a trim, its tail;
+// the table keeps each mapping's direct-memory offset so either release returns the right range.
+#include <stdatomic.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/mman.h>
+extern int64_t sceKernelGetDirectMemorySize(void);
+extern int32_t sceKernelAllocateDirectMemory(int64_t, int64_t, uint64_t, uint64_t, int32_t, int64_t*);
+extern int32_t sceKernelMapDirectMemory(void**, uint64_t, int32_t, int32_t, int64_t, uint64_t);
+extern int32_t sceKernelMunmap(void*, uint64_t);
+extern int32_t sceKernelReleaseDirectMemory(int64_t, uint64_t);
+
+#define TN_DIRECT_PAGE ((size_t)16 * 1024)
+#define TN_DIRECT_WB_ONION 0
+// ponytail: a fixed table with a linear search; procedural-animals peaks near 3 000 live mappings.
+#define TN_DIRECT_RANGES 16384
+typedef struct { char* va; int64_t phys; size_t len; } tn_direct_range;
+static tn_direct_range tn_ranges[TN_DIRECT_RANGES];
+static size_t tn_range_count;
+static atomic_flag tn_range_lock = ATOMIC_FLAG_INIT;
+
+static void tn_ranges_lock(void) { while (atomic_flag_test_and_set_explicit(&tn_range_lock, memory_order_acquire)) {} }
+static void tn_ranges_unlock(void) { atomic_flag_clear_explicit(&tn_range_lock, memory_order_release); }
+static size_t tn_direct_len(size_t size) { return (size + TN_DIRECT_PAGE - 1) & ~(TN_DIRECT_PAGE - 1); }
+
+static void* tn_direct_mmap(size_t size)
+{
+	const size_t len = tn_direct_len(size);
+	int64_t phys = 0;
+	void* va = NULL;
+	if (sceKernelAllocateDirectMemory(0, sceKernelGetDirectMemorySize(), len, TN_DIRECT_PAGE, TN_DIRECT_WB_ONION, &phys) != 0)
+		return (void*)-1;
+	if (sceKernelMapDirectMemory(&va, len, PROT_READ | PROT_WRITE, 0, phys, TN_DIRECT_PAGE) != 0) {
+		sceKernelReleaseDirectMemory(phys, len);
+		return (void*)-1;
+	}
+	tn_ranges_lock();
+	const int full = tn_range_count == TN_DIRECT_RANGES;
+	if (!full) tn_ranges[tn_range_count++] = (tn_direct_range){(char*)va, phys, len};
+	tn_ranges_unlock();
+	if (full) {
+		sceKernelMunmap(va, len);
+		sceKernelReleaseDirectMemory(phys, len);
+		return (void*)-1;
+	}
+	return va;
+}
+
+static int tn_direct_munmap(void* addr, size_t size)
+{
+	char* const a = (char*)addr;
+	const size_t len = tn_direct_len(size);
+	int64_t phys = -1;
+	tn_ranges_lock();
+	for (size_t i = 0; i < tn_range_count; ++i) {
+		tn_direct_range* r = &tn_ranges[i];
+		if (a < r->va || a + len > r->va + r->len) continue;
+		if (a != r->va && a + len != r->va + r->len) break;  // a hole in the middle: dlmalloc makes none
+		phys = r->phys + (a - r->va);
+		if (len == r->len) *r = tn_ranges[--tn_range_count];
+		else if (a == r->va) { r->va += len; r->phys += (int64_t)len; r->len -= len; }
+		else r->len -= len;
+		break;
+	}
+	tn_ranges_unlock();
+	if (phys < 0) return -1;
+	sceKernelMunmap(a, len);
+	sceKernelReleaseDirectMemory(phys, len);
+	return 0;
+}
+
+#define MMAP(s) tn_direct_mmap(s)
+#define DIRECT_MMAP(s) tn_direct_mmap(s)
+#define MUNMAP(a, s) tn_direct_munmap((a), (s))
+
 // Resolved through -I by e4-build.sh, which owns the download and its hash.
 #include "dlmalloc.c"
 
