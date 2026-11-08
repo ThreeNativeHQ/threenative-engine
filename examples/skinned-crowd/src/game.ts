@@ -13,10 +13,12 @@ const game = defineGame({
   frameBudget: crowdRate.measuring
     ? { reportEvery: 120, onWindow: crowdBudget, report: crowdSpans }
     : undefined,
-  renderer: crowdRate.measuring
-    ? { gpuTimestampFrameInterval: 1, resolutionScale: 1, pixelRatio: 1 }
-    : undefined,
-  render: { preferWebGPU: true },
+  renderer: {
+    ...(crowdRate.measuring
+      ? { gpuTimestampFrameInterval: 1, resolutionScale: 1, pixelRatio: 1 }
+      : {}),
+    preferWebGPU: true,
+  },
   scenes: { crowd: Crowd },
   start: "crowd",
 });

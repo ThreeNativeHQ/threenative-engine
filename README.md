@@ -77,7 +77,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     },
   },
   plugins: [rapier(), playtest()],
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { play: Play },
   start: "play",
 });

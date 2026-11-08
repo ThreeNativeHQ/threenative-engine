@@ -24,7 +24,7 @@ const game = defineGame<GameState, RunnerPhysics>({
   // grid, and the accent belongs to obstacles — never to the runner.
   plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { boot: Boot, run: Run },
   // The track is built from `ctx.random`, so this seed is the level. Change it for a new one.
   seed: 77_412,

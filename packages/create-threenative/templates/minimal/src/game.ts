@@ -23,7 +23,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   // it, semantic assertions fail closed with TN_PLAYTEST_BRIDGE_MISSING rather than passing.
   plugins: [rapier(), playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { play: Play },
   start: "play",
 });

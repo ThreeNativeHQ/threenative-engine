@@ -26,7 +26,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   },
   plugins: [rapier({ gravity: { x: 0, y: -36, z: 0 } }), playtest({ events })],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { play: Play },
   // The course is procedural; the seed makes its rocks, grass and coin wobble the same every run.
   seed: 6402,

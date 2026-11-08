@@ -74,7 +74,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     playtest(),
   ],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   renderer: { antialias: true },
   // warmUp stays OFF here, measured on the Pixel 8 (PRD-327 device lane, 2026-09-03): the
   // whole-scene compileAsync walk is synchronous on the native host — ~33 s for this town —

@@ -11,7 +11,7 @@ import { Grip } from "./scenes/Grip.js";
 const game = defineGame({
   plugins: [playtest()],
   initialState: {},
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { grip: Grip },
   start: "grip",
 });

@@ -5,7 +5,7 @@ Set your game's name, icon, display and renderer options, then build and check a
 ## Project config
 
 `threenative.config.ts` exports an `IThreeNativeConfig`, so your editor completes and type-checks
-it. The game reads renderer and display settings through `render: config.renderer` and
+it. The game reads renderer and display settings through `renderer: config.renderer` and
 `display: config.display`. These are the main fields from the generated file:
 
 ```ts

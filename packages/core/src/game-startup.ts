@@ -130,28 +130,20 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   const renderer = await createRenderer({
     ...game.config.renderer,
     canvas: game.config.canvas ?? game.config.renderer?.canvas,
-    preferWebGPU: game.config.render?.preferWebGPU ?? game.config.renderer?.preferWebGPU,
+    preferWebGPU: game.config.renderer?.preferWebGPU,
     // One rule on both runtimes, decided 2026-09-01 after a HiDPI desktop browser upscaled a
     // DPR-1 web buffer into visible pixelation: the device's real density, with an explicit
     // `renderer.pixelRatio` winning over it (the old branch silently clobbered that value).
     // Headless capture lanes run at DPR 1 and are unaffected; the resolution scaler composes
     // on top, so a density the GPU cannot afford is trimmed by rungs, not by the developer.
     pixelRatio: game.config.renderer?.pixelRatio ?? globalThis.devicePixelRatio ?? 1,
-    antialias: resolveRendererAntialias(
-      game.config.render,
-      game.config.renderer?.antialias,
-      getPlatform().os,
-    ),
+    antialias: resolveRendererAntialias(game.config.renderer, undefined, getPlatform().os),
     alphaAntialiasing: resolveRendererAlphaAntialiasing(
-      game.config.render,
-      game.config.renderer?.alphaAntialiasing,
+      game.config.renderer,
+      undefined,
       getPlatform().os,
     ),
-    ...resolveRendererScaleSetting(
-      game.config.render,
-      game.config.renderer?.resolutionScale,
-      getPlatform().os,
-    ),
+    ...resolveRendererScaleSetting(game.config.renderer, undefined, getPlatform().os),
     source: game.config.renderer?.source ?? game.platform?.renderer,
   });
   if (game.aborted) {
@@ -269,7 +261,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   // authored scene is marked once, here, so three never walks it a second time; the mirror scene
   // is marked at the render site, where whichever root is drawn this frame is known.
   const matrixWorldPass = new MatrixWorldPass({
-    mode: resolveMatrixWorldMode(game.config.render),
+    mode: resolveMatrixWorldMode(game.config.renderer),
   });
   game.matrixWorld = matrixWorldPass;
   game.cleanup.push(() => {
@@ -284,7 +276,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   const projection = new SceneRenderProjection(threeScene, {
     // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
     // names the material check beside accepting it, and the projection owns both readings.
-    projection: game.config.render?.projection,
+    projection: game.config.renderer?.projection,
     velocity: () => !ownedEngine && (renderer.renderChainUsesPerObjectVelocity?.() ?? false),
     matrixWorld: matrixWorldPass,
   });
@@ -305,7 +297,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   // and measured whether or not the game narrows or declines it. Its decision is per camera, so
   // a shadow caster and anything attached to the camera are never dropped on the main view alone.
   const cameraCull = new RenderCameraCull({
-    minimumPixels: game.config.render?.minimumProjectedPixels,
+    minimumPixels: game.config.renderer?.minimumProjectedPixels,
   });
   game.cameraCull = cameraCull;
   game.cleanup.push(() => {
