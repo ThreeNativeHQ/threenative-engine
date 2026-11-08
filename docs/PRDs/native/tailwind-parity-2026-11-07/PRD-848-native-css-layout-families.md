@@ -94,6 +94,12 @@ cells are the driver gaps above, and 2 of the 5 grid-and-query cells are exempt.
   cell left in the batch. The thirteen that do not discriminate are staging: a border-spacing or caption needs a
   table whose cells carry borders and whose caption is content; `clear-*`/`break-*` need a float to clear and a box
   that can fragment.
+- **A scroller that is also the probe must not carry the probe's fill, and its content must be
+  text-free.** Two staging faults in the same family: `.probe`'s blue fill painted the scroller solid and
+  hid its own children, and the fillers' labels put glyph anti-aliasing — the one difference this engine
+  and Chromium always have — into a cell that measures a *position*. Clearing the fill and dropping the
+  labels moved the `scroll-p*` cells from 0.92 to **0.97** against the 0.99 bar; what is left is the
+  stopped position itself.
 - **`scroll-p*` cells discriminate now and measure a real difference (0.92 to 0.98).** The vacuity arm
   strips the last class of an element whose class list *starts* with `probe`, and the scroller was spelled
   `stage-scroll probe scroll-p-40` — so both arms rendered the same document and the staging looked inert.

@@ -111,6 +111,8 @@ const PANEL_CSS = `
 .stage-col{display:flex;flex-direction:column;gap:6px;width:100%}
 .stage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;width:100%}
 .stage-scroll{width:100%;height:${CELL_H - 44}px;overflow:auto}
+/* A scroller that is also the probe must not carry the probe's fill: it would hide its own content. */
+.stage-scroll-probe{background:transparent}
 /* Both axes overflow: a scroll cell's inline scroll-margin units only move a scroller that can
    scroll inline, and a body the width of its scroller has nothing to scroll horizontally. */
 .stage-scroll-body{height:600px;min-width:600px;display:flex;flex-direction:column;gap:44px}
@@ -1320,12 +1322,17 @@ function cellTree(cell) {
         "div",
         // `probe` leads the list: the vacuity arm strips the last class of every element whose class
         // list *starts* with `probe`, so a scroller spelled `stage-scroll probe …` was never stripped
-        // and both arms measured the same frame.
-        { class: `probe stage-scroll ${cell.class}` },
+        // and both arms measured the same frame. `stage-scroll-probe` clears the probe's blue fill —
+        // a scroller painted solid blue hides every child, which is what it scrolls.
+        { class: `probe stage-scroll stage-scroll-probe ${cell.class}` },
         el(
           "div",
           { class: "stage-scroll-body stage-scroll-deep" },
-          ...fillers(4),
+          // Text-free fillers: a scroller cell's content is a position, and glyph anti-aliasing (the
+          // one difference this engine and Chromium always have) would otherwise dominate the cell's
+          // score — measured, the frames agreed on every flat colour and differed only on the
+          // fillers' labels.
+          ...blanks(4),
           el("div", { class: "stage-fill scroll-target" }),
         ),
       ),
