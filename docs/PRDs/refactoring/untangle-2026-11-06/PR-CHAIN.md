@@ -22,9 +22,11 @@
 | [PRD-838](../../done/PRD-838-scripts-share-one-runtime-layer.md) | `prd:100%` | ✅ done | nothing (`pnpm visuals` needs owner scores, see below) |
 | [PRD-839](PRD-839-ci-contract-is-a-model-not-text.md) | `prd:75%` | ⚠️ merged | AC-2: the job list of the next PR CI run |
 | [PRD-842](PRD-842-native-tests-check-behaviour-not-source-text.md) | `prd:50%` | ⚠️ merged | Phase 2 box 2 and AC-2: seven iOS simulator checks on CI |
-| [PRD-841](PRD-841-game-ts-stops-being-the-hub.md) | lane | ⚠️ lane `untangle-841` | AC-2: the starter golden path failed once with `TN_PLAYTEST_BRIDGE_MISSING`; a baseline run decides if the boot refactor causes it |
-| [PRD-834](PRD-834-cross-language-contracts-are-generated.md) | lane `prd:75%` | ⚠️ lane `untangle-834` | Phase 3 box 1 (`render` → `renderer` fold, about 30 call sites), AC-1, AC-2 |
-| [PRD-840](PRD-840-platform-difference-is-a-value.md) | lane | ⚠️ lane `untangle-840` | phases 1–3 are committed on the lane; AC-1 parity, AC-2 visual judge, AC-3 paired bench |
+| [PRD-841](PRD-841-game-ts-stops-being-the-hub.md) | `prd:100%` | ✅ merged into the PR branch | nothing: AC-1 93 core tests, AC-2 the starter golden path in its CI configuration exit 0 |
+| [PRD-834](PRD-834-cross-language-contracts-are-generated.md) | `prd:100%` | ✅ merged into the PR branch | nothing: the `render` → `renderer` fold is wired, `pnpm native:verify:desktop` exit 0 and the starter perf lane read two frame-budget windows |
+| [PRD-840](PRD-840-platform-difference-is-a-value.md) | lane | ⚠️ lane `untangle-840` | AC-1 measured (identical conformance outcomes before/after); AC-2 judge running on the web and native captures; AC-3 **blocked**: the host runs other agents' benchmarks at load 25 on 24 cores, so `bench:engines` reports `absolutes invalid-absolute` |
+
+Landed 2026-11-08: `lane/untangle-841` and `lane/untangle-834` are merged into `refactor/untangle-832-842`. While building the PRD-840 captures, the native bundler's core-subpath resolver was found to break every kit that imports `@threenative/core/render/environment` (`src/environment.ts` after PRD-833 moved it); fixed on lane 840 with its own test (see PRD-840's corrections).
 
 The PR label is `prd:50%` until the merged phase boxes reach 75% of the batch.
 
