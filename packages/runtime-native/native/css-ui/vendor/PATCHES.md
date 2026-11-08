@@ -43,7 +43,7 @@ old `inline_fragment_rects` loop moved into `inline_fragments` so paint can shar
 hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
 `draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 139 added code lines
+## `blitz-paint-0.3.0-beta.2` — 214 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -504,6 +504,23 @@ to delete once the query worked.
   The parity meter's filter family moves 2/19 → **9/19**: brightness, contrast, grayscale,
   hue-rotate, invert, saturate and sepia go from 0.20–0.88 to **1.0000**, and the two cells that
   already passed (blur, backdrop-opacity) are unchanged. The 32-fixture browser oracle stays 28/28.
+
+### 5. `mask-mode: luminance` fell back to alpha, so a colour mask hid everything
+
+* **Where:** `src/gradient.rs` (the new `apply_luminance_alpha`), `src/render/mask.rs` (reads the
+  layer's `mask-mode` and passes it down), `src/render/background.rs` (`draw_image_layer` and
+  `draw_gradient_layer` take the flag and rewrite the peniko gradient's stops after conversion).
+* **Why:** this crate composites every mask layer with `Compose::DestIn`, which reads *alpha*, and CSS
+  luminance masks carry their mask value in *luminance*: Tailwind's `mask-linear-from-red-50` stops
+  are two opaque colours that differ only in brightness, so as an alpha mask both are 1 and the mask
+  hid nothing — eight colour-mask cells measured 0.52 to 0.72 against a 0.99 bar. The luminance is
+  computed on linear-light values (sRGB → linear, then `0.2126 R + 0.7152 G + 0.0722 B`), which is
+  what CSS Masking defines; on the stored sRGB values a `red-50` stop reads 0.96 against Chromium's
+  0.91.
+* **Proves it:** the parity meter's eight colour-mask cells move from 0.52–0.72 to **0.945–0.982**
+  (still failing the 0.99 bar, so the family stays at 23 of 50 — what is left is the mask geometry,
+  not the mode). The 32-fixture browser oracle is unchanged (28/28) and the crate's 57 tests are
+  green. Raster and SVG image masks are still alpha-only, which the hunk says.
 
 ## `parley-0.11.1` — 240 added code lines
 

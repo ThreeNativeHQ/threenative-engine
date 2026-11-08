@@ -97,16 +97,14 @@ impl ElementCx<'_, '_> {
             let layer = ImageLayerStyles::from_svg(svg_styles, image_data, idx);
             let mask_clip_path = self.box_path(layer.clip);
 
-            // TODO: support `mask-mode: luminance` (luminance masks are currently
-            // rendered as alpha masks).
-            #[cfg(feature = "tracing")]
-            {
-                use style::properties::generated::longhands::mask_mode::single_value::computed_value::T as StyloMaskMode;
-                let mask_mode = &svg_styles.mask_mode.0;
-                if matches!(get_cyclic(&mask_mode, idx), StyloMaskMode::Luminance) {
-                    warn!("mask-mode: luminance is not supported (falling back to alpha)");
-                }
-            }
+            // VENDOR HUNK (threenative/css-ui): `mask-mode: luminance` is honoured for gradient
+            // masks, which is every mask Tailwind emits (`mask-linear-*`, `mask-b-from-*`, ...). A
+            // raster or SVG image mask is still drawn as an alpha mask.
+            use style::properties::generated::longhands::mask_mode::single_value::computed_value::T as StyloMaskMode;
+            let luminance = matches!(
+                get_cyclic(&svg_styles.mask_mode.0, idx),
+                StyloMaskMode::Luminance
+            );
 
             // Each mask layer is composited with the (already drawn) layers below it
             // using the Porter-Duff operator given by its `mask-composite` value. The
@@ -134,7 +132,7 @@ impl ElementCx<'_, '_> {
                 None,
                 None,
             );
-            self.draw_image_layer(scene, &layer);
+            self.draw_image_layer(scene, &layer, luminance);
             scene.pop_layer();
         }
     }
