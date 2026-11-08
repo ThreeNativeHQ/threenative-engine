@@ -36,7 +36,7 @@ export default defineGame({
     move: { up: ["ArrowUp"], down: ["ArrowDown"], left: ["ArrowLeft"], right: ["ArrowRight"] },
   },
   frameBudget: false,
-  render: { projection: false, matrixWorld: "all" },
+  renderer: { projection: false, matrixWorld: "all" },
   scenes: { play: Play },
   start: "play",
 });

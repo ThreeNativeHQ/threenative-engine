@@ -12,7 +12,7 @@ const game = defineGame({
   // The bridge a scenario needs to observe entities, performance and the scene graph.
   plugins: [playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { lod: Lod },
   start: "lod",
 });

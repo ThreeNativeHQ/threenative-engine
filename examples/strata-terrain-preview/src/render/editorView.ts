@@ -789,7 +789,7 @@ export async function createEditorView(
     // The page lives at /terrain-editor/, so a bare map path would resolve beneath it. The starter's
     // maps are served from the root (`publicDir`), the same place the game finds them.
     assets: { basePath: "/" },
-    render: { preferWebGPU: true },
+    renderer: { preferWebGPU: true },
     scenes: { editor: EditorScene },
     start: "editor",
   });

@@ -33,7 +33,7 @@ const game = defineGame<GameState>({
   },
   plugins: [playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { coast: Coast },
   seed: 607,
   start: "coast",

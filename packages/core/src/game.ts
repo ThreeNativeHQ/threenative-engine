@@ -20,6 +20,7 @@ import type { IRenderPerformanceSample } from "./loop.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { installQuietMarkers, uninstallQuietMarkers } from "./quiet-markers.js";
 import type { IRandom } from "./random.js";
+import { type GameRendererConfig, assertNoLegacyRenderKey } from "./renderer-config.js";
 import type { IRendererOptions } from "./renderer.js";
 import {
   SCENE_ENTRY_INSPECTORS,
@@ -269,8 +270,15 @@ export interface IGameConfig<
    * 60 fps default rather than a scaler with no target.
    */
   readonly display?: NonNullable<IThreeNativeConfig["display"]>;
-  readonly render?: NonNullable<IThreeNativeConfig["renderer"]>;
-  readonly renderer?: IRendererOptions;
+  /**
+   * The project's renderer settings: `config.renderer` from `threenative.config.ts` beside the live
+   * renderer options, as one key.
+   *
+   * `render` once carried the portable half, so a game wrote `render: config.renderer` beside a
+   * second `renderer:` and the antialias and scale resolvers each fell back from one to the other.
+   * The retired key now throws `TN_GAME_RENDER_KEY_RENAMED` and names this one.
+   */
+  readonly renderer?: GameRendererConfig;
   readonly seed?: number;
   readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
   /**
@@ -407,6 +415,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   readonly #ui: IGameUiSeam;
 
   constructor(config: IGameConfig<TState, TPhysics>) {
+    assertNoLegacyRenderKey(config);
     validateCameraConfig(config.camera);
     const startScene = config.scenes[config.start];
     if (startScene === undefined) throw new Error(`Unknown start scene '${config.start}'.`);

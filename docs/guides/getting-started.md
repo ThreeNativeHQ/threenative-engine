@@ -118,7 +118,7 @@ export default defineGame<DemoState>({
     left: ["KeyA", "ArrowLeft"], right: ["KeyD", "ArrowRight"],
   } },
   plugins: [playtest()],
-  render: config.renderer,
+  renderer: config.renderer,
   display: config.display,
   scenes: { first: FirstScene },
   start: "first",

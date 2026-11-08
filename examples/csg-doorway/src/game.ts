@@ -11,7 +11,7 @@ const game = defineGame<IDoorwayState, IPhysicsContext>({
   },
   plugins: [playtest(), rapier()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { doorway: Doorway },
   start: "doorway",
 });

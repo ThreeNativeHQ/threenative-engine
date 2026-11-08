@@ -5,6 +5,44 @@
   const queue = host.queue;
   const magic = 0x544e4652;
   const version = 2;
+  // <generated frame-ops> Do not edit. Run `pnpm --filter @threenative/three-native generate`.
+  // From packages/three-native/api/frame-ops.json. Ids are frozen and append-only.
+  const OP_WRITE_BUFFER = 1;
+  const OP_CREATE_COMMAND_ENCODER = 2;
+  const OP_BEGIN_RENDER_PASS = 3;
+  const OP_RENDER_SET_PIPELINE = 4;
+  const OP_RENDER_SET_BIND_GROUP = 5;
+  const OP_RENDER_SET_VERTEX_BUFFER = 6;
+  const OP_RENDER_SET_INDEX_BUFFER = 7;
+  const OP_RENDER_DRAW = 8;
+  const OP_RENDER_DRAW_INDEXED = 9;
+  const OP_RENDER_DRAW_INDIRECT = 10;
+  const OP_RENDER_DRAW_INDEXED_INDIRECT = 11;
+  const OP_RENDER_SET_VIEWPORT = 12;
+  const OP_RENDER_SET_SCISSOR_RECT = 13;
+  const OP_RENDER_SET_BLEND_CONSTANT = 14;
+  const OP_RENDER_SET_STENCIL_REFERENCE = 15;
+  const OP_RENDER_EXECUTE_BUNDLES = 16;
+  const OP_RENDER_END = 17;
+  const OP_BEGIN_COMPUTE_PASS = 18;
+  const OP_COMPUTE_SET_PIPELINE = 19;
+  const OP_COMPUTE_SET_BIND_GROUP = 20;
+  const OP_COMPUTE_DISPATCH_WORKGROUPS = 21;
+  const OP_COMPUTE_END = 22;
+  const OP_COPY_BUFFER_TO_BUFFER = 23;
+  const OP_COPY_BUFFER_TO_TEXTURE = 24;
+  const OP_COPY_TEXTURE_TO_BUFFER = 25;
+  const OP_COPY_TEXTURE_TO_TEXTURE = 26;
+  const OP_CLEAR_BUFFER = 27;
+  const OP_FINISH = 28;
+  const OP_SUBMIT = 29;
+  const OP_WRITE_TEXTURE = 30;
+  const OP_COPY_EXTERNAL_IMAGE_TO_TEXTURE = 31;
+  const OP_BUFFER_DESTROY = 32;
+  const OP_TEXTURE_DESTROY = 33;
+  const OP_RESOLVE_QUERY_SET = 34;
+  const OP_COMPUTE_DISPATCH_WORKGROUPS_INDIRECT = 35;
+  // </generated frame-ops>
   // Production selects its transport at complete frame boundaries, without a game setting.
   // Explicit booleans remain internal reference arms for transport tests and profiling.
   const automaticPlans = host.compiledFramePlans === undefined;
@@ -361,11 +399,11 @@
   const renderPassPrototype = {
     setPipeline(p) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (planMode && reusable(4, passId, pipelineId(p, "render pipeline"))) {
+      if (planMode && reusable(OP_RENDER_SET_PIPELINE, passId, pipelineId(p, "render pipeline"))) {
         reuseRecord(0);
         return;
       }
-      emit(4, () => {
+      emit(OP_RENDER_SET_PIPELINE, () => {
         u32(passId);
         u32(pipelineId(p, "render pipeline"));
       });
@@ -378,12 +416,12 @@
       if (
         widest <= 4 &&
         planMode &&
-        reusable(5, passId, i, bindGroupId(g), widest, o?.[0] ?? 0, o?.[1] ?? 0, o?.[2] ?? 0, o?.[3] ?? 0)
+        reusable(OP_RENDER_SET_BIND_GROUP, passId, i, bindGroupId(g), widest, o?.[0] ?? 0, o?.[1] ?? 0, o?.[2] ?? 0, o?.[3] ?? 0)
       ) {
         reuseRecord(0);
         return;
       }
-      emit(5, () => {
+      emit(OP_RENDER_SET_BIND_GROUP, () => {
         u32(passId);
         u32(i);
         u32(bindGroupId(g));
@@ -392,11 +430,11 @@
     },
     setVertexBuffer(s, b, o, z) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (planMode && reusable(6, passId, s, bufferId(b), opt(o, 0), opt(z, -1))) {
+      if (planMode && reusable(OP_RENDER_SET_VERTEX_BUFFER, passId, s, bufferId(b), opt(o, 0), opt(z, -1))) {
         reuseRecord(0);
         return;
       }
-      emit(6, () => {
+      emit(OP_RENDER_SET_VERTEX_BUFFER, () => {
         u32(passId);
         u32(s);
         u32(bufferId(b));
@@ -408,11 +446,11 @@
       const passId = receiverId(this, renderPassIdKey, "render pass");
       // The format goes in as a number, never a boolean: the snapshot holds numbers, and `1 !== true`
       // would make every index-buffer record look changed for the rest of the run.
-      if (planMode && reusable(7, passId, bufferId(b), f === "uint32" ? 1 : 0, opt(o, 0), opt(z, -1))) {
+      if (planMode && reusable(OP_RENDER_SET_INDEX_BUFFER, passId, bufferId(b), f === "uint32" ? 1 : 0, opt(o, 0), opt(z, -1))) {
         reuseRecord(0);
         return;
       }
-      emit(7, () => {
+      emit(OP_RENDER_SET_INDEX_BUFFER, () => {
         u32(passId);
         u32(bufferId(b));
         u32(f === "uint32");
@@ -422,11 +460,11 @@
     },
     draw(a, b, c, d) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (planMode && reusable(8, passId, a, opt(b, 1), opt(c, 0), opt(d, 0))) {
+      if (planMode && reusable(OP_RENDER_DRAW, passId, a, opt(b, 1), opt(c, 0), opt(d, 0))) {
         reuseRecord(0);
         return;
       }
-      emit(8, () => {
+      emit(OP_RENDER_DRAW, () => {
         u32(passId);
         u32(a);
         u32(opt(b, 1));
@@ -436,11 +474,11 @@
     },
     drawIndexed(a, b, c, d, e) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (planMode && reusable(9, passId, a, opt(b, 1), opt(c, 0), opt(d, 0), opt(e, 0))) {
+      if (planMode && reusable(OP_RENDER_DRAW_INDEXED, passId, a, opt(b, 1), opt(c, 0), opt(d, 0), opt(e, 0))) {
         reuseRecord(0);
         return;
       }
-      emit(9, () => {
+      emit(OP_RENDER_DRAW_INDEXED, () => {
         u32(passId);
         u32(a);
         u32(opt(b, 1));
@@ -451,11 +489,11 @@
     },
     drawIndirect(b, o) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (planMode && reusable(10, passId, bufferId(b), o)) {
+      if (planMode && reusable(OP_RENDER_DRAW_INDIRECT, passId, bufferId(b), o)) {
         reuseRecord(0);
         return;
       }
-      emit(10, () => {
+      emit(OP_RENDER_DRAW_INDIRECT, () => {
         u32(passId);
         u32(bufferId(b));
         f64(o);
@@ -463,11 +501,11 @@
     },
     drawIndexedIndirect(b, o) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (planMode && reusable(11, passId, bufferId(b), o)) {
+      if (planMode && reusable(OP_RENDER_DRAW_INDEXED_INDIRECT, passId, bufferId(b), o)) {
         reuseRecord(0);
         return;
       }
-      emit(11, () => {
+      emit(OP_RENDER_DRAW_INDEXED_INDIRECT, () => {
         u32(passId);
         u32(bufferId(b));
         f64(o);
@@ -475,22 +513,22 @@
     },
     setViewport(...a) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (a.length === 6 && planMode && reusable(12, passId, a[0], a[1], a[2], a[3], a[4], a[5])) {
+      if (a.length === 6 && planMode && reusable(OP_RENDER_SET_VIEWPORT, passId, a[0], a[1], a[2], a[3], a[4], a[5])) {
         reuseRecord(0);
         return;
       }
-      emit(12, () => {
+      emit(OP_RENDER_SET_VIEWPORT, () => {
         u32(passId);
         for (const v of a) f64(v);
       });
     },
     setScissorRect(...a) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (a.length === 4 && planMode && reusable(13, passId, a[0], a[1], a[2], a[3])) {
+      if (a.length === 4 && planMode && reusable(OP_RENDER_SET_SCISSOR_RECT, passId, a[0], a[1], a[2], a[3])) {
         reuseRecord(0);
         return;
       }
-      emit(13, () => {
+      emit(OP_RENDER_SET_SCISSOR_RECT, () => {
         u32(passId);
         for (const v of a) u32(v);
       });
@@ -501,7 +539,7 @@
       if (
         planMode &&
         reusable(
-          14,
+          OP_RENDER_SET_BLEND_CONSTANT,
           passId,
           listed ? c[0] : c.r,
           listed ? c[1] : c.g,
@@ -512,7 +550,7 @@
         reuseRecord(0);
         return;
       }
-      emit(14, () => {
+      emit(OP_RENDER_SET_BLEND_CONSTANT, () => {
         u32(passId);
         if (Array.isArray(c) || ArrayBuffer.isView(c)) {
           f64(c[0]);
@@ -529,18 +567,18 @@
     },
     setStencilReference(r) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (planMode && reusable(15, passId, r)) {
+      if (planMode && reusable(OP_RENDER_SET_STENCIL_REFERENCE, passId, r)) {
         reuseRecord(0);
         return;
       }
-      emit(15, () => {
+      emit(OP_RENDER_SET_STENCIL_REFERENCE, () => {
         u32(passId);
         u32(r);
       });
     },
     executeBundles(a) {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      emit(16, () => {
+      emit(OP_RENDER_EXECUTE_BUNDLES, () => {
         u32(passId);
         u32(a.length);
         for (const b of a) u32(renderBundleId(b));
@@ -548,21 +586,21 @@
     },
     end() {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      if (planMode && reusable(17, passId)) {
+      if (planMode && reusable(OP_RENDER_END, passId)) {
         reuseRecord(-1);
         return;
       }
-      emit(17, () => u32(passId), -1);
+      emit(OP_RENDER_END, () => u32(passId), -1);
     },
   };
   const computePassPrototype = {
     setPipeline(p) {
       const passId = receiverId(this, computePassIdKey, "compute pass");
-      if (planMode && reusable(19, passId, pipelineId(p, "compute pipeline"))) {
+      if (planMode && reusable(OP_COMPUTE_SET_PIPELINE, passId, pipelineId(p, "compute pipeline"))) {
         reuseRecord(0);
         return;
       }
-      emit(19, () => {
+      emit(OP_COMPUTE_SET_PIPELINE, () => {
         u32(passId);
         u32(pipelineId(p, "compute pipeline"));
       });
@@ -573,12 +611,12 @@
       if (
         widest <= 4 &&
         planMode &&
-        reusable(20, passId, i, bindGroupId(g), widest, o?.[0] ?? 0, o?.[1] ?? 0, o?.[2] ?? 0, o?.[3] ?? 0)
+        reusable(OP_COMPUTE_SET_BIND_GROUP, passId, i, bindGroupId(g), widest, o?.[0] ?? 0, o?.[1] ?? 0, o?.[2] ?? 0, o?.[3] ?? 0)
       ) {
         reuseRecord(0);
         return;
       }
-      emit(20, () => {
+      emit(OP_COMPUTE_SET_BIND_GROUP, () => {
         u32(passId);
         u32(i);
         u32(bindGroupId(g));
@@ -587,11 +625,11 @@
     },
     dispatchWorkgroups(x, y, z) {
       const passId = receiverId(this, computePassIdKey, "compute pass");
-      if (planMode && reusable(21, passId, x, opt(y, 1), opt(z, 1))) {
+      if (planMode && reusable(OP_COMPUTE_DISPATCH_WORKGROUPS, passId, x, opt(y, 1), opt(z, 1))) {
         reuseRecord(0);
         return;
       }
-      emit(21, () => {
+      emit(OP_COMPUTE_DISPATCH_WORKGROUPS, () => {
         u32(passId);
         u32(x);
         u32(opt(y, 1));
@@ -600,11 +638,11 @@
     },
     dispatchWorkgroupsIndirect(b, o) {
       const passId = receiverId(this, computePassIdKey, "compute pass");
-      if (planMode && reusable(35, passId, bufferId(b), o)) {
+      if (planMode && reusable(OP_COMPUTE_DISPATCH_WORKGROUPS_INDIRECT, passId, bufferId(b), o)) {
         reuseRecord(0);
         return;
       }
-      emit(35, () => {
+      emit(OP_COMPUTE_DISPATCH_WORKGROUPS_INDIRECT, () => {
         u32(passId);
         u32(bufferId(b));
         f64(o);
@@ -612,16 +650,16 @@
     },
     end() {
       const passId = receiverId(this, computePassIdKey, "compute pass");
-      if (planMode && reusable(22, passId)) {
+      if (planMode && reusable(OP_COMPUTE_END, passId)) {
         reuseRecord(-1);
         return;
       }
-      emit(22, () => u32(passId), -1);
+      emit(OP_COMPUTE_END, () => u32(passId), -1);
     },
   };
   const renderPass = (encoderId, descriptor) => {
     const passId = ++frameId;
-    emit(3, () => {
+    emit(OP_BEGIN_RENDER_PASS, () => {
       u32(encoderId);
       u32(passId);
       const colors = descriptor.colorAttachments || [];
@@ -668,7 +706,7 @@
   };
   const computePass = (encoderId, descriptor) => {
     const passId = ++frameId;
-    emit(18, () => {
+    emit(OP_BEGIN_COMPUTE_PASS, () => {
       u32(encoderId);
       u32(passId);
       timestampWrites(descriptor?.timestampWrites);
@@ -690,12 +728,12 @@
     copyBufferToBuffer(s, so, d, do_, z) {
       if (
         planMode &&
-        reusable(23, encoderIdOf(this), bufferId(s), so, bufferId(d), do_, z)
+        reusable(OP_COPY_BUFFER_TO_BUFFER, encoderIdOf(this), bufferId(s), so, bufferId(d), do_, z)
       ) {
         reuseRecord(0);
         return;
       }
-      emit(23, () => {
+      emit(OP_COPY_BUFFER_TO_BUFFER, () => {
         u32(encoderIdOf(this));
         u32(bufferId(s));
         f64(so);
@@ -705,7 +743,7 @@
       });
     },
     copyBufferToTexture(s, d, z) {
-      emit(24, () => {
+      emit(OP_COPY_BUFFER_TO_TEXTURE, () => {
         u32(encoderIdOf(this));
         u32(bufferId(s.buffer));
         f64(opt(s.offset, 0));
@@ -716,7 +754,7 @@
       });
     },
     copyTextureToBuffer(s, d, z) {
-      emit(25, () => {
+      emit(OP_COPY_TEXTURE_TO_BUFFER, () => {
         u32(encoderIdOf(this));
         textureCopy(s);
         u32(bufferId(d.buffer));
@@ -727,7 +765,7 @@
       });
     },
     copyTextureToTexture(s, d, z) {
-      emit(26, () => {
+      emit(OP_COPY_TEXTURE_TO_TEXTURE, () => {
         u32(encoderIdOf(this));
         textureCopy(s);
         textureCopy(d);
@@ -735,11 +773,11 @@
       });
     },
     clearBuffer(b, o, z) {
-      if (planMode && reusable(27, encoderIdOf(this), bufferId(b), opt(o, 0), opt(z, -1))) {
+      if (planMode && reusable(OP_CLEAR_BUFFER, encoderIdOf(this), bufferId(b), opt(o, 0), opt(z, -1))) {
         reuseRecord(0);
         return;
       }
-      emit(27, () => {
+      emit(OP_CLEAR_BUFFER, () => {
         u32(encoderIdOf(this));
         u32(bufferId(b));
         f64(opt(o, 0));
@@ -753,7 +791,7 @@
       if (
         planMode &&
         reusable(
-          34,
+          OP_RESOLVE_QUERY_SET,
           encoderIdOf(this),
           id,
           firstQuery,
@@ -765,7 +803,7 @@
         reuseRecord(0);
         return;
       }
-      emit(34, () => {
+      emit(OP_RESOLVE_QUERY_SET, () => {
         u32(encoderIdOf(this));
         u32(id);
         u32(firstQuery);
@@ -776,9 +814,9 @@
     },
     finish() {
       const commandId = ++frameId;
-      if (planMode && reusable(28, encoderIdOf(this), commandId)) reuseRecord(0);
+      if (planMode && reusable(OP_FINISH, encoderIdOf(this), commandId)) reuseRecord(0);
       else
-        emit(28, () => {
+        emit(OP_FINISH, () => {
           u32(encoderIdOf(this));
           u32(commandId);
         });
@@ -787,8 +825,8 @@
   };
   device.createCommandEncoder = () => {
     const encoderId = ++frameId;
-    if (planMode && reusable(2, encoderId)) reuseRecord(1);
-    else emit(2, () => u32(encoderId), 1);
+    if (planMode && reusable(OP_CREATE_COMMAND_ENCODER, encoderId)) reuseRecord(1);
+    else emit(OP_CREATE_COMMAND_ENCODER, () => u32(encoderId), 1);
     const encoder = Object.create(commandEncoderPrototype);
     encoder[encoderIdKey] = encoderId;
     encoder[wireIdKey] = frameSerial;
@@ -807,8 +845,8 @@
   };
   const createBuffer = device.createBuffer.bind(device);
   const createTexture = device.createTexture.bind(device);
-  device.createBuffer = (descriptor) => wrapDestroy(createBuffer(descriptor), bufferId, 32);
-  device.createTexture = (descriptor) => wrapDestroy(createTexture(descriptor), textureId, 33);
+  device.createBuffer = (descriptor) => wrapDestroy(createBuffer(descriptor), bufferId, OP_BUFFER_DESTROY);
+  device.createTexture = (descriptor) => wrapDestroy(createTexture(descriptor), textureId, OP_TEXTURE_DESTROY);
   queue.writeBuffer = (b, o, d, do_, z) => {
     if (!Number.isSafeInteger(o) || o < 0 || o & 3)
       throw new RangeError(
@@ -817,7 +855,7 @@
     const copy = upload(d, do_, z);
     if (copy.byteLength & 3)
       throw new RangeError("frame op stream: writeBuffer size must be a multiple of 4");
-    emit(1, () => {
+    emit(OP_WRITE_BUFFER, () => {
       u32(bufferId(b));
       f64(o);
       u32(copy.byteLength);
@@ -854,7 +892,7 @@
   };
   queue.writeTexture = (d, data, l, z) => {
     const copy = textureUploadSlice(d, data, l, z);
-    emit(30, () => {
+    emit(OP_WRITE_TEXTURE, () => {
       textureCopy(d);
       f64(0);
       u32(opt(l.bytesPerRow, 0));
@@ -878,7 +916,7 @@
     const o = opt(s.origin, {});
     const ox = Array.isArray(o) ? opt(o[0], 0) : opt(o.x, 0);
     const oy = Array.isArray(o) ? opt(o[1], 0) : opt(o.y, 0);
-    emit(31, () => {
+    emit(OP_COPY_EXTERNAL_IMAGE_TO_TEXTURE, () => {
       u32(image.width);
       u32(image.height);
       u32(ox);
@@ -897,12 +935,12 @@
     if (
       submitted !== null &&
       planMode &&
-      reusable(29, a.length, submitted[0] ?? 0, submitted[1] ?? 0, submitted[2] ?? 0, submitted[3] ?? 0)
+      reusable(OP_SUBMIT, a.length, submitted[0] ?? 0, submitted[1] ?? 0, submitted[2] ?? 0, submitted[3] ?? 0)
     ) {
       reuseRecord(-submitted.length);
       return;
     }
-    emit(29,
+    emit(OP_SUBMIT,
       () => {
         u32(a.length);
         for (const b of a) u32(commandBufferId(b));

@@ -48,7 +48,7 @@ class Boot extends Scene<IBootState> {
 const game = defineGame<IBootState>({
   plugins: [playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { boot: Boot },
   start: "boot",
 });

@@ -44,7 +44,7 @@ const game = defineGame<GalleryState>({
       return budgetKnob.maxFps;
     },
   },
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { gallery: Gallery },
   seed: 316,
   start: "gallery",

@@ -225,5 +225,5 @@ export default defineGame<State>({
   // deliver a `press` step as the same keydown, so this reads identically on web and on a device.
   input: { [ARM]: { keys: ["KeyV"] } },
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
 });

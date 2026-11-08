@@ -170,7 +170,7 @@ class ClothScene extends Scene<IClothState, IPhysicsContext> {
 const game = defineGame<IClothState, IPhysicsContext>({
   input: { gust: { keys: ["Space"] }, reload: { keys: ["KeyR"] } },
   plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { cloth: ClothScene },
   start: "cloth",
   step: 1 / 60,

@@ -35,7 +35,7 @@ void defineGame({
     },
   },
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { spawn: Spawn },
   start: "spawn",
 }).start();

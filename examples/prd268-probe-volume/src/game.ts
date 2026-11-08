@@ -380,7 +380,7 @@ const game = defineGame<IProbeVolumeFixtureState>({
   input: { lamp: { keys: ["KeyL"] } },
   inputTarget: globalThis,
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { probeVolume: ProbeVolumeFixture },
   start: "probeVolume",
 });

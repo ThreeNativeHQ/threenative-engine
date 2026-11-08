@@ -182,7 +182,7 @@ class ClipAudit extends Scene<IClipAuditState> {
 
 const game = defineGame<IClipAuditState>({
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { clipAudit: ClipAudit },
   start: "clipAudit",
 });

@@ -96,7 +96,7 @@ class TerrainSplatScene extends Scene {
 
 export default defineGame({
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { terrainSplat: TerrainSplatScene },
   start: "terrainSplat",
   step: 1 / 60,

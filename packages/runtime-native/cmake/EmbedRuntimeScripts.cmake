@@ -4,9 +4,11 @@ endif()
 
 get_filename_component(OUTPUT_DIR "${OUTPUT}" DIRECTORY)
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-file(WRITE "${OUTPUT}" "#pragma once\n#include <cstddef>\n#include <string_view>\n\nnamespace mystral::runtime_scripts {\n\nstruct ScriptView {\n    const char* data = nullptr;\n    std::size_t size = 0;\n};\n\n")
+file(WRITE "${OUTPUT}" "#pragma once\n#include <cstddef>\n#include <cstdio>\n#include <cstdlib>\n#include <string_view>\n\nnamespace mystral::runtime_scripts {\n\nstruct ScriptView {\n    const char* data = nullptr;\n    std::size_t size = 0;\n};\n\n")
 
 set(SCRIPT_CASES "")
+set(SCRIPT_ENUMERATORS "")
+set(SCRIPT_NAME_TABLE "")
 foreach(SCRIPT_NAME IN LISTS SCRIPT_NAMES)
     string(MAKE_C_IDENTIFIER "${SCRIPT_NAME}" SCRIPT_IDENTIFIER)
     file(READ "${SOURCE_DIR}/${SCRIPT_NAME}.js" SCRIPT_HEX HEX)
@@ -14,9 +16,20 @@ foreach(SCRIPT_NAME IN LISTS SCRIPT_NAMES)
     file(APPEND "${OUTPUT}"
         "inline constexpr unsigned char k_${SCRIPT_IDENTIFIER}[] = {${SCRIPT_BYTES}};\n"
     )
+    set(SCRIPT_ENUMERATORS "${SCRIPT_ENUMERATORS}    ${SCRIPT_IDENTIFIER},\n")
+    set(SCRIPT_NAME_TABLE "${SCRIPT_NAME_TABLE}    \"${SCRIPT_NAME}\",\n")
     set(SCRIPT_CASES
         "${SCRIPT_CASES}    if (name == \"${SCRIPT_NAME}\") return {reinterpret_cast<const char*>(k_${SCRIPT_IDENTIFIER}), sizeof(k_${SCRIPT_IDENTIFIER})};\n"
     )
 endforeach()
 
-file(APPEND "${OUTPUT}" "\nstatic inline ScriptView find(std::string_view name) {\n${SCRIPT_CASES}    return {};\n}\n\n}  // namespace mystral::runtime_scripts\n")
+file(APPEND "${OUTPUT}" "\nstatic inline ScriptView find(std::string_view name) {\n${SCRIPT_CASES}    return {};\n}\n")
+
+# Callers name a script by enumerator, so a misspelled script is a compile error that names it. A
+# header built with TN_SCRIPT_ENUM off (the math script, which one caller reads by string) keeps
+# only find(). require() aborts boot naming the script if an enumerator ever has no payload.
+if(DEFINED SCRIPT_ENUM)
+    file(APPEND "${OUTPUT}" "\nenum class Script {\n${SCRIPT_ENUMERATORS}};\n\ninline constexpr const char* kScriptNames[] = {\n${SCRIPT_NAME_TABLE}};\n\nstatic inline ScriptView require(Script script) {\n    const std::size_t index = static_cast<std::size_t>(script);\n    const char* name = index < sizeof(kScriptNames) / sizeof(kScriptNames[0]) ? kScriptNames[index] : \"<out of range>\";\n    const ScriptView view = index < sizeof(kScriptNames) / sizeof(kScriptNames[0]) ? find(name) : ScriptView{};\n    if (!view.data) {\n        std::fprintf(stderr, \"TN_EMBEDDED_SCRIPT_MISSING: runtime script '%s' (enumerator %zu) has no embedded payload; boot cannot continue.\\n\", name, index);\n        std::abort();\n    }\n    return view;\n}\n")
+endif()
+
+file(APPEND "${OUTPUT}" "\n}  // namespace mystral::runtime_scripts\n")

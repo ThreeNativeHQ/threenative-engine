@@ -29,7 +29,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   },
   plugins: [rapier(), replay(), playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { play: Play },
   seed: 90210,
   start: "play",

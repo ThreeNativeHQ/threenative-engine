@@ -1147,7 +1147,7 @@ const game = defineGame<IRiggingState, IPhysicsContext>({
     rapier({ deterministicRestart: true }),
     playtest(),
   ],
-  render: { preferWebGPU: true, resolutionScale: 1 },
+  renderer: { preferWebGPU: true, resolutionScale: 1 },
   display: { maxFps: 60 },
   seed: 446,
   scenes: { candidate: RiggingScene, spring: SpringScene },

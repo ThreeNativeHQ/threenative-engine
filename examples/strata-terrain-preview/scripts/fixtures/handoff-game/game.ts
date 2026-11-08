@@ -10,7 +10,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   input: {},
   plugins: [rapier(), playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { handoff: Handoff },
   start: "handoff",
 });

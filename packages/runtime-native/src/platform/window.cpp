@@ -5,6 +5,7 @@
  * for WebGPU surface creation.
  */
 
+#include "mystral/config_keys.h"
 #include "mystral/platform/input.h"
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/vfs/embedded_bundle.h"
@@ -178,9 +179,9 @@ static void applyEmbeddedBootSplash() {
     // the two packaging paths — `threenative build` and the release packager — do not both flatten,
     // so a flattened key was present in one artifact and absent in the other. Find `bootSplash`
     // first and read the colour after it: correct on both, and still no JSON parser.
-    const auto section = config.find("\"bootSplash\"");
+    const auto section = config.find(std::string("\"") + kConfigKeyBootSplash + "\"");
     if (section == std::string::npos) return;
-    const auto at = config.find("\"backgroundColor\"", section);
+    const auto at = config.find(std::string("\"") + kConfigKeyBackgroundColor + "\"", section);
     if (at == std::string::npos) return;
     const auto open = config.find('"', config.find(':', at));
     if (open == std::string::npos) return;
