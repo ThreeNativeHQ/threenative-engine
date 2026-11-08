@@ -55,7 +55,9 @@ import {
   markTwoSidedFoliage,
   reflectionTrace,
   shadowPreset,
+  tracedGiField,
   unrealSunDiscScale,
+  upperSkyMean,
   watchGi,
   watchShadowTier,
 } from "./tuning.js";
@@ -359,8 +361,28 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (tracing) reflectionTrace.current = new TracedReflections(model);
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
+      // PRD-831: ?giField=trace lights the materials from a RadianceCache that traces the scene on the GPU (the sun, and
+      // the sky's upper-hemisphere mean for an escaping ray), in place of the CPU bake's field. The capture waits for
+      // `window.__tnGiField.ready()`. Knobs as in CalibrationScene: giDensity, giRays, giBias.
+      const sunLight = { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION };
+      const field =
+        TUNED && level >= 7 && !OFF.has("gi") && params.get("giField") === "trace"
+          ? tracedGiField(
+              ctx,
+              model,
+              { sun: sunLight },
+              upperSkyMean(Number(params.get("skyMul") ?? GI.skylightIntensityMultiplier)),
+              Number(params.get("giDensity") ?? 1),
+              Number(params.get("giRays") ?? 32),
+              Number(params.get("giBias") ?? 0.5),
+              Number(params.get("giMap") ?? (params.get("giVis") === "1" ? 8 : 0)),
+              params.get("giVis") === "1",
+            )
+          : undefined;
+      if (field !== undefined) (window as unknown as { __tnGiField: unknown }).__tnGiField = field;
       if (TUNED && level >= 2 && !OFF.has("gi"))
         installGi(ctx, model, {
+          ...(field === undefined ? {} : { field }),
           // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
           paintGround: !tracing || params.get("paint") === "1",
           // Diagnosis knob spill=1: an emissive sphere lights its neighbours below L7 too (the look before PRD-634's emitter rule).
@@ -396,7 +418,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           ...(GI_METHOD === "none"
             ? { skyShadowDistance: level >= 7 && !GI.distanceFieldAO ? 0 : 10 }
             : {}),
-          sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
+          sun: sunLight,
         });
       // Diagnosis knob envMul=N scales the sky's diffuse and specular environment light (0 = no sky light but the GI cache).
       if (params.get("envMul") !== null) scene.environmentIntensity = Number(params.get("envMul"));
@@ -437,9 +459,12 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           this.#dispose?.();
           const world = new WorldEnvironment({
             ...qualityPreset("high"),
-            // The Epic gather is opt-in here: on the sunlit room it smooths the walls but lights the wall under the sill
-            // 30 levels above Unreal (PRD-638 judge round 2026-10-21), so the default stays medium until PRD-640's probes land.
-            ...(params.get("ssgiQuality") === "epic" ? EPIC_SSGI : {}),
+            // A GI calibration model is compared with Unreal's L7-Epic, so it gathers with the Epic tier: at the medium tier the
+            // sun patch, seen by a few rays a pixel, left blotches and streaks in the sunlit room's back-wall glow (PRD-831
+            // judge 2026-11-07: every pose IMPROVEMENT and CLOSE, sun60-window smooth only at Epic). The 2026-10-21 objection
+            // (the wall under the sill 30 levels high) predates the per-ray cache read. ?ssgiQuality=medium is the BEFORE arm;
+            // the template's own reference scene (no model) keeps the medium tier.
+            ...((params.get("ssgiQuality") ?? (params.get("model") === null ? null : "epic")) === "epic" ? EPIC_SSGI : {}),
             // Diagnosis: ?ssgiQuality=<tier>, ?ssgiScale=N, ?ssgiIntensity=N and ?ssgiDenoise=N bracket the gather.
             ...(params.get("ssgiQuality") === null ? {} : { ssgiQuality: params.get("ssgiQuality") as "epic" }),
             ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),

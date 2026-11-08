@@ -34,7 +34,8 @@ import {
 import { texture, uniform, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import { gtaoUrlKnobs } from "../render/aoReach.js";
-import { giCache, installGi } from "../render/giCache.js";
+import { giCache, installGi, skyRadiance } from "../render/giCache.js";
+import { tracedGiField } from "../render/giTraced.js";
 import { watchGi } from "../render/giTier.js";
 import { type IGlbMaterialImages, fetchGlbMaterialImages } from "../render/glbImages.js";
 import { reflectionTrace } from "../render/reflectionTrace.js";
@@ -336,15 +337,69 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         if (params.get("lampHit") !== "0") reflectionTrace.lamps = lights;
       }
       if (GI_METHOD !== "none") {
-        // Diagnosis: ?giSkip=<region> bakes with that region black, to measure its share of the bounce.
-        const skipped = meshes.filter((m) => regionOf(m) === params.get("giSkip"));
-        const kept = skipped.map((m) => (m.material as unknown as { color: Color }).color.clone());
+        // Diagnosis: ?giSkip=<region>[,<region>] bakes with those regions black, albedo and emission, to measure their
+        // share of the bounce; the screen keeps them as they are.
+        const skipNames = (params.get("giSkip") ?? "").split(",");
+        const skipped = meshes.filter((m) => skipNames.includes(regionOf(m) ?? ""));
+        type Lit = { color: Color; emissive?: Color };
+        const kept = skipped.map((m) => (m.material as unknown as Lit).color.clone());
+        const keptEmissive = skipped.map((m) => (m.material as unknown as Lit).emissive?.clone());
         for (const m of skipped) {
           // Materials are shared (every white surface is one MI_White): only this region goes black.
           m.material = (m.material as MeshBasicMaterial).clone();
-          (m.material as unknown as { color: Color }).color.setScalar(0);
+          (m.material as unknown as Lit).color.setScalar(0);
+          (m.material as unknown as Lit).emissive?.setScalar(0);
         }
+        // PRD-831: ?giField=trace lights the materials from a RadianceCache that traces the scene on the GPU, in place of the
+        // CPU bake's field; the bake still runs for the sky shares and the emitters. The probes need a few frames: the capture
+        // waits for `window.__tnGiField.ready()`.
+        const sky = skyRadiance.current;
+        const field =
+          params.get("giField") === "trace"
+            ? tracedGiField(
+                ctx,
+                model,
+                {
+                  lights: lights.map((l) => ({
+                    color: l.color,
+                    distance: l.distance,
+                    intensity: l.intensity,
+                    position: l.position,
+                  })),
+                },
+                // Diagnosis: ?giSky=0 gives the trace's escaping rays no sky.
+                sky === undefined || params.get("giSky") === "0"
+                  ? new Color(0, 0, 0)
+                  : new Color(
+                      (sky.data[0] ?? 0) * sky.scale[0],
+                      (sky.data[1] ?? 0) * sky.scale[1],
+                      (sky.data[2] ?? 0) * sky.scale[2],
+                    ),
+                // ?giDensity=<probes per metre> and ?giRays=<rays per side>: the field's grid and ray count. The rays default
+                // to Unreal's 32 per side (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:641,
+                // GRadianceCacheProbeResolution): at 8 a lone ray onto the lamp shade's underside lit one probe 6x its neighbours.
+                Number(params.get("giDensity") ?? 1),
+                Number(params.get("giRays") ?? 32),
+                // ?giBias=<share of a probe spacing>: Unreal's screen probe traces the near field itself and reads the cache
+                // only past ProbeTMin + cell * sqrt(3) (LumenRadianceCacheInterpolation.ush:190); this gather traces screen
+                // space only, so it reads the field half a spacing off the surface, away from the probes inside a solid.
+                Number(params.get("giBias") ?? 0.5),
+                // ?giMap=<cells per side>: each probe keeps an octahedral radiance map that the gather reads per ray, as Unreal's
+                // radiance cache stores radiance per probe (LumenScreenProbeGather.cpp:641); SH L2 smears a coloured wall across
+                // the sphere. 8 x 8 cells over 32 x 32 rays averages 16 rays a cell. Off by default: ?giMap=8 moved the corner floor
+                // away from Unreal (PRD-831 decisions, 2026-11-07), so the SH stays the read until a map arm wins.
+                Number(params.get("giMap") ?? (params.get("giVis") === "1" ? 8 : 0)),
+                // ?giVis=1: each read depth-tests its eight probes against the map's depth, so a probe behind a wall drops
+                // out (LumenRadianceCacheInterpolation.ush:390). It needs the map, so it turns on 8 x 8 cells.
+                params.get("giVis") === "1",
+              )
+            : undefined;
+        if (field !== undefined) (window as unknown as { __tnGiField: unknown }).__tnGiField = field;
         const gi = installGi(ctx, model, {
+          // Diagnosis: ?giFallback=irradiance gives the gather the cosine-convolved read per ray (the pre-PRD-831 arm).
+          ...(field === undefined
+            ? {}
+            : { field: params.get("giFallback") === "irradiance" ? { irradiance: field.irradiance } : field }),
           // A traced ray finds the floor itself: the painted floor of the cube capture is not needed.
           paintGround: !tracing,
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
@@ -368,7 +423,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             ...(params.get("direct") === "0" || params.get("giFollow") === "0" ? {} : { source: l }),
           })),
         });
-        skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
+        skipped.forEach((m, i) => {
+          (m.material as unknown as Lit).color.copy(kept[i] as Color);
+          const emissive = keptEmissive[i];
+          if (emissive !== undefined) (m.material as unknown as Lit).emissive?.copy(emissive);
+        });
         if (gi === undefined)
           unsupported.push({ actor: NAME, property: "GI", reason: "the GI cache did not bake" });
         // Diagnosis: ?direct=0 switches the lights off after the bake, so the frame holds the indirect

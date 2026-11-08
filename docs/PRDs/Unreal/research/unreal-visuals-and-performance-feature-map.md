@@ -87,11 +87,11 @@ quadrantChart
 | 1 | PRD-632 | Filmic tone curve, EV100, auto exposure | L1 | 6 | 5 | 23/23 | PRD-631 | Every pixel. Every later layer compares at matched exposure |
 | 2 | PRD-633 | Sky atmosphere and sky light capture | L2 | 6 | 5 | 2/12 | PRD-632 | The sky fills the frame and lights the scene |
 | 2 | PRD-636 | Finishing post: bloom, vignette, local exposure, motion blur | L9 | 5 | 3 | 18/29 | PRD-632 | Half done; a cheap finish |
-| 2 | PRD-635 | AO on indirect light only | L6 | 5 | 3 | 8/17 | PRD-632 | Low cost, visible in every contact area |
+| 2 | PRD-635 | AO on indirect light only | L6 | 5 | 3 | 15/17 | PRD-632 | Low cost, visible in every contact area |
 | 2 | PRD-651 | Leaf cards cast leaf shadows | L5 | 6 | 4 | 7/12 | — | Phase 1 is an engine bug on the default engine |
 | 2 | PRD-649 | Shadow calibration scenes | L5 | 5 | 4 | 3/12 | PRD-646 | Unblocks PRD-634, 650, 652 |
 | 2 | PRD-646 | ThreeNative recreates the GI calibration scenes | L7 | 6 | 4 | 13/15 | PRD-632 | Unblocks every GI verdict |
-| 2 | PRD-603 | `RadianceCache` traces the packed scene | L7 | 7 | 5 | 0/10 | — | The GI foundation; README says it can start now |
+| 2 | PRD-603 | `RadianceCache` traces the packed scene | L7 | 7 | 5 | 9/9 | — | The GI foundation; README says it can start now |
 | 2 | PRD-539 | TSR quality and cost at low resolution | Perf | 6 est. | 4 | 10/10 | — | Independent. Lower render resolution pays for every other layer |
 | 3 | PRD-562 | Aerial perspective from a froxel volume | L3 | 4 | 3 | 0/8 | PRD-633 | Needs the atmosphere |
 | 3 | PRD-VQ-08 | Volumetric clouds and overhead transmittance | L4 | 7 est. | 3 | 0/9 | PRD-633 | The default Unreal map has clouds |

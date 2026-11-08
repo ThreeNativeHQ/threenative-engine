@@ -407,6 +407,8 @@ public:
     GpuStatus readAlbedoPixels(ReadbackCallback done);
     /** The emitted radiance (RGBA16Float); InvalidHandle until a post pass reads "emissive". */
     GpuStatus readEmissivePixels(ReadbackCallback done);
+    /** The indirect diffuse light (RGBA16Float); InvalidHandle until a post pass reads "indirectDiffuse". */
+    GpuStatus readIndirectPixels(ReadbackCallback done);
     /**
      * The region [x, y, width, height] of one custom MRT slot's attachment (three's PassNode.getTexture(slot)
      * read back), packed RGBA16Float rows, top row first. InvalidHandle until a frame draws that slot.
@@ -996,8 +998,8 @@ private:
          *  writes only their ambient and hemisphere terms. */
         bool selective = false;
         std::vector<uint64_t> lightSelection;
-        std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
-        uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
+        std::array<std::unique_ptr<shader::StageModule>, 32> aux;  // by AuxTarget mask, built on first request
+        uint32_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
         /** The aux fragment that also writes custom MRT slots, keyed by the frame's slot list (mask included). */
         std::map<std::string, std::unique_ptr<shader::StageModule>> auxMrt;
         /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
@@ -1006,7 +1008,7 @@ private:
     /** A program's per-draw probes, resolved once in buildLayouts; read by every draw of every pass. */
     DrawProbes probesOf(const Program& program);
     /** The post targets the scene can write besides its colour, in attachment order (PRD-740). */
-    enum AuxTarget : uint8_t { kAuxNormal = 1, kAuxMaterial = 2, kAuxAlbedo = 4, kAuxEmissive = 8 };
+    enum AuxTarget : uint8_t { kAuxNormal = 1, kAuxMaterial = 2, kAuxAlbedo = 4, kAuxEmissive = 8, kAuxIndirect = 16 };
     /**
      * The aux pass's fragment for the targets in `mask`: the program's own lit fragment built again, writing each
      * target at its own location in AuxTarget order, so one draw fills every target the post graph reads. Same builder
@@ -1324,6 +1326,8 @@ private:
     WGPUTextureView albedoView_ = nullptr;
     WGPUTexture emissiveTexture_ = nullptr;
     WGPUTextureView emissiveView_ = nullptr;
+    WGPUTexture indirectTexture_ = nullptr;
+    WGPUTextureView indirectView_ = nullptr;
     /** A material's custom MRT targets (three's mrt() slots other than the named ones), one RGBA16F texture per slot
      *  name, drawn by the aux pass and read by the post graph by that name; created with the first frame that writes
      *  one, released with the targets. */

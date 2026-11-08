@@ -606,6 +606,9 @@ export function definePass(
       // reads this name (Renderer::planAux), so the read is the request and no MRT output names it: the occlusion and
       // the gather belong to the opaque surface, and the composite restores what a translucent sheet drew over it.
       if (name === "translucent") return tsl.texture({ name: "translucent" }, tsl.uv());
+      // Each lit draw's indirect diffuse light (hemisphere, ambient, environment, irradiance node; no direct light),
+      // drawn while the post graph reads the name (Renderer::planAux), so an occlusion can darken that share alone.
+      if (name === "indirectDiffuse") return tsl.texture({ name: "indirectDiffuse" }, tsl.uv());
       if (
         (name === "metalness" || name === "roughness") &&
         this.#mrt?.outputs.normal === normalView &&

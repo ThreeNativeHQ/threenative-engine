@@ -1664,6 +1664,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     out.albedo = diffuseColor;
     out.emissive = emissive;
+    out.indirectDiffuse = totalIndirectDiffuse;
     out.normal = n;
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
     outputDepthNode(f, slots, variant);
@@ -1802,6 +1803,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     out.albedo = diffuseColor;
     out.emissive = emissive;
+    out.indirectDiffuse = indirectDiffuse;
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);

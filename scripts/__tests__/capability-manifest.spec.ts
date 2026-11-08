@@ -819,6 +819,13 @@ describe("capability manifest generator", () => {
       },
       "lumen surface cache": { ids: ["request.lumen-surface-cache"], owners: ["SurfaceCache"] },
       "lumen scene": { ids: ["request.lumen-scene"], owners: ["SurfaceCache"] },
+      "lumen radiance cache": {
+        ids: ["request.lumen-radiance-cache"],
+        owners: ["RadianceCache"],
+      },
+      "radiance cache": { ids: ["request.lumen-radiance-cache"], owners: ["RadianceCache"] },
+      "dynamic probe gi": { ids: ["request.dynamic-probe-gi"], owners: ["RadianceCache"] },
+      "irradiance field": { ids: ["request.dynamic-probe-gi"], owners: ["RadianceCache"] },
       "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
       "lumen translucency volume": {
         ids: ["request.lumen-translucency-volume"],
