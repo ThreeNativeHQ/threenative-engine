@@ -17,38 +17,7 @@ export type HorizonSurroundings = Record<
 // Each world keeps its own surroundings in the installed Heightfield query. They are fetched, not
 // imported: as a module the 7 MB file took about 3 s to compile before the first frame.
 let continuationFields: Record<string, Heightfield> = {};
-let prefilteredFields: Record<string, Heightfield> = {};
 let sources: HorizonSurroundings = {};
-
-/**
- * Two separable box passes of radius 2 cells (about a 15 m Gaussian at 9.8 m cells). Far collar
- * rings read this copy: bilinear heights turn a diagonal wall into grid-aligned stair steps on the
- * skyline, which a prefiltered field does not, as a mip level does for a far texture.
- */
-export function prefiltered(heights: Float32Array, size: number): Float32Array {
-  let source = heights;
-  // Rows then columns, twice: [stride between lines, stride along a line].
-  for (const [line, step] of [
-    [size, 1],
-    [1, size],
-    [size, 1],
-    [1, size],
-  ] as const)
-    source = boxPass(source, size, line, step);
-  return source;
-}
-
-function boxPass(source: Float32Array, size: number, line: number, step: number): Float32Array {
-  const out = new Float32Array(source.length);
-  for (let a = 0; a < size; a++)
-    for (let b = 0; b < size; b++) {
-      let sum = 0;
-      for (let k = -2; k <= 2; k++)
-        sum += source[a * line + Math.min(size - 1, Math.max(0, b + k)) * step] as number;
-      out[a * line + b * step] = sum / 5;
-    }
-  return out;
-}
 
 /**
  * `world/horizon.json`, fetched once per page and installed here. A failed fetch clears the memo
@@ -71,7 +40,6 @@ export function loadHorizonSurroundings(assets: Pick<IAssetLoader, "resolve">): 
 /** Installs the surroundings `createHorizonCollar` reads; call once before building terrain. */
 export function setHorizonSurroundings(baked: HorizonSurroundings): void {
   sources = baked;
-  prefilteredFields = {};
   continuationFields = Object.fromEntries(
     Object.entries(baked).map(([name, source]) => [
       name,
@@ -96,15 +64,29 @@ function field(source: HorizonSurroundings[string], heights: Float32Array): Heig
   });
 }
 
-/** Built on first use: only the world being shown pays the filter at load. */
-function prefilteredField(name: string): Heightfield | undefined {
-  const source = sources[name];
-  if (!source) return undefined;
-  prefilteredFields[name] ??= field(
-    source,
-    prefiltered(new Float32Array(source.heights), source.resolution),
-  );
-  return prefilteredFields[name];
+const catmullRom = (a: number, b: number, c: number, d: number, t: number): number =>
+  b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
+
+/**
+ * The survey at `(x, z)` through a Catmull-Rom patch of its 4×4 nearest samples: C1 across cell
+ * edges, so a diagonal wall draws a straight skyline, and it passes through every sample, so no
+ * ridge or gully is lost to a blur. Throws outside the survey, as `Heightfield.heightAt` does.
+ */
+export function cubicAt(world: string, x: number, z: number): number {
+  const source = sources[world];
+  if (!source) throw new RangeError(`Missing surveyed surroundings for '${world}'`);
+  const { heights, resolution: n, size } = source;
+  const column = (x / size + 0.5) * (n - 1);
+  const row = (z / size + 0.5) * (n - 1);
+  if (!(column >= 0 && row >= 0 && column <= n - 1 && row <= n - 1))
+    throw new RangeError(`Survey query (${x}, ${z}) is outside '${world}'`);
+  const c0 = Math.min(n - 2, Math.floor(column));
+  const r0 = Math.min(n - 2, Math.floor(row));
+  const at = (r: number, c: number): number =>
+    heights[Math.min(n - 1, Math.max(0, r)) * n + Math.min(n - 1, Math.max(0, c))] as number;
+  const line = (r: number): number =>
+    catmullRom(at(r, c0 - 1), at(r, c0), at(r, c0 + 1), at(r, c0 + 2), column - c0);
+  return catmullRom(line(r0 - 1), line(r0), line(r0 + 1), line(r0 + 2), row - r0);
 }
 
 /**
@@ -120,12 +102,12 @@ const HORIZON_REACH = 2100;
 /**
  * The far collar for one world: the square's edge continued onto that site's surveyed surroundings,
  * 384 rings out to 2.1 km. Every height it answers is this game's look — the survey itself, its
- * prefiltered copy blended in past 300 m, and the seam step that closes the detail boundary.
+ * Catmull-Rom sample blended in past 300 m, and the seam step that closes the detail boundary.
  */
 export function createHorizonCollar(data: IBakedWorld, world: WorldName): HeightfieldCollar {
   const surveyed = continuationFields[world];
-  const smooth = prefilteredField(world);
-  if (!surveyed || !smooth) throw new RangeError(`Missing surveyed surroundings for '${world}'`);
+  if (!surveyed || !sources[world])
+    throw new RangeError(`Missing surveyed surroundings for '${world}'`);
   const segments = data.resolution - 1;
   const half = data.size / 2;
   const height = ({ distance, x, z }: IHeightfieldCollarSite): number => {
@@ -136,10 +118,12 @@ export function createHorizonCollar(data: IBakedWorld, world: WorldName): Height
     const column = Math.round((edgeX / data.size + 0.5) * segments);
     const row = Math.round((edgeZ / data.size + 0.5) * segments);
     const near = surveyed.heightAt(x, z);
-    // Past 300 m the collar draws the prefiltered copy, blended in over 600 m, as a mip level does
-    // for a far texture: bilinear heights turn a diagonal wall into grid-aligned skyline stairs.
+    // Past 300 m the collar takes a Catmull-Rom sample of the survey, blended in over 600 m:
+    // bilinear heights turn a diagonal wall into grid-aligned skyline stairs, and the curve has no
+    // stairs while it keeps every ridge and gully the survey holds. The box-filtered copy it
+    // replaces erased them, and a 1 km peak read as smooth clay.
     const fold = Math.min(1, Math.max(0, (distance - 300) / 600));
-    const smoothed = fold > 0 ? (smooth.heightAt(x, z) - near) * fold * fold * (3 - 2 * fold) : 0;
+    const smoothed = fold > 0 ? (cubicAt(world, x, z) - near) * fold * fold * (3 - 2 * fold) : 0;
     // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
     // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real.
     const seam =
