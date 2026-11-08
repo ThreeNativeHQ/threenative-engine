@@ -86,7 +86,7 @@ each refused row from `native-css-compat.ts` in the commit that turns its group 
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-848`: **19 of 69 units pass**
-across the four groups (flow 1/15, logical 18/18, scroll 0/31, grid-and-query 0/5); the scroll group's 30 non-discriminating
+across the four groups (flow 1/15, logical 18/18, scroll 7/31, grid-and-query 0/5); the scroll group's 23 non-discriminating
 cells are the driver gaps above, and 2 of the 5 grid-and-query cells are exempt.
 
 - **Flow (1/15).** The tag gate is open (see Phase 1) and every cell but one is measured. `columns-12` with a float
@@ -111,10 +111,12 @@ cells are the driver gaps above, and 2 of the 5 grid-and-query cells are exempt.
   - What the group still needs is drivers, not pixels: `scroll-margin`/`scroll-padding` only move a scroller when
     a *snap* or a `scrollIntoView` lands on them, `snap-*` needs snap, `overscroll-*` needs a scroller at its
     limit, and `sticky` needs the scroller to move under it.
-  - **Two of those are gated upstream (measured, not guessed).** Stylo 0.20 builds `scroll-margin-*` and
-    `scroll-padding-*` for **Gecko only** (`properties/longhands.toml`, `engine = "gecko"`), so the servo build
-    the engine uses does not parse them at all — the 21 `scroll-m*` cells cannot be proven by any driver until a
-    vendored Stylo hunk adds them to the servo build. `overscroll-behavior-*` is present but behind
-    `servo_pref = "layout.unimplemented"`.
+  - **The upstream gate is gone.** Stylo 0.20 built `scroll-margin-*`/`scroll-padding-*` for Gecko only, so the
+    servo build never parsed them; a vendored hunk (16 longhands and six shorthands, `vendor/PATCHES.md`) puts
+    them in. `scrollIntoView` also scrolled only the viewport and read neither property, and now walks every
+    scrollable ancestor innermost-first (blitz-dom hunk 20). The group is **7 of 31**: the block-axis margins
+    pass on both subjects, and the rest need drivers — `overscroll-*` needs a scroller at its limit, `snap-*`
+    needs snap, and the 11 `scroll-p*` cells need a stage that puts the class on the *scroller* (their property
+    is the container's, like `justify-*`), which is the next staging rule in this group.
 - **Logical (12/18) and grid-and-query (1/5).** The logical cells that do not discriminate are `border-*-start`-style
   longhands on a probe with no border width, and the query cells need a sized container ancestor.
