@@ -1504,7 +1504,29 @@ async function driveStep(page, step) {
     // A real wheel needs the pointer over the scroller first: Chromium routes it to the element
     // under the cursor, which is how the engine's `wheel` takes its position too.
     await page.mouse.move(step.x, step.y);
-    return void (await page.mouse.wheel(step.dx ?? 0, step.dy));
+    await page.mouse.wheel(step.dx ?? 0, step.dy);
+    // Chromium applies a wheel's scroll on the compositor, not in the event's own task: measured on
+    // a `.stage-scroll` cell, `scrollTop` is still 0 when the wheel resolves and 140 two animation
+    // frames later. The engine scrolls inside the event and re-renders, so a capture taken straight
+    // after the wheel compares a scrolled frame against an unscrolled one — which is what the family
+    // read as a 140 px wheel-routing difference. Wait for every scroll offset to stop moving.
+    return void (await page.evaluate(async () => {
+      const offsets = () =>
+        [...document.querySelectorAll("*")].map((el) => el.scrollTop + el.scrollLeft).join(",");
+      // Stability is only meaningful *after* the scroll has begun: the first two frames after the
+      // wheel are both still 0, so a one-frame-stable test returns before anything moved. Four
+      // frames of patience, then two consecutive identical reads, is the shortest wait that cannot
+      // mistake "not started" for "settled".
+      let last = offsets();
+      let stable = 0;
+      for (let frame = 0; frame < 30; frame += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const next = offsets();
+        stable = frame >= 3 && next === last ? stable + 1 : 0;
+        last = next;
+        if (stable >= 2) return;
+      }
+    }));
   }
   if (step.t !== "pointer") return undefined;
   if (step.type === "move") return void (await page.mouse.move(step.x, step.y));
@@ -1721,6 +1743,17 @@ function measureRegion(cellBox, probeBox) {
   // subjects. The cell's own stage is what such a unit is measured over.
   if (probeBox.w < 1 || probeBox.h < 1)
     return { x: cellBox.x, y: cellBox.y + LABEL_H, w: cellBox.w, h: cellBox.h - LABEL_H };
+  // A probe scrolled out of its cell (`sticky`, `scroll-*`, `snap-*`: the driver's wheel moves it
+  // above the cell's own box) leaves a region clamped to a sliver, and an SSIM over one row of
+  // pixels is `NaN` — which the report printed as 0.0 for all 31 scroll cells. When nothing of the
+  // probe is inside the cell, the cell's stage is what the unit changed.
+  const stage = { x: cellBox.x, y: cellBox.y + LABEL_H, w: cellBox.w, h: cellBox.h - LABEL_H };
+  const inside =
+    probeBox.y + probeBox.h > stage.y &&
+    probeBox.y < stage.y + stage.h &&
+    probeBox.x + probeBox.w > stage.x &&
+    probeBox.x < stage.x + stage.w;
+  if (!inside) return stage;
   const left = Math.max(cellBox.x, probeBox.x - PROBE_PAD);
   const top = Math.max(cellBox.y + LABEL_H, probeBox.y - PROBE_PAD);
   const right = Math.min(cellBox.x + cellBox.w, probeBox.x + probeBox.w + PROBE_PAD);

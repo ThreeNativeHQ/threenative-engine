@@ -2259,10 +2259,17 @@ impl BaseDocument {
 
         let node = self.get_node(node_id)?;
         let pos = node.absolute_position(0.0, 0.0);
-
+        // `absolute_position` subtracts a node's *own* scroll offset as well as its ancestors', which
+        // is what paint wants for the node's contents: a scrolled box paints its subtree up by its
+        // scroll. A client rect is the box itself, and a browser leaves a scrolled container where it
+        // is — only its children move. Adding the node's own offset back is what makes
+        // `getBoundingClientRect()` of an `overflow: auto` box agree with Chromium's; without it every
+        // scrolled container reported itself 140 px above its own box (the parity meter's whole scroll
+        // family, measured against Chromium after one wheel).
+        let own = node.scroll_offset();
         Some(BoundingRect {
-            x: pos.x as f64,
-            y: pos.y as f64,
+            x: pos.x as f64 + own.x as f64,
+            y: pos.y as f64 + own.y as f64,
             width: node.unrounded_layout().size.width as f64,
             height: node.unrounded_layout().size.height as f64,
         })

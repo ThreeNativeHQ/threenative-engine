@@ -487,6 +487,43 @@ fn a_transformed_element_is_hit_where_it_is_painted() {
 }
 
 #[test]
+fn a_scrolled_box_keeps_its_own_rect_and_moves_its_content() {
+    let mut ui = ui(
+        320,
+        200,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n.sc{{position:absolute;left:20px;top:20px;width:200px;height:100px;overflow:auto}}\n\
+                     .body{{height:400px}}\n.item{{width:100px;height:40px;background:#2563eb}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "sc"),
+            create(2, "div"),
+            attr(2, "class", "body"),
+            create(3, "div"),
+            attr(3, "class", "item"),
+            append(0, 1),
+            append(1, 2),
+            append(2, 3),
+        ],
+    );
+    assert_eq!(ui.node_box(1), Some([20.0, 20.0, 200.0, 100.0]), "unscrolled");
+    // One wheel of 140 px over the container: the engine scrolls it, and a browser's client rects
+    // leave the scrolled box where it is while its content moves up by the scroll.
+    wheel(&mut ui, 120.0, 60.0, 0.0, 140.0);
+    ui.render();
+    assert_eq!(
+        ui.node_box(1),
+        Some([20.0, 20.0, 200.0, 100.0]),
+        "a scrolled container's own box does not move"
+    );
+    assert_eq!(ui.node_box(3), Some([20.0, -120.0, 100.0, 40.0]), "its content does");
+}
+
+#[test]
 fn a_transformed_element_reports_its_transformed_box() {
     let mut ui = ui(
         320,

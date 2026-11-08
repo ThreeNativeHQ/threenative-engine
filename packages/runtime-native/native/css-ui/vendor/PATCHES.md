@@ -89,7 +89,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
   previous vendor sources.
 
-## `blitz-dom-0.3.0-beta.2` — 610 added code lines
+## `blitz-dom-0.3.0-beta.2` — 638 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -354,6 +354,22 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   fails against the previous vendor sources, and `a_transformed_element_is_hit_where_it_is_painted`
   still passes, which is the composition this shares with hit testing. The 32-fixture browser
   oracle (`corpus/oracle.mjs`) is unchanged.
+
+### 17. a scrolled box reported its own rect 140 px above itself
+
+* **Where:** `src/document.rs` (`untransformed_client_rect`: the element's own `scroll_offset` is
+  added back onto `absolute_position`).
+* **Why:** `absolute_position` subtracts a node's own scroll offset as well as its ancestors', which
+  is what paint wants for the node's *contents* — a scrolled box paints its subtree up by its scroll.
+  A client rect is the box itself, and a browser leaves a scrolled container where it is; only its
+  children move. Without the add-back, every scrolled container in the parity meter's scroll family
+  reported itself 140 px above its own box after one wheel, so the whole group read as a real
+  mismatch against Chromium (6 cells) or as a `NaN`-collapsed pixel score (the rest).
+* **Proves it:** `tests/interaction.rs::a_scrolled_box_keeps_its_own_rect_and_moves_its_content` — the
+  container stays at `[20, 20, 200, 100]` after a 140 px wheel while its child moves to `-120`, and
+  the test fails against the previous vendor sources. The parity meter's `--family PRD-848 --group
+  scroll` stops reporting the 140 px lie: 30 of 31 cells are now honestly "does not discriminate"
+  (they need a `scrollIntoView` driver or a snap implementation) instead of a false failure.
 
 ## `parley-0.11.1` — 240 added code lines
 
