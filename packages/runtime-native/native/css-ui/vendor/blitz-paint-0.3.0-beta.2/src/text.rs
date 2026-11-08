@@ -630,7 +630,30 @@ pub(crate) fn stroke_text<'a>(
                 };
                 let run_node_id = style.brush.id;
                 let run_x0 = glyph_run.offset() as f64;
-                let run_x1 = run_x0 + glyph_run.advance() as f64;
+                // VENDOR HUNK (threenative/css-ui): a decoration stops at the last glyph. The run's
+                // advance includes the white space a line ends with, which hangs outside the line box
+                // and is not decorated: measured on the parity scene's `underline` cell, the engine's
+                // line was 103px against Chromium's 93. Only the glyph run that reaches the end of
+                // its run loses the trailing spaces; a line's earlier glyph runs keep theirs.
+                let trailing = {
+                    let run = glyph_run.run();
+                    let mut cumulative = 0.0f32;
+                    let mut ink_end = 0.0f32;
+                    for cluster in run.clusters() {
+                        cumulative += cluster.advance();
+                        if !cluster.is_space_or_nbsp() {
+                            ink_end = cumulative;
+                        }
+                    }
+                    let reaches_end =
+                        (glyph_run.offset() + glyph_run.advance() - run.advance()).abs() < 0.5;
+                    if reaches_end {
+                        (run.advance() - ink_end).max(0.0)
+                    } else {
+                        0.0
+                    }
+                };
+                let run_x1 = run_x0 + glyph_run.advance() as f64 - trailing as f64;
 
                 for entry in stack.iter() {
                     if entry.decoration.is_none() {

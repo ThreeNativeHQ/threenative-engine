@@ -43,7 +43,7 @@ old `inline_fragment_rects` loop moved into `inline_fragments` so paint can shar
 hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
 `draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 324 added code lines
+## `blitz-paint-0.3.0-beta.2` — 352 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -606,6 +606,19 @@ to delete once the query worked.
   0.98 glyph bar — the remainder is the wave's phase and the stroke's shape, not the period, the depth
   or the position. Both constants are fitted to a measurement, and the hunk says so because Chromium
   does not document the squiggle's geometry.
+
+### 11. a decoration ran through the white space a line ends with
+
+* **Where:** `src/text.rs` (the decoration range subtracts the trailing spaces of the run, for the
+  glyph run that reaches that run's end).
+* **Why:** the range came from `glyph_run.offset() + advance()`, and a run's advance includes the space
+  a line ends with — which hangs outside the line box and is not decorated. Measured on the parity
+  scene: the engine's underline was 103 px wide where Chromium's is 93. Every decoration unit measured
+  just under its 0.98 glyph bar because of it (`underline` 0.9777, `decoration-2` 0.9772,
+  `decoration-red-50` 0.9777).
+* **Proves it:** those three cells pass at **0.9819, 0.9821 and 0.9821**, and the `type` family goes
+  13/41 → **17/41**. The trim applies only to the glyph run that reaches the end of its own run, so a
+  line's earlier runs keep their inner spaces.
 
 ## `parley-0.11.1` — 240 added code lines
 

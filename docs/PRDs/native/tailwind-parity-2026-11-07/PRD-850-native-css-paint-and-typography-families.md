@@ -104,6 +104,10 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   another frame. What is left on `shadow-red-50` (0.9661) and `inset-shadow-red-50` (0.9809) is
   therefore something else — Tailwind stacks *two* shadow layers, so the second layer's interaction is
   the place to look, not the kernel.
+- **A decoration no longer runs through the white space a line ends with.** The range came from the
+  glyph run's advance, which includes that space: the engine's underline was 103 px where Chromium's is
+  93. Trimming it took `underline`, `decoration-2` and `decoration-red-50` from 0.977 to **0.982** and
+  the `type` family from 13/41 to **17/41**.
 - **Two decoration defects left, measured row by row.** `underline-offset-8` puts the line on row
   60 where Chromium puts it on 59 (the auto position matches to the row, so the difference is how an
   explicit offset is rounded: this crate rounds the line's top, Chromium's rasteriser does not).
