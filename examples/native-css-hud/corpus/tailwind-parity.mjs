@@ -1223,6 +1223,8 @@ function layoutStage(cell, probe, classes, before, after) {
         // `stage-table probe …` was never stripped — so every table unit measured identical frames
         // (`border-spacing` and `border-collapse` were "does nothing" for that reason).
         { class: `probe stage-table ${classes}` },
+        // `caption-side` needs a caption to move: a table with none cannot show the property.
+        ...(cell.caption === true ? [el("caption", {}, text("Cap"))] : []),
         el(
           "tbody",
           {},
@@ -1514,6 +1516,8 @@ function utilityEntry(unit, classCss, byProperty) {
     // shadow is painted but invisible on it, so the cell cannot tell a correct engine from one that
     // dropped the declaration.
     lightStage: /^(drop|inset)-?shadow|^shadow/u.test(unit.probe) || undefined,
+    // `caption-*` moves a table's caption, so the staged table needs one.
+    caption: unit.props.includes("caption-side") || undefined,
     // A `position` unit is proved by a child that escapes the flow only when its parent is
     // positioned: the contrast for these cells used `position: absolute; inset: 16px`, which moved
     // the probe's *box* as well and measured a 16px edge miss on all four sides.
@@ -2468,6 +2472,19 @@ if (flag("check")) {
   if (uncompilable.length > 0) {
     problems.push(`${uncompilable.length} probes Tailwind does not compile:`);
     for (const cell of uncompilable.slice(0, 30)) problems.push(`    ${cell.class}`);
+  }
+
+  // Every cell that is measured must name a probe. The vacuity arm strips the last class of an element
+  // whose class list *starts* with `probe`, so a stage that spells its probe differently (a table was
+  // `stage-table probe …`, a scroller was `stage-scroll probe …`) compares a frame with itself: its
+  // cells read "does nothing" and nothing in the scene shows why. Three staging rules had that fault
+  // before this check existed.
+  const probeless = cells.filter((cell) => cell.probe === undefined && cell.exempt === undefined);
+  if (probeless.length > 0) {
+    problems.push(
+      `${probeless.length} measured cells name no probe (their stage is never stripped):`,
+    );
+    for (const cell of probeless.slice(0, 30)) problems.push(`    ${cell.class}`);
   }
 
   if (!flag("no-vacuity")) {

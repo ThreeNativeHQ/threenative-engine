@@ -156,6 +156,15 @@ tailwind-parity: 288/503 (57.3 %)  [132 do not discriminate, 29 exempt, 4 perman
   Closing it means either a vendored Stylo hunk (5.6 MB of source for one table entry plus a device
   input) or a stylesheet rewrite in `css-ui` that turns the two queries into `all`/`not all`; the
   first is the honest one and it is not in this increment.
+- **A cell with no probe is now a gate failure.** Three staging rules had spelled their probe so the
+  class list did not *start* with `probe` (`stage-scroll probe …`, `stage-table probe …`, and one
+  earlier): the vacuity arm strips the last class of an element whose list starts with `probe`, so those
+  cells compared a frame with itself and read "does nothing" — 7 flow cells and 11 scroll cells were
+  hidden that way, each found by hand. `--check` now fails on any measured cell with no probe id, which
+  is what all three had in common, so the next one is caught by the gate instead of by a person.
+- **The caption cell needed a caption.** `caption-top` could not discriminate because the staged table
+  had no `<caption>`; with one it measures 0.3121 — a real difference in this engine's caption painting,
+  now recorded rather than hidden.
 - **The meter is not yet run-to-run deterministic.** Two consecutive full runs of the same tree
   differed by three cells (227 against 230 non-discriminating, no engine change between them), all in
   the scroll group. `--ratchet` compares a run against a floor, so a cell that flips costs a red gate
