@@ -1670,6 +1670,89 @@ fn mix_blend_mode_composites_the_element_against_its_backdrop() {
     assert_eq!(rgb(&ui, 48, 48), [255, 0, 0], "the backdrop outside it is untouched");
 }
 
+/// A *non-separable* blend mode: `hue` takes the source's hue with the backdrop's saturation and
+/// luminance, so an opaque blue over an opaque red is not blue and not red but a luminance-matched
+/// blue - `rgb(54, 54, 255)` by CSS Compositing and Blending Level 1 (SetLum(SetSat(Cs, Sat(Cb)),
+/// Lum(Cb))). Separable modes reach the layer already; this pins the path the u8 blur path in
+/// `vello_cpu` skips.
+#[test]
+fn mix_blend_mode_composites_a_non_separable_mode() {
+    let mut ui = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#back{{position:absolute;left:0;top:0;width:64px;height:64px;background:#ff0000}}\n\
+                     #top{{position:absolute;left:0;top:0;width:32px;height:32px;background:#0000ff;mix-blend-mode:hue}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "back"),
+            create(2, "div"),
+            attr(2, "id", "top"),
+            append(0, 1),
+            append(0, 2),
+        ],
+    );
+    ui.render();
+    let blended = rgb(&ui, 16, 16);
+    assert!(
+        (blended[0] as i32 - 54).abs() <= 3
+            && (blended[1] as i32 - 54).abs() <= 3
+            && blended[2] >= 250,
+        "hue blends to a luminance-matched blue, got {blended:?}"
+    );
+    assert_eq!(rgb(&ui, 48, 48), [255, 0, 0], "the backdrop outside it is untouched");
+}
+
+/// Known limitation, pinned with its measurement: a blend layer that is *nested* inside a clip layer
+/// loses its operator. The parity scene gives every cell a positioned `overflow: hidden` wrapper, so
+/// this is the shape every `mix-blend-mode` cell has, and it is why `mix-blend-hue` reads 0.5069 there
+/// while the same declarations paint correctly at the top level
+/// (`mix_blend_mode_composites_a_non_separable_mode`).
+///
+/// Measured: `multiply` of blue over red inside an `overflow: hidden` ancestor returns `[0, 0, 255]`
+/// (the unblended source) instead of `[0, 0, 0]`, and `hue` returns `[0, 0, 255]` instead of a
+/// luminance-matched blue. Two fixes were tried and reverted:
+/// - routing a non-`Normal` blend through the offscreen `ColourLayer` path so the composite happens at
+///   *pop*: unchanged, because `vello_cpu`'s blend layer has the same problem one level down;
+/// - mapping `push_clip_layer` to a clip on the clip stack (`push_clip_path`) so the surface stays flat:
+///   the nested blend then worked, but three previously passing tests failed (`multiply` at the top
+///   level and a colour-filter layer), so the mapping is not equivalent.
+/// Capturing the backdrop instead is not available: `vello_cpu`'s `render` panics with "some layers
+/// haven't been popped yet" while a layer is open (confirmed by direct experiment).
+#[ignore = "nested blend layers lose their operator: vello_cpu 0.1 keeps the backdrop in the layer. PRD-845"]
+#[test]
+fn a_nested_blend_layer_keeps_its_operator() {
+    let mut ui = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#stage{{position:relative;width:64px;height:64px;overflow:hidden;background:#ff0000}}\n\
+                     #top{{position:absolute;left:0;top:0;width:32px;height:32px;background:#0000ff;mix-blend-mode:multiply}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "stage"),
+            create(2, "div"),
+            attr(2, "id", "top"),
+            append(0, 1),
+            append(1, 2),
+        ],
+    );
+    ui.render();
+    assert_eq!(
+        rgb(&ui, 16, 16),
+        [0, 0, 0],
+        "blue multiplied over red is black inside a clipping ancestor too"
+    );
+}
+
 #[test]
 fn a_gradient_background_takes_its_position() {
     // Tailwind's `bg-top` moves a *gradient* image to the top of the box; the parity scene's cell
