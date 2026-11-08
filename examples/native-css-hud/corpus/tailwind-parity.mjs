@@ -948,6 +948,11 @@ const CONTRAST_EXTRAS = [
     "background-image:repeating-linear-gradient(45deg,#f59e0b 0 6px,#2563eb 6px 12px);background-size:24px 24px",
   ],
   [/^position$/u, "inset:16px"],
+  // A mask cell's contrast was coming out as `mask-image: none` — the "different value" for the property
+  // was another unit that removes the mask — and the contrast rule lands *after* the utilities in the
+  // sheet, so at equal specificity it disabled the mask for the very cell it was comparing. The contrast
+  // has to be a mask, just not this one.
+  [/^mask-/u, "mask-image:linear-gradient(to top,#000,#fff)"],
   // The contrast for a `transform` unit came from another class in the set that also composes
   // Tailwind's transform variables (`transform: translateZ(0) var(--tw-rotate-x,) …`), so both arms
   // rotated once the staged variable supplied a function. A contrast that *replaces* the chain is what

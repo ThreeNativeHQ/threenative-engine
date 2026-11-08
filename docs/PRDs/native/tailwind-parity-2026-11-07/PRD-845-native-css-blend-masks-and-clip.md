@@ -131,6 +131,13 @@ score is 22 of 50 rather than 23 — the engine paints masks now, and the differ
 mask-rendering gaps that were previously invisible behind a mask that did nothing. Scene 313 → 311 for the
 same reason: one point of apparent score was a mask that was not being painted at all.
 
+**A mask cell's contrast was `mask-image: none`.** The contrast for those cells was the "different value"
+of the property taken from `mask-none`, i.e. no mask at all — so the arm that is supposed to differ by being
+*dropped* differed by having no mask, and the cell compared a mask against nothing. The contrast now names a
+gradient of its own (`to top, #000, #fff`). Score-neutral (the contrast only decides whether a cell
+discriminates, not the two-subject SSIM) and measured, the family is unchanged at 23 of 50 with 13 inert —
+which means the `-to-40` cells' 0.78–0.93 is a rendering difference, not that staging fault.
+
 **What is left in the family, measured.** The `-to-40` position units and the combined `x`/`y` axes paint
 *no mask at all* in this engine — the probe is the plain blue `235` where the browser fades `79…108` — while
 the `-to-red-50` colour units work at 0.9966. The difference between them is which variable the unit sets
