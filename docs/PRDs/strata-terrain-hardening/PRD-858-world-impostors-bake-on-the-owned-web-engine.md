@@ -44,6 +44,11 @@ The native gpu scene already has the terminal impostor level and `DataArrayTextu
 
 - [ ] Visual judge: far trees on the default engine against the threejs arm, at the overview and edge views, 2 runs per arm. proof: a fresh judge verdict on PR #635
 
+## Found on the way (not this PRD)
+
+- The owned engine ignores `geometry.drawRange` in every draw: `renderer.cpp` encodes the whole index or vertex buffer, and no native test covers a range. three draws `max(start, 0)` to `min(count, start + count)`. Core's `ClusteredMesh` and `ClusteredBatch` (`setDrawRange(0, cursor)`) and the cell proxy (`setDrawRange(0, 0)` to hide a mesh) depend on it. The forest kit reaches none of them on the default engine, so it is not the overview gap below.
+- Paired overview run, 2026-11-08, same build: `wideTris` 257 840 (engine) against 257 488 (threejs). Main-pass triangles 5 087 113 against 90 619, draws 60 against 33, CPU frame p95 9.5 ms against 5.2 ms, presented p95 33.4 ms against 16.7 ms. The far trees now match; the extra main-pass triangles come from another source, not yet found.
+
 ## Acceptance
 
 - [ ] The forest kit's overview runs at 60 fps on the default engine on the RTX 2080, with impostors baked and a NEUTRAL or IMPROVEMENT judge verdict against the threejs arm. proof: Chrome DevTools frame p95 and the Phase 3 verdict
