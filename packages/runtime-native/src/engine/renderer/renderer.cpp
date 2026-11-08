@@ -1,4 +1,5 @@
 #include "engine/foundation/job_pool.h"
+#include "engine/foundation/flags.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
@@ -319,14 +320,14 @@ BufferStore& shadowGroupInstances() {
 // FM8's lever: TN_SHADOW_INSTANCE_GROUPS=0 plans one row per caster per page again. Read per frame, not once,
 // so a test and the stress lab's paired runs plan both arms in one process.
 bool shadowGroupsEnabled() {
-    const char* flag = std::getenv("TN_SHADOW_INSTANCE_GROUPS");
+    const char* flag = flags::read<flags::ShadowInstanceGroups>();
     return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
 // FG1's lever: TN_SHADOW_INSTANCE_CULL=0 draws every instance of an instanced caster on each page its union box reaches
 // again. Read per frame, not once, so a test and the stress lab's paired runs plan both arms in one process.
 bool shadowInstanceCullEnabled() {
-    const char* flag = std::getenv("TN_SHADOW_INSTANCE_CULL");
+    const char* flag = flags::read<flags::ShadowInstanceCull>();
     return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
@@ -539,7 +540,7 @@ TN_WGSL_STRIPPED(kPmremIntegration, R"WGSL(
 // compares the pixels.
 bool& perDrawProbes() {
     static bool perDraw = [] {
-        const char* flag = std::getenv("TN_PROGRAM_PROBES");
+        const char* flag = flags::once<flags::ProgramProbes>();
         return flag && std::strcmp(flag, "per-draw") == 0;
     }();
     return perDraw;
@@ -550,7 +551,7 @@ bool& perDrawProbes() {
 // list again (diagnostic): a test renders both arms and compares the shadow plans draw for draw.
 bool& flatShadowSelection() {
     static bool flat = [] {
-        const char* flag = std::getenv("TN_SHADOW_PAGE_SCAN");
+        const char* flag = flags::once<flags::ShadowPageScan>();
         return flag && std::strcmp(flag, "flat") == 0;
     }();
     return flat;
@@ -780,8 +781,10 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     return shadowBounds;
 }
 
-Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
+Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events,
+                   RenderFeatures features)
     : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(std::make_shared<PipelineCache>(device)), layouts_(std::make_shared<PipelineLayoutCache>(device)), retired_(TextureId::watch()) {
+    features_ = checkedRenderFeatures(features);
     geometry_->gpu.shareSubmissions(gpu_);
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
     WGPUTextureDescriptor lutDesc = {};
@@ -853,7 +856,7 @@ WGPUSampler Renderer::linearClampSampler() {
 
 Renderer& Renderer::probeCaptureRenderer() {
     if (!probeCapture_) {
-        probeCapture_ = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+        probeCapture_ = std::make_unique<Renderer>(instance_, device_, queue_, events_, features_);
         probeCapture_->passTimer_ = passTimer_;
         probeCapture_->ownsPassTimer_ = false;
         probeCapture_->layouts_ = layouts_;
@@ -2133,7 +2136,7 @@ void Renderer::dropBundles() {
     for (ShadowBundle& shadow : shadowBundles_)
         if (shadow.bundle) wgpuRenderBundleRelease(shadow.bundle);
     shadowBundles_.clear();
-    if (stableRows_)
+    if (features().stableRows)
         for (auto* rows : {&mainRows_, &auxRows_, &velocityRows_})
             if (*rows) (*rows)->clear();  // the bundles kept their objects alive
 }
@@ -3093,14 +3096,13 @@ static double meterMs() {
 }
 
 Renderer::RecordCause Renderer::recordCause(const std::vector<uint64_t>& was, const std::vector<uint32_t>& wasRows,
-                                            const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows) {
+                                            const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows,
+                                            bool hashes) {
     // bundleKeyOf's row: pipeline, groups, the vertex and fragment offsets at 3 and 4, instances, then 6 words per store.
     if (was == now) return RecordNone;
     if (was.empty() || wasRows.empty()) return RecordOther;
     if (wasRows.size() != nowRows.size()) return RecordCount;
-#ifdef __EMSCRIPTEN__
-    return RecordOther;  // the web engine skips the order and offset hashes: 4 MiB is its budget
-#else
+    if (!hashes) return RecordOther;  // RenderFeatures::web() skips the order and offset hashes: 4 MiB is its budget
     // Each draw's row with its offsets masked, hashed; the sum of the row hashes does not depend on their order.
     const auto hashed = [](const std::vector<uint64_t>& key, const std::vector<uint32_t>& rows) {
         std::vector<uint64_t> out(rows.size());
@@ -3121,7 +3123,6 @@ Renderer::RecordCause Renderer::recordCause(const std::vector<uint64_t>& was, co
     uint64_t sumA = 0, sumB = 0;
     for (std::size_t d = 0; d < a.size(); ++d) { sumA += a[d]; sumB += b[d]; }
     return sumA == sumB ? RecordOrder : RecordOther;
-#endif
 }
 
 std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<const DrawItem> items,
@@ -3146,7 +3147,7 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
     }
     // UE 5.8.3: Engine/Source/Runtime/Renderer/Private/MeshDrawCommands.cpp sorts a pass's visible commands by a
     // state key (FMeshDrawCommandSortKey: pipeline, then state), never by view depth, so its cached commands hold.
-#ifndef __EMSCRIPTEN__  // the web engine compiles the rows, which alone sort by state, out
+    // stateFirst is RenderFeatures' stablePasses and stableRows: only the retained rows sort by state.
     stateFirst = stateFirst && std::all_of(opaque.begin(), opaque.end(), [](const auto& d) {
         return d.second->background || (d.second->depthWrite && d.second->depthTest && d.second->colorWrite);
     });
@@ -3159,7 +3160,6 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
                    std::tie(x.background, y.renderOrder, y.kind, y.side, y.material, y.positions, y.indices, y.key);
         });
     } else
-#endif
     std::sort(opaque.begin(), opaque.end(), [](const auto& a, const auto& b) {
         if (a.second->background != b.second->background) return a.second->background;
         if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
@@ -3405,7 +3405,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     depth.depthClearValue = 1.0f;
     const bool timed = ownsPassTimer_ && passTimer_->active();
 
-    const auto opaque = sortDraws(items, camera, stablePasses_ && stableRows_);
+    const auto opaque = sortDraws(items, camera, features().stablePasses && features().stableRows);
 
     double stageStarted = meterStart(cpuMetered_);
     // The light layout every lit program this frame is specialized for, in three's light order.
@@ -3978,7 +3978,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (frameUniforms_.size() < slotArena_) frameUniforms_.resize(slotArena_, 0);
         return true;
     };
-    if (stablePasses_ && !compilation) {
+    if (features().stablePasses && !compilation) {
         frameUniforms_.resize(slotArena_);
         ++slotFrame_;
         slotUses_.clear();
@@ -4134,7 +4134,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         // A transparent draw records in the tail bundle, which re-records on change anyway: its blocks are appended, so the
         // slots of draws out of view (a batch and its unbatched members) do not grow every frame's upload.
-        const uint64_t slotKey = stablePasses_ && item.key && !item.transparent
+        const uint64_t slotKey = features().stablePasses && item.key && !item.transparent
                                      ? item.key * 0x9e3779b97f4a7c15ull + slotUses_[item.key]++
                                      : 0;
         const uint64_t slotBytes = aligned(program.vertex.uniformBlockSize) + aligned(program.fragment.uniformBlockSize);
@@ -4224,7 +4224,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         plan.back().slot = slotKey;
     }
 
-    if (stablePasses_ && !compilation)
+    if (features().stablePasses && !compilation)
         for (auto slot = uniformSlots_.begin(); slot != uniformSlots_.end();) {
             if (slotFrame_ - slot->second.seen <= kSlotFrames) { ++slot; continue; }
             freeSlots_[slot->second.bytes].push_back(slot->second.offset);
@@ -4931,7 +4931,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const DeformationFrame* previous = !traa_->needsSeed() && prior != deformationFrames_.end() &&
                 prior->second.program == &velocity ? &prior->second : nullptr;
             // PRD-754: a slot of its own beside the draw's colour blocks, else appended in plan order.
-            const uint64_t velocitySlot = stablePasses_ && draw.slot ? draw.slot * 0x9e3779b97f4a7c15ull + 0x5654u : 0;
+            const uint64_t velocitySlot = features().stablePasses && draw.slot ? draw.slot * 0x9e3779b97f4a7c15ull + 0x5654u : 0;
             const auto offset = static_cast<uint32_t>(uniformBlocks(velocitySlot, aligned(velocity.vertex.uniformBlockSize)));
             // Copy by field name: the colour and velocity stages have different uniform layouts.
             for (const auto& field : velocity.vertex.uniforms) {
@@ -5665,7 +5665,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     bundleKeyOf(job.auxPlan, job.auxKey, &auxKeyRows);
     bundleKeyOf(velocityPlan, job.velocityKey, &velocityKeyRows);
     job.velocityKey.push_back(0);  // a trailing word, as the main (split) and aux (mask and slots) keys have
-    job.shadowKeys.resize(stablePasses_ ? shadowPasses.size() : 0);
+    job.shadowKeys.resize(features().stablePasses ? shadowPasses.size() : 0);
     for (std::size_t k = 0; k < job.shadowKeys.size(); ++k) bundleKeyOf(shadowPasses[k].draws, job.shadowKeys[k]);
     // The pass's own layout: its named targets and its custom MRT slots, so a frame that adds a slot records
     // a bundle for the wider pass even when no row changed (aux_bundle_key.h).
@@ -5938,11 +5938,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         retained.last.cause = RecordNone;
         out.ms = meterMs() - rowsStarted;
     };
-    if (stableRows_)
+    if (features().stableRows)
         for (auto* rows : {&mainRows_, &auxRows_, &velocityRows_})
             if (!*rows) *rows = std::make_unique<MainRows>();
     job.mainRows = job.auxRows = job.velocityRows = PassRows{};
-    if (stablePasses_ && stableRows_ && !compilation &&
+    if (features().stablePasses && features().stableRows && !compilation &&
         std::all_of(plan.begin(), plan.end(), [](const Planned& p) {
             const DrawItem& i = *p.item;
             return i.transparent || i.background || (i.depthWrite && i.depthTest && i.colorWrite);
@@ -5973,7 +5973,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         };
         retainTail(*auxRows_, job.auxPlan, job.auxKey, auxKeyRows, auxKeyTail, job.auxRows);
         retainTail(*velocityRows_, velocityPlan, job.velocityKey, velocityKeyRows, 1, job.velocityRows);
-    } else if (stableRows_) {
+    } else if (features().stableRows) {
         for (auto* rows : {&mainRows_, &auxRows_, &velocityRows_})
             if (*rows) (*rows)->clear();  // the next record may release what they hold
     }
@@ -6196,7 +6196,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         // The pass replays its draws from a bundle recorded once per key (PRD-754): a caster's matrix is a uniform
         // write, so a moved caster draws from the same commands. The viewport and the page clear are pass state.
         const std::size_t index = std::size_t(&shadowPlan - shadowPasses.data());
-        if (!stablePasses_) {
+        if (!features().stablePasses) {
             bound = nullptr;
             boundIndex = nullptr;
             for (const Planned& p : shadowPlan.draws) encode(shadowPass, p, Tally::Shadow);
@@ -6291,7 +6291,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     // A pass's delta bundle: its rows first seen since the last sort, recorded again only when that set grows.
     const auto delta = [&](const WGPURenderBundleEncoderDescriptor& descriptor, const PassRows& pass, WGPURenderBundle& bundle,
                            std::array<uint64_t, 3>& key, uint32_t& recorded) {
-        if (!stableRows_ || !pass.on || pass.sorted == pass.rows->size()) {
+        if (!features().stableRows || !pass.on || pass.sorted == pass.rows->size()) {
             if (bundle) wgpuRenderBundleRelease(bundle);
             bundle = nullptr;
             return;
@@ -6305,7 +6305,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         recorded += uint32_t(pass.rows->size() - pass.sorted);
         lastFrame_.recordMs += meterMs() - recordStarted;
     };
-    if (stableRows_ && job.mainRows.on) {
+    if (features().stableRows && job.mainRows.on) {
         WGPURenderBundleEncoderDescriptor descriptor{};
         const WGPUTextureFormat color = sceneFormat_;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
@@ -6385,7 +6385,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         const auto lampRedraws = lastFrame_.lampRedraws, lampShadowDraws = lastFrame_.lampShadowDraws;
         const double shadowEncodeMs = lastFrame_.shadowEncodeMs, shadowRecordMs = lastFrame_.recordMs;
         const uint32_t shadowRecorded = lastFrame_.shadowRecorded;
-        const auto cause = recordCause(mainBundleKey_, mainBundleRows_, bundleKey, job.bundleRows);
+        const auto cause = recordCause(mainBundleKey_, mainBundleRows_, bundleKey, job.bundleRows, features().recordCauseHashes);
         const double recordStarted = meterMs();
         lastFrame_ = FrameStats{};
         const auto record = [&](std::size_t from, std::size_t to) {
@@ -6463,7 +6463,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         descriptor.colorFormatCount = formatCount; descriptor.colorFormats = formats;
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = samples;
         descriptor.depthReadOnly = true;
-        if (stableRows_ && rows.on && (!bundle || planned != key)) {
+        if (features().stableRows && rows.on && (!bundle || planned != key)) {
             const double recordStarted = meterMs();
             const WGPURenderBundle recorded = recordRows(descriptor, rows, false);
             if (bundle) wgpuRenderBundleRelease(bundle);  // after the record: the new bundle holds the rows' objects
@@ -6486,7 +6486,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             lastFrame_.recordMs += (meterMs() - recordStarted);
         }
         delta(descriptor, rows, deltaBundle, deltaKey, lastFrame_.auxRecorded);
-        if (!stableRows_ || !rows.on || rows.tail == draws.size()) {
+        if (!features().stableRows || !rows.on || rows.tail == draws.size()) {
             if (tailBundle) wgpuRenderBundleRelease(tailBundle);
             tailBundle = nullptr;
         } else if (!tailBundle || rows.tailKey != tailKey) {

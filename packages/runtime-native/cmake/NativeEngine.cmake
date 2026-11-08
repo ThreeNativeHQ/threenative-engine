@@ -50,16 +50,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "android" AND NOT MYSTRAL_PLATFORM STREQUAL "io
 endif()
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
-add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
-tn_native_engine_target(tn_engine_renderer)
-target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-    tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes tn_host_services)
+set(tn_renderer_backend)
 if(TARGET dawn::webgpu)
-    target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
+    set(tn_renderer_backend dawn::webgpu)
 elseif(TARGET wgpu::wgpu)
-    target_link_libraries(tn_engine_renderer PUBLIC wgpu::wgpu)
+    set(tn_renderer_backend wgpu::wgpu)
 endif()
-target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+tn_engine_renderer_target(tn_host_services ${tn_renderer_backend})
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     # Gate E: clear, submit and read back 300 headless frames with no JS engine linked.

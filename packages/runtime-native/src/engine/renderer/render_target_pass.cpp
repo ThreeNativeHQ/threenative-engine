@@ -46,7 +46,7 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
         const bool rg = target.texture->format == kTextureRGFormat;
         gpu->renderer->setSceneFormat(rg ? (float32 ? WGPUTextureFormat_RG32Float : WGPUTextureFormat_RG16Float)
                                          : (float32 ? WGPUTextureFormat_RGBA32Float : WGPUTextureFormat_RGBA16Float));
-        gpu->database = std::make_unique<RenderDatabase>();
+        gpu->database = std::make_unique<RenderDatabase>(main.features());
         target.gpu = std::move(gpu);
     }
     auto& gpu = *static_cast<TargetGpu*>(target.gpu.get());
@@ -65,7 +65,7 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     TargetGpu& gpu = gpuOf(main, target);
     // three's MRT: each attachment draws the scene with the material outputs named after its texture (resolveMrt).
     if (gpu.database->mrtName != target.texture->name || gpu.database->mrtPrimary != primary) {
-        gpu.database = std::make_unique<RenderDatabase>();
+        gpu.database = std::make_unique<RenderDatabase>(main.features());
         gpu.database->mrtName = target.texture->name;
         gpu.database->mrtPrimary = primary;
     }
