@@ -745,6 +745,150 @@ fn a_transition_runs_against_the_virtual_clock() {
     assert_eq!(rgb(&ui, 50, 30), [255, 0, 0], "and arrived");
 }
 
+/// A `cubic-bezier` timing function, as Chromium solves it: the same curve at the same instant is the
+/// same colour. The expected values are computed from the CSS easing definition
+/// (`cubic-bezier(0.4,0,0.2,1)` at x = 1/3 and 2/3), not read from this engine.
+#[test]
+fn a_bezier_timing_function_matches_the_curve() {
+    let mut ui = ui(
+        320,
+        200,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n.b{{width:100px;height:40px;margin:10px;background:#2563eb;transition:background-color 150ms cubic-bezier(0.4,0,0.2,1)}}\n.b:hover{{background:#ef4444}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "b"),
+            append(0, 1),
+        ],
+    );
+    hover(&mut ui, 50.0, 30.0);
+    ui.render();
+    assert_eq!(rgb(&ui, 50, 30), [0x25, 0x63, 0xeb], "untouched at the instant of the hover");
+
+    // A channel may differ by one from the arithmetic: the curve is solved to an epsilon and the
+    // colour is rounded after interpolation, the way a browser rounds it.
+    let near = |got: [u8; 3], want: [u8; 3]| {
+        got.iter()
+            .zip(want)
+            .all(|(a, b)| (*a as i32 - b as i32).abs() <= 1)
+    };
+
+    ui.set_time(50.0);
+    ui.render();
+    // x = 1/3, y = 0.4573 -> #81559f
+    assert!(
+        near(rgb(&ui, 50, 30), [0x81, 0x55, 0x9f]),
+        "a third of the way through the curve, got {:?}",
+        rgb(&ui, 50, 30)
+    );
+
+    ui.set_time(100.0);
+    ui.render();
+    // x = 2/3, y = 0.9208 -> #df4651
+    assert!(
+        near(rgb(&ui, 50, 30), [0xdf, 0x46, 0x51]),
+        "two thirds, got {:?}",
+        rgb(&ui, 50, 30)
+    );
+
+    ui.set_time(150.0);
+    ui.render();
+    assert_eq!(rgb(&ui, 50, 30), [0xef, 0x44, 0x44], "and arrived");
+}
+
+/// `@property`-registered custom properties, which is how Tailwind 4 ships `--tw-*`: a registered
+/// property has a declared syntax and an initial value, and a var chain that reads one must see the
+/// value the cascade computed for it. The parity stylesheet registers every `--tw-*` it uses, so a
+/// transition that resolves in a plain stylesheet can still fail there.
+#[test]
+fn a_registered_custom_property_resolves_inside_a_var_chain() {
+    let mut ui = ui(
+        320,
+        200,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "@property --tw-duration{{syntax:\"*\";inherits:false}}\n:root{{--default-transition-duration:150ms}}\n{BASE}\n.a{{width:100px;height:40px;margin:10px;background:#2563eb;transition-property:background-color;transition-duration:var(--tw-duration, var(--default-transition-duration));transition-timing-function:cubic-bezier(0.4,0,0.2,1)}}\n.a:hover{{background:#ef4444}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "a"),
+            append(0, 1),
+        ],
+    );
+    hover(&mut ui, 50.0, 30.0);
+    ui.render();
+    ui.set_time(50.0);
+    ui.render();
+    let got = rgb(&ui, 50, 30);
+    assert!(
+        got
+            .iter()
+            .zip([0x81u8, 0x55, 0x9f])
+            .all(|(a, b)| (*a as i32 - b as i32).abs() <= 1),
+        "150ms from the :root chain, a third of the way through the curve, got {got:?}"
+    );
+}
+
+/// Tailwind emits its easing as a var chain — `transition-timing-function: var(--tw-ease,
+/// var(--default-transition-timing-function))` — with both variables unset on a plain `transition`
+/// utility. A chain whose inner variable is unset must still resolve to the outer fallback; an engine
+/// that drops the declaration instead falls back to `ease`, which agrees with the correct curve at both
+/// ends of a transition and differs everywhere in between, exactly as the parity cells measured.
+#[test]
+fn a_var_chain_timing_function_resolves_to_its_fallback() {
+    let mut ui = ui(
+        320,
+        200,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n.a{{width:100px;height:40px;margin:10px;background:#2563eb;transition:background-color 150ms var(--tw-ease, cubic-bezier(0.4,0,0.2,1))}}\n.a:hover{{background:#ef4444}}\n.b{{width:100px;height:40px;margin:10px;background:#2563eb;transition:background-color 150ms cubic-bezier(0.4,0,0.2,1)}}\n.b:hover{{background:#ef4444}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "a"),
+            append(0, 1),
+            create(2, "div"),
+            attr(2, "class", "b"),
+            append(0, 2),
+        ],
+    );
+    // One pointer can hover one box, so the boxes are sampled one after the other, each at the same
+    // instant of its own transition.
+    hover(&mut ui, 50.0, 30.0);
+    ui.render();
+    ui.set_time(50.0);
+    ui.render();
+    let chain = rgb(&ui, 50, 30);
+
+    hover(&mut ui, 50.0, 80.0);
+    ui.render();
+    // The clock is at 50 when this transition starts, so its own 50ms sample is clock 100.
+    ui.set_time(100.0);
+    ui.render();
+    let literal = rgb(&ui, 50, 80);
+
+    assert_eq!(
+        chain, literal,
+        "the var chain and the literal curve are the same timing function"
+    );
+    // One channel of rounding is the arithmetic, not the curve.
+    assert!(
+        chain
+            .iter()
+            .zip([0x81u8, 0x55, 0x9f])
+            .all(|(a, b)| (*a as i32 - b as i32).abs() <= 1),
+        "and both are a third of the way, got {chain:?}"
+    );
+}
+
 #[test]
 fn a_transition_keeps_its_delay() {
     let mut ui = transitions();

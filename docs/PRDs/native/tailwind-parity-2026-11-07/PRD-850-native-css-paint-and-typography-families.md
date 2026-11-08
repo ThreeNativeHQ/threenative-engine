@@ -78,6 +78,21 @@ the same task as the focus, after a forced style flush. Measured effect: the gro
 became real measurements — `transition` 0.9198, `duration-initial` 0.9198, `delay-75` 0.8787, `ease-in`
 0.9596, `ease-initial` 0.6511 — and non-discriminating cells across the scene fell 130 → 126.
 
+The curve itself is correct; three crate tests now say so, each written from the CSS definition rather
+than from this engine's output:
+
+- `cubic-bezier(0.4,0,0.2,1)` at a third and two thirds of a 150 ms colour change gives `#81559f` and
+  `#df4651`, which the engine produces within a channel of rounding;
+- a var chain whose inner variable is unset — `var(--tw-ease, cubic-bezier(...))`, the shape Tailwind
+  emits — resolves to the outer fallback and times identically to the literal curve;
+- `@property`-registered `--tw-*` reading a `:root` theme variable (`var(--tw-duration,
+  var(--default-transition-duration))`) resolves to 150 ms and times identically.
+
+So the remaining difference is in *when* each subject starts the clock, not in the curve or the chain:
+at 0 ms and at every sample from 150 ms on, the two agree exactly, and only the two mid-flight samples
+differ (50 ms 0.9711, 100 ms 0.9198). Next step: log both arms' computed colour at 50 ms for this cell
+— the browser's transition `startTime` against the engine's clock — before changing anything else.
+
 Those numbers are now a real engine gap rather than a staging one: the engine's transition interpolation
 departs from Chromium's part-way through a 150 ms `background-color` change, with the size of the
 departure tracking the timing curve (a `linear` curve agreeing, both `cubic-bezier` curves not), which is
