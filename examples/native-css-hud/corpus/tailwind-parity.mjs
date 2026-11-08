@@ -1324,6 +1324,9 @@ const BORDER_COLOR_PROPS =
 const EXTRA_STAGING = [
   [/^bg-(linear|conic|radial)/u, ["from-red-500", "to-blue-500"]],
   [/^bg-blend-/u, ["bg-linear-to-r", "from-red-500", "to-blue-500"]],
+  // A *position* unit (`from-40%`, `via-40%`) sets no colour of its own: the stop it positions has to
+  // come from a colour companion, or the gradient has an empty `--tw-gradient-stops` and paints nothing.
+  [/^(from|via|to)-\d/u, ["bg-linear-to-r", "from-red-500", "to-blue-500"]],
   [/^via-/u, ["bg-linear-to-r", "from-red-500"]],
   [/^from-/u, ["bg-linear-to-r", "to-blue-500"]],
   [/^to-/u, ["bg-linear-to-r", "from-red-500"]],

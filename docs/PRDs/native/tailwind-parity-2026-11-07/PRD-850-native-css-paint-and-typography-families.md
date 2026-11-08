@@ -50,6 +50,22 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Decisions
 
+**A gradient *position* unit sets no colour of its own.** `from-40%` positions a stop that has to exist: the
+companion was `bg-linear-to-r` + `to-blue-500`, which leaves `--tw-gradient-from` unset, so
+`--tw-gradient-stops` resolved to nothing and the cell painted the same frame with and without the unit.
+Position units now stage a colour at both ends; measured, the misc group 146 → **152 of 182** and
+`from-40%` passes at 0.9987 — the scene 314 → **315 of 503** in the full run (the group run reads +6; five
+of those are marginal between runs).
+
+Two attempts this turn were measured and reverted:
+
+- an `<img>` probe for `object-fit`/`object-position`: it makes the meter report "no cell box in Chromium"
+  for those cells and cost two more, so object-fit/object-position stay inert;
+- an oversized child for `contain`/`overflow` cells (`inner: 1`): it costs **eight** misc cells, because the
+  `contain` cells that already passed were passing without a child.
+
+## Decisions
+
 **`fill`, `stroke` and `stroke-width` need a shape, and this crate has no SVG.** Staged on an
 `<svg><rect>` probe the engine refuses the whole panel — 24 cells of the paint family come back as
 `the engine refused this stage` — because `threenative-css-ui`'s element list creates no SVG nodes and

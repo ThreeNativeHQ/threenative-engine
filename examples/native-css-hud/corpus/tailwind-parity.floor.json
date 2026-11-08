@@ -1,5 +1,5 @@
 {
-  "passed": 314,
+  "passed": 315,
   "units": [
     "PRD-850/paint|bg|--tw-gradient-position,background-image|",
     "PRD-850/paint|bg|background-size|",
@@ -103,6 +103,7 @@
     "PRD-850/misc|flex|flex-wrap|",
     "PRD-850/misc|flow|display|",
     "PRD-850/misc|font|--tw-font-weight,font-weight|",
+    "PRD-850/misc|from|--tw-gradient-from-position|",
     "PRD-850/misc|from|--tw-gradient-from,--tw-gradient-stops|",
     "PRD-850/misc|gap|gap|",
     "PRD-850/misc|gap|row-gap|",
