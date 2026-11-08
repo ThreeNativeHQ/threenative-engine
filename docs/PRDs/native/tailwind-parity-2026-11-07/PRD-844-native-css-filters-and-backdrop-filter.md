@@ -96,6 +96,28 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
 - **`drop-shadow-*` cannot be proven at this scene's size**: its whole effect is a soft edge and the counterfactual
   scores 0.997 against the 0.99 bar. A larger or higher-contrast probe is the scene's fix, not the engine's.
 
+## Open: what a colour-matrix pass needs, measured (2026-11-07)
+
+The vendored offscreen path was written and **reverted unproven**, and this is the measurement that
+reverted it.
+
+- A per-pixel colour filter is implementable in this backend: `RenderContext::new(w, h)` +
+  `render(pixmap, resources)` + `register_image` + `PaintType::Image` is enough to render a layer
+  offscreen, apply the matrix (or a `feComponentTransfer` function) to its pixels and composite it
+  back. A crate test proved both primitives: `brightness(50%)` on `#2563eb` gave `#13327` and
+  `grayscale(100%)` gave `#606060`, exactly the CSS values.
+- It does **not** yet work inside the parity scene's layer chain: the child context renders
+  **0 opaque pixels** for every filtered cell (instrumented and measured), so the element's paint is
+  lost rather than filtered — `grayscale`'s probe centre came out as the page background. The scene's
+  filtered element sits inside a clip-path layer chain (`render.rs`'s `maybe_with_layer` with a clip
+  path, a mask layer, then the filter layer), and the clip passed to `push_layer` is in the element's
+  *local* space (`(0,0)-(120,40)`) while the ops that follow carry their own world transforms. The
+  next attempt should reconcile those two coordinate spaces — most likely by pushing the clip on the
+  child *inside* the same transform the parent's `push_layer` would have applied, and by checking
+  whether vello evaluates a clip path at push time or at render time.
+- `backdrop-filter` is a second, independent gap: `push_layer`'s backdrop argument is still ignored
+  upstream.
+
 ## Decisions
 
 - 2026-11-07 (agent): **the feature goes on before the primitive is written.** Turning `filters` on is what turns "every
