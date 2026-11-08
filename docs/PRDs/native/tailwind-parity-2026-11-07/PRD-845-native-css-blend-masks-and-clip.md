@@ -82,11 +82,17 @@ distinct blue values (a criterion that cannot be fooled by a rule removal shifti
 probe is a flat page, not a fade). Two more clip-layer tests pass as well, with one and with two nested
 `overflow: hidden` ancestors, so it is not the cell's clip either.
 
-What that leaves is structural rather than a rule: this panel holds **fifty masked cells in one
-document**, and some are masked with `mask-type: luminance`, `mask-composite: add`, `mask-radial-*` and
-friends. The next experiment is a reduced batch — one cell's subtree in a panel of its own, then five,
-then the whole set — built by filtering the saved `ops` list, which is now a mechanical edit rather than a
-hunt.
+With every *other* probe's mask classes stripped — one masked element left in the whole document, layout
+untouched — the region is still flat, so the number of masked elements is not the cause either. The
+remaining hypothesis is the sheet's own text: something earlier in it stops the mask declarations from
+being applied.
+
+Bisecting that needs a **block-level pass over the stylesheet**, and a quick brace-scanner is not good
+enough: it mis-slices `html,body{…}` and produces garbage (measured — the frame came back all black). The
+next attempt should use `cssparser`, which this crate already depends on through stylo, to walk top-level
+rules and drop them in halves. That is the one piece of tooling standing between this family and its
+answer, and it is worth building once: the same bisect applies to every family whose cells are inert in a
+panel but correct in isolation.
 
 ## Open: the eight colour-mask cells differ by a mask *curve*, measured (2026-11-07)
 
