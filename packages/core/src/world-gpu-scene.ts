@@ -179,6 +179,7 @@ import {
   growBuffer,
   storageAttribute,
 } from "./world-gpu-types.js";
+import { localClip, localPoint } from "./world-root-frame.js";
 
 /**
  * The GPU-driven main pass of a streamed world: one compute dispatch culls and LOD-selects every
@@ -258,9 +259,15 @@ export function gpuSceneUnsupported(renderer: IRendererLike): string {
   return "";
 }
 
-/** The six planes of a camera's frustum, as the kernel reads them, into `out`. */
-function cameraPlanes(camera: Camera, out: Float32Array): void {
-  frustumPlanes(_proj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), out);
+/**
+ * The six planes of a camera's frustum, as the kernel reads them, into `out`.
+ *
+ * The kernel tests them against placements, which are in the root's local frame, so the planes are
+ * taken in that frame too: a game that moves its world root culls the camera that is actually over
+ * the ring rather than the one it would be if the ring were still at the origin. See `localClip`.
+ */
+function cameraPlanes(camera: Camera, out: Float32Array, root: Matrix4 | undefined): void {
+  frustumPlanes(localClip(_proj, camera, root), out);
 }
 
 const _proj = new Matrix4();
@@ -860,10 +867,15 @@ export class WorldGpuScene {
   readonly #lodEye = new Vector3();
   #lodEyeSet = false;
 
-  dispatch(renderer: IRendererLike, camera: Camera): void {
+  /**
+   * `root` is the world's own `matrixWorld`: the frame its placements are recorded in, which is the
+   * frame the planes and the eye have to be taken in. A harness driving the scene on its own leaves
+   * it out, and then the records are read in world space, as they were before the root could move.
+   */
+  dispatch(renderer: IRendererLike, camera: Camera, root?: Matrix4): void {
     if (this.#on === false) return;
     if (this.#buffers === undefined) return;
-    cameraPlanes(camera, this.#planes);
+    cameraPlanes(camera, this.#planes, root);
     for (const [index, plane] of this.#planeVectors.entries()) {
       const at = index * 4;
       plane.set(
@@ -874,7 +886,7 @@ export class WorldGpuScene {
       );
     }
     if (this.#lodEyeSet) this.#eye.value.copy(this.#lodEye);
-    else this.#eye.value.setFromMatrixPosition(camera.matrixWorld);
+    else localPoint(this.#eye.value.setFromMatrixPosition(camera.matrixWorld), root);
     // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
     // one thread per key.
     if (this.#readback.measuring) this.#readback.measure(renderer, camera);

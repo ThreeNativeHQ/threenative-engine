@@ -27,6 +27,7 @@ import {
   type IWorldPackage,
   cellPlacements,
 } from "./world-package.js";
+import { localClip } from "./world-root-frame.js";
 
 /**
  * The main pass's coarse cull: one volume per resident visibility cell, one frustum a frame, and the
@@ -169,9 +170,10 @@ export class CellMainCull {
     if (camera === undefined || (camera as ICamera).isOrthographicCamera === true) return;
     this.#host.beginBundleFrame();
     this.#mainCullFrustums += 1;
-    const frustum = _cullFrustum.setFromProjectionMatrix(
-      _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
-    );
+    // The volumes this tests and the records it narrows are the root's own, so the frustum is taken
+    // in the root's frame: a game that moves its world draws the squares that are over the camera.
+    const root = this.#host.render().root();
+    const frustum = _cullFrustum.setFromProjectionMatrix(localClip(_cullProjScreen, camera, root));
     // The visible visibility cells, for the whole pass, into a set that is reused and compared
     // rather than allocated: two sets trading places, so a settled camera allocates nothing at all.
     const next = this.#cullScratch;
@@ -250,7 +252,7 @@ export class CellMainCull {
     // After the coarse gate, and only for the main camera: an orthographic one — every shadow
     // level's own — returned at the top, so a level's render never dispatches over the main pass's
     // compaction.
-    if (gpu.on) gpu.dispatch(this.#host.render().renderer() as IRendererLike, camera);
+    if (gpu.on) gpu.dispatch(this.#host.render().renderer() as IRendererLike, camera, root);
   }
 
   /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
