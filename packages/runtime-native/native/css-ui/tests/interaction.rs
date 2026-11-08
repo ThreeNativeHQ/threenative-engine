@@ -1316,6 +1316,36 @@ fn a_colour_filter_transforms_the_layer_it_wraps() {
     );
 }
 
+/// A gradient with `in oklab` interpolates its stops in Oklab, and peniko — this crate's gradient
+/// painter — interpolates in sRGB. Left alone the two agree at both ends and differ most in the middle,
+/// which is where every parity sample of a Tailwind gradient sits.
+#[test]
+fn a_gradient_named_oklab_interpolates_in_oklab() {
+    let mut ui = ui(
+        160,
+        80,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:120px;height:40px;margin:10px;background:linear-gradient(in oklab,#ff0000,#0000ff)}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    // Oklab's midpoint of red and blue is (140,83,162); sRGB's is (128,0,128), and the green channel
+    // is what tells them apart at a glance.
+    let middle = rgb(&ui, 70, 30);
+    assert!(
+        (middle[1] as i32 - 83).abs() <= 4,
+        "the oklab midpoint has a green channel, sRGB's has none: got {middle:?}"
+    );
+}
+
 #[test]
 fn a_zero_degree_gradient_runs_to_the_top() {
     // CSS `linear-gradient(0deg, a, b)` goes from the *bottom* to the top, so the top of the box is

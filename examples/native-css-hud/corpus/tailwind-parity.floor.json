@@ -1,6 +1,7 @@
 {
-  "passed": 311,
+  "passed": 312,
   "units": [
+    "PRD-850/paint|bg|--tw-gradient-position,background-image|",
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
     "PRD-850/paint|border|--tw-border-style,border-style|",

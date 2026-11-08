@@ -62,14 +62,18 @@ the cell is reporting an engine difference, not a staging one. Tailwind 4 emits
 `linear-gradient(<angle> in oklab, …)` inside an `@supports` block, and Chromium takes that branch while
 this engine ignores the interpolation method.
 
-The fix is contained and named for the next run: `vendor/blitz-paint-0.3.0-beta.2/src/gradient.rs`
-builds peniko stops from stylo's items and peniko interpolates in sRGB, so the stops for a gradient whose
-method is explicit (`GradientFlags::HAS_DEFAULT_COLOR_INTERPOLATION_METHOD` **unset**) have to be
-resampled in Oklab before they are pushed — insert k intermediate stops per pair, converting through
-`AbsoluteColor::to_color_space(ColorSpace::Oklab)` and back. Not shipped this turn because stylo's
-gradient variant keeps only that one flag and not *which* space was named, so an explicit `in srgb`
-gradient would be mis-sampled; the honest order is to carry the method through stylo first, then
-resample. Every gradient cell in the scene sits between 0.96 and 0.99 for the same reason.
+**Fixed.** The earlier note here said stylo dropped the named space; it does not — every gradient variant
+carries a `color_interpolation_method`, and `GradientFlags::HAS_DEFAULT_COLOR_INTERPOLATION_METHOD` is
+only a hint. `vendor/blitz-paint-0.3.0-beta.2/src/gradient.rs` now threads that method through
+`resolve_color_stops` and, when it is not sRGB, *resamples* the stops before they reach peniko: each pair
+gains 48 intermediate stops computed with stylo's own `mix::mix_many`, which implements the space and the
+hue method properly. peniko keeps painting sRGB segments, and 48 of them per pair follow the named
+curve closely enough that the two agree to 0.998.
+
+Proven red-green: `a_gradient_named_oklab_interpolates_in_oklab` reads `[125, 0, 130]` on the previous
+code (the sRGB midpoint) and the Oklab midpoint `[140, 83, 162]` with it. Measured: `bg-linear-60`
+0.9642 → **0.9983**, the paint group 18 → **20 of 39**, and the scene **311 → 313 of 503** with nothing
+lost.
 
 ## Decisions
 

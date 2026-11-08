@@ -778,6 +778,22 @@ fails on its own: the strut (`box-model-and-sizing`), the order and scale of the
   Arial`, and with this hunk its 21px line box is the one Chromium measures on Liberation Sans;
   without it the button is 3.09px tall at the bottom and the column above it with it (2 edge misses).
 
+## `blitz-paint-0.3.0-beta.2` — a gradient named `in oklab` interpolates in Oklab
+
+### 1. peniko interpolates in sRGB, so a gradient's named space was ignored
+
+* **Where:** `src/gradient.rs` (`resample_stops`, threaded through `resolve_color_stops` and the three
+  `*_gradient` builders; their tuples and the match arms now carry `color_interpolation_method`).
+* **Why:** CSS Images 4 interpolates a gradient's stops in the space its `in <space>` names, and Tailwind
+  4 emits `linear-gradient(<angle> in oklab, …)` for every gradient inside an `@supports` block that
+  every current browser takes. peniko interpolates in premultiplied sRGB, so the two renderers agree at
+  both ends of a gradient and differ most in the middle — which is where a parity sample of a gradient
+  sits. Stops are now resampled in the named space through stylo's own `mix::mix_many` (48 per pair)
+  before they reach peniko, which keeps both the colour space and the hue method correct.
+* **Proves it:** `a_gradient_named_oklab_interpolates_in_oklab` reads the sRGB midpoint `[125, 0, 130]`
+  on the previous code and the Oklab midpoint `[140, 83, 162]` with it; `parity:tailwind --group paint`
+  takes `bg-linear-60` from 0.9642 to 0.9983 and the group from 18 to 20 of 39.
+
 ## `anyrender_vello_cpu-0.17.0` — 250 added code lines
 
 ### 1. a filter primitive the backend cannot paint aborted the whole frame
