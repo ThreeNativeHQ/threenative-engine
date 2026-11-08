@@ -41,7 +41,7 @@
  * ## Usage
  *
  *   node corpus/tailwind-parity.mjs                 # score the crate subject, keeping the scene current
- *   node corpus/tailwind-parity.mjs --host          # not implemented: exits non-zero, never a silent crate score
+ *   node corpus/tailwind-parity.mjs --host          # the real desktop host as the subject
  *   node corpus/tailwind-parity.mjs --write         # regenerate the scene only
  *   node corpus/tailwind-parity.mjs --check         # denominator, ownership, freshness, vacuity
  *   node corpus/tailwind-parity.mjs --family PRD-844 [--group mask]
@@ -57,6 +57,7 @@ import { chromium } from "@playwright/test";
 import react from "@vitejs/plugin-react";
 import { PNG } from "pngjs";
 import { build } from "vite";
+import { hostPanel, prepareHostOut } from "./host.mjs";
 import {
   CHROMIUM_ARGS,
   EDGE_PX,
@@ -1840,7 +1841,11 @@ function comparePanel(panel, web, native, vacuous, blind = vacuous) {
     const elements = web.boxes.filter(
       (candidate) => candidate.n >= cell.first && candidate.n <= cell.last,
     );
-    const misses = edgeMisses(elements, native.rects, EDGE_PX);
+    // A subject that reports pixels only (the desktop host) leaves the geometry bar unmeasured;
+    // the report says so rather than treating "no boxes" as "every box agrees".
+    const geometry =
+      native.rects === undefined ? undefined : edgeMisses(elements, native.rects, EDGE_PX);
+    const misses = geometry ?? [];
     const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
     if (blind.has(cell.unit)) {
       return {
@@ -1863,6 +1868,7 @@ function comparePanel(panel, web, native, vacuous, blind = vacuous) {
       box: cell.box ?? measured.cellBox,
       region: measured.region,
       edgeMisses: misses,
+      geometryMeasured: geometry !== undefined,
       ssim: Number(measured.score.toFixed(4)),
       ssimMin: min,
       pass: misses.length === 0 && measured.score >= min,
@@ -1979,6 +1985,14 @@ async function writeSheet(browser, panel, cells, dir, outDir) {
   return shot;
 }
 
+/** A panel the host subject cannot stage, as a reported refusal. */
+function refusedOnHost(panel) {
+  if (panel.env === undefined) return undefined;
+  return {
+    refused: `the host subject has no device descriptor for ${JSON.stringify(panel.env)}`,
+  };
+}
+
 // -------------------------------------------------------------------------------------------------
 // CLI.
 // -------------------------------------------------------------------------------------------------
@@ -1995,14 +2009,15 @@ const selected = (panel) =>
   (wants.family === undefined || panel.owner === wants.family) &&
   (wants.group === undefined || panel.group === wants.group);
 
-if (flag("host")) {
-  // Advertising a subject that is not implemented is the failure this check exists to prevent: a
-  // run that silently scores the crate while claiming the host is worse than no run.
-  console.error(
-    "TN_PARITY_HOST_UNSUPPORTED: --host has no host subject yet; the crate subject is the only one",
-  );
-  process.exit(1);
-}
+/**
+ * Which native subject scores this run.
+ *
+ * The crate's headless `oracle` example and the real desktop host paint through the same crate; the
+ * host is what proves the integration (host ABI, stylesheet packaging, the UI clock). It cannot pin
+ * an animation's clock and it reports no per-node box, so `--host` refuses a motion panel by name
+ * and reports the geometry bar as unmeasured instead of scoring those on a weaker bar.
+ */
+const hostSubject = flag("host");
 
 const derived = await deriveUnits();
 const scene = await buildScene(derived);
@@ -2106,6 +2121,7 @@ const same = (a, b) => a.length === b.length && Buffer.compare(a, b) === 0;
 const MOTION = /animation|transition|@starting-style/u;
 
 rmSync(outRoot, { force: true, recursive: true });
+if (hostSubject) prepareHostOut();
 site = await serveWeb();
 browser = await chromium.launch({ args: CHROMIUM_ARGS });
 const report = [];
@@ -2119,11 +2135,21 @@ try {
     const drive = panel.cells.map((cell) => driverFor(cell, probeBoxes));
     let measured;
     let vacuous = new Map();
-    if (motion) {
+    if (motion && hostSubject) {
+      measured = panel.cells.map((cell) => ({
+        ...cell,
+        pass: false,
+        why:
+          "the host subject cannot pin an animation clock yet: the host's input seam has no " +
+          "advance, so a motion panel is refused by name rather than scored at rest",
+      }));
+    } else if (motion) {
       measured = await measureMotion(panel, dir, drive);
     } else {
       const web = await webPanel(panel, { drive });
-      const native = cratePanel(panel, join(dir, "native"), { drive });
+      const native = hostSubject
+        ? (refusedOnHost(panel) ?? hostPanel(panel))
+        : cratePanel(panel, join(dir, "native"), { drive });
       // Two capture runs per side: a subject that does not paint the same frame twice cannot be
       // compared with one that does, and a difference would otherwise read as a parity gap.
       const webAgain = await webPanel(panel, { drive });
@@ -2171,11 +2197,14 @@ const refusedCount = report.filter((cell) =>
 ).length;
 const percent = denominator === 0 ? 0 : Math.round((passed / denominator) * 1000) / 10;
 const permanentCount = report.length - denominator;
-writeFileSync(join(outRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+writeFileSync(
+  join(outRoot, hostSubject ? "report-host.json" : "report.json"),
+  `${JSON.stringify(report, null, 2)}\n`,
+);
 // Every cell is in the denominator. An exemption is an unproven unit, and a cell that does not
 // discriminate is a scene defect: neither may be reported as coverage.
 console.log(
-  `tailwind-parity: ${passed}/${denominator} (${percent} %)  [${useless.length} do not discriminate, ${exemptCount - permanentCount} exempt, ${permanentCount} permanently inactive, ${refusedCount} refused]`,
+  `tailwind-parity${hostSubject ? " (desktop host, pixels only)" : ""}: ${passed}/${denominator} (${percent} %)  [${useless.length} do not discriminate, ${exemptCount - permanentCount} exempt, ${permanentCount} permanently inactive, ${refusedCount} refused]`,
 );
 
 if (wants.sheet !== undefined) {
