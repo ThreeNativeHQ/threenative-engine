@@ -1344,6 +1344,40 @@ fn a_colour_filter_transforms_the_layer_it_wraps() {
 /// initial value, not "unset". An engine that reads it as the guaranteed-invalid value leaves every
 /// `var(--tw-mask-*)` invalid, the whole `mask-image` invalid, and paints **no mask anywhere** — which
 /// is what this panel does, while the same declarations paint a correct fade without that block.
+/// A mask inside a clipping ancestor: the staged probe sits in a `overflow: hidden` cell, as every
+/// parity cell does, and the mask has to survive that clip layer.
+#[test]
+fn a_mask_paints_inside_a_clipping_ancestor() {
+    let mut ui = ui(
+        160,
+        80,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#outer{{width:300px;height:200px;overflow:hidden;position:relative}}\n#s{{width:140px;height:60px;overflow:hidden;position:relative}}\n#a{{width:120px;height:40px;margin:10px;background:#2563eb;mask-image:linear-gradient(to bottom, black, transparent)}}"
+                ),
+            ),
+            create(0 + 1, "div"),
+            attr(1, "id", "outer"),
+            append(0, 1),
+            create(2, "div"),
+            attr(2, "id", "s"),
+            append(1, 2),
+            create(3, "div"),
+            attr(3, "id", "a"),
+            append(2, 3),
+        ],
+    );
+    ui.render();
+    let low = rgb(&ui, 70, 44);
+    let high = rgb(&ui, 70, 16);
+    assert!(
+        (low[2] as i32 - high[2] as i32).abs() > 20,
+        "the mask still fades inside the clip: {low:?} at one end, {high:?} at the other"
+    );
+}
+
 #[test]
 fn a_registered_property_set_to_initial_keeps_its_initial_value() {
     let mut ui = ui(

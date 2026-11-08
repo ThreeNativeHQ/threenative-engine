@@ -76,8 +76,17 @@ difference can be bisected rule by rule without a browser in the loop. Two candi
 out this way: removing the companion rule from the sheet changes nothing, and the `@property` fallback
 block (`@layer properties { @supports (…) { * { --tw-mask-top: initial } } }`) is harmless — a registered
 property set to `initial` keeps its registered initial value, and a fourth test proves the mask still
-paints through that reset. What is left is the rest of the panel's ~36 KB of rules, and a half-split over
-`batch.json` is a two-minute experiment.
+paints through that reset. The half-split is done, and it rules out a single rule: dropping *either* half of the panel's 83 flat
+utility rules leaves the panel unmasked, measured by whether the probe's region holds more than two
+distinct blue values (a criterion that cannot be fooled by a rule removal shifting the layout — a shifted
+probe is a flat page, not a fade). Two more clip-layer tests pass as well, with one and with two nested
+`overflow: hidden` ancestors, so it is not the cell's clip either.
+
+What that leaves is structural rather than a rule: this panel holds **fifty masked cells in one
+document**, and some are masked with `mask-type: luminance`, `mask-composite: add`, `mask-radial-*` and
+friends. The next experiment is a reduced batch — one cell's subtree in a panel of its own, then five,
+then the whole set — built by filtering the saved `ops` list, which is now a mechanical edit rather than a
+hunt.
 
 ## Open: the eight colour-mask cells differ by a mask *curve*, measured (2026-11-07)
 
