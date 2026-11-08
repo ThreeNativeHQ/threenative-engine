@@ -84,7 +84,7 @@ Two lanes can run at the same time: **A** engine, CI and MCP (Step 0, PR-1, PR-2
 | 2 | A | PR-2 | PRD-585: the `strata` CI job is green | 0 | 0.5–1 day | ⭐⭐⭐⭐ |
 | 3 | A | direct | One web run closes PRD-595 AC-3 and the Strata half of PRD-798 | 2 | 2–3 h | ⭐⭐⭐⭐ |
 | 4 | A | PR-4 | PRD-591: `loadTerrainSplat` plumbing and measured height bands | 3 | 0.5 day | ⭐⭐⭐⭐ |
-| 5 | A | PR-5 | NEW-4: one request decides landform, water, size and a real survey | 1 | 0.5–1 day | ⭐⭐⭐⭐⭐ |
+| 5 | A | PR-5 | NEW-4: one request decides landform, water, size and a real survey | 1 | 1–2 days | ⭐⭐⭐⭐⭐ |
 | 6 | B | PR-6 | NEW-1: ground vegetation revamp | 4 | 2–3 days | ⭐⭐⭐⭐⭐ |
 | 7 | B | PR-7 | NEW-2: mountain improvement | 5, 6 | 2–3 days | ⭐⭐⭐⭐ |
 | 8 | B | PR-8 | PRD-583: layered PBR surface in the cook, headed judge | 6 | 1 day | ⭐⭐⭐ |
