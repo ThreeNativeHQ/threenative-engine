@@ -156,6 +156,25 @@ inline axis, overlapping with a `z-index` of its own for the stacking units), `r
 for `z-*`, and an outline for `outline-offset-*`. Measured: the misc group 137 → **144 of 182**, the
 scene 295 → **303 of 503 (60.2 %)**, non-discriminating 124 → 117.
 
+## Decisions
+
+**A text-dominated cell cannot discriminate at a 0.99 vacuity bar, and larger type does not help.**
+Measured: this engine's glyph anti-aliasing against Chromium's is already about 0.982 in a small run, so
+dropping a declaration that moves glyphs by a pixel leaves the region *at* 0.98 and the cell reads "does
+nothing" — which is what `ordinal`, `slashed-zero`, `tabular-nums`, `proportional-nums` and `normal-nums`
+all do, whatever run they are given. Staging `text-2xl` made it worse, not better: the noise scales with
+glyph area, so the signal-to-noise ratio is unchanged and the family fell 16 → 15 of 41. Reverted.
+
+Two things were learned that a later pass can use:
+
+- the run each variant needs is a *full digit set with ordinals* (`0 1 2 3 … 1st 2nd 3rd`), but the
+  generic run discriminates `oldstyle` and the digit run does not, so the two are mutually exclusive
+  until a single run satisfies both;
+- a long unbreakable run (`truncate`, `wrap-anywhere`) turns both cells into *real* measurements —
+  0.9747 and 0.9264 — i.e. an engine difference in where the ellipsis falls and where a long word
+  breaks. That is a gap to investigate, not a staging defect, and it was reverted with the rest because
+  it costs `oldstyle` and neither cell passes yet.
+
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **143 of
