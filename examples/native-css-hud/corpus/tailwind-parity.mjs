@@ -681,10 +681,29 @@ const VARIANT_STAGE = {
     exempt: { owner: P851, why: "read-only: needs a text field" },
   },
   empty: { class: "empty:bg-red-500" },
-  "focus-within": { class: "focus-within:bg-red-500", wrap: "fw", inner: 1, drive: tab },
+  "focus-within": {
+    class: "focus-within:bg-red-500",
+    // The browser draws a UA focus ring the engine does not, and a ring that only one subject paints
+    // is a mismatch about the *ring*, not about what the cell measures. `outline-none` is the
+    // companion that takes it out of the frame on both sides.
+    companions: ["outline-none"],
+    inner: 1,
+    inside: "focusable",
+    drive: tab,
+  },
   hover: { class: "hover:bg-red-500", drive: [hover] },
-  focus: { class: "focus:bg-red-500", tag: "button", drive: tab },
-  "focus-visible": { class: "focus-visible:bg-red-500", tag: "button", drive: tab },
+  focus: {
+    class: "focus:bg-red-500",
+    companions: ["outline-none"],
+    tag: "button",
+    drive: tab,
+  },
+  "focus-visible": {
+    class: "focus-visible:bg-red-500",
+    companions: ["outline-none"],
+    tag: "button",
+    drive: tab,
+  },
   active: { class: "active:bg-red-500", tag: "button", drive: press },
   enabled: { class: "enabled:bg-red-500", tag: "button" },
   disabled: { class: "disabled:bg-red-500", tag: "button", attrs: { disabled: "" } },
@@ -1065,11 +1084,15 @@ const probeClass = (companions, unit) => ["probe", ...companions, unit].join(" "
 /** The probe's inner content: the fillers a child-variant needs, a text run, or nothing. */
 function probeInner(stage, cell, innerCount) {
   if (innerCount !== undefined) {
-    return Array.from({ length: innerCount }, (_, i) =>
-      stage.inside === "checked"
-        ? el("input", { type: "checkbox", checked: "", class: "stage-fill" })
-        : el("div", { class: "stage-fill" }, text(`In ${i + 1}`)),
-    );
+    return Array.from({ length: innerCount }, (_, i) => {
+      if (stage.inside === "checked")
+        return el("input", { type: "checkbox", checked: "", class: "stage-fill" });
+      // `focus-within:` needs something inside the probe that can *take* focus; a `div` cannot, so
+      // the variant never fired and the cell measured "does nothing" on both subjects.
+      if (stage.inside === "focusable")
+        return el("button", { class: "stage-fill", type: "button" }, text(`In ${i + 1}`));
+      return el("div", { class: "stage-fill" }, text(`In ${i + 1}`));
+    });
   }
   if (cell.prose === true) return [text(LOREM)];
   if (stage.text !== undefined) return [text(stage.text)];
@@ -1195,7 +1218,7 @@ const CONTROL_UNIT = /^(accent|caret|appearance|field-sizing|resize)/u;
 
 /** One cell's tree: the label and the staged probe. */
 function cellTree(cell) {
-  const stage = VARIANT_STAGE[cell.label] ?? {};
+  const stage = VARIANT_STAGE[cell.variant ?? cell.label] ?? {};
   // A container unit's probe carries the display its property needs, so the children the staging
   // gives it are laid out the way the unit is defined to act on them.
   const container = cell.container === undefined ? "" : ` stage-${cell.container}`;
@@ -1358,6 +1381,11 @@ function variantEntry(variant) {
     group,
     label: cls,
     class: cls,
+    // The staging table is keyed by the *variant's* name; a cell that only carried its class made
+    // every `attrs`, `wrap`, `inner`, `before` and `after` in that table dead, which is why the
+    // structural variants (`nth-*`, `has:`, `in-*`, `disabled:`, `aria-*`, `data-*`) measured
+    // "does nothing" on both subjects: the document they asked for was never built.
+    variant: variant.name,
     contrast: { declarations: stage.contrast ?? "background-color:#3f3f46", sources: [] },
     companions: stage.companions ?? [],
     layout: "plain",
@@ -1617,7 +1645,15 @@ async function driveStep(page, step) {
     return undefined;
   }
   if (step.t !== "pointer") return undefined;
-  if (step.type === "move") return void (await page.mouse.move(step.x, step.y));
+  // `page.hover()` rather than a bare `mouse.move`: a jump to the probe's centre leaves Chromium's
+  // hover chain on the element under the pointer's *previous* position (measured: `:hover` still
+  // named the cell label after a move to the probe's centre, while `elementFromPoint` there returned
+  // the probe). The engine applies a hover from the coordinates alone, so the input the two subjects
+  // receive is the same — the browser just needs the input pipeline's own hover path to notice.
+  if (step.type === "move")
+    return void (await (step.id === undefined
+      ? page.mouse.move(step.x, step.y)
+      : page.hover(`[data-n="${step.id}"]`)));
   if (step.type === "down") return void (await page.mouse.down());
   if (step.type === "up") return void (await page.mouse.up());
   if (step.type === "cancel") return void (await page.mouse.move(0, 0));
@@ -1654,6 +1690,11 @@ async function settleScroll(page) {
 
 /** Playwright steps for a cell's driver, at coordinates the caller measured on the engine's behalf. */
 async function driveWeb(page, steps) {
+  // A pointer that has never moved has no hover state to update: the first `mouse.move` to the
+  // probe's centre sets the position but does not always repaint `:hover` for the element under it
+  // (measured: the hovered chain still named the cell label after a move to the probe). One move to
+  // the corner first gives the next move a previous position to move *from*.
+  if (steps.some((step) => step.t === "pointer")) await page.mouse.move(0, 0);
   for (const step of steps) await driveStep(page, step);
 }
 
@@ -2091,7 +2132,9 @@ function driverFor(cell, boxes) {
     if (step.t === "scrollIntoView") return { t: "scrollIntoView", id: cell.probe };
     if (step.at !== "probe") return step;
     if (step.t === "wheel") return { t: "wheel", x, y, dx: step.dx ?? 0, dy: step.dy };
-    return { t: "pointer", type: step.type, x, y };
+    // The probe's own id travels with the step: `page.hover()` on the element is what actually
+    // moves Chromium's hover chain, where a bare `mouse.move` to its centre does not (measured).
+    return { t: "pointer", type: step.type, x, y, id: cell.probe };
   });
 }
 

@@ -78,7 +78,25 @@ const TAGS: &[&str] = &[
 /// The attribute names an `attr` op may set, besides any `data-*` or `aria-*`. Everything else
 /// is rejected: an arbitrary attribute name is a selector surface this slice does not model.
 const ATTRS: &[&str] = &[
-    "class", "id", "style", "role", "disabled", "type", "src", "alt", "tabindex", "title",
+    "class",
+    "id",
+    "style",
+    "role",
+    "disabled",
+    "type",
+    "src",
+    "alt",
+    "tabindex",
+    "title",
+    // Boolean attributes a selector matches on: `:inert` and `:checked` are ordinary state a game's
+    // UI sets, and `checked` is what a staged control is in for `peer-checked:`/`has-[:checked]`.
+    "inert",
+    "checked",
+    "selected",
+    "open",
+    // The document's direction, which a UI sets on a region for RTL languages.
+    "dir",
+    "lang",
 ];
 
 /// The events a `listen` op may name.

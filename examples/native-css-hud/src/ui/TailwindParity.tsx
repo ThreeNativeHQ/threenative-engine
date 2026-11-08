@@ -42,6 +42,17 @@ interface IScenePanel {
 const REACT_ATTR: Readonly<Record<string, string>> = { class: "className", for: "htmlFor" };
 
 /**
+ * Attributes whose *presence* is their value, which React does not render from `""`.
+ *
+ * A DOM boolean attribute is true when it is there: `<button disabled>` is a disabled button, and
+ * the corpus spells that `disabled: ""` the way HTML does. React treats `disabled: ""` as false and
+ * omits the attribute, so a staged `disabled:`/`inert:`/`checked:` control reached the browser
+ * enabled and every one of those variants measured "does nothing" — while the engine, which takes
+ * the attribute as given, painted them.
+ */
+const BOOLEAN_ATTRS = new Set(["disabled", "checked", "selected", "open", "inert"]);
+
+/**
  * A probe's class list is `probe <contrast class> <unit class>`: the vacuity guard drops the last
  * token, which is the one unit being measured, and keeps the contrast class it wins against.
  */
@@ -66,7 +77,12 @@ function render(node: ISceneNode, strip: boolean, key: number): ReactElement | s
   const props: Record<string, unknown> = { key };
   if (node.n !== undefined) props["data-n"] = node.n;
   for (const [name, value] of Object.entries(node.attrs ?? {})) {
-    props[REACT_ATTR[name] ?? name] = strip && PROBE.test(value) ? stripUnitClass(value) : value;
+    props[REACT_ATTR[name] ?? name] =
+      BOOLEAN_ATTRS.has(name) && value === ""
+        ? true
+        : strip && PROBE.test(value)
+          ? stripUnitClass(value)
+          : value;
   }
   return createElement(
     node.tag ?? "div",
