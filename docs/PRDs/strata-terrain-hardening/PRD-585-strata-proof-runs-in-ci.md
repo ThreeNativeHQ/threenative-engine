@@ -59,6 +59,8 @@ index them in the example's `AGENTS.md`.
 - [ ] Keep the 88b Strata startup benchmark comparable using game and emitted third-party runtime identities plus the resolved Vite compiler dependency closure and Vite patch digest; record owned Three patch digests as treatment, accept unrelated workspace lock/catalog drift, and reject changed or missing metadata. proof: `pnpm exec vitest run scripts/__tests__/verify-strata-startup.spec.ts` and a current-candidate startup benchmark CI run.
 - [ ] Web playtest green in CI. proof: CI run link
 - [ ] Consumer and editor scripts green in CI. proof: CI run link
+- [ ] `enterMs` is back under its 50 ms budget on every world enter. proof: `pnpm --filter strata-terrain-preview test:terrain:web` reports `enterMs` ≤ 50
+  Open (2026-11-07, PR #635, NVIDIA Turing, private Xvfb, two runs): every enter takes 254 to 730 ms (444 ms on the asserted one). The 2026-10-12 record was 10 to 45 ms, and 102.7 ms on 2026-10-24. Unverified cause; the owned Wasm engine became the web default on 2026-10-15. The other three timing budgets stay red as before (`afterFirstFrameTaskMs` 2240, `timeToReadyMs` 23.1 s, `maxViewGpuMs` 42.3), so `test:terrain:web` exits 1 and AC-1 cannot go green yet.
 
 The local job wiring is verified; AC-1/AC-2 need a real candidate CI run with successful `strata` execution. Skipped draft checks are not runtime proof.
 
