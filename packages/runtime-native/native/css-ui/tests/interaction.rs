@@ -1354,6 +1354,72 @@ fn a_colour_filter_transforms_the_layer_it_wraps() {
 /// a gradient in this Chromium build: half way along a red-50 (`#fef2f2`) to black gradient the mask alpha
 /// is 0.48 (sRGB weights) not 0.20 (linear-light), and Chromium paints 0.48. The blue channel of the probe
 /// over the page colour tells the two apart by a factor of two.
+/// Three probes, one per case, to isolate where the `ltr:` variant's selector is lost:
+///   a) a plain attribute selector,
+///   b) the same inside `:where()`,
+///   c) inside a `:where()` that also names the unsupported `:dir()`.
+/// `:where()` takes a *forgiving* selector list (Selectors 4), so (c) must behave like (b).
+/// `:active` must match while the pointer is held down over the element, which is what Tailwind's
+/// `active:` variant compiles to (`&:active`). The parity cell `active:bg-red-500` fails at 0.6492 —
+/// Chromium paints the pressed colour and this engine paints the base one — so this isolates whether the
+/// state reaches the selector at all.
+#[test]
+fn an_active_press_reaches_the_selector() {
+    let mut ui = ui(
+        200,
+        140,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:120px;height:40px;margin:10px;background:#2563eb}}\n#a:active{{background:#ef4444}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    let (width, height, _) = ui.viewport();
+    let (nx, ny) = (60.0 / width as f32, 30.0 / height as f32);
+    ui.pointer("move", nx, ny, 0).expect("move");
+    ui.pointer("down", nx, ny, 1).expect("down");
+    ui.render();
+    assert_eq!(
+        rgb(&ui, 60, 30),
+        [0xef, 0x44, 0x44],
+        "a held pointer sets :active"
+    );
+}
+
+#[test]
+fn a_forgiving_where_list_drops_only_the_alternative_it_cannot_parse() {
+    let mut ui = ui(
+        260,
+        220,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n\
+                     .box{{width:120px;height:40px;margin:10px;background:#2563eb}}\n\
+                     #a[dir=\"ltr\"]{{background:#ef4444}}\n\
+                     #b:where([dir=\"ltr\"]){{background:#22c55e}}\n\
+                     #c:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *){{background:#f59e0b}}"
+                ),
+            ),
+            create(1, "div"), attr(1, "id", "a"), attr(1, "class", "box"), attr(1, "dir", "ltr"), append(0, 1),
+            create(2, "div"), attr(2, "id", "b"), attr(2, "class", "box"), attr(2, "dir", "ltr"), append(0, 2),
+            create(3, "div"), attr(3, "id", "c"), attr(3, "class", "box"), attr(3, "dir", "ltr"), append(0, 3),
+        ],
+    );
+    ui.render();
+    assert_eq!(rgb(&ui, 60, 30), [0xef, 0x44, 0x44], "a) attribute selector");
+    assert_eq!(rgb(&ui, 60, 80), [0x22, 0xc5, 0x5e], "b) inside :where()");
+    assert_eq!(rgb(&ui, 60, 130), [0xf5, 0x9e, 0x0b], "c) :where() with an unsupported alternative");
+}
+
 #[test]
 fn a_luminance_mask_weights_the_srgb_components() {
     let mut ui = ui(
