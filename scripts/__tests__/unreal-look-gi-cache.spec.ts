@@ -16,8 +16,8 @@ import {
   Texture,
   Vector3,
 } from "three";
-import { describe, expect, it } from "vitest";
 import { vec3 } from "three/tsl";
+import { describe, expect, it } from "vitest";
 import {
   cacheFallback,
   giCache,
