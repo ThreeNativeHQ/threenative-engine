@@ -128,6 +128,9 @@ const PANEL_CSS = `
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
 .stage-fill{width:120px;height:40px;background:#27272a}
 .stage-flex{display:flex}
+/* A near-black shadow on the dark stage is invisible: the cell cannot tell a correct engine from one
+   that dropped the declaration, so these cells put a light stage behind the probe. */
+.light-stage .cell-stage{background:#e4e4e7}
 /* A containment cell's child is bigger than the probe: paint containment is only visible when there
    is something to clip. */
 .stage-contain > .stage-fill{width:200px;height:120px}
@@ -1305,6 +1308,7 @@ function cellTree(cell) {
   const container = cell.container === undefined ? "" : ` stage-${cell.container}`;
   const items = cell.items === true ? " stage-items" : "";
   const contain = cell.contain === true ? " stage-contain" : "";
+  const light = cell.lightStage === true ? " light-stage" : "";
   const border = cell.borderProbe === true ? " stage-border" : "";
   const classes = probeClass(cell.companions ?? [], cell.class) + container + border + items + contain;
   const probe = el(
@@ -1370,7 +1374,7 @@ function cellTree(cell) {
 
   return el(
     "div",
-    { class: `cell c${cell.index}` },
+    { class: `cell c${cell.index}${cell.lightStage === true ? " light-stage" : ""}` },
     el("div", { class: "cell-label" }, text(cell.label)),
     el("div", { class: "cell-stage" }, ...children),
   );
@@ -1501,6 +1505,10 @@ function utilityEntry(unit, classCss, byProperty) {
     // box — a probe with nothing overflowing cannot show that, so a contain cell's probe gets a child
     // larger than itself.
     contain: unit.props.includes("contain") || undefined,
+    // A drop shadow's colour is usually near-black, and the cell's own background is `#18181b`: the
+    // shadow is painted but invisible on it, so the cell cannot tell a correct engine from one that
+    // dropped the declaration.
+    lightStage: /^(drop|inset)-?shadow|^shadow/u.test(unit.probe) || undefined,
     // A `position` unit is proved by a child that escapes the flow only when its parent is
     // positioned: the contrast for these cells used `position: absolute; inset: 16px`, which moved
     // the probe's *box* as well and measured a 16px edge miss on all four sides.
