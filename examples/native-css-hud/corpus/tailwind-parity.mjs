@@ -1182,6 +1182,14 @@ function probeInner(stage, cell, innerCount) {
   if (stage.text !== undefined) return [text(stage.text)];
   // `false` from the predicate is not a text node: a probe that needs no text gets none.
   if (cell.unit?.props.some((p) => TEXT_PROPS.has(p)) !== true) return [];
+  // Truncation and forced breaking need a run with nowhere to break: `LOREM` has spaces, and a space
+  // is where any of them may break instead. (The numeric run below stays as it is — `oldstyle` is
+  // discriminated by the generic one and lost by a longer digit run.)
+  if (cell.unit.props.some((p) => ["text-overflow", "overflow-wrap", "word-break"].includes(p)))
+    // Wide identical glyphs, not a dense word: where a break or an ellipsis lands is then a whole
+    // glyph, which the two renderers either agree on or do not, instead of a sub-pixel advance that
+    // this engine's glyph anti-aliasing already differs on in any dense run.
+    return [text("WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW")];
   // A wrapping, clamping or breaking unit needs a run long enough to wrap; a numeric variant needs
   // digits to vary (`tabular-nums` on letters is the same frame as `normal-nums`); a tab needs a tab.
   // `white-space` comes first: it changes how a *run* of spaces is treated, and `LOREM` has single

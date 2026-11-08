@@ -50,6 +50,15 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Decisions
 
+**A break or an ellipsis is measured with wide identical glyphs, not a dense word.** The earlier run was
+a long word: `truncate` read 0.9747 and `wrap-anywhere` 0.9260, and the diff was spread across the whole
+line — which is what this engine's glyph anti-aliasing does to *any* dense run (0.982 is its floor), not
+a layout difference. `"WWWWWWWW…"` makes the break and the ellipsis a whole-glyph event: the two
+renderers either agree on which glyph starts the next line or they do not. Measured: type 17 → **21 of
+41**, `truncate` 0.9897, `wrap-anywhere` 0.9933, `break-all` 0.9933, and the scene 303 → **307 of 503**.
+
+## Decisions
+
 **The transition group needs a changing property, and staging it broke on a pointer.** `transition`,
 `transition-none`, `transition-discrete`, `duration-*`, `delay-*` and `ease-*` (8 cells) all measure
 "does nothing" because a static frame contains no change for a transition to interpolate. The staged
