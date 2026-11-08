@@ -1,3 +1,4 @@
+import type { WebHostModule } from "./browser-renderer.js";
 /** Native VSM owns the clip cameras and sampling; core keeps its public option validation. */
 let nextId = 0;
 const installed = new Set<ShadowBaseNode>();
@@ -57,7 +58,7 @@ function walkStillCurrent(node: ShadowBaseNode, root: IShadowObject): boolean {
  * render here: web frame field 87 is the levels its clipmaps still owe a render (`deferred`), -1 when there is no virtual shadow.
  * ponytail: one total for every node, exact for the one sun a game has; per light when a game has two.
  */
-export function reportVirtualShadowFrame(module: { _tnw_web_frame(field: number): number }): void {
+export function reportVirtualShadowFrame(module: Pick<WebHostModule, "_tnw_web_frame">): void {
   if (installed.size === 0) return; // no host call for a scene without one
   const pending = module._tnw_web_frame(87);
   if (pending < 0) return;
