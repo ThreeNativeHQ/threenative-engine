@@ -81,13 +81,16 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   24px`, so a fraction of a tile is worth 1.0 of SSIM on a high-frequency pattern. Measured along the
   same row inside the probe, the stripe transitions are `8, 12, 20, 29, 32, 36, 44, 53` in Chromium and
   `10, 18, 26, 32, 34, 42, 50, 56` here — a phase difference, not a missing image.
-  Three things were tested in isolation and are **right**: a repeating gradient moves with
-  `background-position` (`a_gradient_background_takes_its_position`), `top` resolves to `center top`
-  (same test), and `background-size: 24px 24px` scales a repeating gradient
-  (`a_repeating_gradient_takes_its_background_size`). So the phase difference is in something the
-  scene stages and the isolated tests do not — the probe's 120×40 box against the 64×64/96×96 the tests
-  use, or the contrast's `background-position`/`background-size` pair interacting with the unit's own
-  `background-position`. That box size is the next variable to isolate.
+  Both sides tile at **24 px** and both show two transitions per tile — so the size and the repeat are
+  right. Measured at the scene's exact geometry (120×40, `box-sizing: border-box`, 2 px padding) the
+  engine's transitions inside the probe are `3, 11, 20, 24, 27, 35, 44, 48, 51, 59`, a 24 px tile with
+  transitions at +3 and +11; Chromium's from the same row are `8, 12, 20, 29, 32, 36, 44, 53`, the same
+  shape at +4 and +12 from a tile origin five pixels later. That is a **5 px origin offset**, not a
+  scale or a repeat difference, and `background-origin`'s default (`padding-box`), its mapping and
+  `box_rect` were all read and are correct — so the offset is in how the gradient's *tile rectangle* is
+  derived from the origin box (the padding box is 116×36 here, and 24 px tiles centred in it land five
+  pixels from where the engine puts them). The next attempt should print the resolved tile rect for
+  both engines instead of inferring it from stripes.
 - **A box shadow's blur is already Chromium's, and a spec-based "fix" broke a reference frame.**
   CSS defines the blur radius as twice the standard deviation, so the outset path was changed to pass
   `blur * 0.5`. The parity scene's `shadow-red-50` cell improved (0.9661 → 0.9756) — and the crate's
