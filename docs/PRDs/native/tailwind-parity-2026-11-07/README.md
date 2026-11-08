@@ -53,13 +53,19 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 249/503 (49.5 %)  [152 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 255/503 (50.7 %)  [152 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]
 ```
 
 A cell is evidence only when it discriminates (see Meter, item 3). The 152 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
+
+The 6 units after 249 are seven CSS colour filters painting at all: `vello_common` cannot render a
+colour matrix or a component transfer, so every `grayscale()`, `saturate()`, `hue-rotate()`, `sepia()`,
+`brightness()`, `contrast()` and `invert()` was dropped. A filter that is exactly one of those now
+renders its layer offscreen, transforms the pixels and composites the result back — with the layer's
+clip transformed into device space, which was the one thing the first attempt got wrong.
 
 The unit after 247 is a decoration's pixel alignment: a 1px underline drawn from a stroke centred at a
 fractional y covers two rows at 50 % each, where a browser pixel-aligns the rectangle. Measured on the
