@@ -73,11 +73,14 @@ export function withUpdateRanges(prototype: object): void {
       if (cached !== undefined) return cached;
       const target: IRange[] = [];
       let snapshot: unknown;
+      // The records as the engine last had them: a record edited in place differs from it.
+      let mirror = "[]";
       const refresh = () => {
         const current = emptied.delete(this) ? "[]" : (read.call(this) as unknown);
         if (current === snapshot) return;
         target.splice(0, target.length, ...(JSON.parse(String(current)) as IRange[]));
         snapshot = current;
+        mirror = JSON.stringify(target);
       };
       const validate = (ranges: readonly IRange[]) => {
         for (const range of ranges)
@@ -97,6 +100,7 @@ export function withUpdateRanges(prototype: object): void {
         clear.call(this);
         for (const range of target) add.call(this, range.start, range.count);
         snapshot = undefined;
+        mirror = JSON.stringify(target);
       };
       const guarded = <T>(change: () => T): T => {
         refresh();
@@ -117,7 +121,9 @@ export function withUpdateRanges(prototype: object): void {
               refresh();
               for (const range of ranges) add.call(owner, range.start, range.count);
               snapshot = undefined;
-              return target.push(...ranges);
+              const length = target.push(...ranges);
+              mirror = JSON.stringify(target);
+              return length;
             };
           if (typeof key === "string" && MUTATORS.has(key))
             return (...args: unknown[]) =>
@@ -149,6 +155,26 @@ export function withUpdateRanges(prototype: object): void {
           return Reflect.getOwnPropertyDescriptor(array, key);
         },
       });
+      // A record is an ordinary object, as three's is, so an edit in place (`last.count = n`, core's
+      // addRange) reaches the engine when needsUpdate publishes it, as the V8 adapter does (PRD-857).
+      let holder: object | null = Object.getPrototypeOf(this) as object | null;
+      let publish: PropertyDescriptor | undefined;
+      while (holder !== null && publish === undefined) {
+        publish = Object.getOwnPropertyDescriptor(holder, "needsUpdate");
+        holder = Object.getPrototypeOf(holder) as object | null;
+      }
+      if (publish?.set !== undefined) {
+        const set = publish.set;
+        const get = publish.get;
+        Object.defineProperty(this, "needsUpdate", {
+          configurable: true,
+          ...(get === undefined ? {} : { get: () => get.call(owner) }),
+          set(value: unknown) {
+            if (value && JSON.stringify(target) !== mirror) write();
+            set.call(owner, value);
+          },
+        });
+      }
       proxies.set(this, proxy);
       return proxy;
     },

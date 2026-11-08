@@ -22,6 +22,10 @@ class FakeAttribute {
     this.ranges = [];
     return this;
   }
+  version = 0;
+  set needsUpdate(value: boolean) {
+    if (value) this.version += 1;
+  }
 }
 withUpdateRanges(FakeAttribute.prototype);
 const ranges = (attribute: FakeAttribute) =>
@@ -55,6 +59,22 @@ describe("updateRanges on the web facade", () => {
     expect(attribute.ranges).toEqual([{ start: 8, count: 4 }]);
     expect(() => ranges(attribute).push({ start: -1, count: 2 })).toThrow(/TN_NATIVE_UNSUPPORTED/u);
     expect(attribute.ranges).toEqual([{ start: 8, count: 4 }]);
+  });
+
+  // PRD-857: core's addRange widens the last record in place, as three's live records allow; the
+  // edit reached nothing, so a grown GPU world scene uploaded only its first rows.
+  it("sends a record edited in place when needsUpdate publishes it", () => {
+    const attribute = new FakeAttribute();
+    attribute.addUpdateRange(0, 4);
+    const last = ranges(attribute)[0] as { start: number; count: number };
+    last.count = 12;
+    last.start = 0;
+    attribute.needsUpdate = true;
+    expect(attribute.ranges).toEqual([{ start: 0, count: 12 }]);
+    expect(attribute.version).toBe(1);
+    const writes = attribute.clears;
+    attribute.needsUpdate = true;
+    expect(attribute.clears).toBe(writes);
   });
 
   it("follows a clear the engine made", () => {
