@@ -42,6 +42,8 @@ export interface IAttributeSync {
   /** Shape survives data uploads and transform calls; only copy/replacement changes it. */
   readonly shapes: WeakMap<object, Map<string, unknown>>;
   readonly pending: Set<object>;
+  /** Item ranges a mesh-level write put in an attribute's array, sent with `pending` (PRD-860). */
+  readonly dirty: Map<object, { from: number; to: number }>;
   writeBack(): void;
   itemSizeOf(attribute: object): number;
   rangeOf(method: string, args: readonly unknown[], itemSize: number): readonly [number, number];
@@ -53,6 +55,7 @@ export interface IAttributeSync {
     index: unknown,
     argument: unknown,
   ): { array: TypedArray; at: number; values: ArrayLike<number> } | undefined;
+  writeMatrixAt(mesh: object, index: unknown, matrix: unknown): boolean;
 }
 
 export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
@@ -70,7 +73,14 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
   // Shape survives data uploads and transform calls; only copy/replacement changes it.
   const shapes = new WeakMap<object, Map<string, unknown>>();
   const pending = new Set<object>();
+  const dirty = new Map<object, { from: number; to: number }>();
   const writeBack = (): void => {
+    for (const [attribute, { from, to }] of dirty) {
+      const entry = arrays.get(attribute);
+      if (entry !== undefined && !pending.has(attribute))
+        attributeWrite?.call(runtime, refOf(attribute), entry.array.subarray(from, to), from);
+    }
+    dirty.clear();
     for (const attribute of pending) {
       const entry = arrays.get(attribute);
       if (entry !== undefined) attributeWrite?.call(runtime, refOf(attribute), entry.array);
@@ -163,6 +173,38 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
       return undefined;
     return { array: entry.array, at, values };
   };
+  // three's `setMatrixAt` writes the item into `instanceMatrix.array`, and so does this: one engine
+  // call an instance made a meadow of a few thousand tufts cost 60 ms of a laptop load (PRD-860). The
+  // written range goes to the engine once, before the next engine call, which is the first thing that
+  // can read it. Anything three would not write (a bad index, no matrix) takes the engine's call.
+  const writeMatrixAt = (mesh: object, index: unknown, matrix: unknown): boolean => {
+    const values = (matrix as { elements?: ArrayLike<number> } | null)?.elements;
+    const attribute = (mesh as { instanceMatrix?: unknown }).instanceMatrix;
+    const at = Number(index) * 16;
+    if (
+      attributeArray === undefined ||
+      values?.length !== 16 ||
+      typeof attribute !== "object" ||
+      attribute === null ||
+      !Number.isSafeInteger(at) ||
+      at < 0
+    )
+      return false;
+    let entry = arrays.get(attribute);
+    if (entry === undefined) {
+      entry = { array: attributeArray.call(runtime, refOf(attribute)) };
+      arrays.set(attribute, entry);
+    }
+    if (at + 16 > entry.array.length) return false;
+    entry.array.set(values, at);
+    const range = dirty.get(attribute);
+    if (range === undefined) dirty.set(attribute, { from: at, to: at + 16 });
+    else {
+      range.from = Math.min(range.from, at);
+      range.to = Math.max(range.to, at + 16);
+    }
+    return true;
+  };
   return {
     attributeArray,
     attributeWrite,
@@ -170,11 +212,13 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
     itemSizes,
     shapes,
     pending,
+    dirty,
     writeBack,
     itemSizeOf,
     rangeOf,
     syncRange,
     syncFull,
     instanceItem,
+    writeMatrixAt,
   };
 }
