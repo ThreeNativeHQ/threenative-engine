@@ -529,6 +529,50 @@ describe("createRenderer", () => {
     }
   });
 
+  it("skips framebuffer copies a compile triggers, and keeps a mid-compile frame's", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      // three's compileAsync runs a viewport texture's `updateBefore`, which copies the framebuffer.
+      // The compile's render context never had `renderTarget` assigned, so the backend copies the
+      // canvas (rgba8unorm) into the scene copy (rgba16float) and logs a format error per material:
+      // three per held warm-up on the Strata preview. A compile draws nothing, so the copy is moot.
+      const copies: string[] = [];
+      const backend = {
+        copyFramebufferToTexture: () => {
+          copies.push("copied");
+        },
+      };
+      const live: { renderer?: Awaited<ReturnType<typeof createRenderer>> } = {};
+      const raw: Record<string, unknown> = {
+        backend,
+        compileAsync: async () => {
+          backend.copyFramebufferToTexture();
+          // A frame the compile yielded to draws for real.
+          live.renderer?.render({} as never, {} as never);
+        },
+        domElement: canvas,
+        render: () => backend.copyFramebufferToTexture(),
+        setSize: () => undefined,
+      };
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => raw as never,
+      });
+      live.renderer = renderer;
+      await renderer.compileAsync({} as never, {} as never);
+      expect(copies).toEqual(["copied"]);
+      renderer.render({} as never, {} as never);
+      expect(copies).toEqual(["copied", "copied"]);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("leaves no frame-buffer target behind when two compiles overlap", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

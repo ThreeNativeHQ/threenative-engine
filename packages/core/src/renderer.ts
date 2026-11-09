@@ -768,6 +768,20 @@ function wrapRenderer(
   };
 
   let renderingFrame = 0;
+  // three's `compileAsync` runs a viewport texture's `updateBefore`, which copies the framebuffer from
+  // a render context the compile never bound to a target, so the backend reads the canvas
+  // (rgba8unorm) into the scene copy (rgba16float) and logs a format error per refracting material.
+  // A compile draws no pixels: the copy it triggers outside a real frame is skipped, and a frame the
+  // compile yields to still copies.
+  const copyingBackend = raw.backend as
+    | { copyFramebufferToTexture?: (...args: unknown[]) => unknown }
+    | undefined;
+  const stockFramebufferCopy = copyingBackend?.copyFramebufferToTexture;
+  if (copyingBackend !== undefined && typeof stockFramebufferCopy === "function")
+    copyingBackend.copyFramebufferToTexture = (...args: unknown[]) =>
+      activeCompiles > 0 && renderingFrame === 0
+        ? undefined
+        : stockFramebufferCopy.apply(copyingBackend, args);
   let temporalUpscaleActive = false;
   const renderFrame = (scene: Object3D, camera: Camera): void => {
     const temporal = wrapped.temporalUpscale?.() === true;
