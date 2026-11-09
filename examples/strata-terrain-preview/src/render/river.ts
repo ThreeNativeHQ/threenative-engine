@@ -1106,6 +1106,10 @@ export function createLakes(
     // surface and has to find something drawn there. See the Snell's window branch below.
     side: DoubleSide,
     transparent: true,
+    // One draw for both sides: the camera is on one side of a near-flat sheet at a time. three's
+    // default draws a transparent double-sided material twice, flipping `side` between the draws,
+    // and on the streamed ground that flip rebuilt this pipeline 58 times in one turn (PRD-790).
+    forceSinglePass: true,
   });
   material.positionNode = vec3(
     positionLocal.x,

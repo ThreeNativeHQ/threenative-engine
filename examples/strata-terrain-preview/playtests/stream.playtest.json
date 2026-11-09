@@ -85,6 +85,22 @@
         "gte": 0,
         "allowTrivial": "Measured only under ?tnTerrainValidate=1; -1 otherwise, so an unmeasured run fails."
       }
+    ],
+    "components": [
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelineCensusAvailable",
+        "equals": true,
+        "allowTrivial": "A pipeline counter must measure the run, or a zero below is silence, not a measurement."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelinesSinceReveal",
+        "lte": 4,
+        "allowTrivial": "Ratchet, not the goal (PRD-790 box 3 wants 0): the tile block's mirror variant, one unnamed basic material at the first step, and authored-terrain and the distant ridges on the turn 1.8 km out. Before the lake drew in one pass, its two-pass draw rebuilt its pipeline 58 times there."
+      }
     ]
   }
 }
