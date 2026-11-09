@@ -48,6 +48,6 @@ The proof: the river surface stopped in a straight edge at its first station whi
 
 ## Acceptance
 
-- [ ] AC-1: No water, streaming or terrain-field mechanism in the inventory is left only in the preview, or each one left has a written reason here. proof: the inventory table in this PRD's PR comment
+- [x] AC-1: No water, streaming or terrain-field mechanism in the inventory is left only in the preview, or each one left has a written reason here. proof: the inventory table in this PRD's PR comment — 2026-11-10: [PR #635 comment](https://github.com/ThreeNativeHQ/threenative-engine/pull/635#issuecomment-6750056714), 12 mechanisms: 9 moved, 3 kept with the reasons under Decisions.
 - [x] AC-2: `engine_search_capabilities` returns each moved export for its situation. proof: `searchCapabilities` (the MCP tool's function) on the worktree manifest — 2026-11-10: 7/7 rank first: `riverRibbonGeometry`, `lakeSurfaceGeometry`, `shoreField`, `AdmissionBudget`, `TerrainTiles` (`settledHalf`), `warmUnculled`, `surfaceSampler`. Note: `call.mjs` from this worktree reaches the main checkout's `.mcp.json` and its older manifest; an installed game reads its own.
 - [ ] AC-3: The five worlds and the kits look the same or better (fresh judge per visual phase). proof: judge verdicts on the PR
