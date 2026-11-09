@@ -212,6 +212,17 @@ export interface IWorldTilesOptions {
     readonly minX: number;
     readonly minZ: number;
   };
+  /**
+   * A region another surface already draws and collides, in tile-local metres: a tile wholly inside
+   * it is never meshed and gets no collider. A tile that only overlaps it is meshed whole; the game
+   * hides the overlap in its own surface.
+   */
+  readonly hole?: {
+    readonly maxX: number;
+    readonly maxZ: number;
+    readonly minX: number;
+    readonly minZ: number;
+  };
   /** How deep each edge skirt extends below its surface. Defaults to one tile width. */
   readonly skirtDepth?: number;
   /** Square tile neighborhood to consider around the followed point. Defaults to 1. */
@@ -359,6 +370,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #sampleHeight: IWorldTilesOptions["sampleHeight"];
   readonly #streamRadius: number;
   readonly #extent: IWorldTilesOptions["extent"];
+  readonly #hole: IWorldTilesOptions["hole"];
   /** Diagnostics outlive construction; their canonical field is never used by resident tiles. */
   #topology:
     | (Pick<Heightfield, "columns" | "depth" | "origin" | "rows" | "width"> & {
@@ -462,6 +474,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.skirtDepth = positive(options.skirtDepth ?? this.tileSize, "skirtDepth");
     this.#streamRadius = integerAtLeast(options.streamRadius ?? 1, 0, "streamRadius");
     this.#extent = options.extent;
+    this.#hole = options.hole;
     this.#receiveShadow = options.receiveShadow === true;
     this.#colliderRadius = integerAtLeast(
       options.colliderRadius ?? this.#streamRadius,
@@ -1379,11 +1392,23 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#setLodLevel(tile, this.#targetLod(tile, distance), countTransition);
   }
 
-  /** Whether the tile's square overlaps the ground at all; always true when no extent was given. */
+  /**
+   * Whether the tile's square overlaps the ground at all and is not wholly inside the hole; always
+   * true when neither was given.
+   */
   #touchesExtent(tileX: number, tileZ: number): boolean {
+    const half = this.tileSize / 2;
+    const hole = this.#hole;
+    if (
+      hole !== undefined &&
+      tileX * this.tileSize - half >= hole.minX &&
+      tileX * this.tileSize + half <= hole.maxX &&
+      tileZ * this.tileSize - half >= hole.minZ &&
+      tileZ * this.tileSize + half <= hole.maxZ
+    )
+      return false;
     const extent = this.#extent;
     if (extent === undefined) return true;
-    const half = this.tileSize / 2;
     return (
       tileX * this.tileSize + half > extent.minX &&
       tileX * this.tileSize - half < extent.maxX &&

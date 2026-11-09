@@ -97,7 +97,7 @@ export const HORIZON_WALK_BAND = 200;
 
 /** Rings of the far collar, and the radius they reach: the survey's own rim, at 2.1 km. */
 const HORIZON_RINGS = 384;
-const HORIZON_REACH = 2100;
+export const HORIZON_REACH = 2100;
 
 /**
  * The far collar for one world: the square's edge continued onto that site's surveyed surroundings,

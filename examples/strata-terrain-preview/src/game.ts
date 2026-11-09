@@ -16,8 +16,11 @@ import {
   MeshStandardMaterial,
   OrthographicCamera,
   type PerspectiveCamera,
+  Vector2,
   Vector3,
 } from "three";
+import { uniform } from "three/tsl";
+import type { MeshStandardNodeMaterial } from "three/webgpu";
 import {
   beginScene,
   createMeasure,
@@ -33,7 +36,7 @@ import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.j
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
-import { HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
+import { HORIZON_REACH, HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/propWorld.js";
@@ -41,7 +44,7 @@ import { invalidatePropShadows } from "./render/propWorld.js";
 import { buildPropVariants } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
-import { type IBakedWorld, createTerrain } from "./render/terrain.js";
+import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/terrain.js";
 import { sampleActiveWaterProof, waterProofEnabled } from "./render/waterProof.js";
 import { type IMeadow, type Scatter, type Variants, createMeadow } from "./sceneProps.js";
 import { type TerrainCtx, type TerrainState, initialState } from "./sceneState.js";
@@ -52,6 +55,7 @@ import {
   forestStageArm,
   forestStageTerrainTargets,
 } from "./world/forestStage.js";
+import { addStreamedGround } from "./world/streamedGround.js";
 import { walkBandSlices } from "./world/walkBand.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
 import { START_WORLD, WORLD_ORDER, WORLD_SELECT, loadBakedWorld } from "./worlds.js";
@@ -80,6 +84,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #stageLoad = 0;
     /** Bumped when a scene is left, so a band build still slicing stops instead of joining the next scene. */
     #bandLoad = 0;
+    /** PRD-790: the streamed ground past the square, on `?stream=1` until its judge passes. */
+    #stream: { split: ITerrainStream; material: Promise<MeshStandardNodeMaterial> } | undefined;
     #mannequin: IMannequin | undefined;
     #swimClips: readonly AnimationClip[] = [];
     #rig: IPlayerRig | undefined;
@@ -122,7 +128,27 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // Prepare scenery while the scene loads; enter only attaches it.
       // `?skyAo=off` is the named before arm: the ground keeps the whole sky, as it did before.
       const skyAo = new URLSearchParams(globalThis.location?.search ?? "").get("skyAo") !== "off";
-      this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome, skyAo ? sky : undefined);
+      const streaming =
+        new URLSearchParams(globalThis.location?.search ?? "").get("stream") === "1";
+      let tileSurface: (material: MeshStandardNodeMaterial) => void = () => undefined;
+      const material = new Promise<MeshStandardNodeMaterial>((resolve) => {
+        tileSurface = resolve;
+      });
+      const split: ITerrainStream | undefined = streaming
+        ? {
+            centre: uniform(new Vector2()),
+            half: uniform(0),
+            tiles: (surface) => tileSurface(surface),
+          }
+        : undefined;
+      this.#stream = split ? { split, material } : undefined;
+      this.#terrain = createTerrain(
+        this.#data,
+        ctx.assets,
+        this.#biome,
+        skyAo ? sky : undefined,
+        split,
+      );
       this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
       // The sky's LUT dispatch builds its compute nodes: 13-16 ms, paid here behind the curtain so
       // `enter`'s own `ctx.add` finds the renderer already attached (PRD-585, `enterMs` <= 50).
@@ -299,7 +325,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             if (!released) gate.fail(error);
           });
         });
-        const edge = data.size / 2 + band.extent;
+        // Streamed ground reaches the collar's rim; without it the walk band is the level.
+        const edge = data.size / 2 + (this.#stream ? HORIZON_REACH - 40 : band.extent);
         const walls = [-1, 1].flatMap((side) =>
           [
             { x: side * edge, z: 0, width: 4, depth: edge * 2 },
@@ -365,6 +392,23 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       this.#rig = rig;
       const player = rig.body;
       const actor = rig.actor;
+      const stream = this.#stream;
+      if (stream && mesh) {
+        const streamLoad = this.#bandLoad;
+        void stream.material.then((surface) => {
+          if (streamLoad !== this.#bandLoad) return surface.dispose();
+          const ground = addStreamedGround(
+            ctx,
+            data,
+            world,
+            surface,
+            stream.split,
+            actor,
+            (facts) => ctx.state.set(facts),
+          );
+          ctx.entities.add("streamed-ground", { tiles: ground.tiles, dispose: ground.dispose });
+        });
+      }
 
       const fixture = new Heightfield({
         rows: 17,

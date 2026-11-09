@@ -249,6 +249,28 @@ describe("TerrainTiles", () => {
     ).toThrow(/residentByteBudget/u);
   });
 
+  it("meshes no tile wholly inside the hole another surface covers", () => {
+    const tiles = new TerrainTiles({
+      validate: false,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: Number.MAX_SAFE_INTEGER,
+      residentTileBudget: 25,
+      sampleHeight,
+      streamRadius: 2,
+      tileResolution: 9,
+      tileSize: 16,
+      // Tile 0:0 spans [-8, 8]: wholly inside. Tile 1:0 spans [8, 24]: it only touches the hole.
+      hole: { minX: -12, maxX: 12, minZ: -12, maxZ: 12 },
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+
+    expect(tiles.residentKeys).not.toContain("0:0");
+    expect(tiles.residentKeys).toContain("1:0");
+    expect(tiles.residentTileCount).toBe(24);
+    tiles.dispose();
+  });
+
   it("counts retained edge samples in each tile and its admission estimate", () => {
     const tiles = new TerrainTiles({
       validate: true,

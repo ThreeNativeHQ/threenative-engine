@@ -22,6 +22,7 @@ import {
   RGBAFormat,
   RepeatWrapping,
   type Texture,
+  type Vector2,
   Vector3,
 } from "three";
 import {
@@ -51,7 +52,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, UniformNode } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { GROUND_TILE, type LayerKey, ROCKFACE_MAPS } from "../world/terrainAssets.js";
 import { alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
@@ -541,7 +542,15 @@ export async function createGroundMaterial(
   assets: IAssetLoader,
   curvature: IGroundCurvature,
   biome?: IBiome,
+  /**
+   * A streamed tile carries no painted `canopy` or baked `sky`: it lies past the trees and keeps the
+   * whole sky, exactly as the collar's own attributes say.
+   */
+  streamed = false,
 ): Promise<MeshStandardNodeMaterial> {
+  const canopyCover = (): Node<"float"> =>
+    streamed ? float(0) : attribute<"float">("canopy", "float");
+  const skyShare = (): Node<"float"> => (streamed ? float(1) : attribute<"float">("sky", "float"));
   const measured =
     biome && "heightBands" in biome
       ? (biome as IWorldBiome)
@@ -667,7 +676,7 @@ export async function createGroundMaterial(
       // Needle litter lies under the trees that were actually placed (`paintCanopy`), frayed by noise
       // at its edge. The old sine-sum stand mask no longer matched the value-noise scatter, and its
       // 38 m fade left every stand standing on meadow turf from any height.
-      const litter = smoothstep(0, 0.6, attribute<"float">("canopy", "float"))
+      const litter = smoothstep(0, 0.6, canopyCover())
         .mul(mix(0.72, 1, smoothstep(-0.5, 0.5, bakedNoise(positionWorld.mul(2.2)))))
         .mul(oneMinus(smoothstep(300, 600, positionView.length())))
         .mul(0.85);
@@ -918,9 +927,7 @@ export async function createGroundMaterial(
         const albedo = vec4(color, 1);
         // Concavity occludes sky bounce, leaving direct sunlight physically separate; the
         // horizon the surrounding relief makes (`skyVisibility`) shades valleys and gorges too.
-        material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow)).mul(
-          attribute<"float">("sky", "float"),
-        );
+        material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow)).mul(skyShare());
 
         // 50–200 metre vegetation tones survive texture mipmapping in the overview.
         const dryness = otherBiome
@@ -1179,12 +1186,25 @@ export async function createGroundMaterial(
  * keeps that fallback rather than failing the world: the terrain still has to collide on a host
  * with no asset server.
  */
+/**
+ * The square around the player that streamed tiles draw (PRD-790): centre and half-width in metres.
+ * The collar draws everywhere outside it, and the tiles draw only inside it and past the playable
+ * square, so each point of ground is drawn once.
+ */
+export interface ITerrainStream {
+  readonly centre: UniformNode<"vec2", Vector2>;
+  readonly half: UniformNode<"float", number>;
+  /** Receives the tiles' own ground material once the square's ground is in place. */
+  readonly tiles: (material: MeshStandardNodeMaterial) => void;
+}
+
 export function createTerrain(
   data: IBakedWorld,
   assets?: IAssetLoader,
   biome?: IBiome,
   /** The baked `skyVisibility` per vertex; without it the ground keeps the whole sky. */
   sky?: Float32Array,
+  stream?: ITerrainStream,
 ): { collar: HeightfieldCollar; field: Heightfield; mesh: Mesh } {
   const field = new Heightfield({
     rows: data.resolution,
@@ -1297,14 +1317,37 @@ export function createTerrain(
     disposed = true;
   });
   if (assets !== undefined)
-    void createGroundMaterial(data, assets, curvature, biome)
-      .then((ground) => {
+    void Promise.all([
+      createGroundMaterial(data, assets, curvature, biome),
+      stream ? createGroundMaterial(data, assets, curvature, biome, true) : undefined,
+    ])
+      .then(([ground, tile]) => {
         // Anything but the flat placeholder means the scene already moved on; a material nothing
         // draws holds GPU memory until its textures are released.
-        if (disposed || mesh.material !== material) return ground.dispose();
+        if (disposed || mesh.material !== material) {
+          tile?.dispose();
+          return ground.dispose();
+        }
         mesh.material = ground;
         horizon.material = ground;
         material.dispose();
+        const surfaces = [ground];
+        if (stream && tile) {
+          // Chebyshev distance from the streamed square's centre, against its half-width.
+          const fromCentre = max(
+            abs(positionWorld.x.sub(stream.centre.x)),
+            abs(positionWorld.z.sub(stream.centre.y)),
+          );
+          const far = ground.clone();
+          far.maskNode = fromCentre.greaterThanEqual(stream.half);
+          horizon.material = far;
+          tile.maskNode = fromCentre
+            .lessThan(stream.half)
+            .and(max(abs(positionWorld.x), abs(positionWorld.z)).greaterThan(data.size / 2));
+          surfaces.push(far, tile);
+          geometry.addEventListener("dispose", () => far.dispose());
+          stream.tiles(tile);
+        }
         // The ground took no image-based light, so terrain in shadow fell to near-black while every
         // plant on it read the sky. It reads the same clamped sky the vegetation does.
         if (biome === undefined || biome.lawnGround)
@@ -1312,10 +1355,12 @@ export function createTerrain(
             if (!sky || mesh.material !== ground || !ground.colorNode) return;
             // An envMap would be the ground's 17th sampler; the diffuse sky it carries is two colours.
             const { up, down } = skyIrradiance(sky);
-            ground.emissiveNode = (ground.colorNode as Node<"vec3">)
-              .mul(mix(vec3(...down), vec3(...up), normalWorld.y.mul(0.5).add(0.5)))
-              .mul(GROUND_SKY_LIGHT);
-            ground.needsUpdate = true;
+            for (const surface of surfaces) {
+              surface.emissiveNode = (surface.colorNode as Node<"vec3">)
+                .mul(mix(vec3(...down), vec3(...up), normalWorld.y.mul(0.5).add(0.5)))
+                .mul(GROUND_SKY_LIGHT);
+              surface.needsUpdate = true;
+            }
           });
       })
       // A map that never arrives, or a set this material cannot bind, leaves the ground on its
