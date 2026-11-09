@@ -65,6 +65,9 @@ describe("core constraints", () => {
           // The automatic caller of `mergeByMaterial`: it reads each mesh's material identity and
           // render flags to decide which meshes share a draw, and constructs or edits no material.
           file !== "auto-batch.ts" &&
+          // `meshSections` splits an imported mesh by its own material slots and hands each section the
+          // game's material instance back; it constructs, configures and reads no material property.
+          file !== "world-model-sections.ts" &&
           // The scene trace flattens the game's meshes into triangle and material-texel buffers, and
           // `TracedReflections` walks them. They read the game's materials and write none of them.
           // The tighter check is below.

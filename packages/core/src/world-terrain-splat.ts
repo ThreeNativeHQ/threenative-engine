@@ -33,7 +33,7 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import type { IAssetLoader } from "./assets.js";
+import { type IAssetLoader, fetchAsset } from "./assets.js";
 import type { IRendererLike } from "./renderer.js";
 import type { IWorldExtent } from "./world-package.js";
 
@@ -229,24 +229,16 @@ function packageAssetPath(directory: string, path: string): string {
 }
 
 async function fetchResolved(assets: IAssetLoader, path: string): Promise<Response> {
-  let attempted = false;
-  let everyFetchRejected = true;
-  let lastFetchError: unknown;
-  for (const candidate of await assets.resolve(path)) {
-    attempted = true;
-    let response: Response;
-    try {
-      response = await fetch(candidate);
-    } catch (error) {
-      lastFetchError = error;
-      continue;
-    }
-    everyFetchRejected = false;
-    if (response.ok) return response;
+  try {
+    return await fetchAsset(assets, path);
+  } catch (error) {
+    // The native fetch error, when every candidate rejected, stays the cause a caller reads.
+    const cause = error instanceof Error ? error.cause : undefined;
+    throw new Error(
+      `loadTerrainSplat: '${path}' is not served.`,
+      cause === undefined ? undefined : { cause },
+    );
   }
-  if (attempted && everyFetchRejected)
-    throw new Error(`loadTerrainSplat: '${path}' is not served.`, { cause: lastFetchError });
-  throw new Error(`loadTerrainSplat: '${path}' is not served.`);
 }
 
 /** Every splat plane in one array texture: one sampler, whatever the plane count. */

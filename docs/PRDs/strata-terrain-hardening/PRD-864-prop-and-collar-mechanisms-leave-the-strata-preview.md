@@ -23,7 +23,8 @@ The second half of the PRD-863 inventory (owner, 2026-11-10: "extract all world 
 
 ### Phase 3 — collar, walk band and loading
 
-- [ ] Terrain mesh and far collar build, collar walk band, canopy paint, texture preparation, baked file fetch. proof: a core spec each, `edge.playtest.json`, judge
+- [x] Baked file fetch: core `fetchAsset(assets, path)` walks every url `assets.resolve` names and throws `TN_ASSET_NOT_SERVED` naming each miss; the preview's `fetchBakedFile` and core's own `loadTerrainSplat` call it. proof: `assets.spec.ts`, `world-terrain-splat.spec.ts`, preview tests — 2026-11-10: core and terrain 368/368 files; the splat loader keeps its message and its native-error cause; preview 274/274.
+- [ ] Terrain mesh and far collar build, collar walk band, canopy paint, texture preparation. proof: a core spec each, `edge.playtest.json`, judge
 
 ## Decisions
 
