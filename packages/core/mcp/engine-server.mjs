@@ -822,6 +822,7 @@ var EXACT_SYMBOL_LEAD = 4;
 var NAME_BASE_LEAD = 2;
 var NAME_SHARE_LEAD = 1.4;
 var SYMBOL_WEIGHT_FLOOR = 4.2;
+var SINGLE_WORD_SHARE_FLOOR = 0.3;
 function scoreSymbolName(symbol, situation, queryTokens, weights) {
   const name = [...new Set(nameWords(symbol))];
   if (name.length === 0) return void 0;
@@ -831,10 +832,15 @@ function scoreSymbolName(symbol, situation, queryTokens, weights) {
   const share = requestTotal === 0 ? 0 : specificity / requestTotal;
   const nameScore = NAME_BASE_LEAD + NAME_SHARE_LEAD * Math.min(1, share);
   if (spellsName(situation, symbol)) {
-    return {
-      score: normaliseName(situation) === normaliseName(symbol) ? EXACT_SYMBOL_LEAD : nameScore,
-      specificity
-    };
+    if (normaliseName(situation) === normaliseName(symbol)) {
+      return { score: EXACT_SYMBOL_LEAD, specificity };
+    }
+    if (name.length === 1) {
+      if (weightOf(weights, name[0] ?? "") < SYMBOL_WEIGHT_FLOOR) return void 0;
+      if (share < SINGLE_WORD_SHARE_FLOOR) return void 0;
+      return { score: (NAME_BASE_LEAD + NAME_SHARE_LEAD) * Math.min(1, share), specificity };
+    }
+    return { score: nameScore, specificity };
   }
   if (name.length < 2) return void 0;
   const queryWords = new Set(nameWords(situation));

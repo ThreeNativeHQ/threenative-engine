@@ -726,6 +726,27 @@ describe("threenative-engine-mcp", () => {
     expect(searchResults(query, workspaceManifest)[0]?.symbol).toBe(symbol);
   });
 
+  /**
+   * A one-word name is also an ordinary English word. Spelled inside a longer request it must not
+   * displace the mechanic the request is about: `View` is a React rectangle, `scene`, `depth`,
+   * `velocity` and `connect` are `three/tsl` buffers and a transport. The word has to hold a real
+   * share of the request, and it has to be rare in the name index, or the row is a wrong lead.
+   */
+  it.each([
+    ["camera follows the player with a third person view", "View"],
+    ["the enemy velocity should push the player back when hit", "velocity"],
+    ["make the water depth fog darker underwater", "depth"],
+    ["make the scene feel foggy and moody", "Scene"],
+  ])("does not answer '%s' with the ordinary word '%s'", (query, symbol) => {
+    expect(searchResults(query, workspaceManifest)[0]?.symbol).not.toBe(symbol);
+  });
+
+  it("keeps a one-word name that holds the request", () => {
+    expect(searchResults("add godrays", workspaceManifest)[0]?.symbol).toBe("godrays");
+    expect(searchResults("enable ssgi", workspaceManifest)[0]?.symbol).toBe("ssgi");
+    expect(searchResults("use rapier", workspaceManifest)[0]?.symbol).toBe("rapier");
+  });
+
   /** Spelling `characterbody3d` or `Area3D` as words means the same node as the camel case. */
   it.each([
     ["character body 3d movement", "CharacterBody3D"],

@@ -803,11 +803,14 @@ describe("capability manifest generator", () => {
         ids: ["request.rough-diffuse-substrate-eon"],
         owners: ["useRoughDiffuse"],
       },
-      // PRD-865: seven aliases below are recalled with the aliases stripped, because these
-      // capabilities' own summaries name the Unreal vocabulary (`global illumination`, `virtual
-      // shadow`, `lumen surface cache`, `radiance cache`). The alias rows are still the vocabulary
-      // the requests use; they are no longer those rows' only path. Marked, not deleted: a later
-      // PRD that needs alias-necessity strictness for Unreal terms should start here.
+      // PRD-865: seven aliases below are recalled with the aliases stripped, for two reasons the
+      // new channels introduced. `SurfaceCache` and `RadianceCache` are found because the request
+      // spells their name (`lumen surface cache`, `radiance cache`). `GIBudget` and
+      // `ShadowFilterBudget` are found through their situations once the tokenizer splits the
+      // camelCase of `sg.GlobalIlluminationQuality` and `sg.ShadowQuality` into words. The alias
+      // rows are still the vocabulary the requests use, and still decide rank 1, but they are no
+      // longer those rows' only path. Marked, not deleted: a later PRD that needs alias-necessity
+      // strictness for Unreal terms should start here.
       "lumen scalability": {
         baselineAlreadyRecalled: true,
         ids: ["request.gi-quality-scalability"],
