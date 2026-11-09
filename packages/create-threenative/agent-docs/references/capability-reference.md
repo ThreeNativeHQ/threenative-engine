@@ -4003,6 +4003,21 @@ export function riverRibbonGeometry( rivers: readonly { … }
 const geometry = riverRibbonGeometry(rivers, field, { maxDepth: 1.6 });
 ```
 
+### `shoreField`
+
+`function` — Distance to the shore and open-sea exposure for every node of a square height grid, measured once from the bake. `distance` is a two-pass chamfer distance to the nearest node at or above `level` (0 on dry ground). `exposed` floods from the grid's edge through water deeper than `openDepth`, then `carry` metres further into shallow water, so a sheltered lagoon behind a sand bar stays out of it. Both feed the game's surf and shore masks; neither decides a colour.
+
+```ts
+export function shoreField( heights: ArrayLike<number>, resolution: number, size: number, level: number, options: IShoreFieldOptions = { … }
+```
+
+- **Use when:** surf breaks only on water open to the sea, not in a sheltered lagoon · distance from each water cell to the shore, for a foam or depth mask
+- **Constraints:** heights are row-major, `resolution` by `resolution`, across `size` metres; measured once, never per frame
+
+```ts
+const { distance, exposed } = shoreField(world.heights, world.resolution, world.size, world.waterLevel);
+```
+
 ### `snowDiscFootprint`
 
 `function` — A circular contact footprint, sized from a radius the caller measures. The shape a sphere, a ball, a wheel or a probe presses into snow, and the default the physics binding derives from a sphere's contact geometry. Flat inside the radius, eased over the softness band, with a raised rim just outside it.

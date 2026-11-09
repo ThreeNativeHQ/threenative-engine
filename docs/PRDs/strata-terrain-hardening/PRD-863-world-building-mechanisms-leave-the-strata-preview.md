@@ -27,7 +27,7 @@ The proof: the river surface stopped in a straight edge at its first station whi
 - [x] Lake surface geometry: core `lakeSurfaceGeometry` draws the disc `WaterBodies` floods (out to `lakeReach`, wet cells only, `metres` depth); the preview calls it. proof: `world-river-ribbon.spec.ts` lake cases, the forest lake mesh before and after — 2026-11-10: core 7/7 (every point the lake query floods over ground under the level is drawn); the forest lake is 6 992 triangles before and after, positions and `metres` exact, `waveDepth` within 6e-8, so no frame changes and no judge is due. The port also sizes the vertex buffer to the rings it fills (the preview's held one unused ring at the origin).
 - [ ] The forest and tundra kits draw their lakes with `lakeSurfaceGeometry`. proof: a kit capture before and after, judge
   Open: the kits flood a grid from the seed inside `radius` and the tundra kit clips it at the contour, so the switch changes their shape; it waits for a kit capture lane. The kits have no swim query, so no drawn-versus-swum mismatch exists there today.
-- [ ] Shore distance and open-sea exposure field: one core function for the preview and the coastal kit. proof: a core spec, the coastal playtest
+- [x] Shore distance and open-sea exposure field: core `shoreField` for the preview and the coastal kit. proof: `world-shore-field.spec.ts`, the coastal bake's field before and after — 2026-11-10: core 3/3; on the coastal bake both arrays are identical to the old inline code across 66 049 nodes (5 733 exposed), so no frame changes; the kit ran the same 57 lines, now one call.
 
 ### Phase 2 — streaming and startup
 
