@@ -141,7 +141,9 @@ export interface IBundleFile {
  * after the entry script ran, so a first visit's network idled until ~330 ms and the 1 MB module
  * ended at ~800 ms; Rapier's chunk then waited for the engine to boot. This head script preloads the
  * Wasm the page will run (the threads build only when isolated: otherwise the isolation worker may
- * reload the page) and, once it lands, Rapier, so each gets the whole link in turn.
+ * reload the page) and, once it lands, Rapier, so each gets the whole link in turn. Only for a Wasm
+ * this browser has not fetched: a preloaded response loses V8's compiled-code cache, and a repeat
+ * visit that recompiled the module was ~150 ms slower on a laptop.
  */
 export function withEnginePreload(
   html: string,
@@ -178,9 +180,15 @@ export function withEnginePreload(
     return document.head.appendChild(tag);
   };
   if (${threaded} && !globalThis.crossOriginIsolated) return;
-  const wasm = link("preload", ${quote(wasm)}, "fetch");
+  const href = ${quote(wasm)};
+  const store = (use) => { try { return use(localStorage); } catch { return null; } };
+  if (store((s) => s.getItem("tnEngineWasm")) === href) return;
+  const wasm = link("preload", href, "fetch");
   const rapier = ${quote(rapier)};
-  if (rapier !== null) wasm.onload = wasm.onerror = () => link("modulepreload", rapier);
+  wasm.onload = wasm.onerror = () => {
+    store((s) => s.setItem("tnEngineWasm", href));
+    if (rapier !== null) link("modulepreload", rapier);
+  };
 })();</script>`;
   return html.replace(/<script/iu, `${script}\n    <script`);
 }

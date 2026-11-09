@@ -301,6 +301,38 @@ describe("web branding adapter", () => {
     expect(threaded.indexOf("tn-native-engine-web-threads-T1")).toBeLessThan(
       threaded.indexOf('type="module"'),
     );
+    // A repeat visit skips it: a preloaded response loses V8's compiled-code cache, and recompiling the
+    // module cost a laptop's repeat visit ~150 ms. The script runs as the page would run it.
+    const run = (isolated: boolean, stored: Record<string, string>) => {
+      const links: { rel: string; href: string; onload?: () => void }[] = [];
+      const source = /<script>([\s\S]*?)<\/script>/u.exec(threaded)?.[1] ?? "";
+      new Function("document", "localStorage", "globalThis", source)(
+        {
+          createElement: () => ({}),
+          head: {
+            appendChild: (tag: (typeof links)[number]) => {
+              links.push(tag);
+              return tag;
+            },
+          },
+        },
+        {
+          getItem: (key: string) => stored[key] ?? null,
+          setItem: (key: string, value: string) => {
+            stored[key] = value;
+          },
+        },
+        { crossOriginIsolated: isolated },
+      );
+      return links;
+    };
+    const stored: Record<string, string> = {};
+    const first = run(true, stored);
+    expect(first.map((tag) => tag.rel)).toEqual(["preload"]);
+    first[0]?.onload?.();
+    expect(first.map((tag) => tag.rel)).toEqual(["preload", "modulepreload"]);
+    expect(run(true, stored)).toEqual([]);
+    expect(run(false, {})).toEqual([]);
     const plain = withEnginePreload(html, bundle, false);
     expect(plain).toContain('"/game/assets/tn-native-engine-web-P1.wasm"');
     expect(plain).not.toContain("threads-T1.wasm");
