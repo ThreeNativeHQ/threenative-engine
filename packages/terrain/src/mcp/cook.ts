@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type IBakeBiomeOptions, bakeBiome, foliageScatterRules } from "../core/bake-biome.js";
 import { type IBiomeSpec, type IBiomeWaterBody, validateBiome } from "../core/biome.js";
+import { createFlow, fillDepressions, routeFlow } from "../core/fluvial.js";
 import { decodeHeightPNG, decodeRAW16 } from "../core/io.js";
 import { finalizeState } from "../core/operations.js";
 import { applyPlacementOverrides } from "../core/placements.js";
@@ -12,7 +13,7 @@ import type { LandformKind } from "../core/presets.js";
 import { SURVEYS, locationSurvey } from "../core/surveys.js";
 import type { IGroundDecision, IGroundRequest } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
-import type { ITerrainState, Layer } from "../core/types.js";
+import type { ITerrainDocument, ITerrainState, Layer, SplinePoint } from "../core/types.js";
 import { starterAssetsDir } from "../kit-assets.js";
 import { measureGlb } from "./glb-stats.js";
 import { surveyHeights } from "./survey.js";
@@ -192,10 +193,15 @@ interface IWaterLayer {
  *
  * A row has no position and no path, so a river or lake row re-shapes the recipe's own layer of that
  * kind, in order: a river sets the ribbon width (and depth), a lake its radius. A layer with no row
- * is removed, and an ocean row adds a layer, since the ocean needs no seed. A river or lake row with
- * no layer to take it has nowhere to flow or sit, so it fails instead of echoing.
+ * is removed, and an ocean row adds a layer, since the ocean needs no seed. A river row with no layer
+ * comes back to be routed down the finished ground (`routeRivers`); a lake row with no layer has no
+ * basin to sit in, so it fails instead of echoing.
  */
-function applyWaterRows(layers: IWaterLayer[], rows: readonly IBiomeWaterBody[]): void {
+function applyWaterRows(
+  layers: IWaterLayer[],
+  rows: readonly IBiomeWaterBody[],
+): IBiomeWaterBody[] {
+  const unrouted: IBiomeWaterBody[] = [];
   const queue = (kind: string): IWaterLayer[] =>
     layers.filter((layer) =>
       kind === "river"
@@ -216,6 +222,10 @@ function applyWaterRows(layers: IWaterLayer[], rows: readonly IBiomeWaterBody[])
       continue;
     }
     const layer = (row.kind === "river" ? rivers : lakes).shift();
+    if (layer === undefined && row.kind === "river") {
+      unrouted.push(row);
+      continue;
+    }
     if (layer === undefined) {
       throw new Error(
         `cook: water row '${row.kind}' has no ${row.kind} layer in the recipe to take it.`,
@@ -233,6 +243,90 @@ function applyWaterRows(layers: IWaterLayer[], rows: readonly IBiomeWaterBody[])
     (layer) => (layer.type === "river" || layer.type === "water") && !keep.has(layer),
   );
   for (const layer of dropped) layers.splice(layers.indexOf(layer), 1);
+  return unrouted;
+}
+
+/**
+ * Gives each river row a layer down the ground's own drainage: the main stem of the largest basin
+ * that leaves the world, then the next largest at least an eighth of the world away. The stem runs
+ * from where its catchment is a tenth of the outlet's to the edge, every 16 m. Bed, depth and
+ * shoulder are the forest starter's river (7 m bed for a 5.32 m ribbon).
+ */
+function routeRivers(
+  recipe: ITerrainDocument & { layers: Layer[] },
+  rows: readonly IBiomeWaterBody[],
+): void {
+  const state = Terrain.fromJSON(recipe).evaluate();
+  const { resolution: n, size } = state;
+  const filled = Float64Array.from(state.height);
+  fillDepressions(filled, n);
+  const flow = createFlow(n);
+  routeFlow(filled, n, flow);
+  const roots: number[] = [];
+  for (let i = 0; i < n * n; i += 1) if ((flow.receiver[i] as number) < 0) roots.push(i);
+  roots.sort((a, b) => (flow.cells[b] as number) - (flow.cells[a] as number));
+  const world = (i: number): [number, number] => [
+    ((i % n) / (n - 1) - 0.5) * size,
+    (Math.floor(i / n) / (n - 1) - 0.5) * size,
+  ];
+  const outlets: number[] = [];
+  for (const root of roots) {
+    if (outlets.length === rows.length) break;
+    const [x, z] = world(root);
+    const apart = outlets.every((o) => {
+      const [ox, oz] = world(o);
+      return Math.hypot(x - ox, z - oz) >= size / 8;
+    });
+    if (apart) outlets.push(root);
+  }
+  const step = Math.max(1, Math.round((16 / size) * (n - 1)));
+  rows.forEach((row, index) => {
+    const outlet = outlets[index];
+    if (outlet === undefined)
+      throw new Error(`cook: water row 'river' found no drainage basin to run down.`);
+    // Up the stem: always the donor carrying the most water, until the catchment is a tenth.
+    const stem = [outlet];
+    const source = (flow.cells[outlet] as number) * 0.1;
+    for (let cell = outlet; ; ) {
+      let next = -1;
+      const x = cell % n;
+      const z = Math.floor(cell / n);
+      for (let dz = -1; dz <= 1; dz += 1)
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (dx === 0 && dz === 0) continue;
+          if (x + dx < 0 || x + dx >= n || z + dz < 0 || z + dz >= n) continue;
+          const j = cell + dz * n + dx;
+          if (flow.receiver[j] !== cell) continue;
+          if (next < 0 || (flow.cells[j] as number) > (flow.cells[next] as number)) next = j;
+        }
+      if (next < 0 || (flow.cells[next] as number) < source) break;
+      stem.push(next);
+      cell = next;
+    }
+    if (stem.length < 2 * step)
+      throw new Error(`cook: water row 'river' found no stem longer than 32 m to run down.`);
+    // Source first, the edge last: downstream order, as the starters author theirs.
+    const cells = stem.reverse().filter((_, k) => k % step === 0 || k === stem.length - 1);
+    const points: SplinePoint[] = cells.map((cell) => {
+      const [x, z] = world(cell);
+      return [x, null, z];
+    });
+    const bed = (row.width as number) / 0.76;
+    recipe.layers.push({
+      enabled: true,
+      opacity: 1,
+      id: `river-${index}`,
+      type: "river",
+      params: {
+        followTerrain: true,
+        points,
+        width: bed,
+        waterWidth: 0.76,
+        depth: row.depth ?? 1.8,
+        shoulder: 10,
+      },
+    } as Layer);
+  });
 }
 
 /**
@@ -463,7 +557,8 @@ async function cookInto(
             size: request.sizeMeters ?? biome.sizeMeters,
           }).toJSON(),
         };
-  if (request.water !== undefined) applyWaterRows(recipe.recipe.layers, request.water);
+  const unrouted =
+    request.water === undefined ? [] : applyWaterRows(recipe.recipe.layers, request.water);
   // `fromJSON` reads `config`, so an override written beside it would be accepted and then ignored.
   if (request.sizeMeters !== undefined) recipe.recipe.config.size = request.sizeMeters;
   if (request.seed !== undefined) recipe.recipe.config.seed = request.seed;
@@ -488,6 +583,8 @@ async function cookInto(
 
   // A landform preset authors the ground and no scatter rules, so the biome file's foliage is placed
   // on it through the stages every starter scatter runs.
+  // A river the recipe has no layer for runs down the finished ground, survey or preset alike.
+  if (unrouted.length > 0) routeRivers(recipe.recipe, unrouted);
   const evaluated = Terrain.fromJSON(recipe.recipe).evaluate();
   const state = applyPlacementOverrides(
     scatterFoliage(evaluated, biome, kind, assetTable),
