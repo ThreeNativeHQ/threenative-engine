@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-860 — The first scene plays before the game finishes downloading
 
-**Status:** IN PROGRESS — the engine's late-asset line landed and Midway now ships cooked, but no box is done: its cooked bytes are 166 MB rather than the tens of MB a KTX2 cook would give, because the default engine refuses KTX2 and meshopt (`TN_ASSETS_COMPRESSION_SKIPPED`), so AC-2's 50 MB now rests on the load split alone, which Midway cannot do until a hull can arrive after `enter`.
+**Status:** IN PROGRESS — Phase 1 boots Midway on 49.95 MB (AC-1, AC-2 met); AC-3 waits on a scenario that flies to the enemy fleet; Phases 2 and 3 wait on the owned engine's KTX2 decoder ([PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
 **Priority:** P1 — Midway still waits for 136.4 MB before the first frame of play (measured below, AC-1), and texture and mesh streaming (AC-4 to AC-8) do not exist.
 **Complexity:** 8 (HIGH) — 6–10 implementation files (+2): the loader, a mip-streaming module, the KTX2 path in the owned engine, the model cook and the Midway game; a new streaming module (+2); request queues and residency are concurrent state (+2); the change crosses the TypeScript packages and the owned C++ engine build (+2).
 **Owner:** João
@@ -179,9 +179,9 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 
 #### Phase 1 — Midway boots on its spawn bytes
 
-- [ ] AC-1 [local]: The Midway launch playtest at 40 Mbps records the baseline: bytes before first play, time to first play and total shipped bytes. proof: `node packages/playtest/dist/runner/cli.js <midway>/playtests/launch.playtest.json --url http://127.0.0.1:5173 --browser-recipe webgpu` with `artifacts.network` set — Evidence: partial, not ticked. Bytes: the runtime's own `TN_STARTUP_OFFSCREEN_BYTES` on the cooked build reports 139.5 MB awaited before first play (255 files: visible 42.2, unattributed 21.9, off-screen 75.4), against 166.2 MB shipped. Loading 11.3 s, enter at 15.6 s on a software adapter. Time to first play at 40 Mbps: not measured — under SwiftShader the run fails on `TN_PLAYTEST_SOFTWARE_ADAPTER` before a link-bound number would mean anything.
-- [ ] AC-2 [local]: Cooked Midway reaches first play after 50 MB or less, and `TN_STARTUP_OFFSCREEN_BYTES` reports no warn. proof: the same playtest — Evidence: not met. 139.5 MB awaited and the warn fires: 75.4 MB of it is off the spawn camera. The ceiling is reachable — 42.2 MB is what the camera shows — by deferring the off-screen files named above and moving the 13 MB of cockpit dials and most of the 8.7 MB of audio out of the launch, which needs a hull that can arrive after `enter` (open item 1).
-- [ ] AC-3 [local]: The flight playtest reaches the enemy fleet with zero `TN_ASSET_LATE` lines, and the engine test proves that a late request emits the line. proof: `<midway>/playtests/flight.playtest.json` at 40 Mbps and `pnpm exec vitest run packages/core/__tests__/assets*.spec.ts` — Evidence: engine half done — `assets-late.spec.ts` proves a late request emits one line carrying its bytes, and that an awaited or prefetched file stays quiet; 94 tests green. Playtest half not run: nothing is deferred yet, so a zero there would prove nothing.
+- [x] AC-1 [local]: The Midway launch playtest at 40 Mbps records the baseline: bytes before first play, time to first play and total shipped bytes. proof: `TN_PLAYTEST_HOST_DISPLAY=1 DISPLAY=:0 npx threenative-playtest playtests/launch.playtest.json --browser-recipe webgpu --headed` against `vite preview` of Midway `00719cf`+`a52e839`, RTX 2080 (`TN_GPU_CLASS` nvidia/turing) — Evidence (2026-11-09): `TN_STARTUP_OFFSCREEN_BYTES.awaitedBytes` **139,518,197** (visible 42.2 MB, unattributed 21.9, off-screen 75.4, warn); first play (`TN_LOAD_STEP ready`) **38.97 s** in the playtest, 36.8 s in a Playwright probe of the same build at the same link (147.6 MB on the wire before it); **161.4 MB** shipped (manifest outputs plus shared images). The run completed every step; its one red is `maxPassTriangles.main` 1,360,253 > 1,300,000, which the baseline carries.
+- [x] AC-2 [local]: Cooked Midway reaches first play after 50 MB or less, and `TN_STARTUP_OFFSCREEN_BYTES` reports no warn. proof: the same playtest on Midway `f8591d4` — Evidence (2026-11-09): `awaitedBytes` **49,950,371**, `warn: false` (visible 42.2 MB, unattributed 3.2, off-screen 4.5); first play **17.8 s** in the playtest (19.5 s in the probe), from 38.97 s; zero `TN_ASSET_LATE` lines through the run, and the streamed fleet built at 33.0 s. 22.9 MB of the cut were three dead loads (`destroyer.samidare.glb`, `carrier.yorktown.glb`, `weapon.torpedo.glb`) that nothing drew; the rest moved behind `prefetch` after the reveal (Japanese fleet, Akagi, atoll, escorts, cockpit textures, speech, combat cues). Frame time is held open under Phase 1 "Open" below, not under this box.
+- [ ] AC-3 [local]: The flight playtest reaches the enemy fleet with zero `TN_ASSET_LATE` lines, and the engine test proves that a late request emits the line. proof: `<midway>/playtests/flight.playtest.json` at 40 Mbps and `pnpm exec vitest run packages/core/__tests__/assets*.spec.ts` — Evidence: engine half done (`assets-late.spec.ts`, 94 tests green). Launch playtest on `f8591d4`: zero `TN_ASSET_LATE` lines while the whole deferred set streamed in. Not ticked: `flight.playtest.json` repeats the launch climb and never reaches the enemy fleet, about 200 km out, so the box needs a scenario that flies there.
 
 #### Phase 2 — Textures stream by mip
 
@@ -244,19 +244,37 @@ enemy fleet, distant hulls and later audio to `prefetch` in the order the flight
 before first play (visible 42.2, unattributed 21.9, off-screen 75.4); the bake skips 63.2 MB of model
 and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
 
+**Landed 2026-11-09:**
+
+- Midway `f8591d4` (game layer): three dead loads deleted; the hulls the spawn camera does not
+  show load after the reveal behind one `prefetch` and the world builds each ship when its model
+  lands (`ModelPendingError`, `WorldView.buildStreamed`, in `addInSlices` slices); the cockpit
+  interior attaches late (`attachCockpitInterior`); speech, combat and enemy-engine cues load late.
+- `TN_ASSET_UNUSED` (`packages/core/src/startup-offscreen-bytes.ts`, `measureUnusedModels`,
+  `reportUnusedModelsLater`): a minute after the reveal, every awaited model no scene object came
+  from, with its bytes. It is the line that would have named Midway's 22.9 MB of dead loads; the
+  offscreen line could only call them not-placed. Tests in `startup-offscreen-bytes.spec.ts`.
+- The playtest handshake gets the startup window (`packages/playtest/src/runner/bridgeClient.ts`):
+  core answers `describe` only after the start scene's `load()`, so a 30 s handshake failed every
+  Midway run at 40 Mbps 370 ms short. A failed `load()` now rejects `describe` at once
+  (`game-startup.ts`), instead of leaving it to time out.
+- `packages/core/src/texture-streaming.ts`: KTX2 level index, the UE wanted-mip rule and
+  coarse-first mip ranges, pure and tested — Phase 2 groundwork, not yet exported.
+
 **Open, in the order it blocks this phase:**
 
-1. A hull must be able to arrive after `enter`. `WorldView` builds every ship at entry by cloning a
-   model that `load()` awaited and `hull()` throws without one, so deferring a model means a
-   placeholder that fills in when its bytes land — the change that makes AC-2 reachable. Measure the
-   result with `TN_STARTUP_OFFSCREEN_BYTES.awaitedBytes` at the reveal (ceiling 50 MB) and
-   `TN_ASSET_LATE` at zero on the flight (its `prefetch` list is what silences it).
-2. A playtest lane that settles Midway inside 195 s at 40 Mbps on a real adapter, so AC-1 to AC-3
-   can run at all.
-3. The compression question, if the owner wants the 166 MB down: [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)
-   owns it, because meshopt is a CMake line and a bufferView decode while KTX2 needs a transcoder
-   decision. `engine: "threejs"` would sidestep both by changing Midway's renderer, which is not
-   this PRD's call.
+1. Frame time while the fleet streams in. The first paired launch runs: baseline passed the
+   frame bound; the change read CPU p95 16.79 ms against 16.7 ms (one run 33.35 ms rAF p95 while
+   other sessions held the GPU). Akagi's merged stand-in builds in one ~220 ms task. Paired runs
+   in a private network namespace (the host's docker churn fails fetches with
+   `ERR_NETWORK_CHANGED`) decide whether this is a regression.
+2. AC-3's scenario: one that flies to the enemy fleet.
+3. Engine follow-up (owner question 2026-11-09, "can this be pushed to the engine?"): a
+   `ctx.assets.model(path, { defer: true })` handle that returns a placeholder group at once and
+   fills it when the bytes land, so a game defers a file with one flag instead of Midway's
+   restructure. Fully automatic deferral was rejected: games that read geometry at build time
+   (Midway measures wingspans and bakes stand-ins) would break silently.
+4. The compression question stays with [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md).
 
 #### Phase 2: Textures stream by mip
 
