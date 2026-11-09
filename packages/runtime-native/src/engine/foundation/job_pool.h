@@ -46,6 +46,12 @@ public:
     static JobPool& shared();
     /** Replaces the process pool with one of `workers` workers: tests run one case at 1 and N threads. */
     static void resetShared(unsigned workers);
+    /**
+     * Makes `shared()` on the calling thread answer `pool` (null restores the process pool). The web host's glTF
+     * loader thread decodes on a small pool of its own, so a model landing during play never takes the frame's
+     * workers: a frame job that finds the pool busy runs inline on the main thread (PRD-860).
+     */
+    static void useOnThisThread(JobPool* pool) { threadPool_ = pool; }
     /** The worker count `shared()` starts with. */
     static unsigned defaultWorkers();
 
@@ -94,6 +100,7 @@ private:
     inline static std::atomic<uint64_t> runs_{0}, items_{0};
     std::atomic<bool> running_{false};
     inline static thread_local bool inJob_ = false;
+    inline static thread_local JobPool* threadPool_ = nullptr;  // useOnThisThread
 };
 
 }  // namespace tn::engine
