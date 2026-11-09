@@ -6,7 +6,14 @@ import {
   thinCards,
 } from "@threenative/core";
 /** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
-import { bakedNoise, instanceRandom } from "@threenative/core/world";
+import {
+  type IMeshSection,
+  bakedNoise,
+  instanceRandom,
+  meshSections,
+  repairZeroNormals,
+  sectionGeometry,
+} from "@threenative/core/world";
 import {
   Box3,
   BufferAttribute,
@@ -666,19 +673,6 @@ export function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined>
   return skyLight;
 }
 
-/** A mesh's material sections: one per group for a material array, otherwise the whole mesh. */
-function meshSections(
-  mesh: Mesh,
-): { material: Material; group?: { start: number; count: number } }[] {
-  const materials = mesh.material;
-  return Array.isArray(materials)
-    ? mesh.geometry.groups.map((group) => ({
-        material: materials[group.materialIndex ?? 0] as Material,
-        group,
-      }))
-    : [{ material: materials }];
-}
-
 /** Per-world reshape for one asset, applied on top of the shared whole-model scale. */
 const WORLD_ASSET_SCALES: Record<string, Record<string, readonly [number, number, number]>> = {
   tundra: { grass: [1.35, 1, 1.35], bush: [0.18, 1, 0.18], scrub: [1.1, 2, 1.1] },
@@ -708,17 +702,6 @@ function scaleGeometry(
     const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8);
     geometry.scale(24 / longest, 24 / longest, 24 / longest);
   }
-}
-
-/** `spruce_full_03_low` ships zero normals; repair the optional art, including existing cooks. */
-function repairNormals(geometry: BufferGeometry): void {
-  const normals = geometry.getAttribute("normal");
-  let valid = normals !== undefined;
-  for (let i = 0; valid && normals && i < normals.count; i++) {
-    const length = Math.hypot(normals.getX(i), normals.getY(i), normals.getZ(i));
-    valid = Number.isFinite(length) && length >= 0.01;
-  }
-  if (!valid) geometry.computeVertexNormals();
 }
 
 /** Radial coverage per height band: tips see sky, needles near the trunk do not. */
@@ -766,23 +749,14 @@ function prepareGeometry(
   stone: boolean,
   box: Box3,
   size: Vector3,
-  group?: { start: number; count: number },
+  section: IMeshSection,
 ): BufferGeometry {
-  const geometry = baseGeometryOf(mesh).clone().applyMatrix4(mesh.matrixWorld);
-  if (group) {
-    const start = Math.max(group.start, geometry.drawRange.start);
-    const end = Math.min(
-      group.start + group.count,
-      geometry.drawRange.start + geometry.drawRange.count,
-    );
-    geometry.clearGroups();
-    geometry.setDrawRange(start, Math.max(0, end - start));
-  }
-  const centre = box.getCenter(new Vector3());
-  const centredStone = stone && BIOMES[world].lawnGround;
-  geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
+  // `spruce_full_03_low` ships zero normals; the repair runs after the reshape so they fit it.
+  const geometry = sectionGeometry(mesh, box, section, {
+    centreXZ: stone && BIOMES[world].lawnGround,
+  });
   scaleGeometry(geometry, one.asset, world, size);
-  repairNormals(geometry);
+  repairZeroNormals(geometry);
   return geometry;
 }
 
@@ -890,7 +864,7 @@ export async function loadPack(
             ? entry.find((part) => (part.level ?? 0) === 0 && part.role === role)?.material
             : undefined;
         if (!source.map && one.level && !(inherited instanceof MeshPhysicalNodeMaterial)) continue;
-        const geometry = prepareGeometry(mesh, one, world, stone, box, size, section.group);
+        const geometry = prepareGeometry(mesh, one, world, stone, box, size, section);
         if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling"))
           addRadialCoverage(geometry, one.metres, world, comparison);
         const material =

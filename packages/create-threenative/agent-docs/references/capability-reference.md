@@ -4018,6 +4018,21 @@ export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { �
 const data = await loadWorldHeightmap("/world/terrain/heightmap.u16");
 ```
 
+### `meshSections`
+
+`function` — A mesh's material sections: one per geometry group for a material array, else the whole mesh. Instanced props draw one batch per material, so an imported model splits here first.
+
+```ts
+export function meshSections(mesh: Mesh): IMeshSection[] { … }
+```
+
+- **Use when:** scatter or instance an imported glTF model that has several materials
+- **Constraints:** a section's `material` can be `undefined` for a group naming a missing material slot; skip it
+
+```ts
+for (const section of meshSections(mesh)) parts.push(sectionGeometry(mesh, box, section));
+```
+
 ### `noiseVolume`
 
 `function` — The one volume every material shares: baked on first use, 1 MiB of RGBA8 (it stays in L2).
@@ -4033,6 +4048,21 @@ export function noiseVolume(): Data3DTexture { … }
 const volume = noiseVolume();
 ```
 
+### `repairZeroNormals`
+
+`function` — Recompute the normals of a geometry whose normals are missing, zero or not finite, and leave authored normals alone. Some exported art ships zero normals and draws black under any light. Run it after any reshape, so the recomputed normals fit the final shape.
+
+```ts
+export function repairZeroNormals(geometry: BufferGeometry): boolean { … }
+```
+
+- **Use when:** an imported model draws black or unlit because it ships zero normals
+- **Constraints:** one bad normal recomputes them all; an intentionally hard-edged model loses its authored split normals only if one is bad
+
+```ts
+geometry.scale(1.1, 1, 1.1); repairZeroNormals(geometry);
+```
+
 ### `riverRibbonGeometry`
 
 `function` — The water surface of every river, as one geometry with one group per river. Each station is a row across the river at its own surface height, out to `reach` widths either side of the centreline, the reach `WaterBodies` floods; one more row a reach past each end stands where `WaterBodies` clamps a segment, so the water a swimmer finds past a river's end is drawn there too (cut at the end station, the surface stopped in a straight edge with its carved bed dry beyond). Quads dry on both rows against `field` are dropped, so the surface ends at the shore. Attributes for the game's water material: `flow` (the unit downstream heading), `flowUv` (metres down the centreline, metres across it) and `metres` (water depth over the ground). It decides no colour, ripple or opacity: the game shades it.
@@ -4046,6 +4076,21 @@ export function riverRibbonGeometry( rivers: readonly { … }
 
 ```ts
 const geometry = riverRibbonGeometry(rivers, field, { maxDepth: 1.6 });
+```
+
+### `sectionGeometry`
+
+`function` — One section's geometry in model space, standing on y = 0. Every section of a model takes the same base from the whole model's `box`, so a crown keeps its place on its trunk: basing each section on its own bounds detaches them. The mesh's LOD0 geometry is cloned under its world matrix, and a group becomes the clone's draw range.
+
+```ts
+export function sectionGeometry( mesh: Mesh, box: Box3, section: IMeshSection, options: { … }
+```
+
+- **Use when:** the crown of an instanced tree floats off its trunk, or the parts of a model separate · turn each part of an imported model into a geometry for an instanced prop batch
+- **Constraints:** `box` is the whole model's world bounds after any unit normalisation; call `mesh.updateWorldMatrix` first
+
+```ts
+const box = new Box3().setFromObject(root); const geometry = sectionGeometry(mesh, box, section);
 ```
 
 ### `shoreField`

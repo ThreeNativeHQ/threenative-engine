@@ -29,6 +29,8 @@ export { AdmissionBudget } from "./world-load-limiter.js";
 export { shoreField } from "./world-shore-field.js";
 export { surfaceSampler } from "./world-surface-sampler.js";
 export { baseRingGap, footprintGap, staticLowestY } from "./world-static-pose.js";
+export { meshSections, repairZeroNormals, sectionGeometry } from "./world-model-sections.js";
+export type { IMeshSection } from "./world-model-sections.js";
 export type { IBaseRing, StaticGroundQuery } from "./world-static-pose.js";
 export type { SurfaceSampler } from "./world-surface-sampler.js";
 export { warmUnculled } from "./world-warm.js";

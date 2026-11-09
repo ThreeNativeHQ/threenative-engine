@@ -19,7 +19,7 @@ The second half of the PRD-863 inventory (owner, 2026-11-10: "extract all world 
 ### Phase 2 — prop streaming and models
 
 - [ ] Baked prop package decode and per-bucket stream; meadow lifecycle. proof: `reveal.playtest.json`, `lod.playtest.json`, judge
-- [ ] Model to prop parts (sections, whole-model base and scale, normal repair). proof: a core spec, judge
+- [x] Model to prop parts: core `meshSections`, `sectionGeometry` (one whole-model base for every section) and `repairZeroNormals`; `pack.ts` keeps its per-world reshape table. proof: `world-model-sections.spec.ts`, the old and new `prepareGeometry` compared — 2026-11-10: core 2/2; positions, normals and draw ranges bit-identical on over 400 world, asset, stone and section cases, so no frame changes and no judge is due; preview 274/274.
 
 ### Phase 3 — collar, walk band and loading
 
