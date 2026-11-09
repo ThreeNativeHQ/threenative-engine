@@ -97,7 +97,7 @@ flowchart LR
 **Implementation:** load the cooked `world.glb` with stock `GLTFLoader`; assert instance counts and that no mesh is a per-tree copy.
 - [x] Vanilla loader gets `InstancedMesh` with the bake's counts. proof: `CONSUMER_GAME=skip pnpm --filter strata-terrain-preview test:consumer` — 2026-10-10 exit 0; the generated consumer script reads the cooked `world.json`, derives each species' logical count from its runs, and checks each child `InstancedMesh` count (fir 4×3 100, fir-c 4×1 400, boulder 1×320) with 0 per-tree copies and no hardcoded values.
 
-- [ ] Render the cooked world in the headed WebGPU consumer and pass the visual judge. proof: two same-pose runs per arm with checked adapter and labelled images — pending; the first baseline capture was black and is rejected.
+- [x] Render the cooked world in the headed WebGPU consumer and pass the visual judge. proof: two same-pose runs per arm with checked adapter and labelled images — pending; the first baseline capture was black and is rejected. 2026-11-09: the MCP-cooked forest renders headed in its generated consumer game on both engines (default and `engine: "threejs"`), 2 runs per arm at spawn and walk, nvidia/turing checked, 0 console errors, no black frame; a fresh judge rates the default arm NEUTRAL against the threejs arm with every tree, rock and horizon present (PRD-762 Phase 3, sheets `prd-762/engine-vs-threejs-run{1,2}.jpg`).
 
 ## Current plan
 
