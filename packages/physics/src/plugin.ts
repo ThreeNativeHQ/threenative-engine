@@ -113,6 +113,12 @@ function visibleId(buffer: Readonly<Float32Array>, offset: number): number {
   return value;
 }
 
+/**
+ * Each game's `ctx.physics` once Rapier is up, which `recast()` waits on. A registry symbol on the
+ * ctx, not module state: the navigation subpath is its own bundle and may hold its own copy.
+ */
+const PHYSICS_READY = Symbol.for("threenative.physics.ready");
+
 export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   const backend = physicsSimulationBackend();
   let simulation: IPhysicsSimulation | undefined;
@@ -141,6 +147,8 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   // game-authored state can answer. Monotone for the plugin's lifetime, scene restarts included.
   let completedSteps = 0;
   let gameContext: ICtx<Record<string, unknown>, IPhysicsContext> | undefined;
+  /** Bumped by each setup and dispose, so an init that lands after dispose builds nothing. */
+  let generations = 0;
   const interpolationRemovals = new Map<PhysicsBody3D, () => void>();
   function updateInterpolation(body: PhysicsBody3D): void {
     interpolationRemovals.get(body)?.();
@@ -190,19 +198,32 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   }
 
   return {
-    setup: async (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
+    // Rapier's Wasm initializes while the scene loads: a game builds bodies in `enter()`, and the
+    // start gate holds `enter()` until `ctx.physics` is set, so a first visit does not wait for
+    // Rapier before loading its textures and world (PRD-860). With no gate, setup awaits it.
+    setup: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
       gameContext = ctx;
-      await backend.initialize();
-      const selected = backend.createSimulation(options);
-      simulation = selected;
-      if (runtime !== undefined) runtime.rapier = selected.version;
-      context = buildContext(selected);
-      ctx.physics = context;
-      unregisterObservations = runtime?.observations?.contribute({
-        capabilities: ["runtime.physics"],
-        sample: (request) => physicsObservations(ctx, runtime, request),
+      const generation = ++generations;
+      const ready = backend.initialize().then(() => {
+        if (generation !== generations)
+          throw new Error("rapier() was disposed before it initialized.");
+        const selected = backend.createSimulation(options);
+        simulation = selected;
+        if (runtime !== undefined) runtime.rapier = selected.version;
+        const built = buildContext(selected);
+        context = built;
+        ctx.physics = built;
+        unregisterObservations = runtime?.observations?.contribute({
+          capabilities: ["runtime.physics"],
+          sample: (request) => physicsObservations(ctx, runtime, request),
+        });
+        return built;
       });
-      return unregisterObservations;
+      Object.defineProperty(ctx, PHYSICS_READY, { configurable: true, value: ready });
+      const cleanup = () => unregisterObservations?.();
+      if (runtime?.holdStart === undefined) return ready.then(() => cleanup);
+      void runtime.holdStart(ready.then(() => undefined)).catch(() => undefined);
+      return cleanup;
     },
     update: (_ctx, dt) => {
       if (simulation === undefined) throw new Error("Physics plugin updated before setup.");
@@ -340,6 +361,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       ctx.physics = context;
     },
     dispose: () => {
+      generations += 1;
       unregisterObservations?.();
       unregisterObservations = undefined;
       for (const buoyancy of [...buoyancies]) buoyancy.dispose();

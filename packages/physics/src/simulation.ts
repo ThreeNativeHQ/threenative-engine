@@ -1857,6 +1857,10 @@ export function requirePhysicsSimulation(
     );
   }
   if (physics?.simulation !== undefined) return physics.simulation;
+  if (physics === undefined && world === undefined)
+    throw new Error(
+      "TN_PHYSICS_NOT_READY: `physics` is undefined. ctx.physics is set before Scene.enter(), not during load(), because Rapier initializes while the scene loads: create physics nodes in enter() or later.",
+    );
   const candidate =
     typeof world === "object" && world !== null && "simulation" in world
       ? (world as { readonly simulation?: unknown }).simulation
