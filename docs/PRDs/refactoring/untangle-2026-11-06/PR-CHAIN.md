@@ -21,7 +21,7 @@
 | [PRD-837](../../done/PRD-837-core-owns-each-shared-fact-once.md) | `prd:100%` | ✅ done | nothing (judge NEUTRAL on Strata forest and abyss) |
 | [PRD-838](../../done/PRD-838-scripts-share-one-runtime-layer.md) | `prd:100%` | ✅ done | nothing (`pnpm visuals` needs owner scores, see below) |
 | [PRD-839](../../done/PRD-839-ci-contract-is-a-model-not-text.md) | `prd:100%` | ✅ done | nothing: AC-2 measured, 25 of 25 job names identical to the last comparable run |
-| [PRD-842](PRD-842-native-tests-check-behaviour-not-source-text.md) | `prd:50%` | ⚠️ merged | Phase 2 box 2 and AC-2 wait on the macOS `build-ios-simulator` job; the variant fix (`simctl uninstall` before each install) is on the PR. The seven `ui-layer-host-contract` slice tests moved to [PRD-862](PRD-862-untangle-native-leftovers.md) |
+| [PRD-842](../../done/PRD-842-native-tests-check-behaviour-not-source-text.md) | `prd:100%` | ✅ done | `build-ios-simulator` green on run 42690949915 (head `6abdc3c1a`). The remaining source-text specs moved to [PRD-862](PRD-862-untangle-native-leftovers.md) |
 | [PRD-841](../../done/PRD-841-game-ts-stops-being-the-hub.md) | `prd:100%` | ✅ done, in `done/` | nothing: AC-1 93 core tests, AC-2 the starter golden path in its CI configuration exit 0 |
 | [PRD-834](../../done/PRD-834-cross-language-contracts-are-generated.md) | `prd:100%` | ✅ done, in `done/` | nothing: the `render` → `renderer` fold is wired, `pnpm native:verify:desktop` exit 0 and the starter perf lane read two frame-budget windows |
 | [PRD-840](../../done/PRD-840-platform-difference-is-a-value.md) | `prd:100%` | ✅ done | AC-1 measured (identical conformance outcomes before/after); AC-2 web judge **NEUTRAL**. The native capture and the frame-time A/B moved to [PRD-862](PRD-862-untangle-native-leftovers.md) (owner, 2026-11-09) |
@@ -41,7 +41,7 @@ flowchart TD
   E["Step 5 — fresh Opus judge on the PRD-840 captures<br/>tick AC-2"]
   F["Step 6 — merge 834 and 840<br/>focused checks: typecheck, lint, core and playtest suites,<br/>native:build, wasm:build, native:verify:desktop"]
   G["Step 7 — push, add the release-proof label<br/>one ci.yml run plus build-ios-simulator"]
-  H["Step 8 — close the CI boxes<br/>PRD-839 AC-2 job-list diff, PRD-842 iOS checks"]
+  H["Step 8 — close the CI boxes<br/>PRD-839 AC-2 job-list diff, PRD-842 iOS checks (both done)"]
   I["Step 9 — every PRD at 100% and in done/<br/>label prd:100%, PR body updated"]
   J["Step 10 — merge queue, full board, squash-merge"]
   A --> B --> C --> F

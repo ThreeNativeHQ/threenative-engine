@@ -4,7 +4,7 @@
 **Priority:** P2 — the refactor in PR #632 has no native judge verdict, no frame-time A/B, and seven native slice tests still read source as text.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-840](../../done/PRD-840-platform-difference-is-a-value.md), [PRD-842](PRD-842-native-tests-check-behaviour-not-source-text.md)
+**Depends on:** [PRD-840](../../done/PRD-840-platform-difference-is-a-value.md), [PRD-842](../../done/PRD-842-native-tests-check-behaviour-not-source-text.md)
 **Batch:** [Untangle report, 2026-11-06](README.md)
 
 ## Context
@@ -19,12 +19,14 @@ could not run inside PRD-840 and PRD-842, so they move here with their evidence:
   (L1@256) drawCalls is 0`, and the host load made absolutes invalid.
 - PRD-842: seven `ui-layer-host-contract` tests slice `ui_overlay.cpp`, `window.cpp` or
   `ui_overlay_ios.mm` by regex (PRD-842, "What still reads source as text", rows marked `open`).
+- PRD-842 box 2: `player-host-globals.test.mjs` still reads `.cpp` text, and 22 files that call
+  `readFileSync` name `bindings.cpp`, `runtime.cpp` or `browser-renderer.ts`.
 
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The visual judge returns NEUTRAL or better on the starter on native desktop, the PRD-840 BEFORE `9940d76c6` against its merged AFTER, same pose. proof: judge verdict on this box.
 - [ ] AC-2 [local]: The starter frame time does not regress on web or native across the PRD-840 arms. proof: `pnpm bench:engines` paired A/B on a quiet host.
-- [ ] AC-3 [local]: `ui-layer-host-contract` reads no `.cpp` or `.mm` text outside its four wire tests. proof: `rg -n 'readFileSync' packages/runtime-native/tests/ui-layer-host-contract.test.mjs`.
+- [ ] AC-3 [local]: Source-text specs remain only for the ABI digest and the four named wire tests of `ui-layer-host-contract`. proof: `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists only the ABI spec and `ui-layer-host-contract`.
 
 ## Blocked on
 
@@ -41,3 +43,4 @@ could not run inside PRD-840 and PRD-842, so they move here with their evidence:
 #### Phase 3: Slice tests become behaviour checks
 - [ ] The four Linux slices (keyboard routing, gestures outside the window, keyboard ownership, CSS scroll traces) run against header seams. proof: `pnpm exec vitest run tests/ui-layer-host-contract.test.mjs` in `packages/runtime-native`.
 - [ ] The three iOS rows (detach order, MRC overlay link, scheme paths) get a macOS lane check or a recorded decision. proof: the `build-ios-simulator` job.
+- [ ] `player-host-globals` and the specs on `bindings.cpp`, `runtime.cpp` and `browser-renderer.ts` become behaviour checks, or are deleted where a behaviour test covers them. proof: AC-3.
