@@ -37,6 +37,20 @@ overview. Give those captures to a fresh judge subagent for absolute scoring
 against the parent rubric. Record its scores and before/after views in the PR.
 All rows must reach 4. Lowering that threshold needs an owner decision first.
 
+## Baseline (2026-11-09)
+
+`KIT=<kit> pnpm --filter strata-terrain-preview test:kit` on PR #635 head `01f6b3772`, headed WebGPU nvidia/turing (RTX 2080), sheets `prd-580/baseline-2026-11-09-<kit>.jpg` on `pr635-screenshots`. A fresh judge scored absolutely (4 = a good UE5 starter scene):
+
+| Kit | ground | trees_rocks | lighting_depth | water | artifacts |
+| --- | --- | --- | --- | --- | --- |
+| forest | 3 | 3 | 3 | 2 | 3 |
+| coastal | 2 | 2 | 2 | 3 | 2 |
+| alpine | 2 | 1 | 2 | n/a | 1 |
+| desert | 3 | 1 | 3 | n/a | 3 |
+| tundra | 2 | 1 | 2 | 1 | 1 |
+
+No row reaches 4. The defects the judge named first: a white, featureless sky and hard world edge in every elevated view; a visible texture grid on sand, dunes and tundra ground; flat untextured water (forest lake, tundra kettles and rivers); one repeated rock texture over the alpine peak and no alpine or desert vegetation; untextured coastal tree silhouettes; the forest lawn has no grass blades at walking height (sparse ferns only). Three of the five proofs also exited 1 on performance gates at host load 40-49 (forest `maxFrameMsP95` 22.06 ms with GPU 18.83 ms, coastal one `TN_BRIDGE_WARNING` on an 84 ms frame, alpine too few GPU samples); the captures are complete, and the forest GPU half matches the PRD-584 near-fir bill.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local, actor: implementing agent]: The authored sky and horizon reach at least 4 on lighting_depth in elevated views of all five kits. proof: `KIT=<world> pnpm --filter strata-terrain-preview test:kit` for forest, coastal, alpine, desert and tundra, plus fresh judge scores on edge and overview captures — Evidence: pending.
