@@ -909,8 +909,11 @@ export async function createGroundMaterial(
       },
       materialFactory: ({ color, normal }) => {
         const albedo = vec4(color, 1);
-        // Concavity occludes sky bounce, leaving direct sunlight physically separate.
-        material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow));
+        // Concavity occludes sky bounce, leaving direct sunlight physically separate; the
+        // horizon the surrounding relief makes (`skyVisibility`) shades valleys and gorges too.
+        material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow)).mul(
+          attribute<"float">("sky", "float"),
+        );
 
         // 50–200 metre vegetation tones survive texture mipmapping in the overview.
         const dryness = otherBiome
@@ -1172,6 +1175,8 @@ export function createTerrain(
   data: IBakedWorld,
   assets?: IAssetLoader,
   biome?: IBiome,
+  /** The baked `skyVisibility` per vertex; without it the ground keeps the whole sky. */
+  sky?: Float32Array,
 ): { collar: HeightfieldCollar; field: Heightfield; mesh: Mesh } {
   const field = new Heightfield({
     rows: data.resolution,
@@ -1189,6 +1194,14 @@ export function createTerrain(
   geometry.setAttribute(
     "canopy",
     new Float32BufferAttribute(new Float32Array(geometry.getAttribute("position").count), 1),
+  );
+  // The share of the sky each vertex sees past the relief around it, for the ground's ambient term.
+  const vertices = geometry.getAttribute("position").count;
+  if (sky && sky.length !== vertices)
+    throw new RangeError(`Baked sky visibility has ${sky.length} values for ${vertices} vertices`);
+  geometry.setAttribute(
+    "sky",
+    new Float32BufferAttribute(sky ?? new Float32Array(vertices).fill(1), 1),
   );
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   const mesh: Mesh = new Mesh(geometry, material);
@@ -1254,6 +1267,11 @@ export function createTerrain(
   horizonGeometry.setAttribute(
     "canopy",
     new Float32BufferAttribute(new Float32Array(edgePositions.count), 1),
+  );
+  // The ground material reads `sky` too; the collar lies past the baked square and keeps the sky.
+  horizonGeometry.setAttribute(
+    "sky",
+    new Float32BufferAttribute(new Float32Array(edgePositions.count).fill(1), 1),
   );
   const horizon: Mesh = new Mesh(horizonGeometry, material);
   horizon.name = "temperate-distant-ridges";

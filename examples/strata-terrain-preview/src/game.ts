@@ -36,7 +36,7 @@ import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render
 import { HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/ocean.js";
-import { loadCanopy, loadPropPackage, propCounts } from "./render/propWorld.js";
+import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/propWorld.js";
 import { invalidatePropShadows } from "./render/propWorld.js";
 import { buildPropVariants } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
@@ -110,14 +110,17 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         return;
       }
       const horizon = loadHorizonSurroundings(ctx.assets);
-      const [packageData, canopy] = await Promise.all([
+      const [packageData, canopy, sky] = await Promise.all([
         loadPropPackage(ctx.assets, world),
         loadCanopy(ctx.assets, world),
+        loadSky(ctx.assets, world),
       ]);
       this.#scatter = { package: packageData, canopy, counts: propCounts(packageData) };
       await horizon;
       // Prepare scenery while the scene loads; enter only attaches it.
-      this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
+      // `?skyAo=off` is the named before arm: the ground keeps the whole sky, as it did before.
+      const skyAo = new URLSearchParams(globalThis.location?.search ?? "").get("skyAo") !== "off";
+      this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome, skyAo ? sky : undefined);
       this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
       if (spec.water.some((body) => body.kind === "ocean")) {
         this.#ocean = createOcean();

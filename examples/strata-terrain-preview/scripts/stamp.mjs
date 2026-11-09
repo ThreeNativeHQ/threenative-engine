@@ -19,6 +19,7 @@ const biomeFile = (name) =>
 /** Every file a bake reads besides the recipes: the game's own source and the package build. */
 const SOURCES = [
   "../src/render/terrain.ts",
+  "../src/render/skyVisibility.ts",
   "../src/render/biomes.ts",
   "../src/world/terrainAssets.ts",
   "../src/render/benchmark.ts",
@@ -68,6 +69,7 @@ export async function isFresh(outputDir) {
           ...WORLDS.flatMap((name) => [
             `${name}.props.json`,
             `${name}.canopy.bin`,
+            `${name}.sky.bin`,
             `${name}.world.json`,
             `${name}.layers.json`,
             `${name}.splat.rgba8`,

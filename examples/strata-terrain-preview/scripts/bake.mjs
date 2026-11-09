@@ -116,6 +116,7 @@ if (!isEntry) {
       await writeFile(new URL(`${name}.json`, outputDir), JSON.stringify(world));
   // Import after the JSON outputs exist: terrain's horizon reads the newly baked continuation.
   const { paintCanopy } = await import("../src/render/terrain.js");
+  const { skyVisibility } = await import("../src/render/skyVisibility.js");
   const { writeProps } = await import("./props.mjs");
   for (const name of WORLDS) {
     const data = worlds[name];
@@ -129,6 +130,12 @@ if (!isEntry) {
     await writeFile(
       new URL(`${name}.canopy.bin`, outputDir),
       new Uint8Array(canopy.buffer, canopy.byteOffset, canopy.byteLength),
+    );
+    // The share of the sky each vertex sees past the relief, one byte a vertex, for the ground's AO.
+    const sky = skyVisibility(data.heights, data.resolution, data.size);
+    await writeFile(
+      new URL(`${name}.sky.bin`, outputDir),
+      Uint8Array.from(sky, (value) => Math.round(value * 255)),
     );
     const buckets = await writeProps(outputDir, name, scatter[name].placements, data.size);
     mesh.geometry.dispose();

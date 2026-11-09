@@ -191,6 +191,15 @@ export async function loadCanopy(
   return new Float32Array(await response.arrayBuffer());
 }
 
+/** The share of the sky each terrain vertex sees past the relief, as `skyVisibility` baked it. */
+export async function loadSky(
+  assets: Pick<IAssetLoader, "resolve">,
+  world: string,
+): Promise<Float32Array> {
+  const response = await fetchBakedFile(assets, `world/${world}.sky.bin`, "sky visibility map");
+  return Float32Array.from(new Uint8Array(await response.arrayBuffer()), (byte) => byte / 255);
+}
+
 /** The bucket's records, decoded from the eight float32 per record its container holds. */
 function recordsOf(bucket: IPropBucketPackage): IRecord[] {
   const floats = new Float32Array(
