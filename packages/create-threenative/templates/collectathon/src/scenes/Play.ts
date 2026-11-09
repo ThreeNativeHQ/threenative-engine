@@ -110,7 +110,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
     });
-    const course = buildCourse(makeRng(6402), surfaces, GRASS_SHARE[tier]);
+    // The island is the same every run of this build: the first run draws it, a repeat reads it
+    // back from `ctx.assets.memo` (~105 ms of the load on a laptop).
+    const course = await buildCourse(makeRng(6402), surfaces, GRASS_SHARE[tier], ctx.assets.memo);
     this.#course = course;
     ctx.add(course.group);
     ctx.entities.add("course", { debug: () => course.audit });
