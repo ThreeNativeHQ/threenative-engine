@@ -885,6 +885,9 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
   } catch (error) {
     reportSceneLoadFailure(error);
     settleLoaded(error);
+    // A runner's describe waits on these: answer it with the failure now, as every other start
+    // failure below does, instead of leaving it to run out its whole handshake budget.
+    for (const startGate of startGates) startGate.rejectEntered(error);
     game.teardown(ctx);
     throw error;
   }
