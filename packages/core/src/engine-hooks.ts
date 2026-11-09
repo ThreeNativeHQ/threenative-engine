@@ -12,8 +12,11 @@ export const COPY_MATRIX_WORLD_HOOK = "__tnCopyMatrixWorld";
 
 type CopyMatrixWorld = (target: Matrix4) => void;
 
+/** An `Object3D` that may carry the engine's hook; the property is absent on plain three.js. */
+type HookCarrier = Object3D & { readonly [COPY_MATRIX_WORLD_HOOK]?: unknown };
+
 function hookOf(object: Object3D): CopyMatrixWorld | undefined {
-  const hook = (object as unknown as Record<string, unknown>)[COPY_MATRIX_WORLD_HOOK];
+  const hook = (object as HookCarrier)[COPY_MATRIX_WORLD_HOOK];
   return typeof hook === "function" ? (hook as CopyMatrixWorld) : undefined;
 }
 
