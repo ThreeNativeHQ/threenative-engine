@@ -405,13 +405,20 @@ void RenderDatabase::sortCenterOf(const BufferGeometry& geometry, DrawItem& d) {
         d.sortCenter = std::array<double, 3>{sphere->center.x, sphere->center.y, sphere->center.z};
         return;
     }
-    // BufferGeometry.js:1074-1080: the sphere is centred on the box, so the box centre is the key.
-    Box3 box;
-    Vector3 point, center;
-    box.makeEmpty();
-    for (uint64_t i = 0, count = position->count(); i < count; ++i) box.expandByPoint(position->getXYZ(i, point));
-    box.getCenter(center);
-    d.sortCenter = std::array<double, 3>{center.x, center.y, center.z};
+    // BufferGeometry.js:1074-1080: the sphere is centred on the box, so the box centre is the key. A material
+    // edited every frame refreshes its draw every frame; the centre moves only with the vertices.
+    if (geometry.sortCenterRevision_ != geometry.revision() || geometry.sortCenterVersion_ != position->version()) {
+        Box3 box;
+        Vector3 point, center;
+        box.makeEmpty();
+        for (uint64_t i = 0, count = position->count(); i < count; ++i) box.expandByPoint(position->getXYZ(i, point));
+        box.getCenter(center);
+        geometry.sortCenter_ = {center.x, center.y, center.z};
+        geometry.sortCenterRevision_ = geometry.revision();
+        geometry.sortCenterVersion_ = position->version();
+        ++projection::detail::sortCenterPassCount();
+    }
+    d.sortCenter = geometry.sortCenter_;
 }
 
 // three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.

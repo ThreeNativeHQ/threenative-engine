@@ -23,6 +23,7 @@
 #include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/math/Vector.h"
 
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -234,6 +235,12 @@ public:
     mutable uint64_t contentKey_ = 0;
     mutable uint64_t contentEpoch_ = 0;
     mutable bool contentStreamed_ = false;
+    // RenderDatabase::sortCenterOf: the box centre a geometry with no bounding sphere is keyed by, and the
+    // revision and position version it was taken at, so a draw whose material moves every frame re-keys
+    // without a pass over every vertex.
+    mutable std::array<double, 3> sortCenter_{};
+    mutable uint64_t sortCenterRevision_ = std::numeric_limits<uint64_t>::max();
+    mutable uint32_t sortCenterVersion_ = 0;
 
 private:
     uint64_t revision_ = 0;
