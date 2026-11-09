@@ -105,18 +105,62 @@ const HORIZON_REACH = 2100;
  * Catmull-Rom sample blended in past 300 m, and the seam step that closes the detail boundary.
  */
 export function createHorizonCollar(data: IBakedWorld, world: WorldName): HeightfieldCollar {
+  return new HeightfieldCollar({
+    height: collarHeight(data, world),
+    resolution: data.resolution,
+    ringDistance: (ring) => (ring / HORIZON_RINGS) ** 1.65 * HORIZON_REACH,
+    rings: HORIZON_RINGS,
+    size: data.size,
+    walkBand: HORIZON_WALK_BAND,
+  });
+}
+
+/** The square's own heights as a bilinear query, centred on the origin. */
+function squareField(data: IBakedWorld): Heightfield {
+  return new Heightfield({
+    rows: data.resolution,
+    columns: data.resolution,
+    width: data.size,
+    depth: data.size,
+    origin: { x: 0, z: 0 },
+    heights: Float32Array.from(data.heights),
+  });
+}
+
+/**
+ * The ground at any `(x, z)` of one world: the playable square inside it, the collar's own height
+ * past its edge (`distance` is how far past the edge the point stands). Streamed tiles sample this,
+ * so a tile that crosses the edge draws the same surface the square and the collar draw.
+ */
+export function createWorldHeight(
+  data: IBakedWorld,
+  world: WorldName,
+): (x: number, z: number) => number {
+  const square = squareField(data);
+  const collar = collarHeight(data, world);
+  const half = data.size / 2;
+  return (x, z) => {
+    const distance = Math.max(Math.abs(x), Math.abs(z)) - half;
+    return distance <= 0
+      ? square.heightAt(x, z)
+      : collar({ distance, x, z } as IHeightfieldCollarSite);
+  };
+}
+
+function collarHeight(
+  data: IBakedWorld,
+  world: WorldName,
+): (site: IHeightfieldCollarSite) => number {
   const surveyed = continuationFields[world];
   if (!surveyed || !sources[world])
     throw new RangeError(`Missing surveyed surroundings for '${world}'`);
-  const segments = data.resolution - 1;
+  const square = squareField(data);
   const half = data.size / 2;
-  const height = ({ distance, x, z }: IHeightfieldCollarSite): number => {
+  return ({ distance, x, z }: IHeightfieldCollarSite): number => {
     // The square's edge point this vertex grew from: the seam is stated there, not out at the ring.
     const scale = (half + distance) / half;
-    const edgeX = x / scale;
-    const edgeZ = z / scale;
-    const column = Math.round((edgeX / data.size + 0.5) * segments);
-    const row = Math.round((edgeZ / data.size + 0.5) * segments);
+    const edgeX = Math.min(half, Math.max(-half, x / scale));
+    const edgeZ = Math.min(half, Math.max(-half, z / scale));
     const near = surveyed.heightAt(x, z);
     // Past 300 m the collar takes a Catmull-Rom sample of the survey, blended in over 600 m:
     // bilinear heights turn a diagonal wall into grid-aligned skyline stairs, and the curve has no
@@ -125,19 +169,11 @@ export function createHorizonCollar(data: IBakedWorld, world: WorldName): Height
     const fold = Math.min(1, Math.max(0, (distance - 300) / 600));
     const smoothed = fold > 0 ? (cubicAt(world, x, z) - near) * fold * fold * (3 - 2 * fold) : 0;
     // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
-    // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real.
-    const seam =
-      (data.heights[row * data.resolution + column] as number) - surveyed.heightAt(edgeX, edgeZ);
+    // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real. The
+    // square's edge is read between its vertices too, so a streamed tile meets it with no step.
+    const seam = square.heightAt(edgeX, edgeZ) - surveyed.heightAt(edgeX, edgeZ);
     return near + smoothed + seam * Math.exp(-distance / 40);
   };
-  return new HeightfieldCollar({
-    height,
-    resolution: data.resolution,
-    ringDistance: (ring) => (ring / HORIZON_RINGS) ** 1.65 * HORIZON_REACH,
-    rings: HORIZON_RINGS,
-    size: data.size,
-    walkBand: HORIZON_WALK_BAND,
-  });
 }
 
 /**

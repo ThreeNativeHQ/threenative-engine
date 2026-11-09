@@ -73,6 +73,7 @@ biomes meet at a blended border. Look stays in game `src/render/`, and residency
 
 - [ ] The playable terrain is generator tiles streamed by `TerrainTiles` around the player, with colliders in the collider radius. proof: `playtests/stream.playtest.json` walks 2 km in a straight line and asserts `travel` >= 2000 and `grounded`
 - [ ] Tiles join with no gap, to each other and to the horizon ring. proof: the same scenario with `?tnTerrainValidate=1` asserts `maxSeamGap` <= 0.01 m
+  2026-11-09, groundwork only: `createWorldHeight(data, world)` (`src/render/horizon.ts`) is the one height a streamed tile samples, the square inside and the collar's own height past its edge. The collar's seam step was read at the nearest edge vertex, so between vertices the joined surface stepped 0.56 m; it now reads the square bilinearly along the edge. `__tests__/world-height.spec.ts`: the edge gap is 0.56 m red and <= 0.01 m green, and the sampler answers the collar mesh's own heights; every forest and coastal collar vertex matches the previous build within 1 mm. Still open: the tiles themselves. The ground material reads square-space maps (curvature, erosion) and the collar draws boundary vertex colours, so a tile past the square needs its own ground look in `src/render/` and a visual judge.
 - [ ] Streaming builds no pipeline and adds no hitch after the reveal. proof: `stream.playtest.json` asserts `pipelinesSinceReveal` 0 and no `TN_SCENE_WARNING` or `TN_HOT_CALL`; `loop.playtest.json` stays green
 
 ### Phase 3 — Proof by a new biome
