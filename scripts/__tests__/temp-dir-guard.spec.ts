@@ -181,6 +181,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/player-thread-priority-desktop.mjs",
+    "The release-lane probe stages its bundle under the package's untracked build directory, not the OS temp directory, and removes it on exit.",
+  ],
+  [
     "packages/runtime-native/tests/native-engine/player-ui-overlay.mjs",
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
