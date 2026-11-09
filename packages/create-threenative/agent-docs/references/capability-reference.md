@@ -4424,7 +4424,7 @@ export function rapier(options: IPhysicsOptions = { … }
 ```
 
 - **Use when:** add physics to a portable game · provide the context used by character and rigid bodies
-- **Constraints:** place rapier() before recast() in the plugin list
+- **Constraints:** place rapier() before recast() in the plugin list · ctx.physics is set before Scene.enter(), not during load(): Rapier initializes while the scene loads, so create bodies in enter() or later (TN_PHYSICS_NOT_READY)
 - **Requires:** npm i @threenative/physics
 
 ```ts

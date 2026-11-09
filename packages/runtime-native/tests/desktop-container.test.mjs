@@ -291,6 +291,12 @@ test('macOS plist names the icon that was actually staged', () => {
   assert.equal(`${iconName}.icns`, basename(manifest.app.icon));
 });
 
+test('macOS plist opts the game into Game Mode (PRD-859)', () => {
+  const plist = containerMetadata({ platform: 'darwin', config })['Contents/Info.plist'];
+  assert.match(plist, /<key>LSSupportsGameMode<\/key><true\/>/u);
+  assert.match(plist, /<key>LSApplicationCategoryType<\/key><string>public\.app-category\.games<\/string>/u);
+});
+
 test('macOS metadata escapes XML text from authored application identity', () => {
   const plist = containerMetadata({
     platform: 'darwin', config: { app: { ...config.app, name: 'R&D <Orbit>' } },

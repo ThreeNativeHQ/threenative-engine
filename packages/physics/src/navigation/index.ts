@@ -54,19 +54,28 @@ function disposeNavigation(navigation: INavigationContext): void {
 export function recast(): NavigationPlugin {
   let navigation: INavigationContext | undefined;
   return {
-    setup: async (ctx: ICtx<Record<string, unknown>, IPhysicsContext>) => {
-      await initialize();
-      if (ctx.physics === undefined)
+    // Like rapier(), Recast initializes while the scene loads and holds `enter()` until it is up.
+    setup: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
+      // rapier() leaves its readiness here (`plugin.ts` PHYSICS_READY); this bundle has no copy of it.
+      const physics: Promise<IPhysicsContext> | undefined = Reflect.get(
+        ctx,
+        Symbol.for("threenative.physics.ready"),
+      );
+      if (physics === undefined)
         throw new Error("recast() requires rapier() earlier in the plugins array.");
-      const empty = emptyNavigation();
-      navigation = {
-        agents: new Set(),
-        navMesh: empty.navMesh,
-        obstacles: new Set(),
-        query: empty.query,
-        regions: new Set(),
-      };
-      ctx.physics.navigation = navigation;
+      const ready = Promise.all([physics, initialize()]).then(([context]) => {
+        const empty = emptyNavigation();
+        navigation = {
+          agents: new Set(),
+          navMesh: empty.navMesh,
+          obstacles: new Set(),
+          query: empty.query,
+          regions: new Set(),
+        };
+        context.navigation = navigation;
+      });
+      if (runtime?.holdStart === undefined) return ready.then(() => undefined);
+      void runtime.holdStart(ready).catch(() => undefined);
       return undefined;
     },
     update: (ctx, dt) => {

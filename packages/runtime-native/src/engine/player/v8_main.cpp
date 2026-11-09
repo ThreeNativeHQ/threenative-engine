@@ -340,10 +340,10 @@ class V8Game {
     /** A frame with nothing to draw yet: the game's frame callbacks still run (run.h frameWithoutView). */
     void frameWithoutView() { presentFrame(); flushCompute(); profileFrame(false); }
     /** PRD-613: the loop's wait for the frame its render thread has in flight; absent without that thread. */
-    void setRenderBarrier(std::function<void()> barrier) { renderBarrier_ = std::move(barrier); }
+    void setRenderBarrier(std::function<void(bool)> barrier) { renderBarrier_ = std::move(barrier); }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
         presentFrame();  // the game's frame callbacks may change the renderer state applied below
-        idleRenderer();  // the settings below are the renderer's own, so the frame in flight ends first
+        idleRenderer(false);  // the settings below are the renderer's own, so the frame in flight ends first
         flushCompute();  // PRD-620: kernels queued this frame run ahead of its passes
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
@@ -372,8 +372,9 @@ class V8Game {
     RenderDatabase overlayDatabase_;
     static void renderOverlay(const v8::FunctionCallbackInfo<v8::Value>& info);
     // Everything this game does to the renderer outside the loop's own handoff calls this first.
-    void idleRenderer() { if (renderBarrier_) renderBarrier_(); }
-    std::function<void()> renderBarrier_;
+    /** `touch` false: the end of the frame's script, not a mid-frame renderer touch the next present must wait for. */
+    void idleRenderer(bool touch = true) { if (renderBarrier_) renderBarrier_(touch); }
+    std::function<void(bool)> renderBarrier_;
     void presentFrame();
     void profileFrame(bool drawn = true);
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
@@ -387,6 +388,13 @@ class V8Game {
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void clearTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void initTexture(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void copyTexture(const v8::FunctionCallbackInfo<v8::Value>& info);
+    /** Runs a texture op now, or queues it until the renderer opens (a game's startup runs before it). */
+    void textureOp(std::function<void(Renderer&)> op);
+    std::vector<std::function<void(Renderer&)>> pendingTextureOps_;
+    /** Any texture class, as tnw_web_copy_texture reads it: a material map, or the array or volume a copy writes into. */
+    std::shared_ptr<Texture> textureArgument(v8::Local<v8::Value> value);
     static void hasRenderer(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void captureFace(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -864,6 +872,69 @@ void V8Game::clearTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
                       info[1]->BooleanValue(isolate), info[2]->BooleanValue(isolate));
 }
 
+void V8Game::textureOp(std::function<void(Renderer&)> op) {
+    if (renderer_ == nullptr) return pendingTextureOps_.push_back(std::move(op));
+    idleRenderer();
+    flushCompute();  // a copy may read what a queued kernel writes
+    try {
+        op(*renderer_);
+    } catch (const std::exception& error) {
+        // A queued op has no caller left to throw to: it names itself here, and the game draws on.
+        std::fprintf(stderr, "TN_NATIVE_TEXTURE_COPY: %s\n", error.what());
+    }
+}
+
+// `tn.initTexture(texture, texelsOnGpu)`: three's renderer.initTexture (as tnw_web_init_texture). `texelsOnGpu` is three's
+// `source.dataReady = false`: nothing is uploaded and the CPU texels are dropped, because copyTextureToTexture writes them.
+void V8Game::initTexture(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    const auto texture = info.Length() == 2 && info[1]->IsBoolean() ? game.textureArgument(info[0]) : nullptr;
+    if (texture == nullptr) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_NATIVE_INIT_TEXTURE: expected a texture and a boolean")));
+        return;
+    }
+    const bool texelsOnGpu = info[1]->BooleanValue(isolate);
+    texture->dataReady = !texelsOnGpu;
+    game.textureOp([texture, texelsOnGpu](Renderer& renderer) {
+        renderer.initTexture(*texture);
+        if (texelsOnGpu) std::vector<uint8_t>().swap(texture->data);
+    });
+}
+
+// `tn.copyTexture(source, destination, sx, sy, sz, w, h, d, dx, dy, dz, srcLevel, dstLevel)`: three's
+// renderer.copyTextureToTexture (as tnw_web_copy_texture); a negative `w` takes the source's image size.
+void V8Game::copyTexture(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    const auto refuse = [&](const char* reason) { isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, reason))); };
+    const auto source = info.Length() == 13 ? game.textureArgument(info[0]) : nullptr;
+    const auto destination = info.Length() == 13 ? game.textureArgument(info[1]) : nullptr;
+    if (source == nullptr || destination == nullptr) return refuse("TN_NATIVE_COPY_TEXTURE: expected two textures and 11 numbers");
+    std::array<int32_t, 11> n{};
+    for (int i = 0; i < 11; ++i) {
+        if (!info[i + 2]->IsNumber()) return refuse("TN_NATIVE_COPY_TEXTURE: expected two textures and 11 numbers");
+        n[i] = info[i + 2]->Int32Value(isolate->GetCurrentContext()).FromMaybe(0);
+    }
+    const auto [sx, sy, sz, w, h, d, dx, dy, dz, srcLevel, dstLevel] = n;
+    if (std::min({sx, sy, sz, dx, dy, dz, srcLevel, dstLevel, d}) < 0 || (w >= 0 && h < 0))
+        return refuse("TN_NATIVE_COPY_TEXTURE: negative origin, level or extent");
+    Renderer::TextureCopy copy;
+    copy.srcX = uint32_t(sx); copy.srcY = uint32_t(sy); copy.srcZ = uint32_t(sz);
+    copy.width = w < 0 ? 0 : uint32_t(w); copy.height = w < 0 ? 0 : uint32_t(h); copy.depth = uint32_t(d);
+    copy.dstX = uint32_t(dx); copy.dstY = uint32_t(dy); copy.dstZ = uint32_t(dz);
+    copy.srcLevel = uint32_t(srcLevel); copy.dstLevel = uint32_t(dstLevel);
+    game.textureOp([source, destination, copy](Renderer& renderer) { renderer.copyTextureToTexture(*source, *destination, copy); });
+}
+
+std::shared_ptr<Texture> V8Game::textureArgument(v8::Local<v8::Value> value) {
+    tn_handle_t handle{};
+    auto* object = adapter_->unwrap(value, handle) ? tn::abi::objectOf(handle) : nullptr;
+    if (object == nullptr || !tn::binding::isGpuTextureClass(object->cls))
+        return nullptr;
+    return std::static_pointer_cast<Texture>(object->ptr);
+}
+
 // `tn.hasRenderer()`: whether the player has opened its renderer. The game's startup runs before it,
 // so a render() then only publishes the scene, and a draw into a render target has nothing to draw with.
 void V8Game::hasRenderer(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -893,7 +964,7 @@ void V8Game::settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus st
 
 void V8Game::flushCompute() {
     if (computeQueue_.empty() || renderer_ == nullptr) return;
-    idleRenderer();
+    idleRenderer(false);  // each mid-frame caller has already reached the barrier as a touch
     computeQueue_.flush(*renderer_, [](const std::string& reason) { std::fprintf(stderr, "%s\n", reason.c_str()); });
 }
 
@@ -1202,6 +1273,8 @@ void V8Game::initialize(Renderer& renderer) {
     outputChanged_ = false;
     if (post_) renderer.setPostGraph(post_);
     pollCompilations();
+    // Texture copies the game's startup queued (prd493's terrain splat stacks its layers in load()).
+    for (auto& op : std::exchange(pendingTextureOps_, {})) textureOp(std::move(op));
 }
 
 bool V8Game::observe(const std::string& method, const json::Value* argument, json::Value& result, std::string& error) {
@@ -1464,6 +1537,8 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "captureFace"), v8::Function::New(ctx, &captureFace, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "clearTarget"), v8::Function::New(ctx, &clearTarget, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "initTexture"), v8::Function::New(ctx, &initTexture, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "copyTexture"), v8::Function::New(ctx, &copyTexture, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readFrame"), v8::Function::New(ctx, &readFrame, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compute"), v8::Function::New(ctx, &compute, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readStorage"), v8::Function::New(ctx, &readStorage, self).ToLocalChecked()).Check();
@@ -1970,7 +2045,7 @@ int main(int argc, char** argv) {
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
     configured.overlay = [&game] { return game.overlay(); };
     configured.drawOverlay = [&game](Renderer& renderer) { game.drawOverlay(renderer); };
-    configured.setRenderBarrier = [&game](std::function<void()> barrier) { game.setRenderBarrier(std::move(barrier)); };
+    configured.setRenderBarrier = [&game](std::function<void(bool)> barrier) { game.setRenderBarrier(std::move(barrier)); };
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
     // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=
     // native-css picks the CSS backend. The loop reaches it only through these hooks.

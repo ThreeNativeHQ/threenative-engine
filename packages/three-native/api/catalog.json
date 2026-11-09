@@ -224,6 +224,15 @@
       "constructor": [],
       "fields": [
         {
+          "name": "blendMode",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "duration",
           "type": "number",
           "mutable": false,
@@ -251,7 +260,21 @@
           }
         }
       ],
-      "methods": []
+      "methods": [
+        {
+          "name": "toJSON",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "{ name: string; duration: number; tracks: Array<{ name: string; times: number[]; values: number[]; interpolation?: number; type: string }>; blendMode: number }"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "AnimationMixer",
@@ -5550,6 +5573,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "CubeTexture",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "Texture",
+      "constructor": [],
+      "fields": [],
+      "methods": []
     },
     {
       "name": "Data3DTexture",
@@ -14888,7 +14923,7 @@
         {
           "name": "name",
           "type": "string",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -14906,7 +14941,7 @@
         {
           "name": "values",
           "type": "Float32Array",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -14920,6 +14955,51 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getInterpolation",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getValueSize",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setInterpolation",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "interpolation",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -18817,7 +18897,7 @@
         {
           "name": "name",
           "type": "string",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -18835,7 +18915,7 @@
         {
           "name": "values",
           "type": "Float32Array",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -18849,6 +18929,51 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getInterpolation",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getValueSize",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setInterpolation",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "interpolation",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -26966,7 +27091,7 @@
         {
           "name": "name",
           "type": "string",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -26984,7 +27109,7 @@
         {
           "name": "values",
           "type": "Float32Array",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -26998,6 +27123,51 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getInterpolation",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getValueSize",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setInterpolation",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "interpolation",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -30332,6 +30502,15 @@
       "constructor": [],
       "fields": [
         {
+          "name": "dataReady",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "version",
           "type": "number",
           "mutable": false,
@@ -30907,6 +31086,104 @@
       "constructor": [],
       "fields": [],
       "methods": []
+    },
+    {
+      "name": "Storage3DTexture",
+      "kind": "class",
+      "source": "three/webgpu",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "Texture",
+      "constructor": [
+        {
+          "name": "width",
+          "type": "number",
+          "optional": true,
+          "default": "1"
+        },
+        {
+          "name": "height",
+          "type": "number",
+          "optional": true,
+          "default": "1"
+        },
+        {
+          "name": "depth",
+          "type": "number",
+          "optional": true,
+          "default": "1"
+        }
+      ],
+      "fields": [
+        {
+          "name": "is3DTexture",
+          "type": "true",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "isStorageTexture",
+          "type": "true",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "mipmapsAutoUpdate",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "wrapR",
+          "type": "Wrapping",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "setSize",
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "width",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "height",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "depth",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "async": false,
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     }
   ]
 }

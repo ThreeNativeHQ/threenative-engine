@@ -576,6 +576,7 @@ function cacheLoader(load: (path: string) => Object3D | undefined = () => makeMo
   const released: string[] = [];
   const cleared: number[] = [];
   const assets: IAssetLoader = {
+    memo: () => Promise.reject(new Error("unused")),
     audio: () => Promise.reject(new Error("unused")),
     cache: {
       backgroundFill: false,

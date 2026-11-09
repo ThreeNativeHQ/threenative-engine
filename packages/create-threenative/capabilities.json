@@ -5621,7 +5621,10 @@
     },
     {
       "aliases": [],
-      "constraints": ["place rapier() before recast() in the plugin list"],
+      "constraints": [
+        "place rapier() before recast() in the plugin list",
+        "ctx.physics is set before Scene.enter(), not during load(): Rapier initializes while the scene loads, so create bodies in enter() or later (TN_PHYSICS_NOT_READY)"
+      ],
       "example": "const game = defineGame({ plugins: [rapier()] });",
       "importPath": "@threenative/physics",
       "kind": "function",

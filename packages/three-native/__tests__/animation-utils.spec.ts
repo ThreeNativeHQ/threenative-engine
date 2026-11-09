@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { AnimationUtils } from "../src/animation-utils.js";
+import { AnimationUtils, defineCreateInterpolant } from "../src/animation-utils.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: upstream three's own classes, untyped here.
 type Loose = any;
@@ -124,4 +124,60 @@ describe("AnimationUtils port", () => {
     three.flattenJSON(keys, theirs[0], theirs[1], "v");
     expect(flat).toEqual(theirs);
   });
+});
+
+// PRD-854: core's root motion samples `track.createInterpolant(result).evaluate(time)`, which the engine track
+// does not bind. The port, installed on engine-like track classes, against three's own interpolants.
+describe("createInterpolant port", () => {
+  const engineClass = (Base: Loose) => {
+    class Track {
+      #source: Loose;
+      constructor(...args: Loose[]) {
+        this.#source = new Base(...args);
+      }
+      get name() {
+        return this.#source.name;
+      }
+      get ValueTypeName() {
+        return this.#source.ValueTypeName;
+      }
+      get times() {
+        return Array.from(this.#source.times);
+      }
+      get values() {
+        return Array.from(this.#source.values);
+      }
+      getValueSize() {
+        return this.#source.getValueSize();
+      }
+      getInterpolation() {
+        return this.#source.getInterpolation();
+      }
+    }
+    return Track;
+  };
+  const classes: Record<string, Loose> = {
+    QuaternionKeyframeTrack: engineClass(T.QuaternionKeyframeTrack),
+    VectorKeyframeTrack: engineClass(T.VectorKeyframeTrack),
+    NumberKeyframeTrack: engineClass(T.NumberKeyframeTrack),
+  };
+  defineCreateInterpolant(classes);
+  for (const track of clip().tracks)
+    for (const mode of [T.InterpolateLinear, T.InterpolateDiscrete]) {
+      it(`evaluates ${track.ValueTypeName} ${mode === T.InterpolateLinear ? "linear" : "discrete"} keys as three does`, () => {
+        const name = track.constructor.name as string;
+        const ported = new classes[name](track.name, track.times, track.values, mode);
+        const own = new T[name](track.name, track.times, track.values, mode);
+        const size = own.getValueSize();
+        const result = new Float32Array(size);
+        const mine = ported.createInterpolant(result);
+        const theirs = own.createInterpolant(new Float32Array(size));
+        for (const time of [-1, 0, 0.2, 0.5, 0.7, 1, 2]) {
+          const got = mine.evaluate(time);
+          expect(got).toBe(result);
+          const expected = Array.from(theirs.evaluate(time) as ArrayLike<number>);
+          for (const [k, value] of expected.entries()) expect(got[k]).toBeCloseTo(value, 6);
+        }
+      });
+    }
 });

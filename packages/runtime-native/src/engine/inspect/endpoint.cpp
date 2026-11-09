@@ -266,7 +266,7 @@ bool Endpoint::sample(const Value* argument, Value& result, std::string& error) 
                                         {"rotation", Value::makeArray({num(o->quaternion.x), num(o->quaternion.y),
                                                                        num(o->quaternion.z), num(o->quaternion.w)})},
                                         {"scale", triple(o->scale.x, o->scale.y, o->scale.z)}})},
-                     {"visible", Value::makeBool(o->visible())}}));
+                     {"visible", Value::makeBool(o->authoredVisible())}}));
             }
         }
     }

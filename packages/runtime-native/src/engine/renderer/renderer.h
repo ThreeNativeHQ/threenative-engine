@@ -483,6 +483,7 @@ public:
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
+    WGPUTexture sceneColorTexture() const { return sceneColor_; }
     /** The RGBA8 output frame a render() with no present target draws, and blitTo copies to the window. */
     WGPUTextureView outputColorView() const { return colorView_; }
     /** The format the scene colour is drawn and read in: RGBA16Float, RGBA32Float for a FloatType render target, RG16Float/RG32Float for an RGFormat one (a 32-bit target is never multisampled). */
@@ -1075,11 +1076,15 @@ private:
             // A DataArrayTexture: `depth` layers of one 2D texture, sampled as a 2DArray view. Part of the key
             // because the same width/height/depth with and without it needs a different view dimension.
             bool array = false;
+            bool cube = false;  // a CubeTexture: six `array` layers with a cube view
+            // A 3D texture: a Data3DTexture (kVolume) or a Storage3DTexture (kStorage), with a 3D view.
+            bool volume = false;
             uint16_t wrapS = 0, wrapT = 0, wrapR = 0, magFilter = 0, minFilter = 0;
             double anisotropy = 0;
             [[nodiscard]] bool operator==(const Key& other) const {
                 return kind == other.kind && width == other.width && height == other.height && depth == other.depth &&
                        levels == other.levels && format == other.format && usage == other.usage && array == other.array &&
+                       cube == other.cube && volume == other.volume &&
                        wrapS == other.wrapS && wrapT == other.wrapT && wrapR == other.wrapR &&
                        magFilter == other.magFilter && minFilter == other.minFilter && anisotropy == other.anisotropy;
             }
@@ -1158,10 +1163,12 @@ private:
         std::vector<PmremPacket> packets;
         std::size_t next = 0;
         uint64_t awaitSerial = 0;        // the last submitted packet's serial, awaited before the next
+        uint32_t waits = 0;              // calls that found the last group still on the GPU
         WGPUBindGroup group = nullptr;   // the current packet's bind group, rebuilt per packet
         uint32_t groupUniform = UINT32_MAX;
         uint64_t stride = 0;
-        uint64_t budget = 0;             // the costliest packet's cost: the per-call submission cap
+        uint64_t heaviest = 0;           // the costliest packet's cost: the smallest per-call cap
+        uint64_t budget = 0;             // the per-call submission cap, heaviest..4x heaviest
     };
     std::optional<EnvironmentPreparation> envPrep_;
     bool environmentPending_ = false;

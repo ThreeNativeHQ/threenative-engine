@@ -14,7 +14,10 @@ export interface IWebBrandVitePlugin {
     readonly root: string;
     readonly command?: "build" | "serve";
   }): Promise<void>;
-  transformIndexHtml(html: string): string;
+  transformIndexHtml(
+    html: string,
+    context?: { readonly bundle?: Readonly<Record<string, IBundleFile>> },
+  ): string;
   configureServer(server: IMiddlewareServer): void;
   configurePreviewServer(server: IMiddlewareServer): void;
   generateBundle(this: {
@@ -50,11 +53,15 @@ export const isolationMiddleware: Middleware = (req, res, next) => {
   next();
 };
 
-/** The same headers for a static host that reads a `_headers` file (Netlify, Cloudflare Pages). */
+/**
+ * The same headers for a static host that reads a `_headers` file (Netlify, Cloudflare Pages), plus
+ * a year-long immutable cache for Vite's content-hashed `assets/` files (PRD-860): a repeat visit
+ * then reads them from disk with no revalidation round trip, and a new build has new names.
+ */
 export function renderIsolationHeaders(): string {
   return `/*\n${Object.entries(ISOLATION_HEADERS)
     .map(([key, value]) => `  ${key}: ${value}\n`)
-    .join("")}`;
+    .join("")}/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n`;
 }
 
 /**
@@ -106,6 +113,85 @@ const ISOLATION_BOOT = `<script>(() => {
       return new Promise(() => {});
     }, () => {});
 })();</script>`;
+
+/**
+ * The build identity `ctx.assets.memo` keys on (PRD-860): the hashed entry script, which changes
+ * whenever any of the game's code does. Only a production page has one; the dev server's entry is
+ * `src/main.ts`, so a dev page writes none and generated content rebuilds every run there.
+ */
+export function withBuildId(html: string): string {
+  const entry = /<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]*\/assets\/[^"]+\.js)"/iu.exec(
+    html,
+  )?.[1];
+  if (entry === undefined) return html;
+  return html.replace(
+    /<script/iu,
+    `<script>globalThis.__TN_BUILD_ID__ = ${JSON.stringify(entry).replaceAll("<", "\\u003c")};</script>\n    <script`,
+  );
+}
+
+export interface IBundleFile {
+  readonly fileName: string;
+  readonly type: string;
+  readonly moduleIds?: readonly string[];
+}
+
+/**
+ * Starts the engine's Wasm download with the page (PRD-860). The glue that fetches it loads only
+ * after the entry script ran, so a first visit's network idled until ~330 ms and the 1 MB module
+ * ended at ~800 ms; Rapier's chunk then waited for the engine to boot. This head script preloads the
+ * Wasm the page will run (the threads build only when isolated: otherwise the isolation worker may
+ * reload the page) and, once it lands, Rapier, so each gets the whole link in turn. Only for a Wasm
+ * this browser has not fetched: a preloaded response loses V8's compiled-code cache, and a repeat
+ * visit that recompiled the module was ~150 ms slower on a laptop.
+ */
+export function withEnginePreload(
+  html: string,
+  bundle: Readonly<Record<string, IBundleFile>> | undefined,
+  threaded: boolean,
+): string {
+  if (bundle === undefined) return html;
+  const files = Object.values(bundle);
+  const entry = /<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]*)"/iu.exec(html)?.[1];
+  const entryFile = files.find((file) => entry?.endsWith(file.fileName) === true);
+  if (entry === undefined || entryFile === undefined) return html;
+  const base = entry.slice(0, entry.length - entryFile.fileName.length);
+  const href = (test: (file: IBundleFile) => boolean): string | undefined => {
+    const found = files.find(test);
+    return found === undefined ? undefined : base + found.fileName;
+  };
+  const threads = href((file) => /tn-native-engine-web-threads-[^/]*\.wasm$/u.test(file.fileName));
+  const plain = href((file) =>
+    /tn-native-engine-web-(?!threads-)[^/]*\.wasm$/u.test(file.fileName),
+  );
+  const wasm = threaded ? threads : plain;
+  if (wasm === undefined) return html;
+  const rapier = href(
+    (file) =>
+      file.type === "chunk" &&
+      file.moduleIds?.some((id) => id.includes("/@dimforge/rapier3d")) === true,
+  );
+  const quote = (value: string | undefined) =>
+    JSON.stringify(value ?? null).replaceAll("<", "\\u003c");
+  const script = `<script>(() => {
+  const link = (rel, href, as) => {
+    const tag = Object.assign(document.createElement("link"), { rel, href, crossOrigin: "anonymous" });
+    if (as !== undefined) tag.as = as;
+    return document.head.appendChild(tag);
+  };
+  if (${threaded} && !globalThis.crossOriginIsolated) return;
+  const href = ${quote(wasm)};
+  const store = (use) => { try { return use(localStorage); } catch { return null; } };
+  if (store((s) => s.getItem("tnEngineWasm")) === href) return;
+  const wasm = link("preload", href, "fetch");
+  const rapier = ${quote(rapier)};
+  wasm.onload = wasm.onerror = () => {
+    store((s) => s.setItem("tnEngineWasm", href));
+    if (rapier !== null) link("modulepreload", rapier);
+  };
+})();</script>`;
+  return html.replace(/<script/iu, `${script}\n    <script`);
+}
 
 function htmlAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
@@ -253,11 +339,14 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
           strict: resolved.command !== "build",
         });
     },
-    transformIndexHtml(html) {
+    transformIndexHtml(html, context) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
-      const output = updateLaunchMarkup(root, config, html);
+      const output = withBuildId(updateLaunchMarkup(root, config, html));
       // Before the first script, so it runs ahead of the game module.
-      return threaded ? output.replace(/<script/iu, `${ISOLATION_BOOT}\n    <script`) : output;
+      const isolated = threaded
+        ? output.replace(/<script/iu, `${ISOLATION_BOOT}\n    <script`)
+        : output;
+      return withEnginePreload(isolated, context?.bundle, threaded);
     },
     // Every page links the manifest, and only a build emits it: in dev Vite would answer the link
     // with index.html, which the browser reports as a manifest syntax error on each load.
