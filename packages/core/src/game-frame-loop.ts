@@ -1,4 +1,5 @@
 import { flushAnimationTicks } from "./animation-batch.js";
+import { drawWorld } from "./auto-batch.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
 import { FrameBudget } from "./frame-budget.js";
 import { isDevLaunch } from "./game-dev-tools.js";
@@ -609,7 +610,7 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
             if (scaler !== undefined) renderer.setResolutionScale(scaler.scale, scaler.scaleSource);
           }
           const engineStart = readStages === undefined ? 0 : budgetNow();
-          renderer.render(renderRoot, camera);
+          drawWorld(() => renderer.render(renderRoot, camera));
           const engineEnd = readStages === undefined ? 0 : budgetNow();
           startup.renders += 1;
           // Count declined frames without treating them as drawn-frame render cost.
