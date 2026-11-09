@@ -30,6 +30,52 @@ The per-finding facts, the cited `file:line` and a one-line fix sketch are in [t
 #### Phase 3: The 45 low findings
 
 - [ ] Fix or reject each REAL low finding in the evidence file, with the reason beside each rejection. proof: one line per finding in this box
+  2026-11-09: 44 fixed, 1 rejected. Open only because E57 changes what reaches the screen and its visual judge has not run.
+  - E01 FIXED in the EPIC squash `972d1e371`: fix(core): assert the concurrent spawn waiters clear their deadlines.
+  - E02 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): a failed horizon fetch no longer poisons every later world load.
+  - E03 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): the kit proof empties a reused artifact directory again.
+  - E05 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): the swimmer enters the sea the world draws.
+  - E06 FIXED in the EPIC squash `972d1e371`: fix(strata-example): name the wildwood stage arm in the comments that list the arms.
+  - E07 FIXED in the EPIC squash `972d1e371`: fix(wasm-engine-boot): the normal-node scenario fails a run that fell back to the geometric normal.
+  - E13 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): run the shared water regressions from the test lane.
+  - E14 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): drop the forest skip flag whose false arms its own throw made unreachable.
+  - E15 FIXED in the EPIC squash `972d1e371`: fix(core): restore the frame-buffer texture name only once, after overlapping compiles.
+  - E16 FIXED in the EPIC squash `972d1e371`: fix(core): the dither-partition test reads the mask instead of plain JS numbers.
+  - E18 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): name ?farForest=on as the override the flag actually reads.
+  - E19 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): delete the ?massif=before knob and the survey it swapped in.
+  - E22 FIXED in the EPIC squash `972d1e371`: fix(create-threenative): stop the terrain-kit symlink walk at the first existing folder.
+  - E23 FIXED in the EPIC squash `972d1e371`: fix(core): make the bundle row-cap test really cross 1,024 rows.
+  - E24 FIXED in the EPIC squash `972d1e371`: fix(core): exercise the depth-buffer width check without a resize event.
+  - E25 FIXED in the EPIC squash `972d1e371`: fix(core): endFrame's doc says a hitch still returns its split.
+  - E26 FIXED in the EPIC squash `972d1e371`: fix(core): scale a zero-area kept card about its own centre.
+  - E27 FIXED in the EPIC squash `972d1e371`: fix(playtest): a worker relaunch no longer reports the discarded attempt's cpu profile.
+  - E28 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): sway()'s doc says the shadow casts the rest pose, and why.
+  - E30 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): delete the ?peaks and ?meadowBase A/B knobs.
+  - E31 FIXED in the EPIC squash `972d1e371`: fix(engine-mcp): drop a stop word's inflections too, not just the word.
+  - E32 FIXED in the EPIC squash `972d1e371`: fix(physics): a forced trunk gets a positive capsule radius.
+  - E33 FIXED in the EPIC squash `972d1e371`: fix(strata): the spruce terminal minimum is taken by the loader, and the gate test drives it.
+  - E34 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): bound each invalidated shadow region by the instance's own span.
+  - E35 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): river rocks must sit on the river's bank, not just be counted.
+  - E37 FIXED in the EPIC squash `972d1e371`: fix(core): size the chunk shadow proxy index pool from the shadow ladder.
+  - E38 FIXED in the EPIC squash `972d1e371`: fix(core): keep a file URL's triple slash when resolving terrain splat layer maps.
+  - E42 FIXED in the EPIC squash `972d1e371`: fix(runtime-native): a missing MRT slot refuses one read instead of killing the web host.
+  - E43 FIXED in the EPIC squash `972d1e371`: fix(native): state the parity bound the first-frame shadow row enforces.
+  - E45 FIXED in the EPIC squash `972d1e371`: fix(terrain): a 409 rebase the external writer already landed settles instead of rejecting.
+  - E47 FIXED in the EPIC squash `972d1e371`: fix(assets): report a GLB with no JSON chunk where the container shows it.
+  - E50 FIXED in the EPIC squash `972d1e371`: fix(terrain): wait for the export cook to start instead of a fixed sleep.
+  - E53 FIXED in the EPIC squash `972d1e371`: fix(three-native): release an object-valued uniform with the value it reads.
+  - E54 FIXED in the EPIC squash `972d1e371`: fix(terrain): let the example guard see path-string reads, not only imports.
+  - E55 FIXED in the EPIC squash `972d1e371`: fix(terrain): describe the placement record as position, quaternion and scale.
+  - E58 FIXED in the EPIC squash `972d1e371`: fix(native-renderer): a mirror's pass is reused only while its reflector lives.
+  - E60 FIXED in the EPIC squash `972d1e371`: fix(scripts): describe terrain peers as shipped or external.
+  - E61 FIXED in the EPIC squash `972d1e371`: fix(scripts): resolve the terrain reply only on a newline-terminated line.
+  - E63 FIXED in the EPIC squash `972d1e371`: fix(terrain): cook both AC-3 arms as tool calls in a fresh process.
+  - E65 FIXED in the EPIC squash `972d1e371`: fix(scripts): the startup gate compares Three patch digests and records the arm's own patch.
+  - E66 FIXED in the EPIC squash `972d1e371`: fix(terrain): the cook reports the water it floods, not the rows it was asked for.
+  - E74 FIXED in the EPIC squash `972d1e371`: fix(native-renderer): accept a legal eight-attachment aux pass.
+  - E75 FIXED in the EPIC squash `972d1e371`: fix(native-renderer): a volume texture carries the usage a texture copy reads.
+  - E57 FIXED 2026-11-09 on PR #635 (`feaf012c6`): alpine, desert and tundra set `lighting.lods: true`, so the `boulder-mid.glb` each bakes at 35 m is sky-dressed; coastal bakes no mid level and keeps `false`. `kit-runtime.spec.ts` "dresses the mid level its own assets.json bakes": 3 failed without the fix, 5 passed with it; `packages/terrain/__tests__/` 605/605. Visual judge of the far boulders NOT run (kit frames, with E62).
+  - E68 REJECTED: an explicit `kit` over a `biome` argument is the pinned contract (`terrain-mcp.spec.ts:1060` "keeps kit as the explicit override over a biome name"), and a request word that loses to an argument is reported as `decided.biome.source: "argument"` (`tools.ts:474`). A guard that threw on the conflict broke that pinned spec, so it was reverted.
 
 ## Acceptance Criteria
 
