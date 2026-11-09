@@ -241,6 +241,11 @@ public:
     mutable std::array<double, 3> sortCenter_{};
     mutable uint64_t sortCenterRevision_ = std::numeric_limits<uint64_t>::max();
     mutable uint32_t sortCenterVersion_ = 0;
+    // Renderer: the morph targets packed as its morph storage reads them (a vec4 per vertex and target, the
+    // normal after the position), and the revision and each target's attribute and version they were packed at.
+    mutable std::vector<float> morphPacked_;
+    mutable uint64_t morphPackedRevision_ = std::numeric_limits<uint64_t>::max();
+    mutable std::vector<std::pair<const BufferAttribute*, uint32_t>> morphPackedAt_;
 
 private:
     uint64_t revision_ = 0;

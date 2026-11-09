@@ -3845,18 +3845,39 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const std::size_t vertices = g->morphPositions.front()->count();
             d.morphBase = double(morphData.size() / 4);
             d.morphVertexCount = double(vertices);
-            for (std::size_t i = 0; i < g->morphPositions.size(); ++i) {
-                for (std::size_t j = 0; j < vertices; ++j) {
-                    const BufferAttribute& p = *g->morphPositions[i];
-                    morphData.insert(morphData.end(), {float(p.getComponent(j, 0)), float(p.getComponent(j, 1)),
-                                                       float(p.getComponent(j, 2)), 0.0f});
-                    if (normals) {
-                        const BufferAttribute& n = *g->morphNormals.at(i);
-                        morphData.insert(morphData.end(), {float(n.getComponent(j, 0)), float(n.getComponent(j, 1)),
-                                                           float(n.getComponent(j, 2)), 0.0f});
+            // three packs a geometry's morph texture once and reuses it (three r187 src/nodes/accessors/Morph.js:93-199
+            // getEntry, a WeakMap per geometry); repacking every component every frame cost each morphed draw a
+            // pass over all its targets. The pack moves with the geometry's revision and each target's writes.
+            bool packed = g->morphPackedRevision_ == g->revision() &&
+                          g->morphPackedAt_.size() == g->morphPositions.size() + g->morphNormals.size();
+            for (std::size_t i = 0; packed && i < g->morphPositions.size(); ++i)
+                packed = g->morphPackedAt_[i] == std::pair<const BufferAttribute*, uint32_t>{g->morphPositions[i].get(), g->morphPositions[i]->version()};
+            for (std::size_t i = 0; packed && i < g->morphNormals.size(); ++i)
+                packed = g->morphPackedAt_[g->morphPositions.size() + i] ==
+                         std::pair<const BufferAttribute*, uint32_t>{g->morphNormals[i].get(), g->morphNormals[i]->version()};
+            if (!packed) {
+                std::vector<float>& pack = g->morphPacked_;
+                pack.clear();
+                pack.reserve(g->morphPositions.size() * vertices * (normals ? 8 : 4));
+                for (std::size_t i = 0; i < g->morphPositions.size(); ++i) {
+                    for (std::size_t j = 0; j < vertices; ++j) {
+                        const BufferAttribute& p = *g->morphPositions[i];
+                        pack.insert(pack.end(), {float(p.getComponent(j, 0)), float(p.getComponent(j, 1)),
+                                                 float(p.getComponent(j, 2)), 0.0f});
+                        if (normals) {
+                            const BufferAttribute& n = *g->morphNormals.at(i);
+                            pack.insert(pack.end(), {float(n.getComponent(j, 0)), float(n.getComponent(j, 1)),
+                                                     float(n.getComponent(j, 2)), 0.0f});
+                        }
                     }
                 }
+                g->morphPackedRevision_ = g->revision();
+                g->morphPackedAt_.clear();
+                for (const auto& target : g->morphPositions) g->morphPackedAt_.emplace_back(target.get(), target->version());
+                for (const auto& target : g->morphNormals) g->morphPackedAt_.emplace_back(target.get(), target->version());
+                ++morphPacks_;
             }
+            morphData.insert(morphData.end(), g->morphPacked_.begin(), g->morphPacked_.end());
             d.morphInfluenceBase = double(morphInfluences.size());
             double sum = 0;
             for (const double influence : *drawn->morphInfluences) {

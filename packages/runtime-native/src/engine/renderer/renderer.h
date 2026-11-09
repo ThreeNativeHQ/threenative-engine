@@ -550,6 +550,8 @@ public:
         const std::vector<Box3>* instances = nullptr;  // FG1: the draw cache's per-instance boxes, one per instance
     };
     [[nodiscard]] const std::map<std::size_t, std::vector<CasterRecord>>& casterRecords() const { return casterRecords_; }
+    /** Morph-target packs this renderer ran: one per geometry revision and target write, not one per frame. */
+    [[nodiscard]] uint64_t morphPackCount() const { return morphPacks_; }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
@@ -1546,6 +1548,7 @@ private:
     static constexpr uint64_t kInstanceSlotPlans = 4096;
     /** Counts the plans (FM2): a program's frame slab is rebuilt when this moves past the plan that wrote it. */
     uint64_t planSerial_ = 0;
+    uint64_t morphPacks_ = 0;
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
     Handle uniformBuffer_;
