@@ -8,10 +8,10 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { terrainPalette } from "../src/render/palette.js";
+import { WORLD_NAMES as WORLDS } from "../src/render/worldNames.js";
 
 const { realContinuation, recipes } = await import("./recipe.mjs");
 
-const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"];
 const drawn = new Set(["forest", "coastal"]);
 const biomeFile = (name) =>
   new URL(`../../../packages/terrain/starter/${name}/biome.data.json`, import.meta.url);
@@ -25,6 +25,7 @@ const SOURCES = [
   "../src/render/benchmark.ts",
   "../src/render/propWorld.ts",
   "../src/render/props.ts",
+  "../src/render/worldNames.ts",
   "./bake.mjs",
   "./props.mjs",
   "./recipe.mjs",

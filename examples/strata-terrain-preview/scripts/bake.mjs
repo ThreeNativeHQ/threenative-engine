@@ -19,8 +19,8 @@ const { dem, drawn, outputDir, realContinuation, recipes, terrainSurfacePackage,
 const { isFresh, stamp } = await import("./stamp.mjs");
 const { GROUND_MAPS } = await import("../src/world/terrainAssets.js");
 const { BIOMES } = await import("../src/render/biomes.js");
+const { WORLD_NAMES: WORLDS } = await import("../src/render/worldNames.js");
 
-const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"];
 const DRIVEN = ["alpine", "desert", "coastal"];
 
 /** One biome file, validated: the rules this world places by. */

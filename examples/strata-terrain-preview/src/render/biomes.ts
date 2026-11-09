@@ -24,8 +24,9 @@ import {
   type LayerKey,
   ROCKFACE_MAPS,
 } from "../world/terrainAssets.js";
+import type { WORLD_NAMES } from "./worldNames.js";
 
-export type WorldName = "forest" | "coastal" | "alpine" | "desert" | "tundra";
+export type WorldName = (typeof WORLD_NAMES)[number];
 type RGB = readonly [number, number, number];
 
 /** Where a pinned vista camera looks, from the player it tracks. */

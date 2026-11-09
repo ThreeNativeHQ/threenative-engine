@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { MATERIAL_IDS, Mask, Terrain, bakeMesh, landformBackdrop } from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
+import { WORLD_NAMES } from "../src/render/worldNames.js";
 
 const { GROUND_MAPS, GROUND_TILE } = await import("../src/world/terrainAssets.js");
 
@@ -87,10 +88,7 @@ export function terrainSurfacePackage(name, state, maps) {
 
 // Public-domain surveyed elevations; one offset and orientation are shared by detail and horizon.
 export const dem = {};
-for (const name of ["forest", "coastal", "alpine", "desert", "tundra"].flatMap((name) => [
-  name,
-  `${name}-horizon`,
-])) {
+for (const name of WORLD_NAMES.flatMap((name) => [name, `${name}-horizon`])) {
   const meta = JSON.parse(await readFile(new URL(`dem/${name}.json`, import.meta.url), "utf8"));
   const bytes = await readFile(new URL(`dem/${name}.bin`, import.meta.url));
   assert.equal(meta.encoding, "int16-le-decimetres-relative-to-elevationOffset");

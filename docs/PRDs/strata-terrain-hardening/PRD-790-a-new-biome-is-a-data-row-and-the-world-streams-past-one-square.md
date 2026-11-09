@@ -85,7 +85,7 @@ biomes meet at a blended border. Look stays in game `src/render/`, and residency
 
 ### Phase 3 — Proof by a new biome
 
-- [ ] A sixth biome ships as one new row plus bake data, with no code branch. proof: the commit diff touches only `render/biomes.ts` and bake inputs; `capture-strata-worlds --worlds <new>` frames non-blank on NVIDIA
+- [ ] A sixth biome ships as one new row plus bake data, with no code branch. proof: the commit diff touches only `render/biomes.ts` and bake inputs; `capture-strata-worlds --worlds <new>` frames non-blank on NVIDIA — 2026-11-09, prep: the five world names lived in seven copies (the `WorldName` type, the key map, bake, stamp, recipe, measure). They now come from one list, `src/render/worldNames.ts`; the number keys follow its order. A sixth world is a name there, its row in `biomes.ts` and its `dem/<name>{,-horizon}` survey pair. Typecheck, 273 preview tests and the bake pass with no baked-file change. Open: the biome itself.
 - [ ] Two biomes meet at a blended border in one streamed world. proof: `stream.playtest.json` crosses the border; fresh visual judge rates the border frames with no hard seam
 
 ## Acceptance Criteria
