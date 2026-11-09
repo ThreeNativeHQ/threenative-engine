@@ -1,4 +1,4 @@
-import { WaveField } from "@threenative/core";
+import { type IAssetLoader, WaveField } from "@threenative/core";
 import {
   Box3,
   BoxGeometry,
@@ -19,7 +19,14 @@ import {
 import { HERO_FEEL } from "../entities/Hero.js";
 import type { WalkerKind } from "../entities/Walker.js";
 import { buildCastle, buildSignpost, planarUv, wrapUv } from "../render/castle.js";
-import { type IMeadow, plantIsland } from "../render/foliage.js";
+import {
+  type IMeadow,
+  type IPlantingRecord,
+  type IPlantingSite,
+  buildPlanting,
+  checkedPlanting,
+  planPlanting,
+} from "../render/foliage.js";
 import { farHills, paintGround } from "../render/ground.js";
 import { mottle, patches } from "../render/materials.js";
 import {
@@ -229,10 +236,30 @@ export function makeRng(seed: number): () => number {
 }
 
 /**
- * `surfaces` are the loaded textures (`loadSurfaces` in surface.ts); `grassShare` is the share of
- * grass tufts the quality tier draws (`GRASS_SHARE` in `quality.ts`).
+ * The island planted: drawn from `site` on a run that has nothing stored, and read back from
+ * `memo` on the next run of this build, so `buildPlanting` has the same placements either way.
  */
-export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare = 1): ICourse {
+async function planted(
+  site: IPlantingSite,
+  memo: IAssetLoader["memo"] | undefined,
+): Promise<{ group: Group; meadow: IMeadow }> {
+  if (memo === undefined) return buildPlanting(planPlanting(site), site);
+  const record: IPlantingRecord = await memo("planting", () => planPlanting(site));
+  // The memo hands back flat arrays either way, so a hit costs a length check, not a rebuild.
+  return buildPlanting(checkedPlanting(record), site);
+}
+
+/**
+ * `surfaces` are the loaded textures (`loadSurfaces` in surface.ts); `grassShare` is the share of
+ * grass tufts the quality tier draws (`GRASS_SHARE` in `quality.ts`). `memo` keeps the planting
+ * between runs; without one every run draws it.
+ */
+export async function buildCourse(
+  rng: () => number,
+  surfaces: ISurfaces,
+  grassShare = 1,
+  memo?: IAssetLoader["memo"],
+): Promise<ICourse> {
   const group = new Group();
   group.name = "course";
   const [doorX, doorZ] = COURSE.castle.door;
@@ -511,7 +538,7 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
 
   // Planting (`render/foliage.ts`): never on a route a scenario runs, a landmark or a boulder.
   const taken = [...keepOut, ...boulders] as const;
-  const planting = plantIsland({
+  const plantingSite: IPlantingSite = {
     bounds: TERRAIN_BOUNDS,
     clear: (x, zz, w) =>
       !onRoute(x, zz, w) &&
@@ -531,7 +558,8 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
     surfaces,
     // The islet's drum cliff radius at the waterline: it narrows to 92% over its height.
     shores: [[COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius * 0.98]],
-  });
+  };
+  const planting = await planted(plantingSite, memo);
   group.add(planting.group);
 
   // The world's shape on a 1 m grid of land: the climb from the shore to the top, the share of
