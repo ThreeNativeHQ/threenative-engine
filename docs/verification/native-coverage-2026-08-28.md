@@ -27,7 +27,7 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 527 | 85.69% |
 | **TOTAL** | **68485** | **55969** | **81.72%** |
 
-Source digest: `sha256:5ebcea2ad0eb0758abdb67fb57781419dddc0079b3262faf8a9afb2b16b3fd69`
+Source digest: `sha256:457775421a8c5ec5711e6bc6977a9ff4477e4ec2a259248bad544f5e000de1c8`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -358,7 +358,7 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 524 | 85.20% |
 | **TOTAL** | **24457** | **19284** | **78.85%** |
 
-Source digest: `sha256:7654bd1bddb42b3dd5eead4c6d0ea07705d7fe51ed41af9e4045e68ebe9b87e8`
+Source digest: `sha256:457775421a8c5ec5711e6bc6977a9ff4477e4ec2a259248bad544f5e000de1c8`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -681,7 +681,7 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 524 | 85.20% |
 | **TOTAL** | **24580** | **19268** | **78.39%** |
 
-Source digest: `sha256:227e47d9501744aa967f8ff75600a30c1f187a11e8a1cba701d19bafa68804b8`
+Source digest: `sha256:457775421a8c5ec5711e6bc6977a9ff4477e4ec2a259248bad544f5e000de1c8`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
