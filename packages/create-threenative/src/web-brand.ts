@@ -14,7 +14,10 @@ export interface IWebBrandVitePlugin {
     readonly root: string;
     readonly command?: "build" | "serve";
   }): Promise<void>;
-  transformIndexHtml(html: string): string;
+  transformIndexHtml(
+    html: string,
+    context?: { readonly bundle?: Readonly<Record<string, IBundleFile>> },
+  ): string;
   configureServer(server: IMiddlewareServer): void;
   configurePreviewServer(server: IMiddlewareServer): void;
   generateBundle(this: {
@@ -125,6 +128,61 @@ export function withBuildId(html: string): string {
     /<script/iu,
     `<script>globalThis.__TN_BUILD_ID__ = ${JSON.stringify(entry).replaceAll("<", "\\u003c")};</script>\n    <script`,
   );
+}
+
+export interface IBundleFile {
+  readonly fileName: string;
+  readonly type: string;
+  readonly moduleIds?: readonly string[];
+}
+
+/**
+ * Starts the engine's Wasm download with the page (PRD-860). The glue that fetches it loads only
+ * after the entry script ran, so a first visit's network idled until ~330 ms and the 1 MB module
+ * ended at ~800 ms; Rapier's chunk then waited for the engine to boot. This head script preloads the
+ * Wasm the page will run (the threads build only when isolated: otherwise the isolation worker may
+ * reload the page) and, once it lands, Rapier, so each gets the whole link in turn.
+ */
+export function withEnginePreload(
+  html: string,
+  bundle: Readonly<Record<string, IBundleFile>> | undefined,
+  threaded: boolean,
+): string {
+  if (bundle === undefined) return html;
+  const files = Object.values(bundle);
+  const entry = /<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]*)"/iu.exec(html)?.[1];
+  const entryFile = files.find((file) => entry?.endsWith(file.fileName) === true);
+  if (entry === undefined || entryFile === undefined) return html;
+  const base = entry.slice(0, entry.length - entryFile.fileName.length);
+  const href = (test: (file: IBundleFile) => boolean): string | undefined => {
+    const found = files.find(test);
+    return found === undefined ? undefined : base + found.fileName;
+  };
+  const threads = href((file) => /tn-native-engine-web-threads-[^/]*\.wasm$/u.test(file.fileName));
+  const plain = href((file) =>
+    /tn-native-engine-web-(?!threads-)[^/]*\.wasm$/u.test(file.fileName),
+  );
+  const wasm = threaded ? threads : plain;
+  if (wasm === undefined) return html;
+  const rapier = href(
+    (file) =>
+      file.type === "chunk" &&
+      file.moduleIds?.some((id) => id.includes("/@dimforge/rapier3d")) === true,
+  );
+  const quote = (value: string | undefined) =>
+    JSON.stringify(value ?? null).replaceAll("<", "\\u003c");
+  const script = `<script>(() => {
+  const link = (rel, href, as) => {
+    const tag = Object.assign(document.createElement("link"), { rel, href, crossOrigin: "anonymous" });
+    if (as !== undefined) tag.as = as;
+    return document.head.appendChild(tag);
+  };
+  if (${threaded} && !globalThis.crossOriginIsolated) return;
+  const wasm = link("preload", ${quote(wasm)}, "fetch");
+  const rapier = ${quote(rapier)};
+  if (rapier !== null) wasm.onload = wasm.onerror = () => link("modulepreload", rapier);
+})();</script>`;
+  return html.replace(/<script/iu, `${script}\n    <script`);
 }
 
 function htmlAttribute(value: string): string {
@@ -273,11 +331,14 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
           strict: resolved.command !== "build",
         });
     },
-    transformIndexHtml(html) {
+    transformIndexHtml(html, context) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
       const output = withBuildId(updateLaunchMarkup(root, config, html));
       // Before the first script, so it runs ahead of the game module.
-      return threaded ? output.replace(/<script/iu, `${ISOLATION_BOOT}\n    <script`) : output;
+      const isolated = threaded
+        ? output.replace(/<script/iu, `${ISOLATION_BOOT}\n    <script`)
+        : output;
+      return withEnginePreload(isolated, context?.bundle, threaded);
     },
     // Every page links the manifest, and only a build emits it: in dev Vite would answer the link
     // with index.html, which the browser reports as a manifest syntax error on each load.
