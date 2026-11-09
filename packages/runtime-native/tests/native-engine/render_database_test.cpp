@@ -2227,11 +2227,11 @@ void arrayRenderTarget() {
     CHECK(renderToTarget(renderer, *target, empty, camera, {0, 1, 0, 1}, false, false, true, true, 1).empty());
     CHECK(!renderToTarget(renderer, *target, empty, camera, {0, 0, 1, 1}, false, false, true, true, 2).empty());
     const auto texel = [&](RenderTarget& from, uint32_t layer, uint32_t level) {
-        std::array<float, 3> rgb{-1, -1, -1};
+        std::array<float, 4> rgb{-1, -1, -1, -1};
         bool done = false;
         CHECK(readRenderTarget(from, 0, 0, 1, 1, [&](GpuStatus status, std::vector<uint8_t> bytes) {
             if (status == GpuStatus::Ok && bytes.size() == 8)
-                for (int c = 0; c < 3; ++c) {
+                for (int c = 0; c < 4; ++c) {
                     uint16_t bits = 0;
                     std::memcpy(&bits, bytes.data() + c * 2, 2);
                     rgb[c] = halfToFloat(bits);
@@ -2245,9 +2245,9 @@ void arrayRenderTarget() {
         }
         return rgb;
     };
-    for (RenderTarget* from : {target.get(), target->more[0].get()}) {
-        const auto red = texel(*from, 0, 0), green = texel(*from, 1, 0);
-        const auto redTip = texel(*from, 0, 5), greenTip = texel(*from, 1, 5);  // the 1x1 level
+    {
+        const auto red = texel(*target, 0, 0), green = texel(*target, 1, 0);
+        const auto redTip = texel(*target, 0, 5), greenTip = texel(*target, 1, 5);  // the 1x1 level
         std::fprintf(stderr, "array target: layer 0 %.3f %.3f (tip %.3f %.3f), layer 1 %.3f %.3f (tip %.3f %.3f)\n",
                      red[0], red[1], redTip[0], redTip[1], green[0], green[1], greenTip[0], greenTip[1]);
         CHECK(red[0] == 1.0f && red[1] == 0.0f);
@@ -2255,6 +2255,17 @@ void arrayRenderTarget() {
         CHECK(std::abs(redTip[0] - 1.0f) < 1e-3f && redTip[1] < 1e-3f);
         CHECK(std::abs(greenTip[1] - 1.0f) < 1e-3f && greenTip[0] < 1e-3f);
     }
+    // three's WebGPUBackend clears every attachment after the first to (0, 0, 0, 1), whatever the renderer's clear
+    // colour. The impostor bake clears to (0, 0, 0, 0) and keeps its depth numerator in the second attachment's
+    // alpha, so an empty texel must read alpha one there, or every mip that blends a crown edge with empty space
+    // decodes a wrong depth and the far impostor smears across its quad.
+    for (uint32_t layer : {0u, 1u})
+        for (uint32_t level : {0u, 5u}) {
+            const auto second = texel(*target->more[0], layer, level);
+            std::fprintf(stderr, "array target second attachment: layer %u level %u %.3f %.3f %.3f %.3f\n", layer, level,
+                         second[0], second[1], second[2], second[3]);
+            CHECK(second[0] == 0.0f && second[1] == 0.0f && second[2] == 0.0f && std::abs(second[3] - 1.0f) < 1e-3f);
+        }
     CHECK(readRenderTarget(*target, 0, 0, 1, 1, [](GpuStatus, std::vector<uint8_t>) {}, 2, 0) == GpuStatus::OutOfRange);
     const auto plain = RenderTarget::make(8, 8, kTextureHalfFloatType);  // one layer: only layer 0 draws
     CHECK(!renderToTarget(renderer, *plain, empty, camera, {0, 0, 1, 1}, false, false, true, true, 1).empty());

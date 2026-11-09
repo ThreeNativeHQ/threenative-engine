@@ -34,6 +34,9 @@ struct TargetGpu {
     }
 };
 
+/** What three clears an MRT attachment after the first to (WebGPUBackend `_clearValue`). */
+constexpr std::array<double, 4> kSecondaryClear{0, 0, 0, 1};
+
 /** three's mip filters: the target keeps a full chain for them, else one level. */
 bool mipFiltered(const Texture& texture) {
     const auto filter = static_cast<TextureFilter>(texture.minFilter);
@@ -129,8 +132,9 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);
     std::vector<std::string> diagnostics = gpu.database->diagnostics();
     for (const std::string& message : gpu.renderer->diagnostics()) diagnostics.push_back(message);
+    // three's WebGPUBackend clears every attachment after the first to (0, 0, 0, 1), not the renderer's clear colour.
     for (const auto& attachment : target.more)
-        for (std::string& message : renderToTarget(main, *attachment, root, camera, clear, shadowMap, deferred, false, autoClear, layer))
+        for (std::string& message : renderToTarget(main, *attachment, root, camera, kSecondaryClear, shadowMap, deferred, false, autoClear, layer))
             diagnostics.push_back(std::move(message));
     return diagnostics;
 }
@@ -142,7 +146,7 @@ void clearRenderTarget(Renderer& main, RenderTarget& target, std::array<double, 
     gpu.renderer->keepContents(!color, !depth);
     gpu.renderer->render({}, CameraState{}, LightState{}, clear);  // an empty pass: only its load ops act
     gpu.rendered = true;
-    for (const auto& attachment : target.more) clearRenderTarget(main, *attachment, clear, color, depth);
+    for (const auto& attachment : target.more) clearRenderTarget(main, *attachment, kSecondaryClear, color, depth);
 }
 
 WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target) {
