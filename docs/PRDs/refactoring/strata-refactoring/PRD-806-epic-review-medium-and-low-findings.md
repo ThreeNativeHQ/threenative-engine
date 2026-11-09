@@ -79,4 +79,4 @@ The per-finding facts, the cited `file:line` and a one-line fix sketch are in [t
 
 ## Acceptance Criteria
 
-- [ ] AC-1: `pnpm typecheck` and `pnpm lint` exit 0 after the fixes. proof: command output in the box
+- [x] AC-1: `pnpm typecheck` and `pnpm lint` exit 0 after the fixes. proof: command output in the box — 2026-11-09: local `pnpm typecheck` exit 0 at `3817a9529` and `pnpm lint` exit 0 at `ecebc2fe5`; CI run 42609379659 on `2c9262966` (after every fix, E57 included): `typecheck` success, `lint` success, `ci-required` success.
