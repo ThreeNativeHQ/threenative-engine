@@ -1,13 +1,13 @@
 # PRD-806 — Fix the medium and low findings of the PR #483 epic review
 
-**Status:** PARTIAL — 6 of 8 Phase 1 and 2 boxes are fixed (E46 and E73 added on PR #635, 2026-11-08). E56/E62 and the 45 low findings closed 2026-11-09. Scope: the 14 medium findings (13 after one duplicate) and 45 low findings verified on HEAD `21c713b7d` on 2026-11-05. The high findings are in [PRD-805](../../done/PRD-805-epic-review-findings.md).
+**Status:** DONE 2026-11-09 on PR #635 — every medium and low finding is fixed or rejected with its reason. Scope: the 14 medium findings (13 after one duplicate) and 45 low findings verified on HEAD `21c713b7d` on 2026-11-05. The high findings are in [PRD-805](PRD-805-epic-review-findings.md).
 **Priority:** P2 — each open finding below is a real defect, and none makes the board red at HEAD
 **Complexity:** 5 (MEDIUM); many small fixes in independent files
 **Owner:** ThreeNative maintainers
 
 ## Problem
 
-The per-finding facts, the cited `file:line` and a one-line fix sketch are in [the evidence file](PRD-805-epic-review-findings.evidence.md). The verifier was a DeepSeek arm, so read each cited line before you fix it. Each fix gets a red-green spec. A fix that changes what reaches the screen (E46, E56, E73) also needs the visual judge.
+The per-finding facts, the cited `file:line` and a one-line fix sketch are in [the evidence file](../refactoring/strata-refactoring/PRD-805-epic-review-findings.evidence.md). The verifier was a DeepSeek arm, so read each cited line before you fix it. Each fix gets a red-green spec. A fix that changes what reaches the screen (E46, E56, E73) also needs the visual judge.
 
 ## Execution Phases
 
