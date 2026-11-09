@@ -253,7 +253,7 @@ SurfaceConfig readSurfaceConfig() {
         else if (std::strcmp(text, "1") == 0 || std::strcmp(text, "on") == 0) config.vsync = true;
         else config.problem = std::string("TN_PLAYER_VSYNC must be 0, 1, off or on, got '") + text + "'";
     }
-    if (const char* text = std::getenv("TN_PLAYER_PRIORITY"); text != nullptr && text[0] != '\0') {
+    if (const char* text = flags::read<flags::PlayerPriority>(); text != nullptr && text[0] != '\0') {
         if (std::strcmp(text, "normal") == 0) config.priority = false;
         else if (std::strcmp(text, "game") != 0)
             config.problem = std::string("TN_PLAYER_PRIORITY must be game or normal, got '") + text + "'";

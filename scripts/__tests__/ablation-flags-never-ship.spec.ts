@@ -116,6 +116,7 @@ const ENGINE_FLAGS: Readonly<Record<string, "Once" | "Live">> = {
   TN_PLAYER_HEIGHT: "Live",
   TN_PLAYER_TITLE: "Live",
   TN_PLAYER_VSYNC: "Live",
+  TN_PLAYER_PRIORITY: "Live",
   TN_PLAYER_METRICS: "Live",
   TN_PLAYER_GPU_TIMING: "Live",
   TN_PLAYER_MAIN_THREAD_CPU: "Live",

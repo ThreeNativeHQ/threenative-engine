@@ -6,13 +6,13 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
-import { afterAll, test } from "vitest";
+import { test } from "vitest";
 
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { desktopBuildDirectory, nativeTestExecutable } from "../scripts/native-test-lane.mjs";
 import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
 
@@ -24,8 +24,7 @@ if (process.env.npm_lifecycle_event === "native:verify:desktop") {
   assert.ok(available, `the desktop verify lane needs ${mystral}, Xvfb, xwininfo and xprop`);
 }
 const hostTest = available ? test : test.skip;
-const scratch = mkdtempSync(join(tmpdir(), "tn-host-window-"));
-afterAll(() => rmSync(scratch, { force: true, recursive: true }));
+const scratch = makeTempDirSync("tn-host-window-");
 
 /** Stages and compiles a one-file game with this config; returns the path of its executable. */
 function packageGame(name, config, source = "setTimeout(() => process.exit(0), 8000);") {

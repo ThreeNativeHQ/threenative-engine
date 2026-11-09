@@ -5,11 +5,11 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, test } from "vitest";
+import { test } from "vitest";
 
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { desktopBuildDirectory, nativeTestExecutable } from "../scripts/native-test-lane.mjs";
 
 const mystral = process.env.TN_NATIVE_MYSTRAL_BIN ?? nativeTestExecutable(desktopBuildDirectory(), "mystral");
@@ -18,8 +18,7 @@ const required =
   process.env.npm_lifecycle_event === "native:verify:desktop";
 if (required) assert.ok(existsSync(mystral), `the desktop verify lane needs ${mystral} (run pnpm native:build)`);
 const hostTest = existsSync(mystral) ? test : test.skip;
-const scratch = mkdtempSync(join(tmpdir(), "tn-host-cli-"));
-afterAll(() => rmSync(scratch, { force: true, recursive: true }));
+const scratch = makeTempDirSync("tn-host-cli-");
 
 function runGame(source, env = {}, extraArgs = []) {
   const script = join(scratch, `game-${Math.random().toString(36).slice(2)}.js`);

@@ -3,10 +3,11 @@
 // These checks hold the three places a script name lives to one list: the CMake list, the files on
 // disk and the enumerators the C++ callers name.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const root = join(import.meta.dirname, "..");
 const scriptsDirectory = join(root, "src", "runtime-scripts");
@@ -60,7 +61,7 @@ describe("embedded runtime script names", () => {
   });
 
   it("refuses to generate a header for a script with no file, naming it", () => {
-    const workdir = mkdtempSync(join(tmpdir(), "tn-embed-"));
+    const workdir = makeTempDirSync("tn-embed-");
     try {
       const { result } = generate(workdir, ["storage-polyfill", "no-such-script"]);
       expect(result.status).not.toBe(0);
@@ -71,7 +72,7 @@ describe("embedded runtime script names", () => {
   });
 
   it("aborts boot, naming the script, when an enumerator has no payload", () => {
-    const workdir = mkdtempSync(join(tmpdir(), "tn-embed-"));
+    const workdir = makeTempDirSync("tn-embed-");
     try {
       const { result } = generate(workdir, ["storage-polyfill", "frame-op-stream"]);
       expect(result.status).toBe(0);

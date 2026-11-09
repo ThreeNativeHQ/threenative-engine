@@ -38,6 +38,7 @@ inline constexpr Flag PlayerWidth{"TN_PLAYER_WIDTH", Read::Live};
 inline constexpr Flag PlayerHeight{"TN_PLAYER_HEIGHT", Read::Live};
 inline constexpr Flag PlayerTitle{"TN_PLAYER_TITLE", Read::Live};
 inline constexpr Flag PlayerVsync{"TN_PLAYER_VSYNC", Read::Live};
+inline constexpr Flag PlayerPriority{"TN_PLAYER_PRIORITY", Read::Live};
 inline constexpr Flag PlayerMetrics{"TN_PLAYER_METRICS", Read::Live};
 inline constexpr Flag PlayerGpuTiming{"TN_PLAYER_GPU_TIMING", Read::Live};
 inline constexpr Flag PlayerMainThreadCpu{"TN_PLAYER_MAIN_THREAD_CPU", Read::Live};
