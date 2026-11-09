@@ -5,6 +5,8 @@
 // macOS: the frame-critical threads read QOS_CLASS_USER_INTERACTIVE (pthread_get_qos_class_np on each thread, which
 // only that thread can read, so the report line is the readout).
 // TN_PLAYER_PRIORITY=normal changes no thread on either OS.
+// TN_PRIORITY_WINDOWED=1 opens a real window: only a presenter starts the present (tn-gpu) and render (tn-render)
+// threads, so this mode fails unless both are reported and raised. The default mode runs SDL's dummy driver.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { rmSync } from "node:fs";
@@ -13,6 +15,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
 
+const windowed = process.env.TN_PRIORITY_WINDOWED === "1";
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
 assert(executable, "Usage: player-thread-priority-desktop.mjs <tn-native-engine-player-v8[.exe]>");
@@ -38,7 +41,7 @@ const windowsThreads = (pid) => execFileSync("powershell", ["-NoProfile", "-Comm
   .trim().split(/\r?\n/).map((line) => { const [tid, level] = line.trim().split(" "); return { tid: Number(tid), level }; });
 
 async function run(extra = {}) {
-  const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", ...extra };
+  const env = { ...process.env, ...(windowed ? {} : { SDL_VIDEODRIVER: "dummy" }), SDL_AUDIO_DRIVER: "dummy", ...extra };
   delete env.TN_PLAYTEST_MAILBOX_ROOT;
   if (!("TN_PLAYER_PRIORITY" in extra)) delete env.TN_PLAYER_PRIORITY;
   const child = spawn(resolve(executable), [outfile], { env });
@@ -67,6 +70,7 @@ assert.equal(raised.field("override"), "none");
 assert.equal(normal.field("override"), "normal");
 const critical = (r) => ["game", "render", "present"].filter((k) => r.field(k) !== "none");
 assert(critical(raised).includes("game"), `the game thread is reported: ${raised.report}`);
+if (windowed) for (const key of ["render", "present"]) assert(critical(raised).includes(key), `windowed: the ${key} thread is reported: ${raised.report}`);
 
 if (process.platform === "win32") {
   for (const key of critical(raised)) assert.equal(raised.field(key), "1", `${key} reads THREAD_PRIORITY_ABOVE_NORMAL: ${raised.report}`);
@@ -85,5 +89,5 @@ if (process.platform === "win32") {
   // The override sets no QoS; what the OS starts a thread with differs by launch context, so only the source is checked.
   assert.equal(normal.field("source"), "none", `override: no QoS is set: ${normal.report}`);
 }
-console.log(`PASS default: ${raised.report}`);
+console.log(`PASS ${windowed ? "windowed" : "default"}: ${raised.report}`);
 console.log(`PASS TN_PLAYER_PRIORITY=normal: ${normal.report}`);
