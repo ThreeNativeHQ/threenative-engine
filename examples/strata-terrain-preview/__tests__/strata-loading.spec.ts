@@ -290,6 +290,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       propParts: parts,
       data: { size: 512 },
       spawn: { x: 0, y: 0, z: 0 },
+      groundReady: undefined,
       fallbackSaplingHeight: undefined,
       scatter: { canopy: new Float32Array(0), counts: {}, package: { buckets: [], cellSize: 128 } },
       groundAt: () => ({ height: 0, offset: 0 }),

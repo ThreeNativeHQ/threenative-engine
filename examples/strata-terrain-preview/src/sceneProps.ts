@@ -119,6 +119,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
     fallbackParts,
     field,
     gate,
+    groundReady,
     invalidateShadows,
     loading,
     look,
@@ -478,7 +479,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
         void Promise.all([
           Promise.all(joins.map((join) => join.ready)),
           ...joins.map((join) => join.stream.prewarmed),
-          options.groundReady,
+          groundReady,
         ]).then(
           ([regions]) => {
             land({
