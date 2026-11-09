@@ -1155,6 +1155,9 @@ function companionsFor(unit) {
 
 /** Which wrapper a utility unit needs. */
 function layoutFor(unit) {
+  // `vertical-align` applies to an inline-level box inside a line box: with the probe alone in a block it
+  // aligns against nothing and the cell reads "does nothing".
+  if (unit.props.includes("vertical-align")) return "line";
   if (unit.props.some((p) => /backdrop-filter/.test(p))) return "backdrop";
   if (unit.props.some((p) => PROSE_PROPS.has(p))) return "prose";
   if (/^(sticky|snap-|scroll-|overscroll-)/u.test(unit.probe)) return "scroll";
@@ -1693,9 +1696,6 @@ function utilityEntry(unit, classCss, byProperty) {
       undefined,
     // `aspect-ratio` is ignored when both dimensions are set, and the staged probe sets both.
     aspect: unit.props.includes("aspect-ratio") || undefined,
-    // `vertical-align` applies to an inline-level box inside a line box: with the probe alone in a block
-    // it aligns against nothing and the cell reads "does nothing".
-    layout: unit.props.includes("vertical-align") ? "line" : undefined,
     // A `flex` shorthand sets the item's width, which loses to the staged probe's own `width: 120px`.
     basis: unit.props.includes("flex") || undefined,
     // `overflow: clip` cuts a child at the padding box, so a probe with nothing overflowing cannot show
