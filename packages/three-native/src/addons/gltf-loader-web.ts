@@ -30,7 +30,7 @@ export interface IGltfResult {
 }
 
 const load = __tnLoadGltf as
-  | ((bytes: Uint8Array, files: ReadonlyMap<string, Uint8Array>) => IEngineModel)
+  | ((bytes: Uint8Array, files: ReadonlyMap<string, Uint8Array>) => Promise<IEngineModel>)
   | undefined;
 
 interface IGltfJson {
@@ -280,7 +280,7 @@ export class GLTFLoader {
         const bytes =
           typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
         const hosted = hostPlugins(this.#factories, data);
-        const model = load(bytes, files);
+        const model = await load(bytes, files);
         result = {
           scene: model.scene,
           scenes: [model.scene],

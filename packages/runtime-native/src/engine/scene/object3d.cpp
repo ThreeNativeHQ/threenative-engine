@@ -11,6 +11,7 @@
 #include "engine/foundation/uuid.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <cstdlib>
 #include <random>
@@ -201,7 +202,8 @@ void Object3D::releaseTransform() {
 namespace {
 
 // three's `_object3DId`, and the first Object3D this process builds takes 0 as three's does.
-uint64_t nextObjectId = 0;
+// Atomic: the web host builds models on its glTF loader thread while the main thread builds too (PRD-860).
+std::atomic<uint64_t> nextObjectId{0};
 uint64_t hierarchyRevision = 0;
 
 // three's module-level scratch values.

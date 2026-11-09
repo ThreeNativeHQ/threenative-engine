@@ -106,6 +106,11 @@ export interface IBrowserRuntime {
     bytes: Uint8Array,
     files?: ReadonlyMap<string, Uint8Array>,
   ): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
+  /** `loadGltf` on the engine's loader thread (PRD-860), when the module carries it. */
+  loadGltfAsync?(
+    bytes: Uint8Array,
+    files?: ReadonlyMap<string, Uint8Array>,
+  ): Promise<{ readonly scene: IEngineRef; readonly animations: IEngineRef[] }>;
 }
 
 /**
@@ -206,11 +211,14 @@ export function gltfOf(
   abi: TnAbiModule,
   context: number,
   h: Pick<IAbiHelpers, "scoped" | "alloc"> & { keyOf(pointer: number): IEngineRef },
-): Pick<IBrowserRuntime, "loadGltf"> {
+): Pick<IBrowserRuntime, "loadGltf" | "loadGltfAsync"> {
   // quality-allow: the Emscripten module is read through the exports this call site names, not its full surface.
   const host = abi as unknown as Partial<
     Record<
       | "_tnw_web_load_gltf"
+      | "_tnw_web_load_gltf_begin"
+      | "_tnw_web_load_gltf_done"
+      | "_tnw_web_load_gltf_finish"
       | "_tnw_web_load_error"
       | "_tnw_web_gltf_file"
       | "_tnw_web_gltf_files_clear",
@@ -219,55 +227,89 @@ export function gltfOf(
   >;
   const {
     _tnw_web_load_gltf: load,
+    _tnw_web_load_gltf_begin: begin,
+    _tnw_web_load_gltf_done: done,
+    _tnw_web_load_gltf_finish: finish,
     _tnw_web_load_error: error,
     _tnw_web_gltf_file: file,
     _tnw_web_gltf_files_clear: clearFiles,
   } = host;
   if (load === undefined || error === undefined) return {};
-  return {
-    loadGltf: (bytes, files) =>
+  /** Files the model names by relative uri (shared images), kept for the engine loader's next load. */
+  const stageFiles = (files: ReadonlyMap<string, Uint8Array> | undefined): void => {
+    if (files === undefined || files.size === 0) return;
+    if (file === undefined || clearFiles === undefined)
+      throw new Error(
+        "TN_WASM_GLTF_FILES_UNAVAILABLE: this web engine cannot read a model's image files",
+      );
+    for (const [uri, content] of files) {
+      // tnw_web_gltf_file keeps its own copy, so this scratch is dead once it returns. One scope
+      // per file frees it at once: the peak is one file, not the sum of all of them.
       h.scoped(() => {
-        // Files the model names by relative uri (shared images), read by the engine loader.
-        if (files !== undefined && files.size > 0) {
-          if (file === undefined || clearFiles === undefined)
-            throw new Error(
-              "TN_WASM_GLTF_FILES_UNAVAILABLE: this web engine cannot read a model's image files",
-            );
-          for (const [uri, content] of files) {
-            // tnw_web_gltf_file keeps its own copy, so this scratch is dead once it returns. One scope
-            // per file frees it at once: the peak is one file, not the sum of all of them.
-            h.scoped(() => {
-              const name = h.alloc(abi.lengthBytesUTF8(uri) + 1);
-              abi.stringToUTF8(uri, name, abi.lengthBytesUTF8(uri) + 1);
-              const copy = h.alloc(Math.max(1, content.byteLength));
-              abi.HEAPU8.set(content, copy);
-              file(name, copy, content.byteLength);
-            });
-          }
+        const name = h.alloc(abi.lengthBytesUTF8(uri) + 1);
+        abi.stringToUTF8(uri, name, abi.lengthBytesUTF8(uri) + 1);
+        const copy = h.alloc(Math.max(1, content.byteLength));
+        abi.HEAPU8.set(content, copy);
+        file(name, copy, content.byteLength);
+      });
+    }
+  };
+  /** The handles `share(out, capacity, count)` writes, retried once at the exact size for a model with many clips. */
+  const handles = (share: (out: number, capacity: number, count: number) => number) =>
+    h.scoped(() => {
+      const count = h.alloc(4);
+      for (let capacity = 64; ; ) {
+        const out = h.alloc(HANDLE * capacity);
+        const status = share(out, capacity, count);
+        const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
+        if (status === 0) {
+          const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
+          return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
         }
+        const reason = abi.UTF8ToString(error());
+        if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
+        capacity = needed;
+      }
+    });
+  const loadGltf: NonNullable<IBrowserRuntime["loadGltf"]> = (bytes, files) =>
+    h.scoped(() => {
+      try {
+        stageFiles(files);
+        const data = h.alloc(Math.max(1, bytes.byteLength));
+        abi.HEAPU8.set(bytes, data);
+        return handles((out, capacity, count) =>
+          load(context, data, bytes.byteLength, out, capacity, count),
+        );
+      } finally {
+        clearFiles?.();
+      }
+    });
+  if (begin === undefined || done === undefined || finish === undefined) return { loadGltf };
+  return {
+    loadGltf,
+    // PRD-860: the engine parses on its loader thread, so a model that arrives during play costs the
+    // main thread a poll and the hand-over, not the 100-500 ms parse Midway's late fleet froze on.
+    loadGltfAsync: async (bytes, files) => {
+      const ticket = h.scoped(() => {
         try {
+          stageFiles(files);
           const data = h.alloc(Math.max(1, bytes.byteLength));
           abi.HEAPU8.set(bytes, data);
-          const count = h.alloc(4);
-          // Retried once with the exact size when the model has more clips than the first guess.
-          for (let capacity = 64; ; ) {
-            const out = h.alloc(HANDLE * capacity);
-            const status = load(context, data, bytes.byteLength, out, capacity, count);
-            const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
-            if (status === 0) {
-              const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
-              return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
-            }
-            const reason = abi.UTF8ToString(error());
-            if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
-            capacity = needed;
-          }
+          // begin copies the bytes and takes the staged files with it.
+          return begin(data, bytes.byteLength);
         } finally {
           clearFiles?.();
         }
-      }),
+      });
+      if (ticket === 0) throw new Error("TN_WASM_GLTF: the engine refused the load");
+      while (done(ticket) === 0) await new Promise((resolve) => setTimeout(resolve, GLTF_POLL_MS));
+      return handles((out, capacity, count) => finish(context, ticket, out, capacity, count));
+    },
   };
 }
+
+/** How often a pending engine glTF load is polled: a 4 ms timer costs nothing beside a 100 ms parse. */
+const GLTF_POLL_MS = 4;
 
 /** TSL by name over `tn_tsl_call`, when the module exports it (the product web host does). */
 export function tslOf(
