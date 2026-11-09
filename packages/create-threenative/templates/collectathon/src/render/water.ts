@@ -111,6 +111,13 @@ export function ripplePixels(): Uint8Array {
     const a = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
     return a - Math.floor(a);
   };
+  // Each octave's lattice is k x k whole points, hashed once: a texel reads 64 of them.
+  const lattices = new Map<number, Float64Array>();
+  for (const k of [8, 16, 32, 64]) {
+    const lattice = new Float64Array(k * k);
+    for (let x = 0; x < k; x += 1) for (let z = 0; z < k; z += 1) lattice[x * k + z] = hash(x, z);
+    lattices.set(k, lattice);
+  }
   const noise = (u: number, v: number, k: number): number => {
     const x = u * k;
     const z = v * k;
@@ -120,7 +127,9 @@ export function ripplePixels(): Uint8Array {
     let b = z - j;
     a = a * a * a * (a * (a * 6 - 15) + 10);
     b = b * b * b * (b * (b * 6 - 15) + 10);
-    const h = (hx: number, hz: number): number => hash(((hx % k) + k) % k, ((hz % k) + k) % k);
+    const lattice = lattices.get(k) as Float64Array;
+    const h = (hx: number, hz: number): number =>
+      lattice[(((hx % k) + k) % k) * k + (((hz % k) + k) % k)] as number;
     return (
       (h(i, j) * (1 - a) + h(i + 1, j) * a) * (1 - b) +
       (h(i, j + 1) * (1 - a) + h(i + 1, j + 1) * a) * b

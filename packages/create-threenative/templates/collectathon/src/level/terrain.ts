@@ -130,19 +130,35 @@ export function buildTerrain(plan: ITerrainPlan): ITerrain {
   const inside = (x: number, z: number): boolean =>
     x >= minX && x <= maxX && z >= minZ && z <= maxZ;
   const seaFloor = plan.seaLevel - 6.5;
+  // Each path segment with its bounding box, in path order: a segment whose box lies clearly
+  // farther than the nearest so far cannot be nearer, so its exact distance is never needed.
+  const segments = plan.paths.flatMap((path) =>
+    path.slice(1).map((b, i) => {
+      const a = path[i] as readonly [number, number];
+      return {
+        a,
+        b,
+        minX: Math.min(a[0], b[0]),
+        maxX: Math.max(a[0], b[0]),
+        minZ: Math.min(a[1], b[1]),
+        maxZ: Math.max(a[1], b[1]),
+      };
+    }),
+  );
   return {
     field,
     flatness: (x, z) => (inside(x, z) ? field.normalAt(x, z).y : 1),
     ground: (x, z) => (inside(x, z) ? field.heightAt(x, z) : seaFloor),
-    // A plain loop: planting asks this thousands of times a load, and the array-building form cost
-    // ~65 ms of a repeat visit. Same segments, same order, same minimum.
+    // Planting asks this thousands of times a load. Same segments, same order, same minimum: a box
+    // skipped is more than a millionth farther than the nearest, past any rounding of its distance.
     pathDistance: (x, z) => {
       let nearest = Number.POSITIVE_INFINITY;
-      for (const path of plan.paths)
-        for (let i = 1; i < path.length; i += 1) {
-          const corner = path[i] as readonly [number, number];
-          nearest = Math.min(nearest, segmentDistance(x, z, path[i - 1] ?? corner, corner));
-        }
+      for (const segment of segments) {
+        const dx = Math.max(segment.minX - x, 0, x - segment.maxX);
+        const dz = Math.max(segment.minZ - z, 0, z - segment.maxZ);
+        if (dx * dx + dz * dz > nearest * nearest * 1.000001) continue;
+        nearest = Math.min(nearest, segmentDistance(x, z, segment.a, segment.b));
+      }
       return nearest;
     },
   };

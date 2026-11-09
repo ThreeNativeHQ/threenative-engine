@@ -236,7 +236,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // every no-install scaffold (three 0.187.0, the rts kit and the dropped Blender server), so no value
 // from either parent applies to the merged bytes.
 // Recomputed 2026-11-08 (PRD-860): seven kits take the generated-content memo (the cloud noise, the
-// collectathon sky) and one scattering table a run; measured by this test.
+// collectathon sky) and one scattering table a run; collectathon then paints and plants the same bytes
+// faster; measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-829 (2026-11-06): all sixteen trees move, measured by this test. Each kit AGENTS/CLAUDE pair
   // gains the `npx threenative doctor --fix` command line. The new `.threenative/agent-files.json`
@@ -394,7 +395,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "ed54fde1fb9b126c883ed9ecb66e2be4c2df47fac80ce5d1b80e064342d17a60",
+  collectathon: "a049c5fca5088be0337f8dc6704fd68591166ba9643d996bae02f09cc4f104ab",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
