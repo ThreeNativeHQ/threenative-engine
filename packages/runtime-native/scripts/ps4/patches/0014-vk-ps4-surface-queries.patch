@@ -1,0 +1,170 @@
+diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -881,6 +881,15 @@ VKAPI_ATTR void VKAPI_CALL vk_ps4_CmdEndQuery(VkCommandBuffer, VkQueryPool, uint
+ VKAPI_ATTR void VKAPI_CALL vk_ps4_CmdWriteTimestamp(VkCommandBuffer, VkPipelineStageFlagBits, VkQueryPool, uint32_t);
+ VKAPI_ATTR void VKAPI_CALL vk_ps4_CmdCopyQueryPoolResults(VkCommandBuffer, VkQueryPool, uint32_t, uint32_t, VkBuffer, VkDeviceSize, VkDeviceSize, VkQueryResultFlags);
+ 
++/* Surface (VK_KHR_surface): the PS4 has no window system, so a surface here is
++ * the GnmVideoOut display vk_ps4_CreateSwapchainKHR opens. The queries answer
++ * for that one configuration; the handle itself is an opaque token. */
++VKAPI_ATTR VkResult VKAPI_CALL vk_ps4_GetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice, uint32_t, VkSurfaceKHR, VkBool32 *);
++VKAPI_ATTR VkResult VKAPI_CALL vk_ps4_GetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice, VkSurfaceKHR, VkSurfaceCapabilitiesKHR *);
++VKAPI_ATTR VkResult VKAPI_CALL vk_ps4_GetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice, VkSurfaceKHR, uint32_t *, VkSurfaceFormatKHR *);
++VKAPI_ATTR VkResult VKAPI_CALL vk_ps4_GetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice, VkSurfaceKHR, uint32_t *, VkPresentModeKHR *);
++VKAPI_ATTR void VKAPI_CALL vk_ps4_DestroySurfaceKHR(VkInstance, VkSurfaceKHR, const VkAllocationCallbacks *);
++
+ /* Swapchain */
+ VKAPI_ATTR VkResult VKAPI_CALL vk_ps4_CreateSwapchainKHR(VkDevice, const VkSwapchainCreateInfoKHR *, const VkAllocationCallbacks *, VkSwapchainKHR *);
+ VKAPI_ATTR void VKAPI_CALL vk_ps4_DestroySwapchainKHR(VkDevice, VkSwapchainKHR, const VkAllocationCallbacks *);
+diff --git a/src/vk_ps4_dispatch.c b/src/vk_ps4_dispatch.c
+--- a/src/vk_ps4_dispatch.c
++++ b/src/vk_ps4_dispatch.c
+@@ -543,6 +543,12 @@ static const VkPs4NameEntry g_instance_funcs[] = {
+     ENTRY(vkGetPhysicalDeviceSparseImageFormatProperties),
+     ENTRY(vkGetPhysicalDeviceImageFormatProperties),
+     ENTRY(vkCreateDevice),
++    /* VK_KHR_surface: the queries a swapchain cannot be sized or formatted without */
++    ENTRY(vkGetPhysicalDeviceSurfaceSupportKHR),
++    ENTRY(vkGetPhysicalDeviceSurfaceCapabilitiesKHR),
++    ENTRY(vkGetPhysicalDeviceSurfaceFormatsKHR),
++    ENTRY(vkGetPhysicalDeviceSurfacePresentModesKHR),
++    ENTRY(vkDestroySurfaceKHR),
+     /* Vulkan 1.1 */
+     ENTRY(vkEnumerateInstanceVersion),
+     ENTRY(vkEnumeratePhysicalDeviceGroups),
+diff --git a/src/vk_ps4_entrypoints.c b/src/vk_ps4_entrypoints.c
+--- a/src/vk_ps4_entrypoints.c
++++ b/src/vk_ps4_entrypoints.c
+@@ -138,6 +138,13 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginQuery(VkCommandBuffer a, VkQueryPool b, uin
+ VKAPI_ATTR void VKAPI_CALL vkCmdEndQuery(VkCommandBuffer a, VkQueryPool b, uint32_t c) { vk_ps4_CmdEndQuery(a, b, c); }
+ VKAPI_ATTR void VKAPI_CALL vkCmdWriteTimestamp(VkCommandBuffer a, VkPipelineStageFlagBits b, VkQueryPool c, uint32_t d) { vk_ps4_CmdWriteTimestamp(a, b, c, d); }
+ 
++/* === Surface (VK_KHR_surface; the PS4 surface is the VideoOut display) === */
++VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice a, uint32_t b, VkSurfaceKHR c, VkBool32 *d) { return vk_ps4_GetPhysicalDeviceSurfaceSupportKHR(a, b, c, d); }
++VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice a, VkSurfaceKHR b, VkSurfaceCapabilitiesKHR *c) { return vk_ps4_GetPhysicalDeviceSurfaceCapabilitiesKHR(a, b, c); }
++VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice a, VkSurfaceKHR b, uint32_t *c, VkSurfaceFormatKHR *d) { return vk_ps4_GetPhysicalDeviceSurfaceFormatsKHR(a, b, c, d); }
++VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice a, VkSurfaceKHR b, uint32_t *c, VkPresentModeKHR *d) { return vk_ps4_GetPhysicalDeviceSurfacePresentModesKHR(a, b, c, d); }
++VKAPI_ATTR void VKAPI_CALL vkDestroySurfaceKHR(VkInstance a, VkSurfaceKHR b, const VkAllocationCallbacks *c) { vk_ps4_DestroySurfaceKHR(a, b, c); }
++
+ /* === Swapchain === */
+ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice a, const VkSwapchainCreateInfoKHR *b, const VkAllocationCallbacks *c, VkSwapchainKHR *d) { return vk_ps4_CreateSwapchainKHR(a, b, c, d); }
+ VKAPI_ATTR void VKAPI_CALL vkDestroySwapchainKHR(VkDevice a, VkSwapchainKHR b, const VkAllocationCallbacks *c) { vk_ps4_DestroySwapchainKHR(a, b, c); }
+diff --git a/src/vk_ps4_swapchain.c b/src/vk_ps4_swapchain.c
+--- a/src/vk_ps4_swapchain.c
++++ b/src/vk_ps4_swapchain.c
+@@ -361,3 +361,114 @@ vk_ps4_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
+     (void)q;
+     return VK_SUCCESS;
+ }
++
++/* === VK_KHR_surface ==========================================================
++ * vulkan-ps4 has no window system: a "surface" is the GnmVideoOut display the
++ * swapchain opens, at the fixed VideoOut resolution. The queries below answer
++ * for that one configuration rather than being absent, because a caller cannot
++ * size or format a swapchain without them: Dawn's wgpuSurfaceConfigure reads
++ * the capabilities before vkCreateSwapchainKHR and destroys the surface handle
++ * it was given. The handle is an opaque token -- nothing here dereferences it,
++ * and vk_ps4_DestroySurfaceKHR is a no-op for that reason.
++ */
++
++VKAPI_ATTR VkResult VKAPI_CALL
++vk_ps4_GetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice physical_device,
++                                          uint32_t queueFamilyIndex, VkSurfaceKHR surface,
++                                          VkBool32 *pSupported) {
++    if (!pSupported) return VK_ERROR_INITIALIZATION_FAILED;
++    (void)physical_device;
++    (void)surface;
++    /* One graphics queue family, and it is also the one that presents. */
++    *pSupported = (queueFamilyIndex == 0) ? VK_TRUE : VK_FALSE;
++    return VK_SUCCESS;
++}
++
++VKAPI_ATTR VkResult VKAPI_CALL
++vk_ps4_GetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice physical_device,
++                                               VkSurfaceKHR surface,
++                                               VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) {
++    if (!pSurfaceCapabilities) return VK_ERROR_INITIALIZATION_FAILED;
++    (void)physical_device;
++    (void)surface;
++
++    memset(pSurfaceCapabilities, 0, sizeof(*pSurfaceCapabilities));
++    /* Both bounds are the VideoOut size: sceGnmVideoOutOpen takes the extent
++     * from the swapchain create info but the display is fixed, so a swapchain
++     * of any other size would present through a differently sized buffer. */
++    pSurfaceCapabilities->minImageExtent.width = GNM_VIDEO_OUT_DEFAULT_WIDTH;
++    pSurfaceCapabilities->minImageExtent.height = GNM_VIDEO_OUT_DEFAULT_HEIGHT;
++    pSurfaceCapabilities->maxImageExtent = pSurfaceCapabilities->minImageExtent;
++    pSurfaceCapabilities->currentExtent = pSurfaceCapabilities->minImageExtent;
++    /* vkCreateSwapchainKHR rejects 0 and clamps to GNM_VIDEO_OUT_MAX_BUFFERS. */
++    pSurfaceCapabilities->minImageCount = 2;
++    pSurfaceCapabilities->maxImageCount = GNM_VIDEO_OUT_MAX_BUFFERS;
++    pSurfaceCapabilities->maxImageArrayLayers = 1;
++    pSurfaceCapabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
++    pSurfaceCapabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
++    pSurfaceCapabilities->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
++    pSurfaceCapabilities->supportedUsageFlags =
++        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
++        VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
++    return VK_SUCCESS;
++}
++
++/* The one format the VideoOut scanout presents faithfully. sceGnmVideoOutSubmitFlipAndWait
++ * takes no pixel format, so the display reads each buffer as RGBA8 in memory order: an
++ * R8G8B8A8_UNORM swapchain image (FMT 8_8_8_8, swizzle X,Y,Z,W) lands correctly, while a
++ * B8G8R8A8_UNORM one (swizzle Z,Y,X,W) writes B first and would reach the screen with red and
++ * blue exchanged -- so it is not advertised rather than silently mis-presented. */
++static const VkSurfaceFormatKHR g_surface_formats[] = {
++    {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
++};
++
++VKAPI_ATTR VkResult VKAPI_CALL
++vk_ps4_GetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
++                                          uint32_t *pSurfaceFormatCount,
++                                          VkSurfaceFormatKHR *pSurfaceFormats) {
++    if (!pSurfaceFormatCount) return VK_ERROR_INITIALIZATION_FAILED;
++    (void)physical_device;
++    (void)surface;
++    const uint32_t count = (uint32_t)(sizeof(g_surface_formats) / sizeof(g_surface_formats[0]));
++    if (!pSurfaceFormats) {
++        *pSurfaceFormatCount = count;
++        return VK_SUCCESS;
++    }
++    if (*pSurfaceFormatCount < count) {
++        *pSurfaceFormatCount = count;
++        return VK_INCOMPLETE;
++    }
++    memcpy(pSurfaceFormats, g_surface_formats, sizeof(g_surface_formats));
++    *pSurfaceFormatCount = count;
++    return VK_SUCCESS;
++}
++
++VKAPI_ATTR VkResult VKAPI_CALL
++vk_ps4_GetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice physical_device,
++                                               VkSurfaceKHR surface, uint32_t *pPresentModeCount,
++                                               VkPresentModeKHR *pPresentModes) {
++    if (!pPresentModeCount) return VK_ERROR_INITIALIZATION_FAILED;
++    (void)physical_device;
++    (void)surface;
++    /* vkQueuePresentKHR flips on the VideoOut's vsync. */
++    if (!pPresentModes) {
++        *pPresentModeCount = 1;
++        return VK_SUCCESS;
++    }
++    if (*pPresentModeCount < 1) {
++        *pPresentModeCount = 1;
++        return VK_INCOMPLETE;
++    }
++    pPresentModes[0] = VK_PRESENT_MODE_FIFO_KHR;
++    *pPresentModeCount = 1;
++    return VK_SUCCESS;
++}
++
++VKAPI_ATTR void VKAPI_CALL
++vk_ps4_DestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface,
++                         const VkAllocationCallbacks *pAllocator) {
++    /* Nothing is allocated per surface: the display belongs to the swapchain. */
++    (void)instance;
++    (void)surface;
++    (void)pAllocator;
++}

@@ -1,0 +1,20 @@
+diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
+index cc3b856..8cdbad8 100644
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -151,9 +151,12 @@ struct VkPs4PhysicalDevice {
+ /* === Device === */
+ #define VK_PS4_MAX_QUEUES 16
+ /* In-flight submissions that can hold an epilogue slice at once (see
+- * gnm_epilogue_cmd).  The guest waits on its EOP fence every frame, so a
+- * handful of frames of slack is plenty. */
+-#define VK_PS4_GNM_EPILOGUE_SLOTS 16u
++ * gnm_epilogue_cmd).  Dawn submits many times a frame (uploads, passes,
++ * semaphores), so 16 slices was about one frame of slack: taking a slice spun
++ * until the GPU retired the previous frame's submits, and the starter's submit
++ * thread spent 93% of its time there (PRD-784, perf on shadPS4).  256 slices
++ * of 65 dwords is 66 KB. */
++#define VK_PS4_GNM_EPILOGUE_SLOTS 256u
+ 
+ struct VkPs4Device {
+     VkPs4ObjectType type;

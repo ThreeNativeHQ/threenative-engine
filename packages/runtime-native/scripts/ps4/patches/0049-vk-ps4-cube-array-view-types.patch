@@ -1,0 +1,24 @@
+diff --git a/src/vk_ps4_image.c b/src/vk_ps4_image.c
+index 27805f6..f666fc5 100644
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -598,6 +598,19 @@ vk_ps4_CreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo
+             view->gnm_view.basearray = r->baseArrayLayer & 0x1FFF;
+             view->gnm_view.lastarray = last & 0x1FFF;
+         }
++        /* The view type picks the T# type. Every view used to keep the image's 2D type (a
++         * render target's T# from sceGnmTexCreate2d is one 2D slice), so a cube view -- the
++         * environment's PMREM cube, sampled by direction -- read one face or nothing, and every
++         * face lit only by the environment went black (PRD-784 P4-3). DEPTH is the cube count
++         * for a cube, the slice count for an array, as sceGnmCreateTexture sets them. */
++        const VkImageViewType vt = pCreateInfo->viewType;
++        if ((vt == VK_IMAGE_VIEW_TYPE_CUBE || vt == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) && layer_count >= 6) {
++            view->gnm_view.type = GNM_TEXTURE_CUBEMAP;
++            sceGnmTexSetDepth(&view->gnm_view, layer_count / 6);
++        } else if (vt == VK_IMAGE_VIEW_TYPE_2D_ARRAY && !multisampled) {
++            view->gnm_view.type = GNM_TEXTURE_2D_ARRAY;
++            sceGnmTexSetDepth(&view->gnm_view, layer_count);
++        }
+     }
+ 
+     *pImageView = (VkImageView)view;

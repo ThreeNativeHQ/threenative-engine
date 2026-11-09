@@ -1,0 +1,10 @@
+// PS4 shim: OpenOrbis libc++ 11's <algorithm> has no `namespace std::ranges` and does not include
+// the ranges algorithms, which the standard says live here. The engine's std::ranges::equal /
+// std::ranges::find call sites include <algorithm> and nothing else, so this header chains to the
+// real one and then adds the two-algorithm <ranges> shim beside it.
+// Put this dir BEFORE .../include/c++/v1 on -isystem so it wins.
+#ifndef _PS4_SHIM_ALGORITHM
+#define _PS4_SHIM_ALGORITHM
+#include_next <algorithm>
+#include <ranges>  // the shim's own: this directory is on -isystem ahead of libc++'s
+#endif             // _PS4_SHIM_ALGORITHM

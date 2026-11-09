@@ -1,6 +1,6 @@
 export type PlatformRuntime = "web" | "native";
-export type PlatformOS = "android" | "ios" | "linux" | "macos" | "windows" | "unknown";
-export type PlatformFormFactor = "mobile" | "desktop" | "unknown";
+export type PlatformOS = "android" | "ios" | "linux" | "macos" | "windows" | "ps4" | "unknown";
+export type PlatformFormFactor = "mobile" | "desktop" | "console" | "unknown";
 
 export interface IPlatformInfo {
   readonly runtime: PlatformRuntime;
@@ -22,6 +22,7 @@ interface IUserAgentData {
 
 const DESKTOP_OS = new Set<PlatformOS>(["linux", "macos", "windows"]);
 const MOBILE_OS = new Set<PlatformOS>(["android", "ios"]);
+const CONSOLE_OS = new Set<PlatformOS>(["ps4"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -51,11 +52,17 @@ function nativePlatform(source: unknown): Readonly<IPlatformInfo> {
     os !== "linux" &&
     os !== "macos" &&
     os !== "windows" &&
+    os !== "ps4" &&
     os !== "unknown"
   ) {
     invalidNativePlatform("os is unknown");
   }
-  if (formFactor !== "mobile" && formFactor !== "desktop" && formFactor !== "unknown") {
+  if (
+    formFactor !== "mobile" &&
+    formFactor !== "desktop" &&
+    formFactor !== "console" &&
+    formFactor !== "unknown"
+  ) {
     invalidNativePlatform("formFactor is unknown");
   }
   if (!Number.isInteger(maxTouchPoints) || (maxTouchPoints as number) < 0) {
@@ -66,7 +73,9 @@ function nativePlatform(source: unknown): Readonly<IPlatformInfo> {
     ? "mobile"
     : DESKTOP_OS.has(os as PlatformOS)
       ? "desktop"
-      : "unknown";
+      : CONSOLE_OS.has(os as PlatformOS)
+        ? "console"
+        : "unknown";
   if (formFactor !== expectedFormFactor) {
     invalidNativePlatform("os and formFactor disagree");
   }
@@ -207,6 +216,16 @@ export function isNative(): boolean {
 
 export function isMobile(): boolean {
   return getPlatform().formFactor === "mobile";
+}
+
+/** A games console (PS4): a pad is the input, there is no keyboard, mouse or touchscreen. */
+export function isConsole(): boolean {
+  return getPlatform().formFactor === "console";
+}
+
+/** A PlayStation 4: the pad is a DualShock 4, so its buttons are ✕ ○ □ △ and OPTIONS. */
+export function isPs4(): boolean {
+  return getPlatform().os === "ps4";
 }
 
 export function isTouchscreenAvailable(): boolean {

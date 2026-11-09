@@ -1,0 +1,28 @@
+diff --git a/src/vk_ps4_instance.c b/src/vk_ps4_instance.c
+index 8b2a112..ff5123f 100644
+--- a/src/vk_ps4_instance.c
++++ b/src/vk_ps4_instance.c
+@@ -207,8 +207,10 @@ vk_ps4_CreateInstance(
+     l->maxSamplerLodBias = 16.0f;
+     l->maxSamplerAnisotropy = 16.0f;
+     l->maxViewports = 16;
+-    l->maxViewportDimensions[0] = 4096;
+-    l->maxViewportDimensions[1] = 4096;
++    /* GCN's PA and CB/DB address 16384 pixels per axis (PA_SC_SCREEN_SCISSOR is 15 bits, the DB pitch
++     * reaches 16384). A 4096 limit refused the virtual-shadow atlas (TN_VIRTUAL_SHADOW_UNSUPPORTED). */
++    l->maxViewportDimensions[0] = 16384;
++    l->maxViewportDimensions[1] = 16384;
+     l->viewportBoundsRange[0] = -32768.0f;
+     l->viewportBoundsRange[1] = 32767.0f;
+     l->viewportSubPixelBits = 8;
+@@ -223,8 +225,8 @@ vk_ps4_CreateInstance(
+     l->minInterpolationOffset = -2.0f;
+     l->maxInterpolationOffset = 1.0f;
+     l->subPixelInterpolationOffsetBits = 8;
+-    l->maxFramebufferWidth = 4096;
+-    l->maxFramebufferHeight = 4096;
++    l->maxFramebufferWidth = 16384;
++    l->maxFramebufferHeight = 16384;
+     l->maxFramebufferLayers = 2048;
+     l->framebufferColorSampleCounts = VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT |
+                                       VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT;

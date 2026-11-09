@@ -43,7 +43,11 @@ export function Menu() {
       >
         restart
       </button>
-      <span>WASD / arrows to move · shift to run · space to jump the gap · reach the flag</span>
+      <span>
+        {state.pad
+          ? "left stick to move · R2 to run · ✕ to jump the gap · right stick to zoom · reach the flag"
+          : "WASD / arrows to move · shift to run · space to jump the gap · reach the flag"}
+      </span>
     </div>
   );
 }

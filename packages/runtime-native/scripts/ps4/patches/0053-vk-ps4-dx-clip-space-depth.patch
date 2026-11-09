@@ -1,0 +1,34 @@
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -1512,8 +1512,10 @@
+          * from window space to clip space (emit_spirv_special.cpp:74), so a
+          * shader that already outputs NDC collapses its geometry to the viewport
+          * corner and writes no pixel. Vulkan clip space is -w..w with clipping
+-         * on, which is this all-zero word. */
+-        vk_ps4_emit_context_reg(&cmd->gnm_cmd, R_028810_PA_CL_CLIP_CNTL, 0);
++         * on, which is this all-zero word plus DX_CLIP_SPACE_DEF: Vulkan's z is 0..w, and the
++         * all-zero word names the -w..w space (shadPS4 ClipSpace::MinusWToW), which compressed every
++         * depth into 0.5..1 (CmdSetViewport). */
++        vk_ps4_emit_context_reg(&cmd->gnm_cmd, R_028810_PA_CL_CLIP_CNTL, S_028810_DX_CLIP_SPACE_DEF(1));
+ 
+         /* Emit depth/stencil state.
+          * When pDepthStencilState is NULL, the Vulkan spec requires that
+@@ -1596,10 +1598,15 @@
+          * GNM viewport: scale = half-dimension, offset = center */
+         vp_info.scale[0] = vp->width * 0.5f;
+         vp_info.scale[1] = vp->height * 0.5f;
+-        vp_info.scale[2] = (vp->maxDepth - vp->minDepth) * 0.5f;
++        /* Vulkan clip-space z is 0..w, so the z transform is z * (max - min) + min under
++         * PA_CL_CLIP_CNTL.DX_CLIP_SPACE_DEF (set at pipeline bind). The -1..1 form
++         * (scale (max-min)/2, offset (max+min)/2) put every depth in 0.5..1: shadPS4 turned it into
++         * a negativeOneToOne viewport, a shadow map held 0.5 + d/2 while the lookup compared the
++         * plain d, and no caster ever shadowed anything (PRD-784 P4-3). */
++        vp_info.scale[2] = vp->maxDepth - vp->minDepth;
+         vp_info.offset[0] = vp->x + vp->width * 0.5f;
+         vp_info.offset[1] = vp->y + vp->height * 0.5f;
+-        vp_info.offset[2] = (vp->maxDepth + vp->minDepth) * 0.5f;
++        vp_info.offset[2] = vp->minDepth;
+         sceGnmDrawCmdSetViewport(&cmd->gnm_cmd, firstViewport + i, &vp_info);
+     }
+ }

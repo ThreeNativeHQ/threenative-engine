@@ -1,0 +1,34 @@
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -269,8 +269,16 @@
+          * target is a thin macro-tiled one (GNM_TM_THIN_2D_THIN, the tile mode
+          * sceGnmRtInitColorTargetCreateInfo is documented with in opengnm's
+          * gnm_helpers.h). */
+-        const GnmTileMode rt_tilemode =
+-            samples > 1 ? GNM_TM_THIN_2D_THIN : GNM_TM_DISPLAY_2D_THIN;
++        /* A mipmapped single-sampled target is micro-tiled on every level. Macro (2D) tiling
++         * degrades to 1D on the small levels, so the level targets the engine renders (PMREM,
++         * mip chains) carried another array mode than the texture that samples them, and
++         * shadPS4 dropped those levels as a chance overlap: the rough PMREM levels, which hold
++         * the sky fill, read black (PRD-784 visuals).
++         * ponytail: 1D costs some bandwidth on these few targets on hardware; drop it when the
++         * lane no longer needs one array mode per image. */
++        const GnmTileMode rt_tilemode = samples > 1 ? GNM_TM_THIN_2D_THIN
++                                        : mip_levels > 1 ? GNM_TM_DISPLAY_1D_THIN
++                                                         : GNM_TM_DISPLAY_2D_THIN;
+         sceGnmRtInitColorTargetCreateInfo(
+             &rt_ci, gnm_fmt,
+             pCreateInfo->extent.width, pCreateInfo->extent.height,
+@@ -384,7 +392,11 @@
+         tex_ci.nummiplevels = mip_levels;
+         tex_ci.numslices = pCreateInfo->arrayLayers;
+         tex_ci.numfragments = 1;
+-        tex_ci.tilemodehint = GNM_TM_DISPLAY_2D_THIN;
++        /* A mipmapped texture is micro-tiled for the same reason as a mipmapped target above:
++         * the levels the driver tiles on upload (opengnm addressing) and the levels shadPS4
++         * detiles must agree, and they do not for 2D macro-tiled mips, so the grid's lines
++         * read as scattered dots and blocks past level 0 (PRD-784 visuals). */
++        tex_ci.tilemodehint = mip_levels > 1 ? GNM_TM_DISPLAY_1D_THIN : GNM_TM_DISPLAY_2D_THIN;
+         tex_ci.mingpumode = gpu_mode;
+ 
+         GnmError err = sceGnmCreateTexture(&img->gnm_texture, &tex_ci);

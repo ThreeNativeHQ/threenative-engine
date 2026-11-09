@@ -1,0 +1,278 @@
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -245,6 +245,12 @@
+     uint32_t *pm4_buffer;      /* backing store */
+     uint32_t pm4_buffer_size;  /* in dwords */
+     uint32_t pm4_used;         /* in dwords */
++    /* A recording that outgrows pm4_buffer continues in chained chunks, submitted after it in order
++     * (vk_ps4_cmd_grow). Packets point at data embedded in a chunk, so a chunk never moves; chunks are
++     * kept for the next recording. pm4_head_used is the dwords pm4_buffer held when the first chunk opened. */
++    uint32_t **pm4_chunks;
++    uint32_t *pm4_chunk_used;
++    uint32_t pm4_chunk_count, pm4_chunk_alloc, pm4_head_used;
+     bool is_recording;
+     bool is_begin;
+     /* Current render pass state */
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -24,6 +24,67 @@
+ static void vk_ps4_set_ps_inputs(VkPs4CommandBuffer *cmd, const VkPs4Pipeline *pipe);
+ 
+ #define VK_PS4_CMD_BUFFER_SIZE (256 * 1024)  /* 256KB default PM4 buffer */
++#define VK_PS4_CMD_CHUNK_DWORDS (1024 * 1024 / 4)  /* each chained chunk: 1 MB, under the 4 MB IB limit */
++
++/* GNM's grow callback (cmdcanfit): the default refused, and every packet after a full 256 KB buffer was
++ * dropped without a word. A frame of virtual-shadow pages filled it: the pages it dropped kept the atlas's
++ * zeroed depth, which reads as full shadow, and a page is not drawn again until it is invalidated, so most
++ * of the scene stayed black (PRD-784 P5-16). The buffer now closes and continues in a new chunk. */
++static bool vk_ps4_cmd_grow(GnmCommandBuffer *gc, uint32_t need, void *userdata) {
++    VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)userdata;
++    const VkAllocationCallbacks *alloc = &cmd->device->allocator;
++    if (need > VK_PS4_CMD_CHUNK_DWORDS) {
++        vk_ps4_log("PM4: a %u-dword packet is larger than a chunk; dropped", need);
++        return false;
++    }
++    const uint32_t used = (uint32_t)(gc->cmdptr - gc->beginptr);
++    if (cmd->pm4_chunk_count == 0) cmd->pm4_head_used = used;
++    else cmd->pm4_chunk_used[cmd->pm4_chunk_count - 1] = used;
++    if (cmd->pm4_chunk_count == cmd->pm4_chunk_alloc) {
++        const uint32_t n = cmd->pm4_chunk_alloc + 1;
++        uint32_t **chunks = vk_ps4_alloc_zero(alloc, n * sizeof(*chunks), 16);
++        uint32_t *sizes = vk_ps4_alloc_zero(alloc, n * sizeof(*sizes), 16);
++        uint32_t *chunk = vk_ps4_alloc_zero(alloc, VK_PS4_CMD_CHUNK_DWORDS * sizeof(uint32_t), 256);
++        if (!chunks || !sizes || !chunk) {
++            vk_ps4_free(alloc, chunks); vk_ps4_free(alloc, sizes); vk_ps4_free(alloc, chunk);
++            vk_ps4_log("PM4: out of memory for a %u-byte chunk; packets dropped", VK_PS4_CMD_CHUNK_DWORDS * 4);
++            return false;
++        }
++        if (cmd->pm4_chunk_alloc) {
++            memcpy(chunks, cmd->pm4_chunks, cmd->pm4_chunk_alloc * sizeof(*chunks));
++            memcpy(sizes, cmd->pm4_chunk_used, cmd->pm4_chunk_alloc * sizeof(*sizes));
++            vk_ps4_free(alloc, cmd->pm4_chunks);
++            vk_ps4_free(alloc, cmd->pm4_chunk_used);
++        }
++        chunks[cmd->pm4_chunk_alloc] = chunk;
++        cmd->pm4_chunks = chunks;
++        cmd->pm4_chunk_used = sizes;
++        cmd->pm4_chunk_alloc = n;
++    }
++    uint32_t *next = cmd->pm4_chunks[cmd->pm4_chunk_count++];
++    gc->beginptr = gc->cmdptr = next;
++    gc->endptr = next + VK_PS4_CMD_CHUNK_DWORDS;
++    gc->sizedwords = VK_PS4_CMD_CHUNK_DWORDS;
++    return true;
++}
++static GnmCommandCallbackFunc vk_ps4_cmd_grow_fn = vk_ps4_cmd_grow;
++
++/* Room for n dwords, growing into a new chunk when the current one is full. */
++static bool vk_ps4_cmd_reserve(GnmCommandBuffer *gc, uint32_t n) {
++    if ((uint32_t)(gc->endptr - gc->cmdptr) >= n) return true;
++    return gc->callback.func && gc->callback.func(gc, n, gc->callback.userdata) &&
++           (uint32_t)(gc->endptr - gc->cmdptr) >= n;
++}
++
++/* Free the PM4 storage of a command buffer: the head buffer and every chunk. */
++static void vk_ps4_cmd_free_pm4(const VkAllocationCallbacks *alloc, VkPs4CommandBuffer *cmd) {
++    for (uint32_t i = 0; i < cmd->pm4_chunk_alloc; i++) vk_ps4_free(alloc, cmd->pm4_chunks[i]);
++    vk_ps4_free(alloc, cmd->pm4_chunks);
++    vk_ps4_free(alloc, cmd->pm4_chunk_used);
++    cmd->pm4_chunks = NULL; cmd->pm4_chunk_used = NULL;
++    cmd->pm4_chunk_alloc = cmd->pm4_chunk_count = 0;
++    vk_ps4_cmd_free_pm4(alloc, cmd);
++}
+ 
+ /* Forward declaration from vk_ps4_pipeline.c */
+ extern GnmPrimitiveType vk_topology_to_gnm(VkPrimitiveTopology topology);
+@@ -1132,7 +1193,7 @@
+     for (uint32_t i = 0; i < pool->command_buffer_count; i++) {
+         VkPs4CommandBuffer *cmd = pool->command_buffers[i];
+         if (cmd) {
+-            if (cmd->pm4_buffer) vk_ps4_free(alloc, cmd->pm4_buffer);
++            if (cmd->pm4_buffer) vk_ps4_cmd_free_pm4(alloc, cmd);
+             vk_ps4_free(alloc, cmd);
+             pool->command_buffers[i] = NULL;
+         }
+@@ -1143,7 +1204,7 @@
+     for (uint32_t i = 0; i < pool->free_count; i++) {
+         if (pool->free_list[i]) {
+             if (pool->free_list[i]->pm4_buffer)
+-                vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
++                vk_ps4_cmd_free_pm4(alloc, pool->free_list[i]);
+             vk_ps4_free(alloc, pool->free_list[i]);
+             pool->free_list[i] = NULL;
+         }
+@@ -1181,7 +1242,7 @@
+                 for (uint32_t j = 0; j < i; j++) {
+                     VkPs4CommandBuffer *c = (VkPs4CommandBuffer *)pCommandBuffers[j];
+                     if (c) {
+-                        if (c->pm4_buffer) vk_ps4_free(alloc, c->pm4_buffer);
++                        if (c->pm4_buffer) vk_ps4_cmd_free_pm4(alloc, c);
+                         vk_ps4_free(alloc, c);
+                     }
+                     pCommandBuffers[j] = VK_NULL_HANDLE;
+@@ -1209,7 +1270,7 @@
+                 for (uint32_t j = 0; j < i; j++) {
+                     VkPs4CommandBuffer *c = (VkPs4CommandBuffer *)pCommandBuffers[j];
+                     if (c) {
+-                        if (c->pm4_buffer) vk_ps4_free(alloc, c->pm4_buffer);
++                        if (c->pm4_buffer) vk_ps4_cmd_free_pm4(alloc, c);
+                         vk_ps4_free(alloc, c);
+                     }
+                     pCommandBuffers[j] = VK_NULL_HANDLE;
+@@ -1227,7 +1288,7 @@
+             if (pool->command_buffer_count < VK_PS4_MAX_COMMAND_BUFFERS_PER_POOL) {
+                 pool->command_buffers[pool->command_buffer_count++] = cmd;
+             } else {
+-                vk_ps4_free(alloc, cmd->pm4_buffer);
++                vk_ps4_cmd_free_pm4(alloc, cmd);
+                 vk_ps4_free(alloc, cmd);
+                 for (uint32_t j = 0; j < i; j++) {
+                     VkPs4CommandBuffer *c = (VkPs4CommandBuffer *)pCommandBuffers[j];
+@@ -1238,7 +1299,7 @@
+                                 break;
+                             }
+                         }
+-                        if (c->pm4_buffer) vk_ps4_free(alloc, c->pm4_buffer);
++                        if (c->pm4_buffer) vk_ps4_cmd_free_pm4(alloc, c);
+                         vk_ps4_free(alloc, c);
+                     }
+                     pCommandBuffers[j] = VK_NULL_HANDLE;
+@@ -1284,7 +1345,7 @@
+         if (pool && pool->free_count < VK_PS4_MAX_COMMAND_BUFFERS_PER_POOL) {
+             pool->free_list[pool->free_count++] = cmd;
+         } else {
+-            if (cmd->pm4_buffer) vk_ps4_free(alloc, cmd->pm4_buffer);
++            if (cmd->pm4_buffer) vk_ps4_cmd_free_pm4(alloc, cmd);
+             vk_ps4_free(alloc, cmd);
+         }
+     }
+@@ -1299,8 +1360,10 @@
+ 
+     /* Initialize GnmCommandBuffer with the PM4 buffer */
+     cmd->gnm_cmd = sceGnmCmdInit(
+-        cmd->pm4_buffer, cmd->pm4_buffer_size * sizeof(uint32_t), NULL, NULL
++        cmd->pm4_buffer, cmd->pm4_buffer_size * sizeof(uint32_t), &vk_ps4_cmd_grow_fn, cmd
+     );
++    cmd->pm4_chunk_count = 0;
++    cmd->pm4_head_used = 0;
+ 
+     /* Emit default hardware state only for primary command buffers.
+      * Secondary buffers are executed within a primary's context, so they
+@@ -1350,6 +1413,8 @@
+         sceGnmCmdReset(&cmd->gnm_cmd);
+     }
+     cmd->pm4_used = 0;
++    cmd->pm4_chunk_count = 0;
++    cmd->pm4_head_used = 0;
+     cmd->is_recording = false;
+     /* Reset all tracking state */
+     cmd->current_pipeline = NULL;
+@@ -1378,7 +1443,7 @@
+     for (uint32_t i = 0; i < pool->free_count; i++) {
+         if (pool->free_list[i]) {
+             if (pool->free_list[i]->pm4_buffer)
+-                vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
++                vk_ps4_cmd_free_pm4(alloc, pool->free_list[i]);
+             vk_ps4_free(alloc, pool->free_list[i]);
+             pool->free_list[i] = NULL;
+         }
+@@ -1399,7 +1464,7 @@
+     for (uint32_t i = 0; i < pool->free_count; i++) {
+         if (pool->free_list[i]) {
+             if (pool->free_list[i]->pm4_buffer)
+-                vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
++                vk_ps4_cmd_free_pm4(alloc, pool->free_list[i]);
+             vk_ps4_free(alloc, pool->free_list[i]);
+             pool->free_list[i] = NULL;
+         }
+@@ -2032,7 +2097,7 @@
+             /* Batched: single SET_SH_REG with 2 values */
+             uint32_t reg_addr = R_00B130_SPI_SHADER_USER_DATA_VS_0 +
+                                 pipe->vs_base_vertex_reg * 4;
+-            if ((uint32_t)(cmd->gnm_cmd.endptr - cmd->gnm_cmd.cmdptr) >= 4) {
++            if (vk_ps4_cmd_reserve(&cmd->gnm_cmd, 4)) {
+                 cmd->gnm_cmd.cmdptr[0] = PKT3(PKT3_SET_SH_REG, 2, 0);
+                 cmd->gnm_cmd.cmdptr[1] = (reg_addr - SI_SH_REG_OFFSET) >> 2;
+                 cmd->gnm_cmd.cmdptr[2] = firstVertex;
+@@ -2043,7 +2108,7 @@
+             if (pipe->has_base_vertex_reg) {
+                 uint32_t reg_addr = R_00B130_SPI_SHADER_USER_DATA_VS_0 +
+                                     pipe->vs_base_vertex_reg * 4;
+-                if ((uint32_t)(cmd->gnm_cmd.endptr - cmd->gnm_cmd.cmdptr) >= 3) {
++                if (vk_ps4_cmd_reserve(&cmd->gnm_cmd, 3)) {
+                     cmd->gnm_cmd.cmdptr[0] = PKT3(PKT3_SET_SH_REG, 1, 0);
+                     cmd->gnm_cmd.cmdptr[1] = (reg_addr - SI_SH_REG_OFFSET) >> 2;
+                     cmd->gnm_cmd.cmdptr[2] = firstVertex;
+@@ -2053,7 +2118,7 @@
+             if (pipe->has_start_instance_reg) {
+                 uint32_t reg_addr = R_00B130_SPI_SHADER_USER_DATA_VS_0 +
+                                     pipe->vs_start_instance_reg * 4;
+-                if ((uint32_t)(cmd->gnm_cmd.endptr - cmd->gnm_cmd.cmdptr) >= 3) {
++                if (vk_ps4_cmd_reserve(&cmd->gnm_cmd, 3)) {
+                     cmd->gnm_cmd.cmdptr[0] = PKT3(PKT3_SET_SH_REG, 1, 0);
+                     cmd->gnm_cmd.cmdptr[1] = (reg_addr - SI_SH_REG_OFFSET) >> 2;
+                     cmd->gnm_cmd.cmdptr[2] = firstInstance;
+@@ -2093,7 +2158,7 @@
+         if (both) {
+             uint32_t reg_addr = R_00B130_SPI_SHADER_USER_DATA_VS_0 +
+                                 pipe->vs_base_vertex_reg * 4;
+-            if ((uint32_t)(cmd->gnm_cmd.endptr - cmd->gnm_cmd.cmdptr) >= 4) {
++            if (vk_ps4_cmd_reserve(&cmd->gnm_cmd, 4)) {
+                 cmd->gnm_cmd.cmdptr[0] = PKT3(PKT3_SET_SH_REG, 2, 0);
+                 cmd->gnm_cmd.cmdptr[1] = (reg_addr - SI_SH_REG_OFFSET) >> 2;
+                 cmd->gnm_cmd.cmdptr[2] = (uint32_t)vertexOffset;
+@@ -2104,7 +2169,7 @@
+             if (pipe->has_base_vertex_reg) {
+                 uint32_t reg_addr = R_00B130_SPI_SHADER_USER_DATA_VS_0 +
+                                     pipe->vs_base_vertex_reg * 4;
+-                if ((uint32_t)(cmd->gnm_cmd.endptr - cmd->gnm_cmd.cmdptr) >= 3) {
++                if (vk_ps4_cmd_reserve(&cmd->gnm_cmd, 3)) {
+                     cmd->gnm_cmd.cmdptr[0] = PKT3(PKT3_SET_SH_REG, 1, 0);
+                     cmd->gnm_cmd.cmdptr[1] = (reg_addr - SI_SH_REG_OFFSET) >> 2;
+                     cmd->gnm_cmd.cmdptr[2] = (uint32_t)vertexOffset;
+@@ -2114,7 +2179,7 @@
+             if (pipe->has_start_instance_reg) {
+                 uint32_t reg_addr = R_00B130_SPI_SHADER_USER_DATA_VS_0 +
+                                     pipe->vs_start_instance_reg * 4;
+-                if ((uint32_t)(cmd->gnm_cmd.endptr - cmd->gnm_cmd.cmdptr) >= 3) {
++                if (vk_ps4_cmd_reserve(&cmd->gnm_cmd, 3)) {
+                     cmd->gnm_cmd.cmdptr[0] = PKT3(PKT3_SET_SH_REG, 1, 0);
+                     cmd->gnm_cmd.cmdptr[1] = (reg_addr - SI_SH_REG_OFFSET) >> 2;
+                     cmd->gnm_cmd.cmdptr[2] = firstInstance;
+--- a/src/vk_ps4_queue.c
++++ b/src/vk_ps4_queue.c
+@@ -194,17 +194,27 @@
+             VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)submit->pCommandBuffers[c];
+             if (!cmd || !cmd->pm4_buffer) continue;
+ 
+-            uint32_t cmd_size_bytes = cmd->pm4_used * sizeof(uint32_t);
+-            if (cmd_size_bytes == 0) continue;
+-
+-            void *dcb_addr = cmd->pm4_buffer;
++            /* The head buffer, then each chained chunk in recording order (vk_ps4_cmd_grow); pm4_used is
++             * the dwords of the last one. */
++            void *dcb_addrs[cmd->pm4_chunk_count + 1];
++            uint32_t dcb_sizes[cmd->pm4_chunk_count + 1];
++            uint32_t count = 0;
++            for (uint32_t k = 0; k <= cmd->pm4_chunk_count; k++) {
++                const uint32_t dwords = k == cmd->pm4_chunk_count ? cmd->pm4_used
++                                        : k == 0                  ? cmd->pm4_head_used
++                                                                  : cmd->pm4_chunk_used[k - 1];
++                if (dwords == 0) continue; /* GNM refuses an empty DCB */
++                dcb_addrs[count] = k == 0 ? (void *)cmd->pm4_buffer : (void *)cmd->pm4_chunks[k - 1];
++                dcb_sizes[count++] = dwords * sizeof(uint32_t);
++            }
++            if (count == 0) continue;
+ 
+             /* Submit to GNM — pass NULL for ccb_addrs and ccb_sizes
+              * since we don't use a separate constant command buffer. */
+-            vk_ps4_log("QueueSubmit: sceGnmSubmitCommandBuffers dwords=%u",
+-                       cmd->pm4_used);
++            vk_ps4_log("QueueSubmit: sceGnmSubmitCommandBuffers dwords=%u chunks=%u",
++                       cmd->pm4_used, cmd->pm4_chunk_count);
+             int32_t result = sceGnmSubmitCommandBuffers(
+-                1, &dcb_addr, &cmd_size_bytes, NULL, NULL
++                count, dcb_addrs, dcb_sizes, NULL, NULL
+             );
+ 
+             if (result != 0) {
