@@ -15,7 +15,13 @@ Owner, 2026-11-07: the ground vegetation looks bad and too bright. Known measure
 ### Phase 1 — references and criteria
 
 - [ ] Capture the current ground on all five worlds beside the Gaia and AAA reference frames, and write the visual acceptance criteria. proof: `capture-strata-worlds` frames and the criteria list on the PR
-- [ ] Read the Unreal Landscape grass subsystem (grass types, density scaling, cull distance) and the layer blending, and cite each line. proof: `UE 5.8.3: Engine/...:line` citations in this PRD
+- [x] Read the Unreal Landscape grass subsystem (grass types, density scaling, cull distance) and the layer blending, and cite each line. proof: `UE 5.8.3: Engine/...:line` citations in this PRD — 2026-11-08, read at the 5.8.3 clone (`396c9f059`); a DeepSeek scout listed them and each line below was re-read by hand:
+  - A grass variety defaults to 400 instances per 10 m² (40 per m²), clamped 0 to 1 000, on a jittered grid (`bUseGrid`, `PlacementJitter` 1). UE 5.8.3: Engine/Source/Runtime/Landscape/Classes/LandscapeGrassType.h:43, Engine/Source/Runtime/Landscape/Private/LandscapeGrass.cpp:1482
+  - Start and end cull distances both default to 10 000 units (100 m); between them a `PerInstanceFadeAmount` material fades each instance, and past the end a whole cluster is culled. UE 5.8.3: Engine/Source/Runtime/Landscape/Classes/LandscapeGrassType.h:57, Engine/Source/Runtime/Landscape/Private/LandscapeGrass.cpp:1486
+  - Scale is uniform with every range 1 to 1, rotation is random, and each instance aligns to the surface by the triangle normal. UE 5.8.3: Engine/Source/Runtime/Landscape/Private/LandscapeGrass.cpp:1492, Engine/Source/Runtime/Landscape/Classes/LandscapeGrassType.h:119
+  - `grass.densityScale` and `grass.CullDistanceScale` scale every variety at once, both 1 by default. UE 5.8.3: Engine/Source/Runtime/Landscape/Private/LandscapeGrass.cpp:130
+  - Layer blending has weight, alpha (legacy) and height modes. A height-blended weight is clamp(lerp(-1, 1, weight) + height, 0.0001, 1), then every weight is divided by their sum, so height 0 keeps the painted weight and a layer never reaches exactly 0. UE 5.8.3: Engine/Source/Runtime/Landscape/Classes/Materials/MaterialExpressionLandscapeLayerBlend.h:21, Engine/Source/Runtime/Landscape/Private/Materials/MaterialExpressionLandscapeLayerBlend.cpp:224
+  What this PRD takes: density per square metre and a fade band before a hard cull (Phase 3 density rows), random yaw and surface alignment for clumps, and height blending at the soil and litter edges.
 
 ### Phase 2 — soil value
 
