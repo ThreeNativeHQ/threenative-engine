@@ -545,6 +545,14 @@ function surface(
   // A plain imported PBR card erased canopy depth at the same geometry and camera.
   if (cutout && source.map && !(look.woodCanopy && canopy)) {
     importedFoliage(material, source, source.map);
+    if (look.woodCanopy && (asset === "grass" || asset === "meadow")) {
+      // One photograph per species reads as astroturf: each clump takes its own value about 1 and
+      // a green-to-dry hue from its instance hash, and its root sinks into the soil's shade.
+      const clump = sin(phase.mul(3.7)).mul(0.5).add(0.5);
+      const shade = mix(vec3(0.82, 0.98, 0.8), vec3(1.3, 1.12, 0.68), clump);
+      const root = mix(0.72, 1, smoothstep(0.0, 0.1, positionGeometry.y));
+      material.colorNode = (material.colorNode as Node<"vec3">).mul(shade).mul(root);
+    }
     if (look.woodCanopy) {
       // Blades and fronds a cell thick pass the sun through; without it a meadow seen against the
       // sun is lit almost only by the sky. Same shadowed term as the needles, without their fill.

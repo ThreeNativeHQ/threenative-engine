@@ -30,7 +30,7 @@ Owner, 2026-11-07: the ground vegetation looks bad and too bright. Known measure
 ### Phase 3 — cover and near detail
 
 - [ ] Grass, low plants, ferns and litter density follow the measured height and slope bands and the splat layers. proof: a spec on the density rows, and the walk-pose frame
-- [ ] Grass clumps in `render/cover.ts` get a darker root, a value range and colour variation per clump. proof: the close frame in the judge set
+- [x] Grass clumps in `render/cover.ts` get a darker root, a value range and colour variation per clump. proof: the close frame in the judge set — 2026-11-09: the forest draws the licensed Grass Library, so the change is in `render/pack.ts` (`cover.ts` is the procedural fallback and already carries four per-clump greens and `rootAo`). Each grass and meadow clump takes a green-to-dry hue with value about 1 from its `instanceRandom` (a red/blue debug arm proved the hash varies per clump), and its lowest 10 cm shades to 0.72. A first tune (value 0.62–1.2, root 0.45 over 18 cm) was judged REGRESSION: meadow-close L* 45.9 → 40.5. The retune holds L* 46.1 (2 runs). Fresh judge: IMPROVEMENT on meadow-close and river in both runs, NEUTRAL on player and overview, nothing outside the grass changed; saturation 0.32 → 0.41. Left: the short carpet blades still read as dark strokes in both arms. Sheets `prd-855/clump-{forest,close}-run{1,2}.jpg` on `pr635-screenshots`.
 - [ ] Needle litter and a detail normal on the forest floor break the near ground into detail. proof: the close frame in the judge set
 - [ ] Frame time, streaming, the 25 MiB cooked-kit budget and `pipelinesSinceReveal` 0 in `loop.playtest.json` stay at their original values. proof: `loop.playtest.json` and the starter-kit size spec
 
