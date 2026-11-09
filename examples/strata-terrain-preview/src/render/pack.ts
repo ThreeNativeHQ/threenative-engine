@@ -599,6 +599,27 @@ function surface(
       // grows from, so every blade takes the up normal and the sun's shadow still falls across it.
       material.normalNode = vec3(0, 1, 0).transformDirection(cameraViewMatrix);
     }
+    if (look.woodCanopy && asset === "fern") {
+      // A frond drew lime beside the sward it grows in: it takes a deeper green, each plant its own
+      // value, and the heart of the plant sinks into the shade of its own fronds.
+      const each = mix(0.85, 1.08, sin(phase.mul(2.3)).mul(0.5).add(0.5));
+      const heart = mix(0.5, 1, smoothstep(0.0, 0.4, positionGeometry.y));
+      material.colorNode = (material.colorNode as Node<"vec3">)
+        .mul(vec3(0.68, 0.8, 0.5))
+        .mul(each)
+        .mul(heart);
+      material.aoNode = mix(0.5, 1, smoothstep(0.0, 0.3, positionGeometry.y));
+    }
+    if (look.woodCanopy && FLOWERS.has(asset)) {
+      // A flower model carries its own leaves, photographed pale mint: beside the sward they drew
+      // as white paper rosettes (paint-by-species capture, 2026-11-09). The green texels take the
+      // sward's green and sink at the plant's heart; a petal, redder than it is green, keeps its
+      // photograph.
+      const sampled = material.colorNode as Node<"vec3">;
+      const leaf = smoothstep(0.0, 0.06, sampled.g.sub(sampled.r));
+      const heart = mix(0.45, 1, smoothstep(0.0, 0.3, positionGeometry.y));
+      material.colorNode = mix(sampled, sampled.mul(vec3(0.5, 0.66, 0.4)).mul(heart), leaf);
+    }
     if (look.woodCanopy) {
       // Blades and fronds a cell thick pass the sun through; without it a meadow seen against the
       // sun is lit almost only by the sky. Same shadowed term as the needles, without their fill.
@@ -948,15 +969,15 @@ export async function loadPack(
     // keeps a third of its blades and past far a tenth, each grown to hold the mat's area. UE grass
     // steps down its static mesh's own LODs the same way (UE 5.8.3:
     // Engine/Source/Runtime/Landscape/Classes/LandscapeGrassType.h:59-79, cull distances and MinLOD).
-    // The field grass steps down the same way at its own nearer `LOD_STEPS`, where a tuft is still a
-    // dozen pixels tall: it keeps half its blades, then a quarter.
+    // The field grass and the ferns step down the same way at their own nearer `LOD_STEPS`, where a
+    // tuft is still a dozen pixels tall: they keep half their blades, then a quarter.
     const thinned =
       one.asset === "meadow"
         ? ([
             [1, 0.35],
             [2, 0.12],
           ] as const)
-        : one.asset === "grass"
+        : one.asset === "grass" || one.asset === "fern"
           ? ([
               [1, 0.5],
               [2, 0.25],

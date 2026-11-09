@@ -117,6 +117,27 @@ export interface ICoverDriftRow {
 }
 
 /**
+ * The understorey: the layer a closed wood carries under its canopy, and how thick it grows.
+ *
+ * A wood is the only ground that grows one today, but its numbers are the file's, not the code's: a
+ * woodland that wants more bracken, more thicket or more needle litter edits its own row.
+ */
+export interface IUnderstoreySpec {
+  /** How many candidates the understorey's loop draws; zero plants the layer not at all. */
+  readonly attempts: number;
+  /** A multiplier on the chance of each placement: 1 is the layer the wood was graded on. */
+  readonly litter: number;
+  readonly fern: number;
+  readonly bush: number;
+  /** The meadow flowers of the light gaps, which this stream plants as poppies. */
+  readonly flower: number;
+  /** The share of ground-cover candidates dropped under a crown, 0 to 1. */
+  readonly shade: number;
+  /** How far from a trunk its crown shades the ground, in metres. */
+  readonly shadeRadius: number;
+}
+
+/**
  * What a biome's one ordered stream runs on: its cover model, its seed, and the places it keeps open.
  *
  * The numbers here are the game's, not the row's: a stream is one sequence of draws for the whole
@@ -132,6 +153,8 @@ export interface ICoverSpec {
   readonly stoneRadius: number;
   /** Circles kept clear, `[x, z, radius]`: the places a player walks. */
   readonly clearings: readonly (readonly [number, number, number])[];
+  /** The layer under a closed wood's canopy: how many draws, and how thick each one grows. */
+  readonly understorey: IUnderstoreySpec;
 }
 
 /** A ground layer's band, as fractions of the measured height range. */
@@ -223,7 +246,23 @@ const SPEC_FIELDS = [
   "species",
   "aliases",
 ] as const;
-const COVER_FIELDS = ["ground", "seed", "attempts", "stoneRadius", "clearings"] as const;
+const COVER_FIELDS = [
+  "ground",
+  "seed",
+  "attempts",
+  "stoneRadius",
+  "clearings",
+  "understorey",
+] as const;
+const UNDERSTOREY_FIELDS = [
+  "attempts",
+  "litter",
+  "fern",
+  "bush",
+  "flower",
+  "shade",
+  "shadeRadius",
+] as const;
 const COVER_GROUNDS = ["wood", "crag", "mesa", "mats"] as const;
 const STREAMS = ["ordered", "seeded"] as const;
 const DRIFT_FIELDS = ["field", "frequency", "offset", "amplitude", "band"] as const;
@@ -464,6 +503,19 @@ function clearing(value: unknown, biome: string, field: string): readonly [numbe
   return [x, z, radius];
 }
 
+function understorey(value: unknown, biome: string): IUnderstoreySpec {
+  const row = closed(value, biome, "cover.understorey", UNDERSTOREY_FIELDS);
+  return {
+    attempts: whole(row.attempts, biome, "cover.understorey.attempts"),
+    litter: count(row.litter, biome, "cover.understorey.litter"),
+    fern: count(row.fern, biome, "cover.understorey.fern"),
+    bush: count(row.bush, biome, "cover.understorey.bush"),
+    flower: count(row.flower, biome, "cover.understorey.flower"),
+    shade: share(row.shade, biome, "cover.understorey.shade"),
+    shadeRadius: count(row.shadeRadius, biome, "cover.understorey.shadeRadius"),
+  };
+}
+
 function cover(value: unknown, biome: string): ICoverSpec {
   const row = closed(value, biome, "cover", COVER_FIELDS);
   const clearings = row.clearings;
@@ -474,6 +526,7 @@ function cover(value: unknown, biome: string): ICoverSpec {
     attempts: whole(row.attempts, biome, "cover.attempts", 1),
     stoneRadius: positive(row.stoneRadius, biome, "cover.stoneRadius"),
     clearings: clearings.map((entry, index) => clearing(entry, biome, `cover.clearings[${index}]`)),
+    understorey: understorey(row.understorey, biome),
   };
 }
 

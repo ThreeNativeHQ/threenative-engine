@@ -142,14 +142,14 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
     foliage: [
       {
         species: "spruce",
-        density: 3200,
+        density: 7000,
         slope: [0, 32],
         height: null,
         spacing: [3.2, 6.4],
         collision: "trunk",
         stands: true,
         grassThreshold: 0.3,
-        standThreshold: 0.3,
+        standThreshold: 0.16,
         far: {
           cell: 6,
           spacing: [6.5, 13],
@@ -170,7 +170,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         density: 1,
         slope: [0, 42],
         height: [0, 66],
-        spacing: 1.2,
+        spacing: 0.8,
         mats: null,
         slopeFalloff: 20,
         heightFalloff: 28,
@@ -179,11 +179,11 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         drift: {
           field: "stand",
           frequency: [3.1, 2.7],
-          offset: 0.65,
-          amplitude: 0.35,
+          offset: 0.8,
+          amplitude: 0.2,
           band: [0, 1],
         },
-        bladeScale: 0.8,
+        bladeScale: 1,
         bladeJitter: 0.65,
         scrubChance: 0.3,
         scrubScale: 0.9,
@@ -716,13 +716,14 @@ describe("a biome's values", () => {
   });
 
   it("share one ordered stream: one seed and one candidate budget, on every biome", () => {
-    // One stream per biome means one seed and one attempt budget, and the five files carry the
-    // game's. A sixth biome may name its own; these five must not drift apart.
+    // One stream per biome means one seed and one attempt budget. The seed is the game's on all
+    // five files; the forest grew its own candidate budget with the wood, and the other four keep
+    // the graded one. A sixth biome may name its own; these five must not drift apart unseen.
     for (const world of WORLDS)
       expect({ world, ...biomeSpec(world).cover }).toMatchObject({
         world,
         seed: 466_468,
-        attempts: 80_000,
+        attempts: world === "forest" ? 240_000 : 80_000,
         stoneRadius: 1.9,
         ground: expect.any(String),
         clearings: expect.any(Array),

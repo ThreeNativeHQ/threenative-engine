@@ -28,7 +28,12 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { type IBakedBiome, bakeBiome, foliageScatterRules } from "../src/core/bake-biome.js";
-import { type IBiomeSpec, type IFoliageType, validateBiome } from "../src/core/biome.js";
+import {
+  type IBiomeSpec,
+  type IFoliageType,
+  type IUnderstoreySpec,
+  validateBiome,
+} from "../src/core/biome.js";
 import { decodeRAW16 } from "../src/core/io.js";
 import { finalizeState } from "../src/core/operations.js";
 import { Terrain } from "../src/core/terrain.js";
@@ -45,18 +50,18 @@ const PHASE_1: Record<
 > = {
   forest: {
     counts: {
-      boulder: 105,
-      bush: 1384,
-      fern: 7211,
-      grass: 144698,
-      litter: 2694,
+      boulder: 115,
+      bush: 4211,
+      fern: 30303,
+      grass: 259588,
+      litter: 37440,
       mountain: 7,
-      pebble: 1616,
-      poppy: 3316,
-      riverrock: 357,
-      sapling: 5379,
-      scrub: 43242,
-      spruce: 3131,
+      pebble: 1638,
+      poppy: 4128,
+      riverrock: 318,
+      sapling: 9528,
+      scrub: 78269,
+      spruce: 5649,
     },
     heights: "c3b5a7ebe3784e844604799f599950ea52f98477ca3a3e8b0c63cf76c08b6770",
     manifest: "df9936f9e3a31532426972a19c47c168262efc6117040d5a577863500307dd2c",
@@ -111,7 +116,7 @@ const PHASE_1: Record<
  * `placements.bin` was encoded from.
  */
 const PHASE_1_CANONICAL: Record<World, string> = {
-  forest: "b6d332a8bad442ef172a2d0da4db88b3d478860a303b6a94b450a83951a1c567",
+  forest: "08b036c936049aacb95ce61c33e3d0d5f7d421a4c318fd3cabe4c93c7d954155",
   coastal: "5ca73a9acf36f84c536e70b5fe86fd51f88554d871a453eb024d5dc34d304d4e",
   alpine: "10c755d4856a51fabe05f38fe59d9550bc5236edd4a1cb11e1f7f6ced1c9e7f8",
   desert: "fa52459ddcda51b336764219ce033add8ccd90f3fd299cd95d43878cf38813b3",
@@ -332,7 +337,66 @@ describe("the biome files' bake against the Phase 1 table", () => {
     const forest = place(ground, spec, undefined, "seeded");
     const pkg = forest.package;
     if (pkg === null) throw new Error("the seeded bake wrote no package");
-    expect(forest.placements).toEqual([{ asset: "spruce", count: 3200 }]);
-    expect(pkg.files[pkg.manifest.placements]?.byteLength).toBe(3200 * 8 * 4);
+    expect(forest.placements).toEqual([{ asset: "spruce", count: 7000 }]);
+    expect(pkg.files[pkg.manifest.placements]?.byteLength).toBe(7000 * 8 * 4);
+  });
+
+  it("grows the understorey from the wood's own row", () => {
+    // The layer under the canopy is data, not code: the file's own numbers give the Phase 1 counts,
+    // twice the bracken thickens the ferns, and a budget of no candidates plants no needle litter.
+    const { ground, spec } = run("forest");
+    const scattered = (understorey: Partial<IUnderstoreySpec>): Record<string, number> =>
+      Object.fromEntries(
+        bakeBiome({
+          spec: {
+            ...spec,
+            cover: { ...spec.cover, understorey: { ...spec.cover.understorey, ...understorey } },
+          },
+          state: ground,
+        }).placements.map((placed) => [placed.asset, placed.count]),
+      );
+    const plain = scattered({});
+    expect(plain).toMatchObject(PHASE_1.forest.counts);
+    expect(scattered({ fern: spec.cover.understorey.fern * 2 }).fern ?? 0).toBeGreaterThan(
+      plain.fern ?? 0,
+    );
+    expect(scattered({ attempts: 0 }).litter).toBe(0);
+    // A crown thins the grass under it: full shade over four metres drops blades, and the trees
+    // that cast it do not move.
+    const shaded = scattered({ shade: 1, shadeRadius: 4 });
+    expect(shaded.grass ?? 0).toBeLessThan(plain.grass ?? 0);
+    expect(shaded.spruce).toBe(plain.spruce);
+  });
+
+  it("moves no tree and no rock when the understorey thickens or the crowns shade", () => {
+    // The understorey and the shade draw from streams of their own: a row that grows more ferns
+    // changes the ferns, and every layer placed after them keeps its exact pose.
+    const { ground, spec } = run("forest");
+    const graded = {
+      attempts: 14_000,
+      litter: 1,
+      fern: 1,
+      bush: 1,
+      flower: 1,
+      shade: 0,
+      shadeRadius: 3,
+    };
+    const placed = (understorey: IUnderstoreySpec) =>
+      bakeBiome({
+        spec: { ...spec, cover: { ...spec.cover, understorey } },
+        state: ground,
+      }).scatter?.placements ?? [];
+    const plain = placed(graded);
+    const thick = placed({ ...graded, attempts: 60_000, fern: 2, shade: 0.5 });
+    const poses = (list: typeof plain, asset: string) =>
+      list
+        .filter((one) => one.asset === asset)
+        .map((one) => [one.position, one.rotation, one.scale]);
+    for (const asset of ["spruce", "sapling", "boulder", "riverrock"]) {
+      expect(poses(plain, asset).length).toBeGreaterThan(0);
+      expect(poses(thick, asset)).toEqual(poses(plain, asset));
+    }
+    expect(poses(thick, "fern").length).toBeGreaterThan(poses(plain, "fern").length);
+    expect(poses(thick, "grass").length).toBeLessThan(poses(plain, "grass").length);
   });
 });

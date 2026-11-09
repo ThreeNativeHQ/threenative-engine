@@ -144,6 +144,7 @@ export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 80, near: 22 } as con
  * GPU frame by a median 8% at the overview (the frame is bound by pixels, not triangles).
  */
 export const LOD_STEPS: Record<string, readonly [number, number]> = {
+  fern: [30, 60],
   grass: [30, 60],
   spruce: [LOD_BANDS.mid, 105],
 };

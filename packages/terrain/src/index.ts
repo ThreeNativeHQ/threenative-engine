@@ -14,6 +14,7 @@ export type {
   IGrassType,
   ILayerInfo,
   ISpawnSpec,
+  IUnderstoreySpec,
 } from "./core/biome.js";
 export { MATS_FIELD, STAND_FIELD, fieldWeight } from "./core/cover-field.js";
 export type { ICoverField } from "./core/cover-field.js";

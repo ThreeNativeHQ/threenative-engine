@@ -369,8 +369,11 @@ function floodedBodies(state: ITerrainState): IBiomeWaterBody[] {
  * ponytail: fixed to the starter arena; read the game's own footprint once a cook can see it.
  */
 export const PLAY_AREA_CLEAR_RADIUS = 23;
+// The mask's soft edge is the outer 2% of its radius, where a tree still passes by chance: the
+// mask is drawn that much wider, so the whole promised radius is clear (a denser forest row put a
+// trunk at 22.79 m).
 const PLAY_AREA_CLEAR: IScatterClear = {
-  mask: { type: "circle", at: [0, 0], radius: PLAY_AREA_CLEAR_RADIUS, falloff: 0.02 },
+  mask: { type: "circle", at: [0, 0], radius: PLAY_AREA_CLEAR_RADIUS / 0.98, falloff: 0.02 },
   opacity: 1,
 };
 
