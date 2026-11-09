@@ -1,3 +1,4 @@
+import { measureBands } from "@threenative/terrain";
 import { ACESFilmicToneMapping, AgXToneMapping, type Texture, type ToneMapping } from "three";
 /** Game-owned biome choices; all five worlds share the same rendering and collision paths. */
 import {
@@ -667,33 +668,21 @@ export interface IWorldBiome extends IBiome {
   readonly snowBand: readonly [number, number];
 }
 
-/** Resolve game-owned fractions once against this world's actual samples. */
+/** Resolve game-owned fractions once against this world's actual samples (`measureBands` owns the arithmetic). */
 export function measureBiome(biome: IBiome, heights: readonly number[]): IWorldBiome {
-  if (heights.length === 0) throw new RangeError("Terrain elevation samples are empty");
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  for (const height of heights) {
-    if (!Number.isFinite(height)) throw new RangeError("Terrain elevation sample is nonfinite");
-    min = Math.min(min, height);
-    max = Math.max(max, height);
-  }
-  const span = max - min;
-  if (!Number.isFinite(span)) throw new RangeError("Terrain elevation range is nonfinite");
-  const resolve = (fraction: number) => {
-    const height = min + fraction * span;
-    if (!Number.isFinite(height)) throw new RangeError("Terrain elevation band is nonfinite");
-    return height;
-  };
+  const measured = measureBands(
+    [
+      ...Object.entries(biome.heightFractions).map(([layer, [from, to]]) => ({ layer, from, to })),
+      { layer: "snow", from: biome.snowFractions[0], to: biome.snowFractions[1] },
+    ],
+    heights,
+  );
   return {
     ...biome,
-    elevationRange: [min, max],
-    heightBands: Object.fromEntries(
-      Object.entries(biome.heightFractions).map(([key, pair]) => [
-        key,
-        [resolve(pair[0]), resolve(pair[1])] as const,
-      ]),
-    ) as HeightBands,
-    snowBand: [resolve(biome.snowFractions[0]), resolve(biome.snowFractions[1])],
+    elevationRange: measured.elevationRange,
+    heightBands: measured.bands as HeightBands,
+    // The snow row above is always passed, so measureBands always returns its band.
+    snowBand: measured.snowBand as readonly [number, number],
   };
 }
 

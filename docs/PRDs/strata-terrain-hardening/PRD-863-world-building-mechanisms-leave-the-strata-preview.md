@@ -33,12 +33,15 @@ The proof: the river surface stopped in a straight edge at its first station whi
 
 - [x] Streamed ground: the per-frame budget is core's existing `AdmissionBudget` (now exported and tagged), the settled block is `TerrainTiles.settledHalf`, and the warm-before-reveal is core `warmUnculled`; `streamedGround.ts` keeps the game's tile size, colliders and material (170 -> 100 lines). proof: `world-terrain-tiles.spec.ts`, `world-warm.spec.ts`, `stream.playtest.json` `pipelinesSinceReveal` 0 — 2026-11-10: core 82/82 (settled block red without the method); `stream.playtest.json` (`?stream=1&tnTerrainValidate=1`, load 17) `pipelinesSinceReveal` 0 and every stream counter passes. The run exits 1 on 3 console errors and 2 `TN_SCENE_WARNING`s, and HEAD's code shows the same 3 errors on the same host (A/B below), so they are not this change.
 - [x] Lake warm behind the curtain: the preview's hand-written lake hook is now `warmUnculled(ctx, lake.mesh)`, the same helper the tiles use. proof: `world-warm.spec.ts`, `loop.playtest.json` 0 late pipelines — 2026-11-10: `loop.playtest.json` `pipelinesSinceReveal` 0 with HEAD's `game.ts` and with this one (load 17); both runs log the same 3 `copyFramebufferToTexture` console errors inside the held startup compile, a pre-existing core bug: on the owned engine `warmUpWorldPass` is undefined, so `renderWarmPasses` draws every object unculled straight to the `rgba8unorm` canvas, and a refracting water material copies that into its `rgba16float` scene copy. Tracked in PRD-790's streaming box.
-- [ ] Spawn admission gate (one deadline, readiness join, failure receipt). proof: a core spec, `reveal.playtest.json`
 
 ### Phase 3 — terrain fields
 
-- [ ] `measureBiome` uses the terrain package's `measureBands` (an exact duplicate). proof: preview tests
+- [x] `measureBiome` uses the terrain package's `measureBands`. proof: preview tests, the bands before and after — 2026-11-10: `measureBiome` is now a 15-line adapter from the preview's fraction record to `measureBands` layers; the measured biome is deep-equal to the old code on all five worlds; preview 274/274.
 - [ ] Curvature field, sky visibility bake, drawn-surface sampler. proof: a core spec each, values equal to the preview's before the move
+
+## Decisions
+
+- 2026-11-10 (agent, AFK): the spawn gate stays in the preview. Its generic part, a deadline that holds the loading curtain, is already core's `ctx.startup.hold(label, promise, budgetMs, progress)`; what is left is this game's `TN_STRATA_SPAWN_FAILURE` receipt, its witness fields and its `worldReady`/`loadingError` state.
 
 ## Acceptance
 
