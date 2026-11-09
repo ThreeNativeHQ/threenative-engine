@@ -102,6 +102,7 @@
         "@threenative/core/world#loadTerrainSplat": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",
         "@threenative/core/world#loadWorldHeightmap": "export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { … }",
         "@threenative/core/world#noiseVolume": "export function noiseVolume(): Data3DTexture { … }",
+        "@threenative/core/world#riverRibbonGeometry": "export function riverRibbonGeometry( rivers: readonly { … }",
         "@threenative/core/world#snowDiscFootprint": "export function snowDiscFootprint( radius: number, options: ISnowDiscFootprintOptions = { … }",
         "@threenative/core/world#SnowField": "export class SnowField { … }",
         "@threenative/core/world#TerrainTiles": "export class TerrainTiles extends Object3D implements IComputeDriven { … }",

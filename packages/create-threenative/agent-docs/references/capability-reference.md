@@ -3973,6 +3973,21 @@ export function noiseVolume(): Data3DTexture { … }
 const volume = noiseVolume();
 ```
 
+### `riverRibbonGeometry`
+
+`function` — The water surface of every river, as one geometry with one group per river. Each station is a row across the river at its own surface height, out to `reach` widths either side of the centreline, the reach `WaterBodies` floods; one more row a reach past each end stands where `WaterBodies` clamps a segment, so the water a swimmer finds past a river's end is drawn there too (cut at the end station, the surface stopped in a straight edge with its carved bed dry beyond). Quads dry on both rows against `field` are dropped, so the surface ends at the shore. Attributes for the game's water material: `flow` (the unit downstream heading), `flowUv` (metres down the centreline, metres across it) and `metres` (water depth over the ground). It decides no colour, ripple or opacity: the game shades it.
+
+```ts
+export function riverRibbonGeometry( rivers: readonly { … }
+```
+
+- **Use when:** draw a river's water surface from the baked stations · a river's water stops in a straight edge, or a swimmer floats where no water is drawn · share one river shape between the drawn water and the swimmer
+- **Constraints:** stations, width and reach come from the game's bake; the game's material shades the geometry
+
+```ts
+const geometry = riverRibbonGeometry(rivers, field, { maxDepth: 1.6 });
+```
+
 ### `snowDiscFootprint`
 
 `function` — A circular contact footprint, sized from a radius the caller measures. The shape a sphere, a ball, a wheel or a probe presses into snow, and the default the physics binding derives from a sphere's contact geometry. Flat inside the radius, eased over the softness band, with a raised rim just outside it.

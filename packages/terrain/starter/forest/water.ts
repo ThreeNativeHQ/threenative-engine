@@ -6,7 +6,7 @@
 // the shore are this file's to change: the kit owns its look.
 import type { ICtx } from "@threenative/core";
 import { WaterSurface3D } from "@threenative/core";
-import type { Heightfield } from "@threenative/core/world";
+import { type Heightfield, riverRibbonGeometry } from "@threenative/core/world";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
   BufferAttribute,
@@ -199,32 +199,6 @@ function lakeMaterial(surface: WaterSurface3D): MeshBasicNodeMaterial {
   return material;
 }
 
-/** A ribbon along the river's profile: each point's left and right edge across the course. */
-function riverGeometry(river: IRiver): BufferGeometry {
-  const half = river.width / 2;
-  const positions: number[] = [];
-  const indices: number[] = [];
-  river.points.forEach(([x, y, z], i) => {
-    const before = river.points[Math.max(0, i - 1)] ?? [x, y, z];
-    const after = river.points[Math.min(river.points.length - 1, i + 1)] ?? [x, y, z];
-    const tx = after[0] - before[0];
-    const tz = after[2] - before[2];
-    const length = Math.hypot(tx, tz) || 1;
-    const sx = (-tz / length) * half;
-    const sz = (tx / length) * half;
-    positions.push(x + sx, y + RIVER_LIFT, z + sz, x - sx, y + RIVER_LIFT, z - sz);
-    if (i > 0) {
-      const a = 2 * (i - 1);
-      const b = 2 * i;
-      indices.push(a, b, a + 1, b, b + 1, a + 1);
-    }
-  });
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
-  geometry.setIndex(indices);
-  return geometry;
-}
-
 /**
  * Adds the lake and river the bake wrote. `field` is the ground the props and the colliders stand on.
  * The caller owns the returned handle: its `dispose` removes both meshes and releases each surface.
@@ -258,7 +232,14 @@ export function addForestWater(
       opacity: 0.9,
       side: DoubleSide,
     });
-    meshes.push(new Mesh(riverGeometry(river), material));
+    // One channel width across, out a half width past each end where the bed is carved; dry
+    // quads drop, so the water ends at the bank (core `riverRibbonGeometry`).
+    const mesh = new Mesh(
+      riverRibbonGeometry([river], field, { reach: 0.5, columns: 3 }),
+      material,
+    );
+    mesh.position.y = RIVER_LIFT;
+    meshes.push(mesh);
   }
   for (const mesh of meshes) ctx.add(mesh);
   return {
