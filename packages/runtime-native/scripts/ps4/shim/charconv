@@ -1,0 +1,123 @@
+// PS4 shim: OpenOrbis libc++ 11's <charconv> has integer to_chars/from_chars only — the
+// floating-point overloads are absent (libc++ shipped them in 14), so `std::to_chars(buf, end,
+// double)` silently picks the deleted `bool` overload. The engine formats numbers for WGSL source,
+// JSON and package text, so provide float/double over the C library's correctly-rounded printf
+// conversions with an explicit round-trip check for the shortest form.
+// Put this dir BEFORE .../include/c++/v1 on -isystem so it wins.
+//
+// ponytail: alignment is not the standard's "smallest number of characters"; float text can differ
+// from libc++'s Ryu output for values whose shortest form sits either side of %g's exponent switch.
+// Upgrade path: port v8's DoubleToString (or libc++'s to_chars) if a cross-platform golden ever
+// compares this text byte for byte on floats.
+#ifndef _PS4_SHIM_CHARCONV
+#define _PS4_SHIM_CHARCONV
+#include_next <charconv>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+
+namespace std {
+namespace __ps4_shim {
+
+inline char __conversion(chars_format __format) {
+    switch (__format) {
+    case chars_format::scientific: return 'e';
+    case chars_format::fixed: return 'f';
+    case chars_format::hex: return '\0';  // Not provided: nothing in this repo formats hex floats.
+    case chars_format::general:
+    default: return 'g';
+    }
+}
+
+// The text printf writes at `__precision`, whose meaning is printf's own: digits after the point for
+// %e and %f, significant digits for %g ('g' also drops trailing zeros, as to_chars must).
+template <class _Float>
+inline int __printf_precision(char* __buf, size_t __cap, _Float __value, char __kind, int __precision) {
+    return std::snprintf(__buf, __cap, __kind == 'g' ? "%.*g" : (__kind == 'e' ? "%.*e" : "%.*f"),
+                         __precision, double(__value));
+}
+
+// Shortest round trip: the first significant-digit count whose text parses back to the same value.
+// printf is correctly rounded, so the first hit is the shortest text that survives the round trip.
+// Only 'g' and 'e' have a shortest form here; 'f'/'hex' are refused by __to_chars below.
+template <class _Float>
+inline int __format_float(char* __buf, size_t __cap, _Float __value, char __kind) {
+    for (int __d = 1; __d <= std::numeric_limits<_Float>::max_digits10; ++__d) {
+        const int __n = __printf_precision(__buf, __cap, __value, __kind, __kind == 'g' ? __d : __d - 1);
+        if (__n < 0 || size_t(__n) >= __cap) return __n;
+        char* __end = nullptr;
+        const _Float __back = sizeof(_Float) == sizeof(float) ? _Float(std::strtof(__buf, &__end))
+                                                             : _Float(std::strtod(__buf, &__end));
+        if (__back == __value && __end == __buf + __n) return __n;
+    }
+    return std::snprintf(__buf, __cap, __kind == 'g' ? "%.17g" : "%.16e", double(__value));
+}
+
+template <class _Float>
+inline to_chars_result __to_chars(char* __first, char* __last, _Float __value, chars_format __format,
+                                 int __precision) {
+    const char __kind = __conversion(__format);
+    if (__kind == '\0' || __first > __last)
+        return {__last, errc::invalid_argument};
+    const size_t __cap = size_t(__last - __first);
+    // A negative precision asks for the shortest round trip; 'f' has no shortest form here.
+    if (__precision < 0 && __kind == 'f') return {__last, errc::invalid_argument};
+    const int __n = __precision < 0
+                        ? __format_float(__first, __cap, __value, __kind)
+                        : __printf_precision(__first, __cap, __value, __kind, __precision);
+    if (__n < 0 || size_t(__n) > __cap)
+        return {__last, errc::value_too_large};
+    return {__first + __n, errc()};
+}
+
+template <class _Float>
+inline from_chars_result __from_chars(const char* __first, const char* __last, _Float& __value) {
+    // from_chars takes a range, strtod takes a C string: copy into a buffer that outlives the call.
+    char __buf[256];
+    const size_t __n = size_t(__last - __first);
+    if (__first >= __last) return {__first, errc::invalid_argument};
+    if (__n >= sizeof __buf) return {__last, errc::value_too_large};
+    std::memcpy(__buf, __first, __n);
+    __buf[__n] = '\0';
+    errno = 0;
+    char* __end = nullptr;
+    const _Float __parsed = sizeof(_Float) == sizeof(float) ? _Float(std::strtof(__buf, &__end))
+                                                           : _Float(std::strtod(__buf, &__end));
+    if (__end == __buf) return {__first, errc::invalid_argument};
+    const auto __consumed = static_cast<size_t>(__end - __buf);
+    if (errno == ERANGE && (__parsed == 0 || __parsed == std::numeric_limits<_Float>::infinity()))
+        return {__first + __consumed, errc::result_out_of_range};
+    __value = __parsed;
+    return {__first + __consumed, errc()};
+}
+
+}  // namespace __ps4_shim
+
+inline to_chars_result to_chars(char* __first, char* __last, float __value,
+                               chars_format __format = chars_format::general) {
+    return __ps4_shim::__to_chars(__first, __last, __value, __format, -1);
+}
+inline to_chars_result to_chars(char* __first, char* __last, double __value,
+                               chars_format __format = chars_format::general) {
+    return __ps4_shim::__to_chars(__first, __last, __value, __format, -1);
+}
+inline to_chars_result to_chars(char* __first, char* __last, float __value, chars_format __format,
+                               int __precision) {
+    return __ps4_shim::__to_chars(__first, __last, __value, __format, __precision);
+}
+inline to_chars_result to_chars(char* __first, char* __last, double __value, chars_format __format,
+                               int __precision) {
+    return __ps4_shim::__to_chars(__first, __last, __value, __format, __precision);
+}
+
+inline from_chars_result from_chars(const char* __first, const char* __last, float& __value) {
+    return __ps4_shim::__from_chars(__first, __last, __value);
+}
+inline from_chars_result from_chars(const char* __first, const char* __last, double& __value) {
+    return __ps4_shim::__from_chars(__first, __last, __value);
+}
+
+}  // namespace std
+#endif  // _PS4_SHIM_CHARCONV

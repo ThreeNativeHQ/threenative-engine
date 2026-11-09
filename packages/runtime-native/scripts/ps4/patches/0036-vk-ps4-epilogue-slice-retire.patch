@@ -1,0 +1,163 @@
+vulkan-ps4: reuse an epilogue slice only after the GPU has parsed it
+
+--- a/src/vk_ps4_queue.c
++++ b/src/vk_ps4_queue.c
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include "vk_ps4_internal.h"
++#include <pm4/sid.h>
+ 
+ #include <string.h>
+ 
+@@ -23,11 +24,55 @@
+  * was still queued (shadPS4's walk then read payload as a packet header:
+  * "Unimplemented PM4 type 0").  16 slices = 8 frames of slack, and the guest
+  * waits on the EOP fence before re-recording, which frees its slices again. */
++/* One retire dword per slice, after the idle label. */
++static volatile uint32_t *vk_ps4_queue_retired(VkPs4Device *dev) {
++    return dev->gnm_epilogue_cmd +
++        (uint64_t)VK_PS4_GNM_EPILOGUE_SLOTS * dev->gnm_epilogue_cmd_dwords + 1u;
++}
++
++/* The GPU reads a submitted slice when it parses it, which can be several
++ * submits after sceGnmSubmitCommandBuffers returns: rewriting a queued slice
++ * changes the packets under it (an EOP's 6 dwords overwritten by a WaitMem's 7
++ * derails shadPS4 at "count=7, remaining=6").  So a slice is reused only once
++ * the GPU has written the ticket of its last use. */
+ static uint32_t *vk_ps4_queue_next_epilogue(VkPs4Device *dev) {
+-    uint32_t *slot = dev->gnm_epilogue_cmd +
+-        (dev->gnm_epilogue_next++ % VK_PS4_GNM_EPILOGUE_SLOTS) *
++    uint32_t idx = dev->gnm_epilogue_next++ % VK_PS4_GNM_EPILOGUE_SLOTS;
++    volatile uint32_t *retired = vk_ps4_queue_retired(dev);
++    while (retired[idx] != dev->gnm_epilogue_ticket[idx]) {
++        /* spin: the GPU is still behind this slice */
++    }
++    dev->gnm_epilogue_ticket[idx]++;
++    return dev->gnm_epilogue_cmd + idx * dev->gnm_epilogue_cmd_dwords;
++}
++
++/* Append the WRITE_DATA that retires `slot`, after its packet. */
++static void vk_ps4_queue_emit_retire(VkPs4Device *dev, GnmCommandBuffer *cmd,
++                                     uint32_t *slot) {
++    uint32_t idx = (uint32_t)(slot - dev->gnm_epilogue_cmd) /
++        dev->gnm_epilogue_cmd_dwords;
++    uint64_t addr = (uint64_t)(uintptr_t)(vk_ps4_queue_retired(dev) + idx);
++    if ((uint32_t)(cmd->endptr - cmd->cmdptr) < 5) return;
++    cmd->cmdptr[0] = PKT3(PKT3_WRITE_DATA, 3, 0);
++    cmd->cmdptr[1] = (5u << 8) | (1u << 20); /* DST_SEL memory, WR_CONFIRM */
++    cmd->cmdptr[2] = (uint32_t)addr;
++    cmd->cmdptr[3] = (uint32_t)(addr >> 32);
++    cmd->cmdptr[4] = dev->gnm_epilogue_ticket[idx];
++    cmd->cmdptr += 5;
++}
++
++/* Submit one slice; a slice the GPU never sees is retired on the CPU. */
++static int32_t vk_ps4_queue_submit_epilogue(VkPs4Device *dev, void *slot,
++                                            uint32_t bytes) {
++    int32_t result = sceGnmSubmitCommandBuffers(1, &slot, &bytes, NULL, NULL);
++#ifdef VK_USE_PLATFORM_PS4
++    if (result != 0)
++#endif
++    { /* host builds submit nothing, so no GPU ever retires the slice */
++        uint32_t idx = (uint32_t)((uint32_t *)slot - dev->gnm_epilogue_cmd) /
+             dev->gnm_epilogue_cmd_dwords;
+-    return slot;
++        vk_ps4_queue_retired(dev)[idx] = dev->gnm_epilogue_ticket[idx];
++    }
++    return result;
+ }
+ 
+ /* Emit an EOP event write into `slot`, writing signal_value to the GPU label
+@@ -46,6 +91,7 @@
+         &cmd, GNM_CACHE_FLUSH_AND_INV_TS_EVENT, gpuaddr,
+         GNM_DATA_SEL_SEND_DATA32, (uint64_t)signal_value
+     );
++    vk_ps4_queue_emit_retire(dev, &cmd, slot);
+     return (uint32_t)(cmd.cmdptr - cmd.beginptr) * sizeof(uint32_t);
+ }
+ 
+@@ -65,6 +111,7 @@
+     sceGnmDrawCmdWaitMem(
+         &cmd, GNM_WAIT_REG_MEM_FUNC_EQUAL, gpuaddr, refval, 0xffffffff
+     );
++    vk_ps4_queue_emit_retire(dev, &cmd, slot);
+     return (uint32_t)(cmd.cmdptr - cmd.beginptr) * sizeof(uint32_t);
+ }
+ 
+@@ -100,9 +147,7 @@
+                 uint32_t wait_bytes = vk_ps4_queue_emit_waitmem_at(
+                     dev, wait_addr, label_addr, sem->signal_value
+                 );
+-                int32_t wait_result = sceGnmSubmitCommandBuffers(
+-                    1, &wait_addr, &wait_bytes, NULL, NULL
+-                );
++                int32_t wait_result = vk_ps4_queue_submit_epilogue(dev, wait_addr, wait_bytes);
+                 if (wait_result != 0) {
+                     /* WaitMem submit failed — fall back to CPU check. */
+                     if (!sem->signaled) {
+@@ -168,9 +213,7 @@
+                 uint32_t eop_bytes = vk_ps4_queue_emit_eop_at(
+                     dev, eop_addr, label_addr, sem->signal_value
+                 );
+-                int32_t result = sceGnmSubmitCommandBuffers(
+-                    1, &eop_addr, &eop_bytes, NULL, NULL
+-                );
++                int32_t result = vk_ps4_queue_submit_epilogue(dev, eop_addr, eop_bytes);
+                 if (result != 0) {
+                     /* EOP submit failed — fall back to CPU signaling so
+                      * the semaphore doesn't deadlock waiters. */
+@@ -204,9 +247,7 @@
+             uint32_t eop_bytes = vk_ps4_queue_emit_eop_at(
+                 dev, eop_addr, label_addr, f->signal_value
+             );
+-            int32_t result = sceGnmSubmitCommandBuffers(
+-                1, &eop_addr, &eop_bytes, NULL, NULL
+-            );
++            int32_t result = vk_ps4_queue_submit_epilogue(dev, eop_addr, eop_bytes);
+             if (result != 0) {
+                 /* EOP submit failed — fall back to CPU signaling. */
+                 f->signaled = true;
+@@ -253,9 +294,7 @@
+         uint64_t label_addr = (uint64_t)(uintptr_t)idle_label;
+         void *eop_addr = vk_ps4_queue_next_epilogue(dev);
+         uint32_t eop_bytes = vk_ps4_queue_emit_eop_at(dev, eop_addr, label_addr, 1);
+-        int32_t result = sceGnmSubmitCommandBuffers(
+-            1, &eop_addr, &eop_bytes, NULL, NULL
+-        );
++        int32_t result = vk_ps4_queue_submit_epilogue(dev, eop_addr, eop_bytes);
+ #ifdef VK_USE_PLATFORM_PS4
+         if (result == 0) {
+             /* Poll until the GPU writes the label. */
+--- a/src/vk_ps4_device.c
++++ b/src/vk_ps4_device.c
+@@ -93,7 +93,7 @@
+          * and EOP fence/semaphore signal writes: one slice per in-flight submit,
+          * plus one dword after the last slice as QueueWaitIdle's idle label. */
+     const uint64_t epilogue_bytes =
+-        ((uint64_t)VK_PS4_GNM_EPILOGUE_SLOTS * VK_PS4_GNM_EPILOGUE_CMD_DWORDS + 1u) *
++        ((uint64_t)VK_PS4_GNM_EPILOGUE_SLOTS * (VK_PS4_GNM_EPILOGUE_CMD_DWORDS + 1u) + 1u) *
+         sizeof(uint32_t);
+     err = sceGnmDirectMemoryAllocate(
+         &dev->gnm_epilogue_mem, epilogue_bytes, alignment,
+@@ -108,6 +108,8 @@
+     dev->gnm_epilogue_cmd = (uint32_t *)dev->gnm_epilogue_mem.mapped;
+     dev->gnm_epilogue_cmd_dwords = VK_PS4_GNM_EPILOGUE_CMD_DWORDS;
+     dev->gnm_epilogue_next = 0;
++    memset(dev->gnm_epilogue_cmd, 0, epilogue_bytes);
++    memset(dev->gnm_epilogue_ticket, 0, sizeof(dev->gnm_epilogue_ticket));
+ 
+     /* Load the embedded clear pixel shader for tiled RT clears.
+      * Copy the static binary to a malloc'd buffer (GPU-accessible on PS4)
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -184,6 +184,9 @@
+     uint32_t *gnm_epilogue_cmd;
+     uint32_t gnm_epilogue_cmd_dwords; /* per slice */
+     uint32_t gnm_epilogue_next;       /* rotating slice index */
++    /* Ticket of each slice's last use; the GPU writes it to the slice's retire
++     * dword (after the idle label) once it has parsed the slice. */
++    uint32_t gnm_epilogue_ticket[VK_PS4_GNM_EPILOGUE_SLOTS];
+     /* Embedded clear pixel shader for tiled RT clears.
+      * The clear PS outputs a UBO vec4 to MRT0, enabling draw-based
+      * clears on tiled surfaces where FillMemory doesn't work.

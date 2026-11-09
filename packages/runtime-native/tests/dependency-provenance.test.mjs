@@ -54,7 +54,7 @@ test('Linux arm64 fetches libuv source where no prebuilt exists, and CMake build
   assert.ok(arm64, 'download-deps must keep an explicit Linux arm64 desktop set');
   assert.match(arm64, /'libuv-source'/u);
   assert.deepEqual([...arm64.matchAll(/'([^']+)'/gu)].map((match) => match[1]),
-    ['wgpu', 'sdl3', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', 'webp-source', 'skia', 'swc', 'quiche', 'libuv-source']);
+    ['wgpu', 'sdl3', 'v8', 'quickjs', 'stb', 'cgltf', 'meshopt', 'webp', 'webp-source', 'skia', 'swc', 'quiche', 'libuv-source']);
 
   const cmake = readFileSync(join(PACKAGE_ROOT, 'CMakeLists.txt'), 'utf8');
   assert.match(
@@ -64,7 +64,7 @@ test('Linux arm64 fetches libuv source where no prebuilt exists, and CMake build
   );
   assert.match(
     cmake,
-    /elseif\(EXISTS \$\{LIBUV_DIR\} AND NOT IOS AND NOT ANDROID\)/u,
+    /elseif\(EXISTS \$\{LIBUV_DIR\} AND NOT IOS AND NOT ANDROID AND NOT TN_PS4\)/u,
     'the prebuilt branch must remain the fallback that the source path only bypasses',
   );
 });

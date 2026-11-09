@@ -1,0 +1,17 @@
+diff --git a/absl/base/config.h b/absl/base/config.h
+index 39d60e3..3cbcae3 100644
+--- a/absl/base/config.h
++++ b/absl/base/config.h
+@@ -380,7 +380,11 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
+     defined(__myriad2__) || defined(__HAIKU__) || defined(__OpenBSD__) || \
+     defined(__NetBSD__) || defined(__QNX__) || defined(__VXWORKS__) ||    \
+     defined(__hexagon__) || defined(__XTENSA__) ||                        \
+-    defined(_WASI_EMULATED_MMAN)
++    defined(_WASI_EMULATED_MMAN) || defined(__ORBIS__)
++// __ORBIS__ (PS4, OpenOrbis libc): <sys/mman.h> and mmap(2) exist, but the OO
++// libc++ __config #undefs __FreeBSD__, so the list above would miss it and
++// abseil would build low_level_alloc.cc / create_thread_identity.cc /
++// graphcycles.cc / per_thread_sem.cc empty, leaving absl::Mutex unlinkable.
+ #define ABSL_HAVE_MMAP 1
+ #endif
+ 

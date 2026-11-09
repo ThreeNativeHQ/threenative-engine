@@ -51,6 +51,7 @@
     "parity": "sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs",
     "parity:ledger": "tsx scripts/check-parity-ledger.ts",
     "prd:progress": "tsx scripts/prd-progress.ts",
+    "ps4": "node packages/runtime-native/scripts/ps4/ps4.mjs",
     "unreal:status": "tsx scripts/unreal-port-status.ts",
     "prepare": "git config core.hooksPath githooks",
     "profile:native-cpu": "tsx scripts/profile-native-cpu.ts",

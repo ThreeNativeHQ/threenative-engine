@@ -299,7 +299,7 @@ inline BufferStore* vertexSourceOf(const DrawItem& item, const shader::VertexAtt
                           : a.name == "uv"            ? item.uvs
                           : a.name == "color"         ? item.colors
                           : a.name == "instanceColor" ? item.instanceColors
-                          : a.name == "skinIndex"     ? item.skinIndices
+                          : a.name == "skinIndex" && a.type.scalar == shader::Type::Scalar::U32 ? item.skinIndices
                           : a.name == "skinWeight"    ? item.skinWeights
                           : column                   ? item.instanceMatrices : nullptr;
     // Any other name is one of the geometry's own attributes (TSL attribute(name)).

@@ -1,0 +1,80 @@
+opengnm-psbc: s_or_saveexec_b64 lowers to s_mov/s_or (shadPS4 lacks S_OR_SAVEEXEC_B64)
+
+diff --color -ru a/src/amd/compiler/aco_interface.cpp b/src/amd/compiler/aco_interface.cpp
+--- a/src/amd/compiler/aco_interface.cpp	2026-11-06 22:54:16.639693176 -0700
++++ b/src/amd/compiler/aco_interface.cpp	2026-11-06 23:04:13.991030120 -0700
+@@ -163,6 +163,8 @@
+    if (program->needs_fp_mode_insertion)
+       insert_fp_mode(program.get());
+ 
++   /* After disable_wqm, which emits the WQM-to-exact s_or_saveexec_b64. */
++   lower_saveexec_for_shadps4(program.get());
+    insert_waitcnt(program.get());
+    insert_NOPs(program.get());
+    if (program->gfx_level >= GFX11)
+@@ -346,6 +348,8 @@
+    lower_branches(program.get());
+    validate(program.get());
+ 
++   /* After disable_wqm, which emits the WQM-to-exact s_or_saveexec_b64. */
++   lower_saveexec_for_shadps4(program.get());
+    insert_waitcnt(program.get());
+    insert_NOPs(program.get());
+ 
+diff --color -ru a/src/amd/compiler/aco_ir.h b/src/amd/compiler/aco_ir.h
+--- a/src/amd/compiler/aco_ir.h	2026-11-06 22:54:16.637225676 -0700
++++ b/src/amd/compiler/aco_ir.h	2026-11-06 23:04:13.990944761 -0700
+@@ -2484,6 +2484,7 @@
+ void optimize(Program* program);
+ void optimize_postRA(Program* program);
+ void lower_branches(Program* program);
++void lower_saveexec_for_shadps4(Program* program);
+ void setup_reduce_temp(Program* program);
+ void lower_to_cssa(Program* program);
+ void register_allocation(Program* program, ra_test_policy = {});
+diff --color -ru a/src/amd/compiler/aco_lower_to_hw_instr.cpp b/src/amd/compiler/aco_lower_to_hw_instr.cpp
+--- a/src/amd/compiler/aco_lower_to_hw_instr.cpp	2026-11-06 22:54:16.642117726 -0700
++++ b/src/amd/compiler/aco_lower_to_hw_instr.cpp	2026-11-06 23:04:13.991413326 -0700
+@@ -3045,4 +3045,42 @@
+    program->progress = CompilationProgress::after_lower_to_hw;
+ }
+ 
++/* shadPS4 (v0.21.0 and main) translates s_and_saveexec_b64 and s_orn2_saveexec_b64 only, and aborts
++ * the pipeline on s_or_saveexec_b64 ("Unknown opcode S_OR_SAVEEXEC_B64"). psbc targets the PS4 alone,
++ * so each one becomes SALU ops shadPS4 translates, with the same results and the same SCC
++ * (exec != 0). It runs after lower_branches (which may delete an exec write nothing reads) and after
++ * disable_wqm (which emits one). */
++void
++lower_saveexec_for_shadps4(Program* program)
++{
++   for (Block& block : program->blocks) {
++      std::vector<aco_ptr<Instruction>> out;
++      out.reserve(block.instructions.size());
++      Builder bld(program, &out);
++      for (aco_ptr<Instruction>& instr : block.instructions) {
++         if (instr->opcode != aco_opcode::s_or_saveexec_b64) {
++            out.emplace_back(std::move(instr));
++            continue;
++         }
++         /* s_or_saveexec_b64 D, S0: D = exec; exec = S0 | exec; SCC = exec != 0. */
++         const PhysReg saved = instr->definitions[0].physReg();
++         const Definition scc_def = instr->definitions[1];
++         const Operand src = instr->operands[0];
++         if (src.isConstant() || src.physReg() != saved) {
++            assert(src.isConstant() || (src.physReg() + 1 != saved && saved + 1 != src.physReg()));
++            bld.sop1(aco_opcode::s_mov_b64, Definition(saved, s2), Operand(exec, s2));
++            bld.sop2(aco_opcode::s_or_b64, Definition(exec, s2), scc_def, src, Operand(exec, s2));
++         } else {
++            /* D is S0: swap D and exec with three xors, then or them into exec. */
++            const Operand d(saved, s2), e(exec, s2);
++            bld.sop2(aco_opcode::s_xor_b64, Definition(saved, s2), Definition(scc, s1), d, e);
++            bld.sop2(aco_opcode::s_xor_b64, Definition(exec, s2), Definition(scc, s1), e, d);
++            bld.sop2(aco_opcode::s_xor_b64, Definition(saved, s2), Definition(scc, s1), d, e);
++            bld.sop2(aco_opcode::s_or_b64, Definition(exec, s2), scc_def, e, d);
++         }
++      }
++      block.instructions = std::move(out);
++   }
++}
++
+ } // namespace aco

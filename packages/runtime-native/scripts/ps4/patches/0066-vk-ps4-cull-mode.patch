@@ -1,0 +1,56 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -448,6 +448,21 @@
+             vk_topology_to_gnm(pipe->input_assembly_state.topology));
+ }
+ 
++/* PA_SU_SC_MODE_CNTL from the pipeline's rasterization state: cull mode and front face, as RADV
++ * writes them (VkCullModeFlags FRONT=1/BACK=2 and VkFrontFace CCW=0/CW=1 are the register's own
++ * encodings). Without it every draw kept the reset value, no culling, so a FrontSide mesh drew its
++ * back faces too (PRD-784 P5-8). The rest of the register keeps that reset value: solid fill, first
++ * provoking vertex. A clear draw (a RECTLIST) passes VK_CULL_MODE_NONE; the next bind restores. */
++static void vk_ps4_emit_primitive_setup(VkPs4CommandBuffer *cmd, VkCullModeFlags cull, VkFrontFace face) {
++    GnmPrimitiveSetup ps;
++    memset(&ps, 0, sizeof(ps));
++    ps.cullmode = (GnmCullMode)(cull & VK_CULL_MODE_FRONT_AND_BACK);
++    ps.frontface = face == VK_FRONT_FACE_CLOCKWISE ? GNM_FACE_CW : GNM_FACE_CCW;
++    ps.frontmode = GNM_FILL_SOLID;
++    ps.backmode = GNM_FILL_SOLID;
++    sceGnmDrawCmdSetPrimitiveSetup(&cmd->gnm_cmd, &ps);
++}
++
+ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+                                      VkPs4Image *img,
+                                      const VkClearColorValue *cc,
+@@ -459,6 +474,7 @@
+         vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc, level);
+         return;
+     }
++    vk_ps4_emit_primitive_setup(cmd, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+ 
+     /* A colour target has no mip fields, so the image's own RT descriptor names
+      * level 0.  A clear of level N renders into a level-N target: the level's
+@@ -606,6 +622,7 @@
+  * turns depth writes off (`SetDepthWriteEnabled(... && !depth_clear_enable)`)
+  * -- no depth test at all, the symptom this path exists to fix. */
+ static void vk_ps4_clear_depth_draw(VkPs4CommandBuffer *cmd, VkPs4Image *img) {
++    vk_ps4_emit_primitive_setup(cmd, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+     /* Temporarily enable depth write so the draw accesses the depth buffer.
+      * This guarantees the lazy clear fires regardless of the bound pipeline's
+      * depth state. DB_DEPTH_CONTROL is restored by the next CmdBindPipeline. */
+@@ -855,6 +872,7 @@
+     }
+ 
+     vk_ps4_emit_aa_config(cmd, (uint32_t)pipe->multisample_state.rasterizationSamples);
++    vk_ps4_emit_primitive_setup(cmd, pipe->rasterization_state.cullMode, pipe->rasterization_state.frontFace);
+ }
+ 
+ /* === MSAA resolve: the GCN colour-buffer ROP ===============================
+@@ -1488,6 +1506,7 @@
+ 
+         /* Sample-rate state for the target this draw rasterizes into. */
+         vk_ps4_emit_aa_config(cmd, (uint32_t)pipe->multisample_state.rasterizationSamples);
++        vk_ps4_emit_primitive_setup(cmd, pipe->rasterization_state.cullMode, pipe->rasterization_state.frontFace);
+ 
+         /* SPI_SHADER_COL_FORMAT: shadPS4's PS translator drops a colour export
+          * outright when the format reads Zero (export.cpp:62), which is what the

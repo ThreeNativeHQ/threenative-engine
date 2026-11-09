@@ -1,0 +1,26 @@
+opengnm-psbc: 64-bit SGPR constants skip s_bfm_b64 and s_brev_b64 (shadPS4 translates neither)
+
+--- a/src/amd/compiler/aco_lower_to_hw_instr.cpp	2026-11-07 20:56:25.103997749 -0700
++++ b/src/amd/compiler/aco_lower_to_hw_instr.cpp	2026-11-07 20:56:25.120166317 -0700
+@@ -157,18 +157,9 @@
+       return;
+    }
+ 
+-   unsigned start = (ffsll(constant) - 1) & 0x3f;
+-   unsigned size = util_bitcount64(constant) & 0x3f;
+-   if (BITFIELD64_RANGE(start, size) == constant) {
+-      bld.sop2(aco_opcode::s_bfm_b64, dst, Operand::c32(size), Operand::c32(start));
+-      return;
+-   }
+-
+-   uint64_t rev = ((uint64_t)util_bitreverse(constant) << 32) | util_bitreverse(constant >> 32);
+-   if (Operand::is_constant_representable(rev, 8, true, false)) {
+-      bld.sop1(aco_opcode::s_brev_b64, dst, Operand::c64(rev));
+-      return;
+-   }
++   /* No s_bfm_b64 or s_brev_b64 form: shadPS4 (v0.21.0) translates neither and aborts the pipeline
++    * ("Unknown opcode S_BFM_B64": the soft lamp-shadow shader, PRD-784 calibration). The PS4 GPU has both;
++    * the two 32-bit halves below cost one more instruction. */
+ 
+    if (can_use_mov) {
+       bld.sop1(aco_opcode::s_mov_b64, dst, Operand::c64(constant));

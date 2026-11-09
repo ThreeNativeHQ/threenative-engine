@@ -1,0 +1,215 @@
+diff -ruN base/include/vk_ps4_internal.h new/include/vk_ps4_internal.h
+--- a/include/vk_ps4_internal.h	2026-11-06 23:45:16.565055941 -0700
++++ b/include/vk_ps4_internal.h	2026-11-07 00:11:23.223522689 -0700
+@@ -724,6 +724,17 @@
+ uint64_t vk_ps4_now_ns(void);
+ void vk_ps4_sleep_us(uint32_t us);
+ 
++/* === Diagnostic wait counters (vk_ps4_swapchain.c) ===
++ * Totals since the last TN_VKPS4_WAITS line, reset on every print.  Plain
++ * globals: one queue and one presenting thread, and this is a probe. */
++extern uint64_t vk_ps4_diag_acquire_ns;  /* time in AcquireNextImageKHR's poll */
++extern uint64_t vk_ps4_diag_fence_ns;    /* time inside WaitForFences */
++extern uint64_t vk_ps4_diag_fence_calls;
++extern uint64_t vk_ps4_diag_idle_ns;     /* time inside QueueWaitIdle */
++extern uint64_t vk_ps4_diag_idle_calls;
++extern uint64_t vk_ps4_diag_submits;
++void vk_ps4_diag_present(void);
++
+ /* === Format mapping === */
+ GnmDataFormat vk_ps4_vk_format_to_gnm(VkFormat format);
+ GnmDataFormat vk_ps4_vk_format_to_gnm_buffer(VkFormat format);
+diff -ruN base/src/vk_ps4_queue.c new/src/vk_ps4_queue.c
+--- a/src/vk_ps4_queue.c	2026-11-06 23:45:16.558863732 -0700
++++ b/src/vk_ps4_queue.c	2026-11-07 00:12:08.971315773 -0700
+@@ -121,6 +121,7 @@
+         return VK_ERROR_INITIALIZATION_FAILED;
+     }
+     VkPs4Queue *q = (VkPs4Queue *)queue;
++    vk_ps4_diag_submits++;
+     VkPs4Device *dev = q->device;
+     vk_ps4_log("QueueSubmit: count=%u family=%u", submitCount, q->family_index);
+ 
+@@ -275,6 +276,7 @@
+         return VK_ERROR_INITIALIZATION_FAILED;
+     }
+     VkPs4Queue *q = (VkPs4Queue *)queue;
++    const uint64_t start = vk_ps4_now_ns();
+     /* With the EOP fence mechanism, QueueWaitIdle should wait for the last
+      * submitted fence.  Since QueueSubmit is serialized and the GPU processes
+      * command buffers in order, the last EOP write completing means all
+@@ -310,6 +312,8 @@
+         *idle_label = 1;
+ #endif
+     }
++    vk_ps4_diag_idle_ns += vk_ps4_now_ns() - start;
++    vk_ps4_diag_idle_calls++;
+     return VK_SUCCESS;
+ }
+ 
+@@ -321,7 +325,8 @@
+     VkPs4Device *dev = (VkPs4Device *)device;
+     /* DeviceWaitIdle waits for all queues to be idle.  Since we have a
+      * single queue family, this is equivalent to QueueWaitIdle on the
+-     * first queue.  Use the same EOP-poll approach. */
++     * first queue.  Use the same EOP-poll approach.  Its wait lands in the
++     * idle counters through that call, so it is not counted twice here. */
+     if (dev->queue_count > 0 && dev->queues[0]) {
+         return vk_ps4_QueueWaitIdle((VkQueue)dev->queues[0]);
+     }
+diff -ruN base/src/vk_ps4_swapchain.c new/src/vk_ps4_swapchain.c
+--- a/src/vk_ps4_swapchain.c	2026-11-06 23:45:16.565571585 -0700
++++ b/src/vk_ps4_swapchain.c	2026-11-07 00:11:47.240416137 -0700
+@@ -9,6 +9,7 @@
+ 
+ #include "vk_ps4_internal.h"
+ 
++#include <stdio.h>   /* the TN_VKPS4_WAITS diagnostic line */
+ #include <string.h>
+ 
+ #ifdef __ORBIS__
+@@ -57,6 +58,63 @@
+     }
+ }
+ 
++/* === Diagnostic wait counters (PRD-784 P4-2) ===
++ * E5 spends most of its 27.5 ms frame waiting somewhere in this driver, and the
++ * frame meter only says "host gap".  Each counter is wall-clock inside one
++ * entry point and is reset by the line it feeds, so a line covers exactly
++ * VK_PS4_DIAG_WINDOW presents. */
++#define VK_PS4_DIAG_WINDOW 100
++
++uint64_t vk_ps4_diag_acquire_ns;
++uint64_t vk_ps4_diag_fence_ns;
++uint64_t vk_ps4_diag_fence_calls;
++uint64_t vk_ps4_diag_idle_ns;
++uint64_t vk_ps4_diag_idle_calls;
++uint64_t vk_ps4_diag_submits;
++
++/* "whole.hundredths" printed as two integers: the PS4 libc printf is not
++ * relied on for %f, and the probe must not be the thing that breaks. */
++static void vk_ps4_diag_print(uint64_t presents) {
++    const uint64_t acquire_ns = vk_ps4_diag_acquire_ns / VK_PS4_DIAG_WINDOW;
++    const uint64_t fence_ns = vk_ps4_diag_fence_ns / VK_PS4_DIAG_WINDOW;
++    const uint64_t idle_ns = vk_ps4_diag_idle_ns / VK_PS4_DIAG_WINDOW;
++    printf("TN_VKPS4_WAITS presents=%llu acquire_ms=%llu.%02llu fence_ms=%llu.%02llu"
++           " fences=%llu.%02llu idle_ms=%llu.%02llu idles=%llu.%02llu submits=%llu.%02llu\n",
++           (unsigned long long)presents,
++           (unsigned long long)(acquire_ns / 1000000ULL),
++           (unsigned long long)((acquire_ns / 10000ULL) % 100ULL),
++           (unsigned long long)(fence_ns / 1000000ULL),
++           (unsigned long long)((fence_ns / 10000ULL) % 100ULL),
++           (unsigned long long)(vk_ps4_diag_fence_calls / VK_PS4_DIAG_WINDOW),
++           (unsigned long long)((vk_ps4_diag_fence_calls % VK_PS4_DIAG_WINDOW) * 100ULL /
++                                VK_PS4_DIAG_WINDOW),
++           (unsigned long long)(idle_ns / 1000000ULL),
++           (unsigned long long)((idle_ns / 10000ULL) % 100ULL),
++           (unsigned long long)(vk_ps4_diag_idle_calls / VK_PS4_DIAG_WINDOW),
++           (unsigned long long)((vk_ps4_diag_idle_calls % VK_PS4_DIAG_WINDOW) * 100ULL /
++                                VK_PS4_DIAG_WINDOW),
++           (unsigned long long)(vk_ps4_diag_submits / VK_PS4_DIAG_WINDOW),
++           (unsigned long long)((vk_ps4_diag_submits % VK_PS4_DIAG_WINDOW) * 100ULL /
++                                VK_PS4_DIAG_WINDOW));
++    fflush(stdout);
++
++    vk_ps4_diag_acquire_ns = 0;
++    vk_ps4_diag_fence_ns = 0;
++    vk_ps4_diag_fence_calls = 0;
++    vk_ps4_diag_idle_ns = 0;
++    vk_ps4_diag_idle_calls = 0;
++    vk_ps4_diag_submits = 0;
++}
++
++/* Count a present; every VK_PS4_DIAG_WINDOW-th one reports the window. */
++void vk_ps4_diag_present(void) {
++    static uint64_t presents = 0;
++    presents++;
++    if ((presents % VK_PS4_DIAG_WINDOW) == 0) {
++        vk_ps4_diag_print(presents);
++    }
++}
++
+ VKAPI_ATTR VkResult VKAPI_CALL
+ vk_ps4_CreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo,
+                           const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain) {
+@@ -252,7 +310,8 @@
+     /* An image is free when no caller holds it and the display moved past
+      * its flip.  Poll the flip count until one frees, within `timeout`.
+      * Round robin from current_image hands out the oldest image first. */
+-    const uint64_t deadline = vk_ps4_now_ns() + timeout;
++    const uint64_t wait_start = vk_ps4_now_ns();
++    const uint64_t deadline = wait_start + timeout;
+     uint32_t acquired = sc->image_count;  /* invalid sentinel */
+     for (;;) {
+         vk_ps4_flip_poll(sc);
+@@ -264,12 +323,15 @@
+             break;
+         }
+         if (acquired < sc->image_count) {
++            vk_ps4_diag_acquire_ns += vk_ps4_now_ns() - wait_start;
+             break;
+         }
+         if (timeout == 0) {
++            vk_ps4_diag_acquire_ns += vk_ps4_now_ns() - wait_start;
+             return VK_NOT_READY;
+         }
+         if (timeout != UINT64_MAX && vk_ps4_now_ns() >= deadline) {
++            vk_ps4_diag_acquire_ns += vk_ps4_now_ns() - wait_start;
+             return VK_TIMEOUT;
+         }
+         vk_ps4_sleep_us(100);
+@@ -345,6 +407,7 @@
+     /* Signal semaphores (Vulkan 1.1+ via VkPresentTimesInfoGOOGLE etc.
+      * Vulkan 1.0 VkPresentInfoKHR has no signal semaphores) */
+     (void)q;
++    vk_ps4_diag_present();
+     return VK_SUCCESS;
+ }
+ 
+diff -ruN base/src/vk_ps4_sync.c new/src/vk_ps4_sync.c
+--- a/src/vk_ps4_sync.c	2026-11-06 23:45:16.565593965 -0700
++++ b/src/vk_ps4_sync.c	2026-11-07 00:12:01.191352126 -0700
+@@ -167,6 +167,7 @@
+      * On the host generic build the label is written by the (no-op) submit
+      * path, so the CPU-side signaled flag is the source of truth there. */
+     uint32_t poll_count = 0;
++    VkResult result = VK_SUCCESS;
+ 
+     for (;;) {
+         uint32_t signaled_count = 0;
+@@ -187,20 +188,18 @@
+             }
+             if (done) {
+                 signaled_count++;
+-                if (!waitAll) {
+-                    return VK_SUCCESS;
+-                }
+             }
+         }
+-        if (waitAll && signaled_count == fenceCount) {
+-            return VK_SUCCESS;
++        if (waitAll ? signaled_count == fenceCount : signaled_count > 0) {
++            break;
+         }
+ 
+         /* Check timeout */
+         if (deadline_ns != UINT64_MAX) {
+             uint64_t now = vk_ps4_now_ns();
+             if (now >= deadline_ns) {
+-                return VK_TIMEOUT;
++                result = VK_TIMEOUT;
++                break;
+             }
+         }
+ 
+@@ -212,6 +211,10 @@
+         }
+         poll_count++;
+     }
++
++    vk_ps4_diag_fence_ns += vk_ps4_now_ns() - start;
++    vk_ps4_diag_fence_calls++;
++    return result;
+ }
+ 
+ VKAPI_ATTR VkResult VKAPI_CALL

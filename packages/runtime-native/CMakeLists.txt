@@ -270,7 +270,12 @@ endif()
 # Platform Detection
 # ============================================================================
 
-if(APPLE)
+if(TN_PS4)
+    # PS4 (OpenOrbis): cmake/ps4.toolchain.cmake sets TN_PS4 before anything here. The target is
+    # GNU-ish, so without this branch the chain would match UNIX and name the platform "linux",
+    # configuring SDL3/X11/fontconfig for a host that cannot run them.
+    set(MYSTRAL_PLATFORM "ps4")
+elseif(APPLE)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         set(MYSTRAL_PLATFORM "ios")
         set(MYSTRAL_USE_V8 OFF)
@@ -346,7 +351,7 @@ set(SDL3_FOUND OFF)
 file(GLOB SDL3_SOURCE_DIRS ${SDL3_DIR}/SDL3-*)
 if(SDL3_SOURCE_DIRS)
     list(GET SDL3_SOURCE_DIRS 0 SDL3_SOURCE_DIR)
-    if(EXISTS ${SDL3_SOURCE_DIR}/CMakeLists.txt)
+    if(EXISTS ${SDL3_SOURCE_DIR}/CMakeLists.txt AND NOT TN_PS4)
         message(STATUS "Building SDL3 from source: ${SDL3_SOURCE_DIR}")
 
         # Configure SDL3 build options - static library only
@@ -386,7 +391,7 @@ if(SDL3_SOURCE_DIRS)
         else()
             message(WARNING "SDL3 static target not found after add_subdirectory")
         endif()
-    else()
+    elseif(NOT TN_PS4)
         message(WARNING "SDL3 CMakeLists.txt not found in ${SDL3_SOURCE_DIR}")
     endif()
 else()
@@ -420,6 +425,21 @@ endif()
 
 if(NOT SDL3_FOUND)
     message(WARNING "SDL3 not found. Run 'node scripts/download-deps.mjs' first.")
+endif()
+
+if(TN_PS4)
+    # PS4: SDL3 is the input/audio seam the player's loop is written against, and no PS4 video or
+    # audio driver exists to build yet. The headers are enough to compile the engine's host-services
+    # unit; scripts/ps4/ps4-deps.sh stages them beside the Dawn and V8 prebuilts.
+    file(GLOB TN_PS4_SDL3_INCLUDE_DIRS ${THIRD_PARTY_DIR}/sdl3/SDL3-*/include)
+    if(TN_PS4_SDL3_INCLUDE_DIRS)
+        list(GET TN_PS4_SDL3_INCLUDE_DIRS 0 SDL3_INCLUDE_DIR)
+        set(SDL3_FOUND ON)
+        message(STATUS "PS4: SDL3 headers only, no driver lib: ${SDL3_INCLUDE_DIR}")
+    else()
+        message(FATAL_ERROR
+            "TN_PS4_SDL3_MISSING: no SDL3 headers under ${THIRD_PARTY_DIR}/sdl3; run scripts/ps4/ps4-deps.sh")
+    endif()
 endif()
 
 # wgpu-native
@@ -734,6 +754,9 @@ if(TN_ENABLE_NATIVE_PHYSICS)
             set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios-sim")
         elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
             set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios")
+        elseif(TN_PS4)
+            # OpenOrbis links against its own musl: the Linux musl staticlib's libc references resolve there.
+            set(THREENATIVE_PHYSICS_TARGET "x86_64-unknown-linux-musl")
         else()
             message(FATAL_ERROR "Native physics has no prebuilt target for this platform/architecture")
         endif()
@@ -745,7 +768,7 @@ if(TN_ENABLE_NATIVE_PHYSICS)
         message(FATAL_ERROR
             "Native physics artifact is missing: ${THREENATIVE_PHYSICS_LIBRARY}. "
             "Run node scripts/build-native-physics.mjs with --android, --ios-simulator, "
-            "or --ios-device as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
+            "--ios-device or --ps4 as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
         )
     endif()
     add_library(threenative-native-physics STATIC IMPORTED)
@@ -993,7 +1016,9 @@ if(ANDROID)
     else()
         message(STATUS "libwebp not found - WebP texture support disabled. Run 'node scripts/download-deps.mjs --only webp-source' to enable.")
     endif()
-elseif(EXISTS ${WEBP_DIR} AND NOT IOS)
+elseif(EXISTS ${WEBP_DIR} AND NOT IOS AND NOT TN_PS4)
+    # PS4 takes no host prebuilt: the .a under webp/ is a Linux binary, and the guest links no
+    # libc it was built against. TN_PS4 keeps WebP off, as it was before the desktop deps landed.
     # libwebp prebuilt structure: webp/libwebp-{version}-{platform}/lib/libwebp.a
     file(GLOB WEBP_SUBDIRS ${WEBP_DIR}/libwebp-*)
     if(WEBP_SUBDIRS)
@@ -1306,7 +1331,7 @@ set(LIBUV_SOURCE_DIR ${THIRD_PARTY_DIR}/libuv-src/libuv-1.51.0)
 #      download-deps.mjs fetches the arch-independent libuv-source there instead.
 # The prebuilt stays first choice whenever it exists, so x64/macOS/Windows linking is unchanged.
 set(LIBUV_SOURCE_AVAILABLE FALSE)
-if(EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID)
+if(EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID AND NOT TN_PS4)
     set(LIBUV_SOURCE_AVAILABLE TRUE)
 endif()
 if(LIBUV_SOURCE_AVAILABLE AND (TN_ENABLE_SANITIZERS OR NOT EXISTS ${LIBUV_DIR}))
@@ -1327,7 +1352,7 @@ if(LIBUV_SOURCE_AVAILABLE AND (TN_ENABLE_SANITIZERS OR NOT EXISTS ${LIBUV_DIR}))
             "libuv source at ${LIBUV_SOURCE_DIR} defined no libuv::libuv target; the build must "
             "not fall back to the prebuilt and silently lose async I/O (or sanitizer coverage)")
     endif()
-elseif(EXISTS ${LIBUV_DIR} AND NOT IOS AND NOT ANDROID)
+elseif(EXISTS ${LIBUV_DIR} AND NOT IOS AND NOT ANDROID AND NOT TN_PS4)
     # Headers are directly in include/
     if(EXISTS ${LIBUV_DIR}/include)
         set(LIBUV_INCLUDE_DIR ${LIBUV_DIR}/include)

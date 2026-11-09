@@ -15,6 +15,17 @@ const require = createRequire(resolve(native, "package.json"));
 const { build } = require("esbuild");
 const ts = require("typescript");
 const core = dirname(require.resolve("@threenative/core/package.json"));
+// A core subpath bundles from the source its package export names: "./spells" -> dist/spells/index.js
+// -> src/spells/index.ts. Guessing src/<last segment>.ts missed the nested spells entries.
+export function coreSubpathSource(coreDir, specifier) {
+  try {
+    return coreSourcePath(specifier, coreDir);
+  } catch (failure) {
+    // The mapping rule lives in `coreSourcePath`; this keeps the name and the code #621's test pins.
+    const reason = failure instanceof Error ? failure.message : String(failure);
+    throw new Error(`TN_NATIVE_ENGINE_UNBOUND: ${specifier} [${reason}]`);
+  }
+}
 const threeNative = dirname(require.resolve("@threenative/three-native/package.json"));
 const assetsEntry = resolve(dirname(require.resolve("@threenative/assets/package.json")), "dist/index.js");
 
@@ -132,6 +143,9 @@ function unboundDiagnostic(specifier, name) {
 
 /** Bundle the portable entry against native imports; publish nothing when a binding is absent. */
 export async function bundleNativeEngine({ entry, outfile, boot = true, define = {}, host = boot }) {
+  // React and its reconciler branch on `process.env.NODE_ENV`; the player has no `process` (Vite defines it
+  // on the desktop path, bundle.mjs). A caller's own define wins.
+  define = { "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"), ...define };
   let engineCommit;
   try {
     const git = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -152,6 +166,9 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     external: ["three", "three/*", "three-mesh-bvh", "three-mesh-bvh/*",
       "@threenative/core", "@threenative/core/*"],
     logLevel: "silent", metafile: true, sourcemap: "inline", sourcesContent: true,
+    // A UI component imports its stylesheet; the native-css backend reads the extracted sheets from the
+    // ui dir, so in the JS realm the import is only a side effect (the desktop path is Vite's CSS split).
+    loader: { ".css": "empty" },
     // A script entry that imports core's loader by relative path (the load test's Fox) would inline the
     // browser loader and its GLTFLoader; it reads the cooked package like core's own imports do.
     plugins: [packageImports, { name: "native-assets", setup(builder) {
@@ -209,6 +226,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     "three-mesh-bvh": resolve(threeNative, "src/addons/mesh-bvh.ts"),
     "three/addons/utils/BufferGeometryUtils.js": resolve(threeNative, "src/addons/buffer-geometry-utils.ts"),
     "three/addons/geometries/DecalGeometry.js": resolve(threeNative, "src/addons/decal-geometry.ts"),
+    "three/addons/animation/CCDIKSolver.js": resolve(threeNative, "src/addons/ccd-ik-solver.ts"),
   };
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
     // A facade's own exports; `three` inside one (an addon over the engine) is the facade above.
@@ -224,6 +242,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     bundle: true, write: false, format: "iife", platform: "neutral", target: "es2022",
     conditions: ["threenative-native"], define: { "import.meta.env": "{}", ...define }, metafile: true,
     logLevel: "silent", outfile, sourcemap: "external", sourcesContent: true,
+    loader: { ".css": "empty" },
     plugins: [packageImports, { name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
         if (args.importer.startsWith(`${resolve(core, "src")}${sep}`))
@@ -290,8 +309,10 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
 
 /**
  * Cooks a project's assets for the native engine beside the game bundle: its own `assets` config,
- * decoder-free (the engine's loaders decode no meshopt or KTX2), with the native package on, which
- * the player reads from `<bundle dir>/native/assets.tnpk`. `source` overrides the config's source dir.
+ * with the native package on, which the player reads from `<bundle dir>/native/assets.tnpk`.
+ * Meshopt stays on: the engine compiles the meshoptimizer decoders and its glTF loader decodes
+ * EXT/KHR_meshopt_compression (PRD-515). KTX2 is still refused (TN_NATIVE_KTX2_UNSUPPORTED), so its
+ * cook output is not kept. `source` overrides the config's source dir.
  */
 export async function cookNativeEngineAssets({ project, outfile, source }) {
   project = resolve(project);
@@ -306,7 +327,7 @@ export async function cookNativeEngineAssets({ project, outfile, source }) {
   // A file URL: on Windows, `import("D:\\...")` reads `d:` as a URL scheme and throws (engine#612).
   const { compileAssets } = await import(pathToFileURL(assetsEntry).href);
   await compileAssets({ cwd: project, config: { ...assets, ...(source && { source: resolve(source) }), nativePackage: true }, platform: "desktop",
-    runtimeDecoders: { ktx2: false, meshopt: false } });
+    runtimeDecoders: { ktx2: false, meshopt: true } });
   const output = resolve(project, assets.output ?? "public", "native/assets.tnpk");
   const target = resolve(dirname(resolve(outfile)), "native/assets.tnpk");
   // A game with no asset files gets no pack (TN_ASSETS_NATIVE_PACKAGE_EMPTY), and the player opens

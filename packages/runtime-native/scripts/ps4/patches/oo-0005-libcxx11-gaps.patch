@@ -1,0 +1,72 @@
+diff --git a/src/dawn/common/GPUInfo.cpp b/src/dawn/common/GPUInfo.cpp
+index e5abc6081..32b3bba66 100644
+--- a/src/dawn/common/GPUInfo.cpp
++++ b/src/dawn/common/GPUInfo.cpp
+@@ -83,9 +83,16 @@ std::string DriverVersion::ToString() const {
+ }
+ 
+ std::strong_ordering DriverVersion::operator<=>(const DriverVersion& other) const {
+-    return std::lexicographical_compare_three_way(mDriverVersion.begin(), mDriverVersion.end(),
+-                                                  other.mDriverVersion.begin(),
+-                                                  other.mDriverVersion.end());
++    // PS4: OpenOrbis libc++ 11 has no std::lexicographical_compare_three_way.
++    if (std::lexicographical_compare(mDriverVersion.begin(), mDriverVersion.end(),
++                                     other.mDriverVersion.begin(), other.mDriverVersion.end())) {
++        return std::strong_ordering::less;
++    }
++    if (std::lexicographical_compare(other.mDriverVersion.begin(), other.mDriverVersion.end(),
++                                     mDriverVersion.begin(), mDriverVersion.end())) {
++        return std::strong_ordering::greater;
++    }
++    return std::strong_ordering::equal;
+ }
+ 
+ // According to Intel graphics driver version schema, build number is generated from the
+diff --git a/src/dawn/native/vulkan/BufferVk.cpp b/src/dawn/native/vulkan/BufferVk.cpp
+index 7c42caf52..ad3719687 100644
+--- a/src/dawn/native/vulkan/BufferVk.cpp
++++ b/src/dawn/native/vulkan/BufferVk.cpp
+@@ -318,7 +318,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
+             if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+                 DAWN_TRY(MapMemoryAndPerformOperation(
+                     0, mAllocatedSize,
+-                    [](std::span<uint8_t> mapped) { std::ranges::fill(mapped, 0x01); }));
++                    [](std::span<uint8_t> mapped) { std::fill(mapped.begin(), mapped.end(), 0x01); }));
+             }
+             if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) &&
+                 paddingClearSize > 0) {
+@@ -326,7 +326,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
+                     MapMemoryAndPerformOperation(paddingClearOffset, paddingClearSize,
+                                                  [&paddingClearSize](std::span<uint8_t> mapped) {
+                                                      DAWN_ASSERT(mapped.size() == paddingClearSize);
+-                                                     std::ranges::fill(mapped, 0x0);
++                                                     std::fill(mapped.begin(), mapped.end(), 0x0);
+                                                  }));
+             }
+         } else {
+@@ -655,7 +655,7 @@ MaybeError Buffer::UploadData(uint64_t bufferOffset, const void* data, size_t si
+         uint64_t dstOffset = 0;
+         if (needsZeroInitialization) {
+             DAWN_ASSERT(mapped.size() == mAllocatedSize);
+-            std::ranges::fill(mapped, 0x0);
++            std::fill(mapped.begin(), mapped.end(), 0x0);
+             GetDevice()->IncrementLazyClearCountForTesting();
+             dstOffset = bufferOffset;
+         }
+diff --git a/src/tint/lang/core/constant/eval.cc b/src/tint/lang/core/constant/eval.cc
+index d948b84ab..543ffa254 100644
+--- a/src/tint/lang/core/constant/eval.cc
++++ b/src/tint/lang/core/constant/eval.cc
+@@ -3294,7 +3294,11 @@ Eval::Result Eval::round(const core::type::Type* ty,
+             using T = UnwrapNumber<NumberT>;
+ 
+             auto integral = NumberT(0);
+-            auto fract = std::abs(std::modf(e.value, &(integral.value)));
++            // PS4: OpenOrbis <math.h> only declares modf(double, double*) (no C++ float
++            // overload), so go through double and convert back.
++            double integralDouble = 0.0;
++            auto fract = std::abs(std::modf(static_cast<double>(e.value), &integralDouble));
++            integral = NumberT(integralDouble);
+             // When e lies halfway between integers k and k + 1, the result is k when k is even,
+             // and k + 1 when k is odd.
+             NumberT result = NumberT(0.0);
