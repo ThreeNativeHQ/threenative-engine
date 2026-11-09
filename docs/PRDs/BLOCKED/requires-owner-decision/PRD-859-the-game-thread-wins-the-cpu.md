@@ -69,8 +69,8 @@ Risks:
 
 #### Phase 2 — Windows and macOS desktop
 
-- AC-4 moved to `## Blocked on` (2026-11-08).
-- AC-5 moved to `## Blocked on` (2026-11-08).
+- [ ] AC-4 [shared]: On Windows, the game, render and present threads read `THREAD_PRIORITY_ABOVE_NORMAL` and background threads read `THREAD_PRIORITY_LOWEST` (`GetThreadPriority`), and the report line matches. proof: the Windows leg of `.github/workflows/native-release.yml` (the only workflow that builds the engine player on Windows, see Decisions) runs `packages/runtime-native/tests/native-engine/player-thread-priority-desktop.mjs`, which also reads every thread back through `(Get-Process).Threads` — Evidence: pending (code and test written 2026-11-08; not run, this machine has no Windows toolchain).
+- [ ] AC-5 [shared]: On macOS, the frame-critical threads read `QOS_CLASS_USER_INTERACTIVE` (`pthread_get_qos_class_np`), and the packaged `Info.plist` carries `LSSupportsGameMode` and the games category. proof: the macOS leg of `.github/workflows/native-release.yml` runs the same test; the plist keys by `pnpm exec vitest run --config vitest.config.ts tests/desktop-container.test.mjs` in `packages/runtime-native` — Evidence: plist half 2026-11-08, Linux: 53/53 pass, including `macOS plist opts the game into Game Mode (PRD-859)`. QoS half pending (not run, no macOS toolchain here).
 
 #### Phase 3 — Android, override and convention
 
@@ -84,8 +84,8 @@ Risks:
 ## Blocked on
 
 - AC-3 (contended Midway p95, moved 2026-11-08): a presented-frame p95 is valid only on the real display `:0`; the private Xvfb throttles presents (about 94 ms p95 in the trial flight) and `perf` refuses its FPS. Using `:0` needs João's approval in each session, and none came in this one. Unblocked by João approving `:0` for about 1.5 hours (20 alternating flights, contended and uncontended, under `gpu-slot.sh --exclusive`); the original box text is in this PRD's history. Assets: `flight.sh` and the packaged Midway player are reproducible from this checkout.
+  Run 2026-11-08 on `:0` (owner present and watching; `gpu-slot.sh --exclusive`; 5 rounds × contended/uncontended × default/`normal`, alternating order; `playerFrames` frame p95): contended default 19.6 / 29.9 / 35.4 ms against `normal` 58.8 / 78.1 ms, but 5 of the 10 contended flights failed the scenario (EXIT 2), so neither arm has five runs. Uncontended default 20.4–34.2 ms against `normal` 21.1–61.5 ms, at a load average of 31–106 from other agents, so the "uncontended" arm was not uncontended and the 2% clause cannot be judged. The direction favors the default; the AC is not proven. Unblocked by a quiet host (no other agent load) for about 1.5 hours.
 
-- AC-4 (Windows) and AC-5 (macOS), moved 2026-11-08 as the Phase 2 clause asks: the Windows and macOS legs of `.github/workflows/native-platforms.yml` build only the legacy `mystral` host, not the engine player that `ThreadPlacement` lives in; only `native-release.yml` builds the player there. This machine has no Windows or macOS toolchain, so code for those bodies would ship unrun. The `run.cpp` non-Linux stub stays as it was. Unblocked by a player build and placement-test step on those legs; then restore both boxes with their original text from this PRD's history.
 
 - ADPF on physical hardware: the emulator can return no hint manager, so AC-6 proves only the fallback path. The proof that ADPF raises clocks needs the Pixel 8 attached over Wi-Fi ADB (`adpf=on` plus a contended p95 run). Unblocked by João attaching the device; then add this as a box.
 
@@ -108,6 +108,7 @@ Risks:
 
 - 2026-11-08 (agent, owner request): the web build is out of scope. The browser owns process and thread scheduling, and no web API raises a page's CPU priority.
 - 2026-11-08 (agent): no realtime class (`SCHED_FIFO`, `REALTIME_PRIORITY_CLASS`). It needs admin or `CAP_SYS_NICE`, and it can starve the compositor and audio. Unreal ships no realtime class either.
+- 2026-11-08 (agent, owner away): AC-4 and AC-5 take `native-release.yml` as their proof lane instead of `native-platforms.yml`. Only `native-release.yml` builds the engine player on Windows and macOS, and the Phase 2 clause asked to confirm the leg first; adding a player build to `native-platforms.yml` would duplicate that build.
 - 2026-11-08 (agent): Windows uses per-thread `THREAD_PRIORITY_ABOVE_NORMAL` (the Unreal default) instead of MMCSS or `HIGH_PRIORITY_CLASS`. Add MMCSS only if AC-3's Windows equivalent shows a gap.
 - 2026-11-08 (agent): Linux uses rtkit, not Feral GameMode. GameMode's default config does not renice (`renice=0`), and rtkit ships on most desktops through PipeWire.
 
