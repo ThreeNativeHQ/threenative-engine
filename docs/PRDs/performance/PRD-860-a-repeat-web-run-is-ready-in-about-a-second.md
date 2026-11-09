@@ -1,6 +1,7 @@
 # PRD-860 — A repeat web run is ready in about a second
 
-**Status:** IN PROGRESS
+**Status:** PARTIAL
+**Blocker:** All eight phase boxes, AC-3 and AC-4 are verified. AC-1 (1.38 s against 1.2 s) and AC-2 (about 3.1 s against 2.7 s) are open: the next cuts need the collectathon kit to split its seeded streams, or a change to the GPU-bound warm-up (see Decisions).
 **Priority:** P1 — AC-1 and AC-2 are open: a repeat run of the collectathon kit takes about 1.38 s against the 1.2 s bar, and a first visit about 3.13 s against the 2.7 s bar.
 **Complexity:** 6 (MEDIUM) — 6-10 implementation files (+2), a new generated-content cache (+2), engine packages and a kit template change together (+2); risk override: none.
 **Owner:** João
@@ -70,6 +71,7 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 - 2026-11-08 (agent): the box "Rapier loads as a hashed `.wasm` through `instantiateStreaming`" is replaced. That build (`cf58debc9`) cut 155 KB but no time, because the static import still held the entry module. What pays is moving Rapier off the boot path: its own chunk, fetched as physics imports (c10).
 - 2026-11-08 (agent): two readiness changes were measured and dropped: exposure reads every frame until measured, and quiet frames counted from the compile (1565/1593/1644 against 1509/1616/1648 ms). The five frames after the compile wait on GPU frames (7-11 ms of CPU each), not on the gate.
 - 2026-11-08 (agent): an always-on Wasm preload (`a1fe3000c`) made a repeat visit 150-200 ms slower, because a preloaded response loses V8's compiled-code cache. The preload runs only for a Wasm URL the browser has not fetched (`49c1ae3cb`).
+- 2026-11-08 (agent): what a repeat run still spends after `e13c0b534`, from one laptop CPU profile (`buildCourse` 323 ms, the cover 147 ms, colliders 61 ms), and why each is not taken here. The collectathon world generation (`plantIsland` path distance, clearance, leaf texture, terrain sampler) draws from one seeded stream, so storing any piece shifts every later draw and moves the island; it needs the kit to split its streams first. The loading cover is drawn every frame (147 ms), and skipping a frame presents black during the warm-up, the startup flash reported three times before. Rapier builds its trimesh tree in its own Wasm (34 ms of the 61). The 1.0-1.4 s tail is GPU-bound pipeline warm-up, where the dropped readiness changes and the JS precache showed no gain.
 
 ## Execution Phases
 
@@ -84,15 +86,15 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
   - Unthrottled repeat-visit CPU profile (unminified build): in the minimal kit `cloudTextures()` (`templates/*/src/render/clouds.ts`, shared by six kits) runs about 0.6 s of main-thread JS before the first frame, and `bakedRadiance` about 0.12 s.
 
 #### Phase 2: A repeat run does not redo the last run's work
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/create-threenative/src/` (the `_headers` writer), `packages/core/src/asset-cache.ts` and `assets.ts` (`memo`), the collectathon template `src/level/` and `src/render/`, the warm-up path in `packages/core/src/warmup.ts`.
 
 - [x] Hashed assets ship `Cache-Control: public, max-age=31536000, immutable`, and a repeat run makes no revalidation request. proof: `pnpm exec vitest run packages/create-threenative/__tests__` plus the bench request count — 2026-11-08, `3ebe059ed`: `web-brand.spec.ts`, `asset-memo.spec.ts`, `asset-cache.spec.ts`, `load-bench.spec.ts` 46 passed; a repeat visit makes 12 requests with 1 KB on the wire (the page itself).
-- [ ] `ctx.assets.memo` returns the stored arrays on a repeat run, and the collectathon kit builds its world through it with its playtests green. proof: `pnpm exec vitest run packages/core/__tests__/asset-cache.spec.ts` plus `pnpm test:templates` for collectathon.
+- [x] `ctx.assets.memo` returns the stored arrays on a repeat run, and the collectathon kit builds its world through it with its playtests green. proof: `pnpm exec vitest run packages/core/__tests__/asset-cache.spec.ts` plus `pnpm test:templates` for collectathon. — 2026-11-08: `asset-cache.spec.ts` and `asset-memo.spec.ts` 37 passed. `TN_TEMPLATE_ONLY=collectathon,minimal pnpm test:templates` on the laptop (Iris Xe, `e13c0b534`): collectathon 22 of 23 scenarios pass in two runs, minimal all but one. The one fail per kit is `no-hitch` GPU p95 (collectathon 27.2 ms, minimal 18.0 ms over 16.7), and develop `4dd50f4c2` fails it the same on that laptop (27.6 ms, 17.5 ms), so the GPU, not this PRD, misses it. An earlier HEAD run flagged one `steadyCover` frame at 25 ms in Chromium's blank-tab `#121212` before first paint; it did not recur in two reruns.
 - [x] The hot paths a repeat run walks cost less, each kept only on a paired laptop gain. proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — 2026-11-08: the scattering table built once in six kits and the reach cull over vertices (`e6f24156f`, repeat 1586-1632 ms from 1784-1795); foliage composes plain matrices and the path distance is a loop (`03414c30b`, 70-100 ms paired); a matrix over shared engine memory is a view, not a Proxy (`bf9a55778`, 1512/1569/1555 against 1566/1616/1644 ms paired); `setMatrixAt` and `setColorAt` write the instance array and send the written range once before the next engine call (`e13c0b534`, repeat 1380/1387/1381 against 1506/1536/1514 ms and first 3124/3151/3126 against 3190/3295/3217 ms paired with `49c1ae3cb`). `browser-math.spec.ts` and `browser-backend-coverage.spec.ts` red-green, three-native 536 passed, physics 267 passed.
 
 #### Phase 3: A first visit downloads and compiles less
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/physics/src/web.ts`, the web build in `packages/create-threenative/src/`, the collectathon `src/scenes/Play.ts`.
 
 - [x] Rapier downloads beside the engine boot, and `index.js` carries no base64 module. proof: `pnpm exec vitest run packages/physics/__tests__` plus the bench byte report — 2026-11-08, `3ae3ff027`: physics 267 passed; `index.js` 864 → 250 KB Brotli, Rapier its own 614 KB chunk; collectathon first visit 3545-3616 ms from 3695-3725, minimal 3132-3252 from 3268-3434.
