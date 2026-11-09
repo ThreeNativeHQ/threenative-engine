@@ -25,8 +25,6 @@ The proof: the river surface stopped in a straight edge at its first station whi
 
 - [x] River surface geometry: core `riverRibbonGeometry` beside `WaterBodies`, a reach past each end; the preview and both kits call it. proof: `world-river-ribbon.spec.ts`, `river-ribbon.spec.ts` (forest bake), `test:water`, the river-head judge — 2026-11-10: `river-ribbon.spec.ts` red on the old ribbon (the swim query floods half a reach past the head, nothing drawn) then green; core spec 4/4; preview 274/274 and `test:water` PASS; the kits pass a half-width reach and 3 columns, so only their end caps change. Fresh judge on the river-head sheets (two runs, NVIDIA Turing, `~/Downloads/strata-river-head/`): IMPROVEMENT both runs — the straight edge is gone, the carved head fills, no new artefact.
 - [x] Lake surface geometry: core `lakeSurfaceGeometry` draws the disc `WaterBodies` floods (out to `lakeReach`, wet cells only, `metres` depth); the preview calls it. proof: `world-river-ribbon.spec.ts` lake cases, the forest lake mesh before and after — 2026-11-10: core 7/7 (every point the lake query floods over ground under the level is drawn); the forest lake is 6 992 triangles before and after, positions and `metres` exact, `waveDepth` within 6e-8, so no frame changes and no judge is due. The port also sizes the vertex buffer to the rings it fills (the preview's held one unused ring at the origin).
-- [ ] The forest and tundra kits draw their lakes with `lakeSurfaceGeometry`. proof: a kit capture before and after, judge
-  Open: the kits flood a grid from the seed inside `radius` and the tundra kit clips it at the contour, so the switch changes their shape; it waits for a kit capture lane. The kits have no swim query, so no drawn-versus-swum mismatch exists there today.
 - [x] Shore distance and open-sea exposure field: core `shoreField` for the preview and the coastal kit. proof: `world-shore-field.spec.ts`, the coastal bake's field before and after — 2026-11-10: core 3/3; on the coastal bake both arrays are identical to the old inline code across 66 049 nodes (5 733 exposed), so no frame changes; the kit ran the same 57 lines, now one call.
 
 ### Phase 2 — streaming and startup
@@ -45,6 +43,8 @@ The proof: the river surface stopped in a straight edge at its first station whi
 
 - 2026-11-10 (agent, AFK): the curvature texture stays in `src/render/terrain.ts`. Its Laplacian gain, 8 m neighbourhood, wet margin, river reach and flow normalisation decide how the ground shades, and look stays game source.
 - 2026-11-10 (agent, AFK): `skyVisibility` moves to `@threenative/terrain` with the next rebake, not now. `scripts/stamp.mjs` hashes its source into every bake, so a move alone rebakes all five worlds and commits about 50 MB of new JSON for no runtime change.
+
+- 2026-11-10 (agent): the forest and tundra kits keep their own lake surfaces; the box that switched them to `lakeSurfaceGeometry` is deleted. `lakeSurfaceGeometry` exists so the drawn lake matches `WaterBodies`' swim query, and the kits run no swim query, so there is no mismatch to fix. The tundra kit also clips each frozen kettle at the ground's contour, which a disc of wet cells would coarsen. A kit that adds swimming switches then.
 
 ## Acceptance
 
