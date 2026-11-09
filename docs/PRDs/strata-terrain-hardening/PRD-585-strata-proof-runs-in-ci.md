@@ -31,7 +31,7 @@ index them in the example's `AGENTS.md`.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [shared]: The `strata` job runs `test:terrain:web` green on a PR touching `packages/terrain/`. proof: CI run link — Evidence: pending.
+- [ ] AC-1 [shared]: The `strata` job runs `test:terrain:web` green on a PR touching `packages/terrain/`. proof: CI run link — Evidence: pending. 2026-11-09: the full dispatch [42609379659](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/42609379659) on `strata-chain` (`2c9262966`) passed 79 jobs with `strata` skipped: its scope plan reads `TN_CI_STRATA_GPU: false` (`"strataGpu":false`), so the job needs that repository variable and a GPU runner, an owner setting this chain does not change.
 - [ ] AC-2 [shared]: The same job runs `test:consumer` and `test:terrain:editor` green. proof: CI run link — Evidence: pending.
 - [x] AC-3 [local]: The change-scope selects the job for terrain, example and `world-cells` paths and skips it for an unrelated template. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` — Evidence: PASS (213 tests), including `world.ts`, qualification, and required-verdict missing/skipped/failed/unmapped cases.
 - [x] AC-4 [local]: A baked 3×3-cell package loads through a real `WorldCells`; walking across cells gives resident cells and instance counts equal to the bake. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-terrain.spec.ts` — Evidence: PASS (1 test); bounded drain fails on timeout and cleanup runs in `finally`.
