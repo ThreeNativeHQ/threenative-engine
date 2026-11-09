@@ -266,6 +266,28 @@ Two things were learned that a later pass can use:
   breaks. That is a gap to investigate, not a staging defect, and it was reverted with the rest because
   it costs `oldstyle` and neither cell passes yet.
 
+### The `background-*` tiling: period and phase are right, the stripe edges are too soft (measured 2026-11-09)
+
+Three cells read exactly 0.2243 — `bg-top`, `bg-repeat`, `bg-origin-border`. Reading the two frames of the
+same cell (a 45° repeating gradient of 6px amber / 6px blue bands on a 120×40 probe) at the middle row:
+
+```
+web     transitions at  8, 12, 20, 29, 32, 36, 44, 53, 56, 60, 68, 77, 80, 84, 92, 101
+engine  transitions at  8, 10, 18, 26, 32, 34, 42, 50, 56, 58, 66, 74, 80, 82, 90, 98
+```
+
+Both start at 8 and both repeat every **24 px**, so the gradient line's length, angle and start point are
+already right — the earlier "period and phase" reading was wrong. The difference is the **width of the
+stripe edge**: Chromium's bands are crisp (transitions 4 and 8–9 px apart), this engine paints ~4 px ramps,
+so its amber bands are wider and a point 16 px in is amber where Chromium is blue.
+
+Two hypotheses were tested and both are dead: the stripes are **not** painted through
+`draw_gradient_layer` (a debug print there never fires), and they are **not** smoothed by the Oklab stop
+resampling — adding the hard-stop guard (`right_at <= left_at` emits the pair unchanged instead of
+interpolating it) changes nothing on these three cells and nothing anywhere else in the family, so it was
+reverted. What is left is a specific question for the next owner: *where* does a repeating gradient's stripe
+edge get its ramp in this backend, given that neither the gradient layer nor the stop list produces it.
+
 ## Documented limit (owner decision, 2026-11-07): no SVG element support
 
 `fill`, `stroke` and `stroke-width` paint a shape, and this engine creates no SVG nodes and paints none.
