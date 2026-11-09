@@ -340,10 +340,10 @@ class V8Game {
     /** A frame with nothing to draw yet: the game's frame callbacks still run (run.h frameWithoutView). */
     void frameWithoutView() { presentFrame(); flushCompute(); profileFrame(false); }
     /** PRD-613: the loop's wait for the frame its render thread has in flight; absent without that thread. */
-    void setRenderBarrier(std::function<void()> barrier) { renderBarrier_ = std::move(barrier); }
+    void setRenderBarrier(std::function<void(bool)> barrier) { renderBarrier_ = std::move(barrier); }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
         presentFrame();  // the game's frame callbacks may change the renderer state applied below
-        idleRenderer();  // the settings below are the renderer's own, so the frame in flight ends first
+        idleRenderer(false);  // the settings below are the renderer's own, so the frame in flight ends first
         flushCompute();  // PRD-620: kernels queued this frame run ahead of its passes
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
@@ -372,8 +372,9 @@ class V8Game {
     RenderDatabase overlayDatabase_;
     static void renderOverlay(const v8::FunctionCallbackInfo<v8::Value>& info);
     // Everything this game does to the renderer outside the loop's own handoff calls this first.
-    void idleRenderer() { if (renderBarrier_) renderBarrier_(); }
-    std::function<void()> renderBarrier_;
+    /** `touch` false: the end of the frame's script, not a mid-frame renderer touch the next present must wait for. */
+    void idleRenderer(bool touch = true) { if (renderBarrier_) renderBarrier_(touch); }
+    std::function<void(bool)> renderBarrier_;
     void presentFrame();
     void profileFrame(bool drawn = true);
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
@@ -963,7 +964,7 @@ void V8Game::settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus st
 
 void V8Game::flushCompute() {
     if (computeQueue_.empty() || renderer_ == nullptr) return;
-    idleRenderer();
+    idleRenderer(false);  // each mid-frame caller has already reached the barrier as a touch
     computeQueue_.flush(*renderer_, [](const std::string& reason) { std::fprintf(stderr, "%s\n", reason.c_str()); });
 }
 
@@ -2044,7 +2045,7 @@ int main(int argc, char** argv) {
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
     configured.overlay = [&game] { return game.overlay(); };
     configured.drawOverlay = [&game](Renderer& renderer) { game.drawOverlay(renderer); };
-    configured.setRenderBarrier = [&game](std::function<void()> barrier) { game.setRenderBarrier(std::move(barrier)); };
+    configured.setRenderBarrier = [&game](std::function<void(bool)> barrier) { game.setRenderBarrier(std::move(barrier)); };
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
     // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=
     // native-css picks the CSS backend. The loop reaches it only through these hooks.
