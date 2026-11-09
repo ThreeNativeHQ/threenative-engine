@@ -230,6 +230,11 @@ async function visit(
     started = Date.now();
     await page.goto(url, { waitUntil: "commit" });
     await page.waitForFunction(READY, null, { polling: 16, timeout: 180_000 });
+    // TN_LOAD_BENCH_SHOTS=<dir>: the ready frame of every visit, for a visual judge (PRD-860 AC-4).
+    if (marksFile !== undefined && process.env.TN_LOAD_BENCH_SHOTS)
+      await page.screenshot({
+        path: path.join(process.env.TN_LOAD_BENCH_SHOTS, `${path.basename(marksFile, ".txt")}.png`),
+      });
     // TN_LOAD_BENCH_RESOURCES=1: each request's start and end since navigation, as `TN_RESOURCE` marks.
     if (process.env.TN_LOAD_BENCH_RESOURCES === "1")
       for (const line of await page.evaluate(() =>
