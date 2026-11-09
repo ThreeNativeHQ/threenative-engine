@@ -189,6 +189,12 @@ public:
     void setDrawRange(double start, double count);
 
     void computeBoundingBox();
+    /**
+     * computeBoundingBox's box (the positions, then each morph target's reach) without setting `boundingBox`:
+     * it holds the vertices at every influence, so a morphed draw is bounded without morphing each vertex.
+     * Cached for one revision and the position and target attributes and versions it was taken at.
+     */
+    [[nodiscard]] const Box3& morphReachBox() const;
     void computeBoundingSphere();
     void computeVertexNormals();
     void normalizeNormals();
@@ -246,6 +252,13 @@ public:
     mutable std::vector<float> morphPacked_;
     mutable uint64_t morphPackedRevision_ = std::numeric_limits<uint64_t>::max();
     mutable std::vector<std::pair<const BufferAttribute*, uint32_t>> morphPackedAt_;
+
+private:
+    mutable Box3 morphReachBox_;
+    mutable uint64_t morphReachRevision_ = std::numeric_limits<uint64_t>::max();
+    mutable std::vector<std::pair<const BufferAttribute*, uint32_t>> morphReachAt_;
+
+public:
 
 private:
     uint64_t revision_ = 0;

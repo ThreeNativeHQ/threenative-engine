@@ -750,6 +750,10 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     if (stated) {
         bounds = box;  // where the author says the positionNode puts the vertices
     } else if (rig && rig->boneReachBounds(bounds)) {
+    } else if (item.morphGeometry && !item.boneMatrices) {
+        // three bounds a morphed mesh by computeBoundingBox, which takes every target's reach and no influence;
+        // morphing each vertex on the CPU here, every frame, cost the MCP forest about 6 % of its CPU.
+        bounds = item.morphGeometry->morphReachBox();
     } else if (item.positions->scalar() == Scalar::F32) {
         for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
             float p[3]; item.positions->read(idx * 4, p, sizeof(p));
