@@ -84,6 +84,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Frame spans** `#spans`: off. Override: `TN_FRAME_SPANS=1`. Marker: `TN_FRAME_SPANS`.
 - **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
 - **Desktop window** `#desktop-mode`: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
+- **CPU priority** `#cpu-priority`: game threads first. Override: `display.priority: "normal"`. Marker: `TN_PROCESS_PRIORITY`.
 - **Terrain** `#terrain`: authored in the game. Override: optional `@threenative/terrain`; `references/terrain-authoring.md`.
 - **Navigation** `#navigation`: none; browser-only WASM. Override: import `@threenative/physics/navigation` on purpose.
 - **Scene change** `#scene-change`: `ctx.goto(name)` keeps state. Override: `game.goto(name)` resets state.

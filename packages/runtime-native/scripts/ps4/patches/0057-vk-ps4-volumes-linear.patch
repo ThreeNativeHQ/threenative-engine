@@ -1,0 +1,15 @@
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -397,6 +397,12 @@
+          * detiles must agree, and they do not for 2D macro-tiled mips, so the grid's lines
+          * read as scattered dots and blocks past level 0 (PRD-784 visuals). */
+         tex_ci.tilemodehint = mip_levels > 1 ? GNM_TM_DISPLAY_1D_THIN : GNM_TM_DISPLAY_2D_THIN;
++        /* A volume is linear: vk_ps4_tiled_upload tiles one slice at a time and refuses depth > 1,
++         * so its upload is the row copy, which lands right only in a linear surface. Tiled, the
++         * 64^3 cloud noise read back scrambled and the sky drew thin streaks (PRD-784 visuals).
++         * ponytail: linear costs texture-cache locality on hardware; tile volumes when the upload
++         * learns thick tiling. */
++        if (pCreateInfo->imageType == VK_IMAGE_TYPE_3D) tex_ci.tilemodehint = GNM_TM_DISPLAY_LINEAR_ALIGNED;
+         tex_ci.mingpumode = gpu_mode;
+ 
+         GnmError err = sceGnmCreateTexture(&img->gnm_texture, &tex_ci);

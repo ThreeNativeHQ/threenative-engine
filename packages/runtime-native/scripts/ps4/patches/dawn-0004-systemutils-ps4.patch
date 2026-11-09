@@ -1,0 +1,30 @@
+diff --git a/src/dawn/common/SystemUtils.cpp b/src/dawn/common/SystemUtils.cpp
+index b27e7b252..94a136b92 100644
+--- a/src/dawn/common/SystemUtils.cpp
++++ b/src/dawn/common/SystemUtils.cpp
+@@ -148,6 +148,12 @@ std::optional<std::string> GetExecutablePath() {
+ std::optional<std::string> GetExecutablePath() {
+     return {};
+ }
++#elif DAWN_PLATFORM_IS(PS4)
++std::optional<std::string> GetExecutablePath() {
++    // PS4: no /proc/self/exe. Only used for VK_LAYER_PATH / runtime search paths, which the
++    // PS4 backend does not use (vulkan-ps4 is linked in, not dlopen'ed).
++    return {};
++}
+ #else
+ #error "Implement GetExecutablePath for your platform."
+ #endif
+@@ -202,6 +208,12 @@ std::optional<std::string> GetModulePath() {
+ std::optional<std::string> GetModulePath() {
+     return {};
+ }
++#elif DAWN_PLATFORM_IS(PS4)
++std::optional<std::string> GetModulePath() {
++    // PS4: no dladdr/realpath over a loaded module list; the embedder is one static ELF
++    // (eboot.bin); Dawn never reads it (vulkan-ps4 is linked in, not dlopen'ed).
++    return {};
++}
+ #else
+ #error "Implement GetModulePath for your platform."
+ #endif

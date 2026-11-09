@@ -1,0 +1,54 @@
+diff --git a/src/vk_ps4_shader.c b/src/vk_ps4_shader.c
+--- a/src/vk_ps4_shader.c
++++ b/src/vk_ps4_shader.c
+@@ -148,6 +148,7 @@
+ /* Helper: compile a shader module for a specific stage using libpsbc.
+  * Called from pipeline creation. Returns the compiled binary and metadata. */
+ VkResult vk_ps4_compile_shader_module(VkPs4ShaderModule *mod, VkShaderStageFlagBits stage,
++                                      const char *entrypoint,
+                                       const VkAllocationCallbacks *alloc,
+                                       void **out_binary, size_t *out_binary_size,
+                                       GnmShaderMetadata *out_metadata) {
+@@ -163,7 +164,12 @@
+     /* Set up compile options (zero-init to avoid stack garbage) */
+     PsbcCompileOptions opts = {0};
+     opts.target = PSBC_TARGET_PS4_BASE;
+-    opts.entrypoint = "main";
++    /* The entry point is the one the pipeline stage named, not a fixed "main": a SPIR-V module
++     * may name its entry point anything (Dawn renames every WebGPU entry point to
++     * "dawn_entry_point"), and libpsbc's SPIR-V reader searches this module for that exact name —
++     * a mismatch fails the whole pipeline with "Entry point not found for vertex shader \"main\"".
++     * A stage that names none keeps the Vulkan-valid default "main". */
++    opts.entrypoint = (entrypoint && entrypoint[0]) ? entrypoint : "main";
+     opts.optimise = true;
+ 
+     /* Determine stage */
+diff --git a/src/vk_ps4_pipeline.c b/src/vk_ps4_pipeline.c
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -17,6 +17,7 @@
+ 
+ /* Forward declaration from vk_ps4_shader.c */
+ VkResult vk_ps4_compile_shader_module(VkPs4ShaderModule *mod, VkShaderStageFlagBits stage,
++                                      const char *entrypoint,
+                                       const VkAllocationCallbacks *alloc,
+                                       void **out_binary, size_t *out_binary_size,
+                                       GnmShaderMetadata *out_metadata);
+@@ -355,7 +356,7 @@
+             } else {
+                 /* Cache miss — compile the shader */
+                 VkResult vr = vk_ps4_compile_shader_module(
+-                    mod, stage->stage, alloc, &binary, &binary_size, &metadata
++                    mod, stage->stage, stage->pName, alloc, &binary, &binary_size, &metadata
+                 );
+                 if (vr != VK_SUCCESS) {
+                     if (binary && binary != mod->binary) {
+@@ -748,7 +749,7 @@
+             }
+         } else {
+             VkResult vr = vk_ps4_compile_shader_module(
+-                mod, ci->stage.stage, alloc, &binary, &binary_size, &metadata
++                mod, ci->stage.stage, ci->stage.pName, alloc, &binary, &binary_size, &metadata
+             );
+             if (vr != VK_SUCCESS) {
+                 if (binary && binary != mod->binary) {

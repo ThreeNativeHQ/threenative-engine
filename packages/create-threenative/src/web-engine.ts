@@ -80,7 +80,7 @@ const ENGINE_MATH_IMPORTER = /[\\/](?:browser-math\.ts|web-engine-runtime\.js)(?
 export interface IWebEnginePlugin {
   readonly name: string;
   readonly enforce: "pre";
-  configResolved(config: { readonly root: string }): void;
+  configResolved(config: { readonly root: string; readonly command?: "build" | "serve" }): void;
   resolveId(source: string, importer?: string): string | null;
   load(id: string): Promise<string | null>;
 }
@@ -212,6 +212,12 @@ export interface IWebEngineOptions {
   readonly engine?: "threejs" | "threenative";
   /** The Wasm engine's ES module, for a workspace build that does not install runtime-native. */
   readonly wasm?: string;
+  /**
+   * Refuse a page without worker threads (TN_WEB_THREADS_OFF). Default: everywhere but a Vite build,
+   * so the dev server, playtests and conformance fail closed while a shipped game still loads: it
+   * falls back to the single-thread engine and warns (owner, 2026-11-08: "so at least the game loads").
+   */
+  readonly strict?: boolean;
 }
 
 /**
@@ -221,6 +227,7 @@ export interface IWebEngineOptions {
  */
 export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEnginePlugin {
   let root = options.root;
+  let strict = options.strict ?? true;
   const native = options.engine === "threenative";
   const projectRoot = (): string => {
     if (root === undefined)
@@ -232,6 +239,7 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
     enforce: "pre",
     configResolved(config) {
       root ??= config.root;
+      strict = options.strict ?? config.command !== "build";
     },
     resolveId(specifier, importer = "") {
       if (!native) return null;
@@ -257,6 +265,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       // three's DecalGeometry clipping, ported over the engine's geometry classes.
       if (source === "three/addons/geometries/DecalGeometry.js")
         return browserModule("web-engine-decal-geometry.js", "addons/decal-geometry.ts");
+      // three's CCD IK solver, ported over the engine's bones and math classes.
+      if (source === "three/addons/animation/CCDIKSolver.js")
+        return browserModule("web-engine-ccd-ik-solver.js", "addons/ccd-ik-solver.ts");
       // Upstream's HDRLoader extends DataTextureLoader, which the engine does not bind; this one
       // decodes with the same RGBE parser into an engine DataTexture.
       if (source === "three/addons/loaders/HDRLoader.js")
@@ -299,19 +310,36 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         throw new Error(
           `TN_WASM_THREADS_MISSING: engine "threenative" needs the threaded Wasm engine at ${threads}; reinstall @threenative/runtime-native, or in a ThreeNative checkout run \`pnpm wasm:build\` (presets wasm and wasm-threads). ${OPT_OUT}`,
         );
-      // Shared memory exists only on a cross-origin-isolated page (COOP + COEP, createWebBrandPlugin
-      // sends them from the dev and preview servers; a static host must send them too).
-      return [
+      // Shared memory exists only on a cross-origin-isolated page (COOP + COEP: createWebBrandPlugin
+      // sends them from the dev and preview servers, and a build's service worker adds them on a host
+      // that sends none). `__tnIsolation` (web-brand's boot script) is pending while it reloads the page.
+      const off = (detail: string): string =>
+        `${THREADS_OFF}: ${detail} Serve the game over https or localhost (the build's service worker adds Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp), or send both headers; on itch.io enable "SharedArrayBuffer support".`;
+      const head = [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
-        "if (globalThis.crossOriginIsolated !== true)",
-        `  throw new Error("${THREADS_OFF}: this page is not cross-origin isolated, so the engine cannot start its worker threads; serve it with the headers Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.");`,
-        `const createModule = (await import(${JSON.stringify(threads)})).default;`,
-        `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
-        'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
-        `  throw new Error(\`${THREADS_OFF}: the engine's job pool started no worker thread (\${globalThis.__tnWebThreads}).\`);`,
-        `export const { ${names.join(", ")} } = engine;`,
-        "",
-      ].join("\n");
+        "if (globalThis.crossOriginIsolated !== true) await globalThis.__tnIsolation;",
+      ];
+      const threadsReport = "${globalThis.__tnWebThreads}";
+      const lines = strict
+        ? [
+            "if (globalThis.crossOriginIsolated !== true)",
+            `  throw new Error(${JSON.stringify(off("this page is not cross-origin isolated, so the engine cannot start its worker threads."))});`,
+            `const createModule = (await import(${JSON.stringify(threads)})).default;`,
+            `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
+            'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
+            `  throw new Error(\`${THREADS_OFF}: the engine's job pool started no worker thread (${threadsReport}).\`);`,
+          ]
+        : [
+            "const createModule = (",
+            "  globalThis.crossOriginIsolated === true",
+            `    ? await import(${JSON.stringify(threads)})`,
+            `    : await import(${JSON.stringify(single)})`,
+            ").default;",
+            `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
+            'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
+            `  console.warn(\`${off(`the engine runs without worker threads (${threadsReport}), so frames cost more.`).replaceAll("`", "\\`")}\`);`,
+          ];
+      return [...head, ...lines, `export const { ${names.join(", ")} } = engine;`, ""].join("\n");
     },
   };
 }

@@ -1,0 +1,26 @@
+--- a/libpsbc/psbc_compile.c
++++ b/libpsbc/psbc_compile.c
+@@ -760,6 +760,23 @@
+     switch (ctx->stage) {
+     case MESA_SHADER_VERTEX:
+     case MESA_SHADER_TESS_EVAL:  /* DS uses same semantics as VS */
++        /* A VS input is named by its attribute location, and its VGPRs are vs_inputs[location]:
++         * radv gives every location up to the last one read four VGPRs. Counting dense indices
++         * broke a shader that skips a location: the cloth pennant reads uv (location 1) and no
++         * position, so its fetch loaded vs_inputs[0]'s VGPRs and the VS read undefined UVs
++         * (PRD-784 visuals). */
++        if (ctx->stage == MESA_SHADER_VERTEX) {
++            u_foreach_bit64(attr, ctx->nir->info.inputs_read) {
++                const uint32_t loc = attr - VERT_ATTRIB_GENERIC0;
++                const GnmVertexInputSemantic input = {
++                    .semantic = loc,
++                    .vgpr = ctx->rargs->ac.args[ctx->rargs->vs_inputs[loc].arg_index].offset,
++                    .sizeinelements = ctx->rargs->ac.args[ctx->rargs->vs_inputs[loc].arg_index].size,
++                };
++                memcpy(buf + offset, &input, sizeof(input));
++                offset += sizeof(input);
++            }
++        } else
+         for (uint32_t i = 0;
+              i < util_bitcount64(ctx->nir->info.inputs_read); i += 1) {
+             const GnmVertexInputSemantic input = {

@@ -56,16 +56,20 @@ pub fn resolve_2d_transform(
             .transform
             .to_transform_3d_matrix(Some(&reference_box))
             .ok()
-            // The `has_3d` flag means a 3d function appeared in the list, not that the
-            // matrix needs 3d: `translate3d(x, y, 0)` sets it while resolving to a
-            // plain 2d translation.
-            //
-            // TODO: support 3D transforms. Outside a 3d rendering context the spec
-            // still applies the transform as a painting effect -- its own example
-            // paints `rotateY(50deg)` narrower -- so dropping one is wrong. `is_2d()`
-            // is closer than the flag, not the rule.
+            // VENDOR HUNK (threenative/css-ui): a 3D transform *without* a perspective component is
+            // painted as its 2D projection, which is what a browser does outside a 3D rendering
+            // context — the spec's own example paints `rotateY(50deg)` narrower. Dropping every
+            // matrix that merely *contains* a 3D function lost `rotate-x-45` and `rotate-y-45`
+            // entirely (the parity scene measured 0.6410 and 0.7942 against Chromium: one painted
+            // the rotation, the other painted an untransformed box). A matrix with a perspective
+            // row (`m14`/`m24`/`m34` non-zero, or `m44 != 1`) still needs a projective
+            // rasterisation this backend does not have, and is left out.
             // See: https://drafts.csswg.org/css-transforms-2/#3d-transform-rendering
-            .filter(|(t, _has_3d)| t.is_2d())
+            .filter(|(t, _has_3d)| {
+                let perspective_free =
+                    t.m14 == 0.0 && t.m24 == 0.0 && t.m34 == 0.0 && (t.m44 - 1.0).abs() < f32::EPSILON;
+                perspective_free
+            })
             .map(|(t, _)| {
                 // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
                 // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new

@@ -45,8 +45,8 @@ Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agen
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-action-rpg.md`.
 <!-- /shared -->
 
-This repository owns the dungeon, combat, stats, inventory, persistence and every visual decision. `src/game.ts` stays portable; `src/main.ts` is the web-only React mount.
-Controls: WASD or arrows move; Space or F attacks; E casts Arcane Surge; Shift rolls; Q or U equips or unequips; C or R sets a checkpoint.
+This game owns dungeon, combat, stats, inventory, persistence and look; `src/game.ts` is portable, `src/main.ts` the web React mount.
+Keys: WASD/arrows move; Space/F attack; E Arcane Surge; Shift roll; Q/U equip toggle; C/R checkpoint.
 
 <!-- shared: kit-commands -->
 ## Commands
@@ -95,6 +95,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Spells** `#spells`: every factory ships a stock look. Override: per-call options on `@threenative/core/spells`.
 - **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
 - **Desktop window** `#desktop-mode`: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
+- **CPU priority** `#cpu-priority`: game threads first. Override: `display.priority: "normal"`. Marker: `TN_PROCESS_PRIORITY`.
 - **Terrain** `#terrain`: authored in the game. Override: optional `@threenative/terrain`; `references/terrain-authoring.md`.
 - **Navigation** `#navigation`: none; browser-only WASM. Override: import `@threenative/physics/navigation` on purpose.
 - **Move input** `#move-axis`: `input.vector("move").y` is +up. Override: one explicit `-move.y` conversion.

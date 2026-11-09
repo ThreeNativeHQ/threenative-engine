@@ -1,0 +1,14 @@
+--- a/src/vk_ps4_descriptor.c
++++ b/src/vk_ps4_descriptor.c
+@@ -137,6 +137,11 @@
+     if (desc_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ||
+         desc_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
+         gnm_buf->stride = 0;
++        /* A raw buffer's range is num_records in bytes. The const-buffer base counted 16-byte
++         * records, so only the first sixteenth of a storage buffer was in range: reads past it
++         * returned 0 and writes were dropped. The cloth pennant collapsed to a point and never
++         * moved (PRD-784 visuals). */
++        gnm_buf->numrecords = size;
+     }
+ }
+ 

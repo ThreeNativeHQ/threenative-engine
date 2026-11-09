@@ -249,6 +249,7 @@ describe("threenative build", () => {
       display: {
         fullscreen: true,
         keepScreenOn: false,
+        priority: "game" as const,
         maxFps: 60,
         orientation: "landscape" as const,
       },

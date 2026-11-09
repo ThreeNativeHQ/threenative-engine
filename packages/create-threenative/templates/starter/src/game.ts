@@ -19,10 +19,11 @@ const game = defineGame<GameState, IPhysicsContext>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
-    run: { keys: ["ShiftLeft", "ShiftRight"] },
+    // Pad buttons use the W3C standard numbers: 0 is ✕ on a DualShock, 7 is R2, 9 is OPTIONS.
+    run: { buttons: [7], keys: ["ShiftLeft", "ShiftRight"] },
     jump: { buttons: [0], keys: ["Space"] },
     flagGust: { keys: ["KeyG"] },
-    restart: { keys: ["KeyR"] },
+    restart: { buttons: [9], keys: ["KeyR"] },
     // Wheel, pinch and the right stick share one portable camera intent. Negative DOM deltaY
     // (toward-user) is positive scroll intent on browser and native; the scene owns the framing.
     zoom: { gamepadAxes: [3], pinch: true, scroll: true },

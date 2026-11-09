@@ -1,0 +1,64 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -413,6 +413,22 @@
+  * sceGnmCmdAllocInside, write the clear color there, build a GnmBuffer
+  * V# pointing to it, and set it via SetVsharpUserData.  Then we draw
+  * a fullscreen triangle with the embedded fullscreen VS. */
++/* GNM_EMBEDDED_VSH_FULLSCREEN places its three vertices at (-1,-1), (1,-1) and (-1,1):
++ * the three corners a RECTLIST expands into the whole target, the way Sony's own clears
++ * use it (shadPS4 gnmdriver.cpp sceGnmSetEmbeddedVsShader; shadPS4 emulates RectList with
++ * a TCS, vk_graphics_pipeline.cpp:93). Drawn as a TRILIST it covers only the half below
++ * the diagonal, and every clear, depth clear and resolve left the other half stale. The
++ * draw then hands the bound pipeline its own primitive type back. */
++static void vk_ps4_draw_fullscreen_rect(VkPs4CommandBuffer *cmd) {
++    sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd, GNM_PT_RECTLIST);
++    sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);
++    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 3);
++    VkPs4Pipeline *pipe = cmd->current_pipeline;
++    if (pipe && pipe->bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS)
++        sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd,
++            vk_topology_to_gnm(pipe->input_assembly_state.topology));
++}
++
+ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+                                      VkPs4Image *img,
+                                      const VkClearColorValue *cc) {
+@@ -493,10 +509,8 @@
+     sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
+     sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+ 
+-    /* Draw a fullscreen triangle to clear the entire RT.
+-     * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky. */
+-    sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);
+-    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 3);
++    /* One fullscreen rect clears the entire RT. */
++    vk_ps4_draw_fullscreen_rect(cmd);
+ }
+ 
+ /* Choose the appropriate color clear method based on the RT's tile mode.
+@@ -588,12 +602,8 @@
+     sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+     sceGnmDrawCmdSetEmbeddedPsShader(&cmd->gnm_cmd, GNM_EMBEDDED_PSH_DUMMY);
+ 
+-    /* Draw a fullscreen triangle to trigger the lazy clear.
+-     * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky and may
+-     * have been set to a large value by a previous draw. */
+-    sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd, GNM_PT_TRILIST);
+-    sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);
+-    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 3);
++    /* One fullscreen rect triggers the lazy clear. */
++    vk_ps4_draw_fullscreen_rect(cmd);
+ 
+     /* The clear has fired at that draw; the pass's own draws must test, not
+      * clear. */
+@@ -858,9 +868,7 @@
+ 
+     sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
+     sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+-    sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd, GNM_PT_TRILIST);
+-    sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);
+-    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 3);
++    vk_ps4_draw_fullscreen_rect(cmd);
+ 
+     /* Back to ordinary colour writes before anything else runs. */
+     sceGnmDrawCmdSetCbControl(&cmd->gnm_cmd, V_028808_CB_NORMAL, V_028808_ROP3_COPY);

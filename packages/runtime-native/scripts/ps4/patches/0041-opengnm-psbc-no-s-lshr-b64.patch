@@ -1,0 +1,86 @@
+opengnm-psbc: scalar 64-bit logical right shifts use 32-bit SALU ops (shadPS4 lacks S_LSHR_B64)
+
+diff --color -ru a/src/amd/compiler/instruction_selection/aco_instruction_selection.h b/src/amd/compiler/instruction_selection/aco_instruction_selection.h
+--- a/src/amd/compiler/instruction_selection/aco_instruction_selection.h	2026-11-06 22:48:31.073861516 -0700
++++ b/src/amd/compiler/instruction_selection/aco_instruction_selection.h	2026-11-06 22:48:31.092680164 -0700
+@@ -272,6 +272,7 @@
+ Temp bool_to_vector_condition(isel_context* ctx, Temp val, Temp dst = Temp(0, s2));
+ Temp bool_to_scalar_condition(isel_context* ctx, Temp val, Temp dst = Temp(0, s1));
+ Temp as_vgpr(isel_context* ctx, Temp val);
++Temp emit_s_lshr_b64(Builder& bld, Temp src, Operand amount);
+ Temp emit_extract_vector(isel_context* ctx, Temp src, uint32_t idx, RegClass dst_rc);
+ void emit_split_vector(isel_context* ctx, Temp vec_src, unsigned num_components);
+ void expand_vector(isel_context* ctx, Temp vec_src, Temp dst, unsigned num_components,
+diff --color -ru a/src/amd/compiler/instruction_selection/aco_isel_helpers.cpp b/src/amd/compiler/instruction_selection/aco_isel_helpers.cpp
+--- a/src/amd/compiler/instruction_selection/aco_isel_helpers.cpp	2026-11-06 22:48:31.077133954 -0700
++++ b/src/amd/compiler/instruction_selection/aco_isel_helpers.cpp	2026-11-06 22:48:31.093136649 -0700
+@@ -100,6 +100,34 @@
+    return val;
+ }
+ 
++/* A scalar 64-bit logical right shift from 32-bit SALU ops. shadPS4 (v0.21.0 and main) does not
++ * translate S_LSHR_B64 and aborts the pipeline; psbc only targets the PS4, so every scalar 64-bit
++ * logical right shift takes this path. The amount reads its low 6 bits, as s_lshr_b64 does. */
++Temp
++emit_s_lshr_b64(Builder& bld, Temp src, Operand amount)
++{
++   Temp lo = bld.tmp(s1), hi = bld.tmp(s1);
++   bld.pseudo(aco_opcode::p_split_vector, Definition(lo), Definition(hi), src);
++   Temp amt =
++      bld.sop2(aco_opcode::s_and_b32, bld.def(s1), bld.def(s1, scc), amount, Operand::c32(63u));
++   /* s_lshr_b32 reads amt & 31: hi >> amt below 32, hi >> (amt - 32) from 32 up. */
++   Temp hi_shr = bld.sop2(aco_opcode::s_lshr_b32, bld.def(s1), bld.def(s1, scc), hi, amt);
++   Temp lo_shr = bld.sop2(aco_opcode::s_lshr_b32, bld.def(s1), bld.def(s1, scc), lo, amt);
++   /* hi << (32 - amt) as (hi << 1) << (31 - amt): 0 at amt == 0, where a shift by 32 is not. */
++   Temp hi_shl1 =
++      bld.sop2(aco_opcode::s_lshl_b32, bld.def(s1), bld.def(s1, scc), hi, Operand::c32(1u));
++   Temp rest =
++      bld.sop2(aco_opcode::s_sub_u32, bld.def(s1), bld.def(s1, scc), Operand::c32(31u), amt);
++   Temp carry = bld.sop2(aco_opcode::s_lshl_b32, bld.def(s1), bld.def(s1, scc), hi_shl1, rest);
++   Temp lo_small = bld.sop2(aco_opcode::s_or_b32, bld.def(s1), bld.def(s1, scc), lo_shr, carry);
++   Temp big = bld.sopc(aco_opcode::s_bitcmp1_b32, bld.def(s1, scc), amt, Operand::c32(5u));
++   Temp res_lo =
++      bld.sop2(aco_opcode::s_cselect_b32, bld.def(s1), hi_shr, lo_small, bld.scc(big));
++   Temp res_hi =
++      bld.sop2(aco_opcode::s_cselect_b32, bld.def(s1), Operand::zero(), hi_shr, bld.scc(big));
++   return bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), res_lo, res_hi);
++}
++
+ Temp
+ as_vgpr(isel_context* ctx, Temp val)
+ {
+diff --color -ru a/src/amd/compiler/instruction_selection/aco_select_nir_alu.cpp b/src/amd/compiler/instruction_selection/aco_select_nir_alu.cpp
+--- a/src/amd/compiler/instruction_selection/aco_select_nir_alu.cpp	2026-11-06 22:48:31.079127653 -0700
++++ b/src/amd/compiler/instruction_selection/aco_select_nir_alu.cpp	2026-11-06 22:48:31.094150768 -0700
+@@ -1086,7 +1086,9 @@
+       } else if (dst.regClass() == v2) {
+          emit_vop3a_instruction(ctx, instr, aco_opcode::v_lshr_b64, dst);
+       } else if (dst.regClass() == s2) {
+-         emit_sop2_instruction(ctx, instr, aco_opcode::s_lshr_b64, dst, true);
++         bld.copy(Definition(dst),
++                  emit_s_lshr_b64(bld, get_alu_src(ctx, instr->src[0]),
++                                  Operand(get_alu_src(ctx, instr->src[1]))));
+       } else if (dst.regClass() == s1) {
+          emit_sop2_instruction(ctx, instr, aco_opcode::s_lshr_b32, dst, true);
+       } else {
+@@ -3300,7 +3302,7 @@
+ 
+          Temp src = bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), src1, src0);
+ 
+-         Temp res = bld.sop2(aco_opcode::s_lshr_b64, bld.def(s2), bld.def(s1, scc), src, amount);
++         Temp res = emit_s_lshr_b64(bld, src, Operand(amount));
+          bld.pseudo(aco_opcode::p_extract_vector, Definition(dst), res, Operand::zero());
+       } else if (dst.regClass() == v1) {
+          emit_vop3a_instruction(ctx, instr, aco_opcode::v_alignbit_b32, dst, false, 3u);
+diff --color -ru a/src/amd/compiler/instruction_selection/aco_select_nir_intrinsics.cpp b/src/amd/compiler/instruction_selection/aco_select_nir_intrinsics.cpp
+--- a/src/amd/compiler/instruction_selection/aco_select_nir_intrinsics.cpp	2026-11-06 22:48:31.080861439 -0700
++++ b/src/amd/compiler/instruction_selection/aco_select_nir_intrinsics.cpp	2026-11-06 22:48:31.094649143 -0700
+@@ -4286,7 +4286,7 @@
+ 
+             Temp lohi = bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), lo, hi);
+ 
+-            Temp shr = bld.sop2(aco_opcode::s_lshr_b64, bld.def(s2), bld.def(s1, scc), lohi, delta);
++            Temp shr = emit_s_lshr_b64(bld, lohi, Operand(delta));
+             delta = bld.sop2(aco_opcode::s_sub_u32, bld.def(s1), bld.def(s1, scc), Operand::c32(64),
+                              delta);
+             Temp shl = bld.sop2(aco_opcode::s_lshl_b64, bld.def(s2), bld.def(s1, scc), lohi, delta);

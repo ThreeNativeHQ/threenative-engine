@@ -377,6 +377,14 @@
       "kits": "all"
     },
     {
+      "id": "cpu-priority",
+      "name": "CPU priority",
+      "default": "game threads first",
+      "override": "`display.priority: \"normal\"`",
+      "marker": "TN_PROCESS_PRIORITY",
+      "kits": "all"
+    },
+    {
       "id": "terrain",
       "name": "Terrain",
       "default": "authored in the game",

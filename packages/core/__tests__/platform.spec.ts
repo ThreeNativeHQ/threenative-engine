@@ -3,15 +3,17 @@ import {
   detectPlatform,
   getPlatform,
   hostGestureTarget,
+  isConsole,
   isMobile,
   isNative,
+  isPs4,
   isTouchscreenAvailable,
   isWeb,
 } from "../src/platform.js";
 
 function nativeSource(
-  os: "android" | "ios" | "linux" | "macos" | "windows" | "unknown",
-  formFactor: "mobile" | "desktop" | "unknown",
+  os: "android" | "ios" | "linux" | "macos" | "windows" | "ps4" | "unknown",
+  formFactor: "mobile" | "desktop" | "console" | "unknown",
   maxTouchPoints: number,
 ) {
   return {
@@ -84,6 +86,11 @@ describe("platform detection", () => {
       { formFactor: "desktop", maxTouchPoints: 0, os: "macos", runtime: "native" },
     ],
     [
+      "PS4 native",
+      nativeSource("ps4", "console", 0),
+      { formFactor: "console", maxTouchPoints: 0, os: "ps4", runtime: "native" },
+    ],
+    [
       "absent navigator",
       { navigator: undefined },
       { formFactor: "unknown", maxTouchPoints: 0, os: "unknown", runtime: "web" },
@@ -123,6 +130,12 @@ describe("platform detection", () => {
     ).toThrow("TN_NATIVE_PLATFORM_INVALID");
   });
 
+  it("should reject a console OS reported with a desktop form factor", () => {
+    expect(() => detectPlatform(nativeSource("ps4", "desktop", 0))).toThrow(
+      "TN_NATIVE_PLATFORM_INVALID",
+    );
+  });
+
   it("should keep every helper on the frozen process snapshot", () => {
     const platform = getPlatform();
 
@@ -130,6 +143,8 @@ describe("platform detection", () => {
     expect(isWeb()).toBe(platform.runtime === "web");
     expect(isNative()).toBe(platform.runtime === "native");
     expect(isMobile()).toBe(platform.formFactor === "mobile");
+    expect(isConsole()).toBe(platform.formFactor === "console");
+    expect(isPs4()).toBe(platform.os === "ps4");
     expect(isTouchscreenAvailable()).toBe(platform.maxTouchPoints > 0);
     expect(isWeb()).not.toBe(isNative());
   });

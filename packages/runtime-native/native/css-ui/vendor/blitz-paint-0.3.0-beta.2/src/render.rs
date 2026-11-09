@@ -41,7 +41,7 @@ use style::{
 };
 
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
-use peniko::{self, Fill, ImageData, ImageSampler};
+use peniko::{self, Fill, ImageData, ImageSampler, Mix};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
@@ -452,6 +452,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             &clip_path_for_layer,
             None,
             None,
+            Mix::Normal,
             |scene| {
                 // If the element has a CSS `mask`, then push an isolation layer for the
                 // masked content. The mask is applied when the layer is popped below.
@@ -484,14 +485,18 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
                 // Opacity/Filter layer if box has opacity or a filter.
                 // Clipped to border-box as it needs to include the background and borders.
+                // `mix-blend-mode` composites the element's own layer against what is under it, so
+                // the element needs a layer even when its opacity is 1 and it has no filter.
+                let blend = peniko_mix(effects.mix_blend_mode);
                 self.layer_manager.maybe_with_layer(
                     scene,
-                    has_opacity || filter.is_some() || backdrop_filter.is_some(),
+                    has_opacity || filter.is_some() || backdrop_filter.is_some() || blend != Mix::Normal,
                     opacity,
                     cx.transform,
                     &effect_layer_clip,
                     filter,
                     backdrop_filter,
+                    blend,
                     |scene| {
                         cx.draw_background(scene);
                         cx.draw_inset_box_shadow(scene);
@@ -516,6 +521,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             clip,
                             None,
                             None,
+                            Mix::Normal,
                             |scene| {
                                 // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
                                 let content_position = Point {
@@ -1306,4 +1312,33 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBo
         outline_offset,
         border_radii,
     )
+}
+
+/// The peniko `Mix` a computed `mix-blend-mode` names.
+///
+/// `plus-lighter` has no `Mix` in peniko 0.6 (it belongs to `Compose`), so it is painted as `Normal`
+/// and a cell that needs it must expect that.
+fn peniko_mix(
+    mode: style::properties::generated::longhands::mix_blend_mode::computed_value::T,
+) -> peniko::Mix {
+    use peniko::Mix;
+    use style::properties::generated::longhands::mix_blend_mode::computed_value::T as Mode;
+    match mode {
+        Mode::Normal | Mode::PlusLighter => Mix::Normal,
+        Mode::Multiply => Mix::Multiply,
+        Mode::Screen => Mix::Screen,
+        Mode::Overlay => Mix::Overlay,
+        Mode::Darken => Mix::Darken,
+        Mode::Lighten => Mix::Lighten,
+        Mode::ColorDodge => Mix::ColorDodge,
+        Mode::ColorBurn => Mix::ColorBurn,
+        Mode::HardLight => Mix::HardLight,
+        Mode::SoftLight => Mix::SoftLight,
+        Mode::Difference => Mix::Difference,
+        Mode::Exclusion => Mix::Exclusion,
+        Mode::Hue => Mix::Hue,
+        Mode::Saturation => Mix::Saturation,
+        Mode::Color => Mix::Color,
+        Mode::Luminosity => Mix::Luminosity,
+    }
 }

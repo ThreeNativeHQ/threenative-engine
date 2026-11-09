@@ -14,7 +14,12 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <sched.h>
+#include <sys/resource.h>
 #endif
+#if !defined(_WIN32)
+#include <pthread.h>
+#endif
+#include <cerrno>
 #if defined(__linux__)
 #include <linux/perf_event.h>
 #include <sys/syscall.h>
@@ -46,6 +51,11 @@
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
 #include "mystral/webgpu_compat.h"
+
+#if defined(TN_PS4)
+// libkernel's wall clock in microseconds: the reference E5 checks std::chrono::steady_clock against.
+extern "C" uint64_t sceKernelGetProcessTime();
+#endif
 
 // The legacy host's SDL-to-DOM input translation (platform/input.cpp), which declares none of these.
 namespace mystral::platform {
@@ -222,6 +232,7 @@ struct SurfaceConfig {
     uint32_t width = kWidth, height = kHeight;
     bool vsync = kSurfaceVsync;
     std::string title = "ThreeNative native engine";
+    bool priority = true;  // PRD-859: TN_PLAYER_PRIORITY=normal (`display.priority: "normal"`) keeps the OS default
     std::string problem;
 };
 
@@ -246,6 +257,11 @@ SurfaceConfig readSurfaceConfig() {
         else if (std::strcmp(text, "1") == 0 || std::strcmp(text, "on") == 0) config.vsync = true;
         else config.problem = std::string("TN_PLAYER_VSYNC must be 0, 1, off or on, got '") + text + "'";
     }
+    if (const char* text = std::getenv("TN_PLAYER_PRIORITY"); text != nullptr && text[0] != '\0') {
+        if (std::strcmp(text, "normal") == 0) config.priority = false;
+        else if (std::strcmp(text, "game") != 0)
+            config.problem = std::string("TN_PLAYER_PRIORITY must be game or normal, got '") + text + "'";
+    }
     return config;
 }
 
@@ -257,6 +273,10 @@ const SurfaceConfig& surfaceConfig() {
 void startupStage(const char* stage) {
 #if defined(__ANDROID__)
     __android_log_print(ANDROID_LOG_INFO, "TN_Player", "TN_PLAYER_STAGE: %s", stage);
+#elif defined(TN_PS4)
+    // PS4 has no logcat and no shell to ask: stdout is the only account of how far boot got, and
+    // shadPS4 shows it as [stdout] (E1/E4 rely on the same).
+    std::printf("TN_PLAYER_STAGE: %s\n", stage);
 #else
     (void)stage;
 #endif
@@ -311,6 +331,14 @@ bool openWindow(Window& window) {
     // SDL reads the hint in SDL_Init: set after it, a Wayland session keeps Wayland and no surface.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
 #endif
+#if defined(TN_PS4)
+    // The dummy driver owns the window handle the loop sizes its drawing buffer from and the events
+    // it pumps; the frame itself reaches the screen through Dawn's VideoOut swapchain (context.cpp's
+    // PLATFORM_PS4). It is opt-in: SDL3's DUMMY_Available (SDL_nullvideo.c) accepts only a hint that
+    // names it, so without this line SDL_Init fails with "No available video device" and the player
+    // falls back to a headless run that presents nothing.
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::printf("[Playtest] SDL_Init failed: %s\n", SDL_GetError());
         return false;
@@ -318,7 +346,11 @@ bool openWindow(Window& window) {
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
 #if defined(__APPLE__)
     flags |= SDL_WINDOW_METAL;
-#elif !defined(_WIN32)
+#elif defined(_WIN32) || defined(TN_PS4)
+    // A plain window: the frame reaches the screen through Dawn's own surface (DXGI on Windows, the
+    // VideoOut swapchain on PS4, context.cpp's PLATFORM_PS4). SDL_WINDOW_VULKAN exists for SDL's own
+    // Vulkan path, and the dummy driver a console runs refuses it.
+#else
     flags |= SDL_WINDOW_VULKAN;
 #endif
     window.handle = SDL_CreateWindow(surfaceConfig().title.c_str(), static_cast<int>(surfaceConfig().width),
@@ -342,7 +374,13 @@ bool openWindow(Window& window) {
 
 /** SDL exposes the native handles needed by the host's existing Dawn surface API. */
 bool surfaceForWindow(mystral::webgpu::Context& context, Window& window) {
-#if defined(__ANDROID__)
+#if defined(TN_PS4)
+    // The dummy video driver owns no native handle, and the PS4 has no window to name: the surface
+    // is the VideoOut scanout (context.cpp's PLATFORM_PS4 branch). The window is still the event
+    // source and the size the drawing buffer follows.
+    (void)window;
+    return context.createSurfaceWithDisplay(nullptr, nullptr, mystral::webgpu::Context::PLATFORM_PS4);
+#elif defined(__ANDROID__)
     void* native = SDL_GetPointerProperty(SDL_GetWindowProperties(window.handle),
                                          SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
     return native && context.createSurface(native, mystral::webgpu::Context::PLATFORM_ANDROID);
@@ -490,6 +528,16 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
     return V::makeObject(std::move(members));
 }
 
+/**
+ * PRD-859: a frame-critical thread names itself, so the priority sweep keeps it raised and lowers every other thread.
+ * Runs on that thread, as its first job.
+ */
+void frameCriticalThread(const char* name) {
+#if defined(__linux__)
+    pthread_setname_np(pthread_self(), name);
+#endif
+}
+
 #if defined(__linux__) && !defined(__ANDROID__)
 /**
  * PRD-610: the game thread keeps its own cores. It takes one L3 domain (a Ryzen CCD), or one physical
@@ -503,7 +551,6 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
  */
 struct ThreadPlacement {
     cpu_set_t helpers{};
-    bool active = false;
     std::chrono::steady_clock::time_point lastSweep{};
 
     static long readNumber(const std::string& path) {
@@ -531,9 +578,99 @@ struct ThreadPlacement {
         }
         return set;
     }
+    /**
+     * PRD-859: the game thread wins the CPU. The frame-critical threads (the game thread, and the threads that name
+     * themselves `tn-gpu` and `tn-render`) ask for nice -10 (Unreal's TPri_AboveNormal on Unix), through setpriority
+     * when RLIMIT_NICE allows it, else rtkit. Every other thread and child process yields at nice +10 (TPri_Lowest),
+     * which needs no privilege. TN_PLAYER_PRIORITY=normal turns both off. A failed raise is reported, never fatal.
+     */
+    static constexpr int kRaised = -10, kLowered = 10;
+    bool placed = false, priority = false;
+    pid_t game = 0;
+    std::set<int> tried;              // tids a raise was asked for, once each
+    std::string source = "none", reason, rtkitProblem, reported;
+    struct Readout { int game = INT_MIN, render = INT_MIN, present = INT_MIN, background = INT_MAX; };
+    Readout readout;
+
+    static int niceOf(int tid) {
+        errno = 0;
+        const int value = getpriority(PRIO_PROCESS, static_cast<id_t>(tid));
+        return errno == 0 ? value : INT_MIN;
+    }
+    static std::string commOf(int pid, const char* tid) {
+        char name[32] = {};
+        if (std::FILE* file = std::fopen(("/proc/" + std::to_string(pid) + "/task/" + tid + "/comm").c_str(), "r")) {
+            if (!std::fgets(name, sizeof name, file)) name[0] = 0;
+            std::fclose(file);
+        }
+        std::string text = name;
+        while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
+        return text;
+    }
+    /** rtkit's MakeThreadHighPriority over the system bus, through libsystemd loaded at run time (no build dependency). */
+    bool rtkitRaise(int tid) {
+        struct BusError { const char* name; const char* message; int needFree; };
+        using Open = int (*)(void**);
+        using Call = int (*)(void*, const char*, const char*, const char*, const char*, BusError*, void**, const char*, ...);
+        using Free = void (*)(BusError*);
+        static void* library = dlopen("libsystemd.so.0", RTLD_NOW | RTLD_LOCAL);
+        static const auto open = library ? reinterpret_cast<Open>(dlsym(library, "sd_bus_open_system")) : nullptr;
+        static const auto call = library ? reinterpret_cast<Call>(dlsym(library, "sd_bus_call_method")) : nullptr;
+        static const auto release = library ? reinterpret_cast<Free>(dlsym(library, "sd_bus_error_free")) : nullptr;
+        static void* bus = nullptr;  // ponytail: opened once and kept for the process; the sweep is its only user
+        if (!open || !call || !release) return rtkitProblem = "no-libsystemd", false;
+        if (!bus) {
+            if (const int status = open(&bus); status < 0) return bus = nullptr, rtkitProblem = "no-system-bus:" + std::to_string(-status), false;
+        }
+        BusError error{nullptr, nullptr, 0};
+        const int status = call(bus, "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1", "org.freedesktop.RealtimeKit1",
+                                "MakeThreadHighPriority", &error, nullptr, "ti", static_cast<uint64_t>(tid), static_cast<int32_t>(kRaised));
+        if (status < 0) rtkitProblem = error.name ? error.name : "errno:" + std::to_string(-status);
+        release(&error);
+        return status >= 0;
+    }
+    void raise(int tid) {
+        if (!tried.insert(tid).second || niceOf(tid) <= kRaised) return;
+        if (setpriority(PRIO_PROCESS, static_cast<id_t>(tid), kRaised) == 0) {
+            source = "setpriority";
+            return;
+        }
+        const int error = errno;
+        if (rtkitRaise(tid)) {
+            source = "rtkit";
+            return;
+        }
+        // Unreal's rule: a refused raise is logged once and is not an error, since Unix does not let a user raise by default.
+        if (reason.empty())
+            std::fprintf(stderr, "TN_PROCESS_PRIORITY_RAISE_REFUSED: setpriority %s, rtkit %s; the frame-critical threads keep nice 0.\n",
+                         error == EACCES ? "EACCES" : error == EPERM ? "EPERM" : std::to_string(error).c_str(), rtkitProblem.c_str());
+        reason = error == EACCES ? "EACCES" : error == EPERM ? "EPERM" : std::to_string(error);
+    }
+    /** Background work yields: nice +10, set only while lower, so a repeated sweep makes no extra syscall. */
+    void lower(int tid) {
+        if (const int value = niceOf(tid); value != INT_MIN && value < kLowered) setpriority(PRIO_PROCESS, static_cast<id_t>(tid), kLowered);
+        readout.background = std::min(readout.background, niceOf(tid));
+    }
+    void report() {
+        const auto value = [](int nice) { return nice == INT_MIN || nice == INT_MAX ? std::string("none") : std::to_string(nice); };
+        std::string line = "game=" + value(readout.game) + " render=" + value(readout.render) + " present=" + value(readout.present) +
+                           " background=" + value(readout.background) + " source=" + (priority ? source : "none");
+        if (priority && source == "none" && !reason.empty()) line += " reason=" + reason + " rtkit=" + rtkitProblem;
+        line += priority ? " override=none" : " override=normal";
+        if (line == reported) return;
+        reported = line;
+        std::printf("TN_PROCESS_PRIORITY %s\n", line.c_str());
+        std::fflush(stdout);
+    }
     void start() {
+        game = static_cast<pid_t>(syscall(SYS_gettid));
+        priority = surfaceConfig().priority;
+        placed = place();
+        sweep();
+    }
+    bool place() {
         cpu_set_t allowed;
-        if (sched_getaffinity(0, sizeof allowed, &allowed) != 0 || CPU_COUNT(&allowed) < 4) return;
+        if (sched_getaffinity(0, sizeof allowed, &allowed) != 0 || CPU_COUNT(&allowed) < 4) return false;
         int chosen = -1;
         // The fastest cores by max frequency first (P-cores on a hybrid CPU), then the last CPPC rank among them.
         const auto cpuFile = [](int c, const char* name) { return "/sys/devices/system/cpu/cpu" + std::to_string(c) + name; };
@@ -557,24 +694,38 @@ struct ThreadPlacement {
         }
         if (CPU_COUNT(&main) == 0) CPU_SET(chosen, &main);
         CPU_XOR(&helpers, &allowed, &main);
-        if (CPU_COUNT(&helpers) == 0 || sched_setaffinity(0, sizeof main, &main) != 0) return;
-        active = true;
-        sweep();
+        if (CPU_COUNT(&helpers) == 0 || sched_setaffinity(0, sizeof main, &main) != 0) return false;
         std::string cpus;
         for (int c = 0; c < CPU_SETSIZE; ++c)
             if (CPU_ISSET(c, &main)) cpus += (cpus.empty() ? "" : ",") + std::to_string(c);
         std::printf("TN_THREAD_PLACEMENT main=%s helpers=%d\n", cpus.c_str(), CPU_COUNT(&helpers));
+        return true;
     }
-    /** Moves every thread but the calling (game) one, and every descendant process, onto the helpers. */
+    /**
+     * Moves every thread but the game one, and every descendant process, onto the helpers; raises the frame-critical
+     * threads of the player and lowers the rest (PRD-859).
+     */
     void moveTasks(int pid, bool self) {
         const std::string root = "/proc/" + std::to_string(pid) + "/task";
         DIR* tasks = opendir(root.c_str());
         if (!tasks) return;
-        const pid_t me = static_cast<pid_t>(syscall(SYS_gettid));
         while (const dirent* entry = readdir(tasks)) {
             const int tid = std::atoi(entry->d_name);
             if (tid <= 0) continue;
-            if (!self || tid != me) sched_setaffinity(tid, sizeof helpers, &helpers);
+            if (placed && (!self || tid != game)) sched_setaffinity(tid, sizeof helpers, &helpers);
+            const std::string name = self ? commOf(pid, entry->d_name) : std::string();
+            int* critical = !self ? nullptr : tid == game ? &readout.game : name == "tn-render" ? &readout.render
+                                                         : name == "tn-gpu" ? &readout.present : nullptr;
+            if (critical) {
+                if (priority) raise(tid);
+                *critical = niceOf(tid);
+            } else if (self && name.rfind("SDLAudio", 0) == 0) {
+                // SDL raises its own audio device threads (time-critical playback); they keep what SDL set.
+            } else if (priority) {
+                lower(tid);
+            } else {
+                readout.background = std::min(readout.background, niceOf(tid));
+            }
             // Children are listed per thread; WebKit's processes hang off the overlay's thread.
             if (std::FILE* file = std::fopen((root + "/" + entry->d_name + "/children").c_str(), "r")) {
                 int child = 0;
@@ -586,11 +737,13 @@ struct ThreadPlacement {
     }
     void sweep() {
         lastSweep = std::chrono::steady_clock::now();
+        readout = {};
         moveTasks(static_cast<int>(getpid()), true);
+        report();
     }
-    /** Threads started after `start` inherit the game thread's core; a sweep a second moves them. */
+    /** Threads started after `start` inherit the game thread's core and nice value; a sweep a second moves them. */
     void sweepIfDue() {
-        if (active && std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
+        if (game != 0 && std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
     }
 };
 #else
@@ -666,6 +819,14 @@ struct Session {
     // queue them ahead of the next readback faster than a software GPU executes them.
     uint64_t lastRenderedTick = UINT64_MAX;
     bool hasRendered = false;
+#if defined(TN_PS4)
+    // A console has no frame meter and no shell to ask: the frames this loop presented are counted
+    // here and printed every 100 by step(), which is the account a judged run reads.
+    uint64_t presentedFrames = 0;
+    double ps4JsMs = 0.0;
+    std::chrono::steady_clock::time_point ps4WindowStart{};
+    uint64_t ps4WindowKernelUs = 0;
+#endif
     std::set<std::string> renderNotes;  // a renderer note (a skipped draw) prints once, not every frame
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
     double updateMixerCpuMs = 0;
@@ -777,10 +938,14 @@ int Session::initialize() {
 #if !defined(__ANDROID__)
     if (const char* flag = std::getenv("TN_GPU_THREAD"); presenter && !(flag && std::strcmp(flag, "0") == 0)) {
         gpuThread = std::make_shared<GpuThread>();
+        gpuThread->post([] { frameCriticalThread("tn-gpu"); });
+        gpuThread->wait();
         renderer->gpu().setThread(gpuThread);
         // Only a game that fences its own renderer touches (setRenderBarrier) can share the renderer with a thread.
         if (const char* rt = std::getenv("TN_RENDER_THREAD"); !gpuTiming && !(rt && std::strcmp(rt, "0") == 0) && game.setRenderBarrier) {
             renderThread = std::make_shared<GpuThread>();
+            renderThread->post([] { frameCriticalThread("tn-render"); });
+            renderThread->wait();
             renderer->collectFrame();
             game.setRenderBarrier([this] { waitRenderThread(false); });
         }
@@ -1301,10 +1466,16 @@ int Session::step() {
     // the clock follows real time instead, as the web loop follows requestAnimationFrame.
     if (!runner || endpoint->liveClock()) {
         nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
+#if defined(TN_PS4)
+        const auto jsBegin = std::chrono::steady_clock::now();
+#endif
         for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps) {
             if (runner) ++drivenTicks;
             update(kTickStep);
         }
+#if defined(TN_PS4)
+        ps4JsMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - jsBegin).count();
+#endif
     }
     if (endpoint->automaticRenderHeld()) return viewFailed ? -1 : 1;
     if (!refreshView())
@@ -1314,6 +1485,25 @@ int Session::step() {
     // the queue ahead of the next render-target readback and make it wait behind all of them.
     if (presenter || !hasRendered || tick() != lastRenderedTick) {
         renderFrame();
+#if defined(TN_PS4)
+        if (++presentedFrames % 100 == 0) {
+            // PRD-784 E5: the game's JS update time and the whole frame's wall time, each averaged
+            // over the last 100 presented frames.
+            const auto frameNow = std::chrono::steady_clock::now();
+            const double wallMs = ps4WindowStart.time_since_epoch().count()
+                ? std::chrono::duration<double, std::milli>(frameNow - ps4WindowStart).count() / 100.0 : 0.0;
+            // The same window on libkernel's clock: steady_clock must agree with it, or every dt and
+            // timer in the guest is off (a wrong clock id once made it read CPU time).
+            const uint64_t kernelUs = sceKernelGetProcessTime();
+            const double kernelMs = ps4WindowKernelUs ? static_cast<double>(kernelUs - ps4WindowKernelUs) / 100000.0 : 0.0;
+            std::printf("TN_PLAYER_FRAMES %llu js_ms=%.3f frame_ms=%.3f kernel_frame_ms=%.3f\n",
+                        static_cast<unsigned long long>(presentedFrames), ps4JsMs / 100.0, wallMs, kernelMs);
+            ps4JsMs = 0.0;
+            ps4WindowStart = frameNow;
+            ps4WindowKernelUs = kernelUs;
+            std::fflush(stdout);
+        }
+#endif
     } else {
         renderer->poll();
         events.drain();

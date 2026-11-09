@@ -1,0 +1,65 @@
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -322,17 +322,35 @@
+ static void vk_ps4_clear_color_fillmem(GnmCommandBuffer *cmd,
+                                         VkPs4Image *img,
+                                         const VkClearColorValue *cc) {
+-    if (!img->memory || !img->memory->gnm_mem.mapped) return;
+-
+-    uint64_t rt_addr = (uint64_t)img->memory->gnm_mem.mapped +
+-                       img->memory_offset;
+-    uint32_t bpp = vk_format_to_bpp(img->create_info.format);
+-    uint32_t surface_w = img->create_info.extent.width;
+-    uint32_t surface_h = img->create_info.extent.height;
++    uint64_t rt_addr;
++    uint32_t rt_size;
++    if (!img->memory) {
++        /* Swapchain images own no VkPs4DeviceMemory: their store is the
++         * display-linear VideoOut buffer held in the image's GnmRenderTarget
++         * (same shape as the CmdCopyImageToBuffer fix).  The byte size is the
++         * RT's own, exactly what sceGnmRtCreateColorTarget reported for that
++         * buffer: sceGnmRtGetPitch() counts pixels, not bytes. */
++        uint32_t align = 0;
++        uint64_t size = 0;
++        if (!img->is_swapchain_image) return;
++        rt_addr = (uint64_t)sceGnmRtGetBaseAddr(&img->gnm_rt);
++        if (sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt) != GNM_ERROR_OK) return;
++        rt_size = (uint32_t)size;
++    } else {
++        if (!img->memory->gnm_mem.mapped) return;
++        uint32_t bpp = vk_format_to_bpp(img->create_info.format);
++        rt_addr = (uint64_t)img->memory->gnm_mem.mapped +
++                  img->memory_offset;
++        rt_size = img->create_info.extent.width *
++                  img->create_info.extent.height * bpp;
++        rt_size = (rt_size + 3) & ~3u;
++    }
++    /* FillMemory wants a 4-byte aligned address and a size that is a
++     * multiple of 4.  A GNM RT base is 256-byte aligned and its surface size
++     * is a whole number of bytes, so neither case needs rounding. */
++    if (!rt_addr || rt_size < 4) return;
+     uint32_t clear_val = vk_ps4_pack_clear_val_32(
+         img->create_info.format, cc);
+-    uint32_t rt_size = surface_w * surface_h * bpp;
+-    rt_size = (rt_size + 3) & ~3u;
+     sceGnmDrawCmdFillMemory(cmd, rt_addr, rt_size, clear_val);
+ }
+ 
+@@ -2618,7 +2636,15 @@
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+     VkPs4Image *img = (VkPs4Image *)image;
+ 
+-    if (!img->memory || !img->memory->gnm_mem.mapped) return;
++    if (!img->memory) {
++        /* Swapchain image: no VkPs4DeviceMemory, so the range walk below
++         * (which reads img->memory) cannot clear it.  It is one mip of one
++         * layer on a display-linear VideoOut RT, so the whole-image clear
++         * is exact. */
++        if (img->is_swapchain_image) vk_ps4_clear_color(cmd, img, pColor);
++        return;
++    }
++    if (!img->memory->gnm_mem.mapped) return;
+ 
+     /* Tiled render targets require a draw-based clear because FillMemory
+      * writes linearly and doesn't respect the tiled memory layout.

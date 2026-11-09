@@ -64,12 +64,39 @@ const TAGS: &[&str] = &[
     "div", "section", "aside", "header", "footer", "main", "nav", "article", "h1", "h2", "h3",
     "h4", "h5", "h6", "p", "span", "button", "img", "ul", "ol", "li", "a", "label", "strong",
     "em", "b", "i", "small",
+    // A scoreboard, an inventory grid and a stats page are tables, and blitz-dom lays them out
+    // (`layout/table.rs`); refusing the tag made a whole Tailwind layout family unmeasurable rather
+    // than unsupported. PRD-848 is what proves the layout, so the tag is allowed and the fixtures
+    // decide whether it is right.
+    "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col",
+    // The controls a HUD settings panel needs, and the only elements an `accent-*`, `caret-*`,
+    // `appearance-*`, `field-sizing-*` or `resize-*` utility can apply to. What they *paint* is
+    // PRD-851's subject; refusing the tag would make the question unaskable.
+    "input", "textarea", "select", "option", "details", "summary",
 ];
 
 /// The attribute names an `attr` op may set, besides any `data-*` or `aria-*`. Everything else
 /// is rejected: an arbitrary attribute name is a selector surface this slice does not model.
 const ATTRS: &[&str] = &[
-    "class", "id", "style", "role", "disabled", "type", "src", "alt", "tabindex", "title",
+    "class",
+    "id",
+    "style",
+    "role",
+    "disabled",
+    "type",
+    "src",
+    "alt",
+    "tabindex",
+    "title",
+    // Boolean attributes a selector matches on: `:inert` and `:checked` are ordinary state a game's
+    // UI sets, and `checked` is what a staged control is in for `peer-checked:`/`has-[:checked]`.
+    "inert",
+    "checked",
+    "selected",
+    "open",
+    // The document's direction, which a UI sets on a region for RTL languages.
+    "dir",
+    "lang",
 ];
 
 /// The events a `listen` op may name.
@@ -397,14 +424,17 @@ pub struct CssUi {
     time: f64,
     /// `prefers-color-scheme: dark`.
     dark: bool,
-    /// `prefers-reduced-motion: reduce`, as the [`REDUCED_MOTION_CSS`] sheet implements it.
+    /// `prefers-reduced-motion: reduce`, which the engine reports to the stylesheet as a media
+    /// query (`@media (prefers-reduced-motion: reduce)`), the same way a browser does.
     reduced_motion: bool,
+    /// `forced-colors: active`, as the host reported it.
+    forced_colors: bool,
+    /// `inverted-colors: inverted`, as the host reported it.
+    inverted_colors: bool,
     /// Whether the pointer is a finger rather than a mouse: it does not hover, and the device
     /// reports `(hover: none)` and `(pointer: coarse)`.
     touch: bool,
     ua_css: String,
-    /// The reduced-motion sheet, while it is applied (see [`REDUCED_MOTION_CSS`]).
-    motion_css: String,
     redraw: Arc<Redraw>,
     assets: Arc<Assets>,
     dirty: bool,
@@ -475,9 +505,10 @@ impl CssUi {
             time: 0.0,
             dark: false,
             reduced_motion: false,
+            forced_colors: false,
+            inverted_colors: false,
             touch: false,
             ua_css: String::new(),
-            motion_css: String::new(),
             redraw,
             assets,
             dirty: true,
@@ -853,13 +884,13 @@ impl CssUi {
     /// The device the UI is styled for: `dark` drives `prefers-color-scheme`, and
     /// `reduced_motion` drives `prefers-reduced-motion`.
     ///
-    /// The reduced-motion half is a sheet rather than a media query: Stylo's media features are
-    /// Gecko's or Servo's, and Servo's list has no `prefers-reduced-motion` at all (the Gecko
-    /// one reads it through gecko bindings this crate has no way to reach), so
-    /// `@media (prefers-reduced-motion: reduce)` can never match here. What that query asks for
-    /// is honoured directly instead: while it is set, nothing animates — see
-    /// [`REDUCED_MOTION_CSS`]. A game's own `!important` still wins, which is the same
-    /// precedence a browser gives it.
+    /// Both halves are media queries the stylesheet answers on its own: `prefers-color-scheme` and
+    /// `prefers-reduced-motion`. The second one is a vendored Stylo hunk rather than an
+    /// approximation — Servo's media-feature list had no `prefers-reduced-motion` at all, so
+    /// `@media (prefers-reduced-motion: reduce)` and `(no-preference)` both failed to match, which
+    /// is exactly what Tailwind's `motion-reduce:` and `motion-safe:` compile to. Nothing else
+    /// changes: a stylesheet that asks for reduce and does nothing about it keeps its transitions,
+    /// as it does in a browser.
     pub fn set_env(&mut self, dark: bool, reduced_motion: bool) {
         if dark == self.dark && reduced_motion == self.reduced_motion {
             // Nothing the stylesheet can see has changed, so nothing is repainted: a host states its
@@ -874,16 +905,49 @@ impl CssUi {
             self.scale,
             self.color_scheme(),
         ));
-        if !self.motion_css.is_empty() {
-            self.doc.remove_user_agent_stylesheet(&self.motion_css);
-            self.motion_css.clear();
-        }
-        if reduced_motion {
-            self.doc.add_user_agent_stylesheet(REDUCED_MOTION_CSS);
-            self.motion_css = REDUCED_MOTION_CSS.to_string();
-        }
+        self.doc.set_reduced_motion(reduced_motion);
         self.dirty = true;
         self.sync_dirty();
+    }
+
+    /// The rest of the device's media preferences: `prefers-contrast`, `forced-colors` and
+    /// `inverted-colors`, each `None` when the caller has nothing to say about it.
+    ///
+    /// `contrast` is the CSS keyword (`"more"`, `"less"`, `"custom"`, `"no-preference"`); anything
+    /// else is refused by name, because a typo that silently meant "no preference" would measure as
+    /// a correct engine that resolved the wrong query.
+    pub fn set_media_preferences(
+        &mut self,
+        contrast: Option<&str>,
+        forced_colors: Option<bool>,
+        inverted_colors: Option<bool>,
+    ) -> Result<(), String> {
+        let contrast = match contrast {
+            None => 0,
+            Some("no-preference") => 0,
+            Some("more") => 1,
+            Some("less") => 2,
+            Some("custom") => 3,
+            Some(other) => return Err(format!("prefers-contrast: unknown value \"{other}\"")),
+        };
+        let mut preferences = blitz_dom::MediaPreferences {
+            reduced_motion: self.reduced_motion,
+            contrast,
+            forced_colors: self.forced_colors,
+            inverted_colors: self.inverted_colors,
+        };
+        if let Some(value) = forced_colors {
+            preferences.forced_colors = value;
+        }
+        if let Some(value) = inverted_colors {
+            preferences.inverted_colors = value;
+        }
+        self.forced_colors = preferences.forced_colors;
+        self.inverted_colors = preferences.inverted_colors;
+        self.doc.set_media_preferences(preferences);
+        self.dirty = true;
+        self.sync_dirty();
+        Ok(())
     }
 
     /// Whether the pointer is a finger rather than a mouse.
@@ -1143,6 +1207,28 @@ impl CssUi {
         }
     }
 
+    /// Move focus to a caller's element by id, the way a host does when a dialog opens, a form's
+    /// first field is activated from code, or a test wants a control focused without a pointer.
+    ///
+    /// Returns whether the id named a focusable element: a `<div>` with no `tabindex` is not one, so
+    /// a host that asks for it learns that nothing moved rather than believing the address worked.
+    /// The ring is not shown — this is a programmatic focus, and a browser paints `:focus` without
+    /// `:focus-visible` for one.
+    pub fn focus(&mut self, id: u32) -> bool {
+        let Some(node) = self.ids.get(&id).copied() else {
+            return false;
+        };
+        if !is_focusable(&self.doc, node) {
+            return false;
+        }
+        self.doc.set_focus_visible(node, false);
+        // Focusing restyles the node, and the document's redraw flag is not what makes that paint:
+        // a host that only asks for the next frame would get the previous one.
+        self.dirty = true;
+        self.sync_dirty();
+        true
+    }
+
     /// Move focus one element forwards (`shift` for backwards), or out of the document when
     /// there is nowhere left to go. Returns whether the document had a use for the key: nothing
     /// to focus and no focus to move is a game that owns its own Tab, not a UI that swallowed one.
@@ -1292,6 +1378,22 @@ impl CssUi {
             .doc
             .element_from_point(nx * self.width as f32, ny * self.height as f32);
         let moved = self.doc.scroll_wheel(hit, dx as f64, dy as f64, &mut |_| {});
+        if moved {
+            self.dirty = true;
+            self.sync_dirty();
+        }
+        moved
+    }
+
+    /// Scroll every scrollable ancestor of `id` so the element is visible, honouring its
+    /// `scroll-margin` and each ancestor's `scroll-padding` — `scrollIntoView({ block: "start",
+    /// inline: "start" })`. Returns whether anything scrolled.
+    pub fn scroll_into_view(&mut self, id: u32, block_end: bool, inline_end: bool) -> bool {
+        let Some(node) = self.ids.get(&id).copied() else {
+            return false;
+        };
+        self.doc.resolve(self.animation_seconds());
+        let moved = self.doc.scroll_node_into_view(node, block_end, inline_end);
         if moved {
             self.dirty = true;
             self.sync_dirty();
@@ -1559,16 +1661,6 @@ fn root_box_css(width: u32, height: u32) -> String {
 /// the same substitution (see `vendor/PATCHES.md`), so both sides measure one face.
 const UA_CSS: &str = "button { box-sizing: border-box; border-width: 2px; border-style: outset; \
      font: 400 13.3333px Arial; }";
-
-/// What `prefers-reduced-motion: reduce` asks for, as a user-agent sheet: no transition and no
-/// animation takes any time, delays included (a transition that keeps its delay is still a
-/// transition the user asked not to see). It is `!important`, which outranks every author
-/// declaration that is not itself `!important` — the same precedence the cascade gives it in a
-/// browser.
-///
-/// See [`CssUi::set_env`] for why this is a sheet and not a media query.
-const REDUCED_MOTION_CSS: &str = "* { transition-duration: 0s !important; transition-delay: 0s !important; \
-     animation-duration: 0s !important; animation-delay: 0s !important; }";
 
 fn qual(tag: &str) -> QualName {
     QualName::new(None, ns!(html), LocalName::from(tag))

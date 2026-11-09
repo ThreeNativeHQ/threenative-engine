@@ -378,7 +378,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
   // 2026-11-04 (PRD-777 on PRD-632): action-rpg AGENTS/CLAUDE name the spell factories in one line. Measured by this test.
-  "action-rpg": "c8584454d8cc657761f4701c509173794f154a1a54bb2c93bee4f263e6963f8d",
+  "action-rpg": "a5da04a8dd80fe302d92e83750402642adadec1fd610f4d98afa8f164b193769",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -392,7 +392,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "e4a4fd0f80f3f20b752d1f6e9c7e5ded40ef6a9f05de20a7b00b832810149cc2",
+  collectathon: "20af7279442897195eb2890802a22b25fce0a6a5803f53003dc0de188afd2b17",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -401,14 +401,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "e432aec84fd061e0d01ceb5705efd9fd5851ba16b0cb3de238d043ab0704a472",
+  adventure: "207561c05950f1e015421a09e4ef82e2b7b64a4a48d4cdc3b86cb46314ad050d",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "265b055f30f15901c5d8411d93eed5628e5fd97287caf4b97bb5bf8a806006a0",
-  minimal: "acc5c85289a3cf27debc795beee05024a0c7b28adfc4d078588c1a254a385c53",
-  platformer: "5f3921b1a5cbff00b731361f1bb037ed66dac6d5dcc8b8bbd4b722a8ce6d6cd9",
-  puzzle: "83f50df24891e650e25f2a9131ce59dbeceeb43516f48b5863b8c53a72250f9a",
-  racing: "a212e92e756615a8caf06523e08b61b1e5bfd8338aeb5957115e67c631cba21f",
-  rain: "85669ce4009f190dbd9832303d47b332456398282bc4c3125348918ad50871e8",
+  kart: "2441b2d0d15887e2ef53919da030feb8a5ed2b171e3009f6d81f63f4141d7996",
+  minimal: "7061e7e24a98928cb39d1cffd9d50b279040b69bff9ef48d99e4065d95489116",
+  platformer: "c50a34ac8a293341aaf5d7ee7a0adfc9722f82522303f595c1de1e1b6baa6825",
+  puzzle: "98b017ad0db95fbf0861052ae2749f3f91d83050a346fc93f6726a94e773047c",
+  racing: "202619e7de642ffeea18d032aff67cb119cb69a63bf2fc7e14b23b263cb217f6",
+  rain: "ebb3600d8ad42a87a1aa97888a6ceb55c55f587571dc2ad3588b7e982d1656aa",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -425,18 +425,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
   // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
   // Measured by this test.
-  rts: "8b5db0c2644c8b523ac7ac76638db70bcd7acba4d38ef45f74d95f229a8d5243",
-  runner: "8b37d835c84aa459d2a8d4f2e0d29f619971b140077d141fd3241bdb925b520e",
+  rts: "5032f7d27bd4ea0e1786ebf8828f16d1cf7bab1fe67b0c1da641de6a552f3cc1",
+  runner: "e593f5b7f49bf7a6e66d6ec0f8b32a1916012117e7414be932aebd79ac5bfa7e",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   // Re-measured 2026-11-03 (PRD-617): its AGENTS/CLAUDE engine section no longer claims an engine
   // pin the template does not carry. Measured by this test.
   // Re-measured 2026-11-03 (PRD-617): `sails.playtest.json` sets `drawEvery: 60`, so the scenario
   // asks the runner for 30 drawn frames per 1,800-tick hold instead of taking as many readback
   // samples as the adapter happens to draw. Only this tree moves.
-  sailing: "03ad43448d6e821e07e3d0806229213afd4bff3fb50e6dad8fd87ed15ca2c217",
+  sailing: "058bd20ce7a62632ae796ab7fe7d66b7f32f9d1a69bd19aef25d9b28c6e740ca",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "5a0e1d6ca7bf6e5ecc2c0fcbcb9d26e41a52db28743557c0a1b295b3b74e9167",
-  snow: "b64371ba8cc497acefaf61317fc6136d38c49d5aa7106e85a71c78cca605c120",
+  shooter: "de9824d326d874a9996a3d79bb787f569736867871228fc1943e329da5ac4014",
+  snow: "05a8cbe470dcbc5375ea706b440e0c69e2e9dbf545db2b1a2b3ed3500fc76b74",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -449,8 +449,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Play.ts's motion samples between presented frames and fixed steps, and moved two native
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
-  starter: "f3cc3156b4554a0a0bebbcc3abfa82c3bd1653082f4248cb718197e12f31a014",
-  "tower-defense": "fa1b1517f769a3263fda3afc08ff0b4357c07e32fc478df14ff3a42f819ea71b",
+  // Measured by this test on the merge of origin/develop (d4ef1a88d, PRD-784) into this lane:
+  // develop moved six starter sources, this lane moved its style.css, so neither parent value holds.
+  starter: "5a42f4e9be18bc0cb662b96368271fb309140dee544e220ef2eff3cc628207be",
+  "tower-defense": "b0a7f7f6f872af021e758e4fb720192a19ecbafd42f2da34828787415a5b77a9",
 };
 
 // The authoring stamp (PRD-829) hashes files this tree hash already reads, plus the cohort version.

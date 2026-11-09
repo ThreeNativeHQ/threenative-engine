@@ -1,0 +1,31 @@
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+index 168c1f3..3696669 100644
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -2107,8 +2107,14 @@ vk_ps4_CmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkI
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+     VkPs4Image *src = (VkPs4Image *)srcImage;
+     VkPs4Buffer *dst = (VkPs4Buffer *)dstBuffer;
+-    if (!src || !dst || !src->memory || !dst->memory) return;
+-    if (!src->memory->gnm_mem.mapped || !dst->memory->gnm_mem.mapped) return;
++    if (!src || !dst || !dst->memory || !dst->memory->gnm_mem.mapped) return;
++    /* Swapchain images own no VkPs4DeviceMemory: their backing store is the
++     * display-linear VideoOut buffer held in the image's GnmRenderTarget. */
++    uint64_t src_mapped = src->memory ? (uint64_t)src->memory->gnm_mem.mapped : 0;
++    uint64_t src_mem_off = src->memory ? src->memory_offset : 0;
++    if (!src_mapped && src->is_swapchain_image)
++        src_mapped = (uint64_t)sceGnmRtGetBaseAddr(&src->gnm_rt);
++    if (!src_mapped) return;
+ 
+     for (uint32_t i = 0; i < regionCount; i++) {
+         const VkBufferImageCopy *r = &pRegions[i];
+@@ -2123,8 +2129,7 @@ vk_ps4_CmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkI
+         uint32_t copy_width = vk_format_row_size(src->create_info.format, r->imageExtent.width);
+         uint32_t copy_height = compressed ? (r->imageExtent.height + 3) / 4 : r->imageExtent.height;
+ 
+-        uint64_t src_base = (uint64_t)src->memory->gnm_mem.mapped +
+-                            src->memory_offset;
++        uint64_t src_base = src_mapped + src_mem_off;
+         uint64_t dst_base = (uint64_t)dst->memory->gnm_mem.mapped +
+                             dst->memory_offset + r->bufferOffset;
+ 

@@ -1,0 +1,17 @@
+// PS4 shim: OpenOrbis libc++ 11's <functional> ships std::default_searcher but not the Boyer-Moore
+// pair (libc++ 12). The engine names boyer_moore_horspool_searcher for one package text scan.
+// ponytail: alias to libc++'s own default_searcher — the same interface, a naive O(n*m) scan instead
+// of BMH's skip table, on a code string scanned once per package load. Upgrade path: a real BMH
+// searcher here if that ever lands in a profile.
+// Put this dir BEFORE .../include/c++/v1 on -isystem so it wins.
+#ifndef _PS4_SHIM_FUNCTIONAL
+#define _PS4_SHIM_FUNCTIONAL
+#include_next <functional>
+
+namespace std {
+
+template <class _ForwardIterator>
+using boyer_moore_horspool_searcher = default_searcher<_ForwardIterator>;
+
+}  // namespace std
+#endif  // _PS4_SHIM_FUNCTIONAL

@@ -1,0 +1,70 @@
+--- a/src/vk_ps4_device.c
++++ b/src/vk_ps4_device.c
+@@ -112,16 +112,39 @@
+     /* Load the embedded clear pixel shader for tiled RT clears.
+      * Copy the static binary to a malloc'd buffer (GPU-accessible on PS4)
+      * and parse it with sceGnmShaderBinaryGetMetadata to extract the PS
+-     * stage registers and shader code address. */
++     * stage registers and shader code address.
++     *
++     * The GCN code has to start at a 256-byte boundary: the program-address
++     * registers carry only bits 8..63 (sceGnmPsRegsSetAddress, opengnm
++     * include/gnm_shader.h), so an address whose low byte is not zero is
++     * truncated to the boundary below it and the GPU -- or shadPS4 -- executes
++     * the container's file header instead of code ("illegal encoding:
++     * 0xffffffff", the PS stage header's SPI_SHADER_PGM_HI word). This binary
++     * predates psbc's 256-byte code layout (E2 patch 0006) and puts its code at
++     * 0x74, so the blob is placed inside the buffer at whatever offset puts
++     * that code on a boundary, and parsed again from there. */
+     {
+ #include "../shaders/clear_ps_binary.h"
+-        dev->clear_ps_binary = malloc(g_clear_ps_binary_size);
+-        if (dev->clear_ps_binary) {
+-            memcpy(dev->clear_ps_binary, g_clear_ps_binary, g_clear_ps_binary_size);
++        uint8_t *raw = malloc(g_clear_ps_binary_size + 256);
++        dev->clear_ps_binary = raw;
++        if (raw) {
++            memcpy(raw, g_clear_ps_binary, g_clear_ps_binary_size);
++            uint8_t *blob = raw;
++            GnmShaderMetadata probe;
++            memset(&probe, 0, sizeof(probe));
++            if (sceGnmShaderBinaryGetMetadata(raw, g_clear_ps_binary_size, &probe) ==
++                    GNM_ERROR_OK &&
++                probe.shadercode) {
++                const size_t codeoff = (const uint8_t *)probe.shadercode - raw;
++                const size_t shift =
++                    (256u - (((uintptr_t)raw + codeoff) & 0xffu)) & 0xffu;
++                blob = raw + shift;
++                memmove(blob, raw, g_clear_ps_binary_size);
++            }
+             GnmShaderMetadata meta;
+             memset(&meta, 0, sizeof(meta));
+             GnmError gnm_err = sceGnmShaderBinaryGetMetadata(
+-                dev->clear_ps_binary, g_clear_ps_binary_size, &meta
++                blob, g_clear_ps_binary_size, &meta
+             );
+             if (gnm_err == GNM_ERROR_OK && meta.stage) {
+                 const GnmPsShader *ps = (const GnmPsShader *)meta.stage;
+@@ -130,12 +153,21 @@
+                  * start of the GnmPsShader, not a GPU address.  We must
+                  * call sceGnmPsRegsSetAddress to patch it to the actual
+                  * address of the shader code in the malloc'd buffer.
+-                 * meta.shadercode points into dev->clear_ps_binary. */
++                 * meta.shadercode points into that (relocated) blob. */
+                 if (meta.shadercode) {
+                     sceGnmPsRegsSetAddress(
+                         &dev->clear_ps_regs, (void *)meta.shadercode
+                     );
+                     dev->clear_ps_ready = true;
++/* Breadcrumb: this binary cannot survive an unaligned code address
++                     * (see the load above), so name the address the GPU will use. */
++                    vk_ps4_log(
++                        "clear_ps: blob=%p code=%p off=0x%zx pgmlo=%08x pgmhi=%08x",
++                        (void *)raw, (void *)meta.shadercode,
++                        (size_t)((const uint8_t *)meta.shadercode - raw),
++                        dev->clear_ps_regs.spishaderpgmlops,
++                        dev->clear_ps_regs.spishaderpgmhips
++                    );
+                 }
+             }
+         }

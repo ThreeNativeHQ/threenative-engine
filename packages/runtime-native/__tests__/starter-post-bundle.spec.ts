@@ -45,6 +45,37 @@ describe("starter post import bindings", () => {
     expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
   });
 
+  // PRD-784 P5-9: FluidField2D (prd249) imports three/tsl's compute(), which the facade did not export.
+  it("bundles three/tsl compute as node.compute", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(entry, `import { compute } from "three/tsl"; globalThis.bound = compute;`);
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
+
+  // PRD-784 P5-9: the names prd476, animation-composition, prd493 and prd268 import, which the facade
+  // did not export: JS ports over bound classes, engine globals and three's constants.
+  it("bundles the P5-9 three, three/tsl and CCDIKSolver names", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(
+      entry,
+      `
+      import { AdditiveAnimationBlendMode, AnimationUtils, Box2, DataArrayTexture, EdgesGeometry, InterpolateDiscrete, InterpolateLinear, InterpolateSmooth, NormalAnimationBlendMode, Uint8BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute } from "three";
+      import { viewportCoordinate } from "three/tsl";
+      import { CCDIKSolver } from "three/addons/animation/CCDIKSolver.js";
+      globalThis.bound = { AdditiveAnimationBlendMode, AnimationUtils, Box2, DataArrayTexture, EdgesGeometry, InterpolateDiscrete, InterpolateLinear, InterpolateSmooth, NormalAnimationBlendMode, Uint8BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute, viewportCoordinate, CCDIKSolver };
+    `,
+    );
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
+
   it("bundles defineGame without a web-only renderer import", async () => {
     // Every game reaches game.ts and renderer.ts; neither may drag an unbound import onto native.
     const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));

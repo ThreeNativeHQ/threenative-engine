@@ -1,0 +1,20 @@
+diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
+index 1b011b5..4faa8b3 100644
+--- a/libpsbc/psbc_compile.c
++++ b/libpsbc/psbc_compile.c
+@@ -1149,6 +1158,15 @@ PsbcResult psbc_compile_shader(
+     /* Initialize NIR options for all stages */
+     radv_get_nir_options(&compiler_info);
+ 
++    /* radv fills spirv_caps from the physical device
++     * (vk_physical_device_get_spirv_capabilities(), used by vk_nir.c); a
++     * standalone compiler has no VkPhysicalDevice, so the zeroed struct made
++     * spirv_to_nir warn "Unsupported SPIR-V capability: Shader" on every
++     * module (it is a warning, not a rejection: spirv_to_nir.c:5652). Shader is
++     * the one capability every Vulkan module declares; add others here as
++     * shaders start using them. */
++    compiler_info.spirv_caps.Shader = true;
++
+     /* Construct radv_shader_stage */
+     struct radv_shader_stage stage = {0};
+     stage.stage = mesa_stage;

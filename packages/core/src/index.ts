@@ -1679,9 +1679,19 @@ export type {
  * @constraint image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
  * @constraint a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
  * @constraint when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
+ * @situation show gamepad prompts and bind pad buttons on a games console such as the PS4
  * @example if (isMobile()) showTouchControls();
+ * @example if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
  */
-export { getPlatform, isMobile, isNative, isTouchscreenAvailable, isWeb } from "./platform.js";
+export {
+  getPlatform,
+  isConsole,
+  isMobile,
+  isNative,
+  isPs4,
+  isTouchscreenAvailable,
+  isWeb,
+} from "./platform.js";
 export type {
   IPlatformInfo,
   PlatformFormFactor,

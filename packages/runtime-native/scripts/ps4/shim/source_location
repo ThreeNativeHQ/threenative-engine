@@ -1,0 +1,42 @@
+// PS4 shim: OpenOrbis libc++ 11 has no <source_location> at all (it landed in libc++ 12).
+// The engine names its authoring call sites with it (`src/engine/shader/ir.h` `using Where`),
+// so provide the standard shape over clang's builtins. Put this dir BEFORE other system headers.
+#ifndef _PS4_SHIM_SOURCE_LOCATION
+#define _PS4_SHIM_SOURCE_LOCATION
+#include <cstdint>
+
+namespace std {
+
+class source_location {
+public:
+    // consteval, as the standard says: a call site is a compile-time fact, and a default argument
+    // (`Where where = Where::current()`) only works if the call is constant-evaluated there.
+    static consteval source_location current(const char* __file = __builtin_FILE(),
+                                             const char* __function = __builtin_FUNCTION(),
+                                             std::uint_least32_t __line = __builtin_LINE(),
+                                             std::uint_least32_t __column = 0) noexcept {
+        return source_location(__file, __function, __line, __column);
+    }
+
+    constexpr source_location() noexcept = default;
+    constexpr source_location(const source_location&) noexcept = default;
+    constexpr source_location& operator=(const source_location&) noexcept = default;
+
+    constexpr std::uint_least32_t line() const noexcept { return __line_; }
+    constexpr std::uint_least32_t column() const noexcept { return __column_; }
+    constexpr const char* file_name() const noexcept { return __file_; }
+    constexpr const char* function_name() const noexcept { return __function_; }
+
+private:
+    constexpr source_location(const char* __file, const char* __function,
+                              std::uint_least32_t __line, std::uint_least32_t __column) noexcept
+        : __file_(__file), __function_(__function), __line_(__line), __column_(__column) {}
+
+    const char* __file_ = "";
+    const char* __function_ = "";
+    std::uint_least32_t __line_ = 0;
+    std::uint_least32_t __column_ = 0;
+};
+
+}  // namespace std
+#endif  // _PS4_SHIM_SOURCE_LOCATION

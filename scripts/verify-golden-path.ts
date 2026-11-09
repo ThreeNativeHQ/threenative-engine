@@ -14,7 +14,8 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
+import { type AddressInfo, createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1118,6 +1119,95 @@ async function runDev(target: string, template: string, port: number): Promise<v
   }
 }
 
+const STATIC_TYPES: Readonly<Record<string, string>> = {
+  ".css": "text/css",
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".json": "application/json",
+  ".mjs": "text/javascript",
+  ".svg": "image/svg+xml",
+  ".wasm": "application/wasm",
+  ".webmanifest": "application/manifest+json",
+};
+
+/**
+ * A shipped game must start the engine with its worker threads on a host that sends no COOP/COEP
+ * headers (GitHub Pages, a plain static server), and still load, single-threaded and warned, where
+ * nothing can isolate it. `vite preview` sends the headers, so the `test` layer cannot see this:
+ * serve `dist/` with none and read the engine's thread report in both arms.
+ */
+export async function assertStaticHostThreads(dist: string, timeoutMs = 180_000): Promise<string> {
+  const server = createHttpServer((request, response) => {
+    const pathname = decodeURIComponent(new URL(request.url ?? "/", "http://host").pathname);
+    const file = path.join(dist, pathname.endsWith("/") ? `${pathname}index.html` : pathname);
+    readFile(file).then(
+      (body) => {
+        response.setHeader(
+          "Content-Type",
+          STATIC_TYPES[path.extname(file)] ?? "application/octet-stream",
+        );
+        response.end(body);
+      },
+      () => {
+        response.statusCode = 404;
+        response.end();
+      },
+    );
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  const { chromium } = await import("@playwright/test");
+  const { WEBGPU_BROWSER_ARGS } = await import("../packages/playtest/dist/runner/index.js");
+  const browser = await chromium.launch({ headless: false, args: [...WEBGPU_BROWSER_ARGS] });
+  // A page error fails either arm; the thread report and the warning decide.
+  const load = async (
+    url: string,
+  ): Promise<{ report: string; warned: boolean; isolated: boolean }> => {
+    // A fresh context, so the second arm never inherits the first arm's service worker.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    let warned = false;
+    const report = await new Promise<string>((resolve, reject) => {
+      page.on("pageerror", (error) => reject(error));
+      page.on("console", (message) => {
+        const text = message.text();
+        if (text.includes("TN_WEB_THREADS_OFF")) warned = true;
+        const threads = /^TN_FRAME_BUDGET:.*"threads":"([^"]*)"/u.exec(text)?.[1];
+        if (threads !== undefined) resolve(threads);
+      });
+      setTimeout(
+        () =>
+          reject(new Error(`no TN_FRAME_BUDGET window with a thread report in ${timeoutMs} ms`)),
+        timeoutMs,
+      ).unref();
+      page.goto(url).catch(reject);
+    });
+    const isolated = (await page.evaluate(() => globalThis.crossOriginIsolated)) === true;
+    await context.close();
+    return { report, warned, isolated };
+  };
+  try {
+    const threaded = await load(`http://127.0.0.1:${port}/`);
+    if (!threaded.report.startsWith("on") || !threaded.isolated || threaded.warned)
+      throw new Error(
+        `TN_WEB_THREADS_OFF: on a header-less https-or-localhost host the engine must start its worker threads; got ${JSON.stringify(threaded)}.`,
+      );
+    // `?tnIsolation=0` skips the service worker, as a host it cannot isolate would (plain http on a
+    // LAN address, an itch.io frame): the game still loads, single-threaded, and says why.
+    const fallback = await load(`http://127.0.0.1:${port}/?tnIsolation=0`);
+    if (fallback.report.startsWith("on") || fallback.isolated || !fallback.warned)
+      throw new Error(
+        `TN_WEB_THREADS_FALLBACK: a page the worker cannot isolate must load single-threaded with a TN_WEB_THREADS_OFF warning; got ${JSON.stringify(fallback)}.`,
+      );
+    const report = `${threaded.report}; unisolated fallback ${fallback.report}`;
+    return report;
+  } finally {
+    await browser.close();
+    server.close();
+  }
+}
+
 async function assertArtifact(target: string, template: string): Promise<void> {
   const artifact = path.join(target, "dist", "index.html");
   const info = await stat(artifact).catch(() => undefined);
@@ -1126,6 +1216,13 @@ async function assertArtifact(target: string, template: string): Promise<void> {
   }
   if (!info.isFile() || info.size === 0) {
     throw new Error(`template '${template}' produced an empty web artifact at '${artifact}'.`);
+  }
+  // Every kit runs the threaded Wasm engine unless it names `engine: "threejs"`, whose build emits no `_headers`.
+  if (existsSync(path.join(target, "dist", "_headers"))) {
+    const threads = await assertStaticHostThreads(path.join(target, "dist"));
+    process.stdout.write(
+      `golden-path ${template}: header-less static host started threads ${threads}\n`,
+    );
   }
 }
 

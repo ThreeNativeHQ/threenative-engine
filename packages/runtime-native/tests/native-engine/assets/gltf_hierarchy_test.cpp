@@ -351,7 +351,8 @@ int main() {
         return mesh ? mesh->material.get() : nullptr;
     };
     // An extension that needs a decoder this loader lacks is still refused by name, not dropped.
-    for (const char* decoder : {"KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu", "EXT_texture_avif"}) {
+    // (EXT/KHR_meshopt_compression left this list with the meshopt slice; meshopt_decode_test proves them.)
+    for (const char* decoder : {"KHR_draco_mesh_compression", "KHR_texture_basisu", "EXT_texture_avif"}) {
         auto refusedDecoder = tiny(std::string("\"") + decoder + "\"", {R"({})"});
         if (refusedDecoder.error != std::string("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED ") + decoder) {
             std::printf("%s: not refused by name (%s)\n", decoder, refusedDecoder.error.c_str()); ++differ;

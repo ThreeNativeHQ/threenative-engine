@@ -1,0 +1,46 @@
+diff --git a/include/gnm_drawcommandbuffer.h b/include/gnm_drawcommandbuffer.h
+--- a/include/gnm_drawcommandbuffer.h
++++ b/include/gnm_drawcommandbuffer.h
+@@ -103,6 +103,9 @@
+     GnmCommandBuffer* cmd, uint32_t rtslot, const GnmRenderTarget* rt
+ );
+ void sceGnmDrawCmdSetRenderTargetMask(GnmCommandBuffer* cmd, uint32_t mask);
++void sceGnmDrawCmdSetCbControl(
++    GnmCommandBuffer* cmd, uint32_t mode, uint32_t rop3
++);
+ void sceGnmDrawCmdSetScreenScissor(
+     GnmCommandBuffer* cmd, int32_t left, int32_t top, int32_t right,
+     int32_t bottom
+diff --git a/src/drawcommandbuffer.c b/src/drawcommandbuffer.c
+--- a/src/drawcommandbuffer.c
++++ b/src/drawcommandbuffer.c
+@@ -767,6 +767,29 @@
+ 	setcontextregister(cmd, R_028238_CB_TARGET_MASK, mask);
+ }
+ 
++void sceGnmDrawCmdSetCbControl(
++    GnmCommandBuffer* cmd, uint32_t mode, uint32_t rop3
++) {
++	if (mode > 7 || rop3 > 0xFF) {
++		sceGnmWriteMsgf(
++		    GNM_MSGSEV_ERR,
++		    "SetCbControl: mode %u / rop3 0x%x is out of range",
++		    mode, rop3
++		);
++		return;
++	}
++
++	const uint32_t cmddwords = 2 + 1;
++	if (!cmdcanfit(cmd, cmddwords)) {
++		return;
++	}
++
++	setcontextregister(
++	    cmd, R_028808_CB_COLOR_CONTROL,
++	    S_028808_MODE(mode) | S_028808_ROP3(rop3)
++	);
++}
++
+ void sceGnmDrawCmdSetScreenScissor(
+     GnmCommandBuffer* cmd, int32_t left, int32_t top, int32_t right,
+     int32_t bottom

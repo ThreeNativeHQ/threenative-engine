@@ -1,0 +1,20 @@
+diff --git a/src/vk_ps4_descriptor.c b/src/vk_ps4_descriptor.c
+index fbd6f27..e87edb6 100644
+--- a/src/vk_ps4_descriptor.c
++++ b/src/vk_ps4_descriptor.c
+@@ -183,8 +183,13 @@ static void build_sampler_descriptor(GnmSampler *s, const VkSamplerCreateInfo *c
+     /* LOD — clamp to non-negative for min/max LOD. lodbias is s4.10 fixed-point. */
+     float min_lod = ci->minLod > 0.0f ? ci->minLod : 0.0f;
+     float max_lod = ci->maxLod > 0.0f ? ci->maxLod : 0.0f;
+-    s->minlod = (uint32_t)(min_lod * 256.0f) & 0xFFF;
+-    s->maxlod = (uint32_t)(max_lod * 256.0f) & 0xFFF;
++    /* MIN_LOD/MAX_LOD are unsigned 4.8 (largest 4095/256): clamp, do not wrap. WebGPU's default
++     * lodMaxClamp of 32 is 0x2000, which `& 0xFFF` turned into 0 -- every sampler read mip 0, so
++     * minified textures aliased into dashed lines and the normal map's grain never averaged. */
++    if (min_lod > 4095.0f / 256.0f) min_lod = 4095.0f / 256.0f;
++    if (max_lod > 4095.0f / 256.0f) max_lod = 4095.0f / 256.0f;
++    s->minlod = (uint32_t)(min_lod * 256.0f);
++    s->maxlod = (uint32_t)(max_lod * 256.0f);
+     /* lodbias is a signed 14-bit s4.10 fixed-point (10 fractional bits → scale 1024). */
+     int32_t bias = (int32_t)(ci->mipLodBias * 1024.0f);
+     s->lodbias = (uint32_t)(bias & 0x3FFF);

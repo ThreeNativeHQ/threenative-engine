@@ -1,0 +1,20 @@
+--- a/src/drawcommandbuffer.c
++++ b/src/drawcommandbuffer.c
+@@ -1210,9 +1210,15 @@
+ 		return;
+ 	}
+ 
+-	// PM4 header: DISPATCH_DIRECT, count=4, compute engine
++	// PM4 header: DISPATCH_DIRECT, four payload dwords, compute engine.
++	// A PKT3 count field is payload dwords MINUS ONE (Mesa's ac_pm4_cmd_end
++	// writes ndw - last_pm4 - 2; shadPS4 consumes count + 2 words,
++	// liverpool.cpp:961), so four payload words are count 3, not 4. With 4 the
++	// parser also swallowed the trailing NOP's header and read the NOP's first
++	// zero body word as a type-0 packet ("Unimplemented PM4 type 0, base reg: 0,
++	// size: 1", liverpool.cpp:291) on the first compute dispatch.
+ 	const uint32_t predicate = (flags & 1) ? 1 : 0;
+-	cmd->cmdptr[0] = PKT3(PKT3_DISPATCH_DIRECT, 4, predicate) |
++	cmd->cmdptr[0] = PKT3(PKT3_DISPATCH_DIRECT, 3, predicate) |
+ 			 PKT3_SHADER_TYPE_S(1);  // compute engine
+ 	cmd->cmdptr[1] = threadsx;
+ 	cmd->cmdptr[2] = threadsy;

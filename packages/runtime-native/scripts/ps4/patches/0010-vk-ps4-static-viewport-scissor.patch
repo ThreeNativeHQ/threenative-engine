@@ -1,0 +1,86 @@
+diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -504,6 +504,18 @@
+     VkPipelineDepthStencilStateCreateInfo depth_stencil_state;
+     VkPipelineViewportStateCreateInfo viewport_state;
+     VkPipelineMultisampleStateCreateInfo multisample_state;
++    /* Static viewport/scissor, copied out of the create info: viewport_state's
++     * pViewports/pScissors point at caller memory that is freed once
++     * vkCreateGraphicsPipelines returns.  A pipeline whose dynamic state does
++     * not name VIEWPORT/SCISSOR applies these in vkCmdBindPipeline, because
++     * those registers are only ever written by vkCmdSetViewport/vkCmdSetScissor. */
++#define VK_PS4_MAX_STATIC_VIEWPORTS 16
++    bool dynamic_viewport;   /* VK_DYNAMIC_STATE_VIEWPORT was declared */
++    bool dynamic_scissor;    /* VK_DYNAMIC_STATE_SCISSOR was declared */
++    uint32_t static_viewport_count;
++    VkViewport static_viewports[VK_PS4_MAX_STATIC_VIEWPORTS];
++    uint32_t static_scissor_count;
++    VkRect2D static_scissors[VK_PS4_MAX_STATIC_VIEWPORTS];
+     /* Fetch shader (generated from vertex input) */
+     void *fetch_shader;
+     size_t fetch_shader_size;
+diff --git a/src/vk_ps4_pipeline.c b/src/vk_ps4_pipeline.c
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -283,8 +283,37 @@
+                     S_028434_STENCILWRITEMASK_BF(ds->back.writeMask);
+             }
+         }
+-        if (ci->pViewportState)
+-            pipe->viewport_state = *ci->pViewportState;
++        if (ci->pViewportState) {
++            const VkPipelineViewportStateCreateInfo *vs = ci->pViewportState;
++            pipe->viewport_state = *vs;
++
++            /* Which of the two is dynamic decides whether vkCmdBindPipeline may
++             * apply the static arrays below. */
++            if (ci->pDynamicState) {
++                for (uint32_t d = 0; d < ci->pDynamicState->dynamicStateCount; d++) {
++                    switch (ci->pDynamicState->pDynamicStates[d]) {
++                    case VK_DYNAMIC_STATE_VIEWPORT: pipe->dynamic_viewport = true; break;
++                    case VK_DYNAMIC_STATE_SCISSOR:  pipe->dynamic_scissor  = true; break;
++                    default: break;
++                    }
++                }
++            }
++
++            /* Deep copy: pViewports/pScissors point into the caller's create
++             * info, which is gone once this returns. */
++            if (vs->pViewports && vs->viewportCount > 0) {
++                uint32_t n = vs->viewportCount;
++                if (n > VK_PS4_MAX_STATIC_VIEWPORTS) n = VK_PS4_MAX_STATIC_VIEWPORTS;
++                memcpy(pipe->static_viewports, vs->pViewports, n * sizeof(VkViewport));
++                pipe->static_viewport_count = n;
++            }
++            if (vs->pScissors && vs->scissorCount > 0) {
++                uint32_t n = vs->scissorCount;
++                if (n > VK_PS4_MAX_STATIC_VIEWPORTS) n = VK_PS4_MAX_STATIC_VIEWPORTS;
++                memcpy(pipe->static_scissors, vs->pScissors, n * sizeof(VkRect2D));
++                pipe->static_scissor_count = n;
++            }
++        }
+         if (ci->pMultisampleState)
+             pipe->multisample_state = *ci->pMultisampleState;
+ 
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -1206,6 +1206,17 @@
+             ds_off.depthboundsenable = 0;
+             sceGnmDrawCmdSetDepthStencilControl(&cmd->gnm_cmd, &ds_off);
+         }
++
++        /* Apply the pipeline's own viewport/scissor when it did not declare them
++         * dynamic.  Only vkCmdSetViewport/vkCmdSetScissor write those registers, so
++         * a static pipeline would otherwise rasterize through whatever a previous
++         * bind left -- initially xscale 0, a zero-size viewport that draws nothing. */
++        if (!pipe->dynamic_viewport && pipe->static_viewport_count > 0)
++            vk_ps4_CmdSetViewport(commandBuffer, 0, pipe->static_viewport_count,
++                                  pipe->static_viewports);
++        if (!pipe->dynamic_scissor && pipe->static_scissor_count > 0)
++            vk_ps4_CmdSetScissor(commandBuffer, 0, pipe->static_scissor_count,
++                                 pipe->static_scissors);
+     } else if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE) {
+         sceGnmDrawCmdSetCsShader(&cmd->gnm_cmd, &pipe->cs_regs);
+     }

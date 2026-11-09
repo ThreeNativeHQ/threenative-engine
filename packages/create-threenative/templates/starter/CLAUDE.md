@@ -45,7 +45,7 @@ Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agen
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-starter.md`.
 <!-- /shared -->
 
-The game boots into `Play`: a test arena (`src/render/arena.ts`) drawn as a grid, holding a pickup, a crate, a gap to jump and a spawn. `platform()` builds both ends of the course.
+`Play`: a grid test arena (`src/render/arena.ts`) with a pickup, crate, jump gap and spawn; `platform()` builds both course ends.
 React mounts from `src/main.ts`; `src/game.ts` is portable. This repository owns gameplay and every visible choice in `src/render/`.
 
 <!-- shared: kit-commands -->
@@ -96,6 +96,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Frame spans** `#spans`: off. Override: `TN_FRAME_SPANS=1`. Marker: `TN_FRAME_SPANS`.
 - **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
 - **Desktop window** `#desktop-mode`: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
+- **CPU priority** `#cpu-priority`: game threads first. Override: `display.priority: "normal"`. Marker: `TN_PROCESS_PRIORITY`.
 - **Terrain** `#terrain`: authored in the game. Override: optional `@threenative/terrain`; `references/terrain-authoring.md`.
 - **Navigation** `#navigation`: none; browser-only WASM. Override: import `@threenative/physics/navigation` on purpose.
 - **Move input** `#move-axis`: `input.vector("move").y` is +up. Override: one explicit `-move.y` conversion.

@@ -383,7 +383,9 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
         const std::string& name = vertex.attributes[i].name;
         const bool matrixColumn = name.rfind("instanceMatrix", 0) == 0;
         attributes[i] = {};
-        const bool skinIndex = name == "skinIndex";
+        // three's skinning() reads skinIndex as integers (the skin path's own format); a TSL attribute("skinIndex",
+        // "vec4") reads it as float, an ordinary attribute (procedural-animals' DQS skin).
+        const bool skinIndex = name == "skinIndex" && t.scalar == shader::Type::Scalar::U32;
         attributes[i].format = skinIndex ? target.skinIndex : vertexFormat(t);
         attributes[i].shaderLocation = vertex.attributes[i].location;
         buffers[i] = {};

@@ -43,6 +43,28 @@ describe("integration work applies to the changed source", () => {
     expect(select(workflow, [file, "scripts/unclassified.ts"])).toEqual(all);
     expect(select(workflow, [file, "packages/runtime-native/src/main.cpp"]).decals).toBe(true);
   });
+  it("selects the PlayStation lane only for PS4 code (PRD-784)", () => {
+    for (const file of [
+      "packages/runtime-native/scripts/ps4/e2-build.sh",
+      "packages/runtime-native/scripts/ps4/patches/0057-vk-ps4-volumes-linear.patch",
+      "packages/runtime-native/scripts/ps4/check-frame.mjs",
+      "packages/runtime-native/tests/ps4-frame-check.test.mjs",
+      "packages/runtime-native/tests/fixtures/ps4-frames/cube-spin-ps4.png",
+      "packages/runtime-native/cmake/ps4.toolchain.cmake",
+      "packages/runtime-native/src/platform/ps4_main.cpp",
+    ]) {
+      expect(select(workflow, [file]).playstation, file).toBe(true);
+    }
+    for (const file of [
+      "packages/runtime-native/src/engine/render.cpp",
+      "packages/runtime-native/src/main.cpp",
+      "packages/runtime-native/scripts/bundle.mjs",
+      "packages/runtime-native/package.json",
+      "packages/core/src/renderer.ts",
+    ]) {
+      expect(select(workflow, [file]).playstation, file).toBe(false);
+    }
+  });
   it("retains animation routing for weighted playback and authored locomotion", () => {
     for (const file of [
       "packages/core/src/animation.ts",

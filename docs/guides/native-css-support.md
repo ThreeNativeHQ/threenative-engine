@@ -34,10 +34,12 @@ every glyph advance to a whole pixel and the engine does not.
   `ui/stylesheets.json`, keeping emitted CSS and maps unchanged. CSS emitted only for a lazy chunk
   is refused with `TN_CSS_UI_LAZY_STYLESHEET_UNSUPPORTED`; import those styles statically from
   `src/ui/main.tsx`. A hand-staged directory without an order manifest loads CSS alphabetically.
-- **Reduced motion is a rule, not a media query.** Stylo's servo build has no `prefers-reduced-motion`
-  feature, so `@media (prefers-reduced-motion: reduce)` never matches. When reduced motion is
-  requested the engine instead forces `transition-duration: 0s`; any other thing you hang on that media
-  query will not happen.
+- **Reduced motion is a media query, as it is in a browser.** `@media (prefers-reduced-motion:
+  reduce)` and `(no-preference)` match the host's reduced-motion setting (Tailwind's
+  `motion-reduce:`/`motion-safe:` compile to exactly those two queries). The engine used to force
+  `transition-duration: 0s` instead, because Stylo's servo build had no such feature; the vendored
+  hunk that adds it is what deleted that workaround, and transitions now run as authored unless your
+  stylesheet asks otherwise.
 - **Fonts.** Only fonts your UI build ships (and whatever the machine resolves for names it does not)
   are used; there is no network. A missing `url()` file fails the build and a missing font file fails
   attach by name, rather than falling back silently.

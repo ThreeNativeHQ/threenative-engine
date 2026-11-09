@@ -1,0 +1,46 @@
+diff --git a/src/vk_ps4_pipeline.c b/src/vk_ps4_pipeline.c
+index b621e66..8c8e3b4 100644
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -313,8 +313,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+ 
+             if (cached_binary && cached_size > 0) {
+                 /* Cache hit — copy the binary (we need our own copy because
+-                 * the cache may be destroyed before the pipeline) */
+-                binary = vk_ps4_alloc(alloc, cached_size, 16);
++                 * the cache may be destroyed before the pipeline).
++                 * 256-byte aligned: the shader code address must be (see
++                 * sceGnmPsRegsSetAddress, bits 8..63 of the program address). */
++                binary = vk_ps4_alloc(alloc, cached_size, 256);
+                 if (binary) {
+                     memcpy(binary, cached_binary, cached_size);
+                     binary_size = cached_size;
+@@ -707,7 +709,9 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
+         }
+ 
+         if (cached_binary && cached_size > 0) {
+-            binary = vk_ps4_alloc(alloc, cached_size, 16);
++            /* 256-byte aligned: the shader code address must be (see
++             * sceGnmPsRegsSetAddress, bits 8..63 of the program address). */
++            binary = vk_ps4_alloc(alloc, cached_size, 256);
+             if (binary) {
+                 memcpy(binary, cached_binary, cached_size);
+                 binary_size = cached_size;
+diff --git a/src/vk_ps4_shader.c b/src/vk_ps4_shader.c
+index 151a536..26c555f 100644
+--- a/src/vk_ps4_shader.c
++++ b/src/vk_ps4_shader.c
+@@ -196,8 +196,11 @@ VkResult vk_ps4_compile_shader_module(VkPs4ShaderModule *mod, VkShaderStageFlagB
+     }
+     vk_ps4_log("compile_shader: %s OK binary=%zu bytes", stage_name, output.size);
+ 
+-    /* Copy the compiled binary */
+-    void *binary_copy = vk_ps4_alloc(alloc, output.size, 16);
++    /* Copy the compiled binary. 256-byte aligned: the GPU program-address
++     * registers carry only bits 8..63 (sceGnmPsRegsSetAddress), and psbc lays
++     * the code out at a 256-byte offset, so a 16-byte-aligned copy pointed the
++     * stage at the truncated address and the GPU executed header bytes. */
++    void *binary_copy = vk_ps4_alloc(alloc, output.size, 256);
+     if (!binary_copy) {
+         psbc_free_output(&output);
+         return VK_ERROR_OUT_OF_HOST_MEMORY;

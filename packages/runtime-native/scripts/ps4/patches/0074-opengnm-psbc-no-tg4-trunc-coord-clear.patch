@@ -1,0 +1,16 @@
+opengnm-psbc: no TRUNC_COORD clear before a gather (the PS4 driver never sets it; shadPS4 cannot trace the clear)
+
+--- a/src/amd/vulkan/nir/radv_nir_lower_descriptors.c	2026-11-07 21:09:50.497897116 -0700
++++ b/src/amd/vulkan/nir/radv_nir_lower_descriptors.c	2026-11-07 21:09:50.513057786 -0700
+@@ -745,7 +745,10 @@
+       .disable_aniso_single_level =
+          compiler_info->key.disable_aniso_single_level && compiler_info->ac->gfx_level < GFX8,
+       .has_image_load_dcc_bug = compiler_info->ac->has_image_load_dcc_bug,
+-      .disable_tg4_trunc_coord = !compiler_info->ac->conformant_trunc_coord && !compiler_info->key.disable_trunc_coord,
++      /* No TRUNC_COORD clear before a gather: the PS4 driver never sets TRUNC_COORD in a sampler, so the clear is
++       * a no-op there, and shadPS4 (v0.21.0) cannot trace a sampler built by it: the TRAA resolve's gather
++       * asserted in resource_discover_pass.cpp:289 (Unreal calibration on PS4). */
++      .disable_tg4_trunc_coord = false,
+       .has_desc_resource_level = compiler_info->ac->has_desc_resource_level,
+       .args = &stage->args,
+       .info = &stage->info,

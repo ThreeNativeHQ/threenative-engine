@@ -1,0 +1,23 @@
+vulkan-ps4: advertise linear filtering for normalized, sRGB and float formats
+
+--- a/src/vk_ps4_format.c
++++ b/src/vk_ps4_format.c
+@@ -162,6 +162,18 @@
+              * formats have no buffer representation — sceGnmBufSetFormat
+              * rejects them silently. */
+             GnmDataFormat gnm = g_format_table[i].gnm_format;
++            /* The texture unit filters every normalized, sRGB and float format,
++             * 32-bit float included; integer formats are point-sampled only.
++             * Without the bit Dawn reports no float32-filterable, and a scene
++             * with a linear-filtered FloatType texture is refused. */
++            if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) &&
++                (gnm.chantype == GNM_IMG_NUM_FORMAT_UNORM ||
++                 gnm.chantype == GNM_IMG_NUM_FORMAT_SNORM ||
++                 gnm.chantype == GNM_IMG_NUM_FORMAT_SRGB ||
++                 gnm.chantype == GNM_IMG_NUM_FORMAT_FLOAT)) {
++                props.linearTilingFeatures |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
++                props.optimalTilingFeatures |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
++            }
+             if (vk_ps4_gnm_format_is_buffer_compatible(gnm)) {
+                 props.bufferFeatures |=
+                     VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT |

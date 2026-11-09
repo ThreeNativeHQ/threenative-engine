@@ -159,8 +159,9 @@ impl ElementCx<'_, '_> {
                 &background_clip_path,
                 None,
                 None,
+                peniko::Mix::Normal,
                 |scene| {
-                    self.draw_image_layer(scene, &layer);
+                    self.draw_image_layer(scene, &layer, false);
                 },
             );
         }
@@ -185,12 +186,21 @@ impl ElementCx<'_, '_> {
     }
 
     /// Draw a single layer of a CSS image layer list (`background-image` or `mask-image`)
-    pub(super) fn draw_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
+    /// Draw one image layer. `luminance` makes a gradient's alpha carry its luminance, which is what
+    /// `mask-mode: luminance` means (see `apply_luminance_alpha`).
+    pub(super) fn draw_image_layer(
+        &self,
+        scene: &mut impl PaintScene,
+        layer: &ImageLayerStyles,
+        luminance: bool,
+    ) {
         match layer.stylo_image {
             GenericImage::None => {
                 // Do nothing
             }
-            GenericImage::Gradient(gradient) => self.draw_gradient_layer(scene, gradient, layer),
+            GenericImage::Gradient(gradient) => {
+                self.draw_gradient_layer(scene, gradient, layer, luminance)
+            }
             GenericImage::Url(_) => {
                 self.draw_raster_image_layer(scene, layer);
                 #[cfg(feature = "svg")]
@@ -466,6 +476,7 @@ impl ElementCx<'_, '_> {
         scene: &mut impl PaintScene,
         gradient: &StyloGradient,
         layer: &ImageLayerStyles,
+        luminance: bool,
     ) {
         // For a fixed layer the positioning area (the viewport) already covers
         // everything visible, so it also serves as the clip rect (no extension
@@ -521,13 +532,16 @@ impl ElementCx<'_, '_> {
         let bounding_box = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
 
-        let (gradient, gradient_transform) = to_peniko_gradient(
+        let (mut gradient, gradient_transform) = to_peniko_gradient(
             gradient,
             tile_rect,
             bounding_box,
             self.scale,
             &current_color,
         );
+        if luminance {
+            crate::gradient::apply_luminance_alpha(&mut gradient);
+        }
         let brush = anyrender::Paint::Gradient(&gradient);
 
         let transform = base_transform.then_translate(Vec2 {

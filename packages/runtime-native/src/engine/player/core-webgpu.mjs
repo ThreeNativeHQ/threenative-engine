@@ -158,6 +158,9 @@ export class WebGPURenderer {
     const { width, height } = globalThis.tn.surfaceSize();
     return target.set(width, height);
   }
+  // render() publishes the frame, and the player draws it after the frame callback: the engine runs
+  // onBeforeRender then, so core's geometry capture keeps its hooks until the next frame.
+  drawsAfterFrame = true;
   render(scene, camera) {
     updateTempNodes(this, scene, camera);
     drawSecondaryPasses(this);
