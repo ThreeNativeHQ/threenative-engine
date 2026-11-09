@@ -64,7 +64,7 @@ test('Linux arm64 fetches libuv source where no prebuilt exists, and CMake build
   );
   assert.match(
     cmake,
-    /elseif\(EXISTS \$\{LIBUV_DIR\} AND NOT IOS AND NOT ANDROID\)/u,
+    /elseif\(EXISTS \$\{LIBUV_DIR\} AND NOT IOS AND NOT ANDROID AND NOT TN_PS4\)/u,
     'the prebuilt branch must remain the fallback that the source path only bypasses',
   );
 });

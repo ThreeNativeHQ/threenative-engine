@@ -586,6 +586,8 @@ export function renderAndroidManifest(source, orientation = 'landscape') {
   }
   rendered = upsertApplicationMetadata(rendered, 'TN_KEEP_SCREEN_ON', String(config.display.keepScreenOn));
   rendered = upsertApplicationMetadata(rendered, 'TN_MAX_FPS', String(config.display.maxFps));
+  // `display.priority` (PRD-859): the game thread's CPU priority; anything but "normal" ships the default.
+  rendered = upsertApplicationMetadata(rendered, 'TN_PRIORITY', config.display.priority === 'normal' ? 'normal' : 'game');
   // `display.backgroundMode`. Carried as metadata beside the others so the activity can hand it to
   // the native host, which decides whether the render loop parks when the player leaves. Fail
   // closed on a value nobody defined: an unrecognized mode ships as 'pause'.

@@ -667,7 +667,7 @@ test('real Android packaging emits configured and no-config artifacts through th
       icons: { android: { foreground, monochrome, background: '#111827' } },
     },
     bootSplash: { backgroundColor: '#0d1b2a', image: splash },
-    display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true, maxFps: 120 },
+    display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true, maxFps: 120, priority: 'normal' },
     window: { title: 'Fox Desktop', width: 1024, height: 576, resizable: false },
   };
 
@@ -686,6 +686,7 @@ test('real Android packaging emits configured and no-config artifacts through th
   assert.match(application, /TN_KEEP_SCREEN_ON" android:value="true"/u);
   assert.match(application, /TN_FULLSCREEN" android:value="false"/u);
   assert.match(application, /TN_MAX_FPS" android:value="120"/u);
+  assert.match(application, /TN_PRIORITY" android:value="normal"/u);
   assert.match(application, /TN_WINDOW_TITLE" android:value="@string\/window_title"/u);
   assert.doesNotMatch(activity, /TN_KEEP_SCREEN_ON|TN_FULLSCREEN|TN_WINDOW_TITLE/u);
   assert.match(strings, /<string name="app_name">Fox<\/string>/u);
@@ -726,6 +727,7 @@ test('real Android packaging emits configured and no-config artifacts through th
   assert.match(defaultManifest, /TN_KEEP_SCREEN_ON" android:value="false"/u);
   assert.match(defaultManifest, /TN_FULLSCREEN" android:value="true"/u);
   assert.match(defaultManifest, /TN_MAX_FPS" android:value="60"/u);
+  assert.match(defaultManifest, /TN_PRIORITY" android:value="game"/u);
   assert.match(defaultStrings, /<string name="app_name">ThreeNative<\/string>/u);
 });
 

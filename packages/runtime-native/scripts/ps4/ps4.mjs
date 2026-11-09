@@ -105,15 +105,39 @@ function sha256File(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
 
+// The stick explains itself: an owner who never read a terminal opens this file and follows five lines.
+function installNote(pkg, sha) {
+  return [
+    'ThreeNative on PS4',
+    '',
+    `package: ${path.basename(pkg)} (${(statSync(pkg).size / 1024 / 1024).toFixed(1)} MiB)`,
+    `sha256:  ${sha}`,
+    '',
+    'A stock console cannot install this file: the console must already be jailbroken, with GoldHEN running.',
+    '',
+    ...USB_STEPS.map((line, i) => `${i + 1}. ${line}`),
+    '',
+    'An installed package needs GoldHEN running after every boot. With GoldHEN autoload-from-USB on, keep',
+    'this stick in the console: power on, then launch the game from the home screen.',
+    '',
+  ].join('\n');
+}
+
 // Copy, compare the bytes by sha256, then flush: a stick pulled before `sync` returns can hold a cut file.
 function copyToUsb(pkg, dir) {
   const target = path.join(dir, path.basename(pkg));
   copyFileSync(pkg, target);
   const [want, got] = [sha256File(pkg), sha256File(target)];
   if (want !== got) throw new Error(`${target} differs from ${pkg} after the copy (sha256 ${got}, want ${want}): the stick may be failing`);
+  const note = path.join(dir, 'TN-PS4-INSTALL.txt');
+  writeFileSync(note, installNote(pkg, got));
   spawnSync('sync', [], { stdio: 'ignore' });
-  const fstype = spawnSync('findmnt', ['-n', '-o', 'FSTYPE', '--target', dir], { encoding: 'utf8' }).stdout?.trim() ?? '';
-  return { target, sha: got, fstype, warning: fsWarning(fstype, statSync(pkg).size) };
+  // mount.exfat-fuse mounts through FUSE, so the kernel reports fuseblk there; lsblk names what the
+  // stick itself carries, and a correct exFAT stick must not be reported as one to reformat.
+  const [reported = '', source = ''] = (spawnSync('findmnt', ['-n', '-o', 'FSTYPE,SOURCE', '--target', dir], { encoding: 'utf8' }).stdout ?? '').trim().split(/\s+/);
+  const device = reported === 'fuseblk' && source ? (spawnSync('lsblk', ['-no', 'FSTYPE', source], { encoding: 'utf8' }).stdout ?? '').trim() : '';
+  const fstype = device || reported;
+  return { target, note, sha: got, fstype, warning: fsWarning(fstype, statSync(pkg).size) };
 }
 
 function selfCheck() {
@@ -141,6 +165,9 @@ function selfCheck() {
   const copied = copyToUsb(fake, target);
   assert.equal(readFileSync(copied.target, 'utf8'), 'pkg bytes');
   assert.equal(copied.target, path.join(target, 'src.pkg'), 'the package lands at the root of the mount');
+  assert.match(readFileSync(copied.note, 'utf8'), /Package Installer/, 'the stick carries the install steps');
+  assert.match(readFileSync(copied.note, 'utf8'), /already be jailbroken/, 'and says the console must be jailbroken first');
+  assert.doesNotMatch(copied.fstype, /fuseblk/, 'a FUSE mount is resolved to the filesystem the stick carries');
   assert.match(checkGame('/nonexistent-game-dir'), /not a directory/);
   assert.match(checkGame(HERE), /no src\/game\.ts/);
   assert.equal(checkGame(path.resolve(HERE, '../../../../examples/wasm-engine-boot')), '');
@@ -193,6 +220,7 @@ async function main(argv) {
       return fail(`the copy to ${options.usb} (${error.message})`);
     }
     log(`USB: ${copied.target} copied, sha256 ${copied.sha} verified, synced (filesystem ${copied.fstype || 'unknown'})`);
+    log(`USB: ${copied.note} holds the steps to install on the console`);
     if (copied.warning) log(`WARNING: ${copied.warning}`);
   }
   if (options.console) {
