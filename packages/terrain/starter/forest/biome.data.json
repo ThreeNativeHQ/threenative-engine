@@ -11,30 +11,30 @@
   "cover": {
     "ground": "wood",
     "seed": 466468,
-    "attempts": 80000,
+    "attempts": 240000,
     "stoneRadius": 1.9,
     "clearings": [[165, -95, 10], [-145, -120, 10], [360, 200, 10]]
   },
   "foliage": [
     {
       "species": "spruce",
-      "density": 3200,
+      "density": 7000,
       "slope": [0, 32],
       "height": null,
       "spacing": [3.2, 6.4],
       "collision": "trunk",
       "stands": true,
       "grassThreshold": 0.3,
-      "standThreshold": 0.3,
+      "standThreshold": 0.16,
       "far": {
         "cell": 6,
         "spacing": [6.5, 13],
         "spacingAt": [150, 1500],
         "slope": [36, 46],
-        "meadowSlope": [12, 24],
+        "meadowSlope": [0, 1],
         "reach": 2300,
         "treelineJitter": 30,
-        "stand": [0.26, 0.4],
+        "stand": [0.1, 0.26],
         "seed": 466559,
         "impostor": 110
       }
@@ -46,7 +46,7 @@
       "density": 1,
       "slope": [0, 42],
       "height": [0, 66],
-      "spacing": 1.2,
+      "spacing": 0.8,
       "slopeFalloff": 20,
       "heightFalloff": 28,
       "mats": null,
@@ -56,11 +56,11 @@
       "drift": {
         "field": "stand",
         "frequency": [3.1, 2.7],
-        "offset": 0.65,
-        "amplitude": 0.35,
+        "offset": 0.8,
+        "amplitude": 0.2,
         "band": [0, 1]
       },
-      "bladeScale": 0.8,
+      "bladeScale": 1,
       "bladeJitter": 0.65,
       "scrubChance": 0.3,
       "scrubScale": 0.9,

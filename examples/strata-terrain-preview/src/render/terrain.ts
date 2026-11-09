@@ -125,6 +125,8 @@ interface ILayerMaps {
   normal?: Texture;
 }
 
+/** Props draw at render order 0 and the water at 2: the ground draws between them. */
+const GROUND_RENDER_ORDER = 1;
 /**
  * The beach band, in metres above the bake's own sea level.
  *
@@ -163,7 +165,7 @@ const WET_SAND = {
  */
 const MEADOW = vec3(0.47, 0.72, 0.4);
 /** A spruce forest's meadow: dark olive, not lawn green (Project Nature's spruce forest frames). */
-const FOREST_MEADOW = vec3(0.36, 0.46, 0.26);
+const FOREST_MEADOW = vec3(0.4, 0.58, 0.27);
 /** How much of the vegetation's sky light the ground receives; the vegetation's own is 1.13. */
 const GROUND_SKY_LIGHT = 0.6;
 /** Multiplier that turns meadow turf into shaded needle litter under a stand. */
@@ -688,8 +690,8 @@ export async function createGroundMaterial(
         // picks them, finer noise frays their edge, a hollow keeps its turf. They fade out by 350 m
         // so a far slope does not print the noise as camouflage.
         const bare = smoothstep(
-          -0.05,
-          0.3,
+          0.16,
+          0.5,
           macro.add(mottling.mul(0.85)).sub(hollow.max(0).mul(0.2)),
         )
           .mul(oneMinus(smoothstep(150, 350, positionView.length())))
@@ -1234,6 +1236,11 @@ export function createTerrain(
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   const mesh: Mesh = new Mesh(geometry, material);
   mesh.name = "authored-terrain";
+  // The ground is under everything and its material is the frame's dearest: drawn in sort order it
+  // shaded every pixel a crown or a blade then covered. After the props, the depth test rejects those
+  // first (forest player pose, RTX 2080, 913x881: 13.6 ms of GPU with the ground in sort order, 8.9 ms
+  // after the props). The water keeps its place after the ground at render order 2.
+  mesh.renderOrder = GROUND_RENDER_ORDER;
   mesh.layers.enable(REFLECTED_LAYER);
   mesh.receiveShadow = true;
   mesh.castShadow = biome?.terrainCastsShadow ?? false;
@@ -1303,6 +1310,7 @@ export function createTerrain(
   );
   const horizon: Mesh = new Mesh(horizonGeometry, material);
   horizon.name = "temperate-distant-ridges";
+  horizon.renderOrder = GROUND_RENDER_ORDER;
   horizon.layers.enable(REFLECTED_LAYER);
   horizon.receiveShadow = true;
   // Scenery beyond the collider: no ray stands on it, and a picking tree over its 1.5M triangles

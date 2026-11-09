@@ -133,6 +133,30 @@ export type PropRole =
 export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 80, near: 22 } as const;
 
 /**
+ * Species that step to their second and third prepared level nearer than `LOD_BANDS.mid` and `far`.
+ *
+ * A spruce 105 m out stands about 110 px tall on a 900 px frame, and from 80 m to 150 m it drew its
+ * 10.7k-triangle middle level: two triangles a pixel, on every tree of the far bank. It takes the
+ * level it already draws past `far` from 105 m. A grass tuft is under 25 px tall past 30 m and
+ * under 10 px past 60 m, and it drew every blade to the end of its 112 m reach.
+ * Forest, RTX 2080, 1600x900, four interleaved pairs against `?lodSteps=off`: main-pass triangles
+ * fell from 21.2 M to 17.5 M at the player pose and from 36.4 M to 29.0 M at the overview, and the
+ * GPU frame by a median 8% at the overview (the frame is bound by pixels, not triangles).
+ */
+export const LOD_STEPS: Record<string, readonly [number, number]> = {
+  grass: [30, 60],
+  spruce: [LOD_BANDS.mid, 105],
+};
+
+/** The metres at which `asset` steps to its second and third prepared level. */
+export function lodSteps(asset: string): readonly [number, number] {
+  // `?lodSteps=off` is the named override: every species steps at `LOD_BANDS`, for the paired A/B.
+  if (new URLSearchParams(globalThis.location?.search ?? "").get("lodSteps") === "off")
+    return [LOD_BANDS.mid, LOD_BANDS.far];
+  return LOD_STEPS[asset] ?? [LOD_BANDS.mid, LOD_BANDS.far];
+}
+
+/**
  * The draw reach a placement's variant gives it, shortened by its seeded fade for `FADED_ASSETS`.
  *
  * `variantIndex` counts the placements the bake drew before this one on the same variant, so the

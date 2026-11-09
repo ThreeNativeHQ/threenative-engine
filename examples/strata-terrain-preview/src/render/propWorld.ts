@@ -42,6 +42,7 @@ import {
   PROP_ASSETS,
   type PropGroundQuery,
   impostorDistanceForScale,
+  lodSteps,
   preparePose,
   propKey,
   propRatio,
@@ -476,7 +477,7 @@ export async function streamProps(options: IPropWorldOptions) {
           );
           const lods = levels.slice(1).map((level, i) => ({
             glb: `${record.key}/${level}.glb`,
-            distance: i === 0 ? LOD_BANDS.mid : LOD_BANDS.far,
+            distance: lodSteps(record.placement.asset)[i === 0 ? 0 : 1],
           }));
           const bounds = new Box3();
           for (const level of levels) {

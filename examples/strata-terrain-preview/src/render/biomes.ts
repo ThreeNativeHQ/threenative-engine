@@ -286,7 +286,7 @@ const temperate: IBiome = {
       reach: [900, 1300],
       // UE's `AerialPespectiveViewDistanceScale` (SkyAtmosphereComponent.cpp:131, default 1): the
       // 2.4 km backdrop takes the blue of a range twice as far away, as the goal frame does.
-      distanceScale: 2,
+      distanceScale: 4,
       start: 150,
       terms: [
         { density: 0.0002, height: 0, scale: 200 },

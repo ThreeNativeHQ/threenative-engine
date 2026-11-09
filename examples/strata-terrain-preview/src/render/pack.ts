@@ -405,8 +405,16 @@ function tintedFoliage(
     // The atlas is photographed olive-yellow (opaque mean RGB 90,81,21: almost no blue), which no
     // channel gain turns blue-green. Keep its luminance detail and give it a spruce hue.
     const needle = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+    // One hue on every crown reads as one tree copied across the valley: each tree leans
+    // blue-green or yellow-green and takes its own value from its instance hash, kept small so the
+    // one-hue impostor past the far gate still matches. A crown is paler at its sunlit top and
+    // darker in its skirt, which is geometry and so bakes into the impostor too.
+    const lean = sin(phase.mul(1.7)).mul(0.5).add(0.5);
+    const hue = mix(vec3(0.45, 0.81, 0.34), vec3(0.56, 0.86, 0.26), lean);
+    const value = mix(0.9, 1.08, sin(phase.mul(2.9)).mul(0.5).add(0.5));
+    const crownTop = mix(0.8, 1.14, smoothstep(1.5, 11, positionGeometry.y));
     material.colorNode = mix(
-      needle.mul(vec3(0.42, 0.85, 0.45)),
+      needle.mul(hue).mul(value).mul(crownTop),
       vec3(0.05, 0.03, 0.015),
       smoothstep(0.02, 0.12, sampled.r.sub(sampled.g)),
     );
@@ -556,9 +564,40 @@ function surface(
       // One photograph per species reads as astroturf: each clump takes its own value about 1 and
       // a green-to-dry hue from its instance hash, and its root sinks into the soil's shade.
       const clump = sin(phase.mul(3.7)).mul(0.5).add(0.5);
-      const shade = mix(vec3(0.82, 0.98, 0.8), vec3(1.3, 1.12, 0.68), clump);
-      const root = mix(0.72, 1, smoothstep(0.0, 0.1, positionGeometry.y));
-      material.colorNode = (material.colorNode as Node<"vec3">).mul(shade).mul(root);
+      const shade = mix(vec3(0.62, 0.86, 0.5), vec3(0.98, 0.96, 0.52), clump.mul(clump));
+      // Drifts metres across: a meadow is darker in its damp patches and paler on its dry ones.
+      const drift = mix(0.78, 1.08, smoothstep(-0.4, 0.4, bakedNoise(positionWorld.mul(0.11))));
+      // Part of a meadow has gone to seed: straw patches tens of metres across break the one green,
+      // on a slower field than the drift so the two do not line up.
+      const straw = smoothstep(
+        0.2,
+        0.6,
+        bakedNoise(
+          vec3(positionWorld.x, 0, positionWorld.z)
+            .mul(0.027)
+            .add(vec3(31, 0, 17)),
+        ),
+      );
+      const seeded = mix(vec3(1, 1, 1), vec3(1.32, 1.08, 0.6), straw.mul(0.6));
+      // A blade is dark where it leaves the thatch and brightest at its tip.
+      // A tuft stands three times as tall as the field grass, so the same 0.32 m ramp left nearly
+      // all of it at full value above a field that sits inside its own root shade: its ramp runs
+      // the tuft's own height.
+      const root = mix(0.34, 1, smoothstep(0.0, fieldGrass ? 0.32 : 0.8, positionGeometry.y));
+      // The tall tufts are photographed far paler than the field grass they stand in: bring them
+      // to the same sward so a tuft reads as taller grass, not as a lit paper cut-out.
+      const sward = fieldGrass ? vec3(1, 1, 1) : vec3(0.5, 0.62, 0.4);
+      material.colorNode = (material.colorNode as Node<"vec3">)
+        .mul(shade)
+        .mul(drift)
+        .mul(root)
+        .mul(sward)
+        .mul(seeded);
+      material.aoNode = mix(0.5, 1, smoothstep(0.0, 0.25, positionGeometry.y));
+      // A blade card stands upright, so its own normal faces the horizon and half the cards face
+      // away from the sun: those drew black beside sunlit ones. A meadow shades as the ground it
+      // grows from, so every blade takes the up normal and the sun's shadow still falls across it.
+      material.normalNode = vec3(0, 1, 0).transformDirection(cameraViewMatrix);
     }
     if (look.woodCanopy) {
       // Blades and fronds a cell thick pass the sun through; without it a meadow seen against the
@@ -909,12 +948,23 @@ export async function loadPack(
     // keeps a third of its blades and past far a tenth, each grown to hold the mat's area. UE grass
     // steps down its static mesh's own LODs the same way (UE 5.8.3:
     // Engine/Source/Runtime/Landscape/Classes/LandscapeGrassType.h:59-79, cull distances and MinLOD).
-    if (one.asset === "meadow")
+    // The field grass steps down the same way at its own nearer `LOD_STEPS`, where a tuft is still a
+    // dozen pixels tall: it keeps half its blades, then a quarter.
+    const thinned =
+      one.asset === "meadow"
+        ? ([
+            [1, 0.35],
+            [2, 0.12],
+          ] as const)
+        : one.asset === "grass"
+          ? ([
+              [1, 0.5],
+              [2, 0.25],
+            ] as const)
+          : undefined;
+    if (thinned)
       for (const part of entry.filter((candidate) => (candidate.level ?? 0) === 0))
-        for (const [level, keep] of [
-          [1, 0.35],
-          [2, 0.12],
-        ] as const) {
+        for (const [level, keep] of thinned) {
           if (!part.geometry.index || part.geometry.groups.length > 0 || !part.material) continue;
           const geometry = thinCards(part.geometry, keep);
           built.push({ geometry, material: part.material });
