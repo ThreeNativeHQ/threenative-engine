@@ -738,6 +738,42 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   /**
+   * Half-width, in metres, of the largest square of tiles around `position`'s tile that is fully
+   * settled: each tile in it is resident, or is one the stream never draws (wholly inside `hole` or
+   * past `extent`). Zero while the tile under `position` is still building. A game that draws other
+   * ground where the tiles have not arrived (a collar, a far mesh) clips it to this square, so a tile
+   * still building shows that ground, never a hole.
+   *
+   * @situation a hole or a flicker where streamed terrain tiles are still building
+   * @situation split the ground between streamed tiles and a far mesh around the player
+   * @constraint reads residency only; call it after `follow` in the same frame
+   * @example split.half.value = tiles.settledHalf(player.position);
+   */
+  settledHalf(position: Pick<Vector3, "x" | "z">): number {
+    const centerX = Math.floor(
+      (finite(position.x, "settled x") + this.tileSize / 2) / this.tileSize,
+    );
+    const centerZ = Math.floor(
+      (finite(position.z, "settled z") + this.tileSize / 2) / this.tileSize,
+    );
+    const settled = (tileX: number, tileZ: number): boolean =>
+      this.#resident.has(keyFor(tileX, tileZ)) || !this.#touchesExtent(tileX, tileZ);
+    let ring = -1;
+    for (let k = 0; k <= this.#streamRadius; k += 1) {
+      for (let d = -k; d <= k; d += 1)
+        if (
+          !settled(centerX + d, centerZ - k) ||
+          !settled(centerX + d, centerZ + k) ||
+          !settled(centerX - k, centerZ + d) ||
+          !settled(centerX + k, centerZ + d)
+        )
+          return ring < 0 ? 0 : (ring + 0.5) * this.tileSize;
+      ring = k;
+    }
+    return (ring + 0.5) * this.tileSize;
+  }
+
+  /**
    * Move residency to the followed point: admit, evict and re-level every tile.
    *
    * `budget` caps construction chunks as well as completed admissions. An unfinished tile stays

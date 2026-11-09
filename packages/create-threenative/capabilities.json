@@ -4817,6 +4817,25 @@
     {
       "aliases": [],
       "constraints": [
+        "open a new budget each frame; a unit always finishes, so one unit can cross the limit"
+      ],
+      "example": "tiles.follow(player.position, new AdmissionBudget(2, () => performance.now()));",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class AdmissionBudget implements IAdmissionBudget { … }",
+      "situations": [
+        "streamed terrain tiles or cells hitch the frame that admits them",
+        "cap how many milliseconds a frame spends building streamed content"
+      ],
+      "summary": "One frame's admission allowance, shared by every path that puts streamed content on screen. A streaming world has no frame-time ceiling anywhere else: a cell row arriving builds a batch per asset run over every placement in it, a terrain tile builds every LOD level, and the game's `createCollider` runs for every resident tile — all in the one frame that discovers them. That is the 100-330 ms hitch a 60 m/s camera feels every time the ring moves, and it is admission cost, not streaming: the loads never fail. The budget is opened once per `update` and drawn down by the units it admits. A unit always finishes, so a frame spends at most the limit plus the unit that crossed it, and the rest of the backlog waits for the next frame rather than being dropped.",
+      "supersedes": [],
+      "symbol": "AdmissionBudget"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON"
       ],
       "example": "await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: \"world/world.glb\" });",
@@ -5212,6 +5231,25 @@
       "summary": "Validate a `world.json` manifest against the v1 contract. Never throws on garbage input: a non-object manifest is `WORLD_MALFORMED`. Every problem is collected, so an exporter sees the complete list at once.",
       "supersedes": [],
       "symbol": "validateWorldPackage"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "`ctx.beforeRender` runs on every world draw, also behind the curtain; join the promise to the curtain's hold"
+      ],
+      "example": "const warm = warmUnculled(ctx, lake.mesh); ctx.startup.hold(\"lake\", () => warm);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function warmUnculled( ctx: { … }",
+      "situations": [
+        "the first frames after the loading curtain hitch on pipeline builds for content behind the camera",
+        "streamed terrain or a lake compiles its pipelines after the reveal"
+      ],
+      "summary": "Draw `root` with frustum culling off until it has drawn `draws` times, then cull it again and resolve. A pipeline is built by its first real draw (a startup warm-up compiles a different pass), so content the spawn view does not see — streamed tiles behind the player, a mirror that draws only when its water does — builds its pipelines after the reveal and hitches the first frames that see it. Join the promise to the loading curtain to build them behind it. Objects that join `root` while it warms draw unculled too.",
+      "supersedes": [],
+      "symbol": "warmUnculled"
     },
     {
       "aliases": [],

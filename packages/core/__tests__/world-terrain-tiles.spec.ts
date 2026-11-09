@@ -271,6 +271,43 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it("reports the largest settled block around the followed tile, counting the hole and the extent", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: Number.MAX_SAFE_INTEGER,
+      residentTileBudget: 25,
+      sampleHeight,
+      streamRadius: 2,
+      tileResolution: 9,
+      tileSize: 16,
+      hole: { minX: -12, maxX: 12, minZ: -12, maxZ: 12 },
+      extent: { minX: -40, maxX: 40, minZ: -40, maxZ: 24 },
+    });
+    // Nothing resident: the followed tile 0:0 lies wholly inside the hole, so it is settled, but
+    // its ring is still building.
+    expect(tiles.settledHalf({ x: 0, z: 0 })).toBe(8);
+    // A wanted tile that is not resident yet reads zero when it is the followed one.
+    expect(tiles.settledHalf({ x: 16, z: 0 })).toBe(0);
+    // One build allowed: the nearest ring tile arrives and the ring is still incomplete.
+    let admitted = 0;
+    tiles.follow(
+      { x: 0, z: 0 },
+      {
+        admit: (work) => {
+          if (admitted++ >= 1) return false;
+          work();
+          return true;
+        },
+      },
+    );
+    expect(tiles.residentTileCount).toBeGreaterThan(0);
+    expect(tiles.settledHalf({ x: 0, z: 0 })).toBe(8);
+    tiles.follow({ x: 0, z: 0 });
+    // Every wanted tile is resident; row 2 lies past the extent's maxZ of 24, so it counts settled.
+    expect(tiles.settledHalf({ x: 0, z: 0 })).toBe(40);
+    tiles.dispose();
+  });
+
   it("counts retained edge samples in each tile and its admission estimate", () => {
     const tiles = new TerrainTiles({
       validate: true,

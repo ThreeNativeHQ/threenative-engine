@@ -1,8 +1,9 @@
 import type { ICtx } from "@threenative/core";
 import {
-  type IAdmissionBudget,
+  AdmissionBudget,
   type IWorldTileColliderInput,
   TerrainTiles,
+  warmUnculled,
 } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import type { Object3D } from "three";
@@ -75,51 +76,24 @@ export function addStreamedGround(
       }),
   });
   ctx.add(tiles);
-  // A pipeline's first real draw builds it (the warm-up compile keys a different pass), and the spawn
-  // view sees few tiles. So the tiles draw unculled until every tile around the spawn has drawn
-  // twice, and `ready` holds the curtain until then: their pipelines are built behind it. The
-  // stream runs once per world draw, because the fixed step does not run while the curtain is up.
-  let markReady: () => void = () => undefined;
-  const ready = new Promise<void>((resolve) => {
-    markReady = resolve;
-  });
-  const full = (RADIUS + 0.5) * TILE;
-  let warmDraws = 0; // draws since the block filled; -1 once warm
-  const cull = (culled: boolean) =>
-    tiles.traverse((object) => {
-      object.frustumCulled = culled;
-    });
   ctx.beforeRender(() => {
-    let spent = 0;
-    const budget: IAdmissionBudget = {
-      admit(work) {
-        if (spent >= ADMISSION_MS) return false;
-        const started = performance.now();
-        work();
-        spent += performance.now() - started;
-        return true;
-      },
-    };
-    tiles.follow(follow.position, budget);
-    const centreX = Math.floor((follow.position.x + TILE / 2) / TILE);
-    const centreZ = Math.floor((follow.position.z + TILE / 2) / TILE);
-    split.centre.value.set(centreX * TILE, centreZ * TILE);
-    split.half.value = coveredHalf(tiles, centreX, centreZ, half, reach);
-    if (warmDraws >= 0) {
-      cull(false);
-      if (split.half.value === full) warmDraws++;
-      if (warmDraws > 2) {
-        warmDraws = -1;
-        cull(true);
-        markReady();
-      }
-    }
+    tiles.follow(follow.position, new AdmissionBudget(ADMISSION_MS, () => performance.now()));
+    split.centre.value.set(
+      Math.floor((follow.position.x + TILE / 2) / TILE) * TILE,
+      Math.floor((follow.position.z + TILE / 2) / TILE) * TILE,
+    );
+    split.half.value = tiles.settledHalf(follow.position);
     report({
       streamTiles: tiles.residentTileCount,
       streamCoveredHalf: split.half.value,
       streamSeamGap: tiles.maxSeamGap ?? -1,
     });
   });
+  // The tiles around the spawn draw unculled behind the curtain until the whole block has drawn
+  // twice, so their pipelines are built before the reveal (the spawn view sees few of them). The
+  // stream runs once per world draw, because the fixed step does not run while the curtain is up.
+  const full = (RADIUS + 0.5) * TILE;
+  const ready = warmUnculled(ctx, tiles, { when: () => split.half.value === full });
   return {
     ready,
     tiles,
@@ -130,41 +104,4 @@ export function addStreamedGround(
       surface.dispose();
     },
   };
-}
-
-/**
- * Half-width of the largest square of tiles around `centreX, centreZ` that is fully drawn: each tile
- * in it is resident, or lies wholly inside the playable square (the square draws it) or wholly past
- * the reach (nothing draws there). Zero when even the player's own tile is still building.
- */
-function coveredHalf(
-  tiles: TerrainTiles,
-  centreX: number,
-  centreZ: number,
-  half: number,
-  reach: number,
-): number {
-  const settled = (tileX: number, tileZ: number): boolean => {
-    if (tiles.getTile(`${String(tileX)}:${String(tileZ)}`) !== undefined) return true;
-    const low = (index: number) => index * TILE - TILE / 2;
-    const high = (index: number) => index * TILE + TILE / 2;
-    const inside =
-      low(tileX) >= -half && high(tileX) <= half && low(tileZ) >= -half && high(tileZ) <= half;
-    const past =
-      low(tileX) >= reach || high(tileX) <= -reach || low(tileZ) >= reach || high(tileZ) <= -reach;
-    return inside || past;
-  };
-  let ring = -1;
-  for (let k = 0; k <= RADIUS; k++) {
-    for (let d = -k; d <= k; d++)
-      if (
-        !settled(centreX + d, centreZ - k) ||
-        !settled(centreX + d, centreZ + k) ||
-        !settled(centreX - k, centreZ + d) ||
-        !settled(centreX + k, centreZ + d)
-      )
-        return ring < 0 ? 0 : (ring + 0.5) * TILE;
-    ring = k;
-  }
-  return (ring + 0.5) * TILE;
 }

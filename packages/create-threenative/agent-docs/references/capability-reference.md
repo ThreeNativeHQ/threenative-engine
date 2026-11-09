@@ -3773,6 +3773,21 @@ const handle = startWorkerGame(new Worker(new URL("./worker.ts", import.meta.url
 
 ## `@threenative/core/world`
 
+### `AdmissionBudget`
+
+`class` — One frame's admission allowance, shared by every path that puts streamed content on screen. A streaming world has no frame-time ceiling anywhere else: a cell row arriving builds a batch per asset run over every placement in it, a terrain tile builds every LOD level, and the game's `createCollider` runs for every resident tile — all in the one frame that discovers them. That is the 100-330 ms hitch a 60 m/s camera feels every time the ring moves, and it is admission cost, not streaming: the loads never fail. The budget is opened once per `update` and drawn down by the units it admits. A unit always finishes, so a frame spends at most the limit plus the unit that crossed it, and the rest of the backlog waits for the next frame rather than being dropped.
+
+```ts
+export class AdmissionBudget implements IAdmissionBudget { … }
+```
+
+- **Use when:** streamed terrain tiles or cells hitch the frame that admits them · cap how many milliseconds a frame spends building streamed content
+- **Constraints:** open a new budget each frame; a unit always finishes, so one unit can cross the limit
+
+```ts
+tiles.follow(player.position, new AdmissionBudget(2, () => performance.now()));
+```
+
 ### `applyTerrainSurface`
 
 `function` — Apply a cooked GLB's package-authored layered surface to its marked terrain meshes. `url` is the loaded GLB URL; extras pointers are relative to it. Uses the same asset/fetch path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.
@@ -4102,6 +4117,21 @@ export function validateWorldPackage( manifest: unknown, options: IWorldPackageV
 
 ```ts
 const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer.byteLength });
+```
+
+### `warmUnculled`
+
+`function` — Draw `root` with frustum culling off until it has drawn `draws` times, then cull it again and resolve. A pipeline is built by its first real draw (a startup warm-up compiles a different pass), so content the spawn view does not see — streamed tiles behind the player, a mirror that draws only when its water does — builds its pipelines after the reveal and hitches the first frames that see it. Join the promise to the loading curtain to build them behind it. Objects that join `root` while it warms draw unculled too.
+
+```ts
+export function warmUnculled( ctx: { … }
+```
+
+- **Use when:** the first frames after the loading curtain hitch on pipeline builds for content behind the camera · streamed terrain or a lake compiles its pipelines after the reveal
+- **Constraints:** `ctx.beforeRender` runs on every world draw, also behind the curtain; join the promise to the curtain's hold
+
+```ts
+const warm = warmUnculled(ctx, lake.mesh); ctx.startup.hold("lake", () => warm);
 ```
 
 ### `WaterBodies`

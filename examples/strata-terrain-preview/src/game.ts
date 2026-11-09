@@ -7,7 +7,7 @@ import {
   markStatic,
 } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { Heightfield } from "@threenative/core/world";
+import { Heightfield, warmUnculled } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D, rapier } from "@threenative/physics";
 import {
   type AnimationClip,
@@ -476,17 +476,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // behind the curtain and the spawn join waits for them (PRD-790). Re-culled before the
         // holds release: the held startup compile copies the screen in the canvas format, which the
         // lake's refraction refuses.
-        const lakeMesh = lake.mesh;
-        lakeMesh.frustumCulled = false;
-        const warmed = new Promise<void>((resolve) => {
-          let draws = 0;
-          ctx.beforeRender(() => {
-            if (draws < 0 || ++draws <= 2) return;
-            draws = -1;
-            lakeMesh.frustumCulled = true;
-            resolve();
-          });
-        });
+        const warmed = warmUnculled(ctx, lake.mesh);
         groundReady =
           groundReady === undefined
             ? warmed

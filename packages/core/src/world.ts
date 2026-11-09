@@ -25,7 +25,10 @@ export type {
 } from "./world-water-bodies.js";
 export { lakeSurfaceGeometry, riverRibbonGeometry } from "./world-river-ribbon.js";
 export type { ILakeSurfaceOptions, IRiverRibbonOptions } from "./world-river-ribbon.js";
+export { AdmissionBudget } from "./world-load-limiter.js";
 export { shoreField } from "./world-shore-field.js";
+export { warmUnculled } from "./world-warm.js";
+export type { IWarmUnculledOptions } from "./world-warm.js";
 export type { IShoreField, IShoreFieldOptions } from "./world-shore-field.js";
 
 export { TerrainTiles } from "./world-tiles.js";
