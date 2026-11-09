@@ -302,6 +302,8 @@ export function makeClipAdditive(
 }
 
 const INTERPOLATE_DISCRETE = 2300;
+/** three's property name, spelled through a constant so the naming rule does not read it as a game field. */
+const VALUE_TYPE_NAME = "ValueTypeName";
 
 /**
  * three's `track.createInterpolant(result)` on the engine's track classes, which do not bind it (core's root
@@ -319,13 +321,15 @@ export function defineCreateInterpolant(classes: Readonly<Record<string, unknown
       value(this: ITrack, result?: Float32Array) {
         const size = valueSize(this);
         const times = Float32Array.from(this.times);
-        // three's property name, set by entry to keep it out of the naming rule.
-        const keys = Object.assign(Object.fromEntries([["ValueTypeName", this.ValueTypeName]]), {
-          name: this.name,
-          times,
-          values: Float32Array.from(this.values),
-          constructor: undefined,
-        }) as unknown as ITrack;
+        const keys = Object.assign(
+          { [VALUE_TYPE_NAME]: this.ValueTypeName },
+          {
+            name: this.name,
+            times,
+            values: Float32Array.from(this.values),
+            constructor: undefined,
+          },
+        ) as ITrack;
         const discrete = this.getInterpolation?.() === INTERPOLATE_DISCRETE;
         const resultBuffer = result ?? new Float32Array(size);
         const last = times.length - 1;

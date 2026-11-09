@@ -360,28 +360,26 @@ export function defineLayeredTargets(
     >
   >,
 ) {
-  const Vector4 = classes.Vector4 as unknown as new (
+  const Vector4 = classes.Vector4 as new (
     x: number,
     y: number,
     z: number,
     w: number,
   ) => IViewportLike;
-  const RenderTarget = classes.RenderTarget as unknown as new (
+  const RenderTarget = classes.RenderTarget as new (
     width: number,
     height: number,
     options: ITargetOptions,
   ) => { setSize(width: number, height: number): void; dispose(): void };
-  const CubeTexture = classes.CubeTexture as unknown as new (
-    images: readonly object[],
-  ) => ITargetTexture;
-  const Data3DTexture = classes.Data3DTexture as unknown as new (
+  const CubeTexture = classes.CubeTexture as new (images: readonly object[]) => ITargetTexture;
+  const Data3DTexture = classes.Data3DTexture as new (
     data: null,
     width: number,
     height: number,
     depth: number,
   ) => ITargetTexture;
-  const Object3D = classes.Object3D as unknown as new () => IObject3DLike;
-  const PerspectiveCamera = classes.PerspectiveCamera as unknown as new (
+  const Object3D = classes.Object3D as new () => IObject3DLike;
+  const PerspectiveCamera = classes.PerspectiveCamera as new (
     fov: number,
     aspect: number,
     near: number,
