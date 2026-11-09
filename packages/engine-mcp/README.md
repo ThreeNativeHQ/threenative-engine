@@ -6,10 +6,12 @@ owns the discovery order and plan record.
 
 The server exposes `engine_search_capabilities`, `engine_capability_detail`,
 `engine_search_references`, `engine_reference_detail`, and `engine_save_reference`.
-Capability search works offline. Full requests use `scope: "request"` (up to 15 deduplicated
-matches); mechanic searches use `scope: "mechanic"` (up to five). Inspect `matchedSituation`
-and the detail constraints before implementing. A `none` capability result includes up to three
-reference suggestions.
+Capability search works offline and finds a capability by an exact exported symbol name as well as
+by situation. Full requests use `scope: "request"` (up to 15 deduplicated
+matches); mechanic searches use `scope: "mechanic"` (up to five). A row carries the answer —
+`importPath`, `signature`, `example`, `constraints`, `overrides` and any deprecation — so read every
+row and call `engine_capability_detail` only for a symbol the search did not return. A `none`
+capability result includes up to three reference suggestions.
 
 First infer the concrete mechanics implied by the request. Call `engine_search_capabilities` once
 with that mechanically explicit request and `scope: "request"`, then once per mechanic with

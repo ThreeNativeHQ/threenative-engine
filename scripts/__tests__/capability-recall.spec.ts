@@ -35,6 +35,7 @@ function result(symbol: string): ICapabilitySearchResult {
     importPath: "@threenative/core",
     matchedSituation: "fixture",
     score: 0,
+    signature: "class GroundSnap",
     summary: "fixture",
     symbol,
   };

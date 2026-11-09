@@ -50,8 +50,10 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
    mechanic from pinned `file:line`, never from a video. No network or no tools: record
    `none: gameplay frames unavailable`.
 3. **Built-ins** — engine_capabilities built-in discovery, served by the same MCP: call
-   `engine_search_capabilities` with `scope: "mechanic"` per mechanic, system or symptom; inspect
-   hits with `engine_capability_detail`. Record installed capabilities and binding constraints. A
+   `engine_search_capabilities` with `scope: "mechanic"` per mechanic, system or symptom, and read
+   every row — it carries the import path, signature, example, constraints, overrides and
+   deprecations, so call `engine_capability_detail` only for a symbol the search did not return.
+   Record installed capabilities and binding constraints. A
    `verdict: "none"` means game-owned behavior in `src/`; do not rephrase until something matches.
    These role names add no servers.
 4. **Plan** — hand **Kit**, **Mechanics** and **References** to `prd-creator`. Plan the core loop
@@ -92,8 +94,9 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
 A change to an existing game skips step 1 and whole-game planning; do not invoke `prd-creator` just
 to restart the game plan. For each change, search before you write:
 
-- Step 3 for every change: `engine_search_capabilities` with `scope: "mechanic"`, then
-  `engine_capability_detail` on each hit, so installed systems are reused.
+- Step 3 for every change: `engine_search_capabilities` with `scope: "mechanic"`, then read every
+  row — `engine_capability_detail` only for a symbol the search did not return — so installed
+  systems are reused.
 - Step 2 for each gameplay mechanic the change adds or alters: `engine_search_references`, then
   `engine_reference_detail`; use `engine_watch_reference` when the motion is the question.
 - Steps 5-8 for the change, using the existing game, plan and context: apply step 5 to the
