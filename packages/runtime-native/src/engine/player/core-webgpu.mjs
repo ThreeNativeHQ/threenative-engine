@@ -17,7 +17,7 @@ for (const name of ["DirectionalLightShadow", "PointLightShadow", "SpotLightShad
 }
 import { BufferAttribute, Color, DataTexture, Material, NormalBlending } from "./core-three.mjs";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
-import { PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";
+import { IndirectStorageBufferAttribute, PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";
 import { readStorageBytes } from "../../../../three-native/src/storage.ts";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
 import { defineToneMappingLibrary } from "../../../../three-native/src/tone-mapping.ts";
