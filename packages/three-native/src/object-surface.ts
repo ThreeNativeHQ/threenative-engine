@@ -205,6 +205,10 @@ const FLAGGED_CLASSES = [
   "Texture",
   "DataTexture",
   "CanvasTexture",
+  // A particle batch re-sends only the attributes it finds by this flag, as three's idiom has it.
+  "InstancedBufferAttribute",
+  "InstancedBufferGeometry",
+  "InterleavedBufferAttribute",
   "Object3D",
   "Scene",
   "Group",
