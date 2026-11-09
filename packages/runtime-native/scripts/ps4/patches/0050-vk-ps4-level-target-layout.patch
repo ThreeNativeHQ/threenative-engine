@@ -1,0 +1,115 @@
+diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
+index 8cdbad8..09e3d14 100644
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -329,6 +329,7 @@ struct VkPs4Image {
+     GnmRenderTarget gnm_rt;        /* if used as render target */
+     GnmDepthRenderTarget gnm_drt;  /* if used as depth target */
+     bool is_render_target;
++    uint64_t rt_bytes;             /* the colour target's memory requirement: what a level target may cover */
+     bool is_depth_target;
+     /* Swapchain image tracking: if this image is a swapchain buffer,
+      * these fields identify the video out handle and buffer index so
+@@ -809,6 +810,7 @@ typedef struct VkPs4ImageLevel {
+     uint32_t pitch;   /* surface pitch of this level, in texels (blocks if BC) */
+     uint32_t width;   /* Vulkan extent of this level: max(1, extent >> level) */
+     uint32_t height;
++    uint32_t tilemode; /* this level's GnmTileMode: a small mip degrades from 2D to 1D tiling */
+ } VkPs4ImageLevel;
+ 
+ /* Level geometry from the driver's own surface table.  False when the image has
+diff --git a/src/vk_ps4_image.c b/src/vk_ps4_image.c
+index f666fc5..c592706 100644
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -143,6 +143,7 @@ bool vk_ps4_image_level(const VkPs4Image *img, uint32_t level, uint32_t layer,
+     out->offset = offset;
+     out->size = size;
+     out->pitch = si.pitch;
++    out->tilemode = (uint32_t)tp.tilemode;
+     out->width = (info.width >> level) ? (info.width >> level) : 1;
+     out->height = (info.height >> level) ? (info.height >> level) : 1;
+     return true;
+@@ -153,26 +154,57 @@ bool vk_ps4_image_level_rt(const VkPs4Image *img, uint32_t level, uint32_t layer
+     if (!img || !out || !img->is_render_target) return false;
+     if (!img->memory || !img->memory->gnm_mem.mapped) return false;
+ 
++    /* The level's layer 0: the layer is chosen by the target's slice view, not
++     * folded into the address. */
+     VkPs4ImageLevel lv;
+-    if (!vk_ps4_image_level(img, level, layer, &lv)) return false;
+-
+     const VkImageCreateInfo *ci = &img->create_info;
++    const uint32_t layers = ci->arrayLayers ? ci->arrayLayers : 1;
++    if (layer >= layers || !vk_ps4_image_level(img, level, 0, &lv)) return false;
++
+     uint32_t samples = ci->samples ? ci->samples : 1;
+     if (samples > 8) samples = 8;
+ 
+     /* Build level N's target the way CreateImage built level 0's: same format,
+-     * sample count, tile mode and GPU mode, on the level's own address, extent
+-     * and pitch.  One slice: a layer is folded into the address, and a colour
+-     * attachment is one layer deep. */
++     * sample count, GPU mode and slice count, on the level's own address,
++     * extent, pitch and tile mode (a small mip degrades from 2D to 1D tiling,
++     * as sceGpaTpInit reports; level 0's mode described a surface bigger than
++     * the mip's slot, and the GPU wrote past it).  A layer is CB_COLOR_VIEW.SLICE_START, as radv
++     * programs it (GFX6-8: mip by base address, layer by slice), so every layer
++     * of a level is one surface: a per-layer address made each cube face a
++     * surface of its own, which the cube sampled afterwards does not cover as
++     * one image (shadPS4 dropped the faces it could not merge: black PMREM,
++     * PRD-784 P4-3). */
+     GnmRenderTargetCreateInfo rt_ci;
+     sceGnmRtInitColorTargetCreateInfo(&rt_ci, sceGnmRtGetFormat(&img->gnm_rt),
+-        lv.width, lv.height, 1, samples, samples,
+-        (GnmTileMode)img->gnm_rt.attrib.tilemode_index, GNM_GPU_BASE);
++        lv.width, lv.height, layers, samples, samples,
++        (GnmTileMode)lv.tilemode, GNM_GPU_BASE);
+     rt_ci.pitch = lv.pitch;
+     if (sceGnmCreateRenderTarget(out, &rt_ci) != GNM_ERROR_OK) return false;
+ 
++    /* The CB's slice stride is CB_COLOR_SLICE (pixels / 64), which
++     * sceGnmCreateRenderTarget sizes as a standalone surface: at 64x64 RGBA16F
++     * that is 64 KB, while the mip's slice in the image's level table is 32 KB.
++     * Every face past the first then landed on the wrong face and the last one
++     * past the image (a guest heap abort, PRD-784).  The level table is what
++     * the texture unit reads, so the target takes its slice size from it. */
++    const uint32_t bpp = sceGnmDfGetTotalBitsPerElement(sceGnmRtGetFormat(&img->gnm_rt));
++    if (samples == 1 && bpp && (lv.size * 8) % ((uint64_t)bpp * 64) == 0)
++        out->slice.tilemax = (uint32_t)((lv.size * 8 / bpp) / 64 - 1);
++    /* A target the CB may write past the image's own memory is refused: the
++     * GPU would overwrite whatever Dawn sub-allocated next.  The caller keeps
++     * its level-0 path. */
++    const uint64_t rt_size = (uint64_t)(out->slice.tilemax + 1) * 64 * bpp / 8 * layers;
++    if (!bpp || (img->rt_bytes && lv.offset + rt_size > img->rt_bytes)) {
++        static unsigned reported;
++        if (reported++ < 16)
++            fprintf(stderr, "TN_VKPS4_LEVEL_RT_OVERRUN %ux%u mips=%u layers=%u level=%u tm=%u offset=%llu rt=%llu image=%llu\n",
++                    ci->extent.width, ci->extent.height, ci->mipLevels, layers, level, lv.tilemode,
++                    (unsigned long long)lv.offset, (unsigned long long)rt_size, (unsigned long long)img->rt_bytes);
++        return false;
++    }
+     sceGnmRtSetBaseAddr(out, (char *)img->memory->gnm_mem.mapped +
+                                  img->memory_offset + lv.offset);
++    out->view.slicestart = layer & 0x7FF;
+     return true;
+ }
+ 
+@@ -427,7 +459,8 @@ vk_ps4_GetImageMemoryRequirements(VkDevice device, VkImage image, VkMemoryRequir
+             VkPs4ImageLevel lv;
+             for (uint32_t l = 0; l < mips; l++) {
+                 if (!vk_ps4_image_level(img, l, 0, &lv)) { total = 0; break; }
+-                total += lv.size * slices;
++                /* The level's end, not the sum of sizes: levels are aligned. */
++                if (lv.offset + lv.size * slices > total) total = lv.offset + lv.size * slices;
+             }
+             if (total > size) size = total;
+         }
+@@ -442,6 +475,7 @@ vk_ps4_GetImageMemoryRequirements(VkDevice device, VkImage image, VkMemoryRequir
+         }
+         pMemoryRequirements->size = size;
+         pMemoryRequirements->alignment = align ? align : 64;
++        img->rt_bytes = size;
+     } else {
+         uint64_t size = 0;
+         uint32_t align = 0;

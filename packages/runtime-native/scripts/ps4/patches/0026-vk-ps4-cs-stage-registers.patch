@@ -1,0 +1,19 @@
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -821,6 +821,16 @@
+ 
+             /* Shader code pointer = base + header_bytes */
+             void *cs_code = (void *)(base + header_bytes);
++            /* The stage header carries the register words psbc compiled:
++             * COMPUTE_PGM_RSRC1/RSRC2 -- USER_SGPR is RSRC2 bits 1..5, the count
++             * of user SGPRs the hardware hands the shader -- and
++             * COMPUTE_NUM_THREAD_XYZ. Only the address was copied here, so a
++             * compute dispatch ran with RSRC1=RSRC2=0 and every user SGPR the
++             * shader read (its descriptor-set bases) came from nowhere: psbc
++             * compiled 0x88 (USER_SGPR=4) for the engine's clear shader and
++             * shadPS4 saw 0, then rejected the ReadConst base its IR read from
++             * an undefined SGPR (flatten_extended_userdata_pass.cpp:832). */
++            pipe->cs_regs = ((const GnmCsShader *)metadata.stage)->registers;
+             sceGnmCsRegsSetAddress(&pipe->cs_regs, cs_code);
+ 
+             /* Extract CS input usage slots.

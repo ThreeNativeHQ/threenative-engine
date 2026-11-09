@@ -1,0 +1,62 @@
+diff --git a/src/dawn/native/vulkan/BackendVk.cpp b/src/dawn/native/vulkan/BackendVk.cpp
+index 78366c404..de1433252 100644
+--- a/src/dawn/native/vulkan/BackendVk.cpp
++++ b/src/dawn/native/vulkan/BackendVk.cpp
+@@ -67,6 +67,9 @@ constexpr char kVulkanLibName[] = "vulkan-1.dll";
+ constexpr char kVulkanLibName[] = "libvulkan.dylib";
+ #elif DAWN_PLATFORM_IS(FUCHSIA)
+ constexpr char kVulkanLibName[] = "libvulkan.so";
++#elif DAWN_PLATFORM_IS(PS4)
++// PS4: vulkan-ps4 (libvulkan_ps4.a) is linked into the embedder, there is no loader to open.
++constexpr char kVulkanLibName[] = "libvulkan_ps4.a";
+ #else
+ #error "Unimplemented Vulkan backend platform"
+ #endif
+@@ -351,8 +354,12 @@ MaybeError VulkanInstance::Initialize(const InstanceBase* instance, ICD icd) {
+ 
+     switch (icd) {
+         case ICD::None: {
++#if DAWN_PLATFORM_IS(PS4)
++            // PS4: the driver is statically linked (libvulkan_ps4.a); nothing to dlopen.
++#else
+             DAWN_TRY(LoadVulkan(kVulkanLibName));
+             // Succesfully loaded driver; break.
++#endif
+             break;
+         }
+         case ICD::SwiftShader: {
+diff --git a/src/dawn/native/vulkan/VulkanFunctions.cpp b/src/dawn/native/vulkan/VulkanFunctions.cpp
+index 8ef9251f6..ab98949ae 100644
+--- a/src/dawn/native/vulkan/VulkanFunctions.cpp
++++ b/src/dawn/native/vulkan/VulkanFunctions.cpp
+@@ -33,6 +33,14 @@
+ #include "dawn/common/DynamicLib.h"
+ #include "dawn/native/vulkan/VulkanInfo.h"
+ 
++#if DAWN_PLATFORM_IS(PS4)
++// PS4: no libvulkan loader; vulkan-ps4 is statically linked into the embedder and defines this
++// entry point itself (vk_ps4_dispatch.c). dawn/common/vulkan_platform.h sets VK_NO_PROTOTYPES,
++// so the Vulkan header declares no prototypes at all: declare the one we need at file scope.
++extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance,
++                                                                        const char* pName);
++#endif  // DAWN_PLATFORM_IS(PS4)
++
+ namespace dawn::native::vulkan {
+ 
+ namespace {
+@@ -89,9 +97,15 @@ F AsVkFn(void(VKAPI_PTR* addr)()) {
+     } while (0)
+ 
+ MaybeError VulkanFunctions::LoadGlobalProcs(const DynamicLib& vulkanLib) {
++#if DAWN_PLATFORM_IS(PS4)
++    // PS4: statically linked ICD, see the file-scope declaration above.
++    (void)vulkanLib;
++    GetInstanceProcAddr = ::vkGetInstanceProcAddr;
++#else
+     if (!vulkanLib.GetProc(&GetInstanceProcAddr, "vkGetInstanceProcAddr")) {
+         return DAWN_INTERNAL_ERROR("Couldn't get vkGetInstanceProcAddr");
+     }
++#endif
+ 
+     GET_GLOBAL_PROC(CreateInstance);
+     GET_GLOBAL_PROC(EnumerateInstanceExtensionProperties);

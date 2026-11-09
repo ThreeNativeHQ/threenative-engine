@@ -1,0 +1,39 @@
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -763,7 +763,7 @@
+              * CommonData + input usage slots. */
+             uint32_t header_bytes = metadata.fileheader->headersizedwords
+                 ? metadata.fileheader->headersizedwords * 4u
+-                : (uint32_t)(sizeof(GnmShaderCommonData) +
++                : (uint32_t)(sizeof(GnmCsShader) +
+                              nslots * sizeof(GnmInputUsageSlot));
+ 
+             /* Shader code pointer = base + header_bytes */
+@@ -780,15 +780,22 @@
+             pipe->cs_regs = ((const GnmCsShader *)metadata.stage)->registers;
+             sceGnmCsRegsSetAddress(&pipe->cs_regs, cs_code);
+ 
+-            /* Extract CS input usage slots.
+-             * For CS, the slot table follows GnmShaderCommonData. */
++            /* Extract CS input usage slots. The table follows the whole GnmCsShader header, not
++             * GnmShaderCommonData: CommonData is 8 bytes and the CS stage registers add 0x1c, so a
++             * read at +8 lands inside COMPUTE_PGM_LO and every slot it yields is noise. psbc emits
++             * one PTR_INDIRECTRESOURCETABLE slot per descriptor set (type 0x1c, apislot = set,
++             * startregister = the SGPR pair the shader reads), and it is that slot the CmdBind
++             * path writes the set pointer to. Read from the wrong offset it produced a slot with
++             * usagetype 0xcc/apislot 0/startregister 0, so vkCmdBindDescriptorSets wrote binding
++             * 0's Vsharp over CS user SGPRs 0-3 -- the shader's set pointer lives in SGPR2/3 --
++             * and every compute dispatch ran with a Vsharp in place of its descriptor base. */
+             if (nslots > 0) {
+                 /* Bounds check: ensure slot table fits within the binary */
+-                uint32_t slots_bytes = (uint32_t)(sizeof(GnmShaderCommonData) +
++                uint32_t slots_bytes = (uint32_t)(sizeof(GnmCsShader) +
+                                    nslots * sizeof(GnmInputUsageSlot));
+                 if (slots_bytes <= binary_size) {
+-                    const GnmInputUsageSlot *cs_slots =
+-                        (const GnmInputUsageSlot *)(base + sizeof(GnmShaderCommonData));
++                    const GnmInputUsageSlot *cs_slots = (const GnmInputUsageSlot *)(
++                        (const uint8_t *)metadata.stage + sizeof(GnmCsShader));
+                     memcpy(pipe->vs_input_usage_slots, cs_slots,
+                            nslots * sizeof(GnmInputUsageSlot));
+                     pipe->vs_input_usage_slot_count = nslots;

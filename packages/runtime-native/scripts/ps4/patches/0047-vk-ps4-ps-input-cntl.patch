@@ -1,0 +1,89 @@
+diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
+index 9f1d45f..cc3b856 100644
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -540,6 +540,11 @@ struct VkPs4Pipeline {
+     /* Vertex input semantics extracted from VS shader binary */
+     GnmVertexInputSemantic vs_input_semantics[VK_PS4_MAX_INPUT_USAGE_SLOTS];
+     uint32_t vs_input_semantic_count;
++    /* VS parameter exports and PS inputs, both named by varying slot (psbc), for SPI_PS_INPUT_CNTL. */
++    GnmVertexExportSemantic vs_export_semantics[VK_PS4_MAX_INPUT_USAGE_SLOTS];
++    uint32_t vs_export_semantic_count;
++    GnmPixelInputSemantic ps_input_semantics[VK_PS4_MAX_INPUT_USAGE_SLOTS];
++    uint32_t ps_input_semantic_count;
+     /* Push constant inline register mapping — extracted from
+      * IMM_ALUFLOATCONST input usage slots emitted by psbc.
+      * Each entry maps a push constant dword index to a user-data
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+index 6b06a2b..2704111 100644
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -21,6 +21,7 @@
+  * (stencil ref/mask/ops don't have GNM API wrappers). */
+ #include <pm4/sid.h>
+ #include <pm4/amdgfxregs.h>
++static void vk_ps4_set_ps_inputs(VkPs4CommandBuffer *cmd, const VkPs4Pipeline *pipe);
+ 
+ #define VK_PS4_CMD_BUFFER_SIZE (256 * 1024)  /* 256KB default PM4 buffer */
+ 
+@@ -789,6 +790,7 @@ static void vk_ps4_rebind_pipeline_state(VkPs4CommandBuffer *cmd) {
+     /* Re-emit PS if present */
+     if (pipe->has_ps) {
+         sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &pipe->ps_regs);
++        vk_ps4_set_ps_inputs(cmd, pipe);
+     }
+ 
+     /* Re-emit fetch shader */
+@@ -1415,6 +1417,7 @@ vk_ps4_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeli
+         /* Set pixel shader only if the pipeline has one */
+         if (pipe->has_ps) {
+             sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &pipe->ps_regs);
++            vk_ps4_set_ps_inputs(cmd, pipe);
+         }
+ 
+         /* Bind fetch shader if the pipeline has one */
+@@ -2494,6 +2497,16 @@ vk_ps4_CmdResolveImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageL
+  * written (Dawn fills its upload buffer before it records the copy) and that no
+  * earlier, still-queued command samples the destination; a GPU detile-copy pass
+  * removes both assumptions when a game streams textures mid-frame. */
++/* SPI_PS_INPUT_CNTL: which VS parameter each PS input reads. Never programmed before, so every
++ * input read a stale mapping, and a pixel shader that reads a subset of the VS outputs (a lit
++ * material) read its UVs from another varying (PRD-784 P4-3). psbc names both tables by varying
++ * slot; the GS path exports through a copy shader and keeps the old behaviour. */
++static void vk_ps4_set_ps_inputs(VkPs4CommandBuffer *cmd, const VkPs4Pipeline *pipe) {
++    if (pipe->has_gs || pipe->ps_input_semantic_count == 0) return;
++    sceGnmDrawCmdSetPsInputUsage(&cmd->gnm_cmd, pipe->vs_export_semantics, pipe->vs_export_semantic_count,
++                                 pipe->ps_input_semantics, pipe->ps_input_semantic_count);
++}
++
+ static bool vk_ps4_tiled_upload(VkPs4Image *dst, const VkBufferImageCopy *r, const uint8_t *src) {
+     const VkFormat format = dst->create_info.format;
+     if (vk_format_is_compressed(format) || dst->is_depth_target || dst->is_swapchain_image) return false;
+diff --git a/src/vk_ps4_pipeline.c b/src/vk_ps4_pipeline.c
+index df6e893..bd5529e 100644
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -431,6 +431,11 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+                             memcpy(pipe->vs_input_semantics, semantics, nsemantics * sizeof(GnmVertexInputSemantic));
+                             pipe->vs_input_semantic_count = nsemantics;
+                         }
++                        uint32_t nexports = vs->numexportsemantics;
++                        if (nexports > VK_PS4_MAX_INPUT_USAGE_SLOTS) nexports = VK_PS4_MAX_INPUT_USAGE_SLOTS;
++                        memcpy(pipe->vs_export_semantics, sceGnmVsShaderExportSemanticTable(vs),
++                               nexports * sizeof(GnmVertexExportSemantic));
++                        pipe->vs_export_semantic_count = nexports;
+                     }
+                     pipe->vs_module = mod;
+                     vs_found = true;
+@@ -449,6 +454,11 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+                     }
+                     pipe->fs_module = mod;
+                     ps_found = true;
++                    uint32_t ninputs = ps->numinputsemantics;
++                    if (ninputs > VK_PS4_MAX_INPUT_USAGE_SLOTS) ninputs = VK_PS4_MAX_INPUT_USAGE_SLOTS;
++                    memcpy(pipe->ps_input_semantics, sceGnmPsShaderInputSemanticTable(ps),
++                           ninputs * sizeof(GnmPixelInputSemantic));
++                    pipe->ps_input_semantic_count = ninputs;
+                     pipe->has_ps = true;
+                     if (slots && nslots > 0) {
+                         memcpy(pipe->ps_input_usage_slots, slots, nslots * sizeof(GnmInputUsageSlot));

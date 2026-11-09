@@ -149,7 +149,7 @@ class RenderDatabase {
     const GraphSources& graphSources(const Material& material);
     void vertexColorsOf(const BufferGeometry& geometry, const Material& material, DrawItem& d);
     static void depthBiasOf(const Material& material, DrawItem& d);
-    void geometryInputsOf(const BufferGeometry& geometry, DrawItem& d);
+    void geometryInputsOf(const BufferGeometry& geometry, DrawItem& d, bool skinned);
     static void sortCenterOf(const BufferGeometry& geometry, DrawItem& d);
     // One mirrored pass per live reflector: its own targets and its own records, so the pass never
     // resizes the frame or churns the frame's draw records. A pass draws no further reflections.

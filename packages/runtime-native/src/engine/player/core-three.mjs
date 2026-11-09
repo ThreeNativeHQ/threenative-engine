@@ -6,6 +6,11 @@ import {
   defineTypeFlags,
 } from "../../../../three-native/src/object-surface.ts";
 import { definePropertyBinding } from "../../../../three-native/src/property-binding.ts";
+import { defineGridHelper } from "../../../../three-native/src/grid-helper.ts";
+import { AnimationUtils } from "../../../../three-native/src/animation-utils.ts";
+import { defineBox2 } from "../../../../three-native/src/box2.ts";
+import { defineTypedBufferAttribute } from "../../../../three-native/src/buffer-attributes.ts";
+import { defineEdgesGeometry } from "../../../../three-native/src/edges-geometry.ts";
 // Identity-preserving imports over the V8 adapter, never upstream Three.js.
 import { audio } from "./core-audio.mjs";
 export const {
@@ -35,6 +40,7 @@ export const {
   ConstantColorFactor,
   CustomBlending,
   CylinderGeometry,
+  DataArrayTexture,
   DepthTexture,
   DirectionalLight,
   DodecahedronGeometry,
@@ -168,6 +174,18 @@ export const clone = (root) => skeletonUtils.clone(root);
 export const { BatchedMesh } = globalThis;
 // three's InstancedBufferGeometry: an engine class, drawn instanceCount times.
 export const { InstancedBufferGeometry } = globalThis;
+// three's GridHelper: engine LineSegments with vertex colours (shared definer, ported from three).
+export const GridHelper = defineGridHelper(globalThis);
+// three's EdgesGeometry, Box2, typed BufferAttributes and AnimationUtils: JS ports over engine classes,
+// shared with the Wasm entry (PRD-784 P5-9).
+export const EdgesGeometry = defineEdgesGeometry(globalThis);
+export const Box2 = defineBox2(globalThis);
+export const Uint8BufferAttribute = defineTypedBufferAttribute(BufferAttribute, Uint8Array);
+export const Uint16BufferAttribute = defineTypedBufferAttribute(BufferAttribute, Uint16Array);
+export const Uint32BufferAttribute = defineTypedBufferAttribute(BufferAttribute, Uint32Array);
+export { AnimationUtils };
+// three's flags on the engine's layered texture, as the Wasm entry sets them (texture-sources.ts).
+Object.assign(DataArrayTexture.prototype, { isArrayTexture: true, isDataArrayTexture: true });
 // three exports the engine does not provide: refused at use, by name, as on Wasm (unsupportedExport).
 export const LineLoop = unsupportedExport("LineLoop");
 export const Points = unsupportedExport("Points");
@@ -268,7 +286,7 @@ for (const [base, names] of [
   [Mesh, [SkinnedMesh, InstancedMesh]],
   [BufferGeometry, geometries],
   [BufferAttribute, [Float32BufferAttribute, InstancedBufferAttribute]],
-  [Texture, [DepthTexture, DataTexture, globalThis.CanvasTexture]],
+  [Texture, [DepthTexture, DataTexture, DataArrayTexture, globalThis.CanvasTexture]],
   [Path, [Shape]],
 ]) {
   for (const derived of names) Object.setPrototypeOf(derived.prototype, base.prototype);
@@ -323,3 +341,10 @@ export const GreaterEqualCompare = 518;
 export const CustomToneMapping = 5;
 export const AlwaysDepth = 1;
 export const VSMShadowMap = 3;
+// three's interpolation and animation blend constants (constants.js); the engine's keyframe track and
+// AnimationClip constructors accept exactly these values.
+export const InterpolateDiscrete = 2300;
+export const InterpolateLinear = 2301;
+export const InterpolateSmooth = 2302;
+export const NormalAnimationBlendMode = 2500;
+export const AdditiveAnimationBlendMode = 2501;

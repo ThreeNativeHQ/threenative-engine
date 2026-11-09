@@ -14,9 +14,9 @@
  *   node scripts/download-deps.mjs --rebuild-wgpu-cache-api  # Rebuild patched wgpu-native from source
  *   node scripts/download-deps.mjs --force      # Re-download even if exists
  *
- * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, webp, webp-source, skia, swc
- * iOS deps: wgpu-ios, skia-ios, webp-source (for cross-compilation from macOS)
- * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source
+ * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, meshopt, webp, webp-source, skia, swc
+ * iOS deps: wgpu-ios, skia-ios, webp-source, meshopt (for cross-compilation from macOS)
+ * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source, meshopt
  */
 
 import { execFileSync, execSync } from 'node:child_process';
@@ -307,6 +307,16 @@ const DEPS = {
     headerUrl: (header) => `https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/${header}`,
     extractTo: 'cgltf',
     headers: ['cgltf.h'],
+  },
+  meshopt: {
+    // meshoptimizer's decoders for EXT_meshopt_compression / KHR_meshopt_compression in the native
+    // glTF loader (PRD-515): MIT, four files, pinned to a release tag. Only the codecs the loader
+    // calls are vendored; the encoders ride along in the same translation units.
+    version: '1.3',
+    getUrl: () => null,
+    headerUrl: (header) => `https://raw.githubusercontent.com/zeux/meshoptimizer/v1.3/src/${header}`,
+    extractTo: 'meshopt',
+    headers: ['meshoptimizer.h', 'vertexcodec.cpp', 'indexcodec.cpp', 'vertexfilter.cpp'],
   },
   webp: {
     // libwebp for WebP image decoding (used by GLTF EXT_texture_webp extension)
@@ -1610,14 +1620,14 @@ async function main() {
   // Keep the desktop feature set; libuv builds from locked source where no prebuilt exists.
   const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
   const desktopDeps = linuxArm64
-    ? ['wgpu', 'sdl3', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', 'webp-source', 'skia', 'swc', 'quiche', 'libuv-source']
-    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', 'webp-source', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
+    ? ['wgpu', 'sdl3', 'v8', 'quickjs', 'stb', 'cgltf', 'meshopt', 'webp', 'webp-source', 'skia', 'swc', 'quiche', 'libuv-source']
+    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'meshopt', 'webp', 'webp-source', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
-  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios', 'webp-source'];
+  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios', 'webp-source', 'meshopt'];
 
   // Android deps (only downloaded with --only or --android)
-  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source'];
+  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source', 'meshopt'];
   const selectedAndroidDeps = requestedBackend === 'dawn'
     ? androidDeps.filter((name) => name !== 'wgpu-android')
     : androidDeps;

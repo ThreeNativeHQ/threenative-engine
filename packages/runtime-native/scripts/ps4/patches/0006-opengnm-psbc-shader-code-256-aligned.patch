@@ -1,0 +1,25 @@
+diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
+index 1b011b5..4faa8b3 100644
+--- a/libpsbc/psbc_compile.c
++++ b/libpsbc/psbc_compile.c
+@@ -307,9 +307,18 @@ static PsbcResult buildshaderbinary(
+         break;
+     }
+ 
+-    /* GCN bytecode that comes after the headers must be 4 byte aligned */
++    /* GCN bytecode that comes after the headers must start at a 256-byte
++     * boundary: the GPU's program-address registers carry only bits 8..63
++     * (sceGnmPsRegsSetAddress in gnm_shader.h), so the runtime can only point
++     * a stage at a 256-byte-aligned code address. A 4-byte-aligned code offset
++     * is truncated by the hardware, which then executes header bytes. Pad the
++     * stage header so PsslBinaryHeader + GnmShaderFileHeader + stage data ends
++     * on a multiple of 256. */
++    const uint32_t headerbytes =
++        sizeof(PsslBinaryHeader) + sizeof(GnmShaderFileHeader);
+     const uint32_t alignbytes =
+-        ((shspecificsize + 3) & (-4)) - shspecificsize;
++        ((shspecificsize + headerbytes + 0xFFu) & ~0xFFu) -
++        (shspecificsize + headerbytes);
+     shspecificsize += alignbytes;
+ 
+     /* Calculate total size */

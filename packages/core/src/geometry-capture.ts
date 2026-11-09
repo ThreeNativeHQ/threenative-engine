@@ -462,6 +462,7 @@ export function rendererBackendIdentity(raw: unknown): string | undefined {
 export class GeometryCapture {
   #pending: IPendingRequest | undefined;
   #armed: IArmedFrame | undefined;
+  #deferredPasses: readonly IRenderPassSample[] | undefined;
 
   /**
    * Arms one capture and answers its report. A malformed request throws rather than quietly
@@ -560,7 +561,17 @@ export class GeometryCapture {
    * Ends the frame: removes every hook, reconciles the rows against the measured pass totals and
    * answers the waiting request.
    */
-  finishFrame(passes: readonly IRenderPassSample[]): void {
+  finishFrame(
+    passes: readonly IRenderPassSample[],
+    options?: { readonly drawsAfterFrame?: boolean },
+  ): void {
+    // A host whose render() only records the frame (the native V8 player) draws it after the frame
+    // callback, and its engine runs onBeforeRender then: the hooks stay until settleDeferred().
+    if (options?.drawsAfterFrame === true && this.#pending !== undefined) {
+      this.#deferredPasses = passes;
+      return;
+    }
+    this.#deferredPasses = undefined;
     const armed = this.#armed;
     const pending = this.#pending;
     this.#restore();
@@ -570,8 +581,15 @@ export class GeometryCapture {
     pending.settle(buildReport(armed, passes, pending));
   }
 
+  /** Answers a capture whose frame a host drew after the frame callback. A no-op otherwise. */
+  settleDeferred(): void {
+    const passes = this.#deferredPasses;
+    if (passes !== undefined) this.finishFrame(passes);
+  }
+
   /** Drops a pending capture and every hook. A scene exit is not a reason to report a stale frame. */
   cancel(reason: string): void {
+    this.#deferredPasses = undefined;
     const pending = this.#pending;
     this.#restore();
     this.#pending = undefined;

@@ -373,11 +373,13 @@ void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Materi
 // The geometry's attributes beyond the ones the programs name (a TSL attribute() reads them), and an
 // InstancedBufferGeometry's instance count: instanceCount, at most what its per-instance attributes
 // hold, as three's WebGL backend clamps it (_maxInstanceCount).
-void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d) {
+// A skinned mesh feeds skinIndex and skinWeight to three's skinning(); on any other mesh they are ordinary
+// attributes a TSL attribute() reads (procedural-animals' DQS skin), so they join the list as float copies.
+void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d, bool skinned) {
     d.attributes->clear();
     for (const auto& [name, attribute] : geometry.attributes) {
         if (!attribute || name == "position" || name == "normal" || name == "uv" || name == "color" ||
-            name == "skinIndex" || name == "skinWeight")
+            (skinned && (name == "skinIndex" || name == "skinWeight")))
             continue;
         d.attributes->push_back({name, floatStore(geometry, name.c_str()), attribute->perInstance});
     }
@@ -543,7 +545,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         r.draw->item.matrixWorld = toArray(mesh.matrixWorld);
         r.draw->item.renderOrder = mesh.renderOrder();
         // A game moves an InstancedBufferGeometry's instanceCount every frame (Midway's particles).
-        if (mesh.geometry && mesh.geometry->instanced) geometryInputsOf(*mesh.geometry, r.draw->item);
+        if (mesh.geometry && mesh.geometry->instanced) geometryInputsOf(*mesh.geometry, r.draw->item, mesh.type() == "SkinnedMesh");
         return r;
     }
     r.draw = std::make_unique<Record::Draw>();
@@ -573,7 +575,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.normalScaleY = material->normalScale.y;
     vertexColorsOf(*r.canonical, *material, d);
     depthBiasOf(*material, d);
-    geometryInputsOf(*r.canonical, d);
+    geometryInputsOf(*r.canonical, d, mesh.type() == "SkinnedMesh");
     sortCenterOf(*r.canonical, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     r.draw->nodes = material->nodes;
@@ -650,7 +652,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         d.normalScaleY = r.material->normalScale.y;
         if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
         depthBiasOf(*r.material, d);
-        if (r.canonical) geometryInputsOf(*r.canonical, d);
+        if (r.canonical) geometryInputsOf(*r.canonical, d, mesh.type() == "SkinnedMesh");
         if (r.canonical) sortCenterOf(*r.canonical, d);
         // A non-float colour or custom attribute reaches the draw as a converted copy that `needsUpdate` replaces
         // without moving the geometry revision: such a record re-reads those inputs every frame, as before FM1.
@@ -662,7 +664,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
                     r.convertedInputs = true;
     } else if (r.convertedInputs) {
         vertexColorsOf(*r.canonical, *r.material, d);
-        geometryInputsOf(*r.canonical, d);
+        geometryInputsOf(*r.canonical, d, mesh.type() == "SkinnedMesh");
     }
     // An InstancedBufferGeometry's instanceCount moves freely (a game counts its particles per frame), and a
     // mesh's own count is read below, so a held material half still reads this one.

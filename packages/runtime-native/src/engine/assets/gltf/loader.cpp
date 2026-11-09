@@ -17,6 +17,9 @@
 #include <string>
 
 #include "cgltf.h"
+#if TN_ENGINE_MESHOPT
+#include "meshoptimizer.h"
+#endif
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/assets/gltf/image_decode.h"
 #include "engine/foundation/job_pool.h"
@@ -102,15 +105,29 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_volume", "KHR_texture_basisu", "KHR_texture_transform", "KHR_mesh_quantization",
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
-// What stays refused is what needs a decoder this loader does not have (draco, meshopt, basisu, avif).
-// A material extension the standard program cannot draw yet still loads: its factors land on the
-// Material and the renderer refuses that mesh by name (TN_NATIVE_MATERIAL_UNSUPPORTED), not the model.
+// What stays refused is what needs a decoder this loader does not have (draco, basisu, avif). Meshopt
+// is decoded (below) whenever the provisioned meshoptimizer is compiled in. A material extension the
+// standard program cannot draw yet still loads: its factors land on the Material and the renderer
+// refuses that mesh by name (TN_NATIVE_MATERIAL_UNSUPPORTED), not the model.
 const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit",
                                           "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat",
                                           "KHR_materials_emissive_strength", "KHR_texture_transform",
                                           "KHR_materials_transmission", "KHR_materials_volume", "KHR_materials_sheen",
                                           "KHR_materials_iridescence", "KHR_materials_anisotropy",
                                           "KHR_materials_dispersion", "EXT_materials_bump", "EXT_mesh_gpu_instancing"};
+
+// EXT_meshopt_compression and KHR_meshopt_compression name the same bitstream and the same JSON
+// fields; only EXT is in cgltf's parser, so both are read from the document here.
+bool isMeshoptExtension(const std::string& name) {
+    return name == "EXT_meshopt_compression" || name == "KHR_meshopt_compression";
+}
+// True when this build carries the meshoptimizer decoders (tn_engine_meshopt, provisioned by download-deps).
+#ifdef TN_ENGINE_MESHOPT
+constexpr bool kDecodesMeshopt = true;
+#else
+constexpr bool kDecodesMeshopt = false;
+#endif
+bool decodesMeshopt() { return kDecodesMeshopt; }
 
 class Builder {
   public:
@@ -158,6 +175,7 @@ class Builder {
             const std::string name = data_.extensions_used[i];
             used_.insert(name);
             if (name == "EXT_texture_webp" && decodesWebP()) continue;
+            if (isMeshoptExtension(name) && decodesMeshopt()) continue;
             if (kThreeExtensions.count(name) && !kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
                 return false;
@@ -166,6 +184,7 @@ class Builder {
         for (std::size_t i = 0; i < data_.extensions_required_count; ++i) {
             const std::string name = data_.extensions_required[i];
             if (name == "EXT_texture_webp" && decodesWebP()) continue;
+            if (isMeshoptExtension(name) && decodesMeshopt()) continue;
             if (!kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
                 return false;
@@ -572,12 +591,146 @@ class Builder {
         return true;
     }
 
+    /** A meshopt-compressed buffer view: what it declares, read from its EXT or KHR extension object. */
+    struct Compressed {
+        const cgltf_buffer* buffer = nullptr;
+        std::size_t offset = 0, size = 0, stride = 0, count = 0;
+        int mode = -1;    // 0 attributes, 1 triangles, 2 indices
+        int filter = 0;   // 0 none, 1 octahedral, 2 quaternion, 3 exponential, 4 colour
+    };
+
+    static int modeOf(const std::string& name) {
+        return name == "ATTRIBUTES" ? 0 : name == "TRIANGLES" ? 1 : name == "INDICES" ? 2 : -1;
+    }
+    static int filterOf(const std::string& name) {
+        if (name.empty() || name == "NONE") return 0;
+        if (name == "OCTAHEDRAL") return 1;
+        if (name == "QUATERNION") return 2;
+        if (name == "EXPONENTIAL") return 3;
+        if (name == "COLOR") return 4;  // KHR_meshopt_compression's addition to EXT's three
+        return -1;
+    }
+    // A whole, non-negative JSON number: every field below came from a file nobody vouched for.
+    static bool whole(const Value* v, std::size_t& out) {
+        if (!v || !v->isNumber()) return false;
+        const double d = v->number();
+        if (!(d >= 0) || d > 9007199254740992.0 || d != std::floor(d)) return false;
+        out = static_cast<std::size_t>(d);
+        return true;
+    }
+
+    /** The meshopt extension object this buffer view declares, EXT's or KHR's (one schema). */
+    const Value* meshoptExtension(const cgltf_buffer_view& view) {
+        const Value* extensions = member(item(member(&json_, "bufferViews"), cgltf_buffer_view_index(&data_, &view)),
+                                         "extensions");
+        const Value* ext = member(extensions, "EXT_meshopt_compression");
+        return ext ? ext : member(extensions, "KHR_meshopt_compression");
+    }
+
+    /**
+     * The compression a buffer view declares, validated against the extension's own rules: the parent
+     * view holds exactly `count * stride` decoded bytes, and mode and filter fix the legal strides.
+     * False for a view that neither extension names; `why` when it names one it cannot honour.
+     */
+    bool compressedView(const cgltf_buffer_view& view, Compressed& out, bool& found, std::string& why) {
+        const Value* ext = meshoptExtension(view);
+        found = ext != nullptr;
+        if (!found) return false;
+        std::size_t buffer = 0;
+        if (!whole(member(ext, "buffer"), buffer) || buffer >= data_.buffers_count) {
+            why = "no such compressed buffer";
+            return false;
+        }
+        out.buffer = &data_.buffers[buffer];
+        if (!whole(member(ext, "byteLength"), out.size) || !whole(member(ext, "byteStride"), out.stride) ||
+            !whole(member(ext, "count"), out.count) ||
+            (member(ext, "byteOffset") && !whole(member(ext, "byteOffset"), out.offset))) {
+            why = "byteLength, byteStride and count must be whole non-negative numbers";
+            return false;
+        }
+        out.mode = modeOf(text(member(ext, "mode")));
+        out.filter = filterOf(text(member(ext, "filter")));
+        if (out.mode < 0 || out.filter < 0) why = "unknown mode or filter";
+        else if (out.stride == 0 || out.count == 0) why = "zero stride or count";
+        // count * stride is the decoded size, overflow-checked and then required to be the view's length.
+        else if (out.count > SIZE_MAX / out.stride || out.count * out.stride != view.size)
+            why = "count * byteStride is not the bufferView byteLength";
+        else if (out.mode == 0 && (out.stride % 4 || out.stride < 4 || out.stride > 256)) why = "attributes byteStride";
+        else if (out.mode == 1 && out.count % 3) why = "triangle count is not a multiple of 3";
+        else if (out.mode != 0 && out.stride != 2 && out.stride != 4) why = "index byteStride";
+        else if (out.mode != 0 && out.filter != 0) why = "filter on an index view";
+        else if (out.filter == 1 && out.stride != 4 && out.stride != 8) why = "octahedral byteStride";
+        else if (out.filter == 2 && out.stride != 8) why = "quaternion byteStride";
+        else if (out.filter == 3 && out.stride % 4) why = "exponential byteStride";
+        else if (out.filter == 4 && out.stride != 4 && out.stride != 8) why = "colour byteStride";
+        return why.empty();
+    }
+
+    /**
+     * The buffer view's bytes: the compressed stream decoded into `decoded`, once per view, when the
+     * view declares a meshopt extension, else the view's own range of its buffer. Null with `error_`
+     * set on a malformed stream, so a damaged file is a refusal and never a crash.
+     */
+    const uint8_t* viewBytes(const cgltf_buffer_view* view) {
+        if (!view) return nullptr;
+        // A view already decoded answers from the cache; an empty one is a refusal already reported.
+        if (const auto known = decodedViews_.find(view); known != decodedViews_.end())
+            return known->second.empty() ? nullptr : known->second.data();
+        bool found = false;
+        std::string why;
+        Compressed compressed;
+        if (!compressedView(*view, compressed, found, why)) {
+            if (found) refuse(viewError(*view, why));
+            return found ? nullptr : static_cast<const uint8_t*>(cgltf_buffer_view_data(view));
+        }
+        std::vector<uint8_t>& bytes = decodedViews_[view];
+        if (!decodeView(*view, compressed, bytes)) return nullptr;
+        return bytes.data();
+    }
+
+    // Every meshopt refusal: the stable code, the buffer view it names, then why.
+    std::string viewError(const cgltf_buffer_view& view, const std::string& why) {
+        return "TN_NATIVE_GLTF_MESHOPT_INVALID bufferView " + std::to_string(cgltf_buffer_view_index(&data_, &view)) +
+               ": " + why;
+    }
+
+    bool decodeView(const cgltf_buffer_view& view, const Compressed& c, std::vector<uint8_t>& out) {
+#ifndef TN_ENGINE_MESHOPT
+        // Unreachable: checkExtensions refuses both extensions without the decoder.
+        refuse(viewError(view, "no meshopt decoder in this build"));
+        return false;
+#else
+        const uint8_t* buffer = c.buffer->data ? static_cast<const uint8_t*>(c.buffer->data) : nullptr;
+        if (!buffer || c.offset > c.buffer->size || c.size > c.buffer->size - c.offset) {
+            refuse(viewError(view, "the compressed bytes are outside the buffer"));
+            return false;
+        }
+        out.resize(c.count * c.stride);  // == view.size, checked in compressedView
+        const uint8_t* source = buffer + c.offset;
+        const int result = c.mode == 0 ? meshopt_decodeVertexBuffer(out.data(), c.count, c.stride, source, c.size)
+                            : c.mode == 1 ? meshopt_decodeIndexBuffer(out.data(), c.count, c.stride, source, c.size)
+                                          : meshopt_decodeIndexSequence(out.data(), c.count, c.stride, source, c.size);
+        if (result != 0) {
+            refuse(viewError(view, "meshopt decode failed (" + std::to_string(result) + ")"));
+            return false;
+        }
+        switch (c.filter) {
+            case 1: meshopt_decodeFilterOct(out.data(), c.count, c.stride); break;
+            case 2: meshopt_decodeFilterQuat(out.data(), c.count, c.stride); break;
+            case 3: meshopt_decodeFilterExp(out.data(), c.count, c.stride); break;
+            case 4: meshopt_decodeFilterColor(out.data(), c.count, c.stride); break;
+            default: break;
+        }
+        return true;
+#endif
+    }
+
     // The accessor's bytes into `out` (zeroed, count * item bytes long): interleaved views
     // de-interleaved, sparse values applied.
     bool rawBytes(const cgltf_accessor& a, std::byte* out) {
         const std::size_t itemBytes = cgltf_component_size(a.component_type) * cgltf_num_components(a.type);
         if (a.buffer_view && a.count) {
-            const uint8_t* base = cgltf_buffer_view_data(a.buffer_view);
+            const uint8_t* base = viewBytes(a.buffer_view);
             if (!base) {
                 refuse("TN_NATIVE_GLTF_BUFFER_MISSING accessor data");
                 return false;
@@ -589,8 +742,8 @@ class Builder {
         }
         if (a.is_sparse) {
             const cgltf_accessor_sparse& s = a.sparse;
-            const uint8_t* indices = cgltf_buffer_view_data(s.indices_buffer_view);
-            const uint8_t* sparseValues = cgltf_buffer_view_data(s.values_buffer_view);
+            const uint8_t* indices = viewBytes(s.indices_buffer_view);
+            const uint8_t* sparseValues = viewBytes(s.values_buffer_view);
             if (!indices || !sparseValues) {
                 refuse("TN_NATIVE_GLTF_BUFFER_MISSING sparse data");
                 return false;
@@ -925,7 +1078,7 @@ class Builder {
         const uint8_t* bytes = nullptr;
         std::size_t size = 0;
         if (image.buffer_view) {
-            bytes = static_cast<const uint8_t*>(cgltf_buffer_view_data(image.buffer_view));
+            bytes = viewBytes(image.buffer_view);
             size = image.buffer_view->size;
         } else if (image.uri && std::strncmp(image.uri, "data:", 5) == 0) {
             const char* comma = std::strchr(image.uri, ',');
@@ -986,7 +1139,8 @@ class Builder {
             const cgltf_image& image = data_.images[source];
             std::span<const uint8_t> bytes;
             if (image.buffer_view) {
-                bytes = {static_cast<const uint8_t*>(cgltf_buffer_view_data(image.buffer_view)), image.buffer_view->size};
+                // A refused (malformed meshopt) view is null: leave it to the scene walk's refusal.
+                if (const uint8_t* view = viewBytes(image.buffer_view)) bytes = {view, image.buffer_view->size};
             } else if (image.uri && std::strncmp(image.uri, "data:", 5) != 0 && options_.readUri) {
                 if (const std::string key = sharedImageKey(source); key.empty() || decodedUriImage(key)) continue;
                 std::string uri = image.uri;
@@ -1154,6 +1308,7 @@ class Builder {
     std::map<std::string, std::shared_ptr<Material>> finalMaterials_;
     std::map<std::size_t, std::shared_ptr<Texture>> textures_;
     std::map<int, std::string> imageKeys_;      // sharedImageKey by glTF image index
+    std::map<const cgltf_buffer_view*, std::vector<uint8_t>> decodedViews_;  // meshopt views, decoded once
     std::map<int, TextureSource> predecoded_;  // predecodeImages' pixels by glTF image index, until a texture takes them
 };
 
@@ -1162,6 +1317,9 @@ class Builder {
 namespace {
 bool alignedView(const cgltf_buffer_view* view, cgltf_size offset, cgltf_size componentSize) {
     if (!view || componentSize == 0) return true;
+    // A view with no data of its own is a meshopt fallback placeholder: its offset addresses nothing,
+    // and the bytes it stands in for are decoded into a fresh, aligned buffer (TN_NATIVE_GLTF_MESHOPT).
+    if (!view->buffer || !view->buffer->data) return view->stride % componentSize == 0;
     return (view->offset + offset) % componentSize == 0 && view->stride % componentSize == 0;
 }
 bool aligned(const cgltf_data& data) {

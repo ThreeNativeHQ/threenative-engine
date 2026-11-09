@@ -69,6 +69,11 @@
 #include "mystral/webgpu/presentation.h"
 #include "mystral/webgpu_compat.h"
 
+#if defined(TN_PS4)
+// libkernel's wall clock in microseconds: the reference E5 checks std::chrono::steady_clock against.
+extern "C" uint64_t sceKernelGetProcessTime();
+#endif
+
 // The legacy host's SDL-to-DOM input translation (platform/input.cpp), which declares none of these.
 namespace mystral::platform {
 void processKeyboardEvent(const SDL_KeyboardEvent& event, bool isDown);
@@ -285,6 +290,10 @@ const SurfaceConfig& surfaceConfig() {
 void startupStage(const char* stage) {
 #if defined(__ANDROID__)
     __android_log_print(ANDROID_LOG_INFO, "TN_Player", "TN_PLAYER_STAGE: %s", stage);
+#elif defined(TN_PS4)
+    // PS4 has no logcat and no shell to ask: stdout is the only account of how far boot got, and
+    // shadPS4 shows it as [stdout] (E1/E4 rely on the same).
+    std::printf("TN_PLAYER_STAGE: %s\n", stage);
 #else
     (void)stage;
 #endif
@@ -339,6 +348,14 @@ bool openWindow(Window& window) {
     // SDL reads the hint in SDL_Init: set after it, a Wayland session keeps Wayland and no surface.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
 #endif
+#if defined(TN_PS4)
+    // The dummy driver owns the window handle the loop sizes its drawing buffer from and the events
+    // it pumps; the frame itself reaches the screen through Dawn's VideoOut swapchain (context.cpp's
+    // PLATFORM_PS4). It is opt-in: SDL3's DUMMY_Available (SDL_nullvideo.c) accepts only a hint that
+    // names it, so without this line SDL_Init fails with "No available video device" and the player
+    // falls back to a headless run that presents nothing.
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::printf("[Playtest] SDL_Init failed: %s\n", SDL_GetError());
         return false;
@@ -346,7 +363,11 @@ bool openWindow(Window& window) {
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
 #if defined(__APPLE__)
     flags |= SDL_WINDOW_METAL;
-#elif !defined(_WIN32)
+#elif defined(_WIN32) || defined(TN_PS4)
+    // A plain window: the frame reaches the screen through Dawn's own surface (DXGI on Windows, the
+    // VideoOut swapchain on PS4, context.cpp's PLATFORM_PS4). SDL_WINDOW_VULKAN exists for SDL's own
+    // Vulkan path, and the dummy driver a console runs refuses it.
+#else
     flags |= SDL_WINDOW_VULKAN;
 #endif
     window.handle = SDL_CreateWindow(surfaceConfig().title.c_str(), static_cast<int>(surfaceConfig().width),
@@ -370,7 +391,13 @@ bool openWindow(Window& window) {
 
 /** SDL exposes the native handles needed by the host's existing Dawn surface API. */
 bool surfaceForWindow(mystral::webgpu::Context& context, Window& window) {
-#if defined(__ANDROID__)
+#if defined(TN_PS4)
+    // The dummy video driver owns no native handle, and the PS4 has no window to name: the surface
+    // is the VideoOut scanout (context.cpp's PLATFORM_PS4 branch). The window is still the event
+    // source and the size the drawing buffer follows.
+    (void)window;
+    return context.createSurfaceWithDisplay(nullptr, nullptr, mystral::webgpu::Context::PLATFORM_PS4);
+#elif defined(__ANDROID__)
     void* native = SDL_GetPointerProperty(SDL_GetWindowProperties(window.handle),
                                          SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
     return native && context.createSurface(native, mystral::webgpu::Context::PLATFORM_ANDROID);
@@ -939,6 +966,14 @@ struct Session {
     // queue them ahead of the next readback faster than a software GPU executes them.
     uint64_t lastRenderedTick = UINT64_MAX;
     bool hasRendered = false;
+#if defined(TN_PS4)
+    // A console has no frame meter and no shell to ask: the frames this loop presented are counted
+    // here and printed every 100 by step(), which is the account a judged run reads.
+    uint64_t presentedFrames = 0;
+    double ps4JsMs = 0.0;
+    std::chrono::steady_clock::time_point ps4WindowStart{};
+    uint64_t ps4WindowKernelUs = 0;
+#endif
     std::set<std::string> renderNotes;  // a renderer note (a skipped draw) prints once, not every frame
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
     double updateMixerCpuMs = 0;
@@ -1578,10 +1613,16 @@ int Session::step() {
     // the clock follows real time instead, as the web loop follows requestAnimationFrame.
     if (!runner || endpoint->liveClock()) {
         nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
+#if defined(TN_PS4)
+        const auto jsBegin = std::chrono::steady_clock::now();
+#endif
         for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps) {
             if (runner) ++drivenTicks;
             update(kTickStep);
         }
+#if defined(TN_PS4)
+        ps4JsMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - jsBegin).count();
+#endif
     }
     if (endpoint->automaticRenderHeld()) return viewFailed ? -1 : 1;
     if (!refreshView())
@@ -1591,6 +1632,25 @@ int Session::step() {
     // the queue ahead of the next render-target readback and make it wait behind all of them.
     if (presenter || !hasRendered || tick() != lastRenderedTick) {
         renderFrame();
+#if defined(TN_PS4)
+        if (++presentedFrames % 100 == 0) {
+            // PRD-784 E5: the game's JS update time and the whole frame's wall time, each averaged
+            // over the last 100 presented frames.
+            const auto frameNow = std::chrono::steady_clock::now();
+            const double wallMs = ps4WindowStart.time_since_epoch().count()
+                ? std::chrono::duration<double, std::milli>(frameNow - ps4WindowStart).count() / 100.0 : 0.0;
+            // The same window on libkernel's clock: steady_clock must agree with it, or every dt and
+            // timer in the guest is off (a wrong clock id once made it read CPU time).
+            const uint64_t kernelUs = sceKernelGetProcessTime();
+            const double kernelMs = ps4WindowKernelUs ? static_cast<double>(kernelUs - ps4WindowKernelUs) / 100000.0 : 0.0;
+            std::printf("TN_PLAYER_FRAMES %llu js_ms=%.3f frame_ms=%.3f kernel_frame_ms=%.3f\n",
+                        static_cast<unsigned long long>(presentedFrames), ps4JsMs / 100.0, wallMs, kernelMs);
+            ps4JsMs = 0.0;
+            ps4WindowStart = frameNow;
+            ps4WindowKernelUs = kernelUs;
+            std::fflush(stdout);
+        }
+#endif
     } else {
         renderer->poll();
         events.drain();

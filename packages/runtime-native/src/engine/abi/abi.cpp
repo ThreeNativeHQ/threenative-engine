@@ -593,7 +593,14 @@ void crossed(std::string_view name) {
     gCrossings.fetch_add(1, std::memory_order_relaxed);
     if (!gHistogramOn.load(std::memory_order_relaxed)) return;
     const std::lock_guard<std::mutex> hold(gHistogramLock);
+#if defined(TN_PS4)
+    // The one libc++ 11 gap this repo cannot shim: heterogeneous unordered_map::find landed in
+    // libc++ 12, so the transparent NameHash/equal_to<> pair buys nothing and the key is built.
+    // It is a coin flip whether a crossing may allocate here anyway (emplace does, just below).
+    const auto found = gHistogram.find(std::string(name));
+#else
     const auto found = gHistogram.find(name);
+#endif
     if (found != gHistogram.end()) ++found->second;
     else gHistogram.emplace(std::string(name), 1);
 }

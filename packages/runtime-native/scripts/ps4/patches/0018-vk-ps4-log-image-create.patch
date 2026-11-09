@@ -1,0 +1,95 @@
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -9,6 +9,7 @@
+ 
+ #include "vk_ps4_internal.h"
+ 
++#include <stdio.h>
+ #include <string.h>
+ 
+ static GnmTextureType vk_image_type_to_gnm(VkImageType type) {
+@@ -61,6 +62,24 @@
+     if (samples == 0) samples = 1;
+     if (samples > 8) samples = 8;  /* clamp to PS4 max */
+ 
++    /* Breadcrumb: the descriptor OpenGNM is about to be handed. A create that
++     * fails is otherwise a bare VK_ERROR_OUT_OF_DEVICE_MEMORY with no way back
++     * to the image (vk_ps4_image.c:81 / :155), and no allocation is attempted
++     * for it, so this line is the only record of what was rejected. */
++    static unsigned long image_seq = 0;
++    const unsigned long seq = ++image_seq;
++    const char *path_kind = vk_image_is_color_target(pCreateInfo) ? "color-target"
++                            : vk_image_is_depth(pCreateInfo)    ? "depth-target"
++                                                                : "texture";
++    vk_ps4_log(
++        "CreateImage #%lu: imageType=%u format=%d extent=%ux%ux%u mipLevels=%u arrayLayers=%u "
++        "samples=0x%x usage=0x%x flags=0x%x tiling=%d initialLayout=%d sharing=%u gnm_fmt=0x%x -> %s",
++        seq, (unsigned)pCreateInfo->imageType, (int)pCreateInfo->format,
++        pCreateInfo->extent.width, pCreateInfo->extent.height, pCreateInfo->extent.depth,
++        mip_levels, pCreateInfo->arrayLayers, (unsigned)samples, (unsigned)pCreateInfo->usage,
++        (unsigned)pCreateInfo->flags, (int)pCreateInfo->tiling, (int)pCreateInfo->initialLayout,
++        (unsigned)pCreateInfo->sharingMode, gnm_fmt.asuint, path_kind);
++
+     if (vk_image_is_color_target(pCreateInfo)) {
+         /* Create as render target */
+         img->is_render_target = true;
+@@ -77,6 +96,17 @@
+ 
+         GnmError err = sceGnmCreateRenderTarget(&img->gnm_rt, &rt_ci);
+         if (err != GNM_ERROR_OK) {
++            vk_ps4_log(
++                "CreateImage #%lu: sceGnmCreateRenderTarget FAILED err=%d (fmt=0x%x %ux%u numslices=%u "
++                "numsamples=%u numfragments=%u tilemode=%d) -> VK_ERROR_OUT_OF_DEVICE_MEMORY",
++                seq, (int)err, gnm_fmt.asuint, pCreateInfo->extent.width,
++                pCreateInfo->extent.height, pCreateInfo->arrayLayers, samples, samples,
++                (int)GNM_TM_DISPLAY_2D_THIN);
++            fprintf(stderr, "vk_ps4: CreateImage #%lu color-target format=%d %ux%u samples=0x%x "
++                            "usage=0x%x: sceGnmCreateRenderTarget err=%d\n",
++                    seq, (int)pCreateInfo->format, pCreateInfo->extent.width,
++                    pCreateInfo->extent.height, (unsigned)samples, (unsigned)pCreateInfo->usage,
++                    (int)err);
+             vk_ps4_free(alloc, img);
+             return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+         }
+@@ -114,6 +144,10 @@
+         drt_ci.numfragments = 1;
+         GnmError err = sceGnmCreateDepthRenderTarget(&img->gnm_drt, &drt_ci);
+         if (err != GNM_ERROR_OK) {
++            vk_ps4_log("CreateImage #%lu: sceGnmCreateDepthRenderTarget FAILED err=%d "
++                       "(format=%d %ux%u zfmt=%d), falling back to the texture path",
++                       seq, (int)err, (int)pCreateInfo->format, pCreateInfo->extent.width,
++                       pCreateInfo->extent.height, (int)zfmt);
+             /* Fallback: zeroed DRT, use texture path for size calc */
+             memset(&img->gnm_drt, 0, sizeof(img->gnm_drt));
+             img->is_depth_target = false;
+@@ -133,7 +167,10 @@
+         tex_ci.numfragments = 1;
+         tex_ci.tilemodehint = GNM_TM_DISPLAY_2D_THIN;
+         tex_ci.mingpumode = gpu_mode;
+-        sceGnmCreateTexture(&img->gnm_texture, &tex_ci);
++        GnmError tex_err = sceGnmCreateTexture(&img->gnm_texture, &tex_ci);
++        if (tex_err != GNM_ERROR_OK)
++            vk_ps4_log("CreateImage #%lu: depth fallback sceGnmCreateTexture FAILED err=%d",
++                       seq, (int)tex_err);
+     } else {
+         /* Create as texture */
+         GnmTextureCreateInfo tex_ci;
+@@ -151,6 +188,18 @@
+ 
+         GnmError err = sceGnmCreateTexture(&img->gnm_texture, &tex_ci);
+         if (err != GNM_ERROR_OK) {
++            vk_ps4_log(
++                "CreateImage #%lu: sceGnmCreateTexture FAILED err=%d (fmt=0x%x %ux%ux%u type=%d "
++                "mips=%u slices=%u fragments=%u tilemode=%d) -> VK_ERROR_OUT_OF_DEVICE_MEMORY",
++                seq, (int)err, gnm_fmt.asuint, pCreateInfo->extent.width,
++                pCreateInfo->extent.height, pCreateInfo->extent.depth,
++                (int)tex_ci.texturetype, mip_levels, pCreateInfo->arrayLayers,
++                tex_ci.numfragments, (int)GNM_TM_DISPLAY_2D_THIN);
++            fprintf(stderr, "vk_ps4: CreateImage #%lu texture format=%d %ux%u mips=%u layers=%u "
++                            "samples=0x%x usage=0x%x: sceGnmCreateTexture err=%d\n",
++                    seq, (int)pCreateInfo->format, pCreateInfo->extent.width,
++                    pCreateInfo->extent.height, mip_levels, pCreateInfo->arrayLayers,
++                    (unsigned)samples, (unsigned)pCreateInfo->usage, (int)err);
+             vk_ps4_free(alloc, img);
+             return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+         }

@@ -30,6 +30,8 @@ export const syncUniforms = live.sync;
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const Fn = withFnBuilder(globalThis.tsl.Fn);
+// three's compute(node, count, workgroupSize) is node.compute(...), which the engine binds (PRD-784 P5-9).
+export const compute = (node, count, workgroupSize) => node.compute(count, workgroupSize);
 // three's lights([...]) takes one array; each light crosses as its own engine object.
 export const lights = (list = []) => globalThis.tsl.lights(...list);
 export const {
@@ -49,6 +51,9 @@ export const {
   atan, mod, fwidth, saturation, mat2, hash, time, deltaTime, transformDirection, normalWorldGeometry,
   getViewPosition, frameGroup, renderGroup, objectGroup, transformNormalToView, property,
 } = globalThis.tsl;
+// three's viewportCoordinate is screenCoordinate.sub(viewport.xy) (ScreenNode.js). Every native pass
+// draws the full target, so viewport.xy is (0, 0) and the two are equal.
+export const viewportCoordinate = screenCoordinate;
 
 export const { storageTexture, textureStore } = defineStorageTextures(globalThis.tsl);
 

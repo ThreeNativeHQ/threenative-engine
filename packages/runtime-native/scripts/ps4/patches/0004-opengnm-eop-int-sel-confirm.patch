@@ -1,0 +1,27 @@
+diff --git a/src/drawcommandbuffer.c b/src/drawcommandbuffer.c
+index 1f3c309..fbe078a 100644
+--- a/src/drawcommandbuffer.c
++++ b/src/drawcommandbuffer.c
+@@ -1747,7 +1747,9 @@ void sceGnmDrawCmdEventWriteEop(
+ 
+ 	uint32_t sel = EOP_DST_SEL(EOP_DST_SEL_MEM) | EOP_DATA_SEL(datasel);
+ 	if (datasel != GNM_DATA_SEL_DISCARD)
+-		sel |= EOP_INT_SEL(EOP_INT_SEL_SEND_DATA_AFTER_WR_CONFIRM);
++		/* int_sel 2 = interrupt when the write is confirmed, Sony's libgnm
++		 * encoding; shadPS4 traps on 3 (video_core/amdgpu/pm4_cmds.h:510). */
++		sel |= EOP_INT_SEL(2);
+ 
+ 	cmd->cmdptr[0] = PKT3(PKT3_EVENT_WRITE_EOP, 4, 0);
+ 	cmd->cmdptr[1] =
+@@ -2027,7 +2029,10 @@ static void writeZpassDoneEop(
+ 
+ 	const uint32_t sel = EOP_DST_SEL(EOP_DST_SEL_MEM) |
+ 	                     EOP_DATA_SEL(GNM_DATA_SEL_SEND_DATA32) |
+-	                     EOP_INT_SEL(EOP_INT_SEL_SEND_DATA_AFTER_WR_CONFIRM);
++	                     /* int_sel 2 = interrupt when the write is confirmed,
++	                      * Sony's libgnm encoding; shadPS4 traps on 3
++	                      * (video_core/amdgpu/pm4_cmds.h:510). */
++	                     EOP_INT_SEL(2);
+ 
+ 	cmd->cmdptr[0] = PKT3(PKT3_EVENT_WRITE_EOP, 4, 0);
+ 	cmd->cmdptr[1] =

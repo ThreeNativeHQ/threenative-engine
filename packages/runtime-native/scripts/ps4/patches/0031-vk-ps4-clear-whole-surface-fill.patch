@@ -1,0 +1,100 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -263,6 +263,30 @@
+     }
+ }
+ 
++/* A whole-surface FillMemory clear writes one 32-bit word everywhere, so it
++ * reproduces the clear colour only when the target's pixel repeats that word:
++ * every format up to 32 bpp does, and a 64 bpp one does when its two words
++ * (R,G) and (B,A) are equal. Anything else needs the draw-based clear. */
++static bool vk_ps4_clear_val_uniform(VkFormat fmt, const VkClearColorValue *cc,
++                                     uint32_t *out) {
++    uint32_t bpp = vk_format_to_bpp(fmt);
++    if (bpp > 0 && bpp <= 4) {
++        *out = vk_ps4_pack_clear_val_32(fmt, cc);
++        return true;
++    }
++    if (fmt == VK_FORMAT_R16G16B16A16_SFLOAT) {
++        uint16_t half[4];
++        for (int i = 0; i < 4; i++) half[i] = vk_ps4_float_to_half(cc->float32[i]);
++        uint32_t lo = (uint32_t)half[0] | ((uint32_t)half[1] << 16);
++        uint32_t hi = (uint32_t)half[2] | ((uint32_t)half[3] << 16);
++        if (lo == hi) {
++            *out = lo;
++            return true;
++        }
++    }
++    return false;
++}
++
+ /* Fill a linear region of memory with a 32-bit value (row-by-row for sub-rect).
+  * NOTE: FillMemory writes 32-bit values to 4-byte-aligned addresses.
+  * For tiled RTs, this produces incorrect results because the memory layout
+@@ -338,11 +362,23 @@
+         rt_size = (uint32_t)size;
+     } else {
+         if (!img->memory->gnm_mem.mapped) return;
+-        uint32_t bpp = vk_format_to_bpp(img->create_info.format);
+         rt_addr = (uint64_t)img->memory->gnm_mem.mapped +
+                   img->memory_offset;
+-        rt_size = img->create_info.extent.width *
+-                  img->create_info.extent.height * bpp;
++        if (img->is_render_target) {
++            /* The RT knows its own surface size: a tiled one is a whole number
++             * of tiles, not width*height*bpp. A constant fill covers either
++             * shape, so the size the descriptor reports is the one to write. */
++            uint32_t align = 0;
++            uint64_t size = 0;
++            rt_size = sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt) == GNM_ERROR_OK &&
++                      size > 0 && size <= 0xFFFFFFFFull
++                          ? (uint32_t)size
++                          : 0;
++        } else {
++            uint32_t bpp = vk_format_to_bpp(img->create_info.format);
++            rt_size = img->create_info.extent.width *
++                      img->create_info.extent.height * bpp;
++        }
+         rt_size = (rt_size + 3) & ~3u;
+     }
+     /* FillMemory wants a 4-byte aligned address and a size that is a
+@@ -415,10 +451,6 @@
+         img->create_info.extent.width,
+         img->create_info.extent.height);
+ 
+-    /* Bind the clear pixel shader and fullscreen VS */
+-    sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
+-    sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+-
+     /* A clear is a DRAW, so it rasterizes through whatever viewport the LAST
+      * draw left in the context -- and through the device's init state for the
+      * first draw of a command buffer. Neither belongs to the target being
+@@ -444,8 +476,6 @@
+ 
+     /* Draw a fullscreen triangle to clear the entire RT.
+      * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky. */
+-    /* Draw a fullscreen triangle to clear the entire RT.
+-     * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky. */
+     sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);
+     sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 3);
+ }
+@@ -462,7 +492,18 @@
+          * or THIN_LINEAR) can use FillMemory; everything else needs the
+          * draw-based clear. */
+         GnmTileMode tm = (GnmTileMode)img->gnm_rt.attrib.tilemode_index;
+-        if (tm == GNM_TM_DISPLAY_LINEAR_GENERAL ||
++        /* A whole-surface clear of a CONSTANT colour does not care how the
++         * surface is tiled: every byte of it takes the same value, so a linear
++         * FillMemory over the RT's own byte size produces the image the tiled
++         * layout would. Only a colour whose pixel is wider than FillMemory's
++         * one 32-bit word (16_16_16_16: R,G and B,A differ) or a sub-rect
++         * clear needs the draw. Measured on the E3TEX repro, the draw-based
++         * clear left an R8G8B8A8 target 25% covered and a 16_16_16_16 one
++         * untouched (clear: path=draw, CB_COLOR0_INFO/ATTRIB identical to the
++         * triangle draw's, so the target was never the disagreement). */
++        uint32_t word = 0;
++        if (vk_ps4_clear_val_uniform(img->create_info.format, cc, &word) ||
++            tm == GNM_TM_DISPLAY_LINEAR_GENERAL ||
+             tm == GNM_TM_DISPLAY_LINEAR_ALIGNED) {
+             vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc);
+         } else {

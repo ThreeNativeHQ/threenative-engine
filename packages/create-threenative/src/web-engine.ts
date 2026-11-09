@@ -265,6 +265,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       // three's DecalGeometry clipping, ported over the engine's geometry classes.
       if (source === "three/addons/geometries/DecalGeometry.js")
         return browserModule("web-engine-decal-geometry.js", "addons/decal-geometry.ts");
+      // three's CCD IK solver, ported over the engine's bones and math classes.
+      if (source === "three/addons/animation/CCDIKSolver.js")
+        return browserModule("web-engine-ccd-ik-solver.js", "addons/ccd-ik-solver.ts");
       // Upstream's HDRLoader extends DataTextureLoader, which the engine does not bind; this one
       // decodes with the same RGBE parser into an engine DataTexture.
       if (source === "three/addons/loaders/HDRLoader.js")
