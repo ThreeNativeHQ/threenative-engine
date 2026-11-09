@@ -286,7 +286,7 @@ void PropertyBinding::getValue(double* buffer, std::size_t offset) {
         buffer[offset] = (((*node).*vector_)()).getComponent(component_);
         return;
     case Target::Visible:
-        buffer[offset] = node->visible() ? 1 : 0;
+        buffer[offset] = node->authoredVisible() ? 1 : 0;
         return;
     case Target::MaterialNumber:
         buffer[offset] = (*material_).*materialNumber_;
