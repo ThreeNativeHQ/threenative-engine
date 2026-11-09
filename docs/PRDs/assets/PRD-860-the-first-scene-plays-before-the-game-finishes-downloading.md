@@ -258,16 +258,27 @@ and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](PRD-
   core answers `describe` only after the start scene's `load()`, so a 30 s handshake failed every
   Midway run at 40 Mbps 370 ms short. A failed `load()` now rejects `describe` at once
   (`game-startup.ts`), instead of leaving it to time out.
+- The web engine parses a late model off the main thread (`web_host.cpp`
+  `tnw_web_load_gltf_begin/done/finish`, one loader pthread; `gltf-loader-web.ts` awaits it). A
+  DevTools trace of Midway's stream-in had 2.36 s of `loadGltf` long tasks on the main thread; after
+  it, none. The loader thread builds engine objects beside the main thread, so the object, material,
+  geometry and attribute id counters are atomic (`concurrent_ids`: red 3/3 with plain counters,
+  green 3/3). Its image decodes run on a pool of two of its own (`JobPool::useOnThisThread`):
+  per-thread CPU showed the shared eight at 649% for ~2 s a model while the main thread sat at
+  98-102%, because a frame job that finds the pool busy runs inline. Idle workers read 1-2% CPU
+  each, so the pool parks rather than spins.
 - `packages/core/src/texture-streaming.ts`: KTX2 level index, the UE wanted-mip rule and
   coarse-first mip ranges, pure and tested — Phase 2 groundwork, not yet exported.
 
 **Open, in the order it blocks this phase:**
 
-1. Frame time while the fleet streams in. The first paired launch runs: baseline passed the
-   frame bound; the change read CPU p95 16.79 ms against 16.7 ms (one run 33.35 ms rAF p95 while
-   other sessions held the GPU). Akagi's merged stand-in builds in one ~220 ms task. Paired runs
-   in a private network namespace (the host's docker churn fails fetches with
-   `ERR_NETWORK_CHANGED`) decide whether this is a regression.
+1. Frame time while the fleet streams in. Paired launch runs in a private network namespace (the
+   host's docker churn fails fetches with `ERR_NETWORK_CHANGED`), frame p95 bound passed: baseline
+   2/3, streaming with the synchronous parse 0/3, with the loader thread 1/3. The run with the
+   loader's own pool read baseline 0/3 and loader pool 0/3 at a host load average of 55 on 12
+   cores, so it decides nothing; it reruns at 5 runs per arm on a quiet host. What still runs on
+   the main thread during the stream: Midway's `attachCockpits` (0.9-2.3 s of bridge calls, game
+   layer), pipeline compiles, and Akagi's ~220 ms merged stand-in.
 2. AC-3's scenario: one that flies to the enemy fleet.
 3. Engine follow-up (owner question 2026-11-09, "can this be pushed to the engine?"): a
    `ctx.assets.model(path, { defer: true })` handle that returns a placeholder group at once and
