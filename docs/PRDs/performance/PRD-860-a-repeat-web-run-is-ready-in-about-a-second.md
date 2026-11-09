@@ -1,7 +1,7 @@
 # PRD-860 — A repeat web run is ready in about a second
 
 **Status:** IN PROGRESS
-**Priority:** P1 — AC-1 and AC-2 are open: a repeat run of the collectathon kit takes about 1.46 s against the 1.2 s bar, and a first visit about 3.13 s against the 2.7 s bar.
+**Priority:** P1 — AC-1 and AC-2 are open: a repeat run of the collectathon kit takes about 1.38 s against the 1.2 s bar, and a first visit about 3.13 s against the 2.7 s bar.
 **Complexity:** 6 (MEDIUM) — 6-10 implementation files (+2), a new generated-content cache (+2), engine packages and a kit template change together (+2); risk override: none.
 **Owner:** João
 **Depends on:** None. Follows PRD-743 (asset disk cache) and PRD-828 (engine work moves into C++).
@@ -55,6 +55,7 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 | Immutable asset headers | `threenative build --target web` → `_headers` | headers with no `Cache-Control` | Phase 2 |
 | Rapier out of line | `@threenative/physics` web import → its own chunk, awaited by `initialize` (`packages/physics/src/web.ts`) | the static import in the entry chunk | Phase 3 |
 | Engine Wasm preload | `threenative build --target web` → head script (`withEnginePreload`, `packages/create-threenative/src/web-brand.ts`) | the glue's late fetch on a first visit | Phase 3 |
+| Instance array writes | any game's `InstancedMesh.setMatrixAt`/`setColorAt` (`packages/three-native/src/browser-attribute-sync.ts` `writeItemAt`, routed in `browser-backend.ts`) | one engine call an instance; a bad index or the first colour keep it | Phase 2 |
 | Shared-memory matrix view | any game's `Matrix4`/`Matrix3` `elements` on the threads build (`packages/three-native/src/browser-value-views.ts`) | the per-element Proxy write | Phase 2 |
 
 ## Decisions
@@ -88,7 +89,7 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 
 - [x] Hashed assets ship `Cache-Control: public, max-age=31536000, immutable`, and a repeat run makes no revalidation request. proof: `pnpm exec vitest run packages/create-threenative/__tests__` plus the bench request count — 2026-11-08, `3ebe059ed`: `web-brand.spec.ts`, `asset-memo.spec.ts`, `asset-cache.spec.ts`, `load-bench.spec.ts` 46 passed; a repeat visit makes 12 requests with 1 KB on the wire (the page itself).
 - [ ] `ctx.assets.memo` returns the stored arrays on a repeat run, and the collectathon kit builds its world through it with its playtests green. proof: `pnpm exec vitest run packages/core/__tests__/asset-cache.spec.ts` plus `pnpm test:templates` for collectathon.
-- [x] The hot paths a repeat run walks cost less, each kept only on a paired laptop gain. proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — 2026-11-08: the scattering table built once in six kits and the reach cull over vertices (`e6f24156f`, repeat 1586-1632 ms from 1784-1795); foliage composes plain matrices and the path distance is a loop (`03414c30b`, 70-100 ms paired); a matrix over shared engine memory is a view, not a Proxy (`bf9a55778`, 1512/1569/1555 against 1566/1616/1644 ms paired). `browser-math.spec.ts` red-green, three-native 536 passed, physics 267 passed.
+- [x] The hot paths a repeat run walks cost less, each kept only on a paired laptop gain. proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — 2026-11-08: the scattering table built once in six kits and the reach cull over vertices (`e6f24156f`, repeat 1586-1632 ms from 1784-1795); foliage composes plain matrices and the path distance is a loop (`03414c30b`, 70-100 ms paired); a matrix over shared engine memory is a view, not a Proxy (`bf9a55778`, 1512/1569/1555 against 1566/1616/1644 ms paired); `setMatrixAt` and `setColorAt` write the instance array and send the written range once before the next engine call (`e13c0b534`, repeat 1380/1387/1381 against 1506/1536/1514 ms and first 3124/3151/3126 against 3190/3295/3217 ms paired with `49c1ae3cb`). `browser-math.spec.ts` and `browser-backend-coverage.spec.ts` red-green, three-native 536 passed, physics 267 passed.
 
 #### Phase 3: A first visit downloads and compiles less
 **Status:** IN PROGRESS
