@@ -1,6 +1,6 @@
 # Vendored patches
 
-Five upstream crates are vendored here and wired with `[patch.crates-io]` in this crate's
+Six upstream crates are vendored here and wired with `[patch.crates-io]` in this crate's
 `Cargo.toml`. Each is a pinned version copied from the crates.io registry source unchanged apart
 from the hunks below; `LICENSE-MIT` / `LICENSE-APACHE` are the upstream licences, which the
 published `.crate` archives omit.
@@ -43,7 +43,7 @@ old `inline_fragment_rects` loop moved into `inline_fragments` so paint can shar
 hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
 `draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 125 added code lines
+## `blitz-paint-0.3.0-beta.2` — 352 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -88,8 +88,38 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   bordered span sliced across two lines), plus
   `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
   previous vendor sources.
+### 4. a multi-layer mask painted nothing: an identity layer took the composite
 
-## `blitz-dom-0.3.0-beta.2` — 493 added code lines
+* **Where:** `src/render/mask.rs` (`draw_css_mask`, plus `is_uniform_opaque`).
+* **Why:** Tailwind 4's `mask-image` names six layers, five of which are the registered initial value
+  `linear-gradient(#fff, #fff)`. Two things broke this: a layer pushed with `SrcIn`/`DestIn` *inside* the
+  mask's own `DestIn` layer erases the whole mask (measured: `SrcIn` hides everything, `SrcOver` shows
+  everything), and the bottom-most-layer test used the *list index* rather than the first layer actually
+  drawn, so skipping an identity layer left the one real layer composited `SrcIn` against an empty mask.
+  Identity layers (one opaque colour repeated) are now skipped — intersecting with an opaque mask is the
+  identity — and the first layer drawn is the one that composites `SrcOver`.
+* **Proves it:** `a_tailwind_three_layer_mask_composition_paints` (a six-layer intersected composition
+  fades across the box) and `a_mask_gradient_whose_stops_come_from_registered_variables_paints`, both of
+  which failed before this hunk. `parity:tailwind --family PRD-845 --group mask` now measures every cell
+  instead of reporting "does nothing" for ten of them.
+### 5. `mask-mode: luminance` weighted linear-light values, and Chromium weights the stored sRGB ones
+
+* **Where:** `src/gradient.rs` (`apply_luminance_alpha`).
+* **Why:** CSS Masking describes a linear-light `luminance()`, and hunk 5's first version followed it — the
+  earlier note in this file even said so. Measured against Chromium on the parity scene, that is wrong for a
+  CSS gradient in this build. The difference only shows on a gradient whose stops are *resampled* (Tailwind
+  writes `in oklab`, which this crate now resamples): with two stops both readings reduce to the same linear
+  alpha ramp between the endpoint colours, but with intermediate stops the per-stop luminance decides the
+  curve. With linear-light weights the six `mask-{linear,conic,radial}-{from,to}-red-50` cells scored
+  0.8145–0.8928 against the 0.99 bar; with the weights applied to the stored sRGB components all eighteen
+  `-red-50` cells pass at 0.994–0.996 and the mask group goes **23 → 29 of 50** with no cell lost.
+* **Proves it:** `a_luminance_mask_weights_the_srgb_components` (the midpoint of a
+  `linear-gradient(to right in oklab, #fef2f2, #000)` mask reads blue 104 with the sRGB weights and 50 with
+  the linear-light ones, so the test fails against the previous source), and
+  `parity:tailwind --family PRD-845 --group mask`.
+
+
+## `blitz-dom-0.3.0-beta.2` — 760 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -318,6 +348,346 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   than the span (parley's cluster hit test skips inline boxes), and RTL is implemented but no
   fixture measures it.
 
+### 15. an animation at the exact end of an iteration held the previous iteration's last frame
+
+* **Where:** `src/stylo.rs` (`resolve_stylist`, the per-animation tick in the restyle loop).
+* **Why:** CSS Animations defines `iterationProgress = (localTime / duration) mod 1`, so a
+  one-second animation sampled at exactly 1000 ms is at the *start* of its second iteration and
+  paints its `from` keyframe. Stylo's `iterate_if_necessary` wraps on a strict `>` (`iteration_over`),
+  so at that one instant the frame stayed on the previous iteration's `to` value — animated
+  invisibly, and measurably wrong. The parity meter samples 100 % of a one-second clock, which is
+  exactly that instant: `animate-ping` (Tailwind's `ping 1s … infinite`) measured SSIM 0.5111 at
+  1000 ms while its 0, 250, 500 and 750 ms samples were 1.0, 0.999, 0.9959 and 1.0. One ulp past
+  the instant (`now.next_up()`) puts the boundary on the iteration after it and moves no other
+  frame; a finite animation's `has_ended`/`forwards` fill is untouched because it reads `now`.
+* **Proves it:** `tests/animation.rs` — `an_infinite_animation_wraps_at_the_exact_iteration_boundary`
+  fails against the previous vendor sources (`rgb(0,0,255)` at 1000 ms instead of Chromium's
+  `rgb(255,0,0)`) and passes with it, and `a_finished_animation_holds_its_last_frame` pins the
+  `forwards` fill the hunk must not disturb. The meter's `--family PRD-847` sample moves from
+  0.5111 to the bar.
+
+### 16. a client rect ignored `transform`, so a rotated or animated box reported its untransformed size
+
+* **Where:** `src/document.rs` (`get_client_bounding_rect` now composes the element's and its
+  ancestors' transforms over the box's four corners; the old body is `untransformed_client_rect`,
+  and the viewport-scroll subtraction moved to the caller so it happens once, after the transform).
+* **Why:** CSSOM client rects are *transformed* — `rotate(45deg)` on a 100x40 box reports 99x99 —
+  and this returned the layout box. Paint and hit testing already apply the same composition (each
+  node's `transform` about its own origin, stored in device-pixel space by `resolve_2d_transform`,
+  which also folds in `transform-origin`, `translate`, `rotate` and `scale`), so a transformed
+  element was painted and clicked where it was, but *reported* where it was laid out. The parity
+  meter's geometry bar is that rectangle, so every transform unit measured as a 56 px edge miss
+  while its pixels matched: `animate-ping`'s 250/500/750 ms samples scored 0.999, 0.9959 and 1.0
+  against a 0.99 bar and failed on the box alone.
+* **Proves it:** `tests/interaction.rs::a_transformed_element_reports_its_transformed_box` (a
+  `rotate(45deg)` 100x40 box is 98.99 square and a `translate(30px,20px)` box moves to `[40, 30]`)
+  fails against the previous vendor sources, and `a_transformed_element_is_hit_where_it_is_painted`
+  still passes, which is the composition this shares with hit testing. The 32-fixture browser
+  oracle (`corpus/oracle.mjs`) is unchanged.
+
+### 17. a scrolled box reported its own rect 140 px above itself
+
+* **Where:** `src/document.rs` (`untransformed_client_rect`: the element's own `scroll_offset` is
+  added back onto `absolute_position`).
+* **Why:** `absolute_position` subtracts a node's own scroll offset as well as its ancestors', which
+  is what paint wants for the node's *contents* — a scrolled box paints its subtree up by its scroll.
+  A client rect is the box itself, and a browser leaves a scrolled container where it is; only its
+  children move. Without the add-back, every scrolled container in the parity meter's scroll family
+  reported itself 140 px above its own box after one wheel, so the whole group read as a real
+  mismatch against Chromium (6 cells) or as a `NaN`-collapsed pixel score (the rest).
+* **Proves it:** `tests/interaction.rs::a_scrolled_box_keeps_its_own_rect_and_moves_its_content` — the
+  container stays at `[20, 20, 200, 100]` after a 140 px wheel while its child moves to `-120`, and
+  the test fails against the previous vendor sources. The parity meter's `--family PRD-848 --group
+  scroll` stops reporting the 140 px lie: 30 of 31 cells are now honestly "does not discriminate"
+  (they need a `scrollIntoView` driver or a snap implementation) instead of a false failure.
+
+### 18. a table's row and row group never received a layout
+
+* **Where:** `src/layout/table.rs` — `TableContext` gains `cell_rows` and `row_boxes`, `TableRow` gains
+  its `group`, `collect_table_cells` threads the row and the group through, and
+  `TableTreeWrapper::set_unrounded_layout` grows each row, and each row its group, as taffy reports the
+  cells.
+* **Why:** a table is mapped onto taffy's grid and the wrapper exposes the *cells* only. A `tr` and a
+  `tbody` are in the box tree but not in the grid, so neither was ever laid out: both stayed as
+  zero-width boxes at the table's origin. A browser gives `tr` the row's area and `tbody` the union of
+  its rows, spanning the table's content width — and the parity meter reads exactly those boxes for its
+  1-px edge bar, so `border-collapse`, `table-fixed` and the three `border-spacing` cells each failed on
+  a `tbody` miss of 300 px and more.
+* **Proves it:** `tests/table_boxes.rs` (`a_row_and_its_group_span_the_table_instead_of_collapsing_to_nothing`):
+  before this hunk `tbody` reads `[0.0, 0.0, 0.0, 0.0]` against a 200 px table, after it
+  `[0.0, 0.0, 190.0, 62.0]` covering both rows. Measured on the parity meter,
+  `--family PRD-848 --group flow`: the `tbody` edge miss on `border-collapse` falls from 309.5 px to
+  34.5 px and on `table-fixed` from 308 px to 36 px. The group stays at 2 of 15 because the remaining
+  misses are elsewhere (a `<caption>` is still never laid out — see below — and the table's own bottom
+  edge is short); no cell was lost.
+
+## `stylo-0.20.0` — 118 added code lines and 22 TOML lines, and `stylo_atoms-0.20.0` — 4 added lines
+
+### 1. a colour transition to an `oklch()` value interpolated in sRGB
+
+* **Where:** `values/animated/color.rs` (`Animate for Color`): the `ColorInterpolationMethod` is
+  `best_interpolation_between` for two `Absolute` colors and `srgb()` otherwise, where the whole
+  implementation had `srgb()` hardcoded. (`AbsoluteColor::animate` in the same file was already
+  correct; the transitions of a `<color>`-typed property go through the generic `Color` one.)
+* **Why:** CSS Color 4 names Oklab as the interpolation space unless **both** ends are legacy sRGB
+  syntax, and Tailwind 4's whole palette is `oklch()`. A legacy start (`#2563eb` from a staged
+  declaration) against an `oklch()` end therefore has to interpolate in Oklab; in sRGB the two ends
+  agree exactly and the middle is a dozen units per channel off, which is precisely what a parity
+  sample mid-transition sees and a sample at rest does not.
+* **Proves it:** `a_colour_transition_to_an_oklch_value_interpolates_in_oklab` (fails on the previous
+  code with the sRGB blend `[135, 74, 152]`, passes with the Oklab one `[153, 102, 164]`), and
+  `parity:tailwind --family PRD-850 --group misc`: the whole transition group went from two cells at
+  0.94–0.98 to six passing at 0.9992–0.9999 (`transition`, `transition-none`'s neighbours,
+  `duration-75`, `duration-initial`, `delay-75`, `ease-in`, `ease-initial`), the group 131 → 137 of
+  182, and the scene 290 → **295 of 503**.
+
+### 2. the servo build had no `prefers-reduced-motion`, and no way to carry the preference
+
+* **Where:** `servo/media_features.rs` (a new `eval_prefers_reduced_motion` and its
+  `feature!` entry, `MEDIA_FEATURES` 15 → 16), `device/servo.rs` (`ExtraDeviceData` gains
+  `prefers_reduced_motion`, plus `set_prefers_reduced_motion`/`prefers_reduced_motion`),
+  `queries/values.rs` (the `PrefersReducedMotion` value, which the Gecko build declares privately),
+  and `stylo_atoms-0.20.0/static_atoms.txt` (the feature's name has to be a static atom).
+* **Why:** Stylo's Servo media-feature list had no `prefers-reduced-motion` at all, so
+  `@media (prefers-reduced-motion: reduce)` **and** `(no-preference)` both failed to match. That is
+  exactly what Tailwind's `motion-reduce:` and `motion-safe:` compile to, so both variants resolved
+  to nothing and the parity meter measured identical wrong frames (SSIM 0.6492 for both, against a
+  0.99 bar). No public API reaches the media-feature table, which is what makes this a vendored
+  hunk rather than a crate change.
+* **Proves it:** `tests/interaction.rs::reduced_motion_is_a_media_query_the_stylesheet_sees` — a
+  document whose colour is chosen by the two queries is blue with no preference and red after
+  `set_env(false, true)`, and blue again when the preference is cleared; it fails against the
+  previous vendor sources. The parity meter's `--family PRD-847` moves from 1/5 to **3/5**:
+  `motion-safe:bg-red-500` and `motion-reduce:bg-red-500` go from 0.6492 to 1.0.
+
+### 3. `scroll-margin` and `scroll-padding` were Gecko-only, so the servo build never parsed them
+
+* **Where:** `properties/longhands.toml` (16 `scroll-margin-*`/`scroll-padding-*` longhands lose
+  `engine = "gecko"`) and `properties/shorthands.toml` (the six shorthands).
+* **Why:** the codegen skips a longhand whose `engine` is not the build's (`declare_longhand`), so
+  Servo's build had no `scroll-margin`/`scroll-padding` at all: Tailwind's `scroll-m*`/`scroll-p*`
+  utilities parsed to nothing, and no driver could move a scroller by them. The rest of the engine's
+  scroll support already existed — this was the missing half.
+* **Proves it:** `tests/interaction.rs::scroll_into_view_honours_scroll_margin_and_scroll_padding`
+  reads both back through `scrollIntoView` (below), and the parity meter's scroll group moves from
+  0 of 31 to **7 of 31** with 23 cells still needing drivers rather than a missing property.
+
+### 4. the same for `prefers-contrast`, `forced-colors` and `inverted-colors`
+
+* **Where:** the three hunks above, repeated for three more features: `queries/values.rs`
+  (`PrefersContrast`, `InvertedColors`), `device/servo.rs` (three fields, their accessors, and
+  `forced_colors()` returning the field instead of a hardcoded `ForcedColors::None`),
+  `servo/media_features.rs` (three evaluators and entries, `MEDIA_FEATURES` 16 → 19), and three
+  atoms in `stylo_atoms`' list.
+* **Why:** Tailwind's `contrast-more:`, `contrast-less:`, `forced-colors:` and `inverted-colors:`
+  compile to those queries and none of them could match, so all four variants were dead on the
+  engine and the parity meter carried them as pending exemptions.
+* **Proves it:**
+  `tests/interaction.rs::contrast_forced_and_inverted_colours_are_media_queries_the_stylesheet_sees`
+  (contrast more/less and inverted invert by colour; forced colours are proved by geometry, because
+  that mode rewrites every painted colour the way a browser does — Canvas is white — and a colour
+  cannot show it). The meter's `--family PRD-849 --group media` moves 13/24 → **15/22**, with
+  `contrast-more:` and `forced-colors:` passing and both leaving the exemption list; `contrast-less:`
+  and `inverted-colors:` stay exemptions for a reason that is the *reference browser's*, recorded
+  there.
+
+`blitz-dom` hunk 17 in this same change carries the device flag through
+(`BaseDocument::set_reduced_motion`, `make_device` takes it), and `css-ui`'s `set_env` now sets it
+instead of injecting the `transition-duration: 0s !important` sheet — the workaround the PRD asked
+to delete once the query worked.
+
+### 5. `any-pointer` was a platform guess, not the device's own pointer
+
+* **Where:** `src/document.rs` (`make_device` passes the primary's `PointerCapabilities` as the
+  all-pointer union instead of `PointerCapabilities::default()`).
+* **Why:** `default()` is compiled per platform and answers `COARSE` on this build, so a desktop
+  reported `(any-pointer: coarse)` and not `(any-pointer: fine)` — Tailwind's `any-pointer-coarse:`
+  variant fired on a mouse-only host and `any-pointer-fine:` did not. A device with one pointer has
+  the same union as its primary, which is what this engine models.
+* **Proves it:** `tests/interaction.rs::any_pointer_mirrors_the_device_it_is_driven_by` — a mouse
+  box is `(40, 20)` (fine, not coarse) and the same document on a finger is `(20, 40)`; it fails
+  against the previous vendor sources. The parity meter's `any-pointer-coarse:` cell stops reporting
+  a real mismatch.
+
+### 6. `scrollIntoView` scrolled only the viewport, and ignored `scroll-margin`/`scroll-padding`
+
+* **Where:** `src/scrolling.rs` (the new `scroll_node_into_view`; `scroll_into_view` is left as the
+  viewport-only entry point it was).
+* **Why:** `Element.scrollIntoView()` aligns the element's *scroll-margin* box with every scrollable
+  ancestor's *scroll-padding* edge, innermost first. The engine had a viewport-only version and read
+  neither property, so Tailwind's `scroll-m*`/`scroll-p*` units had no consumer at all. The walk
+  reads everything out of the tree into plain numbers before scrolling, because the mutable scroll
+  cannot overlap the borrows the computation needs.
+* **Proves it:** `tests/interaction.rs::scroll_into_view_honours_scroll_margin_and_scroll_padding` —
+  an item 200px down a scroller aligns at 200 with nothing declared, and at 110 with
+  `scroll-margin-top: 60px` plus `scroll-padding-top: 30px`; the test fails against the previous
+  vendor sources. The meter's scroll group goes 0/31 → 7/31.
+* **Alignment is per axis:** `scroll_node_into_view` takes `block_end`/`inline_end`, because an
+  end-side `scroll-margin` or `scroll-padding` only moves a scroller that aligns to the *end* —
+  `scroll-pr-*`/`scroll-pb-*` measured "does nothing" against a start-only driver. The end alignment
+  is computed from the element's extent plus its end margin and the scroller's end padding, against
+  the scroller's own size. The group goes **14/31 → 20/31**.
+* **A follow-up fixed the last 2 px:** the element's position was taken relative to the scroller's
+  *padding edge* and then the scroller's own border and padding were subtracted again, so every
+  `scroll-p*` cell stopped two pixels high (measured against Chromium: target rows 188..221 against
+  186..221). `absolute_position` already reports boxes from that edge — a child's layout location is
+  relative to its parent's content box — so neither is subtracted now, and the group goes **7/31 →
+  14/31** (every block-axis `scroll-m*` and `scroll-p*` cell passes at 1.0000).
+
+### 7. a decoration line was drawn half a pixel off, so a 1px underline covered two rows
+
+* **Where:** `src/text.rs` (`draw_decoration_line`: both edges of the line are snapped to whole device
+  pixels; the `snap` argument carries it).
+* **Why:** the line is a stroke centred at `baseline - offset + size/2`, and at a fractional
+  coordinate a 1px stroke covers two rows at 50 % each. A browser pixel-aligns the decoration
+  rectangle: measured on the parity scene's `underline` cell, Chromium paints one crisp row at y=52
+  and the engine painted rows 52 and 53 — visible as a soft, thicker line, SSIM 0.9604 against a 0.98
+  bar for a decoration whose *position* already matched Chromium's to the row.
+* **Proves it:** the parity meter's `underline` goes 0.9604 → 0.9777, `decoration-2`/`decoration-red-50`
+  0.914/0.96 → 0.977, and `line-through` passes (0.9823). The 32-fixture browser oracle is unchanged
+  (28/28) and the crate's own suite is green. `overline` is still 0.8544: the snap did not change its
+  offset, which is a separate measurement (the em-box top) and the next thing to look at there.
+
+### 8. a `display: none` element reported the position it last had
+
+* **Where:** `src/document.rs` (`untransformed_client_rect`: a `display: none` element answers a zero
+  rect at the origin).
+* **Why:** taffy leaves a stale location with a zero size, so `getBoundingClientRect()` on a hidden
+  element returned e.g. `[0, 506, 0, 0]`. CSSOM says a box-less element's rect is all zeros, and the
+  parity meter's geometry bar read the stale `y` as a 506 px edge miss on a cell whose pixels already
+  matched to 1.0.
+* **Proves it:** the parity scene's `hidden` cell passes (1.0 pixels, 0 edge misses). The crate test
+  suite and the 32-fixture browser oracle are unchanged.
+
+### 9. a colour matrix and a component transfer were dropped, so every CSS colour filter painted nothing
+
+* **Where:** `src/scene.rs` (the new `ColourLayer`: a filter that is exactly one per-pixel colour
+  function renders its layer into its own `RenderContext`, the pixels are transformed, and the result
+  is composited back as a registered image), `src/filters.rs` (`colour_filter_only`).
+* **Why:** `vello_common` 0.1.0 `unimplemented!`s on both primitives, so `grayscale()`,
+  `saturate()`, `hue-rotate()`, `sepia()`, `brightness()`, `contrast()`, `invert()` and `opacity()`
+  were dropped — 15 of the parity meter's filter cells measured a real difference for that reason.
+  Both primitives are per-pixel functions of the layer's own pixels, which is exactly what an
+  offscreen render makes available. The clip passed to `push_layer` is in the element's *local* space
+  and the ops that follow carry their own world transforms, so the child's clip is transformed by the
+  layer's transform before it is pushed — the first attempt pushed it untransformed and the child
+  clipped every pixel away (measured: 0 opaque pixels, and the element's paint was lost).
+* **The backdrop half is written and does not land.** A backdrop filter needs a copy of what is
+  painted *under* the layer, which means rendering the parent — and `vello_cpu` panics ("some layers
+  haven't been popped yet") when that is asked of a context with an open layer, which blitz has (it
+  wraps some elements in a clip-path or mask layer). A depth counter refuses the capture there instead
+  of crashing, so the eight `backdrop-*` cells keep the values they had; the next attempt needs a
+  capture that does not require closing the parent's layers.
+* **Proves it:** `tests/interaction.rs::a_colour_filter_transforms_the_layer_it_wraps` —
+  `brightness(50%)` on `#2563eb` gives `#13327` and `grayscale(100%)` gives `#606060`, the CSS values.
+  The parity meter's filter family moves 2/19 → **9/19**: brightness, contrast, grayscale,
+  hue-rotate, invert, saturate and sepia go from 0.20–0.88 to **1.0000**, and the two cells that
+  already passed (blur, backdrop-opacity) are unchanged. The 32-fixture browser oracle stays 28/28.
+
+### 10. `mask-mode: luminance` fell back to alpha, so a colour mask hid everything
+
+* **Where:** `src/gradient.rs` (the new `apply_luminance_alpha`), `src/render/mask.rs` (reads the
+  layer's `mask-mode` and passes it down), `src/render/background.rs` (`draw_image_layer` and
+  `draw_gradient_layer` take the flag and rewrite the peniko gradient's stops after conversion).
+* **Why:** this crate composites every mask layer with `Compose::DestIn`, which reads *alpha*, and CSS
+  luminance masks carry their mask value in *luminance*: Tailwind's `mask-linear-from-red-50` stops
+  are two opaque colours that differ only in brightness, so as an alpha mask both are 1 and the mask
+  hid nothing — eight colour-mask cells measured 0.52 to 0.72 against a 0.99 bar. The luminance is
+  computed on linear-light values (sRGB → linear, then `0.2126 R + 0.7152 G + 0.0722 B`), which is
+  what CSS Masking defines; on the stored sRGB values a `red-50` stop reads 0.96 against Chromium's
+  0.91.
+* **Proves it:** the parity meter's eight colour-mask cells move from 0.52–0.72 to **0.945–0.982**
+  (still failing the 0.99 bar, so the family stays at 23 of 50 — what is left is the mask geometry,
+  not the mode). The 32-fixture browser oracle is unchanged (28/28) and the crate's 57 tests are
+  green. Raster and SVG image masks are still alpha-only, which the hunk says.
+
+### 11. an overline's top edge was one thickness above the ascent
+
+* **Where:** `src/text.rs` (the overline's offset is `ascent`, not `ascent + size`).
+* **Why:** measured against Chromium on the parity scene's `overline` cell, the engine's line was one
+  row higher than the browser's (y=34 against y=35). The line's *top* edge sits on the ascent; the
+  engine put its top one thickness above it and the pixel snap then locked the error in.
+* **Proves it:** the cell goes 0.8949 → **0.9793** against a 0.98 glyph bar — still 0.0007 short, and
+  what is left is the line's *length*: a decoration is drawn across the run's advance, which includes
+  the white space a line ends with (measured on `underline`: 103 px against Chromium's 93, and
+  Chromium trims it). `GlyphRun` exposes `glyphs()` and the run's `clusters()`, not per-line clusters,
+  so trimming needs the line's portion of the run — that is the next measurement here.
+
+### 12. an inset box shadow ignored its spread, so a ring with no blur painted nothing
+
+* **Where:** `src/render/box_shadow.rs` (`draw_inset_box_shadow`: the `DestOut` cut-out is the border
+  box deflated by the shadow's `spread`).
+* **Why:** the spread is the width of an inset shadow's band, and the cut-out was the border box
+  itself — so an inset shadow with a spread and no blur covered the whole box and then erased itself.
+  Tailwind's `ring-inset` plus a ring width is exactly `box-shadow: inset 0 0 0 4px …`: measured, the
+  parity scene's cell showed no ring where Chromium paints one, and a 48×48 box with
+  `inset 0 0 0 4px #ffffff` stayed entirely blue.
+* **Proves it:** `tests/interaction.rs::an_inset_box_shadow_paints_inside_the_box` fails against the
+  previous vendor sources. The parity meter's `ring-inset` and `inset-ring-red-50` go from 0.747 to
+  **1.0000**, the `misc` group 125 → 127 of 182, and the 32-fixture browser oracle is unchanged
+  (28/28). `inset-shadow-red-50` now discriminates for the first time and measures 0.9809 — its blur
+  kernel is the next question there.
+
+### 13. `mix-blend-mode` was never read, so every blend painted as `Normal`
+
+* **Where:** `src/render.rs` (`peniko_mix` maps the computed `mix-blend-mode`; the element's effect
+  layer is pushed when the mode is not `Normal`), `src/layers.rs` (`maybe_with_layer` /
+  `maybe_push_layer` take the mode and pass it to `push_layer`, and the clip-only fast path is not
+  taken for a non-normal mode), `src/render/background.rs` and `src/render/box_shadow.rs` (their layer
+  calls pass `Normal`).
+* **Why:** `maybe_push_layer` hardcoded `Mix::Normal`, and blitz's `is_stacking_context` does not
+  consider the property, so an element with `mix-blend-mode` painted as if it had none.
+* **Proves it:** `tests/interaction.rs::mix_blend_mode_composites_the_element_against_its_backdrop` —
+  a blue square with `multiply` over red is black and the backdrop outside it is untouched; the test
+  fails against the previous vendor sources. **The parity scene's blend cells do not move**: they are
+  all `hue` (Tailwind's `mix-blend-hue`, `bg-blend-hue`), and `vello_cpu` 0.1's `try_u8_mix` returns
+  `None` for the non-separable modes (`hue`, `saturation`, `color`, `luminosity`, `color-dodge`,
+  `color-burn`, `soft-light`), so the layer is composited as `Normal` anyway. Separable modes work;
+  the non-separable ones are a `vello_cpu` limitation, not this crate's.
+
+### 14. a perspective-free 3D transform was dropped instead of projected
+
+* **Where:** `src/stylo_to_kurbo.rs` (`resolve_2d_transform`: a matrix with no perspective row keeps
+  its 2D submatrix instead of being filtered out).
+* **Why:** outside a 3D rendering context CSS Transforms 2 paints a 3D transform as its projection onto
+  the plane — its own example paints `rotateY(50deg)` narrower — and this crate dropped every matrix
+  that merely *contained* a 3D function, so `rotate-x-45` and `rotate-y-45` painted an untransformed
+  box (0.6410 and 0.7942 against Chromium).
+* **Proves it:** `tests/interaction.rs::a_perspective_free_3d_rotation_paints_its_2d_projection` — a
+  100×40 box with `rotateY(45deg)` reports 70.71 wide, and one with `perspective(500px) rotateY(45deg)`
+  keeps its layout width because a perspective row still needs a projective rasterisation this backend
+  does not have. The parity meter's `transform3d` family goes 1/9 → **3/9** (both rotations 0.9991 and
+  0.9996) and the whole scene 272 → **274/503 (54.5 %)**.
+
+### 15. a wavy decoration's wavelength was four pixels where Chromium's is six
+
+* **Where:** `src/text.rs` (`draw_decoration_line`: `half_wave` is three thicknesses, not two).
+* **Why:** measured on the parity scene's `decoration-wavy` cell — the decoration's lowest lit row per
+  column cycles `47, 47, 48, 49, 50, 50, 49` in Chromium (a period of six at a one-pixel thickness) and
+  `46, 46, 46, 47, 47` here (a period of four). The squiggle was therefore twice as dense as the
+  browser's, which a 0.99 SSIM bar sees as a different pattern whatever the amplitude does.
+* **Proves it:** the engine's period is now six, matching Chromium's (re-measured the same way:
+  `46, 46, 45, 46, 47, 47, 47`). The squiggle then sat **2–2.5 px higher** than Chromium's (lit rows
+  45..47 against 47..50) and its wave was shallower, so the same measurement fitted two more
+  constants: the centre is `y + 2.5 * size` and the amplitude `1.5 * size`, which puts the engine's lit
+  rows at 47..50–ish against Chromium's 47..50. The cell goes 0.8472 → **0.9067** and still fails the
+  0.98 glyph bar — the remainder is the wave's phase and the stroke's shape, not the period, the depth
+  or the position. Both constants are fitted to a measurement, and the hunk says so because Chromium
+  does not document the squiggle's geometry.
+
+### 16. a decoration ran through the white space a line ends with
+
+* **Where:** `src/text.rs` (the decoration range subtracts the trailing spaces of the run, for the
+  glyph run that reaches that run's end).
+* **Why:** the range came from `glyph_run.offset() + advance()`, and a run's advance includes the space
+  a line ends with — which hangs outside the line box and is not decorated. Measured on the parity
+  scene: the engine's underline was 103 px wide where Chromium's is 93. Every decoration unit measured
+  just under its 0.98 glyph bar because of it (`underline` 0.9777, `decoration-2` 0.9772,
+  `decoration-red-50` 0.9777).
+* **Proves it:** those three cells pass at **0.9819, 0.9821 and 0.9821**, and the `type` family goes
+  13/41 → **17/41**. The trim applies only to the glyph run that reaches the end of its own run, so a
+  line's earlier runs keep their inner spaces.
+
 ## `parley-0.11.1` — 240 added code lines
 
 Hunk 1 is the one over the guideline and it is separable in three pieces, each of which a fixture
@@ -457,3 +827,39 @@ fails on its own: the strut (`box-model-and-sizing`), the order and scale of the
 * **Proves it:** `ua-defaults` — its bare `<button>` takes the UA sheet's `font: 400 13.3333px
   Arial`, and with this hunk its 21px line box is the one Chromium measures on Liberation Sans;
   without it the button is 3.09px tall at the bottom and the column above it with it (2 edge misses).
+
+## `blitz-paint-0.3.0-beta.2` — a gradient named `in oklab` interpolates in Oklab
+
+### 1. peniko interpolates in sRGB, so a gradient's named space was ignored
+
+* **Where:** `src/gradient.rs` (`resample_stops`, threaded through `resolve_color_stops` and the three
+  `*_gradient` builders; their tuples and the match arms now carry `color_interpolation_method`).
+* **Why:** CSS Images 4 interpolates a gradient's stops in the space its `in <space>` names, and Tailwind
+  4 emits `linear-gradient(<angle> in oklab, …)` for every gradient inside an `@supports` block that
+  every current browser takes. peniko interpolates in premultiplied sRGB, so the two renderers agree at
+  both ends of a gradient and differ most in the middle — which is where a parity sample of a gradient
+  sits. Stops are now resampled in the named space through stylo's own `mix::mix_many` (48 per pair)
+  before they reach peniko, which keeps both the colour space and the hue method correct.
+* **Proves it:** `a_gradient_named_oklab_interpolates_in_oklab` reads the sRGB midpoint `[125, 0, 130]`
+  on the previous code and the Oklab midpoint `[140, 83, 162]` with it; `parity:tailwind --group paint`
+  takes `bg-linear-60` from 0.9642 to 0.9983 and the group from 18 to 20 of 39.
+
+## `anyrender_vello_cpu-0.17.0` — 250 added code lines
+
+### 1. a filter primitive the backend cannot paint aborted the whole frame
+
+* **Where:** `src/filters.rs` (`convert_filter_effect`).
+* **Why:** this backend's `filters` feature is what makes `filter:` reach pixels at all, and with it
+  on, `vello_common` 0.1.0's `PreparedFilter::new` *panics* on any primitive it has not implemented
+  (`unimplemented!("Other filter primitives not yet implemented")`). Tailwind's colour-matrix
+  utilities — `grayscale`, `brightness`, `contrast`, `saturate`, `sepia`, `hue-rotate`, `invert`, and
+  every `backdrop-*` — are exactly those, so one of them on screen aborted the host's frame instead
+  of painting an unfiltered box. Dropping the primitive keeps the two things apart: a filter the
+  backend cannot paint is a visible difference a comparison reports, and an unsupported feature is
+  no longer a crash that reports nothing.
+* **Proves it:** `parity:tailwind --family PRD-844` — before this hunk seven cells of the filter
+  family were `the engine refused this stage: not implemented: Other filter primitives not yet
+  implemented` and could not be measured at all; after it all nineteen are measured, `blur-3xl`
+  matches Chromium at SSIM 0.9951, and the colour-matrix cells report the real gap (0.20 to 0.87).
+  Multi-primitive graphs and the backdrop filter argument are still unimplemented upstream and are
+  PRD-844's remaining work.
