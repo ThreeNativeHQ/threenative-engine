@@ -83,6 +83,7 @@ flowchart LR
 
 - [ ] Preserve the authored layered PBR surface and resolve `texturesDir` headlessly. proof: layered cook spec plus headed before/after visual judge — pending; the current GLB uses only the first layer.
   2026-11-08: the spec half holds at HEAD. `terrain-world.spec.ts` "preserves every relative layer texture byte-for-byte and marks terrain nodes" resolves `texturesDir` paths under Node, writes every layer's maps beside the GLB and marks each terrain node `tnTerrainSurface: "world.json"`, so the game's `loadTerrainSplat` draws all layers while a vanilla loader keeps the first-layer fallback; 38/38. Open: the headed judge, which rides with the PRD-762 Phase 3 frames.
+  2026-11-09, judge half blocked by design: a same-pose before/after has no first-layer arm in the game. The MCP-cooked forest consumer with `surface: terrainSurface` removed fails closed at start (`TN_STARTUP_FAILED: TerrainTiles surface is required and must be game-owned.`, 2 runs, nvidia/turing), and the layered arm renders with no error (2 runs). The first-layer fallback exists only in a vanilla `GLTFLoader` (`scripts/fixtures/vanilla-world.mjs`), which frames the world from its bounds, not from the game's poses. Needs an owner call: accept the layered-only frames plus the spec, or build a posed vanilla arm.
 
 #### Phase 2: LODs and the world package
 **Status:** done
