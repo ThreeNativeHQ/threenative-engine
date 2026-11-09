@@ -167,6 +167,11 @@ const FOREST_MEADOW = vec3(0.36, 0.46, 0.26);
 const GROUND_SKY_LIGHT = 0.6;
 /** Multiplier that turns meadow turf into shaded needle litter under a stand. */
 const FOREST_FLOOR = vec3(0.44, 0.38, 0.3);
+/**
+ * Bare earth between the stands, on top of the litter tint: a spruce floor's humus reads L* 29-37 at
+ * the walk pose (PRD-855), and the litter tint alone left it at 53, brighter than the turf beside it.
+ */
+const BARE_SOIL = vec3(0.4, 0.38, 0.37);
 /** Turf multiplier for the backdrop's spruce stands: dark blue-green needles, as in the goal frame. */
 const BACKDROP_SPRUCE = vec3(0.2, 0.3, 0.2);
 /**
@@ -639,6 +644,7 @@ export async function createGroundMaterial(
   Object.assign(weights, biomeWeights(measured, steep, hollow, breakUp));
   // Needle litter and crown shade under the placed stands, as a multiplicative floor tint.
   let forestFloor: Node<"float"> = float(0);
+  let bareSoil: Node<"float"> = float(0);
   // Transport, slope and shelter choose the splat; noise only frays the material's edge.
   weights.rock = max(weights.rock, scour.mul(0.9)).mul(oneMinus(deposits.mul(0.22)));
   if (look.crestRock) weights.rock = max(weights.rock, smoothstep(0.08, 0.22, slope));
@@ -682,6 +688,7 @@ export async function createGroundMaterial(
         weights.dirt = weights.dirt.max(bare.mul(0.8));
         // The soil takes the litter's warm needle tint in full, not the dirt photograph's grey gravel.
         forestFloor = forestFloor.max(bare);
+        bareSoil = bare;
       }
     }
     // Coastal soil patches remain; the forest meadow keeps turf between distant blade clusters.
@@ -1097,7 +1104,8 @@ export async function createGroundMaterial(
           continuation,
         )
           .mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank))
-          .mul(mix(vec3(1), FOREST_FLOOR, forestFloor));
+          .mul(mix(vec3(1), FOREST_FLOOR, forestFloor))
+          .mul(mix(vec3(1), BARE_SOIL, bareSoil));
         material.roughnessNode = mix(
           mix(
             otherBiome ? 0.94 : mix(0.88, 0.98, dryness),

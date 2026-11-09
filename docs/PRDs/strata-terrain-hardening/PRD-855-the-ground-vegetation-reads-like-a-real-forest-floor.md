@@ -1,6 +1,6 @@
 # PRD-855: The ground vegetation reads like a real forest floor
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — the bare soil reads L* 35 at the walk pose (Phase 2); references, cover and near detail are open.
 **Priority:** P1 — the ground is too bright (soil L 46–51 against a 29–37 reference) and has no cover at walking height (Phase 2, Phase 3).
 **Complexity:** 6 (MEDIUM-HIGH)
 **Depends on:** [PRD-591](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) AC-4 (measured height bands)
@@ -25,7 +25,7 @@ Owner, 2026-11-07: the ground vegetation looks bad and too bright. Known measure
 
 ### Phase 2 — soil value
 
-- [ ] Soil albedo and roughness in `render/surfaces.ts` and `render/terrain.ts` put the soil inside L 29–37 at the forest walk pose under the metered auto exposure. proof: a measured L value from the walk-pose frame
+- [x] Soil albedo and roughness in `render/surfaces.ts` and `render/terrain.ts` put the soil inside L 29–37 at the forest walk pose under the metered auto exposure. proof: a measured L value from the walk-pose frame — 2026-11-09: `BARE_SOIL` (0.4, 0.38, 0.37) multiplies the forest's bare-earth mask on top of the litter tint in `render/terrain.ts`; roughness unchanged. `capture-strata-worlds` forest `player` (metered auto exposure, NVIDIA Turing), CIELAB L* of the bare patch crop 120x40+1080+420: 53.1 before (2 runs) → 35.0 after (2 runs, 35.01 both); sunlit turf 57.3 → 57.1. The judge's wider crop of the same patch reads 49.7 → 38.6, and a part-bare sunlit fringe 57.7 → 45.9; shadowed soil under the canopy 16 → 12. Fresh judge: IMPROVEMENT on player, meadow-close and overview in both runs, NEUTRAL on river (little soil), no hard edge, hue stays warm. Left: beige ground near the tree bases and on the lower-left hillside is another layer this mask does not cover. Sheets `prd-855/soil-forest-run{1,2}.jpg` on `pr635-screenshots`.
 
 ### Phase 3 — cover and near detail
 
