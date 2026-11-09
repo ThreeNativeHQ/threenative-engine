@@ -54,6 +54,10 @@ import { clone as cloneByExamplesPath } from "three/examples/jsm/utils/SkeletonU
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { Material } from "three";
+// PRD-854: names core's world modules import (prd493 bundles them) and never call on the engine: each refuses by name.
+import { CompressedArrayTexture, InstancedInterleavedBuffer, TextureUtils } from "three";
+import { BundleGroup, EventNode, IndirectStorageBufferAttribute } from "three/webgpu";
+import { element, instancedBufferAttribute, instancedDynamicBufferAttribute, positionView, transformNormal, varyingProperty } from "three/tsl";
 import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal, Loop, int } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
@@ -122,6 +126,9 @@ const answers = (geometries) => JSON.stringify(geometries.slice(0, 3).map((g) =>
 const panels = panel(THREE);
 check(panels[0] instanceof THREE.BufferGeometry && answers(panels) === ${JSON.stringify(answers(panel(three)))}, "Shape, holes and ExtrudeGeometry as three");
 const refuses = (make, pattern) => { try { make(); return false; } catch (error) { return pattern.test(String(error.message)); } };
+for (const [name, value] of Object.entries({ CompressedArrayTexture, InstancedInterleavedBuffer, TextureUtils, BundleGroup, EventNode,
+  IndirectStorageBufferAttribute, element, instancedBufferAttribute, instancedDynamicBufferAttribute, positionView, transformNormal, varyingProperty }))
+  check(refuses(() => (typeof value === "function" ? new value() : value.x), new RegExp("TN_NATIVE_UNSUPPORTED_" + name.toUpperCase())), name + " refused at use");
 check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
   { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
 const paramTexture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);

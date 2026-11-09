@@ -57,9 +57,12 @@ export type AnimationActionLoopStyles = (typeof AnimationActionLoopStyles)[keyof
 /** Catalog supported: three/AnimationClip. */
 export declare class AnimationClip {
 constructor();
+blendMode: number;
 readonly duration: number;
 readonly name: string;
 readonly tracks: Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>;
+
+  toJSON(): { name: string; duration: number; tracks: Array<{ name: string; times: number[]; values: number[]; interpolation?: number; type: string }>; blendMode: number };
 }
 
 /** Catalog supported: three/AnimationMixer. */
@@ -682,6 +685,11 @@ y: number;
   setFromVector3(vec3: Vector3): this;
 
   setFromCartesianCoords(x: number, y: number, z: number): this;
+}
+
+/** Catalog supported: three/CubeTexture. */
+export declare class CubeTexture extends Texture {
+constructor();
 }
 
 /** Catalog supported: three/Data3DTexture. */
@@ -1908,11 +1916,17 @@ export declare const NotEqualStencilFunc: 517;
 export declare class NumberKeyframeTrack {
 constructor();
 readonly ValueTypeName: string;
-readonly name: string;
+name: string;
 readonly times: Float32Array;
-readonly values: Float32Array;
+values: Float32Array;
 
   clone(): this;
+
+  getInterpolation(): number;
+
+  getValueSize(): number;
+
+  setInterpolation(interpolation: number): this;
 }
 
 /** Catalog supported: three/Object3D. */
@@ -2295,11 +2309,17 @@ readonly isQuaternion: true;
 export declare class QuaternionKeyframeTrack {
 constructor();
 readonly ValueTypeName: string;
-readonly name: string;
+name: string;
 readonly times: Float32Array;
-readonly values: Float32Array;
+values: Float32Array;
 
   clone(): this;
+
+  getInterpolation(): number;
+
+  getValueSize(): number;
+
+  setInterpolation(interpolation: number): this;
 }
 
 /** Catalog partial (native-not-implemented): three/QuaternionLike. */
@@ -3367,11 +3387,17 @@ export type Vector4Tuple = [ number, number, number, number ];
 export declare class VectorKeyframeTrack {
 constructor();
 readonly ValueTypeName: string;
-readonly name: string;
+name: string;
 readonly times: Float32Array;
-readonly values: Float32Array;
+values: Float32Array;
 
   clone(): this;
+
+  getInterpolation(): number;
+
+  getValueSize(): number;
+
+  setInterpolation(interpolation: number): this;
 }
 
 /** Catalog partial (native-not-implemented): three/WebGLCoordinateSystem. */
@@ -3696,6 +3722,7 @@ readonly mapSize: Vector2;
 /** Catalog supported: three/Source. */
 export declare class Source {
 constructor();
+dataReady: boolean;
 readonly version: number;
 }
 
@@ -3790,4 +3817,15 @@ specularIntensityMap: Texture | null;
 /** Catalog partial (graph-authoring-only, constructor-not-bound): three/webgpu/MRTNode. */
 export declare class MRTNode extends Node {
 constructor();
+}
+
+/** Catalog supported: three/webgpu/Storage3DTexture. */
+export declare class Storage3DTexture extends Texture {
+constructor(width?: number, height?: number, depth?: number);
+readonly is3DTexture: true;
+readonly isStorageTexture: true;
+mipmapsAutoUpdate: boolean;
+wrapR: Wrapping;
+
+  setSize(width: number, height: number, depth: number): void;
 }

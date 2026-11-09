@@ -677,9 +677,8 @@ namespace {
 /** Any texture class, as the renderer reads it: the cast every material map takes (abi/bindings_material.cpp). */
 Texture* textureOf(const tn_handle_t* handle) {
     auto* object = handle == nullptr ? nullptr : tn::abi::objectOf(*handle);
-    // The array and volume classes are no material map (isTextureClass), but a texture copy writes into them.
-    if (object == nullptr || !(tn::binding::isTextureClass(object->cls) || object->cls == "DataArrayTexture" ||
-                               object->cls == "Data3DTexture"))
+    // The array, volume and cube classes are no material map (isTextureClass), but a texture copy writes into them.
+    if (object == nullptr || !tn::binding::isGpuTextureClass(object->cls))
         return nullptr;
     return static_cast<Texture*>(object->ptr.get());
 }

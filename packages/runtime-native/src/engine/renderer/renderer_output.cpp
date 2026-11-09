@@ -300,7 +300,9 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     depth_ = wgpuDeviceCreateTexture(device_, &depthDesc);
     WGPUTextureDescriptor sceneDesc = depthDesc;
     sceneDesc.format = sceneFormat_;
-    sceneDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+    // CopyDst: copyTextureToTexture writes into a render target's colour (three's texture copies into a target).
+    sceneDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc |
+                      WGPUTextureUsage_CopyDst;
     sceneColor_ = wgpuDeviceCreateTexture(device_, &sceneDesc);
     sceneView_ = view2d(sceneColor_, sceneFormat_);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);

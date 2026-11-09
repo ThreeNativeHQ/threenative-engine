@@ -514,6 +514,10 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_post_denoise_one_lane=denoise_over_a_red_field_keeps_one_lane
     native_engine_abi_tsl_ssr_parameters=tsl_ssr_parameters
     native_engine_abi_tsl_texture_store=tsl_texture_store
+    native_engine_abi_tsl_storage_texture_read=tsl_storage_texture_read
+    native_engine_abi_tsl_storage_texture_3d=tsl_storage_texture_3d
+    native_engine_abi_tsl_cube_texture=tsl_cube_texture
+    native_engine_abi_tsl_mixed_operands=tsl_mixed_operands
     native_engine_abi_tsl_mat4_element=tsl_mat4_element
     native_engine_abi_binding_fn=binding_fn
     native_engine_abi_tsl_call=tsl_call

@@ -777,14 +777,27 @@ struct Session {
     std::exception_ptr renderError;  // an encode failure, rethrown on the game thread at the next handoff
     bool renderJobPosted = false;
     uint64_t renderFallbacks = 0;    // frames that took the inline path while the render thread was on
-    /** Waits for the frame in flight: the render thread first, then the GPU thread its job fed. */
-    void waitRenderThread(bool rethrow) {
+    /**
+     * Dawn holds its device lock for the whole present, including a FIFO acquire's wait for vblank
+     * (`GetCurrentTexture`) and an X11 copy (`xcb_put_image` on Xvfb), so a present running beside the game's
+     * JavaScript stalls every wgpu call that script makes, such as a synchronous target draw (PRD-854). After a
+     * frame whose script touched the renderer, the next present waits here and the next frame-boundary wait posts
+     * it; any other frame posts its present at once, so it still overlaps the next frame's script.
+     */
+    std::function<void()> pendingPresent;
+    bool rendererTouched = false;  // the game's script reached the render barrier since the last frame was posted
+    /**
+     * Waits for the frame in flight: the render thread first, then the GPU thread its job fed, after posting the
+     * pending present. `present` false (the game's mid-frame barrier) stops after the render thread.
+     */
+    void waitRenderThread(bool rethrow, bool present = true) {
         if (renderThread) {
             renderThread->wait();
             if (renderJobPosted) renderThreadCpuMs = renderJobCpuMs;
             renderJobPosted = false;
         }
-        if (gpuThread) {
+        if (gpuThread && present) {
+            if (pendingPresent) gpuThread->post(std::exchange(pendingPresent, nullptr));
             gpuThread->wait();
             gpuThreadCpuMs = gpuJobCpuMs;
         }
@@ -950,7 +963,10 @@ int Session::initialize() {
             renderThread->post([] { frameCriticalThread("tn-render"); });
             renderThread->wait();
             renderer->collectFrame();
-            game.setRenderBarrier([this] { waitRenderThread(false); });
+            game.setRenderBarrier([this](bool touch) {
+                rendererTouched |= touch;
+                waitRenderThread(false, false);
+            });
         }
     }
 #endif
@@ -1146,13 +1162,14 @@ int Session::initialize() {
                 // The jobs hold renderers, never scene data, and the game thread does not touch them until
                 // its next waitRenderThread().
                 renderJobPosted = true;
-                renderThread->post([this, format, queue = context->getQueue(), presentationEpoch]() mutable {
+                renderThread->post([this, format, queue = context->getQueue(), presentationEpoch,
+                                    deferPresent = std::exchange(rendererTouched, false)]() mutable {
                     const double begin = threadCpuMs();
                     try {
                         for (auto& job : encodeJobs) job();
                         if (auto plan = renderer->prepareBlit(format)) {
-                            gpuThread->post([plan = *plan, presenter = presenter.get(), queue,
-                                             stats = &gpuJobCpuMs, observation = endpoint.get(), presentationEpoch]() mutable {
+                            auto present = [plan = *plan, presenter = presenter.get(), queue,
+                                            stats = &gpuJobCpuMs, observation = endpoint.get(), presentationEpoch]() mutable {
                                 const double gpuBegin = threadCpuMs();
                                 Presenter::Frame frame;
                                 WGPUCommandBuffer commands = presenter->begin(frame) ? Renderer::encodeBlit(plan, frame.color) : nullptr;
@@ -1166,7 +1183,9 @@ int Session::initialize() {
                                     if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
                                 }
                                 *stats = threadCpuMs() - gpuBegin;
-                            });
+                            };
+                            if (deferPresent) pendingPresent = std::move(present);
+                            else gpuThread->post(std::move(present));
                         }
                     } catch (...) {
                         renderError = std::current_exception();

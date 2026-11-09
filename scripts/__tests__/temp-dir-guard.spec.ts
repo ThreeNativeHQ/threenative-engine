@@ -190,6 +190,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/player-target-draw-present.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
     "packages/playtest/src/runner/linuxCpuWindow.ts",
     "The CPU window collector removes its fixture directory in a finally block, and a killed run leaves only its own tagged directory.",
   ],

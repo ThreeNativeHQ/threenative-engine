@@ -199,15 +199,23 @@ void Renderer::initTexture(const Texture& texture) {
 // region is one command, and a destination that generates mipmaps rebuilds them after a level 0 write.
 void Renderer::copyTextureToTexture(const Texture& source, const Texture& destination, const TextureCopy& copy) {
     FrameGpuTimer::Scope timerScope(nullptr);
-    const MaterialTexture* from = materialTexture(source);
-    const MaterialTexture* to = materialTexture(destination);
-    if (!from->texture || !to->texture)
-        throw std::runtime_error("TN_NATIVE_COPY_TEXTURE: both textures must be uploaded images, not render targets");
+    // A render target's texture is its last render, read or written in place (three copies a cube face, a 3D slice or
+    // a row of SH coefficients so); any other texture is its own uploaded record.
+    const auto targetOf = [](const Texture& texture) {
+        return std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock());
+    };
+    const auto sourceTarget = targetOf(source), destinationTarget = targetOf(destination);
+    const WGPUTexture from = sourceTarget ? renderTargetTexture(*this, *sourceTarget) : materialTexture(source)->texture;
+    const MaterialTexture* to = destinationTarget ? nullptr : materialTexture(destination);
+    const WGPUTexture into = destinationTarget ? renderTargetTexture(*this, *destinationTarget) : to->texture;
+    if (!from || !into) throw std::runtime_error("TN_NATIVE_COPY_TEXTURE: both textures must have an image or a render");
+    if (wgpuTextureGetFormat(from) != wgpuTextureGetFormat(into))
+        throw std::runtime_error("TN_NATIVE_COPY_TEXTURE: the two textures store different formats (match their type)");
     flushMipmaps();  // the source's chain and the destination's earlier writes come first
     WGPUImageCopyTexture_Compat src{}, dst{};
-    src.texture = from->texture; src.mipLevel = copy.srcLevel; src.origin = {copy.srcX, copy.srcY, copy.srcZ};
+    src.texture = from; src.mipLevel = copy.srcLevel; src.origin = {copy.srcX, copy.srcY, copy.srcZ};
     src.aspect = WGPUTextureAspect_All;
-    dst.texture = to->texture; dst.mipLevel = copy.dstLevel; dst.origin = {copy.dstX, copy.dstY, copy.dstZ};
+    dst.texture = into; dst.mipLevel = copy.dstLevel; dst.origin = {copy.dstX, copy.dstY, copy.dstZ};
     dst.aspect = WGPUTextureAspect_All;
     const WGPUExtent3D extent = {copy.width ? copy.width : source.width, copy.width ? copy.height : source.height,
                                  copy.depth};
@@ -215,7 +223,7 @@ void Renderer::copyTextureToTexture(const Texture& source, const Texture& destin
     wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
     submit(wgpuCommandEncoderFinish(encoder, nullptr));
     wgpuCommandEncoderRelease(encoder);
-    if (copy.dstLevel != 0) return;
+    if (copy.dstLevel != 0 || to == nullptr) return;  // a render target holds one level
     if (!copyRebuildsMipmaps(destination.volume, to->key.levels)) return;
     // ponytail: a CPU-built chain is not a render target, so a copy refreshes level 0 only; read the level back
     // and rebuild on the CPU if a PS4 game copies into a mipmapped texture.
@@ -231,6 +239,8 @@ Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& textu
     // A DataArrayTexture stores `depth` 2D images in one 2D texture; a Data3DTexture is one 3D image.
     key.depth = texture.volume || texture.array ? texture.depth : 1;
     key.array = texture.array;
+    key.cube = texture.cube;
+    key.volume = texture.volume;
     key.texelBytes = texture.bytesPerTexel();
     key.wrapS = texture.wrapS;
     key.wrapT = texture.wrapT;
@@ -275,7 +285,7 @@ Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& textu
 
 WGPUTexture Renderer::createMaterialTexture(const MaterialTexture::Key& key) {
     WGPUTextureDescriptor desc = {};
-    desc.dimension = key.kind == MaterialTexture::kVolume ? WGPUTextureDimension_3D : WGPUTextureDimension_2D;
+    desc.dimension = key.volume ? WGPUTextureDimension_3D : WGPUTextureDimension_2D;
     desc.size = {key.width, key.height, key.depth};
     desc.format = key.format;
     desc.usage = key.usage;
@@ -304,6 +314,7 @@ void Renderer::uploadMaterialTexture(WGPUTexture destination, const Texture& tex
     };
     if (key.kind == MaterialTexture::kVolume) {
         if (texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a Data3DTexture");
+        if (!texture.dataReady) return;  // a RenderTarget3D's texels are written on the GPU
         const uint64_t expected = uint64_t(texture.width) * texture.height * texture.depth * texture.bytesPerTexel();
         if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA volume byte count");
         gpu_.sync();  // ordered after any submit still on the GPU thread
@@ -423,7 +434,8 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         record.texture = createMaterialTexture(key);
         if (key.kind != MaterialTexture::kStorage) uploadMaterialTexture(record.texture, texture, key);
         WGPUTextureViewDescriptor view = {};
-        view.dimension = key.kind == MaterialTexture::kVolume ? WGPUTextureViewDimension_3D
+        view.dimension = key.volume ? WGPUTextureViewDimension_3D
+                        : key.cube ? WGPUTextureViewDimension_Cube
                         : key.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
         view.mipLevelCount = key.levels;
         view.arrayLayerCount = key.array ? key.depth : 1;

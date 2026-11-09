@@ -7,10 +7,11 @@ import {
 } from "../../../../three-native/src/object-surface.ts";
 import { definePropertyBinding } from "../../../../three-native/src/property-binding.ts";
 import { defineGridHelper } from "../../../../three-native/src/grid-helper.ts";
-import { AnimationUtils } from "../../../../three-native/src/animation-utils.ts";
+import { AnimationUtils, defineCreateInterpolant } from "../../../../three-native/src/animation-utils.ts";
 import { defineBox2 } from "../../../../three-native/src/box2.ts";
 import { defineTypedBufferAttribute } from "../../../../three-native/src/buffer-attributes.ts";
 import { defineEdgesGeometry } from "../../../../three-native/src/edges-geometry.ts";
+import { defineLayeredTargets } from "../../../../three-native/src/render-target.ts";
 // Identity-preserving imports over the V8 adapter, never upstream Three.js.
 import { audio } from "./core-audio.mjs";
 export const {
@@ -38,6 +39,7 @@ export const {
   ConeGeometry,
   ConstantAlphaFactor,
   ConstantColorFactor,
+  CubeTexture,
   CustomBlending,
   CylinderGeometry,
   DataArrayTexture,
@@ -184,16 +186,34 @@ export const Uint8BufferAttribute = defineTypedBufferAttribute(BufferAttribute, 
 export const Uint16BufferAttribute = defineTypedBufferAttribute(BufferAttribute, Uint16Array);
 export const Uint32BufferAttribute = defineTypedBufferAttribute(BufferAttribute, Uint32Array);
 export { AnimationUtils };
+// three's track.createInterpolant over the engine tracks (shared with the Wasm entry, PRD-854).
+defineCreateInterpolant(globalThis);
 // three's flags on the engine's layered texture, as the Wasm entry sets them (texture-sources.ts).
 Object.assign(DataArrayTexture.prototype, { isArrayTexture: true, isDataArrayTexture: true });
 // three exports the engine does not provide: refused at use, by name, as on Wasm (unsupportedExport).
 export const LineLoop = unsupportedExport("LineLoop");
 export const Points = unsupportedExport("Points");
 export const WebGLRenderer = unsupportedExport("WebGLRenderer");
+export const CompressedArrayTexture = unsupportedExport("CompressedArrayTexture");
+export const InstancedInterleavedBuffer = unsupportedExport("InstancedInterleavedBuffer");
+export const TextureUtils = unsupportedExport("TextureUtils");
+// three's CubeRenderTarget, RenderTarget3D and CubeCamera (shared with the Wasm back end).
+export const { CubeRenderTarget, RenderTarget3D, CubeCamera } = defineLayeredTargets(globalThis);
 export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
 
 // Native traversal and child enumeration are host callbacks, not a second JS scene graph.
 const bags = new WeakMap();
+// three's userData is the game's object, kept with the wrapper; a game may also replace it (`x.userData = {...}`).
+const userData = {
+  configurable: true,
+  get() {
+    if (!bags.has(this)) bags.set(this, {});
+    return bags.get(this);
+  },
+  set(value) {
+    bags.set(this, value);
+  },
+};
 for (const name of [
   "Object3D",
   "Scene",
@@ -223,12 +243,7 @@ for (const name of [
         return parent.call(this) ?? null;
       },
     },
-    userData: {
-      get() {
-        if (!bags.has(this)) bags.set(this, {});
-        return bags.get(this);
-      },
-    },
+    userData,
   });
   // The engine's walk (`__walk`, shared with the Wasm back end): one call for the whole subtree.
   prototype.traverse = function (callback) {
@@ -240,6 +255,13 @@ for (const name of [
 }
 defineTypeFlags(globalThis);
 defineReleaseNoops(globalThis);
+// three gives Material, Texture and BufferGeometry a userData too: as on Wasm (browser-backend.ts), every engine
+// class with a dispose method (prd493's terrain splat writes material.userData.TN_TERRAIN_SPLAT).
+for (const name of Object.getOwnPropertyNames(globalThis)) {
+  const prototype = typeof globalThis[name] === "function" ? globalThis[name].prototype : undefined;
+  if (typeof prototype?.dispose === "function" && !Object.hasOwn(prototype, "userData"))
+    Object.defineProperty(prototype, "userData", userData);
+}
 const geometries = [
   BoxGeometry,
   CircleGeometry,
