@@ -289,9 +289,29 @@ export async function measure(args: IArgs & { dist: string }) {
         const marks = (n: number) =>
           process.env.TN_LOAD_BENCH_MARKS &&
           path.join(process.env.TN_LOAD_BENCH_MARKS, `${cycle}-${n}.txt`);
-        runs.push(await visit(server.url, profile, "first", args.network, undefined, marks(0)));
         const profileOut = cycle === 0 ? args.cpuProfile : undefined;
-        runs.push(await visit(server.url, profile, "repeat", args.network, profileOut, marks(1)));
+        // TN_LOAD_BENCH_PROFILE=first profiles the first visit instead of the first repeat.
+        const first = process.env.TN_LOAD_BENCH_PROFILE === "first";
+        runs.push(
+          await visit(
+            server.url,
+            profile,
+            "first",
+            args.network,
+            first ? profileOut : undefined,
+            marks(0),
+          ),
+        );
+        runs.push(
+          await visit(
+            server.url,
+            profile,
+            "repeat",
+            args.network,
+            first ? undefined : profileOut,
+            marks(1),
+          ),
+        );
         runs.push(await visit(server.url, profile, "repeat", args.network, undefined, marks(2)));
       } finally {
         await rm(profile, { force: true, recursive: true });

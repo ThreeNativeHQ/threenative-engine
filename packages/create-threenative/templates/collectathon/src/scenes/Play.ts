@@ -91,13 +91,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     this.#loading = createLoadingScreen(ctx);
     // The HUD is page UI the cover cannot hide, so it waits for the same readiness.
     void ctx.startup.whenReady().then(() => ctx.state.set({ loaded: true }));
-    const surfaces = await loadSurfaces(ctx.assets);
-    // The sky is the same every run of this build: paint it once, then read the pixels back.
-    const painted = await ctx.assets.memo("sky", () => ({
-      fill: skyPixels(0.3, 128),
-      ripples: ripplePixels(),
-      sky: skyPixels(),
-    }));
+    // The sky is the same every run of this build: paint it once, then read the pixels back. A first
+    // visit paints it (~600 ms on a laptop) while the surface textures download, not after them.
+    const [surfaces, painted] = await Promise.all([
+      loadSurfaces(ctx.assets),
+      ctx.assets.memo("sky", () => ({
+        fill: skyPixels(0.3, 128),
+        ripples: ripplePixels(),
+        sky: skyPixels(),
+      })),
+    ]);
     primeRipplePixels(painted.ripples);
     this.#sky = skyTexture(1, 2048, painted.sky);
     this.#fill = skyTexture(0.3, 128, painted.fill);
