@@ -13,8 +13,8 @@ describe("ctx.assets.memo (PRD-860)", () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
   });
   afterEach(() => {
-    delete scope.caches;
-    delete scope.__TN_BUILD_ID__;
+    Reflect.deleteProperty(scope, "caches");
+    Reflect.deleteProperty(scope, "__TN_BUILD_ID__");
     vi.restoreAllMocks();
   });
 
@@ -50,7 +50,7 @@ describe("ctx.assets.memo (PRD-860)", () => {
   });
 
   it("builds every run, and says why, with no build id or no cache storage", async () => {
-    delete scope.__TN_BUILD_ID__;
+    Reflect.deleteProperty(scope, "__TN_BUILD_ID__");
     const build = vi.fn(() => ({ v: new Int32Array([1]) }));
     await createAssetMemo("game")("k", build);
     await createAssetMemo("game")("k", build);

@@ -13,6 +13,7 @@ import { RacingCar } from "../entities/RacingCar.js";
 import { Rival } from "../entities/Rival.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { cameraBank, chaseCamera, setupCamera } from "../render/camera.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -24,7 +25,6 @@ import {
   materialLightingEnabled,
 } from "../render/quality.js";
 import { SKY_OPTIONS, SUN_DIRECTION, setupSky } from "../render/sky.js";
-import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, type RaceStatus, resolveRaceStatus } from "../state.js";
 import { Lap } from "../track/Lap.js";

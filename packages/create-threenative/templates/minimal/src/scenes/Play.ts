@@ -26,6 +26,7 @@ import {
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { type IPlayerModel, Player } from "../entities/Player.js";
 import { followCamera, setupCamera } from "../render/camera.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -39,7 +40,6 @@ import {
 import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { SKY_OPTIONS, setupSky } from "../render/sky.js";
-import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 

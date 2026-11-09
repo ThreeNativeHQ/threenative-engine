@@ -35,6 +35,7 @@ import { MAGAZINE, RESERVE, Rifle } from "../entities/Rifle.js";
 import { Target } from "../entities/Target.js";
 import { TouchControls } from "../entities/TouchControls.js";
 import { onAfterPhysics } from "../postPhysics.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { DecalField, bulletHoleTexture } from "../render/decals.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { ImpactBursts, MuzzleFlash, MuzzleFlashPool, softCircleTexture } from "../render/gunfx.js";
@@ -51,7 +52,6 @@ import {
 } from "../render/quality.js";
 import { scale } from "../render/scale.js";
 import { SKY_OPTIONS, setupSky } from "../render/sky.js";
-import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { loadSurfaces } from "../render/surface.js";
 import { TOWN_HALF, type Town, type TownCollider, buildTown } from "../render/town.js";
 import { createTownMaterials } from "../render/townMaterials.js";

@@ -19,6 +19,7 @@ import { describeDrops, rollDrops } from "../loot/drops.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { loadProgress, saveProgress } from "../progress.js";
 import { createDungeonCamera } from "../render/camera.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { createDungeon, isSolid } from "../render/dungeon.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
@@ -32,7 +33,6 @@ import {
   materialLightingEnabled,
 } from "../render/quality.js";
 import { SKY_OPTIONS, setupSky } from "../render/sky.js";
-import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { TouchControls } from "../render/touch-controls.js";
 import {
   type IActionRpgVfxOptions,
