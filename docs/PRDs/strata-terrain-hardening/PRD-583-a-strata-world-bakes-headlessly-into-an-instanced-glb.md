@@ -82,6 +82,7 @@ flowchart LR
 - [x] Mirrored placements fail by name. proof: same spec — 2026-10-10: mirrored-Z case throws `Placement '<id>' of species 'fir' contact check failed`.
 
 - [ ] Preserve the authored layered PBR surface and resolve `texturesDir` headlessly. proof: layered cook spec plus headed before/after visual judge — pending; the current GLB uses only the first layer.
+  2026-11-08: the spec half holds at HEAD. `terrain-world.spec.ts` "preserves every relative layer texture byte-for-byte and marks terrain nodes" resolves `texturesDir` paths under Node, writes every layer's maps beside the GLB and marks each terrain node `tnTerrainSurface: "world.json"`, so the game's `loadTerrainSplat` draws all layers while a vanilla loader keeps the first-layer fallback; 38/38. Open: the headed judge, which rides with the PRD-762 Phase 3 frames.
 
 #### Phase 2: LODs and the world package
 **Status:** done
