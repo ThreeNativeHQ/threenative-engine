@@ -1,7 +1,7 @@
 # PRD-860 — A repeat web run is ready in about a second
 
 **Status:** IN PROGRESS
-**Priority:** P1 — AC-1 and AC-2 are open: a repeat run of the collectathon kit takes 2.37 s, almost as long as the 5.05 s first run, because no cache covers the work a run repeats.
+**Priority:** P1 — AC-1 and AC-2 are open: a repeat run of the collectathon kit takes about 1.46 s against the 1.2 s bar, and a first visit about 3.13 s against the 2.7 s bar.
 **Complexity:** 6 (MEDIUM) — 6-10 implementation files (+2), a new generated-content cache (+2), engine packages and a kit template change together (+2); risk override: none.
 **Owner:** João
 **Depends on:** None. Follows PRD-743 (asset disk cache) and PRD-828 (engine work moves into C++).
@@ -43,7 +43,7 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 
 - [ ] AC-1 [local]: a repeat run of the collectathon kit, browser relaunched, is ready in at most 1.2 s median at 20 Mbit/s and 40 ms on the laptop (bench baseline 2.51 s, at least 2x faster). proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — Evidence: pending.
 - [ ] AC-2 [local]: the first visit of the same kit is ready in at most 2.7 s median under the same conditions (bench baseline 3.90 s, at least 30% faster). proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — Evidence: pending.
-- [ ] AC-3 [local]: the control, the minimal kit, which uses none of the new caches, is no slower than its develop baseline on either arm, within the spread of three runs. It charges the levers' own bookkeeping to a game that gains nothing. proof: `pnpm bench:load --kit minimal --network 20000:40 --runs 5` — Evidence: pending.
+- [x] AC-3 [local]: the control, the minimal kit, which uses none of the new caches, is no slower than its develop baseline on either arm, within the spread of three runs. It charges the levers' own bookkeeping to a game that gains nothing. proof: `pnpm bench:load --kit minimal --network 20000:40 --runs 5` — 2026-11-08, `49c1ae3cb`, laptop, three runs: first visit 2931 / 2983 / 2981 ms (baseline 3507-3596), repeat 1400 / 1457 / 1479 ms (baseline 2249-2292). Faster on both arms.
 - [ ] AC-4 [local]: a fresh visual judge rates the spawn frame NEUTRAL or IMPROVEMENT against the develop baseline, two headed WebGPU captures per arm. proof: visual judge subagent on the bench captures — Evidence: pending.
 
 ## Integration Ledger
@@ -53,7 +53,9 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 | Load benchmark | `pnpm bench:load` → `scripts/load-bench.ts` | none, new harness | Phase 1 |
 | Generated-content cache | kit `Play.load` → `ctx.assets.memo` → `packages/core/src/asset-cache.ts` | the per-run regeneration | Phase 2 |
 | Immutable asset headers | `threenative build --target web` → `_headers` | headers with no `Cache-Control` | Phase 2 |
-| Rapier out of line | `@threenative/physics` web init → hashed `.wasm` | the inline base64 module | Phase 3 |
+| Rapier out of line | `@threenative/physics` web import → its own chunk, awaited by `initialize` (`packages/physics/src/web.ts`) | the static import in the entry chunk | Phase 3 |
+| Engine Wasm preload | `threenative build --target web` → head script (`withEnginePreload`, `packages/create-threenative/src/web-brand.ts`) | the glue's late fetch on a first visit | Phase 3 |
+| Shared-memory matrix view | any game's `Matrix4`/`Matrix3` `elements` on the threads build (`packages/three-native/src/browser-value-views.ts`) | the per-element Proxy write | Phase 2 |
 
 ## Decisions
 
@@ -63,6 +65,10 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 - 2026-11-08 (agent, from the spike): the goal machine is the quiet laptop, not the desktop, because desktop runs at host load 50+ read 4x high and vary by 40% between runs.
 - 2026-11-08 (agent): the cache stores bytes in TypeScript in core, next to the PRD-743 asset cache. It is I/O, not compute, and core must not carry Wasm. Generation that stays per run moves into C++ through the PRD-828 bulk calls only when the bench shows that the cache alone misses AC-2.
 - 2026-11-08 (agent): native relaunch (pipeline cache on the owned engine, V8 code cache) stays with PRD-368 and PRD-335. This PRD reports native as `memo` disabled with its reason and changes nothing else there.
+- 2026-11-08 (agent): the box "the recorded pipelines start while the scene builds" is deleted. Two attempts measured no gain on paired laptop arms: the environment bake beside the first compile (1755/1748/1785 against 1732/1773/1781 ms), and a JS-side pipeline precache, which Chrome does not dedupe. Chrome's GPU process creates pipelines and runs queue submits in series, so earlier starts only queue earlier.
+- 2026-11-08 (agent): the box "Rapier loads as a hashed `.wasm` through `instantiateStreaming`" is replaced. That build (`cf58debc9`) cut 155 KB but no time, because the static import still held the entry module. What pays is moving Rapier off the boot path: its own chunk, fetched as physics imports (c10).
+- 2026-11-08 (agent): two readiness changes were measured and dropped: exposure reads every frame until measured, and quiet frames counted from the compile (1565/1593/1644 against 1509/1616/1648 ms). The five frames after the compile wait on GPU frames (7-11 ms of CPU each), not on the gate.
+- 2026-11-08 (agent): an always-on Wasm preload (`a1fe3000c`) made a repeat visit 150-200 ms slower, because a preloaded response loses V8's compiled-code cache. The preload runs only for a Wasm URL the browser has not fetched (`49c1ae3cb`).
 
 ## Execution Phases
 
@@ -80,12 +86,14 @@ Each lever lands only when the bench shows a gain above run noise on the paired 
 **Status:** IN PROGRESS
 **Files:** `packages/create-threenative/src/` (the `_headers` writer), `packages/core/src/asset-cache.ts` and `assets.ts` (`memo`), the collectathon template `src/level/` and `src/render/`, the warm-up path in `packages/core/src/warmup.ts`.
 
-- [ ] Hashed assets ship `Cache-Control: public, max-age=31536000, immutable`, and a repeat run makes no revalidation request. proof: `pnpm exec vitest run packages/create-threenative/__tests__` plus the bench request count.
+- [x] Hashed assets ship `Cache-Control: public, max-age=31536000, immutable`, and a repeat run makes no revalidation request. proof: `pnpm exec vitest run packages/create-threenative/__tests__` plus the bench request count — 2026-11-08, `3ebe059ed`: `web-brand.spec.ts`, `asset-memo.spec.ts`, `asset-cache.spec.ts`, `load-bench.spec.ts` 46 passed; a repeat visit makes 12 requests with 1 KB on the wire (the page itself).
 - [ ] `ctx.assets.memo` returns the stored arrays on a repeat run, and the collectathon kit builds its world through it with its playtests green. proof: `pnpm exec vitest run packages/core/__tests__/asset-cache.spec.ts` plus `pnpm test:templates` for collectathon.
-- [ ] The recorded pipelines start while the scene builds, and the bench shows the warm-up mark earlier. proof: `pnpm bench:load --kit collectathon --runs 5`.
+- [x] The hot paths a repeat run walks cost less, each kept only on a paired laptop gain. proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — 2026-11-08: the scattering table built once in six kits and the reach cull over vertices (`e6f24156f`, repeat 1586-1632 ms from 1784-1795); foliage composes plain matrices and the path distance is a loop (`03414c30b`, 70-100 ms paired); a matrix over shared engine memory is a view, not a Proxy (`bf9a55778`, 1512/1569/1555 against 1566/1616/1644 ms paired). `browser-math.spec.ts` red-green, three-native 536 passed, physics 267 passed.
 
 #### Phase 3: A first visit downloads and compiles less
-**Status:** NOT STARTED
-**Files:** `packages/physics/src/web.ts`, the web build in `packages/create-threenative/src/`.
+**Status:** IN PROGRESS
+**Files:** `packages/physics/src/web.ts`, the web build in `packages/create-threenative/src/`, the collectathon `src/scenes/Play.ts`.
 
-- [ ] Rapier loads as a hashed `.wasm` through `instantiateStreaming`, and `index.js` carries no base64 module. proof: `pnpm exec vitest run packages/physics/__tests__` plus the bench byte report.
+- [x] Rapier downloads beside the engine boot, and `index.js` carries no base64 module. proof: `pnpm exec vitest run packages/physics/__tests__` plus the bench byte report — 2026-11-08, `3ae3ff027`: physics 267 passed; `index.js` 864 → 250 KB Brotli, Rapier its own 614 KB chunk; collectathon first visit 3545-3616 ms from 3695-3725, minimal 3132-3252 from 3268-3434.
+- [x] The engine Wasm starts with the page and Rapier after it, on a first visit only. proof: `pnpm exec vitest run packages/create-threenative/__tests__/web-brand.spec.ts` plus a paired bench — 2026-11-08, `49c1ae3cb`: 8 passed; the Wasm lands at 670 ms, not 805; collectathon first 3123/3124/3140 against 3169/3277/3314 ms paired, repeat flat; minimal first 2931-2983 ms.
+- [x] The collectathon paints its sky while its surface textures download. proof: `pnpm bench:load --kit collectathon --network 20000:40 --runs 5` — 2026-11-08, `637eda3a9`: first visit 3084/3221/3265 ms from 3545-3616.
