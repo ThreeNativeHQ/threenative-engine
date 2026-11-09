@@ -3,7 +3,7 @@
 **Status:** IN PROGRESS — Phase 1 done 2026-11-10 (PR #635).
 **Priority:** P2 — the prop placement, prop streaming, model preparation and collar code live only in the preview, so a game or kit cannot reuse them.
 **Complexity:** 7 (HIGH): about 1 900 lines.
-**Depends on:** [PRD-863](PRD-863-world-building-mechanisms-leave-the-strata-preview.md) (same rules, same inventory)
+**Depends on:** [PRD-863](../done/PRD-863-world-building-mechanisms-leave-the-strata-preview.md) (same rules, same inventory)
 **Epic:** [Strata terrain hardening](README.md); rides PR #635.
 
 ## Problem

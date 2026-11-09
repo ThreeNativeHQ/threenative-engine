@@ -51,6 +51,25 @@ function drawnAt(
 }
 
 describe("riverRibbonGeometry", () => {
+  it("draws no water past an end where the ground falls away from the bed", () => {
+    // The bed is 9 m to the head at z = 0, then the ground falls 0.2 m per metre past it: water
+    // standing there at the head's 10 m would hang over dry ground, as at the tundra meltwater head.
+    const field = Heightfield.fromSampler({
+      columns: 161,
+      depth: 400,
+      origin: { x: 0, z: 0 },
+      rows: 161,
+      sampleHeight: (x: number, z: number) => (Math.abs(x) <= 4 ? 9 : 12) - Math.max(0, z) * 0.2,
+      width: 400,
+    });
+    const geometry = riverRibbonGeometry([RIVER], field);
+    const reach = RIVER.width * WATER_RIBBON_REACH;
+    expect(drawnAt(geometry, 0, reach * 0.5)).toBe(false);
+    expect(drawnAt(geometry, 0, -1)).toBe(true);
+    // The tail, where the bed carries on level, keeps its cap.
+    expect(drawnAt(geometry, 0, -100 - reach * 0.5)).toBe(true);
+  });
+
   it("draws water past each end wherever WaterBodies floods it", () => {
     const field = valley();
     const geometry = riverRibbonGeometry([RIVER], field);

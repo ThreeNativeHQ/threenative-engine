@@ -22,6 +22,8 @@ export interface IRiverRibbonOptions {
  * `WaterBodies` clamps a segment, so the water a swimmer finds past a river's end is drawn there too
  * (cut at the end station, the surface stopped in a straight edge with its carved bed dry beyond).
  * Quads dry on both rows against `field` are dropped, so the surface ends at the shore.
+ * Past an end where the ground falls below the end's bed, the water would run off: that cap is not
+ * drawn, and the end stays cut at its last station.
  *
  * Attributes for the game's water material: `flow` (the unit downstream heading), `flowUv` (metres
  * down the centreline, metres across it) and `metres` (water depth over the ground). It decides no
@@ -30,6 +32,7 @@ export interface IRiverRibbonOptions {
  * @situation draw a river's water surface from the baked stations
  * @situation a river's water stops in a straight edge, or a swimmer floats where no water is drawn
  * @situation share one river shape between the drawn water and the swimmer
+ * @situation river water hangs over dry ground past the river's head or tail
  * @constraint stations, width and reach come from the game's bake; the game's material shades the geometry
  * @example const geometry = riverRibbonGeometry(rivers, field, { maxDepth: 1.6 });
  */
@@ -82,6 +85,9 @@ export function riverRibbonGeometry(
   return geometry;
 }
 
+/** Metres the ground past an end may sit under its bed before the cap there counts as drained. */
+const DRAIN_TOLERANCE = 0.05;
+
 /** A station `reach` metres past `end`, away from `inner`, at the end's surface height. */
 function beyond(
   end: readonly number[],
@@ -122,6 +128,15 @@ function ribbon(
       Math.min(minZ + field.depth, Math.max(minZ, z)),
     );
   const wet: number[] = [];
+  // A cap vertex over ground below the bed at its end station is drained: water there would run off,
+  // not stand at the end's level, so the quads that reach it are dropped and that end stays cut.
+  const last = points.length - 1;
+  const bedAt = (station: readonly number[]): number => ground(station[0] ?? 0, station[2] ?? 0);
+  const capBed = [
+    bedAt(stations[0] as readonly number[]),
+    bedAt(stations.at(-1) as readonly number[]),
+  ];
+  const drained: boolean[] = [];
   // Metres down the centreline, as Unreal builds a river's sections by distance along its spline and
   // carries the flow per vertex (UE 5.8.3:
   // Engine/Plugins/Experimental/Water/Source/Runtime/Private/WaterBodyRiverComponent.cpp:104-138).
@@ -146,13 +161,19 @@ function ribbon(
       out.positions.push(vx, y, vz);
       out.flows.push(dx, dz);
       out.uvs.push(downstream, across);
-      const depth = Math.min(
-        maxDepth,
-        Math.max(0, y - ground(vx, vz)),
-        Math.max(0, (reach - Math.abs(across)) * edgeSlope),
-      );
+      const below = ground(vx, vz);
+      const bed = k === 0 ? capBed[0] : k === last ? capBed[1] : undefined;
+      const dry = bed !== undefined && below < bed - DRAIN_TOLERANCE;
+      const depth = dry
+        ? 0
+        : Math.min(
+            maxDepth,
+            Math.max(0, y - below),
+            Math.max(0, (reach - Math.abs(across)) * edgeSlope),
+          );
       out.depths.push(depth);
       wet.push(depth > 0 ? 1 : 0);
+      drained.push(dry);
     }
   }
   for (let k = 1; k < points.length; k += 1) {
@@ -164,6 +185,7 @@ function ribbon(
       const rowA = (wet[a - 1] ?? 0) + (wet[a + 1] ?? 0) + (wet[d - 1] ?? 0) + (wet[d + 1] ?? 0);
       const rowB = (wet[a] ?? 0) + (wet[a + 1] ?? 0) + (wet[d] ?? 0) + (wet[d + 1] ?? 0);
       if (rowA === 0 && rowB === 0) continue;
+      if (drained[a] || drained[a + 1] || drained[d] || drained[d + 1]) continue;
       // Wound so the face points up: along × across points down, so the pair is taken the other way.
       out.indices.push(base + a, base + a + 1, base + d, base + a + 1, base + d + 1, base + d);
     }

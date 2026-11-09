@@ -2,8 +2,8 @@
 
 **Status:** IN PROGRESS — Phase 1 started 2026-11-10 (PR #635).
 **Priority:** P1 — a fix in the preview leaves every kit and every game with the bug.
-**Complexity:** 6 (MEDIUM-HIGH): water, streaming and terrain fields; props, models and the collar are [PRD-864](PRD-864-prop-and-collar-mechanisms-leave-the-strata-preview.md).
-**Epic:** [Strata terrain hardening](README.md); rides PR #635 (owner, this session: no extra PRs).
+**Complexity:** 6 (MEDIUM-HIGH): water, streaming and terrain fields; props, models and the collar are [PRD-864](../strata-terrain-hardening/PRD-864-prop-and-collar-mechanisms-leave-the-strata-preview.md).
+**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md); rides PR #635 (owner, this session: no extra PRs).
 
 ## Problem
 
@@ -46,8 +46,8 @@ The proof: the river surface stopped in a straight edge at its first station whi
 
 - 2026-11-10 (agent): the forest and tundra kits keep their own lake surfaces; the box that switched them to `lakeSurfaceGeometry` is deleted. `lakeSurfaceGeometry` exists so the drawn lake matches `WaterBodies`' swim query, and the kits run no swim query, so there is no mismatch to fix. The tundra kit also clips each frozen kettle at the ground's contour, which a disc of wet cells would coarsen. A kit that adds swimming switches then.
 
-## Acceptance
+## Acceptance Criteria
 
 - [x] AC-1: No water, streaming or terrain-field mechanism in the inventory is left only in the preview, or each one left has a written reason here. proof: the inventory table in this PRD's PR comment — 2026-11-10: [PR #635 comment](https://github.com/ThreeNativeHQ/threenative-engine/pull/635#issuecomment-6750056714), 12 mechanisms: 9 moved, 3 kept with the reasons under Decisions.
 - [x] AC-2: `engine_search_capabilities` returns each moved export for its situation. proof: `searchCapabilities` (the MCP tool's function) on the worktree manifest — 2026-11-10: 7/7 rank first: `riverRibbonGeometry`, `lakeSurfaceGeometry`, `shoreField`, `AdmissionBudget`, `TerrainTiles` (`settledHalf`), `warmUnculled`, `surfaceSampler`. Note: `call.mjs` from this worktree reaches the main checkout's `.mcp.json` and its older manifest; an installed game reads its own.
-- [ ] AC-3: The five worlds and the kits look the same or better (fresh judge per visual phase). proof: judge verdicts on the PR
+- [x] AC-3: The five worlds and the kits look the same or better (fresh judge per visual phase). proof: judge verdicts on the PR — 2026-11-09: forest river head IMPROVEMENT (above). Kits, forest and tundra, 5 shots, 2 runs per arm, headed WebGPU on NVIDIA Turing: NEUTRAL, no regression; no close river end in their shots. Preview tundra, 3 river-end poses pinned by script in headed Chrome on the same GPU: the first judge found a REGRESSION at the meltwater head, where the cap past the head hung 2-3 m over snow that falls away upstream. Fix: core `riverRibbonGeometry` drops a cap whose ground sits below the bed at its end station (`world-river-ribbon.spec.ts` red, then 8/8; core world specs 973/973; forest ribbon index arrays identical before and after, tundra 27 600 -> 27 522 triangles). Fresh judge on the fixed arm: NEUTRAL at all three poses, 2 runs per arm. Coastal, alpine and desert draw no river; the other moves are equality-proven. The kit judge ran before the fix; the fix only drops caps, toward BEFORE. Open beside it: the swimmer query (`WaterBodies`) still floods past the meltwater head, as before this PRD.
