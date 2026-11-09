@@ -64,9 +64,10 @@ biomes meet at a blended border. Look stays in game `src/render/`, and residency
 
 ### Phase 1 — Biome rows
 
-- [ ] `BiomeSpec` table with five rows; `terrain.ts`, `scatter.ts`, `game.ts` and `biomes.ts` hold 0 `world === "..."` branches. proof: `rg -c 'world [!=]== "' examples/strata-terrain-preview/src` prints nothing, plus `pnpm --filter strata-terrain-preview typecheck`
-- [ ] A row with a missing or out-of-range field fails the bake and names the biome and field. proof: `examples/strata-terrain-preview/__tests__/biome-spec.spec.ts` (red with a removed field, green with the full table)
+- [x] `BiomeSpec` table with five rows; `terrain.ts`, `scatter.ts`, `game.ts` and `biomes.ts` hold 0 `world === "..."` branches. proof: `rg -c 'world [!=]== "' examples/strata-terrain-preview/src` prints nothing, plus `pnpm --filter strata-terrain-preview typecheck` — 2026-11-08, found shipped by #483 (972d1e371): the five rows are `packages/terrain/starter/<biome>/biome.data.json`, read once through `validateBiome` into `BIOME_SPECS` (`src/render/biomeData.ts`); the grep prints nothing and the example's `tsc --noEmit` exits 0.
+- [x] A row with a missing or out-of-range field fails the bake and names the biome and field. proof: `examples/strata-terrain-preview/__tests__/biome-spec.spec.ts` (red with a removed field, green with the full table) — 2026-11-08: the spec lives with the validator, `packages/terrain/__tests__/biome-spec.spec.ts`, 7/7: every shipped file validates, and a removed `seed`, a removed `grass[0].spacing`, an unknown `sky` and a slope of `[0, 120]` each throw naming the biome and the field. The bake reads each row through the same `validateBiome` (`scripts/bake.mjs:32`), so a bad row stops the bake by name.
 - [ ] The five worlds look the same as before the refactor. proof: `capture-strata-worlds` before/after, two runs per arm, fresh visual judge NEUTRAL or better for all five
+  2026-11-08: open. The refactor landed inside #483, so its before arm is a pre-#483 commit; `biome-values.spec.ts` pins every value the old branches computed, which proves the numbers, not the look.
 
 ### Phase 2 — The world streams
 
