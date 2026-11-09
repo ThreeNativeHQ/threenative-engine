@@ -54,3 +54,8 @@ Two examples package and then stop at run time on the desktop V8 player:
 ## Decisions
 
 - 2026-11-08 (João): The C++ part of PRD-784 P5-9 moves to this PRD, so PRD-784 closes at 100%.
+- 2026-11-08 (lead, owner approved `:0`): the prd268 bake budget failure has an engine cause, not a game cause. Every synchronous target draw makes wgpu calls on the game thread, and Dawn's `DeviceMutex` is held for the whole present on the GPU thread. gdb (three samples) shows the GPU thread in `vulkan::SwapChain::PresentImpl` → libGLX_nvidia → `xcb_put_image`, and the game thread blocked in `CommandEncoder::APIBeginRenderPass` → `DeviceMutex::Lock`. On Xvfb (no DRI3) the present copies each frame over the X socket. The cost grows with the window: a target draw costs 7.1 ms at 640x360, 32 ms at 1280x720 and 85 ms at 1920x1080. A game barrier that waits only for the render thread does not help: 77 / 73 ms against 89 / 84 ms at 1920x1080, so that change was reverted. On the real display `:0` (KDE, RTX 2080, FIFO present) the stock bundle still stops at 16.8 and 16.5 ms per bake item (2 runs), about one 60 Hz refresh.
+
+## Follow-ups
+
+- Not in this PRD: encode a synchronous target draw off the game thread, as PRD-613 does for reflection passes (prepare on the game thread, encode on the render thread). The game thread then makes no wgpu call while a present holds Dawn's device lock. Open point: ordering of `copyTextureToTexture` and target reads against the deferred encode.
