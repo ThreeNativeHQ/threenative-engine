@@ -643,6 +643,9 @@ async function runVariant(label, plistEdits, { judge, markers, ui }) {
     run('plutil', ['-replace', key, flag, String(value), join(variantApp, 'Info.plist')]);
   }
   if (ui) await stageUiPage(join(variantApp, 'ui'));
+  // Installing over the previous variant kept its staged `ui/` (run 42648487428: the
+  // missing-bundle launch loaded the web-ui page), so each variant starts from no install.
+  run('xcrun', ['simctl', 'uninstall', simulator.udid, bundleId]);
   run('xcrun', ['simctl', 'install', simulator.udid, variantApp]);
   awaitBundleRegistration(simulator.udid, bundleId);
   const since = new Date().toISOString().slice(0, 19).replace('T', ' ');
