@@ -1054,4 +1054,24 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     mesh.setMatrixAt(5, translation(1, 1, 1));
     expect(calls).toContain("setMatrixAt");
   });
+
+  it("writes setColorAt into the instance colours once the engine made them (PRD-860)", () => {
+    const { runtime, writes } = engine();
+    const calls: string[] = [];
+    const invoke = runtime.invoke.bind(runtime);
+    runtime.invoke = (self, method, args) => {
+      calls.push(method);
+      return invoke(self, method, args);
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+    const { mesh, color } = instanced(classes);
+    // The first colour makes the attribute in the engine, as three makes it on first use.
+    mesh.setColorAt(0, color(1, 0, 0));
+    expect(calls.filter((method) => method === "setColorAt")).toHaveLength(1);
+    mesh.setColorAt(1, color(0, 0.5, 0.25));
+    expect(calls.filter((method) => method === "setColorAt")).toHaveLength(1);
+    mesh.computeBoundingSphere();
+    expect(writes.at(-1)).toMatchObject({ offset: 3, values: [0, 0.5, 0.25] });
+    expect(Array.from((mesh.instanceColor as IAttribute).array)).toEqual([1, 0, 0, 0, 0.5, 0.25]);
+  });
 });

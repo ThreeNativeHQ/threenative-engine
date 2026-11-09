@@ -690,7 +690,7 @@ export function defineBrowserClasses(
     syncRange,
     syncFull,
     instanceItem,
-    writeMatrixAt,
+    writeItemAt,
   } = defineAttributeSync({ runtime, refOf });
 
   const fromEngine = (value: EngineValue): unknown => {
@@ -900,8 +900,8 @@ export function defineBrowserClasses(
         writable: true,
         value(this: object, ...args: unknown[]) {
           if (glueCounting) methodCalls += 1;
-          // An instance's matrix is an array write, as in three, sent before the next engine call.
-          if (instanceWrite === "instanceMatrix" && writeMatrixAt(this, args[0], args[1])) {
+          // An instance's matrix or colour is an array write, as in three, sent before the next engine call.
+          if (instanceWrite !== undefined && writeItemAt(this, instanceWrite, args[0], args[1])) {
             labels.delete(this);
             animated.delete(this);
             return this;

@@ -55,7 +55,12 @@ export interface IAttributeSync {
     index: unknown,
     argument: unknown,
   ): { array: TypedArray; at: number; values: ArrayLike<number> } | undefined;
-  writeMatrixAt(mesh: object, index: unknown, matrix: unknown): boolean;
+  writeItemAt(
+    mesh: object,
+    name: "instanceMatrix" | "instanceColor",
+    index: unknown,
+    value: unknown,
+  ): boolean;
 }
 
 export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
@@ -173,17 +178,37 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
       return undefined;
     return { array: entry.array, at, values };
   };
-  // three's `setMatrixAt` writes the item into `instanceMatrix.array`, and so does this: one engine
-  // call an instance made a meadow of a few thousand tufts cost 60 ms of a laptop load (PRD-860). The
-  // written range goes to the engine once, before the next engine call, which is the first thing that
-  // can read it. Anything three would not write (a bad index, no matrix) takes the engine's call.
-  const writeMatrixAt = (mesh: object, index: unknown, matrix: unknown): boolean => {
-    const values = (matrix as { elements?: ArrayLike<number> } | null)?.elements;
-    const attribute = (mesh as { instanceMatrix?: unknown }).instanceMatrix;
-    const at = Number(index) * 16;
+  // three's `setMatrixAt` and `setColorAt` write the item into the attribute's array, and so does
+  // this: one engine call an instance made a meadow of a few thousand tufts cost 60 ms of a laptop
+  // load (PRD-860). The written range goes to the engine once, before the next engine call, which is
+  // the first thing that can read it. Anything three would not write (a bad index, no value) and the
+  // first colour (the engine creates `instanceColor` then) take the engine's call.
+  const writeItemAt = (
+    mesh: object,
+    name: "instanceMatrix" | "instanceColor",
+    index: unknown,
+    value: unknown,
+  ): boolean => {
+    const source = value as {
+      elements?: ArrayLike<number>;
+      r?: unknown;
+      g?: unknown;
+      b?: unknown;
+    } | null;
+    const size = name === "instanceMatrix" ? 16 : 3;
+    const values =
+      name === "instanceMatrix"
+        ? source?.elements
+        : typeof source?.r === "number" &&
+            typeof source.g === "number" &&
+            typeof source.b === "number"
+          ? [source.r, source.g, source.b]
+          : undefined;
+    const attribute = (mesh as Record<string, unknown>)[name];
+    const at = Number(index) * size;
     if (
       attributeArray === undefined ||
-      values?.length !== 16 ||
+      values?.length !== size ||
       typeof attribute !== "object" ||
       attribute === null ||
       !Number.isSafeInteger(at) ||
@@ -195,13 +220,13 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
       entry = { array: attributeArray.call(runtime, refOf(attribute)) };
       arrays.set(attribute, entry);
     }
-    if (at + 16 > entry.array.length) return false;
+    if (at + size > entry.array.length) return false;
     entry.array.set(values, at);
     const range = dirty.get(attribute);
-    if (range === undefined) dirty.set(attribute, { from: at, to: at + 16 });
+    if (range === undefined) dirty.set(attribute, { from: at, to: at + size });
     else {
       range.from = Math.min(range.from, at);
-      range.to = Math.max(range.to, at + 16);
+      range.to = Math.max(range.to, at + size);
     }
     return true;
   };
@@ -219,6 +244,6 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
     syncRange,
     syncFull,
     instanceItem,
-    writeMatrixAt,
+    writeItemAt,
   };
 }
