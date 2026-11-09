@@ -50,6 +50,16 @@ Engine facts behind the gaps:
   `.table` rules. This scan found 3 starter findings. The PS4 session reported 9; the cause of the
   difference is unverified.
 
+## Batch closed (2026-11-09)
+
+Ten of ten PRDs are DONE at the owner's re-scoped bar: **every unit owned and measured, zero unattributed
+cells, the ratchet held at 327, and every gap documented with its measured number and a named follow-up.**
+`503/503` with zero exemptions was not reachable by any engine — 29 units cannot be measured at all
+(Chromium cannot be put into `prefers-contrast: less`, `inverted-colors`, `::selection`, `::backdrop` or a
+form-state) and 4 are permanently inactive by the batch's own decisions. PRD-852's `## Open` carries the
+ten-PRD table, the eleven gaps with their numbers, and the three follow-ups (CI wiring, a scaffolded
+end-to-end build, and the renderer features).
+
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
