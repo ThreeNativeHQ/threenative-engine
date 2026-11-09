@@ -19,9 +19,12 @@ import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
 const mystral = process.env.TN_NATIVE_MYSTRAL_BIN ?? nativeTestExecutable(desktopBuildDirectory(), "mystral");
 const xvfb = fileURLToPath(new URL("../../../scripts/xvfb.sh", import.meta.url));
 const have = (tool) => spawnSync("sh", ["-c", `command -v ${tool}`]).status === 0;
-const available = process.platform === "linux" && existsSync(mystral) && ["Xvfb", "xwininfo", "xprop", "xdotool"].every(have);
-if (process.env.npm_lifecycle_event === "native:verify:desktop") {
-  assert.ok(available, `the desktop verify lane needs ${mystral}, Xvfb, xwininfo and xprop`);
+// The probe reads the window the X server reports, so only the Linux lane can run it: macOS and
+// Windows have no Xvfb, xwininfo or xprop to demand, and the verify lane runs on all three.
+const linux = process.platform === "linux";
+const available = linux && existsSync(mystral) && ["Xvfb", "xwininfo", "xprop", "xdotool"].every(have);
+if (linux && process.env.npm_lifecycle_event === "native:verify:desktop") {
+  assert.ok(available, `the desktop verify lane needs ${mystral}, Xvfb, xwininfo, xprop and xdotool`);
 }
 const hostTest = available ? test : test.skip;
 const scratch = makeTempDirSync("tn-host-window-");
