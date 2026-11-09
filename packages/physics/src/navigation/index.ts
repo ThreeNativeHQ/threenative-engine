@@ -57,9 +57,10 @@ export function recast(): NavigationPlugin {
     // Like rapier(), Recast initializes while the scene loads and holds `enter()` until it is up.
     setup: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
       // rapier() leaves its readiness here (`plugin.ts` PHYSICS_READY); this bundle has no copy of it.
-      const physics = (ctx as unknown as { [key: symbol]: Promise<IPhysicsContext> | undefined })[
-        Symbol.for("threenative.physics.ready")
-      ];
+      const physics: Promise<IPhysicsContext> | undefined = Reflect.get(
+        ctx,
+        Symbol.for("threenative.physics.ready"),
+      );
       if (physics === undefined)
         throw new Error("recast() requires rapier() earlier in the plugins array.");
       const ready = Promise.all([physics, initialize()]).then(([context]) => {

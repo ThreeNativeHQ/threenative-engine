@@ -175,7 +175,7 @@ export function createAssetMemo(namespace: string): AssetMemo {
         const stored = await cache.match(url);
         if (stored !== undefined) {
           const buffer = await stored.arrayBuffer();
-          const value = decodeMemo(buffer) as unknown as T;
+          const value = decodeMemo(buffer) as T;
           report({ bytes: buffer.byteLength, hit: true, key, ms: Math.round(now() - started) });
           return value;
         }
