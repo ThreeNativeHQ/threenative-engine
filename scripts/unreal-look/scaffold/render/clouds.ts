@@ -224,6 +224,19 @@ export interface ICloudTextures {
 }
 const textureCache = new Map<number, ICloudTextures>();
 
+/**
+ * Hand back the textures an earlier run generated, so `cloudTextures(seed)` skips ~0.6 s of noise
+ * on the main thread. The scene keeps them between runs with `ctx.assets.memo`.
+ */
+export function primeCloudTextures(textures: ICloudTextures, seed = 631): void {
+  if (
+    textures.pattern.length !== PATTERN_SIZE ** 2 * 4 ||
+    textures.volume.length !== VOLUME_SIZE ** 3 * 2
+  )
+    throw new Error("cloud textures do not match PATTERN_SIZE and VOLUME_SIZE.");
+  textureCache.set(seed, textures);
+}
+
 export function cloudTextures(seed = 631): ICloudTextures {
   const cached = textureCache.get(seed);
   if (cached) return cached;
