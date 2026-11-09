@@ -29,8 +29,8 @@ The per-finding facts, the cited `file:line` and a one-line fix sketch are in [t
 
 #### Phase 3: The 45 low findings
 
-- [ ] Fix or reject each REAL low finding in the evidence file, with the reason beside each rejection. proof: one line per finding in this box
-  2026-11-09: 44 fixed, 1 rejected. Open only because E57 changes what reaches the screen and its visual judge has not run.
+- [x] Fix or reject each REAL low finding in the evidence file, with the reason beside each rejection. proof: one line per finding in this box
+  2026-11-09: 44 fixed, 1 rejected.
   - E01 FIXED in the EPIC squash `972d1e371`: fix(core): assert the concurrent spawn waiters clear their deadlines.
   - E02 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): a failed horizon fetch no longer poisons every later world load.
   - E03 FIXED in the EPIC squash `972d1e371`: fix(strata-terrain-preview): the kit proof empties a reused artifact directory again.
@@ -74,7 +74,7 @@ The per-finding facts, the cited `file:line` and a one-line fix sketch are in [t
   - E66 FIXED in the EPIC squash `972d1e371`: fix(terrain): the cook reports the water it floods, not the rows it was asked for.
   - E74 FIXED in the EPIC squash `972d1e371`: fix(native-renderer): accept a legal eight-attachment aux pass.
   - E75 FIXED in the EPIC squash `972d1e371`: fix(native-renderer): a volume texture carries the usage a texture copy reads.
-  - E57 FIXED 2026-11-09 on PR #635 (`feaf012c6`): alpine, desert and tundra set `lighting.lods: true`, so the `boulder-mid.glb` each bakes at 35 m is sky-dressed; coastal bakes no mid level and keeps `false`. `kit-runtime.spec.ts` "dresses the mid level its own assets.json bakes": 3 failed without the fix, 5 passed with it; `packages/terrain/__tests__/` 605/605. Visual judge of the far boulders NOT run (kit frames, with E62).
+  - E57 FIXED 2026-11-09 on PR #635 (`feaf012c6`): alpine, desert and tundra set `lighting.lods: true`, so the `boulder-mid.glb` each bakes at 35 m is sky-dressed; coastal bakes no mid level and keeps `false`. `kit-runtime.spec.ts` "dresses the mid level its own assets.json bakes": 3 failed without the fix, 5 passed with it; `packages/terrain/__tests__/` 605/605. Visual judge, 2026-11-09: `KIT=alpine pnpm test:kit` at `feaf012c6^` and `2c9262966`, two runs per arm, headed WebGPU nvidia/turing, sheets `prd-806/e57-{boulders,ground,edge}.jpg` on `pr635-screenshots`: a fresh judge returns NEUTRAL on all three frames, no regression (arm RMSE 0.0010 against run noise 0.0026-0.0035 on `boulders`). It also says the frames do not show the gain: the one far boulder in view draws the same in both arms, so these poses prove no regression, not the sky on the mid level.
   - E68 REJECTED: an explicit `kit` over a `biome` argument is the pinned contract (`terrain-mcp.spec.ts:1060` "keeps kit as the explicit override over a biome name"), and a request word that loses to an argument is reported as `decided.biome.source: "argument"` (`tools.ts:474`). A guard that threw on the conflict broke that pinned spec, so it was reverted.
 
 ## Acceptance Criteria
