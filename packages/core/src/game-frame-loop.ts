@@ -78,6 +78,7 @@ import {
   staticRoots,
   staticTransformCensus,
 } from "./static-transform.js";
+import { endSliceFrames, noteSliceFrame } from "./streaming.js";
 import { resolveTargetFps } from "./target-fps.js";
 import type { IUiBridge } from "./ui-bridge.js";
 import { UI_DEV_METRICS_MESSAGE } from "./ui-bridge.js";
@@ -976,6 +977,8 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
     // of 13 launches). Not a reset either: a GPU-bound world under the cover declines every other
     // frame, and a reset held every Hop launch to the 10 s window bound.
     onFrame: (frameMs) => {
+      // Slices streaming in after the reveal run once per frame, in the headroom this frame left.
+      noteSliceFrame(frameMs, heldTargetFps, startup.worldRendered && !startupCoverActive());
       const skips = rendererFrameGateSkips(renderer.raw);
       const declined = skips !== undefined && skips > readinessGateSkips;
       if (skips !== undefined) readinessGateSkips = skips;
@@ -1012,7 +1015,10 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
   loopState.current = gameLoop;
 
   return {
-    dispose: () => gameLoop.stop(),
+    dispose: () => {
+      gameLoop.stop();
+      endSliceFrames();
+    },
     geometryCapture,
     loop: gameLoop,
   };
