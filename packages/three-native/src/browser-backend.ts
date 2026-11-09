@@ -264,6 +264,11 @@ function defineTraversal(
  * Defines every registry class over `runtime`. With `catalog`, classes chain as three's do
  * (`mesh instanceof Object3D`) and carry three's `is*` flags.
  */
+/** A catalog field that is one of three's `is<Class>` type flags, which the back end sets to true. */
+export const isTypeFlagField = (field: { name: string; type: string; mutable?: boolean }) =>
+  /^is[A-Z]/u.test(field.name) &&
+  (field.type === "true" || (field.type === "boolean" && field.mutable === false));
+
 export function defineBrowserClasses(
   registry: IRegistryDump,
   source: IBrowserRuntime,
@@ -1730,9 +1735,6 @@ export function defineBrowserClasses(
         });
     }
   }
-  const isFlag = (field: { name: string; type: string; mutable?: boolean }) =>
-    /^is[A-Z]/u.test(field.name) &&
-    (field.type === "true" || (field.type === "boolean" && field.mutable === false));
   for (const [name, cls] of Object.entries(classes)) {
     const entry = entries.get(name);
     const parent = entry?.extends ? classes[entry.extends] : undefined;
@@ -1744,7 +1746,7 @@ export function defineBrowserClasses(
       link = link.extends ? entries.get(link.extends) : undefined
     )
       // Writable: three's own value classes assign `this.isColor = true` in their constructors.
-      for (const field of (link.fields ?? []).filter(isFlag))
+      for (const field of (link.fields ?? []).filter(isTypeFlagField))
         Object.defineProperty(cls.prototype, field.name, {
           configurable: true,
           writable: true,

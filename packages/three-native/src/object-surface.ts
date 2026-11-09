@@ -196,15 +196,26 @@ export function defineObjectSurface(classes: ISurfaceClasses): void {
 }
 
 // three's scene classes and the `is<Class>` flag each one defines; every light is also `isLight`.
+// type-flags.spec.ts fails when a bound class lacks a flag three's own instance reads true.
 const FLAGGED_CLASSES = [
   "NodeMaterial",
   "MeshBasicNodeMaterial",
   "MeshStandardNodeMaterial",
   "MeshPhysicalNodeMaterial",
   "SpriteNodeMaterial",
+  // Its parent is MeshStandardMaterial, so the material base (Material's direct children) misses it.
+  "MeshPhysicalMaterial",
   "Texture",
   "DataTexture",
   "CanvasTexture",
+  "CubeTexture",
+  "Data3DTexture",
+  "DataArrayTexture",
+  "DepthTexture",
+  "Source",
+  "RenderTarget",
+  "Matrix4",
+  "CatmullRomCurve3",
   // A particle batch re-sends only the attributes it finds by this flag, as three's idiom has it.
   "InstancedBufferAttribute",
   "InstancedBufferGeometry",
@@ -260,7 +271,10 @@ export function defineTypeFlags(classes: Readonly<Record<string, unknown>>): voi
       ? [`is${name}`, "isLight"]
       : name.endsWith("NodeMaterial")
         ? [`is${name}`, "isNodeMaterial"]
-        : [`is${name}`];
+        : // three renamed Source to TextureSource and keeps both flags.
+          name === "Source"
+          ? ["isSource", "isTextureSource"]
+          : [`is${name}`];
     for (const flag of flags)
       Object.defineProperty(cls.prototype, flag, {
         configurable: true,
