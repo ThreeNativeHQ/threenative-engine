@@ -31,6 +31,7 @@ catalog:
   pngjs: 7.0.0
   tailwindcss: 4.3.3
   '@tailwindcss/vite': 4.3.3
+  '@tailwindcss/node': 4.3.3
   '@vitejs/plugin-react': 6.0.5
   zod: 4.4.3
   typescript: npm:@typescript/typescript6@6.0.2

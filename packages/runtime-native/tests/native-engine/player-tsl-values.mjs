@@ -19,8 +19,8 @@ process.once("exit", () => rmSync(work, { recursive: true, force: true }));
 const entry = resolve(work, "game.ts");
 const outfile = resolve(work, "game.js");
 await writeFile(entry, `
-import { DepthTexture, PerspectiveCamera, RenderTarget, Scene, Texture, Vector2, Vector3 } from "three";
-import { float, texture, uniform, vec2, vec3 } from "three/tsl";
+import { Data3DTexture, DepthTexture, PerspectiveCamera, RenderTarget, Scene, Texture, Vector2, Vector3 } from "three";
+import { float, texture, texture3D, uniform, vec2, vec3 } from "three/tsl";
 
 globalThis.tn.onUpdate(() => {
   if (globalThis.tn.scene !== undefined) return;
@@ -43,6 +43,10 @@ globalThis.tn.onUpdate(() => {
   refused = "";
   try { sampled.value = new DepthTexture(2, 2); } catch (error) { refused = String(error); }
   if (!refused.includes("TN_NATIVE_TEXTURE_VALUE_TYPE") || sampled.value !== replacement) faults.push("texture refusal " + refused);
+  // ProbeVolume swaps its texture3D between an empty volume and the baked one: the engine node must follow.
+  const volume = texture3D(new Data3DTexture(new Float32Array(4), 1, 1, 1));
+  try { volume.value = new Texture(); faults.push("texture3D swap to 2D accepted"); }
+  catch (error) { if (!String(error).includes("TN_NATIVE_TEXTURE_VALUE_TYPE")) faults.push("texture3D refusal " + error); }
   globalThis.tn.log(faults.length === 0 ? "TSL_VALUES_OK" : "TSL_VALUES_BAD " + faults.join(", "));
 });
 `);

@@ -32,7 +32,10 @@ blitz-traits = "=0.3.0-beta.2"
 # backend that needs no GPU, no window and no system library, which is what makes this
 # runnable in a headless test.
 anyrender = "0.13.0"
-anyrender_vello_cpu = "0.17.0"
+# `filters` is what makes `filter:` reach pixels at all: without it every filter is dropped, and
+# with it vello_cpu's own primitives (gaussian blur, drop shadow, offset, flood, colour matrix,
+# blend) paint the single-node filters Tailwind's colour-matrix utilities emit.
+anyrender_vello_cpu = { version = "0.17.0", features = ["filters"] }
 # Blitz drives text through Parley.
 parley = { version = "0.11.1", default-features = false, features = ["std"] }
 # The only hand-written parsing here: a mutation batch is one JSON string, and the host's own
@@ -62,3 +65,14 @@ blitz-paint = { path = "vendor/blitz-paint-0.3.0-beta.2" }
 parley = { path = "vendor/parley-0.11.1" }
 taffy = { path = "vendor/taffy-0.14.0" }
 fontique = { path = "vendor/fontique-0.11.1" }
+# `vello_common` 0.1.0 panics on a filter primitive it has not implemented, and a colour matrix
+# is one of them. One hunk drops what the backend cannot paint so a filter is a visible
+# difference rather than an aborted frame; `vendor/PATCHES.md` carries it.
+anyrender_vello_cpu = { path = "vendor/anyrender_vello_cpu-0.17.0" }
+# Servo's media-feature list had no `prefers-reduced-motion` (so Tailwind's `motion-safe:` and
+# `motion-reduce:` both failed to match) and its device had no way to carry the preference. Three
+# hunks add the value, the device field and the feature; `vendor/PATCHES.md` carries them.
+stylo = { path = "vendor/stylo-0.20.0" }
+# The media feature's name has to be a static atom, and the atom set is a generated list in its own
+# crate: one line in `static_atoms.txt` is the whole hunk.
+stylo_atoms = { path = "vendor/stylo_atoms-0.20.0" }

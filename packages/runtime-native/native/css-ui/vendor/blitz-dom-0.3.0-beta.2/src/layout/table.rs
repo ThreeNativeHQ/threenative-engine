@@ -32,6 +32,12 @@ pub struct TableContext {
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo<Atom>>>,
     pub border_style: Option<ServoArc<Border>>,
     pub border_collapse: BorderCollapse,
+    /// The row each cell sits in, parallel to `cells`. A row and its row group are not in the grid —
+    /// the wrapper lays out the cells only — so their boxes are accumulated from their cells as taffy
+    /// reports each one (see `TableTreeWrapper::set_unrounded_layout`).
+    pub cell_rows: Vec<NodeId>,
+    /// The union of every cell box seen so far, per row and per row group.
+    pub row_boxes: AtomicRefCell<Vec<(NodeId, taffy::Layout)>>,
 }
 
 // #[derive(Debug, Clone, Eq, PartialEq)]
@@ -52,6 +58,8 @@ pub struct TableRow {
     // kind: TableItemKind,
     pub node_id: NodeId,
     pub height: f32,
+    /// The row group this row belongs to (`tbody`, `thead`, `tfoot`), when it has one.
+    pub group: Option<NodeId>,
 }
 
 pub(crate) fn build_table_context(
@@ -60,6 +68,7 @@ pub(crate) fn build_table_context(
 ) -> (TableContext, Vec<NodeId>) {
     let mut cells: Vec<TableCell> = Vec::new();
     let mut rows: Vec<TableRow> = Vec::new();
+    let mut cell_rows: Vec<NodeId> = Vec::new();
     let mut row = 0u16;
     let mut col = 0u16;
 
@@ -104,8 +113,10 @@ pub(crate) fn build_table_context(
             &mut col,
             &mut cells,
             &mut rows,
+            &mut cell_rows,
             &mut column_sizes,
             &mut first_cell_border,
+            &None,
         );
     }
     column_sizes.resize(col as usize, style_helpers::auto());
@@ -170,6 +181,8 @@ pub(crate) fn build_table_context(
             style,
             cells,
             rows,
+            cell_rows,
+            row_boxes: AtomicRefCell::new(Vec::new()),
             computed_grid_info: AtomicRefCell::new(None),
             border_collapse,
             border_style: first_cell_border,
@@ -188,8 +201,10 @@ pub(crate) fn collect_table_cells(
     col: &mut u16,
     cells: &mut Vec<TableCell>,
     rows: &mut Vec<TableRow>,
+    cell_rows: &mut Vec<NodeId>,
     columns: &mut Vec<TrackSizingFunction>,
     first_cell_border: &mut Option<ServoArc<Border>>,
+    group: &Option<NodeId>,
 ) {
     let node = &mut doc.nodes[node_id];
 
@@ -214,6 +229,14 @@ pub(crate) fn collect_table_cells(
         | DisplayInside::TableFooterGroup
         | DisplayInside::Contents => {
             let children = std::mem::take(&mut doc.nodes[node_id].children);
+            // A row group is `tbody`/`thead`/`tfoot`: its rows inherit it, so the box the group ends up
+            // with is the union of them. `DisplayInside::Contents` is not a box at all, so it passes
+            // the group it was given straight through.
+            let group = if display.inside() == DisplayInside::Contents {
+                *group
+            } else {
+                Some(node_id)
+            };
             for child_id in children.iter().copied() {
                 doc.nodes[child_id]
                     .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -226,8 +249,10 @@ pub(crate) fn collect_table_cells(
                     col,
                     cells,
                     rows,
+                    cell_rows,
                     columns,
                     first_cell_border,
+                    &group,
                 );
             }
             doc.nodes[node_id].children = children;
@@ -240,6 +265,7 @@ pub(crate) fn collect_table_cells(
             rows.push(TableRow {
                 node_id,
                 height: 0.0,
+                group: *group,
             });
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
@@ -253,8 +279,10 @@ pub(crate) fn collect_table_cells(
                     col,
                     cells,
                     rows,
+                    cell_rows,
                     columns,
                     first_cell_border,
+                    group,
                 );
             }
             doc.nodes[node_id].children = children;
@@ -330,6 +358,9 @@ pub(crate) fn collect_table_cells(
             };
             style.size.width = style_helpers::auto();
             cells.push(TableCell { node_id, style });
+            // The row this cell belongs to: `rows` is pushed in document order, so the row most
+            // recently seen is this cell's.
+            cell_rows.push(rows.last().map(|row| row.node_id).unwrap_or(node_id));
 
             *col += colspan;
         }
@@ -405,8 +436,53 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
     }
 
     fn set_unrounded_layout(&mut self, node_id: taffy::NodeId, layout: &taffy::Layout) {
-        let node_id = crate::taffy_node_id(self.ctx.cells[usize::from(node_id)].node_id);
-        self.doc.set_unrounded_layout(node_id, layout)
+        let index = usize::from(node_id);
+        let cell_node = self.ctx.cells[index].node_id;
+        self.doc
+            .set_unrounded_layout(crate::taffy_node_id(cell_node), layout);
+
+        // A cell's row and row group are not in the grid — the wrapper lays out the cells only — so
+        // neither ever receives a layout, and both ended up as zero-width boxes at the table's origin.
+        // A browser gives `tr` the row's area and `tbody` the union of its rows, and the parity meter
+        // reads those boxes for its edge bar: `border-collapse`, `table-fixed` and the `border-spacing`
+        // cells each failed on a `tbody` miss of 300 px and more. Each cell therefore grows its row,
+        // and its row grows its group, as taffy reports it.
+        let row_node = self.ctx.cell_rows.get(index).copied();
+        let group_node = row_node.and_then(|row| {
+            self.ctx
+                .rows
+                .iter()
+                .find(|candidate| candidate.node_id == row)
+                .and_then(|row| row.group)
+        });
+        for target in [row_node, group_node].into_iter().flatten() {
+            let merged = {
+                let mut boxes = self.ctx.row_boxes.borrow_mut();
+                match boxes.iter_mut().find(|(node, _)| *node == target) {
+                    Some((_, box_so_far)) => {
+                        let right = (box_so_far.location.x + box_so_far.size.width)
+                            .max(layout.location.x + layout.size.width);
+                        let bottom = (box_so_far.location.y + box_so_far.size.height)
+                            .max(layout.location.y + layout.size.height);
+                        // A row and a row group start at the table's content edge and span it, not at
+                        // the first cell: with `border-spacing: 160px` the first cell starts 160px in,
+                        // and a box built from the cells alone was that much narrower than the browser's
+                        // (measured: 196px misses on both `tbody` and `tr`).
+                        box_so_far.location.x = 0.0;
+                        box_so_far.location.y = box_so_far.location.y.min(layout.location.y);
+                        box_so_far.size.width = right.max(box_so_far.size.width);
+                        box_so_far.size.height = bottom - box_so_far.location.y;
+                        *box_so_far
+                    }
+                    None => {
+                        boxes.push((target, *layout));
+                        *layout
+                    }
+                }
+            };
+            self.doc
+                .set_unrounded_layout(crate::taffy_node_id(target), &merged);
+        }
     }
 
     fn compute_child_layout(

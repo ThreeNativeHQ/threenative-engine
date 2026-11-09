@@ -1330,13 +1330,22 @@ if (runtime.tsl !== undefined) {
   check(array.element(1) === first, "uniformArray.element caches node by index");
   (ships[0] as { x: number }).x = 9;
   tslInstance.sync();
-  let arrayThrew1 = false;
+  // PRD-854: a node index selects among the constant elements (`uniformArray(values).element(i)`
+  // at a loop's node index); only a fractional number still refuses.
+  let nodeIndexAccepted = true;
   try {
     array.element(first);
+  } catch {
+    nodeIndexAccepted = false;
+  }
+  check(nodeIndexAccepted, "uniformArray.element takes the loop's node index");
+  let arrayThrew1 = false;
+  try {
+    array.element(1.5);
   } catch (error) {
     arrayThrew1 = /TN_TSL_UNIFORM_ARRAY/.test(String(error));
   }
-  check(arrayThrew1, "uniformArray.element refuses non-integer index");
+  check(arrayThrew1, "uniformArray.element refuses a fractional index");
   let arrayThrew2 = false;
   try {
     array.element(2);

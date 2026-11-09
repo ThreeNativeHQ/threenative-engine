@@ -74,9 +74,10 @@ struct Game {
     /**
      * PRD-613: with the render thread on, the loop hands the game a function that waits for the frame in
      * flight. A game calls it before anything it does to the renderer from outside the loop's own
-     * handoff (a render target, a read-back, a compile, a post graph). Absent without a render thread.
+     * handoff (a render target, a read-back, a compile, a post graph), with `touch` true, and with `touch` false
+     * at the end of the frame's script. A touch defers the next present (PRD-854). Absent without a render thread.
      */
-    std::function<void(std::function<void()> barrier)> setRenderBarrier;
+    std::function<void(std::function<void(bool touch)> barrier)> setRenderBarrier;
     /** Releases game-owned GPU resources before the loop destroys its renderer. */
     std::function<void()> shutdown;
     /** One fixed tick; `dt` is the step in seconds. The loop calls it once per `advance` tick. */

@@ -240,7 +240,10 @@ ExprId Lowerer::emit(Node node) {
     switch (d.kind) {
         case Kind::AtomicAdd: {
             const auto& target = *d.args[0];
-            return program_.atomicAdd(ensureStorage(target), index(d.args[0]), convert(expression(d.args[1]), target.type));
+            uint8_t function = 0;  // an AtomicAdd node's name is the builtin (atomicMax, ...); empty is atomicAdd
+            while (!d.name.empty() && function < kAtomicFunctions.size() && d.name != kAtomicFunctions[function]) ++function;
+            return program_.atomicAdd(ensureStorage(target), index(d.args[0]), convert(expression(d.args[1]), target.type),
+                                      Where::current(), function);
         }
         case Kind::AtomicStore: throw std::runtime_error("atomicStore has no return value");
         case Kind::WgslFunction: throw std::runtime_error("wgslFn must be called before use");
@@ -301,6 +304,8 @@ ExprId Lowerer::emit(Node node) {
             return program_.textureSize(d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
         case Kind::StorageTexture:
             if (d.args.empty()) throw std::runtime_error("storageTexture requires coordinates when read");
+            if (static_cast<const tn::engine::Texture*>(d.object.get())->volume)
+                throw std::runtime_error("a Storage3DTexture is read with texture3D, not storageTexture(...).sample");
             return program_.textureLoad(program_.texture2d(d.name), convert(expression(d.args[0]), Type::vec(2, Type::Scalar::I32)), program_.constant(int32_t(0)));
         case Kind::TextureLoad: {
             const auto loaded = program_.textureLoad(d.bits == 1 || d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
@@ -369,6 +374,18 @@ ExprId Lowerer::emit(Node node) {
                     const bool compare = d.binary == BinOp::Less || d.binary == BinOp::Greater || d.binary == BinOp::Equal ||
                                          d.binary == BinOp::LessEqual || d.binary == BinOp::GreaterEqual;
                     const auto scalar = compare && at.isScalar() && bt.isScalar() ? Type::Scalar::F32 : at.rows >= bt.rows ? at.scalar : bt.scalar;
+                    if (at.scalar != scalar) a = program_.construct(Type::vec(at.rows, scalar), {a});
+                    if (bt.scalar != scalar) b = program_.construct(Type::vec(bt.rows, scalar), {b});
+                }
+            } else {
+                // r187's OperatorNode: operands of two component types meet at the higher of bool < uint < int < float
+                // (NodeBuilder.getPromotedComponentType), so `float.add(int)` is a float, as on the web.
+                const auto at = program_.expr(a).type, bt = program_.expr(b).type;
+                const auto rank = [](Type::Scalar s) {
+                    return s == Type::Scalar::F32 ? 3 : s == Type::Scalar::I32 ? 2 : s == Type::Scalar::U32 ? 1 : 0;
+                };
+                if (at.numeric() && bt.numeric() && !at.isMatrix() && !bt.isMatrix() && at.scalar != bt.scalar) {
+                    const auto scalar = rank(at.scalar) >= rank(bt.scalar) ? at.scalar : bt.scalar;
                     if (at.scalar != scalar) a = program_.construct(Type::vec(at.rows, scalar), {a});
                     if (bt.scalar != scalar) b = program_.construct(Type::vec(bt.rows, scalar), {b});
                 }
@@ -473,7 +490,16 @@ ExprId Lowerer::emit(Node node) {
             if (coordinate == kInvalid) return kInvalid;
             // A DataArrayTexture reads at (uv, layer); a texture(array, uv) with no `.depth(layer)` reads layer 0.
             const auto object = d.textureObject();
-            const bool array = object && static_cast<const tn::engine::Texture*>(object.get())->array;
+            const bool cube = object && static_cast<const tn::engine::Texture*>(object.get())->cube;
+            const bool array = !cube && object && static_cast<const tn::engine::Texture*>(object.get())->array;
+            // r187's CubeTextureNode.setupUV under the WebGPU coordinate system: the direction's x is negated.
+            if (cube) {
+                if (program_.expr(coordinate).type != Type::vec(3))
+                    throw std::runtime_error("TN_TSL cubeTexture: needs a vec3 direction, as an argument or through "
+                                             ".sample(direction); the reflect-vector default is not bound natively");
+                coordinate = program_.construct(Type::vec(3), {program_.neg(program_.swizzle(coordinate, "x")),
+                                                               program_.swizzle(coordinate, "yz")});
+            }
             if (array && program_.expr(coordinate).type == Type::vec(2))
                 coordinate = program_.construct(Type::vec(3), {coordinate, program_.constant(0.0f)});
             // A depth texture, or the scene pass's own depth (a texture named "depth" with no object
@@ -498,7 +524,7 @@ ExprId Lowerer::emit(Node node) {
                 return texture;
             };
             const auto textureOf = [&] {
-                return declared(array ? program_.texture2dArray(d.name)
+                return declared(cube ? program_.textureCube(d.name) : array ? program_.texture2dArray(d.name)
                                 : program_.expr(coordinate).type == Type::vec(3) ? program_.texture3d(d.name) : program_.texture2d(d.name));
             };
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
@@ -514,7 +540,7 @@ ExprId Lowerer::emit(Node node) {
             // uniform is declared here, at first use, so a node material without a texture keeps its
             // layout. Volumes (probe GI, LUTs), arrays and post or compute graphs keep the implicit LOD.
             const bool volume = program_.expr(coordinate).type == Type::vec(3);
-            if (!volume && !array && inputs_.count("viewMipBias") && program_.stage() == Stage::Fragment)
+            if (!volume && !array && !cube && inputs_.count("viewMipBias") && program_.stage() == Stage::Fragment)
                 return program_.sampleBias(textureOf(), coordinate, program_.uniform("viewMipBias", Type::f32()));
             return program_.sample(textureOf(), coordinate);
         }
@@ -570,8 +596,8 @@ void Lowerer::statement(Node node) {
         case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
         case Kind::TextureStore: {
             const auto* texture = static_cast<const tn::engine::Texture*>(s.object.get());
-            program_.textureStore(program_.storageTexture2d(s.name, texture->storageFormat()),
-                                  convert(expression(s.args[0]), Type::vec(2, Type::Scalar::U32)),
+            program_.textureStore(program_.storageTexture2d(s.name, texture->storageFormat(), texture->volume),
+                                  convert(expression(s.args[0]), Type::vec(texture->volume ? 3 : 2, Type::Scalar::U32)),
                                   convert(expression(s.args[1]), Type::vec(4)));
             return;
         }

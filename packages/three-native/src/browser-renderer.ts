@@ -18,7 +18,13 @@ import {
 } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
 import { frameAttachmentName } from "./pass-node.js";
-import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
+import {
+  type IPositionLike,
+  type IRegionLike,
+  defineRenderTargets,
+  targetTexelBytes,
+  textureCopyArguments,
+} from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { syncVirtualShadowLods } from "./shadow-node.js";
 import { defineSphereReflectionCapture } from "./sphere-reflection-capture.js";
@@ -89,20 +95,6 @@ interface IAdapterInfo {
   readonly architecture: string;
   readonly description: string;
   readonly device: string;
-}
-
-/** three's Box2 and Box3 as a texture copy reads them: a region by its corners. */
-interface IRegionLike {
-  readonly isBox3?: boolean;
-  readonly min: { readonly x: number; readonly y: number; readonly z?: number };
-  readonly max: { readonly x: number; readonly y: number; readonly z?: number };
-}
-
-/** A Vector2 or Vector3: the destination origin of a texture copy, z the array layer. */
-interface IPositionLike {
-  readonly x: number;
-  readonly y: number;
-  readonly z?: number;
 }
 
 interface IColorLike {
@@ -1075,25 +1067,11 @@ export function defineWebRenderer(
         throw new Error("TN_WASM_RENDERER: copyTextureToTexture() before init() finished.");
       writeHandle(0, source, "source texture");
       writeHandle(12, destination, "destination texture");
-      const { min, max } = srcRegion ?? {};
-      // A Box2 has no z: its depth is one layer, a Box3's its own.
-      const size =
-        min && max ? [max.x - min.x, max.y - min.y, (max.z ?? 1) - (min.z ?? 0)] : [-1, -1, 1];
       check(
         module._tnw_web_copy_texture(
           handles,
           handles + 12,
-          min?.x ?? 0,
-          min?.y ?? 0,
-          min?.z ?? 0,
-          size[0] as number,
-          size[1] as number,
-          srcRegion?.isBox3 ? (size[2] as number) : 1,
-          dstPosition?.x ?? 0,
-          dstPosition?.y ?? 0,
-          dstPosition?.z ?? 0,
-          srcLevel,
-          dstLevel,
+          ...textureCopyArguments(srcRegion, dstPosition, srcLevel, dstLevel),
         ),
       );
     }

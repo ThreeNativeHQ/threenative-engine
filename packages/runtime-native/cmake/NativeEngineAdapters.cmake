@@ -331,6 +331,11 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-window-title.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_window_title PROPERTIES LABELS "native-engine")
+    # PRD-854: a synchronous target draw does not wait for the previous frame's present (Xvfb, real window).
+    add_test(NAME native_engine_player_target_draw_present
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-target-draw-present.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_target_draw_present PROPERTIES LABELS "native-engine")
     # PRD-551: QuadMesh into RenderTargets and readRenderTargetPixelsAsync on the real player (headless GPU).
     add_test(NAME native_engine_player_render_target
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-render-target.mjs

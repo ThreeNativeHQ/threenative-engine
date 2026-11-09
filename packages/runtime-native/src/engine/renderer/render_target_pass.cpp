@@ -114,6 +114,11 @@ WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target) {
     return gpu.renderer->sceneColorView();
 }
 
+WGPUTexture renderTargetTexture(Renderer& main, RenderTarget& target) {
+    renderTargetView(main, target);
+    return gpuOf(main, target).renderer->sceneColorTexture();
+}
+
 GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                            ReadbackCallback done) {
     if (!done) return GpuStatus::OutOfRange;
