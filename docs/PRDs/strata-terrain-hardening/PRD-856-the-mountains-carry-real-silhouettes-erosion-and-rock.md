@@ -47,4 +47,4 @@ Owner, 2026-11-07: the mountains need to improve. The request does not name the 
 ## Acceptance Criteria
 
 - [ ] A fresh visual judge returns IMPROVEMENT on the mountain frames against the references, with before/after sheets on the PR. proof: judge verdict on the PR
-- [ ] No seam gap at the horizon ring. proof: the horizon frame in the judge set
+- [x] No seam gap at the horizon ring. proof: the horizon frame in the judge set — 2026-11-09: measured, not judged. `terrain.playtest.json` `player.horizon.seamGap` (the gap between all 1024 continuation seam vertices and their playable baked samples) passed at 0 on alpine-ridge, desert-mesa and tundra-plain in the five-world `test:terrain:web` run on `2f317c907` (nvidia/turing, headed). Later commits change only ground and grass colour, not geometry. The overview frames of alpine, tundra and forest (`capture-strata-worlds`, the same commit) show no sky through the ring. The judge set of box 49 is still open.
