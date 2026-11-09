@@ -56,6 +56,7 @@ import {
   type IStartupOffscreenBytes,
   STARTUP_OFFSCREEN_BYTES_MARKER,
   measureStartupOffscreenBytes,
+  reportUnusedModelsLater,
 } from "./startup-offscreen-bytes.js";
 import {
   type IStartupImageState,
@@ -496,6 +497,14 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
           `${STARTUP_OFFSCREEN_BYTES_MARKER}_FAILED: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
+      // Once, a minute on: an awaited model no scene object came from (TN_ASSET_UNUSED).
+      releases.push(
+        reportUnusedModelsLater(
+          new Map(assets.resolved),
+          threeScene,
+          () => game.aborted || game.renderer !== renderer,
+        ),
+      );
       // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
       const unlit = unlitFoliageWarning(threeScene);
       if (unlit !== undefined)
