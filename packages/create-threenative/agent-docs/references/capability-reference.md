@@ -4070,6 +4070,21 @@ snow.stamp({ x: 0, z: 0, area: 0.074, load: 784, duration: 0.1, footprint: snowD
 snow.recover(1 / 60, 0.0012, 0.4);
 ```
 
+### `surfaceSampler`
+
+`function` — `Heightfield.surfaceAt` under the transform the game draws the field's mesh with, so a prop or a player stands on the triangles the eye sees rather than on the bilinear field between them. Answers `null` outside the field and for a transform it does not model (any rotation, or an unequal scale), so the caller keeps its own fallback there.
+
+```ts
+export function surfaceSampler(field: Heightfield, matrixWorld: Matrix4): SurfaceSampler { … }
+```
+
+- **Use when:** stand props or a player on the drawn terrain triangles under a moved or scaled mesh · props float or sink where the terrain mesh is drawn under a transform
+- **Constraints:** the mesh is `field.toGeometry()` drawn upright under a uniform scale; read `matrixWorld` after it settles
+
+```ts
+const ground = surfaceSampler(field, mesh.matrixWorld); const y = ground(x, z) ?? fallback;
+```
+
 ### `TerrainTiles`
 
 `class` — Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.

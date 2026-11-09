@@ -27,6 +27,8 @@ export { lakeSurfaceGeometry, riverRibbonGeometry } from "./world-river-ribbon.j
 export type { ILakeSurfaceOptions, IRiverRibbonOptions } from "./world-river-ribbon.js";
 export { AdmissionBudget } from "./world-load-limiter.js";
 export { shoreField } from "./world-shore-field.js";
+export { surfaceSampler } from "./world-surface-sampler.js";
+export type { SurfaceSampler } from "./world-surface-sampler.js";
 export { warmUnculled } from "./world-warm.js";
 export type { IWarmUnculledOptions } from "./world-warm.js";
 export type { IShoreField, IShoreFieldOptions } from "./world-shore-field.js";

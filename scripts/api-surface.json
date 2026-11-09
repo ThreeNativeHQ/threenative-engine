@@ -108,6 +108,7 @@
         "@threenative/core/world#shoreField": "export function shoreField( heights: ArrayLike<number>, resolution: number, size: number, level: number, options: IShoreFieldOptions = { … }",
         "@threenative/core/world#snowDiscFootprint": "export function snowDiscFootprint( radius: number, options: ISnowDiscFootprintOptions = { … }",
         "@threenative/core/world#SnowField": "export class SnowField { … }",
+        "@threenative/core/world#surfaceSampler": "export function surfaceSampler(field: Heightfield, matrixWorld: Matrix4): SurfaceSampler { … }",
         "@threenative/core/world#TerrainTiles": "export class TerrainTiles extends Object3D implements IComputeDriven { … }",
         "@threenative/core/world#terrainValidationRequested": "export function terrainValidationRequested(): boolean { … }",
         "@threenative/core/world#validateWorldPackage": "export function validateWorldPackage( manifest: unknown, options: IWorldPackageValidationOptions, ): { … }",

@@ -5173,6 +5173,25 @@
       "symbol": "SnowField"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "the mesh is `field.toGeometry()` drawn upright under a uniform scale; read `matrixWorld` after it settles"
+      ],
+      "example": "const ground = surfaceSampler(field, mesh.matrixWorld); const y = ground(x, z) ?? fallback;",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function surfaceSampler(field: Heightfield, matrixWorld: Matrix4): SurfaceSampler { … }",
+      "situations": [
+        "stand props or a player on the drawn terrain triangles under a moved or scaled mesh",
+        "props float or sink where the terrain mesh is drawn under a transform"
+      ],
+      "summary": "`Heightfield.surfaceAt` under the transform the game draws the field's mesh with, so a prop or a player stands on the triangles the eye sees rather than on the bilinear field between them. Answers `null` outside the field and for a transform it does not model (any rotation, or an unequal scale), so the caller keeps its own fallback there.",
+      "supersedes": [],
+      "symbol": "surfaceSampler"
+    },
+    {
       "aliases": ["stream terrain across chunks"],
       "constraints": [
         "sampleHeight and surface are required game choices; no landform or surface preset is installed",

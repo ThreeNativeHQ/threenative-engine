@@ -1,8 +1,9 @@
-import type {
-  Heightfield,
-  HeightfieldCollar,
-  IShadowRegion,
-  WorldCells,
+import {
+  type Heightfield,
+  type HeightfieldCollar,
+  type IShadowRegion,
+  type WorldCells,
+  surfaceSampler,
 } from "@threenative/core/world";
 import { ScatterColliders } from "@threenative/physics";
 import {
@@ -22,7 +23,6 @@ import {
   collarSampler,
   farForestPlacements,
 } from "./render/farForest.js";
-import { createGroundSampler } from "./render/groundSampler.js";
 import { HORIZON_WALK_BAND } from "./render/horizon.js";
 import { loadPack, loadSkyLight } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
@@ -206,7 +206,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
     if (ridges instanceof Mesh) ridges.geometry.computeBoundingBox();
     const rayTop =
       Math.max(top, ridges instanceof Mesh ? (ridges.geometry.boundingBox?.max.y ?? top) : top) + 2;
-    const groundSample = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
+    const groundSample = surfaceSampler(field, mesh.matrixWorld);
     // Past the walk band's collider the drawn collar is the ground (`farForest.ts`).
     const collarGround = collarSampler(collar);
     const groundAt: PropGroundQuery = (placement, at) => {

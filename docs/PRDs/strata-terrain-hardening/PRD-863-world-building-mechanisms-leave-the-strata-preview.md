@@ -37,11 +37,14 @@ The proof: the river surface stopped in a straight edge at its first station whi
 ### Phase 3 — terrain fields
 
 - [x] `measureBiome` uses the terrain package's `measureBands`. proof: preview tests, the bands before and after — 2026-11-10: `measureBiome` is now a 15-line adapter from the preview's fraction record to `measureBands` layers; the measured biome is deep-equal to the old code on all five worlds; preview 274/274.
-- [ ] Curvature field, sky visibility bake, drawn-surface sampler. proof: a core spec each, values equal to the preview's before the move
+- [x] Drawn-surface sampler: core `surfaceSampler(field, matrixWorld)` replaces the preview's `createGroundSampler` (same logic; the unused geometry argument is gone). proof: `world-surface-sampler.spec.ts`, the preview's `groundSampler.spec.ts` against a raycaster and the collider — 2026-11-10: core 2/2; the preview's 8 cases pass on the core function; preview 274/274.
 
 ## Decisions
 
 - 2026-11-10 (agent, AFK): the spawn gate stays in the preview. Its generic part, a deadline that holds the loading curtain, is already core's `ctx.startup.hold(label, promise, budgetMs, progress)`; what is left is this game's `TN_STRATA_SPAWN_FAILURE` receipt, its witness fields and its `worldReady`/`loadingError` state.
+
+- 2026-11-10 (agent, AFK): the curvature texture stays in `src/render/terrain.ts`. Its Laplacian gain, 8 m neighbourhood, wet margin, river reach and flow normalisation decide how the ground shades, and look stays game source.
+- 2026-11-10 (agent, AFK): `skyVisibility` moves to `@threenative/terrain` with the next rebake, not now. `scripts/stamp.mjs` hashes its source into every bake, so a move alone rebakes all five worlds and commits about 50 MB of new JSON for no runtime change.
 
 ## Acceptance
 
