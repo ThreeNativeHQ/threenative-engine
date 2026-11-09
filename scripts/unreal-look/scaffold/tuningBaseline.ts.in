@@ -4,6 +4,8 @@
 export type FinalGatherMethod = "none" | "irradianceField" | "screenProbeGather";
 export const EPIC_SSGI = {};
 export const installGi = (..._args: unknown[]): void => undefined;
+export const tracedGiField = (..._args: unknown[]): undefined => undefined;
+export const upperSkyMean = (..._args: unknown[]): undefined => undefined;
 export type IGlbMaterialImages = Readonly<Record<string, unknown>>;
 export const fetchGlbMaterialImages = async (..._args: unknown[]) => ({
   images: new Map<string, IGlbMaterialImages>(),

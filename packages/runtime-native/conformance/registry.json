@@ -1469,6 +1469,21 @@
       "required": true
     },
     {
+      "id": "probe-volume-trace",
+      "title": "off-screen irradiance probe volume refreshed by tracing the packed scene",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/probe-volume-trace.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "translucency-gi",
       "title": "translucent surface reads the probe volume without a facing",
       "category": "lighting-gi",
@@ -2301,6 +2316,20 @@
       "category": "rendering",
       "status": "implemented",
       "scene": "conformance/scenes/shared/post-normal-node.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "ao-indirect-only",
+      "title": "ambient occlusion takes only the indirect diffuse light: the owned engine's indirectDiffuse target against a frame without the sky light",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/ao-indirect-only.js",
       "browserRecipe": "webgpu",
       "tolerance": {
         "pixelMismatchRatio": 0.04,

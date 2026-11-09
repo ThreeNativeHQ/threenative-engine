@@ -66,6 +66,7 @@ npx threenative doctor --fix # refresh agent files
 Each is on by default with a named override. Detail: `node_modules/create-threenative/agent-docs/references/conventions.md#<id>`.
 
 - **Look** `#look`: filmic curve, metered auto exposure. Override: `tonemapMode: "aces"`; `autoExposureEnabled: false` + `exposure`. Marker: `TN_WORLD_ENVIRONMENT`.
+- **Ambient occlusion** `#ao-indirect`: darkens indirect light only, not the sun. Override: `gtaoIndirectOnly: false`; `gtaoEnabled: false`. Marker: `TN_WORLD_ENVIRONMENT`.
 - **Quality tier (`src/render/quality.ts`)** `#quality`: GPU class picks `high`, `medium` or `low`. Override: `setupPost(..., { tier: "low" })`. Marker: `TN_QUALITY_TIER`.
 - **Resolution scale** `#resolution`: `"auto"`, 0.85 on mobile-low. Override: numeric `resolutionScale`. Marker: `TN_FRAME_BUDGET`.
 - **Budget real time for the look** `#frame-budget`: frame meter and scene verdict on. Override: `frameBudget: false`. Marker: `TN_FRAME_BUDGET`, `TN_SCENE_WARNING`.
@@ -83,6 +84,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Frame spans** `#spans`: off. Override: `TN_FRAME_SPANS=1`. Marker: `TN_FRAME_SPANS`.
 - **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
 - **Desktop window** `#desktop-mode`: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
+- **CPU priority** `#cpu-priority`: game threads first. Override: `display.priority: "normal"`. Marker: `TN_PROCESS_PRIORITY`.
 - **Terrain** `#terrain`: authored in the game. Override: optional `@threenative/terrain`; `references/terrain-authoring.md`.
 - **Navigation** `#navigation`: none; browser-only WASM. Override: import `@threenative/physics/navigation` on purpose.
 - **Scene change** `#scene-change`: `ctx.goto(name)` keeps state. Override: `game.goto(name)` resets state.

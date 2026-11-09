@@ -1,0 +1,118 @@
+{
+  "name": "prd603-lamp-toggle",
+  "schemaVersion": 1,
+  "subject": "a traced probe field lights the wall from an off-screen lamp, then goes dark within 60 frames of the lamp switching off",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "click",
+      "at": {
+        "x": 1,
+        "y": 1
+      },
+      "label": "trace-and-settle",
+      "waitFrames": 120,
+      "release": true,
+      "screenshot": "lamp-on"
+    },
+    {
+      "label": "lamp-off",
+      "press": "KeyL",
+      "release": true,
+      "waitFrames": 90,
+      "screenshot": "lamp-off"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "probe.update",
+        "equals": "trace",
+        "allowTrivial": "the mode is fixed by the URL; this holds it"
+      },
+      {
+        "id": "GameState",
+        "path": "probe.status",
+        "equals": "ready",
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "probe.sampleNodeInstalled",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "probe.sampleRed",
+        "gte": 0.01,
+        "allowTrivial": "the lamp-on sample lands during the first step, before the second step's baseline"
+      },
+      {
+        "id": "GameState",
+        "path": "probe.sampleHueRatio",
+        "gte": 3,
+        "allowTrivial": "the lamp-on sample lands during the first step, before the second step's baseline"
+      },
+      {
+        "id": "GameState",
+        "path": "probe.lampOn",
+        "equals": false,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "probe.lampRefreshFrames",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "probe.lampRefreshFrames",
+        "lte": 60,
+        "allowTrivial": "-1 before the switch is below the bound; the gte assertion proves the change"
+      },
+      {
+        "id": "GameState",
+        "path": "probe.sampleRedLampOff",
+        "gte": 0,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "probe.sampleRedLampOff",
+        "lte": 0.02,
+        "allowTrivial": "-1 before the switch is below the bound; the gte assertion proves the change"
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 280,
+          "y": 100,
+          "width": 720,
+          "height": 520,
+          "minNonblankPixelRatio": 0.01
+        },
+        "frameDiff": {
+          "minChangedPixelRatio": 0.002
+        }
+      }
+    ]
+  }
+}

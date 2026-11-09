@@ -140,6 +140,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_coplanar_keeps_winner=coplanar_keeps_winner
         native_engine_renderer_cull_keeps_main_bundle=cull_keeps_main_bundle
         native_engine_renderer_emissive_target=emissive_target
+        native_engine_renderer_indirect_target=indirect_target
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
         native_engine_renderer_aux_routes_written_normals=aux_routes_written_normals

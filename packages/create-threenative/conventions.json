@@ -10,6 +10,27 @@
       "kits": "all"
     },
     {
+      "id": "ao-indirect",
+      "name": "Ambient occlusion",
+      "default": "darkens indirect light only, not the sun",
+      "override": "`gtaoIndirectOnly: false`; `gtaoEnabled: false`",
+      "marker": "TN_WORLD_ENVIRONMENT",
+      "kits": [
+        "adventure",
+        "collectathon",
+        "kart",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "runner",
+        "sailing",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
       "id": "quality",
       "name": "Quality tier (`src/render/quality.ts`)",
       "default": "GPU class picks `high`, `medium` or `low`",
@@ -353,6 +374,14 @@
       "default": "CLI, then `display.fullscreen`, then `window.maximized`",
       "override": "`--windowed`; `--maximized`; `--fullscreen`",
       "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "cpu-priority",
+      "name": "CPU priority",
+      "default": "game threads first",
+      "override": "`display.priority: \"normal\"`",
+      "marker": "TN_PROCESS_PRIORITY",
       "kits": "all"
     },
     {

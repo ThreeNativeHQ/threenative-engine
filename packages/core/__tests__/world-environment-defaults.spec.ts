@@ -10,7 +10,7 @@ import {
 } from "three";
 import DenoiseNode from "three/addons/tsl/display/DenoiseNode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
-import { texture, vec4 } from "three/tsl";
+import { pass, texture, vec4 } from "three/tsl";
 import {
   type Node,
   NodeFrame,
@@ -349,19 +349,33 @@ it("still reports its render-chain tier when every post stage is off", () => {
   expect(readRenderChainObservation(raw)).toBeUndefined();
 });
 
-// PRD-617: the contact occlusion applies on the owned engine and is dropped on the threejs arm, so a frame
-// without a baked world cache would show a contact shadow on one arm only. The stage refuses instead.
-it("refuses the screen-reach occlusion on a frame with no world cache, as the threejs arm does", () => {
+// PRD-617, PRD-635: the screen-reach occlusion darkens indirect light only. Upstream three cannot tell that share
+// apart without a baked world cache, so the stage refuses there instead of darkening the sun. The owned engine writes
+// the share to its own `indirectDiffuse` target, so it admits the stage on any frame, cache or not.
+const passNode = Object.getPrototypeOf(pass(new Scene(), new PerspectiveCamera()));
+const getTextureNode = passNode.getTextureNode;
+function buildAo(
+  engine: object | undefined,
+  options: ConstructorParameters<typeof WorldEnvironment>[0],
+) {
   vi.spyOn(console, "info").mockImplementation(() => {});
-  const target = renderer("webgpu", { info: { engine: "native" } }).target;
-  let refusal: unknown;
+  const target = renderer("webgpu", engine === undefined ? {} : { info: { engine } }).target;
+  const reads: string[] = [];
+  vi.spyOn(passNode, "getTextureNode").mockImplementation(function (
+    this: unknown,
+    name = "output",
+  ) {
+    reads.push(name as string);
+    return getTextureNode.call(this, name);
+  });
+  let error: unknown;
   target.createRenderChain = ({ stages }) => {
     const stage = stages?.find((entry) => entry.name === "ambientOcclusion");
     if (!stage) throw new Error("missing AO stage");
     try {
       stage.build(vec4(1), { tier: "high" });
-    } catch (error) {
-      refusal = error;
+    } catch (caught) {
+      error = caught;
     }
     return { applied: { stages: [], dropped: [] }, dispose() {} };
   };
@@ -372,10 +386,35 @@ it("refuses the screen-reach occlusion on a frame with no world cache, as the th
       finalGatherMethod: "none",
       gtaoEnabled: true,
       tonemapMode: "aces",
+      ...options,
     },
     target,
   );
-  expect(String(refusal)).toMatch(/^Error: TN_AO_INDIRECT_UNSUPPORTED: /);
+  return { error, reads };
+}
+
+it("refuses the screen-reach occlusion on upstream three with no world cache", () => {
+  expect(String(buildAo(undefined, {}).error)).toMatch(/^Error: TN_AO_INDIRECT_UNSUPPORTED: /);
+});
+
+it("admits the screen-reach occlusion on the owned engine with no world cache", () => {
+  // The test's GTAONode is upstream's, which has no `reachPx`: the stage gets past the admission to that check.
+  expect(String(buildAo({ name: "native" }, {}).error)).toMatch(
+    /^Error: TN_AO_REACH_UNSUPPORTED: /,
+  );
+});
+
+it("darkens only the owned engine's indirect diffuse target, and the whole frame on upstream three", () => {
+  const owned = buildAo({ name: "native" }, { gtaoRadius: 0.35 });
+  expect(owned.error).toBeUndefined();
+  expect(owned.reads).toContain("indirectDiffuse");
+  const upstream = buildAo(undefined, { gtaoRadius: 0.35 });
+  expect(upstream.error).toBeUndefined();
+  expect(upstream.reads).not.toContain("indirectDiffuse");
+  // The named override keeps the whole-frame multiply on the owned engine too.
+  expect(
+    buildAo({ name: "native" }, { gtaoRadius: 0.35, gtaoIndirectOnly: false }).reads,
+  ).not.toContain("indirectDiffuse");
 });
 
 it.each([

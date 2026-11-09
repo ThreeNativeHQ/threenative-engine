@@ -681,7 +681,7 @@ export async function bundle(entry, out, result, side, esbuildBin, dryRun, forma
 }
 
 function contentType(path) {
-  if (path.endsWith(".js")) return "text/javascript";
+  if (path.endsWith(".js") || path.endsWith(".mjs")) return "text/javascript";
   if (path.endsWith(".html")) return "text/html";
   if (path.endsWith(".wasm")) return "application/wasm";
   if (path.endsWith(".glb")) return "model/gltf-binary";
@@ -864,6 +864,14 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    // TN_CONFORMANCE_CONSOLE=1 echoes the page's console: a bare "Event" page error names no cause.
+    if (process.env.TN_CONFORMANCE_CONSOLE === "1")
+      {
+        page.on("console", (message) => console.error(`[page ${message.type()}] ${message.text()}`));
+        page.context().on("response", (response) => {
+          if (response.status() >= 400) console.error(`[page ${response.status()}] ${response.url()}`);
+        });
+      }
     if (test.id === "world-gpu-scene-readback")
       page.on("console", (message) => {
         if (message.text().startsWith("TN_WORLD_GPU_")) worldProofOutput.push(message.text());
@@ -1332,7 +1340,12 @@ export async function bundleOwnedWeb(entry, outfile, wasmEntry = ownedEngineWasm
     rmSync(pluginDir, { recursive: true, force: true });
   }
   // The page runs the threads engine on an isolated page (the plugin falls back to the single-thread one), so both go.
-  for (const name of ["tn-native-engine-web.wasm", "tn-native-engine-web-threads.wasm"])
+  // The threads engine starts its workers from `new URL("tn-native-engine-web-threads.mjs", import.meta.url)`, so that module goes beside the bundle too: without it each worker 404s.
+  for (const name of [
+    "tn-native-engine-web.wasm",
+    "tn-native-engine-web-threads.wasm",
+    "tn-native-engine-web-threads.mjs",
+  ])
     copyFileSync(join(dirname(wasmEntry), name), join(dirname(outfile), name));
 }
 

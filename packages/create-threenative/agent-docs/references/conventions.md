@@ -11,6 +11,13 @@ Default: filmic curve, metered auto exposure. Override: `tonemapMode: "aces"`; `
 
 The default look is `tonemapMode: "filmic"` with metered auto exposure. Lights are in lux, as in Unreal (EV100 exposure): the sun is 6 lux, and while the meter is off the fixed `exposure` is 2.4. `tonemapMode: "aces"` and `autoExposureEnabled: false` with a fixed `exposure` are the overrides. Set `tonemapMode: "aces"` to choose ACES, or `autoExposureEnabled: false` with a fixed `exposure` to choose manual exposure, on the same quality preset; the render log reports the override. The filmic curve and metered auto exposure are on by default here. Set `tonemapMode: "aces"` or `autoExposureEnabled: false` with a fixed `exposure` on the same preset to override the curve or the meter.
 
+<a id="ao-indirect"></a>
+## Ambient occlusion
+
+Default: darkens indirect light only; the sun keeps its light. Override: `gtaoIndirectOnly: false` (whole frame); `gtaoEnabled: false`. Reports: TN_WORLD_ENVIRONMENT.
+
+The contact occlusion (`gtaoEnabled`, on at `high` and `medium`) darkens only the light that reaches a surface from around it: sky, ambient, environment and baked irradiance. A sunlit crease keeps its sunlight, as in Unreal 5.8.3. The owned engine writes each draw's indirect diffuse light to its `indirectDiffuse` target, and the stage takes the occlusion off that share. Set `gtaoIndirectOnly: false` on the quality preset to multiply the whole frame instead. `engine: "threejs"` has no such target, so it needs `gtaoRadius` and multiplies the whole frame.
+
 <a id="quality"></a>
 ## Quality tier
 
@@ -204,6 +211,13 @@ For online play only, import `connect` from `@threenative/core/net` with an HTTP
 Default: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
 
 Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
+
+<a id="cpu-priority"></a>
+## CPU priority
+
+Default: game threads first. Override: `display.priority: "normal"`. Reports: TN_PROCESS_PRIORITY.
+
+A shipped native game asks the OS for more CPU than other programs: its game, render and present threads take a higher priority (desktop nice -10, Android nice -4 plus an ADPF hint session) and its own background work (shader compiles, workers, HUD processes) yields. It needs no admin rights; a refused raise is reported, not fatal. `TN_PROCESS_PRIORITY` states what the OS applied. Set `display.priority: "normal"` only when the user asks for the OS default; the web build ignores it.
 
 <a id="terrain"></a>
 ## Terrain

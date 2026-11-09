@@ -19,6 +19,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
+#include <chrono>
+#include <climits>
+#include <cerrno>
+#include <cstring>
+#include <string>
+#include <dirent.h>
+#include <dlfcn.h>
+#include <sched.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #include <android/log.h>
 #include <android/asset_manager.h>
@@ -75,6 +84,134 @@ static std::string readAsset(const std::string& assetPath) {
     LOGI("Asset loaded successfully: %zu bytes", bytesRead);
     return content;
 }
+
+/**
+ * PRD-859: the game thread wins the CPU on Android. The game thread (this SDL thread) takes nice -4 (NORMAL - 4,
+ * Unreal's TPri_Highest) and an ADPF hint session (API 33+, resolved at run time so older devices still load) that
+ * hears each frame's work time against the frame target. Every other thread the process owns takes SCHED_BATCH and
+ * nice +10 (Unreal's TPri_Lowest), except the Java main thread, the HWUI and binder threads and SDL's audio threads.
+ * `display.priority: "normal"` turns both off. One logcat line reports what the OS applied after each change.
+ */
+namespace mystral::platform {
+namespace {
+struct GameThreadPriority {
+    using Manager = void* (*)();
+    using Create = void* (*)(void*, const int32_t*, size_t, int64_t);
+    using Update = int (*)(void*, int64_t);
+    using Report = int (*)(void*, int64_t);
+    bool enabled = false;
+    pid_t game = 0;
+    bool adpfTried = false;
+    void* session = nullptr;
+    Update update = nullptr;
+    Report report = nullptr;
+    int64_t targetNs = 0;
+    std::string adpf = "off", source = "none", reported;
+    std::chrono::steady_clock::time_point lastEnd{}, lastSweep{};
+};
+GameThreadPriority g_priority;
+
+int niceOf(int tid) {
+    errno = 0;
+    const int value = getpriority(PRIO_PROCESS, static_cast<id_t>(tid));
+    return errno == 0 ? value : INT_MIN;
+}
+
+/** Threads the platform owns and the frame waits on keep their priority. */
+bool keeps(int tid, const std::string& name) {
+    return tid == g_priority.game || tid == getpid() || name == "RenderThread" || name.rfind("hwui", 0) == 0 ||
+           // Android 12+ names binder threads `binder:<pid>_<n>`; older releases use `Binder:`. The binder
+           // driver sets their priority per call, so a sweep would only fight it.
+           name.rfind("Binder:", 0) == 0 || name.rfind("binder:", 0) == 0 || name.rfind("HwBinder:", 0) == 0 ||
+           name.rfind("SDLAudio", 0) == 0;
+}
+
+void openSession(int64_t targetNs) {
+    g_priority.adpfTried = true;
+    void* library = dlopen("libandroid.so", RTLD_NOW | RTLD_LOCAL);
+    const auto manager = library ? reinterpret_cast<GameThreadPriority::Manager>(dlsym(library, "APerformanceHint_getManager")) : nullptr;
+    const auto create = library ? reinterpret_cast<GameThreadPriority::Create>(dlsym(library, "APerformanceHint_createSession")) : nullptr;
+    g_priority.update = library ? reinterpret_cast<GameThreadPriority::Update>(dlsym(library, "APerformanceHint_updateTargetWorkDuration")) : nullptr;
+    g_priority.report = library ? reinterpret_cast<GameThreadPriority::Report>(dlsym(library, "APerformanceHint_reportActualWorkDuration")) : nullptr;
+    if (!manager || !create || !g_priority.update || !g_priority.report) {
+        g_priority.adpf = "unsupported reason=no-api";  // API < 33
+        return;
+    }
+    void* hints = manager();
+    const int32_t threads[] = {static_cast<int32_t>(g_priority.game)};
+    g_priority.session = hints ? create(hints, threads, 1, targetNs) : nullptr;
+    g_priority.adpf = g_priority.session ? "on" : hints ? "unsupported reason=no-session" : "unsupported reason=no-manager";
+    g_priority.targetNs = targetNs;
+}
+
+void sweep() {
+    g_priority.lastSweep = std::chrono::steady_clock::now();
+    int lowest = INT_MAX, batch = 0, background = 0;
+    if (DIR* tasks = opendir("/proc/self/task")) {
+        while (const dirent* entry = readdir(tasks)) {
+            const int tid = std::atoi(entry->d_name);
+            if (tid <= 0) continue;
+            char name[32] = {};
+            if (std::FILE* file = std::fopen(("/proc/self/task/" + std::string(entry->d_name) + "/comm").c_str(), "r")) {
+                if (!std::fgets(name, sizeof name, file)) name[0] = 0;
+                std::fclose(file);
+            }
+            std::string comm = name;
+            while (!comm.empty() && comm.back() == '\n') comm.pop_back();
+            if (keeps(tid, comm)) continue;
+            ++background;
+            if (g_priority.enabled) {
+                if (sched_getscheduler(tid) != SCHED_BATCH) {
+                    const sched_param param{0};
+                    sched_setscheduler(tid, SCHED_BATCH, &param);
+                }
+                if (const int value = niceOf(tid); value != INT_MIN && value < 10) setpriority(PRIO_PROCESS, static_cast<id_t>(tid), 10);
+            }
+            if (sched_getscheduler(tid) == SCHED_BATCH) ++batch;
+            lowest = std::min(lowest, niceOf(tid));
+        }
+        closedir(tasks);
+    }
+    std::string line = "game=" + std::to_string(niceOf(g_priority.game)) +
+                       " background=" + (lowest == INT_MAX ? std::string("none") : std::to_string(lowest)) +
+                       " batch=" + std::to_string(batch) + "/" + std::to_string(background) + " source=" +
+                       (g_priority.enabled ? g_priority.source : "none") + " adpf=" + g_priority.adpf +
+                       (g_priority.enabled ? " override=none" : " override=normal");
+    if (line == g_priority.reported) return;
+    g_priority.reported = line;
+    LOGI("TN_PROCESS_PRIORITY %s", line.c_str());
+}
+}  // namespace
+
+void startGameThreadPriority(bool enabled) {
+    g_priority.enabled = enabled;
+    g_priority.game = gettid();
+    if (enabled) {
+        if (setpriority(PRIO_PROCESS, static_cast<id_t>(g_priority.game), -4) == 0) g_priority.source = "setpriority";
+        else g_priority.source = std::string("none reason=") + (errno == EACCES ? "EACCES" : errno == EPERM ? "EPERM" : std::to_string(errno));
+    }
+    sweep();
+}
+
+/** From the presentation pacing, on the game thread: the frame's work ended now; `targetNs` is the frame target. */
+void noteGameFrameWork(int64_t targetNs) {
+    if (!g_priority.enabled || g_priority.game == 0) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (!g_priority.adpfTried && targetNs > 0) openSession(targetNs);
+    if (g_priority.session) {
+        if (targetNs > 0 && targetNs != g_priority.targetNs && g_priority.update(g_priority.session, targetNs) == 0)
+            g_priority.targetNs = targetNs;
+        if (g_priority.lastEnd != std::chrono::steady_clock::time_point{})
+            g_priority.report(g_priority.session, std::chrono::duration_cast<std::chrono::nanoseconds>(now - g_priority.lastEnd).count());
+    }
+    if (now - g_priority.lastSweep >= std::chrono::seconds(1)) sweep();
+}
+
+/** From the presentation pacing: the wait for the next present ended; the next frame's work starts now. */
+void noteGameFrameWaitEnded() {
+    if (g_priority.enabled) g_priority.lastEnd = std::chrono::steady_clock::now();
+}
+}  // namespace mystral::platform
 
 /**
  * SDL_main - Entry point called by SDL on Android.
@@ -186,6 +323,15 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
         }
     }
     LOGI("maxFps=%u", config.maxFps);
+    // `display.priority` (PRD-859), carried from the manifest as TN_PRIORITY. Empty means the default.
+    bool gamePriority = true;
+    if (argc > 11 && argv[11] && argv[11][0] != '\0') {
+        if (std::strcmp(argv[11], "normal") == 0) gamePriority = false;
+        else if (std::strcmp(argv[11], "game") != 0) {
+            LOGE("TN_PRIORITY_INVALID: TN_PRIORITY must be game or normal, got '%s'", argv[11]);
+            return 2;
+        }
+    }
 #if TN_ANDROID_VSYNC
     // FIFO quantizes a missed vblank to an integer divisor: at physical 60 Hz, a 10-14 ms frame
     // with a small scheduling miss becomes a 33 ms frame. Keep FIFO below the full-refresh target,
@@ -275,6 +421,7 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
 
     // Run the main loop
     LOGI("About to call run()...");
+    mystral::platform::startGameThreadPriority(gamePriority);
     runtime->run();
     LOGI("run() returned");
 

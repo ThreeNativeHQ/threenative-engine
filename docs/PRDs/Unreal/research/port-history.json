@@ -166,5 +166,21 @@
     "lookDone": 157,
     "lookTotal": 491,
     "open": 86
+  },
+  {
+    "date": "2026-11-07",
+    "done": 420,
+    "total": 1141,
+    "lookDone": 166,
+    "lookTotal": 490,
+    "open": 85
+  },
+  {
+    "date": "2026-11-08",
+    "done": 427,
+    "total": 1141,
+    "lookDone": 173,
+    "lookTotal": 490,
+    "open": 85
   }
 ]
