@@ -39,6 +39,8 @@
       "packages/runtime-native/native/css-ui/vendor/**",
       "examples/native-css-hud/corpus/out/**",
       "examples/native-css-hud/corpus/out-interaction/**",
+      "examples/native-css-hud/corpus/out-parity/**",
+      "examples/native-css-hud/src/ui/tailwind-parity.scene.json",
       "packages/three-native/generated/**",
       "packages/assets/vendor/basis-encoder/basis_encoder.js",
       "packages/runtime-native/**/*.json",

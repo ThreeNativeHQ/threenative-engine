@@ -1299,6 +1299,7 @@ impl Drop for ViewportMut<'_> {
             self.doc.media_type.clone(),
             self.doc.font_ctx.clone(),
             self.doc.touch,
+            self.doc.preferences,
         ));
         self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 

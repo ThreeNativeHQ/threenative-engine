@@ -208,6 +208,9 @@ pub struct BaseDocument {
     /// Whether the device this document is rendered on is driven by touch alone,
     /// which is what `@media (hover: none)` and `(pointer: coarse)` report.
     pub(crate) touch: bool,
+    /// The user's media preferences, which is what the `prefers-*` and `forced-colors` media
+    /// queries report. Defaults to no preference on every axis.
+    pub(crate) preferences: MediaPreferences,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document.
@@ -355,11 +358,25 @@ pub struct BaseDocument {
     pub(crate) abort_signal: Option<AbortSignal>,
 }
 
+/// The user's media preferences, as the `prefers-*` / `forced-colors` media queries report them.
+///
+/// `contrast` is `0` for no preference, `1` for more and `2` for less, which is the CSS keyword
+/// order the engine's stylo build reads; the numbers keep this type out of the public API of the
+/// dependency, where a re-export would otherwise have to track Stylo's enum.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MediaPreferences {
+    pub reduced_motion: bool,
+    pub contrast: u8,
+    pub forced_colors: bool,
+    pub inverted_colors: bool,
+}
+
 pub(crate) fn make_device(
     viewport: &Viewport,
     media_type: MediaType,
     font_ctx: Arc<Mutex<FontContext>>,
     touch: bool,
+    preferences: MediaPreferences,
 ) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
@@ -376,7 +393,7 @@ pub(crate) fn make_device(
         PointerCapabilities::FINE | PointerCapabilities::HOVER
     };
 
-    Device::new(
+    let mut device = Device::new(
         media_type,
         selectors::matching::QuirksMode::NoQuirks,
         viewport_size,
@@ -389,8 +406,34 @@ pub(crate) fn make_device(
             ColorScheme::Dark => PrefersColorScheme::Dark,
         },
         pointer_capabilities,
-        PointerCapabilities::default(),
-    )
+        // The union of every pointer's capabilities is the primary's on a device with one pointer,
+        // which is what this engine models. `PointerCapabilities::default()` is a *platform* guess
+        // (it answers COARSE on this build), and Tailwind's `any-pointer-coarse:` variant fired on a
+        // desktop because of it.
+        pointer_capabilities,
+    );
+    // What the `prefers-*` and `forced-colors` queries report. Set on the device the stylist
+    // evaluates queries against, rather than approximated with a spurious sheet: a game's own media
+    // queries have to answer the same way the engine's do.
+    use style::queries::values::{InvertedColors, PrefersContrast, PrefersReducedMotion};
+    device.set_prefers_reduced_motion(match preferences.reduced_motion {
+        true => PrefersReducedMotion::Reduce,
+        false => PrefersReducedMotion::NoPreference,
+    });
+    device.set_prefers_contrast(match preferences.contrast {
+        1 => PrefersContrast::More,
+        2 => PrefersContrast::Less,
+        _ => PrefersContrast::NoPreference,
+    });
+    device.set_forced_colors(match preferences.forced_colors {
+        true => style::values::specified::color::ForcedColors::Active,
+        false => style::values::specified::color::ForcedColors::None,
+    });
+    device.set_inverted_colors(match preferences.inverted_colors {
+        true => InvertedColors::Inverted,
+        false => InvertedColors::None,
+    });
+    device
 }
 
 impl BaseDocument {
@@ -440,7 +483,13 @@ impl BaseDocument {
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, media_type.clone(), font_ctx.clone(), false);
+        let device = make_device(
+        &viewport,
+        media_type.clone(),
+        font_ctx.clone(),
+        false,
+        MediaPreferences::default(),
+    );
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(NodeTree::new());
@@ -481,6 +530,7 @@ impl BaseDocument {
             nodes_to_id,
             viewport,
             media_type,
+            preferences: MediaPreferences::default(),
             touch: false,
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
@@ -1983,6 +2033,7 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
+            self.preferences,
         ));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
@@ -2009,6 +2060,34 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
+            self.preferences,
+        ));
+    }
+
+    /// Whether the user asked for reduced motion, which is what
+    /// `@media (prefers-reduced-motion: reduce)` reports and `(no-preference)` denies.
+    pub fn set_reduced_motion(&mut self, reduced_motion: bool) {
+        self.set_media_preferences(MediaPreferences {
+            reduced_motion,
+            ..self.preferences
+        });
+    }
+
+    /// The user's contrast, forced-colors and inverted-colors preferences, which is what
+    /// `@media (prefers-contrast: more)`, `(forced-colors: active)` and `(inverted-colors: inverted)`
+    /// report. Rebuilds the stylist device, like [`Self::set_touch`], so the next restyle
+    /// re-evaluates every query.
+    pub fn set_media_preferences(&mut self, preferences: MediaPreferences) {
+        if self.preferences == preferences {
+            return;
+        }
+        self.preferences = preferences;
+        self.set_stylist_device(make_device(
+            &self.viewport,
+            self.media_type.clone(),
+            self.font_ctx.clone(),
+            self.touch,
+            self.preferences,
         ));
     }
 
@@ -2024,6 +2103,7 @@ impl BaseDocument {
             self.media_type.clone(),
             self.font_ctx.clone(),
             self.touch,
+            self.preferences,
         ));
     }
 
@@ -2218,8 +2298,21 @@ impl BaseDocument {
 
     /// Computes the size and position of the `Node` relative to the viewport
     pub fn get_client_bounding_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
-        // Non-atomic inline elements have no layout box of their own: return
-        // the union of their per-line-box fragment rects.
+        let rect = self.untransformed_client_rect(node_id)?;
+        let rect = self.apply_transforms(node_id, rect);
+        Some(BoundingRect {
+            x: rect.x - self.viewport_scroll.x,
+            y: rect.y - self.viewport_scroll.y,
+            width: rect.width,
+            height: rect.height,
+        })
+    }
+
+    /// The element's border box in page coordinates, before any `transform` is applied.
+    ///
+    /// Non-atomic inline elements have no layout box of their own, so their rect is the union of
+    /// their per-line-box fragment rects.
+    fn untransformed_client_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         if let Some(rects) = self.inline_fragment_rects(node_id) {
             let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
             let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
@@ -2231,11 +2324,13 @@ impl BaseDocument {
                 .iter()
                 .map(|r| r.y + r.height)
                 .fold(f64::NEG_INFINITY, f64::max);
+            // The fragment rects are unsplit page coordinates: the viewport scroll and the
+            // transforms are applied by the caller, which has the element and its ancestors.
             return match rects.is_empty() {
                 true => None,
                 false => Some(BoundingRect {
-                    x: x0,
-                    y: y0,
+                    x: x0 + self.viewport_scroll.x,
+                    y: y0 + self.viewport_scroll.y,
                     width: x1 - x0,
                     height: y1 - y0,
                 }),
@@ -2243,14 +2338,91 @@ impl BaseDocument {
         }
 
         let node = self.get_node(node_id)?;
+        // A `display: none` element has no box, and CSSOM reports a zero rect at the origin for it —
+        // not the position it last had. Taffy leaves a stale location with a zero size (measured:
+        // `[0, 506, 0, 0]` for a hidden probe in the parity scene's `hidden` cell, against
+        // Chromium's `[0, 0, 0, 0]`), which the geometry bar then reads as a 506px edge miss.
+        if node.primary_styles().is_some_and(|style| {
+            style.clone_display().inside() == DisplayInside::None
+        }) {
+            return Some(BoundingRect {
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+            });
+        }
         let pos = node.absolute_position(0.0, 0.0);
-
+        // `absolute_position` subtracts a node's *own* scroll offset as well as its ancestors', which
+        // is what paint wants for the node's contents: a scrolled box paints its subtree up by its
+        // scroll. A client rect is the box itself, and a browser leaves a scrolled container where it
+        // is — only its children move. Adding the node's own offset back is what makes
+        // `getBoundingClientRect()` of an `overflow: auto` box agree with Chromium's; without it every
+        // scrolled container reported itself 140 px above its own box (the parity meter's whole scroll
+        // family, measured against Chromium after one wheel).
+        let own = node.scroll_offset();
         Some(BoundingRect {
-            x: pos.x as f64 - self.viewport_scroll.x,
-            y: pos.y as f64 - self.viewport_scroll.y,
+            x: pos.x as f64 + own.x as f64,
+            y: pos.y as f64 + own.y as f64,
             width: node.unrounded_layout().size.width as f64,
             height: node.unrounded_layout().size.height as f64,
         })
+    }
+
+    /// A page-space rectangle after the element's own and its ancestors' `transform`s: a browser's
+    /// `getBoundingClientRect()` is the *transformed* border box reduced to its axis-aligned
+    /// bounding box, so `rotate-45` on a 100x40 box reports 99x99, not 100x40.
+    ///
+    /// The walk composes from the element outwards, each transform about its own origin, which is
+    /// the same composition paint applies and hit testing inverts (each node's `transform` is
+    /// stored in device-pixel space, so a CSS-pixel offset is scaled in and back out) — a rect, a
+    /// pixel and a click therefore agree. `transform-origin`, `translate`, `rotate` and `scale` are
+    /// already folded into the stored matrix by `resolve_2d_transform`.
+    fn apply_transforms(&self, node_id: NodeId, rect: BoundingRect) -> BoundingRect {
+        let scale = self.viewport.scale_f64();
+        let mut corners = [
+            (rect.x, rect.y),
+            (rect.x + rect.width, rect.y),
+            (rect.x, rect.y + rect.height),
+            (rect.x + rect.width, rect.y + rect.height),
+        ];
+        let mut any = false;
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let node = &self.nodes[id];
+            current = node.parent;
+            let Some(t) = *node.transform() else {
+                continue;
+            };
+            any = true;
+            let origin = node.absolute_position(0.0, 0.0);
+            let [m11, m12, m21, m22, m41, m42] = t.as_coeffs();
+            for point in corners.iter_mut() {
+                let x = (point.0 - origin.x as f64) * scale;
+                let y = (point.1 - origin.y as f64) * scale;
+                point.0 = origin.x as f64 + (m11 * x + m21 * y + m41) / scale;
+                point.1 = origin.y as f64 + (m12 * x + m22 * y + m42) / scale;
+            }
+        }
+        if !any {
+            return rect;
+        }
+        let x0 = corners.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+        let y0 = corners.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+        let x1 = corners
+            .iter()
+            .map(|p| p.0)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let y1 = corners
+            .iter()
+            .map(|p| p.1)
+            .fold(f64::NEG_INFINITY, f64::max);
+        BoundingRect {
+            x: x0,
+            y: y0,
+            width: x1 - x0,
+            height: y1 - y0,
+        }
     }
 
     /// Computes the sizes and positions of the `Node`'s box fragments relative to the
