@@ -3835,6 +3835,21 @@ export function bakedNoise( p: Node<"vec3">, amplitude: Scalar = 1, pivot: Scala
 const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));
 ```
 
+### `baseRingGap`
+
+`function` — The highest gap between a wide model's rim and the ground, one sample per angular sector: in each sector, the lowest vertex beyond `rim` of that sector's reach. A narrow buried stem then cannot hold a wide base up in the air on the downhill side. Sink the pose by `gap` (plus any burial the game wants) to close it.
+
+```ts
+export function baseRingGap( geometry: BufferGeometry, matrix: Matrix4, ground: StaticGroundQuery, options: { … }
+```
+
+- **Use when:** a cliff or crag model rests on a buried stem while its wide base hangs over the downhill ground
+- **Constraints:** throws `TN_STATIC_POSE_GROUND` where the ground does not answer; check `samples` before trusting `gap`
+
+```ts
+const ring = baseRingGap(geometry, matrix, ground); if (ring.samples >= 4) matrix.elements[13] -= ring.gap + 0.5;
+```
+
 ### `cellPlacements`
 
 `function` — Borrow the run's placement records as a live view over the placement buffer.
@@ -3848,6 +3863,21 @@ export function cellPlacements(placements: ArrayBuffer, run: IWorldRun): Float32
 
 ```ts
 const records = cellPlacements(buffer, { asset: "tree", offset: 0, count: 120 });
+```
+
+### `footprintGap`
+
+`function` — How far the flat underside of a static geometry rises above the ground at its highest point. Snapping the lowest point leaves the downhill side of a flat-bottomed rock hanging; sinking the pose by this much buries the whole footprint. Returns 0 when the footprint is already buried.
+
+```ts
+export function footprintGap( geometry: BufferGeometry, matrix: Matrix4, ground: StaticGroundQuery, margin = 0, ): number { … }
+```
+
+- **Use when:** a rock snapped to a slope shows a lip or a gap under its downhill side
+- **Constraints:** the footprint is every vertex at the geometry's lowest local y; throws `TN_STATIC_POSE_GROUND` where the ground does not answer
+
+```ts
+matrix.elements[13] -= footprintGap(geometry, matrix, ground, 0.08);
 ```
 
 ### `getWorldCapabilities`
@@ -4068,6 +4098,21 @@ const terrain = Heightfield.fromSampler({ rows: 129, columns: 129, width: 64, de
 const snow = new SnowField({ field: terrain, depth: 0.28, hardness: 0.3 });
 snow.stamp({ x: 0, z: 0, area: 0.074, load: 784, duration: 0.1, footprint: snowDiscFootprint(0.12) });
 snow.recover(1 / 60, 0.0012, 0.4);
+```
+
+### `staticLowestY`
+
+`function` — Exact lowest world Y of a static geometry under `matrix`, the precise measurement `GroundSnap` audits against, cheap enough for a load that poses hundreds of thousands of props. An upright pose reads the bounding box. A tilted pose scans the vertices bottom first (sorted once per geometry) and stops once no later vertex can be lower: `|x e1 + z e9| <= reach * hypot(e1, e9)`.
+
+```ts
+export function staticLowestY(geometry: BufferGeometry, matrix: Matrix4): number { … }
+```
+
+- **Use when:** stand a scattered rock, tree or crate on the ground by its lowest point, not its origin · props hover or sink because their pivot is not at their base
+- **Constraints:** static geometry only; a skinned model uses `GroundSnap`; the sort is cached per geometry, so do not mutate its positions
+
+```ts
+placed.position.y += ground - staticLowestY(geometry, matrix);
 ```
 
 ### `surfaceSampler`

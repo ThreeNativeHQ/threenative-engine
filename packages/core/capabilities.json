@@ -4888,6 +4888,24 @@
     {
       "aliases": [],
       "constraints": [
+        "throws `TN_STATIC_POSE_GROUND` where the ground does not answer; check `samples` before trusting `gap`"
+      ],
+      "example": "const ring = baseRingGap(geometry, matrix, ground); if (ring.samples >= 4) matrix.elements[13] -= ring.gap + 0.5;",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function baseRingGap( geometry: BufferGeometry, matrix: Matrix4, ground: StaticGroundQuery, options: { … }",
+      "situations": [
+        "a cliff or crag model rests on a buried stem while its wide base hangs over the downhill ground"
+      ],
+      "summary": "The highest gap between a wide model's rim and the ground, one sample per angular sector: in each sector, the lowest vertex beyond `rim` of that sector's reach. A narrow buried stem then cannot hold a wide base up in the air on the downhill side. Sink the pose by `gap` (plus any burial the game wants) to close it.",
+      "supersedes": [],
+      "symbol": "baseRingGap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the returned view aliases the caller's buffer; writing to it mutates the source"
       ],
       "example": "const records = cellPlacements(buffer, { asset: \"tree\", offset: 0, count: 120 });",
@@ -4900,6 +4918,22 @@
       "summary": "Borrow the run's placement records as a live view over the placement buffer.",
       "supersedes": [],
       "symbol": "cellPlacements"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the footprint is every vertex at the geometry's lowest local y; throws `TN_STATIC_POSE_GROUND` where the ground does not answer"
+      ],
+      "example": "matrix.elements[13] -= footprintGap(geometry, matrix, ground, 0.08);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function footprintGap( geometry: BufferGeometry, matrix: Matrix4, ground: StaticGroundQuery, margin = 0, ): number { … }",
+      "situations": ["a rock snapped to a slope shows a lip or a gap under its downhill side"],
+      "summary": "How far the flat underside of a static geometry rises above the ground at its highest point. Snapping the lowest point leaves the downhill side of a flat-bottomed rock hanging; sinking the pose by this much buries the whole footprint. Returns 0 when the footprint is already buried.",
+      "supersedes": [],
+      "symbol": "footprintGap"
     },
     {
       "aliases": [],
@@ -5171,6 +5205,25 @@
       "summary": "Persistent snow deformation over one canonical heightfield. Snow keeps four channels per cell — indentation, displaced bank, compaction and disturbance — and writes the combined surface (`terrain + depth + bank - indent`) back into the heightfield it was given. Queries, rendered geometry and collider export therefore all read one surface, and no second terrain representation exists. The field is numeric only: it never chooses a boot, a tread, a particle, a material or a camera. Games supply terrain heights, the snow depth, the contact profile and the response coefficients; this class owns the storage, the load-dependent penetration and the bounded recovery. It is a heightfield approximation — not granular snow, displaced-volume conservation, avalanches, melting or a calibrated material law.",
       "supersedes": [],
       "symbol": "SnowField"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "static geometry only; a skinned model uses `GroundSnap`; the sort is cached per geometry, so do not mutate its positions"
+      ],
+      "example": "placed.position.y += ground - staticLowestY(geometry, matrix);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function staticLowestY(geometry: BufferGeometry, matrix: Matrix4): number { … }",
+      "situations": [
+        "stand a scattered rock, tree or crate on the ground by its lowest point, not its origin",
+        "props hover or sink because their pivot is not at their base"
+      ],
+      "summary": "Exact lowest world Y of a static geometry under `matrix`, the precise measurement `GroundSnap` audits against, cheap enough for a load that poses hundreds of thousands of props. An upright pose reads the bounding box. A tilted pose scans the vertices bottom first (sorted once per geometry) and stops once no later vertex can be lower: `|x e1 + z e9| <= reach * hypot(e1, e9)`.",
+      "supersedes": [],
+      "symbol": "staticLowestY"
     },
     {
       "aliases": [],

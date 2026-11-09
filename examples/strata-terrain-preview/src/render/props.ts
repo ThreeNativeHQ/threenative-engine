@@ -7,6 +7,7 @@
 //     are the picture, and the picture is the game's (AGENTS rule 3).
 //   - preparePose grounds each pose on plain math; propWorld.ts delegates instancing and LOD to WorldCells.
 import { createRandom } from "@threenative/core";
+import { type IBaseRing, baseRingGap, footprintGap, staticLowestY } from "@threenative/core/world";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type BufferGeometry,
@@ -443,55 +444,8 @@ export interface IPropInstance {
   cragBaseClearance?: number;
   cragRingSamples?: number;
 }
-/** A geometry's vertices, lowest local y first, and their widest horizontal reach. */
-const bottomFirst = new WeakMap<BufferGeometry, { xyz: Float32Array; reach: number }>();
-
-function verticesBottomFirst(geometry: BufferGeometry): { xyz: Float32Array; reach: number } {
-  const cached = bottomFirst.get(geometry);
-  if (cached) return cached;
-  const position = geometry.getAttribute("position");
-  const order = Array.from({ length: position.count }, (_, i) => i).sort(
-    (a, b) => position.getY(a) - position.getY(b),
-  );
-  const xyz = new Float32Array(position.count * 3);
-  let reach = 0;
-  order.forEach((i, k) => {
-    xyz[k * 3] = position.getX(i);
-    xyz[k * 3 + 1] = position.getY(i);
-    xyz[k * 3 + 2] = position.getZ(i);
-    reach = Math.max(reach, Math.hypot(position.getX(i), position.getZ(i)));
-  });
-  const entry = { xyz, reach };
-  bottomFirst.set(geometry, entry);
-  return entry;
-}
-
-/**
- * Exact lowest world Y of a static geometry under `matrix` (GroundSnap's precise measurement). A tilted pose scans the vertices bottom first and stops once no later vertex
- * can be lower: |x e1 + z e9| is at most reach * hypot(e1, e9). The full scan cost 3.4 s of the
- * forest's load (218,816 placements, 976 vertices each).
- */
-export function lowestY(geometry: BufferGeometry, matrix: Matrix4): number {
-  const e = matrix.elements;
-  if (e[1] === 0 && e[9] === 0) {
-    if (geometry.boundingBox === null) geometry.computeBoundingBox();
-    const box = geometry.boundingBox;
-    if (box) return (e[5] < 0 ? box.max.y : box.min.y) * e[5] + e[13];
-  }
-  const { xyz, reach } = verticesBottomFirst(geometry);
-  const tilt = reach * Math.hypot(e[1], e[9]);
-  const upright = e[5] > 0;
-  let lowest = Number.POSITIVE_INFINITY;
-  for (let k = 0; k < xyz.length; k += 3) {
-    const y = xyz[k + 1] as number;
-    if (upright && y * e[5] + e[13] - tilt >= lowest) break;
-    lowest = Math.min(
-      lowest,
-      (xyz[k] as number) * e[1] + y * e[5] + (xyz[k + 2] as number) * e[9] + e[13],
-    );
-  }
-  return lowest;
-}
+/** Exact lowest world Y of a static geometry under `matrix`: core `staticLowestY`. */
+export const lowestY = staticLowestY;
 
 /**
  * The quaternion a placement's own scatter numbers describe: the normal tilt, then the yaw.
@@ -654,17 +608,17 @@ export function preparePose(
   }
   // Bury the flat footprint on the downhill side too; a centre-only snap leaves a visible lip.
   if (grounding && !transform && ["boulder", "riverrock", "scree"].includes(placement.asset)) {
-    const base = geometry.boundingBox?.min.y;
-    const positions = geometry.getAttribute("position");
-    const point = new Vector3();
-    let gap = 0;
     model.updateMatrix();
-    for (let i = 0; i < positions.count; i++) {
-      if (Math.abs(positions.getY(i) - (base ?? Number.POSITIVE_INFINITY)) > 1e-5) continue;
-      point.fromBufferAttribute(positions, i).applyMatrix4(model.matrix);
-      const height = groundAt(placement, point.toArray()).height;
-      if (height === null) throw new Error(`Missing ground under rock '${placement.id}'`);
-      gap = Math.max(gap, point.y - height + 0.08);
+    let gap: number;
+    try {
+      gap = footprintGap(
+        geometry,
+        model.matrix,
+        (x, z) => groundAt(placement, [x, 0, z]).height,
+        0.08,
+      );
+    } catch (error) {
+      throw new Error(`Missing ground under rock '${placement.id}'`, { cause: error });
     }
     model.position.y -= gap;
   }
@@ -676,40 +630,18 @@ export function preparePose(
     placement.asset === "mountain" &&
     !placement.id.endsWith(":outcrop")
   ) {
-    // Lowest peripheral vertex per angular sector: a narrow buried stem must not support
-    // a wide scan collar hanging above the downhill ground.
-    const box = geometry.boundingBox;
-    if (!box) throw new Error(`Crag '${placement.id}' has no bounds`);
+    // Lowest rim vertex per angular sector: a narrow buried stem must not support a wide scan
+    // collar hanging above the downhill ground.
+    if (!geometry.boundingBox) throw new Error(`Crag '${placement.id}' has no bounds`);
     model.updateMatrix();
-    const centre = box.getCenter(new Vector3()).applyMatrix4(model.matrix);
-    const sectors = Array.from({ length: 16 }, () => ({ reach: 0, vertices: [] as Vector3[] }));
-    const vertices = geometry.getAttribute("position");
-    for (let i = 0; i < vertices.count; i++) {
-      const point = new Vector3().fromBufferAttribute(vertices, i).applyMatrix4(model.matrix);
-      const dx = point.x - centre.x;
-      const dz = point.z - centre.z;
-      const bin = Math.min(15, Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * 16));
-      const sector = sectors[bin];
-      if (!sector) continue;
-      sector.reach = Math.max(sector.reach, Math.hypot(dx, dz));
-      sector.vertices.push(point);
+    let ring: IBaseRing;
+    try {
+      ring = baseRingGap(geometry, model.matrix, (x, z) => groundAt(placement, [x, 0, z]).height);
+    } catch (error) {
+      throw new Error(`Missing ground under crag ring '${placement.id}'`, { cause: error });
     }
-    let highestGap = Number.NEGATIVE_INFINITY;
-    cragRingSamples = 0;
-    for (const sector of sectors) {
-      let lowest: Vector3 | undefined;
-      for (const point of sector.vertices)
-        if (
-          Math.hypot(point.x - centre.x, point.z - centre.z) >= sector.reach * 0.75 &&
-          (!lowest || point.y < lowest.y)
-        )
-          lowest = point;
-      if (!lowest) continue;
-      const contact = groundAt(placement, lowest.toArray()).height;
-      if (contact === null) throw new Error(`Missing ground under crag ring '${placement.id}'`);
-      highestGap = Math.max(highestGap, lowest.y - contact);
-      cragRingSamples++;
-    }
+    const highestGap = ring.gap;
+    cragRingSamples = ring.samples;
     if (cragRingSamples < 4) throw new Error(`Incomplete base ring for crag '${placement.id}'`);
     const sink = Math.max(0, highestGap + 0.5);
     model.position.y -= sink;

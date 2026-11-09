@@ -28,6 +28,8 @@ export type { ILakeSurfaceOptions, IRiverRibbonOptions } from "./world-river-rib
 export { AdmissionBudget } from "./world-load-limiter.js";
 export { shoreField } from "./world-shore-field.js";
 export { surfaceSampler } from "./world-surface-sampler.js";
+export { baseRingGap, footprintGap, staticLowestY } from "./world-static-pose.js";
+export type { IBaseRing, StaticGroundQuery } from "./world-static-pose.js";
 export type { SurfaceSampler } from "./world-surface-sampler.js";
 export { warmUnculled } from "./world-warm.js";
 export type { IWarmUnculledOptions } from "./world-warm.js";
