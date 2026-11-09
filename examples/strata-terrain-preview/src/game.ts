@@ -471,6 +471,26 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.camera.layers.enable(WATER_LAYER);
       const lake = this.#lake;
       if (lake) {
+        // The lake's mirror renders only when the lake draws, and each surface it reflects builds
+        // its pipeline on that first mirror draw. So the lake draws unculled for two world draws
+        // behind the curtain and the spawn join waits for them (PRD-790). Re-culled before the
+        // holds release: the held startup compile copies the screen in the canvas format, which the
+        // lake's refraction refuses.
+        const lakeMesh = lake.mesh;
+        lakeMesh.frustumCulled = false;
+        const warmed = new Promise<void>((resolve) => {
+          let draws = 0;
+          ctx.beforeRender(() => {
+            if (draws < 0 || ++draws <= 2) return;
+            draws = -1;
+            lakeMesh.frustumCulled = true;
+            resolve();
+          });
+        });
+        groundReady =
+          groundReady === undefined
+            ? warmed
+            : Promise.all([groundReady, warmed]).then(() => undefined);
         const centre = lake.mesh.geometry.getAttribute("position");
         const at = data.lakes?.[0]?.at;
         let lakeFootprintError = 0;
