@@ -106,7 +106,10 @@ come from Midway's own cooked manifest (`public/assets.manifest.json`, 228 entri
   and `texture: 52 file(s), 13.2 MB`. Midway's cook is therefore quantize + compact + LOD + WebP
   only: **166.2 MB shipped** (90.1 MB of manifest entries plus 76.1 MB of shared images) from 188 MB
   of sources, and a 165 MB `dist` against 197 MB before. Phase 1's "KTX2 textures, meshopt geometry"
-  is unavailable until the owned engine decodes them — the work Phase 2's first risk already names.
+  is unavailable until the owned engine decodes them — filed as
+  [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md): the meshopt decoder is already
+  vendored in `third_party/meshopt/` and never compiled, and KTX2 needs a Basis transcoder that is
+  not in the tree at all.
 - **The load split, not the cook, is what reaches AC-2's 50 MB.** Everything `load()` awaits today
   is **136.4 MB over 255 files** (every model, all 68 speech clips, every cockpit texture, the sky).
   A spawn-only await — the player's SBD, Yorktown, the deck crew, the atoll, the escort destroyer,
@@ -240,9 +243,10 @@ texture compression for want of an engine decoder.
    `TN_ASSET_LATE` at zero on the flight (its `prefetch` list is what silences it).
 2. A playtest lane that settles Midway inside 195 s at 40 Mbps on a real adapter, so AC-1 to AC-3
    can run at all.
-3. The KTX2 question, if the owner wants the 166 MB down: either the owned engine learns the
-   decoders, or Midway runs `engine: "threejs"`, which changes its renderer and does not belong in
-   this PRD.
+3. The compression question, if the owner wants the 166 MB down: [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)
+   owns it, because meshopt is a CMake line and a bufferView decode while KTX2 needs a transcoder
+   decision. `engine: "threejs"` would sidestep both by changing Midway's renderer, which is not
+   this PRD's call.
 
 #### Phase 2: Textures stream by mip
 
