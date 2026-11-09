@@ -122,7 +122,15 @@ constexpr const char* kRetentionScript = R"JS((() => {
 int main(int argc, char** argv) {
     const bool rollback = argc > 1 && std::string(argv[1]) == "--worker-rollback";
     const bool retention = argc > 1 && std::string(argv[1]) == "--callback-retention";
-    if (rollback) setenv("THREENATIVE_NATIVE_WORKER_ROLLBACK", "1", 1);
+    // MSVC has no setenv; the runtime reads this variable on both platforms, so it is set the way
+    // player/v8_main.cpp sets TN_PLAYER_WIDTH.
+    if (rollback) {
+#if defined(_WIN32)
+        _putenv_s("THREENATIVE_NATIVE_WORKER_ROLLBACK", "1");
+#else
+        setenv("THREENATIVE_NATIVE_WORKER_ROLLBACK", "1", 1);
+#endif
+    }
 
     mystral::RuntimeConfig config;
     config.width = 1;
