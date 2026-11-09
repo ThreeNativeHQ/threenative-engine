@@ -39,7 +39,7 @@ export function addStreamedGround(
     streamCoveredHalf: number;
     streamSeamGap: number;
   }) => void,
-): { dispose(): void; readonly tiles: TerrainTiles } {
+): { dispose(): void; readonly ready: Promise<void>; readonly tiles: TerrainTiles } {
   const half = data.size / 2;
   const reach = half + HORIZON_REACH;
   const tiles = new TerrainTiles({
@@ -75,7 +75,21 @@ export function addStreamedGround(
       }),
   });
   ctx.add(tiles);
-  ctx.afterPhysics(() => {
+  // A pipeline's first real draw builds it (the warm-up compile keys a different pass), and the spawn
+  // view sees few tiles. So the tiles draw unculled until every tile around the spawn has drawn
+  // twice, and `ready` holds the curtain until then: their pipelines are built behind it. The
+  // stream runs once per world draw, because the fixed step does not run while the curtain is up.
+  let markReady: () => void = () => undefined;
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  const full = (RADIUS + 0.5) * TILE;
+  let warmDraws = 0; // draws since the block filled; -1 once warm
+  const cull = (culled: boolean) =>
+    tiles.traverse((object) => {
+      object.frustumCulled = culled;
+    });
+  ctx.beforeRender(() => {
     let spent = 0;
     const budget: IAdmissionBudget = {
       admit(work) {
@@ -91,6 +105,15 @@ export function addStreamedGround(
     const centreZ = Math.floor((follow.position.z + TILE / 2) / TILE);
     split.centre.value.set(centreX * TILE, centreZ * TILE);
     split.half.value = coveredHalf(tiles, centreX, centreZ, half, reach);
+    if (warmDraws >= 0) {
+      cull(false);
+      if (split.half.value === full) warmDraws++;
+      if (warmDraws > 2) {
+        warmDraws = -1;
+        cull(true);
+        markReady();
+      }
+    }
     report({
       streamTiles: tiles.residentTileCount,
       streamCoveredHalf: split.half.value,
@@ -98,6 +121,7 @@ export function addStreamedGround(
     });
   });
   return {
+    ready,
     tiles,
     dispose: () => {
       split.half.value = 0;

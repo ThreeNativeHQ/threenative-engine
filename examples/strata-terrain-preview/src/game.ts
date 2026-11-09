@@ -393,9 +393,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const player = rig.body;
       const actor = rig.actor;
       const stream = this.#stream;
+      // ponytail: a ground material that never loads leaves this pending, and the spawn deadline
+      // then fails the scene by name; `?stream=1` is opt-in, so no tile-less fallback yet.
+      let groundReady: Promise<void> | undefined;
       if (stream && mesh) {
         const streamLoad = this.#bandLoad;
-        void stream.material.then((surface) => {
+        groundReady = stream.material.then((surface) => {
           if (streamLoad !== this.#bandLoad) return surface.dispose();
           const ground = addStreamedGround(
             ctx,
@@ -407,6 +410,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             (facts) => ctx.state.set(facts),
           );
           ctx.entities.add("streamed-ground", { tiles: ground.tiles, dispose: ground.dispose });
+          return ground.ready;
         });
       }
 
@@ -551,6 +555,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         reveal,
         scatter: this.#scatter,
         spawn: rig.spawn,
+        groundReady,
         stage,
         world,
       });
