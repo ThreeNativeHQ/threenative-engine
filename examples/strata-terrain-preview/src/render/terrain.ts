@@ -130,7 +130,7 @@ interface ILayerMaps {
  * Wide, because this coast rises a few degrees: a 3 m band is a 30 m walk of beach here and stops
  * halfway up it. The bake paints sand below 6 m for the same reason.
  */
-const SHORE = { beach: 7.5, wet: 1 };
+const SHORE = { beach: 6, wet: -0.5 };
 
 /**
  * The wet band, and what it does to the sand.
@@ -593,7 +593,7 @@ export async function createGroundMaterial(
   const sand =
     data.waterLevel === null
       ? float(0)
-      : smoothstep(float(SHORE.beach), float(SHORE.wet), positionWorld.y).mul(
+      : smoothstep(float(SHORE.beach), float(SHORE.wet), positionWorld.y.sub(data.waterLevel)).mul(
           smoothstep(0.34, 0.1, steep),
         );
   /**
