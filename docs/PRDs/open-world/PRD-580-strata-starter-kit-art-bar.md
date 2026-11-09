@@ -51,6 +51,8 @@ All rows must reach 4. Lowering that threshold needs an owner decision first.
 
 No row reaches 4. The defects the judge named first: a white, featureless sky and hard world edge in every elevated view; a visible texture grid on sand, dunes and tundra ground; flat untextured water (forest lake, tundra kettles and rivers); one repeated rock texture over the alpine peak and no alpine or desert vegetation; untextured coastal tree silhouettes; the forest lawn has no grass blades at walking height (sparse ferns only). Three of the five proofs also exited 1 on performance gates at host load 40-49 (forest `maxFrameMsP95` 22.06 ms with GPU 18.83 ms, coastal one `TN_BRIDGE_WARNING` on an 84 ms frame, alpine too few GPU samples); the captures are complete, and the forest GPU half matches the PRD-584 near-fir bill.
 
+The white void in the elevated views is not the sky. The kit proof scaffolds the `minimal` template, whose default sky is the Unreal atmosphere with clouds and height fog (`templates/minimal/src/render/sky.ts`). Each kit ships only its 512 m square and nothing past it (alpine overview: one peak over a blank lower hemisphere). So AC-1 (lighting_depth >= 4 in elevated views) needs terrain past the square first. That is the PRD-790 Phase 2 work (one joined height, `createWorldHeight`, landed for the preview), so PRD-790 Phase 2 comes before AC-1.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local, actor: implementing agent]: The authored sky and horizon reach at least 4 on lighting_depth in elevated views of all five kits. proof: `KIT=<world> pnpm --filter strata-terrain-preview test:kit` for forest, coastal, alpine, desert and tundra, plus fresh judge scores on edge and overview captures — Evidence: pending.
