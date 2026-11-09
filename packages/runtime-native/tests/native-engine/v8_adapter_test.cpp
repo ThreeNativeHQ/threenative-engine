@@ -771,7 +771,7 @@ void tslApi() {
             };
             checks.push(bad(() => float({})), bad(() => float(NaN)), bad(() => uint(-1)),
                 bad(() => uniform(vec3(1)).setName('')), bad(() => instancedArray(0, 'vec4')),
-                bad(() => float(0).toVar()), bad(() => float(0).assign(1)),
+                float(0).toVar() !== undefined, bad(() => float(0).assign(1)),
                 bad(() => Fn(() => Loop(1.5, () => {}))()),
                 bad(() => Fn(() => If(float(0).equal(0), 7))()));
             let branch;
@@ -779,6 +779,10 @@ void tslApi() {
                 try { If(float(0).equal(0), () => { throw new Error('original'); }); }
                 catch (e) { checks.push(e.message === 'original'); }
                 const acc = float(0).toVar();
+                checks.push(float(1).toVar('named') !== undefined);  // three's toVar(name): prd476's substep count
+                // TextureNode.depth(layer) on a DataArrayTexture: prd493's terrain splat reads its layers this way.
+                const layers = new DataArrayTexture(new Uint8Array(8), 1, 1, 2);
+                checks.push(typeof tsl.texture(layers, tsl.uv()).depth(tsl.int(1)) === 'object');
                 Loop(2, ({ i }) => {
                     branch = If(i.lessThan(1), () => acc.assign(1)).Else(() => acc.assign(2));
                 });
@@ -788,8 +792,8 @@ void tslApi() {
             return checks.map(Number).join('');
         })()
     )JS");
-    CHECK(got == "111111111111111111");
-    if (got != "111111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
+    CHECK(got == "1111111111111111111111");
+    if (got != "1111111111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
 
     // Compare the actual native DAG, not just the presence of fluent methods. r185's
     // stepElement/mixElement/smoothstepElement reorder the fluent receiver to the last argument.
@@ -1572,6 +1576,32 @@ void skeletal() {
         mixer2.addEventListener('finished', () => mixer2.uncacheAction(nativeClip));
         mixer2.update(1.5);
         check(mixer2.existingAction(nativeClip) === null && Math.abs(looping.time - 0.5) < 1e-9, 'uncache on finished');
+        // three's track getValueSize / getInterpolation / setInterpolation and clip.toJSON (PRD-854): core's
+        // AnimationComposer reads them, and the animation-composition example fingerprints its clips.
+        const turn = new QuaternionKeyframeTrack('hip.quaternion', [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]);
+        const shift = new VectorKeyframeTrack('hip.position', [0, 1], [0, 0, 0, 1, 2, 3]);
+        check(turn.getValueSize() === 4 && shift.getValueSize() === 3, 'getValueSize');
+        check(turn.getInterpolation() === 2301 && shift.getInterpolation() === 2301, 'default interpolation');
+        check(shift.setInterpolation(2300) === shift && shift.getInterpolation() === 2300, 'setInterpolation chains');
+        let badMode=false; try { shift.setInterpolation(7); } catch (e) { badMode=true; }
+        check(badMode && shift.getInterpolation() === 2300, 'setInterpolation refuses a non-three mode');
+        const held = new AnimationClip('held', 1, [turn, shift]);
+        held.tracks[0].setInterpolation(2300);
+        check(held.tracks[0].getInterpolation() === 2300 && turn.getInterpolation() === 2301, 'a held track is the clip own');
+        const json = held.toJSON();
+        check(json.name === 'held' && json.duration === 1 && json.blendMode === 2500 && json.tracks.length === 2, 'clip toJSON');
+        check(json.tracks[0].type === 'quaternion' && json.tracks[0].interpolation === 2300 && json.tracks[1].type === 'vector', 'track toJSON');
+        check(JSON.stringify(json.tracks[1].values) === '[0,0,0,1,2,3]' && Array.isArray(json.tracks[1].times), 'track toJSON arrays');
+        check(!('interpolation' in new AnimationClip('plain', 1, [turn]).toJSON().tracks[0]), 'default interpolation is left out');
+        const named = shift.clone(); named.name = 'uuid.position';
+        check(named.name === 'uuid.position' && shift.name === 'hip.position', 'a track name writes');
+        const edited = Float32Array.from(named.values); edited.set([4, 5, 6], 3); named.values = edited;
+        check(JSON.stringify(named.values) === '[0,0,0,4,5,6]', 'track values write back whole');
+        let shortValues=false; try { named.values = [1, 2, 3]; } catch (e) { shortValues=true; }
+        check(shortValues, 'values must keep one value per time');
+        check(held.blendMode === 2500, 'blendMode reads three NormalAnimationBlendMode');
+        held.blendMode = 2501;
+        check(held.blendMode === 2501 && held.toJSON().blendMode === 2501, 'blendMode writes');
         return 'ok';
       })()
     )JS";
@@ -1633,6 +1663,15 @@ void geometryLifecycle() {
     )JS");
     CHECK(got == "true,BoxGeometry,true,1,9,36,1,true,1,true,0");
     if (got != "true,BoxGeometry,true,1,9,36,1,true,1,true,0") std::fprintf(stderr, "geometry lifecycle: %s\n", got.c_str());
+    // three's mesh.morphTargetInfluences is a plain array a game may replace whole (core's projection and LOD rebuild
+    // copy it from another mesh), as the Wasm back end accepts (browser-backend.ts).
+    const std::string influences = run(rt, adapter, R"JS(
+        const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        mesh.morphTargetInfluences = [0.25, 0.5];
+        mesh.morphTargetInfluences.join()
+    )JS");
+    CHECK(influences == "0.25,0.5");
+    if (influences != "0.25,0.5") std::fprintf(stderr, "whole morph influences: %s\n", influences.c_str());
 }
 
 // three keeps a material's slots as own fields; games find textures with Object.values(material).
@@ -1647,6 +1686,30 @@ void materialSlots() {
     )JS");
     CHECK(got == "true,true");
     if (got != "true,true") std::fprintf(stderr, "material slots: %s\n", got.c_str());
+    // three's `source.dataReady = false` (the texels are written by copyTextureToTexture), then `image.data = new
+    // Uint8Array(0)` to release the CPU copy: prd493's terrain splat stacks its layers this way.
+    const std::string stacked = run(rt, adapter, R"JS(
+        const layers = new DataArrayTexture(new Uint8Array(8), 1, 1, 2);
+        layers.source.dataReady = false;
+        layers.image.data = new Uint8Array(0);
+        [layers.source.dataReady, layers.image.width].join()
+    )JS");
+    CHECK(stacked == "false,1");
+    if (stacked != "false,1") std::fprintf(stderr, "texels on the GPU: %s\n", stacked.c_str());
+    // three's CubeRenderTarget makes `new CubeTexture(images)` from six `{ width, height, depth }` faces, and
+    // RenderTarget3D `new Data3DTexture(null, w, h, d)`: both hold no texels, which the GPU writes.
+    const std::string layered = run(rt, adapter, R"JS(
+        const face = { width: 8, height: 8, depth: 1 };
+        const cube = new CubeTexture([face, face, face, face, face, face]);
+        cube.type = 1016;
+        const volume = new Data3DTexture(null, 4, 2, 3);
+        volume.type = 1015;
+        let refused = '';
+        try { new CubeTexture([face]); } catch (e) { refused = e.message.includes('six') ? 'refused' : e.message; }
+        [cube.type, cube.source.dataReady, volume.source.dataReady, volume.image.width, volume.type, refused].join()
+    )JS");
+    CHECK(layered == "1016,false,false,4,1015,refused");
+    if (layered != "1016,false,false,4,1015,refused") std::fprintf(stderr, "layered targets: %s\n", layered.c_str());
     // Diagnostic observation must never suppress a setter or its material version increment.
     auto& stats = tn::engine::Material::diagnostics();
     const auto saved = stats;

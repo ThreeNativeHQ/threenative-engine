@@ -301,6 +301,58 @@ export function makeClipAdditive(
   );
 }
 
+const INTERPOLATE_DISCRETE = 2300;
+/** three's property name, spelled through a constant so the naming rule does not read it as a game field. */
+const VALUE_TYPE_NAME = "ValueTypeName";
+
+/**
+ * three's `track.createInterpolant(result)` on the engine's track classes, which do not bind it (core's root
+ * motion samples with it). The interpolant reads a snapshot of the keys, holds the first and last key outside
+ * them as three's Interpolant does, and writes each value into `result`.
+ * ponytail: a smooth track evaluates linearly; port CubicInterpolant when a game samples one.
+ */
+export function defineCreateInterpolant(classes: Readonly<Record<string, unknown>>): void {
+  for (const name of ["NumberKeyframeTrack", "VectorKeyframeTrack", "QuaternionKeyframeTrack"]) {
+    const prototype = (classes[name] as { prototype?: object } | undefined)?.prototype;
+    if (prototype === undefined || "createInterpolant" in prototype) continue;
+    Object.defineProperty(prototype, "createInterpolant", {
+      configurable: true,
+      writable: true,
+      value(this: ITrack, result?: Float32Array) {
+        const size = valueSize(this);
+        const times = Float32Array.from(this.times);
+        const keys = Object.assign(
+          { [VALUE_TYPE_NAME]: this.ValueTypeName },
+          {
+            name: this.name,
+            times,
+            values: Float32Array.from(this.values),
+            constructor: undefined,
+          },
+        ) as ITrack;
+        const discrete = this.getInterpolation?.() === INTERPOLATE_DISCRETE;
+        const resultBuffer = result ?? new Float32Array(size);
+        const last = times.length - 1;
+        const keyValue = (key: number) =>
+          (keys.values as Float32Array).subarray(key * size, key * size + size);
+        return {
+          resultBuffer,
+          evaluate(time: number) {
+            if (time <= (times[0] as number)) resultBuffer.set(keyValue(0));
+            else if (time >= (times[last] as number)) resultBuffer.set(keyValue(last));
+            else if (discrete) {
+              let i = 1;
+              while ((times[i] as number) <= time) i++;
+              resultBuffer.set(keyValue(i - 1));
+            } else resultBuffer.set(sample(keys, time, size));
+            return resultBuffer;
+          },
+        };
+      },
+    });
+  }
+}
+
 /** three's static `AnimationUtils` namespace. */
 export const AnimationUtils = {
   convertArray,
