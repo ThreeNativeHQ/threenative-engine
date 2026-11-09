@@ -142,7 +142,9 @@ describe("the circuit", () => {
     expect(load.indexOf("await")).toBeLessThan(load.indexOf("setupSky(scene, texture"));
     // The environment measurement reads the GPU back; it starts here and is not awaited.
     expect(load).toContain("void this.#sampleSky(");
-    expect(load.match(/\bawait\b/gu)).toHaveLength(1);
+    // Two: the photograph when the arm reads it, and the cloud noise the run keeps between visits
+    // (PRD-860) — both settle before the first frame, and neither is the GPU sample.
+    expect(load.match(/\bawait\b/gu)).toHaveLength(2);
   });
 });
 

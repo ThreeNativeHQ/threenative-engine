@@ -191,6 +191,18 @@ function auditCourse(
  * A boulder `size` metres across its middle: an icosphere pushed in and out by a few seeded waves and
  * flattened a little, smooth-shaded, so it reads as weathered rock and not as a faceted gem.
  */
+/**
+ * `Math.hypot(dx, dz) < reach`, asked thousands of times by the planting: squared distances settle
+ * every case more than a millionth from the edge, and the edge itself takes the same `hypot`.
+ */
+function within(dx: number, dz: number, reach: number): boolean {
+  const squared = dx * dx + dz * dz;
+  const edge = reach * reach;
+  if (squared > edge * 1.000001) return false;
+  if (squared < edge * 0.999999 && reach > 0) return true;
+  return Math.hypot(dx, dz) < reach;
+}
+
 function boulderGeometry(size: number, rng: () => number): BufferGeometry {
   const geometry = new IcosahedronGeometry(size, 2);
   const position = geometry.attributes.position;
@@ -451,7 +463,7 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
   /** Every pickup: scenery keeps a clear metre round each, so none hangs inside a tree or a rock. */
   const pickups = [...coins, ...gems, ...Object.values(seeds)];
   const nearPickup = (x: number, zz: number, reach: number): boolean =>
-    pickups.some(([kx, , kz]) => Math.hypot(x - kx, zz - kz) < reach);
+    pickups.some(([kx, , kz]) => within(x - kx, zz - kz, reach));
 
   // Scenery: boulders where the ground breaks into a slope, never on a route and never inside a
   // landmark (a rock through the shaft's wall, under the pillar's coin ring or in the castle).
@@ -503,7 +515,7 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
     bounds: TERRAIN_BOUNDS,
     clear: (x, zz, w) =>
       !onRoute(x, zz, w) &&
-      !taken.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr + w) &&
+      !taken.some(([kx, kz, kr]) => within(x - kx, zz - kz, kr + w)) &&
       !nearPickup(x, zz, w + 1),
     flatness: terrain.flatness,
     grassShare,
@@ -555,8 +567,14 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
     steepShare: steep / landCells,
   };
 
+  let audit: ICourse["audit"] | undefined;
   return {
-    audit: { ...auditCourse(group, pickups, ground), ...world },
+    // Measured on first read, not on every load: only the debug snapshot and the layout
+    // playtests read it, and walking every solid's bounds cost a run ~0.1 s.
+    get audit() {
+      audit ??= { ...auditCourse(group, pickups, ground), ...world };
+      return audit;
+    },
     checkpoints: [
       new Vector3(...COURSE.spawn),
       new Vector3(...onGround(sx + 9, 0, sz + 13)),

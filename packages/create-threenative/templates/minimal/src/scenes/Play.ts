@@ -26,6 +26,7 @@ import {
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { type IPlayerModel, Player } from "../entities/Player.js";
 import { followCamera, setupCamera } from "../render/camera.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -62,6 +63,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
       SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",

@@ -13,6 +13,7 @@ import { type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { HITBOX, type IRunnerModel, Runner } from "../entities/Runner.js";
 import type { RunnerPhysics } from "../physics.js";
 import { chaseRunner, setupCamera } from "../render/camera.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { createDustTrail } from "../render/dust.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
@@ -55,6 +56,8 @@ export class Run extends Scene<GameState, RunnerPhysics> {
       // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
       SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",

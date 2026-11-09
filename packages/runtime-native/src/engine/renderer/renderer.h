@@ -1163,10 +1163,12 @@ private:
         std::vector<PmremPacket> packets;
         std::size_t next = 0;
         uint64_t awaitSerial = 0;        // the last submitted packet's serial, awaited before the next
+        uint32_t waits = 0;              // calls that found the last group still on the GPU
         WGPUBindGroup group = nullptr;   // the current packet's bind group, rebuilt per packet
         uint32_t groupUniform = UINT32_MAX;
         uint64_t stride = 0;
-        uint64_t budget = 0;             // the costliest packet's cost: the per-call submission cap
+        uint64_t heaviest = 0;           // the costliest packet's cost: the smallest per-call cap
+        uint64_t budget = 0;             // the per-call submission cap, heaviest..4x heaviest
     };
     std::optional<EnvironmentPreparation> envPrep_;
     bool environmentPending_ = false;

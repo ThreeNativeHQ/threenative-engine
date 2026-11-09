@@ -307,6 +307,9 @@ function sceneContext(
     // proof scene for everything else.
     model: async <T>(name: string): Promise<T> =>
       (name === "mannequin.glb" ? templatedRig(MANNEQUIN_CLIPS) : { scene: proofScene }) as T,
+    // The no-cache host (dev server, native): the content is built every run, so a scene that keeps
+    // generated content through `memo` measures the same work here as it did before PRD-860.
+    memo: async <T>(_key: string, build: () => T | Promise<T>): Promise<T> => await build(),
     texture: async () => new Texture(),
   };
   return {

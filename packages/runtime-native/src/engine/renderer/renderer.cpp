@@ -2515,7 +2515,9 @@ void Renderer::beginEnvironment(const Texture& equirect) {
         for (uint32_t face = 0; face < 6; ++face)
             passes.push_back({env.targetViews[size_t(lod) * 6 + face], env.sourceView, env.sampler,
                               integrate ? envIntegrationPipeline_ : envGgxPipeline_, size,
-                              integrate ? kPmremIntegrationSize * kPmremIntegrationSize * 3u : kPmremGgxSamples,
+                              // Roughness 0 reads one texel (kPmremGgx's roughness < 0.001 branch), not 256.
+                              integrate ? kPmremIntegrationSize * kPmremIntegrationSize * 3u
+                                        : roughness < 0.001f ? 1u : kPmremGgxSamples,
                               roughness, float(bias), sourceLod, face});
     }
 
@@ -2554,7 +2556,8 @@ void Renderer::beginEnvironment(const Texture& equirect) {
     for (std::size_t p = 0; p < passes.size(); ++p)
         prep.packets.push_back({passes[p].target, passes[p].source, passes[p].sampler, passes[p].pipeline,
                                 passes[p].size, passes[p].size, passes[p].samples, uint32_t(p)});
-    for (const PmremPacket& packet : prep.packets) prep.budget = std::max(prep.budget, pmremPacketCost(packet));
+    for (const PmremPacket& packet : prep.packets) prep.heaviest = std::max(prep.heaviest, pmremPacketCost(packet));
+    prep.budget = prep.heaviest;
     envPrep_ = std::move(prep);
 }
 void Renderer::abandonEnvironment() {
@@ -2574,7 +2577,10 @@ bool Renderer::pumpEnvironment() {
         return false;
     }
     // Advance one packet only once the previous submission's completion is observed.
-    if (prep.next > 0 && gpu_.completedSerial() < prep.awaitSerial) return false;
+    if (prep.next > 0 && gpu_.completedSerial() < prep.awaitSerial) {
+        ++prep.waits;
+        return false;
+    }
     if (prep.next >= prep.packets.size()) {
         if (const auto found = environments_.find(prep.ident);
             found != environments_.end() && found->second.version == prep.version)
@@ -2582,8 +2588,14 @@ bool Renderer::pumpEnvironment() {
         abandonEnvironment();
         return true;
     }
-    // One frame carries packets up to the cost of the heaviest single packet (fragments x samples),
-    // so the cheap low-LOD packets share frames while no submission outgrows the costliest one.
+    // One frame carries packets up to the budget (fragments x samples). It starts at the heaviest single packet, so
+    // the cheap low-LOD packets share frames, and doubles after each group the GPU finished by the next frame: every
+    // group costs a completion round trip (about two frames), and a GPU that keeps up needs 4 groups for a 512 cube,
+    // not 10 (PRD-860). It stops at 4x the heaviest packet, and a slow group (a software adapter) puts it back.
+    constexpr uint64_t kPmremBudgetGrowth = 4;
+    if (prep.next > 0)
+        prep.budget = prep.waits <= 1 ? std::min(prep.budget * 2, prep.heaviest * kPmremBudgetGrowth) : prep.heaviest;
+    prep.waits = 0;
     uint64_t spent = 0;
     do {
     const PmremPacket& packet = prep.packets[prep.next];
