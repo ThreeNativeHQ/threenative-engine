@@ -1,0 +1,192 @@
+---
+prd_contract: v1
+---
+
+# PRD-860 — The first scene plays before the game finishes downloading
+
+**Status:** NOT STARTED
+**Priority:** P1 — no box is done: Midway still downloads all 197 MB before the first frame of play (AC-1), and texture and mesh streaming (AC-4 to AC-8) do not exist.
+**Complexity:** 8 (HIGH) — 6–10 implementation files (+2): the loader, a mip-streaming module, the KTX2 path in the owned engine, the model cook and the Midway game; a new streaming module (+2); request queues and residency are concurrent state (+2); the change crosses the TypeScript packages and the owned C++ engine build (+2).
+**Owner:** João
+**Depends on:** None. Reuses [PRD-729](../done/assets/PRD-729-assets-ship-smallest-and-preload-fastest.md) (cooked bytes, throttled preload probe) and [PRD-496](../performance/PRD-496-the-loading-screen-is-bytes-not-files.md) (loader fan-out).
+
+## Context
+
+The owner asked for web asset streaming (2026-11-08): "instead of downloading a 2GB game, it only
+gets 50mb for the first scene, then downloads the rest on the go in background". Midway is the
+subject (owner, 2026-11-08: "use midway as a sample game for this, its large enough").
+
+What ships today:
+
+- `ctx.assets` (`packages/core/src/assets.ts`) downloads what a scene awaits, then
+  `backgroundFill` (on by default, `assets.ts:65`) fetches the rest of the manifest at idle priority.
+  `prefetch(paths)` (`assets.ts:215`) warms named files early. Priority `now` goes before `soon`.
+- `TN_STARTUP_OFFSCREEN_BYTES` (`packages/core/src/startup-offscreen-bytes.ts:40`) reports the bytes
+  the reveal waited for that the spawn camera does not show.
+- `WorldCells`, `TerrainTiles`, `ScatterColliders` and `propPackageFiles` stream open worlds by
+  position.
+- Playtest scenarios throttle the network (`artifacts.network.downloadKbps`, `latencyMs`,
+  `packages/playtest/src/scenario/schema-validate.ts:327`).
+
+What is missing:
+
+- **Midway does not use any of it.** `src/scenes/Midway.ts` `load()` awaits every model and all
+  audio in one `Promise.all`. The game ships 197 MB (`dist/`, measured 2026-11-08): 29 GLBs and
+  146 OGG files. Its GLBs are not cooked: `akagi.glb` is 26.3 MB with 33 PNG/JPEG images and no
+  KTX2 or meshopt data.
+- **No texture streaming.** A texture downloads and uploads all its mips at once. The feature map
+  row "Texture and mesh streaming" is open (`docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md:265`).
+- **No mesh LOD streaming.** A cooked LOD chain (`lodChainOf`, `TN_discrete_lod`) shares the vertex
+  buffers of its base level, so the coarse level cannot download first.
+
+## Solution
+
+Three slices, each proven on Midway with a throttled playtest:
+
+1. **Midway boots on its spawn bytes.** Cook Midway through `compileAssets` (KTX2 textures,
+   meshopt geometry). Change its `load()` to await only what the spawn camera shows. Every other
+   file goes to `prefetch` or `backgroundFill`. The engine adds one log line, `TN_ASSET_LATE`, for
+   a file that a scene requests after the reveal and that is not yet resident. That line makes a
+   pop-in visible to a playtest.
+2. **Textures stream by mip.** A KTX2 file keeps its level index in its header, so the loader can
+   read each mip level with one HTTP `Range` request. The loader first fetches the header and the
+   small mip tail. It then fetches the larger levels that the screen size asks for.
+3. **Meshes stream by LOD.** The model cook writes each streamed LOD level with its own vertex and
+   index ranges, coarsest first. The loader draws the coarsest level, then fetches finer levels by
+   projected error.
+
+```mermaid
+sequenceDiagram
+  participant Scene as Midway scene
+  participant Loader as ctx.assets
+  participant Net as HTTP (Range)
+  participant GPU as Engine upload
+  Scene->>Loader: await spawn models (now)
+  Loader->>Net: header + mip tail + coarsest LOD
+  Net-->>Loader: small bytes
+  Loader->>GPU: upload tail mips + coarse LOD
+  Loader-->>Scene: reveal (first play)
+  loop each update
+    Loader->>Loader: wanted mips / LOD from screen size
+    Loader->>Net: Range fetch of the next level (soon)
+    Net-->>GPU: finer mip or LOD
+  end
+  Loader->>Net: backgroundFill (idle) for the rest of the manifest
+```
+
+### Unreal reference (UE 5.8.3, read 2026-11-08 at `~/projects/UnrealEngine`)
+
+Borrow the algorithm and defaults. Do not copy code.
+
+- **Wanted texture mips.** `ceil(1 + log2(max(1, screenSize)))`, clamped to the allowed range.
+  UE 5.8.3: Engine/Source/Runtime/Engine/Private/Streaming/StreamingTexture.cpp:309.
+- **Wanted mesh LODs.** The smallest LOD count whose normalized screen size covers the wanted size.
+  UE 5.8.3: Engine/Source/Runtime/Engine/Private/Streaming/StreamingTexture.cpp:320.
+- **Always-resident tail.** The mips the cook inlines stay resident, and at least one mip always
+  stays resident. UE 5.8.3: Engine/Source/Runtime/Engine/Private/TextureDerivedData.cpp:2658.
+- **Visible first.** A request loads the visible-wanted mips before the mips for hidden primitives.
+  A request is important when it misses more than two mips (one for meshes).
+  UE 5.8.3: Engine/Source/Runtime/Engine/Private/Streaming/StreamingTexture.cpp:503.
+- **Budgets.** `r.Streaming.PoolSize` (-1: platform default, :120), `r.Streaming.PoolSizeForMeshes`
+  (below 0: meshes share the texture pool, :126) and `r.Streaming.MaxTempMemoryAllowed` (50 MB of
+  in-flight mip memory, :139). UE 5.8.3: Engine/Source/Runtime/Engine/Private/Streaming/TextureStreamingHelpers.cpp.
+- **Mesh streaming is off by default in Unreal** (`r.MeshStreaming` 0).
+  UE 5.8.3: Engine/Source/Runtime/Engine/Private/ContentStreaming.cpp:38. Here it is on by
+  default ("Auto by default"), with a named override.
+
+### Conventions
+
+- **On by default, named override.** `ctx.assets` options take `streamTextures: false` and
+  `streamMeshes: false`. An override is reported in the startup line, not silent.
+- **Measured, not configured.** The wanted level comes from the render camera and the viewport.
+  The browser exposes no GPU memory size, so the default pool has no cap below what fits. It
+  reports resident bytes in `TN_STREAMING_POOL`. `texturePoolBytes` is the named override, and it
+  is a hard cap that reports pressure.
+- **Native.** A native host reads installed files, so a `Range` read becomes a file offset read.
+  The native proof shows the same settled frame (Rule 5: web-only is unfinished).
+
+### Risks
+
+- ⚠️ The owned C++ engine is the default on web. It needs a path that uploads one mip level into an
+  existing texture (`packages/runtime-native/src/webgpu/bindings_resources.cpp`). If that path
+  does not exist, Phase 2 adds it.
+- ⚠️ A static file host without `Range` support returns 200 with the full body. The loader must
+  detect this and keep the full file, not fail.
+- ⚠️ Lower mips first changes the image for a short time. The visual judge rule applies to the
+  settled frame and to the pop-in.
+
+## Acceptance Criteria
+
+Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the PRD-729 profile).
+"First play" is `ctx.startup.whenReady()` settling.
+
+- [ ] End to end [local]: a cold browser profile plays cooked Midway at 40 Mbps from the spawn through the flight with texture and mesh streaming on, after the AC-7 byte count, with zero `TN_ASSET_LATE` lines. proof: the AC-3 flight playtest after Phase 3 — Evidence: pending.
+
+#### Phase 1 — Midway boots on its spawn bytes
+
+- [ ] AC-1 [local]: The Midway launch playtest at 40 Mbps records the baseline: bytes before first play, time to first play and total shipped bytes. proof: `node packages/playtest/dist/runner/cli.js <midway>/playtests/launch.playtest.json --url http://127.0.0.1:5173 --browser-recipe webgpu` with `artifacts.network` set — Evidence: pending.
+- [ ] AC-2 [local]: Cooked Midway reaches first play after 50 MB or less, and `TN_STARTUP_OFFSCREEN_BYTES` reports no warn. proof: the same playtest — Evidence: pending.
+- [ ] AC-3 [local]: The flight playtest reaches the enemy fleet with zero `TN_ASSET_LATE` lines, and the engine test proves that a late request emits the line. proof: `<midway>/playtests/flight.playtest.json` at 40 Mbps and `pnpm exec vitest run packages/core/__tests__/assets*.spec.ts` — Evidence: pending.
+
+#### Phase 2 — Textures stream by mip
+
+- [ ] AC-4 [local]: A KTX2 texture uploads its resident tail first, then fetches the wanted levels with `Range` requests. A host without `Range` keeps the full file. proof: `pnpm exec vitest run packages/core/__tests__/texture-streaming.spec.ts` — Evidence: pending.
+- [ ] AC-5 [local]: On cooked Midway at 40 Mbps, texture bytes before first play drop below the AC-2 result, and the owned engine (the default) draws the streamed mips. proof: the AC-2 playtest, with `TN_STREAMING_POOL` read from the console — Evidence: pending.
+- [ ] AC-6 [local]: A fresh visual judge returns NEUTRAL or IMPROVEMENT for the settled spawn frame and one flight pose, streamed against `streamTextures: false`, two runs per arm. proof: headed `--browser-recipe webgpu` captures, `adapter.info` checked, images on the PR — Evidence: pending.
+
+#### Phase 3 — Meshes stream by LOD
+
+- [ ] AC-7 [local]: The model cook writes each streamed LOD with its own vertex and index ranges, and Midway's ships draw the coarsest level first. Bytes before first play drop below the AC-5 result. proof: `pnpm exec vitest run packages/assets/__tests__/model-pass*.spec.ts` and the AC-2 playtest — Evidence: pending.
+- [ ] AC-8 [local]: A fresh visual judge returns NEUTRAL or IMPROVEMENT for the settled frames, streamed against `streamMeshes: false`, and the native desktop host draws the same settled frame. proof: the AC-6 capture recipe and `pnpm native:verify:desktop` on cooked Midway — Evidence: pending.
+
+## Integration Ledger
+
+| Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
+|---|---|---|---|
+| Spawn-only boot | Midway `src/scenes/Midway.ts` `load()` → `ctx.assets` | One `Promise.all` of every asset becomes spawn awaits plus `prefetch` | AC-2, AC-3 |
+| Late-asset report | `ctx.assets` request after the reveal → `TN_ASSET_LATE` | New line, no old path | AC-3 |
+| Texture mip streaming | `ctx.assets` KTX2 load → owned-engine mip upload | Whole-file KTX2 load stays only for hosts without `Range` | AC-4, AC-5 |
+| Mesh LOD streaming | `compileAssets` model pass → `ctx.assets` model load | Shared-buffer LOD chains stay for non-streamed models | AC-7 |
+
+Fill the `file:line` entry points when each phase lands.
+
+## Execution Phases
+
+#### Phase 1: Midway boots on its spawn bytes
+
+**Status:** NOT STARTED
+**Estimate:** about half a day.
+**Files:** `<midway>/src/scenes/Midway.ts` and its asset build config (game layer: what the spawn
+shows is the game's choice); `packages/core/src/assets.ts` (engine layer: `TN_ASSET_LATE`, which
+every game needs); `<midway>/playtests/launch.playtest.json` and `flight.playtest.json` (network
+profile).
+**Implementation:** Measure AC-1 before any change. Cook the GLBs and audio with `compileAssets`.
+Split `load()`: await the spawn carrier, the player aircraft, the sky and the spawn audio. Send the
+enemy fleet, distant hulls and later audio to `prefetch` in the order the flight reaches them.
+**Verification:** the AC-1 to AC-3 commands. Work on Midway at `~/projects/threenative/sandbox/midway-open-pacific`
+(`<midway>` above). Engine edits go into `packages/` and are reinstalled with
+`scripts/midway-bench/install.sh`, never patched into the game copy.
+
+#### Phase 2: Textures stream by mip
+
+**Status:** NOT STARTED
+**Estimate:** 2 to 3 days.
+**Files:** a new `packages/core/src/texture-streaming.ts` (wanted mips, request queue, pool
+report); `packages/core/src/assets.ts` (KTX2 `Range` path); `packages/runtime-native/src/webgpu/bindings_resources.cpp`
+(single-level upload, if missing); `packages/core/__tests__/texture-streaming.spec.ts`.
+**Implementation:** Port the wanted-mip formula and the visible-first order from the Unreal
+reference above. Read the KTX2 level index from the header. Keep the in-flight bytes under a cap
+in the manner of `MaxTempMemoryAllowed`. Grade from the render camera, as `WorldCells` does.
+Update the feature map row to cite this PRD, then run `pnpm unreal:status`.
+**Verification:** the AC-4 to AC-6 commands, plus `pnpm typecheck && pnpm lint`.
+
+#### Phase 3: Meshes stream by LOD
+
+**Status:** NOT STARTED
+**Estimate:** 2 to 3 days.
+**Files:** the model pass in `packages/assets/src/` (per-level vertex and index ranges, coarsest
+first); `packages/core/src/assets.ts` (LOD fetch by projected error, the same `autoLod` error
+measure that `WorldCells` uses); `packages/assets/__tests__/`.
+**Implementation:** Port the mesh LOD rule from the Unreal reference. Reuse the cooked chain and
+its projected-error switch distances. A skinned mesh keeps its current path.
+**Verification:** the AC-7 and AC-8 commands, plus `pnpm native:build` before the native frame.
