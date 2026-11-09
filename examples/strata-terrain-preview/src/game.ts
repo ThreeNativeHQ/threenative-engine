@@ -101,7 +101,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // baked forest kit copy, streamed by the kit's own `addForest`; the sky, camera and views stay.
       const arm = look.stageArm ? forestStageArm(globalThis.location?.search ?? "") : undefined;
       if (arm) {
+        this.#river = undefined;
         this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
+        this.#sky.atmosphere.attachRenderer(ctx.renderer);
         const load = ++this.#stageLoad;
         const stage = await addForestStage(ctx, ctx.camera, arm, () => this.#stageLoad === load);
         if (this.#stageLoad === load) {
@@ -122,11 +124,20 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const skyAo = new URLSearchParams(globalThis.location?.search ?? "").get("skyAo") !== "off";
       this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome, skyAo ? sky : undefined);
       this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
+      // The sky's LUT dispatch builds its compute nodes: 13-16 ms, paid here behind the curtain so
+      // `enter`'s own `ctx.add` finds the renderer already attached (PRD-585, `enterMs` <= 50).
+      this.#sky.atmosphere.attachRenderer(ctx.renderer);
       if (spec.water.some((body) => body.kind === "ocean")) {
         this.#ocean = createOcean();
         this.#water = createWaterMesh(this.#ocean, this.#data);
       }
       this.#lake = createLakes(this.#data.lakes ?? [], this.#terrain.field);
+      // A braided river network is 15-18 ms of geometry: built with the lake, attached in `enter`.
+      this.#river = createRivers(
+        this.#data.rivers ?? [],
+        this.#terrain.field,
+        look.riverMirrorsPonds ? this.#lake?.reflectionAt : undefined,
+      );
       this.#erosionSamples = {
         flow: this.#data.erosion?.flow.filter((value) => value > 0).length ?? 0,
         deposition: this.#data.erosion?.deposition.filter((value) => value > 0).length ?? 0,
@@ -453,14 +464,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const erosionDepositSamples = this.#erosionSamples.deposition;
       // Every fixed camera stands in a clearing: a trunk a metre from the lens is a green wall, not a
       // framing, and the seed decides where trees land, so the eyes are kept open by rule.
-      const river = stage
-        ? undefined
-        : createRivers(
-            data.rivers ?? [],
-            field,
-            look.riverMirrorsPonds ? lake?.reflectionAt : undefined,
-          );
-      this.#river = river;
+      const river = stage ? undefined : this.#river;
       if (river) {
         ctx.state.set({
           riverSurfaceCount: river.mesh.geometry.groups.filter((group) => group.count > 0).length,
