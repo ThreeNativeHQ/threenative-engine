@@ -3,8 +3,8 @@
 **Status:** PARTIAL — Phases 1 to 3 landed (2026-11-07). The two acceptance boxes are open.
 **Priority:** P1 — `terrain_generate` drops every request word except the biome word, so "a forest with mountains and a river" cooks a flat default forest (Phase 1).
 **Complexity:** 5 (MEDIUM)
-**Depends on:** [PRD-762](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (same MCP tool, path must start first)
-**Epic:** [Strata terrain hardening](README.md), chain step PR-5 in [PR-CHAIN.md](PR-CHAIN.md)
+**Depends on:** [PRD-762](../strata-terrain-hardening/PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (same MCP tool, path must start first)
+**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md), chain step PR-5 in [PR-CHAIN.md](../strata-terrain-hardening/PR-CHAIN.md)
 
 ## Problem
 
@@ -12,7 +12,7 @@ Owner direction (2026-11-07): the terrain MCP receives a request such as "create
 
 Today `parseGenerateInput` (`packages/terrain/src/mcp/tools.ts:192`) reads only the biome words (`BIOME_WORD_ROWS`). "Mountains", "river", "island", "huge" and every other word are dropped silently. `landform`, `water` and `sizeMeters` come only from explicit arguments.
 
-The spike in [PR-CHAIN.md](PR-CHAIN.md) measured the parts: AWS terrarium tiles need no key (Mount Fuji z12 decodes to 1 317–3 754 m at 31.2 m/px), and `decodeHeightPNG`, `decodeRAW16` and the `heightmap` layer already ship.
+The spike in [PR-CHAIN.md](../strata-terrain-hardening/PR-CHAIN.md) measured the parts: AWS terrarium tiles need no key (Mount Fuji z12 decodes to 1 317–3 754 m at 31.2 m/px), and `decodeHeightPNG`, `decodeRAW16` and the `heightmap` layer already ship.
 
 All work is bake time. No network call at runtime.
 
@@ -40,5 +40,8 @@ Open gap (2026-11-07): "create a forest with mountains and a river" now fails lo
 Closed for rivers (2026-11-08): a river row with no layer now runs down the finished ground's own drainage (`routeRivers` in `cook.ts`, on the installed `fillDepressions`/`routeFlow`): the main stem of the largest basin that leaves the world, from where its catchment is a tenth of the outlet's to the edge, every 16 m, with the forest starter's bed, depth and shoulder; a second row takes the next basin at least an eighth of the world away. A lake row with no layer still fails closed: a lake needs a basin, and a fluvially eroded preset has none. `terrain-mcp.spec.ts` cases red on HEAD (`has no river layer`, 2 failed) then green; whole MCP and survey specs 157/157. Visual judge of the cooked river in a game: open, with the PRD-762 Phase 3 frames.
 
 - [x] "create a forest with mountains and a river" cooks a forest kit on a mountain landform with a river, and the result lists every choice and the word behind it. proof: one real `terrain_generate` cook, result JSON in the PR — 2026-11-08: the server's own `handleLine` `tools/call`, survey ground (Matterhorn, EU-DEM attribution in the README), 6.0 s, 20 draws, 3 200 firs, `water: [{kind: "river", width: 5.32}]`; `water.json` holds one river of 164 points falling 8.6 to 5.6 m, monotone, ending at the world's edge along the lowland drainage line (hillshade check). `decided`: biome "forest", landform "alpine" from "mountains", water from "river", size default, ground survey default; `unused: []`. Result JSON on the PR.
-- [ ] The MCP surface snapshot and the capability manifest name the new fields. proof: `pnpm build` and the terrain MCP surface snapshot spec
-  2026-11-08: the snapshot half holds: `terrain-mcp-tools.json` names `decided`, `unused` and `ground`, `mcp-tool-schemas.spec.ts` 7/7. The manifest half does not: `capabilities.json` indexes code exports and no MCP tool at all (`terrain_patch` and `terrain_biome_new` are absent too), and the survey and word tables are not exported. Open: index MCP tool fields in the manifest, or drop that half of the box (owner call).
+- [x] The MCP surface snapshot names the new fields. proof: the terrain MCP surface snapshot spec — 2026-11-09: `terrain-mcp-tools.json` names `decided`, `unused` and `ground`; `scripts/__tests__/mcp-tool-schemas.spec.ts` plus `packages/terrain/__tests__/terrain-mcp.spec.ts` 2 files, 153/153 pass. The capability-manifest half was dropped (see Decisions).
+
+## Decisions
+
+- 2026-11-09 (agent): the AC no longer asks the capability manifest to name the new MCP fields. `capabilities.json` indexes code exports only and holds no MCP tool (`terrain_patch` and `terrain_biome_new` are absent too). The MCP `tools/list` reply and its snapshot spec already carry every tool field. Reversible: index MCP tools in the manifest in its own PRD.
