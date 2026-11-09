@@ -180,6 +180,7 @@ describe("createWebEnginePlugin", () => {
       "web-engine-mesh-bvh-webgpu",
       "web-engine-buffer-geometry-utils",
       "web-engine-decal-geometry",
+      "web-engine-ccd-ik-solver",
       "web-engine-hdr-loader",
       "web-engine-lut-cube-loader",
       "web-engine-gltf-loader",
@@ -347,6 +348,15 @@ describe("createWebEnginePlugin", () => {
     );
     expect(resolved).toMatch(
       /(?:three-native\/src\/addons\/decal-geometry\.ts|web-engine-decal-geometry\.js)$/u,
+    );
+  });
+
+  it("resolves CCDIKSolver to the engine port, never the upstream addon", () => {
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
+      "three/addons/animation/CCDIKSolver.js",
+    );
+    expect(resolved).toMatch(
+      /(?:three-native\/src\/addons\/ccd-ik-solver\.ts|web-engine-ccd-ik-solver\.js)$/u,
     );
   });
 

@@ -1,0 +1,19 @@
+diff --git a/src/amd/vulkan/radv_shader.c b/src/amd/vulkan/radv_shader.c
+index 7dc552b..17a2ec3 100644
+--- a/src/amd/vulkan/radv_shader.c
++++ b/src/amd/vulkan/radv_shader.c
+@@ -412,8 +412,12 @@ radv_shader_choose_subgroup_size(const struct radv_compiler_info *compiler_info,
+            (nir->info.stage == MESA_SHADER_COMPUTE && nir->info.cs.has_cooperative_matrix)) &&
+           local_size % RADV_SUBGROUP_SIZE == 0);
+ 
+-      /* Use wave32 for small workgroups. */
+-      if (local_size <= 32)
++      /* Use wave32 for small workgroups -- on hardware that has wave32. A
++       * PS4 (GFX7/GFX8) compute stage is wave64 whatever the workgroup size is,
++       * and radv_nir_shader_info_pass asserts exactly that for gfx < GFX10
++       * (radv_shader_info.c:1125): picking 32 here aborted the standalone
++       * compiler on the first small compute shader it saw. */
++      if (local_size <= 32 && compiler_info->ac->gfx_level >= GFX10)
+          wave_size = 32;
+       else if (require_full_subgroups)
+          wave_size = 64;

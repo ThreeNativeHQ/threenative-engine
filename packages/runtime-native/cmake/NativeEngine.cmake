@@ -37,6 +37,10 @@ if(SDL3_STATIC_TARGET)
 elseif(SDL3_LIBRARY)
     target_link_libraries(tn_host_services PRIVATE ${SDL3_LIBRARY})
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
+elseif(SDL3_INCLUDE_DIR)
+    # PS4: headers without an archive (no PS4 SDL3 driver exists yet), so the engine compiles and
+    # slice 2 picks the driver. Nothing links, which is all a cross configure can do here anyway.
+    target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
 endif()
 
 # The same pacing checks must link with the JS-free host, not only the legacy bindings.
@@ -685,6 +689,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     option(TN_ENGINE_PLAYER_UI_OVERLAY "Link the desktop web-view UI overlay into the engine players (Linux; needs node scripts/build-native-ui-overlay.mjs and webkit2gtk-4.1)" OFF)
     if(TN_ENGINE_PLAYER_UI_OVERLAY)
         include(cmake/NativeEnginePlayerUiOverlay.cmake)
+    elseif(TN_PS4 AND TN_ENABLE_CSS_UI)
+        # PS4 (PRD-784): the HUD is the CSS backend, a pure-Rust staticlib with no web view. Only the
+        # define is set here; scripts/ps4/e5-build.sh links the archive by hand beside the physics one.
+        target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=1)
     else()
         target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
     endif()

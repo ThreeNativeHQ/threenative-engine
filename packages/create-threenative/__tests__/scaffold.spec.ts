@@ -237,7 +237,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // from either parent applies to the merged bytes.
 // Recomputed 2026-11-08 (PRD-860): seven kits take the generated-content memo (the cloud noise, the
 // collectathon sky) and one scattering table a run; collectathon then paints and plants the same bytes
-// faster; re-measured on the merge of develop 0711f2b77 (PRD-859) by this test.
+// faster; re-measured on the merge of develop d4ef1a88d (PRD-784) by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-829 (2026-11-06): all sixteen trees move, measured by this test. Each kit AGENTS/CLAUDE pair
   // gains the `npx threenative doctor --fix` command line. The new `.threenative/agent-files.json`
@@ -452,7 +452,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Play.ts's motion samples between presented frames and fixed steps, and moved two native
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
-  starter: "591d44465e0a50cec033e821df39ca12fc121fd8a39273d291801c274a023c81",
+  // Recomputed 2026-11-08 on the merge of origin/develop (0711f2b77) into the PRD-784 lane: both
+  // sides moved starter's tree. Measured by this test on the merged tree.
+  starter: "9c082cf08fb78110ba619c27343497d20fde2c4a9e1c31886ac815806ddf91b4",
   "tower-defense": "c1ff21a577d9a495ccf8383bbb66b880e8fc9bd325c4ea96a9c2d72716a02357",
 };
 

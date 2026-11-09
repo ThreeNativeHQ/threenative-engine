@@ -655,6 +655,8 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
           // Added, not bracketed: the render call sits between the apply and the restore, and a
           // span that contained it would report the world pass as cull work.
           if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
+          // The previous frame's capture, when the host drew that frame after its callback.
+          geometryCapture.settleDeferred();
           const capturing = geometryCapture.armed();
           if (capturing) {
             // The mirror is what the renderer sees; arming the authored scene would attribute the
@@ -723,7 +725,12 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
           if (worldPasses !== undefined && worldPasses.length > 0)
             frameBudget?.addRenderPasses(worldPasses);
           // After the passes are read, so the rows reconcile against this frame's own totals.
-          if (capturing) geometryCapture.finishFrame(worldPasses ?? []);
+          if (capturing)
+            geometryCapture.finishFrame(worldPasses ?? [], {
+              drawsAfterFrame:
+                (renderer.raw as { drawsAfterFrame?: unknown } | undefined)?.drawsAfterFrame ===
+                true,
+            });
           // Resolve the GPU timestamps every frame, not once per reported window.
           //
           // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.

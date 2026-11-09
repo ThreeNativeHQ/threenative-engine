@@ -344,6 +344,34 @@ describe("mergeByMaterial", () => {
     return material;
   }
 
+  // PRD-784: a cooked model's positions are normalized Int16 (KHR_mesh_quantization), and placing them before
+  // they were float clamped every merged vertex into [-1, 1]: the Cornell room's six white meshes collapsed to
+  // a clump at the origin under auto-batch on the native engine, whose packager cooks every model.
+  it("should place a cooked (quantized position) part at its world transform", () => {
+    const cooked = new BoxGeometry(1, 1, 1);
+    const position = cooked.getAttribute("position");
+    const quantized = new Int16Array(position.count * 3);
+    for (let index = 0; index < quantized.length; index += 1)
+      quantized[index] = Math.round((position.array[index] as number) * 32767);
+    cooked.setAttribute("position", new BufferAttribute(quantized, 3, true));
+    const root = new Group();
+    for (const x of [10, -10]) {
+      const mesh = new Mesh(cooked, surface("white"));
+      mesh.position.set(x, 1, 2);
+      mesh.scale.setScalar(2.95);
+      root.add(mesh);
+    }
+
+    const [merged] = mergeByMaterial(root, { label: "cornell" });
+
+    const out = merged?.geometry.getAttribute("position");
+    expect(out?.array).toBeInstanceOf(Float32Array);
+    // The first corner sits at +0.5 on each axis: 10 + 0.5 * 2.95, not a value clamped to 1.
+    expect(out?.getX(0)).toBeCloseTo(11.475, 3);
+    expect(out?.getY(0)).toBeCloseTo(2.475, 3);
+    expect(out?.getZ(0)).toBeCloseTo(3.475, 3);
+  });
+
   it("should return one mesh per material with transforms baked and the game's own surface", () => {
     const hull = surface("hull");
     const deck = surface("deck");

@@ -1,0 +1,26 @@
+diff --git a/src/dawn/common/Platform.h b/src/dawn/common/Platform.h
+index b4ac61004..b0ba6e047 100644
+--- a/src/dawn/common/Platform.h
++++ b/src/dawn/common/Platform.h
+@@ -90,6 +90,11 @@
+ #define DAWN_PLATFORM_IS_FUCHSIA 1
+ #define DAWN_PLATFORM_IS_POSIX 1
+ 
++#elif defined(__ORBIS__) || defined(__PROSPERO__) || defined(__FreeBSD__)
++// PS4/PS5 (OpenOrbis toolchain): FreeBSD-derived libc, no libvulkan loader.
++#define DAWN_PLATFORM_IS_PS4 1
++#define DAWN_PLATFORM_IS_POSIX 1
++
+ #elif defined(__EMSCRIPTEN__)
+ #define DAWN_PLATFORM_IS_EMSCRIPTEN 1
+ #define DAWN_PLATFORM_IS_POSIX 1
+@@ -235,6 +240,9 @@ static_assert(sizeof(sizeof(char)) == 4, "Expect sizeof(size_t) == 4");
+ #define DAWN_PLATFORM_IS_MACOS 0
+ #endif
+ 
++#if !defined(DAWN_PLATFORM_IS_PS4)
++#define DAWN_PLATFORM_IS_PS4 0
++#endif
+ #if !defined(DAWN_PLATFORM_IS_FUCHSIA)
+ #define DAWN_PLATFORM_IS_FUCHSIA 0
+ #endif

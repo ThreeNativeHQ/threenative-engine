@@ -1,0 +1,42 @@
+opengnm-psbc: BinaryInfo.length names the instructions, not the constant data after them
+
+--- a/libpsbc/psbc_compile.c	2026-11-06 22:41:02.313109355 -0700
++++ b/libpsbc/psbc_compile.c	2026-11-06 22:41:02.324375239 -0700
+@@ -223,13 +223,19 @@
+ /* Build the shader binary into a memory buffer instead of a file. */
+ static PsbcResult buildshaderbinary(
+     const BuildContext* ctx,
+-    const uint32_t* code, uint32_t code_dw,
++    const uint32_t* code, uint32_t code_dw, uint32_t exec_dw,
+     uint8_t** out_data, size_t* out_size
+ ) {
+     uint32_t codesize = code_dw * sizeof(uint32_t);
++    /* The instructions alone: ACO appends a shader's constant data (a const
++     * array, for one) after s_endpgm, inside code_size. BinaryInfo.length
++     * names the instruction bytes; shadPS4 decodes that many bytes as GCN, so
++     * a length over the constant data decodes floats as instructions. */
++    uint32_t execsize = exec_dw * sizeof(uint32_t);
+     if (ctx->nir->info.stage == MESA_SHADER_VERTEX &&
+         ctx->rinfo->vs.has_prolog) {
+         codesize += sizeof(uint32_t);
++        execsize += sizeof(uint32_t);
+     }
+ 
+     uint32_t* newcode = malloc(codesize);
+@@ -845,7 +851,7 @@
+         .version = 7,
+         .ispsslcg = 1,
+         .type = shbintype(ctx->psbc_stage),
+-        .length = codesize,
++        .length = execsize,
+         .chunkusagebaseoffsetdwords = chunkusageoffset,
+         .numinputusageslots = numinputslots,
+         .shaderhash0 = (uint32_t)(shaderhash & 0xffffffff),
+@@ -1432,6 +1438,7 @@
+     uint8_t* output_data = NULL;
+     size_t output_size = 0;
+     PsbcResult result = buildshaderbinary(&buildctx, code, code_dw,
++                                          legacy->exec_size / sizeof(uint32_t),
+                                           &output_data, &output_size);
+     out->data = output_data;
+     out->size = output_size;

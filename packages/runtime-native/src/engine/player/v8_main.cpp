@@ -51,7 +51,9 @@
 #include "adapters/v8/adapter.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/inspect/endpoint.h"
+#include "engine/player/gamepads.h"
 #include "engine/player/run.h"
+#include "runtime_scripts.h"
 #include "mystral/platform/input.h"
 #include "mystral/platform/ui_overlay.h"
 #include <SDL3/SDL.h>
@@ -88,6 +90,20 @@ v8::Local<v8::String> v8str(v8::Isolate* isolate, const std::string& s) {
     return v8::String::NewFromUtf8(isolate, s.c_str(), v8::NewStringType::kNormal, static_cast<int>(s.size()))
         .ToLocalChecked();
 }
+
+// The shim manifest's pure-JS globals (URL, URLSearchParams, AbortController, TextEncoder/Decoder, Blob,
+// Headers, streams, the Event classes), from the same embedded scripts the legacy host evaluates. Without
+// them a game that reads `location.search` or aborts a request died at startup on the player (PRD-784
+// sweep: skinned-crowd, procedural-animals). Scripts that need host natives the player lacks stay out:
+// storage, image-bitmap and scheduler-yield. tests/player-host-globals.test.mjs runs this list.
+constexpr const char* kPlayerRuntimeScripts[] = {"fetch-polyfill", "streams-polyfill", "url-worker-polyfill", "event-constructors-setup"};
+// fetch-polyfill's fetch calls __httpRequestAsync, which the player has no binding for: a fetch would only
+// reject, and core's asset cache would wrap it. The player keeps no fetch, as before (the declaration is
+// not deletable, so it is cleared). `self` is the global.
+constexpr const char* kPlayerRuntimeTail = R"JS(
+globalThis.fetch = undefined;
+globalThis.self = globalThis;
+)JS";
 
 // The host object, defined before the bundle so the bundle imports nothing. `isDown` reads the
 // held-key set; `onUpdate`, `scene` and `camera` are plain JS properties the host reads.
@@ -151,6 +167,50 @@ void pointerCaptureCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
 // The UI composite's cost for the frame budget's `ui` phase; 0 until the player composites (PRD-554 phase 2).
 void uiCompositeMsCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     info.GetReturnValue().Set(0.0);
+}
+
+// `navigator.getGamepads()`: the browser call core's input samples controllers through
+// (packages/core/src/input.ts browserGamepads), in the shape the legacy host gives it
+// (src/runtime.cpp setupDomEvents) and the W3C Gamepad API spells out. Pads come from the platform
+// (gamepads.cpp: the DS4's Orbis pad on PS4, SDL3 elsewhere).
+void getGamepadsCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    v8::Isolate* isolate = info.GetIsolate();
+    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+    mystral::platform::GamepadState pads[4];  // the standard's four slots
+    const int count = player::tnPollGamepads(pads, 4);
+    // A browser's timestamp counts ms from the page's start; this host's counts from its first poll.
+    static const auto epoch = std::chrono::steady_clock::now();
+    const double timestamp =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - epoch).count();
+    v8::Local<v8::Array> gamepads = v8::Array::New(isolate, count);
+    for (int index = 0; index < count; ++index) {
+        const mystral::platform::GamepadState& state = pads[index];
+        v8::Local<v8::Object> gamepad = v8::Object::New(isolate);
+        gamepad->Set(ctx, v8str(isolate, "index"), v8::Number::New(isolate, state.index)).Check();
+        gamepad->Set(ctx, v8str(isolate, "id"), v8str(isolate, state.id)).Check();
+        gamepad->Set(ctx, v8str(isolate, "connected"), v8::True(isolate)).Check();
+        gamepad->Set(ctx, v8str(isolate, "mapping"), v8str(isolate, "standard")).Check();
+        gamepad->Set(ctx, v8str(isolate, "timestamp"), v8::Number::New(isolate, timestamp)).Check();
+        v8::Local<v8::Array> axes = v8::Array::New(isolate, state.numAxes);
+        for (int axis = 0; axis < state.numAxes; ++axis)
+            axes->Set(ctx, axis, v8::Number::New(isolate, state.axes[axis])).Check();
+        gamepad->Set(ctx, v8str(isolate, "axes"), axes).Check();
+        v8::Local<v8::Array> buttons = v8::Array::New(isolate, state.numButtons);
+        for (int button = 0; button < state.numButtons; ++button) {
+            // `touched` is the contact a pad reports separately; neither platform API tells a
+            // resting finger from a pressed switch, so it follows `pressed`.
+            const bool pressed = state.buttons[button];
+            v8::Local<v8::Object> entry = v8::Object::New(isolate);
+            entry->Set(ctx, v8str(isolate, "pressed"), v8::Boolean::New(isolate, pressed)).Check();
+            entry->Set(ctx, v8str(isolate, "touched"), v8::Boolean::New(isolate, pressed)).Check();
+            entry->Set(ctx, v8str(isolate, "value"),
+                       v8::Number::New(isolate, state.buttonValues[button])).Check();
+            buttons->Set(ctx, button, entry).Check();
+        }
+        gamepad->Set(ctx, v8str(isolate, "buttons"), buttons).Check();
+        gamepads->Set(ctx, index, gamepad).Check();
+    }
+    info.GetReturnValue().Set(gamepads);
 }
 
 void logCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -396,6 +456,9 @@ constexpr const char* kDocumentShim = R"JS(
       if (String(tag).toLowerCase() === "canvas") return canvas();
       throw new Error("TN_PLAYER_DOCUMENT: document.createElement('" + tag + "') is not available in the engine player");
     },
+    // The player has no page: no element has an id. null is the answer the legacy host gives for a non-canvas id,
+    // so a game's `document.getElementById("app") ?? undefined` mount lookup reads "none" (vfx-gallery).
+    getElementById: () => null,
   };
   globalThis.document.createElementNS = (_ns, tag) => globalThis.document.createElement(tag);
 })();
@@ -1232,6 +1295,23 @@ bool V8Game::start(const std::string& path, std::string& error) {
     // WebAudio is the legacy host's (SDL output, worker decode); the three audio classes sit on it.
     mystral::audio::initializeAudioBindings(services_.get());
     installDocument(ctx);
+    {
+        // navigator, created when missing: this player installs no other navigator member, and a game
+        // reads pads only through it.
+        v8::Local<v8::Object> global = ctx->Global();
+        v8::Local<v8::Value> existing;
+        v8::Local<v8::Object> navigator;
+        if (global->Get(ctx, v8str(isolate_, "navigator")).ToLocal(&existing) && existing->IsObject())
+            navigator = existing.As<v8::Object>();
+        else
+            navigator = v8::Object::New(isolate_);
+        navigator->Set(ctx, v8str(isolate_, "getGamepads"),
+                       v8::Function::New(ctx, &getGamepadsCallback).ToLocalChecked()).Check();
+        // A string, as the legacy host gives (webgpu/bindings.cpp): core's playtest replay record names the
+        // runtime by navigator.userAgent, and `undefined` there failed the bridge's JSON check (vfx-gallery).
+        navigator->Set(ctx, v8str(isolate_, "userAgent"), v8str(isolate_, "ThreeNative engine player (V8)")).Check();
+        global->Set(ctx, v8str(isolate_, "navigator"), navigator).Check();
+    }
 #if TN_PLAYER_NATIVE_PHYSICS
     if (!mystral::physics::initializeNativePhysicsBindings(services_.get()))
         return error = "TN_NATIVE_PHYSICS_MISSING: resident installation failed", false;
@@ -1332,6 +1412,16 @@ bool V8Game::start(const std::string& path, std::string& error) {
     v8::Local<v8::Value> ignored;
     if (!v8::Script::Compile(ctx, v8str(isolate_, kPrelude)).ToLocal(&prelude) || !prelude->Run(ctx).ToLocal(&ignored))
         return error = "host prelude failed", false;
+    for (const char* name : kPlayerRuntimeScripts) {
+        const auto script = mystral::runtime_scripts::find(name);
+        v8::Local<v8::Script> compiled;
+        if (script.data == nullptr ||
+            !v8::Script::Compile(ctx, v8str(isolate_, std::string(script.data, script.size))).ToLocal(&compiled) ||
+            !compiled->Run(ctx).ToLocal(&ignored))
+            return error = std::string("host runtime script failed: ") + name, false;
+    }
+    if (!v8::Script::Compile(ctx, v8str(isolate_, kPlayerRuntimeTail)).ToLocal(&prelude) || !prelude->Run(ctx).ToLocal(&ignored))
+        return error = "host runtime tail failed", false;
     // A playtest runner announces itself as on the legacy desktop host, so core's playtest plugin
     // collects the per-frame render samples the runner's performance assertions read.
     if (const char* root = std::getenv("TN_PLAYTEST_MAILBOX_ROOT"); root != nullptr && root[0] != '\0')
@@ -1339,15 +1429,23 @@ bool V8Game::start(const std::string& path, std::string& error) {
     const auto host = ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocalChecked().As<v8::Object>();
     auto platform = v8::Object::New(isolate_);
     platform->Set(ctx, v8str(isolate_, "runtime"), v8str(isolate_, "native")).Check();
-#if defined(_WIN32)
+    // A PS4 is a console: core's isConsole() and isPs4() read these two, so a game swaps keyboard
+    // prompts for DualShock ones. The PS4 build is clang on a FreeBSD triple, so it is tested first.
+#if defined(TN_PS4)
+    const char* os = "ps4";
+    const char* formFactor = "console";
+#elif defined(_WIN32)
     const char* os = "windows";
+    const char* formFactor = "desktop";
 #elif defined(__APPLE__)
     const char* os = "macos";
+    const char* formFactor = "desktop";
 #else
     const char* os = "linux";
+    const char* formFactor = "desktop";
 #endif
     platform->Set(ctx, v8str(isolate_, "os"), v8str(isolate_, os)).Check();
-    platform->Set(ctx, v8str(isolate_, "formFactor"), v8str(isolate_, "desktop")).Check();
+    platform->Set(ctx, v8str(isolate_, "formFactor"), v8str(isolate_, formFactor)).Check();
     platform->Set(ctx, v8str(isolate_, "maxTouchPoints"), v8::Integer::New(isolate_, 0)).Check();
     host->Set(ctx, v8str(isolate_, "platform"), platform).Check();
     host->Set(ctx, v8str(isolate_, "log"), v8::Function::New(ctx, &logCallback).ToLocalChecked()).Check();
@@ -1801,6 +1899,19 @@ int main(int argc, char** argv) {
     // what the game's `adapter.info` and the playtest's adapter class come from. A check has no GPU.
     if (!checkGame) game.setAdapter(player::adapterIdentity());
     std::string error;
+    const std::filesystem::path uiRoot = std::filesystem::path(gamePath).parent_path() / "ui";
+    std::error_code noUi;
+    const bool hasUi = std::filesystem::is_regular_file(uiRoot / "index.html", noUi);
+#if defined(TN_PS4)
+    // The guest has no environment to set, and the CSS backend is the only UI it links (PRD-784).
+    const bool cssUi = true;
+#else
+    const char* uiRenderer = std::getenv("TN_UI_RENDERER");
+    const bool cssUi = uiRenderer != nullptr && std::string(uiRenderer) == "native-css";
+#endif
+    // `createCssUiRoot().render(...)` commits while the bundle boots, before the window the CSS UI
+    // attaches to exists; held, those first frames reach the document instead of vanishing.
+    if (hasUi && cssUi && !checkGame) mystral::platform::holdUiPostsUntilCssAttach();
     if (!game.start(gamePath, error))
         return std::fprintf(stderr, "TN_PLAYER_V8_GAME: %s\n", error.c_str()), 1;
 
@@ -1863,11 +1974,7 @@ int main(int argc, char** argv) {
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
     // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=
     // native-css picks the CSS backend. The loop reaches it only through these hooks.
-    const std::filesystem::path uiRoot = std::filesystem::path(gamePath).parent_path() / "ui";
-    std::error_code noUi;
-    if (std::filesystem::is_regular_file(uiRoot / "index.html", noUi)) {
-        const char* renderer = std::getenv("TN_UI_RENDERER");
-        const bool cssUi = renderer != nullptr && std::string(renderer) == "native-css";
+    if (hasUi) {
 #if defined(__linux__) && !defined(__ANDROID__)
         if (!cssUi) {
             // As the legacy host does (cli/main.cpp): the web view attaches to an X11 surface, so GTK

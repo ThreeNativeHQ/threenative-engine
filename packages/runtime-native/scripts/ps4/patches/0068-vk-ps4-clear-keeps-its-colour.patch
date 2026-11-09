@@ -1,0 +1,50 @@
+--- a/src/vk_ps4_device.c
++++ b/src/vk_ps4_device.c
+@@ -160,6 +160,16 @@
+                     sceGnmPsRegsSetAddress(
+                         &dev->clear_ps_regs, (void *)meta.shadercode
+                     );
++                    /* The blob zeroes s[0:3] (s_mov_b64 x2) right before it loads the clear colour
++                     * through them, and declares USER_SGPR 3, one dword short of the V#: every draw
++                     * clear wrote 0,0,0,0, so the PS4 sky drew black (PRD-784 P5-5). */
++                    uint32_t *clear_code = (uint32_t *)meta.shadercode;
++                    if (clear_code[0] == 0xbe800480u && clear_code[1] == 0xbe820480u) {
++                        clear_code[0] = 0xbf800000u; /* s_nop */
++                        clear_code[1] = 0xbf800000u; /* s_nop */
++                    }
++                    dev->clear_ps_regs.spishaderpgmrsrc2ps =
++                        (dev->clear_ps_regs.spishaderpgmrsrc2ps & ~(0x1fu << 1)) | (4u << 1);
+                     dev->clear_ps_ready = true;
+ /* Breadcrumb: this binary cannot survive an unaligned code address
+                      * (see the load above), so name the address the GPU will use. */
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -475,6 +475,16 @@
+         return;
+     }
+     vk_ps4_emit_primitive_setup(cmd, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
++    /* The clear inherits CB_TARGET_MASK, CB_COLOR_CONTROL and DB_DEPTH_CONTROL from the last pipeline: a
++     * depth-only pass (shadow map) left mask 0, which drops the colour export (PRD-784 P5-5). The next
++     * CmdBindPipeline or rebind restores all three. */
++    sceGnmDrawCmdSetRenderTargetMask(&cmd->gnm_cmd, 0xF);
++    sceGnmDrawCmdSetCbControl(&cmd->gnm_cmd, V_028808_CB_NORMAL, V_028808_ROP3_COPY);
++    {
++        GnmDepthStencilControl ds_off;
++        memset(&ds_off, 0, sizeof(ds_off));
++        sceGnmDrawCmdSetDepthStencilControl(&cmd->gnm_cmd, &ds_off);
++    }
+ 
+     /* A colour target has no mip fields, so the image's own RT descriptor names
+      * level 0.  A clear of level N renders into a level-N target: the level's
+@@ -657,6 +667,11 @@
+         vk_ps4_emit_aa_config(cmd, (uint32_t)img->create_info.samples);
+     }
+ 
++    /* The dummy PS exports zeros, and the colour clear just before left its target bound at slot 0:
++     * with colour writes on, the depth clear painted that colour clear back to 0,0,0,0, so every PS4 scene
++     * pass lost its background colour (PRD-784 P5-5). The next CmdBindPipeline restores the mask. */
++    sceGnmDrawCmdSetRenderTargetMask(&cmd->gnm_cmd, 0);
++
+     /* Use embedded fullscreen VS + dummy PS */
+     sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+     sceGnmDrawCmdSetEmbeddedPsShader(&cmd->gnm_cmd, GNM_EMBEDDED_PSH_DUMMY);
