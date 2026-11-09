@@ -13,7 +13,13 @@ import type { LandformKind } from "../core/presets.js";
 import { SURVEYS, locationSurvey } from "../core/surveys.js";
 import type { IGroundDecision, IGroundRequest } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
-import type { ITerrainDocument, ITerrainState, Layer, SplinePoint } from "../core/types.js";
+import type {
+  IScatterClear,
+  ITerrainDocument,
+  ITerrainState,
+  Layer,
+  SplinePoint,
+} from "../core/types.js";
 import { starterAssetsDir } from "../kit-assets.js";
 import { measureGlb } from "./glb-stats.js";
 import { surveyHeights } from "./survey.js";
@@ -355,6 +361,19 @@ function floodedBodies(state: ITerrainState): IBiomeWaterBody[] {
  * the pack ships no art for draws nothing: the pack is the one art set a cook has. A starter keeps
  * its authored rules, so its cook stays the world its own bake writes.
  */
+/**
+ * The radius, in metres, around the world's centre that a preset's trees keep out of. The starter
+ * game's arena stands there (template `render/arena.ts` `ARENA`: ±13 m by ±11 m inside 1 m walls,
+ * a half-diagonal of 18.4 m), and the cook seats the ground under its floor, so a tree inside it
+ * grows through the floor or a wall; the radius adds a fir crown (3.6 m) and rounds up.
+ * ponytail: fixed to the starter arena; read the game's own footprint once a cook can see it.
+ */
+export const PLAY_AREA_CLEAR_RADIUS = 23;
+const PLAY_AREA_CLEAR: IScatterClear = {
+  mask: { type: "circle", at: [0, 0], radius: PLAY_AREA_CLEAR_RADIUS, falloff: 0.02 },
+  opacity: 1,
+};
+
 function scatterFoliage(
   state: ITerrainState,
   biome: IBiomeSpec,
@@ -373,7 +392,13 @@ function scatterFoliage(
   if (foliage.length === 0) return state;
   return finalizeState({
     ...state,
-    scatterRules: [...state.scatterRules, ...foliageScatterRules(foliage, state.height)],
+    scatterRules: [
+      ...state.scatterRules,
+      ...foliageScatterRules(foliage, state.height).map((rule) => ({
+        ...rule,
+        clear: [...rule.clear, PLAY_AREA_CLEAR],
+      })),
+    ],
   });
 }
 

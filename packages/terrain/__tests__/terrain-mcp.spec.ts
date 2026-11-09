@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   Heightfield,
   heightSamplerFromHeightmap,
@@ -18,7 +18,7 @@ import { BIOME_OWN } from "../src/core/request-words.js";
 import type { IGroundRequest } from "../src/core/surveys.js";
 import type { ITerrainDocument } from "../src/core/types.js";
 import { IsolatedKillError, childExecArgv, runIsolated } from "../src/mcp/child.js";
-import { cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
+import { PLAY_AREA_CLEAR_RADIUS, cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
 import { measureGlb } from "../src/mcp/glb-stats.js";
 import {
   TERRAIN_KITS,
@@ -1517,6 +1517,16 @@ describe("every landform under every biome", () => {
             cell.runs.map((run) => run.asset),
           );
           expect(new Set(placed)).toEqual(new Set([stand]));
+          // PRD-806 E62 judge: the starter game's arena stands at the world's centre, so no tree
+          // grows through its floor or walls (eight float32 per record, x and z at 0 and 2).
+          const bytes = await readFile(
+            join(project, dirname(result.worldPackage), manifest.placements),
+          );
+          const records = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+          let nearest = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < records.length; i += 8)
+            nearest = Math.min(nearest, Math.hypot(records[i] as number, records[i + 2] as number));
+          expect(nearest).toBeGreaterThanOrEqual(PLAY_AREA_CLEAR_RADIUS);
         }
         // The preset's own chain: a starter heightmap crop is what `landform` replaces.
         const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
