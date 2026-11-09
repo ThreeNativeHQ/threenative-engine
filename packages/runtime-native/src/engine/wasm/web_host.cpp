@@ -54,7 +54,7 @@ namespace {
 // 9 = tnw_web_clear_target, and tnw_web_render_target flags (bit 2: autoClear false).
 // 10 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
 // 11 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
-constexpr uint32_t kWebHostAbi = 11;
+constexpr uint32_t kWebHostAbi = 12;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
