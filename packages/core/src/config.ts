@@ -337,6 +337,14 @@ export interface IThreeNativeConfig {
     readonly fullscreen?: boolean;
     readonly keepScreenOn?: boolean;
     /**
+     * CPU priority of a shipped native game (PRD-859). `"game"`, the default, raises the game, render
+     * and present threads above other programs and lowers the game's own background work (shader
+     * compiles, workers, the HUD processes), through the route each OS allows without admin rights.
+     * `"normal"` keeps the OS default. The player reports what the OS applied on its
+     * `TN_PROCESS_PRIORITY` line. The browser owns scheduling, so a web build ignores it.
+     */
+    readonly priority?: "game" | "normal";
+    /**
      * Maximum native presentation rate in frames per second. Left out, it follows the display's own
      * refresh rate capped at 120 on desktop and web, and stays 60 on mobile where the ceiling is
      * power and heat; the resolved value and its source are reported on every `TN_FRAME_BUDGET`

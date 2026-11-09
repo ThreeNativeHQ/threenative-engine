@@ -239,6 +239,17 @@ describe("packageEngineDesktop", () => {
     expect(start).toBe(launcher(1920, 1080));
     expect(start).toContain(':"${TN_PLAYER_WIDTH:=1920}"'.slice(1));
     expect(start).toContain('exec "$DIR/tn-native-engine-player-v8" "$DIR/game.js" "$@"');
+    expect(start).toContain(':"${TN_PLAYER_PRIORITY:=game}"'.slice(1));
+  });
+
+  it("hands the player the game's CPU priority (display.priority, PRD-859)", () => {
+    expect(launcher(1280, 720, undefined, "normal")).toContain(
+      ':"${TN_PLAYER_PRIORITY:=normal}"'.slice(1),
+    );
+    expect(launcher(1280, 720, undefined, "normal")).toContain(
+      "export TN_PLAYER_WIDTH TN_PLAYER_HEIGHT TN_PLAYER_PRIORITY",
+    );
+    expect(() => launcher(1280, 720, undefined, "high")).toThrow(/TN_ENGINE_PACKAGE_ARGS/u);
   });
 
   it("opens the window with the game's title and size, a quote in the title included", async () => {
