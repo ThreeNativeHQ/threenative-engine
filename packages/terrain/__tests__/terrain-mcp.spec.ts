@@ -1215,24 +1215,30 @@ describe("terrain_generate biome cooks", () => {
         ground: "procedural",
       },
     ],
-  ] as const)("routes a river row with no layer down %s", async (_, request) => {
-    const world = await cook(request as Parameters<typeof cook>[0]);
-    try {
-      const row = (request.water as readonly { width: number }[])[0] as { width: number };
-      expect(world.result.water).toEqual([{ kind: "river", width: row.width }]);
-      expect(world.water.rivers).toHaveLength(1);
-      const points = world.water.rivers[0].points as [number, number, number][];
-      expect(points.length).toBeGreaterThanOrEqual(3);
-      // Downstream order: the last point reaches the world's edge, and no point climbs far.
-      const half = world.recipe.config.size / 2;
-      const last = points.at(-1) as [number, number, number];
-      expect(Math.max(Math.abs(last[0]), Math.abs(last[2]))).toBeGreaterThan(half - 8);
-      for (let k = 1; k < points.length; k++)
-        expect((points[k] as number[])[1]).toBeLessThanOrEqual((points[k - 1] as number[])[1] + 0.5);
-    } finally {
-      await world.remove();
-    }
-  }, 120_000);
+  ] as const)(
+    "routes a river row with no layer down %s",
+    async (_, request) => {
+      const world = await cook(request as Parameters<typeof cook>[0]);
+      try {
+        const row = (request.water as readonly { width: number }[])[0] as { width: number };
+        expect(world.result.water).toEqual([{ kind: "river", width: row.width }]);
+        expect(world.water.rivers).toHaveLength(1);
+        const points = world.water.rivers[0].points as [number, number, number][];
+        expect(points.length).toBeGreaterThanOrEqual(3);
+        // Downstream order: the last point reaches the world's edge, and no point climbs far.
+        const half = world.recipe.config.size / 2;
+        const last = points.at(-1) as [number, number, number];
+        expect(Math.max(Math.abs(last[0]), Math.abs(last[2]))).toBeGreaterThan(half - 8);
+        for (let k = 1; k < points.length; k++)
+          expect((points[k] as number[])[1]).toBeLessThanOrEqual(
+            (points[k - 1] as number[])[1] + 0.5,
+          );
+      } finally {
+        await world.remove();
+      }
+    },
+    120_000,
+  );
 
   it("fails closed on a lake row the recipe has no layer for", async () => {
     await expect(cook({ kit: "coastal", water: [{ kind: "lake", radius: 40 }] })).rejects.toThrow(
