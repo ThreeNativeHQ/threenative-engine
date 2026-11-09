@@ -85,7 +85,6 @@ unsigned JobPool::defaultWorkers() {
 }
 
 JobPool& JobPool::shared() {
-    if (threadPool_ != nullptr) return *threadPool_;
     auto& pool = sharedSlot();
     if (!pool) pool = std::make_unique<JobPool>(defaultWorkers());
     return *pool;

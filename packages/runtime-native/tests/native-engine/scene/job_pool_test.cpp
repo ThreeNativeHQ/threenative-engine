@@ -416,28 +416,7 @@ void itemFailureReachesTheCaller() {
 
 }  // namespace
 
-// PRD-860: the web host's glTF loader thread decodes on a pool of its own, so a model's decode never
-// takes the frame's workers. A thread that names a pool sees it from shared(); every other thread
-// keeps the process pool.
-void threadPoolOverride() {
-    JobPool& process = JobPool::shared();
-    JobPool own(1);
-    JobPool* seen = nullptr;
-    JobPool* after = nullptr;
-    std::thread loader([&] {
-        JobPool::useOnThisThread(&own);
-        seen = &JobPool::shared();
-        JobPool::useOnThisThread(nullptr);
-        after = &JobPool::shared();
-    });
-    loader.join();
-    CHECK(seen == &own);
-    CHECK(after == &process);
-    CHECK(&JobPool::shared() == &process);
-}
-
 TN_TEST_MAIN({"for_each_once", forEachOnce}, {"item_failure_reaches_the_caller", itemFailureReachesTheCaller}, {"matrix_walk_jobs", matrixWalkJobs},
              {"matrix_walk_threshold", matrixWalkThreshold}, {"pool_starts_on_need", poolStartsOnNeed}, {"pool_is_always_on", poolIsAlwaysOn},
              {"dispatch_floor", dispatchFloor}, {"workers_cover_the_machine", workersCoverTheMachine},
-             {"pool_fails_closed_when_no_worker_starts", poolFailsClosedWhenNoWorkerStarts},
-             {"thread_pool_override", threadPoolOverride})
+             {"pool_fails_closed_when_no_worker_starts", poolFailsClosedWhenNoWorkerStarts})

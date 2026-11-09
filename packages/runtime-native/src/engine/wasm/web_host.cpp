@@ -1013,16 +1013,10 @@ void runGltfJob(GltfJob& job) {
 std::mutex gltfQueueMutex;
 std::condition_variable gltfQueueWake;  // TN_WORKER_ONLY: the loader parks here; the main thread only notifies
 std::deque<std::shared_ptr<GltfJob>> gltfQueue;
-// ponytail: a fixed two, not measured per machine; the loader thread is a third lane of decode beside them.
-constexpr unsigned kGltfLoaderWorkers = 2;
 
 void queueGltfJob(std::shared_ptr<GltfJob> job) {
     static const bool started = [] {
         std::thread([] {
-            // Its own two decode workers: Midway's late fleet took all eight of the frame's for ~2 s a
-            // model, and the frame's jobs ran inline on the main thread meanwhile (PRD-860).
-            static JobPool decodes(kGltfLoaderWorkers);
-            JobPool::useOnThisThread(&decodes);
             for (;;) {
                 std::shared_ptr<GltfJob> next;
                 {
