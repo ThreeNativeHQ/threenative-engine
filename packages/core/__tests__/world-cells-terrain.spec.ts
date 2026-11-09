@@ -22,6 +22,7 @@ function makeModel(): Object3D {
 
 function cacheLoader(): IAssetLoader {
   return {
+    memo: () => Promise.reject(new Error("unused")),
     audio: () => Promise.reject(new Error("unused")),
     cache: {
       backgroundFill: false,

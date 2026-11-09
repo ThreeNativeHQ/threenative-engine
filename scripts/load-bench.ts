@@ -238,12 +238,10 @@ async function visit(
     // TN_LOAD_BENCH_RESOURCES=1: each request's start and end since navigation, as `TN_RESOURCE` marks.
     if (process.env.TN_LOAD_BENCH_RESOURCES === "1")
       for (const line of await page.evaluate(() =>
-        performance
-          .getEntriesByType("resource")
-          .map(
-            (entry) =>
-              `${Math.round(entry.responseEnd)} TN_RESOURCE ${Math.round(entry.startTime)}-${Math.round(entry.responseEnd)} ${(entry as PerformanceResourceTiming).encodedBodySize} ${entry.name.split("/").pop()}`,
-          ),
+        performance.getEntriesByType("resource").map((resource) => {
+          const entry = resource as PerformanceResourceTiming;
+          return `${Math.round(entry.responseEnd)} TN_RESOURCE ${Math.round(entry.startTime)}-${Math.round(entry.responseEnd)} ${entry.encodedBodySize} ${entry.name.split("/").pop()}`;
+        }),
       ))
         marks.push(line);
     if (cpuProfile !== undefined) {

@@ -144,6 +144,7 @@ function countingLoader(): { assets: IAssetLoader; models: string[] } {
   const inner = createAssetLoader({ basePath: "" });
   const models: string[] = [];
   const assets: IAssetLoader = {
+    memo: inner.memo,
     get compressedTextures() {
       return inner.compressedTextures;
     },
