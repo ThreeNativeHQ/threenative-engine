@@ -15,6 +15,7 @@
     "api:surface:sync": "tsx scripts/check-api-surface.ts --update && biome format --write --no-errors-on-unmatched scripts/api-surface.json",
     "bake:delete-test": "sh scripts/xvfb.sh tsx scripts/bake-delete-test.ts",
     "bench:engines": "tsx scripts/engine-load-test/cli.ts",
+    "bench:load": "tsx scripts/load-bench.ts",
     "bench:engines:report": "tsx scripts/engine-load-test/cli.ts --compare",
     "bench:engines:monitor": "tsx scripts/engine-load-test/monitor.ts",
     "dashboard": "tsx scripts/perf-live.ts",

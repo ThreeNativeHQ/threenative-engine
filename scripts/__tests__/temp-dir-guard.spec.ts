@@ -37,6 +37,10 @@ const allowedProductionCreators = new Map<string, string>([
     "Each compile round writes its cases to one staging directory removed in finally.",
   ],
   [
+    "scripts/load-bench.ts",
+    "Each measured cycle needs a browser profile that never saw the site, and its three visits remove it in finally.",
+  ],
+  [
     "packages/playtest/src/runner/videoAnalysis.ts",
     "Video frames are removed by the analysis finally.",
   ],

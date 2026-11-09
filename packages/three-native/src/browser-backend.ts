@@ -683,12 +683,14 @@ export function defineBrowserClasses(
     itemSizes,
     shapes,
     pending,
+    dirty,
     writeBack,
     itemSizeOf,
     rangeOf,
     syncRange,
     syncFull,
     instanceItem,
+    writeItemAt,
   } = defineAttributeSync({ runtime, refOf });
 
   const fromEngine = (value: EngineValue): unknown => {
@@ -898,6 +900,12 @@ export function defineBrowserClasses(
         writable: true,
         value(this: object, ...args: unknown[]) {
           if (glueCounting) methodCalls += 1;
+          // An instance's matrix or colour is an array write, as in three, sent before the next engine call.
+          if (instanceWrite !== undefined && writeItemAt(this, instanceWrite, args[0], args[1])) {
+            labels.delete(this);
+            animated.delete(this);
+            return this;
+          }
           // three's toArray(array, offset) writes the lanes into the array it is given and answers that array; the
           // engine answers a new one, since a plain array crosses by value.
           if (method === "toArray" && args[0] !== undefined) {
@@ -919,7 +927,7 @@ export function defineBrowserClasses(
           } else if (schedule === "all") scheduling = new WeakMap();
           // A per-vertex setter writes its own range and reads no kept array, so a whole-shadow flush
           // would cost O(N) a call; it syncs just its range back below. Anything else flushes edits.
-          if (pending.size > 0 && !rangeMethod && !bookkeeping) writeBack();
+          if ((pending.size > 0 || dirty.size > 0) && !rangeMethod && !bookkeeping) writeBack();
           // A full-array attribute transform reads its own array: send the game's shadow first.
           if (transformMethod) {
             const entry = arrays.get(this);
@@ -1715,6 +1723,7 @@ export function defineBrowserClasses(
                   );
               }
               pending.delete(this);
+              dirty.delete(this);
             }
             needsUpdate.set?.call(this, value);
           },

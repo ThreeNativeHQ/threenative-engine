@@ -184,6 +184,7 @@ export type { IRigidBody3DOptions, RigidBodyType } from "./RigidBody3D.js";
  * @situation add physics to a portable game
  * @situation provide the context used by character and rigid bodies
  * @constraint place rapier() before recast() in the plugin list
+ * @constraint ctx.physics is set before Scene.enter(), not during load(): Rapier initializes while the scene loads, so create bodies in enter() or later (TN_PHYSICS_NOT_READY)
  * @example const game = defineGame({ plugins: [rapier()] });
  * @requires npm i @threenative/physics
  */

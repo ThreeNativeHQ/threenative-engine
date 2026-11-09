@@ -11,6 +11,9 @@
 // hands the camera it renders with: a shared object posed at the probe, looking down the face's axis.
 // `database_environment_warmup`: startup warm-up's bake step (the V8 player's tn.prepareEnvironment)
 // advances the PMREM bake with no frame drawn, so the first frame after it draws the world.
+// `environment_bake_round_trips`: a GPU that finishes each group before the next call bakes a 2048-wide sky
+// in a few submissions. Every group waits for the GPU, so each one costs about two frames of a held startup
+// (PRD-860: ten groups held the minimal kit 350 ms on an Intel iGPU).
 
 #include "check.h"
 #include "engine/assets/probe_volume.h"
@@ -256,9 +259,35 @@ void databaseEnvironmentWarmUp() {
     CHECK(renderer.lastFrame().draws > 0);
 }
 
+void environmentBakeRoundTrips() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    auto sky = std::make_shared<DataTexture>();
+    sky->mapping = 303;
+    sky->width = 2048;  // a 512 cube: the kits' sky
+    sky->height = 1024;
+    sky->data.assign(size_t(sky->width) * sky->height * 4, 200);
+    sky->needsUpdate();
+    std::array<DrawItem, 1> items{};
+    items[0].envMap = sky.get();
+    int calls = 0;
+    bool done = false;
+    while (!done && calls < 64) {
+        done = renderer.prepareEnvironments(items);
+        ++calls;
+        CHECK(waitFor(renderer, [&] { return renderer.gpu().completedSerial() >= renderer.gpu().submittedSerial(); }));
+    }
+    std::printf("environment_bake_round_trips: %d calls\n", calls);
+    CHECK(done);
+    CHECK(calls <= 5);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"database_environment_warmup", databaseEnvironmentWarmUp},
+             {"environment_bake_round_trips", environmentBakeRoundTrips},
              {"shared_retired_sweep", sharedRetiredSweep},
              {"probe_capture_environment", probeCaptureDuringEnvironmentBake},
              {"probe_capture_callback_camera", probeCaptureCallbackCamera})

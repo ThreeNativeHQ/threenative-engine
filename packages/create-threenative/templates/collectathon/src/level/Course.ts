@@ -1,4 +1,4 @@
-import { WaveField } from "@threenative/core";
+import { type IAssetLoader, WaveField } from "@threenative/core";
 import {
   Box3,
   BoxGeometry,
@@ -19,7 +19,14 @@ import {
 import { HERO_FEEL } from "../entities/Hero.js";
 import type { WalkerKind } from "../entities/Walker.js";
 import { buildCastle, buildSignpost, planarUv, wrapUv } from "../render/castle.js";
-import { type IMeadow, plantIsland } from "../render/foliage.js";
+import {
+  type IMeadow,
+  type IPlantingRecord,
+  type IPlantingSite,
+  buildPlanting,
+  checkedPlanting,
+  planPlanting,
+} from "../render/foliage.js";
 import { farHills, paintGround } from "../render/ground.js";
 import { mottle, patches } from "../render/materials.js";
 import {
@@ -191,6 +198,18 @@ function auditCourse(
  * A boulder `size` metres across its middle: an icosphere pushed in and out by a few seeded waves and
  * flattened a little, smooth-shaded, so it reads as weathered rock and not as a faceted gem.
  */
+/**
+ * `Math.hypot(dx, dz) < reach`, asked thousands of times by the planting: squared distances settle
+ * every case more than a millionth from the edge, and the edge itself takes the same `hypot`.
+ */
+function within(dx: number, dz: number, reach: number): boolean {
+  const squared = dx * dx + dz * dz;
+  const edge = reach * reach;
+  if (squared > edge * 1.000001) return false;
+  if (squared < edge * 0.999999 && reach > 0) return true;
+  return Math.hypot(dx, dz) < reach;
+}
+
 function boulderGeometry(size: number, rng: () => number): BufferGeometry {
   const geometry = new IcosahedronGeometry(size, 2);
   const position = geometry.attributes.position;
@@ -217,10 +236,30 @@ export function makeRng(seed: number): () => number {
 }
 
 /**
- * `surfaces` are the loaded textures (`loadSurfaces` in surface.ts); `grassShare` is the share of
- * grass tufts the quality tier draws (`GRASS_SHARE` in `quality.ts`).
+ * The island planted: drawn from `site` on a run that has nothing stored, and read back from
+ * `memo` on the next run of this build, so `buildPlanting` has the same placements either way.
  */
-export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare = 1): ICourse {
+async function planted(
+  site: IPlantingSite,
+  memo: IAssetLoader["memo"] | undefined,
+): Promise<{ group: Group; meadow: IMeadow }> {
+  if (memo === undefined) return buildPlanting(planPlanting(site), site);
+  const record: IPlantingRecord = await memo("planting", () => planPlanting(site));
+  // The memo hands back flat arrays either way, so a hit costs a length check, not a rebuild.
+  return buildPlanting(checkedPlanting(record), site);
+}
+
+/**
+ * `surfaces` are the loaded textures (`loadSurfaces` in surface.ts); `grassShare` is the share of
+ * grass tufts the quality tier draws (`GRASS_SHARE` in `quality.ts`). `memo` keeps the planting
+ * between runs; without one every run draws it.
+ */
+export async function buildCourse(
+  rng: () => number,
+  surfaces: ISurfaces,
+  grassShare = 1,
+  memo?: IAssetLoader["memo"],
+): Promise<ICourse> {
   const group = new Group();
   group.name = "course";
   const [doorX, doorZ] = COURSE.castle.door;
@@ -451,7 +490,7 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
   /** Every pickup: scenery keeps a clear metre round each, so none hangs inside a tree or a rock. */
   const pickups = [...coins, ...gems, ...Object.values(seeds)];
   const nearPickup = (x: number, zz: number, reach: number): boolean =>
-    pickups.some(([kx, , kz]) => Math.hypot(x - kx, zz - kz) < reach);
+    pickups.some(([kx, , kz]) => within(x - kx, zz - kz, reach));
 
   // Scenery: boulders where the ground breaks into a slope, never on a route and never inside a
   // landmark (a rock through the shaft's wall, under the pillar's coin ring or in the castle).
@@ -499,11 +538,11 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
 
   // Planting (`render/foliage.ts`): never on a route a scenario runs, a landmark or a boulder.
   const taken = [...keepOut, ...boulders] as const;
-  const planting = plantIsland({
+  const plantingSite: IPlantingSite = {
     bounds: TERRAIN_BOUNDS,
     clear: (x, zz, w) =>
       !onRoute(x, zz, w) &&
-      !taken.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr + w) &&
+      !taken.some(([kx, kz, kr]) => within(x - kx, zz - kz, kr + w)) &&
       !nearPickup(x, zz, w + 1),
     flatness: terrain.flatness,
     grassShare,
@@ -519,7 +558,8 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
     surfaces,
     // The islet's drum cliff radius at the waterline: it narrows to 92% over its height.
     shores: [[COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius * 0.98]],
-  });
+  };
+  const planting = await planted(plantingSite, memo);
   group.add(planting.group);
 
   // The world's shape on a 1 m grid of land: the climb from the shore to the top, the share of
@@ -555,8 +595,14 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
     steepShare: steep / landCells,
   };
 
+  let audit: ICourse["audit"] | undefined;
   return {
-    audit: { ...auditCourse(group, pickups, ground), ...world },
+    // Measured on first read, not on every load: only the debug snapshot and the layout
+    // playtests read it, and walking every solid's bounds cost a run ~0.1 s.
+    get audit() {
+      audit ??= { ...auditCourse(group, pickups, ground), ...world };
+      return audit;
+    },
     checkpoints: [
       new Vector3(...COURSE.spawn),
       new Vector3(...onGround(sx + 9, 0, sz + 13)),

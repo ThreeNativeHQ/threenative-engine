@@ -1,4 +1,4 @@
-import { Box3, InstancedMesh, Matrix4, Mesh, Object3D, Quaternion, Vector3 } from "three";
+import { InstancedMesh, Matrix4, Mesh, Object3D, Quaternion, Vector3 } from "three";
 import { CollisionShape3D } from "./CollisionShape3D.js";
 import { RigidBody3D } from "./RigidBody3D.js";
 import type { IPhysicsContext } from "./plugin.js";
@@ -31,7 +31,6 @@ const scratchWorld = new Matrix4();
 const scratchPosition = new Vector3();
 const scratchScale = new Vector3();
 const scratchRotation = new Quaternion();
-const scratchBounds = new Box3();
 
 function optionsFor(filter: StaticColliderFilter | undefined): IBuildStaticCollidersOptions {
   return typeof filter === "function" ? { predicate: filter } : (filter ?? {});
@@ -63,9 +62,20 @@ function configureCarrier(carrier: Mesh, transform: Matrix4, scale: Vector3): vo
   carrier.updateMatrixWorld(true);
 }
 
+/**
+ * Whether the carrier's lowest world-space vertex sits below the ceiling: the exact answer
+ * `Box3.setFromObject(carrier, true)` gives, read from the Y row of the world matrix alone.
+ * The Box3 walk calls getVertexPosition and applyMatrix4 per vertex, about 35 ms per arena at load.
+ */
 function isReachable(carrier: Mesh, ceiling: number): boolean {
-  scratchBounds.setFromObject(carrier, true);
-  return !scratchBounds.isEmpty() && scratchBounds.min.y < ceiling;
+  const position = carrier.geometry.getAttribute("position");
+  if (position === undefined || position.count === 0) return false;
+  const e = carrier.matrixWorld.elements;
+  const [m1, m5, m9, m13] = [e[1] ?? 0, e[5] ?? 0, e[9] ?? 0, e[13] ?? 0];
+  for (let i = 0; i < position.count; i++)
+    if (m1 * position.getX(i) + m5 * position.getY(i) + m9 * position.getZ(i) + m13 < ceiling)
+      return true;
+  return false;
 }
 
 function addCollider(

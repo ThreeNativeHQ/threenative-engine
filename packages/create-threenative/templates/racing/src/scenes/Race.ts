@@ -14,6 +14,7 @@ import { RacingCar } from "../entities/RacingCar.js";
 import { Rival } from "../entities/Rival.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { cameraBank, chaseCamera, setupCamera } from "../render/camera.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
@@ -119,6 +120,8 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     this.#sky = texture;
     const scene = ctx.scene;
     if (scene === undefined) return;
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(scene, texture, ctx.renderer.softwareAdapter !== undefined);
     // The measurement is not awaited: it reads the GPU back and must not hold the first frame.
     void this.#sampleSky(ctx, scene, generation);

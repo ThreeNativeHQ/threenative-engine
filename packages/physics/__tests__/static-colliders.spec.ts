@@ -9,6 +9,7 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  SphereGeometry,
 } from "three";
 import { beforeAll, describe, expect, it } from "vitest";
 import "../src/index.js";
@@ -135,6 +136,22 @@ describe("buildStaticColliders", () => {
     expect(bodies[0]?.shape.descriptor.collisionLayer).toBe(2);
     expect(bodies[0]?.shape.descriptor.collisionMask).toBe(4);
 
+    plugin.dispose?.(ctx);
+  });
+
+  it("culls by the lowest transformed vertex, not by a loose box around the rotated mesh", async () => {
+    const { ctx, plugin } = await setup();
+    const root = new Group();
+    // A unit sphere at y 7 turned 45 degrees: its lowest vertex is at 6.0, the box around its rotated
+    // bounding box reaches 5.59. A 5.8 ceiling culls it only when the cull reads the real vertices.
+    const tilted = new Mesh(new SphereGeometry(1, 16, 12));
+    tilted.position.y = 7;
+    tilted.rotation.z = Math.PI / 4;
+    root.add(tilted);
+    root.add(new Mesh(new BoxGeometry(1, 1, 1)));
+
+    expect(buildStaticColliders(ctx, root, { reachableCeiling: 5.8 })).toHaveLength(1);
+    expect(buildStaticColliders(ctx, root, { reachableCeiling: 6.1 })).toHaveLength(2);
     plugin.dispose?.(ctx);
   });
 });

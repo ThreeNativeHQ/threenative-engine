@@ -26,6 +26,7 @@ import { Goal, ISLAND } from "../entities/Goal.js";
 import { type IPlayerModel, PLAYER_STAND_Y, Player } from "../entities/Player.js";
 import { createArena, platform } from "../render/arena.js";
 import { createSpringArm } from "../render/camera.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { pickupRiseEase } from "../render/easing.js";
 import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -86,6 +87,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ]);
     this.#playerModel = playerModel;
     this.#sky = sky;
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(ctx.scene, sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
