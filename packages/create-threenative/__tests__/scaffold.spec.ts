@@ -449,7 +449,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Play.ts's motion samples between presented frames and fixed steps, and moved two native
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
-  starter: "516e4d9bf588e826be0eeac6302ae7b8d0029281632a58285ddf759ddecfd0d6",
+  // Measured by this test on the merge of origin/develop (d4ef1a88d, PRD-784) into this lane:
+  // develop moved six starter sources, this lane moved its style.css, so neither parent value holds.
+  starter: "5a42f4e9be18bc0cb662b96368271fb309140dee544e220ef2eff3cc628207be",
   "tower-defense": "b0a7f7f6f872af021e758e4fb720192a19ecbafd42f2da34828787415a5b77a9",
 };
 

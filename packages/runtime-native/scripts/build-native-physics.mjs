@@ -11,7 +11,7 @@ const manifest = join(runtimeRoot, 'native', 'physics', 'Cargo.toml');
 const targetDir = join(runtimeRoot, '.runtime', 'physics-target');
 const requested = new Set(process.argv.slice(2));
 const checkOnly = requested.delete('--check');
-const supported = new Set(['--android', '--desktop', '--ios', '--ios-device', '--ios-simulator']);
+const supported = new Set(['--android', '--desktop', '--ios', '--ios-device', '--ios-simulator', '--ps4']);
 for (const argument of requested) {
   if (!supported.has(argument)) {
     throw new Error(`Unknown native physics target option: ${argument}`);
@@ -60,6 +60,9 @@ if (requested.has('--android')) {
 }
 if (requested.has('--ios-simulator')) targets.push(['aarch64-apple-ios-sim']);
 if (requested.has('--ios-device')) targets.push(['aarch64-apple-ios']);
+// PS4 (PRD-784): OpenOrbis links against its own musl, so the Linux musl staticlib's libc references
+// resolve there; nothing is linked here, so no linker is named.
+if (requested.has('--ps4')) targets.push(['x86_64-unknown-linux-musl']);
 
 if (
   !checkOnly
@@ -80,7 +83,7 @@ for (const [target, linker] of targets) {
     console.log(`${target}: ${artifact}`);
     continue;
   }
-  if (target.includes('apple')) {
+  if (target.includes('apple') || target.includes('musl')) {
     const rustTarget = spawnSync('rustup', ['target', 'add', target], {
       cwd: runtimeRoot,
       encoding: 'utf8',
@@ -88,7 +91,7 @@ for (const [target, linker] of targets) {
     if (rustTarget.status !== 0) {
       throw new Error(
         rustTarget.stderr || rustTarget.stdout
-          || `rustup could not install the required Apple Rust target ${target}`,
+          || `rustup could not install the required Rust target ${target}`,
       );
     }
   }

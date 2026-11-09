@@ -1,0 +1,222 @@
+diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
+index 51c1aed..d21a7f2 100644
+--- a/libpsbc/psbc_compile.c
++++ b/libpsbc/psbc_compile.c
+@@ -268,8 +268,12 @@ static PsbcResult buildshaderbinary(
+     if (is_vs_family && ctx->rargs->ac.vertex_buffers.used) {
+         numinputslots += 1;
+     }
+-    if (ctx->rargs->descriptors[0].used) {
+-        numinputslots += 1;
++    /* One slot per used descriptor set: each set's base is its own user SGPR
++     * pair, so the driver writes one 64-bit pointer per slot, at that set's
++     * startregister. */
++    for (unsigned s = 0; s < MAX_SETS; s++) {
++        if (ctx->rargs->descriptors[s].used)
++            numinputslots += 1;
+     }
+ 
+     uint32_t shspecificsize = headershsize(ctx->psbc_stage);
+@@ -703,18 +707,23 @@ static PsbcResult buildshaderbinary(
+         memcpy(buf + offset, &s, sizeof(s));
+         offset += sizeof(s);
+     }
+-    if (ctx->rargs->descriptors[0].used) {
++    /* One PTR_INDIRECTRESOURCETABLE slot per used set, apislot = the set index:
++     * the driver resolves the set from it and writes that set's base pointer to
++     * startregister (two user SGPRs, lo then hi). */
++    for (unsigned set = 0; set < MAX_SETS; set++) {
++        if (!ctx->rargs->descriptors[set].used)
++            continue;
+         const GnmInputUsageSlot s = {
+             .usagetype = GNM_SHINPUTUSAGE_PTR_INDIRECTRESOURCETABLE,
++            .apislot = set,
+             .startregister =
+                 ctx->rargs->ac
+-                    .args[ctx->rargs->descriptors[0].arg_index]
++                    .args[ctx->rargs->descriptors[set].arg_index]
+                     .offset,
+         };
+         memcpy(buf + offset, &s, sizeof(s));
+         offset += sizeof(s);
+     }
+-
+     /* write input/export semantics */
+     switch (ctx->stage) {
+     case MESA_SHADER_VERTEX:
+@@ -1023,9 +1032,9 @@ static const char* psbc_desc_name(VkDescriptorType type) {
+     }
+ }
+ 
+-/* Returns NULL with PSBC_RESULT_OK in *res when the shader has no resources */
++/* Returns NULL with PSBC_RESULT_OK in *res when the set has no resources */
+ static struct radv_descriptor_set_layout* psbc_build_set_layout(
+-    nir_shader* nir, PsbcResult* res
++    nir_shader* nir, unsigned set, PsbcResult* res
+ ) {
+     const nir_variable_mode modes =
+         nir_var_uniform | nir_var_image | nir_var_mem_ubo | nir_var_mem_ssbo;
+@@ -1038,12 +1047,8 @@ static struct radv_descriptor_set_layout* psbc_build_set_layout(
+     nir_foreach_variable_with_modes(var, nir, modes) {
+         if (psbc_var_desc_type(var) == VK_DESCRIPTOR_TYPE_MAX_ENUM)
+             continue;
+-        if (var->data.descriptor_set != 0) {
+-            fprintf(stderr, "psbc: %s uses descriptor set %u, only set 0 is supported\n",
+-                    var->name ? var->name : "resource", var->data.descriptor_set);
+-            *res = PSBC_RESULT_COMPILE_NIR;
+-            return NULL;
+-        }
++        if (var->data.descriptor_set != set)
++            continue;
+         if ((int)var->data.binding > maxbinding)
+             maxbinding = var->data.binding;
+     }
+@@ -1066,6 +1071,8 @@ static struct radv_descriptor_set_layout* psbc_build_set_layout(
+ 
+         if (type == VK_DESCRIPTOR_TYPE_MAX_ENUM)
+             continue;
++        if (var->data.descriptor_set != set)
++            continue;
+ 
+         b = &layout->binding[var->data.binding];
+         count = MAX2(glsl_get_aoa_size(var->type), 1);
+@@ -1095,12 +1102,12 @@ static struct radv_descriptor_set_layout* psbc_build_set_layout(
+         }
+         b->offset = i * PSBC_BINDING_STRIDE;
+         offset = b->offset + b->size * b->array_size;
+-        fprintf(stderr, "psbc: set 0 binding %d: %s x%u at offset %u, %u bytes each\n",
+-                i, psbc_desc_name(b->type), b->array_size, b->offset, b->size);
++        fprintf(stderr, "psbc: set %u binding %d: %s x%u at offset %u, %u bytes each\n",
++                set, i, psbc_desc_name(b->type), b->array_size, b->offset, b->size);
+     }
+ 
+     layout->size = offset;
+-    fprintf(stderr, "psbc: set 0 size %u bytes\n", layout->size);
++    fprintf(stderr, "psbc: set %u size %u bytes\n", set, layout->size);
+     return layout;
+ }
+ 
+@@ -1204,12 +1211,39 @@ PsbcResult psbc_compile_shader(
+     /* Descriptor set layout comes from every declared resource, before the
+      * optimizer removes unused ones: the runtime fills tables by the declared
+      * bindings, so offsets must not depend on what a variant happens to use */
+-    PsbcResult layoutres;
+-    struct radv_descriptor_set_layout* setlayout =
+-        psbc_build_set_layout(nir, &layoutres);
+-    if (layoutres != PSBC_RESULT_OK) {
+-        psbc_shutdown();
+-        return layoutres;
++    /* One layout per used set: a WebGPU pipeline binds up to four (the
++     * Compatibility guarantee, which vulkan-ps4 reports as maxBindGroups 4) and
++     * a set may be used by a stage the other one does not touch. radv lowers
++     * every descriptor load through layout.set[desc_set].layout, so a set with
++     * no resource of its own still needs an empty layout, not a NULL. */
++    const nir_variable_mode modes =
++        nir_var_uniform | nir_var_image | nir_var_mem_ubo | nir_var_mem_ssbo;
++    PsbcResult layoutres = PSBC_RESULT_OK;
++    unsigned nsets = 0;
++    nir_foreach_variable_with_modes(var, nir, modes) {
++        if (psbc_var_desc_type(var) != VK_DESCRIPTOR_TYPE_MAX_ENUM &&
++            var->data.descriptor_set + 1 > nsets)
++            nsets = var->data.descriptor_set + 1;
++    }
++    struct radv_descriptor_set_layout* setlayouts[MAX_SETS] = {0};
++    for (unsigned set = 0; set < nsets; set++) {
++        setlayouts[set] = psbc_build_set_layout(nir, set, &layoutres);
++        if (layoutres != PSBC_RESULT_OK) {
++            while (set--)
++                free(setlayouts[set]);
++            psbc_shutdown();
++            return layoutres;
++        }
++        if (!setlayouts[set]) {
++            /* Declared but unused by this stage: an empty layout. */
++            setlayouts[set] = calloc(1, sizeof(*setlayouts[set]));
++            if (!setlayouts[set]) {
++                while (set--)
++                    free(setlayouts[set]);
++                psbc_shutdown();
++                return PSBC_RESULT_INTERNAL_ERROR;
++            }
++        }
+     }
+ 
+     /* Optimize NIR */
+@@ -1228,10 +1262,9 @@ PsbcResult psbc_compile_shader(
+     /* Shader info + args + postprocess */
+     radv_nir_shader_info_init(stage.stage, stage.next_stage, &stage.info);
+ 
+-    if (setlayout) {
+-        stage.layout.num_sets = 1;
+-        stage.layout.set[0].layout = setlayout;
+-    }
++    stage.layout.num_sets = nsets;
++    for (unsigned set = 0; set < nsets; set++)
++        stage.layout.set[set].layout = setlayouts[set];
+ 
+     struct radv_graphics_state_key gfx_state = {0};
+     gfx_state.ps.epilog.spi_shader_col_format = V_028714_SPI_SHADER_FP16_ABGR;
+@@ -1286,6 +1319,25 @@ PsbcResult psbc_compile_shader(
+         &compiler_info, &gfx_state, &stage, previous_stage, NULL
+     );
+ 
++    /* The standalone compiler reports one input-usage slot per descriptor set
++     * and the ICD writes one 64-bit base pointer per slot. radv falls back to a
++     * single indirect table of 32-bit set pointers when the pairs do not fit
++     * the stage's sixteen user SGPRs; that table truncates a set base above
++     * 4 GiB, so a shader compiled that way would read the wrong memory. Name
++     * the limit instead of emitting it. */
++    if (stage.args.user_sgprs_locs.shader_data[AC_UD_INDIRECT_DESCRIPTORS]
++            .sgpr_idx != -1) {
++        fprintf(stderr,
++                "psbc: %u descriptor sets need %u user SGPRs as 64-bit base "
++                "pairs, more than a %s stage has; the indirect table is not "
++                "supported\n",
++                nsets, 2 * nsets, "PS4");
++        for (unsigned set = 0; set < nsets; set++)
++            free(setlayouts[set]);
++        psbc_shutdown();
++        return PSBC_RESULT_COMPILE_NIR;
++    }
++
+     /* Sony's vertex shader calls its fetch shader through user SGPR pair 0 --
+      * s_swappc_b64 s[0:1], s[0:1], the instruction buildshaderbinary()
+      * prepends -- so the runtime writes that address to VS user data slot 0.
+@@ -1346,7 +1398,8 @@ PsbcResult psbc_compile_shader(
+     );
+ 
+     if (!binary) {
+-        free(setlayout);
++        for (unsigned set = 0; set < nsets; set++)
++            free(setlayouts[set]);
+         psbc_shutdown();
+         return PSBC_RESULT_COMPILE_ACO;
+     }
+@@ -1384,7 +1437,8 @@ PsbcResult psbc_compile_shader(
+     out->size = output_size;
+ 
+     free(binary);
+-    free(setlayout);
++    for (unsigned set = 0; set < nsets; set++)
++        free(setlayouts[set]);
+     psbc_shutdown();
+ 
+     return result;
+diff --git a/src/amd/vulkan/radv_shader_args.c b/src/amd/vulkan/radv_shader_args.c
+index 2d9e1a3..401acb6 100644
+--- a/src/amd/vulkan/radv_shader_args.c
++++ b/src/amd/vulkan/radv_shader_args.c
+@@ -1016,8 +1016,11 @@ radv_declare_shader_args(const struct radv_compiler_info *compiler_info,
+       } else {
+          const uint32_t num_desc_set = util_bitcount(info->desc_set_used_mask);
+ 
+-         /* One dword per pointer, two per descriptor set or table (lo, hi). */
+-         if (info->force_indirect_descriptors || remaining_sgprs < num_desc_set) {
++         /* One dword per pointer, two per descriptor set or table (lo, hi), so
++          * four sets cost eight of the stage's sixteen user SGPRs. Compare
++          * against what they cost, not against how many there are: with the
++          * count, four sets pass a twelve-SGPR budget for eight SGPRs. */
++         if (info->force_indirect_descriptors || remaining_sgprs < 2 * num_desc_set) {
+             user_sgpr_info.indirect_all_descriptor_sets = true;
+             user_sgpr_info.remaining_sgprs -= 2;
+          } else {

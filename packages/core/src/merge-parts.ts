@@ -233,17 +233,13 @@ type NormalElements = readonly [
  * Positions of one part, placed, written into `values` at `at`.
  *
  * The expression is three's `Vector3.applyMatrix4` term for term over the same elements in the same
- * order, including its homogeneous divide, so a merged buffer holds the values it held before. The
- * second half of it is what `setXYZ` wrote back into the part's own typed array before the
- * de-quantizing copy read it again: `normalize` rounds into the channel's own range — the scratch
- * store keeps a value outside that range wrapping exactly as three's store did — and `denormalize`
- * reads it back as a float.
+ * order, including its homogeneous divide. A placed position leaves a quantized channel's range, so
+ * it goes straight to float and never back into the channel's own type.
  */
 function writePosition(
   channel: IChannel,
   indices: Uint16Array | Uint32Array | null,
   elements: PlacementElements | null,
-  scratch: IScratch | null,
   values: Float32Array,
   at: number,
 ): void {
@@ -271,14 +267,6 @@ function writePosition(
       pz = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w;
     }
     const out = at + vertex * 3;
-    if (scratch !== null) {
-      scratch[0] = Math.round(px * scale);
-      scratch[1] = Math.round(py * scale);
-      scratch[2] = Math.round(pz * scale);
-      px = Math.max((scratch[0] as number) / scale, -1);
-      py = Math.max((scratch[1] as number) / scale, -1);
-      pz = Math.max((scratch[2] as number) / scale, -1);
-    }
     values[out] = px;
     values[out + 1] = py;
     values[out + 2] = pz;
@@ -399,6 +387,15 @@ function scratchOf(array: IRawNumbers): IScratch | null {
   return null;
 }
 
+/** A channel as plain float, read through its own accessors so normalization and interleaving resolve. */
+function floatCopy(attribute: BufferAttribute | InterleavedBufferAttribute): BufferAttribute {
+  const values = new Float32Array(attribute.count * attribute.itemSize);
+  for (let index = 0; index < attribute.count; index += 1)
+    for (let component = 0; component < attribute.itemSize; component += 1)
+      values[index * attribute.itemSize + component] = attribute.getComponent(index, component);
+  return new BufferAttribute(values, attribute.itemSize);
+}
+
 function flatten(
   part: IMergePart,
   paint: boolean,
@@ -406,6 +403,10 @@ function flatten(
   deindex: boolean,
 ): BufferGeometry {
   const placed = part.geometry.clone();
+  // Placed before it is float, a quantized position is stored back into its own range and clamps.
+  const position = placed.getAttribute("position");
+  if (position !== undefined && (!(position.array instanceof Float32Array) || position.normalized))
+    placed.setAttribute("position", floatCopy(position));
   const matrix = placementMatrix(part);
   if (matrix !== undefined) placed.applyMatrix4(matrix);
   const flat = deindex && placed.index !== null ? placed.toNonIndexed() : placed;
@@ -428,17 +429,13 @@ function flatten(
       !("isInterleavedBufferAttribute" in attribute)
     )
       continue;
-    const values = new Float32Array(attribute.count * attribute.itemSize);
-    for (let index = 0; index < attribute.count; index += 1)
-      for (let component = 0; component < attribute.itemSize; component += 1)
-        values[index * attribute.itemSize + component] = attribute.getComponent(index, component);
-    flat.setAttribute(name, new BufferAttribute(values, attribute.itemSize));
+    flat.setAttribute(name, floatCopy(attribute));
   }
-  const position = flat.getAttribute("position");
-  if (!paint || position === undefined) return flat;
+  const flatPosition = flat.getAttribute("position");
+  if (!paint || flatPosition === undefined) return flat;
   const tone = new Color(part.color);
-  const painted = new Float32Array(position.count * 3);
-  for (let vertex = 0; vertex < position.count; vertex += 1) {
+  const painted = new Float32Array(flatPosition.count * 3);
+  for (let vertex = 0; vertex < flatPosition.count; vertex += 1) {
     painted[vertex * 3] = tone.r;
     painted[vertex * 3 + 1] = tone.g;
     painted[vertex * 3 + 2] = tone.b;
@@ -602,7 +599,6 @@ function writeChannel(
       indices,
       // quality-allow: Matrix4.elements is number[] in three's types and always 16 long.
       matrix === undefined ? null : (matrix.elements as unknown as PlacementElements),
-      scratchOf(channel.array),
       values,
       at,
     );

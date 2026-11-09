@@ -105,7 +105,15 @@ bool parsePackage(std::span<const uint8_t> bytes, Package& out, PackageError& er
     return true;
 }
 
-uint32_t targetDecoders() { return 0; }  // none qualified yet, on any target
+// Meshopt is qualified wherever tn_engine_meshopt is compiled in (TN_ENGINE_MESHOPT): the same decoder
+// the glTF loader uses, on every engine target. Draco and KTX2 are not, so their bits stay unset.
+uint32_t targetDecoders() {
+#ifdef TN_ENGINE_MESHOPT
+    return kDecoderMeshopt;
+#else
+    return 0;
+#endif
+}
 
 bool verifyPackage(const Package& package, uint32_t availableDecoders, PackageError& error) {
     for (const PackageEntry& e : package.entries) {

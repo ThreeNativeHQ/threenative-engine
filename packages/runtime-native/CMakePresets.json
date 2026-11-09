@@ -143,6 +143,36 @@
       "displayName": "ThreeNative web engine with Wasm threads (-pthread), for cross-origin-isolated pages",
       "binaryDir": "${sourceDir}/build/wasm-threads",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "TN_WEB_THREADS": "ON" }
+    },
+    {
+      "name": "tn-ps4",
+      "displayName": "ThreeNative PlayStation 4 (OpenOrbis): engine core + V8 adapter over the PS4 prebuilts",
+      "description": "Cross build for the PS4 lane (PRD-784). Stage the prebuilts with packages/runtime-native/scripts/ps4/ps4-deps.sh first. No PS4 artifact is written inside the repo: binaryDir and the staged third_party both live under $TN_PS4_E5_DIR.",
+      "generator": "Ninja",
+      "binaryDir": "$env{HOME}/.cache/tmp-tn/prd784/e5/build",
+      "toolchainFile": "${sourceDir}/cmake/ps4.toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+        "MYSTRAL_USE_V8": "ON",
+        "MYSTRAL_USE_JSC": "OFF",
+        "MYSTRAL_USE_QUICKJS": "OFF",
+        "MYSTRAL_USE_DAWN": "ON",
+        "MYSTRAL_USE_WGPU": "OFF",
+        "TN_ENABLE_CANVAS2D": "OFF",
+        "TN_ENABLE_VIDEO": "OFF",
+        "TN_ENABLE_RAYTRACING": "OFF",
+        "TN_ENABLE_WEBTRANSPORT": "OFF",
+        "TN_ENABLE_NATIVE_GLTF": "OFF",
+        "TN_ENABLE_DRACO": "OFF",
+        "TN_ENABLE_DEBUG_SERVER": "OFF",
+        "TN_ENABLE_NATIVE_PHYSICS": "ON",
+        "TN_ENABLE_CSS_UI": "ON",
+        "TN_ENABLE_METAHUMAN": "OFF",
+        "TN_ENGINE_ONLY": "ON",
+        "TN_ENGINE_PLAYER": "ON",
+        "MYSTRAL_USE_SWC": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -152,7 +182,8 @@
     { "name": "tn-android", "configurePreset": "tn-android" },
     { "name": "tn-ios", "configurePreset": "tn-ios" },
     { "name": "wasm", "configurePreset": "wasm", "targets": ["tn-native-engine-web"] },
-    { "name": "wasm-threads", "configurePreset": "wasm-threads", "targets": ["tn-native-engine-web"] }
+    { "name": "wasm-threads", "configurePreset": "wasm-threads", "targets": ["tn-native-engine-web"] },
+    { "name": "tn-ps4", "configurePreset": "tn-ps4" }
   ],
   "testPresets": [
     { "name": "tn-linux", "configurePreset": "tn-linux", "output": { "outputOnFailure": true } }

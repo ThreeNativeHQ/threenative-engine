@@ -1,0 +1,18 @@
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -397,6 +397,15 @@
+          * detiles must agree, and they do not for 2D macro-tiled mips, so the grid's lines
+          * read as scattered dots and blocks past level 0 (PRD-784 visuals). */
+         tex_ci.tilemodehint = mip_levels > 1 ? GNM_TM_DISPLAY_1D_THIN : GNM_TM_DISPLAY_2D_THIN;
++        /* A 16-byte texel takes thin micro tiling. shadPS4 v0.21.0 detiles DISPLAY micro tiling at
++         * 128 bpp in the thin element order (host_shaders/tiling.comp:159-166), while the upload
++         * tiles it in addrlib's display order (opengnm gpuaddr/surface.c:1583-1590): a 25x1 RGBA32F
++         * texture read zero at every odd texel and the wolves' pose texture collapsed them to slabs
++         * (PRD-784 P5-6). Both trees order thin tiles alike, and thin is a valid texture tiling on
++         * hardware. ponytail: back to display tiling once the pinned shadPS4 fixes its 128 bpp arm. */
++        if (pCreateInfo->format == VK_FORMAT_R32G32B32A32_SFLOAT || pCreateInfo->format == VK_FORMAT_R32G32B32A32_UINT ||
++            pCreateInfo->format == VK_FORMAT_R32G32B32A32_SINT)
++            tex_ci.tilemodehint = mip_levels > 1 ? GNM_TM_THIN_1D_THIN : GNM_TM_THIN_2D_THIN;
+         /* A volume is linear: vk_ps4_tiled_upload tiles one slice at a time and refuses depth > 1,
+          * so its upload is the row copy, which lands right only in a linear surface. Tiled, the
+          * 64^3 cloud noise read back scrambled and the sky drew thin streaks (PRD-784 visuals).

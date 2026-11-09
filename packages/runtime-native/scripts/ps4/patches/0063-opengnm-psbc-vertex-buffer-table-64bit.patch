@@ -1,0 +1,17 @@
+--- a/src/amd/vulkan/radv_shader_args.c
++++ b/src/amd/vulkan/radv_shader_args.c
+@@ -214,6 +214,14 @@
+    if (info->type != RADV_SHADER_TYPE_GS_COPY) {
+       if (info->vs.vb_desc_usage_mask) {
+          RADV_ADD_UD_ARG(state, 1, AC_ARG_CONST_ADDR, ac.vertex_buffers, AC_UD_VS_VERTEX_BUFFERS);
++         /* PS4: the vertex buffer table base is a 64-bit pointer, and the driver and the fetch shader
++          * use both halves (SetPointerUserData, s_load_dwordx4 from the SGPR pair). Without this high
++          * half, base_vertex took that SGPR: the VS read the pointer's high dword as base_vertex and
++          * shifted every gl_VertexIndex (the torn cloth pennant), and writing base_vertex zeroed the
++          * pointer (a garbage V#, device lost). Same convention as a set base (patch 0017). */
++         RADV_ADD_NULL_ARG(state, AC_ARG_SGPR, 1, AC_ARG_VALUE);
++         state->args->user_sgprs_locs.shader_data[AC_UD_VS_VERTEX_BUFFERS].num_sgprs++;
++         state->args->num_user_sgprs++;
+       }
+ 
+       RADV_ADD_UD_ARG(state, 1, AC_ARG_VALUE, ac.base_vertex, AC_UD_VS_BASE_VERTEX_START_INSTANCE);

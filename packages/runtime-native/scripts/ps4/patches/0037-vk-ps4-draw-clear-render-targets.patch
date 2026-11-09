@@ -1,0 +1,21 @@
+vulkan-ps4: draw-clear tiled render targets now that the fullscreen draw is a RECTLIST
+
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -534,9 +534,13 @@
+          * clear left an R8G8B8A8 target 25% covered and a 16_16_16_16 one
+          * untouched (clear: path=draw, CB_COLOR0_INFO/ATTRIB identical to the
+          * triangle draw's, so the target was never the disagreement). */
+-        uint32_t word = 0;
+-        if (vk_ps4_clear_val_uniform(img->create_info.format, cc, &word) ||
+-            tm == GNM_TM_DISPLAY_LINEAR_GENERAL ||
++        /* 0037: that measurement was the half-target TRILIST (0035): with the
++         * fullscreen RECTLIST the draw clears the whole target. A FillMemory
++         * over a whole render target is a CPU-visible write of every byte of it
++         * (15 MB for a 720p 4x target), which shadPS4 then re-syncs into its GPU
++         * copy each frame: the E5 profile spent a third of the GPU thread in
++         * memcpy. So only linear targets keep the fill. */
++        if (tm == GNM_TM_DISPLAY_LINEAR_GENERAL ||
+             tm == GNM_TM_DISPLAY_LINEAR_ALIGNED) {
+             vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc);
+         } else {

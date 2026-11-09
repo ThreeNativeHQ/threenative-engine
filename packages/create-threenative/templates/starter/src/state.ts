@@ -9,6 +9,8 @@ export type GameState = {
   levelX: number;
   lives: number;
   odometer: number;
+  /** True on a console (`isConsole()`): the menu shows pad prompts instead of keyboard ones. */
+  pad: boolean;
   /** Set from the UI's pause and resume intents, and read back by the menu. */
   paused: boolean;
   /** True once the UI layer has rendered and published its interactive rectangles. */
