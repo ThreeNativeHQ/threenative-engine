@@ -193,7 +193,7 @@ struct SourceGuard {
     static void lanesOf(Object3D& object, std::array<double, 15>& into) {
         into = {object.position.x, object.position.y, object.position.z, object.quaternion.x,
                 object.quaternion.y, object.quaternion.z, object.quaternion.w, object.scale.x,
-                object.scale.y, object.scale.z, object.visible() ? 1.0 : 0.0, object.castShadow() ? 1.0 : 0.0,
+                object.scale.y, object.scale.z, object.authoredVisible() ? 1.0 : 0.0, object.castShadow() ? 1.0 : 0.0,
                 object.receiveShadow() ? 1.0 : 0.0, double(object.renderOrder()), object.layers().mask};
     }
     static void watch(Object3D& object, Entry& entry) {
@@ -524,7 +524,10 @@ void registerObject3D(ClassBinding& b) {
     b.ctor = [](const Args&, Store&) { return makeNode(); };
 
     // The renderer's flat inputs. Every setter that bumps `revision` is one of these.
-    b.getters["visible"] = [](void* self) { return Value::of(as<Object3D>(self)->visible()); };
+    b.getters["visible"] = [](void* self) { return Value::of(as<Object3D>(self)->authoredVisible()); };
+    // Engine-internal: core's AutoBatch hides a merged source from drawing without touching its `visible`.
+    b.getters["__tnBatchHidden"] = [](void* self) { return Value::of(as<Object3D>(self)->batchHidden()); };
+    b.setters["__tnBatchHidden"] = [](void* self, const Value& v) { as<Object3D>(self)->setBatchHidden(flag(v)); };
     b.setters["visible"] = [](void* self, const Value& v) { as<Object3D>(self)->setVisible(flag(v)); };
     // Games set `visible` every frame, and the shadow flags on every mesh while they load; the Wasm
     // back end reads each byte and skips an unchanged set.

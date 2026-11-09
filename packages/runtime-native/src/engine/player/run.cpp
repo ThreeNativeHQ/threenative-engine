@@ -19,6 +19,23 @@
 #if !defined(_WIN32)
 #include <pthread.h>
 #endif
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <tlhelp32.h>
+// minwindef.h defines `near` and `far` as empty 16-bit pointer qualifiers; the engine's cameras and fog name fields so.
+#undef near
+#undef far
+#endif
+#if defined(__APPLE__)
+#include <pthread/qos.h>
+#endif
+#include <atomic>
 #include <cerrno>
 #if defined(__linux__)
 #include <linux/perf_event.h>
@@ -532,9 +549,42 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
  * PRD-859: a frame-critical thread names itself, so the priority sweep keeps it raised and lowers every other thread.
  * Runs on that thread, as its first job.
  */
+#if defined(_WIN32) || defined(__APPLE__)
+/**
+ * Windows and macOS keep each frame-critical thread by its id, not its name (`tn-gpu` is the present worker). On
+ * Windows the sweep raises them; on macOS a thread can set only its own QoS, so each one sets it here and stores what
+ * the OS reads back. 0 means the thread never started.
+ */
+std::atomic<uint64_t> gPresentThread{0}, gRenderThread{0};
+std::atomic<int> gPresentQos{0}, gRenderQos{0};
+#endif
+#if defined(__APPLE__)
+/** QoS of the calling thread, as the OS reads it back (pthread_get_qos_class_np). */
+int selfQos() {
+    qos_class_t qos = QOS_CLASS_UNSPECIFIED;
+    int relative = 0;
+    pthread_get_qos_class_np(pthread_self(), &qos, &relative);
+    return static_cast<int>(qos);
+}
+#endif
+
 void frameCriticalThread(const char* name) {
+    const bool present = std::strcmp(name, "tn-gpu") == 0;
 #if defined(__linux__)
+    (void)present;
     pthread_setname_np(pthread_self(), name);
+#elif defined(_WIN32)
+    (present ? gPresentThread : gRenderThread) = GetCurrentThreadId();
+#elif defined(__APPLE__)
+    pthread_setname_np(name);
+    // PRD-859: QOS_CLASS_USER_INTERACTIVE is the class macOS gives the work that draws the next frame.
+    if (surfaceConfig().priority) pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    uint64_t id = 0;
+    pthread_threadid_np(nullptr, &id);
+    (present ? gPresentThread : gRenderThread) = id;
+    (present ? gPresentQos : gRenderQos) = selfQos();
+#else
+    (void)present;
 #endif
 }
 
@@ -744,6 +794,103 @@ struct ThreadPlacement {
     /** Threads started after `start` inherit the game thread's core and nice value; a sweep a second moves them. */
     void sweepIfDue() {
         if (game != 0 && std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
+    }
+};
+#elif defined(_WIN32)
+/**
+ * PRD-859 on Windows: the frame-critical threads (the game thread, the present worker and the render thread) run at
+ * THREAD_PRIORITY_ABOVE_NORMAL (Unreal's Windows default) and every other thread of the player at
+ * THREAD_PRIORITY_LOWEST (TPri_Lowest). Neither needs admin. A sweep a second reaches threads started later. The values
+ * are read back with GetThreadPriority. TN_PLAYER_PRIORITY=normal changes no thread.
+ */
+struct ThreadPlacement {
+    bool priority = false;
+    DWORD game = 0;
+    std::chrono::steady_clock::time_point lastSweep{};
+    std::string reported;
+
+    void start() {
+        game = GetCurrentThreadId();
+        priority = surfaceConfig().priority;
+        sweep();
+    }
+    void sweep() {
+        lastSweep = std::chrono::steady_clock::now();
+        int readGame = INT_MIN, readRender = INT_MIN, readPresent = INT_MIN, background = INT_MIN;
+        const DWORD present = static_cast<DWORD>(gPresentThread.load()), render = static_cast<DWORD>(gRenderThread.load());
+        const HANDLE threads = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (threads == INVALID_HANDLE_VALUE) return;
+        THREADENTRY32 entry{};
+        entry.dwSize = sizeof entry;
+        for (BOOL more = Thread32First(threads, &entry); more; more = Thread32Next(threads, &entry)) {
+            if (entry.th32OwnerProcessID != GetCurrentProcessId()) continue;
+            const DWORD tid = entry.th32ThreadID;
+            const HANDLE thread = OpenThread(THREAD_SET_LIMITED_INFORMATION | THREAD_QUERY_LIMITED_INFORMATION, FALSE, tid);
+            if (!thread) continue;
+            int* critical = tid == game ? &readGame : tid == render ? &readRender : tid == present ? &readPresent : nullptr;
+            const int wanted = critical ? THREAD_PRIORITY_ABOVE_NORMAL : THREAD_PRIORITY_LOWEST;
+            if (priority && GetThreadPriority(thread) != wanted) SetThreadPriority(thread, wanted);
+            const int value = GetThreadPriority(thread);
+            CloseHandle(thread);
+            if (critical) *critical = value; else background = std::max(background, value);
+        }
+        CloseHandle(threads);
+        const auto text = [](int value) { return value == INT_MIN ? std::string("none") : std::to_string(value); };
+        // The highest background value is reported: every other background thread reads at or below it.
+        const std::string line = "game=" + text(readGame) + " render=" + text(readRender) + " present=" + text(readPresent) +
+                                 " background=" + text(background) + " source=" + (priority ? "SetThreadPriority" : "none") +
+                                 (priority ? " override=none" : " override=normal");
+        if (line == reported) return;
+        reported = line;
+        std::printf("TN_PROCESS_PRIORITY %s\n", line.c_str());
+        std::fflush(stdout);
+    }
+    void sweepIfDue() {
+        if (game != 0 && std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
+    }
+};
+#elif defined(__APPLE__)
+/**
+ * PRD-859 on macOS: a thread can set only its own QoS, so the game thread sets QOS_CLASS_USER_INTERACTIVE here and the
+ * present and render threads in frameCriticalThread. Threads the player does not create (V8, Dawn, the system) keep
+ * their own QoS: `background=default`. Game Mode comes from the packaged Info.plist (LSSupportsGameMode).
+ */
+struct ThreadPlacement {
+    bool priority = false;
+    std::chrono::steady_clock::time_point lastSweep{};
+    std::string reported;
+    int gameQos = 0;
+
+    static std::string name(int qos) {
+        switch (qos) {
+        case QOS_CLASS_USER_INTERACTIVE: return "user-interactive";
+        case QOS_CLASS_USER_INITIATED: return "user-initiated";
+        case QOS_CLASS_DEFAULT: return "default";
+        case QOS_CLASS_UTILITY: return "utility";
+        case QOS_CLASS_BACKGROUND: return "background";
+        case QOS_CLASS_UNSPECIFIED: return "unspecified";
+        default: return std::to_string(qos);
+        }
+    }
+    void start() {
+        priority = surfaceConfig().priority;
+        if (priority) pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+        gameQos = selfQos();
+        sweep();
+    }
+    void sweep() {
+        lastSweep = std::chrono::steady_clock::now();
+        const auto text = [](const std::atomic<uint64_t>& id, const std::atomic<int>& qos) { return id ? name(qos) : std::string("none"); };
+        const std::string line = "game=" + name(gameQos) + " render=" + text(gRenderThread, gRenderQos) + " present=" +
+                                 text(gPresentThread, gPresentQos) + " background=default source=" + (priority ? "qos" : "none") +
+                                 (priority ? " override=none" : " override=normal");
+        if (line == reported) return;
+        reported = line;
+        std::printf("TN_PROCESS_PRIORITY %s\n", line.c_str());
+        std::fflush(stdout);
+    }
+    void sweepIfDue() {
+        if (std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
     }
 };
 #else

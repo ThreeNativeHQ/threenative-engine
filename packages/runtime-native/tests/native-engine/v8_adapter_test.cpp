@@ -1284,6 +1284,27 @@ void collectVisits() {
     const uint64_t steady = adapter.collectVisits() - before;
     if (steady != 0) std::fprintf(stderr, "a steady frame visited %llu wrappers\n", (unsigned long long)steady);
     CHECK(steady == 0);
+    // A frame's math temporaries die every frame (a game's `new Vector3()` scratch, a three helper's clone).
+    // Releasing an object that can hold no other object changes nobody's ownership, so it must not make the
+    // next safe point decide for all 25,000 wrappers again (Midway: a full pass on every frame).
+    CHECK(js("(() => { for (let i = 0; i < 200; ++i) { new Vector3(i, 0, 0); new Matrix4(); new Quaternion(); } return 'ok'; })()") == "ok");
+    adapter.collect();
+    gc();
+    const uint64_t beforeTemporaries = adapter.collectVisits();
+    adapter.collect();
+    const uint64_t temporaries = adapter.collectVisits() - beforeTemporaries;
+    if (temporaries != 0) std::fprintf(stderr, "releasing math temporaries visited %llu wrappers\n", (unsigned long long)temporaries);
+    CHECK(temporaries == 0);
+    // A call that only reads a list of objects (core's animation bands, every frame) keeps none of them.
+    CHECK(js("globalThis.cam = new PerspectiveCamera(); globalThis.rigs = scene.children.slice(0, 64); scene.__bandRigs(cam, true, 1, rigs); 'ok'") == "ok");
+    adapter.collect();
+    const uint64_t beforeBands = adapter.collectVisits();
+    CHECK(js("scene.__bandRigs(cam, true, 1, rigs).length") == "64");
+    adapter.collect();
+    const uint64_t bands = adapter.collectVisits() - beforeBands;
+    if (bands != 0) std::fprintf(stderr, "a read-only list argument visited %llu wrappers\n", (unsigned long long)bands);
+    CHECK(bands == 0);
+    CHECK(js("globalThis.rigs = null; globalThis.cam = null; 'ok'") == "ok");
 
     // A change of ownership is not missed. Removed with the object as the argument:
     CHECK(js("globalThis.child = scene.children[10]; child.hp = 5; scene.remove(child); globalThis.child = null; 'ok'") == "ok");
