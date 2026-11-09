@@ -677,7 +677,10 @@ try {
     markers: ['TN_NATIVE_SMOKE_300_FRAMES:300'],
   });
   // The WebUI host: attach before the game evaluates, load, page module, first state, layout.
-  hostVariants.webUi = await runVariant('web-ui', [['TNUIRenderer', '-string', 'web']], {
+  // The smoke exits after 300 frames. At 60 fps that is 5 s, and on a CI simulator the game loop
+  // starves the main thread: run 42685499834 started the page navigation 3.5 s after attach and the
+  // app exited before `didFinishNavigation`. A 10 fps cap keeps the app alive for ~30 s.
+  hostVariants.webUi = await runVariant('web-ui', [['TNUIRenderer', '-string', 'web'], ['TNMaxFps', '-integer', 10]], {
     judge: judgeWebUiLaunch,
     markers: ['TN_NATIVE_SMOKE_300_FRAMES:300'],
     ui: true,
