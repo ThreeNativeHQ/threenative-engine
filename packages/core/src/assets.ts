@@ -229,6 +229,10 @@ export interface IAssetLoader {
   /**
    * Start the post-reveal idle fill. The engine calls this when `ctx.startup.whenReady()` settles;
    * a game that drives a loader outside `defineGame` may call it after its own reveal.
+   *
+   * It is also where the reveal is marked for {@link ASSET_LATE_MARKER}: a whole-file load a scene
+   * asks for after this call, and that the game did not `prefetch`, is reported as the pop-in it is.
+   * A game that never calls it never gets the report.
    */
   startBackgroundFill(): Promise<void>;
   /**

@@ -110,11 +110,21 @@ come from Midway's own cooked manifest (`public/assets.manifest.json`, 228 entri
   [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md): the meshopt decoder is already
   vendored in `third_party/meshopt/` and never compiled, and KTX2 needs a Basis transcoder that is
   not in the tree at all.
-- **The load split, not the cook, is what reaches AC-2's 50 MB.** Everything `load()` awaits today
-  is **136.4 MB over 255 files** (every model, all 68 speech clips, every cockpit texture, the sky).
-  A spawn-only await — the player's SBD, Yorktown, the deck crew, the atoll, the escort destroyer,
-  the atoll structures, the sky and the launch audio — is **64.3 MB**, so the split must also defer
-  the two 11 MB hulls and the cockpit's 13 MB of dial textures to land under 50 MB. No KTX2 needed.
+- **The load split, not the cook, is what reaches AC-2's 50 MB — and the runtime now says how much.**
+  On a cooked build the engine's own line reports `awaitedBytes` **139.5 MB**, `visibleBytes`
+  **42.2 MB**, `unattributedBytes` **21.9 MB** (textures and audio: no scene object ties them to a
+  view) and `offscreenBytes` **75.4 MB**, naming `akagi.glb` 17.2 MB hidden, `carrier.yorktown.glb`
+  10.8 MB not-placed, `midway-atoll.glb` 10.7 MB not-placed, `destroyer.samidare.glb` 10.4 MB
+  not-placed and `structures.radar-station.glb` 2.8 MB outside-view. So what the spawn camera shows
+  is 42.2 MB, the off-screen wait is 75.4 MB, and the gap to 50 MB closes by deferring the
+  off-screen files and moving the 13 MB of cockpit dials and most of the 8.7 MB of audio out of the
+  launch. ⚠️ Two of the four named files are `not-placed`, and the engine's own fix line warns why:
+  a model whose geometry the game merged into a new buffer loses its provenance, so Yorktown and the
+  atoll may be on screen and merely unattributable — check before deferring them.
+- **The cooked game boots and draws.** A cooked Midway briefing run on the owned engine loads in
+  11.3 s, enters at 15.6 s, draws 120 frames, passes its tone and diagnostics assertions, and loads
+  every one of the 40 cockpit textures through `ctx.assets`; its only failure is
+  `TN_PLAYTEST_SOFTWARE_ADAPTER` — Chromium on the runner's private Xvfb falls back to SwiftShader.
 - **The compact `instance` pass and the engine's `clone()` disagree.** Cooking turned repeated hull
   parts into `EXT_mesh_gpu_instancing`, and the shipped engine then threw
   `TN_ABI_6: clone(): TN_NATIVE_UNSUPPORTED TN_NATIVE_CLONE_UNSUPPORTED: InstancedMesh` inside
@@ -169,8 +179,8 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 
 #### Phase 1 — Midway boots on its spawn bytes
 
-- [ ] AC-1 [local]: The Midway launch playtest at 40 Mbps records the baseline: bytes before first play, time to first play and total shipped bytes. proof: `node packages/playtest/dist/runner/cli.js <midway>/playtests/launch.playtest.json --url http://127.0.0.1:5173 --browser-recipe webgpu` with `artifacts.network` set — Evidence: partial, not ticked. Bytes: 136.4 MB awaited before first play across 255 files, 166.2 MB shipped, both read from the cooked manifest. Time to first play: not measured — the SwiftShader lane never settled in 30 minutes (see "What execution measured").
-- [ ] AC-2 [local]: Cooked Midway reaches first play after 50 MB or less, and `TN_STARTUP_OFFSCREEN_BYTES` reports no warn. proof: the same playtest — Evidence: not met. 136.4 MB awaited, unchanged by the cook, because the split that would cut it needs a hull to arrive after `enter` (open item 1). A spawn-only await measures 64.3 MB, so the ceiling is reachable once the two 11 MB hulls and the cockpit's textures move out of the launch.
+- [ ] AC-1 [local]: The Midway launch playtest at 40 Mbps records the baseline: bytes before first play, time to first play and total shipped bytes. proof: `node packages/playtest/dist/runner/cli.js <midway>/playtests/launch.playtest.json --url http://127.0.0.1:5173 --browser-recipe webgpu` with `artifacts.network` set — Evidence: partial, not ticked. Bytes: the runtime's own `TN_STARTUP_OFFSCREEN_BYTES` on the cooked build reports 139.5 MB awaited before first play (255 files: visible 42.2, unattributed 21.9, off-screen 75.4), against 166.2 MB shipped. Loading 11.3 s, enter at 15.6 s on a software adapter. Time to first play at 40 Mbps: not measured — under SwiftShader the run fails on `TN_PLAYTEST_SOFTWARE_ADAPTER` before a link-bound number would mean anything.
+- [ ] AC-2 [local]: Cooked Midway reaches first play after 50 MB or less, and `TN_STARTUP_OFFSCREEN_BYTES` reports no warn. proof: the same playtest — Evidence: not met. 139.5 MB awaited and the warn fires: 75.4 MB of it is off the spawn camera. The ceiling is reachable — 42.2 MB is what the camera shows — by deferring the off-screen files named above and moving the 13 MB of cockpit dials and most of the 8.7 MB of audio out of the launch, which needs a hull that can arrive after `enter` (open item 1).
 - [ ] AC-3 [local]: The flight playtest reaches the enemy fleet with zero `TN_ASSET_LATE` lines, and the engine test proves that a late request emits the line. proof: `<midway>/playtests/flight.playtest.json` at 40 Mbps and `pnpm exec vitest run packages/core/__tests__/assets*.spec.ts` — Evidence: engine half done — `assets-late.spec.ts` proves a late request emits one line carrying its bytes, and that an awaited or prefetched file stays quiet; 94 tests green. Playtest half not run: nothing is deferred yet, so a zero there would prove nothing.
 
 #### Phase 2 — Textures stream by mip
@@ -230,9 +240,9 @@ enemy fleet, distant hulls and later audio to `prefetch` in the order the flight
 - Both playtests carry the 40 Mbps / 20 ms profile with console and network artifacts
   (`<midway>/playtests/launch.playtest.json`, `flight.playtest.json`).
 
-**Measured:** 166.2 MB shipped cooked from 188 MB of sources; 136.4 MB awaited before first play
-over 255 files; a spawn-only await of 64.3 MB; the bake skips 63.2 MB of model and 13.2 MB of
-texture compression for want of an engine decoder.
+**Measured:** 166.2 MB shipped cooked from 188 MB of sources; the runtime reports 139.5 MB awaited
+before first play (visible 42.2, unattributed 21.9, off-screen 75.4); the bake skips 63.2 MB of model
+and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
 
 **Open, in the order it blocks this phase:**
 
