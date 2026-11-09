@@ -35,7 +35,10 @@ import {
 } from "../src/render/world-impostor.js";
 
 function makeSurface(
-  source: MeshStandardMaterial | MeshPhysicalMaterial = new MeshStandardMaterial(),
+  source:
+    | MeshStandardMaterial
+    | MeshPhysicalMaterial
+    | MeshStandardNodeMaterial = new MeshStandardMaterial(),
 ): {
   readonly surface: WorldImpostorSurface;
   readonly atlas: WorldImpostorAtlas;

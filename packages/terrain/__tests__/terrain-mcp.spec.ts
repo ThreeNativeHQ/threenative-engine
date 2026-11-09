@@ -1230,8 +1230,8 @@ describe("terrain_generate biome cooks", () => {
         const last = points.at(-1) as [number, number, number];
         expect(Math.max(Math.abs(last[0]), Math.abs(last[2]))).toBeGreaterThan(half - 8);
         for (let k = 1; k < points.length; k++)
-          expect((points[k] as number[])[1]).toBeLessThanOrEqual(
-            (points[k - 1] as number[])[1] + 0.5,
+          expect((points[k] as [number, number, number])[1]).toBeLessThanOrEqual(
+            (points[k - 1] as [number, number, number])[1] + 0.5,
           );
       } finally {
         await world.remove();
