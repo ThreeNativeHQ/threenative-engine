@@ -1,6 +1,10 @@
 @import "tailwindcss";
 /* The corpus harness is not UI source: a word in its comments ("table") became a utility rule. */
 @source not "../../corpus";
+/* Nor is the parity scene: it is the meter's data, and every class in it is a probe the scene asks
+   both renderers for, not a class this HUD uses. Scanning it emitted all 507 probes into the HUD's
+   stylesheet and made this project's own native-css build report every family in the batch. */
+@source not "./tailwind-parity.scene.json";
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, sans-serif; /* bundled font is a later phase */

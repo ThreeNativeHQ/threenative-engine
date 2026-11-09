@@ -31,19 +31,48 @@ type LinearGradient<'a> = (
     &'a LineDirection,
     &'a [GradientItem<LengthPercentage>],
     GradientFlags,
+    style::color::mix::ColorInterpolationMethod,
 );
 type RadialGradient<'a> = (
     &'a EndingShape<NonNegative<CSSPixelLength>, NonNegative<LengthPercentage>>,
     &'a GenericPosition<LengthPercentage, LengthPercentage>,
     &'a OwnedSlice<GenericGradientItem<GenericColor<Percentage>, LengthPercentage>>,
     GradientFlags,
+    style::color::mix::ColorInterpolationMethod,
 );
 type ConicGradient<'a> = (
     &'a Angle,
     &'a GenericPosition<LengthPercentage, LengthPercentage>,
     &'a OwnedSlice<GenericGradientItem<GenericColor<Percentage>, AngleOrPercentage>>,
     GradientFlags,
+    style::color::mix::ColorInterpolationMethod,
 );
+
+/// Rewrite a gradient's stops so that its *alpha* carries its luminance.
+///
+/// VENDOR HUNK (threenative/css-ui): `mask-mode: luminance` is not implemented in this crate (a mask is
+/// composited with `DestIn`, which reads alpha), and two of Tailwind's mask stops are opaque colours that
+/// differ only in luminance — black and white are both alpha 1, so a luminance mask painted as an alpha
+/// mask hid everything.
+///
+/// The weights are applied to the **stored sRGB components**, not to linear-light values. CSS Masking
+/// describes a linear-light `luminance()`, and the first version of this hunk followed it; measured against
+/// Chromium on the parity scene that reading is wrong for a CSS gradient in this build. With linear-light
+/// values the six `mask-{linear,conic,radial}-{from,to}-red-50` cells scored 0.8145–0.8928 against the 0.99
+/// bar; with the sRGB weights all eighteen `-red-50` cells pass at 0.994–0.996 and the mask group goes
+/// 23 → 29 of 50 with no cell lost. A red-50 → black gradient sampled half way reads 0.20 from linear
+/// values and 0.48 from the sRGB ones, and Chromium paints 0.48 there.
+pub(crate) fn apply_luminance_alpha(gradient: &mut peniko::Gradient) {
+    for stop in gradient.stops.iter_mut() {
+        let color = stop.color.to_alpha_color::<peniko::color::Srgb>();
+        let components = color.components;
+        let luminance = 0.2126 * components[0] + 0.7152 * components[1] + 0.0722 * components[2];
+        let alpha = (luminance.clamp(0.0, 1.0) * components[3]).clamp(0.0, 1.0);
+        stop.color = peniko::color::DynamicColor::from_alpha_color(
+            peniko::color::AlphaColor::<peniko::color::Srgb>::new([1.0, 1.0, 1.0, alpha]),
+        );
+    }
+}
 
 pub(crate) fn to_peniko_gradient(
     gradient: &StyloGradient,
@@ -56,12 +85,13 @@ pub(crate) fn to_peniko_gradient(
         // https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient
         GenericGradient::Linear {
             direction,
+            color_interpolation_method,
             items,
             flags,
             // compat_mode,
             ..
         } => linear_gradient(
-            (direction, items, *flags),
+            (direction, items, *flags, *color_interpolation_method),
             origin_rect,
             bounding_box,
             scale,
@@ -69,19 +99,29 @@ pub(crate) fn to_peniko_gradient(
         ),
         GenericGradient::Radial {
             shape,
+            color_interpolation_method,
             position,
             items,
             flags,
             // compat_mode,
             ..
-        } => radial_gradient((shape, position, items, *flags), origin_rect, current_color),
+        } => radial_gradient(
+            (shape, position, items, *flags, *color_interpolation_method),
+            origin_rect,
+            current_color,
+        ),
         GenericGradient::Conic {
             angle,
+            color_interpolation_method,
             position,
             items,
             flags,
             ..
-        } => conic_gradient((angle, position, items, *flags), origin_rect, current_color),
+        } => conic_gradient(
+            (angle, position, items, *flags, *color_interpolation_method),
+            origin_rect,
+            current_color,
+        ),
     }
 }
 
@@ -92,7 +132,7 @@ fn linear_gradient(
     scale: f64,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
-    let (direction, items, flags) = gradient;
+    let (direction, items, flags, color_interpolation_method) = gradient;
 
     let center = bounding_box.center();
     let (start, end) = match direction {
@@ -147,6 +187,7 @@ fn linear_gradient(
         gradient_length,
         &mut gradient,
         repeating,
+        color_interpolation_method,
     );
     if repeating && gradient.stops.len() > 1 {
         gradient.kind = peniko::GradientKind::Linear(LinearGradientPosition {
@@ -163,7 +204,7 @@ fn radial_gradient(
     rect: Rect,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
-    let (shape, position, items, flags) = gradient;
+    let (shape, position, items, flags, color_interpolation_method) = gradient;
     let repeating = flags.contains(GradientFlags::REPEATING);
 
     let mut gradient = peniko::Gradient::new_radial((0.0, 0.0), 1.0).with_extend(if repeating {
@@ -249,6 +290,7 @@ fn radial_gradient(
                 CSSPixelLength::new(gradient_scale.x as f32),
                 &mut gradient,
                 repeating,
+                color_interpolation_method,
             );
             let scale = if repeating && gradient.stops.len() >= 2 {
                 (last_offset - first_offset) as f64
@@ -272,7 +314,7 @@ fn conic_gradient(
     rect: Rect,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
-    let (angle, position, items, flags) = gradient;
+    let (angle, position, items, flags, color_interpolation_method) = gradient;
 
     let repeating = flags.contains(GradientFlags::REPEATING);
     let mut gradient = peniko::Gradient::new_sweep((0.0, 0.0), 0.0, std::f32::consts::PI * 2.0)
@@ -288,6 +330,7 @@ fn conic_gradient(
         CSSPixelLength::new(1.0),
         &mut gradient,
         repeating,
+        color_interpolation_method,
     );
     if repeating && gradient.stops.len() >= 2 {
         gradient.kind = peniko::GradientKind::Sweep(SweepGradientPosition {
@@ -312,6 +355,7 @@ fn resolve_length_color_stops(
     gradient_length: CSSPixelLength,
     gradient: &mut Gradient,
     repeating: bool,
+    method: style::color::mix::ColorInterpolationMethod,
 ) -> (f32, f32) {
     resolve_color_stops(
         current_color,
@@ -319,12 +363,61 @@ fn resolve_length_color_stops(
         gradient_length,
         gradient,
         repeating,
+        method,
         |gradient_length: CSSPixelLength, position: &LengthPercentage| -> Option<f32> {
             position
                 .to_percentage_of(gradient_length)
                 .map(|percentage| percentage.to_percentage().unwrap_or(0.0))
         },
     )
+}
+
+/// Resample a gradient's stops for a colour space peniko does not interpolate in.
+///
+/// CSS Images 4 interpolates a gradient's stops in the space its `in <space>` names, and Tailwind 4
+/// emits `in oklab` for every gradient it writes. peniko interpolates in (premultiplied) sRGB, so a
+/// gradient whose method is not sRGB is expanded here: each pair gains enough intermediate stops that
+/// the sRGB segments between them follow the named space's curve, which is what a browser paints.
+fn resample_stops(
+    stops: &[(AbsoluteColor, f32)],
+    method: style::color::mix::ColorInterpolationMethod,
+) -> Option<Vec<peniko::ColorStop>> {
+    use style::color::{ColorSpace, mix};
+    if stops.len() < 2 || method.space == ColorSpace::Srgb {
+        return None;
+    }
+    // One stop every ~2% of the gradient: at the sizes a UI paints, a tighter spacing is invisible
+    // and a looser one leaves the sRGB segments visible as banding.
+    const PER_PAIR: u32 = 48;
+    let mut out = Vec::with_capacity(stops.len() * PER_PAIR as usize);
+    for pair in stops.windows(2) {
+        let [(left, left_at), (right, right_at)] = [pair[0], pair[1]];
+        if right_at <= left_at {
+            continue;
+        }
+        for step in 0..PER_PAIR {
+            let t = step as f32 / PER_PAIR as f32;
+            let mixed = mix::mix_many(
+                method,
+                [
+                    mix::ColorMixItem::new(left, 1.0 - t),
+                    mix::ColorMixItem::new(right, t),
+                ],
+                style::values::generics::color::ColorMixFlags::empty(),
+            );
+            out.push(peniko::ColorStop {
+                color: mixed.as_dynamic_color(),
+                offset: left_at + (right_at - left_at) * t,
+            });
+        }
+    }
+    if let Some((last, at)) = stops.last() {
+        out.push(peniko::ColorStop {
+            color: last.as_dynamic_color(),
+            offset: *at,
+        });
+    }
+    Some(out)
 }
 
 #[inline]
@@ -334,26 +427,28 @@ fn resolve_color_stops<T>(
     gradient_length: CSSPixelLength,
     gradient: &mut Gradient,
     repeating: bool,
+    method: style::color::mix::ColorInterpolationMethod,
     item_resolver: impl Fn(CSSPixelLength, &T) -> Option<f32>,
 ) -> (f32, f32) {
     let mut hint: Option<f32> = None;
+    // The stops as computed colours, in the order CSS interpolates them: the peniko list is what
+    // sRGB interpolation needs, and this is what the named space needs.
+    let mut absolute: Vec<(AbsoluteColor, f32)> = Vec::new();
 
     for (idx, item) in items.iter().enumerate() {
         let (color, offset) = match item {
             GenericGradientItem::SimpleColorStop(color) => {
                 let step = 1.0 / (items.len() as f32 - 1.0);
-                (
-                    color.resolve_to_absolute(current_color).as_dynamic_color(),
-                    step * idx as f32,
-                )
+                let color = color.resolve_to_absolute(current_color);
+                absolute.push((color, step * idx as f32));
+                (color.as_dynamic_color(), step * idx as f32)
             }
             GenericGradientItem::ComplexColorStop { color, position } => {
                 let offset = item_resolver(gradient_length, position);
                 if let Some(offset) = offset {
-                    (
-                        color.resolve_to_absolute(current_color).as_dynamic_color(),
-                        offset,
-                    )
+                    let color = color.resolve_to_absolute(current_color);
+                    absolute.push((color, offset));
+                    (color.as_dynamic_color(), offset)
                 } else {
                     continue;
                 }
@@ -446,6 +541,13 @@ fn resolve_color_stops<T>(
         }
     }
 
+    // A gradient whose interpolation method is not sRGB is painted from resampled stops: peniko has
+    // no notion of the named space, and the difference is visible in the middle of the gradient and
+    // nowhere else, which is exactly where a parity sample looks.
+    if let Some(resampled) = resample_stops(&absolute, method) {
+        gradient.stops = peniko::ColorStops(resampled.into_iter().collect());
+    }
+
     // Post-process the stops for repeating gradients
     if repeating && gradient.stops.len() > 1 {
         let first_offset = gradient.stops.first().unwrap().offset;
@@ -480,6 +582,7 @@ fn resolve_angle_color_stops(
     gradient_length: CSSPixelLength,
     gradient: &mut Gradient,
     repeating: bool,
+    method: style::color::mix::ColorInterpolationMethod,
 ) -> (f32, f32) {
     resolve_color_stops(
         current_color,
@@ -487,6 +590,7 @@ fn resolve_angle_color_stops(
         gradient_length,
         gradient,
         repeating,
+        method,
         |_gradient_length: CSSPixelLength, position: &AngleOrPercentage| -> Option<f32> {
             match position {
                 AngleOrPercentage::Angle(angle) => {

@@ -26,6 +26,7 @@ impl LayerManager {
         shape: &impl Shape,
         filter: Option<Arc<Filter>>,
         backdrop_filter: Option<Arc<Filter>>,
+        blend: peniko::Mix,
         paint_layer: F,
     ) {
         let layer_used = self.maybe_push_layer(
@@ -36,6 +37,7 @@ impl LayerManager {
             shape,
             filter,
             backdrop_filter,
+            blend,
         );
         paint_layer(scene);
         self.maybe_pop_layer(scene, layer_used);
@@ -51,6 +53,7 @@ impl LayerManager {
         shape: &impl Shape,
         filter: Option<Arc<Filter>>,
         backdrop_filter: Option<Arc<Filter>>,
+        blend: peniko::Mix,
     ) -> bool {
         if !condition {
             return false;
@@ -64,11 +67,11 @@ impl LayerManager {
         }
 
         // Actually push the layer
-        if opacity == 1.0 && filter.is_none() && backdrop_filter.is_none() {
+        if opacity == 1.0 && filter.is_none() && backdrop_filter.is_none() && blend == Mix::Normal {
             scene.push_clip_layer(transform, shape);
         } else {
             scene.push_layer(
-                Mix::Normal,
+                blend,
                 opacity,
                 transform,
                 shape,
