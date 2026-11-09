@@ -1745,7 +1745,7 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
 #ifndef MYSTRAL_CLI_NO_MAIN
     exitCode = finalizeCpuProfile(exitCode);
 #ifdef __APPLE__
-    // SDL3 audio threads block destructors: wait, then `_exit`, which keeps the code SIGKILL lost.
+    // SDL3's audio callback threads block destructors: wait, then `_exit` (SIGKILL lost the code).
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     _exit(exitCode);
 #elif !defined(_WIN32)
