@@ -30,6 +30,8 @@ The second half of the PRD-863 inventory (owner, 2026-11-10: "extract all world 
 
 - 2026-11-10 (agent, AFK): the per-bucket stream (`streamProps`) and the meadow lifecycle stay in the preview. The record format, residency, admission, LOD and shadows are already core's `WorldCells` and `cellPlacements`; what is left decides which buckets get impostors, the LOD and shadow bands, the swap timing and when a scene may revive, which is game policy.
 
+- 2026-11-10 (agent): four other resolve-then-fetch loops keep their own copy of `fetchAsset`'s walk. `WorldCells`' `loadLogical` also retries the next url when parsing fails, a different contract; `@threenative/metahuman` and `@threenative/procedural-animals` do not depend on core (and the animals loop adds abort and a byte cap); `@threenative/terrain`'s starter peer range (`>=0.3.12 <0.4.0`) admits published cores without `fetchAsset`.
+
 ## Acceptance
 
 - [ ] AC-1: No prop, model or collar mechanism in the PRD-863 inventory is left only in the preview, or each one left has a written reason here. proof: the inventory table in this PRD's PR comment
