@@ -134,7 +134,8 @@ describe("lakeSurfaceGeometry", () => {
     let checked = 0;
     for (let x = -10; x <= 30; x += 1.5)
       for (let z = -26; z <= 14; z += 1.5) {
-        if (water.footprintAt(x, z)?.kind !== "lake" || field.heightAt(x, z) >= LAKE.level) continue;
+        if (water.footprintAt(x, z)?.kind !== "lake" || field.heightAt(x, z) >= LAKE.level)
+          continue;
         checked += 1;
         expect(drawnAt(geometry, x, z), `(${x}, ${z})`).toBe(true);
       }
