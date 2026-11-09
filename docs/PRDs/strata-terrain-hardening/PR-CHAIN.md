@@ -105,7 +105,7 @@ Why this order:
 ## Step 0 — PRD-806 fixes, direct to develop
 
 - [x] Review `origin/prd806-visual-fixes` (E46, E49, E73, E56) and `origin/prd806-e62-fir-cook` (E62, E52, E41, E40, E39) against `origin/develop`. Neither branch has a PR. A DeepSeek-written diff gets a full review before merge. 2026-11-09: done by content — every non-docs file of the 12 PRD-806 fix commits on both branches is byte-identical in the PR #635 head (`git diff <fix> HEAD -- <file>` empty for all 37 files).
-- [ ] Merge each branch, run `pnpm typecheck`, `pnpm lint`, `pnpm exec vitest run packages/terrain/__tests__/`, and the native engine texture and renderer tests for E49 and E73. Tick the PRD-806 boxes with the results.
+- [x] Merge each branch, run `pnpm typecheck`, `pnpm lint`, `pnpm exec vitest run packages/terrain/__tests__/`, and the native engine texture and renderer tests for E49 and E73. Tick the PRD-806 boxes with the results. 2026-11-09 on the PR #635 head: `pnpm typecheck` exit 0 at `3817a9529` (exit 1 at `ecebc2fe5` on 3 chain-made spec type errors, fixed in that commit), `pnpm lint` exit 0, `vitest run packages/terrain/__tests__/` 600/600, E49 V8 `clone_listeners` red without the fix and green with it; E73 as ticked in PRD-806.
 - [x] Refresh `README.md` in this folder: the EPIC is merged, and the scope table and "Current state" date from 2026-11-04. 2026-11-09: done in `e1ba845e5` (EPIC merge, pointer to this chain) and `7bad7d910`.
 - [ ] Clean up the stale `strata-*` worktrees (`strata-base`, `strata-forest`, `strata-ground-fix`, `strata-ref-*`, `strata-terrain-hardening`). Check merge evidence and untracked data first, and ask before removing a dirty one.
 
