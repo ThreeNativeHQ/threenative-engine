@@ -414,38 +414,49 @@ export function liveUniforms<TNode extends object>(
     },
     /**
      * three's uniformArray(values): `element(i)` at a constant index is a uniform that reads
-     * `values[i]` before each render, as UniformArrayNode copies its array per update. ponytail: a
-     * node index needs an engine uniform array; it is refused by name.
+     * `values[i]` before each render, as UniformArrayNode copies its array per update. A node index
+     * (a Loop's `i`) selects among those uniforms. ponytail: one select per element on each read; an
+     * engine uniform array when a game indexes long arrays.
      */
     uniformArray(values: unknown[]) {
       if (!Array.isArray(values))
         throw new TypeError("TN_TSL_UNIFORM_ARRAY: uniformArray takes an array");
       const elements = new Map<number, TNode>();
-      return {
-        array: values,
-        element(index: unknown): TNode {
-          if (
-            typeof index !== "number" ||
-            !Number.isInteger(index) ||
-            index < 0 ||
-            index >= values.length
-          )
-            throw new RangeError(
-              `TN_TSL_UNIFORM_ARRAY: element needs a constant index in [0, ${values.length})`,
-            );
-          let node = elements.get(index);
-          if (node === undefined) {
-            node = live.uniform(values[index]);
-            // quality-allow: TNode does not expose internal onRenderUpdate hook from WebGPU node system.
-            const updatable = node as unknown as {
-              onRenderUpdate: (callback: () => unknown) => void;
-            };
-            updatable.onRenderUpdate(() => values[index]);
-            elements.set(index, node);
-          }
-          return node;
-        },
+      type IIndexNode = { equal(k: number): { select(a: TNode, b: TNode): TNode } };
+      const element = (index: unknown): TNode => {
+        if (
+          typeof index === "object" &&
+          index !== null &&
+          typeof (index as Partial<IIndexNode>).equal === "function" &&
+          values.length > 0
+        ) {
+          let picked = element(values.length - 1);
+          for (let k = values.length - 2; k >= 0; k--)
+            picked = (index as IIndexNode).equal(k).select(element(k), picked);
+          return picked;
+        }
+        if (
+          typeof index !== "number" ||
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >= values.length
+        )
+          throw new RangeError(
+            `TN_TSL_UNIFORM_ARRAY: element needs a constant index in [0, ${values.length})`,
+          );
+        let node = elements.get(index);
+        if (node === undefined) {
+          node = live.uniform(values[index]);
+          // quality-allow: TNode does not expose internal onRenderUpdate hook from WebGPU node system.
+          const updatable = node as unknown as {
+            onRenderUpdate: (callback: () => unknown) => void;
+          };
+          updatable.onRenderUpdate(() => values[index]);
+          elements.set(index, node);
+        }
+        return node;
       };
+      return { array: values, element };
     },
     sync(extra?: { camera?: unknown; scene?: unknown; frameId?: number }) {
       // `extra.frameId` is the renderer's frame: every render, target draw and compute of one frame

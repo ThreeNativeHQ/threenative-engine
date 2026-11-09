@@ -301,6 +301,22 @@ jobs:
           set -e
           printf '%s\nexit=%s\n' "$out" "$code"
           [ "$code" = 2 ] && grep -q 'TN_PLAYER_V8_ARGS: unknown argument --tn-smoke' <<<"$out"
+      # PRD-859: the game thread wins the CPU. Windows reads THREAD_PRIORITY_ABOVE_NORMAL on the frame-critical
+      # threads and LOWEST on the rest; macOS reads QOS_CLASS_USER_INTERACTIVE. Linux runs
+      # player-thread-placement.mjs in the native-engine ctest lane.
+      - name: The engine player gives its frame-critical threads the CPU
+        if: runner.os != 'Linux'
+        shell: bash
+        working-directory: packages/runtime-native
+        run: node tests/native-engine/player-thread-priority-desktop.mjs "build/tn-engine-ui/${{ matrix.player }}"
+      # The dummy driver has no presenter, so the present and render threads never start there. A real window does.
+      - name: The engine player gives its present and render threads the CPU in a real window
+        if: runner.os != 'Linux'
+        shell: bash
+        working-directory: packages/runtime-native
+        env:
+          TN_PRIORITY_WINDOWED: "1"
+        run: node tests/native-engine/player-thread-priority-desktop.mjs "build/tn-engine-ui/${{ matrix.player }}"
       # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
       # the step. So this ran without INCLUDE, LIB or a usable `cl`, and the first thing inside it
       # that *configures* a build directory — the physics contract lane — got "the C compiler is

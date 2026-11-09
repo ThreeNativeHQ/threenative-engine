@@ -57,6 +57,12 @@ struct Expr {
     uint64_t immediate = 0;  // constant bits, swizzle lanes, or an interned name
 };
 
+/** WGSL's read-modify-write atomics, by the index an AtomicAdd Expr keeps in its immediate's high word. */
+inline constexpr std::array<const char*, 7> kAtomicFunctions{"atomicAdd", "atomicSub", "atomicMax", "atomicMin",
+                                                             "atomicAnd", "atomicOr", "atomicXor"};
+constexpr uint32_t atomicBuffer(uint64_t immediate) { return uint32_t(immediate); }
+constexpr const char* atomicFunction(uint64_t immediate) { return kAtomicFunctions[immediate >> 32]; }
+
 /** A gather-compare Sample's immediate: the texture index, then the signed whole-texel x and y offsets. */
 constexpr uint64_t gatherImmediate(uint32_t texture, int8_t x, int8_t y) {
     return texture | uint64_t(uint8_t(x)) << 32 | uint64_t(uint8_t(y)) << 40;
@@ -123,11 +129,13 @@ public:
     /** `atomic`: an `array<atomic<i32|u32>>`; loads and stores on it become atomicLoad/atomicStore. */
     uint32_t storageBuffer(std::string_view name, Type element, bool atomic = false, Where where = Where::current());
     ExprId loadStorage(uint32_t buffer, ExprId index, Where where = Where::current());
-    /** `atomicAdd(&buffer[index], value)` on an atomic buffer: the element's value before the add. */
-    ExprId atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
+    /** `atomicAdd(&buffer[index], value)` on an atomic buffer: the element's value before the add. `function` picks
+     *  another read-modify-write builtin from kAtomicFunctions (atomicMax, ...); the Expr keeps it above the buffer. */
+    ExprId atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current(), uint8_t function = 0);
     void store(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
     /** A sampled 2D float texture and its sampler, bound together. */
-    uint32_t storageTexture2d(std::string_view name, std::string_view format);
+    /** A write-only storage texture binding; `volume` declares it 3D (three's Storage3DTexture). */
+    uint32_t storageTexture2d(std::string_view name, std::string_view format, bool volume = false);
     void textureStore(uint32_t texture, ExprId coordinate, ExprId value, Where where = Where::current());
     uint32_t texture2d(std::string_view name);
     /** WebGPU allows 16 samplers in a shader stage. */
@@ -264,7 +272,7 @@ private:
     std::unordered_map<std::string, uint64_t> nameIndex_;
     std::vector<Var> vars_;
     std::unordered_map<std::string, std::string> authoredFunctions_;
-    struct StorageTexture { std::string name, format; };
+    struct StorageTexture { std::string name, format; bool volume = false; };
     std::vector<StorageTexture> storageTextures_;
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;

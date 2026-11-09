@@ -204,6 +204,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     "three/addons/loaders/LUTCubeLoader.js": resolve(player, "core-lut.mjs"),
     "three/addons/loaders/HDRLoader.js": resolve(player, "core-hdr.mjs"),
     "three-mesh-bvh": resolve(threeNative, "src/addons/mesh-bvh.ts"),
+    "three-mesh-bvh/webgpu": resolve(player, "core-unused.mjs"),
     "three/addons/utils/BufferGeometryUtils.js": resolve(threeNative, "src/addons/buffer-geometry-utils.ts"),
     "three/addons/geometries/DecalGeometry.js": resolve(threeNative, "src/addons/decal-geometry.ts"),
     "three/addons/animation/CCDIKSolver.js": resolve(threeNative, "src/addons/ccd-ik-solver.ts"),

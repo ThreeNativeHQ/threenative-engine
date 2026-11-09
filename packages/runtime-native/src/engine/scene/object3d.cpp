@@ -313,6 +313,12 @@ void Object3D::setVisible(bool value) {
     bump();
 }
 
+void Object3D::setBatchHidden(bool value) {
+    if (batchHidden_ == value) return;
+    batchHidden_ = value;
+    bump();
+}
+
 Object3D::FlagOffsets Object3D::flagOffsets() {
     static const Object3D probe;
     const auto at = [](const bool& flag) {

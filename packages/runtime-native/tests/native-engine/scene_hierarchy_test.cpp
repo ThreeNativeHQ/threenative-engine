@@ -1463,9 +1463,33 @@ void debug_scene_counts() {
     waste::setDebugEnabled(false);
 }
 
+// core's AutoBatch keeps a merged source out of the draw with `setBatchHidden`. The game's own `visible`
+// is untouched, so a game that saves and restores visibility, or copies the source, sees and copies only
+// what it authored; the draw (`visible()`) honours both.
+void batch_hidden() {
+    Object3D parent, source;
+    parent.add(source);
+    const uint64_t before = source.revision();
+    source.setBatchHidden(true);
+    CHECK(source.revision() != before);   // the renderer's input changed
+    CHECK(!source.visible());              // not drawn
+    CHECK(source.authoredVisible());       // the game still reads its own `visible`
+    std::vector<std::string> seen;
+    parent.traverseVisible(collect, &seen);
+    CHECK(seen.size() == 2);               // traverseVisible is the game's walk: it follows `visible`
+    Object3D copy;
+    copy.copy(source);
+    CHECK(copy.visible() && !copy.batchHidden());  // a copy takes the game's value, never the hide
+    source.setVisible(false);              // the game hides it while merged
+    source.setBatchHidden(false);          // given back: the game's hide stands
+    CHECK(!source.visible() && !source.authoredVisible());
+    source.setVisible(true);
+    CHECK(source.visible());
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"debug_scene_counts", debug_scene_counts}, {"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
+TN_TEST_MAIN({"batch_hidden", batch_hidden}, {"debug_scene_counts", debug_scene_counts}, {"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
              {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh},
              {"transform_layout", transform_layout}, {"transform_lease", transform_lease},
              {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter},
