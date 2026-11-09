@@ -8514,6 +8514,25 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "throws `TN_PROP_BUCKET_INVALID` when the record buffer, the IDs and the runs disagree"
+      ],
+      "example": "for (const record of decodePropBucket(bucket)) pose(record.key, record.position, record.quaternion);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function decodePropBucket(bucket: IPropBucketPackage): IPropBucketRecord[] { … }",
+      "situations": [
+        "read a baked prop bucket back into placements to ground them on this machine's terrain"
+      ],
+      "summary": "The records of one compiled prop bucket, read back in record order: the inverse of `compilePropBuckets`, so a loader that fetched a bake's files gets each record's ID, model, pose and reach without re-deriving the container layout.",
+      "supersedes": [],
+      "symbol": "decodePropBucket"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const decoded = decodeRAW16(new Uint8Array(8), { width: 2, height: 2, min: 0, max: 1 });",
       "importPath": "@threenative/terrain",

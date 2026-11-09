@@ -18,12 +18,16 @@ The second half of the PRD-863 inventory (owner, 2026-11-10: "extract all world 
 
 ### Phase 2 — prop streaming and models
 
-- [ ] Baked prop package decode and per-bucket stream; meadow lifecycle. proof: `reveal.playtest.json`, `lod.playtest.json`, judge
+- [x] Baked prop package decode: `@threenative/terrain` `decodePropBucket`, the inverse of its own `compilePropBuckets`, replaces the preview's `recordsOf` decode. proof: `prop-package.spec.ts` round trip, `reveal.playtest.json` — 2026-11-10: terrain 6/6 (every compiled record reads back to its ID, model, pose and reach; a buffer that disagrees with its IDs throws `TN_PROP_BUCKET_INVALID`); the old and new decode are deep-equal on every record of the forest bake; preview 274/274; `reveal` exit 0, 10/10 (load 9). The records are identical, so no frame changes and no judge or `lod` run is due.
 - [x] Model to prop parts: core `meshSections`, `sectionGeometry` (one whole-model base for every section) and `repairZeroNormals`; `pack.ts` keeps its per-world reshape table. proof: `world-model-sections.spec.ts`, the old and new `prepareGeometry` compared — 2026-11-10: core 2/2; positions, normals and draw ranges bit-identical on over 400 world, asset, stone and section cases, so no frame changes and no judge is due; preview 274/274.
 
 ### Phase 3 — collar, walk band and loading
 
 - [ ] Terrain mesh and far collar build, collar walk band, canopy paint, texture preparation, baked file fetch. proof: a core spec each, `edge.playtest.json`, judge
+
+## Decisions
+
+- 2026-11-10 (agent, AFK): the per-bucket stream (`streamProps`) and the meadow lifecycle stay in the preview. The record format, residency, admission, LOD and shadows are already core's `WorldCells` and `cellPlacements`; what is left decides which buckets get impostors, the LOD and shadow bands, the swap timing and when a scene may revive, which is game policy.
 
 ## Acceptance
 

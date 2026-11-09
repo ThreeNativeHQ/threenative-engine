@@ -545,6 +545,7 @@
         "@threenative/terrain#compilePropBuckets": "export function compilePropBuckets( entries: readonly IPropBucketEntry[], options: ICompilePropBucketsOptions = { … }",
         "@threenative/terrain#createSegmentIndex": "export function createSegmentIndex<T>( segments: readonly IWaterSegment<T>[], cellSize: number, ): ISegmentIndex<T> { … }",
         "@threenative/terrain#decodeHeightPNG": "export async function decodeHeightPNG( input: Uint8Array | ArrayBuffer, options: IDecodeHeightPngOptions = { … }",
+        "@threenative/terrain#decodePropBucket": "export function decodePropBucket(bucket: IPropBucketPackage): IPropBucketRecord[] { … }",
         "@threenative/terrain#decodeRAW16": "export function decodeRAW16( input: Uint8Array | ArrayBuffer, { … }",
         "@threenative/terrain#encodeGLB": "export function encodeGLB(input: IBakedMesh | readonly IBakedMesh[]) { … }",
         "@threenative/terrain#encodeHeightPNG": "export async function encodeHeightPNG(state: ITerrainState, options: Partial<IHeightRange> = { … }",

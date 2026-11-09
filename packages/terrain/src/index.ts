@@ -63,6 +63,7 @@ export { bakeWorldPackage } from "./core/world-package.js";
 export {
   PROP_CELL_SIZE,
   compilePropBuckets,
+  decodePropBucket,
   propAssetOf,
   propPackageFile,
   propPackageFiles,
@@ -72,6 +73,7 @@ export type {
   IPropBucketEntry,
   IPropBucketKind,
   IPropBucketPackage,
+  IPropBucketRecord,
   IPropPackage,
   IPropPackageFiles,
 } from "./core/prop-package.js";

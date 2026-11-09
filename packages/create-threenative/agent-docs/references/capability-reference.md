@@ -6975,6 +6975,22 @@ export async function decodeHeightPNG( input: Uint8Array | ArrayBuffer, options:
 const png = await encodeHeightPNG(new Terrain({ resolution: 17 }).evaluate()); const heights = await decodeHeightPNG(png);
 ```
 
+### `decodePropBucket`
+
+`function` — The records of one compiled prop bucket, read back in record order: the inverse of `compilePropBuckets`, so a loader that fetched a bake's files gets each record's ID, model, pose and reach without re-deriving the container layout.
+
+```ts
+export function decodePropBucket(bucket: IPropBucketPackage): IPropBucketRecord[] { … }
+```
+
+- **Use when:** read a baked prop bucket back into placements to ground them on this machine's terrain
+- **Constraints:** throws `TN_PROP_BUCKET_INVALID` when the record buffer, the IDs and the runs disagree
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+for (const record of decodePropBucket(bucket)) pose(record.key, record.position, record.quaternion);
+```
+
 ### `decodeRAW16`
 
 `function` — Validates dimensions and range before decoding numerical height samples.

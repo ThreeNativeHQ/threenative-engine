@@ -27,6 +27,7 @@ import {
   type IPropPackage,
   PROP_CELL_SIZE,
   compilePropBuckets,
+  decodePropBucket,
   propAssetOf,
 } from "@threenative/terrain";
 import { Box3, type Camera, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
@@ -200,47 +201,25 @@ export async function loadSky(
   return Float32Array.from(new Uint8Array(await response.arrayBuffer()), (byte) => byte / 255);
 }
 
-/** The bucket's records, decoded from the eight float32 per record its container holds. */
+/** The bucket's records as placements: the bake's own decode, with the record's model and pose. */
 function recordsOf(bucket: IPropBucketPackage): IRecord[] {
-  const floats = new Float32Array(
-    bucket.placements.buffer,
-    bucket.placements.byteOffset,
-    bucket.placements.byteLength / 4,
-  );
-  if (floats.length !== bucket.ids.length * 8)
-    throw new Error(`Prop package '${bucket.bucket}': the record buffer disagrees with its IDs`);
-  const keys: string[] = new Array(bucket.ids.length);
-  for (const cell of bucket.cells)
-    for (const run of cell.runs)
-      for (let index = 0; index < run.count; index++) keys[run.offset + index] = run.asset;
-  return bucket.ids.map((id, index) => {
-    const key = keys[index];
-    if (key === undefined) throw new Error(`Prop package '${bucket.bucket}': '${id}' has no run`);
+  return decodePropBucket(bucket).map((record) => ({
+    key: record.key,
     // A run names the model it draws: the asset, the variant, and the shape when one scale cannot
     // carry the placement. The asset alone is what `preparePose` grounds.
-    const asset = propAssetOf(key);
-    const at = index * 8;
-    return {
-      key,
-      placement: {
-        alignToNormal: false,
-        asset,
-        id,
-        layer: `temperate-${asset}`,
-        normal: [0, 1, 0],
-        position: [floats[at] as number, floats[at + 1] as number, floats[at + 2] as number],
-        rotation: 0,
-        scale: floats[at + 7] as number,
-      },
-      quaternion: [
-        floats[at + 3] as number,
-        floats[at + 4] as number,
-        floats[at + 5] as number,
-        floats[at + 6] as number,
-      ],
-      reach: bucket.reach[index] ?? bucket.reach[0] ?? Number.POSITIVE_INFINITY,
-    };
-  });
+    placement: {
+      alignToNormal: false,
+      asset: record.asset,
+      id: record.id,
+      layer: `temperate-${record.asset}`,
+      normal: [0, 1, 0],
+      position: [...record.position],
+      rotation: 0,
+      scale: record.scale,
+    },
+    quaternion: record.quaternion,
+    reach: record.reach,
+  }));
 }
 
 /** The variant counters the bake left: a live placement's fade continues the stream it joined. */
