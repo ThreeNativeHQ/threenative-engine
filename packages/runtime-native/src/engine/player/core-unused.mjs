@@ -19,3 +19,7 @@ export const {
   positionPrevious, storage, tangentGeometry, tangentLocal, uint, vec4,
   context, mrt, output, velocity,
 } = globalThis;
+// three-mesh-bvh/webgpu's TSL ray query: core's GPUSceneBVH reads these at import, and a scene that builds one is refused.
+export const bvhIntersectFirstHit = unsupportedExport("bvhIntersectFirstHit");
+export const bvhNodeStruct = unsupportedExport("bvhNodeStruct");
+export const rayStruct = unsupportedExport("rayStruct");

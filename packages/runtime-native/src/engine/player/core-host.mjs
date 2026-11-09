@@ -26,6 +26,10 @@ const pointerLock = (on) => {
 };
 // The legacy host installs the drawing surface as a global too; a script entry (the load test) reads it there.
 globalThis.canvas = canvas;
+// A page's window is an event target too, and a game may read its input there (`inputTarget: globalThis`):
+// the player's input reaches the window's listeners as it reaches the canvas's.
+globalThis.addEventListener = canvas.addEventListener;
+globalThis.removeEventListener = canvas.removeEventListener;
 canvas.requestPointerLock = () => pointerLock(true);
 canvas.exitPointerLock = () => pointerLock(false);
 // A real monotonic clock, as a page has: ticks and timers keep their fixed-step time, but

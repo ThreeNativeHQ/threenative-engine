@@ -47,6 +47,7 @@ import { type PassDraw, definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
+import { defineLayeredTargets } from "./render-target.js";
 import { defineRendererUtils } from "./renderer-utils.js";
 import { ShadowBaseNode } from "./shadow-node.js";
 import { ReadbackBuffer } from "./storage.js";
@@ -234,6 +235,8 @@ export async function bindWebEngine(
   bound.QuadMesh = defineQuadMesh(classes as never);
   // three's GridHelper over the engine LineSegments (grid-helper.ts), shared with the V8 player.
   bound.GridHelper = defineGridHelper(classes as never);
+  // three's CubeRenderTarget, RenderTarget3D and CubeCamera (render-target.ts), shared with the V8 player.
+  Object.assign(bound, defineLayeredTargets(classes as never));
   // three's EdgesGeometry, Box2, typed BufferAttributes and AnimationUtils: JS ports shared with V8.
   bound.EdgesGeometry = defineEdgesGeometry(classes as never);
   bound.Box2 = defineBox2(classes as never);

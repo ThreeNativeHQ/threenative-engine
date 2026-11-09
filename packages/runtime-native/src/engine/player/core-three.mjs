@@ -11,6 +11,7 @@ import { AnimationUtils, defineCreateInterpolant } from "../../../../three-nativ
 import { defineBox2 } from "../../../../three-native/src/box2.ts";
 import { defineTypedBufferAttribute } from "../../../../three-native/src/buffer-attributes.ts";
 import { defineEdgesGeometry } from "../../../../three-native/src/edges-geometry.ts";
+import { defineLayeredTargets } from "../../../../three-native/src/render-target.ts";
 // Identity-preserving imports over the V8 adapter, never upstream Three.js.
 import { audio } from "./core-audio.mjs";
 export const {
@@ -38,6 +39,7 @@ export const {
   ConeGeometry,
   ConstantAlphaFactor,
   ConstantColorFactor,
+  CubeTexture,
   CustomBlending,
   CylinderGeometry,
   DataArrayTexture,
@@ -195,6 +197,8 @@ export const WebGLRenderer = unsupportedExport("WebGLRenderer");
 export const CompressedArrayTexture = unsupportedExport("CompressedArrayTexture");
 export const InstancedInterleavedBuffer = unsupportedExport("InstancedInterleavedBuffer");
 export const TextureUtils = unsupportedExport("TextureUtils");
+// three's CubeRenderTarget, RenderTarget3D and CubeCamera (shared with the Wasm back end).
+export const { CubeRenderTarget, RenderTarget3D, CubeCamera } = defineLayeredTargets(globalThis);
 export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
 
 // Native traversal and child enumeration are host callbacks, not a second JS scene graph.

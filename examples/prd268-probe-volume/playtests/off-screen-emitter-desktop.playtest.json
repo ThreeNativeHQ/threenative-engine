@@ -1,0 +1,38 @@
+{
+  "name": "prd268-off-screen-emitter-desktop",
+  "schemaVersion": 1,
+  "subject": "the native host bakes the probe volume through a cube camera and the neutral wall receives the off-screen emitter",
+  "target": "desktop",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 60,
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "bake-and-settle",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "volumeEnabled",
+        "equals": true,
+        "allowTrivial": "the native host has no URL, so the volume is on from the first frame"
+      },
+      { "id": "GameState", "path": "probe.status", "equals": "ready", "changed": true },
+      { "id": "GameState", "path": "probe.sampleNodeInstalled", "equals": true, "changed": true },
+      { "id": "GameState", "path": "probe.fraction", "equals": 1, "changed": true },
+      {
+        "id": "GameState",
+        "path": "probe.stale",
+        "equals": false,
+        "allowTrivial": "a settled bake stays fresh"
+      },
+      { "id": "GameState", "path": "probe.sampleRed", "gte": 0.01, "changed": true },
+      { "id": "GameState", "path": "probe.sampleHueRatio", "gte": 3, "changed": true }
+    ]
+  }
+}

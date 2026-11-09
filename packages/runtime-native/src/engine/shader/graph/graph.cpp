@@ -377,6 +377,18 @@ ExprId Lowerer::emit(Node node) {
                     if (at.scalar != scalar) a = program_.construct(Type::vec(at.rows, scalar), {a});
                     if (bt.scalar != scalar) b = program_.construct(Type::vec(bt.rows, scalar), {b});
                 }
+            } else {
+                // r187's OperatorNode: operands of two component types meet at the higher of bool < uint < int < float
+                // (NodeBuilder.getPromotedComponentType), so `float.add(int)` is a float, as on the web.
+                const auto at = program_.expr(a).type, bt = program_.expr(b).type;
+                const auto rank = [](Type::Scalar s) {
+                    return s == Type::Scalar::F32 ? 3 : s == Type::Scalar::I32 ? 2 : s == Type::Scalar::U32 ? 1 : 0;
+                };
+                if (at.numeric() && bt.numeric() && !at.isMatrix() && !bt.isMatrix() && at.scalar != bt.scalar) {
+                    const auto scalar = rank(at.scalar) >= rank(bt.scalar) ? at.scalar : bt.scalar;
+                    if (at.scalar != scalar) a = program_.construct(Type::vec(at.rows, scalar), {a});
+                    if (bt.scalar != scalar) b = program_.construct(Type::vec(bt.rows, scalar), {b});
+                }
             }
             switch (d.binary) {
                 case BinOp::Add: return program_.add(a, b);
@@ -478,7 +490,16 @@ ExprId Lowerer::emit(Node node) {
             if (coordinate == kInvalid) return kInvalid;
             // A DataArrayTexture reads at (uv, layer); a texture(array, uv) with no `.depth(layer)` reads layer 0.
             const auto object = d.textureObject();
-            const bool array = object && static_cast<const tn::engine::Texture*>(object.get())->array;
+            const bool cube = object && static_cast<const tn::engine::Texture*>(object.get())->cube;
+            const bool array = !cube && object && static_cast<const tn::engine::Texture*>(object.get())->array;
+            // r187's CubeTextureNode.setupUV under the WebGPU coordinate system: the direction's x is negated.
+            if (cube) {
+                if (program_.expr(coordinate).type != Type::vec(3))
+                    throw std::runtime_error("TN_TSL cubeTexture: needs a vec3 direction, as an argument or through "
+                                             ".sample(direction); the reflect-vector default is not bound natively");
+                coordinate = program_.construct(Type::vec(3), {program_.neg(program_.swizzle(coordinate, "x")),
+                                                               program_.swizzle(coordinate, "yz")});
+            }
             if (array && program_.expr(coordinate).type == Type::vec(2))
                 coordinate = program_.construct(Type::vec(3), {coordinate, program_.constant(0.0f)});
             // A depth texture, or the scene pass's own depth (a texture named "depth" with no object
@@ -503,7 +524,7 @@ ExprId Lowerer::emit(Node node) {
                 return texture;
             };
             const auto textureOf = [&] {
-                return declared(array ? program_.texture2dArray(d.name)
+                return declared(cube ? program_.textureCube(d.name) : array ? program_.texture2dArray(d.name)
                                 : program_.expr(coordinate).type == Type::vec(3) ? program_.texture3d(d.name) : program_.texture2d(d.name));
             };
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
@@ -519,7 +540,7 @@ ExprId Lowerer::emit(Node node) {
             // uniform is declared here, at first use, so a node material without a texture keeps its
             // layout. Volumes (probe GI, LUTs), arrays and post or compute graphs keep the implicit LOD.
             const bool volume = program_.expr(coordinate).type == Type::vec(3);
-            if (!volume && !array && inputs_.count("viewMipBias") && program_.stage() == Stage::Fragment)
+            if (!volume && !array && !cube && inputs_.count("viewMipBias") && program_.stage() == Stage::Fragment)
                 return program_.sampleBias(textureOf(), coordinate, program_.uniform("viewMipBias", Type::f32()));
             return program_.sample(textureOf(), coordinate);
         }

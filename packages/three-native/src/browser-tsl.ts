@@ -72,6 +72,7 @@ const FUNCTIONS = [
   "uv",
   "texture",
   "texture3D",
+  "cubeTexture",
   "add",
   "sub",
   "mul",
@@ -418,6 +419,7 @@ function takesEngineObject(name: string, index: number): boolean {
     (index === 0 &&
       (name === "pmremTexture" ||
         name === "texture3D" ||
+        name === "cubeTexture" ||
         name === "storageTexture" ||
         name === "textureStore" ||
         name === "lightShadowMatrix")) ||
@@ -612,18 +614,20 @@ export function defineTsl(
   exports.lights = (list: readonly unknown[] = []) => wrap(call("lights", null, [...list]));
   exports.nodeObject = (value: unknown) =>
     isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
-  exports.texture = (initial: unknown, ...args: unknown[]) => {
-    let value = initial;
-    const node = wrap(call("texture", null, [value, ...args]));
-    return Object.defineProperty(node, "value", {
-      get: () => value,
-      set: (next: unknown) => {
-        if (next === value) return;
-        runtime.release(call("textureValue", node[TSL_NODE], [next]));
-        value = next;
-      },
-    });
-  };
+  // three's TextureNode.value: assigning another texture swaps the one the node samples (ProbeVolume swaps its volume).
+  for (const name of ["texture", "texture3D", "cubeTexture"])
+    exports[name] = (initial: unknown, ...args: unknown[]) => {
+      let value = initial;
+      const node = wrap(call(name, null, [value, ...args]));
+      return Object.defineProperty(node, "value", {
+        get: () => value,
+        set: (next: unknown) => {
+          if (next === value) return;
+          runtime.release(call("textureValue", node[TSL_NODE], [next]));
+          value = next;
+        },
+      });
+    };
   exports.rtt = defineRtt(
     exports.rtt as Parameters<typeof defineRtt>[0],
     classes && "Mesh" in classes

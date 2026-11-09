@@ -110,6 +110,11 @@ inline bool isTextureClass(std::string_view cls) {
     return cls == "StorageTexture" || cls == "DepthTexture" || cls == "Texture" || cls == "DataTexture" || cls == "CanvasTexture";
 }
 
+/** A texture a renderer creates on the GPU and copies into: a material map class, or an array, volume or cube. */
+inline bool isGpuTextureClass(std::string_view cls) {
+    return isTextureClass(cls) || cls == "DataArrayTexture" || cls == "Data3DTexture" || cls == "CubeTexture";
+}
+
 inline bool acceptsClass(std::string_view actual, std::string_view expected) {
     return actual == expected || (expected == "Material" && isMaterialClass(actual));
 }

@@ -42,7 +42,7 @@ export const {
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld, positionWorldDirection,
   normalViewGeometry, instanceIndex, cameraViewMatrix, modelWorldMatrix, ivec2, ivec3, ivec4, uvec2, uvec3, uvec4, nodeObject, reflect, textureLoad, textureSize,
-  mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
+  mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
   cameraNear, cameraFar, screenSize, depth, viewportSharedTexture, viewportDepthTexture, linearDepth, viewportLinearDepth,
@@ -99,8 +99,9 @@ export const rtt = defineRtt(globalThis.tsl.rtt, { NodeMaterial: globalThis.Node
 import { defineWgslFn } from "../../../../three-native/src/wgsl-fn.ts";
 export const wgslFn = defineWgslFn(globalThis.tsl.wgslFunction);
 
-export function texture(value, ...args) {
-  const node = globalThis.tsl.texture(value, ...args);
+// three's TextureNode.value: assigning another texture swaps the one the node samples (ProbeVolume swaps its volume).
+const swappable = (make) => (value, ...args) => {
+  const node = make(value, ...args);
   let current = value;
   return Object.defineProperty(node, "value", {
     get: () => current,
@@ -110,7 +111,10 @@ export function texture(value, ...args) {
       current = next;
     },
   });
-}
+};
+export const texture = swappable((...args) => globalThis.tsl.texture(...args));
+export const texture3D = swappable((...args) => globalThis.tsl.texture3D(...args));
+export const cubeTexture = swappable((...args) => globalThis.tsl.cubeTexture(...args));
 
 export const {
   EPSILON, INFINITY, PI, PI2, TWO_PI, HALF_PI, radians,
@@ -126,7 +130,6 @@ export const {
 // Refused at use, as on Wasm: the engine draws a lamp's cube shadow taps (shadowFilterOptions) and the
 // virtual shadow map (virtualShadowOptions) in C++, so the three-only bodies of core's soft-shadow.ts
 // and VirtualShadowNode.setup name these and never call them here.
-export const cubeTexture = unsupportedExport("cubeTexture");
 export const Stack = unsupportedExport("Stack");
 export const getShadowMaterial = unsupportedExport("getShadowMaterial");
 export const shadow = unsupportedExport("shadow");

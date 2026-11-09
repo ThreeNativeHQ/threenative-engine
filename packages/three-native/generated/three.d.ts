@@ -687,6 +687,11 @@ y: number;
   setFromCartesianCoords(x: number, y: number, z: number): this;
 }
 
+/** Catalog supported: three/CubeTexture. */
+export declare class CubeTexture extends Texture {
+constructor();
+}
+
 /** Catalog supported: three/Data3DTexture. */
 export declare class Data3DTexture extends Texture {
 constructor();

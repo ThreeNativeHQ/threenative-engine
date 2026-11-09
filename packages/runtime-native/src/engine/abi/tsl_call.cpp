@@ -736,7 +736,8 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an engine Texture");
         const auto next = std::static_pointer_cast<const engine::Texture>(args[0].object);
         const auto previous = std::static_pointer_cast<const engine::Texture>(receiver->node->textureObject());
-        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume || next->array != previous->array)
+        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume || next->array != previous->array ||
+            next->cube != previous->cube)
             throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: replacement must preserve texture dimension and sample type");
         receiver->node->textureBinding->object = args[0].object;
         return receiver->node;
@@ -795,6 +796,24 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         // One binding per volume, as for texture() above: a baked noise read 44 times a pixel took 212 bindings.
         auto node = g::objectTexture(args[0].object, "nodeMapT" + std::to_string(source->ident.value()),
                                      args.size() > 1 ? arg(1) : g::vec3({half(), half(), half()}));
+        if (args.size() == 3) {
+            auto level = std::make_shared<g::NodeData>(*node);
+            level->args.push_back(arg(2));
+            return level;
+        }
+        return node;
+    }
+    // r187's cubeTexture(value, uvNode, levelNode) (accessors/CubeTextureNode.js): a CubeTexture sampled along a vec3
+    // direction, which `.sample(direction)` replaces. The default direction (the reflect vector) is not bound, so
+    // a node with none refuses where it lowers.
+    if (name == "cubeTexture") {
+        if (args.empty() || args.size() > 3) throw std::runtime_error("cubeTexture takes 1 to 3 arguments");
+        if (args[0].kind != TslArg::Kind::Object || !args[0].object ||
+            !static_cast<const engine::Texture*>(args[0].object.get())->cube)
+            throw std::runtime_error("cubeTexture needs an engine CubeTexture");
+        const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
+        auto node = g::objectTexture(args[0].object, "nodeMapT" + std::to_string(source->ident.value()),
+                                     args.size() > 1 ? arg(1) : g::uv());
         if (args.size() == 3) {
             auto level = std::make_shared<g::NodeData>(*node);
             level->args.push_back(arg(2));

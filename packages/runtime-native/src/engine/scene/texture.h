@@ -178,6 +178,7 @@ public:
     bool storageTexture = false, mipmapsAutoUpdate = true;
     bool volume = false;  // three's isData3DTexture: uploaded and sampled as a 3D texture, at any depth
     bool array = false;   // three's isDataArrayTexture: `depth` layers of one 2D size, each with its own mip chain
+    bool cube = false;    // three's isCubeTexture: an `array` of six faces (+X, -X, +Y, -Y, +Z, -Z) sampled as a cube
     bool& dataReady = imageSource->dataReady;  // three keeps it on the source
     /**
      * The render target this texture is the colour of (three's `renderTarget.texture`,

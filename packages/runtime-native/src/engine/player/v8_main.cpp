@@ -929,8 +929,7 @@ void V8Game::copyTexture(const v8::FunctionCallbackInfo<v8::Value>& info) {
 std::shared_ptr<Texture> V8Game::textureArgument(v8::Local<v8::Value> value) {
     tn_handle_t handle{};
     auto* object = adapter_->unwrap(value, handle) ? tn::abi::objectOf(handle) : nullptr;
-    if (object == nullptr || !(tn::binding::isTextureClass(object->cls) || object->cls == "DataArrayTexture" ||
-                               object->cls == "Data3DTexture"))
+    if (object == nullptr || !tn::binding::isGpuTextureClass(object->cls))
         return nullptr;
     return std::static_pointer_cast<Texture>(object->ptr);
 }

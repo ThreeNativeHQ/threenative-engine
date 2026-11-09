@@ -217,6 +217,30 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                     elements[k].text = texts.back().c_str();
                     elements[k].count = texts.back().size();
                 }
+                else if (e->IsObject() && !e->IsFunction() && !e->IsArray() && !e->IsArrayBufferView() &&
+                         e.As<v8::Object>()->InternalFieldCount() == 0) {
+                    // A record of numbers, as the Wasm back end passes one: CubeRenderTarget's six `{ width, height,
+                    // depth }` faces. A null or undefined field is left out.
+                    v8::Local<v8::Object> object = e.As<v8::Object>();
+                    v8::Local<v8::Array> keys;
+                    if (!object->GetOwnPropertyNames(ctx).ToLocal(&keys)) return false;
+                    values.emplace_back();
+                    auto& pairs = values.back();
+                    for (uint32_t i = 0; i < keys->Length(); ++i) {
+                        v8::Local<v8::Value> key, field;
+                        if (!keys->Get(ctx, i).ToLocal(&key) || !object->Get(ctx, key).ToLocal(&field)) return false;
+                        if (field->IsNullOrUndefined()) continue;
+                        if (!field->IsNumber()) return false;
+                        v8::String::Utf8Value name(isolate, key);
+                        texts.emplace_back(*name ? *name : "");
+                        tn_value_t keyValue{}, number{};
+                        keyValue.kind = TN_VALUE_STRING; keyValue.text = texts.back().c_str(); keyValue.count = texts.back().size();
+                        number.kind = TN_VALUE_NUMBER; number.number = field.As<v8::Number>()->Value();
+                        pairs.push_back(keyValue);
+                        pairs.push_back(number);
+                    }
+                    elements[k].kind = TN_VALUE_RECORD; elements[k].values = pairs.data(); elements[k].count = pairs.size() / 2;
+                }
                 else return false;
             }
             if (std::all_of(elements.begin(), elements.end(), [](const auto& e) { return e.kind == TN_VALUE_NUMBER; })) {

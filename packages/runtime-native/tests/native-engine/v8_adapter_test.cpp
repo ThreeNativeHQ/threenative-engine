@@ -1696,6 +1696,20 @@ void materialSlots() {
     )JS");
     CHECK(stacked == "false,1");
     if (stacked != "false,1") std::fprintf(stderr, "texels on the GPU: %s\n", stacked.c_str());
+    // three's CubeRenderTarget makes `new CubeTexture(images)` from six `{ width, height, depth }` faces, and
+    // RenderTarget3D `new Data3DTexture(null, w, h, d)`: both hold no texels, which the GPU writes.
+    const std::string layered = run(rt, adapter, R"JS(
+        const face = { width: 8, height: 8, depth: 1 };
+        const cube = new CubeTexture([face, face, face, face, face, face]);
+        cube.type = 1016;
+        const volume = new Data3DTexture(null, 4, 2, 3);
+        volume.type = 1015;
+        let refused = '';
+        try { new CubeTexture([face]); } catch (e) { refused = e.message.includes('six') ? 'refused' : e.message; }
+        [cube.type, cube.source.dataReady, volume.source.dataReady, volume.image.width, volume.type, refused].join()
+    )JS");
+    CHECK(layered == "1016,false,false,4,1015,refused");
+    if (layered != "1016,false,false,4,1015,refused") std::fprintf(stderr, "layered targets: %s\n", layered.c_str());
     // Diagnostic observation must never suppress a setter or its material version increment.
     auto& stats = tn::engine::Material::diagnostics();
     const auto saved = stats;
