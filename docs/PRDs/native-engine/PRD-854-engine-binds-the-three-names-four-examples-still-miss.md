@@ -23,8 +23,8 @@ Two examples package and then stop at run time on the desktop V8 player:
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `bundle-native-engine.mjs --engine native --game-runtime v8` exits 0 for the five examples above. — proof: the bundler command per example.
-- [ ] AC-2 [local, desktop]: each of the five examples starts and draws on the desktop V8 player, with no `TN_NATIVE_UNSUPPORTED` or `TN_TSL` error. — proof: the player log and a non-blank screenshot per example.
+- [x] AC-1 [local]: `bundle-native-engine.mjs --engine native --game-runtime v8` exits 0 for the five examples above. — proof: the bundler command per example. Result at 6b72b4f0d: exit 0 for prd268, prd476, prd249, animation-composition and prd493 (prd493 with `--assets`).
+- [ ] AC-2 [local, desktop]: each of the five examples starts and draws on the desktop V8 player, with no `TN_NATIVE_UNSUPPORTED` or `TN_TSL` error. — proof: the player log and a non-blank screenshot per example. Open: four of five hold at 6b72b4f0d, each with 0 `TN_NATIVE_UNSUPPORTED` or `TN_TSL` lines and non-blank screenshots (30 to 373 distinct colours on a 32 x 32 sample): prd476, prd249, animation-composition, prd493. prd268 stops at the bake budget (the box under Phase 2).
 
 ## Execution Phases
 
