@@ -28,6 +28,9 @@
 #endif
 #include <windows.h>
 #include <tlhelp32.h>
+// minwindef.h defines `near` and `far` as empty 16-bit pointer qualifiers; the engine's cameras and fog name fields so.
+#undef near
+#undef far
 #endif
 #if defined(__APPLE__)
 #include <pthread/qos.h>
