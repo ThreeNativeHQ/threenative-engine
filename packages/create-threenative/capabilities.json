@@ -5190,7 +5190,9 @@
       "situations": [
         "stream terrain without cracks",
         "keep generated terrain resident around a moving player",
-        "put a generated terrain tile into a game-owned physics world"
+        "put a generated terrain tile into a game-owned physics world",
+        "a hole or a flicker where streamed terrain tiles are still building (`settledHalf`)",
+        "split the ground between streamed tiles and a far mesh around the player (`settledHalf`)"
       ],
       "summary": "Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.",
       "supersedes": [],

@@ -343,6 +343,8 @@ export type NeighborPair = readonly [IResidentTile, IResidentTile];
  * @situation stream terrain without cracks
  * @situation keep generated terrain resident around a moving player
  * @situation put a generated terrain tile into a game-owned physics world
+ * @situation a hole or a flicker where streamed terrain tiles are still building (`settledHalf`)
+ * @situation split the ground between streamed tiles and a far mesh around the player (`settledHalf`)
  * @alias stream terrain across chunks
  * @constraint sampleHeight and surface are required game choices; no landform or surface preset is installed
  * @constraint residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws

@@ -4078,7 +4078,7 @@ snow.recover(1 / 60, 0.0012, 0.4);
 export class TerrainTiles extends Object3D implements IComputeDriven { … }
 ```
 
-- **Use when:** stream terrain without cracks · keep generated terrain resident around a moving player · put a generated terrain tile into a game-owned physics world
+- **Use when:** stream terrain without cracks · keep generated terrain resident around a moving player · put a generated terrain tile into a game-owned physics world · a hole or a flicker where streamed terrain tiles are still building (`settledHalf`) · split the ground between streamed tiles and a far mesh around the player (`settledHalf`)
 - **Constraints:** sampleHeight and surface are required game choices; no landform or surface preset is installed · residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws · seam gap, LOD pop and the rendered-vertex finiteness scan are measurements that are off by default; TN_TERRAIN_VALIDATE=1, ?tnTerrainValidate=1 or validate: true runs them, and maxSeamGap, maxVisualSeamGap and maxLodPop report undefined while they are off
 - **Overrides:** tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, mergeTiles, validate, and budgets
 
