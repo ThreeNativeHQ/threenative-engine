@@ -67,7 +67,8 @@ export function assertUnpinnedEngine(config: string): void {
 /** A native run that also fails on an engine refusal the exit code does not carry. */
 async function run(command: string, args: readonly string[], cwd: string): Promise<string> {
   const output = await runAsync(command, args, { cwd, stdio: "capture", timeoutMs: 900_000 });
-  if (/TN_ENGINE_[A-Z_]+/u.test(output))
+  // `TN_ENGINE_CATALOG: off (native host bundle)` is the plugin's info line, not a refusal.
+  if (/TN_ENGINE_(?!CATALOG: off)[A-Z_]+/u.test(output))
     throw new Error(
       `${command} ${args.join(" ")} reported an engine refusal:\n${output.slice(-4000)}`,
     );
