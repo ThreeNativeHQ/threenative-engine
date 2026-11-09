@@ -1324,6 +1324,7 @@
       "constraints": [
         "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches",
         "await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world",
+        "a whole-file load requested after the reveal that the game had not `prefetch`ed logs one `TN_ASSET_LATE` line with its bytes, so a pop-in is countable from a playtest",
         "web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once"
       ],
       "example": "const assets = createAssetLoader({ basePath: \"/assets\" });\nconst rock = await assets.texture(\"rock.png\");",
@@ -1340,7 +1341,8 @@
         "download the next scene before the player gets there",
         "free the disk cache from a settings menu",
         "prefetch assets into the Cache Storage disk cache of a large web game",
-        "load assets from a nonstandard base path or a compiled asset manifest"
+        "load assets from a nonstandard base path or a compiled asset manifest",
+        "stream a large game: boot on the spawn bytes and prefetch the rest"
       ],
       "summary": "Create the portable asset loader a scene also receives as `ctx.assets`.",
       "supersedes": [],

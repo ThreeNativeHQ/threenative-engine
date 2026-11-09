@@ -70,6 +70,19 @@ export interface IAssetLoaderOptions {
 }
 
 /** What one request is worth relative to the rest of the loader's queue. */
+/**
+ * Report marker for a file a scene asks for after the reveal that the game had not prefetched.
+ *
+ * The reveal is the first moment the player is playing, so the download such a request starts is
+ * time spent looking at a world without that file in it — the pop-in a streaming game exists to
+ * avoid. One line per file, carrying the bytes and how far into play the request landed, so a
+ * playtest can count the pop-ins instead of a person having to watch for them.
+ *
+ * A file the game asked `prefetch` for first is not late: that is a deliberate stream, and the
+ * engine's own background fill is no promise either — it lags the link by design.
+ */
+export const ASSET_LATE_MARKER = "TN_ASSET_LATE";
+
 export interface IAssetRequestOptions {
   /**
    * `now` for a file the running scene awaits, `soon` for a prefetch. The loader's own direct
@@ -1125,6 +1138,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   let settledBytes = 0;
   /** Logical paths asked for and not yet settled, in request order — what a loading view names. */
   const pending = new Set<string>();
+  /** Logical paths the game warmed ahead of time; a load of one is a stream, not a pop-in. */
+  const warmed = new Set<string>();
+  /** When the reveal made the player play; `undefined` until then. */
+  let revealedAtMs: number | undefined;
 
   /**
    * The compiled size of a logical path, or 0 when it is not knowable — no manifest, an external
@@ -1189,6 +1206,22 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       },
       () => undefined,
     );
+    // A whole-file request after the reveal is the pop-in a streaming game exists to avoid: the
+    // scene has no bytes and starts a download while the player is already looking at the world.
+    // Measured, never configured — and quiet for a file the game warmed with `prefetch`.
+    if (revealedAtMs !== undefined && !warmed.has(path)) {
+      const lateAt = revealedAtMs;
+      void weighed.then(() =>
+        console.log(
+          `${ASSET_LATE_MARKER}:${JSON.stringify({
+            bytes: weight,
+            kind,
+            ms: Math.round(performanceNow() - lateAt),
+            path,
+          })}`,
+        ),
+      );
+    }
     // Opt-in per-asset timing, off by default and free when off: a launch that is slow because of
     // *which* asset is slow cannot be told from the group totals a game logs, and the engine is the
     // only place that sees every settle. Set `globalThis.__TN_ASSET_TRACE__ = true` before boot.
@@ -1265,6 +1298,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
    * settles; a path the manifest does not list is skipped rather than failing the whole prefetch.
    */
   const prefetchPaths = async (paths: readonly string[]): Promise<IAssetPrefetchProgress> => {
+    // Marked before the early returns: a native host has the files installed, and a game asked for
+    // these either way, so a later load of one is not a surprise download.
+    for (const path of paths) warmed.add(path);
     if (!assetCache.enabled) {
       return {
         requested: paths.length,
@@ -1517,6 +1553,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     prefetch: prefetchPaths,
     resolve: async (path) => (await resolveCandidates(path)).urls,
     startBackgroundFill: () => {
+      // The reveal is the first moment the network is free and the player is playing, so it is also
+      // where a request stops being a load and starts being a pop-in. See `ASSET_LATE_MARKER`.
+      revealedAtMs ??= performanceNow();
       // The fill needs the manifest even when the scene loaded nothing through this loader yet;
       // a failed read is the documented no-manifest case and simply leaves the fill empty.
       void manifestOnce().catch(() => undefined);

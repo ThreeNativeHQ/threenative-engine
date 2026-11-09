@@ -1026,8 +1026,8 @@ const counters = FrameCounters.install(counterDeviceOf(renderer.raw));
 export function createAssetLoader(options: IAssetLoaderOptions = { … }
 ```
 
-- **Use when:** preload models, textures, or audio before a scene enters · keep downloaded web assets on disk between visits · download the next scene before the player gets there · free the disk cache from a settings menu · prefetch assets into the Cache Storage disk cache of a large web game · load assets from a nonstandard base path or a compiled asset manifest
-- **Constraints:** reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches · await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world · web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once
+- **Use when:** preload models, textures, or audio before a scene enters · keep downloaded web assets on disk between visits · download the next scene before the player gets there · free the disk cache from a settings menu · prefetch assets into the Cache Storage disk cache of a large web game · load assets from a nonstandard base path or a compiled asset manifest · stream a large game: boot on the spawn bytes and prefetch the rest
+- **Constraints:** reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches · await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world · a whole-file load requested after the reveal that the game had not `prefetch`ed logs one `TN_ASSET_LATE` line with its bytes, so a pop-in is countable from a playtest · web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once
 - **Overrides:** `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
 
 ```ts
