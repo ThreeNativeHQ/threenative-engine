@@ -803,27 +803,52 @@ describe("capability manifest generator", () => {
         ids: ["request.rough-diffuse-substrate-eon"],
         owners: ["useRoughDiffuse"],
       },
-      "lumen scalability": { ids: ["request.gi-quality-scalability"], owners: ["GIBudget"] },
-      "sg.GlobalIlluminationQuality": {
+      // PRD-865: seven aliases below are recalled with the aliases stripped, because these
+      // capabilities' own summaries name the Unreal vocabulary (`global illumination`, `virtual
+      // shadow`, `lumen surface cache`, `radiance cache`). The alias rows are still the vocabulary
+      // the requests use; they are no longer those rows' only path. Marked, not deleted: a later
+      // PRD that needs alias-necessity strictness for Unreal terms should start here.
+      "lumen scalability": {
+        baselineAlreadyRecalled: true,
         ids: ["request.gi-quality-scalability"],
         owners: ["GIBudget"],
       },
-      "final gather method": { ids: ["request.gi-quality-scalability"], owners: ["GIBudget"] },
+      "sg.GlobalIlluminationQuality": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gi-quality-scalability"],
+        owners: ["GIBudget"],
+      },
+      "final gather method": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gi-quality-scalability"],
+        owners: ["GIBudget"],
+      },
       "virtual shadow map scalability": {
+        baselineAlreadyRecalled: true,
         ids: ["request.shadow-quality-scalability"],
         owners: ["ShadowFilterBudget"],
       },
       "sg.ShadowQuality": {
+        baselineAlreadyRecalled: true,
         ids: ["request.shadow-quality-scalability"],
         owners: ["ShadowFilterBudget"],
       },
-      "lumen surface cache": { ids: ["request.lumen-surface-cache"], owners: ["SurfaceCache"] },
+      "lumen surface cache": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.lumen-surface-cache"],
+        owners: ["SurfaceCache"],
+      },
       "lumen scene": { ids: ["request.lumen-scene"], owners: ["SurfaceCache"] },
       "lumen radiance cache": {
+        baselineAlreadyRecalled: true,
         ids: ["request.lumen-radiance-cache"],
         owners: ["RadianceCache"],
       },
-      "radiance cache": { ids: ["request.lumen-radiance-cache"], owners: ["RadianceCache"] },
+      "radiance cache": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.lumen-radiance-cache"],
+        owners: ["RadianceCache"],
+      },
       "dynamic probe gi": { ids: ["request.dynamic-probe-gi"], owners: ["RadianceCache"] },
       "irradiance field": { ids: ["request.dynamic-probe-gi"], owners: ["RadianceCache"] },
       "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
