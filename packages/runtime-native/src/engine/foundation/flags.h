@@ -56,6 +56,8 @@ inline constexpr Flag PlayerCrossings{"TN_PLAYER_CROSSINGS", Read::Live};
 inline constexpr Flag FrameSpans{"TN_FRAME_SPANS", Read::Live};
 inline constexpr Flag UiRenderer{"TN_UI_RENDERER", Read::Live};
 inline constexpr Flag JsCpuProfileStartFrame{"TN_JS_CPU_PROFILE_START_FRAME", Read::Once};
+// The PS4 guest cannot read its host environment, so the pad trace is on unless the host says 0.
+inline constexpr Flag Ps4PadTrace{"TN_PS4_PAD_TRACE", Read::Once};
 
 /** A Live flag's text now, or nullptr when it is unset. */
 template <const Flag& F>

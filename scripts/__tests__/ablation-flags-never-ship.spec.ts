@@ -134,6 +134,7 @@ const ENGINE_FLAGS: Readonly<Record<string, "Once" | "Live">> = {
   TN_FRAME_SPANS: "Live",
   TN_UI_RENDERER: "Live",
   TN_JS_CPU_PROFILE_START_FRAME: "Once",
+  TN_PS4_PAD_TRACE: "Once",
 };
 
 function engineSources(directory: string): string[] {

@@ -1,5 +1,7 @@
 #include "engine/player/gamepads.h"
 
+#include "engine/foundation/flags.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -70,7 +72,7 @@ double stickAxis(uint8_t value) { return standardAxis((static_cast<int>(value) -
  */
 void openPad() {
     g_tried = true;
-    if (const char* trace = std::getenv("TN_PS4_PAD_TRACE");
+    if (const char* trace = flags::once<flags::Ps4PadTrace>();
         trace != nullptr && trace[0] != '\0' && trace[0] != '0')
         g_trace = true;
     // An already-initialised user service (another library did it) returns an error that is no failure.
