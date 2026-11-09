@@ -3926,6 +3926,21 @@ export function lakeReach(field: Heightfield, lake: IWaterLake): number { … }
 const reach = lakeReach(field, { ...lake, margin: 1.12 });
 ```
 
+### `lakeSurfaceGeometry`
+
+`function` — A lake's water surface: a level disc out to `lakeReach`, the footprint `WaterBodies` floods, with a `metres` attribute (water depth over the ground). Only cells with water at a corner get triangles, so the surface does not hover over dry hillside and the shore follows the ground's contour. The rings pack towards the middle, so an irregular basin costs vertices where the camera sees them. Returns `undefined` when the basin holds no water at its level.
+
+```ts
+export function lakeSurfaceGeometry( lake: IWaterLake, field: Heightfield, options: ILakeSurfaceOptions = { … }
+```
+
+- **Use when:** draw a lake's water surface from the baked level and seed · a lake's drawn water and the swimmer's water disagree
+- **Constraints:** the lake row and field come from the game's bake; the game's material shades the geometry
+
+```ts
+const geometry = lakeSurfaceGeometry({ ...lake, margin: 1.12 }, field, { maxDepth: 1.6 });
+```
+
 ### `loadTerrainSplat`
 
 `function` — The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Each layer answers light from its own ORM map where the table ships one and from the table's own roughness and metalness where it does not; a layer that states neither is matte and dielectric, and named in a warning. Nothing here is a look choice: textures, tiles, tints, thresholds, surface response and noise scales all come from the package's table, which the game authors once and its DCC shares.

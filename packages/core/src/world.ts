@@ -23,8 +23,8 @@ export type {
   IWaterRibbon,
   WaterBodyKind,
 } from "./world-water-bodies.js";
-export { riverRibbonGeometry } from "./world-river-ribbon.js";
-export type { IRiverRibbonOptions } from "./world-river-ribbon.js";
+export { lakeSurfaceGeometry, riverRibbonGeometry } from "./world-river-ribbon.js";
+export type { ILakeSurfaceOptions, IRiverRibbonOptions } from "./world-river-ribbon.js";
 
 export { TerrainTiles } from "./world-tiles.js";
 export type {

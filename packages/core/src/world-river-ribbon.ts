@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry } from "three";
 import type { Heightfield } from "./world-heightfield.js";
-import { WATER_RIBBON_REACH } from "./world-water-bodies.js";
+import { type IWaterLake, WATER_RIBBON_REACH, lakeReach } from "./world-water-bodies.js";
 
 /** How a ribbon is cut; every value has the default `WaterBodies` and the Strata preview use. */
 export interface IRiverRibbonOptions {
@@ -168,4 +168,93 @@ function ribbon(
       out.indices.push(base + a, base + a + 1, base + d, base + a + 1, base + d + 1, base + d);
     }
   }
+}
+
+/** How a lake's disc is meshed; every default is the Strata preview's. */
+export interface ILakeSurfaceOptions {
+  /** Rings from the centre to the reach. Default 44. */
+  readonly rings?: number;
+  /** Vertices around each ring. Default 88. */
+  readonly spokes?: number;
+  /** How the ring spacing grows outwards; above 1 packs vertices into the near water. Default 1.7. */
+  readonly packing?: number;
+  /** Deepest water the `metres` attribute records. Default unbounded. */
+  readonly maxDepth?: number;
+}
+
+/**
+ * A lake's water surface: a level disc out to `lakeReach`, the footprint `WaterBodies` floods, with a
+ * `metres` attribute (water depth over the ground). Only cells with water at a corner get triangles,
+ * so the surface does not hover over dry hillside and the shore follows the ground's contour. The
+ * rings pack towards the middle, so an irregular basin costs vertices where the camera sees them.
+ * Returns `undefined` when the basin holds no water at its level.
+ *
+ * @situation draw a lake's water surface from the baked level and seed
+ * @situation a lake's drawn water and the swimmer's water disagree
+ * @constraint the lake row and field come from the game's bake; the game's material shades the geometry
+ * @example const geometry = lakeSurfaceGeometry({ ...lake, margin: 1.12 }, field, { maxDepth: 1.6 });
+ */
+export function lakeSurfaceGeometry(
+  lake: IWaterLake,
+  field: Heightfield,
+  options: ILakeSurfaceOptions = {},
+): BufferGeometry | undefined {
+  const rings = options.rings ?? 44;
+  const spokes = options.spokes ?? 88;
+  const packing = options.packing ?? 1.7;
+  const maxDepth = options.maxDepth ?? Number.POSITIVE_INFINITY;
+  if (!Number.isInteger(rings) || rings < 2 || !Number.isInteger(spokes) || spokes < 3)
+    throw new Error(
+      `TN_LAKE_SURFACE_INVALID: rings must be an integer of at least 2 and spokes of at least 3, received ${rings} and ${spokes}.`,
+    );
+  if (!(packing > 0) || !(maxDepth > 0))
+    throw new Error("TN_LAKE_SURFACE_INVALID: packing and maxDepth must be positive.");
+  const reach = lakeReach(field, lake);
+  if (!(reach > 0)) return undefined;
+  const [cx = 0, cz = 0] = lake.at;
+  const minX = field.origin.x - field.width / 2;
+  const minZ = field.origin.z - field.depth / 2;
+  const count = (rings - 1) * spokes + 1;
+  const positions = new Float32Array(count * 3);
+  const depths = new Float32Array(count);
+  const place = (index: number, radius: number, spoke: number): void => {
+    const angle = (spoke / spokes) * Math.PI * 2;
+    const x = Math.max(minX, Math.min(minX + field.width, cx + Math.cos(angle) * radius));
+    const z = Math.max(minZ, Math.min(minZ + field.depth, cz + Math.sin(angle) * radius));
+    positions[index * 3] = x;
+    positions[index * 3 + 1] = lake.level;
+    positions[index * 3 + 2] = z;
+    depths[index] = Math.min(maxDepth, Math.max(0, lake.level - field.heightAt(x, z)));
+  };
+  place(0, 0, 0);
+  for (let ring = 1; ring < rings; ring += 1) {
+    const radius = reach * (ring / (rings - 1)) ** packing;
+    for (let spoke = 0; spoke < spokes; spoke += 1)
+      place(1 + (ring - 1) * spokes + spoke, radius, spoke);
+  }
+  const depth = (index: number): number => depths[index] ?? 0;
+  const indices: number[] = [];
+  // A cell with one wet corner stays, so the game's depth ramp has dry ground to fade across.
+  for (let spoke = 0; spoke < spokes; spoke += 1) {
+    const first = 1 + spoke;
+    const next = 1 + ((spoke + 1) % spokes);
+    if (depth(0) + depth(first) + depth(next) > 0) indices.push(0, first, next);
+  }
+  for (let ring = 2; ring < rings; ring += 1)
+    for (let spoke = 0; spoke < spokes; spoke += 1) {
+      const next = (spoke + 1) % spokes;
+      const inner = 1 + (ring - 2) * spokes + spoke;
+      const innerNext = 1 + (ring - 2) * spokes + next;
+      const outer = 1 + (ring - 1) * spokes + spoke;
+      const outerNext = 1 + (ring - 1) * spokes + next;
+      if (depth(inner) + depth(innerNext) + depth(outer) + depth(outerNext) <= 0) continue;
+      indices.push(inner, outer, innerNext, innerNext, outer, outerNext);
+    }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(positions, 3));
+  geometry.setAttribute("metres", new BufferAttribute(depths, 1));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
 }

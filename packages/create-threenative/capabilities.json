@@ -5002,6 +5002,25 @@
     {
       "aliases": [],
       "constraints": [
+        "the lake row and field come from the game's bake; the game's material shades the geometry"
+      ],
+      "example": "const geometry = lakeSurfaceGeometry({ ...lake, margin: 1.12 }, field, { maxDepth: 1.6 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lakeSurfaceGeometry( lake: IWaterLake, field: Heightfield, options: ILakeSurfaceOptions = { … }",
+      "situations": [
+        "draw a lake's water surface from the baked level and seed",
+        "a lake's drawn water and the swimmer's water disagree"
+      ],
+      "summary": "A lake's water surface: a level disc out to `lakeReach`, the footprint `WaterBodies` floods, with a `metres` attribute (water depth over the ground). Only cells with water at a corner get triangles, so the surface does not hover over dry hillside and the shore follows the ground's contour. The rings pack towards the middle, so an irregular basin costs vertices where the camera sees them. Returns `undefined` when the basin holds no water at its level.",
+      "supersedes": [],
+      "symbol": "lakeSurfaceGeometry"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe",
         "WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left"
       ],

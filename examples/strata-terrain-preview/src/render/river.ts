@@ -30,7 +30,12 @@
 // every palette colour by a factor between three and thirteen, and the shader then reads as "wants
 // turning up" rather than as broken.
 import { WaterSurface3D, WaveField } from "@threenative/core";
-import { type Heightfield, lakeReach, riverRibbonGeometry } from "@threenative/core/world";
+import {
+  type Heightfield,
+  lakeReach,
+  lakeSurfaceGeometry,
+  riverRibbonGeometry,
+} from "@threenative/core/world";
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Mesh } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
@@ -903,75 +908,22 @@ export function createLakes(
     };
   }
   const [cx = 0, cz = 0] = lake.at;
-  const reach = lakeReach(field, { ...lake, margin: LAKE.reach });
-  if (reach <= 0) return undefined;
-
-  const { rings, spokes } = LAKE;
-  const vertexCount = rings * spokes + 1;
-  const positions = new Float32Array(vertexCount * 3);
-  const metreDepths = new Float32Array(vertexCount);
-  const waveDepths = new Float32Array(vertexCount);
-
-  const place = (index: number, radius: number, spoke: number): void => {
-    const angle = (spoke / spokes) * Math.PI * 2;
-    const x = Math.max(
-      field.origin.x - field.width / 2,
-      Math.min(field.origin.x + field.width / 2, cx + Math.cos(angle) * radius),
-    );
-    const z = Math.max(
-      field.origin.z - field.depth / 2,
-      Math.min(field.origin.z + field.depth / 2, cz + Math.sin(angle) * radius),
-    );
-    const depth = Math.min(MAX_BAKED_DEPTH, Math.max(0, lake.level - field.heightAt(x, z)));
-    positions[index * 3] = x;
-    positions[index * 3 + 1] = lake.level;
-    positions[index * 3 + 2] = z;
-    metreDepths[index] = depth;
-    waveDepths[index] = Math.min(1, depth / OPAQUE_DEPTH);
-  };
-  place(0, 0, 0);
-  for (let ring = 1; ring < rings; ring += 1) {
-    const radius = reach * (ring / (rings - 1)) ** LAKE.packing;
-    for (let spoke = 0; spoke < spokes; spoke += 1)
-      place(1 + (ring - 1) * spokes + spoke, radius, spoke);
-  }
-
-  const indices: number[] = [];
-  for (let spoke = 0; spoke < spokes; spoke += 1) {
-    const first = 1 + spoke;
-    const next = 1 + ((spoke + 1) % spokes);
-    // Keeping the cells with a single wet corner is what gives the alpha ramp below a strip of dry
-    // ground to fade out over, instead of ending abruptly on the waterline itself.
-    if (
-      (waveDepths[0] as number) + (waveDepths[first] as number) + (waveDepths[next] as number) >
-      0
-    )
-      indices.push(0, first, next);
-  }
-  for (let ring = 2; ring < rings; ring += 1) {
-    for (let spoke = 0; spoke < spokes; spoke += 1) {
-      const next = (spoke + 1) % spokes;
-      const inner = 1 + (ring - 2) * spokes + spoke;
-      const innerNext = 1 + (ring - 2) * spokes + next;
-      const outer = 1 + (ring - 1) * spokes + spoke;
-      const outerNext = 1 + (ring - 1) * spokes + next;
-      const wet =
-        (waveDepths[inner] as number) +
-        (waveDepths[innerNext] as number) +
-        (waveDepths[outer] as number) +
-        (waveDepths[outerNext] as number);
-      if (wet <= 0) continue;
-      indices.push(inner, outer, innerNext, innerNext, outer, outerNext);
-    }
-  }
-
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
+  const footprint = { ...lake, margin: LAKE.reach };
+  // The material fades the rim out at the same reach the geometry stops at.
+  const reach = lakeReach(field, footprint);
+  const geometry = lakeSurfaceGeometry(footprint, field, {
+    maxDepth: MAX_BAKED_DEPTH,
+    packing: LAKE.packing,
+    rings: LAKE.rings,
+    spokes: LAKE.spokes,
+  });
+  if (geometry === undefined) return undefined;
+  // The ripple's share of the depth, this game's look: full past OPAQUE_DEPTH, none on the shore.
+  const metres = geometry.getAttribute("metres");
+  const waveDepths = new Float32Array(metres.count);
+  for (let index = 0; index < metres.count; index += 1)
+    waveDepths[index] = Math.min(1, metres.getX(index) / OPAQUE_DEPTH);
   geometry.setAttribute("waveDepth", new BufferAttribute(waveDepths, 1));
-  geometry.setAttribute("metres", new BufferAttribute(metreDepths, 1));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
 
   const surface = new WaterSurface3D({
     level: lake.level,

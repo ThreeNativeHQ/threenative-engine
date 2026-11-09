@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Heightfield, WATER_RIBBON_REACH, WaterBodies, riverRibbonGeometry } from "../src/world.js";
+import {
+  Heightfield,
+  WATER_RIBBON_REACH,
+  WaterBodies,
+  lakeSurfaceGeometry,
+  riverRibbonGeometry,
+} from "../src/world.js";
 
 /** A river 2 m wide running north along x = 0 from z = 0 to z = -100, surface at 10 m. */
 const RIVER = {
@@ -25,7 +31,11 @@ function valley(): Heightfield {
 }
 
 /** Whether (x, z) lies inside a drawn triangle, seen from above. */
-function drawnAt(geometry: ReturnType<typeof riverRibbonGeometry>, x: number, z: number): boolean {
+function drawnAt(
+  geometry: NonNullable<ReturnType<typeof lakeSurfaceGeometry>>,
+  x: number,
+  z: number,
+): boolean {
   const position = geometry.getAttribute("position");
   const index = geometry.getIndex()?.array ?? [];
   const at = (i: number) => [position.getX(i), position.getZ(i)] as const;
@@ -96,6 +106,66 @@ describe("riverRibbonGeometry", () => {
     );
     expect(() => riverRibbonGeometry([RIVER], valley(), { columns: 1 })).toThrow(
       "TN_RIVER_RIBBON_INVALID",
+    );
+  });
+});
+
+/** A bowl 40 m across: ground at 5 m in the middle, rising one metre per 4 m out, level at 8 m. */
+function bowl(): Heightfield {
+  return Heightfield.fromSampler({
+    columns: 121,
+    depth: 240,
+    origin: { x: 0, z: 0 },
+    rows: 121,
+    sampleHeight: (x: number, z: number) => 5 + Math.hypot(x - 10, z + 6) / 4,
+    width: 240,
+  });
+}
+
+const LAKE = { at: [10, -6], level: 8, margin: 1.12, radius: 60 };
+
+describe("lakeSurfaceGeometry", () => {
+  it("draws water wherever WaterBodies floods the lake and the ground is under its level", () => {
+    const field = bowl();
+    const geometry = lakeSurfaceGeometry(LAKE, field);
+    expect(geometry).toBeDefined();
+    if (geometry === undefined) return;
+    const water = new WaterBodies({ field, lakes: [LAKE] });
+    let checked = 0;
+    for (let x = -10; x <= 30; x += 1.5)
+      for (let z = -26; z <= 14; z += 1.5) {
+        if (water.footprintAt(x, z)?.kind !== "lake" || field.heightAt(x, z) >= LAKE.level) continue;
+        checked += 1;
+        expect(drawnAt(geometry, x, z), `(${x}, ${z})`).toBe(true);
+      }
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  it("records each vertex's depth and stands every vertex at the level", () => {
+    const field = bowl();
+    const geometry = lakeSurfaceGeometry(LAKE, field, { maxDepth: 1.6, rings: 8, spokes: 12 });
+    if (geometry === undefined) throw new Error("no lake");
+    const position = geometry.getAttribute("position");
+    const metres = geometry.getAttribute("metres");
+    expect(metres.getX(0)).toBeCloseTo(1.6);
+    for (let i = 0; i < position.count; i += 1) {
+      expect(position.getY(i)).toBe(LAKE.level);
+      const want = Math.min(
+        1.6,
+        Math.max(0, LAKE.level - field.heightAt(position.getX(i), position.getZ(i))),
+      );
+      expect(metres.getX(i)).toBeCloseTo(want, 5);
+    }
+  });
+
+  it("returns nothing for a basin with no water at its level, and throws on bad options", () => {
+    const field = bowl();
+    expect(lakeSurfaceGeometry({ ...LAKE, level: 4 }, field)).toBeUndefined();
+    expect(() => lakeSurfaceGeometry(LAKE, field, { spokes: 2 })).toThrow(
+      "TN_LAKE_SURFACE_INVALID",
+    );
+    expect(() => lakeSurfaceGeometry(LAKE, field, { packing: 0 })).toThrow(
+      "TN_LAKE_SURFACE_INVALID",
     );
   });
 });

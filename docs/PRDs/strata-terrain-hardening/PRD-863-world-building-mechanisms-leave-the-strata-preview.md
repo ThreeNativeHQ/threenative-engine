@@ -24,7 +24,9 @@ The proof: the river surface stopped in a straight edge at its first station whi
 ### Phase 1 — water
 
 - [x] River surface geometry: core `riverRibbonGeometry` beside `WaterBodies`, a reach past each end; the preview and both kits call it. proof: `world-river-ribbon.spec.ts`, `river-ribbon.spec.ts` (forest bake), `test:water`, the river-head judge — 2026-11-10: `river-ribbon.spec.ts` red on the old ribbon (the swim query floods half a reach past the head, nothing drawn) then green; core spec 4/4; preview 274/274 and `test:water` PASS; the kits pass a half-width reach and 3 columns, so only their end caps change. Fresh judge on the river-head sheets (two runs, NVIDIA Turing, `~/Downloads/strata-river-head/`): IMPROVEMENT both runs — the straight edge is gone, the carved head fills, no new artefact.
-- [ ] Lake surface geometry (flood fill, wet-cell triangulation, depth attribute): one core function for the preview and both kits. proof: a core spec, kit playtests, judge
+- [x] Lake surface geometry: core `lakeSurfaceGeometry` draws the disc `WaterBodies` floods (out to `lakeReach`, wet cells only, `metres` depth); the preview calls it. proof: `world-river-ribbon.spec.ts` lake cases, the forest lake mesh before and after — 2026-11-10: core 7/7 (every point the lake query floods over ground under the level is drawn); the forest lake is 6 992 triangles before and after, positions and `metres` exact, `waveDepth` within 6e-8, so no frame changes and no judge is due. The port also sizes the vertex buffer to the rings it fills (the preview's held one unused ring at the origin).
+- [ ] The forest and tundra kits draw their lakes with `lakeSurfaceGeometry`. proof: a kit capture before and after, judge
+  Open: the kits flood a grid from the seed inside `radius` and the tundra kit clips it at the contour, so the switch changes their shape; it waits for a kit capture lane. The kits have no swim query, so no drawn-versus-swum mismatch exists there today.
 - [ ] Shore distance and open-sea exposure field: one core function for the preview and the coastal kit. proof: a core spec, the coastal playtest
 
 ### Phase 2 — streaming and startup

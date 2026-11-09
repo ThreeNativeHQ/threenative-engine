@@ -99,6 +99,7 @@
         "@threenative/core/world#heightSamplerFromHeightmap": "export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWorldExtent, data: Uint16Array, ): (x: number, z: number) => number { … }",
         "@threenative/core/world#instanceRandom": "export function instanceRandom(): Node<\"float\"> { … }",
         "@threenative/core/world#lakeReach": "export function lakeReach(field: Heightfield, lake: IWaterLake): number { … }",
+        "@threenative/core/world#lakeSurfaceGeometry": "export function lakeSurfaceGeometry( lake: IWaterLake, field: Heightfield, options: ILakeSurfaceOptions = { … }",
         "@threenative/core/world#loadTerrainSplat": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",
         "@threenative/core/world#loadWorldHeightmap": "export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { … }",
         "@threenative/core/world#noiseVolume": "export function noiseVolume(): Data3DTexture { … }",
