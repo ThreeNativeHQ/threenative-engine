@@ -1336,6 +1336,7 @@
         "coarse first model streaming",
         "mip streaming textures",
         "TN_STREAMING_POOL",
+        "TN_ASSET_LATE",
         "first playable screen external assets",
         "KTX2Loader on the owned engine",
         "CompressedTexture upload",
@@ -1350,6 +1351,7 @@
         "web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once",
         "streaming is engine-owned and on by default: a cooked LOD-chained model loads its `.coarse.<digest>.glb` companion first, then the full file at \"soon\" priority, and the full geometry replaces the coarse in place (clones and the projection mirror included); a failed coarse load falls back to the whole file and logs `TN_ASSETS_STREAM_FAILED`",
         "texture streaming rides on the coarse parse: each shared `.ktx2` of that model is read by `Range` as its resident mips (the header and the tail), and the whole files replace them when the full model lands; a host without `Range` sends the whole file and keeps it whole. `TN_STREAMING_POOL` reports `files`, `residentBytes`, `fullBytes`, `deferredBytes` and `upgraded` once, two seconds after the last change",
+        "the whole texture keeps what the game set on the resident one (`anisotropy`, wrap, filters, offset, repeat, `userData`), so the swap changes the mips and nothing else",
         "every web build cooks meshopt geometry and KTX2 textures for both engines (`webRuntimeDecoders` in create-threenative answers `{ ktx2: true, meshopt: true }`); the owned engine's glTF loader decodes both itself, with no JS decoder",
         "the owned engine transcodes a KTX2 image to BC7 on a device with `texture-compression-bc`, else ETC2, else RGBA8 with an engine mip chain, and prints `TN_TEXTURE_TRANSCODE_TARGET <target>` once; a block format needs a width and height that are multiples of 4, so any other size stays RGBA8 and the same line names it",
         "a three `CompressedTexture` (format plus `mipmaps`) uploads one GPU write per level; a block format the device lacks throws `TN_NATIVE_TEXTURE_UNSUPPORTED` by name instead of drawing garbage",
@@ -1360,6 +1362,7 @@
       "kind": "function",
       "overrides": [
         "`assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`",
+        "`ctx.assets.model(path, { whole: true })` resolves only once the full file has replaced the coarse companion, for a collider or navmesh that copies vertices once",
         "`assets.streamMeshes: false` loads every model whole (reported once as `TN_ASSETS_STREAM_MESHES_OFF`); `assets.streamTextures: false` loads every model texture whole (`TN_ASSETS_STREAM_TEXTURES_OFF`)",
         "`engine: \"threejs\"` runs three's own `KTX2Loader` and `MeshoptDecoder` in JS instead of the owned engine's decoders"
       ],
@@ -1376,6 +1379,9 @@
         "make the first scene play before the whole game finishes downloading",
         "draw a heavy model's coarsest level first and its full detail when the file lands",
         "draw a model's textures at their resident mips first and the whole files later",
+        "an asset pops in after the reveal and the game needs to count it",
+        "a model texture looks blurry or low resolution right after load, then sharpens",
+        "build a collider or navmesh from a streamed model only once its full file landed",
         "compressed texture upload on the owned engine (KTX2 to BC7 or ETC2 on the GPU)",
         "load a model with KHR_texture_basisu or EXT_meshopt_compression on the owned engine",
         "stream a finer mip level into a CompressedTexture that already draws"
@@ -2382,8 +2388,10 @@
       "symbol": "isStatic"
     },
     {
-      "aliases": ["whole model before collision"],
-      "constraints": [],
+      "aliases": ["whole model before collision", "TN_COLLIDER_COARSE"],
+      "constraints": [
+        "`CollisionShape3D.fromMesh` with \"trimesh\" or \"convexHull\" on a streamed geometry warns `TN_COLLIDER_COARSE` naming the mesh and the `{ whole: true }` override, and still builds"
+      ],
       "example": "const coarse = isStreamedGeometry(mesh.geometry);",
       "importPath": "@threenative/core",
       "kind": "function",

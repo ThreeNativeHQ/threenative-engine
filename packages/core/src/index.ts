@@ -155,7 +155,11 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @alias coarse first model streaming
  * @alias mip streaming textures
  * @alias TN_STREAMING_POOL
+ * @alias TN_ASSET_LATE
  * @alias first playable screen external assets
+ * @situation an asset pops in after the reveal and the game needs to count it
+ * @situation a model texture looks blurry or low resolution right after load, then sharpens
+ * @situation build a collider or navmesh from a streamed model only once its full file landed
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
  * @constraint await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world
  * @constraint a whole-file load requested after the reveal that the game had not `prefetch`ed logs one `TN_ASSET_LATE` line with its bytes, so a pop-in is countable from a playtest
@@ -163,6 +167,8 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @constraint streaming is engine-owned and on by default: a cooked LOD-chained model loads its `.coarse.<digest>.glb` companion first, then the full file at "soon" priority, and the full geometry replaces the coarse in place (clones and the projection mirror included); a failed coarse load falls back to the whole file and logs `TN_ASSETS_STREAM_FAILED`
  * @constraint texture streaming rides on the coarse parse: each shared `.ktx2` of that model is read by `Range` as its resident mips (the header and the tail), and the whole files replace them when the full model lands; a host without `Range` sends the whole file and keeps it whole. `TN_STREAMING_POOL` reports `files`, `residentBytes`, `fullBytes`, `deferredBytes` and `upgraded` once, two seconds after the last change
  * @override `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
+ * @constraint the whole texture keeps what the game set on the resident one (`anisotropy`, wrap, filters, offset, repeat, `userData`), so the swap changes the mips and nothing else
+ * @override `ctx.assets.model(path, { whole: true })` resolves only once the full file has replaced the coarse companion, for a collider or navmesh that copies vertices once
  * @override `assets.streamMeshes: false` loads every model whole (reported once as `TN_ASSETS_STREAM_MESHES_OFF`); `assets.streamTextures: false` loads every model texture whole (`TN_ASSETS_STREAM_TEXTURES_OFF`)
  * @situation compressed texture upload on the owned engine (KTX2 to BC7 or ETC2 on the GPU)
  * @situation load a model with KHR_texture_basisu or EXT_meshopt_compression on the owned engine
@@ -585,6 +591,8 @@ export { baseGeometryOf } from "./model-lod.js";
  * @situation collider or navmesh built from a model is coarser than what is drawn
  * @situation wait for the full model before copying its vertices
  * @alias whole model before collision
+ * @alias TN_COLLIDER_COARSE
+ * @constraint `CollisionShape3D.fromMesh` with "trimesh" or "convexHull" on a streamed geometry warns `TN_COLLIDER_COARSE` naming the mesh and the `{ whole: true }` override, and still builds
  * @example const coarse = isStreamedGeometry(mesh.geometry);
  */
 export { isStreamedGeometry } from "./model-lod.js";
