@@ -215,6 +215,13 @@ describe("stress-fair (PRD-770)", () => {
       const windows = [90, 90, 90, 5, 7, 6].map(window);
       const report = holdoutReport(windows, { name: "shooter", viewport: "1280x720" });
       expect(report).toMatchObject({ preset: "holdout:shooter", windows: 3 });
+      expect(report.metrics).toMatchObject({ fps: 60, renderSkipPct: 0 });
+      // A GPU-bound host: the engine declined half the loop frames, so the player saw 30 a second, not 60.
+      const declined = holdoutReport(
+        windows.map((entry) => ({ ...entry, renderSkips: 150 })),
+        { name: "shooter", viewport: "1280x720" },
+      );
+      expect(declined.metrics).toMatchObject({ fps: 30, renderSkipPct: 50 });
       expect(report.metrics).toMatchObject({
         frameP50Ms: 6,
         frameP95Ms: 8,

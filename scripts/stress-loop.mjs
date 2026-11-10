@@ -176,6 +176,13 @@ export function measureReport(report, { counted = true } = {}) {
         "frameWorstP95Ms",
         true,
       ),
+      // Loop frames the engine declined to draw, in percent. The lab's `fps` leaves them out since 2026-11-10; a
+      // GPU-bound host (Iris Xe) declined enough of them to hide every Wasm stage behind a zero median.
+      renderSkipPct: metric(
+        { renderSkipPct: metrics.renderSkipPct ?? null },
+        "renderSkipPct",
+        true,
+      ),
       fps: metric(metrics, "fps"),
       gpuP50Ms: metric(metrics, "gpuP50Ms", true),
       gpuP95Ms: metric(metrics, "gpuP95Ms", true),
@@ -322,6 +329,7 @@ export function checkedRun(raw, engine) {
 export const TRACKED = [
   { key: "presentedP99Ms", short: "Presented p99 (stutter)", unit: "ms" },
   { key: "frameWorstP95Ms", short: "CPU p95, worst window", unit: "ms" },
+  { key: "renderSkipPct", short: "Frames not drawn", unit: "%" },
   { key: "bridgeCrossingsP50", short: "JS↔Wasm crossings", unit: "/frame" },
   { key: "hostCallsP50", short: "Host (ABI) calls", unit: "/frame" },
   { key: "gpuUploadKbP50", short: "GPU upload", unit: "KB/frame" },

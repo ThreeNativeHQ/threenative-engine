@@ -362,7 +362,15 @@ export function holdoutReport(windows, { name, viewport }) {
     metrics: {
       presentedP50Ms: median((w) => w.presented.p50, "presented.p50"),
       presentedP95Ms: median((w) => w.presented.p95, "presented.p95"),
-      fps: median((w) => w.fps, "fps"),
+      fps: median((w) => (w.fps * (w.frames - (w.renderSkips ?? 0))) / w.frames, "fps"),
+      renderSkipPct:
+        Math.round(
+          (10000 * steady.reduce((sum, w) => sum + (w.renderSkips ?? 0), 0)) /
+            Math.max(
+              1,
+              steady.reduce((sum, w) => sum + w.frames, 0),
+            ),
+        ) / 100,
       gpuP50Ms: median((w) => w.gpu?.p50),
       gpuP95Ms: median((w) => w.gpu?.p95),
       renderP50Ms: median((w) => w.phases.render.p50, "phases.render.p50"),
@@ -424,7 +432,7 @@ async function measureArm(browser, arm, { pass, settle, commit }) {
   let wasm;
   page.on("response", (response) => {
     const url = response.url();
-    if (url.endsWith(".wasm")) wasm = response.body().then((body) => sha12(body));
+    if (url.endsWith(".wasm")) wasm = response.body();
     else if (
       response.request().resourceType() === "script" &&
       url.startsWith(new URL(arm.url).origin)
@@ -465,7 +473,9 @@ async function measureArm(browser, arm, { pass, settle, commit }) {
     const build =
       wasm === undefined
         ? { kind: "js", sha256: sha12(...bundle.map(([, body]) => body)), commit }
-        : { kind: "wasm", sha256: await wasm, commit };
+        : // The engine is the Wasm and the JS around it (core, the facade): a core-only change left the Wasm hash
+          // equal, so a paired window could not prove its two arms were two builds (rows #317-#322).
+          { kind: "wasm", sha256: sha12(await wasm, ...bundle.map(([, body]) => body)), commit };
     return {
       ...arm,
       at: new Date().toISOString(),
