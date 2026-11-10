@@ -104,7 +104,7 @@ try {
     const cooked = await mcp.call("terrain_generate", { request: REQUEST, seed, out });
     assert.deepEqual(cooked.decided.backdrop, { value: "massif", source: "default" });
     assert.equal(cooked.backdrop.source, "massif", `seed ${seed}: no massif in the far ring`);
-    bake({ STRATA_WORLD: join(root, out) });
+    bake(Object.fromEntries([["STRATA_WORLD", join(root, out)]]));
     const ground = readWorld("baked.json");
     const ring = readWorld("horizon.json");
     // The massif at its own spacing: the largest square of its detail grid.
