@@ -156,6 +156,25 @@ if(EXISTS ${TN_MESHOPT_DIR}/meshoptimizer.h AND EXISTS ${TN_MESHOPT_DIR}/vertexc
 else()
     message(STATUS "meshopt not found: the native glTF loader refuses EXT/KHR_meshopt_compression. Run 'node scripts/download-deps.mjs --only meshopt'.")
 endif()
+# Basis Universal's transcoder for KHR_texture_basisu (provisioned by download-deps, PRD-861):
+# Apache-2.0, with its decode-only zstd (BSD) for supercompressed UASTC. The loader transcodes to
+# RGBA8, the one upload format the engine's Texture has, so every GPU block target is compiled out.
+set(TN_BASISU_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/basisu)
+if(EXISTS ${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp AND EXISTS ${TN_BASISU_DIR}/zstd/zstddeclib.c)
+    add_library(tn_engine_basisu STATIC ${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp ${TN_BASISU_DIR}/zstd/zstddeclib.c)
+    tn_native_engine_target(tn_engine_basisu)
+    target_include_directories(tn_engine_basisu PUBLIC ${TN_BASISU_DIR}/transcoder)
+    target_compile_definitions(tn_engine_basisu PUBLIC BASISD_SUPPORT_KTX2=1 BASISD_SUPPORT_KTX2_ZSTD=1
+        BASISD_SUPPORT_UASTC=1 BASISD_SUPPORT_DXT1=0 BASISD_SUPPORT_DXT5A=0 BASISD_SUPPORT_BC7=0
+        BASISD_SUPPORT_BC7_MODE5=0 BASISD_SUPPORT_PVRTC1=0 BASISD_SUPPORT_ETC2_EAC_A8=0 BASISD_SUPPORT_ASTC=0
+        BASISD_SUPPORT_ATC=0 BASISD_SUPPORT_ETC2_EAC_RG11=0 BASISD_SUPPORT_FXT1=0 BASISD_SUPPORT_PVRTC2=0
+        BASISD_SUPPORT_UASTC_HDR=0 INTERFACE TN_ENGINE_BASISU=1)
+    # Third-party C and C++: its own warnings are not this engine's.
+    set_source_files_properties(${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp ${TN_BASISU_DIR}/zstd/zstddeclib.c
+        PROPERTIES COMPILE_OPTIONS "-w")
+else()
+    message(STATUS "basisu not found: the native glTF loader refuses KHR_texture_basisu. Run 'node scripts/download-deps.mjs --only basisu'.")
+endif()
 # Cooked asset packages (N10): the TNPK reader and its hash gate. Untrusted input, portable.
 add_library(tn_engine_assets STATIC src/engine/assets/sha256.cpp src/engine/assets/package.cpp)
 tn_native_engine_target(tn_engine_assets)
@@ -277,6 +296,9 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
     if(TARGET tn_engine_meshopt)
         target_link_libraries(tn_engine_gltf PRIVATE tn_engine_meshopt)
     endif()
+    if(TARGET tn_engine_basisu)
+        target_link_libraries(tn_engine_gltf PRIVATE tn_engine_basisu)
+    endif()
     target_include_directories(tn_engine_gltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
         PRIVATE ${TN_CGLTF_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
     # cgltf is third-party C in a C++ unit: its own warnings are not this engine's.
@@ -318,6 +340,12 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
     target_link_libraries(tn-native-engine-gltf-meshopt-test PRIVATE tn_engine_gltf)
     target_compile_definitions(tn-native-engine-gltf-meshopt-test PRIVATE
         TN_GLTF_MESHOPT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/meshopt-compressed.glb")
+    tn_native_engine_test(tn-native-engine-gltf-ktx2-test tests/native-engine/assets/ktx2_decode_test.cpp
+        native_engine_gltf_ktx2_transcoded=transcodes_to_rgba
+        native_engine_gltf_ktx2_damaged=damaged_is_refused)
+    target_link_libraries(tn-native-engine-gltf-ktx2-test PRIVATE tn_engine_gltf)
+    target_compile_definitions(tn-native-engine-gltf-ktx2-test PRIVATE
+        TN_GLTF_KTX2_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/ktx2-textured.glb")
     find_program(TN_PNPM_EXECUTABLE pnpm)
     target_compile_definitions(tn-native-engine-gltf-hierarchy-test PRIVATE
         TN_GLTF_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/gltf_reference.json"
@@ -345,7 +373,7 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
     endforeach()
     if(EMSCRIPTEN)
         # These read repository files by path: node's own filesystem, not the sandboxed MEMFS.
-        foreach(file_target tn-native-engine-gltf-hierarchy-test tn-native-engine-gltf-meshopt-test
+        foreach(file_target tn-native-engine-gltf-hierarchy-test tn-native-engine-gltf-meshopt-test tn-native-engine-gltf-ktx2-test
                 tn-native-engine-fuzz-gltf tn-native-engine-fuzz-package)
             target_link_options(${file_target} PRIVATE -sNODERAWFS=1)
         endforeach()
@@ -1134,11 +1162,11 @@ if(EMSCRIPTEN)
     # its .wasm in build/web/. Outside the default set: build it with `--target tn-native-engine-web`.
     add_executable(tn-native-engine-web EXCLUDE_FROM_ALL src/engine/wasm/web_host.cpp)
     target_link_libraries(tn-native-engine-web PRIVATE tn_engine_abi tn_engine_renderer)
-    if(TARGET tn_engine_gltf AND NOT TARGET tn_engine_meshopt)
-        # The web bake emits meshopt geometry for this engine (create-threenative webRuntimeDecoders),
-        # so a web engine without the decoder would refuse every cooked model: same error as no cgltf.
+    if(TARGET tn_engine_gltf AND (NOT TARGET tn_engine_meshopt OR NOT TARGET tn_engine_basisu))
+        # The web bake emits meshopt geometry and KTX2 textures for this engine (create-threenative
+        # webRuntimeDecoders), so a web engine without either decoder would refuse every cooked model.
         add_custom_command(TARGET tn-native-engine-web PRE_LINK
-            COMMAND ${CMAKE_COMMAND} -E echo "TN_WEB_ENGINE_DEPS_MISSING: third_party/meshopt is not provisioned. Run node scripts/download-deps.mjs --only meshopt, then reconfigure."
+            COMMAND ${CMAKE_COMMAND} -E echo "TN_WEB_ENGINE_DEPS_MISSING: third_party/meshopt or third_party/basisu is not provisioned. Run node scripts/download-deps.mjs --only meshopt and --only basisu (pnpm wasm:build does both), then reconfigure."
             COMMAND ${CMAKE_COMMAND} -E false
             VERBATIM)
     endif()

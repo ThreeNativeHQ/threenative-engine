@@ -467,10 +467,11 @@ describe("createWebEnginePlugin", () => {
 });
 
 describe("the web engine's asset decoders", () => {
-  it("cooks meshopt on both engines and KTX2 only on the legacy one", () => {
-    // Meshopt decodes in the engine's own glTF loader; KTX2 still needs the JS transcoder path.
-    expect(webRuntimeDecoders({})).toEqual({ ktx2: false, meshopt: true });
-    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual({ ktx2: false, meshopt: true });
+  it("cooks meshopt and model KTX2 on both engines, standalone KTX2 only on the legacy one", () => {
+    // The engine's own glTF loader decodes both; a standalone .ktx2 still needs three's KTX2Loader.
+    const owned = { ktx2: true, meshopt: true, ktx2Files: false };
+    expect(webRuntimeDecoders({})).toEqual(owned);
+    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual(owned);
     expect(webRuntimeDecoders({ engine: "threejs" })).toEqual({ ktx2: true, meshopt: true });
   });
 

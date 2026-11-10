@@ -7,20 +7,21 @@ import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
 /**
- * PRD-861: the browser Wasm engine decodes a meshopt model, so the web bake can emit meshopt for it.
+ * PRD-861: the browser Wasm engine decodes meshopt geometry and KTX2 textures, so the web bake can
+ * emit both for it.
  *
- * Loads the built web engine in Chromium and hands `tnw_web_load_gltf` the 912-byte meshopt fixture
- * whose compressed buffer views carry no fallback bytes (see meshopt_decode_test.cpp): an engine
- * without the decoder refuses it by name, one with it returns the scene handle. A load needs no GPU,
+ * Loads the built web engine in Chromium and hands `tnw_web_load_gltf` each fixture the C++ tests
+ * use: the 912-byte meshopt GLB whose compressed buffer views carry no fallback bytes
+ * (meshopt_decode_test.cpp), and the KTX2 GLB whose two images exist only as ETC1S and UASTC+zstd
+ * (ktx2_decode_test.cpp). An engine without a decoder refuses its model by name
+ * (TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED); one with it returns the scene handle. A load needs no GPU,
  * so the page runs headless. It needs the built engine (`pnpm wasm:build`) and Chromium, so a tree
  * without them skips it; `TN_WEB_HOST_REQUIRE=1` makes that a failure. `TN_WEB_DIR` points it at
  * another build.
  */
 const webDirectory =
   process.env.TN_WEB_DIR ?? fileURLToPath(new URL("../build/web/", import.meta.url));
-const fixture = fileURLToPath(
-  new URL("./native-engine/assets/meshopt-compressed.glb", import.meta.url),
-);
+const fixture = (name) => fileURLToPath(new URL(`./native-engine/assets/${name}`, import.meta.url));
 const built = ["tn-native-engine-web.mjs", "tn-native-engine-web.wasm"].every((file) =>
   existsSync(join(webDirectory, file)),
 );
@@ -32,10 +33,10 @@ if (process.env.TN_WEB_HOST_REQUIRE === "1") {
 }
 const hostTest = built && process.platform === "linux" ? test : test.skip;
 
-hostTest(
-  "the web engine loads a meshopt-compressed GLB through its own glTF loader",
+hostTest.each(["meshopt-compressed.glb", "ktx2-textured.glb"])(
+  "the web engine loads %s through its own glTF loader",
   { timeout: 120_000 },
-  async () => {
+  async (name) => {
     const require = createRequire(new URL("../../playtest/package.json", import.meta.url));
     const { chromium } = require("playwright");
     const types = { ".mjs": "text/javascript", ".wasm": "application/wasm" };
@@ -85,10 +86,10 @@ hostTest(
             scene: heap().getUint32(out, true),
           };
         },
-        { origin, glb: [...readFileSync(fixture)] },
+        { origin, glb: [...readFileSync(fixture(name))] },
       );
       assert.equal(result.created, 0, "tn_context_create failed");
-      assert.equal(result.error, "", "the engine refused the meshopt model");
+      assert.equal(result.error, "", "the engine refused the model");
       assert.equal(result.status, 0);
       assert.equal(result.count, 1, "one scene, no clips");
       assert.notEqual(result.scene, 0, "a scene handle");

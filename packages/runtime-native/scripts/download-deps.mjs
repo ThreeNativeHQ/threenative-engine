@@ -14,16 +14,16 @@
  *   node scripts/download-deps.mjs --rebuild-wgpu-cache-api  # Rebuild patched wgpu-native from source
  *   node scripts/download-deps.mjs --force      # Re-download even if exists
  *
- * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, meshopt, webp, webp-source, skia, swc
- * iOS deps: wgpu-ios, skia-ios, webp-source, meshopt (for cross-compilation from macOS)
- * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source, meshopt
+ * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, meshopt, basisu, webp, webp-source, skia, swc
+ * iOS deps: wgpu-ios, skia-ios, webp-source, meshopt, basisu (for cross-compilation from macOS)
+ * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source, meshopt, basisu
  */
 
 import { execFileSync, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync, mkdtempSync, renameSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import { join, dirname, relative, resolve, win32 } from 'node:path';
+import { basename, join, dirname, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
@@ -317,6 +317,22 @@ const DEPS = {
     headerUrl: (header) => `https://raw.githubusercontent.com/zeux/meshoptimizer/v1.3/src/${header}`,
     extractTo: 'meshopt',
     headers: ['meshoptimizer.h', 'vertexcodec.cpp', 'indexcodec.cpp', 'vertexfilter.cpp'],
+  },
+  basisu: {
+    // Basis Universal's transcoder for KHR_texture_basisu in the native glTF loader (PRD-861):
+    // Apache-2.0, plus its bundled zstd decoder (BSD) for supercompressed UASTC. Pinned to the
+    // last v1 tag; only the transcoder and the decode-only zstd amalgamation are vendored, in
+    // their upstream layout so `#include "../zstd/zstd.h"` resolves.
+    version: '1_60',
+    getUrl: () => null,
+    headerUrl: (header) => `https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/${header}`,
+    extractTo: 'basisu',
+    headers: [
+      'transcoder/basisu.h', 'transcoder/basisu_astc_hdr_core.h', 'transcoder/basisu_astc_helpers.h',
+      'transcoder/basisu_containers.h', 'transcoder/basisu_containers_impl.h', 'transcoder/basisu_file_headers.h',
+      'transcoder/basisu_transcoder.cpp', 'transcoder/basisu_transcoder.h', 'transcoder/basisu_transcoder_internal.h',
+      'transcoder/basisu_transcoder_uastc.h', 'zstd/zstd.h', 'zstd/zstddeclib.c',
+    ],
   },
   webp: {
     // libwebp for WebP image decoding (used by GLTF EXT_texture_webp extension)
@@ -1338,8 +1354,10 @@ export async function downloadDep(name, options = {}) {
         const url = dep.headerUrl(header);
         const quarantine = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
         try {
-          const staged = join(quarantine, header);
+          // A header may sit in a subdirectory (basisu keeps upstream's transcoder/ and zstd/).
+          const staged = join(quarantine, basename(header));
           const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, `${name} ${header}`, url, staged);
+          mkdirSync(dirname(join(destDir, header)), { recursive: true });
           copyFileSync(staged, join(destDir, header));
           verified.push(payload.id);
         } finally {
@@ -1620,14 +1638,14 @@ async function main() {
   // Keep the desktop feature set; libuv builds from locked source where no prebuilt exists.
   const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
   const desktopDeps = linuxArm64
-    ? ['wgpu', 'sdl3', 'v8', 'quickjs', 'stb', 'cgltf', 'meshopt', 'webp', 'webp-source', 'skia', 'swc', 'quiche', 'libuv-source']
-    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'meshopt', 'webp', 'webp-source', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
+    ? ['wgpu', 'sdl3', 'v8', 'quickjs', 'stb', 'cgltf', 'meshopt', 'basisu', 'webp', 'webp-source', 'skia', 'swc', 'quiche', 'libuv-source']
+    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'meshopt', 'basisu', 'webp', 'webp-source', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
-  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios', 'webp-source', 'meshopt'];
+  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios', 'webp-source', 'meshopt', 'basisu'];
 
   // Android deps (only downloaded with --only or --android)
-  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source', 'meshopt'];
+  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source', 'meshopt', 'basisu'];
   const selectedAndroidDeps = requestedBackend === 'dawn'
     ? androidDeps.filter((name) => name !== 'wgpu-android')
     : androidDeps;

@@ -16,6 +16,12 @@
 #include <webp/decode.h>
 #endif
 
+#if TN_ENGINE_BASISU
+#include <mutex>
+
+#include "basisu_transcoder.h"
+#endif
+
 namespace tn::engine::gltf {
 
 ImageFormat imageFormat(const uint8_t* bytes, std::size_t size) {
@@ -24,7 +30,17 @@ ImageFormat imageFormat(const uint8_t* bytes, std::size_t size) {
     if (size >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return ImageFormat::Jpeg;
     if (decodesWebP() && size >= 12 && std::equal(bytes, bytes + 4, "RIFF") && std::equal(bytes + 8, bytes + 12, "WEBP"))
         return ImageFormat::WebP;
+    static const uint8_t ktx2[] = {0xAB, 'K', 'T', 'X', ' ', '2', '0', 0xBB, '\r', '\n', 0x1A, '\n'};
+    if (decodesKtx2() && size >= 12 && std::equal(ktx2, ktx2 + 12, bytes)) return ImageFormat::Ktx2;
     return ImageFormat::Unknown;
+}
+
+bool decodesKtx2() {
+#if TN_ENGINE_BASISU
+    return true;
+#else
+    return false;
+#endif
 }
 
 bool decodesWebP() {
@@ -47,6 +63,30 @@ bool decodeImage(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32
         if (w < 1 || h < 1 || w > kMaxDimension || h > kMaxDimension || int64_t(w) * h > kMaxPixels) return false;
         rgba.resize(std::size_t(w) * h * 4);
         if (!WebPDecodeRGBAInto(bytes, size, rgba.data(), rgba.size(), w * 4)) return false;
+        width = uint32_t(w);
+        height = uint32_t(h);
+        return true;
+    }
+#endif
+#if TN_ENGINE_BASISU
+    if (imageFormat(bytes, size) == ImageFormat::Ktx2) {
+        // The transcoder's tables are built once per process; ktx2_transcoder keeps its own state, so
+        // the loader's decode pool runs one per image in parallel.
+        static std::once_flag tables;
+        std::call_once(tables, [] { basist::basisu_transcoder_init(); });
+        if (size > 0xffffffffu) return false;
+        basist::ktx2_transcoder ktx2;
+        if (!ktx2.init(bytes, uint32_t(size)) || ktx2.get_faces() != 1 || ktx2.get_layers() > 1) return false;
+        w = int(ktx2.get_width());
+        h = int(ktx2.get_height());
+        if (w < 1 || h < 1 || w > kMaxDimension || h > kMaxDimension || int64_t(w) * h > kMaxPixels) return false;
+        if (!ktx2.start_transcoding()) return false;
+        // ponytail: the base level only, as RGBA32; the renderer builds its own mip chain. Transcode to
+        // a GPU block format (BC7/ASTC/ETC2) once the engine's Texture uploads compressed levels.
+        rgba.resize(std::size_t(w) * h * 4);
+        if (!ktx2.transcode_image_level(0, 0, 0, rgba.data(), uint32_t(w) * uint32_t(h),
+                                        basist::transcoder_texture_format::cTFRGBA32))
+            return false;
         width = uint32_t(w);
         height = uint32_t(h);
         return true;

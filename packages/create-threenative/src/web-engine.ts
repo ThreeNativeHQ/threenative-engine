@@ -6,23 +6,24 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 /**
  * The asset decoders the web build ships, per format.
  *
- * Meshopt geometry decodes on both engines: on `engine: "threenative"` the engine's own glTF loader
- * decompresses EXT/KHR_meshopt_compression with meshoptimizer's decoders, which `pnpm wasm:build`
- * provisions and without which the `tn-native-engine-web` target refuses to link.
+ * Meshopt geometry and a model's KTX2 images decode on both engines: on `engine: "threenative"` the
+ * engine's own glTF loader decompresses EXT/KHR_meshopt_compression with meshoptimizer and
+ * transcodes KHR_texture_basisu to RGBA8 with Basis Universal, both provisioned by `pnpm wasm:build`;
+ * without either the `tn-native-engine-web` target refuses to link (PRD-861).
  *
- * KTX2 still needs `engine: "threejs"`: a model's images reach the GPU through the engine's loader,
- * which has no Basis transcoder, so the JS `KTX2Loader` serves only the three renderer's models.
- * A texture loaded straight through `ctx.assets.texture` takes the JS path on either engine.
+ * A standalone `.ktx2` (a texture or lightmap loaded through `ctx.assets`) still needs
+ * `engine: "threejs"`: it takes three's `KTX2Loader`, whose CompressedTexture the owned engine does
+ * not bind, so its cook keeps those textures in their authored format (`ktx2Files: false`).
  *
  * `threenative build` and each template's dev-server asset watch both read it, so the two cook the
  * same bytes.
  */
 export function webRuntimeDecoders(config: {
   readonly engine?: "threejs" | "threenative";
-}): { readonly ktx2: boolean; readonly meshopt: boolean } {
+}): { readonly ktx2: boolean; readonly meshopt: boolean; readonly ktx2Files?: boolean } {
   return config.engine === "threejs"
     ? { ktx2: true, meshopt: true }
-    : { ktx2: false, meshopt: true };
+    : { ktx2: true, meshopt: true, ktx2Files: false };
 }
 
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */
