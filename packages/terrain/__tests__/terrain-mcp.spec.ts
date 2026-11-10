@@ -1242,10 +1242,30 @@ describe("terrain_generate biome cooks", () => {
     120_000,
   );
 
-  it("fails closed on a lake row the recipe has no layer for", async () => {
-    await expect(cook({ kit: "coastal", water: [{ kind: "lake", radius: 40 }] })).rejects.toThrow(
-      /no lake layer/,
-    );
+  it("places a lake row the recipe has no layer for in the ground's deepest basin", async () => {
+    // "A volcanic island with a lake": the preset authors no lake, so the cook finds where water
+    // would stand (the deepest closed basin above the sea, filled to its spill level) and floods it.
+    const world = await cook({
+      ...parseGenerateRequest({ request: "a volcanic island with a lake" }).input,
+      ground: "procedural",
+    });
+    try {
+      const lake = world.recipe.layers.find(
+        (layer: { type: string; params: { kind?: string } }) =>
+          layer.type === "water" && layer.params.kind === "lake",
+      ) as { params: { at: [number, number]; radius: number; level: number } };
+      expect(lake.params.radius).toBe(105);
+      const half = world.recipe.config.size / 2;
+      for (const axis of lake.params.at) expect(Math.abs(axis)).toBeLessThan(half);
+      // Above the sea the island floods.
+      expect(lake.params.level).toBeGreaterThan(1.5);
+      expect(world.result.water).toEqual([
+        { kind: "ocean", level: 1.5 },
+        expect.objectContaining({ kind: "lake", radius: 105 }),
+      ]);
+    } finally {
+      await world.remove();
+    }
   }, 120_000);
 });
 
