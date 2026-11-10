@@ -63,6 +63,21 @@ const isValid = (row, loadVoid) =>
   Number.isFinite(row.metrics?.presentedP95Ms) &&
   !isVoid(row, loadVoid);
 
+/** The GPU vendor in a row's adapter. A browser row reads "nvidia / turing" and Unreal reads "NVIDIA GeForce RTX 2080": both carry the vendor. */
+export const gpuOf = (row) =>
+  /nvidia|intel|amd|apple|qualcomm|arm/iu.exec(row.adapter ?? "")?.[0].toLowerCase() ?? "";
+
+/**
+ * The rows of the scoreboard GPU: where the latest Unreal row ran, else where the latest row ran. A laptop Iris row
+ * against a desktop RTX row compares two machines, not two engines (rows #310-#312 against #288 read "losing 46 to
+ * 56", 2026-11-10). Rows from another GPU stay in the Arms and Ledger tabs.
+ */
+// ponytail: the key is the vendor, so two hosts with one vendor would mix; add a host field to the row when a second one records.
+export function scoreboardRows(rows) {
+  const reference = rows.findLast((row) => row.engine === "unreal") ?? rows.at(-1);
+  return reference === undefined ? rows : rows.filter((row) => gpuOf(row) === gpuOf(reference));
+}
+
 /** The latest kept row, else the latest row that was not rejected. */
 const pick = (rows) =>
   rows.filter((row) => row.decision !== "reject").findLast((row) => row.decision === "keep") ??
@@ -283,7 +298,7 @@ function rampTab(rows, ctx) {
 
 /** One Overview lane: where the develop baseline, the best kept arm and vanilla stand on the ladder. */
 export function laneOf(rows, ctx, shadow, pass) {
-  const mine = rows.filter(
+  const mine = scoreboardRows(rows).filter(
     (row) => isValid(row, ctx.loadVoid) && passOf(row) === pass && loadOf(row.variant) === 1,
   );
   const tn = mine.filter(
@@ -352,7 +367,7 @@ const TREND_COLOR = ["--s1", "--s2", "--s3", "--s4"];
  */
 export function trendSeries(rows, { loadVoid, shadowOf }) {
   const groups = new Map();
-  for (const row of rows) {
+  for (const row of scoreboardRows(rows)) {
     if (row.engine !== "threenative-wasm" || loadOf(row.variant) > 1 || isVoid(row, loadVoid))
       continue;
     if (passOf(row) === null) continue;
@@ -490,7 +505,7 @@ const bar = (fraction, cls) =>
 
 /** The latest valid uncapped load 1 row of one Unreal setup. Each setup keeps its own bar: they are different pictures. */
 const unrealRow = (rows, ctx, setup) =>
-  rows.findLast(
+  scoreboardRows(rows).findLast(
     (row) =>
       row.engine === "unreal" &&
       flagsOf(row.variant).includes(setup) &&
@@ -637,7 +652,7 @@ function scorePanel(rows, ctx) {
     })
     .join("");
   const { stale, ageHours } = verdictOf(rows, ctx);
-  return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene and GPU: 100 = the 120 fps goal)</span>${stale ? ` <b>⚠️ STALE: these rows are ${ageHours} h old, the current engine has no score yet</b>` : ""}</figcaption>
+  return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene, ${esc(gpuOf(scoreboardRows(rows).at(-1) ?? {}) || "one")} GPU only: 100 = the 120 fps goal)</span>${stale ? ` <b>⚠️ STALE: these rows are ${ageHours} h old, the current engine has no score yet</b>` : ""}</figcaption>
 <div class="scroll"${stale ? ' style="opacity:.5"' : ""}><table class="t score"><thead><tr><th>Engine</th><th>Score</th><th class="n">/100</th>${SCORE_PARTS.map(({ short, weight }) => `<th class="n">${esc(short)} <span class="dim">${weight}%</span></th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
 <p class="mt-1 text-[11px] text-dim">Green wins its group, yellow ties at the top, red loses, grey has nothing to compare with yet. Each timing earns goal / value, so half the speed earns half its points, capped at the goal. The small bar under a value is its share of the goal. Compare only inside one group: the groups have different shadow work. Unreal stock also pays for Lumen, a richer picture.</p></figure>`;
 }

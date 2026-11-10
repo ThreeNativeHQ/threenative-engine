@@ -421,6 +421,31 @@ describe("stress-loop", () => {
     expect(strip).toContain('data-verdict="winning"');
   });
 
+  it("compares engines on one GPU only: a later laptop row does not stand in for the desktop baseline", () => {
+    const ctx = { loadVoid: 6, shadowOf: (row: { shadow: string }) => row.shadow };
+    const row = (engine: string, adapter: string, fps: number, variant: string) => ({
+      engine,
+      adapter,
+      shadow: "virtual",
+      variant,
+      pass: "uncapped",
+      load: { peak: 1 },
+      decision: "measure",
+      metrics: { presentedP95Ms: 12, fps, frameP95Ms: 12, gpuP95Ms: 12, hitchesPerMin: 0 },
+    });
+    const desktop = row(WASM, "nvidia / turing", 110, "arm=develop&uncapped");
+    const unreal = row("unreal", "NVIDIA GeForce RTX 2080", 70, "tnmatched&uncapped");
+    const laptop = row(WASM, "intel / gen-12lp", 40, "arm=develop&uncapped");
+    // Rows #310-#312 (Iris Xe) against #288 (RTX 2080) read "losing 46 to 56" on 2026-11-10: two machines, not two engines.
+    const verdict = verdictOf([desktop, unreal, laptop], ctx);
+    expect(verdict.status).toBe("winning");
+    expect(verdict.rivals.find((rival: { result: string }) => rival.result === "win")?.mine).toBe(
+      Math.round(scoreOf(desktop.metrics) ?? 0),
+    );
+    // With no rival on its GPU, the laptop row has nothing to beat.
+    expect(verdictOf([unreal, laptop], ctx).status).toBe("none");
+  });
+
   it("says WAS WINNING in grey when the rows behind the verdict are old, so old data does not read as now", () => {
     const ctx = { loadVoid: 6, shadowOf: (row: { shadow: string }) => row.shadow };
     const row = (engine: string, fps: number, at: string, commit: string) => ({
