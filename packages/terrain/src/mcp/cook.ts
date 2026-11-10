@@ -1329,6 +1329,8 @@ async function cookInto(
     placementCounts: cooked.placementCounts,
     biome: biome.look,
     ground: ground.ground,
+    // The seed this world was cooked with: pass another as `seed` to reroll it.
+    seed: recipe.recipe.config.seed,
     backdrop: farRingResult.decision,
     water: floodedBodies(state),
     bands,
