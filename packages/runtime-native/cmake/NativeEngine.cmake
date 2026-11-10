@@ -195,7 +195,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(TARGET tn_engine_gltf AND TARGET tn_engine_basisu)
         tn_native_engine_test(tn-native-engine-compressed-texture-test tests/native-engine/compressed_texture_test.cpp
             native_engine_compressed_texture_bc7=bc7_draws
-            native_engine_compressed_texture_refused=bc7_refused_without_feature)
+            native_engine_compressed_texture_refused=bc7_refused_without_feature
+            native_engine_compressed_texture_finer_level=finer_level_writes_in_place)
         target_link_libraries(tn-native-engine-compressed-texture-test PRIVATE tn_engine_renderer tn_engine_gltf tn_host_services)
         target_compile_definitions(tn-native-engine-compressed-texture-test PRIVATE
             TN_GLTF_KTX2_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/ktx2-textured.glb")

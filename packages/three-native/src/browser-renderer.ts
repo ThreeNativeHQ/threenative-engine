@@ -575,6 +575,20 @@ export function defineWebRenderer(
       }
     }
 
+    /**
+     * three's `hasFeature`, which KTX2Loader.detectSupport reads (PRD-867): the block formats the engine
+     * uploads on this device. BC7 answers from the device; ETC2 answers false until the engine uploads
+     * three's opaque `RGB_ETC2_Format`, which KTX2Loader picks there, so a KTX2 falls back to RGBA instead.
+     */
+    hasFeature(name: string): boolean {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: hasFeature() before init() finished.");
+      return (
+        name === "texture-compression-bc" &&
+        module._tnw_web_frame(WEB_FRAME_FIELD.textureCompressionBc) === 1
+      );
+    }
+
     render(scene: unknown, camera: unknown): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");

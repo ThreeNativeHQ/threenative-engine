@@ -1052,6 +1052,8 @@ extern "C" double tnw_web_frame(int field) {
         case TN_WEB_FRAME_GPU_SAMPLES: return double(renderer->gpuSamples());
         case TN_WEB_FRAME_GPU_SOURCE_FRAME: return double(renderer->gpuSourceFrame());
         case TN_WEB_FRAME_GPU_TIMER_AVAILABLE: return renderer->gpuTimerAvailable() ? 1 : 0;
+        // PRD-867: the renderer's device takes BC7 (texture-compression-bc), so a KTX2 transcodes to it.
+        case TN_WEB_FRAME_TEXTURE_COMPRESSION_BC: return compressedTextureTarget().load() == kTextureBC7Format ? 1 : 0;
         case TN_WEB_FRAME_GPU_BUSY:
             tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
             return frameGate.decline(renderer->gpu().completedSerial(), emscripten_get_now()) ? 1 : 0;

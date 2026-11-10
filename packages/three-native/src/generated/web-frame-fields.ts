@@ -76,6 +76,7 @@ export const WEB_FRAME_FIELD = {
   cpuMetersActive: 84,
   shadowTriangles: 85,
   firstWorldFrameDrawn: 86,
+  textureCompressionBc: 87,
 } as const;
 
 export type WebFrameField = (typeof WEB_FRAME_FIELD)[keyof typeof WEB_FRAME_FIELD];

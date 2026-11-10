@@ -131,6 +131,55 @@ void bc7Draws() {
     CHECK(centre[0] > 230 && centre[1] < 25 && centre[2] < 25);  // the fixture's red, not the blue clear
 }
 
+// PRD-867 AC-7: a streamed texture holds its coarse level first, then one finer level is written into the GPU
+// texture that is already there. Level 1 is one all-zero BC7 block (an invalid mode: transparent black), level 0
+// the fixture's red blocks. Only level 0's 64 bytes go up: a re-created texture would upload level 1 again.
+void finerLevelWritesInPlace() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (!rendersPixels(context) || !wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_TextureCompressionBC)) {
+        std::fprintf(stderr, "TN_BC7_REQUIRES_TEXTURE_COMPRESSION_BC on a rendering adapter\n");
+        CHECK(false);
+        return;
+    }
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    const auto red = loadedMap();
+    CHECK(red && red->compressed());
+    if (!red || !red->compressed()) return;
+    auto map = std::make_shared<Texture>();
+    map->width = map->height = 8;
+    map->flipY = false;
+    map->allocateMipmaps(kTextureBC7Format, 2);
+    CHECK(!map->compressed());  // no level holds blocks yet: nothing to sample
+    std::string early;
+    try {
+        map->writeMipLevel(0, red->mipmaps[0].data);
+    } catch (const std::invalid_argument& refused) {
+        early = refused.what();
+    }
+    CHECK(early == "TN_NATIVE_TEXTURE_INVALID: compressed level 0 before level 1: levels arrive coarse first");
+    map->writeMipLevel(1, std::vector<uint8_t>(16, 0));
+    CHECK(map->compressed() && map->residentLevel() == 1);
+    const auto coarse = drawn(renderer, events, map);
+    CHECK(coarse.size() == 8 * 8 * 4);
+    if (coarse.size() != 8 * 8 * 4) return;
+    const uint64_t before = renderer.textureUploadBytes();
+    map->writeMipLevel(0, red->mipmaps[0].data);
+    CHECK(map->residentLevel() == 0);
+    const auto fine = drawn(renderer, events, map);
+    CHECK(fine.size() == 8 * 8 * 4);
+    if (fine.size() != 8 * 8 * 4) return;
+    const uint64_t uploaded = renderer.textureUploadBytes() - before;
+    const uint8_t* a = &coarse[(4 * 8 + 4) * 4];
+    const uint8_t* b = &fine[(4 * 8 + 4) * 4];
+    std::printf("coarse centre %u %u %u, fine centre %u %u %u, bytes uploaded for the finer level %llu\n", a[0], a[1],
+                a[2], b[0], b[1], b[2], static_cast<unsigned long long>(uploaded));
+    CHECK(a[0] < 25);                  // the black coarse level, not the red one
+    CHECK(b[0] > 230 && b[1] < 25);    // the finer red level is sampled
+    CHECK(uploaded == 2 * 2 * 16);     // level 0 alone: no re-create, no rewrite of level 1
+}
+
 // A device created without texture-compression-bc: the same BC7 texture is refused by name.
 void bc7RefusedWithoutFeature() {
     mystral::webgpu::Context context;
@@ -185,4 +234,5 @@ void bc7RefusedWithoutFeature() {
 
 }  // namespace
 
-TN_TEST_MAIN({"bc7_draws", bc7Draws}, {"bc7_refused_without_feature", bc7RefusedWithoutFeature})
+TN_TEST_MAIN({"bc7_draws", bc7Draws}, {"bc7_refused_without_feature", bc7RefusedWithoutFeature},
+             {"finer_level_writes_in_place", finerLevelWritesInPlace})

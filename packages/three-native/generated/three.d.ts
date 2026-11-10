@@ -3829,3 +3829,8 @@ wrapR: Wrapping;
 
   setSize(width: number, height: number, depth: number): void;
 }
+
+/** Catalog supported: three/CompressedTexture. */
+export declare class CompressedTexture extends Texture {
+constructor();
+}

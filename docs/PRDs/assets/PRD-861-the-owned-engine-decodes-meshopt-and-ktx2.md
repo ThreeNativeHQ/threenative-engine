@@ -97,8 +97,8 @@ Thresholds: a cooked web build of a template, run on the owned engine, is the su
 
 ## Blocked on
 
-- A compressed-texture upload lane in the owned renderer (BC7, ASTC or ETC2 into the engine's `Texture`, which today holds RGBA8 only and has no caller of `setExternalImageCopy`). Unblocked by a new engine PRD; then the transcoder targets the device format, the device with none keeps RGBA8 by name, and AC-5 and AC-1 can close.
-- The owner's call, if he wants KTX2 on before that lane exists: it costs Midway about 71 MB (Decisions).
+- The cook's KTX2 bytes. [PRD-867](PRD-867-the-owned-engine-uploads-compressed-textures-and-single-mip-levels.md) landed the compressed upload lane (BC7 and ETC2, the device format, RGBA8 named), but Midway's KTX2 cook is still 189.9 MB against 125.1 MB with WebP, mostly UASTC images. AC-1 and AC-5 close when the cook's codec ladder brings KTX2 to WebP's bytes or below.
+- The owner's call, if he wants KTX2 on before that: it costs Midway about 65 MB (PRD-867, Decisions).
 
 ## Decisions
 

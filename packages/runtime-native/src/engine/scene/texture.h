@@ -153,6 +153,8 @@ struct TextureSource {
     /** A compressed image's levels, finest first, in `mipmapFormat`; `data` stays empty then. */
     std::vector<TextureMipmap> mipmaps;
     uint16_t mipmapFormat = 0;  // kTextureBC7Format or kTextureETC2RGBAFormat; 0 for an RGBA image
+    /** Bit n: level n was written by `writeMipLevel`, so a renderer can upload that level alone. */
+    uint32_t writtenLevels = 0;
     uint32_t width = 0, height = 0, depth = 1, version = 0;
     std::shared_ptr<const ExternalImage> external;
     /** three's `source.dataReady`: false when the texels are written on the GPU (copyTextureToTexture), so none are uploaded or held. */
@@ -215,6 +217,59 @@ public:
     void needsUpdate() { ++version_; ++imageSource->version; }
 
     /**
+     * Makes this a compressed texture of `levels` empty levels (finest first) in `format`, sized from
+     * width x height; `writeMipLevel` fills them. Streaming fills them coarse first.
+     */
+    void allocateMipmaps(uint16_t format, uint32_t levels) {
+        if (format != kTextureBC7Format && format != kTextureETC2RGBAFormat)
+            throw std::invalid_argument("TN_NATIVE_TEXTURE_UNSUPPORTED: compressed format " + std::to_string(format) +
+                                        " (BC7 and ETC2 RGBA upload; ASTC is deferred, PRD-867)");
+        if (width == 0 || height == 0 || width % 4 != 0 || height % 4 != 0 || levels == 0 || levels > 32 ||
+            (std::max(width, height) >> (levels - 1)) == 0)
+            throw std::invalid_argument("TN_NATIVE_TEXTURE_INVALID: " + std::to_string(levels) + " levels of a " +
+                                        std::to_string(width) + "x" + std::to_string(height) +
+                                        " compressed texture (a multiple of 4, at most a full chain)");
+        imageSource->mipmaps.assign(levels, {});
+        for (uint32_t level = 0; level < levels; ++level)
+            imageSource->mipmaps[level] = {{}, std::max(1u, width >> level), std::max(1u, height >> level)};
+        imageSource->mipmapFormat = format;
+        imageSource->writtenLevels = 0;
+        data.clear();
+        needsUpdate();
+    }
+
+    /**
+     * One level's blocks into a compressed texture that already has its levels (three's
+     * `mipmaps[level].data = bytes` then `needsUpdate`). Levels are resident from the smallest up, so a level
+     * is written only when the next coarser one holds blocks. The renderer writes this level alone into the
+     * GPU texture that is already there.
+     */
+    void writeMipLevel(uint32_t level, std::vector<uint8_t> bytes) {
+        auto& levels = imageSource->mipmaps;
+        if (imageSource->mipmapFormat == 0 || level >= levels.size())
+            throw std::invalid_argument("TN_NATIVE_TEXTURE_INVALID: no compressed level " + std::to_string(level) + " of " +
+                                        std::to_string(levels.size()));
+        TextureMipmap& mip = levels[level];
+        const std::size_t expected = std::size_t((mip.width + 3) / 4) * ((mip.height + 3) / 4) * 16;
+        if (bytes.size() != expected)
+            throw std::invalid_argument("TN_NATIVE_TEXTURE_INVALID: compressed level " + std::to_string(level) + " (" +
+                                        std::to_string(mip.width) + "x" + std::to_string(mip.height) + ") takes " +
+                                        std::to_string(expected) + " bytes, not " + std::to_string(bytes.size()));
+        if (level + 1 < levels.size() && levels[level + 1].data.empty())
+            throw std::invalid_argument("TN_NATIVE_TEXTURE_INVALID: compressed level " + std::to_string(level) +
+                                        " before level " + std::to_string(level + 1) + ": levels arrive coarse first");
+        mip.data = std::move(bytes);
+        imageSource->writtenLevels |= 1u << level;
+        needsUpdate();
+    }
+    /** The finest level that holds blocks: the base of the sampled view. */
+    [[nodiscard]] uint32_t residentLevel() const {
+        uint32_t level = uint32_t(imageSource->mipmaps.size());
+        while (level > 0 && !imageSource->mipmaps[level - 1].data.empty()) --level;
+        return level;
+    }
+
+    /**
      * three's `Texture.dispose()`: the renderer lets the GPU copy go and the texture uploads again on
      * its next use, so the version moves; then `dispose` is dispatched, as three does.
      */
@@ -241,7 +296,9 @@ public:
     /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
     [[nodiscard]] uint32_t bytesPerTexel() const { return compressed() ? 1u : isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
     /** Its image is block-compressed levels (`mipmaps`), uploaded as they are: no flip and no generated chain. */
-    [[nodiscard]] bool compressed() const { return imageSource->mipmapFormat != 0 && !imageSource->mipmaps.empty(); }
+    [[nodiscard]] bool compressed() const {
+        return imageSource->mipmapFormat != 0 && !imageSource->mipmaps.empty() && !imageSource->mipmaps.back().data.empty();
+    }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
     [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || compressed() || external || !dataReady); }
     /** A material can sample it: an uploaded image, or a render target's last render. */

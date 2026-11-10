@@ -205,6 +205,7 @@ const FLAGGED_CLASSES = [
   "Texture",
   "DataTexture",
   "CanvasTexture",
+  "CompressedTexture",
   "Object3D",
   "Scene",
   "Group",
