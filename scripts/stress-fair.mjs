@@ -313,7 +313,7 @@ export function recordFrameStarts() {
 }
 
 /**
- * Presented p50 and p95 of an uncapped run, from the frame starts in the report's own last `seconds`.
+ * Presented p50, p95 and p99 of an uncapped run, from the frame starts in the report's own last `seconds`.
  * With vsync off the rAF timestamp misreads a saturated main thread: stamps read 33.6, 18.5, 1.2 ms where the frames
  * start 18.4, 18.5, 16.0 ms apart (`tail-probe`, 2026-11-02). Unreal already reports its real frame interval.
  */
@@ -323,7 +323,8 @@ export function presentedFromStarts(starts, seconds) {
   if (gaps.length < 2) throw new Error(`stress-fair: ${gaps.length} frame intervals in the window`);
   const sorted = gaps.sort((a, b) => a - b);
   const at = (share) => sorted[Math.floor((sorted.length - 1) * share)];
-  return { presentedP50Ms: at(0.5), presentedP95Ms: at(0.95) };
+  // p99 is the tail a player feels as a stutter; the p95 of a 60 fps run ignores three frames in every second.
+  return { presentedP50Ms: at(0.5), presentedP95Ms: at(0.95), presentedP99Ms: at(0.99) };
 }
 
 /** One timing run: a fresh page at 1280x720, nothing attached but the page's own report. */

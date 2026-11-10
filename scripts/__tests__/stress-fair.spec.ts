@@ -209,6 +209,13 @@ describe("stress-fair (PRD-770)", () => {
       expect(presentedFromStarts(seriesOf(gaps), 60)).toEqual({
         presentedP50Ms: 15,
         presentedP95Ms: 20,
+        presentedP99Ms: 20,
+      });
+      // One 80 ms stutter in 200 frames is invisible to p95 and is the p99.
+      const stutter = Array.from({ length: 200 }, (_, index) => (index % 67 === 0 ? 80 : 10));
+      expect(presentedFromStarts(seriesOf(stutter), 60)).toMatchObject({
+        presentedP95Ms: 10,
+        presentedP99Ms: 80,
       });
     });
 

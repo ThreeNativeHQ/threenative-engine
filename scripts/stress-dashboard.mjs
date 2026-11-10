@@ -51,6 +51,12 @@ const num = (value, digits = 2) =>
     : "—";
 const passOf = (row) => row.pass ?? (flagsOf(row.variant).includes("uncapped") ? "uncapped" : null);
 
+/**
+ * `play` in a variant is the gameplay preset (`?stress&play`): textured materials, several meshes per layer, a street
+ * camera and object churn. It is another workload, so it never shares a lane or a trend line with `real`.
+ */
+export const sceneKindOf = (row) => (flagsOf(row.variant).includes("play") ? "play" : "real");
+
 /** A run is void above the host-load limit, or when its scene tag names a contaminated run. */
 export const isVoid = (row, loadVoid) =>
   (row.load?.peak ?? 0) > loadVoid ||
@@ -297,9 +303,13 @@ function rampTab(rows, ctx) {
 }
 
 /** One Overview lane: where the develop baseline, the best kept arm and vanilla stand on the ladder. */
-export function laneOf(rows, ctx, shadow, pass) {
+export function laneOf(rows, ctx, shadow, pass, scene = "real") {
   const mine = scoreboardRows(rows).filter(
-    (row) => isValid(row, ctx.loadVoid) && passOf(row) === pass && loadOf(row.variant) === 1,
+    (row) =>
+      isValid(row, ctx.loadVoid) &&
+      passOf(row) === pass &&
+      loadOf(row.variant) === 1 &&
+      sceneKindOf(row) === scene,
   );
   const tn = mine.filter(
     (row) => row.engine === "threenative-wasm" && ctx.shadowOf(row) === shadow,
@@ -314,6 +324,7 @@ export function laneOf(rows, ctx, shadow, pass) {
       undefined,
     );
   return {
+    scene,
     shadow,
     pass,
     baseline: tn.findLast((row) => BASE_ARM.test(armOf(row) ?? "")),
@@ -323,8 +334,10 @@ export function laneOf(rows, ctx, shadow, pass) {
   };
 }
 
+const laneName = (lane) => `${lane.scene === "play" ? "play · " : ""}${SHADOW[lane.shadow]}`;
+
 function ladder(lanes) {
-  const [W, top, laneH, labelW, max] = [560, 24, 44, 138, 36];
+  const [W, top, laneH, labelW, max] = [560, 24, 44, 176, 36];
   const x = (ms) => labelW + ((W - labelW - 10) * Math.min(ms, max)) / max;
   const H = top + lanes.length * laneH + 6;
   const rungs = [...RUNGS, { ms: LINE_30, fps: 30 }]
@@ -347,7 +360,7 @@ function ladder(lanes) {
   const body = lanes
     .map((lane, i) => {
       const cy = top + i * laneH + laneH / 2;
-      return `<line class="grid" x1="${labelW}" x2="${W - 10}" y1="${cy}" y2="${cy}"/><text class="lane" x="${labelW - 8}" y="${cy}" text-anchor="end" dominant-baseline="middle">${SHADOW[lane.shadow]} · ${lane.pass}</text>${mark(lane.vanilla, "vanilla", cy)}${mark(lane.baseline, "baseline", cy - 7)}${mark(lane.kept, "best kept", cy + 7)}`;
+      return `<line class="grid" x1="${labelW}" x2="${W - 10}" y1="${cy}" y2="${cy}"/><text class="lane" x="${labelW - 8}" y="${cy}" text-anchor="end" dominant-baseline="middle">${laneName(lane)} · ${lane.pass}</text>${mark(lane.vanilla, "vanilla", cy)}${mark(lane.baseline, "baseline", cy - 7)}${mark(lane.kept, "best kept", cy + 7)}`;
     })
     .join("");
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Presented p95 against the 120, 90 and 60 fps rungs">${rungs}${body}</svg>`;
@@ -370,7 +383,7 @@ export function trendSeries(rows, { loadVoid, shadowOf }) {
   for (const row of scoreboardRows(rows)) {
     if (row.engine !== "threenative-wasm" || loadOf(row.variant) > 1 || isVoid(row, loadVoid))
       continue;
-    if (passOf(row) === null) continue;
+    if (passOf(row) === null || sceneKindOf(row) !== "real") continue;
     const key = `${shadowOf(row)}|${passOf(row)}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
@@ -661,6 +674,12 @@ function overviewTab(rows, ctx, extra, goals) {
   const lanes = [];
   for (const shadow of ["virtual", "plain"])
     for (const pass of PASSES) lanes.push(laneOf(rows, ctx, shadow, pass));
+  // The gameplay preset gets a lane once it has a row; an unmeasured pass adds no empty line.
+  for (const shadow of ["virtual", "plain"])
+    for (const pass of PASSES) {
+      const lane = laneOf(rows, ctx, shadow, pass, "play");
+      if (lane.baseline !== undefined || lane.kept !== undefined) lanes.push(lane);
+    }
   const cell = (row) => {
     if (row === undefined) return `<td class="dim">no valid run</td>`;
     const v = row.metrics.presentedP95Ms;
@@ -679,12 +698,12 @@ function overviewTab(rows, ctx, extra, goals) {
   const table = `<div class="scroll"><table class="t"><thead><tr><th>Scene</th><th>Pass</th><th>Develop baseline p95</th><th>Best kept arm p95</th><th>Vanilla three.js p95</th><th>Rung met</th></tr></thead><tbody>${lanes
     .map(
       (lane) =>
-        `<tr><td>${SHADOW[lane.shadow]}</td><td>${lane.pass}</td>${cell(lane.baseline)}${cell(lane.kept)}${lane.shadow === "plain" ? cell(lane.vanilla) : `<td class="dim">no equivalent</td>`}${verdict(lane)}</tr>`,
+        `<tr><td>${laneName(lane)}</td><td>${lane.pass}</td>${cell(lane.baseline)}${cell(lane.kept)}${lane.shadow === "plain" ? cell(lane.vanilla) : `<td class="dim">no equivalent</td>`}${verdict(lane)}</tr>`,
     )
     .join("")}</tbody></table></div>`;
   return `${scorePanel(rows, ctx)}<div class="grid items-start gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
 <figure class="card"><figcaption>120 fps goal ladder · presented p95 <span class="dim">(ms, load 1)</span></figcaption>${ladder(lanes)}<p class="mt-1 text-[11px] text-dim"><span style="color:var(--s1)">●</span> latest develop baseline · <span style="color:var(--ok)">◆</span> best kept arm · <span style="color:var(--s3)">■</span> vanilla three.js (plain sun only) · rungs 8.33 / 11.1 / 16.67 ms</p></figure>
-<div><h2>Where it stands</h2>${table}<p class="mt-1 text-[11px] text-dim">VSM is <code>?stress</code>; plain sun is <code>?stress&amp;plainShadow</code>. A vsync pass floors at 16.7 ms on a 60 Hz display, so only the uncapped pass can show 90 or 120 fps. Baseline is the latest <code>develop</code>, <code>head</code> or <code>stack*</code> arm.</p></div></div>
+<div><h2>Where it stands</h2>${table}<p class="mt-1 text-[11px] text-dim">VSM is <code>?stress</code>; plain sun is <code>?stress&amp;plainShadow</code>; play adds <code>&amp;play</code> (textured materials, mesh variety, a street camera, object churn). A vsync pass floors at 16.7 ms on a 60 Hz display, so only the uncapped pass can show 90 or 120 fps. Baseline is the latest <code>develop</code>, <code>head</code> or <code>stack*</code> arm.</p></div></div>
 ${extra}
 ${trendSection(rows, ctx, goals)}`;
 }
