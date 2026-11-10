@@ -5,10 +5,10 @@ prd_contract: v1
 # PRD-861 — The owned engine decodes meshopt and KTX2
 
 **Status:** NOT STARTED
-**Priority:** P1 — every cook for the default engine ships its geometry and its textures uncompressed, which is why cooked Midway is 166.2 MB instead of tens of MB ([PRD-860](PRD-860-the-first-scene-plays-before-the-game-finishes-downloading.md) records the measurement).
+**Priority:** P1 — every cook for the default engine ships its geometry and its textures uncompressed, which is why cooked Midway is 166.2 MB instead of tens of MB (PRD-860 (the first scene plays before the game finishes downloading, not yet filed in this tree) records the measurement).
 **Complexity:** 6 (MEDIUM-HIGH) — 5 implementation files (+2): the bake gate, the engine's glTF loader, its CMake wiring, a TypeScript unit test and a conformance case, across the TypeScript packages and the C++ engine build (+2); one new vendored transcoder (+2).
 **Owner:** João (owner); an agent executes
-**Depends on:** [PRD-860](PRD-860-the-first-scene-plays-before-the-game-finishes-downloading.md) is the consumer whose byte ceiling this unblocks. `EXT_texture_webp` in the same loader is the pattern to follow (`packages/runtime-native/cmake/NativeEngineCore.cmake:239`).
+**Depends on:** PRD-860 (the first scene plays before the game finishes downloading, not yet filed in this tree) is the consumer whose byte ceiling this unblocks. `EXT_texture_webp` in the same loader is the pattern to follow (`packages/runtime-native/cmake/NativeEngineCore.cmake:239`).
 
 ## Context
 
