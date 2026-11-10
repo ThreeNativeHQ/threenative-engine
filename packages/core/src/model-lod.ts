@@ -348,10 +348,21 @@ export interface ILodChain {
   readonly sphere: Sphere;
 }
 
-/** Triangles one level of a chain submits. */
-function drawTriangles(geometry: BufferGeometry): number {
-  const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
-  return Math.floor(drawn / 3);
+const levelTriangles = new WeakMap<BufferGeometry, number>();
+
+/**
+ * Triangles one level of a chain submits, read once: a level is an index view nothing edits, and on
+ * the owned engine each `geometry.index` read is a bridge crossing (Midway's fleet read it 528 times
+ * a frame, `TN_BRIDGE_WARNING`).
+ */
+export function drawTriangles(geometry: BufferGeometry): number {
+  let triangles = levelTriangles.get(geometry);
+  if (triangles === undefined) {
+    const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
+    triangles = Math.floor(drawn / 3);
+    levelTriangles.set(geometry, triangles);
+  }
+  return triangles;
 }
 
 /**
@@ -907,7 +918,98 @@ export function registerModelLodController(mesh: Mesh, controller: IModelLodCont
 function isChained(object: object): boolean {
   const mesh = object as Partial<Mesh>;
   const geometry = mesh.geometry;
-  return mesh.isMesh === true && geometry !== undefined && chains.has(geometry);
+  return (
+    mesh.isMesh === true &&
+    geometry !== undefined &&
+    (chains.has(geometry) || streaming.has(geometry))
+  );
+}
+
+/**
+ * Coarse geometries of streamed models (PRD-860) whose full model is still downloading. They are
+ * tracked like a chained mesh, so on the frame the full model lands every mesh over them, a game's
+ * clones included, picks its chain up.
+ */
+const streaming = new WeakSet<BufferGeometry>();
+
+/** A coarse companion's geometry, drawn until {@link upgradeStreamedGeometry} gives it the full model. */
+export function markStreamedGeometry(coarse: BufferGeometry): void {
+  streaming.add(coarse);
+}
+
+/**
+ * The full model landed: the coarse geometry takes the full base's index and attributes in place,
+ * so every mesh holding it (a game's clones, a projection mirror) draws the full model with no
+ * object swapped under the game, and it adopts the full chain.
+ */
+export function upgradeStreamedGeometry(coarse: BufferGeometry, full: BufferGeometry): void {
+  const attributes = full.attributes as Record<string, BufferAttribute>;
+  for (const name of Object.keys(coarse.attributes))
+    if (attributes[name] === undefined) coarse.deleteAttribute(name);
+  for (const [name, attribute] of Object.entries(attributes)) coarse.setAttribute(name, attribute);
+  coarse.setIndex(full.index);
+  coarse.computeBoundingBox();
+  coarse.computeBoundingSphere();
+  levelTriangles.delete(coarse);
+  const registered = chains.get(full);
+  if (registered !== undefined) chains.set(coarse, registered);
+  streaming.delete(coarse);
+}
+
+/** The material texture slots a model's images reach (glTF's own, plus the physical extensions). */
+const TEXTURE_SLOTS = [
+  "map",
+  "normalMap",
+  "roughnessMap",
+  "metalnessMap",
+  "aoMap",
+  "emissiveMap",
+  "alphaMap",
+  "bumpMap",
+  "lightMap",
+  "displacementMap",
+  "clearcoatMap",
+  "clearcoatNormalMap",
+  "clearcoatRoughnessMap",
+  "sheenColorMap",
+  "sheenRoughnessMap",
+  "transmissionMap",
+  "thicknessMap",
+  "iridescenceMap",
+  "specularColorMap",
+  "specularIntensityMap",
+] as const;
+
+type SlottedMaterial = Record<string, unknown> & { needsUpdate?: boolean };
+
+/**
+ * PRD-860 Phase 2: the coarse model drew with each texture's resident mips; the full model parsed
+ * with the whole files. Every coarse material takes the full model's texture in each slot both
+ * hold, so the clones and the projection mirror that share the material get the full image too,
+ * and the resident-mip texture is released. Returns how many slots swapped.
+ */
+export function upgradeStreamedTextures(coarse: readonly Mesh[], full: readonly Mesh[]): number {
+  const replaced = new Set<{ dispose?: () => void }>();
+  let swapped = 0;
+  coarse.forEach((mesh, index) => {
+    const coarseMaterials = ([] as unknown[]).concat(mesh.material) as SlottedMaterial[];
+    const fullMaterials = ([] as unknown[]).concat(full[index]?.material) as SlottedMaterial[];
+    coarseMaterials.forEach((material, slot) => {
+      const source = fullMaterials[slot];
+      if (material === undefined || source === undefined) return;
+      for (const name of TEXTURE_SLOTS) {
+        const next = source[name] as { dispose?: () => void } | null | undefined;
+        const previous = material[name] as { dispose?: () => void } | null | undefined;
+        if (!next || !previous || next === previous) continue;
+        material[name] = next;
+        replaced.add(previous);
+        swapped += 1;
+      }
+      material.needsUpdate = true;
+    });
+  });
+  for (const texture of replaced) texture.dispose?.();
+  return swapped;
 }
 
 /**
@@ -1388,7 +1490,8 @@ export function updateModelLods(
   for (const mesh of tracking.items) {
     const entry = controllerFor(mesh);
     if (entry === undefined) {
-      tracking.items.delete(mesh);
+      // A streamed coarse mesh stays tracked until its full model lands and brings the chain.
+      if (!streaming.has(mesh.geometry)) tracking.items.delete(mesh);
       continue;
     }
     entry.update(camera, viewportHeight);

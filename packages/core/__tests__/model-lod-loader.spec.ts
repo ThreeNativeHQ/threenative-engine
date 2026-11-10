@@ -495,3 +495,115 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     expect(rungsByZ(unchained).get(FAR_Z)?.index?.count).toBe(LOD0_TRIANGLES * 3);
   }, 120_000);
 });
+
+/** The cooked fixture as its coarse companion: the chain's coarsest indices, no chain. */
+function coarseGlb(): Buffer {
+  const full = cookedGlb();
+  const jsonLength = full.readUInt32LE(12);
+  const json = JSON.parse(full.subarray(20, 20 + jsonLength).toString("utf8")) as {
+    extensionsUsed?: string[];
+    meshes: {
+      primitives: { extensions?: Record<string, { indices: number[] }>; indices: number }[];
+    }[];
+  };
+  for (const mesh of json.meshes)
+    for (const primitive of mesh.primitives) {
+      const chain = primitive.extensions?.[TN_DISCRETE_LOD];
+      if (chain === undefined) continue;
+      primitive.indices = chain.indices.at(-1) as number;
+      delete primitive.extensions?.[TN_DISCRETE_LOD];
+    }
+  json.extensionsUsed = json.extensionsUsed?.filter((name) => name !== TN_DISCRETE_LOD);
+  const jsonPadded = padTo4(Buffer.from(JSON.stringify(json)), 0x20);
+  const bin = full.subarray(20 + jsonLength);
+  const header = Buffer.alloc(20);
+  header.writeUInt32LE(0x46546c67, 0);
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(20 + jsonPadded.length + bin.length, 8);
+  header.writeUInt32LE(jsonPadded.length, 12);
+  header.writeUInt32LE(0x4e4f534a, 16);
+  return Buffer.concat([header, jsonPadded, bin]);
+}
+
+describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
+  const full = cookedGlb();
+  const coarse = coarseGlb();
+  const manifest = {
+    entries: {
+      "ship.glb": {
+        bytes: full.length,
+        kind: "model",
+        lod: { generated: 1, preset: "quality", runtime: { hysteresis: 0.15, maxPixelError: 1 } },
+        output: "ship.full.glb",
+        streamedLods: [{ bytes: coarse.length, level: "coarsest", output: "ship.coarse.glb" }],
+      },
+    },
+    version: 1,
+  };
+
+  /** Serves the manifest and both files; the full file waits until `release` is called. */
+  function stubStreamed(): { fetched: string[]; release: () => void } {
+    const fetched: string[] = [];
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : String(input);
+      fetched.push(url);
+      if (url.includes("assets.manifest.json"))
+        return {
+          headers: { get: () => "application/json" },
+          json: async () => manifest,
+          ok: true,
+          status: 200,
+        };
+      const glb = url.includes("coarse") ? coarse : full;
+      if (glb === full) await gate;
+      return {
+        arrayBuffer: async () => glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength),
+        headers: { get: () => null },
+        ok: true,
+        status: 200,
+      };
+    });
+    return { fetched, release: () => release() };
+  }
+
+  it("draws the coarse companion first, then the full model and its chain on the game's clone too", async () => {
+    const { fetched, release } = stubStreamed();
+    const loader = createAssetLoader({ basePath: "" });
+    const value = await loader.model<{ scene: Object3D }>("ship.glb");
+    const mesh = firstMesh(value.scene);
+    // The game has its model before the full file arrived: the coarsest level, nothing more.
+    expect(mesh.geometry.index?.count).toBe(COARSE_TRIANGLES * 3);
+    const copy = value.scene.clone();
+    const scene = new Scene();
+    scene.add(value.scene, copy);
+
+    release();
+    await vi.waitFor(() => expect(mesh.geometry.index?.count).toBe(LOD0_TRIANGLES * 3));
+    expect(firstMesh(copy).geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+    expect(fetched.some((url) => url.endsWith("ship.coarse.glb"))).toBe(true);
+    expect(fetched.some((url) => url.endsWith("ship.full.glb"))).toBe(true);
+
+    // Far away, both copies walk the full model's chain.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 0, 100);
+    camera.updateMatrixWorld(true);
+    expect(updateModelLods(scene, camera, 1080)).toBe(COARSE_TRIANGLES * 2);
+    loader.clear();
+  }, 120_000);
+
+  it("loads the whole file at once under assets.streamMeshes: false, and says so", async () => {
+    const { fetched, release } = stubStreamed();
+    release();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const loader = createAssetLoader({ basePath: "", streamMeshes: false });
+    const value = await loader.model<{ scene: Object3D }>("ship.glb");
+    expect(firstMesh(value.scene).geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+    expect(fetched.some((url) => url.includes("coarse"))).toBe(false);
+    expect(info.mock.calls.flat().join("\n")).toContain("TN_ASSETS_STREAM_MESHES_OFF");
+    loader.clear();
+  }, 120_000);
+});

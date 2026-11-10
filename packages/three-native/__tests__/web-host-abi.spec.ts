@@ -28,6 +28,8 @@ const PINNED: Record<number, string> = {
   // 11 = the merged host: develop's 9 (tnw_web_clear_target, render-target flags) beside the Strata lane's
   // 9 and 10 (init/copy texture, read_mrt, device_limit) met under one number, so both moved up.
   11: "6ca2e45be11e2c12",
+  // 12 = tnw_web_load_gltf_begin / tnw_web_load_gltf_done (PRD-860: a glTF parses on the loader thread).
+  12: "a60bf14ce843fbf8",
 };
 
 function signatures(): string[] {

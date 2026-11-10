@@ -133,6 +133,65 @@ export const DEFAULT_CONCURRENCY = 6;
 
 const now = (): number => globalThis.performance?.now() ?? Date.now();
 
+/** Kept back from a frame's headroom for the browser's own commit and the GPU process. */
+const SLICE_FRAME_MARGIN_MS = 2;
+/** A slice always gets this much, so a frame with no headroom still moves the list. */
+const MIN_SLICE_BUDGET_MS = 1;
+/** A loop that stops presenting (a hidden tab) must not stall a run: fall back to the host. */
+const LOOP_FRAME_WAIT_MS = 250;
+
+/**
+ * The game loop's frame pulse, for slices that run once the world is on screen.
+ *
+ * In Chrome a `scheduler.yield` continuation runs ahead of rendering, so a chain of 8 ms slices
+ * presents no frame until the scheduler's ~100 ms starvation guard fires. That is harmless behind
+ * a loading curtain and a 10 fps stutter in front of the player: Midway streaming its cockpit
+ * after the reveal read a 102 ms host gap at p95, against 9 ms with nothing streaming. So once
+ * the loop says the world is visible, a slice waits for the loop's next frame, then for one host
+ * yield so it runs after that frame commits, and spends only the headroom the frame left.
+ */
+const loopFrames = {
+  visible: false,
+  budgetMs: DEFAULT_SLICE_BUDGET_MS,
+  waiters: [] as Array<() => void>,
+};
+
+/**
+ * Called by the frame loop after every frame callback: its wall time, the target rate and
+ * whether the world is on screen.
+ *
+ * @internal Shared with `game-frame-loop.ts`; not part of the public surface.
+ */
+export function noteSliceFrame(frameMs: number, targetFps: number, visible: boolean): void {
+  loopFrames.visible = visible;
+  loopFrames.budgetMs =
+    targetFps > 0
+      ? Math.min(
+          DEFAULT_SLICE_BUDGET_MS,
+          Math.max(MIN_SLICE_BUDGET_MS, 1_000 / targetFps - frameMs - SLICE_FRAME_MARGIN_MS),
+        )
+      : DEFAULT_SLICE_BUDGET_MS;
+  for (const resolve of loopFrames.waiters.splice(0)) resolve();
+}
+
+/** The loop stopped: release every waiting slice and go back to the host yield. @internal */
+export function endSliceFrames(): void {
+  noteSliceFrame(0, 0, false);
+}
+
+const nextLoopFrame = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, LOOP_FRAME_WAIT_MS);
+    loopFrames.waiters.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  }).then(yieldToHost);
+
+const yieldSlice = (): Promise<void> => (loopFrames.visible ? nextLoopFrame() : yieldToHost());
+const sliceBudget = (): number =>
+  loopFrames.visible ? loopFrames.budgetMs : DEFAULT_SLICE_BUDGET_MS;
+
 function assertWholeAtLeastOne(value: number, name: string, code: string): void {
   if (!Number.isInteger(value) || value < 1) {
     throw new Error(
@@ -166,8 +225,10 @@ export async function addInSlices<T>(
     assertWholeAtLeastOne(sliceSize, "sliceSize", "TN_ADD_SLICES_SLICE_INVALID");
   }
   const countSlices = sliceSize !== undefined;
-  const sliceBudgetMs = countSlices ? undefined : DEFAULT_SLICE_BUDGET_MS;
-  const yieldFrame = options.yieldFrame ?? yieldToHost;
+  // A game's own yield keeps the fixed budget: the frame pulse paces only the engine's yield.
+  const nextBudget = options.yieldFrame === undefined ? sliceBudget : () => DEFAULT_SLICE_BUDGET_MS;
+  let sliceBudgetMs = countSlices ? undefined : nextBudget();
+  const yieldFrame = options.yieldFrame ?? yieldSlice;
   const shouldContinue = options.while;
   const startedAt = now();
 
@@ -189,7 +250,10 @@ export async function addInSlices<T>(
     if (yieldAfter) {
       await yieldFrame();
       // The presented frame is not part of the next slice's work.
-      if (sliceBudgetMs !== undefined) sliceStartedAt = now();
+      if (sliceBudgetMs !== undefined) {
+        sliceBudgetMs = nextBudget();
+        sliceStartedAt = now();
+      }
     }
   };
 
@@ -197,7 +261,7 @@ export async function addInSlices<T>(
   const sliceSpent = (): boolean =>
     sliceSize !== undefined
       ? added % sliceSize === 0
-      : now() - sliceStartedAt >= DEFAULT_SLICE_BUDGET_MS;
+      : now() - sliceStartedAt >= Number(sliceBudgetMs);
 
   for (let index = 0; index < total; index += 1) {
     if (shouldContinue !== undefined && !shouldContinue()) {

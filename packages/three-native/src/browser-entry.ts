@@ -295,10 +295,13 @@ export async function bindWebEngine(
       bound.DataTexture as never,
     );
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
-  const { loadGltf } = runtime;
+  // Off the main thread when the engine has a loader thread (PRD-860), else in the call.
+  const { loadGltf, loadGltfAsync } = runtime;
   if (loadGltf !== undefined)
-    bound.__tnLoadGltf = (bytes: Uint8Array, files?: ReadonlyMap<string, Uint8Array>) => {
-      const loaded = loadGltf.call(runtime, bytes, files);
+    bound.__tnLoadGltf = async (bytes: Uint8Array, files?: ReadonlyMap<string, Uint8Array>) => {
+      const loaded = await (loadGltfAsync !== undefined
+        ? loadGltfAsync.call(runtime, bytes, files)
+        : loadGltf.call(runtime, bytes, files));
       return { scene: wrap(loaded.scene), animations: loaded.animations.map(wrap) };
     };
   if (tsl !== undefined && runtime.tsl !== undefined) {

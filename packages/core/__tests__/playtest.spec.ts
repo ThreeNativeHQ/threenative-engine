@@ -984,6 +984,46 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
+  it("rejects describe at once when the start scene's load fails", async () => {
+    // PRD-860: a fetch the host's network dropped (ERR_NETWORK_CHANGED) failed Midway's load with
+    // TN_ASSETS_UNRESOLVED, and the runner then waited out the whole handshake budget on a
+    // describe the page could never answer. The start failure is the answer, now.
+    let failLoad: (error: Error) => void = () => undefined;
+    const loading = new Promise<void>((_resolve, reject) => {
+      failLoad = reject;
+    });
+    class FailingScene extends Scene {
+      override async load(): Promise<void> {
+        await loading;
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 })],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { main: FailingScene },
+      start: "main",
+    });
+    const started = game.start().catch((error: unknown) => error);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const described = Promise.resolve(bridge().describe());
+      const outcome = Promise.race([
+        described.then(
+          () => "resolved",
+          (error: unknown) => (error instanceof Error ? error.message : String(error)),
+        ),
+        new Promise((resolve) => setTimeout(() => resolve("still pending"), 500)),
+      ]);
+      failLoad(new Error("TN_ASSETS_UNRESOLVED: 'plane.glb' (Failed to fetch)"));
+      expect(await outcome).toContain("TN_ASSETS_UNRESOLVED");
+      await started;
+    } finally {
+      game.stop();
+    }
+  });
+
   it("holds a native endpoint run until its no-setup describe handshake", async () => {
     const host = globalThis as Record<string, unknown>;
     const previousEndpoint = host.TN_PLAYTEST_ENDPOINT;
@@ -1068,7 +1108,7 @@ describe("playtest holdUntilAttached", () => {
 
     try {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      const described = bridge().describe();
+      const described = Promise.resolve(bridge().describe());
       await new Promise((resolve) => setTimeout(resolve, 50));
       // The race scene is still loading, so a description taken now has nothing to describe.
       expect(events).toEqual(["boot enter", "race load"]);

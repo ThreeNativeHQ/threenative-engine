@@ -22,6 +22,12 @@
 #include <cstring>
 #include <limits>
 #include <deque>
+#include <utility>
+#include <thread>
+#include <span>
+#include <mutex>
+#include <condition_variable>  // TN_WORKER_ONLY: the glTF loader thread parks on it
+#include <atomic>
 #include <vector>
 #include <map>
 #include <set>
@@ -50,7 +56,7 @@ namespace {
 // 9 = tnw_web_clear_target, and tnw_web_render_target flags (bit 2: autoClear false).
 // 10 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
 // 11 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
-constexpr uint32_t kWebHostAbi = 11;
+constexpr uint32_t kWebHostAbi = 12;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -943,6 +949,101 @@ std::string loadFailure;  // why the last tnw_web_load_gltf refused; never fails
 // The files a model names by relative uri (shared images the cook writes beside it), put there by the
 // page before the load, since the host reads no files of its own.
 std::map<std::string, std::vector<uint8_t>> modelFiles;
+
+#if TN_WEB_GLTF
+gltf::LoadResult loadModel(std::span<const uint8_t> bytes, const std::map<std::string, std::vector<uint8_t>>& files) {
+    gltf::LoadOptions options;
+    options.readUri = [&files](const std::string& uri) -> std::span<const uint8_t> {
+        const auto found = files.find(uri);
+        return found == files.end() ? std::span<const uint8_t>{} : std::span<const uint8_t>(found->second);
+    };
+    try {
+        return gltf::load(bytes, options);
+    } catch (const std::exception& error) {
+        // A decode that ran the heap out (std::bad_alloc on a job pool worker) is named, not an opaque Wasm throw.
+        gltf::LoadResult failed;
+        failed.error = std::string("TN_WASM_GLTF_LOAD_FAILED: ") + error.what();
+        return failed;
+    }
+}
+
+/** A loaded model into `context`: the scene, then each clip. 0, or 1 with loadFailure set. */
+int shareModel(tn_context_t* context, const gltf::LoadResult& loaded, tn_handle_t* out, uint32_t capacity,
+               uint32_t* count) {
+    if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
+    if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
+    bool undecoded = false;
+    loaded.scene->traverse([](Object3D& object, void* result) {
+        auto* mesh = dynamic_cast<Mesh*>(&object);
+        if (!mesh || !mesh->material) return;
+        for (const auto& [slot, map] : mesh->material->maps)
+            if (map && !map->hasImage()) *static_cast<bool*>(result) = true;
+    }, &undecoded);
+    if (undecoded) return loadFailure = "TN_NATIVE_GLTF_IMAGE_UNSUPPORTED: the model has undecoded images", 1;
+    *count = 1 + static_cast<uint32_t>(loaded.animations.size());
+    if (!out || capacity < *count) return loadFailure = "TN_WASM_GLTF_CAPACITY", 1;
+    out[0] = tn::abi::shareObject(context, "Group", loaded.scene);
+    for (uint32_t i = 0; i < loaded.animations.size(); ++i)
+        out[1 + i] = tn::abi::shareObject(context, "AnimationClip", loaded.animations[i]);
+    return 0;
+}
+
+/**
+ * One model loading off the main thread (PRD-860): Midway's late fleet spent 2.4 s of play in
+ * tnw_web_load_gltf, one synchronous 100-500 ms task per hull. The loader thread owns `bytes` and
+ * `files` until `done`; then the main thread owns `result`.
+ */
+struct GltfJob {
+    std::vector<uint8_t> bytes;
+    std::map<std::string, std::vector<uint8_t>> files;
+    gltf::LoadResult result;
+    std::atomic<bool> done{false};
+};
+std::map<uint32_t, std::shared_ptr<GltfJob>> gltfJobs;  // main thread only
+uint32_t lastGltfJob = 0;
+
+void runGltfJob(GltfJob& job) {
+    job.result = loadModel(job.bytes, job.files);
+    job.bytes = {};
+    job.files = {};
+    job.done.store(true, std::memory_order_release);
+}
+
+#ifdef __EMSCRIPTEN_PTHREADS__
+// One loader thread, models in order: a model's own image decodes already fan out over the JobPool,
+// and a second loader would only split those workers. Started on the first load, never joined.
+std::mutex gltfQueueMutex;
+std::condition_variable gltfQueueWake;  // TN_WORKER_ONLY: the loader parks here; the main thread only notifies
+std::deque<std::shared_ptr<GltfJob>> gltfQueue;
+
+void queueGltfJob(std::shared_ptr<GltfJob> job) {
+    static const bool started = [] {
+        std::thread([] {
+            for (;;) {
+                std::shared_ptr<GltfJob> next;
+                {
+                    std::unique_lock lock(gltfQueueMutex);
+                    gltfQueueWake.wait(lock, [] { return !gltfQueue.empty(); });
+                    next = std::move(gltfQueue.front());
+                    gltfQueue.pop_front();
+                }
+                runGltfJob(*next);
+            }
+        }).detach();
+        return true;
+    }();
+    (void)started;
+    {
+        std::lock_guard lock(gltfQueueMutex);
+        gltfQueue.push_back(std::move(job));
+    }
+    gltfQueueWake.notify_one();
+}
+#else
+// No threads in this build (no cross-origin isolation): the load runs at begin, as tnw_web_load_gltf does.
+void queueGltfJob(std::shared_ptr<GltfJob> job) { runGltfJob(*job); }
+#endif
+#endif
 }
 
 /** Keeps one file for the next tnw_web_load_gltf calls, by the uri the model names it with. */
@@ -970,34 +1071,7 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
     loadFailure.clear();
 #if TN_WEB_GLTF
     if (!context || !bytes || !size || !count) return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
-    gltf::LoadOptions options;
-    options.readUri = [](const std::string& uri) -> std::span<const uint8_t> {
-        const auto found = modelFiles.find(uri);
-        return found == modelFiles.end() ? std::span<const uint8_t>{} : std::span<const uint8_t>(found->second);
-    };
-    gltf::LoadResult loaded;
-    try {
-        loaded = gltf::load(std::span<const uint8_t>(bytes, size), options);
-    } catch (const std::exception& error) {
-        // A decode that ran the heap out (std::bad_alloc on a job pool worker) is named, not an opaque Wasm throw.
-        return loadFailure = std::string("TN_WASM_GLTF_LOAD_FAILED: ") + error.what(), 1;
-    }
-    if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
-    if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
-    bool undecoded = false;
-    loaded.scene->traverse([](Object3D& object, void* result) {
-        auto* mesh = dynamic_cast<Mesh*>(&object);
-        if (!mesh || !mesh->material) return;
-        for (const auto& [slot, map] : mesh->material->maps)
-            if (map && !map->hasImage()) *static_cast<bool*>(result) = true;
-    }, &undecoded);
-    if (undecoded) return loadFailure = "TN_NATIVE_GLTF_IMAGE_UNSUPPORTED: the model has undecoded images", 1;
-    *count = 1 + static_cast<uint32_t>(loaded.animations.size());
-    if (!out || capacity < *count) return loadFailure = "TN_WASM_GLTF_CAPACITY", 1;
-    out[0] = tn::abi::shareObject(context, "Group", loaded.scene);
-    for (uint32_t i = 0; i < loaded.animations.size(); ++i)
-        out[1 + i] = tn::abi::shareObject(context, "AnimationClip", loaded.animations[i]);
-    return 0;
+    return shareModel(context, loadModel(std::span<const uint8_t>(bytes, size), modelFiles), out, capacity, count);
 #else
     (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count;
     loadFailure = "TN_WASM_GLTF_UNAVAILABLE: this web engine was built without cgltf";
@@ -1007,6 +1081,58 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
 
 /// The last id that arrived without a manifest entry, so the report prints once per id, not per frame.
 static int unknownFrameField = 0;
+
+/**
+ * tnw_web_load_gltf off the main thread: copies `bytes`, takes every file tnw_web_gltf_file kept, and
+ * returns a ticket (0 on bad arguments or a build without cgltf). Poll tnw_web_load_gltf_done, then
+ * tnw_web_load_gltf_finish shares the model into a context.
+ */
+extern "C" uint32_t tnw_web_load_gltf_begin(const uint8_t* bytes, uint32_t size) {
+#if TN_WEB_GLTF
+    if (!bytes || !size) return 0;
+    auto job = std::make_shared<GltfJob>();
+    job->bytes.assign(bytes, bytes + size);
+    job->files = std::exchange(modelFiles, {});
+    gltfJobs[++lastGltfJob] = job;
+    queueGltfJob(std::move(job));
+    return lastGltfJob;
+#else
+    (void)bytes; (void)size;
+    return 0;
+#endif
+}
+
+/** 1 once the ticket's load ended (or the ticket is unknown, so finish answers why), else 0. */
+extern "C" int tnw_web_load_gltf_done(uint32_t ticket) {
+#if TN_WEB_GLTF
+    const auto found = gltfJobs.find(ticket);
+    return found == gltfJobs.end() || found->second->done.load(std::memory_order_acquire) ? 1 : 0;
+#else
+    (void)ticket;
+    return 1;
+#endif
+}
+
+/**
+ * tnw_web_load_gltf's answer for a finished ticket: 0 with the handles in `out`, or 1 with
+ * tnw_web_load_error set. A short `out` (TN_WASM_GLTF_CAPACITY) keeps the ticket for a retry.
+ */
+extern "C" int tnw_web_load_gltf_finish(tn_context_t* context, uint32_t ticket, tn_handle_t* out, uint32_t capacity,
+                                        uint32_t* count) {
+    loadFailure.clear();
+#if TN_WEB_GLTF
+    const auto found = gltfJobs.find(ticket);
+    if (!context || !count || found == gltfJobs.end() || !found->second->done.load(std::memory_order_acquire))
+        return loadFailure = "TN_WASM_GLTF: no finished load for this ticket", 1;
+    const int status = shareModel(context, found->second->result, out, capacity, count);
+    if (status == 0 || loadFailure != "TN_WASM_GLTF_CAPACITY") gltfJobs.erase(found);
+    return status;
+#else
+    (void)context; (void)ticket; (void)out; (void)capacity; (void)count;
+    loadFailure = "TN_WASM_GLTF_UNAVAILABLE: this web engine was built without cgltf";
+    return 1;
+#endif
+}
 
 /**
  * One number of the last frame's telemetry, by the field names in
