@@ -260,59 +260,171 @@ function applyWaterRows(
  * from where its catchment is a tenth of the outlet's to the edge, every 16 m. Bed, depth and
  * shoulder are the forest starter's river (7 m bed for a 5.32 m ribbon).
  */
-/**
- * Places each lake row the recipe had no layer for in the finished ground's deepest closed basin,
- * filled to the level it spills at: where water would stand. Basins sit inside the square and clear
- * of the sea and of each other; ground with no basin a metre deep takes the lowest such ground,
- * flooded two metres. The ground decides, so one request and seed place the same lakes.
- */
-function placeLakes(
-  recipe: ITerrainDocument & { layers: Layer[] },
-  rows: readonly IBiomeWaterBody[],
-): void {
-  const state = Terrain.fromJSON(recipe).evaluate();
-  const { resolution: n, size } = state;
-  const filled = Float64Array.from(state.height);
-  fillDepressions(filled, n);
-  const sea = Math.max(
+/** The highest ocean row's level the recipe floods, or -Infinity with no sea. */
+function seaLevel(recipe: ITerrainDocument & { layers: Layer[] }): number {
+  return Math.max(
     Number.NEGATIVE_INFINITY,
     ...recipe.layers.flatMap((layer) =>
       layer.type === "water" && layer.params.kind === "ocean" ? [layer.params.level ?? 0] : [],
     ),
   );
-  const world = (i: number): [number, number] => [
-    ((i % n) / (n - 1) - 0.5) * size,
-    (Math.floor(i / n) / (n - 1) - 0.5) * size,
-  ];
-  const inner: number[] = [];
-  for (let z = Math.floor(n / 8); z < n - Math.floor(n / 8); z += 1)
-    for (let x = Math.floor(n / 8); x < n - Math.floor(n / 8); x += 1)
-      if ((state.height[z * n + x] as number) > sea + 1) inner.push(z * n + x);
-  const depth = (i: number) => (filled[i] as number) - (state.height[i] as number);
+}
+
+/**
+ * Drops the square's border into a sea the request names, when the ground stands above it there:
+ * "a volcanic island" is a volcano the sea surrounds, not a slab in a flooded plane. It is the noise
+ * operation's own island falloff with no noise of its own, deep enough that the border's highest
+ * point lands three metres under the sea where the falloff reaches its mid-edges.
+ */
+function shapeCoast(recipe: ITerrainDocument & { layers: Layer[] }): void {
+  const sea = seaLevel(recipe);
+  if (sea === Number.NEGATIVE_INFINITY) return;
+  const state = Terrain.fromJSON(recipe).evaluate();
+  const n = state.resolution;
+  let border = Number.NEGATIVE_INFINITY;
+  for (let k = 0; k < n; k += 1)
+    for (const i of [k, (n - 1) * n + k, k * n, k * n + n - 1])
+      border = Math.max(border, state.height[i] as number);
+  if (border < sea) return;
+  // The island falloff at a mid-edge (r = 0.5 / 0.59) is smoothstep(0.6, 1, r) = 0.676 of its depth.
+  recipe.layers.push({
+    enabled: true,
+    opacity: 1,
+    id: "coast",
+    type: "noise",
+    params: { amplitude: 0, scale: 1, island: true, coastDepth: (border - sea + 3) / 0.676 },
+  } as Layer);
+}
+
+/**
+ * Places each lake row the recipe had no layer for in the finished ground's deepest closed basin,
+ * filled to the level it spills at: where water would stand. A basin is one the whole lake fits
+ * around inside the square and on land (a lake radius from the nearest sea), clear of the lakes
+ * before it. Ground with no basin a
+ * metre deep gets one: a crater stamp at its lowest such ground, then flooded to its rim. The ground
+ * decides, so one request and seed place the same lakes.
+ */
+function placeLakes(
+  recipe: ITerrainDocument & { layers: Layer[] },
+  rows: readonly IBiomeWaterBody[],
+): void {
+  const sea = seaLevel(recipe);
   const placed: [number, number, number][] = [];
   rows.forEach((row, index) => {
-    const radius = row.radius as number;
-    const free = inner.filter((i) => {
-      const [x, z] = world(i);
-      return placed.every(([px, pz, r]) => Math.hypot(x - px, z - pz) > r + radius);
-    });
-    const basin = free.reduce((best, i) => (best < 0 || depth(i) > depth(best) ? i : best), -1);
-    const low = free.reduce(
-      (best, i) =>
-        best < 0 || (state.height[i] as number) < (state.height[best] as number) ? i : best,
-      -1,
-    );
-    const at = basin >= 0 && depth(basin) >= 1 ? basin : low;
-    if (at < 0) throw new Error("cook: water row 'lake' found no ground above the sea to sit on.");
-    const level = at === basin ? (filled[at] as number) : (state.height[at] as number) + 2;
-    const [x, z] = world(at);
-    placed.push([x, z, radius]);
+    let radius = row.radius as number;
+    const site = (): {
+      depth: number;
+      ground: number;
+      level: number;
+      room: number;
+      world: [number, number];
+    } => {
+      const state = Terrain.fromJSON(recipe).evaluate();
+      const { resolution: n, size } = state;
+      const filled = Float64Array.from(state.height);
+      fillDepressions(filled, n);
+      const world = (i: number): [number, number] => [
+        ((i % n) / (n - 1) - 0.5) * size,
+        (Math.floor(i / n) / (n - 1) - 0.5) * size,
+      ];
+      // Cells from the nearest sea cell (8-neighbour steps), so a whole lake stands on land.
+      const shore = new Float64Array(n * n).fill(Number.POSITIVE_INFINITY);
+      const queue: number[] = [];
+      for (let i = 0; i < n * n; i += 1)
+        if ((state.height[i] as number) <= sea + 1) {
+          shore[i] = 0;
+          queue.push(i);
+        }
+      for (let head = 0; head < queue.length; head += 1) {
+        const i = queue[head] as number;
+        const x = i % n;
+        const z = Math.floor(i / n);
+        for (let dz = -1; dz <= 1; dz += 1)
+          for (let dx = -1; dx <= 1; dx += 1) {
+            if (x + dx < 0 || x + dx >= n || z + dz < 0 || z + dz >= n) continue;
+            const j = i + dz * n + dx;
+            if ((shore[j] as number) > (shore[i] as number) + 1) {
+              shore[j] = (shore[i] as number) + 1;
+              queue.push(j);
+            }
+          }
+      }
+      const cell = size / (n - 1);
+      let best = -1;
+      let low = -1;
+      // Ground too small for the whole lake still takes it at its most inland cell.
+      let inland = -1;
+      for (let i = 0; i < n * n; i += 1) {
+        const [x, z] = world(i);
+        if (
+          (shore[i] as number) > 0 &&
+          (inland < 0 || (shore[i] as number) > (shore[inland] as number))
+        )
+          inland = i;
+        if (Math.max(Math.abs(x), Math.abs(z)) > size / 2 - radius) continue;
+        if ((shore[i] as number) * cell <= radius) continue;
+        if (!placed.every(([px, pz, r]) => Math.hypot(x - px, z - pz) > r + radius)) continue;
+        const depth = (filled[i] as number) - (state.height[i] as number);
+        if (best < 0 || depth > (filled[best] as number) - (state.height[best] as number)) best = i;
+        if (low < 0 || (state.height[i] as number) < (state.height[low] as number)) low = i;
+      }
+      if (low < 0) low = best = inland;
+      if (low < 0)
+        throw new Error("cook: water row 'lake' found no ground above the sea to sit on.");
+      const depth = (filled[best] as number) - (state.height[best] as number);
+      const at = depth >= 1 ? best : low;
+      const ground = state.height[at] as number;
+      return {
+        depth,
+        ground,
+        level: depth >= 1 ? (filled[at] as number) : ground + 2,
+        // Metres from this cell to the nearest sea: the room a dug basin has on this ground.
+        room: (shore[at] as number) * cell,
+        world: world(at),
+      };
+    };
+    let found = site();
+    if (found.depth < 1) {
+      // A dug basin and its rim stay on land: an island too small for the lake takes a smaller one.
+      radius = Math.min(radius, found.room * 0.55);
+      // A slope leaves a crater's downhill rim open, so a level pad goes under it first. The
+      // crater's bowl spans about half its radius, so the stamp is sized for the lake to fit.
+      recipe.layers.push({
+        enabled: true,
+        opacity: 1,
+        id: `lake-${String(index)}-shelf`,
+        type: "flatten",
+        params: {
+          at: found.world,
+          radius: radius / 0.55,
+          height: found.ground,
+          strength: 1,
+          falloff: 0.35,
+        },
+      } as Layer);
+      recipe.layers.push({
+        enabled: true,
+        opacity: 1,
+        id: `lake-${String(index)}-basin`,
+        type: "stamp",
+        params: {
+          shape: "crater",
+          at: found.world,
+          radius: radius / 0.55,
+          amplitude: 10,
+          roughness: 0,
+          blend: "add",
+        },
+      } as Layer);
+      found = site();
+    }
+    placed.push([found.world[0], found.world[1], radius]);
     recipe.layers.push({
       enabled: true,
       opacity: 1,
       id: `lake-${String(index)}`,
       type: "water",
-      params: { kind: "lake", at: [x, z], radius, level },
+      params: { kind: "lake", at: found.world, radius, level: found.level },
     } as Layer);
   });
 }
@@ -1001,6 +1113,7 @@ async function cookInto(
   // A landform preset authors the ground and no scatter rules, so the biome file's foliage is placed
   // on it through the stages every starter scatter runs.
   // A river the recipe has no layer for runs down the finished ground, survey or preset alike.
+  shapeCoast(recipe.recipe);
   const lakes = unrouted.filter((row) => row.kind === "lake");
   if (lakes.length > 0) placeLakes(recipe.recipe, lakes);
   const rivers = unrouted.filter((row) => row.kind === "river");

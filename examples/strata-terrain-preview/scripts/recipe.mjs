@@ -158,9 +158,11 @@ export const cooked = process.env.STRATA_WORLD
           "utf8",
         ),
       ),
-      ring: JSON.parse(
-        await readFile(new URL("ring.json", pathToFileURL(`${process.env.STRATA_WORLD}/`)), "utf8"),
-      ),
+      // Only an alpine or temperateMountains cook writes a ring; any other stands in a flat one.
+      ring: await readFile(
+        new URL("ring.json", pathToFileURL(`${process.env.STRATA_WORLD}/`)),
+        "utf8",
+      ).then(JSON.parse, () => undefined),
     }
   : undefined;
 
@@ -467,6 +469,20 @@ export const realContinuation = Object.fromEntries(
         resolution: source.resolution,
         seed: 1,
       }).heightmap({ id: "usgs-surroundings", data: source.data });
+    if (name === "forest" && cooked && !cooked.ring) {
+      // Open sea past a cooked coast (30 m under its ocean), else level ground at the datum.
+      const sea = cooked.recipe.layers.find((l) => l.type === "water" && l.params.kind === "ocean");
+      const floor = sea ? (sea.params.level ?? 0) - 30 : 0;
+      return [
+        [
+          name,
+          new Terrain({ size: source.size, resolution: 17, seed: 1 }).heightmap({
+            id: "cooked-flat-ring",
+            data: { width: 2, height: 2, values: [floor, floor, floor, floor] },
+          }),
+        ],
+      ];
+    }
     if (name === "forest" && cooked) {
       // The cook's own ring: its survey continued, its massif already standing in it, and the
       // massif's own heights for the relief map where the ring's cells are too coarse.

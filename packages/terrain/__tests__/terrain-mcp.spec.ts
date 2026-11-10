@@ -16,6 +16,7 @@ import { decodeRAW16 } from "../src/core/io.js";
 import type { LandformKind } from "../src/core/presets.js";
 import { BIOME_OWN } from "../src/core/request-words.js";
 import type { IGroundRequest } from "../src/core/surveys.js";
+import { Terrain } from "../src/core/terrain.js";
 import type { ITerrainDocument } from "../src/core/types.js";
 import { IsolatedKillError, childExecArgv, runIsolated } from "../src/mcp/child.js";
 import { PLAY_AREA_CLEAR_RADIUS, cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
@@ -152,6 +153,7 @@ describe("terrain_generate input", () => {
     // A sea or a shape with no biome word picks the starter that suits it, naming the word.
     for (const [request, kit, word] of [
       ["a volcanic island", "coastal", "island"],
+      ["a volcanic island with a lake", "coastal", "island"],
       ["rolling hills with a lake", "forest", "rolling"],
       ["a misty fjord", "coastal", "fjord"],
       ["the grand canyon", "desert", "canyon"],
@@ -1242,31 +1244,46 @@ describe("terrain_generate biome cooks", () => {
     120_000,
   );
 
-  it("places a lake row the recipe has no layer for in the ground's deepest basin", async () => {
-    // "A volcanic island with a lake": the preset authors no lake, so the cook finds where water
-    // would stand (the deepest closed basin above the sea, filled to its spill level) and floods it.
-    const world = await cook({
-      ...parseGenerateRequest({ request: "a volcanic island with a lake" }).input,
-      ground: "procedural",
-    });
-    try {
-      const lake = world.recipe.layers.find(
-        (layer: { type: string; params: { kind?: string } }) =>
-          layer.type === "water" && layer.params.kind === "lake",
-      ) as { params: { at: [number, number]; radius: number; level: number } };
-      expect(lake.params.radius).toBe(105);
-      const half = world.recipe.config.size / 2;
-      for (const axis of lake.params.at) expect(Math.abs(axis)).toBeLessThan(half);
-      // Above the sea the island floods.
-      expect(lake.params.level).toBeGreaterThan(1.5);
-      expect(world.result.water).toEqual([
-        { kind: "ocean", level: 1.5 },
-        expect.objectContaining({ kind: "lake", radius: 105 }),
-      ]);
-    } finally {
-      await world.remove();
-    }
-  }, 120_000);
+  // "A volcanic island with a lake" and "a small island with a lake": the presets author no lake,
+  // so the cook finds where water would stand (the deepest closed basin a lake fits in on land) or
+  // digs one, and the sea the request names surrounds the land. The visual check that found both
+  // gaps: the lake drew zero flooded cells, and the island stood as a slab in a flooded plane.
+  it.each([
+    ["a volcanic island with a lake", "procedural"],
+    ["a small island with a lake", undefined],
+  ] as const)(
+    "floods a lake inside the land of %s, and the sea rings it",
+    async (request, ground) => {
+      const world = await cook({
+        ...parseGenerateRequest({ request }).input,
+        ...(ground === undefined ? {} : { ground }),
+      });
+      try {
+        const state = Terrain.fromJSON(world.recipe).evaluate();
+        const n = state.resolution;
+        const ocean = state.waters.find((water) => water.kind === "ocean");
+        const lake = state.waters.find((water) => water.kind === "lake");
+        expect(ocean?.level).toBe(1.5);
+        // The lake floods real cells, none of them the sea's or next to it.
+        const wet = (lake?.mask ?? []).reduce((sum, cell) => sum + cell, 0);
+        expect(wet).toBeGreaterThan(20);
+        for (let i = 0; i < n * n; i += 1)
+          if (lake?.mask[i])
+            for (const j of [i - 1, i + 1, i - n, i + n]) expect(ocean?.mask[j] ?? 0).toBe(0);
+        // Every border cell is under the sea: land the sea surrounds, not a slab.
+        for (let k = 0; k < n; k += 1)
+          for (const i of [k, (n - 1) * n + k, k * n, k * n + n - 1])
+            expect(state.height[i]).toBeLessThan(1.5);
+        expect(world.result.water).toEqual([
+          { kind: "ocean", level: 1.5 },
+          expect.objectContaining({ kind: "lake" }),
+        ]);
+      } finally {
+        await world.remove();
+      }
+    },
+    240_000,
+  );
 });
 
 // PRD-854 phase 1: a request's words decide the landform, the water and the size, not only the
