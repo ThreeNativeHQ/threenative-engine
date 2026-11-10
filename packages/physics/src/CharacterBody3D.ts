@@ -8,6 +8,40 @@ import type {
   IPhysicsWorldHandle,
 } from "./handles.js";
 import type { IPhysicsContext } from "./plugin.js";
+
+/**
+ * Seating a standing character. Rapier's controller does not hold a grounded body still: each
+ * gravity step ends with a 0.1 mm nudge along the contact normal (`normal_nudge_factor`), and a
+ * walk leaves the body up to 9 mm inside its contact offset, from where it climbs back 0.1 mm a
+ * step. A follow camera aimed at such a body turns 0.02 px a frame, which flips antialiasing
+ * samples along every high-contrast edge on screen.
+ *
+ * A grounded body that asks for no travel is seated instead. `Step` sends the gravity step until
+ * the solver answers with less than `SEAT_BAND` of travel. `Lift` then raises the body `SEAT_LIFT`
+ * and `Check` sends the gravity step again: a body that rises is still inside its offset and lifts
+ * again, and a body the ground stops has landed on its offset. `Rest` sends no travel from then
+ * on, so the body stays where it landed. Asking to move, a moving floor, ground that can move
+ * with no notice and losing the ground all return to `Step`.
+ */
+enum Seat {
+  Step = 0,
+  Lift = 1,
+  Check = 2,
+  Rest = 3,
+}
+const SEAT_LIFT = 1e-3;
+/** The solver's answer counts as no travel under a quarter of the gravity step, and never under two nudges. */
+const SEAT_BAND = 2e-4;
+/** Half a nudge: the ground stopped a step that ends this far short of the travel it asked for. */
+const SEAT_STOPPED = 5e-5;
+/** One contact offset of the default size, with slack: after this many lifts the body rests where it is. */
+const SEAT_LIFTS = 16;
+/**
+ * Rapier slides a body down ground steeper than 45 degrees, and at a high step rate one step of
+ * that slide is shorter than `SEAT_BAND`. Ground within 10 degrees of that angle, the noise in a
+ * contact normal, does not seat.
+ */
+const SEAT_GROUND_Y = Math.cos(Math.PI / 4 - Math.PI / 18);
 import {
   type IPhysicsCharacterOptions,
   type IPhysicsSimulation,
@@ -145,6 +179,13 @@ export class CharacterBody3D {
   #groundCollider: number | undefined;
   #beforeY = 0;
   #desiredY = 0;
+  #still = false;
+  #seat = Seat.Step;
+  #lifts = 0;
+  /** Where the last step started, and the solver's pose after it with the pose the object was given. */
+  #from = { x: 0, y: 0, z: 0 };
+  #solved = { x: 0, y: 0, z: 0 };
+  #shown = { x: 0, y: 0, z: 0 };
   #disposed = false;
   #interpolate = true;
 
@@ -279,7 +320,15 @@ export class CharacterBody3D {
   /** Called by the shared plugin before a bulk step. */
   writeKinematic(buffer: Float32Array, offset: number): void {
     if (this.#disposed) return;
-    this.#beforeY = this.object.position.y;
+    // A lift is not shown, so the object can trail the body by one step: the step then starts from
+    // the solver's pose. An object the game moved itself starts from where the game put it.
+    const at = this.object.position;
+    const shown = this.#shown;
+    const from = at.x === shown.x && at.y === shown.y && at.z === shown.z ? this.#solved : at;
+    this.#from.x = from.x;
+    this.#from.y = from.y;
+    this.#from.z = from.z;
+    this.#beforeY = from.y;
     this.#desiredY = this.#desired.y;
     const carry =
       this.#sliding && this.grounded && this.velocity.y <= 0 && this.#groundCollider !== undefined
@@ -288,11 +337,24 @@ export class CharacterBody3D {
     const carryX = carry?.x ?? 0;
     const carryY = carry?.y ?? 0;
     const carryZ = carry?.z ?? 0;
+    this.#still =
+      this.#sliding &&
+      this.grounded &&
+      this.#desired.x === 0 &&
+      this.#desired.z === 0 &&
+      this.#desired.y <= 0 &&
+      carryX === 0 &&
+      carryY === 0 &&
+      carryZ === 0 &&
+      (this.groundBody === undefined || this.#physics?.groundHolds?.(this.groundBody.id) !== false);
+    if (!this.#still) this.#seat = Seat.Step;
+    const travelY =
+      this.#seat === Seat.Rest ? 0 : this.#seat === Seat.Lift ? SEAT_LIFT : this.#desired.y;
     // Scalar writes: an array literal here was one more thrown-away object per body per step.
     buffer[offset] = this.body.id;
-    buffer[offset + 1] = this.object.position.x + this.#desired.x + carryX;
-    buffer[offset + 2] = this.object.position.y + this.#desired.y + carryY;
-    buffer[offset + 3] = this.object.position.z + this.#desired.z + carryZ;
+    buffer[offset + 1] = from.x + this.#desired.x + carryX;
+    buffer[offset + 2] = from.y + travelY + carryY;
+    buffer[offset + 3] = from.z + this.#desired.z + carryZ;
     buffer[offset + 4] = this.object.quaternion.x;
     buffer[offset + 5] = this.object.quaternion.y;
     buffer[offset + 6] = this.object.quaternion.z;
@@ -342,7 +404,15 @@ export class CharacterBody3D {
       this.#clearGroundState();
     }
     if (this.#sliding && this.grounded && this.velocity.y < 0) this.velocity.y = 0;
-    this.object.position.set(x, y, z);
+    const lifted = this.#seat === Seat.Lift;
+    this.#seated(x - this.#from.x, y - this.#from.y, z - this.#from.z);
+    this.#solved.x = x;
+    this.#solved.y = y;
+    this.#solved.z = z;
+    if (!lifted) this.object.position.set(x, y, z);
+    this.#shown.x = this.object.position.x;
+    this.#shown.y = this.object.position.y;
+    this.#shown.z = this.object.position.z;
     setRotationIfChanged(this.object.quaternion, qx, qy, qz, qw);
     this.#desired.x = 0;
     this.#desired.y = 0;
@@ -415,6 +485,31 @@ export class CharacterBody3D {
     // Unreal swims once the body's centre is inside the water volume.
     this.swimming = this.immersionDepth > 0.5;
     return this.immersionDepth;
+  }
+
+  /** Advances the seat from the solver's answer to the step that just ran. */
+  #seated(dx: number, dy: number, dz: number): void {
+    if (this.#seat === Seat.Rest && this.#still && this.grounded) return;
+    const band = Math.max(SEAT_BAND, -0.25 * this.#desiredY);
+    if (
+      !this.#still ||
+      !this.grounded ||
+      this.groundNormal.y < SEAT_GROUND_Y ||
+      Math.abs(dx) >= band ||
+      Math.abs(dz) >= band
+    ) {
+      this.#seat = Seat.Step;
+      this.#lifts = 0;
+    } else if (this.#seat === Seat.Step) {
+      if (Math.abs(dy) < band) this.#seat = Seat.Lift;
+    } else if (this.#seat === Seat.Lift) {
+      this.#seat = Seat.Check;
+    } else if (dy >= 0) {
+      this.#lifts += 1;
+      this.#seat = this.#lifts < SEAT_LIFTS ? Seat.Lift : Seat.Rest;
+    } else if (dy > this.#desiredY + SEAT_STOPPED) {
+      this.#seat = Seat.Rest;
+    }
   }
 
   #clearGroundState(): void {
