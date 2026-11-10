@@ -1026,32 +1026,38 @@ void runGltfJob(GltfJob& job) {
 #ifdef __EMSCRIPTEN_PTHREADS__
 // One loader thread, models in order: a model's own image decodes already fan out over the JobPool,
 // and a second loader would only split those workers. Started on the first load, never joined.
-std::mutex gltfQueueMutex;
-std::condition_variable gltfQueueWake;  // TN_WORKER_ONLY: the loader parks here; the main thread only notifies
-std::deque<std::shared_ptr<GltfJob>> gltfQueue;
+struct GltfLoaderThread {
+    std::mutex mutex_;
+    std::condition_variable work_;  // TN_WORKER_ONLY: the loader parks here; the main thread only notifies
+    std::deque<std::shared_ptr<GltfJob>> pending_;
+    bool stopping_ = false;  // never set: the loader lives as long as the page
+
+    void run() {
+        for (;;) {
+            std::shared_ptr<GltfJob> next;
+            {
+                std::unique_lock lock(mutex_);
+                work_.wait(lock, [this] { return stopping_ || !pending_.empty(); }); // TN_WORKER_ONLY: the glTF loader thread's own entry; begin only notifies.
+                if (pending_.empty()) return;
+                next = std::move(pending_.front());
+                pending_.pop_front();
+            }
+            runGltfJob(*next);
+        }
+    }
+};
 
 void queueGltfJob(std::shared_ptr<GltfJob> job) {
-    static const bool started = [] {
-        std::thread([] {
-            for (;;) {
-                std::shared_ptr<GltfJob> next;
-                {
-                    std::unique_lock lock(gltfQueueMutex);
-                    gltfQueueWake.wait(lock, [] { return !gltfQueue.empty(); });
-                    next = std::move(gltfQueue.front());
-                    gltfQueue.pop_front();
-                }
-                runGltfJob(*next);
-            }
-        }).detach();
-        return true;
+    static GltfLoaderThread* const loader = [] {
+        auto* thread = new GltfLoaderThread();  // never freed: the detached loader outlives every static
+        std::thread([thread] { thread->run(); }).detach();
+        return thread;
     }();
-    (void)started;
     {
-        std::lock_guard lock(gltfQueueMutex);
-        gltfQueue.push_back(std::move(job));
+        std::lock_guard lock(loader->mutex_);
+        loader->pending_.push_back(std::move(job));
     }
-    gltfQueueWake.notify_one();
+    loader->work_.notify_one();
 }
 #else
 // No threads in this build (no cross-origin isolation): the load runs at begin, as tnw_web_load_gltf does.
