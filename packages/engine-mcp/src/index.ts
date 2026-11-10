@@ -712,6 +712,12 @@ const NAME_SHARE_LEAD = 1.4;
  * not for a symbol; `godrays` and `traa` reach 2 and `mergeParts`' own words reach 11 and 15.
  */
 const SYMBOL_WEIGHT_FLOOR = 4.2;
+/**
+ * A one-word name spelled in passing also has to hold this much of the request. `depth` is rare
+ * enough for the weight floor, and a request about underwater fog still says it once; below this
+ * share the word is scenery and the row it would lead is a wrong answer at a weak score.
+ */
+const SINGLE_WORD_SHARE_FLOOR = 0.3;
 
 interface ISymbolScore {
   readonly score: number;
@@ -738,10 +744,20 @@ function scoreSymbolName(
   // `use addInSlices for loading` — is asking for that symbol: equality with the whole name, not
   // with what the stemmer leaves of it, which is how `afterPhysics` once answered "physics".
   if (spellsName(situation, symbol)) {
-    return {
-      score: normaliseName(situation) === normaliseName(symbol) ? EXACT_SYMBOL_LEAD : nameScore,
-      specificity,
-    };
+    if (normaliseName(situation) === normaliseName(symbol)) {
+      return { score: EXACT_SYMBOL_LEAD, specificity };
+    }
+    // A one-word name spelled inside a longer request is the weakest form of the signal: `view`,
+    // `scene`, `depth`, `velocity` and `connect` are ordinary English that a request uses without
+    // naming the symbol. It must then earn its place twice — the word has to be one the name index
+    // rarely uses, and it has to hold a real share of the request — or `camera follows the player
+    // with a third person view` answers the React `View` rectangle over the camera it asks for.
+    if (name.length === 1) {
+      if (weightOf(weights, name[0] ?? "") < SYMBOL_WEIGHT_FLOOR) return undefined;
+      if (share < SINGLE_WORD_SHARE_FLOOR) return undefined;
+      return { score: (NAME_BASE_LEAD + NAME_SHARE_LEAD) * Math.min(1, share), specificity };
+    }
+    return { score: nameScore, specificity };
   }
   // A one-word name has to be spelled; a name scattered through the prose needs the gates below.
   if (name.length < 2) return undefined;
