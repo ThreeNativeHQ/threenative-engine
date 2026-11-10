@@ -295,7 +295,8 @@ describe("capability manifest generator", () => {
   it("keeps an export that follows a generic arrow function in a .ts source", async () => {
     const manifest = await checkCapabilityManifest(process.cwd());
     const entry = manifest.entries.find(
-      (candidate) => candidate.importPath === "@threenative/core" && candidate.symbol === "fetchAsset",
+      (candidate) =>
+        candidate.importPath === "@threenative/core" && candidate.symbol === "fetchAsset",
     );
     expect(entry?.situations).toContain("a data file loads in dev but 404s in the built game");
   });
