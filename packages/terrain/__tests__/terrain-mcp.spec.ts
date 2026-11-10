@@ -1265,7 +1265,7 @@ describe("terrain_generate biome cooks", () => {
         const lake = state.waters.find((water) => water.kind === "lake");
         expect(ocean?.level).toBe(1.5);
         // The lake floods real cells, none of them the sea's or next to it.
-        const wet = (lake?.mask ?? []).reduce((sum, cell) => sum + cell, 0);
+        const wet = (lake?.mask ?? new Uint8Array()).reduce((sum, cell) => sum + cell, 0);
         expect(wet).toBeGreaterThan(20);
         for (let i = 0; i < n * n; i += 1)
           if (lake?.mask[i])
@@ -1278,6 +1278,59 @@ describe("terrain_generate biome cooks", () => {
           { kind: "ocean", level: 1.5 },
           expect.objectContaining({ kind: "lake" }),
         ]);
+      } finally {
+        await world.remove();
+      }
+    },
+    240_000,
+  );
+  // "A desert canyon" kept the desert's flat crop and "a misty fjord" the coast's round island: a
+  // landform word only picks a preset, and the kit's own preset keeps the kit's ground. The visual
+  // judge read MISMATCH; a feature word now carves its shape into whatever ground stands there.
+  it.each([
+    ["a desert canyon", "canyon"],
+    ["a misty fjord", "fjord"],
+  ] as const)(
+    "carves the shape %s names into the ground",
+    async (request, feature) => {
+      const parsed = parseGenerateRequest({ request });
+      expect(parsed.decided.features).toEqual({ value: [feature], source: { word: feature } });
+      const world = await cook(parsed.input);
+      try {
+        const state = Terrain.fromJSON(world.recipe).evaluate();
+        const { resolution: n, size } = state;
+        const cut = world.recipe.layers.find(
+          (layer: { id: string }) => layer.id === `${feature}-0`,
+        ) as
+          | { params: { at: [number, number]; rotation: number; radius: [number, number] } }
+          | undefined;
+        expect(cut).toBeDefined();
+        const { at, rotation, radius } = cut?.params ?? { at: [0, 0], rotation: 0, radius: [0, 0] };
+        const turn = (rotation * Math.PI) / 180;
+        const cellOf = (x: number, z: number) =>
+          Math.round((z / size + 0.5) * (n - 1)) * n + Math.round((x / size + 0.5) * (n - 1));
+        // Points along the cut's axis inside the square, and the same points beside the cut.
+        const along = [-0.3, -0.15, 0, 0.15, 0.3]
+          .map(
+            (t) => [at[0] - Math.sin(turn) * t * size, at[1] + Math.cos(turn) * t * size] as const,
+          )
+          .filter(([x, z]) => Math.max(Math.abs(x), Math.abs(z)) < size * 0.4);
+        const beside = (x: number, z: number) =>
+          cellOf(x + Math.cos(turn) * radius[0] * 3, z + Math.sin(turn) * radius[0] * 3);
+        expect(along.length).toBeGreaterThan(1);
+        if (feature === "canyon") {
+          const mean = (cells: number[]) =>
+            cells.reduce((sum, i) => sum + (state.height[i] as number), 0) / cells.length;
+          const floor = mean(along.map(([x, z]) => cellOf(x, z)));
+          const rim = mean(along.map(([x, z]) => beside(x, z)));
+          expect(rim - floor).toBeGreaterThan(15);
+        } else {
+          const ocean = state.waters.find((water) => water.kind === "ocean");
+          // The inlet's own points flood from the sea, and land stands beside them.
+          const inland = along.filter(([x, z]) => (state.height[beside(x, z)] as number) > 1.5);
+          expect(inland.length).toBeGreaterThan(0);
+          for (const [x, z] of inland) expect(ocean?.mask[cellOf(x, z)]).toBe(1);
+        }
       } finally {
         await world.remove();
       }
@@ -1390,6 +1443,7 @@ describe("terrain_generate request words", () => {
       landform: { value: "rollingHills", source: "argument" },
       water: { value: water, source: "argument" },
       sizeMeters: { value: 300, source: "argument" },
+      features: { value: [], source: "default" },
       // PRD-854 phase 2: the argument's landform is grounded on its kind's real survey.
       ground: { value: "survey", source: "default" },
       // PRD-866: rolling hills carry no massif rows, so the ring is not cooked.
@@ -1417,6 +1471,7 @@ describe("terrain_generate request words", () => {
       landform: { value: "alpine", source: { word: "mountains" } },
       water: { value: [{ kind: "river", width: 5.32 }], source: { word: "river" } },
       sizeMeters: { value: 1024, source: { word: "huge" } },
+      features: { value: [], source: "default" },
       ground: { value: "survey", source: "default" },
       // PRD-866: a mountain preset on its survey cooks the far ring with a real massif.
       backdrop: { value: "massif", source: "default" },
@@ -1432,6 +1487,7 @@ describe("terrain_generate request words", () => {
       landform: { value: null, source: "default" },
       water: { value: null, source: "default" },
       sizeMeters: { value: null, source: "default" },
+      features: { value: [], source: "default" },
       // No landform preset, so the ground is the crop the starter authored, not a fetched survey.
       ground: { value: "starter", source: "default" },
       backdrop: { value: "none", source: "default" },

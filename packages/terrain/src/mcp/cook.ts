@@ -12,6 +12,7 @@ import { finalizeState } from "../core/operations.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { LANDFORMS, landform } from "../core/presets.js";
 import type { LandformKind } from "../core/presets.js";
+import type { TerrainFeature } from "../core/request-words.js";
 import { terrainStats } from "../core/stats.js";
 import { MASSIFS, SURVEYS, locationSurvey } from "../core/surveys.js";
 import type { IGroundDecision, IGroundRequest, ISurveyRow } from "../core/surveys.js";
@@ -45,6 +46,8 @@ export interface ICookRequest {
   biome?: string;
   /** Water bodies that replace the biome's declared ones, `IBiomeWaterBody` rows. */
   water?: readonly IBiomeWaterBody[];
+  /** Shapes carved into the ground: a canyon's cut, a fjord's sea inlet. */
+  features?: readonly TerrainFeature[];
   /** The ground the recipe starts from; omitted, a landform preset is grounded on its kind's survey. */
   ground?: IGroundRequest;
   /** `"none"` cooks no far ring; omitted, a mountain landform on a survey gets one. */
@@ -271,6 +274,62 @@ function seaLevel(recipe: ITerrainDocument & { layers: Layer[] }): number {
 }
 
 /**
+ * Carves each feature a request names into the ground, before the recipe's first erosion so the
+ * erosion and terraces shape its walls. Both are an inverted mesa stamp: a flat floor and steep
+ * walls. A canyon runs across the whole square, cut 35 % of the ground's relief (30 to 90 m: a gorge in
+ * the alps is a gorge, not a rift). A
+ * fjord runs from one border to just past the centre with its floor 12 m under the sea, so the sea
+ * floods it as an inlet. The seed turns both, so one request and seed carve the same ground.
+ */
+function carveFeatures(
+  recipe: ITerrainDocument & { layers: Layer[] },
+  features: readonly TerrainFeature[],
+): void {
+  if (features.length === 0) return;
+  const { height, size } = Terrain.fromJSON(recipe).evaluate();
+  let low = Number.POSITIVE_INFINITY;
+  let high = Number.NEGATIVE_INFINITY;
+  for (const value of height) {
+    low = Math.min(low, value);
+    high = Math.max(high, value);
+  }
+  const sea = seaLevel(recipe);
+  const seed = recipe.config.seed ?? 0;
+  const canyonDepth = Math.min(90, Math.max(30, 0.35 * (high - low)));
+  const cuts = features.map((feature, index): Layer => {
+    const turn = (seed * 47 + index * 70) % 180;
+    const radians = (turn * Math.PI) / 180;
+    // The stamp's length runs along its own z: rotated by `turn`, that is (-sin, cos).
+    const reach = feature === "canyon" ? 0 : size * 0.45;
+    return {
+      enabled: true,
+      opacity: 1,
+      id: `${feature}-${String(index)}`,
+      type: "stamp",
+      params: {
+        shape: "mesa",
+        at: [-Math.sin(radians) * reach, Math.cos(radians) * reach],
+        // A wall spans half the half-width: at 0.9 m per metre of depth it stands about 66 degrees,
+        // the steepest a 2 m heightfield draws without a ladder of stretched cells.
+        radius:
+          feature === "canyon"
+            ? [Math.max(size * 0.1, canyonDepth * 0.9), size * 1.2]
+            : [size * 0.05, size * 0.5],
+        rotation: turn,
+        amplitude:
+          feature === "canyon"
+            ? -canyonDepth
+            : -(high - (sea === Number.NEGATIVE_INFINITY ? low : sea) + 12),
+        roughness: 0.15,
+        blend: "add",
+      },
+    } as Layer;
+  });
+  const erosion = recipe.layers.findIndex((layer) => layer.type === "erode");
+  recipe.layers.splice(erosion < 0 ? recipe.layers.length : erosion, 0, ...cuts);
+}
+
+/**
  * Drops the square's border into a sea the request names, when the ground stands above it there:
  * "a volcanic island" is a volcano the sea surrounds, not a slab in a flooded plane. It is the noise
  * operation's own island falloff with no noise of its own, deep enough that the border's highest
@@ -371,13 +430,36 @@ function placeLakes(
       if (low < 0) low = best = inland;
       if (low < 0)
         throw new Error("cook: water row 'lake' found no ground above the sea to sit on.");
-      const depth = (filled[best] as number) - (state.height[best] as number);
-      const at = depth >= 1 ? best : low;
+      // A basin holds the lake when it is a metre deep and floods a quarter of the lake's own disc:
+      // a pocket in a canyon floor is a puddle, not a lake.
+      let flooded = 0;
+      if ((filled[best] as number) - (state.height[best] as number) >= 1) {
+        const level = filled[best] as number;
+        const [bx, bz] = world(best);
+        const seen = new Uint8Array(n * n);
+        const stack = [best];
+        seen[best] = 1;
+        while (stack.length > 0) {
+          const i = stack.pop() as number;
+          flooded += 1;
+          for (const j of [i - 1, i + 1, i - n, i + n]) {
+            if (j < 0 || j >= n * n || seen[j] || Math.abs((j % n) - (i % n)) > 1) continue;
+            const [x, z] = world(j);
+            if ((state.height[j] as number) >= level || Math.hypot(x - bx, z - bz) > radius)
+              continue;
+            seen[j] = 1;
+            stack.push(j);
+          }
+        }
+      }
+      const holds = flooded * cell * cell >= 0.25 * Math.PI * radius * radius;
+      const depth = holds ? (filled[best] as number) - (state.height[best] as number) : 0;
+      const at = holds ? best : low;
       const ground = state.height[at] as number;
       return {
         depth,
         ground,
-        level: depth >= 1 ? (filled[at] as number) : ground + 2,
+        level: holds ? (filled[at] as number) : ground + 2,
         // Metres from this cell to the nearest sea: the room a dug basin has on this ground.
         room: (shore[at] as number) * cell,
         world: world(at),
@@ -1113,6 +1195,7 @@ async function cookInto(
   // A landform preset authors the ground and no scatter rules, so the biome file's foliage is placed
   // on it through the stages every starter scatter runs.
   // A river the recipe has no layer for runs down the finished ground, survey or preset alike.
+  carveFeatures(recipe.recipe, request.features ?? []);
   shapeCoast(recipe.recipe);
   const lakes = unrouted.filter((row) => row.kind === "lake");
   if (lakes.length > 0) placeLakes(recipe.recipe, lakes);

@@ -1,6 +1,6 @@
 # PRD-866: A generated forest stands under mountains with real shapes
 
-**Status:** BLOCKED (owner decision) — phases 1-3 landed (7/7 boxes); AC-1 and AC-2 passed; AC-3 fails (the far band costs about 23 ms GPU, 20 -> 15 FPS) and needs the owner's call
+**Status:** BLOCKED (owner decision) — phases 1-3 landed (7/7 boxes); AC-1 and AC-2 passed; AC-3 open (the far band cost 23 ms GPU; the one-march impostor cut it to about 3.4 ms overview and 1.3 ms vista, unpaired), needs a paired run, then the owner's call if it still falls
 **Priority:** P1 — the owner named the mountains as one of the two defects that keep the forest from "good to go" (2026-11-09); AC-1 is that defect.
 **Complexity:** 6 (MEDIUM) — 6 to 10 files (2), a new placement module (2), state across bake and cook (2); risk override: none
 **Owner:** João
@@ -133,6 +133,7 @@ Auto by default: the cook adds the ring and a massif when the landform is `alpin
 - 2026-11-09 (executor): the forest look's treeline and snow are metres above the floor (`bandSpan: 41`), not shares of the square's own range, so a hillier cooked square keeps the pinned forest's bands.
 - 2026-11-09 (executor): the far forest's default is the band 700 m past the square (`?farForest=near`); `on` plants the whole ring, `off` none. A far spruce draws its coarsest cooked level until the impostor (vista props 28.6 M -> 16.3 M triangles).
 - 2026-11-10 (executor): the far forest's remaining cost is its impostors' main-pass fragments, not shadow work. The `gpuShadow` span was mislabelled: three@0.187.0 `WebGPUBackend.js:3268` (`copyFramebufferToTexture`) reuses the shared `_renderPassTimestampWrites`, so the main pass's time lands on the shadow pass's slot; the GPU total is right. Each impostor quad was its bounding sphere's square, about four times a spruce's silhouette; the quad now fits the baked box (`packages/core`, e92ff9c54, judge NEUTRAL). GPU ms at 1600x900 on the RTX 2080, four windows: overview off 37.6 -> 34.6, near 66.5 -> 57.7; vista off 46.0 -> 40.7, near 72.8 -> 64.0. The band still costs about 23 ms, so AC-3 stays open; `near` stays the default because AC-1's look asks for a wooded ring, and the threshold is the owner's call.
+- 2026-11-10 (executor): the far impostors march their depth atlas once per pixel, not three times: the heaviest blended frame marches and the other two reproject its hit (`packages/core/src/render/world-impostor-surface.ts`, merged in #635 as f7943d1cd, lock test `world-impostor-surface.spec.ts` "depth march"). GPU ms at 1600x900 on the RTX 2080, band `near`: overview 58 -> 38, vista 64 -> 42; visual judge PASS, NEUTRAL on both views, sky and rock byte-identical. Against the `off` arm measured before this change (overview 34.6, vista 40.7), the band now costs about 3.4 ms and 1.3 ms, down from 23 ms. Those two arms ran in different sessions, so AC-3 stays open until a paired `near`/`off` run on one code state reads the steady-state frame rate.
 
 ## Notes for the executor
 
