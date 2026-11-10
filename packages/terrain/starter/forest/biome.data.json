@@ -55,7 +55,7 @@
       "species": "grass",
       "density": 1,
       "slope": [0, 42],
-      "height": [0, 66],
+      "height": null,
       "spacing": 0.8,
       "slopeFalloff": 20,
       "heightFalloff": 28,

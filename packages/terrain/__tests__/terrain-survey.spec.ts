@@ -10,7 +10,7 @@ import { LANDFORMS, type LandformKind } from "../src/core/presets.js";
 import { terrainStats } from "../src/core/stats.js";
 import { MASSIFS, SURVEYS, locationSurvey } from "../src/core/surveys.js";
 import { Terrain } from "../src/core/terrain.js";
-import { cookKit, isForestFloor } from "../src/mcp/cook.js";
+import { cookKit, flatShare, isForestFloor, massifBearing, woodedFoot } from "../src/mcp/cook.js";
 import { surveyHeights } from "../src/mcp/survey.js";
 import { TERRAIN_TOOLS, parseGenerateInput, parseGenerateRequest } from "../src/mcp/tools.js";
 
@@ -465,5 +465,50 @@ describe("the forest floor gate", () => {
     expect(isForestFloor(128, 16, 1024)).toBe(true);
     expect(isForestFloor(80, 19, 256)).toBe(true);
     expect(isForestFloor(40, 31, 1024)).toBe(false);
+  });
+});
+
+// PRD-866: the massif was drawn from the whole circle, so a seed could put it behind the camera.
+describe("the massif's bearing", () => {
+  it("follows the direction the kit's spawn camera looks", () => {
+    // The forest kit's camera sits up and north-east of the player and looks south-west.
+    const [from, to] = massifBearing([28, 24, 42]);
+    const look = (Math.atan2(-42, -28) * 180) / Math.PI;
+    expect(from).toBeLessThan(look);
+    expect(to).toBeGreaterThan(look);
+    expect(to - from).toBeLessThanOrEqual(50);
+    const centre = ((from + to) / 2) * (Math.PI / 180);
+    expect(Math.cos(centre) * 28 + Math.sin(centre) * 42).toBeLessThan(0);
+  });
+});
+
+// PRD-866: a massif facing the forest with its steep side left the forest no foot to climb.
+describe("the massif's wooded foot", () => {
+  const cone = (slope: number) => {
+    const n = 81;
+    const heights = Array.from({ length: n * n }, (_, i) =>
+      Math.max(0, 1000 - slope * 20 * Math.hypot((i % n) - 40, Math.floor(i / n) - 40)),
+    );
+    return { columns: n, rows: n, spacing: 20, heights };
+  };
+  it("reads a gentle foot as wooded and a cliff as not", () => {
+    expect(woodedFoot(cone(0.5), 1000)).toBeGreaterThan(0.95);
+    expect(woodedFoot(cone(1.5), 1000)).toBeLessThan(0.05);
+  });
+});
+
+// PRD-866: a hydro-flattened lake in the crop draws as a bare level lawn.
+describe("the forest floor's flattened lakes", () => {
+  it("measures a flat lake surface and rejects a floor that holds one", () => {
+    const n = 65;
+    const slope = Array.from({ length: n * n }, (_, i) => (i % n) * 0.3 + Math.floor(i / n) * 0.2);
+    expect(flatShare(slope, n)).toBe(0);
+    const lake = slope.map((h, i) =>
+      Math.hypot((i % n) - 32, Math.floor(i / n) - 32) < 7 ? 5 : h,
+    );
+    const share = flatShare(lake, n);
+    expect(share).toBeGreaterThan(0.02);
+    expect(isForestFloor(40, 20, 512, share)).toBe(false);
+    expect(isForestFloor(40, 20, 512, flatShare(slope, n))).toBe(true);
   });
 });

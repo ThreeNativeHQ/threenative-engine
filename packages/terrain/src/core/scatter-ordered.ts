@@ -226,7 +226,8 @@ export function grassWeight(data: IOrderedScatterField, x: number, z: number): n
   const meadow = clamp01((rules.grassSlopeLimit - slope) / rules.grassSlopeFalloff);
   // One rule, three numbers: the density the biome covers, the height band a meadow fades out at,
   // and the mat field it thins on. A dune field's density runs 0.32, a mat plain's field runs the
-  // cover out below 0.47, a wood's meadow fades out 66 m up. A sixth biome sets the numbers.
+  // cover out below 0.47, a wood's meadow runs to its treeline (PRD-866: a 66 m fade left a cooked
+  // floor's knolls bare, since a tree needs the meadow). A sixth biome sets the numbers.
   const fade =
     rules.grassHeight === null
       ? 1

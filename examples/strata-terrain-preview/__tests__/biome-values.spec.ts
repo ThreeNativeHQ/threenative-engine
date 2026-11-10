@@ -1,5 +1,11 @@
 import { readFileSync } from "node:fs";
-import { type IBiomeSpec, LANDFORMS, type LandformKind, validateBiome } from "@threenative/terrain";
+import {
+  type IBiomeSpec,
+  LANDFORMS,
+  type LandformKind,
+  orderedScatterRules,
+  validateBiome,
+} from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 import { BENCHMARK, posesFor } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";
@@ -169,7 +175,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         species: "grass",
         density: 1,
         slope: [0, 42],
-        height: [0, 66],
+        height: null,
         spacing: 0.8,
         mats: null,
         slopeFalloff: 20,
@@ -974,4 +980,17 @@ it("scales the forest's poses with its square and leaves the pinned square's alo
   expect(huge.vista?.look).toEqual([-1800, -1400]);
   expect(huge.vista?.eyeY).toBe(BENCHMARK.forest.poses.vista?.eyeY);
   expect(posesFor("alpine", 1024)).toBe(BENCHMARK.alpine.poses);
+});
+
+// PRD-866: a tree stands only where the meadow weighs 0.3, and the meadow faded out 66 m up, so a
+// cooked floor's knoll above 58 m stood bare (seed 1). The cook allows 90 m of relief per 512 m side.
+describe("the forest's stand trees on a hilly cooked floor", () => {
+  it("grow up the floor's whole relief, under the treeline", () => {
+    const rules = orderedScatterRules(biomeSpec("forest") as IBiomeSpec);
+    const top =
+      rules.grassHeight === null
+        ? Number.POSITIVE_INFINITY
+        : rules.grassHeight[0] - rules.treeGrassThreshold * rules.grassHeight[1];
+    expect(top).toBeGreaterThan(180);
+  });
 });

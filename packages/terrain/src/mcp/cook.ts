@@ -559,7 +559,10 @@ async function forestFloor(
     const stats = terrainStats(grid.values, resolution, size);
     picked = { survey, grid };
     // A forest floor: the pinned valley spans 41 m and its steepest tenth 22 degrees.
-    if (isForestFloor(grid.max - grid.min, stats.slopeP90, size)) break;
+    if (
+      isForestFloor(grid.max - grid.min, stats.slopeP90, size, flatShare(grid.values, resolution))
+    )
+      break;
   }
   const { survey, grid } = picked as NonNullable<typeof picked>;
   applyGroundLayer(document.layers, grid, 1, -grid.min);
@@ -628,9 +631,37 @@ const SURVEYED_EROSION: Layer[] = [
 const FLOOR_RELIEF = 90;
 const FLOOR_SLOPE = 28;
 
-/** Whether a surveyed square of `size` metres is a forest floor. */
-export function isForestFloor(relief: number, slopeP90: number, size: number): boolean {
-  return relief <= FLOOR_RELIEF * Math.max(1, size / 512) && slopeP90 <= FLOOR_SLOPE;
+/**
+ * The share of a survey's cells that are dead flat, which in 3DEP is a lake: the survey is
+ * hydro-flattened, so a water body is stored as its surface. The cook writes no water for it, so
+ * the forest would draw it as a bare level lawn (PRD-866: it moved seed 3 off such a spot).
+ */
+const FLOOR_FLAT = 0.02;
+
+/** The share of interior cells whose four neighbours all sit within 2 cm of them. */
+export function flatShare(values: ArrayLike<number>, resolution: number): number {
+  let flat = 0;
+  for (let r = 1; r < resolution - 1; r++)
+    for (let c = 1; c < resolution - 1; c++) {
+      const h = values[r * resolution + c] as number;
+      const near = [
+        values[r * resolution + c - 1],
+        values[r * resolution + c + 1],
+        values[(r - 1) * resolution + c],
+        values[(r + 1) * resolution + c],
+      ] as number[];
+      if (near.every((n) => Math.abs(n - h) < 0.02)) flat++;
+    }
+  return flat / (resolution - 2) ** 2;
+}
+
+/** Whether a surveyed square of `size` metres is a forest floor, and holds no flattened lake. */
+export function isForestFloor(relief: number, slopeP90: number, size: number, flat = 0): boolean {
+  return (
+    relief <= FLOOR_RELIEF * Math.max(1, size / 512) &&
+    slopeP90 <= FLOOR_SLOPE &&
+    flat <= FLOOR_FLAT
+  );
 }
 
 /**
@@ -687,6 +718,55 @@ async function applyGround(
  */
 const RING_SCALE = 10;
 
+/**
+ * The bearings the far ring's massif is drawn from: the direction the kit's own spawn camera looks
+ * (against its `cameraOffset`), 25 degrees either side. Drawn from the whole circle, a seed put its
+ * mountain behind the camera and the forest "under mountains" showed low hills (PRD-866 three-seed
+ * judge, 2026-11-10, seeds 1 and 3).
+ */
+export function massifBearing(
+  cameraOffset: readonly [number, number, number],
+): readonly [number, number] {
+  const look = (Math.atan2(-cameraOffset[2], -cameraOffset[0]) * 180) / Math.PI;
+  return [look - MASSIF_SPREAD, look + MASSIF_SPREAD];
+}
+const MASSIF_SPREAD = 25;
+const MASSIF_ATTEMPTS = 6;
+/** The share of a massif's lower half under 40 degrees that still reads as a wooded foot. */
+const WOODED_FOOT = 0.6;
+
+/**
+ * The share of a massif's lower slopes, 50 m above its foot to half its height, under 40 degrees:
+ * where a forest can climb the mountain it stands under.
+ */
+export function woodedFoot(
+  detail: {
+    readonly columns: number;
+    readonly rows: number;
+    readonly spacing: number;
+    readonly heights: ArrayLike<number>;
+  },
+  height: number,
+): number {
+  const at = (r: number, c: number) => detail.heights[r * detail.columns + c] as number;
+  let floor = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < detail.heights.length; i++)
+    floor = Math.min(floor, detail.heights[i] as number);
+  const steep = Math.tan((40 * Math.PI) / 180);
+  let lower = 0;
+  let gentle = 0;
+  for (let r = 1; r < detail.rows - 1; r++)
+    for (let c = 1; c < detail.columns - 1; c++) {
+      const h = at(r, c);
+      if (h < floor + 50 || h > floor + height / 2) continue;
+      const dx = (at(r, c + 1) - at(r, c - 1)) / (2 * detail.spacing);
+      const dz = (at(r + 1, c) - at(r - 1, c)) / (2 * detail.spacing);
+      lower++;
+      if (Math.hypot(dx, dz) < steep) gentle++;
+    }
+  return lower === 0 ? 0 : gentle / lower;
+}
+
 /** The far ring a cook writes beside the world (`ring.json`), and what the result reports of it. */
 interface IFarRing {
   readonly decision:
@@ -718,6 +798,7 @@ async function farRing(
   kind: LandformKind | undefined,
   ground: IGroundResult,
   config: { readonly size: number; readonly seed: number },
+  cameraOffset: readonly [number, number, number],
 ): Promise<IFarRing> {
   const range = request.backdropRange ?? kind;
   const rows = range === undefined ? undefined : MASSIFS[range];
@@ -758,11 +839,25 @@ async function farRing(
       values: Array.from(ringGrid.values, (value) => value * scale + offset),
     },
   });
-  const { terrain, placement } = placeMassif(host, {
-    seed: request.seed ?? config.seed,
-    tile: tiles,
-    keepOut: config.size * 1.25,
-  });
+  // A forest stands under the mountain, so its lower slopes must take trees: the first of a few
+  // seeded placements whose foot is wooded wins, else the most wooded one. Facing the camera, Grand
+  // Teton's steep side put 58% of its foot under 40 degrees (PRD-866, small forest, seed 4).
+  let chosen: ReturnType<typeof placeMassif> | undefined;
+  let best = -1;
+  for (let attempt = 0; attempt < MASSIF_ATTEMPTS && best < WOODED_FOOT; attempt++) {
+    const placed = placeMassif(host, {
+      seed: (request.seed ?? config.seed) + attempt * 7919,
+      tile: tiles,
+      keepOut: config.size * 1.25,
+      bearing: massifBearing(cameraOffset),
+    });
+    const foot = woodedFoot(placed.placement.detail, placed.placement.height);
+    if (foot > best) {
+      best = foot;
+      chosen = placed;
+    }
+  }
+  const { terrain, placement } = chosen as ReturnType<typeof placeMassif>;
   const picked = rows[tiles.findIndex((tile) => tile.id === placement.tile)] as ISurveyRow;
   const decision = {
     source: "massif" as const,
@@ -828,7 +923,13 @@ async function cookInto(
   // Before any evaluation: the ground is what the preset's later layers reshape, and a survey that
   // cannot be read fails here rather than after a long bake.
   const ground = await applyGround(recipe.recipe, request, kind);
-  const farRingResult = await farRing(request, kind, ground, recipe.recipe.config);
+  const farRingResult = await farRing(
+    request,
+    kind,
+    ground,
+    recipe.recipe.config,
+    biome.spawn.cameraOffset,
+  );
   // shortcut: starter heights use a 0.1 m lattice; revise decoding if their precision changes.
   for (const layer of recipe.recipe.layers) {
     const data = layer.params?.data;
