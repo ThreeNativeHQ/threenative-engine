@@ -290,6 +290,16 @@ describe("capability manifest generator", () => {
     );
   });
 
+  // A `.ts` source parsed as TSX read `const cached = <T>(…) =>` in assets.ts as JSX and dropped every
+  // export after it: `fetchAsset` had no entry, and `pnpm budgets` failed on its missing doc tags.
+  it("keeps an export that follows a generic arrow function in a .ts source", async () => {
+    const manifest = await checkCapabilityManifest(process.cwd());
+    const entry = manifest.entries.find(
+      (candidate) => candidate.importPath === "@threenative/core" && candidate.symbol === "fetchAsset",
+    );
+    expect(entry?.situations).toContain("a data file loads in dev but 404s in the built game");
+  });
+
   it("proves the committed manifest contains the navigation regression entry", async () => {
     const manifest = await checkCapabilityManifest(process.cwd());
     expect(manifest.entries.length).toBeGreaterThan(0);

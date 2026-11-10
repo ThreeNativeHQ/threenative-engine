@@ -1758,6 +1758,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["reads the response once; call `.json()` or `.arrayBuffer()` on the result"],
+      "example": "const heights = new Float32Array(await (await fetchAsset(ctx.assets, \"world/forest.bin\")).arrayBuffer());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export async function fetchAsset( assets: Pick<IAssetLoader, \"resolve\">, path: string, ): Promise<Response> { … }",
+      "situations": [
+        "load a baked JSON or binary file (a heightmap, a placement buffer, a data table) that the loader has no typed method for",
+        "a data file loads in dev but 404s in the built game"
+      ],
+      "summary": "Fetch a data file the asset loader serves: each url `assets.resolve(path)` names, in order, until one answers ok. A built game serves the hashed output and a dev server the source path, so taking only the first url 404s on one of them. When none answers it throws `TN_ASSET_NOT_SERVED` naming every url tried and why, so a missing file is never a half-drawn world.",
+      "supersedes": [],
+      "symbol": "fetchAsset"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "every mass, area, power and inertia value comes from the game's airframe",
         "damage, stores and configuration arrive as the game's own modifier sample"
@@ -9456,7 +9473,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const box = createTweakBox({ title: \"Fog\", knobs: { density: { min: 0, max: 0.1, value: 0.02 } }, onChange: (name, value) => console.info(name, value) });",
       "importPath": "@threenative/terrain/editor",
       "kind": "function",
       "overrides": [],
