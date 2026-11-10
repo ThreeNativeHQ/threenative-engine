@@ -1,8 +1,16 @@
-import { Object3D, OrthographicCamera, PerspectiveCamera, Sphere, Vector3 } from "three";
+import {
+  BufferGeometry,
+  Object3D,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Sphere,
+  Vector3,
+} from "three";
 import { describe, expect, it } from "vitest";
 import {
   type ILodView,
   conservativeViewDepth,
+  drawTriangles,
   lodPixelScale,
   projectedLodError,
   selectLodLevel,
@@ -147,5 +155,24 @@ describe("selectLodLevel", () => {
   it("handles a zero-error derived level as a real, freely selectable level", () => {
     const zero = [0, 0, 0.02];
     expect(selectLodLevel(zero, 0, 1, 0.15, [view(perspective(10), 10)])).toBe(1);
+  });
+});
+
+describe("drawTriangles", () => {
+  it("reads a level's index once, not once a frame", () => {
+    // On the owned engine each `geometry.index` read crosses the bridge; Midway's fleet read it 528
+    // times a frame through `ModelLod.triangles` and failed its playtest on TN_BRIDGE_WARNING.
+    const geometry = new BufferGeometry();
+    geometry.setIndex([0, 1, 2, 2, 1, 3]);
+    let reads = 0;
+    const index = geometry.index;
+    Object.defineProperty(geometry, "index", {
+      get: () => {
+        reads += 1;
+        return index;
+      },
+    });
+    for (let frame = 0; frame < 60; frame += 1) expect(drawTriangles(geometry)).toBe(2);
+    expect(reads).toBe(1);
   });
 });

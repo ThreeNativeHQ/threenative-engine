@@ -315,10 +315,21 @@ export interface ILodChain {
   readonly sphere: Sphere;
 }
 
-/** Triangles one level of a chain submits. */
-function drawTriangles(geometry: BufferGeometry): number {
-  const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
-  return Math.floor(drawn / 3);
+const levelTriangles = new WeakMap<BufferGeometry, number>();
+
+/**
+ * Triangles one level of a chain submits, read once: a level is an index view nothing edits, and on
+ * the owned engine each `geometry.index` read is a bridge crossing (Midway's fleet read it 528 times
+ * a frame, `TN_BRIDGE_WARNING`).
+ */
+export function drawTriangles(geometry: BufferGeometry): number {
+  let triangles = levelTriangles.get(geometry);
+  if (triangles === undefined) {
+    const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
+    triangles = Math.floor(drawn / 3);
+    levelTriangles.set(geometry, triangles);
+  }
+  return triangles;
 }
 
 /**
