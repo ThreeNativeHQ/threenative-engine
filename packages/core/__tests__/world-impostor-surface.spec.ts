@@ -357,6 +357,32 @@ describe("WorldImpostorSurface atlas count", () => {
   });
 });
 
+describe("WorldImpostorSurface depth march", () => {
+  // PRD-866 AC-3: three marches (one per blended frame) were the far band's GPU cost. The surface
+  // marches the heaviest frame once and reads the other two at that hit point.
+  it("marches the depth atlas once per pixel, not once per blended frame", () => {
+    const { surface, atlas } = makeSurface();
+    const seen = new Set<unknown>();
+    const marches = new Set<unknown>();
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+      const graph = node as {
+        readonly shaderNode?: { readonly jsFunc?: unknown };
+        readonly getChildren?: () => Iterable<unknown>;
+      };
+      const body = graph.shaderNode?.jsFunc;
+      if (typeof body === "function" && String(body).includes("previousGap")) marches.add(node);
+      if (typeof graph.getChildren === "function") for (const child of graph.getChildren()) walk(child);
+    };
+    walk(surface.material.colorNode);
+    walk(surface.material.normalNode);
+    expect(marches.size).toBe(1);
+    surface.dispose();
+    atlas.dispose();
+  });
+});
+
 describe("WorldImpostorSurface far cull contract", () => {
   it("gates the far surface on the world-XZ distance cullAndSelect uses, never view distance", () => {
     const atlas = new WorldImpostorAtlas(8);

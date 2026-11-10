@@ -674,7 +674,17 @@ function buildFragmentNodes(
   const uvs: Node<"vec2">[] = [];
   const colors: Node<"vec4">[] = [];
   const normals: Node<"vec4">[] = [];
-  for (let index = 0; index < 3; index += 1) {
+  // One march, on the frame the blend weighs most; the other two read the same surface point from
+  // their own view. Three marches were the far band's cost (PRD-866 AC-3).
+  const [wa, wb, wc] = weights as [Node<"float">, Node<"float">, Node<"float">];
+  const pickA = wa.greaterThanEqual(wb).and(wa.greaterThanEqual(wc));
+  const pickB = wb.greaterThanEqual(wc);
+  const [xa, xb, xc] = cellX as [Node<"float">, Node<"float">, Node<"float">];
+  const [ya, yb, yc] = cellY as [Node<"float">, Node<"float">, Node<"float">];
+  cellX.push(select(pickA, xa, select(pickB, xb, xc)));
+  cellY.push(select(pickA, ya, select(pickB, yb, yc)));
+  let marched: Node<"vec4"> | undefined;
+  for (let index = 3; index < 4; index += 1) {
     const direction = octahedralViewNode(
       cellX[index] as Node<"float">,
       cellY[index] as Node<"float">,
@@ -708,6 +718,7 @@ function buildFragmentNodes(
     const hit = Fn(() => {
       const found = float(0).toVar();
       const hitUv = vec2(2).toVar();
+      const hitT = float(0).toVar();
       const previousGap = float(0).toVar();
       const previousAlpha = float(0).toVar();
       const previousT = radiusUniform.toVar();
@@ -793,6 +804,7 @@ function buildFragmentNodes(
                 ),
               () => {
                 hitUv.assign(u);
+                hitT.assign(front.add(back).mul(0.5));
                 found.assign(1);
               },
             );
@@ -806,11 +818,29 @@ function buildFragmentNodes(
           Break();
         });
       });
-      return vec3(hitUv, found);
+      return vec4(hitUv, found, hitT);
     })();
-    uvs.push(hit.xy);
-    colors.push(colorMap.depth(layer).sample(hit.xy).mul(hit.z).toVar() as Node<"vec4">);
-    normals.push(normalMap.depth(layer).sample(hit.xy).mul(hit.z).toVar() as Node<"vec4">);
+    marched = hit;
+  }
+
+  const surface = marched as Node<"vec4">;
+  const rayOut = normalize(select(orthographicNode(), dirVarying, dirVarying.sub(relVarying)));
+  const hitPoint = relVarying.add(rayOut.mul(surface.w));
+  for (let index = 0; index < 3; index += 1) {
+    const basis = frameBasisNode(
+      octahedralViewNode(cellX[index] as Node<"float">, cellY[index] as Node<"float">, grid),
+    );
+    const layer = (cellY[index] as Node<"float">)
+      .mul(grid)
+      .add(cellX[index] as Node<"float">)
+      .toInt();
+    const uv = vec2(dot(hitPoint, basis.right), dot(hitPoint, basis.up).negate())
+      .div(radiusUniform)
+      .mul(0.5)
+      .add(0.5);
+    uvs.push(uv);
+    colors.push(colorMap.depth(layer).sample(uv).mul(surface.z).toVar() as Node<"vec4">);
+    normals.push(normalMap.depth(layer).sample(uv).mul(surface.z).toVar() as Node<"vec4">);
   }
 
   const [w0, w1, w2] = weights as [Node<"float">, Node<"float">, Node<"float">];
