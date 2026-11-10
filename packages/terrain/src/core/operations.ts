@@ -755,6 +755,8 @@ export function finalizeState(s: ITerrainState): ITerrainState {
   }
   const wet = (i: number, x: number, z: number, h: number): boolean => {
     if (s.waters.some((water) => water.mask[i])) return true;
+    // A sea draws as one plane at its level: ground under it is under water, flooded or not.
+    if (s.waters.some((water) => water.kind === "ocean" && h < water.level + 0.35)) return true;
     for (const river of s.rivers) {
       const half = river.width / 2;
       for (let k = 1; k < river.points.length; k += 1) {

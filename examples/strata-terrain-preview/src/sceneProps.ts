@@ -359,6 +359,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
               rivers: data.rivers,
               lakes: data.lakes,
               clear: vistaEye ? [[vistaEye[0], vistaEye[1], 55]] : [],
+              seaLevel: data.waterLevel,
             })
           : [];
       farForestCount = far.length;
@@ -373,7 +374,12 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
                 { x: vista.look[0], z: vista.look[1] },
                 data.size / 2,
                 HORIZON_WALK_BAND - 12,
-              )
+              ).filter(({ position: [x, , z] }) => {
+                // A cooked coast's sea covers the ground past the square: no meadow under it.
+                if (data.waterLevel === null) return true;
+                const ground = groundSample(x, z) ?? collarGround.at(x, z);
+                return ground === null || ground > data.waterLevel + 0.35;
+              })
             : []),
           ...far,
         ],
