@@ -1,7 +1,8 @@
 // Drives examples/engine-load-test/skinned-crowd.html in a hardware-WebGPU browser and prints its
 // paired stock/projected report. Query parameters pass through: `-- ladder=8,128 frames=300`.
 import path from "node:path";
-import { driveBenchmarkPage, startProcess, waitForUrl } from "./browser.js";
+import { waitForServer } from "../lib/dev-server.js";
+import { driveBenchmarkPage, startProcess } from "./browser.js";
 
 const port = 5211;
 const query = new URLSearchParams(
@@ -17,7 +18,12 @@ const server = startProcess(
   path.join(import.meta.dirname, "../../examples/engine-load-test"),
 );
 try {
-  await waitForUrl(`http://127.0.0.1:${port}/skinned-crowd.html`, 60_000);
+  await waitForServer({
+    child: server,
+    label: "Skinned-crowd server",
+    timeoutMs: 60_000,
+    url: `http://127.0.0.1:${port}/skinned-crowd.html`,
+  });
   const report = await driveBenchmarkPage({
     url,
     timeoutMs: 1_200_000,

@@ -15,10 +15,12 @@
 #include "engine/renderer/compute.h"
 #include "engine/scene/geometry.h"
 #include "engine/shader/graph/graph.h"
+#include "engine/wasm/web_frame_fields.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <deque>
 #include <vector>
 #include <map>
@@ -64,8 +66,9 @@ WGPUSurface surface = nullptr;
 WGPUTextureFormat surfaceFormat = WGPUTextureFormat_Undefined;
 EventQueue events;
 std::unique_ptr<Renderer> renderer;
-RenderDatabase database;
-RenderDatabase overlayDatabase;  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
+// PRD-840: the web host's render choices, the ones the web engine drew with before they were values (render_features.h).
+RenderDatabase database{RenderFeatures::web()};
+RenderDatabase overlayDatabase{RenderFeatures::web()};  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
 // The startup environment bake's own records: preparation runs beside the frame loop and must not overwrite the
 // draws the frame database keeps for the frame it plans next.
 RenderDatabase environmentDatabase;
@@ -198,7 +201,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     device = result;
     queue = wgpuDeviceGetQueue(device);
     setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
-    renderer = std::make_unique<Renderer>(instance, device, queue, events);
+    renderer = std::make_unique<Renderer>(instance, device, queue, events, RenderFeatures::web());
     renderer->setGpuTimer(timestampTracking);
     if (presentationHeld) renderer->deferUncompiledDraws(true);
     configureWebSurface();
@@ -1002,127 +1005,144 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
 #endif
 }
 
+/// The last id that arrived without a manifest entry, so the report prints once per id, not per frame.
+static int unknownFrameField = 0;
+
 /**
- * The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them, then
- * the setup work done so far, which a steady frame must not add to: pipeline compiles (2), pipeline
- * text-key lookups (3), bind groups created (4), graph keys serialized (5), programs built (6),
- * the last resolved GPU frame time in ms (7), how many GPU times have resolved (8), the caller
- * frame id that sample was submitted under (9), whether frames are timed at all (10), and 1 while
- * two drawn frames are still on the GPU, so the caller draws none (11), and 1 while the last render skipped
- * its frame for an environment that is not baked yet (12). The temporal pass follows: 1 while a traa() effect is in
- * the post graph (13), the frames it has begun (14), 1 when the next resolve has history (15), and the last
- * sub-pixel jitter in pixels, x (16) and y (17). Then the samples the scene draws with (18): 1 while the temporal pass
- * replaces the multisampling the renderer asked for.
- * The temporal pass's counted frame follows the lamp fields, 30 to 33. The kept shadow maps and the uniform bytes are 40 and 41.
+ * One number of the last frame's telemetry, by the field names in
+ * `packages/three-native/api/web-frame-fields.json`: draws and triangles, the setup work a steady
+ * frame must not add to, the GPU sample and its segments, the temporal pass, the shadow maps and the
+ * CPU stage meters. Generation writes the names here (`web_frame_fields.h`) and in the facade
+ * (`src/generated/web-frame-fields.ts`) from that one file.
+ *
+ * An id the manifest does not declare is refused: it prints `TN_WEB_FRAME_UNKNOWN_FIELD` once and
+ * answers NaN, because a zero would read as a real measurement from a table that never had it.
  */
 extern "C" double tnw_web_frame(int field) {
-    // -3 and -4: the CPU stage meters on and off (PRD-771); a static switch, so it answers before the renderer exists.
-    // On until a page asks otherwise.
-    if (field == -3 || field == -4) {
-        Renderer::setCpuMeters(field == -3);
+    // An id the manifest does not declare is a facade built against another field table. Refused
+    // before anything else, because a renderer that does not exist yet would answer a silent zero.
+    if (!tn_is_web_frame_field(field)) {
+        if (unknownFrameField != field) {
+            unknownFrameField = field;
+            std::fprintf(stderr, "TN_WEB_FRAME_UNKNOWN_FIELD %d\n", field);
+        }
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    // The CPU stage meters on and off (PRD-771); a static switch, so it answers before the renderer
+    // exists. On until a page asks otherwise.
+    if (field == TN_WEB_FRAME_CPU_METERS_ON || field == TN_WEB_FRAME_CPU_METERS_OFF) {
+        Renderer::setCpuMeters(field == TN_WEB_FRAME_CPU_METERS_ON);
         return 0;
     }
     if (!renderer) return 0;
     if (!lastDrawn) lastDrawn = renderer.get();
     switch (field) {
-        case -1: renderer->setDebugTimestampRequested(true); return 0;
-        case -2: renderer->setDebugTimestampRequested(false); return 0;
+        case TN_WEB_FRAME_DEBUG_TIMESTAMP_ON: renderer->setDebugTimestampRequested(true); return 0;
+        case TN_WEB_FRAME_DEBUG_TIMESTAMP_OFF: renderer->setDebugTimestampRequested(false); return 0;
         // three's renderer.info.render counts every pass of a render(), the shadow pass's included, as the
         // V8 player's frameDrawn does: one scene is counted the same on every backend.
-        case 0: return double(lastDrawn->lastFrame().draws + lastDrawn->lastFrame().shadowDraws);
-        case 1: return double(lastDrawn->lastFrame().triangles + lastDrawn->lastFrame().shadowTriangles);
-        case 2: return double(renderer->pipelines().compiles());
-        case 3: return double(renderer->pipelines().textLookups());
-        case 4: return double(bindGroupsCreated());
-        case 5: return double(shader::graph::keyBuilds());
-        case 6: return double(renderer->programCount());
-        case 7: return renderer->lastGpuMs();
-        case 8: return double(renderer->gpuSamples());
-        case 9: return double(renderer->gpuSourceFrame());
-        case 10: return renderer->gpuTimerAvailable() ? 1 : 0;
-        case 11:
+        case TN_WEB_FRAME_DRAWS: return double(lastDrawn->lastFrame().draws + lastDrawn->lastFrame().shadowDraws);
+        case TN_WEB_FRAME_TRIANGLES: return double(lastDrawn->lastFrame().triangles + lastDrawn->lastFrame().shadowTriangles);
+        case TN_WEB_FRAME_PIPELINE_COMPILES: return double(renderer->pipelines().compiles());
+        case TN_WEB_FRAME_PIPELINE_LOOKUPS: return double(renderer->pipelines().textLookups());
+        case TN_WEB_FRAME_BIND_GROUPS_CREATED: return double(bindGroupsCreated());
+        case TN_WEB_FRAME_GRAPH_KEY_BUILDS: return double(shader::graph::keyBuilds());
+        case TN_WEB_FRAME_PROGRAMS: return double(renderer->programCount());
+        case TN_WEB_FRAME_GPU_MS: return renderer->lastGpuMs();
+        case TN_WEB_FRAME_GPU_SAMPLES: return double(renderer->gpuSamples());
+        case TN_WEB_FRAME_GPU_SOURCE_FRAME: return double(renderer->gpuSourceFrame());
+        case TN_WEB_FRAME_GPU_TIMER_AVAILABLE: return renderer->gpuTimerAvailable() ? 1 : 0;
+        case TN_WEB_FRAME_GPU_BUSY:
             tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
             return frameGate.decline(renderer->gpu().completedSerial(), emscripten_get_now()) ? 1 : 0;
-        case 12: return renderer->environmentPending() ? 1 : 0;
-        case 13: return renderer->temporalStatus().active ? 1 : 0;
-        case 14: return double(renderer->temporalStatus().frame);
-        case 15: return renderer->temporalStatus().historyValid ? 1 : 0;
-        case 16: return renderer->temporalStatus().jitterX;
-        case 17: return renderer->temporalStatus().jitterY;
-        case 18: return double(renderer->sampleCount());
+        case TN_WEB_FRAME_ENVIRONMENT_PENDING: return renderer->environmentPending() ? 1 : 0;
+        case TN_WEB_FRAME_TEMPORAL_ACTIVE: return renderer->temporalStatus().active ? 1 : 0;
+        case TN_WEB_FRAME_TEMPORAL_FRAME: return double(renderer->temporalStatus().frame);
+        case TN_WEB_FRAME_TEMPORAL_HISTORY_VALID: return renderer->temporalStatus().historyValid ? 1 : 0;
+        case TN_WEB_FRAME_TEMPORAL_JITTER_X: return renderer->temporalStatus().jitterX;
+        case TN_WEB_FRAME_TEMPORAL_JITTER_Y: return renderer->temporalStatus().jitterY;
+        case TN_WEB_FRAME_SAMPLE_COUNT: return double(renderer->sampleCount());
         // The sample field 7 reports, by what drew it: 19 shadow passes, 20 the scene pass, 21 other passes, 22 the
         // output pass, 23 the screen-space gather (frame_gpu_timer.h). They sum to field 7.
-        case 19: case 20: case 21: case 22: case 23: return renderer->lastGpuSegments()[size_t(field - 19)];
+        case TN_WEB_FRAME_GPU_SEGMENT_SHADOW: case TN_WEB_FRAME_GPU_SEGMENT_SCENE: case TN_WEB_FRAME_GPU_SEGMENT_OTHER: case TN_WEB_FRAME_GPU_SEGMENT_OUTPUT: case TN_WEB_FRAME_GPU_SEGMENT_GATHER: return renderer->lastGpuSegments()[size_t(field - TN_WEB_FRAME_GPU_SEGMENT_SHADOW)];
         // PRD-650: the lamp maps apart from the sun's. 24 their GPU time (a part of field 7, beside 19), 25 the
         // lamp maps the last frame redrew, 26 their draws, and 27 every shadow draw, so 27 - 26 is the sun's.
-        case 24: return renderer->lastGpuSegments()[kGpuLampShadowSegment];
-        case 25: return double(renderer->lastFrame().lampRedraws);
-        case 26: return double(renderer->lastFrame().lampShadowDraws);
-        case 27: return double(renderer->lastFrame().shadowDraws);
+        case TN_WEB_FRAME_GPU_SEGMENT_LAMP_SHADOW: return renderer->lastGpuSegments()[kGpuLampShadowSegment];
+        case TN_WEB_FRAME_LAMP_REDRAWS: return double(renderer->lastFrame().lampRedraws);
+        case TN_WEB_FRAME_LAMP_SHADOW_DRAWS: return double(renderer->lastFrame().lampShadowDraws);
+        case TN_WEB_FRAME_SHADOW_DRAWS: return double(renderer->lastFrame().shadowDraws);
         // 28 and 29: the smallest and largest edge of the lamp maps the footprint sized (0 without one).
-        case 28: return double(renderer->lampShadowExtent()[0]);
-        case 29: return double(renderer->lampShadowExtent()[1]);
+        case TN_WEB_FRAME_LAMP_MAP_MIN: return double(renderer->lampShadowExtent()[0]);
+        case TN_WEB_FRAME_LAMP_MAP_MAX: return double(renderer->lampShadowExtent()[1]);
         // 30 to 33: the temporal resolve's newest counted frame (one in 16): the pixels whose history it discarded, the
         // pixels whose history it pulled into the colour neighbourhood, the pixel count of that frame and its frame number.
-        case 30: return double(renderer->temporalStatus().rejected);
-        case 31: return double(renderer->temporalStatus().clamped);
-        case 32: return double(renderer->temporalStatus().pixels);
-        case 33: return double(renderer->temporalStatus().countedFrame);
-        case 34: return renderer->temporalUpscale() ? 1 : 0;
-        case 35: return renderer->inputWidth();
-        case 36: return renderer->inputHeight();
-        case 37: return renderer->traaDebugPass() ? renderer->traaDebugPass()->status().jitterLength : 0;
-        case 38: return renderer->width();
-        case 39: return renderer->height();
+        case TN_WEB_FRAME_TEMPORAL_REJECTED: return double(renderer->temporalStatus().rejected);
+        case TN_WEB_FRAME_TEMPORAL_CLAMPED: return double(renderer->temporalStatus().clamped);
+        case TN_WEB_FRAME_TEMPORAL_PIXELS: return double(renderer->temporalStatus().pixels);
+        case TN_WEB_FRAME_TEMPORAL_COUNTED_FRAME: return double(renderer->temporalStatus().countedFrame);
+        case TN_WEB_FRAME_TEMPORAL_UPSCALE: return renderer->temporalUpscale() ? 1 : 0;
+        case TN_WEB_FRAME_INPUT_WIDTH: return renderer->inputWidth();
+        case TN_WEB_FRAME_INPUT_HEIGHT: return renderer->inputHeight();
+        case TN_WEB_FRAME_TEMPORAL_JITTER_LENGTH: return renderer->traaDebugPass() ? renderer->traaDebugPass()->status().jitterLength : 0;
+        case TN_WEB_FRAME_WIDTH: return renderer->width();
+        case TN_WEB_FRAME_HEIGHT: return renderer->height();
         // PRD-754, 60 to 65: the draws the main pass recorded into its bundle,
         // why its key moved (Renderer::RecordCause), the draws the aux and velocity passes recorded, the ms spent
         // recording bundles, and the ms spent encoding the shadow passes directly. Zero while every bundle holds.
-        case 60: return double(renderer->lastFrame().mainRecorded);
-        case 61: return double(renderer->lastFrame().recordCause);
-        case 62: return double(renderer->lastFrame().auxRecorded);
-        case 63: return renderer->lastFrame().recordMs;
-        case 64: return renderer->lastFrame().shadowEncodeMs;
-        case 65: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
+        case TN_WEB_FRAME_MAIN_RECORDED: return double(renderer->lastFrame().mainRecorded);
+        case TN_WEB_FRAME_RECORD_CAUSE: return double(renderer->lastFrame().recordCause);
+        case TN_WEB_FRAME_AUX_RECORDED: return double(renderer->lastFrame().auxRecorded);
+        case TN_WEB_FRAME_RECORD_MS: return renderer->lastFrame().recordMs;
+        case TN_WEB_FRAME_SHADOW_ENCODE_MS: return renderer->lastFrame().shadowEncodeMs;
+        case TN_WEB_FRAME_SHADOW_RECORDED: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
         // 66 to 70: running CPU ms of the renderer's costly stages, every render summed (Renderer::CpuStage): the virtual
         // shadow pages and caster bounds, the draw plan, the shadow passes' draw lists, the whole prepare half, the encode half.
-        case 66: case 67: case 68: case 69: case 70: return renderer->cpuStageMs(Renderer::CpuStage(field - 66));
+        case TN_WEB_FRAME_CPU_VIRTUAL_PAGES_MS: case TN_WEB_FRAME_CPU_PLAN_MS: case TN_WEB_FRAME_CPU_SHADOW_BUILD_MS: case TN_WEB_FRAME_CPU_PREPARE_MS: case TN_WEB_FRAME_CPU_ENCODE_MS: return renderer->cpuStageMs(Renderer::CpuStage(field - TN_WEB_FRAME_CPU_VIRTUAL_PAGES_MS));
         // 71 and 72: the startup's first real frame (ABI 8). 71 counts the ordinary world submissions that encoded since
         // the page started drawing: a bake step, a compile, an overlay, a declined frame or a failed one never advances it,
         // and core compares it with the generation it saw when it engaged the hold. 72 is 1 once the shadow inputs those
         // frames sample exist: every active virtual shadow has mapped its clip levels, and a scene with none, or with only
         // the ordinary maps a successful encode already drew, is ready. A shadow draw count is not this answer, and only a
         // held frame recomputes it.
-        case 71: return double(worldSubmissions);
-        case 72: return shadowInputsReady ? 1 : 0;
+        case TN_WEB_FRAME_WORLD_SUBMISSIONS: return double(worldSubmissions);
+        case TN_WEB_FRAME_SHADOW_INPUTS_READY: return shadowInputsReady ? 1 : 0;
         // 86: 1 once the first world frame drawn after the hold came off has finished on the GPU, so the display shows
         // it. A draw the gate accepted only says it was queued: a software rasteriser takes tens of seconds to finish it.
-        case 86:
+        case TN_WEB_FRAME_FIRST_WORLD_FRAME_DRAWN:
             tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
             return firstPresentedSerial != 0 && renderer->gpu().completedSerial() >= firstPresentedSerial ? 1 : 0;
         // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
         // 41: the bytes of per-draw uniforms it uploaded.
         // 85 (PRD-770): the shadow passes' triangles, which field 1 adds in. With 27 (every shadow draw) it splits fields
         // 0 and 1 into the main pass and the shadow passes, as three counts a nested shadow render apart from the main one.
-        case 85: return double(lastDrawn->lastFrame().shadowTriangles);
-        case 40: return double(renderer->lastFrame().keptShadowMaps);
-        case 41: return double(renderer->lastFrame().uniformBytes);
+        case TN_WEB_FRAME_SHADOW_TRIANGLES: return double(lastDrawn->lastFrame().shadowTriangles);
+        case TN_WEB_FRAME_KEPT_SHADOW_MAPS: return double(renderer->lastFrame().keptShadowMaps);
+        case TN_WEB_FRAME_UNIFORM_BYTES: return double(renderer->lastFrame().uniformBytes);
         // PRD-771, 73 to 77: running ms, every render summed, like 66 to 70. 73 the post effects' and output pass's share of
         // the encode half (inside 70); 74 the scene half of RenderDatabase::render (joints, scene walk, shadow sync);
         // 75 the whole main-view tnw_web_render, of which 76 is the queued kernels' flush and 77 the batched queue submit.
-        case 73: return renderer->cpuStageMs(Renderer::CpuPost);
-        case 74: return database.sceneMs();
-        case 75: return hostRenderMs;
-        case 76: return hostComputeMs;
-        case 77: return hostSubmitMs;
+        case TN_WEB_FRAME_CPU_POST_MS: return renderer->cpuStageMs(Renderer::CpuPost);
+        case TN_WEB_FRAME_SCENE_MS: return database.sceneMs();
+        case TN_WEB_FRAME_HOST_RENDER_MS: return hostRenderMs;
+        case TN_WEB_FRAME_HOST_COMPUTE_MS: return hostComputeMs;
+        case TN_WEB_FRAME_HOST_SUBMIT_MS: return hostSubmitMs;
         // 79 and 80: the tnw_web_poll that opens a render, and the render's tail (surface texture release, frame gate, diagnostics).
-        case 79: return hostPollMs;
-        case 80: return hostTailMs;
-        case 81: return database.rendererMs();
-        case 82: return hostDatabaseMs;
-        case 83: return hostTargetMs;
-        case 84: return Renderer::cpuMeters() ? 1 : 0;  // the stage meters on (the page lists the totals only while they run)
+        case TN_WEB_FRAME_HOST_POLL_MS: return hostPollMs;
+        case TN_WEB_FRAME_HOST_TAIL_MS: return hostTailMs;
+        case TN_WEB_FRAME_RENDERER_MS: return database.rendererMs();
+        case TN_WEB_FRAME_HOST_DATABASE_MS: return hostDatabaseMs;
+        case TN_WEB_FRAME_HOST_TARGET_MS: return hostTargetMs;
+        case TN_WEB_FRAME_CPU_METERS_ACTIVE: return Renderer::cpuMeters() ? 1 : 0;  // the stage meters on (the page lists the totals only while they run)
         // 78: the address of the array above, as a number; the page reads 18 doubles from it after each render.
-        case 78: return double(reinterpret_cast<uintptr_t>(stageTotals));
-        default: return 0;
+        case TN_WEB_FRAME_STAGE_TOTALS_ADDRESS: return double(reinterpret_cast<uintptr_t>(stageTotals));
+        default:
+            // An id the manifest does not declare: a facade built against another field table.
+            // Say which one once, and answer NaN so the caller sees a broken number rather than a
+            // zero it would read as a real measurement.
+            if (unknownFrameField != field) {
+                unknownFrameField = field;
+                std::fprintf(stderr, "TN_WEB_FRAME_UNKNOWN_FIELD %d\n", field);
+            }
+            return std::numeric_limits<double>::quiet_NaN();
     }
 }

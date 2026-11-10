@@ -19,7 +19,7 @@ export type {
   IPlaytestAssertionSchemaField,
   IPlaytestSetupSchemaEntry,
 } from "./assertion-schema.js";
-export { evaluateRichPlaytestAssertions, overlayNodeObservationKey } from "./assertion-evaluators.js";
+export { evaluateRichPlaytestAssertions } from "./assertion-evaluators.js";
 export { resolveDiagnosticsPolicy } from "./assertion-report.js";
 export type {
   IPlaytestAssertionResult,

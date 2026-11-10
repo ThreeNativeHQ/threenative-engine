@@ -22,7 +22,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   },
   plugins: [rapier({ gravity: { x: 0, y: -38, z: 0 } }), playtest({ events })],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { boot: Boot, play: Play },
   // The whole level is procedural, so the seed is what makes the route identical on every run and
   // every machine. Change it and the course changes; leave it and the course is a fixed thing a

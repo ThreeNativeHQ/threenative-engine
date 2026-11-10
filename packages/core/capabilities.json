@@ -1438,7 +1438,9 @@
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function debugFlag(name: string): boolean { … }",
-      "situations": ["read a debug toggle from the URL or an environment variable"],
+      "situations": [
+        "read a debug toggle from the URL, an environment variable or a harness global"
+      ],
       "summary": "Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.",
       "supersedes": [],
       "symbol": "debugFlag"
@@ -1512,6 +1514,22 @@
       "summary": "Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default in a debug launch, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.",
       "supersedes": [],
       "symbol": "describeSceneWarning"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every dev surface publishes under this key; the worker's typed mirror tuple names it too"
+      ],
+      "example": "import { DEV_GLOBAL_KEY, devGlobal } from \"@threenative/core\";\nconst tools = devGlobal(globalThis);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function devGlobal(scope: unknown): DevGlobal | undefined { … }",
+      "situations": ["read or extend the `__THREENATIVE__` object a dev launch publishes"],
+      "summary": "The one name every dev surface publishes under, and the reader/writer for it.",
+      "supersedes": [],
+      "symbol": "devGlobal"
     },
     {
       "aliases": [],
@@ -2754,6 +2772,22 @@
       "summary": "Bake static diffuse irradiance that reaches surfaces from outside the camera view.",
       "supersedes": [],
       "symbol": "ProbeVolume"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every dev surface publishes under this key; the worker's typed mirror tuple names it too"
+      ],
+      "example": "import { DEV_GLOBAL_KEY, devGlobal } from \"@threenative/core\";\nconst tools = devGlobal(globalThis);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function publishDevGlobal(name: string, value: unknown, scope: unknown): void { … }",
+      "situations": ["read or extend the `__THREENATIVE__` object a dev launch publishes"],
+      "summary": "The one name every dev surface publishes under, and the reader/writer for it.",
+      "supersedes": [],
+      "symbol": "publishDevGlobal"
     },
     {
       "aliases": [],
@@ -4403,6 +4437,185 @@
     {
       "aliases": [],
       "constraints": [
+        "a sample whose source texture or intensity moved is dropped, so a stale one never reaches a material"
+      ],
+      "example": "const hit = cachedEnvironmentSample(renderer, scene);",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function cachedEnvironmentSample( renderer: object, scene: Scene, ): IEnvironmentSample | undefined { … }",
+      "situations": ["skip a second environment readback in the same frame"],
+      "summary": "The sample this renderer took of `scene`'s environment, if it is still current.",
+      "supersedes": [],
+      "symbol": "cachedEnvironmentSample"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "cacheEnvironmentSample(renderer, scene, sample);",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function cacheEnvironmentSample( renderer: object, scene: Scene, sample: IEnvironmentSample, ): void { … }",
+      "situations": ["reuse one environment readback across the materials of a scene"],
+      "summary": "Remembers `sample` as this renderer's reading of `scene`'s environment.",
+      "supersedes": [],
+      "symbol": "cacheEnvironmentSample"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const snapshot = captureEnvironmentSnapshot(scene);",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function captureEnvironmentSnapshot(scene: Scene): IEnvironmentSourceSnapshot { … }",
+      "situations": ["reject an environment readback that belongs to a different sky"],
+      "summary": "The provenance of a scene's environment: which texture, at which intensity, in which colour space.",
+      "supersedes": [],
+      "symbol": "captureEnvironmentSnapshot"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "if (environmentSnapshotCurrent(scene, snapshot)) draw(snapshot);",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function environmentSnapshotCurrent( scene: Scene, snapshot: IEnvironmentSourceSnapshot, ): boolean { … }",
+      "situations": ["hold a material's fill light to the sky that is on screen now"],
+      "summary": "Whether the scene's environment still matches the snapshot a sample was taken from.",
+      "supersedes": [],
+      "symbol": "environmentSnapshotCurrent"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "if (isWebGLFallbackRenderer(renderer)) skipMaterialLane();",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function isWebGLFallbackRenderer(renderer: unknown): boolean { … }",
+      "situations": [
+        "refuse a GPU-only lane on a WebGL fallback instead of drawing something wrong"
+      ],
+      "summary": "Whether a `WebGPURenderer` wrapper is running three's WebGL backend behind it.",
+      "supersedes": [],
+      "symbol": "isWebGLFallbackRenderer"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "high tier, browser, hardware WebGPU, not mobile, not software, not a WebGL fallback"
+      ],
+      "example": "if (materialLightingEnabled(\"high\", env)) lightMaterials();",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function materialLightingEnabled( tier: QualityTier, environment: IMaterialLightingEnvironment, ): boolean { … }",
+      "situations": ["decide whether this renderer is the admitted material lane"],
+      "summary": "Whether `tier` may run the material-lighting lane in `environment`.",
+      "supersedes": [],
+      "symbol": "materialLightingEnabled"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const m = measureEnvironment(scene, 2048);",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function measureEnvironment(scene: Scene, maxSourceTexels: number): IEnvironmentMeasurement { … }",
+      "situations": [
+        "measure what a scene's environment actually contributes",
+        "sample the environment on the GPU without stalling the frame",
+        "keep an environment readback from reaching a frame it does not belong to"
+      ],
+      "summary": "The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the gate that decides which renderer may run the material lane. The backlight itself is a shader with fixed constants, so it stays in each kit's `src/render/` (stamped from one source there) where the game can change how it looks. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).",
+      "supersedes": [],
+      "symbol": "measureEnvironment"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "reportEnvironmentContribution(scene, {\n  darkThreshold: 0.02, fillAdmitted: true, fillColor: new Color(1, 1, 1), fillGain: 0.4,\n  maxSourceTexels: 2048, rimGain: 0.6,\n});",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function reportEnvironmentContribution( scene: Scene, options: IContributionControls, measurement?: IEnvironmentMeasurement, ) { … }",
+      "situations": [
+        "measure what a scene's environment actually contributes",
+        "sample the environment on the GPU without stalling the frame",
+        "keep an environment readback from reaching a frame it does not belong to"
+      ],
+      "summary": "The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the gate that decides which renderer may run the material lane. The backlight itself is a shader with fixed constants, so it stays in each kit's `src/render/` (stamped from one source there) where the game can change how it looks. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).",
+      "supersedes": [],
+      "symbol": "reportEnvironmentContribution"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the sample must be the qualified 64x32 float RGBA readback; anything else is refused by name"
+      ],
+      "example": "const m = sampledRadiance(readback, 1);",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function sampledRadiance(samples: unknown, intensity: number): IEnvironmentMeasurement { … }",
+      "situations": [
+        "turn an environment readback into the radiance a material's fill light needs",
+        "know why an environment sample could not be measured"
+      ],
+      "summary": "The mean radiance and colour of a bounded linear sample, or `unknown` with the reason.",
+      "supersedes": [],
+      "symbol": "sampledRadiance"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off unless the renderer is the admitted high-tier WebGPU lane; every refusal is reported by name",
+        "the readback is abandoned after the deadline and the frame keeps the previous answer"
+      ],
+      "example": "const sample = await sampleEnvironment(renderer, scene, env);",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export async function sampleEnvironment( renderer: unknown, scene: Scene, environment: IMaterialLightingEnvironment, ): Promise<IEnvironmentSample> { … }",
+      "situations": [
+        "measure what a scene's environment actually contributes without stalling the frame",
+        "give a material's fill light the environment's own radiance"
+      ],
+      "summary": "Measures and samples the scene's real environment on the GPU, bounded by a readback deadline.",
+      "supersedes": [],
+      "symbol": "sampleEnvironment"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "if (samplingSourceSupported(source)) sample(source);",
+      "importPath": "@threenative/core/render/environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function samplingSourceSupported(source: NonNullable<Scene[\"environment\"]>): boolean { … }",
+      "situations": ["know why an environment was not sampled on the GPU"],
+      "summary": "Whether an environment texture's mapping and colour space are qualified for the bounded GPU sample.",
+      "supersedes": [],
+      "symbol": "samplingSourceSupported"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the pool is fixed and recycles the cast alive longest; it never grows",
         "a ball that has passed its target lands on the target, however late the frame notices"
       ],
@@ -5139,6 +5352,7 @@
       "signature": "export class SnowField { … }",
       "situations": [
         "leave footprints, tracks and tyre ruts in snow that persist and fill in over time",
+        "let a fresh snowfall slowly fill older tracks back in as the field recovers",
         "let a pushed sphere carve a connected track and a dropped one settle into a crater",
         "store snow deformation that rendered geometry and collision both read",
         "reset a snowfield between rounds or change its depth at runtime",
@@ -6331,6 +6545,22 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "an unreadable load is a refusal, not a silence: an unmeasured machine cannot vouch"
+      ],
+      "example": "import { absolutesVerdict, readHostLoad } from \"@threenative/playtest/runner\";\nconst load = readHostLoad();\nif (absolutesVerdict(load) === \"invalid-absolute\") ignoreAbsoluteMilliseconds();",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function absolutesVerdict(reading: IPerfHostLoadReading): IPerfHostLoad[\"absolutes\"] { … }",
+      "situations": ["mark a benchmark run invalid because the machine was busy"],
+      "summary": "The host-load reading and the rule that decides whether absolute milliseconds are trustworthy: absolutes are invalid once the one-minute load passes half the cores.",
+      "supersedes": [],
+      "symbol": "absolutesVerdict"
+    },
+    {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -7040,6 +7270,22 @@
     {
       "aliases": [],
       "constraints": [
+        "an unreadable load is a refusal, not a silence: an unmeasured machine cannot vouch"
+      ],
+      "example": "import { absolutesVerdict, readHostLoad } from \"@threenative/playtest/runner\";\nconst load = readHostLoad();\nif (absolutesVerdict(load) === \"invalid-absolute\") ignoreAbsoluteMilliseconds();",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function readHostLoad( source: IPerfHostLoadSource = { … }",
+      "situations": ["mark a benchmark run invalid because the machine was busy"],
+      "summary": "The host-load reading and the rule that decides whether absolute milliseconds are trustworthy: absolutes are invalid once the one-minute load passes half the cores.",
+      "supersedes": [],
+      "symbol": "readHostLoad"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns changes only; the caller dispatches them and retains the next snapshot"
       ],
       "example": "import { reconcileBrowserPointers } from \"@threenative/playtest/runner\";\nconst changes = reconcileBrowserPointers(new Map(), [{ id: 1, x: 20, y: 30 }]);",
@@ -7191,18 +7437,17 @@
     },
     {
       "aliases": [],
-      "constraints": ["the app bundle and device transport must be prepared"],
-      "example": "await runAndroidPlaytest(options);",
+      "constraints": [
+        "the driver must prepare the app bundle and the transport must answer the handshake"
+      ],
+      "example": "await runDevicePlaytest(config, { name: \"android\", driver, transport, processName, mailboxPaths });",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export async function runDevicePlaytest( config: IStandalonePlaytestConfig, target: IDevicePlaytestTarget, ): Promise<IStandalonePlaytestReport> { … }",
-      "situations": [
-        "execute a scenario on an Android target",
-        "collect Android playtest artifacts"
-      ],
-      "summary": "Run a playtest on Android through the configured device transport.",
+      "situations": ["execute a scenario on a device target with a custom driver"],
+      "summary": "Run a playtest on any device lane (Android, desktop or iOS) through its driver and transport.",
       "supersedes": [],
       "symbol": "runDevicePlaytest"
     },

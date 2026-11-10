@@ -1574,6 +1574,7 @@ add_custom_command(
         "-DOUTPUT=${TN_RUNTIME_SCRIPT_HEADER}"
         "-DSOURCE_DIR=${TN_RUNTIME_SCRIPT_DIR}"
         "-DSCRIPT_NAMES=${TN_RUNTIME_SCRIPT_NAMES}"
+        -DSCRIPT_ENUM=ON
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedRuntimeScripts.cmake"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedRuntimeScripts.cmake"
@@ -2521,6 +2522,18 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         TN_TIMER_ENGINE_FIRST_TEST)
     target_link_libraries(threenative-timer-engine-first-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-shim-bootstrap-test EXCLUDE_FROM_ALL
+        tests/shim_bootstrap_test.cpp)
+    target_link_libraries(threenative-shim-bootstrap-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-webgpu-wrapper-bag-test EXCLUDE_FROM_ALL
+        tests/webgpu_wrapper_bag_test.cpp)
+    target_link_libraries(threenative-webgpu-wrapper-bag-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-image-decode-teardown-test EXCLUDE_FROM_ALL
+        tests/image_decode_teardown_test.cpp)
+    target_link_libraries(threenative-image-decode-teardown-test PRIVATE mystral-runtime)
+
     # WebTransport contracts. The wire test includes webtransport.cpp textually
     # because its helpers live in an anonymous namespace; it links quiche alone
     # — mystral-runtime already defines the same TU, and linking both would
@@ -2642,6 +2655,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/wgpu_null_handle_test.cpp)
     target_link_libraries(threenative-wgpu-null-handle-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-buffer-map-lifetime-test EXCLUDE_FROM_ALL
+        tests/buffer_map_lifetime_test.cpp)
+    target_link_libraries(threenative-buffer-map-lifetime-test PRIVATE mystral-runtime)
+
     add_executable(threenative-surface-format-selection-test EXCLUDE_FROM_ALL
         tests/surface_format_selection_test.cpp)
     target_include_directories(threenative-surface-format-selection-test PRIVATE
@@ -2664,6 +2681,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             "-Wl,--wrap=close")
     endif()
 
+    # Pure platform decisions (resize plan, font backend) that only a device would otherwise show.
+    add_executable(threenative-platform-policy-test EXCLUDE_FROM_ALL
+        tests/platform_policy_test.cpp)
+    target_link_libraries(threenative-platform-policy-test PRIVATE mystral-runtime)
+
     # Same lane for the embedded-bundle VFS: synthesizes real container files
     # and proves the loader accepts the documented format and rejects damage.
     add_executable(threenative-embedded-bundle-test EXCLUDE_FROM_ALL
@@ -2674,9 +2696,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(TARGET dawn::webgpu)
         target_link_libraries(threenative-wgpu-null-handle-test PRIVATE dawn::webgpu)
         target_link_libraries(threenative-surface-format-selection-test PRIVATE dawn::webgpu)
+        target_link_libraries(threenative-buffer-map-lifetime-test PRIVATE dawn::webgpu)
     elseif(TARGET wgpu::wgpu)
         target_link_libraries(threenative-wgpu-null-handle-test PRIVATE wgpu::wgpu)
         target_link_libraries(threenative-surface-format-selection-test PRIVATE wgpu::wgpu)
+        target_link_libraries(threenative-buffer-map-lifetime-test PRIVATE wgpu::wgpu)
     endif()
 
     # rg11b10ufloat-renderable: the feature behind three's SSGI target format. The oracle
@@ -2813,6 +2837,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_register_contract_test(threenative-worker-production-test)
     tn_register_contract_test(threenative-embedded-bundle-test)
+    tn_register_contract_test(threenative-platform-policy-test)
     tn_register_contract_test(threenative-frame-op-stream-replay-test)
     tn_register_contract_test(threenative-handle-lifetime-test v8)
     tn_register_contract_test(threenative-input-restart-test)
@@ -2845,6 +2870,18 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         PROPERTIES LABELS "native-contract")
     tn_register_contract_test(threenative-timer-delivery-test)
     tn_register_contract_test(threenative-timer-engine-first-test)
+    tn_register_contract_test(threenative-shim-bootstrap-test)
+    # The two extra modes the contract lane runs. `verify-native-contracts.mjs` lists three
+    # invocations for this target, and the coverage lane builds its execution list from the CTest
+    # inventory, so a missing registration reads as `CTest registered 1 invocation(s), expected 3`.
+    foreach(mode worker-rollback callback-retention)
+        add_test(NAME threenative-shim-bootstrap-test-${mode}
+            COMMAND $<TARGET_FILE:threenative-shim-bootstrap-test> --${mode})
+        set_tests_properties(threenative-shim-bootstrap-test-${mode}
+            PROPERTIES LABELS "native-contract")
+    endforeach()
+    tn_register_contract_test(threenative-webgpu-wrapper-bag-test)
+    tn_register_contract_test(threenative-image-decode-teardown-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
     tn_register_contract_test(threenative-pipeline-cache-api-test)
     tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)
@@ -2871,6 +2908,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-webgpu-bindings-reentrancy-test)
     tn_register_contract_test(threenative-rg11b10-renderable-test)
     tn_register_contract_test(threenative-wgpu-null-handle-test)
+    tn_register_contract_test(threenative-buffer-map-lifetime-test)
     tn_register_contract_test(threenative-surface-format-selection-test)
     tn_register_contract_test(threenative-presentation-pacing-test)
     tn_register_contract_test(threenative-webgpu-comprehensive-test)

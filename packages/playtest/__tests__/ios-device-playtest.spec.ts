@@ -10,7 +10,7 @@ import {
   PLAYTEST_PROTOCOL_VERSION,
   type IPlaytestBridgeV1,
 } from "../src/index.js";
-import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
+import type { IDevicePlaytestDriver } from "../src/runner/deviceRunner.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";

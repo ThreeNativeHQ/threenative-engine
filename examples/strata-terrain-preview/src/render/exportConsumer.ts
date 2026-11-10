@@ -116,7 +116,7 @@ export default defineGame({
   input: {},
   plugins: [playtest()],
   assets: { basePath: "artifacts/playtest/world-export", sourcePath: "" },
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { exported: ExportConsumer },
   start: "exported",
 });

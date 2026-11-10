@@ -47,6 +47,7 @@ extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, cons
 #endif
 #endif
 #include "mystral/webgpu_compat.h"
+#include "mystral/webgpu/buffer_map_state.h"
 #include "surface_format_selection.h"
 #endif
 
@@ -1492,50 +1493,16 @@ bool Context::present() {
     return presented;
 }
 
-// Screenshot callback data
-// Note: Extra padding added due to observed stack corruption during initialization
-struct BufferMapData {
-    bool completed = false;
-    uint8_t _pad1[7] = {};
-    WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
-    uint8_t _pad2[12] = {};
-    std::mutex waitMutex;
-    std::condition_variable waitCondition;
-};
-
-using BufferMapDataPtr = std::shared_ptr<BufferMapData>;
-
-static BufferMapDataPtr takeBufferMapData(void* userdata) {
-    auto* holder = static_cast<BufferMapDataPtr*>(userdata);
-    if (holder == nullptr) return {};
-    BufferMapDataPtr data = std::move(*holder);
-    delete holder;
-    return data;
-}
-
+// Screenshot callback data: see buffer_map_state.h for who owns it when the wait times out.
 #if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
 // Dawn buffer map callback
 static void onBufferMapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2) {
-    const BufferMapDataPtr data = takeBufferMapData(userdata1);
-    if (!data) return;
-    {
-        std::lock_guard<std::mutex> lock(data->waitMutex);
-        data->status = status;
-        data->completed = true;
-    }
-    data->waitCondition.notify_all();
+    completeBufferMap(userdata1, status);
 }
 #else
 // wgpu-native buffer map callback
 static void onBufferMapped(WGPUBufferMapAsyncStatus status, void* userdata) {
-    const BufferMapDataPtr data = takeBufferMapData(userdata);
-    if (!data) return;
-    {
-        std::lock_guard<std::mutex> lock(data->waitMutex);
-        data->status = status;
-        data->completed = true;
-    }
-    data->waitCondition.notify_all();
+    completeBufferMap(userdata, status);
 }
 #endif
 
@@ -1657,12 +1624,12 @@ bool Context::saveScreenshot(const char* filename) {
     WGPUBufferMapCallbackInfo mapCallbackInfo = {};
     mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
     mapCallbackInfo.callback = onBufferMapped;
-    mapCallbackInfo.userdata1 = new BufferMapDataPtr(mapData);
+    mapCallbackInfo.userdata1 = makeBufferMapUserdata(mapData);
     mapCallbackInfo.userdata2 = nullptr;
     wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, mapCallbackInfo);
 #else
     // wgpu-native uses separate callback and userdata
-    wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, onBufferMapped, new BufferMapDataPtr(mapData));
+    wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, onBufferMapped, makeBufferMapUserdata(mapData));
 #endif
 
     const bool mapCompleted = waitForBufferMap(*mapData, device_, instance_);
@@ -1761,11 +1728,11 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
     WGPUBufferMapCallbackInfo mapCallbackInfo = {};
     mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
     mapCallbackInfo.callback = onBufferMapped;
-    mapCallbackInfo.userdata1 = new BufferMapDataPtr(mapData);
+    mapCallbackInfo.userdata1 = makeBufferMapUserdata(mapData);
     mapCallbackInfo.userdata2 = nullptr;
     wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, mapCallbackInfo);
 #else
-    wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, onBufferMapped, new BufferMapDataPtr(mapData));
+    wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, onBufferMapped, makeBufferMapUserdata(mapData));
 #endif
 
     const bool mapCompleted = waitForBufferMap(*mapData, device_, instance_);

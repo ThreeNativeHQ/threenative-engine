@@ -17,7 +17,7 @@ const game = defineGame<Record<string, unknown>, IPhysicsContext>({
     lifecycle: { keys: ["KeyL"] },
   },
   plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   seed: 446,
   step: 1 / 60,
   scenes: { course: CompositionCourse },

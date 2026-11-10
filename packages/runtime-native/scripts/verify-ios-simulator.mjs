@@ -4,10 +4,12 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -15,6 +17,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { hasIosSceneManifestFields } from './package-ios.mjs';
+import { judgeBundleMissing, judgePlainLaunch, judgePresentationCap, judgeWebUiLaunch } from './ios-webui-log.mjs';
 import { assertIosRuntime, bundleIsRegistered, selectIosSimulator } from './select-ios-simulator.mjs';
 // The same two assertions the desktop and Android gates run, from one source. A third copy would
 // drift, and the copy that drifts is always the lane nobody runs by hand.
@@ -512,6 +515,11 @@ if (!logs.includes('TN_NATIVE_WORKER_PROOF_PASS:')) {
 if (/GPUValidationError|Validation Error|TN_IOS_PROOF_FAILED|TypeError|ReferenceError|FATAL/u.test(logs)) {
   throw new Error('iOS unified logs contain a native, JavaScript, or WebGPU failure.');
 }
+// The plain smoke app renders natively. A web view in it would mean the shell created one on its own.
+{
+  const webViewFailures = judgePlainLaunch(logs);
+  if (webViewFailures.length > 0) throw new Error(`iOS plain launch: ${webViewFailures.join('; ')}`);
+}
 // One present per frame. The app has reported 300 frames by now, so the runtime has emitted five
 // ticks; a log with none means nothing measured the invariant, which is a failure and not a pass.
 const presentTicks = analyzePresentTicks(logs, { minTicks: 1 });
@@ -598,6 +606,93 @@ try {
 } finally {
   rebuildProof('normal', false);
 }
+// Variants of the built app (PRD-842). Each runs on a copy under artifacts/, so the app that the
+// workflow zips and publishes keeps the Info.plist and files it was built with. They replace text
+// tests that matched `ios/main.mm` and `ios/ui_overlay_ios.mm` and could not say whether the host
+// worked: a launch is the only thing that can.
+const variantRoot = join(artifactRoot, 'variant');
+const variantApp = join(variantRoot, 'threenative-ios.app');
+
+async function stageUiPage(destination) {
+  const smokeUi = join(nativeSmokeRoot, 'ui');
+  rmSync(destination, { force: true, recursive: true });
+  mkdirSync(destination, { recursive: true });
+  const { build: esbuild } = await import('esbuild');
+  await esbuild({
+    bundle: true,
+    entryPoints: [join(smokeUi, 'main.ts')],
+    format: 'esm',
+    logLevel: 'silent',
+    outfile: join(destination, 'main.js'),
+    target: 'es2022',
+  });
+  // The packager's Vite output marks module scripts `crossorigin`, which makes WebKit ask the scheme
+  // handler for the CORS header. The staged page does the same, so a missing header fails the run.
+  const page = readFileSync(join(smokeUi, 'index.html'), 'utf8');
+  writeFileSync(
+    join(destination, 'index.html'),
+    page.replace('<script type="module"', '<script type="module" crossorigin'),
+  );
+}
+
+async function runVariant(label, plistEdits, { judge, markers, ui }) {
+  rmSync(variantRoot, { force: true, recursive: true });
+  mkdirSync(variantRoot, { recursive: true });
+  cpSync(app, variantApp, { recursive: true });
+  for (const [key, flag, value] of plistEdits) {
+    run('plutil', ['-replace', key, flag, String(value), join(variantApp, 'Info.plist')]);
+  }
+  if (ui) await stageUiPage(join(variantApp, 'ui'));
+  // Installing over the previous variant kept its staged `ui/` (run 42648487428: the
+  // missing-bundle launch loaded the web-ui page), so each variant starts from no install.
+  run('xcrun', ['simctl', 'uninstall', simulator.udid, bundleId]);
+  run('xcrun', ['simctl', 'install', simulator.udid, variantApp]);
+  awaitBundleRegistration(simulator.udid, bundleId);
+  const since = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const launched = await captureSimulatorLaunch(simulator.udid, markers);
+  if (launched.error) throw launched.error;
+  // NSLog lines reach the unified log shortly after the app writes them: read until the judge is
+  // satisfied, and fail with the whole log when it is not.
+  let text = '';
+  let failures = [];
+  const deadline = Date.now() + 45_000;
+  for (;;) {
+    text = `${launched.output}\n${unifiedLog(simulator.udid, since)}`;
+    failures = judge(text);
+    if (failures.length === 0 || Date.now() > deadline) break;
+    sleep(3_000);
+  }
+  writeFileSync(join(artifactRoot, `variant-${label}.log`), text);
+  if (failures.length > 0) {
+    throw new Error(`iOS ${label} launch failed:\n- ${failures.join('\n- ')}\nFull log: artifacts/ios/variant-${label}.log`);
+  }
+  return { label, pass: true };
+}
+
+const hostVariants = {};
+try {
+  // `TNMaxFps` is what `ios/main.mm` reads into the presentation cap.
+  hostVariants.maxFps30 = await runVariant('max-fps-30', [['TNMaxFps', '-integer', 30]], {
+    judge: (text) => judgePresentationCap(text, 30),
+    markers: ['TN_NATIVE_SMOKE_300_FRAMES:300'],
+  });
+  // The WebUI host: attach before the game evaluates, load, page module, first state, layout.
+  // The smoke exits after 300 frames. At 60 fps that is 5 s, and on a CI simulator the game loop
+  // starves the main thread: run 42685499834 started the page navigation 3.5 s after attach and the
+  // app exited before `didFinishNavigation`. A 10 fps cap keeps the app alive for ~30 s.
+  hostVariants.webUi = await runVariant('web-ui', [['TNUIRenderer', '-string', 'web'], ['TNMaxFps', '-integer', 10]], {
+    judge: judgeWebUiLaunch,
+    markers: ['TN_NATIVE_SMOKE_300_FRAMES:300'],
+    ui: true,
+  });
+  // A web renderer with no page must refuse by name before the game runs.
+  hostVariants.webUiMissingBundle = await runVariant('web-ui-missing-bundle', [['TNUIRenderer', '-string', 'web']], {
+    judge: judgeBundleMissing,
+    markers: ['TN_UI_BUNDLE_MISSING'],
+  });
+} finally {
+  rmSync(variantRoot, { force: true, recursive: true });
+}
 const report = {
   app: relative(workspaceRoot, app),
   bundle: {
@@ -606,6 +701,7 @@ const report = {
   },
   completedAt: new Date().toISOString(),
   devicePlaytest,
+  hostVariants,
   markers: requiredMarkers,
   pass: true,
   nativePhysics,

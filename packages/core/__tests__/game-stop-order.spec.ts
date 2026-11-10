@@ -213,6 +213,44 @@ describe("IGame.stop release order", () => {
     }
   });
 
+  it("releases several plugins in the order they were set up: every dispose, then every cleanup", async () => {
+    const order: string[] = [];
+    const canvas = testCanvas();
+    class Plain extends SceneBase {
+      static override readonly initialState = {};
+    }
+    const plugin = (name: string) => ({
+      dispose: () => order.push(`${name}-dispose`),
+      setup: () => () => order.push(`${name}-cleanup`),
+    });
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    const game = defineGame({
+      initialState: {},
+      plugins: [plugin("a"), plugin("b")],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: Plain },
+      start: "test",
+    });
+    try {
+      await game.start();
+      game.stop();
+      expect(order).toEqual(["a-dispose", "b-dispose", "a-cleanup", "b-cleanup"]);
+    } finally {
+      game.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("still reaches every release after it when the scene exit throws", async () => {
     const order: string[] = [];
     class Throws extends SceneBase {

@@ -9,13 +9,13 @@ import {
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { HITBOX, type IRunnerModel, Runner } from "../entities/Runner.js";
 import type { RunnerPhysics } from "../physics.js";
 import { chaseRunner, setupCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { createDustTrail } from "../render/dust.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";

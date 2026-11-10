@@ -33,10 +33,6 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "tolerance": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255,
     "window": (value: unknown) => isRecord(value),
   }),
-  "reachability": Object.freeze({
-    "artifact": (value: unknown) => typeof value === "string" && value.trim() !== "",
-    "entities": (value: unknown) => Array.isArray(value),
-  }),
   "aerodynamics": Object.freeze({
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "minForceSamples": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value > 0,
@@ -125,14 +121,6 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "allowTrivial": (value: unknown) => typeof value === "string" && value.replace(/\s/gu, "").length >= MIN_TRIVIALITY_REASON_LENGTH,
     "visible": (value: unknown) => typeof value === "boolean",
   }),
-  "overlayNodes": Object.freeze({
-    "overlayId": (value: unknown) => typeof value === "string" && value.trim() !== "",
-    "selector": (value: unknown) => typeof value === "string" && value.trim() !== "",
-    "attribute": (value: unknown) => typeof value === "string" && value.trim() !== "",
-    "equals": (value: unknown) => true,
-    "textIncludes": (value: unknown) => typeof value === "string" && value.trim() !== "",
-    "visible": (value: unknown) => typeof value === "boolean",
-  }),
   "diagnostics": Object.freeze({
     "noConsoleErrors": (value: unknown) => typeof value === "boolean",
     "noNetworkErrors": (value: unknown) => typeof value === "boolean",
@@ -192,11 +180,6 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "compareToStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "minMeanPoseDistance": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
     "requiredOn": (value: unknown) => Array.isArray(value),
-    "allowTrivial": (value: unknown) => typeof value === "string" && value.replace(/\s/gu, "").length >= MIN_TRIVIALITY_REASON_LENGTH,
-  }),
-  "occluded": Object.freeze({
-    "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
-    "target": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "allowTrivial": (value: unknown) => typeof value === "string" && value.replace(/\s/gu, "").length >= MIN_TRIVIALITY_REASON_LENGTH,
   }),
   "animation": Object.freeze({
@@ -278,5 +261,10 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "contributions": (value: unknown) => isRecord(value),
     "velocity": (value: unknown) => isRecord(value),
     "perAdapter": (value: unknown) => isRecord(value),
+  }),
+  "geometry": Object.freeze({
+    "limit": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "sort": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "timeoutMs": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
   }),
 });

@@ -156,13 +156,12 @@ test("a reason-string triviality opt-out parses unchanged", async () => {
   expect(scenario.assert.resources[0]?.allowTrivial).toBe(reason);
 });
 
-test("the six held-value assertion kinds reject boolean and short triviality opt-outs", async () => {
+test("the held-value assertion kinds reject boolean and short triviality opt-outs", async () => {
   const cases: Array<[string, unknown]> = [
     ["tags", [{ count: 1, tag: "coin" }]],
     ["states", [{ entity: "player", equals: "idle" }]],
     ["visibility", [{ entity: "player", present: true }]],
     ["settled", [{ entity: "body", minBodies: 1 }]],
-    ["occluded", [{}]],
     ["animation", [{ clip: "run", entity: "player" }]],
   ];
 
@@ -180,7 +179,7 @@ test("the six held-value assertion kinds reject boolean and short triviality opt
 });
 
 test("every registry entry carries rationale and the audit reclassifies the six held-value kinds", () => {
-  expect(PLAYTEST_ASSERTION_REGISTRY).toHaveLength(35);
+  expect(PLAYTEST_ASSERTION_REGISTRY).toHaveLength(33);
   expect(PLAYTEST_ASSERTION_REGISTRY.every(({ trivialityRationale }) => trivialityRationale.trim().length > 0)).toBe(true);
   expect(PLAYTEST_ASSERTION_REGISTRY.filter(({ triviality }) => triviality === "reject-initial-value").map(({ kind }) => kind)).toEqual([
     "components",
@@ -190,7 +189,6 @@ test("every registry entry carries rationale and the audit reclassifies the six 
     "hud",
     "visibility",
     "settled",
-    "occluded",
     "animation",
   ]);
 });

@@ -1,9 +1,10 @@
+import { CONSOLE_MARKER } from "../protocol.js";
 import type { IEvaluationContext } from "./context.js";
 
 /** The engine's frame-budget window; its `counters.engine` holds every engine work counter (core FrameCounters.ts). */
-export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET:";
+export const FRAME_BUDGET_MARKER = `${CONSOLE_MARKER.frameBudget}:`;
 /** three-native's census, printed while a playtest bounds engine counters: who crossed, by name. */
-export const BRIDGE_CENSUS_MARKER = "TN_BRIDGE_CENSUS:";
+export const BRIDGE_CENSUS_MARKER = `${CONSOLE_MARKER.bridgeCensus}:`;
 
 interface ISummary {
   readonly mean?: number;

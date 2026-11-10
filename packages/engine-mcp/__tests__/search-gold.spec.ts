@@ -11,7 +11,7 @@ import {
 } from "../../../scripts/capability-search-ab.js";
 import { capabilityDetails, searchCapabilities } from "../src/index.js";
 
-const workspaceManifest = path.resolve("packages/create-threenative/capabilities.json");
+const workspaceManifest = path.resolve("packages/core/capabilities.json");
 const goldFile = path.resolve(GOLD_RELATIVE_PATH);
 const prdFile = path.resolve(
   "docs/PRDs/done/PRD-865-capability-search-finds-by-name-and-answers-in-one-call.md",

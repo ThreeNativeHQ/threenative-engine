@@ -294,12 +294,11 @@ function assertPerformanceObservable(
   reportPath: string,
 ): void {
   if (budget === undefined) return;
-  const runTarget = target === "browser" ? "web" : target;
   const entry = PLAYTEST_ASSERTION_REGISTRY.find(({ kind }) => kind === "performance");
   const supported = entry?.supportedOn ?? [];
-  if (supported.includes(runTarget as (typeof supported)[number])) return;
+  if (supported.includes(target as (typeof supported)[number])) return;
   throw invalid(
     reportPath,
-    `declares a performanceBudget, which the '${runTarget}' target cannot observe. Bounds on frames are measured on: ${supported.join(", ")}.`,
+    `declares a performanceBudget, which the '${target}' target cannot observe. Bounds on frames are measured on: ${supported.join(", ")}.`,
   );
 }

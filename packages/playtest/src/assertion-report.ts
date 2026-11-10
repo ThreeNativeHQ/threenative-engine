@@ -1,3 +1,4 @@
+import { NETWORK_OBSERVER_LANES, PLAYTEST_LANES } from "./lanes.js";
 import type { IPlaytestToneCaptureObservation } from "./tone.js";
 import type {
   IPlaytestComponentAssertion,
@@ -88,12 +89,10 @@ export interface IPlaytestObservations {
   effectLog?: unknown;
   effectLogBefore?: unknown;
   effectLogSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
-  entityTransforms?: Record<string, { halfExtents?: Vec3; position?: Vec3; scale?: Vec3 }>;
   framebufferCoverage?: IPlaytestFramebufferCoverageObservation;
   /** The per-object geometry capture report, present only when the scenario requested one. */
   geometry?: JsonValue;
   hud: Record<string, { after?: unknown; before?: unknown }>;
-  overlayNodes?: Record<string, { after?: unknown; before?: unknown }>;
   network: Array<{ method: string; url: string }>;
   physicsDebug?: unknown;
   physicsDebugBefore?: unknown;
@@ -147,7 +146,9 @@ export interface IPlaytestObservations {
  * Android and iOS do not yet consume a network observer. Desktop reads the native host
  * fetch observation through its playtest mailbox; browser uses request events.
  */
-const NETWORK_BLIND_TARGETS = new Set(["android", "ios"]);
+const NETWORK_BLIND_TARGETS: ReadonlySet<string> = new Set(
+  PLAYTEST_LANES.filter((lane) => !NETWORK_OBSERVER_LANES.includes(lane)),
+);
 
 /** The reason the runner writes for itself when it waives a channel the target cannot observe. */
 export const UNOBSERVABLE_NETWORK_REASON =

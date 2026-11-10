@@ -21,7 +21,7 @@ const game = defineGame<GameState>({
   },
   plugins: [playtest({ events })],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { race: Race },
   seed: 734,
   start: "race",

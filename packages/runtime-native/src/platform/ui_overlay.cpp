@@ -467,6 +467,16 @@ bool applyUiHitRegionsFrame(const std::string& frame) {
     return true;
 }
 
+size_t drainUiFramesToGame(const std::function<void(const std::string&)>& forward) {
+    size_t forwarded = 0;
+    std::string frame;
+    while (takeUiMessage(frame)) {
+        if (applyUiHitRegionsFrame(frame)) continue;
+        forward(frame);
+        ++forwarded;
+    }
+    return forwarded;
+}
 
 #if defined(__ANDROID__)
 /**

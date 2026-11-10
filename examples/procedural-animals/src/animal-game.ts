@@ -90,7 +90,7 @@ export function makeAnimalGame(mode: AnimalMode) {
         },
       },
     ],
-    render: { preferWebGPU: true },
+    renderer: { preferWebGPU: true },
     frameBudget: { reportEvery: 300 },
     scenes: { animals: Workload },
     start: "animals",

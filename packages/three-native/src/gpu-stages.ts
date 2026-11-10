@@ -4,6 +4,7 @@
  * a stage that drew no pass is absent. The order is the native stage id counting from 1
  * (`kStageScreenSpaceGi` in post_effects.h), so a new name goes last.
  */
+import { WEB_FRAME_FIELD } from "./generated/web-frame-fields.js";
 export const GPU_STAGES = ["SSGI"] as const;
 
 export type GpuStage = (typeof GPU_STAGES)[number];
@@ -26,7 +27,7 @@ export function gpuStageId(name: unknown): number {
 export const SHADOW_STAGE = "Shadow";
 
 /** `tnw_web_frame` field of the shadow passes' segment (web_host.cpp). */
-export const SHADOW_SEGMENT_FIELD = 19;
+export const SHADOW_SEGMENT_FIELD: number = WEB_FRAME_FIELD.gpuSegmentShadow;
 
 /**
  * The renderer's CPU stages by `tnw_web_frame` field (web_host.cpp 66 to 77): running ms of every render, which
@@ -39,21 +40,21 @@ export const SHADOW_SEGMENT_FIELD = 19;
  * and the batched queue submit that ends it (PRD-771), then the `tnw_web_poll` that opens it and its tail (surface texture release, frame gate, diagnostics) and the wall time of `Renderer::render` itself (`rendererMs`, which holds the prepare and encode halves) inside the whole `RenderDatabase::render` call (`hostDatabaseMs`), then the render targets' draws (`hostTargetMs`). The order of the names is the order the page reads them.
  */
 export const CPU_STAGE_FIELDS = {
-  cpuVirtualPagesMs: 66,
-  cpuPlanMs: 67,
-  cpuShadowBuildMs: 68,
-  cpuPrepareMs: 69,
-  cpuEncodeMs: 70,
-  cpuPostMs: 73,
-  cpuSceneMs: 74,
-  hostRenderMs: 75,
-  hostComputeMs: 76,
-  hostSubmitMs: 77,
-  hostPollMs: 79,
-  hostTailMs: 80,
-  rendererMs: 81,
-  hostDatabaseMs: 82,
-  hostTargetMs: 83,
+  cpuVirtualPagesMs: WEB_FRAME_FIELD.cpuVirtualPagesMs,
+  cpuPlanMs: WEB_FRAME_FIELD.cpuPlanMs,
+  cpuShadowBuildMs: WEB_FRAME_FIELD.cpuShadowBuildMs,
+  cpuPrepareMs: WEB_FRAME_FIELD.cpuPrepareMs,
+  cpuEncodeMs: WEB_FRAME_FIELD.cpuEncodeMs,
+  cpuPostMs: WEB_FRAME_FIELD.cpuPostMs,
+  cpuSceneMs: WEB_FRAME_FIELD.sceneMs,
+  hostRenderMs: WEB_FRAME_FIELD.hostRenderMs,
+  hostComputeMs: WEB_FRAME_FIELD.hostComputeMs,
+  hostSubmitMs: WEB_FRAME_FIELD.hostSubmitMs,
+  hostPollMs: WEB_FRAME_FIELD.hostPollMs,
+  hostTailMs: WEB_FRAME_FIELD.hostTailMs,
+  rendererMs: WEB_FRAME_FIELD.rendererMs,
+  hostDatabaseMs: WEB_FRAME_FIELD.hostDatabaseMs,
+  hostTargetMs: WEB_FRAME_FIELD.hostTargetMs,
 } as const;
 
 export type CpuStageName = keyof typeof CPU_STAGE_FIELDS;

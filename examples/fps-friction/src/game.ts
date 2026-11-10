@@ -16,7 +16,7 @@ const game = defineGame<IRangeState, IPhysicsContext>({
     look: { pointerRelative: true },
   },
   plugins: [rapier(), playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { range: Range },
   seed: 90210,
   start: "range",

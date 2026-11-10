@@ -378,9 +378,13 @@ describe("registry publication", () => {
       for (const patch of Object.values(kit.pnpm?.patchedDependencies ?? {}))
         declared.add(path.basename(patch));
     }
+    // The manifest is the list, not a patch: it ships so `copyFrameworkPatches` can resolve a
+    // kit's `patchedDependencies` through it, and `framework-patches.spec.ts` holds the two to
+    // each other.
     const shipped = (packed ?? [])
       .filter((file) => file.startsWith("template-assets/patches/"))
       .map((file) => path.basename(file))
+      .filter((file) => file !== "manifest.json")
       .sort();
     expect(shipped).toEqual([...declared].sort());
   }, 120_000);

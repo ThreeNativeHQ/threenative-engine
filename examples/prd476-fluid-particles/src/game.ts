@@ -106,7 +106,7 @@ class DamBreakScene extends Scene<IFluidParticlesState, IPhysicsContext> {
 const game = defineGame<IFluidParticlesState, IPhysicsContext>({
   step: 1 / 60,
   plugins: [rapier({ gravity: { x: 0, y: -9.81, z: 0 } }), playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { coupling: CouplingScene, dam: DamBreakScene },
   start:
     new URLSearchParams(globalThis.location?.search ?? "").get("scene") === "coupling"

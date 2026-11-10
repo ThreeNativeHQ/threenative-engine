@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../packages/playtest/src/assertion-schema.js";
+import { unproducedAssertionKinds } from "../packages/playtest/src/runner/observationFields.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const target = path.join(
@@ -56,6 +57,13 @@ function predicate(type: string): string {
         `No generated assertion validator predicate for registry type '${type}'. Add an explicit fail-closed mapping before changing the registry.`,
       );
   }
+}
+
+const unproduced = unproducedAssertionKinds();
+if (unproduced.length > 0) {
+  throw new Error(
+    `Assertion kinds with no producing runner: ${unproduced.join(", ")}. Add the observation to a runner (src/runner/observationFields.ts) or remove the kind.`,
+  );
 }
 
 const registryEntries = PLAYTEST_ASSERTION_REGISTRY.map((entry) => {

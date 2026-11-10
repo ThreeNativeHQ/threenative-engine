@@ -5,3 +5,6 @@ packages/three-native/tests/compatibility/goldens/** linguist-generated
 packages/three-native/tests/compatibility/fixtures/** linguist-generated
 packages/three-native/api/*.json linguist-generated
 packages/three-native/generated/** linguist-generated
+
+# A CRLF checkout breaks Vite's shebang strip (`/^#!.*\n/`), so a shebang module fails to import on Windows.
+*.mjs text eol=lf

@@ -2,6 +2,7 @@
  * TerrainTiles' constants, admission byte estimates and the input guards they share. Split out of
 `world-tiles.ts` verbatim (PRD-797), so the estimator can be read and tested without the class.
  */
+import { readLaunchFlag } from "./debug.js";
 
 import { type SpanId, addSpan, spanNow, spanRecorder } from "./profiling/Spans.js";
 import type { IHeightfieldWorldPassOptions } from "./world-heightfield.js";
@@ -29,17 +30,9 @@ export const TERRAIN_TILE_MARKER_MS = 5_000;
  * switch — or one that still carries the `=1` that used to ask for the merge — stays on.
  */
 export function terrainMergeOptedOut(): boolean {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
-    string,
-    unknown
-  >;
-  const fromEnv = host.process?.env?.[TERRAIN_MERGE_FLAG];
-  if (fromEnv === "0" || fromEnv === "false") return true;
-  const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnTerrainMerge=(?:0|false)(?:&|$)/u.test(query))
-    return true;
-  return (
-    host.__tnTerrainMerge === false || host.__tnTerrainMerge === 0 || host.__tnTerrainMerge === "0"
+  return readLaunchFlag(
+    { environment: TERRAIN_MERGE_FLAG, global: "__tnTerrainMerge", query: "tnTerrainMerge" },
+    "off",
   );
 }
 

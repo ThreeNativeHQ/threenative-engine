@@ -1,5 +1,6 @@
 /// <reference path="./import-meta.d.ts" />
 
+import { DEV_GLOBAL_KEY, type IDevTools, devGlobal } from "./dev-global.js";
 import type { EntitySnapshot, Registry } from "./entities.js";
 import type {
   GeometryCapture,
@@ -7,17 +8,8 @@ import type {
   IGeometryCaptureRequest,
 } from "./geometry-capture.js";
 
-interface IDevTools {
-  snapshot(): EntitySnapshot;
-  /**
-   * Arms one per-object geometry capture for a development overlay. Absent until the game has a
-   * render loop; the overlay treats that as "not ready", never as an empty scene.
-   */
-  geometry?(request?: IGeometryCaptureRequest): Promise<IGeometryCaptureReport>;
-}
-
 export type DevToolsHost = Record<string, unknown> &
-  Partial<Record<"__THREENATIVE__", Partial<IDevTools>>>;
+  Partial<Record<typeof DEV_GLOBAL_KEY, Partial<IDevTools>>>;
 
 /**
  * The bundler's dev flag.
@@ -68,8 +60,9 @@ export function installDevTools(
   // this whole install from a production build, and a runtime `DEV_MODE` check cannot be stripped.
   const isDev = (import.meta as IImportMeta).env?.DEV === true;
   if (!isDev || host === undefined) return () => undefined;
+  const current = devGlobal(host) ?? {};
   const devTools: IDevTools = {
-    ...host.__THREENATIVE__,
+    ...(current as Partial<IDevTools>),
     geometry: async (request) => {
       const capture = geometry();
       if (capture === undefined) {
@@ -82,12 +75,12 @@ export function installDevTools(
     },
     snapshot: () => entities.snapshot(),
   };
-  host.__THREENATIVE__ = devTools;
+  host[DEV_GLOBAL_KEY] = devTools;
   return () => {
-    if (host.__THREENATIVE__ !== devTools) return;
+    if (devGlobal(host) !== devTools) return;
     const remaining = Object.fromEntries(
       Object.entries(devTools).filter(([key]) => key !== "snapshot" && key !== "geometry"),
     );
-    host.__THREENATIVE__ = Object.keys(remaining).length === 0 ? undefined : remaining;
+    host[DEV_GLOBAL_KEY] = Object.keys(remaining).length === 0 ? undefined : remaining;
   };
 }

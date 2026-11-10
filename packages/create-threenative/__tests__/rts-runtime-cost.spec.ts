@@ -154,6 +154,27 @@ function simFiles(directory: string): string[] {
 /** Where every source under these sentinels lives; a counted line is keyed from here, so
  * `sim/movement.ts:54` and `render/army.ts:316` name a file, not just a line. */
 const SRC = path.resolve(import.meta.dirname, "../templates/rts/src");
+const CORE = path.resolve(import.meta.dirname, "../../../packages/core");
+
+/**
+ * The source file behind a `@threenative/core/<subpath>`, read from core's own `exports` map.
+ *
+ * The kit's render wiring imports the environment mechanism from core (PRD-833), and this spec
+ * transpiles the kit's sources itself rather than handing them to a bundler, so it has to resolve
+ * one framework import. Reading the export map keeps the mapping true when a subpath moves, and
+ * the package's `dist` entry is its `src` file by construction (flat entries, one per `exports` key).
+ */
+function coreSourceFor(subpath: string): string {
+  const manifest = JSON.parse(readFileSync(path.join(CORE, "package.json"), "utf8")) as {
+    exports: Record<string, { import?: string }>;
+  };
+  const key = subpath.length === 0 ? "." : `./${subpath}`;
+  const target = manifest.exports[key]?.import;
+  if (typeof target !== "string") {
+    throw new Error(`TN_RTS_LOADER: @threenative/core exports no '${key}'.`);
+  }
+  return path.join(CORE, target.replace(/^\.\/dist\//u, "src/").replace(/\.js$/u, ".ts"));
+}
 
 /**
  * The source text of the line a counted literal sits on, cached. Classifying an allocation by what
@@ -259,6 +280,13 @@ function watchLiterals(
       transformers: { before: [transformer] },
     });
     const require_ = (specifier: string): unknown => {
+      // The kit's render wiring imports the environment mechanism from core (PRD-833). It is
+      // TypeScript source, so it loads through this same loader instead of the bare resolver.
+      // Only a subpath: the root entry is the spec's own stub, and loading core's `index.ts` here
+      // would pull the whole framework through a loader meant for the kit's simulation.
+      if (specifier.startsWith("@threenative/core/")) {
+        return load(coreSourceFor(specifier.slice("@threenative/core/".length)));
+      }
       if (!specifier.startsWith(".")) return externals[specifier] ?? bare(specifier);
       return load(path.join(path.dirname(file), specifier.replace(/\.js$/u, ".ts")));
     };

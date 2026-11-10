@@ -74,8 +74,9 @@ const game = defineGame<GameState, IPhysicsContext>({
     playtest(),
   ],
   display: config.display,
-  render: config.renderer,
-  renderer: { antialias: true },
+  // One key: the project's renderer config, with this kit's antialias default where the config
+  // leaves it unset. Before the fold the portable `render` half won over the live object.
+  renderer: { ...config.renderer, antialias: config.renderer?.antialias ?? true },
   // warmUp stays OFF here, measured on the Pixel 8 (PRD-327 device lane, 2026-09-03): the
   // whole-scene compileAsync walk is synchronous on the native host — ~33 s for this town —
   // and its per-item yield falls back to requestAnimationFrame, which cannot resolve while the

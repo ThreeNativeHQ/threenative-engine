@@ -5,7 +5,7 @@ its time.
 
 ## Renderer settings
 
-The generated game passes `render: config.renderer` to `defineGame`, so you set rendering options
+The generated game passes `renderer: config.renderer` to `defineGame`, so you set rendering options
 in `threenative.config.ts`.
 
 ```ts

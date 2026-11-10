@@ -1,4 +1,5 @@
 #include "engine/renderer/probes/capture.h"
+#include "engine/foundation/flags.h"
 // tn-native-engine-player-v8 (PRD-531 phase 3): the native-engine desktop player with a game on V8.
 // It links the V8 adapter, so it is a JS artifact and never an engine target; the JS-free player
 // stays tn-native-engine-player. The window, loop, mailbox, render and screenshot path are the same
@@ -1336,7 +1337,7 @@ bool V8Game::observe(const std::string& method, const json::Value* argument, jso
 }
 
 bool V8Game::start(const std::string& path, std::string& error) {
-    const char* configuredAssets = std::getenv("TN_NATIVE_ASSET_PACKAGE");
+    const char* configuredAssets = flags::read<flags::NativeAssetPackage>();
     assetPath_ = configuredAssets ? configuredAssets :
         (std::filesystem::path(path).parent_path() / "native/assets.tnpk").string();
     services_ = mystral::js::createV8Engine();
@@ -1357,7 +1358,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     v8::HandleScope scope(isolate_);
     adapter_ = std::make_unique<tn::adapters::v8adapter::Adapter>(isolate_, context_);
     // three's own math as JS (PRD-573 v1.11 step 4a); TN_NATIVE_JS_MATH=0 is the A/B arm with native math.
-    if (const char* mathMode = std::getenv("TN_NATIVE_JS_MATH"); mathMode == nullptr || std::string(mathMode) != "0")
+    if (const char* mathMode = flags::read<flags::NativeJsMath>(); mathMode == nullptr || std::string(mathMode) != "0")
         adapter_->setJsMath(true);
     mystral::js::JSValueGuard global(*services_, services_->getGlobal());
     auto object = static_cast<v8::Persistent<v8::Value>*>(global.get().ptr)->Get(isolate_).As<v8::Object>();
@@ -1410,7 +1411,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     // The bench's phase clock: thread CPU ms, the clock presentCpuMs uses; the legacy host installs the same name.
     ctx->Global()->Set(ctx, v8str(isolate_, "__tnThreadCpuMs"), v8::Function::New(ctx,
         [](const v8::FunctionCallbackInfo<v8::Value>& info) { info.GetReturnValue().Set(player::threadCpuMs()); }).ToLocalChecked()).Check();
-    if (const char* debug = std::getenv("TN_DEBUG");
+    if (const char* debug = flags::read<flags::Debug>();
         tn::engine::waste::debugFlagEnabled(debug)) {
         tn::engine::waste::setDebugEnabled(true);
         adapter_->enableGcTelemetry();
@@ -1447,7 +1448,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
             info.GetReturnValue().Set(result);
         }, v8::External::New(isolate_, this)).ToLocalChecked()).Check();
     // TN_PLAYER_CROSSINGS=1: the live per-name crossing counts as JSON, so the bench can diff them per rung.
-    if (std::getenv("TN_PLAYER_CROSSINGS") != nullptr)
+    if (flags::read<flags::PlayerCrossings>() != nullptr)
         ctx->Global()->Set(ctx, v8str(isolate_, "__tnCrossingHistogram"), v8::Function::New(ctx,
             [](const v8::FunctionCallbackInfo<v8::Value>& info) {
                 std::vector<std::pair<std::string, json::Value>> names;
@@ -1456,7 +1457,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
             }).ToLocalChecked()).Check();
     // Core reads TN_FRAME_SPANS from process.env (Perry has one); this host has none, so it sets the
     // flag core's spansRequested() also accepts and both arms emit the same render-window spans.
-    if (const char* frameSpans = std::getenv("TN_FRAME_SPANS");
+    if (const char* frameSpans = flags::read<flags::FrameSpans>();
         frameSpans != nullptr && frameSpans[0] != '\0' && std::strcmp(frameSpans, "0") != 0 &&
         std::strcmp(frameSpans, "false") != 0)
         ctx->Global()->Set(ctx, v8str(isolate_, "__tnFrameSpans"), v8::True(isolate_)).Check();
@@ -1497,7 +1498,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
         return error = "host runtime tail failed", false;
     // A playtest runner announces itself as on the legacy desktop host, so core's playtest plugin
     // collects the per-frame render samples the runner's performance assertions read.
-    if (const char* root = std::getenv("TN_PLAYTEST_MAILBOX_ROOT"); root != nullptr && root[0] != '\0')
+    if (const char* root = flags::read<flags::PlaytestMailboxRoot>(); root != nullptr && root[0] != '\0')
         ctx->Global()->Set(ctx, v8str(isolate_, "TN_PLAYTEST_ENDPOINT"), v8str(isolate_, "native://desktop-mailbox")).Check();
     const auto host = ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocalChecked().As<v8::Object>();
     auto platform = v8::Object::New(isolate_);
@@ -1859,7 +1860,7 @@ void V8Game::profileFrame(bool drawn) {
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
     if (!mystral::js::g_startCpuProfile) return;
     static const uint32_t startFrame = [] {
-        const char* value = std::getenv("TN_JS_CPU_PROFILE_START_FRAME");
+        const char* value = flags::once<flags::JsCpuProfileStartFrame>();
         return value != nullptr ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 226u;
     }();
     if (drawn && ++profileFrames_ == startFrame) {
@@ -1981,7 +1982,7 @@ int main(int argc, char** argv) {
     // The guest has no environment to set, and the CSS backend is the only UI it links (PRD-784).
     const bool cssUi = true;
 #else
-    const char* uiRenderer = std::getenv("TN_UI_RENDERER");
+    const char* uiRenderer = flags::read<flags::UiRenderer>();
     const bool cssUi = uiRenderer != nullptr && std::string(uiRenderer) == "native-css";
 #endif
     // `createCssUiRoot().render(...)` commits while the bundle boots, before the window the CSS UI
@@ -2096,7 +2097,7 @@ int main(int argc, char** argv) {
     };
     // TN_PLAYER_CROSSINGS=1: after the run, the bridge crossings by name, most crossed first (the names sum to
     // the total), for finding which names a frame spends them on.
-    const bool histogram = std::getenv("TN_PLAYER_CROSSINGS") != nullptr;
+    const bool histogram = flags::read<flags::PlayerCrossings>() != nullptr;
     if (histogram) tn::abi::crossingHistogramEnable(true);
     const int status = player::run(configured);
     if (histogram) {

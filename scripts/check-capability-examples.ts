@@ -180,7 +180,7 @@ function diagnose(cases: readonly ICase[], root: string): Map<string, string[]> 
 }
 
 export function checkCapabilityExamples(
-  manifestFile = path.resolve("packages/create-threenative/capabilities.json"),
+  manifestFile = path.resolve("packages/core/capabilities.json"),
   root = process.cwd(),
 ): IExampleCheck {
   const manifest = JSON.parse(readFileSync(manifestFile, "utf8")) as {

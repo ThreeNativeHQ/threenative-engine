@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { run } from "./lib/exec.js";
 import {
   assertWebEngineBuilt,
   packageArchivePrefix,
@@ -92,10 +93,6 @@ export interface SandboxResult {
   readonly out: string;
   /** The one game folder inside the sandbox. Nothing is ever written to the sandbox root. */
   readonly project: string;
-}
-
-function run(command: string, args: string[], cwd: string): void {
-  execFileSync(command, args, { cwd, stdio: "inherit" });
 }
 
 function packedManifest(file: string): Record<string, unknown> {

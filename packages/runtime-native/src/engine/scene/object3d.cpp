@@ -5,6 +5,7 @@
 // two callbacks below use their own locals, so no temporary is shared across a re-entry.
 
 #include "engine/scene/object3d.h"
+#include "engine/foundation/flags.h"
 
 #include "engine/foundation/job_pool.h"
 #include "engine/foundation/waste_counters.h"
@@ -19,7 +20,7 @@
 namespace tn::engine {
 
 thread_local bool Object3D::poseObservationEnabled = [] {
-    const auto* flag = std::getenv("TN_ANIMATION_POSE_OBSERVATION");
+    const auto* flag = flags::read<flags::AnimationPoseObservation>();
     return flag && std::strcmp(flag, "1") == 0;
 }();
 

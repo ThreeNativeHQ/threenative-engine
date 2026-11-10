@@ -5,7 +5,7 @@
       "directory": "tn-linux",
       "preset": "tn-linux",
       "cacheVariables": {},
-      "owner": "default native contract lane \u2014 ctest registration (PRD-229 Phase 2) and the G1 desktop host gate",
+      "owner": "default native contract lane — ctest registration (PRD-229 Phase 2) and the G1 desktop host gate",
       "runs": [
         "threenative-async-pipeline-thread-test",
         "threenative-audio-decode-ogg-test",
@@ -54,7 +54,12 @@
         "threenative-webtransport-surface-test",
         "threenative-webtransport-wire-test",
         "threenative-wgpu-null-handle-test",
-        "threenative-worker-production-test"
+        "threenative-worker-production-test",
+        "threenative-buffer-map-lifetime-test",
+        "threenative-image-decode-teardown-test",
+        "threenative-platform-policy-test",
+        "threenative-shim-bootstrap-test",
+        "threenative-webgpu-wrapper-bag-test"
       ]
     },
     {
@@ -63,7 +68,7 @@
       "cacheVariables": {
         "TN_ENABLE_COVERAGE": "ON"
       },
-      "owner": "PRD-229 Phase 1 coverage gate \u2014 scripts/measure-native-coverage.mjs, evidence in docs/verification/native-coverage-2026-08-28.md",
+      "owner": "PRD-229 Phase 1 coverage gate — scripts/measure-native-coverage.mjs, evidence in docs/verification/native-coverage-2026-08-28.md",
       "runs": [
         "threenative-async-pipeline-thread-test",
         "threenative-audio-decode-ogg-test",
@@ -112,7 +117,12 @@
         "threenative-webtransport-surface-test",
         "threenative-webtransport-wire-test",
         "threenative-wgpu-null-handle-test",
-        "threenative-worker-production-test"
+        "threenative-worker-production-test",
+        "threenative-buffer-map-lifetime-test",
+        "threenative-image-decode-teardown-test",
+        "threenative-platform-policy-test",
+        "threenative-shim-bootstrap-test",
+        "threenative-webgpu-wrapper-bag-test"
       ]
     },
     {
@@ -121,7 +131,7 @@
       "cacheVariables": {
         "TN_ENABLE_SANITIZERS": "ON"
       },
-      "owner": "PRD-229 Phase 3 sanitizer lifetime lane \u2014 evidence in docs/verification/native-sanitizer-lane-2026-08-28.md; runs the sanitizer-marked contract targets",
+      "owner": "PRD-229 Phase 3 sanitizer lifetime lane — evidence in docs/verification/native-sanitizer-lane-2026-08-28.md; runs the sanitizer-marked contract targets",
       "runs": [
         "threenative-bindings-creation-test",
         "threenative-dom-dispatch-lifetime-test",
@@ -137,7 +147,7 @@
       "cacheVariables": {
         "TN_ENABLE_CLANG_TIDY": "ON"
       },
-      "owner": "PRD-229 Phase 4 C++ lint lane \u2014 clang-tidy over native sources; runs no test executables",
+      "owner": "PRD-229 Phase 4 C++ lint lane — clang-tidy over native sources; runs no test executables",
       "runs": []
     },
     {
@@ -147,7 +157,7 @@
         "MYSTRAL_USE_QUICKJS": "ON",
         "MYSTRAL_USE_V8": "OFF"
       },
-      "owner": "cross-engine contract proof \u2014 the QuickJS arm of tests/timestamp-query.test.mjs, tests/rg11b10-renderable.test.mjs and the js engine contract; built on demand",
+      "owner": "cross-engine contract proof — the QuickJS arm of tests/timestamp-query.test.mjs, tests/rg11b10-renderable.test.mjs and the js engine contract; built on demand",
       "runs": [
         "threenative-js-engine-contract-test",
         "threenative-rg11b10-renderable-test",
@@ -163,7 +173,7 @@
       "cacheVariables": {
         "TN_ENABLE_NATIVE_PHYSICS": "ON"
       },
-      "owner": "native physics actuation contract \u2014 the only configuration threenative-physics-actuation-bindings-test links in; built on demand by the physics parity lanes",
+      "owner": "native physics actuation contract — the only configuration threenative-physics-actuation-bindings-test links in; built on demand by the physics parity lanes",
       "runs": [
         "threenative-physics-actuation-bindings-test"
       ]
@@ -174,7 +184,7 @@
       "cacheVariables": {
         "TN_ENABLE_METAHUMAN": "ON"
       },
-      "owner": "MetaHuman facial rig contract \u2014 the only configuration threenative-metahuman-bindings-test links in; built on demand by scripts/verify-desktop-metahuman.mjs, which also fetches the pinned OpenRigLogic source",
+      "owner": "MetaHuman facial rig contract — the only configuration threenative-metahuman-bindings-test links in; built on demand by scripts/verify-desktop-metahuman.mjs, which also fetches the pinned OpenRigLogic source",
       "runs": [
         "threenative-metahuman-bindings-test"
       ]
@@ -186,7 +196,7 @@
         "TN_ENABLE_METAHUMAN": "ON",
         "TN_ENABLE_SANITIZERS": "ON"
       },
-      "owner": "MetaHuman facial rig contract under ASan and UBSan \u2014 the lane that reads untrusted DNA bytes into the C ABI; built on demand by scripts/verify-desktop-metahuman.mjs --sanitize",
+      "owner": "MetaHuman facial rig contract under ASan and UBSan — the lane that reads untrusted DNA bytes into the C ABI; built on demand by scripts/verify-desktop-metahuman.mjs --sanitize",
       "runs": [
         "threenative-metahuman-bindings-test"
       ]
@@ -197,7 +207,7 @@
       "cacheVariables": {
         "TN_ENABLE_VIDEO": "ON"
       },
-      "owner": "video recorder state contract \u2014 the only configuration threenative-video-recorder-state-test links in; built on demand by the video lane",
+      "owner": "video recorder state contract — the only configuration threenative-video-recorder-state-test links in; built on demand by the video lane",
       "runs": [
         "threenative-video-recorder-state-test"
       ]
@@ -206,7 +216,7 @@
       "directory": "tn-android",
       "preset": "tn-android",
       "cacheVariables": {},
-      "owner": "Android device lanes \u2014 cross-compiled APK runtime; contract tests execute on device, not ctest",
+      "owner": "Android device lanes — cross-compiled APK runtime; contract tests execute on device, not ctest",
       "runs": []
     },
     {
@@ -216,7 +226,7 @@
         "ANDROID_ABI": "arm64-v8a",
         "MYSTRAL_WEBGPU_BACKEND": "dawn"
       },
-      "owner": "PRD-329 Phase 2 Dawn-on-Android spike \u2014 arm64 only; no product default change",
+      "owner": "PRD-329 Phase 2 Dawn-on-Android spike — arm64 only; no product default change",
       "runs": []
     },
     {

@@ -1,24 +1,26 @@
-import { type Camera, type Object3D, Scene as ThreeScene, Vector2 } from "three";
+import { type Object3D, Scene as ThreeScene, Vector2 } from "three";
 import { createAssetLoader } from "./assets.js";
 import { AutoBatch } from "./auto-batch.js";
 import { CanvasLayer } from "./canvas-layer.js";
-import type { ComputeDrivenRegistry } from "./compute-driven.js";
 import { isComputeDriven } from "./compute-driven.js";
 import { Registry } from "./entities.js";
-import type { FrameBudget } from "./frame-budget.js";
+import {
+  type IBootPhase,
+  type ILoopPhase,
+  clearScene,
+  runAll,
+  throwFirst,
+} from "./game-boot-phase.js";
 import { type DevToolsHost, installDevTools } from "./game-dev-tools.js";
-import type { IGameBootGame, IGameFrameLoop } from "./game-frame-loop.js";
+import type { IGameFrameLoop } from "./game-frame-loop.js";
 import { createCamera } from "./game-validate.js";
 import type {
-  IGameConfig,
   IGameObservationContribution,
-  IGamePlatformSource,
   IGamePluginHooks,
   IGamePluginRuntime,
   IGameRuntimeObservations,
   PluginCleanup,
 } from "./game.js";
-import type { GeometryCapture } from "./geometry-capture.js";
 import { InputMap } from "./input.js";
 import { PhysicsInterpolation } from "./interpolation.js";
 import {
@@ -27,7 +29,6 @@ import {
   watchDeviceLoss,
   watchStartupStall,
 } from "./launch-diagnostics.js";
-import type { IAfterPhysicsPhase } from "./loop.js";
 import { type FixedStepLoop, createAfterPhysicsPhase } from "./loop.js";
 import { MatrixWorldPass } from "./matrix-world.js";
 import { ScenePicker } from "./picking.js";
@@ -39,7 +40,7 @@ import {
   formatUnlitFoliageWarning,
   unlitFoliageWarning,
 } from "./profiling/unlit-foliage-warning.js";
-import { type IRandom, createRandom } from "./random.js";
+import { createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
 import type { VirtualShadowNode } from "./render/virtual-shadow.js";
 import { SceneRenderProjection } from "./renderProjection.js";
@@ -49,8 +50,9 @@ import {
   resolveRendererAntialias,
   resolveRendererScaleSetting,
 } from "./renderer-config.js";
-import { type IRendererLike, createRenderer } from "./renderer.js";
-import type { ICtx, IStartupStatus, IStartupTimeline, Scene, SceneFrame } from "./scene.js";
+import { rendererFacts } from "./renderer-facts.js";
+import { createRenderer } from "./renderer.js";
+import type { ICtx, IStartupStatus, IStartupTimeline } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import {
   type IStartupOffscreenBytes,
@@ -64,8 +66,6 @@ import {
   type StartupCompile,
   StartupReadiness,
 } from "./startup-readiness.js";
-import type { GameStore } from "./state.js";
-import type { IUiBridge } from "./ui-bridge.js";
 import { Viewport } from "./viewport.js";
 import {
   type IWarmUpOptions,
@@ -107,23 +107,8 @@ function createRuntimeObservations(): IGameRuntimeObservations {
 /** The first phase of `#boot`: everything up to the entered start scene. */
 
 export async function startGameWorld<TState extends Record<string, unknown>, TPhysics>(
-  game: IGameBootGame<TState, TPhysics>,
+  game: IBootPhase<TState, TPhysics>,
 ) {
-  const releases: Array<() => void> = [];
-  const dispose = (): void => {
-    const failures: unknown[] = [];
-    for (const release of releases.splice(0)) {
-      try {
-        release();
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    if (failures.length > 0) throw failures[0];
-  };
-  // Registered too: a boot that throws before answering leaves these for a later `stop()`.
-  game.cleanup.push(dispose);
-
   const progress = {
     explicitWarmUpSettled: !game.warmUpConfiguredExplicitly(),
     gpuTallyProvider: undefined as GpuTally | undefined,
@@ -145,28 +130,20 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   const renderer = await createRenderer({
     ...game.config.renderer,
     canvas: game.config.canvas ?? game.config.renderer?.canvas,
-    preferWebGPU: game.config.render?.preferWebGPU ?? game.config.renderer?.preferWebGPU,
+    preferWebGPU: game.config.renderer?.preferWebGPU,
     // One rule on both runtimes, decided 2026-09-01 after a HiDPI desktop browser upscaled a
     // DPR-1 web buffer into visible pixelation: the device's real density, with an explicit
     // `renderer.pixelRatio` winning over it (the old branch silently clobbered that value).
     // Headless capture lanes run at DPR 1 and are unaffected; the resolution scaler composes
     // on top, so a density the GPU cannot afford is trimmed by rungs, not by the developer.
     pixelRatio: game.config.renderer?.pixelRatio ?? globalThis.devicePixelRatio ?? 1,
-    antialias: resolveRendererAntialias(
-      game.config.render,
-      game.config.renderer?.antialias,
-      getPlatform().os,
-    ),
+    antialias: resolveRendererAntialias(game.config.renderer, undefined, getPlatform().os),
     alphaAntialiasing: resolveRendererAlphaAntialiasing(
-      game.config.render,
-      game.config.renderer?.alphaAntialiasing,
+      game.config.renderer,
+      undefined,
       getPlatform().os,
     ),
-    ...resolveRendererScaleSetting(
-      game.config.render,
-      game.config.renderer?.resolutionScale,
-      getPlatform().os,
-    ),
+    ...resolveRendererScaleSetting(game.config.renderer, undefined, getPlatform().os),
     source: game.config.renderer?.source ?? game.platform?.renderer,
   });
   if (game.aborted) {
@@ -174,12 +151,21 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     return;
   }
   game.renderer = renderer;
+  // Pushed first, so it runs last: nothing acquired after the renderer outlives it, and the
+  // presentation hold below lifts just before the renderer goes.
+  game.cleanup.push(() => {
+    renderer.dispose();
+    const mounted = game.platform;
+    if (mounted === undefined) renderer.domElement.remove?.();
+    else mounted.unmountCanvas(renderer.domElement);
+    game.renderer = undefined;
+  });
   // Before anything draws for this startup, including the warm-up and every covered world frame: the owned
   // engine keeps drawing, but presents nothing until a frame's shadow and exposure inputs are ready, so the
   // player never sees the two unsettled pictures a cold post chain produced (measured 185 -> 124 -> 108 mean
   // brightness). A renderer without the seam presents every frame exactly as before.
   renderer.setPresentationHeld?.(true);
-  releases.push(() => renderer.setPresentationHeld?.(false));
+  game.cleanup.push(() => renderer.setPresentationHeld?.(false));
   const canvas = renderer.domElement;
   const platform = game.platform;
   const page = hostDocument();
@@ -191,34 +177,51 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   const inputTarget =
     game.config.inputTarget ??
     (platform === undefined ? (hostWindow() ?? canvas) : (platform.inputTarget ?? canvas));
-  game.input = new InputMap(
+  // The store starts before the input and so stops after it: `stop()` releases the input, then the store.
+  game.state.start();
+  game.cleanup.push(() => game.state.stop());
+  const input = new InputMap(
     game.config.input,
     inputTarget,
     canvas,
     platform?.input,
     game.config.contextMenu,
   );
-  game.state.start();
+  game.input = input;
+  game.cleanup.push(() => {
+    input.dispose();
+    game.input = undefined;
+  });
   const threeScene = new ThreeScene();
+  // Pushed before the objects built on this scene, so it runs after they are released.
+  game.cleanup.push(() => clearScene(threeScene, game.computeDriven));
   if (debug && "__debugTelemetry" in threeScene)
     (threeScene as ThreeScene & { __debugTelemetry: boolean }).__debugTelemetry = true;
   const camera = createCamera(game.config.camera);
   const interpolation = new PhysicsInterpolation(game.config.physicsInterpolation);
   game.interpolation = interpolation;
+  game.cleanup.push(() => {
+    interpolation.clear();
+    game.interpolation = undefined;
+  });
   interpolation.track(camera);
   const viewport = new Viewport({ camera, renderer: game.renderer, source: platform?.viewport });
-  const canvasLayer = new CanvasLayer(viewport);
   game.viewport = viewport;
+  game.cleanup.push(() => {
+    viewport.dispose();
+    game.viewport = undefined;
+  });
+  const canvasLayer = new CanvasLayer(viewport);
+  game.cleanup.push(() => canvasLayer.dispose());
   // The renderer goes to the asset loader so compiled KTX2 textures detect transcoding
   // support against the real backend; a target that supports none fails right here.
   const assets = createAssetLoader({ ...game.config.assets, renderer: renderer.raw });
   if (assets.compressedTextures !== undefined) await assets.compressedTextures.ready;
-  releases.push(() => assets.dispose());
+  game.cleanup.push(() => assets.dispose());
   const entities = new Registry();
   const random = createRandom(game.config.seed);
   const scheduler = new Scheduler();
   const afterPhysicsPhase = createAfterPhysicsPhase();
-  const input = game.input;
   const picker = new ScenePicker({
     camera,
     // Input reports window-relative client coordinates; the picker's NDC math is
@@ -235,6 +238,10 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     viewport,
   });
   game.picker = picker;
+  game.cleanup.push(() => {
+    picker.dispose();
+    game.picker = undefined;
+  });
   const pointerEvents = new PointerEvents3D({
     screen: (position, target) => {
       const rect = (canvas as { getBoundingClientRect?: () => DOMRect }).getBoundingClientRect?.();
@@ -244,25 +251,32 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     },
   });
   game.pointerEvents = pointerEvents;
+  game.cleanup.push(() => {
+    pointerEvents.dispose();
+    game.pointerEvents = undefined;
+  });
   const loopState: { current?: FixedStepLoop } = {};
   // The engine owns the world-matrix walk, not three's renderer: on by default it does not recurse
   // into a hidden subtree, and `renderer.matrixWorld: "all"` restores the every-node walk. The
   // authored scene is marked once, here, so three never walks it a second time; the mirror scene
   // is marked at the render site, where whichever root is drawn this frame is known.
   const matrixWorldPass = new MatrixWorldPass({
-    mode: resolveMatrixWorldMode(game.config.render),
+    mode: resolveMatrixWorldMode(game.config.renderer),
   });
   game.matrixWorld = matrixWorldPass;
+  game.cleanup.push(() => {
+    matrixWorldPass.dispose();
+    game.matrixWorld = undefined;
+  });
   threeScene.matrixWorldAutoUpdate = false;
   // Built before the context because `ctx.startup` reads it: a game asks what the framework's
   // startup is doing, and the answer is this pass.
   // The owned renderer retains its own velocity history; JS snapshots serve Three's accessors.
-  const engineInfo = (renderer.raw as { info?: object }).info;
-  const ownedEngine = engineInfo !== undefined && "engine" in engineInfo;
+  const { ownedEngine } = rendererFacts(renderer);
   const projection = new SceneRenderProjection(threeScene, {
     // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
     // names the material check beside accepting it, and the projection owns both readings.
-    projection: game.config.render?.projection,
+    projection: game.config.renderer?.projection,
     velocity: () => !ownedEngine && (renderer.renderChainUsesPerObjectVelocity?.() ?? false),
     matrixWorld: matrixWorldPass,
   });
@@ -277,13 +291,19 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
       console.info(line),
   });
   game.autoBatch = autoBatch;
+  // Runs before the scene is cleared (pushed after it), so the batches give their sources back first.
+  game.cleanup.push(() => autoBatch.reset());
   // Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 px,
   // and measured whether or not the game narrows or declines it. Its decision is per camera, so
   // a shadow caster and anything attached to the camera are never dropped on the main view alone.
   const cameraCull = new RenderCameraCull({
-    minimumPixels: game.config.render?.minimumProjectedPixels,
+    minimumPixels: game.config.renderer?.minimumProjectedPixels,
   });
   game.cameraCull = cameraCull;
+  game.cleanup.push(() => {
+    cameraCull.dispose();
+    game.cameraCull = undefined;
+  });
   /**
    * Progress is a high-water mark over the measured load state, never a value that can fall.
    *
@@ -364,7 +384,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
       return renderer.firstWorldFrame?.() ?? true;
     },
   });
-  releases.push(() => startupReadiness.cancel());
+  game.cleanup.push(() => startupReadiness.cancel());
   // Startup readiness does not wait on `ui-ready`, and cannot. The intent proves the page's
   // script ran, not that a pixel reached the screen, so waiting on it never closed the race it
   // was added for — it only made the losing side lose later, after up to 45 s of held frames.
@@ -405,7 +425,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     workProgress: () => assets.progress.settled + startupReadiness.workProgress,
     stallMs: STARTUP_STALL_MS,
   });
-  releases.push(stopStallWatch);
+  game.cleanup.push(stopStallWatch);
   watchDeviceLoss(
     (
       renderer.raw as {
@@ -720,13 +740,26 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   game.entities = entities;
   game.scheduler = scheduler;
   game.afterPhysicsPhase = afterPhysicsPhase;
+  // The scene-owned registries. Pushed after the autobatcher, so they empty before it resets (the
+  // order `#teardown` always had), and before the frame loop and plugins, so both release first.
+  game.cleanup.push(() => {
+    afterPhysicsPhase.clear();
+    game.beforeRenderCallbacks.clear();
+    scheduler.clear();
+    entities.clear();
+    game.afterPhysicsPhase = undefined;
+    game.scheduler = undefined;
+    game.entities = undefined;
+  });
   const devToolsHost = platform === undefined ? hostWindow() : platform.devToolsHost;
-  releases.push(
+  game.cleanup.push(
     installDevTools(entities, devToolsHost as DevToolsHost | undefined, () => game.geometryCapture),
   );
   game.scene = new SceneType();
   game.sceneName = bootSceneName;
 
+  // The frame loop and scene entry see the narrower view; the compiler holds `IBootPhase` to it.
+  const loopPhase: ILoopPhase<TState, TPhysics> = game;
   return Object.assign(progress, {
     afterPhysicsPhase,
     autoBatch,
@@ -734,8 +767,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     canvasLayer,
     ctx,
     debug,
-    dispose,
-    game,
+    game: loopPhase,
     input,
     interpolation,
     loopState,
@@ -834,6 +866,36 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
   Object.assign(runtime, {
     _setClockMode: (mode: "fixed-step" | "wall-clock") => gameLoop._setClockMode(mode),
   });
+  // Release order, newest push first (see `drainCleanup`): the loop stops, the scene exits, then every active
+  // plugin's `dispose`, then every plugin's setup cleanup, each group in the order its plugins were
+  // set up. Both plugin groups are pushed before the first `setup` runs, so a boot that aborts or
+  // throws inside the loop below still releases the plugins it had reached.
+  const pluginCleanups: PluginCleanup[] = [];
+  game.cleanup.push(() => throwFirst(runAll(pluginCleanups.splice(0))));
+  const disposed = new Set<IGamePluginHooks<TState, TPhysics>>();
+  game.cleanup.push(() => {
+    const active = game.activePlugins;
+    game.activePlugins = [];
+    throwFirst(
+      runAll(
+        active.map((plugin) => () => {
+          if (disposed.has(plugin)) return;
+          disposed.add(plugin);
+          plugin.dispose?.(ctx);
+        }),
+      ),
+    );
+  });
+  game.cleanup.push(() => {
+    try {
+      if (game.sceneEntered) game.scene?.exit(ctx);
+    } finally {
+      game.sceneFrame = undefined;
+      game.sceneEntered = false;
+    }
+  });
+  // Pushed last of all, so the loop stops before anything it drives is released.
+  game.cleanup.push(() => gameLoop.stop());
   // A boot that throws must end exactly like an aborted boot: every cleanup attempted, every
   // resource released — and the original error rethrown, not a teardown error standing in
   // for it. The abort branches below stay outside these guards: they tear down themselves.
@@ -842,20 +904,19 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
     try {
       cleanup = typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
     } catch (error) {
-      game.teardown(ctx);
+      game.teardown();
       throw error;
     }
     if (typeof plugin !== "function") game.activePlugins.push(plugin);
+    if (cleanup !== undefined) pluginCleanups.push(cleanup);
     if (game.aborted) {
-      if (cleanup !== undefined) game.cleanup.push(cleanup);
-      game.teardown(ctx);
+      game.teardown();
       return;
     }
-    if (cleanup !== undefined) game.cleanup.push(cleanup);
   }
   const scene = game.scene;
   if (scene === undefined) {
-    game.teardown(ctx);
+    game.teardown();
     return;
   }
   // Held: the loop renders every frame from here but steps nothing. On native the render loop
@@ -876,11 +937,11 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
   } catch (error) {
     reportSceneLoadFailure(error);
     settleLoaded(error);
-    game.teardown(ctx);
+    game.teardown();
     throw error;
   }
   if (game.aborted) {
-    game.teardown(ctx);
+    game.teardown();
     return;
   }
   // Plugins that need to mutate scene-load placeholders hold here. Setup must land before
@@ -890,13 +951,13 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
       await Promise.all(startGates.map(({ gate }) => gate));
     } catch (error) {
       for (const startGate of startGates) startGate.rejectEntered(error);
-      game.teardown(ctx);
+      game.teardown();
       throw error;
     }
     if (game.aborted) {
       const error = new Error("Game start was aborted before the start scene entered.");
       for (const startGate of startGates) startGate.rejectEntered(error);
-      game.teardown(ctx);
+      game.teardown();
       return;
     }
   }
@@ -913,11 +974,11 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
     });
   } catch (error) {
     for (const startGate of startGates) startGate.rejectEntered(error);
-    game.teardown(ctx);
+    game.teardown();
     throw error;
   }
   if (game.aborted) {
-    game.teardown(ctx);
+    game.teardown();
     return;
   }
   // The scene is built and the loop is still held, which is the only window where compiling can
@@ -989,7 +1050,7 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
     );
     startup.explicitWarmUpSettled = true;
     if (game.aborted) {
-      game.teardown(ctx);
+      game.teardown();
       return;
     }
   }

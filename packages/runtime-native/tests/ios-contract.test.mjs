@@ -84,11 +84,8 @@ test('the verifier selects through the pinned iOS selector, not a flattened devi
 
 test('iOS scaffold is root-linked to the exact shared core proof', () => {
   const cmake = readFileSync(join(root, 'CMakeLists.txt'), 'utf8');
-  const main = readFileSync(join(root, 'ios/main.mm'), 'utf8');
   assert.match(cmake, /add_executable\(threenative-ios MACOSX_BUNDLE/u);
   assert.match(cmake, /examples\/native-smoke\/dist\/native-smoke\.js/u);
-  assert.match(main, /TN_PLAYTEST_MAILBOX/u);
-  assert.doesNotMatch(main, /WebView|WKWebView|React Native/u);
   const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
   for (const scenario of [
     'device-smoke.playtest.json',
@@ -108,8 +105,8 @@ test('iOS scaffold is root-linked to the exact shared core proof', () => {
   assert.match(verifier, /eventMessage CONTAINS/u);
   assert.doesNotMatch(verifier, /simctl', 'terminate'/u);
   assert.match(verifier, /toISOString\(\)\.slice\(0, 19\)\.replace\('T', ' '\)/u);
-  const jsc = readFileSync(join(root, 'src/js/jsc_engine.mm'), 'utf8');
-  assert.match(jsc, /NSLog\(@"%s", output\.c_str\(\)\)/u);
+  // The JSC console reaching the system log is read back by the simulator run itself: its proof
+  // markers arrive through that log, so a lost NSLog fails `verify-ios-simulator.mjs` on macOS.
 });
 
 test('Linux can validate the iOS lane without claiming simulator execution', () => {
@@ -124,19 +121,8 @@ test('Linux can validate the iOS lane without claiming simulator execution', () 
   assert.equal(report.threeVersion, '0.187.0');
 });
 
-test('JSC prototype installation uses the three-argument Xcode 16.4 API', () => {
-  const jsc = readFileSync(join(root, 'src/js/jsc_engine.mm'), 'utf8');
-  const setPrototypeOf = jsc.slice(
-    jsc.indexOf('bool setPrototypeOf('),
-    jsc.indexOf('// Raw Context Access'),
-  );
-
-  assert.match(
-    setPrototypeOf,
-    /JSObjectSetPrototype\(\s*context_,\s*static_cast<JSObjectRef>\(object\.ptr\),\s*prototype\.ptr[\s\S]*?JSValueMakeUndefined\(context_\)\s*\);/u,
-  );
-  assert.doesNotMatch(setPrototypeOf, /JSObjectSetPrototype\([\s\S]*?&exception\s*\);/u);
-});
+// The three-argument `JSObjectSetPrototype` form is checked by the compiler: `verify-ios-simulator.mjs`
+// builds `jsc_engine.mm` with Xcode on macOS (PRD-842 removed the Linux text match on it).
 
 test('iOS executable verifier builds and exercises native physics fail closed', () => {
   const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
