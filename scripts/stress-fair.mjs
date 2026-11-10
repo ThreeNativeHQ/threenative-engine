@@ -313,6 +313,92 @@ export function recordFrameStarts() {
 }
 
 /**
+ * Page script: every `TN_FRAME_BUDGET` window the engine logs, kept in `globalThis.__TN_BUDGET__`. A real game has no
+ * stress report, and this is the same meter the stress report pools, so a kit game can run as a holdout arm.
+ */
+export function recordBudgetWindows() {
+  const windows = [];
+  globalThis.__TN_BUDGET__ = windows;
+  const debug = console.debug.bind(console);
+  console.debug = (...args) => {
+    if (typeof args[0] === "string" && args[0].startsWith("TN_FRAME_BUDGET:"))
+      windows.push(JSON.parse(args[0].slice("TN_FRAME_BUDGET:".length)));
+    debug(...args);
+  };
+}
+
+/** Windows a holdout report skips after load: shader compiles, first uploads, the scene's entry. */
+const HOLDOUT_WARMUP_WINDOWS = 3;
+
+/**
+ * A stress-lab report from a game's own frame-budget windows, pooled as the lab pools them: the median window per
+ * metric, hitches summed. Throws on too few windows or a missing meter: a holdout that measured nothing is no holdout.
+ */
+export function holdoutReport(windows, { name, viewport }) {
+  const steady = windows.slice(HOLDOUT_WARMUP_WINDOWS);
+  if (steady.length < 3)
+    throw new Error(
+      `holdout ${name}: ${steady.length} frame-budget windows after warm-up, need 3 or more (did the game start?)`,
+    );
+  const median = (read, field) => {
+    const values = steady.map(read).filter((value) => Number.isFinite(value));
+    if (values.length === 0) {
+      if (field === undefined) return null;
+      throw new Error(`holdout ${name}: no window measured ${field}`);
+    }
+    return Math.round(values.sort((a, b) => a - b)[Math.floor(values.length / 2)] * 100) / 100;
+  };
+  const seconds = steady.reduce((sum, w) => sum + (w.frames * w.presented.mean) / 1000, 0);
+  return {
+    schema: "stress-lab-report/1",
+    commit: "holdout",
+    preset: `holdout:${name}`,
+    layers: [],
+    adapter: "",
+    viewport,
+    seconds: Math.round(seconds * 100) / 100,
+    windows: steady.length,
+    counts: {},
+    metrics: {
+      presentedP50Ms: median((w) => w.presented.p50, "presented.p50"),
+      presentedP95Ms: median((w) => w.presented.p95, "presented.p95"),
+      fps: median((w) => w.fps, "fps"),
+      gpuP50Ms: median((w) => w.gpu?.p50),
+      gpuP95Ms: median((w) => w.gpu?.p95),
+      renderP50Ms: median((w) => w.phases.render.p50, "phases.render.p50"),
+      updateP50Ms: median((w) => w.phases.update.p50, "phases.update.p50"),
+      frameP50Ms: median((w) => w.frame.p50, "frame.p50"),
+      frameP95Ms: median((w) => w.frame.p95, "frame.p95"),
+      frameP99Ms: median((w) => w.frame.p99, "frame.p99"),
+      frameWorstP95Ms: Math.max(...steady.map((w) => w.frame.p95)),
+      mainDraws: median((w) => w.passes?.main?.draws.p50, "passes.main.draws.p50"),
+      shadowDraws: median((w) => w.passes?.shadow?.draws.p50),
+      mainTrianglesM: median(
+        (w) => w.passes?.main?.triangles.p50 / 1e6,
+        "passes.main.triangles.p50",
+      ),
+      hitchesPerMin:
+        seconds > 0
+          ? Math.round((steady.reduce((sum, w) => sum + w.hitches, 0) / seconds) * 6000) / 100
+          : 0,
+      longTasks: null,
+      loadMs: null,
+      bridgeCrossingsP50: median((w) => w.counters?.bridgeCrossings?.p50),
+      hostCallsP50: median((w) => w.counters?.hostCalls?.p50),
+      gpuUploadKbP50: median((w) => w.counters?.gpuBytes?.p50 / 1024),
+      jsAllocKbP50: median((w) => w.counters?.jsAllocBytes?.p50 / 1024),
+    },
+  };
+}
+
+/** The holdout name of an arm: `holdout=<name>` in its URL makes it a real game, measured from its frame-budget windows. */
+export const holdoutOf = (variant) =>
+  variant
+    .split("&")
+    .find((flag) => flag.startsWith("holdout="))
+    ?.slice("holdout=".length);
+
+/**
  * Presented p50, p95 and p99 of an uncapped run, from the frame starts in the report's own last `seconds`.
  * With vsync off the rAF timestamp misreads a saturated main thread: stamps read 33.6, 18.5, 1.2 ms where the frames
  * start 18.4, 18.5, 16.0 ms apart (`tail-probe`, 2026-11-02). Unreal already reports its real frame interval.
@@ -332,6 +418,8 @@ async function measureArm(browser, arm, { pass, settle, commit }) {
   const context = browser.contexts()[0] ?? (await browser.newContext());
   const page = await context.newPage();
   if (pass === "uncapped") await page.addInitScript(recordFrameStarts);
+  const holdout = holdoutOf(arm.variant);
+  if (holdout !== undefined) await page.addInitScript(recordBudgetWindows);
   const scripts = [];
   let wasm;
   page.on("response", (response) => {
@@ -350,7 +438,13 @@ async function measureArm(browser, arm, { pass, settle, commit }) {
       await page.goto(arm.url, { waitUntil: "load", timeout: 120_000 });
       await page.waitForTimeout(settle * 1000);
     });
-    const report = await page.evaluate(() => globalThis.__TN_STRESS__ ?? null);
+    const report =
+      holdout === undefined
+        ? await page.evaluate(() => globalThis.__TN_STRESS__ ?? null)
+        : holdoutReport(await page.evaluate(() => globalThis.__TN_BUDGET__ ?? []), {
+            name: holdout,
+            viewport: "1280x720",
+          });
     if (!report?.metrics) throw new Error(`no __TN_STRESS__ report on ${arm.url}`);
     if (pass === "uncapped") {
       const starts = await page.evaluate(() => globalThis.__TN_FRAME_STARTS__);

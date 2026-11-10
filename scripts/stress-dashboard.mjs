@@ -55,7 +55,12 @@ const passOf = (row) => row.pass ?? (flagsOf(row.variant).includes("uncapped") ?
  * `play` in a variant is the gameplay preset (`?stress&play`): textured materials, several meshes per layer, a street
  * camera and object churn. It is another workload, so it never shares a lane or a trend line with `real`.
  */
-export const sceneKindOf = (row) => (flagsOf(row.variant).includes("play") ? "play" : "real");
+export const sceneKindOf = (row) => {
+  const flags = flagsOf(row.variant);
+  // `holdout=<name>` is a real game measured in the same window: it is a keep's proof, never a lane.
+  const holdout = flags.find((flag) => flag.startsWith("holdout="));
+  return holdout ?? (flags.includes("play") ? "play" : "real");
+};
 
 /** A run is void above the host-load limit, or when its scene tag names a contaminated run. */
 export const isVoid = (row, loadVoid) =>
@@ -724,7 +729,14 @@ export function pairsOf(rows, { loadVoid, shadowOf }) {
   for (const row of rows) {
     const tag = /^FAIR window (\S+) \(/u.exec(row.label ?? "")?.[1];
     if (tag === undefined || !isValid(row, loadVoid)) continue;
-    const key = [tag, passOf(row), row.engine, shadowOf(row), loadOf(row.variant)].join("|");
+    const key = [
+      tag,
+      passOf(row),
+      row.engine,
+      shadowOf(row),
+      loadOf(row.variant),
+      sceneKindOf(row),
+    ].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   return [...groups.values()]
