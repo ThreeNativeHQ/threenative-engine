@@ -6,6 +6,7 @@ import { type IBakeBiomeOptions, bakeBiome, foliageScatterRules } from "../core/
 import { type IBiomeSpec, type IBiomeWaterBody, validateBiome } from "../core/biome.js";
 import { createFlow, fillDepressions, routeFlow } from "../core/fluvial.js";
 import { decodeHeightPNG, decodeRAW16 } from "../core/io.js";
+import { hashString, random } from "../core/math.js";
 import { placeMassif } from "../core/massif.js";
 import { finalizeState } from "../core/operations.js";
 import { applyPlacementOverrides } from "../core/placements.js";
@@ -506,6 +507,22 @@ interface IGroundResult {
 }
 
 /**
+ * A seed moves a landform's survey crop up to 0.6 of its extent across the same range, so seeds give
+ * different real valleys of one range instead of one crop (PRD-866). No seed keeps the row's crop.
+ */
+function seededCrop(row: ISurveyRow, seed: number | undefined): ISurveyRow {
+  if (seed === undefined) return row;
+  const next = random(hashString(`survey:${seed}`));
+  const east = (next() * 2 - 1) * 0.6 * row.extentMeters;
+  const north = (next() * 2 - 1) * 0.6 * row.extentMeters;
+  return {
+    ...row,
+    lat: row.lat + north / 111_320,
+    lon: row.lon + east / (111_320 * Math.cos((row.lat * Math.PI) / 180)),
+  };
+}
+
+/**
  * The ground the world starts from, and what it came from. A landform preset is grounded on the real
  * survey its kind names unless the request says otherwise, scaled to the preset's own relief so the
  * world keeps the slopes it was calibrated for; a survey a request located is scaled the same way. A
@@ -528,7 +545,7 @@ async function applyGround(
       ? locationSurvey(asked.location.lat, asked.location.lon)
       : kind === undefined
         ? undefined
-        : SURVEYS[kind];
+        : seededCrop(SURVEYS[kind], request.seed);
   if (survey === undefined) return { ground: { source: "procedural" } };
   const grid = await surveyHeights(survey, document.config.resolution);
   const relief =

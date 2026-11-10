@@ -341,6 +341,9 @@ describe("the far ring", () => {
         projectRoot: root,
       }),
     );
+    // The seed moves the crop across the same range: another real valley, not the row's own crop.
+    expect(result.ground.lat).not.toBe(SURVEYS.temperateMountains.lat);
+    expect(result.ground.name).toBe(SURVEYS.temperateMountains.name);
     expect(result.backdrop).toMatchObject({
       source: "massif",
       name: "Longs Peak and Mount Meeker, Rocky Mountain National Park, Colorado",

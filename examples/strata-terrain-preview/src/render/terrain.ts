@@ -1166,7 +1166,11 @@ export async function createGroundMaterial(
             .add(breakUp.mul(24))
             .add(crestBackdrop ? bakedFractalNoise(positionWorld.mul(0.006), 2).mul(90) : float(0)),
         );
-        const face = smoothstep(0.14, 0.3, crestSteep.add(strata.mul(0.055)));
+        // Rock from about 31 degrees. The wood's spruce stands to 36-46 degrees (its far-forest slope
+        // row), so its cover holds to there: at 31 a surveyed massif's wooded flanks drew bare rock.
+        const face = look.woodedGround
+          ? smoothstep(0.19, 0.31, crestSteep.add(strata.mul(0.055)))
+          : smoothstep(0.14, 0.3, crestSteep.add(strata.mul(0.055)));
         const bands = bedded.mul(face);
         const snowline = elevationBand(
           measured,

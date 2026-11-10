@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import {
   MATERIAL_IDS,
   Mask,
@@ -144,7 +145,26 @@ for (const id of ["longs", "teton", "maroon"]) {
 
 // The Sprague Lake hydro-flattened survey measures the water surface, not its bed.
 // Retain the real valley and shore; author shallow bathymetry and a creek into that surface.
-export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
+/**
+ * `STRATA_WORLD=<terrain_generate out dir>` bakes the forest from a cooked world (PRD-866): its
+ * recipe (ground, erosion and water layers, and its seed) and its far ring, under this example's own
+ * biome row and look. Unset, the forest is the pinned survey below.
+ */
+export const cooked = process.env.STRATA_WORLD
+  ? {
+      recipe: JSON.parse(
+        await readFile(
+          new URL("recipe.json", pathToFileURL(`${process.env.STRATA_WORLD}/`)),
+          "utf8",
+        ),
+      ),
+      ring: JSON.parse(
+        await readFile(new URL("ring.json", pathToFileURL(`${process.env.STRATA_WORLD}/`)), "utf8"),
+      ),
+    }
+  : undefined;
+
+const pinnedForest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .heightmap({ id: "usgs-3dep", data: dem.forest.data })
   .erode({
     id: "surface-runoff",
@@ -382,6 +402,7 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
 // to the initial page module.
 export const drawn = new Set(["forest", "coastal"]);
 export const outputDir = new URL("../src/world/", import.meta.url);
+export const forest = cooked ? Terrain.fromJSON(cooked.recipe) : pinnedForest;
 export const recipes = { forest, coastal, alpine, desert, tundra };
 
 /**
@@ -442,6 +463,19 @@ export const realContinuation = Object.fromEntries(
         resolution: source.resolution,
         seed: 1,
       }).heightmap({ id: "usgs-surroundings", data: source.data });
+    if (name === "forest" && cooked) {
+      // The cook's own ring: its survey continued, its massif already standing in it.
+      const { size, resolution, heights } = cooked.ring;
+      return [
+        [
+          name,
+          new Terrain({ size, resolution, seed: 1 }).heightmap({
+            id: "cooked-ring",
+            data: { width: resolution, height: resolution, values: heights },
+          }),
+        ],
+      ];
+    }
     return name === "forest"
       ? [[name, nearMassif(alpineCrests(surroundings()))]]
       : [[name, surroundings()]];

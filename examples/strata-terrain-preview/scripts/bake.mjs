@@ -14,8 +14,17 @@ import { register } from "tsx/esm/api";
 register();
 import { bakeBiome, validateBiome } from "@threenative/terrain";
 
-const { dem, drawn, massif, outputDir, realContinuation, recipes, terrainSurfacePackage, worldOf } =
-  await import("./recipe.mjs");
+const {
+  cooked,
+  dem,
+  drawn,
+  massif,
+  outputDir,
+  realContinuation,
+  recipes,
+  terrainSurfacePackage,
+  worldOf,
+} = await import("./recipe.mjs");
 const { isFresh, stamp } = await import("./stamp.mjs");
 const { GROUND_MAPS } = await import("../src/world/terrainAssets.js");
 const { BIOMES } = await import("../src/render/biomes.js");
@@ -53,14 +62,17 @@ function biomeOf(name) {
     import.meta.url,
   );
   const spec = validateBiome(JSON.parse(readFileSync(file, "utf8")), name);
-  // A variation keeps the rules and moves the stream they draw from.
-  return { ...spec, cover: { ...spec.cover, seed: spec.cover.seed + VARIATION } };
+  // A variation keeps the rules and moves the stream they draw from; a cooked forest draws from the
+  // cook's own seed (`STRATA_WORLD`).
+  const seed = name === "forest" && cooked ? cooked.recipe.config.seed : spec.cover.seed;
+  return { ...spec, cover: { ...spec.cover, seed: seed + VARIATION } };
 }
 
 /** The surface and placement outputs of one world, written as the game reads them. */
 async function writeWorld(name, state) {
   const started = performance.now();
-  if (DRIVEN.includes(name)) {
+  // A cooked forest (`STRATA_WORLD`) is not the pinned survey, so the survey's own checks skip it.
+  if (DRIVEN.includes(name) && !(name === "forest" && cooked)) {
     const maxDelta = state.height.reduce(
       (max, height, i) => Math.max(max, Math.abs(height - dem[name].data.values[i])),
       0,
