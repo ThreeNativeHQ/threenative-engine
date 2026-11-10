@@ -3,7 +3,7 @@ import { type IBiomeSpec, LANDFORMS, type LandformKind, validateBiome } from "@t
 import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";
-import { BIOMES, type IVistaAim, type WorldName } from "../src/render/biomes.js";
+import { BIOMES, type IVistaAim, type WorldName, measureBiome } from "../src/render/biomes.js";
 import { FAR_FOREST_IMPOSTOR, FAR_FOREST_WORLDS } from "../src/render/farForest.js";
 import { speciesFor } from "../src/render/pack.js";
 import { buildPropVariants } from "../src/render/props.js";
@@ -952,4 +952,15 @@ describe("a biome's ground rock", () => {
       });
     }
   });
+});
+
+// PRD-866: a cooked forest (`STRATA_WORLD`) is hillier or flatter than the pinned 41 m valley; its
+// treeline and snow stay in metres above its floor instead of scaling with its walkable range.
+it("keeps the forest's bands in metres above the floor for any ground", () => {
+  for (const span of [41, 25, 90]) {
+    const measured = measureBiome(BIOMES.forest, [100, 100 + span]);
+    expect(measured.heightBands.treeline).toEqual([100 + 11 * 41, 100 + 14 * 41]);
+    expect(measured.heightBands.cap).toEqual([100 + 17 * 41, 100 + 21 * 41]);
+    expect(measured.elevationRange).toEqual([100, 100 + span]);
+  }
 });

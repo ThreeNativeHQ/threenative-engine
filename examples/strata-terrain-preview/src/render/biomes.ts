@@ -58,6 +58,11 @@ export interface IBiome {
   readonly distantStone: RGB;
   readonly snowFractions: readonly [number, number, number];
   readonly heightFractions: HeightBands;
+  /**
+   * Metres the fractions scale by, when they are heights above the floor rather than shares of this
+   * ground's own walkable range: a treeline does not climb because a cooked square is hillier.
+   */
+  readonly bandSpan?: number;
   readonly maps: Record<LayerKey, IGroundMaps>;
   readonly horizon: "mountain" | "alpine" | "mesa" | "plain";
   readonly sun: {
@@ -412,6 +417,9 @@ const forest: IBiome = {
     treeline: [11, 14],
     cap: [17, 21],
   },
+  // The pinned valley's own span: a cooked world (`STRATA_WORLD`) keeps these bands in metres above
+  // its floor, so its treeline and snow sit where this forest's do.
+  bandSpan: 41,
   oliveMeadow: true,
   openMeadow: true,
   woodedGround: true,
@@ -754,16 +762,21 @@ export interface IWorldBiome extends IBiome {
 
 /** Resolve game-owned fractions once against this world's actual samples (`measureBands` owns the arithmetic). */
 export function measureBiome(biome: IBiome, heights: readonly number[]): IWorldBiome {
+  const floor = biome.bandSpan === undefined ? 0 : heights.reduce((low, h) => Math.min(low, h));
   const measured = measureBands(
     [
       ...Object.entries(biome.heightFractions).map(([layer, [from, to]]) => ({ layer, from, to })),
       { layer: "snow", from: biome.snowFractions[0], to: biome.snowFractions[1] },
     ],
-    heights,
+    biome.bandSpan === undefined ? heights : [floor, floor + biome.bandSpan],
   );
   return {
     ...biome,
-    elevationRange: measured.elevationRange,
+    // The ground's own range, reported as measured, whatever span the bands scale by.
+    elevationRange:
+      biome.bandSpan === undefined
+        ? measured.elevationRange
+        : [floor, heights.reduce((high, h) => Math.max(high, h))],
     heightBands: measured.bands as HeightBands,
     // The snow row above is always passed, so measureBands always returns its band.
     snowBand: measured.snowBand as readonly [number, number],
