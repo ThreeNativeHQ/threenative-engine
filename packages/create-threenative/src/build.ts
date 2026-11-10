@@ -1112,7 +1112,7 @@ export async function buildWeb(
 ): Promise<void> {
   const config = await loadConfig(cwd, { target: "web", profile });
   announceProfile(config);
-  // The Wasm engine's glTF loader decodes Meshopt and a model's KTX2 (PRD-861); standalone KTX2 stays out.
+  // The Wasm engine decodes Meshopt; KTX2 stays out of its cook by measurement (web-engine.ts, PRD-861).
   await compileAssets({
     config: config.assets,
     cwd,

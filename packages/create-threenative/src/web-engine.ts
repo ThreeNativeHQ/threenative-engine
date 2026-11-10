@@ -6,24 +6,25 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 /**
  * The asset decoders the web build ships, per format.
  *
- * Meshopt geometry and a model's KTX2 images decode on both engines: on `engine: "threenative"` the
- * engine's own glTF loader decompresses EXT/KHR_meshopt_compression with meshoptimizer and
- * transcodes KHR_texture_basisu to RGBA8 with Basis Universal, both provisioned by `pnpm wasm:build`;
- * without either the `tn-native-engine-web` target refuses to link (PRD-861).
+ * Meshopt geometry decodes on both engines: on `engine: "threenative"` the engine's own glTF loader
+ * decompresses EXT/KHR_meshopt_compression with meshoptimizer, which `pnpm wasm:build` provisions
+ * and without which the `tn-native-engine-web` target refuses to link (PRD-861).
  *
- * A standalone `.ktx2` (a texture or lightmap loaded through `ctx.assets`) still needs
- * `engine: "threejs"`: it takes three's `KTX2Loader`, whose CompressedTexture the owned engine does
- * not bind, so its cook keeps those textures in their authored format (`ktx2Files: false`).
+ * KTX2 stays off for the owned engine by measurement, not by capability. Its loader transcodes
+ * KHR_texture_basisu, but only to RGBA8: the engine's Texture uploads no compressed format, so a
+ * KTX2 saves no GPU memory there and only costs bytes. On Midway the KTX2 cook shipped 196.0 MB
+ * against 124.7 MB with WebP model textures. Turn it on when the engine uploads BC7/ASTC/ETC2.
+ * A standalone `.ktx2` also needs three's `KTX2Loader`, whose CompressedTexture the engine does not bind.
  *
  * `threenative build` and each template's dev-server asset watch both read it, so the two cook the
  * same bytes.
  */
 export function webRuntimeDecoders(config: {
   readonly engine?: "threejs" | "threenative";
-}): { readonly ktx2: boolean; readonly meshopt: boolean; readonly ktx2Files?: boolean } {
+}): { readonly ktx2: boolean; readonly meshopt: boolean } {
   return config.engine === "threejs"
     ? { ktx2: true, meshopt: true }
-    : { ktx2: true, meshopt: true, ktx2Files: false };
+    : { ktx2: false, meshopt: true };
 }
 
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */

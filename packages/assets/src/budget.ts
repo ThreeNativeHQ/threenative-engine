@@ -9,15 +9,8 @@ export interface IAssetBudget {
 
 /** Runtime decoder capabilities that decide which emitted bytes can be compressed on-device. */
 export interface IAssetRuntimeDecoderCapabilities {
-  /** KTX2 images inside a model (KHR_texture_basisu), decoded by the runtime's glTF loader. */
   readonly ktx2: boolean;
   readonly meshopt: boolean;
-  /**
-   * A standalone `.ktx2` the runtime loads outside a model (a texture or a lightmap). Absent means
-   * `ktx2`. The owned web engine decodes KTX2 in its glTF loader but has no standalone KTX2 texture,
-   * so its build answers `ktx2: true, ktx2Files: false` (PRD-861).
-   */
-  readonly ktx2Files?: boolean;
 }
 
 export interface IBudgetRow {
@@ -287,8 +280,7 @@ export async function measureBudget(
             runtimeDecoders,
           ));
       else if (
-        ((runtimeDecoders.ktx2Files ?? runtimeDecoders.ktx2) &&
-          [".png", ".jpg", ".jpeg", ".webp"].includes(extension)) ||
+        (runtimeDecoders.ktx2 && [".png", ".jpg", ".jpeg", ".webp"].includes(extension)) ||
         (runtimeDecoders.meshopt && output.kind === "model" && extension !== ".ktx2")
       )
         uncooked += shippedBytes;

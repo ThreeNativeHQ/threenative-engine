@@ -626,9 +626,11 @@ export function formatSkippedCompression(rows: readonly ISkippedReportRow[]): re
         row.decoders ?? (row.kind === "model" ? ["meshopt", "KTX2"] : ["KTX2"])
       ).join(" and ");
       const action =
-        row.kind === "model" && row.reason === "platform"
-          ? "retained without decoder-backed compression while decoder-free model passes still ran"
-          : "shipped as authored";
+        row.kind !== "model" || row.reason !== "platform"
+          ? "shipped as authored"
+          : decoders === "KTX2"
+            ? "kept its textures out of KTX2 while meshopt and the decoder-free model passes ran"
+            : "retained without decoder-backed compression while decoder-free model passes still ran";
       const reason =
         row.reason === "config"
           ? `assets.${row.kind}s is "none"`

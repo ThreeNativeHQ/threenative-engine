@@ -467,9 +467,9 @@ describe("createWebEnginePlugin", () => {
 });
 
 describe("the web engine's asset decoders", () => {
-  it("cooks meshopt and model KTX2 on both engines, standalone KTX2 only on the legacy one", () => {
-    // The engine's own glTF loader decodes both; a standalone .ktx2 still needs three's KTX2Loader.
-    const owned = { ktx2: true, meshopt: true, ktx2Files: false };
+  it("cooks meshopt on both engines and KTX2 only on the legacy one", () => {
+    // The engine's loader decodes both, but transcodes KTX2 to RGBA8: smaller WebP wins there.
+    const owned = { ktx2: false, meshopt: true };
     expect(webRuntimeDecoders({})).toEqual(owned);
     expect(webRuntimeDecoders({ engine: "threenative" })).toEqual(owned);
     expect(webRuntimeDecoders({ engine: "threejs" })).toEqual({ ktx2: true, meshopt: true });

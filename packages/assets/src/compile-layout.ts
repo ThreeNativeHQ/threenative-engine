@@ -69,10 +69,8 @@ export function resolveLayout(cwd: string, options: IAssetCompileOptions): IComp
     ktx2: options.platform !== "android" && options.platform !== "ios",
     meshopt: options.platform !== "android" && options.platform !== "ios",
   };
-  // A standalone texture or lightmap is a `.ktx2` file outside any model (see ktx2Files).
-  const ktx2Files = runtimeDecoderCapabilities.ktx2Files ?? runtimeDecoderCapabilities.ktx2;
   const runtimeDecoderAvailable =
-    runtimeDecoderCapabilities.ktx2 && runtimeDecoderCapabilities.meshopt && ktx2Files;
+    runtimeDecoderCapabilities.ktx2 && runtimeDecoderCapabilities.meshopt;
   const mobileAstc = options.platform === "android" || options.platform === "ios";
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
@@ -127,7 +125,7 @@ export function resolveLayout(cwd: string, options: IAssetCompileOptions): IComp
     if (
       spec.needsRuntimeDecoder === true &&
       !(spec.kind === "texture"
-        ? ktx2Files
+        ? runtimeDecoderCapabilities.ktx2
         : spec.kind === "model"
           ? (!(spec.options.passes?.meshopt ?? true) || runtimeDecoderCapabilities.meshopt) &&
             (spec.options.textures === "none" ||
@@ -155,7 +153,12 @@ export function resolveLayout(cwd: string, options: IAssetCompileOptions): IComp
         options: textures,
       });
     }
-    if (textures !== undefined && !ktx2Files && !mobileAstc && textures.maxSize !== undefined) {
+    if (
+      textures !== undefined &&
+      !runtimeDecoderCapabilities.ktx2 &&
+      !mobileAstc &&
+      textures.maxSize !== undefined
+    ) {
       // The KTX2 pass dropped for this target, but the declared cap is still honoured: the
       // decoder-free resize pass needs no runtime decoder and runs in its place. The overrides
       // ride along so a `codec: "none"` glob keeps the authored bytes on this path too.
@@ -275,11 +278,14 @@ export function resolveLayout(cwd: string, options: IAssetCompileOptions): IComp
         ? undefined
         : configuredTextures === undefined
           ? "config"
-          : ktx2Files || mobileAstc
+          : runtimeDecoderCapabilities.ktx2 || mobileAstc
             ? undefined
             : "platform",
     texturesActive:
-      textures !== undefined && options.passes === undefined && ktx2Files && !mobileAstc,
+      textures !== undefined &&
+      options.passes === undefined &&
+      runtimeDecoderCapabilities.ktx2 &&
+      !mobileAstc,
   };
 }
 
