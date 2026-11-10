@@ -415,9 +415,13 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   // surface suits it, and with neither the forest cooks. `decided.biome` says which word chose it.
   let inferred: { readonly kit: TerrainKit; readonly word: string } | undefined;
   if (arguedKit === undefined && spec === undefined && biomeWord === undefined) {
-    const sea = rowHit(WATER_WORD_ROWS, words);
+    // The sea row by kind, not the first water word: "an island with a lake" still names a sea.
+    const sea = rowHit(
+      WATER_WORD_ROWS.filter(([row]) => row.kind === "ocean"),
+      words,
+    );
     const shape = rowHit(LANDFORM_WORD_ROWS, words);
-    if (sea?.row.kind === "ocean") inferred = { kit: "coastal", word: sea.word };
+    if (sea !== undefined) inferred = { kit: "coastal", word: sea.word };
     else if (shape !== undefined && !backdropWordAt(words, shape.word))
       inferred = { kit: LANDFORM_BIOME[shape.row], word: shape.word };
   }

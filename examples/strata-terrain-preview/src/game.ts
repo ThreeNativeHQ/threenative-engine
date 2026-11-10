@@ -155,7 +155,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // The sky's LUT dispatch builds its compute nodes: 13-16 ms, paid here behind the curtain so
       // `enter`'s own `ctx.add` finds the renderer already attached (PRD-585, `enterMs` <= 50).
       this.#sky.atmosphere.attachRenderer(ctx.renderer);
-      if (spec.water.some((body) => body.kind === "ocean")) {
+      // The bake measured the sea (`waterLevel`), so it decides: a cooked island in any slot gets one.
+      if (this.#data.waterLevel !== null) {
         this.#ocean = createOcean();
         this.#water = createWaterMesh(this.#ocean, this.#data);
       }
