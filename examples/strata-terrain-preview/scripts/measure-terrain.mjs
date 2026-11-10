@@ -4,8 +4,9 @@ const t0 = Date.now();
 const worlds = await import("./bake.mjs");
 const loadMs = Date.now() - t0;
 
+const { WORLD_NAMES: NAMES } = await import("../src/render/worldNames.js");
+
 const { hypot } = Math;
-const NAMES = ["forest", "coastal", "alpine", "desert", "tundra"];
 const NEIGHBOURS = [
   [-1, -1],
   [0, -1],

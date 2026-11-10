@@ -2874,12 +2874,11 @@
         },
         {
           "name": "indirect",
-          "type": "IndirectStorageBufferAttribute | null",
+          "type": "BufferAttribute | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_INDIRECT_STORAGE"
+            "kind": "supported"
           }
         },
         {
@@ -2888,8 +2887,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -3301,12 +3299,11 @@
           "overloads": [
             {
               "parameters": [],
-              "returns": "IndirectStorageBufferAttribute | null"
+              "returns": "BufferAttribute | null"
             }
           ],
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_INDIRECT_STORAGE"
+            "kind": "supported"
           }
         },
         {
@@ -3591,7 +3588,7 @@
               "parameters": [
                 {
                   "name": "indirect",
-                  "type": "IndirectStorageBufferAttribute | null",
+                  "type": "BufferAttribute | null",
                   "optional": false
                 },
                 {
@@ -3604,8 +3601,7 @@
             }
           ],
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_INDIRECT_STORAGE"
+            "kind": "supported"
           }
         },
         {
@@ -6820,6 +6816,25 @@
           }
         },
         {
+          "name": "intersectsObject",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "object",
+                  "type": "Object3D",
+                  "optional": false
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "intersectsSphere",
           "async": false,
           "overloads": [
@@ -6828,6 +6843,25 @@
                 {
                   "name": "sphere",
                   "type": "Sphere",
+                  "optional": false
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "intersectsSprite",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "sprite",
+                  "type": "Sprite",
                   "optional": false
                 }
               ],
@@ -31184,6 +31218,18 @@
           }
         }
       ]
+    },
+    {
+      "name": "CompressedTexture",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "Texture",
+      "constructor": [],
+      "fields": [],
+      "methods": []
     }
   ]
 }

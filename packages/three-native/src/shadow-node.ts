@@ -1,8 +1,12 @@
+import type { WebHostModule } from "./browser-renderer.js";
+import { WEB_FRAME_FIELD } from "./generated/web-frame-fields.js";
 /** Native VSM owns the clip cameras and sampling; core keeps its public option validation. */
 let nextId = 0;
 const installed = new Set<ShadowBaseNode>();
 const dispatchKey = Symbol.for("threenative.virtualShadowCommand");
 const bridgeKey = Symbol.for("threenative.virtualShadow");
+/** Core's VirtualShadowNode reads this for `settled` when the engine runs its clipmap. */
+const settledKey = Symbol.for("threenative.virtualShadowSettled");
 /** Core's registration counter for the discrete LOD chains (see `bumpChains` in core's model-lod). */
 const chainsVersionKey = Symbol.for("threenative.discreteLodChainsVersion");
 /** The facade's count of `mesh.geometry` assignments (browser-backend's setter): a swap moves no hierarchy. */
@@ -11,6 +15,7 @@ const geometryAssignmentsKey = Symbol.for("threenative.geometryAssignments");
 interface IBridgeSlots {
   [dispatchKey]?: unknown;
   [bridgeKey]?: unknown;
+  [settledKey]?: boolean;
 }
 interface IShadowObject {
   id: number;
@@ -25,6 +30,7 @@ export function detachVirtualShadow(value: unknown): void {
   value.dispatch = undefined;
   value.lods.clear();
   delete (value as IBridgeSlots)[dispatchKey];
+  delete (value as IBridgeSlots)[settledKey];
 }
 /**
  * Records what the light-root walk depends on and answers whether the last one still holds. Its answer
@@ -48,6 +54,25 @@ function walkStillCurrent(node: ShadowBaseNode, root: IShadowObject): boolean {
   node.walkedAssignments = assignments;
   return current;
 }
+/**
+ * Core's VirtualShadowNode counts frames in updateBefore, which the engine never runs, so the engine reports each world
+ * render here: web frame field 87 is the levels its clipmaps still owe a render (`deferred`), -1 when there is no virtual shadow.
+ * ponytail: one total for every node, exact for the one sun a game has; per light when a game has two.
+ */
+export function reportVirtualShadowFrame(module: Pick<WebHostModule, "_tnw_web_frame">): void {
+  if (installed.size === 0) return; // no host call for a scene without one
+  const pending = module._tnw_web_frame(WEB_FRAME_FIELD.virtualShadowPendingLevels);
+  if (pending < 0) return;
+  for (const node of installed) {
+    const stats = (node as { stats?: { frame: number; held: number; deferred: number } }).stats;
+    if (node.disposed || stats === undefined) continue;
+    stats.frame += 1;
+    stats.held = 0;
+    stats.deferred = pending;
+    (node as IBridgeSlots)[settledKey] = pending === 0;
+  }
+}
+
 export function syncVirtualShadowLods(): void {
   const chains = (globalThis as Record<symbol, unknown>)[
     Symbol.for("threenative.discreteLodChains")

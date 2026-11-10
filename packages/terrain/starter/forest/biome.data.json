@@ -11,21 +11,31 @@
   "cover": {
     "ground": "wood",
     "seed": 466468,
-    "attempts": 80000,
+    "attempts": 240000,
     "stoneRadius": 1.9,
-    "clearings": [[165, -95, 10], [-145, -120, 10], [360, 200, 10]]
+    "clearings": [[165, -95, 10], [-145, -120, 10], [360, 200, 10]],
+    "understorey": {
+      "attempts": 120000,
+      "litter": 1.6,
+      "fern": 2.2,
+      "bush": 0.35,
+      "flower": 0.5,
+      "deadfall": 1.5,
+      "shade": 0.8,
+      "shadeRadius": 1.2
+    }
   },
   "foliage": [
     {
       "species": "spruce",
-      "density": 3200,
+      "density": 7000,
       "slope": [0, 32],
       "height": null,
       "spacing": [3.2, 6.4],
       "collision": "trunk",
       "stands": true,
       "grassThreshold": 0.3,
-      "standThreshold": 0.3,
+      "standThreshold": 0.16,
       "far": {
         "cell": 6,
         "spacing": [6.5, 13],
@@ -45,8 +55,8 @@
       "species": "grass",
       "density": 1,
       "slope": [0, 42],
-      "height": [0, 66],
-      "spacing": 1.2,
+      "height": null,
+      "spacing": 0.8,
       "slopeFalloff": 20,
       "heightFalloff": 28,
       "mats": null,
@@ -56,11 +66,11 @@
       "drift": {
         "field": "stand",
         "frequency": [3.1, 2.7],
-        "offset": 0.65,
-        "amplitude": 0.35,
+        "offset": 0.8,
+        "amplitude": 0.2,
         "band": [0, 1]
       },
-      "bladeScale": 0.8,
+      "bladeScale": 1,
       "bladeJitter": 0.65,
       "scrubChance": 0.3,
       "scrubScale": 0.9,
@@ -83,13 +93,13 @@
     },
     {
       "layer": "treeline",
-      "from": 6.5,
-      "to": 10
+      "from": 11,
+      "to": 14
     },
     {
       "layer": "cap",
-      "from": 14,
-      "to": 17
+      "from": 17,
+      "to": 21
     },
     {
       "layer": "desertRock",
@@ -134,6 +144,7 @@
     "boulder",
     "bush",
     "cliff",
+    "deadfall",
     "fern",
     "grass",
     "litter",
@@ -146,5 +157,17 @@
     "scrub",
     "spruce"
   ],
-  "aliases": ["forest", "pine", "pines", "woods", "woodland"]
+  "aliases": [
+    "forest",
+    "pine",
+    "pines",
+    "woods",
+    "woodland",
+    "spruce",
+    "fir",
+    "trees",
+    "jungle",
+    "rainforest",
+    "grove"
+  ]
 }

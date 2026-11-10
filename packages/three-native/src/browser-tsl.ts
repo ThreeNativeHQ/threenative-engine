@@ -255,6 +255,7 @@ const CONSTANTS = [
   "materialEmissive",
   "materialMetalness",
   "materialRoughness",
+  "diffuseColor",
   "time",
   "deltaTime",
   "normalView",
@@ -612,6 +613,23 @@ export function defineTsl(
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
   // three's lights([...]) takes one array; each light crosses as its own engine object.
   exports.lights = (list: readonly unknown[] = []) => wrap(call("lights", null, [...list]));
+  // three's transformNormal (accessors/Normal.js): the normal matrix of `matrix`, mat3(m)^-T, times the normal.
+  exports.transformNormal = (normal: unknown, matrix: unknown = exports.modelWorldMatrix) => {
+    type Chain = {
+      inverse(): Chain;
+      transpose(): Chain;
+      mul(value: unknown): Chain;
+      normalize(): Chain;
+    };
+    return (exports.mat3 as (value: unknown) => Chain)(matrix)
+      .inverse()
+      .transpose()
+      .mul(normal)
+      .normalize();
+  };
+  // three's element(node, index) (ArrayElementNode) is the node method in function form.
+  exports.element = (node: unknown, index: unknown) =>
+    wrap(call("element", isTslNode(node) ? node[TSL_NODE] : null, [index]));
   exports.nodeObject = (value: unknown) =>
     isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
   // three's TextureNode.value: assigning another texture swaps the one the node samples (ProbeVolume swaps its volume).

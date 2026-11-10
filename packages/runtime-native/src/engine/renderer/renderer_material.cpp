@@ -187,6 +187,34 @@ void Renderer::copyDepthToTexture(const Texture& texture) {
     wgpuCommandEncoderRelease(encoder);
 }
 
+WGPUTexture Renderer::createLayerArray(uint32_t width, uint32_t height, uint32_t layers, uint32_t levels) {
+    WGPUTextureDescriptor desc = {};
+    desc.dimension = WGPUTextureDimension_2D;
+    desc.size = {width, height, layers};
+    desc.format = sceneFormat_;
+    // RenderAttachment: generateMipmaps draws each level from the one above.
+    desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc |
+                 WGPUTextureUsage_RenderAttachment;
+    desc.mipLevelCount = levels;
+    desc.sampleCount = 1;
+    return wgpuDeviceCreateTexture(device_, &desc);
+}
+
+void Renderer::copySceneColorToLayer(WGPUTexture array, uint32_t layer, uint32_t layers, uint32_t levels, bool mipmaps) {
+    WGPUImageCopyTexture_Compat source{}, target{};
+    source.texture = sceneColor_; source.aspect = WGPUTextureAspect_All;
+    target.texture = array; target.aspect = WGPUTextureAspect_All; target.origin = {0, 0, layer};
+    const WGPUExtent3D extent{wgpuTextureGetWidth(sceneColor_), wgpuTextureGetHeight(sceneColor_), 1};
+    const auto encoder = wgpuDeviceCreateCommandEncoder(device_, nullptr);
+    wgpuCommandEncoderCopyTextureToTexture(encoder, &source, &target, &extent);
+    submit(wgpuCommandEncoderFinish(encoder, nullptr));
+    wgpuCommandEncoderRelease(encoder);
+    if (!mipmaps || levels < 2) return;
+    FrameGpuTimer::Scope timerScope(nullptr);  // as initTexture: mip passes are not the frame's GPU time
+    generateMipmaps(array, sceneFormat_, levels, layers);
+    flushMipmaps();
+}
+
 void Renderer::initTexture(const Texture& texture) {
     // Mip passes run between frames (a Midway load showed 1199 render passes in one gap). Timed, they wait
     // in the stream, are summed into the next frame's GPU ms, and a few bursts fill it before a frame clears it.
@@ -266,6 +294,12 @@ Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& textu
         key.kind = MaterialTexture::kVolume;
         key.format = textureFormat(texture);
         key.usage = kVolumeTextureUsage;
+    } else if (texture.compressed()) {
+        // three's CompressedTexture: its levels are uploaded as they are, never generated or rendered to.
+        key.kind = MaterialTexture::kImage;
+        key.levels = static_cast<uint32_t>(texture.mipmaps.size());
+        key.format = textureFormat(texture);
+        key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc;
     } else if (texture.hasImage()) {
         // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
         const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
@@ -312,6 +346,10 @@ void Renderer::uploadMaterialTexture(WGPUTexture destination, const Texture& tex
         textures_->uploadBytes += texture.data.size();
         waste::debugAdd(waste::counters().textureUploadBytes, texture.data.size());
     };
+    if (texture.compressed()) {
+        uploadCompressedLevels(destination, texture, ~0u);
+        return;
+    }
     if (key.kind == MaterialTexture::kVolume) {
         if (texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a Data3DTexture");
         if (!texture.dataReady) return;  // a RenderTarget3D's texels are written on the GPU
@@ -380,6 +418,41 @@ void Renderer::uploadMaterialTexture(WGPUTexture destination, const Texture& tex
         generateMipmaps(destination, key.format, key.levels, key.array ? key.depth : 1);
 }
 
+// A compressed texture's levels [first, end): 4x4 blocks of 16 bytes, each level written at its block-rounded
+// size, as WebGPU's copy rules ask. three uploads a CompressedTexture unflipped, and so does this.
+void Renderer::uploadCompressedLevels(WGPUTexture destination, const Texture& texture, uint32_t levels) {
+    const bool bc7 = texture.imageSource->mipmapFormat == kTextureBC7Format;
+    const WGPUFeatureName feature = bc7 ? WGPUFeatureName_TextureCompressionBC : WGPUFeatureName_TextureCompressionETC2;
+    if (!wgpuDeviceHasFeature(device_, feature))
+        throw std::runtime_error(std::string("TN_NATIVE_TEXTURE_UNSUPPORTED: ") + (bc7 ? "BC7" : "ETC2") +
+                                 " needs the device feature " + (bc7 ? "texture-compression-bc" : "texture-compression-etc2"));
+    if (texture.width % 4 != 0 || texture.height % 4 != 0)
+        throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: a compressed texture's size must be a multiple of 4, not " +
+                                 std::to_string(texture.width) + "x" + std::to_string(texture.height));
+    gpu_.sync();  // the upload is queue work: ordered after any submit still on the GPU thread
+    for (uint32_t level = 0; level < texture.mipmaps.size(); ++level) {
+        const TextureMipmap& mip = texture.mipmaps[level];
+        if (mip.data.empty() || (level < 32 && (levels & (1u << level)) == 0)) continue;  // not resident, or not asked for
+        const uint32_t blocksX = (mip.width + 3) / 4, blocksY = (mip.height + 3) / 4;
+        const uint32_t expectedWidth = std::max(1u, texture.width >> level), expectedHeight = std::max(1u, texture.height >> level);
+        if (mip.width != expectedWidth || mip.height != expectedHeight || mip.data.size() != size_t(blocksX) * blocksY * 16)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: compressed level " + std::to_string(level) + " is " +
+                                     std::to_string(mip.width) + "x" + std::to_string(mip.height) + ", " +
+                                     std::to_string(mip.data.size()) + " bytes");
+        WGPUImageCopyTexture_Compat image = {};
+        image.texture = destination;
+        image.aspect = WGPUTextureAspect_All;
+        image.mipLevel = level;
+        WGPUTextureDataLayout_Compat layout = {};
+        layout.bytesPerRow = blocksX * 16;
+        layout.rowsPerImage = blocksY;
+        const WGPUExtent3D extent = {blocksX * 4, blocksY * 4, 1};
+        wgpuQueueWriteTexture(queue_, &image, mip.data.data(), mip.data.size(), &layout, &extent);
+        textures_->uploadBytes += mip.data.size();
+        waste::debugAdd(waste::counters().textureUploadBytes, mip.data.size());
+    }
+}
+
 const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
     // A render target's texture is that target's last render, borrowed from its own renderer; every other
     // texture answers from its own record below. Ask the weak_ptr which one this is before locking it: a
@@ -397,13 +470,15 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
                 sampled.view = view;
                 sampled.key.wrapS = texture.wrapS; sampled.key.wrapT = texture.wrapT;
                 sampled.key.magFilter = texture.magFilter; sampled.key.minFilter = texture.minFilter;
-                WGPUSamplerDescriptor sampler = {};  // one level: the mip filter never applies
+                WGPUSamplerDescriptor sampler = {};  // only an array target has a mip chain for the mip filter
                 sampler.addressModeU = addressMode(texture.wrapS);
                 sampler.addressModeV = addressMode(texture.wrapT);
                 sampler.addressModeW = WGPUAddressMode_ClampToEdge;
                 sampler.magFilter = filterMode(texture.magFilter);
                 sampler.minFilter = filterMode(texture.minFilter);
-                sampler.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+                sampler.mipmapFilter = texture.minFilter == static_cast<uint16_t>(TextureFilter::NearestMipmapLinear) ||
+                                               texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
+                                           ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
                 sampler.maxAnisotropy = 1;
                 sampler.lodMaxClamp = 32;
                 sampled.sampler = samplerFor(sampler);
@@ -423,8 +498,34 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     // sampler, every bind group that bound them and every recorded bundle stay valid. Releasing the record
     // instead builds a new texture whose view can reuse the old one's address, so every group and bundle made
     // for that address is stale — a fog-of-war texture updated 20 times a second rebuilt all of them.
+    const auto createView = [&] {
+        WGPUTextureViewDescriptor view = {};
+        view.dimension = key.volume ? WGPUTextureViewDimension_3D
+                        : key.cube ? WGPUTextureViewDimension_Cube
+                        : key.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
+        // A compressed texture samples from its finest resident level: streaming writes the finer ones later.
+        record.viewBase = texture.compressed() ? texture.residentLevel() : 0;
+        view.baseMipLevel = record.viewBase;
+        view.mipLevelCount = key.levels - record.viewBase;
+        view.arrayLayerCount = key.array ? key.depth : 1;
+        view.format = key.format;
+        record.view = wgpuTextureCreateView(record.texture, &view);
+    };
     if (record.view != nullptr && record.key == key && key.updatesInPlace()) {
-        uploadMaterialTexture(record.texture, texture, key);
+        if (texture.compressed()) {
+            // writeMipLevel: only the levels written since the last upload go up; any other needsUpdate writes all.
+            const uint32_t written = texture.imageSource->writtenLevels, fresh = written & ~record.uploadedLevels;
+            uploadCompressedLevels(record.texture, texture, fresh != 0 ? fresh : ~0u);
+            record.uploadedLevels = written;
+            if (texture.residentLevel() != record.viewBase) {
+                // A finer level is resident: same texture, a view that reaches it. Groups holding the old view drop.
+                texturesChanged();
+                wgpuTextureViewRelease(record.view);
+                createView();
+            }
+        } else {
+            uploadMaterialTexture(record.texture, texture, key);
+        }
         record.version = texture.version();
         return &record;
     }
@@ -433,14 +534,8 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     if (key.kind != MaterialTexture::kNone) {
         record.texture = createMaterialTexture(key);
         if (key.kind != MaterialTexture::kStorage) uploadMaterialTexture(record.texture, texture, key);
-        WGPUTextureViewDescriptor view = {};
-        view.dimension = key.volume ? WGPUTextureViewDimension_3D
-                        : key.cube ? WGPUTextureViewDimension_Cube
-                        : key.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
-        view.mipLevelCount = key.levels;
-        view.arrayLayerCount = key.array ? key.depth : 1;
-        view.format = key.format;
-        record.view = wgpuTextureCreateView(record.texture, &view);
+        record.uploadedLevels = texture.imageSource->writtenLevels;
+        createView();
     }
     record.key = key;
     WGPUSamplerDescriptor sampler = {};

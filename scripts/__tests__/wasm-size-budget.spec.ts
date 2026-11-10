@@ -5,26 +5,26 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 import { enforceBudgets } from "../check-budgets.js";
 
 describe("shipped web Wasm engine size budget", () => {
-  it.each([4_194_303, 4_194_304])("accepts %i bytes", async (bytes) => {
+  it.each([4_259_839, 4_259_840])("accepts %i bytes", async (bytes) => {
     const root = await wasmFixture(bytes);
     await expect(enforceBudgets(root)).resolves.toBeDefined();
   });
 
-  it("rejects a file one byte over 4 MiB", async () => {
-    const root = await wasmFixture(4_194_305);
+  it("rejects a file one byte over 4 MiB + 64 KiB", async () => {
+    const root = await wasmFixture(4_259_841);
     await expect(enforceBudgets(root)).rejects.toThrow(
-      "TN_WEB_ENGINE_OVER_BUDGET: measured 4194305 bytes, allowed 4194304 bytes",
+      "TN_WEB_ENGINE_OVER_BUDGET: measured 4259841 bytes, allowed 4259840 bytes",
     );
   });
 
   it("holds the threaded engine to the same budget", async () => {
-    const root = await wasmFixture(4_194_304);
+    const root = await wasmFixture(4_259_840);
     await writeFile(
       path.join(root, "packages/runtime-native/build/web/tn-native-engine-web-threads.wasm"),
-      Buffer.alloc(4_194_305),
+      Buffer.alloc(4_259_841),
     );
     await expect(enforceBudgets(root)).rejects.toThrow(
-      "TN_WEB_ENGINE_OVER_BUDGET: measured 4194305 bytes, allowed 4194304 bytes",
+      "TN_WEB_ENGINE_OVER_BUDGET: measured 4259841 bytes, allowed 4259840 bytes",
     );
   });
 

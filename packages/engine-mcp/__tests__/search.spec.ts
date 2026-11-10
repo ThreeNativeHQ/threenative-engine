@@ -684,6 +684,31 @@ describe("threenative-engine-mcp", () => {
    * "use mergeParts". Every one of those answered `verdict: none` because the index read only the
    * situations and aliases, so a symbol the manifest exports by that exact name was invisible.
    */
+  // PR #643 (PRD-860, 861, 867): every streaming and decoder abstraction answers its own words.
+  it.each([
+    ["game takes too long to download before first play", "createAssetLoader"],
+    ["stream textures by mip level", "createAssetLoader"],
+    ["stream meshes coarse lod first", "createAssetLoader"],
+    ["streamTextures", "createAssetLoader"],
+    ["streamMeshes", "createAssetLoader"],
+    ["TN_STREAMING_POOL", "createAssetLoader"],
+    ["TN_ASSET_LATE", "createAssetLoader"],
+    ["an asset pops in after the reveal", "createAssetLoader"],
+    ["a model texture looks blurry right after load", "createAssetLoader"],
+    ["collider built from a streamed model is coarse", "isStreamedGeometry"],
+    ["wait for the whole model before building a trimesh collider", "isStreamedGeometry"],
+    ["TN_COLLIDER_COARSE", "isStreamedGeometry"],
+    ["ktx2 texture on the wasm engine", "createAssetLoader"],
+    ["meshopt compressed model on the web engine", "createAssetLoader"],
+    ["compressed texture upload BC7", "createAssetLoader"],
+    ["range request ktx2 mips", "createAssetLoader"],
+  ])("finds '%s' among the first three results (PRD-860)", (query, symbol) => {
+    const top = searchResults(query, workspaceManifest)
+      .slice(0, 3)
+      .map((result) => result.symbol);
+    expect(top).toContain(symbol);
+  });
+
   it.each([
     ["godrays", "godrays"],
     ["traa", "traa"],

@@ -1,4 +1,4 @@
-import { type Box3, Vector3 } from "three";
+import { type Box3, type Matrix4, Vector3 } from "three";
 import type { Camera } from "three";
 import type { IRendererLike } from "./renderer.js";
 import type { CellChunks } from "./world-cell-chunks.js";
@@ -23,6 +23,7 @@ import {
 import type { CellPrewarm } from "./world-cell-prewarm.js";
 import type { CellRender } from "./world-cell-render.js";
 import type { IWorldCell, IWorldRun } from "./world-package.js";
+import { localPoint } from "./world-root-frame.js";
 import {
   type IAdmissionBudget,
   type IWorldTilesLodView,
@@ -63,6 +64,8 @@ export interface ICellResidencyHost {
   lodHysteresis(): number;
   /** `camera` or `follow`: where the LOD eye is measured from. */
   lodFrom(): "camera" | "follow";
+  /** The world root's own `matrixWorld`: the frame its placements are recorded in. */
+  root(): Matrix4;
   asset(id: string): IAssetState | undefined;
   canonical(id: string): string;
   parts(): ICellResidencyParts;
@@ -249,17 +252,23 @@ export class CellResidency {
    * resting near the gate does not flip the eye between the two.
    */
   updateEye(): void {
-    const follow = this.#eyeFollow.set(
-      this.#host.follow().position.x,
-      this.#host.parts().placements.followY(),
-      this.#host.follow().position.z,
+    // The camera and the player are in world space; the placements the eye grades are in the root's
+    // own frame, so both points are read there before the pull below measures between them.
+    const root = this.#host.root();
+    const follow = localPoint(
+      this.#eyeFollow.set(
+        this.#host.follow().position.x,
+        this.#host.parts().placements.followY(),
+        this.#host.follow().position.z,
+      ),
+      root,
     );
     const camera = this.#host.lodFrom() === "camera" ? this.#host.parts().chunks.camera : undefined;
     if (camera === undefined) {
       this.#eye.copy(follow);
       return;
     }
-    this.#eye.setFromMatrixPosition(camera.matrixWorld);
+    localPoint(this.#eye.setFromMatrixPosition(camera.matrixWorld), root);
     if (this.#host.parts().placements.placementReach === undefined) this.#eye.y = 0;
     const inside = this.#host.parts().placements.firstGate;
     const offset = this.#eye.distanceTo(follow);

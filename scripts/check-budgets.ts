@@ -23,7 +23,9 @@ const execFileAsync = promisify(execFile);
 const LIMITS = {
   frameworkLoc: 15_000,
   nativeRuntimeLoc: 100_000,
-  webEngineBytes: 4_194_304,
+  // 4 MiB + 64 KiB (PRD-867): the KTX2 transcode to BC7/ETC2 and PRD-860's streaming took the threaded
+  // engine to 4,198,621 bytes; the KTX2 cook they enable saves Midway 26.9 MB of download.
+  webEngineBytes: 4_259_840,
 } as const;
 
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);

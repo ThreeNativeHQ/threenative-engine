@@ -13,6 +13,7 @@
 #include "engine/renderer/aux_targets.h"
 #include "engine/renderer/aux_bundle_key.h"
 #include "engine/renderer/texture_copy.h"
+#include "engine/renderer/aux_depth.h"
 #include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
@@ -91,6 +92,10 @@ inline bool gpuJointAncestorEligible(const Object3D& ancestor, const SkinnedMesh
 }
 
 inline WGPUTextureFormat textureFormat(const Texture& texture) {
+    if (texture.compressed())
+        return texture.imageSource->mipmapFormat == kTextureBC7Format
+                   ? (texture.isSRGB() ? WGPUTextureFormat_BC7RGBAUnormSrgb : WGPUTextureFormat_BC7RGBAUnorm)
+                   : (texture.isSRGB() ? WGPUTextureFormat_ETC2RGBA8UnormSrgb : WGPUTextureFormat_ETC2RGBA8Unorm);
     return texture.isFloat() ? WGPUTextureFormat_RGBA32Float
          : texture.isHalfFloat() ? WGPUTextureFormat_RGBA16Float
          : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;
@@ -121,6 +126,12 @@ inline Matrix3 normalMatrix(const Matrix& m) {
                       t12 * s, (i * a - c * g) * s, (c * d - f * a) * s,
                       t13 * s, (b * g - h * a) * s, (e * a - b * d) * s};
     return {inv[0], inv[3], inv[6], inv[1], inv[4], inv[7], inv[2], inv[5], inv[8]};
+}
+
+/** A positionNode caster with no maxPositionOffset whose geometry states its own boundingBox: that box bounds it. */
+inline bool displacedByGeometryBox(const DrawItem& item) {
+    return (item.positionNode || item.nodes->shadowPositionNode()) && item.geometryBox && !item.geometryBox->isEmpty() &&
+           !(item.material && item.material->maxPositionOffset > 0) && !item.boneMatrices && !item.morphGeometry && !item.gpuJoints;
 }
 
 inline WGPUVertexFormat skinIndexFormat(const DrawItem& item) {
@@ -477,6 +488,8 @@ struct Renderer::MainRow {
     uint64_t indexSize = 0;
     uint32_t count = 0;      // indices, or vertices for a non-indexed draw
     uint32_t instances = 0;  // this frame's; 0 while out of view
+    WGPUBuffer indirect = nullptr;  // the geometry's own GPU-filled record (PRD-857), drawn in place of the pass's
+    uint64_t indirectOffset = 0;
     uint64_t seen = 0;
     std::vector<uint64_t> words;  // the draw's row of the per-draw bundle key: unchanged, the commands are too
     // sortDraws' state order: the background first, then renderOrder, then state.

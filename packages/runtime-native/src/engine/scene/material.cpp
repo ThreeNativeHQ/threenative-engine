@@ -1,9 +1,11 @@
 #include "engine/scene/material.h"
 
+#include <atomic>
+
 namespace tn::engine {
 
 namespace {
-uint32_t nextMaterialId = 0;  // three's `_materialId`
+std::atomic<uint32_t> nextMaterialId{0};  // three's `_materialId`; atomic for the glTF loader thread (PRD-860)
 }
 
 Material::Material(MaterialType t, bool node) : type(t), nodeMaterial(node), id(nextMaterialId++) {

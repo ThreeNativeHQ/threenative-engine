@@ -8,10 +8,10 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { terrainPalette } from "../src/render/palette.js";
+import { WORLD_NAMES as WORLDS } from "../src/render/worldNames.js";
 
 const { realContinuation, recipes } = await import("./recipe.mjs");
 
-const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"];
 const drawn = new Set(["forest", "coastal"]);
 const biomeFile = (name) =>
   new URL(`../../../packages/terrain/starter/${name}/biome.data.json`, import.meta.url);
@@ -19,11 +19,13 @@ const biomeFile = (name) =>
 /** Every file a bake reads besides the recipes: the game's own source and the package build. */
 const SOURCES = [
   "../src/render/terrain.ts",
+  "../src/render/skyVisibility.ts",
   "../src/render/biomes.ts",
   "../src/world/terrainAssets.ts",
   "../src/render/benchmark.ts",
   "../src/render/propWorld.ts",
   "../src/render/props.ts",
+  "../src/render/worldNames.ts",
   "./bake.mjs",
   "./props.mjs",
   "./recipe.mjs",
@@ -44,6 +46,8 @@ hash.update(
 );
 hash.update(JSON.stringify(terrainPalette));
 for (const name of WORLDS) hash.update(readFileSync(biomeFile(name)));
+// A variation is another bake: `STRATA_SEED` set or changed re-bakes, unset keeps the pinned stamp.
+if (Number(process.env.STRATA_SEED ?? 0) !== 0) hash.update(`variation:${process.env.STRATA_SEED}`);
 for (const file of SOURCES) hash.update(await readFile(new URL(file, import.meta.url)));
 
 /** This bake's inputs, as one digest. */
@@ -68,6 +72,7 @@ export async function isFresh(outputDir) {
           ...WORLDS.flatMap((name) => [
             `${name}.props.json`,
             `${name}.canopy.bin`,
+            `${name}.sky.bin`,
             `${name}.world.json`,
             `${name}.layers.json`,
             `${name}.splat.rgba8`,

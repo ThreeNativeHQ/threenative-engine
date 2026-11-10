@@ -2,11 +2,13 @@
 
 #include "engine/renderer/render_database.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <string>
 #include <utility>
 
 namespace tn::engine {
@@ -17,7 +19,29 @@ struct TargetGpu {
     std::unique_ptr<Renderer> renderer;
     std::unique_ptr<RenderDatabase> database;
     bool rendered = false;  // the target's colour holds a render (else it is drawn empty before a read)
+    // An array target's layers, with the view a material samples (RenderTarget::layers > 1).
+    WGPUTexture array = nullptr;
+    WGPUTextureView arrayView = nullptr;
+    uint32_t arrayWidth = 0, arrayHeight = 0, levels = 1;
+    TargetGpu() = default;
+    TargetGpu(const TargetGpu&) = delete;
+    TargetGpu& operator=(const TargetGpu&) = delete;
+    ~TargetGpu() { releaseArray(); }
+    void releaseArray() {
+        if (arrayView) wgpuTextureViewRelease(arrayView);
+        if (array) { wgpuTextureDestroy(array); wgpuTextureRelease(array); }
+        arrayView = nullptr; array = nullptr;
+    }
 };
+
+/** What three clears an MRT attachment after the first to (WebGPUBackend `_clearValue`). */
+constexpr std::array<double, 4> kSecondaryClear{0, 0, 0, 1};
+
+/** three's mip filters: the target keeps a full chain for them, else one level. */
+bool mipFiltered(const Texture& texture) {
+    const auto filter = static_cast<TextureFilter>(texture.minFilter);
+    return filter != TextureFilter::Nearest && filter != TextureFilter::Linear;
+}
 
 float halfToFloat(uint16_t bits) {
     const int exponent = (bits >> 10) & 31;
@@ -51,6 +75,19 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
     }
     auto& gpu = *static_cast<TargetGpu*>(target.gpu.get());
     gpu.renderer->setSize(target.width, target.height);  // a no-op at the same extent
+    if (target.layers > 1 && (!gpu.array || gpu.arrayWidth != target.width || gpu.arrayHeight != target.height)) {
+        gpu.releaseArray();
+        gpu.levels = mipFiltered(*target.texture)
+                         ? uint32_t(std::floor(std::log2(double(std::max(target.width, target.height))))) + 1 : 1;
+        gpu.array = gpu.renderer->createLayerArray(target.width, target.height, target.layers, gpu.levels);
+        WGPUTextureViewDescriptor view = {};
+        view.dimension = WGPUTextureViewDimension_2DArray;
+        view.format = gpu.renderer->sceneFormat();
+        view.mipLevelCount = gpu.levels;
+        view.arrayLayerCount = target.layers;
+        gpu.arrayView = wgpuTextureCreateView(gpu.array, &view);
+        gpu.arrayWidth = target.width; gpu.arrayHeight = target.height;
+    }
     return gpu;
 }
 
@@ -58,7 +95,11 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
 
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
                                         std::array<double, 4> clear, bool shadowMap, bool deferred, bool primary,
-                                        bool autoClear) {
+                                        bool autoClear, uint32_t layer) {
+    if (layer >= target.layers)
+        return {"TN_NATIVE_RENDER_TARGET_LAYER: layer " + std::to_string(layer) + " is outside the target's " +
+                std::to_string(target.layers) + " layer(s)"};
+    if (target.layers > 1) deferred = false;  // the copy into the layer reads this draw's colour now
     if (deferred && target.depthTexture)
         return {"TN_NATIVE_DEFERRED_TARGET_DEPTH: a deferred render target cannot carry a depth texture"};
     main.flushDeferred(&target);  // an earlier plan for this target is recorded first, never dropped or drawn twice
@@ -86,11 +127,14 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
         gpu.database->render(*gpu.renderer, root, camera, clear);
     }
     gpu.rendered = true;
+    if (target.layers > 1)
+        gpu.renderer->copySceneColorToLayer(gpu.array, layer, target.layers, gpu.levels, target.texture->generateMipmaps);
     if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);
     std::vector<std::string> diagnostics = gpu.database->diagnostics();
     for (const std::string& message : gpu.renderer->diagnostics()) diagnostics.push_back(message);
+    // three's WebGPUBackend clears every attachment after the first to (0, 0, 0, 1), not the renderer's clear colour.
     for (const auto& attachment : target.more)
-        for (std::string& message : renderToTarget(main, *attachment, root, camera, clear, shadowMap, deferred, false, autoClear))
+        for (std::string& message : renderToTarget(main, *attachment, root, camera, kSecondaryClear, shadowMap, deferred, false, autoClear, layer))
             diagnostics.push_back(std::move(message));
     return diagnostics;
 }
@@ -102,11 +146,12 @@ void clearRenderTarget(Renderer& main, RenderTarget& target, std::array<double, 
     gpu.renderer->keepContents(!color, !depth);
     gpu.renderer->render({}, CameraState{}, LightState{}, clear);  // an empty pass: only its load ops act
     gpu.rendered = true;
-    for (const auto& attachment : target.more) clearRenderTarget(main, *attachment, clear, color, depth);
+    for (const auto& attachment : target.more) clearRenderTarget(main, *attachment, kSecondaryClear, color, depth);
 }
 
 WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target) {
     TargetGpu& gpu = gpuOf(main, target);
+    if (target.layers > 1) return gpu.arrayView;  // its layers hold what each draw copied; an undrawn layer reads zero
     if (!gpu.rendered) {
         gpu.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
         gpu.rendered = true;
@@ -120,17 +165,20 @@ WGPUTexture renderTargetTexture(Renderer& main, RenderTarget& target) {
 }
 
 GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
-                           ReadbackCallback done) {
+                           ReadbackCallback done, uint32_t layer, uint32_t level) {
     if (!done) return GpuStatus::OutOfRange;
     if (!target.gpu) return GpuStatus::InvalidHandle;
-    if (width == 0 || height == 0 || uint64_t(x) + width > target.width || uint64_t(y) + height > target.height)
-        return GpuStatus::OutOfRange;
     auto& gpu = *static_cast<TargetGpu*>(target.gpu.get());
-    const uint32_t full = target.width;
+    const bool layered = target.layers > 1;
+    if ((!layered && (layer != 0 || level != 0)) || (layered && (layer >= target.layers || level >= gpu.levels)))
+        return GpuStatus::OutOfRange;
+    const uint32_t full = std::max(1u, target.width >> level), rows = std::max(1u, target.height >> level);
+    if (width == 0 || height == 0 || uint64_t(x) + width > full || uint64_t(y) + height > rows)
+        return GpuStatus::OutOfRange;
     const bool floatType = target.texture->isFloat();
     const bool stored32 = floatType && !target.halfPrecision;  // what the GPU texture holds
     const uint32_t channels = target.texture->format == kTextureRGFormat ? 2 : 4;
-    return gpu.renderer->readProbePixels(
+    ReadbackCallback crop =
         [x, y, width, height, full, floatType, stored32, channels, done = std::move(done)](GpuStatus status,
                                                                                 std::vector<uint8_t> bytes) {
             if (status != GpuStatus::Ok) {
@@ -155,7 +203,9 @@ GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_
                 }
             }
             done(GpuStatus::Ok, std::move(region));
-        });
+        };
+    return layered ? gpu.renderer->readLayerPixels(gpu.array, layer, level, std::move(crop))
+                   : gpu.renderer->readProbePixels(std::move(crop));
 }
 
 }  // namespace tn::engine

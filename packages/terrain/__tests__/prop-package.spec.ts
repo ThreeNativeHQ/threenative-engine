@@ -1,5 +1,10 @@
 import type { IPlacement } from "@threenative/terrain";
-import { compilePropBuckets, propPackageFile, propPackageFiles } from "@threenative/terrain";
+import {
+  compilePropBuckets,
+  decodePropBucket,
+  propPackageFile,
+  propPackageFiles,
+} from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -119,6 +124,29 @@ describe("the prop package compile", () => {
     ]);
     expect(records[7]).toBeCloseTo(1.5, 6);
     expect([...records.slice(8, 11)]).toEqual([300, 9, 260]);
+  });
+
+  it("reads every bucket back to the IDs, models, poses and reach it was compiled from", () => {
+    const decoded = pkg.buckets.flatMap((bucket) => decodePropBucket(bucket));
+    expect(decoded.map((record) => record.id).sort()).toEqual(
+      ENTRIES.map((entry) => entry.placement.id).sort(),
+    );
+    for (const entry of ENTRIES) {
+      const record = decoded.find((item) => item.id === entry.placement.id);
+      expect(record?.asset).toBe(entry.placement.asset);
+      expect(record?.key).toBe(entry.placement.asset);
+      expect(record?.position).toEqual(entry.placement.position);
+      expect(record?.scale).toBeCloseTo(entry.placement.scale, 6);
+      expect(record?.reach).toBe(Math.fround(entry.reach));
+      const yaw = entry.placement.rotation;
+      expect(record?.quaternion[1]).toBeCloseTo(Math.sin(yaw / 2), 6);
+      expect(record?.quaternion[3]).toBeCloseTo(Math.cos(yaw / 2), 6);
+    }
+    const local = pkg.buckets[0];
+    if (!local) throw new Error("no bucket");
+    expect(() => decodePropBucket({ ...local, ids: [...local.ids, "extra"] })).toThrow(
+      "TN_PROP_BUCKET_INVALID",
+    );
   });
 
   it("writes the bucket list as a manifest that names the three files of every bucket", () => {

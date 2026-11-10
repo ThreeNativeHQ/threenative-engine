@@ -87,6 +87,27 @@ void attributeDisposalLifetime() {
     CHECK(plain->store->gpuReleases() == 1 && plain->getX(0) == 3);
 }
 
+// PRD-857: core's GPU world scene binds one store as compute storage and as vertex or indirect data. The cache kept the
+// first caller's usage, so the second binding was refused by validation. A later usage re-creates the buffer with the
+// union and keeps its bytes; a usage it already has moves nothing.
+void geometryUsageUnion() {
+    Device d;
+    CHECK(d.ok);
+    if (!d.ok) return;
+    GpuResources gpu(d.context.getInstance(), d.context.getDevice(), d.context.getQueue(), d.events, 1);
+    GeometryCache cache(gpu);
+    BufferStore records(Scalar::U32, 10);
+    for (uint32_t i = 0; i < 10; ++i) records.write(i * 4, &i, 4);
+    const Handle vertex = cache.sync(records, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopySrc);
+    const Handle both = cache.sync(records, WGPUBufferUsage_Storage | WGPUBufferUsage_Indirect | WGPUBufferUsage_CopySrc);
+    CHECK(both.generation != vertex.generation || both.index != vertex.index);  // re-created once, with the union
+    const WGPUBufferUsage usage = wgpuBufferGetUsage(gpu.buffer(both));
+    CHECK((usage & WGPUBufferUsage_Vertex) && (usage & WGPUBufferUsage_Storage) && (usage & WGPUBufferUsage_Indirect));
+    CHECK(readBack(gpu, d.events, both, 40) == bytesOf(records, 40));
+    const Handle again = cache.sync(records, WGPUBufferUsage_Vertex);
+    CHECK(again.index == both.index && again.generation == both.generation);  // the steady state moves nothing
+}
+
 void geometry() {
     Device d;
     CHECK(d.ok);
@@ -863,7 +884,7 @@ void recentBindGroups() {
     groups.clear();
 }
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"compile_reaches_off_screen", compileReachesOffScreenDraws}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"compile_reaches_off_screen", compileReachesOffScreenDraws}, {"geometry", geometry}, {"geometry_usage_union", geometryUsageUnion}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException},

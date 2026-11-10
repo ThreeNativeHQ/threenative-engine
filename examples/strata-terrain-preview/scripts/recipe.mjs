@@ -7,8 +7,17 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { MATERIAL_IDS, Mask, Terrain, bakeMesh, landformBackdrop } from "@threenative/terrain";
+import { pathToFileURL } from "node:url";
+import {
+  MATERIAL_IDS,
+  Mask,
+  Terrain,
+  bakeMesh,
+  landformBackdrop,
+  placeMassif,
+} from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
+import { WORLD_NAMES } from "../src/render/worldNames.js";
 
 const { GROUND_MAPS, GROUND_TILE } = await import("../src/world/terrainAssets.js");
 
@@ -87,10 +96,7 @@ export function terrainSurfacePackage(name, state, maps) {
 
 // Public-domain surveyed elevations; one offset and orientation are shared by detail and horizon.
 export const dem = {};
-for (const name of ["forest", "coastal", "alpine", "desert", "tundra"].flatMap((name) => [
-  name,
-  `${name}-horizon`,
-])) {
+for (const name of WORLD_NAMES.flatMap((name) => [name, `${name}-horizon`])) {
   const meta = JSON.parse(await readFile(new URL(`dem/${name}.json`, import.meta.url), "utf8"));
   const bytes = await readFile(new URL(`dem/${name}.bin`, import.meta.url));
   assert.equal(meta.encoding, "int16-le-decimetres-relative-to-elevationOffset");
@@ -111,9 +117,54 @@ for (const name of ["forest", "coastal", "alpine", "desert", "tundra"].flatMap((
   };
 }
 
+/** Whole surveyed mountains, foot to foot at 4 m (`scripts/dem/massif.mjs`), for `placeMassif`. */
+export const MASSIF_TILES = [];
+/** The seed the pinned forest stands its massif with. */
+const MASSIF_SEED = Number(process.env.STRATA_MASSIF_SEED ?? 6);
+for (const id of ["longs", "teton", "maroon"]) {
+  const meta = JSON.parse(
+    await readFile(new URL(`dem/massif-${id}.json`, import.meta.url), "utf8"),
+  );
+  const bytes = await readFile(new URL(`dem/massif-${id}.bin`, import.meta.url));
+  assert.equal(bytes.length, meta.resolution ** 2 * 2, `massif-${id}: truncated tile`);
+  assert.equal(
+    createHash("sha256").update(bytes).digest("hex"),
+    meta.sha256,
+    `massif-${id}: tile hash mismatch`,
+  );
+  MASSIF_TILES.push({
+    id,
+    size: meta.size,
+    resolution: meta.resolution,
+    heights: Float32Array.from(
+      { length: meta.resolution ** 2 },
+      (_, i) => meta.elevationOffset + bytes.readInt16LE(i * 2) / 10,
+    ),
+  });
+}
+
 // The Sprague Lake hydro-flattened survey measures the water surface, not its bed.
 // Retain the real valley and shore; author shallow bathymetry and a creek into that surface.
-export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
+/**
+ * `STRATA_WORLD=<terrain_generate out dir>` bakes the forest from a cooked world (PRD-866): its
+ * recipe (ground, erosion and water layers, and its seed) and its far ring, under this example's own
+ * biome row and look. Unset, the forest is the pinned survey below.
+ */
+export const cooked = process.env.STRATA_WORLD
+  ? {
+      recipe: JSON.parse(
+        await readFile(
+          new URL("recipe.json", pathToFileURL(`${process.env.STRATA_WORLD}/`)),
+          "utf8",
+        ),
+      ),
+      ring: JSON.parse(
+        await readFile(new URL("ring.json", pathToFileURL(`${process.env.STRATA_WORLD}/`)), "utf8"),
+      ),
+    }
+  : undefined;
+
+const pinnedForest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .heightmap({ id: "usgs-3dep", data: dem.forest.data })
   .erode({
     id: "surface-runoff",
@@ -350,7 +401,12 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
 // baked world is a 257-square of heights/colours, so bundling all five would add about 15 MB
 // to the initial page module.
 export const drawn = new Set(["forest", "coastal"]);
-export const outputDir = new URL("../src/world/", import.meta.url);
+// `STRATA_BAKE_OUT=<dir>` writes the bake there instead: a spec's cooked bake must not rewrite the
+// world files every other spec and the game read while they run.
+export const outputDir = process.env.STRATA_BAKE_OUT
+  ? pathToFileURL(`${process.env.STRATA_BAKE_OUT}/`)
+  : new URL("../src/world/", import.meta.url);
+export const forest = cooked ? Terrain.fromJSON(cooked.recipe) : pinnedForest;
 export const recipes = { forest, coastal, alpine, desert, tundra };
 
 /**
@@ -390,6 +446,8 @@ const forestBackdrop = landformBackdrop("temperateMountains", {
   centerHeight:
     forestSurvey.data.values[((forestSurvey.resolution - 1) / 2) * (forestSurvey.resolution + 1)],
 });
+/** Each world's placed massif: its tile, pose and 4 m heights, for the bake's relief file. */
+export const massif = {};
 export const realContinuation = Object.fromEntries(
   Object.keys(recipes).flatMap((name) => {
     const source =
@@ -409,41 +467,46 @@ export const realContinuation = Object.fromEntries(
         resolution: source.resolution,
         seed: 1,
       }).heightmap({ id: "usgs-surroundings", data: source.data });
+    if (name === "forest" && cooked) {
+      // The cook's own ring: its survey continued, its massif already standing in it, and the
+      // massif's own heights for the relief map where the ring's cells are too coarse.
+      const { size, resolution, heights } = cooked.ring;
+      if (cooked.ring.massif?.detail) massif.forest = cooked.ring.massif;
+      return [
+        [
+          name,
+          new Terrain({ size, resolution, seed: 1 }).heightmap({
+            id: "cooked-ring",
+            data: { width: resolution, height: resolution, values: heights },
+          }),
+        ],
+      ];
+    }
     return name === "forest"
-      ? [[name, alpineCrests(nearMassif(surroundings()))]]
+      ? [[name, nearMassif(alpineCrests(surroundings()))]]
       : [[name, surroundings()]];
   }),
 );
 
 /**
  * The vista's near massif (owner, 2026-11-04: "make sure we have the proper mountain on this
- * capture"). The goal frame's mountain fills the upper left of the picture with its summit near the
- * top edge; the generated backdrop had a valley on that bearing. A ridge 2.2 km long and a summit
- * 1.25 km tall stand 1.1 to 2.4 km from the vista eye (`BENCHMARK.forest.poses.vista`), 15 to 40
- * degrees left of its look line, so the playable forest and lake in front keep their ground.
- * `forest-backdrop.spec.ts` measures the skyline from that eye.
+ * capture"; 2026-11-09: "think about heightmaps etc. real shapes"). A whole surveyed mountain, foot
+ * to foot at 4 m, stands with its summit 2.4 km from the vista eye (`BENCHMARK.forest.poses.vista`),
+ * left of its look line, its steepest wall turned south into the low sun. `forest-backdrop.spec.ts` measures
+ * the skyline from that eye; `massif` keeps the placement and its 4 m heights for the relief map.
  */
 function nearMassif(terrain) {
-  return terrain
-    .stamp({
-      id: "massif-ridge",
-      shape: "ridge",
-      at: [-1420, -100],
-      radius: [1100, 600],
-      rotation: 90,
-      amplitude: 850,
-      roughness: 0.1,
-      blend: "max",
-    })
-    .stamp({
-      id: "massif-summit",
-      shape: "mountain",
-      at: [-1450, 0],
-      radius: 750,
-      amplitude: 1250,
-      roughness: 0.1,
-      blend: "max",
-    });
+  const placed = placeMassif(terrain, {
+    seed: MASSIF_SEED,
+    tile: MASSIF_TILES,
+    at: [-2050, -150],
+    // South: the sun stands west-south-west, so a north-east face toward the vista is backlit.
+    face: 90,
+    keepOut: 650,
+    top: [1100, 1160],
+  });
+  massif.forest = placed.placement;
+  return placed.terrain;
 }
 
 /**

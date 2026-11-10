@@ -72,7 +72,10 @@ export const WIDE_CLUSTER = "*";
 export class CellPrewarm {
   readonly #drawBatches = new WeakMap<InstancedMesh, SharedBatch>();
   readonly #submitted = new WeakSet<InstancedMesh>();
-  readonly #drawBorrows = new Map<InstancedMesh, { before: unknown; release(): void }>();
+  readonly #drawBorrows = new Map<
+    InstancedMesh,
+    { before: unknown; release(): void; settle(): void }
+  >();
 
   /** Strict CPU submission gate; idle legacy prewarm settlement is not a submitted draw. */
   pendingCpuDrawsInView(root: Object3D, camera: Camera, renderer?: IRendererLike): number {
@@ -96,6 +99,9 @@ export class CellPrewarm {
         !frustum.intersectsObject(object)
       )
         return;
+      // An engine that calls onBeforeRender alone (the owned engine, for a main draw it submits) counts
+      // the frame once render() returns: the next query settles it.
+      this.#drawBorrows.get(object)?.settle();
       if (this.#submitted.has(object)) return;
       pending++;
       active.add(object);
@@ -107,6 +113,12 @@ export class CellPrewarm {
       const hadBefore = Object.hasOwn(object, "onBeforeRender");
       const hadAfter = Object.hasOwn(object, "onAfterRender");
       let before: number | undefined;
+      // Renders finished when the hook ran: three's `info.render.calls` and the facade's both only grow.
+      let hookedAt: number | undefined;
+      const renders = (): number | undefined => {
+        const value = (renderer.info as { render?: { calls?: number } }).render?.calls;
+        return Number.isSafeInteger(value) ? value : undefined;
+      };
       const calls = (): number | undefined => {
         const value = (renderer.info as { render?: { drawCalls?: number; calls?: number } }).render;
         const count = value?.drawCalls ?? value?.calls;
@@ -125,6 +137,7 @@ export class CellPrewarm {
         before = undefined;
         ownBefore.apply(this, args);
         before = args[2] === camera && renderer.compiling !== true ? calls() : undefined;
+        hookedAt = before === undefined ? undefined : renders();
       };
       const afterHook: typeof object.onAfterRender = function (this: InstancedMesh, ...args) {
         const after = calls();
@@ -140,13 +153,23 @@ export class CellPrewarm {
           release();
         }
         before = undefined;
+        hookedAt = undefined;
         ownAfter.apply(this, args);
       };
       markEngineRenderHook(beforeHook);
       markEngineRenderHook(afterHook);
       object.onBeforeRender = beforeHook;
       object.onAfterRender = afterHook;
-      this.#drawBorrows.set(object, { before: beforeHook, release });
+      // The owned engine calls onBeforeRender alone, and only for a main draw it submits after its cull,
+      // so the hook plus a render that finished after it is the draw. three's after-hook clears `hookedAt`.
+      const settle = () => {
+        const now = hookedAt === undefined ? undefined : renders();
+        if (object.count > 0 && now !== undefined && hookedAt !== undefined && now > hookedAt) {
+          submitted.add(object);
+          release();
+        }
+      };
+      this.#drawBorrows.set(object, { before: beforeHook, release, settle });
     });
     for (const [mesh, borrow] of this.#drawBorrows) if (!active.has(mesh)) borrow.release();
     return pending;

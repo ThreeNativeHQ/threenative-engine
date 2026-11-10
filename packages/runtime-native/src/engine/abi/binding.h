@@ -107,7 +107,8 @@ inline bool isObject3DClass(std::string_view cls) {
 
 /** The engine texture classes a texture argument (a map, a background, a TSL texture) may be. */
 inline bool isTextureClass(std::string_view cls) {
-    return cls == "StorageTexture" || cls == "DepthTexture" || cls == "Texture" || cls == "DataTexture" || cls == "CanvasTexture";
+    return cls == "StorageTexture" || cls == "DepthTexture" || cls == "Texture" || cls == "DataTexture" || cls == "CanvasTexture" ||
+           cls == "CompressedTexture";
 }
 
 /** A texture a renderer creates on the GPU and copies into: a material map class, or an array, volume or cube. */

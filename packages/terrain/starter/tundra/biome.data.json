@@ -13,7 +13,17 @@
     "seed": 466468,
     "attempts": 80000,
     "stoneRadius": 1.9,
-    "clearings": [[166, 180, 10]]
+    "clearings": [[166, 180, 10]],
+    "understorey": {
+      "attempts": 14000,
+      "litter": 1,
+      "fern": 1,
+      "bush": 1,
+      "flower": 1,
+      "deadfall": 0,
+      "shade": 0,
+      "shadeRadius": 3
+    }
   },
   "foliage": [
     {
@@ -127,5 +137,5 @@
     "focus": [150, 160]
   },
   "species": ["boulder", "bush", "riverrock", "sapling", "scree", "scrub"],
-  "aliases": ["tundra", "arctic", "ice"]
+  "aliases": ["tundra", "arctic", "ice", "frozen", "permafrost", "glacial"]
 }

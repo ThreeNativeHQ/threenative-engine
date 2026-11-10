@@ -5,20 +5,30 @@ import {
   normaliseToMetres,
   thinCards,
 } from "@threenative/core";
-/** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
-import { bakedNoise, instanceRandom } from "@threenative/core/world";
+
+import {
+  type IMeshSection,
+  bakedNoise,
+  instanceRandom,
+  meshSections,
+  repairZeroNormals,
+  sectionGeometry,
+} from "@threenative/core/world";
 import {
   Box3,
   BufferAttribute,
   type BufferGeometry,
+  DataTexture,
   DataUtils,
   DoubleSide,
   EquirectangularReflectionMapping,
   FrontSide,
   type Group,
+  LinearFilter,
   type Material,
   type Mesh,
   type MeshStandardMaterial,
+  RedFormat,
   RepeatWrapping,
   type Texture,
   Vector3,
@@ -68,6 +78,7 @@ import {
   desertRockColor,
   measureBiome,
 } from "./biomes.js";
+import { LOOK } from "./lookKnobs.js";
 import {
   type IPropGround,
   createRockGround,
@@ -75,6 +86,13 @@ import {
   skyEnvironment,
 } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
+
+/**
+ * Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback.
+ * `?fab=off` is the named override: the procedural set alone, as a machine without the library
+ * draws it, for comparing the two at one pose.
+ */
+export const FAB_ART = new URLSearchParams(globalThis.location?.search ?? "").get("fab") !== "off";
 
 export interface IPackSpecies {
   readonly asset: string;
@@ -100,20 +118,26 @@ export function canopyComparison(
     throw new Error(`Unsupported canopySpecular '${specular}'`);
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
+/**
+ * Crown heights of the five spruce models. The first three keep their skirt to the ground and stand
+ * at a stand's edge height; the last two are the pack's bare-trunk trees, and stand as the wood's
+ * veterans: a closed spruce stand is tall poles with the crown above a clean trunk.
+ */
+const SPRUCE_METRES = [13, 15, 14, 19, 21];
 const species: IPackSpecies[] = [];
 for (let i = 0; i < 5; i++) {
   species.push({
     asset: "spruce",
     variant: i,
     path: `spruce/${i}`,
-    metres: [12, 14, 13, 10, 11][i] ?? 12,
+    metres: SPRUCE_METRES[i] ?? 12,
   });
   // Whole-card thinning keeps the authored trunk and caps surviving card area growth at 4x.
   species.push({
     asset: "spruce",
     variant: i,
     path: `spruce/${i}-far`,
-    metres: [12, 14, 13, 10, 11][i] ?? 12,
+    metres: SPRUCE_METRES[i] ?? 12,
     level: 1,
   });
 }
@@ -137,6 +161,21 @@ for (const [asset, heights] of Object.entries({
     species.push({ asset, variant, metres, path: `${asset}/${variant}` }),
   );
 }
+/**
+ * Fallen wood on a spruce floor (`cover.understorey.deadfall`): Landscape Pro's three bough groups
+ * and its log, each given by its longest side in metres. `scripts/prep-landscape-pro.mjs` stages them.
+ */
+const LANDSCAPE_PRO = "landscape-pro/fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models";
+(
+  [
+    ["SM_BoughGroup01", 2.4],
+    ["SM_BoughGroup02", 1.9],
+    ["SM_BoughGroup03", 2.8],
+    ["SM_tree_dead", 3.4],
+  ] as const
+).forEach(([model, metres], variant) =>
+  species.push({ asset: "deadfall", variant, metres, path: `${LANDSCAPE_PRO}/${model}` }),
+);
 /** The species drawn as stone: they stand on their lowest point and take a hull collider. */
 export const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
 /** Meadow Flowers species: photographed petals kept, stems lifted, no foliage tint. */
@@ -388,7 +427,7 @@ function tintedFoliage(
         : FLOWERS.has(asset)
           ? ([1, 1, 0.85] as const)
           : canopy && source.name === "branch"
-            ? ([0.45, 0.38, 0.25] as const)
+            ? ([0.26, 0.21, 0.15] as const)
             : ([1, 1, 1] as const);
 
   material.colorNode = sampled.rgb.mul(vec3(...tint));
@@ -398,8 +437,16 @@ function tintedFoliage(
     // The atlas is photographed olive-yellow (opaque mean RGB 90,81,21: almost no blue), which no
     // channel gain turns blue-green. Keep its luminance detail and give it a spruce hue.
     const needle = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+    // One hue on every crown reads as one tree copied across the valley: each tree leans
+    // blue-green or yellow-green and takes its own value from its instance hash, kept small so the
+    // one-hue impostor past the far gate still matches. A crown is paler at its sunlit top and
+    // darker in its skirt, which is geometry and so bakes into the impostor too.
+    const lean = sin(phase.mul(1.7)).mul(0.5).add(0.5);
+    const hue = mix(vec3(0.33, 0.64, 0.43), vec3(0.42, 0.7, 0.35), lean);
+    const value = mix(0.9, 1.08, sin(phase.mul(2.9)).mul(0.5).add(0.5));
+    const crownTop = mix(0.8, 1.14, smoothstep(1.5, 11, positionGeometry.y));
     material.colorNode = mix(
-      needle.mul(vec3(0.42, 0.85, 0.45)),
+      needle.mul(hue).mul(value).mul(crownTop).mul(LOOK.crown),
       vec3(0.05, 0.03, 0.015),
       smoothstep(0.02, 0.12, sampled.r.sub(sampled.g)),
     );
@@ -419,7 +466,21 @@ function tintedFoliage(
     );
   }
   if (!otherBiome && canopy && !cutout && !kite)
-    material.colorNode = sampled.rgb.mul(vec3(0.42, 0.27, 0.15));
+    // A limb is photographed pale and smooth: lit by the low sun it drew as a tan tube beside the
+    // dark trunk it grows from, so it takes about half the trunk's value.
+    material.colorNode = sampled.rgb.mul(
+      source.name === "branch"
+        ? vec3(0.11, 0.1, 0.085).mul(LOOK.limb)
+        : vec3(0.2, 0.18, 0.15).mul(LOOK.bark),
+    );
+  if (!otherBiome && asset === "deadfall" && !cutout) {
+    // Wood that has lain a few winters: dark, damp bark, and moss on the side that faces the sky.
+    const bark = sampled.rgb.mul(vec3(0.3, 0.26, 0.2));
+    const moss = smoothstep(0.25, 0.8, normalWorldGeometry.y).mul(
+      smoothstep(-0.3, 0.3, bakedNoise(positionWorld.mul(2.1))),
+    );
+    material.colorNode = mix(bark, vec3(0.085, 0.12, 0.035), moss.mul(0.85));
+  }
   if (!otherBiome && asset === "litter") {
     // Needle litter is the spruce atlas photographed dry: pull it toward bark brown and lay it
     // flat, so the forest floor carries a dead layer instead of more green.
@@ -502,6 +563,7 @@ function surface(
   skyLight?: Texture,
   comparison?: ICanopyComparison,
   biome?: IWorldBiome,
+  canopyCover?: Node<"float">,
 ): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
@@ -545,11 +607,73 @@ function surface(
   // A plain imported PBR card erased canopy depth at the same geometry and camera.
   if (cutout && source.map && !(look.woodCanopy && canopy)) {
     importedFoliage(material, source, source.map);
+    if (look.woodCanopy && (asset === "grass" || asset === "meadow")) {
+      // One photograph per species reads as astroturf: each clump takes its own value about 1 and
+      // a green-to-dry hue from its instance hash, and its root sinks into the soil's shade.
+      const clump = sin(phase.mul(3.7)).mul(0.5).add(0.5);
+      const shade = mix(vec3(0.62, 0.86, 0.5), vec3(0.98, 0.96, 0.52), clump.mul(clump));
+      // Drifts metres across: a meadow is darker in its damp patches and paler on its dry ones.
+      const drift = mix(0.78, 1.08, smoothstep(-0.4, 0.4, bakedNoise(positionWorld.mul(0.11))));
+      // Part of a meadow has gone to seed: straw patches tens of metres across break the one green,
+      // on a slower field than the drift so the two do not line up.
+      const straw = smoothstep(
+        0.2,
+        0.6,
+        bakedNoise(
+          vec3(positionWorld.x, 0, positionWorld.z)
+            .mul(0.027)
+            .add(vec3(31, 0, 17)),
+        ),
+      );
+      const seeded = mix(vec3(1, 1, 1), vec3(1.32, 1.08, 0.6), straw.mul(0.6));
+      // A blade is dark where it leaves the thatch and brightest at its tip.
+      // A tuft stands three times as tall as the field grass, so the same 0.32 m ramp left nearly
+      // all of it at full value above a field that sits inside its own root shade: its ramp runs
+      // the tuft's own height.
+      const root = mix(0.34, 1, smoothstep(0.0, fieldGrass ? 0.32 : 0.8, positionGeometry.y));
+      // The tall tufts are photographed far paler than the field grass they stand in: bring them
+      // to the same sward so a tuft reads as taller grass, not as a lit paper cut-out.
+      const sward = fieldGrass ? vec3(1, 1, 1) : vec3(0.5, 0.62, 0.4);
+      material.colorNode = (material.colorNode as Node<"vec3">)
+        .mul(shade)
+        .mul(drift)
+        .mul(root)
+        .mul(sward)
+        .mul(seeded);
+      material.aoNode = mix(0.5, 1, smoothstep(0.0, 0.25, positionGeometry.y));
+      // A blade card stands upright, so its own normal faces the horizon and half the cards face
+      // away from the sun: those drew black beside sunlit ones. A meadow shades as the ground it
+      // grows from, so every blade takes the up normal and the sun's shadow still falls across it.
+      material.normalNode = vec3(0, 1, 0).transformDirection(cameraViewMatrix);
+    }
+    if (look.woodCanopy && asset === "fern") {
+      // A frond drew lime beside the sward it grows in: it takes a deeper green, each plant its own
+      // value, and the heart of the plant sinks into the shade of its own fronds.
+      const each = mix(0.85, 1.08, sin(phase.mul(2.3)).mul(0.5).add(0.5));
+      const heart = mix(0.5, 1, smoothstep(0.0, 0.4, positionGeometry.y));
+      material.colorNode = (material.colorNode as Node<"vec3">)
+        .mul(vec3(0.5, 0.66, 0.38))
+        .mul(each)
+        .mul(heart);
+      material.aoNode = mix(0.5, 1, smoothstep(0.0, 0.3, positionGeometry.y));
+    }
+    if (look.woodCanopy && FLOWERS.has(asset)) {
+      // A flower model carries its own leaves, photographed pale mint: beside the sward they drew
+      // as white paper rosettes (paint-by-species capture, 2026-11-09). The green texels take the
+      // sward's green and sink at the plant's heart; a petal, redder than it is green, keeps its
+      // photograph.
+      const sampled = material.colorNode as Node<"vec3">;
+      const leaf = smoothstep(0.0, 0.06, sampled.g.sub(sampled.r));
+      const heart = mix(0.45, 1, smoothstep(0.0, 0.3, positionGeometry.y));
+      material.colorNode = mix(sampled, sampled.mul(vec3(0.5, 0.66, 0.4)).mul(heart), leaf);
+    }
+    if (look.swardTint && !FLOWERS.has(asset))
+      material.colorNode = (material.colorNode as Node<"vec3">).mul(LOOK.sward);
     if (look.woodCanopy) {
       // Blades and fronds a cell thick pass the sun through; without it a meadow seen against the
       // sun is lit almost only by the sky. Same shadowed term as the needles, without their fill.
       // Roots and the gaps between blades stay dark; the upper blade carries the glow.
-      lightNeedles(material, smoothstep(0.02, 0.4, positionGeometry.y), 0.6);
+      lightNeedles(material, smoothstep(0.02, 0.4, positionGeometry.y), 0.4);
       material.emissiveNode = null;
     }
   } else if (source.map) tintedFoliage(material, context, snowMap);
@@ -567,6 +691,13 @@ function surface(
   if (skyLight && !stone) skyEnvironment(material, skyLight);
   // At full sky light a forest crown is ~85% lit by sky and emissive, so it shows no sun side.
   if (skyLight && look.woodCanopy && canopy) material.envMapIntensity = 0.35;
+  // A plant under the crowns sees the sky through a few gaps: its ambient and sky-image light fall
+  // to the row's share where the baked canopy closes over it, and the sun's own light is untouched,
+  // so a sunlit meadow keeps its full sky and a fern in deep shade stops glowing.
+  if (canopyCover && look.understoreySkyLight !== undefined && !canopy && !stone)
+    material.aoNode = ((material.aoNode as Node<"float"> | null) ?? float(1)).mul(
+      mix(float(1), LOOK.plantShade, smoothstep(0.05, 0.6, canopyCover)),
+    );
   return material;
 }
 
@@ -658,19 +789,6 @@ export function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined>
   return skyLight;
 }
 
-/** A mesh's material sections: one per group for a material array, otherwise the whole mesh. */
-function meshSections(
-  mesh: Mesh,
-): { material: Material; group?: { start: number; count: number } }[] {
-  const materials = mesh.material;
-  return Array.isArray(materials)
-    ? mesh.geometry.groups.map((group) => ({
-        material: materials[group.materialIndex ?? 0] as Material,
-        group,
-      }))
-    : [{ material: materials }];
-}
-
 /** Per-world reshape for one asset, applied on top of the shared whole-model scale. */
 const WORLD_ASSET_SCALES: Record<string, Record<string, readonly [number, number, number]>> = {
   tundra: { grass: [1.35, 1, 1.35], bush: [0.18, 1, 0.18], scrub: [1.1, 2, 1.1] },
@@ -700,17 +818,6 @@ function scaleGeometry(
     const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8);
     geometry.scale(24 / longest, 24 / longest, 24 / longest);
   }
-}
-
-/** `spruce_full_03_low` ships zero normals; repair the optional art, including existing cooks. */
-function repairNormals(geometry: BufferGeometry): void {
-  const normals = geometry.getAttribute("normal");
-  let valid = normals !== undefined;
-  for (let i = 0; valid && normals && i < normals.count; i++) {
-    const length = Math.hypot(normals.getX(i), normals.getY(i), normals.getZ(i));
-    valid = Number.isFinite(length) && length >= 0.01;
-  }
-  if (!valid) geometry.computeVertexNormals();
 }
 
 /** Radial coverage per height band: tips see sky, needles near the trunk do not. */
@@ -758,23 +865,14 @@ function prepareGeometry(
   stone: boolean,
   box: Box3,
   size: Vector3,
-  group?: { start: number; count: number },
+  section: IMeshSection,
 ): BufferGeometry {
-  const geometry = baseGeometryOf(mesh).clone().applyMatrix4(mesh.matrixWorld);
-  if (group) {
-    const start = Math.max(group.start, geometry.drawRange.start);
-    const end = Math.min(
-      group.start + group.count,
-      geometry.drawRange.start + geometry.drawRange.count,
-    );
-    geometry.clearGroups();
-    geometry.setDrawRange(start, Math.max(0, end - start));
-  }
-  const centre = box.getCenter(new Vector3());
-  const centredStone = stone && BIOMES[world].lawnGround;
-  geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
+  // `spruce_full_03_low` ships zero normals; the repair runs after the reshape so they fit it.
+  const geometry = sectionGeometry(mesh, box, section, {
+    centreXZ: stone && BIOMES[world].lawnGround,
+  });
   scaleGeometry(geometry, one.asset, world, size);
-  repairNormals(geometry);
+  repairZeroNormals(geometry);
   return geometry;
 }
 
@@ -807,6 +905,25 @@ export function speciesFor(world: WorldName): IPackSpecies[] {
   return selected;
 }
 
+/** The baked crown weight, 0 in the open and about 1 under a closed stand, at a world position. */
+function canopyCoverNode(ground: IPropGround, canopy: Float32Array): Node<"float"> {
+  const map = new DataTexture(
+    Uint8Array.from(canopy, (weight) => Math.round(Math.min(1, Math.max(0, weight)) * 255)),
+    ground.resolution,
+    ground.resolution,
+    RedFormat,
+  );
+  map.minFilter = LinearFilter;
+  map.magFilter = LinearFilter;
+  map.needsUpdate = true;
+  const at = positionWorld.xz
+    .div(float(ground.size))
+    .add(0.5)
+    .mul((ground.resolution - 1) / ground.resolution)
+    .add(0.5 / ground.resolution);
+  return texture(map, at).r;
+}
+
 export interface IPackProps {
   readonly parts: Map<string, IPropPart[]>;
   readonly dispose: () => void;
@@ -817,6 +934,8 @@ export async function loadPack(
   ground?: IPropGround,
   comparison?: ICanopyComparison,
   biome?: IWorldBiome,
+  /** The baked crown weight per ground vertex (`scatter.canopy`), row-major like the heights. */
+  canopy?: Float32Array,
 ): Promise<IPackProps> {
   const measured = biome ?? (ground ? measureBiome(BIOMES[world], ground.heights) : undefined);
   const look = BIOMES[world];
@@ -825,6 +944,7 @@ export async function loadPack(
   const parts = new Map<string, IPropPart[]>();
   const built: { geometry: BufferGeometry; material: Material }[] = [];
   const selected = speciesFor(world);
+  const canopyCover = ground && canopy ? canopyCoverNode(ground, canopy) : undefined;
   const rockface =
     look.crestRock && assets
       ? await Promise.all(
@@ -842,9 +962,10 @@ export async function loadPack(
   const sky = assets ? await loadSkyLight(assets) : undefined;
   const loaded = await Promise.all(
     selected.map(async (one) => {
-      if (!assets) return undefined;
+      if (!assets || !FAB_ART) return undefined;
       try {
-        return await assets.model<{ scene?: Group }>(`temperate/${one.path}.glb`);
+        const root = one.path.startsWith("landscape-pro/") ? "" : "temperate/";
+        return await assets.model<{ scene?: Group }>(`${root}${one.path}.glb`);
       } catch {
         return undefined;
       }
@@ -856,7 +977,7 @@ export async function loadPack(
     if (!root || !one) return;
     normaliseToMetres(root, {
       metres: one.metres,
-      axis: STONE.has(one.asset) ? "longest" : "height",
+      axis: STONE.has(one.asset) || one.asset === "deadfall" ? "longest" : "height",
     });
     const box = new Box3().setFromObject(root); // engine-override: center baked geometry after unit normalization
     const size = box.getSize(new Vector3());
@@ -882,13 +1003,22 @@ export async function loadPack(
             ? entry.find((part) => (part.level ?? 0) === 0 && part.role === role)?.material
             : undefined;
         if (!source.map && one.level && !(inherited instanceof MeshPhysicalNodeMaterial)) continue;
-        const geometry = prepareGeometry(mesh, one, world, stone, box, size, section.group);
+        const geometry = prepareGeometry(mesh, one, world, stone, box, size, section);
         if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling"))
           addRadialCoverage(geometry, one.metres, world, comparison);
         const material =
           inherited instanceof MeshPhysicalNodeMaterial
             ? inherited
-            : surface(source, one.asset, world, rockface[2], sky, comparison, measured);
+            : surface(
+                source,
+                one.asset,
+                world,
+                rockface[2],
+                sky,
+                comparison,
+                measured,
+                canopyCover,
+              );
         if (stone) rockGround?.apply(material);
         else declareWindReach(material, one.asset, geometry);
         if (source !== section.material) source.dispose();
@@ -927,12 +1057,23 @@ export async function loadPack(
     // keeps a third of its blades and past far a tenth, each grown to hold the mat's area. UE grass
     // steps down its static mesh's own LODs the same way (UE 5.8.3:
     // Engine/Source/Runtime/Landscape/Classes/LandscapeGrassType.h:59-79, cull distances and MinLOD).
-    if (one.asset === "meadow")
+    // The field grass and the ferns step down the same way at their own nearer `LOD_STEPS`, where a
+    // tuft is still a dozen pixels tall: they keep half their blades, then a quarter.
+    const thinned =
+      one.asset === "meadow"
+        ? ([
+            [1, 0.35],
+            [2, 0.12],
+          ] as const)
+        : one.asset === "grass" || one.asset === "fern"
+          ? ([
+              [1, 0.5],
+              [2, 0.25],
+            ] as const)
+          : undefined;
+    if (thinned)
       for (const part of entry.filter((candidate) => (candidate.level ?? 0) === 0))
-        for (const [level, keep] of [
-          [1, 0.35],
-          [2, 0.12],
-        ] as const) {
+        for (const [level, keep] of thinned) {
           if (!part.geometry.index || part.geometry.groups.length > 0 || !part.material) continue;
           const geometry = thinCards(part.geometry, keep);
           built.push({ geometry, material: part.material });

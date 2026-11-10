@@ -1,7 +1,9 @@
 import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
+  BufferGeometry,
   DoubleSide,
+  Float32BufferAttribute,
   Group,
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
@@ -23,6 +25,7 @@ import {
   WorldImpostorSurface,
   impostorFrameBasis,
   impostorFrameUv,
+  impostorQuadExtents,
   instanceSyncEvent,
   syncInstanceRanges,
   worldLodMaterial,
@@ -31,11 +34,15 @@ import {
   IMPOSTOR_VIEWS,
   VIEW_DIRECTIONS,
   WorldImpostorAtlas,
+  impostorBounds,
   impostorViewCamera,
 } from "../src/render/world-impostor.js";
 
 function makeSurface(
-  source: MeshStandardMaterial | MeshPhysicalMaterial = new MeshStandardMaterial(),
+  source:
+    | MeshStandardMaterial
+    | MeshPhysicalMaterial
+    | MeshStandardNodeMaterial = new MeshStandardMaterial(),
 ): {
   readonly surface: WorldImpostorSurface;
   readonly atlas: WorldImpostorAtlas;
@@ -87,6 +94,45 @@ describe("WorldImpostorSurface geometry", () => {
 });
 
 describe("WorldImpostorSurface material", () => {
+  it("drops the source's shadow position so the quad casts through its own billboard", () => {
+    // A wind-swept source casts its rest pose (`castShadowPositionNode = positionLocal`). Cloned onto the
+    // quad, the shadow draw skipped the billboard vertex code, so the fragment's `Rel`/`Dir` varyings were
+    // never written: the owned engine lost its renderer (TN_NATIVE_ATTRIBUTE_MISSING) and three cast a unit quad.
+    const source = new MeshStandardNodeMaterial({ alphaTest: 0.42 });
+    source.castShadowPositionNode = uniform(0) as never;
+    const { surface, atlas } = makeSurface(source);
+    expect((surface.material as MeshStandardNodeMaterial).castShadowPositionNode).toBeNull();
+    surface.dispose();
+    atlas.dispose();
+  });
+
+  it("drops the source's surface nodes, which read a UV layout the quad does not have", () => {
+    // A crown's aoNode and emissiveNode sample its own texture through attribute("uv"): on the quad the
+    // owned engine lost its renderer (TN_NATIVE_ATTRIBUTE_MISSING: uv) and three sampled texel (0, 0).
+    const source = new MeshStandardNodeMaterial({ alphaTest: 0.42, roughness: 0.6 });
+    for (const key of [
+      "aoNode",
+      "emissiveNode",
+      "roughnessNode",
+      "metalnessNode",
+      "maskNode",
+    ] as const)
+      Reflect.set(source, key, uniform(0));
+    const { surface, atlas } = makeSurface(source);
+    const material = surface.material as MeshStandardNodeMaterial;
+    for (const key of [
+      "aoNode",
+      "emissiveNode",
+      "roughnessNode",
+      "metalnessNode",
+      "maskNode",
+    ] as const)
+      expect(Reflect.get(material, key), key).toBeNull();
+    expect(material.roughness).toBeCloseTo(0.6, 6);
+    surface.dispose();
+    atlas.dispose();
+  });
+
   it("clones the source class, clears its UV maps and wires the atlas nodes", () => {
     const sourceMap = new Texture();
     const source = new MeshStandardMaterial({
@@ -306,6 +352,33 @@ describe("WorldImpostorSurface atlas count", () => {
       source: new MeshStandardMaterial(),
     });
     expect(surface.material.colorNode).not.toBeNull();
+    surface.dispose();
+    atlas.dispose();
+  });
+});
+
+describe("WorldImpostorSurface depth march", () => {
+  // PRD-866 AC-3: three marches (one per blended frame) were the far band's GPU cost. The surface
+  // marches the heaviest frame once and reads the other two at that hit point.
+  it("marches the depth atlas once per pixel, not once per blended frame", () => {
+    const { surface, atlas } = makeSurface();
+    const seen = new Set<unknown>();
+    const marches = new Set<unknown>();
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+      const graph = node as {
+        readonly shaderNode?: { readonly jsFunc?: unknown };
+        readonly getChildren?: () => Iterable<unknown>;
+      };
+      const body = graph.shaderNode?.jsFunc;
+      if (typeof body === "function" && String(body).includes("previousGap")) marches.add(node);
+      if (typeof graph.getChildren === "function")
+        for (const child of graph.getChildren()) walk(child);
+    };
+    walk(surface.material.colorNode);
+    walk(surface.material.normalNode);
+    expect(marches.size).toBe(1);
     surface.dispose();
     atlas.dispose();
   });
@@ -565,4 +638,56 @@ it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold"
     pack.dispose();
     source.dispose();
   }
+});
+
+// PRD-866: a far spruce's quad was its bounding sphere's square, about four times the tree's own
+// silhouette; every fragment outside the silhouette ran the lit shader to be discarded, and 46k far
+// spruce cost 30 ms of GPU. The quad now fits the baked box's projection.
+describe("the fitted impostor quad", () => {
+  const half = new Vector3(3, 12.5, 3);
+  const radius = half.length();
+
+  it("holds every baked box corner's projection from any view", () => {
+    let seed = 7;
+    const next = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    for (let i = 0; i < 500; i += 1) {
+      const direction = new Vector3(next() * 2 - 1, next() * 2 - 1, next() * 2 - 1).normalize();
+      const { right, up } = impostorFrameBasis(direction);
+      const extent = impostorQuadExtents(direction, half, radius);
+      for (const sx of [-1, 1])
+        for (const sy of [-1, 1])
+          for (const sz of [-1, 1]) {
+            const corner = new Vector3(sx * half.x, sy * half.y, sz * half.z);
+            expect(Math.abs(corner.dot(right))).toBeLessThanOrEqual(extent.across + 1e-9);
+            expect(Math.abs(corner.dot(up))).toBeLessThanOrEqual(extent.up + 1e-9);
+          }
+    }
+  });
+
+  it("draws a tall tree seen from the side in under half the sphere's square", () => {
+    const side = impostorQuadExtents(new Vector3(1, 0.1, 0).normalize(), half, radius);
+    expect((side.across * side.up) / (radius * radius)).toBeLessThan(0.45);
+    const top = impostorQuadExtents(new Vector3(0, 1, 0), half, radius);
+    expect(top.up).toBeCloseTo(3 * 1.1, 6);
+    // Never larger than the sphere, whatever the box.
+    const cube = impostorQuadExtents(new Vector3(1, 1, 1).normalize(), new Vector3(1, 1, 1), 1.2);
+    expect(cube.across).toBeLessThanOrEqual(1.2);
+    expect(cube.up).toBeLessThanOrEqual(1.2);
+  });
+
+  it("is measured from the parts' own box", () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new Float32BufferAttribute([-3, 0, -2, 3, 25, 2, 0, 10, 0], 3),
+    );
+    const bounds = impostorBounds([
+      { geometry, local: new Matrix4(), material: new MeshStandardNodeMaterial() },
+    ]);
+    expect(bounds.halfExtents.toArray()).toEqual([3, 12.5, 2]);
+    expect(bounds.center.toArray()).toEqual([0, 12.5, 0]);
+  });
 });

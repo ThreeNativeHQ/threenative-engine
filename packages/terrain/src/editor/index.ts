@@ -36,6 +36,15 @@ export type {
 } from "./cameras.js";
 export { sniff, surfaceSpace, validateAsset, validateAssets, validateSurfaces } from "./assets.js";
 export { SURFACE_CHANNELS, inspectImage } from "./images.js";
+export { createTweakBox } from "./tweak-box.js";
+export type {
+  ITweakBox,
+  ITweakBoxOptions,
+  ITweakColor,
+  ITweakHost,
+  ITweakRange,
+  TweakKnob,
+} from "./tweak-box.js";
 export type { IImageReport, ISurfaceChannel } from "./images.js";
 export type {
   IAssetAdjust,

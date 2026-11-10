@@ -9,7 +9,6 @@ import {
 import { waterlineRadius } from "@threenative/core/world";
 import { createSegmentIndex } from "@threenative/terrain";
 import {
-  type BufferGeometry,
   ClampToEdgeWrapping,
   DataTexture,
   DataUtils,
@@ -22,6 +21,7 @@ import {
   RGBAFormat,
   RepeatWrapping,
   type Texture,
+  type Vector2,
   Vector3,
 } from "three";
 import {
@@ -33,6 +33,7 @@ import {
   fract,
   fwidth,
   max,
+  min,
   mix,
   mx_noise_float,
   normalWorld,
@@ -43,7 +44,6 @@ import {
   positionWorld,
   rotateUV,
   sign,
-  sin,
   smoothstep,
   texture,
   transformNormalToView,
@@ -51,7 +51,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, UniformNode } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { GROUND_TILE, type LayerKey, ROCKFACE_MAPS } from "../world/terrainAssets.js";
 import { alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
@@ -75,9 +75,16 @@ import {
   elevationBand,
   measureBiome,
 } from "./biomes.js";
-import { collarColors, createHorizonCollar, horizonSurroundings } from "./horizon.js";
+import {
+  type IPackedMassif,
+  collarColors,
+  createHorizonCollar,
+  horizonSurroundings,
+} from "./horizon.js";
+import { LOOK } from "./lookKnobs.js";
 import { loadSkyLight, skyIrradiance } from "./pack.js";
 import { type IBakedLake, type IBakedRiver, REFLECTED_LAYER, surfaceHeights } from "./river.js";
+import { SUN_VECTOR } from "./sky.js";
 
 export interface IBakedWorld {
   size: number;
@@ -124,13 +131,15 @@ interface ILayerMaps {
   normal?: Texture;
 }
 
+/** Props draw at render order 0 and the water at 2: the ground draws between them. */
+const GROUND_RENDER_ORDER = 1;
 /**
  * The beach band, in metres above the bake's own sea level.
  *
  * Wide, because this coast rises a few degrees: a 3 m band is a 30 m walk of beach here and stops
  * halfway up it. The bake paints sand below 6 m for the same reason.
  */
-const SHORE = { beach: 7.5, wet: 1 };
+const SHORE = { beach: 6, wet: -0.5 };
 
 /**
  * The wet band, and what it does to the sand.
@@ -162,13 +171,24 @@ const WET_SAND = {
  */
 const MEADOW = vec3(0.47, 0.72, 0.4);
 /** A spruce forest's meadow: dark olive, not lawn green (Project Nature's spruce forest frames). */
-const FOREST_MEADOW = vec3(0.36, 0.46, 0.26);
+const FOREST_MEADOW = vec3(0.4, 0.58, 0.27);
 /** How much of the vegetation's sky light the ground receives; the vegetation's own is 1.13. */
 const GROUND_SKY_LIGHT = 0.6;
 /** Multiplier that turns meadow turf into shaded needle litter under a stand. */
-const FOREST_FLOOR = vec3(0.44, 0.38, 0.3);
-/** Turf multiplier for the backdrop's spruce stands: dark blue-green needles, as in the goal frame. */
-const BACKDROP_SPRUCE = vec3(0.2, 0.3, 0.2);
+const FOREST_FLOOR = vec3(0.4, 0.4, 0.27);
+/**
+ * Bare earth between the stands, on top of the litter tint: a spruce floor's humus reads L* 29-37 at
+ * the walk pose (PRD-855), and the litter tint alone left it at 53, brighter than the turf beside it.
+ */
+const BARE_SOIL = vec3(0.4, 0.38, 0.37);
+/**
+ * Albedo of the backdrop's closed spruce cover, crowns and the shade between them averaged: the hue of
+ * the playable forest's own crowns in the overview (linear 0.74 : 1 : 0.28), a little bluer, so the
+ * far slopes and the near stands read as one forest.
+ */
+const BACKDROP_SPRUCE = vec3(0.019, 0.028, 0.013);
+/** Albedo of the meadow gaps in the backdrop's cover: dull olive turf, not lawn. */
+const BACKDROP_CLEARING = vec3(0.042, 0.052, 0.022);
 /**
  * The surveyed surroundings carry no stands (the bake plants only the playable square), so past the
  * square's edge the forest hillside is an open sunlit meadow: lawn turf, no needle-soil patches, and
@@ -257,7 +277,7 @@ export function groundTurf(
       bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.09), 2),
     ),
   );
-  return mix(
+  const turf = mix(
     sampled.mul(olive ? mix(FOREST_MEADOW, MEADOW, open) : MEADOW),
     field,
     // Open meadow: the photograph's thatch (albedo 0.15) only carries detail under a dark lawn.
@@ -265,6 +285,7 @@ export function groundTurf(
       .mul(0.55)
       .max(open.mul(0.6)),
   ).mul(mix(float(1), sward, open));
+  return turf;
 }
 
 function rockLayer(
@@ -536,7 +557,15 @@ export async function createGroundMaterial(
   assets: IAssetLoader,
   curvature: IGroundCurvature,
   biome?: IBiome,
+  /**
+   * A streamed tile carries no painted `canopy` or baked `sky`: it lies past the trees and keeps the
+   * whole sky, exactly as the collar's own attributes say.
+   */
+  streamed = false,
 ): Promise<MeshStandardNodeMaterial> {
+  const canopyCover = (): Node<"float"> =>
+    streamed ? float(0) : attribute<"float">("canopy", "float");
+  const skyShare = (): Node<"float"> => (streamed ? float(1) : attribute<"float">("sky", "float"));
   const measured =
     biome && "heightBands" in biome
       ? (biome as IWorldBiome)
@@ -593,7 +622,7 @@ export async function createGroundMaterial(
   const sand =
     data.waterLevel === null
       ? float(0)
-      : smoothstep(float(SHORE.beach), float(SHORE.wet), positionWorld.y).mul(
+      : smoothstep(float(SHORE.beach), float(SHORE.wet), positionWorld.y.sub(data.waterLevel)).mul(
           smoothstep(0.34, 0.1, steep),
         );
   /**
@@ -639,6 +668,7 @@ export async function createGroundMaterial(
   Object.assign(weights, biomeWeights(measured, steep, hollow, breakUp));
   // Needle litter and crown shade under the placed stands, as a multiplicative floor tint.
   let forestFloor: Node<"float"> = float(0);
+  let bareSoil: Node<"float"> = float(0);
   // Transport, slope and shelter choose the splat; noise only frays the material's edge.
   weights.rock = max(weights.rock, scour.mul(0.9)).mul(oneMinus(deposits.mul(0.22)));
   if (look.crestRock) weights.rock = max(weights.rock, smoothstep(0.08, 0.22, slope));
@@ -661,7 +691,7 @@ export async function createGroundMaterial(
       // Needle litter lies under the trees that were actually placed (`paintCanopy`), frayed by noise
       // at its edge. The old sine-sum stand mask no longer matched the value-noise scatter, and its
       // 38 m fade left every stand standing on meadow turf from any height.
-      const litter = smoothstep(0, 0.6, attribute<"float">("canopy", "float"))
+      const litter = smoothstep(0, 0.6, canopyCover())
         .mul(mix(0.72, 1, smoothstep(-0.5, 0.5, bakedNoise(positionWorld.mul(2.2)))))
         .mul(oneMinus(smoothstep(300, 600, positionView.length())))
         .mul(0.85);
@@ -673,8 +703,8 @@ export async function createGroundMaterial(
         // picks them, finer noise frays their edge, a hollow keeps its turf. They fade out by 350 m
         // so a far slope does not print the noise as camouflage.
         const bare = smoothstep(
-          -0.05,
-          0.3,
+          0.16,
+          0.5,
           macro.add(mottling.mul(0.85)).sub(hollow.max(0).mul(0.2)),
         )
           .mul(oneMinus(smoothstep(150, 350, positionView.length())))
@@ -682,6 +712,7 @@ export async function createGroundMaterial(
         weights.dirt = weights.dirt.max(bare.mul(0.8));
         // The soil takes the litter's warm needle tint in full, not the dirt photograph's grey gravel.
         forestFloor = forestFloor.max(bare);
+        bareSoil = bare;
       }
     }
     // Coastal soil patches remain; the forest meadow keeps turf between distant blade clusters.
@@ -694,6 +725,17 @@ export async function createGroundMaterial(
       .mul(oneMinus(drainage))
       .mul(smoothstep(0.15, 0.025, slope))
       .mul(0.5);
+    if (biome?.woodedGround) {
+      // A spruce floor is moss and needles, not turf and not bare sand: under the placed crowns and
+      // on the wood's bare patches the moss layer grows in broad cushions, frayed by a finer noise,
+      // and the needle soil shows between them. In the low sun the old floor drew as pale sand.
+      const cushions = smoothstep(
+        -0.25,
+        0.3,
+        bakedNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.35)).add(mottling.mul(0.5)),
+      );
+      weights.moss = weights.moss.max(forestFloor.mul(cushions).mul(0.85));
+    }
   }
 
   // --- how each surface looks -------------------------------------------------------------
@@ -881,7 +923,15 @@ export async function createGroundMaterial(
           .mul(look.crestTurf ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
           .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
         if (look.sandRipples) normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
-        return { color: groundTurf(surface.rgb, biome, hollow, open), normal };
+        const turf = groundTurf(surface.rgb, biome, hollow, open);
+        // Open turf in the wood takes the row's `turfTint`; under the crowns the needle litter
+        // (`FOREST_FLOOR`) already owns the tone, so the tint fades out with the canopy.
+        return {
+          color: look.woodedGround
+            ? turf.mul(mix(LOOK.turf, vec3(1), smoothstep(0, 0.6, canopyCover())))
+            : turf,
+          normal,
+        };
       },
       // Geometry, transport and curvature choose placement; the packaged masks remain authored data.
       layerWeight: (_masked, { layer: descriptor }) => {
@@ -909,8 +959,9 @@ export async function createGroundMaterial(
       },
       materialFactory: ({ color, normal }) => {
         const albedo = vec4(color, 1);
-        // Concavity occludes sky bounce, leaving direct sunlight physically separate.
-        material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow));
+        // Concavity occludes sky bounce, leaving direct sunlight physically separate; the
+        // horizon the surrounding relief makes (`skyVisibility`) shades valleys and gorges too.
+        material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow)).mul(skyShare());
 
         // 50–200 metre vegetation tones survive texture mipmapping in the overview.
         const dryness = otherBiome
@@ -926,7 +977,18 @@ export async function createGroundMaterial(
           ? mix(vec3(0.92, 0.94, 0.91), vec3(1.08, 1.03, 0.95), dryness)
           : mix(vec3(0.9, 0.95, 0.84), vec3(1.03, 1.04, 0.95), dryness);
         const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
-        const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
+        // Past the square the forest's hills are its wooded lower slopes: seen from 150 m and more
+        // they take the backdrop's spruce cover from 40 m inside the edge, while the meadow under the
+        // player's feet keeps the playable ground's own turf.
+        const continuation =
+          !otherBiome && !look.surveyedBackdrop
+            ? max(
+                smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside),
+                smoothstep(data.size / 2 - 40, data.size / 2 + 20, outside).mul(
+                  smoothstep(150, 350, positionView.length()),
+                ),
+              )
+            : smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
         const strata = bakedFractalNoise(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
         // The forest's backdrop is alpine (owner goal 2026-11-04); the coast keeps its survey's look.
         const crestBackdrop = !look.surveyedBackdrop;
@@ -943,12 +1005,17 @@ export async function createGroundMaterial(
           : steep;
         // Talus at the feet of cliff bands: the same rock, finer and paler.
         const scree = collar ? collar.scree.mul(reliefWeight) : float(0);
-        // Bedding: warped strata about 30 m thick on the steep rock, each a cliff under a ledge,
-        // as the goal frame's faces break into bands (owner, 2026-11-04). The phase is antialiased by
-        // its own screen derivative, so a band thinner than a pixel greys out instead of crawling.
-        const bedding = positionWorld.y
-          .add(bakedFractalNoise(positionWorld.mul(0.004), 2).mul(45))
-          .div(30);
+        // Bedding: strata on the steep rock, each a cliff under a ledge, as the goal frame's faces
+        // break into bands (owner, 2026-11-04). Real beds dip about 20 degrees, thin and thicken, and
+        // break along the strike; level, evenly spaced, unbroken rings read as artificial contour
+        // lines (owner, 2026-11-07). The phase is antialiased by its own screen derivative, so a band
+        // thinner than a pixel greys out instead of crawling. No noise feeds back into its own domain:
+        // that warp curled the beds into marbled swirls (owner, 2026-11-09); beds bend only gently.
+        const dipped = positionWorld.y
+          .add(positionWorld.x.mul(0.3))
+          .sub(positionWorld.z.mul(0.18))
+          .add(bakedFractalNoise(positionWorld.mul(0.004), 2).mul(20));
+        const bedding = dipped.div(34);
         const phase = fract(bedding);
         const blur = fwidth(bedding).min(0.25);
         const ledge = smoothstep(float(0.8).sub(blur), float(0.88).add(blur), phase).mul(
@@ -957,107 +1024,194 @@ export async function createGroundMaterial(
         const wall = smoothstep(float(0.08).sub(blur), float(0.2).add(blur), phase).mul(
           oneMinus(smoothstep(float(0.66).sub(blur), float(0.8).add(blur), phase)),
         );
+        // A bed runs a few hundred metres along the face and pinches out under scree and couloirs.
+        const runs = smoothstep(
+          -0.05,
+          0.3,
+          bakedFractalNoise(positionWorld.mul(vec3(0.006, 0.03, 0.006)), 2),
+        );
         // Not every face is bedded: kilometre patches carry bands, the rest stays massive rock.
         const bedded = collar
-          ? smoothstep(-0.15, 0.25, bakedFractalNoise(positionWorld.mul(0.0018), 2)).mul(
-              reliefWeight,
-            )
+          ? smoothstep(-0.15, 0.25, bakedFractalNoise(positionWorld.mul(0.0018), 2))
+              .mul(runs)
+              .mul(reliefWeight)
           : float(0);
         // Crag ribs that the prefiltered 10 m backdrop mesh cannot carry: 35 m across and 90 m down
         // the fall line, as couloirs and buttresses run. Their gradient tilts the normal and their
         // creases darken the rock, so cliff bands read at two kilometres.
+        // The forest's massif (the only lawn world with a crest backdrop) takes three scales instead:
+        // 350, 120 and 41 m across, each 2.3 times longer down the fall line, as a 110 m relief whose
+        // every octave tilts the face by the same angle, so spurs and couloirs catch the low sun at
+        // every range.
+        const massif = !otherBiome && crestBackdrop;
         const facetAt = (x: number, y: number, z: number) =>
-          bakedFractalNoise(positionWorld.add(vec3(x, y, z)).mul(vec3(0.028, 0.011, 0.028)), 2);
+          massif
+            ? bakedFractalNoise(
+                positionWorld.add(vec3(x, y, z)).mul(vec3(1 / 350, 1 / 800, 1 / 350)),
+                3,
+                2.9,
+                0.33,
+              )
+            : bakedFractalNoise(positionWorld.add(vec3(x, y, z)).mul(vec3(0.028, 0.011, 0.028)), 2);
         const facet = facetAt(0, 0, 0);
         const facetTilt = vec3(
           facet.sub(facetAt(6, 0, 0)),
           facet.sub(facetAt(0, 6, 0)),
           facet.sub(facetAt(0, 0, 6)),
-        ).mul(1.4);
+        ).mul(massif ? 110 / 6 : 1.4);
         // Reuse the resident maps at massif scale: steep faces project onto their own axes.
         const turf = triplanarAlbedo(layer("grass").diffuse, "grass", 12).rgb;
-        // The forest's slopes carry spruce stands with meadow clearings (owner goal 2026-11-04),
-        // not one lawn: kilometre-scale noise picks the stands, crown-scale noise mottles them.
-        const stands = look.surveyedBackdrop
-          ? float(0)
-          : smoothstep(-0.2, 0.2, bakedFractalNoise(positionWorld.mul(0.0035), 3));
-        const forest = turf
-          .mul(
-            mix(
-              MEADOW,
-              BACKDROP_SPRUCE.mul(mix(0.7, 1.2, bakedNoise(positionWorld.mul(0.06)).add(0.5))),
-              stands,
+        // The forest's lower slopes are a closed spruce cover drawn by material alone: 11 m crowns
+        // with dark gaps, denser and sparser stands, darker in the hollows, opened by kilometre meadow clearings.
+        // Past 1 km a crown is a few pixels: its contrast fades, so the cover does not scale over.
+        // One baked read repeats every 8 noise units (88 m at this scale) and drew a checker under the
+        // fog; a second read on a lattice turned 37 degrees and 1.53 times finer breaks the period.
+        const crownField = bakedNoise(positionWorld.div(11))
+          .add(
+            bakedNoise(
+              vec3(
+                positionWorld.x.mul(0.8).add(positionWorld.z.mul(0.6)),
+                positionWorld.y,
+                positionWorld.z.mul(0.8).sub(positionWorld.x.mul(0.6)),
+              ).div(7.2),
+              1,
+              0,
+              2,
             ),
           )
-          .mul(mix(0.5, 0.85, breakUp.add(0.5)));
+          .mul(0.7);
+        const crowns = mix(
+          smoothstep(-0.3, 0.35, crownField),
+          float(0.55),
+          smoothstep(400, 1200, positionView.length()).mul(0.8),
+        );
+        const clumps = bakedFractalNoise(positionWorld.div(160), 2);
+        const clearings = smoothstep(
+          0.28,
+          0.5,
+          bakedFractalNoise(positionWorld.mul(0.008), 2).sub(crestSteep.mul(0.4)),
+        );
+        const cover = mix(
+          BACKDROP_SPRUCE.mul(mix(0.4, 1.3, crowns))
+            .mul(clumps.mul(0.15).add(1))
+            .mul(
+              mix(float(1), float(0.7), collar ? smoothstep(0.1, 0.5, collar.hollow) : float(0)),
+            ),
+          BACKDROP_CLEARING.mul(mix(0.85, 1.1, crowns)),
+          clearings,
+        );
+        // The coast's surveyed backdrop is an open lawn.
+        const forest = crestBackdrop
+          ? cover
+          : turf.mul(MEADOW).mul(mix(0.5, 0.85, breakUp.add(0.5)));
+        // The massif reads at 1-3 km: the rock map tiles at 60 m and 220 m, blended by kilometre
+        // noise, so no face repeats or smears at that range. Unwarped: the ground's 40 m UV warp
+        // swirled a tile this large into marble. The scan is a red-brown boulder; under blue air it
+        // read magenta, so the massif takes its luminance only.
+        const rockAxis = abs(normalWorldGeometry).pow(4);
+        const rockShare = rockAxis.div(rockAxis.x.add(rockAxis.y).add(rockAxis.z));
+        const massifTap = (source: Texture, size: number, offset: number): Node<"vec3"> =>
+          rockShare.x
+            .mul(texture(source, positionWorld.zy.div(size).add(offset)).rgb)
+            .add(rockShare.y.mul(texture(source, positionWorld.xz.div(size).add(offset)).rgb))
+            .add(rockShare.z.mul(texture(source, positionWorld.xy.div(size).add(offset)).rgb));
+        const massifRock = mix(
+          massifTap(layer("rock").diffuse, 60, 0),
+          massifTap(layer("rock").diffuse, 220, 0.37),
+          smoothstep(-0.3, 0.3, bakedNoise(positionWorld.mul(0.0021))),
+        );
         const crag = (
           look.surveyedBackdrop
-            ? triplanarAlbedo(layer("rock").diffuse, "rock", 6)
-            : mix(
-                triplanarAlbedo(layer("rock").diffuse, "rock", 2.6),
-                triplanarAlbedo(layer("rock").diffuse, "rock", 14),
-                patch.mul(0.25).add(0.15),
+            ? triplanarAlbedo(layer("rock").diffuse, "rock", 6).rgb
+            : // At half its contrast the scan's boulder seams stop drawing a crack net over the faces.
+              vec3(
+                dot(massifRock, vec3(0.2126, 0.7152, 0.0722))
+                  .sub(0.07)
+                  .mul(0.5)
+                  .add(0.07),
               )
-        ).rgb
-          .mul(crestBackdrop ? vec3(0.6, 0.59, 0.56) : vec3(0.62, 0.66, 0.67))
-          .mul(strata.mul(0.35).add(1))
+                .mul(vec3(0.93, 0.99, 1.04))
+                .mul(LOOK.rock)
+        )
+          .mul(crestBackdrop ? vec3(0.62) : vec3(0.62, 0.66, 0.67))
+          .mul(strata.mul(crestBackdrop ? 0.15 : 0.35).add(1))
           .mul(crestBackdrop ? mix(0.6, 1.15, smoothstep(-0.4, 0.4, facet)) : float(1))
           // Kilometre-scale warm and cool rock, so whole faces do not read one flat grey.
           .mul(
             crestBackdrop
               ? mix(
-                  vec3(0.94, 0.97, 1.03),
-                  vec3(1.1, 1.02, 0.9),
+                  vec3(0.95, 0.98, 1.03),
+                  vec3(1.05, 1.02, 0.97),
                   smoothstep(-0.3, 0.3, bakedFractalNoise(positionWorld.mul(0.0025), 2)),
                 )
               : vec3(1),
           );
-        const rubble = triplanarAlbedo(layer("rock").diffuse, "rock", 1.2)
-          .rgb.mul(vec3(0.66, 0.65, 0.62))
-          .mul(mix(0.85, 1.1, bakedNoise(positionWorld.mul(0.08)).add(0.5)));
+        // Runoff and lichen stain steep rock in streaks down the fall line, metres wide and tens long.
+        const streaks = smoothstep(
+          -0.35,
+          0.35,
+          bakedFractalNoise(positionWorld.mul(vec3(0.045, 0.006, 0.045)), 3),
+        );
+        const talus = triplanarAlbedo(layer("rock").diffuse, "rock", 1.2).rgb;
+        const rubble = (
+          crestBackdrop
+            ? vec3(dot(talus, vec3(0.2126, 0.7152, 0.0722))).mul(vec3(0.66, 0.67, 0.69))
+            : talus.mul(vec3(0.66, 0.65, 0.62))
+        ).mul(mix(0.85, 1.1, bakedNoise(positionWorld.mul(0.08)).add(0.5)));
+        // A ragged treeline: spurs of forest climb 90 m higher or stop 90 m lower along the slope.
         const treeline = elevationBand(
           measured,
           measured.heightBands.treeline,
-          positionWorld.y.add(breakUp.mul(24)),
+          positionWorld.y
+            .add(breakUp.mul(24))
+            .add(crestBackdrop ? bakedFractalNoise(positionWorld.mul(0.006), 2).mul(90) : float(0)),
         );
-        const face = smoothstep(0.14, 0.3, crestSteep.add(strata.mul(0.055)));
+        // Rock from about 31 degrees. The wood's spruce stands to 36-46 degrees (its far-forest slope
+        // row), so its cover holds to there: at 31 a surveyed massif's wooded flanks drew bare rock.
+        const face = look.woodedGround
+          ? smoothstep(0.19, 0.31, crestSteep.add(strata.mul(0.055)))
+          : smoothstep(0.14, 0.3, crestSteep.add(strata.mul(0.055)));
         const bands = bedded.mul(face);
         const snowline = elevationBand(
           measured,
           measured.heightBands.cap,
           positionWorld.y.add(breakUp.mul(28)),
         );
-        const cap = snowline
-          .mul(
-            // Snow holds on ledges and slides off faces steeper than about 45 degrees, broken by
-            // the facets into fields between bare ribs; the coast keeps it on gentle ground.
-            oneMinus(
-              crestBackdrop
-                ? smoothstep(
-                    collar ? 0.27 : 0.28,
-                    collar ? 0.44 : 0.5,
-                    crestSteep.sub(facet.mul(0.2)),
-                  ).max(
-                    // Bare patches break the fields; the goal frame's upper third is mostly white.
-                    smoothstep(-0.2, -0.45, bakedFractalNoise(positionWorld.mul(0.006), 2)),
-                  )
-                : smoothstep(0.18, 0.42, steep),
-            ),
-          )
-          // Ledges on the bedded faces hold snow the face itself sheds.
-          .max(snowline.mul(ledge).mul(bands).mul(0.9))
-          // Gullies and hollows hold snow on steeper ground than open faces do.
-          .max(
-            collar
-              ? snowline
-                  .mul(smoothstep(0.1, 0.5, collar.hollow))
-                  .mul(oneMinus(smoothstep(0.45, 0.6, crestSteep)))
-                  .mul(reliefWeight)
-              : float(0),
-          );
-        const snow = triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
+        // Snow fields, not ledge lines (owner, 2026-11-09): full cover above the snowline on faces
+        // that point up, tongues 160 m further down the gullies, broken patches 150 m under the
+        // line, and none on wall rock. The facets lift or drop each field's edge, so its rim follows
+        // the ribs instead of a contour.
+        const gully = collar ? smoothstep(0.05, 0.4, collar.hollow).mul(reliefWeight) : float(0);
+        const lying = oneMinus(
+          smoothstep(0.3, 0.48, crestSteep.sub(facet.mul(0.25)).sub(gully.mul(0.1))),
+        );
+        const fields = elevationBand(
+          measured,
+          measured.heightBands.cap,
+          positionWorld.y.add(breakUp.mul(28)).add(gully.mul(160)),
+        ).mul(oneMinus(smoothstep(-0.25, -0.45, bakedFractalNoise(positionWorld.mul(0.006), 2))));
+        const patches = smoothstep(
+          measured.heightBands.cap[0] - 150,
+          measured.heightBands.cap[0] - 20,
+          positionWorld.y.add(breakUp.mul(28)),
+        ).mul(
+          smoothstep(
+            0.12,
+            0.3,
+            bakedFractalNoise(positionWorld.mul(0.011), 2).add(gully.mul(0.35)).add(facet.mul(0.2)),
+          ),
+        );
+        const cap = crestBackdrop
+          ? fields.max(patches).mul(lying)
+          : snowline.mul(oneMinus(smoothstep(0.18, 0.42, steep)));
+        // The massif's snow is unwarped too: the ground's UV warp at a 96 m tile swirled it.
+        const snow = crestBackdrop
+          ? massifTap(layer("snow").diffuse, 60, 0.21)
+          : triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
         // Each band is a darker wall under a paler ledge.
-        const banded = crag.mul(mix(float(1), mix(float(1.12), float(0.72), wall), bands));
+        const banded = crag
+          .mul(mix(float(1), mix(float(1.08), float(0.8), wall), bands))
+          .mul(mix(float(1), mix(float(0.78), float(1.04), streaks), face));
         const mountain = mix(
           mix(forest, mix(banded, rubble, scree), max(max(treeline, face), scree)),
           snow,
@@ -1069,7 +1223,8 @@ export async function createGroundMaterial(
           continuation,
         )
           .mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank))
-          .mul(mix(vec3(1), FOREST_FLOOR, forestFloor));
+          .mul(mix(vec3(1), FOREST_FLOOR, forestFloor))
+          .mul(mix(vec3(1), BARE_SOIL, bareSoil));
         material.roughnessNode = mix(
           mix(
             otherBiome ? 0.94 : mix(0.88, 0.98, dryness),
@@ -1096,8 +1251,10 @@ export async function createGroundMaterial(
         }
         // Distant faces resolve broad rock strata, rather than subpixel meadow normals.
         const rockNormal = layer("rock").normal;
+        // The forest's massif takes its relief from the facets alone: the rock normal map reads
+        // through the ground's UV warp, which at a 30 m tile drew curled lines over every face.
         const mountainTilt = (
-          rockNormal === undefined
+          rockNormal === undefined || massif
             ? vec3(0)
             : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32)
         ).add(
@@ -1117,9 +1274,22 @@ export async function createGroundMaterial(
           .mul(ledge.mul(0.7))
           .add(outward.sub(surveyedNormal).mul(wall.mul(0.35)))
           .mul(bands);
-        const tangent = tilt
+        const detail = tilt
           .add(bandTilt)
           .sub(surveyedNormal.mul(dot(surveyedNormal, tilt.add(bandTilt))));
+        // A bump cannot light a face its own slope turns from the sun: the face's relief would
+        // self-shadow it. Without this the low sun lit the massif's shaded walls in soft, cloud-like
+        // wisps wherever the relief tilted toward it (owner, 2026-11-09). In shade the relief still
+        // turns the face to more or less sky.
+        const tangent = massif
+          ? detail.sub(
+              SUN_VECTOR.mul(
+                max(dot(detail, SUN_VECTOR), 0)
+                  .mul(oneMinus(smoothstep(-0.05, 0.25, dot(surveyedNormal, SUN_VECTOR))))
+                  .mul(continuation),
+              ),
+            )
+          : detail;
         const crystals = microGrain()
           .mul(snowCover)
           .mul(oneMinus(smoothstep(4, 22, positionView.length())));
@@ -1143,10 +1313,25 @@ export async function createGroundMaterial(
  * keeps that fallback rather than failing the world: the terrain still has to collide on a host
  * with no asset server.
  */
+/**
+ * The square around the player that streamed tiles draw (PRD-790): centre and half-width in metres.
+ * The collar draws everywhere outside it, and the tiles draw only inside it and past the playable
+ * square, so each point of ground is drawn once.
+ */
+export interface ITerrainStream {
+  readonly centre: UniformNode<"vec2", Vector2>;
+  readonly half: UniformNode<"float", number>;
+  /** Receives the tiles' own ground material once the square's ground is in place. */
+  readonly tiles: (material: MeshStandardNodeMaterial) => void;
+}
+
 export function createTerrain(
   data: IBakedWorld,
   assets?: IAssetLoader,
   biome?: IBiome,
+  /** The baked `skyVisibility` per vertex; without it the ground keeps the whole sky. */
+  sky?: Float32Array,
+  stream?: ITerrainStream,
 ): { collar: HeightfieldCollar; field: Heightfield; mesh: Mesh } {
   const field = new Heightfield({
     rows: data.resolution,
@@ -1165,9 +1350,22 @@ export function createTerrain(
     "canopy",
     new Float32BufferAttribute(new Float32Array(geometry.getAttribute("position").count), 1),
   );
+  // The share of the sky each vertex sees past the relief around it, for the ground's ambient term.
+  const vertices = geometry.getAttribute("position").count;
+  if (sky && sky.length !== vertices)
+    throw new RangeError(`Baked sky visibility has ${sky.length} values for ${vertices} vertices`);
+  geometry.setAttribute(
+    "sky",
+    new Float32BufferAttribute(sky ?? new Float32Array(vertices).fill(1), 1),
+  );
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   const mesh: Mesh = new Mesh(geometry, material);
   mesh.name = "authored-terrain";
+  // The ground is under everything and its material is the frame's dearest: drawn in sort order it
+  // shaded every pixel a crown or a blade then covered. After the props, the depth test rejects those
+  // first (forest player pose, RTX 2080, 913x881: 13.6 ms of GPU with the ground in sort order, 8.9 ms
+  // after the props). The water keeps its place after the ground at render order 2.
+  mesh.renderOrder = GROUND_RENDER_ORDER;
   mesh.layers.enable(REFLECTED_LAYER);
   mesh.receiveShadow = true;
   mesh.castShadow = biome?.terrainCastsShadow ?? false;
@@ -1230,8 +1428,14 @@ export function createTerrain(
     "canopy",
     new Float32BufferAttribute(new Float32Array(edgePositions.count), 1),
   );
+  // The ground material reads `sky` too; the collar lies past the baked square and keeps the sky.
+  horizonGeometry.setAttribute(
+    "sky",
+    new Float32BufferAttribute(new Float32Array(edgePositions.count).fill(1), 1),
+  );
   const horizon: Mesh = new Mesh(horizonGeometry, material);
   horizon.name = "temperate-distant-ridges";
+  horizon.renderOrder = GROUND_RENDER_ORDER;
   horizon.layers.enable(REFLECTED_LAYER);
   horizon.receiveShadow = true;
   // Scenery beyond the collider: no ray stands on it, and a picking tree over its 1.5M triangles
@@ -1246,14 +1450,37 @@ export function createTerrain(
     disposed = true;
   });
   if (assets !== undefined)
-    void createGroundMaterial(data, assets, curvature, biome)
-      .then((ground) => {
+    void Promise.all([
+      createGroundMaterial(data, assets, curvature, biome),
+      stream ? createGroundMaterial(data, assets, curvature, biome, true) : undefined,
+    ])
+      .then(([ground, tile]) => {
         // Anything but the flat placeholder means the scene already moved on; a material nothing
         // draws holds GPU memory until its textures are released.
-        if (disposed || mesh.material !== material) return ground.dispose();
+        if (disposed || mesh.material !== material) {
+          tile?.dispose();
+          return ground.dispose();
+        }
         mesh.material = ground;
         horizon.material = ground;
         material.dispose();
+        const surfaces = [ground];
+        if (stream && tile) {
+          // Chebyshev distance from the streamed square's centre, against its half-width.
+          const fromCentre = max(
+            abs(positionWorld.x.sub(stream.centre.x)),
+            abs(positionWorld.z.sub(stream.centre.y)),
+          );
+          const far = ground.clone();
+          far.maskNode = fromCentre.greaterThanEqual(stream.half);
+          horizon.material = far;
+          tile.maskNode = fromCentre
+            .lessThan(stream.half)
+            .and(max(abs(positionWorld.x), abs(positionWorld.z)).greaterThan(data.size / 2));
+          surfaces.push(far, tile);
+          geometry.addEventListener("dispose", () => far.dispose());
+          stream.tiles(tile);
+        }
         // The ground took no image-based light, so terrain in shadow fell to near-black while every
         // plant on it read the sky. It reads the same clamped sky the vegetation does.
         if (biome === undefined || biome.lawnGround)
@@ -1261,10 +1488,12 @@ export function createTerrain(
             if (!sky || mesh.material !== ground || !ground.colorNode) return;
             // An envMap would be the ground's 17th sampler; the diffuse sky it carries is two colours.
             const { up, down } = skyIrradiance(sky);
-            ground.emissiveNode = (ground.colorNode as Node<"vec3">)
-              .mul(mix(vec3(...down), vec3(...up), normalWorld.y.mul(0.5).add(0.5)))
-              .mul(GROUND_SKY_LIGHT);
-            ground.needsUpdate = true;
+            for (const surface of surfaces) {
+              surface.emissiveNode = (surface.colorNode as Node<"vec3">)
+                .mul(mix(vec3(...down), vec3(...up), normalWorld.y.mul(0.5).add(0.5)))
+                .mul(GROUND_SKY_LIGHT);
+              surface.needsUpdate = true;
+            }
           });
       })
       // A map that never arrives, or a set this material cannot bind, leaves the ground on its
@@ -1409,7 +1638,7 @@ function buildCurvature(data: IBakedWorld, field: Heightfield, biome?: IBiome): 
 }
 
 /** The collar's own relief at the survey's 9.8 m cells, for the pixels its prefiltered mesh smooths. */
-interface ICollarRelief {
+export interface ICollarRelief {
   readonly texture: DataTexture;
   /** World normal of the unfiltered surroundings. */
   readonly normal: Node<"vec3">;
@@ -1425,81 +1654,49 @@ interface ICollarRelief {
  * collar draws a prefiltered field on a 14-18 m ring grid, so its cliffs, gullies and ledges exist
  * only in this texture. Half float like the curvature: the normal lanes are signed.
  */
-function buildCollarRelief(name: string): ICollarRelief | undefined {
+export function buildCollarRelief(name: string): ICollarRelief | undefined {
   const source = horizonSurroundings(name);
   if (source === undefined) return undefined;
   const n = source.resolution;
-  const cell = source.size / (n - 1);
-  const heights = source.heights;
-  const at = (row: number, column: number): number =>
-    heights[Math.min(n - 1, Math.max(0, row)) * n + Math.min(n - 1, Math.max(0, column))] as number;
-  const slopes = new Float32Array(n * n);
-  for (let row = 0; row < n; row++)
-    for (let column = 0; column < n; column++)
-      slopes[row * n + column] = Math.atan(
-        Math.hypot(
-          (at(row, column + 1) - at(row, column - 1)) / (2 * cell),
-          (at(row + 1, column) - at(row - 1, column)) / (2 * cell),
-        ),
-      );
-  const degrees = Math.PI / 180;
-  const band = (edge0: number, edge1: number, value: number): number => {
-    const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-    return t * t * (3 - 2 * t);
-  };
-  const pixels = new Uint16Array(n * n * 4);
-  for (let row = 0; row < n; row++)
-    for (let column = 0; column < n; column++) {
-      const vertex = row * n + column;
-      const height = at(row, column);
-      const dx = (at(row, column + 1) - at(row, column - 1)) / (2 * cell);
-      const dz = (at(row + 1, column) - at(row - 1, column)) / (2 * cell);
-      const length = Math.hypot(dx, 1, dz);
-      // A gully 5 m deep across 20 m reads near +1.
-      const laplacian =
-        (at(row, column - 2) +
-          at(row, column + 2) +
-          at(row - 2, column) +
-          at(row + 2, column) -
-          4 * height) /
-        (2 * cell) ** 2;
-      // Talus lies at 25-40 degrees under a face steeper than about 45 degrees within 30 m uphill.
-      let cliffAbove = 0;
-      for (let dr = -3; dr <= 3; dr++)
-        for (let dc = -3; dc <= 3; dc++)
-          if (at(row + dr, column + dc) > height + 8)
-            cliffAbove = Math.max(
-              cliffAbove,
-              band(
-                42 * degrees,
-                50 * degrees,
-                slopes[
-                  Math.min(n - 1, Math.max(0, row + dr)) * n +
-                    Math.min(n - 1, Math.max(0, column + dc))
-                ] as number,
-              ),
-            );
-      const slope = slopes[vertex] as number;
-      const talus =
-        band(22 * degrees, 28 * degrees, slope) * (1 - band(38 * degrees, 44 * degrees, slope));
-      pixels[vertex * 4] = DataUtils.toHalfFloat(-dx / length);
-      pixels[vertex * 4 + 1] = DataUtils.toHalfFloat(-dz / length);
-      pixels[vertex * 4 + 2] = DataUtils.toHalfFloat(Math.max(-1, Math.min(1, laplacian * 20)));
-      pixels[vertex * 4 + 3] = DataUtils.toHalfFloat(talus * cliffAbove);
-    }
-  const cooked = new DataTexture(pixels, n, n, RGBAFormat, HalfFloatType);
+  const massif = source.massif && decodeMassif(source.massif);
+  // One atlas, one binding (the ground already samples sixteen): the collar's cells on the left,
+  // a placed massif's own 4 m cells on the right, each read through its own clamped UV.
+  const width = n + (massif?.columns ?? 0);
+  const height = Math.max(n, massif?.rows ?? 0);
+  const pixels = new Uint16Array(width * height * 4);
+  writeRelief(pixels, width, 0, n, n, source.size / (n - 1), source.heights);
+  if (massif)
+    writeRelief(pixels, width, n, massif.columns, massif.rows, massif.spacing, massif.heights);
+  const cooked = new DataTexture(pixels, width, height, RGBAFormat, HalfFloatType);
   cooked.minFilter = LinearFilter;
   cooked.magFilter = LinearFilter;
   cooked.wrapS = ClampToEdgeWrapping;
   cooked.wrapT = ClampToEdgeWrapping;
   cooked.needsUpdate = true;
-  // Grid points sit on texel centres: column c of n is at (c + 0.5) / n.
-  const uv = vec2(positionWorld.x, positionWorld.z)
+  // Grid points sit on texel centres: column c of the collar is at (c + 0.5) / width.
+  const collarUv = vec2(positionWorld.x, positionWorld.z)
     .div(source.size)
     .add(0.5)
-    .mul((n - 1) / n)
-    .add(0.5 / n);
-  const sampled = texture(cooked, uv);
+    .mul(n - 1)
+    .clamp(0, n - 1)
+    .add(0.5)
+    .div(vec2(width, height));
+  let sampled: Node<"vec4"> = texture(cooked, collarUv);
+  if (massif) {
+    const cell = vec2(positionWorld.x, positionWorld.z)
+      .sub(vec2(massif.origin[0], massif.origin[1]))
+      .div(massif.spacing);
+    const last = vec2(massif.columns - 1, massif.rows - 1);
+    const inner = min(min(cell.x, cell.y), min(last.x.sub(cell.x), last.y.sub(cell.y)));
+    const fine = texture(
+      cooked,
+      cell
+        .clamp(vec2(0, 0), last)
+        .add(vec2(n + 0.5, 0.5))
+        .div(vec2(width, height)),
+    );
+    sampled = mix(sampled, fine, smoothstep(0, 3, inner));
+  }
   return {
     texture: cooked,
     normal: vec3(
@@ -1510,6 +1707,86 @@ function buildCollarRelief(name: string): ICollarRelief | undefined {
     hollow: sampled.b,
     scree: sampled.a,
   };
+}
+
+/** A massif's heights from `horizon.json`: int16 decimetres above `offset`, base64. */
+function decodeMassif(packed: IPackedMassif) {
+  const bytes = Uint8Array.from(atob(packed.heights), (c) => c.charCodeAt(0));
+  const raw = new Int16Array(bytes.buffer, 0, packed.columns * packed.rows);
+  return { ...packed, heights: Float32Array.from(raw, (dm) => packed.offset + dm / 10) };
+}
+
+/**
+ * Normal, hollow and talus texels for a `columns` x `rows` height grid at `cell` metres, written
+ * into the atlas from column `x0`. The talus and hollow reach are in metres, so a 4 m grid reads
+ * the same landforms as the 9.8 m collar, only sharper.
+ */
+function writeRelief(
+  pixels: Uint16Array,
+  width: number,
+  x0: number,
+  columns: number,
+  rows: number,
+  cell: number,
+  heights: ArrayLike<number>,
+): void {
+  const at = (row: number, column: number): number =>
+    heights[
+      Math.min(rows - 1, Math.max(0, row)) * columns + Math.min(columns - 1, Math.max(0, column))
+    ] as number;
+  const slopes = new Float32Array(columns * rows);
+  for (let row = 0; row < rows; row++)
+    for (let column = 0; column < columns; column++)
+      slopes[row * columns + column] = Math.atan(
+        Math.hypot(
+          (at(row, column + 1) - at(row, column - 1)) / (2 * cell),
+          (at(row + 1, column) - at(row - 1, column)) / (2 * cell),
+        ),
+      );
+  const slopeAt = (row: number, column: number): number =>
+    slopes[
+      Math.min(rows - 1, Math.max(0, row)) * columns + Math.min(columns - 1, Math.max(0, column))
+    ] as number;
+  const degrees = Math.PI / 180;
+  const band = (edge0: number, edge1: number, value: number): number => {
+    const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  };
+  // The 9.8 m collar measured a hollow across 2 cells and talus within 3 cells; keep those metres.
+  const span = Math.max(2, Math.round(19.6 / cell));
+  const step = Math.max(1, Math.round(9.8 / cell));
+  for (let row = 0; row < rows; row++)
+    for (let column = 0; column < columns; column++) {
+      const height = at(row, column);
+      const dx = (at(row, column + 1) - at(row, column - 1)) / (2 * cell);
+      const dz = (at(row + 1, column) - at(row - 1, column)) / (2 * cell);
+      const length = Math.hypot(dx, 1, dz);
+      // A gully 5 m deep across 20 m reads near +1.
+      const laplacian =
+        (at(row, column - span) +
+          at(row, column + span) +
+          at(row - span, column) +
+          at(row + span, column) -
+          4 * height) /
+        (span * cell) ** 2;
+      // Talus lies at 25-40 degrees under a face steeper than about 45 degrees within 30 m uphill.
+      let cliffAbove = 0;
+      for (let dr = -3; dr <= 3; dr++)
+        for (let dc = -3; dc <= 3; dc++)
+          if (at(row + dr * step, column + dc * step) > height + 8)
+            cliffAbove = Math.max(
+              cliffAbove,
+              band(42 * degrees, 50 * degrees, slopeAt(row + dr * step, column + dc * step)),
+            );
+      const slope = slopes[row * columns + column] as number;
+      const talus =
+        band(22 * degrees, 28 * degrees, slope) * (1 - band(38 * degrees, 44 * degrees, slope));
+      const texel = (row * width + x0 + column) * 4;
+      pixels[texel] = DataUtils.toHalfFloat(-dx / length);
+      pixels[texel + 1] = DataUtils.toHalfFloat(-dz / length);
+      pixels[texel + 2] = DataUtils.toHalfFloat(Math.max(-1, Math.min(1, laplacian * 20)));
+      pixels[texel + 3] = DataUtils.toHalfFloat(talus * cliffAbove);
+    }
 }
 
 async function get(

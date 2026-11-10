@@ -24,7 +24,7 @@ import {
   Frustum,
   type InstancedMesh,
   type Material,
-  Matrix4,
+  type Matrix4,
   type Mesh,
   type Object3D,
   Quaternion,
@@ -121,6 +121,8 @@ export interface ICellRenderHost {
   canonical(id: string): string;
   renderer(): IRendererLike | undefined;
   camera(): Camera | undefined;
+  /** The world root's own `matrixWorld`: the frame its placements are recorded in. */
+  root(): Matrix4;
   now(): number;
   stats(): IWorldCellsStats;
   residentCells(): IterableIterator<IResidentCell>;
@@ -1108,6 +1110,7 @@ export class CellRender {
       renderer: () => this.#host.renderer(),
       resident: () => this.#gpuResident,
       retired: () => this.#retired,
+      root: () => this.#host.root(),
       shadowFloorOf: (assetId) => this.shadowFloorOf(assetId),
       shadowKeyFor: (key, part) => this.shadowKeyFor(key, part),
       shared: () => this.#shared,
@@ -1314,6 +1317,7 @@ export class CellRender {
 
   updateLodEye(x: number, y: number, z: number): void {
     this.#dress.updateLodEye(x, y, z);
+    this.#gpuScene.lodEye(x, y, z);
   }
 
   refreshLodMaterials(asset: IAssetState): void {

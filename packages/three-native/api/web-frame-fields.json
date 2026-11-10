@@ -74,6 +74,8 @@
     { "name": "hostTargetMs", "id": 83 },
     { "name": "cpuMetersActive", "id": 84 },
     { "name": "shadowTriangles", "id": 85 },
-    { "name": "firstWorldFrameDrawn", "id": 86 }
+    { "name": "firstWorldFrameDrawn", "id": 86 },
+    { "name": "textureCompressionBc", "id": 87 },
+    { "name": "virtualShadowPendingLevels", "id": 88 }
   ]
 }

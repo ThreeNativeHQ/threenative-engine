@@ -140,7 +140,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 continue;
             }
             // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
-            if (item.castShadow && shadow.atlas.options().autoDepth &&
+            if (item.castShadow && shadow.atlas.options().autoDepth && !displacedByGeometryBox(item) &&
                 (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
@@ -396,6 +396,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     uint32_t instanceCopies = 0;
     for (const auto& [depth, drawn] : opaque) {
         if (!drawn->instanceMatrices) continue;
+        if (drawn->indirect) {  // read in place as a vertex buffer; nothing to pack
+            instanceBases[drawn] = 0.0;
+            continue;
+        }
         const uint64_t floats = uint64_t{drawn->instanceCount} * 20;
         const BufferStore& matrixStore = *drawn->instanceMatrices;
         const BufferStore* colorStore = drawn->instanceColors;
@@ -500,18 +504,39 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const std::size_t vertices = g->morphPositions.front()->count();
             d.morphBase = double(morphData.size() / 4);
             d.morphVertexCount = double(vertices);
-            for (std::size_t i = 0; i < g->morphPositions.size(); ++i) {
-                for (std::size_t j = 0; j < vertices; ++j) {
-                    const BufferAttribute& p = *g->morphPositions[i];
-                    morphData.insert(morphData.end(), {float(p.getComponent(j, 0)), float(p.getComponent(j, 1)),
-                                                       float(p.getComponent(j, 2)), 0.0f});
-                    if (normals) {
-                        const BufferAttribute& n = *g->morphNormals.at(i);
-                        morphData.insert(morphData.end(), {float(n.getComponent(j, 0)), float(n.getComponent(j, 1)),
-                                                           float(n.getComponent(j, 2)), 0.0f});
+            // three packs a geometry's morph texture once and reuses it (three r187 src/nodes/accessors/Morph.js:93-199
+            // getEntry, a WeakMap per geometry); repacking every component every frame cost each morphed draw a
+            // pass over all its targets. The pack moves with the geometry's revision and each target's writes.
+            bool packed = g->morphPackedRevision_ == g->revision() &&
+                          g->morphPackedAt_.size() == g->morphPositions.size() + g->morphNormals.size();
+            for (std::size_t i = 0; packed && i < g->morphPositions.size(); ++i)
+                packed = g->morphPackedAt_[i] == std::pair<const BufferAttribute*, uint32_t>{g->morphPositions[i].get(), g->morphPositions[i]->version()};
+            for (std::size_t i = 0; packed && i < g->morphNormals.size(); ++i)
+                packed = g->morphPackedAt_[g->morphPositions.size() + i] ==
+                         std::pair<const BufferAttribute*, uint32_t>{g->morphNormals[i].get(), g->morphNormals[i]->version()};
+            if (!packed) {
+                std::vector<float>& pack = g->morphPacked_;
+                pack.clear();
+                pack.reserve(g->morphPositions.size() * vertices * (normals ? 8 : 4));
+                for (std::size_t i = 0; i < g->morphPositions.size(); ++i) {
+                    for (std::size_t j = 0; j < vertices; ++j) {
+                        const BufferAttribute& p = *g->morphPositions[i];
+                        pack.insert(pack.end(), {float(p.getComponent(j, 0)), float(p.getComponent(j, 1)),
+                                                 float(p.getComponent(j, 2)), 0.0f});
+                        if (normals) {
+                            const BufferAttribute& n = *g->morphNormals.at(i);
+                            pack.insert(pack.end(), {float(n.getComponent(j, 0)), float(n.getComponent(j, 1)),
+                                                     float(n.getComponent(j, 2)), 0.0f});
+                        }
                     }
                 }
+                g->morphPackedRevision_ = g->revision();
+                g->morphPackedAt_.clear();
+                for (const auto& target : g->morphPositions) g->morphPackedAt_.emplace_back(target.get(), target->version());
+                for (const auto& target : g->morphNormals) g->morphPackedAt_.emplace_back(target.get(), target->version());
+                ++morphPacks_;
             }
+            morphData.insert(morphData.end(), g->morphPacked_.begin(), g->morphPacked_.end());
             d.morphInfluenceBase = double(morphInfluences.size());
             double sum = 0;
             for (const double influence : *drawn->morphInfluences) {
@@ -549,6 +574,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
         v.alphaHash = item.material && item.material->alphaHash;
+        v.alphaTest = item.material && item.material->alphaTest > 0;
         v.background = item.background;
         v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
         v.sprite = item.sprite;
@@ -563,7 +589,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.vertexColors = item.colorSize;
-        v.instanceStorage = v.instanced;
+        // An indirect draw's instances live where the GPU wrote them (core's cull kernel, PRD-857): bound as an
+        // instance-step vertex buffer, as three binds a StorageInstancedBufferAttribute, `firstInstance` from the
+        // record offsets the fetch. The packed frame copy reads the CPU store, which the GPU never writes back.
+        v.instanceStorage = v.instanced && !item.indirect;
         v.skinned = item.boneMatrices != nullptr;
         v.skinnedPalette = item.boneStride != 0;
         v.skinInstanceValues = item.shadowGroup && item.boneMatrices != nullptr;
@@ -985,8 +1014,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A positionNode caster is placed by its boxes grown by the material's maxPositionOffset (see virtualShadowBounds).
         const auto displaced = [](const DrawItem* const drawn) { return drawn->positionNode || drawn->nodes->shadowPositionNode(); };
         const auto bounded = [&](const DrawItem* const drawn) {
-            return (!displaced(drawn) || (drawn->material && drawn->material->maxPositionOffset > 0)) && !drawn->boneMatrices &&
-                   !drawn->morphGeometry;
+            return (!displaced(drawn) || (drawn->material && drawn->material->maxPositionOffset > 0) ||
+                    displacedByGeometryBox(*drawn)) && !drawn->boneMatrices && !drawn->morphGeometry;
         };
         // FG1: an instanced caster's instances by page cell of one level, counting-sorted: cell c is reached by the
         // instances list[first[c] .. first[c + 1]), ascending.
@@ -1017,7 +1046,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // depth a page writes is unchanged and only the instances its scissor clipped are gone.
         const bool cullInstances = virtualMap && shadowInstanceCullEnabled();
         const auto instanceBoxes = [&](const DrawItem* drawn) -> const std::vector<Box3>* {
-            if (!cullInstances || !drawn->instanceMatrices || !bounded(drawn) || drawn->gpuJoints) return nullptr;
+            // An indirect caster's instances are the GPU's: its record already chose them.
+            if (!cullInstances || !drawn->instanceMatrices || drawn->indirect || !bounded(drawn) || drawn->gpuJoints) return nullptr;
             return casterOf(drawn).instances;
         };
         // The cells a box reaches. A box with no finite extent (a NaN matrix) cannot be placed: it reaches every cell,
@@ -1504,6 +1534,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
                     mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
                     mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
+                    // A cutoff that samples the node's own textures casts what they hold (PRD-858).
+                    if (item.nodeTextures)
+                        for (const auto& [label, texture] : *item.nodeTextures) {
+                            mix(reinterpret_cast<uintptr_t>(texture)); mix(texture ? texture->version() : 0);
+                        }
                 }
             }
             uint64_t& last = mapSignatures_[i];
@@ -1630,7 +1665,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(item.instanceMatrices),
                 item.instanceMatrices ? item.instanceMatrices->count() : 0});
             // A store rewritten with the same matrices did not move: compare the contents, not the writes.
-            if (item.instanceMatrices)
+            if (item.instanceMatrices && !item.indirect)  // ponytail: GPU-placed instances count as still for TRAA
                 current.instanceHash = std::hash<std::string_view>{}(std::string_view(
                     reinterpret_cast<const char*>(static_cast<const BufferStore&>(*item.instanceMatrices).data()),
                     std::size_t{item.instanceCount} * 64));
@@ -1852,13 +1887,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (namedTargets > 0) target.colorWrite = false;
                 if (namedTargets > 1) target.moreWrites = uint8_t(0xffu << (namedTargets - 1));
             }
-            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            target.depthCompare = auxDepthLessEqual(item.depthWrite, sampleCount_) ? WGPUCompareFunction_LessEqual
+                                                                                  : WGPUCompareFunction_Equal;
+            target.frontFace = item.frontFace();
             // At 4x the pass draws single-sampled against the colour pass's resolved depth, one sample taken at a
             // sample position, while this pass interpolates at the pixel centre: they differ by up to half a pixel of
-            // depth slope, so Equal fails on every surface that is not square to the camera. Test LessEqual with the
-            // bias pulling this pass nearer by that slope instead: the nearest surface passes, a surface behind it does not.
+            // depth slope, so Equal fails on every surface that is not square to the camera. Test LessEqual (aux_depth.h)
+            // with the bias pulling this pass nearer by that slope instead: the nearest surface passes, a surface behind it does not.
             if (sampleCount_ == 4) {
-                target.depthCompare = WGPUCompareFunction_LessEqual;
                 target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
             }
             // ponytail: one depth bias for every aux draw, a transparent MRT draw included; a custom slot behind an
@@ -2283,18 +2319,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                .first->second;
         if (cache) { cache->mapGroupKey = groupKey; cache->mapGroup = p.mapGroup; }
     }
-    // A masked caster's depth program samples the caster's map: its group binds that texture (PRD-651).
+    // A masked caster's depth program samples the caster's map (PRD-651) and its node's own textures (an impostor's
+    // atlas, PRD-858): its group binds them.
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) {
-            if (!draw.item->map || !probesOf(*draw.program).fragmentPerDraw) continue;
-            const MaterialTexture* map = materialTexture(*draw.item->map);
+            if ((!draw.item->map && !draw.item->nodeTextures) || !probesOf(*draw.program).fragmentPerDraw) continue;
+            const MaterialTexture* map = draw.item->map ? materialTexture(*draw.item->map) : nullptr;
+            const WGPUTextureView mapView = map ? map->view : nullptr;
+            const WGPUSampler mapSampler = map ? map->sampler : nullptr;
             const std::string key = "depth|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
-                                    std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" +
-                                    std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
+                                    std::to_string(reinterpret_cast<uintptr_t>(mapView)) + "|" +
+                                    std::to_string(reinterpret_cast<uintptr_t>(mapSampler)) + graphKeyOf(*draw.item);
             const auto found = mapGroups_.find(key);
             draw.mapGroup = found != mapGroups_.end() ? found->second
                 : mapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
-                                                    lutView_, lutSampler_, map->view, map->sampler)).first->second;
+                                                    lutView_, lutSampler_, mapView, mapSampler, nullptr, nullptr, nullptr,
+                                                    nullptr, nullptr, nullptr, nullptr, nullptr, draw.item->nodeTextures))
+                      .first->second;
         }
     const uint64_t groupsChosenAt = groupEpoch_;
     for (const auto& [index, pipeline] : responsiveDraws) {
@@ -2335,6 +2376,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     };
     const auto syncNamed = [&](const Planned& p) {
         const DrawItem& item = *p.item;
+        // A GPU-filled indirect record (PRD-857) is a storage buffer the draw also reads as indirect args.
+        if (item.indirect) geometry_->cache.sync(*item.indirect, WGPUBufferUsage_Indirect);
         if (!item.colors && !item.instanceMatrices && !item.instanceColors && item.attributes->empty()) return;
         for (const shader::VertexAttribute& a : p.program->vertex.attributes)
             if (BufferStore* source = vertexSourceOf(item, a)) geometry_->cache.sync(*source, WGPUBufferUsage_Vertex);
@@ -2366,6 +2409,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             };
             appendStore(item.indices);
             for (const auto& attribute : p.program->vertex.attributes) appendStore(vertexSourceOf(item, attribute));
+            if (item.indirect) {
+                const Handle handle = geometry_->cache.sync(*item.indirect, WGPUBufferUsage_Indirect);
+                key.insert(key.end(), {handle.type, handle.context, handle.index, handle.generation, item.indirectOffset});
+            }
         }
     };
     bundleKeyOf(plan, job.bundleKey, &job.bundleRows);
@@ -2443,6 +2490,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const auto resolved = geometry_->cache.resolved(*source);
                 row.vertex.push_back({a.location, geometry_->gpu.buffer(resolved.buffer), offset, resolved.bytes - offset});
             }
+            row.indirect = item.indirect ? geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer) : nullptr;
+            row.indirectOffset = item.indirectOffset;
             row.index = nullptr;
             if (item.indices) {
                 const auto indices = geometry_->cache.resolved(*item.indices);

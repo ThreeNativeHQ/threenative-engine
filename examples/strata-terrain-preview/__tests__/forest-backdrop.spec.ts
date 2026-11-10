@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
+import { Heightfield } from "@threenative/core/world";
 import { terrainStats } from "@threenative/terrain";
 import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
 import { BIOMES, measureBiome } from "../src/render/biomes.js";
-import { prefiltered } from "../src/render/horizon.js";
+import { cubicAt, setHorizonSurroundings } from "../src/render/horizon.js";
 
 // `pnpm test` bakes first, so the forest backdrop in horizon.json is the one the game loads.
 // The smooth USGS surroundings that read as rounded blobs measure curvature kurtosis 13.7; the
@@ -112,6 +113,38 @@ describe("forest backdrop", () => {
     expect(snowy / collar).toBeLessThan(0.15);
   });
 
+  it("leaves the massif's lower slopes gentle enough for forest", () => {
+    // PRD-866: stamped cones were one 35 to 50 degree wall from foot to summit, so trees stood only on
+    // the valley floor. A real mountain's lower slopes are walkable wood under its rock.
+    const { massif } = JSON.parse(
+      readFileSync(new URL("../src/world/horizon.json", import.meta.url), "utf8"),
+    ).forest as {
+      massif: { spacing: number; columns: number; rows: number; offset: number; heights: string };
+    };
+    const raw = Buffer.from(massif.heights, "base64");
+    const heights = new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+    const at = (row: number, column: number) =>
+      massif.offset + (heights[row * massif.columns + column] as number) / 10;
+    const baked = JSON.parse(
+      readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
+    ) as { forest: { heights: number[] } };
+    const [treeline] = measureBiome(BIOMES.forest, baked.forest.heights).heightBands.treeline;
+    const floor = massif.offset;
+    let lower = 0;
+    let gentle = 0;
+    for (let row = 1; row < massif.rows - 1; row++)
+      for (let column = 1; column < massif.columns - 1; column++) {
+        const height = at(row, column);
+        if (height < floor + 50 || height > treeline) continue;
+        const dx = (at(row, column + 1) - at(row, column - 1)) / (2 * massif.spacing);
+        const dz = (at(row + 1, column) - at(row - 1, column)) / (2 * massif.spacing);
+        lower++;
+        if (Math.atan(Math.hypot(dx, dz)) < (40 * Math.PI) / 180) gentle++;
+      }
+    expect(lower).toBeGreaterThan(1000);
+    expect(gentle / lower).toBeGreaterThanOrEqual(0.6);
+  });
+
   it("meets the surveyed ground at the centre", () => {
     const half = (forest.resolution - 1) / 2;
     expect(forest.heights[half * forest.resolution + half]).toBeCloseTo(13.1, 0);
@@ -137,22 +170,47 @@ describe("forest backdrop", () => {
     expect(1 - t * t * (3 - 2 * t)).toBeGreaterThan(0.5);
   });
 
-  it("prefilters the far collar so a wall cannot alias into skyline stairs", () => {
+  it("samples the far collar on a C1 curve that keeps every surveyed ridge", () => {
+    setHorizonSurroundings({ forest });
     const n = forest.resolution;
-    const source = Float32Array.from(forest.heights);
-    const smooth = prefiltered(source, n);
-    const maxStep = (v: Float32Array) => {
-      let max = 0;
-      for (let row = 0; row < n; row++)
-        for (let column = 0; column < n - 1; column++)
-          max = Math.max(
-            max,
-            Math.abs((v[row * n + column + 1] as number) - (v[row * n + column] as number)),
-          );
-      return max;
+    const cell = forest.size / (n - 1);
+    const sample = (row: number, column: number) => forest.heights[row * n + column] as number;
+    // Interpolating: every survey sample is reproduced, so no summit or gully is blurred away.
+    // The box-filtered copy it replaces moved the forest's 1 km peaks by tens of metres.
+    let worst = 0;
+    for (let row = 4; row < n - 4; row += 7)
+      for (let column = 4; column < n - 4; column += 7) {
+        const x = (column / (n - 1) - 0.5) * forest.size;
+        const z = (row / (n - 1) - 0.5) * forest.size;
+        worst = Math.max(worst, Math.abs(cubicAt("forest", x, z) - sample(row, column)));
+      }
+    expect(worst).toBeLessThan(1e-3);
+    // C1 across cell edges: a diagonal wall has no slope jump at each sample line, which is
+    // what bilinear heights draw as skyline stairs.
+    const kink = (height: (x: number, z: number) => number) => {
+      let worstKink = 0;
+      const e = cell * 1e-3;
+      for (let k = 40; k < n - 40; k += 3) {
+        // A point on a sample line, walked along the diagonal.
+        const x = (k / (n - 1) - 0.5) * forest.size;
+        const z = ((k + 0.37) / (n - 1) - 0.5) * forest.size;
+        const centre = height(x, z);
+        const left = (centre - height(x - e, z - e)) / e;
+        const right = (height(x + e, z + e) - centre) / e;
+        worstKink = Math.max(worstKink, Math.abs(right - left));
+      }
+      return worstKink;
     };
-    const mean = (v: Float32Array) => v.reduce((sum, h) => sum + h, 0) / v.length;
-    expect(maxStep(smooth)).toBeLessThan(maxStep(source) * 0.6);
-    expect(Math.abs(mean(smooth) - mean(source))).toBeLessThan(0.5);
+    const bilinear = new Heightfield({
+      rows: n,
+      columns: n,
+      width: forest.size,
+      depth: forest.size,
+      origin: { x: 0, z: 0 },
+      heights: Float32Array.from(forest.heights),
+    });
+    // The control: bilinear heights kink at every sample line; the curve does not.
+    expect(kink((x, z) => bilinear.heightAt(x, z))).toBeGreaterThan(0.05);
+    expect(kink((x, z) => cubicAt("forest", x, z))).toBeLessThan(0.01);
   });
 });

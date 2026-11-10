@@ -7,6 +7,8 @@
 #include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/scene/geometry.h"
+#include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
 #include <algorithm>
@@ -1330,6 +1332,31 @@ void registerFrustum(ClassBinding& b) {
     };
     b.methods["containsPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Frustum>(self)->containsPoint(d.ref<Vector3>(a.at(0), "Vector3")));
+    };
+    // three r185 Frustum.intersectsObject / intersectsSprite (MIT): the object's world bounding sphere
+    // against the planes. An InstancedMesh answers for its own instances' sphere, like three's
+    // `object.boundingSphere`; any other mesh for its geometry's. Core's world cull calls it (PRD-762).
+    b.methods["intersectsObject"] = [](void* self, const Args& a, Store& d) {
+        Object3D& object = objectArg(d, a.at(0));
+        Sphere sphere;
+        if (auto* instanced = dynamic_cast<InstancedMesh*>(&object)) {
+            if (instanced->boundingSphere == nullptr) instanced->computeBoundingSphere();
+            sphere = *instanced->boundingSphere;
+        } else if (auto* mesh = dynamic_cast<Mesh*>(&object); mesh != nullptr && mesh->geometry != nullptr) {
+            if (mesh->geometry->boundingSphere == nullptr) mesh->geometry->computeBoundingSphere();
+            sphere = *mesh->geometry->boundingSphere;
+        } else {
+            throw Unsupported{"Frustum.intersectsObject: expected a mesh with a geometry"};
+        }
+        sphere.applyMatrix4(object.matrixWorld);
+        return Value::of(as<Frustum>(self)->intersectsSphere(sphere));
+    };
+    b.methods["intersectsSprite"] = [](void* self, const Args& a, Store& d) {
+        auto* sprite = dynamic_cast<Sprite*>(&objectArg(d, a.at(0)));
+        if (sprite == nullptr) throw Unsupported{"Frustum.intersectsSprite: expected a Sprite"};
+        Sphere sphere(Vector3(0, 0, 0), 0.7071067811865476 + Vector2(0.5, 0.5).distanceTo(sprite->center));
+        sphere.applyMatrix4(sprite->matrixWorld);
+        return Value::of(as<Frustum>(self)->intersectsSphere(sphere));
     };
     for (int i = 0; i < 6; ++i) {
         const std::string prefix = "planes." + std::to_string(i) + ".";

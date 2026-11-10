@@ -7,6 +7,7 @@
 //     are the picture, and the picture is the game's (AGENTS rule 3).
 //   - preparePose grounds each pose on plain math; propWorld.ts delegates instancing and LOD to WorldCells.
 import { createRandom } from "@threenative/core";
+import { type IBaseRing, baseRingGap, footprintGap, staticLowestY } from "@threenative/core/world";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type BufferGeometry,
@@ -19,9 +20,9 @@ import {
   Quaternion,
   Vector3,
 } from "three";
-import { boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
+import { WILDFLOWER, boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
 import { FAR_FOREST_LAYER } from "./farForest.js";
-import { ATLAS_CELLS, spruceFarCrown, spruceVariants } from "./spruce.js";
+import { ATLAS_CELLS, SPRUCE, spruceFarCrown, spruceVariants } from "./spruce.js";
 
 /** Which cell of the needle atlas the poppy petals sample. */
 const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
@@ -71,6 +72,8 @@ export const DRAW_REACH: Record<string, number> = {
   sapling: 160,
   bush: 120,
   litter: 16,
+  /** Fallen boughs and logs: metres long, so they read from across a clearing. */
+  deadfall: 110,
   boulder: 170,
   riverrock: 100,
   /** River-bed cobbles: a 0.2 m stone under water is sub-pixel well before 45 m. */
@@ -130,6 +133,31 @@ export type PropRole =
  * twenty-two-metre pine.
  */
 export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 80, near: 22 } as const;
+
+/**
+ * Species that step to their second and third prepared level nearer than `LOD_BANDS.mid` and `far`.
+ *
+ * A spruce 105 m out stands about 110 px tall on a 900 px frame, and from 80 m to 150 m it drew its
+ * 10.7k-triangle middle level: two triangles a pixel, on every tree of the far bank. It takes the
+ * level it already draws past `far` from 105 m. A grass tuft is under 25 px tall past 30 m and
+ * under 10 px past 60 m, and it drew every blade to the end of its 112 m reach.
+ * Forest, RTX 2080, 1600x900, four interleaved pairs against `?lodSteps=off`: main-pass triangles
+ * fell from 21.2 M to 17.5 M at the player pose and from 36.4 M to 29.0 M at the overview, and the
+ * GPU frame by a median 8% at the overview (the frame is bound by pixels, not triangles).
+ */
+export const LOD_STEPS: Record<string, readonly [number, number]> = {
+  fern: [30, 60],
+  grass: [30, 60],
+  spruce: [LOD_BANDS.mid, 105],
+};
+
+/** The metres at which `asset` steps to its second and third prepared level. */
+export function lodSteps(asset: string): readonly [number, number] {
+  // `?lodSteps=off` is the named override: every species steps at `LOD_BANDS`, for the paired A/B.
+  if (new URLSearchParams(globalThis.location?.search ?? "").get("lodSteps") === "off")
+    return [LOD_BANDS.mid, LOD_BANDS.far];
+  return LOD_STEPS[asset] ?? [LOD_BANDS.mid, LOD_BANDS.far];
+}
 
 /**
  * The draw reach a placement's variant gives it, shortened by its seeded fade for `FADED_ASSETS`.
@@ -235,7 +263,7 @@ export function buildPropVariants(
   // procedural spruce on the machine that does not. The saplings' own variants come off the end of
   // the same seeded set, so a seedling and a tree are the same species at two sizes rather than two
   // unrelated shapes.
-  const spruces = spruceVariants(PROP_COUNTS.spruce, VARIANTS.seed);
+  const spruces = spruceVariants(PROP_COUNTS.spruce, VARIANTS.seed, SPRUCE.standBareTrunk);
   const youngs = spruceVariants(PROP_COUNTS.sapling, VARIANTS.seed ^ 0x51ed3a7f);
   for (let index = 0; index < PROP_COUNTS.spruce; index += 1) {
     const ready = prepared?.get(`spruce:${index}`);
@@ -357,7 +385,7 @@ export function buildPropVariants(
       variants.set(`${asset}:${i}`, [...ready]);
       continue;
     }
-    const cluster = poppyCluster((VARIANTS.seed ^ (i * 0x27d4eb2f)) >>> 0, POPPY_PETAL);
+    const cluster = poppyCluster((VARIANTS.seed ^ (i * 0x27d4eb2f)) >>> 0, POPPY_PETAL, WILDFLOWER);
     variants.set(`${asset}:${i}`, [
       { geometry: cluster.stems, role: "stem", variant: i },
       { geometry: cluster.petals, role: "petal", variant: i },
@@ -376,7 +404,16 @@ export function buildPropVariants(
     twig.scale(1.7, 0.22, 1.7);
     variants.set(`litter:${i}`, [{ geometry: twig, role: "grass", variant: i }]);
   }
-  for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal", "pebble"])
+  for (const asset of [
+    "riverrock",
+    "scree",
+    "cliff",
+    "mountain",
+    "volcanic",
+    "reveal",
+    "pebble",
+    "deadfall",
+  ])
     for (
       let variant = 0;
       variant < (PROP_COUNTS[asset as keyof typeof PROP_COUNTS] ?? 1);
@@ -392,6 +429,8 @@ export function buildPropVariants(
           ? (VARIANTS.seed ^ ((variant + 7) * 0x85ebca6b)) >>> 0
           : VARIANTS.seed ^ variant,
       );
+      // Without the licensed pack a fallen log is a long low lump of the same generator.
+      if (asset === "deadfall") fallback.scale(1.5, 0.22, 0.3);
       if (["mountain", "volcanic", "reveal"].includes(asset)) {
         if (asset === "mountain") fallback.scale(0.65, 1.45, 1.8);
         fallback.computeBoundingBox();
@@ -422,6 +461,8 @@ const PROP_COUNTS = {
   mountain: 2,
   volcanic: 4,
   reveal: 2,
+  /** Three fallen bough groups and one log. */
+  deadfall: 4,
 };
 
 export const PROP_ASSETS: Record<string, number> = Object.fromEntries(
@@ -443,55 +484,8 @@ export interface IPropInstance {
   cragBaseClearance?: number;
   cragRingSamples?: number;
 }
-/** A geometry's vertices, lowest local y first, and their widest horizontal reach. */
-const bottomFirst = new WeakMap<BufferGeometry, { xyz: Float32Array; reach: number }>();
-
-function verticesBottomFirst(geometry: BufferGeometry): { xyz: Float32Array; reach: number } {
-  const cached = bottomFirst.get(geometry);
-  if (cached) return cached;
-  const position = geometry.getAttribute("position");
-  const order = Array.from({ length: position.count }, (_, i) => i).sort(
-    (a, b) => position.getY(a) - position.getY(b),
-  );
-  const xyz = new Float32Array(position.count * 3);
-  let reach = 0;
-  order.forEach((i, k) => {
-    xyz[k * 3] = position.getX(i);
-    xyz[k * 3 + 1] = position.getY(i);
-    xyz[k * 3 + 2] = position.getZ(i);
-    reach = Math.max(reach, Math.hypot(position.getX(i), position.getZ(i)));
-  });
-  const entry = { xyz, reach };
-  bottomFirst.set(geometry, entry);
-  return entry;
-}
-
-/**
- * Exact lowest world Y of a static geometry under `matrix` (GroundSnap's precise measurement). A tilted pose scans the vertices bottom first and stops once no later vertex
- * can be lower: |x e1 + z e9| is at most reach * hypot(e1, e9). The full scan cost 3.4 s of the
- * forest's load (218,816 placements, 976 vertices each).
- */
-export function lowestY(geometry: BufferGeometry, matrix: Matrix4): number {
-  const e = matrix.elements;
-  if (e[1] === 0 && e[9] === 0) {
-    if (geometry.boundingBox === null) geometry.computeBoundingBox();
-    const box = geometry.boundingBox;
-    if (box) return (e[5] < 0 ? box.max.y : box.min.y) * e[5] + e[13];
-  }
-  const { xyz, reach } = verticesBottomFirst(geometry);
-  const tilt = reach * Math.hypot(e[1], e[9]);
-  const upright = e[5] > 0;
-  let lowest = Number.POSITIVE_INFINITY;
-  for (let k = 0; k < xyz.length; k += 3) {
-    const y = xyz[k + 1] as number;
-    if (upright && y * e[5] + e[13] - tilt >= lowest) break;
-    lowest = Math.min(
-      lowest,
-      (xyz[k] as number) * e[1] + y * e[5] + (xyz[k + 2] as number) * e[9] + e[13],
-    );
-  }
-  return lowest;
-}
+/** Exact lowest world Y of a static geometry under `matrix`: core `staticLowestY`. */
+export const lowestY = staticLowestY;
 
 /**
  * The quaternion a placement's own scatter numbers describe: the normal tilt, then the yaw.
@@ -654,17 +648,17 @@ export function preparePose(
   }
   // Bury the flat footprint on the downhill side too; a centre-only snap leaves a visible lip.
   if (grounding && !transform && ["boulder", "riverrock", "scree"].includes(placement.asset)) {
-    const base = geometry.boundingBox?.min.y;
-    const positions = geometry.getAttribute("position");
-    const point = new Vector3();
-    let gap = 0;
     model.updateMatrix();
-    for (let i = 0; i < positions.count; i++) {
-      if (Math.abs(positions.getY(i) - (base ?? Number.POSITIVE_INFINITY)) > 1e-5) continue;
-      point.fromBufferAttribute(positions, i).applyMatrix4(model.matrix);
-      const height = groundAt(placement, point.toArray()).height;
-      if (height === null) throw new Error(`Missing ground under rock '${placement.id}'`);
-      gap = Math.max(gap, point.y - height + 0.08);
+    let gap: number;
+    try {
+      gap = footprintGap(
+        geometry,
+        model.matrix,
+        (x, z) => groundAt(placement, [x, 0, z]).height,
+        0.08,
+      );
+    } catch (error) {
+      throw new Error(`Missing ground under rock '${placement.id}'`, { cause: error });
     }
     model.position.y -= gap;
   }
@@ -676,40 +670,18 @@ export function preparePose(
     placement.asset === "mountain" &&
     !placement.id.endsWith(":outcrop")
   ) {
-    // Lowest peripheral vertex per angular sector: a narrow buried stem must not support
-    // a wide scan collar hanging above the downhill ground.
-    const box = geometry.boundingBox;
-    if (!box) throw new Error(`Crag '${placement.id}' has no bounds`);
+    // Lowest rim vertex per angular sector: a narrow buried stem must not support a wide scan
+    // collar hanging above the downhill ground.
+    if (!geometry.boundingBox) throw new Error(`Crag '${placement.id}' has no bounds`);
     model.updateMatrix();
-    const centre = box.getCenter(new Vector3()).applyMatrix4(model.matrix);
-    const sectors = Array.from({ length: 16 }, () => ({ reach: 0, vertices: [] as Vector3[] }));
-    const vertices = geometry.getAttribute("position");
-    for (let i = 0; i < vertices.count; i++) {
-      const point = new Vector3().fromBufferAttribute(vertices, i).applyMatrix4(model.matrix);
-      const dx = point.x - centre.x;
-      const dz = point.z - centre.z;
-      const bin = Math.min(15, Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * 16));
-      const sector = sectors[bin];
-      if (!sector) continue;
-      sector.reach = Math.max(sector.reach, Math.hypot(dx, dz));
-      sector.vertices.push(point);
+    let ring: IBaseRing;
+    try {
+      ring = baseRingGap(geometry, model.matrix, (x, z) => groundAt(placement, [x, 0, z]).height);
+    } catch (error) {
+      throw new Error(`Missing ground under crag ring '${placement.id}'`, { cause: error });
     }
-    let highestGap = Number.NEGATIVE_INFINITY;
-    cragRingSamples = 0;
-    for (const sector of sectors) {
-      let lowest: Vector3 | undefined;
-      for (const point of sector.vertices)
-        if (
-          Math.hypot(point.x - centre.x, point.z - centre.z) >= sector.reach * 0.75 &&
-          (!lowest || point.y < lowest.y)
-        )
-          lowest = point;
-      if (!lowest) continue;
-      const contact = groundAt(placement, lowest.toArray()).height;
-      if (contact === null) throw new Error(`Missing ground under crag ring '${placement.id}'`);
-      highestGap = Math.max(highestGap, lowest.y - contact);
-      cragRingSamples++;
-    }
+    const highestGap = ring.gap;
+    cragRingSamples = ring.samples;
     if (cragRingSamples < 4) throw new Error(`Incomplete base ring for crag '${placement.id}'`);
     const sink = Math.max(0, highestGap + 0.5);
     model.position.y -= sink;

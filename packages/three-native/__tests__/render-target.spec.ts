@@ -86,3 +86,42 @@ describe("three's readRenderTargetPixelsAsync over a pass's attachments", () => 
     );
   });
 });
+
+describe("three's array render target and the impostor bake's seam (PRD-858)", () => {
+  function renderer(draws: unknown[][]) {
+    const prototype = { render(): void {} };
+    defineRenderTargets(prototype, () => ({
+      clear: () => {},
+      draw: (...args: unknown[]) => void draws.push(args),
+      read: async () => new Uint8Array(0),
+    }));
+    return Object.create(prototype) as {
+      setRenderTarget(target: unknown, face?: number, mip?: number): void;
+      getActiveCubeFace(): number;
+      render(scene: unknown, camera: unknown): void;
+      getMRT(): unknown;
+      setMRT(mrt: unknown): unknown;
+      initRenderTarget(target: unknown): void;
+    };
+  }
+
+  it("draws the layer setRenderTarget names, and keeps it as the active face", () => {
+    const draws: unknown[][] = [];
+    const r = renderer(draws);
+    const target = {};
+    r.setRenderTarget(target, 3, 0);
+    expect(r.getActiveCubeFace()).toBe(3);
+    r.render("scene", "camera");
+    expect(draws).toEqual([[target, "scene", "camera", 3]]);
+    expect(() => r.setRenderTarget(target, 1.5)).toThrow(/TN_NATIVE_RENDER_TARGET_UNSUPPORTED/);
+    expect(() => r.setRenderTarget(target, 0, 1)).toThrow(/mip level/);
+  });
+
+  it("has getMRT, setMRT(null) and initRenderTarget, and refuses a renderer-wide MRT by name", () => {
+    const r = renderer([]);
+    expect(r.getMRT()).toBeNull();
+    expect(r.setMRT(null)).toBe(r);
+    expect(() => r.initRenderTarget({})).not.toThrow();
+    expect(() => r.setMRT({ isMRTNode: true })).toThrow(/TN_NATIVE_MRT_UNSUPPORTED/);
+  });
+});

@@ -168,6 +168,7 @@ it("delivers flat descriptors, tables, raw masks and prop packages through Vite 
         JSON.stringify({ version: 1, cellSize: 64, buckets: buckets(world) }),
       );
       contents.set(`${world}.canopy.bin`, `${world}.canopy.bin`);
+      contents.set(`${world}.sky.bin`, `${world}.sky.bin`);
       for (const suffix of ["world.json", "layers.json", "splat.rgba8"])
         contents.set(`${world}.${suffix}`, `${world}.${suffix}`);
       for (const bucket of buckets(world))

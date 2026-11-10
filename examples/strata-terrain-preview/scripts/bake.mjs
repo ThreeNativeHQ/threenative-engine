@@ -14,14 +14,46 @@ import { register } from "tsx/esm/api";
 register();
 import { bakeBiome, validateBiome } from "@threenative/terrain";
 
-const { dem, drawn, outputDir, realContinuation, recipes, terrainSurfacePackage, worldOf } =
-  await import("./recipe.mjs");
+const {
+  cooked,
+  dem,
+  drawn,
+  massif,
+  outputDir,
+  realContinuation,
+  recipes,
+  terrainSurfacePackage,
+  worldOf,
+} = await import("./recipe.mjs");
 const { isFresh, stamp } = await import("./stamp.mjs");
 const { GROUND_MAPS } = await import("../src/world/terrainAssets.js");
 const { BIOMES } = await import("../src/render/biomes.js");
+const { WORLD_NAMES: WORLDS } = await import("../src/render/worldNames.js");
 
-const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"];
 const DRIVEN = ["alpine", "desert", "coastal"];
+
+/**
+ * A placed massif's heights at its tile's own spacing, for the collar's relief map: int16
+ * decimetres above `offset`, base64, row-major from `origin` (+X east, +Z south).
+ */
+function packMassif({ origin, spacing, columns, rows, heights }) {
+  let offset = Number.POSITIVE_INFINITY;
+  for (const height of heights) offset = Math.min(offset, Math.floor(height));
+  const bytes = Buffer.alloc(heights.length * 2);
+  for (let i = 0; i < heights.length; i++) {
+    const quantized = Math.round((heights[i] - offset) * 10);
+    assert(quantized >= 0 && quantized <= 32767, "massif heights exceed int16 decimetres");
+    bytes.writeInt16LE(quantized, i * 2);
+  }
+  return { origin, spacing, columns, rows, offset, heights: bytes.toString("base64") };
+}
+
+/**
+ * `STRATA_SEED=<integer>` bakes a variation of every world: the same surveyed ground, biome rules
+ * and look, with every tree, rock and plant in a new place. 0, the default, is the pinned bake.
+ */
+const VARIATION = Number(process.env.STRATA_SEED ?? 0);
+assert(Number.isSafeInteger(VARIATION), "STRATA_SEED must be an integer");
 
 /** One biome file, validated: the rules this world places by. */
 function biomeOf(name) {
@@ -29,13 +61,18 @@ function biomeOf(name) {
     `../../../packages/terrain/starter/${name}/biome.data.json`,
     import.meta.url,
   );
-  return validateBiome(JSON.parse(readFileSync(file, "utf8")), name);
+  const spec = validateBiome(JSON.parse(readFileSync(file, "utf8")), name);
+  // A variation keeps the rules and moves the stream they draw from; a cooked forest draws from the
+  // cook's own seed (`STRATA_WORLD`).
+  const seed = name === "forest" && cooked ? cooked.recipe.config.seed : spec.cover.seed;
+  return { ...spec, cover: { ...spec.cover, seed: seed + VARIATION } };
 }
 
 /** The surface and placement outputs of one world, written as the game reads them. */
 async function writeWorld(name, state) {
   const started = performance.now();
-  if (DRIVEN.includes(name)) {
+  // A cooked forest (`STRATA_WORLD`) is not the pinned survey, so the survey's own checks skip it.
+  if (DRIVEN.includes(name) && !(name === "forest" && cooked)) {
     const maxDelta = state.height.reduce(
       (max, height, i) => Math.max(max, Math.abs(height - dem[name].data.values[i])),
       0,
@@ -98,6 +135,7 @@ if (!isEntry) {
             size: state.size,
             resolution: state.resolution,
             heights: Array.from(state.height, (height) => Math.round(height * 10) / 10),
+            ...(massif[name] && { massif: packMassif(massif[name].detail) }),
           },
         ];
       }),
@@ -108,7 +146,7 @@ if (!isEntry) {
     `Continuation (five same-site USGS DEMs): ${((performance.now() - started) / 1000).toFixed(2)} s; ${Buffer.byteLength(horizon)} JSON bytes`,
   );
   await writeFile(
-    new URL("../src/world/baked.json", import.meta.url),
+    new URL("baked.json", outputDir),
     JSON.stringify(Object.fromEntries(Object.entries(worlds).filter(([name]) => drawn.has(name)))),
   );
   for (const [name, world] of Object.entries(worlds))
@@ -116,6 +154,7 @@ if (!isEntry) {
       await writeFile(new URL(`${name}.json`, outputDir), JSON.stringify(world));
   // Import after the JSON outputs exist: terrain's horizon reads the newly baked continuation.
   const { paintCanopy } = await import("../src/render/terrain.js");
+  const { skyVisibility } = await import("../src/render/skyVisibility.js");
   const { writeProps } = await import("./props.mjs");
   for (const name of WORLDS) {
     const data = worlds[name];
@@ -129,6 +168,12 @@ if (!isEntry) {
     await writeFile(
       new URL(`${name}.canopy.bin`, outputDir),
       new Uint8Array(canopy.buffer, canopy.byteOffset, canopy.byteLength),
+    );
+    // The share of the sky each vertex sees past the relief, one byte a vertex, for the ground's AO.
+    const sky = skyVisibility(data.heights, data.resolution, data.size);
+    await writeFile(
+      new URL(`${name}.sky.bin`, outputDir),
+      Uint8Array.from(sky, (value) => Math.round(value * 255)),
     );
     const buckets = await writeProps(outputDir, name, scatter[name].placements, data.size);
     mesh.geometry.dispose();

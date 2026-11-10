@@ -1,9 +1,15 @@
 import { readFileSync } from "node:fs";
-import { type IBiomeSpec, LANDFORMS, type LandformKind, validateBiome } from "@threenative/terrain";
+import {
+  type IBiomeSpec,
+  LANDFORMS,
+  type LandformKind,
+  orderedScatterRules,
+  validateBiome,
+} from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import { BENCHMARK } from "../src/render/benchmark.js";
+import { BENCHMARK, posesFor } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";
-import { BIOMES, type IVistaAim, type WorldName } from "../src/render/biomes.js";
+import { BIOMES, type IVistaAim, type WorldName, measureBiome } from "../src/render/biomes.js";
 import { FAR_FOREST_IMPOSTOR, FAR_FOREST_WORLDS } from "../src/render/farForest.js";
 import { speciesFor } from "../src/render/pack.js";
 import { buildPropVariants } from "../src/render/props.js";
@@ -132,8 +138,8 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
     layers: [
       { layer: "alpine", from: 0.95, to: 1.65 },
       { layer: "rock", from: 0.35, to: 1.8 },
-      { layer: "treeline", from: 6.5, to: 10 },
-      { layer: "cap", from: 14, to: 17 },
+      { layer: "treeline", from: 11, to: 14 },
+      { layer: "cap", from: 17, to: 21 },
       { layer: "desertRock", from: 0.18, to: 0.48 },
       { layer: "alpineRock", from: 0.06, to: 0.14 },
       { layer: "alpineHollow", from: 0.05, to: 0.12 },
@@ -142,14 +148,14 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
     foliage: [
       {
         species: "spruce",
-        density: 3200,
+        density: 7000,
         slope: [0, 32],
         height: null,
         spacing: [3.2, 6.4],
         collision: "trunk",
         stands: true,
         grassThreshold: 0.3,
-        standThreshold: 0.3,
+        standThreshold: 0.16,
         far: {
           cell: 6,
           spacing: [6.5, 13],
@@ -169,8 +175,8 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         species: "grass",
         density: 1,
         slope: [0, 42],
-        height: [0, 66],
-        spacing: 1.2,
+        height: null,
+        spacing: 0.8,
         mats: null,
         slopeFalloff: 20,
         heightFalloff: 28,
@@ -179,11 +185,11 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         drift: {
           field: "stand",
           frequency: [3.1, 2.7],
-          offset: 0.65,
-          amplitude: 0.35,
+          offset: 0.8,
+          amplitude: 0.2,
           band: [0, 1],
         },
-        bladeScale: 0.8,
+        bladeScale: 1,
         bladeJitter: 0.65,
         scrubChance: 0.3,
         scrubScale: 0.9,
@@ -204,6 +210,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
       boulder: 3,
       bush: 2,
       cliff: 1,
+      deadfall: 4,
       fern: 3,
       grass: 4,
       litter: 2,
@@ -716,13 +723,14 @@ describe("a biome's values", () => {
   });
 
   it("share one ordered stream: one seed and one candidate budget, on every biome", () => {
-    // One stream per biome means one seed and one attempt budget, and the five files carry the
-    // game's. A sixth biome may name its own; these five must not drift apart.
+    // One stream per biome means one seed and one attempt budget. The seed is the game's on all
+    // five files; the forest grew its own candidate budget with the wood, and the other four keep
+    // the graded one. A sixth biome may name its own; these five must not drift apart unseen.
     for (const world of WORLDS)
       expect({ world, ...biomeSpec(world).cover }).toMatchObject({
         world,
         seed: 466_468,
-        attempts: 80_000,
+        attempts: world === "forest" ? 240_000 : 80_000,
         stoneRadius: 1.9,
         ground: expect.any(String),
         clearings: expect.any(Array),
@@ -949,5 +957,40 @@ describe("a biome's ground rock", () => {
         propStoneTint: expected.propStoneTint,
       });
     }
+  });
+});
+
+// PRD-866: a cooked forest (`STRATA_WORLD`) is hillier or flatter than the pinned 41 m valley; its
+// treeline and snow stay in metres above its floor instead of scaling with its walkable range.
+it("keeps the forest's bands in metres above the floor for any ground", () => {
+  for (const span of [41, 25, 90]) {
+    const measured = measureBiome(BIOMES.forest, [100, 100 + span]);
+    expect(measured.heightBands.treeline).toEqual([100 + 11 * 41, 100 + 14 * 41]);
+    expect(measured.heightBands.cap).toEqual([100 + 17 * 41, 100 + 21 * 41]);
+    expect(measured.elevationRange).toEqual([100, 100 + span]);
+  }
+});
+
+// A cooked forest of another size keeps its framings past its own edge: the vista stands 104 m
+// outside the pinned 512 m square, and 208 m outside a 1024 m one.
+it("scales the forest's poses with its square and leaves the pinned square's alone", () => {
+  expect(posesFor("forest", 512)).toBe(BENCHMARK.forest.poses);
+  const huge = posesFor("forest", 1024);
+  expect(huge.vista?.at).toEqual([720, 400]);
+  expect(huge.vista?.look).toEqual([-1800, -1400]);
+  expect(huge.vista?.eyeY).toBe(BENCHMARK.forest.poses.vista?.eyeY);
+  expect(posesFor("alpine", 1024)).toBe(BENCHMARK.alpine.poses);
+});
+
+// PRD-866: a tree stands only where the meadow weighs 0.3, and the meadow faded out 66 m up, so a
+// cooked floor's knoll above 58 m stood bare (seed 1). The cook allows 90 m of relief per 512 m side.
+describe("the forest's stand trees on a hilly cooked floor", () => {
+  it("grow up the floor's whole relief, under the treeline", () => {
+    const rules = orderedScatterRules(biomeSpec("forest") as IBiomeSpec);
+    const top =
+      rules.grassHeight === null
+        ? Number.POSITIVE_INFINITY
+        : rules.grassHeight[0] - rules.treeGrassThreshold * rules.grassHeight[1];
+    expect(top).toBeGreaterThan(180);
   });
 });

@@ -11,44 +11,26 @@ import type { IBakedWorld } from "./terrain.js";
 /** `world/horizon.json`: each world's same-site USGS surroundings, as `scripts/bake.mjs` writes them. */
 export type HorizonSurroundings = Record<
   string,
-  { resolution: number; size: number; heights: number[] }
+  { resolution: number; size: number; heights: number[]; massif?: IPackedMassif }
 >;
+
+/**
+ * A placed survey massif at its tile's own spacing (`placeMassif`), for the collar's relief map:
+ * int16 decimetres above `offset`, base64, row-major from `origin`, +X east and +Z south.
+ */
+export interface IPackedMassif {
+  readonly origin: readonly [number, number];
+  readonly spacing: number;
+  readonly columns: number;
+  readonly rows: number;
+  readonly offset: number;
+  readonly heights: string;
+}
 
 // Each world keeps its own surroundings in the installed Heightfield query. They are fetched, not
 // imported: as a module the 7 MB file took about 3 s to compile before the first frame.
 let continuationFields: Record<string, Heightfield> = {};
-let prefilteredFields: Record<string, Heightfield> = {};
 let sources: HorizonSurroundings = {};
-
-/**
- * Two separable box passes of radius 2 cells (about a 15 m Gaussian at 9.8 m cells). Far collar
- * rings read this copy: bilinear heights turn a diagonal wall into grid-aligned stair steps on the
- * skyline, which a prefiltered field does not, as a mip level does for a far texture.
- */
-export function prefiltered(heights: Float32Array, size: number): Float32Array {
-  let source = heights;
-  // Rows then columns, twice: [stride between lines, stride along a line].
-  for (const [line, step] of [
-    [size, 1],
-    [1, size],
-    [size, 1],
-    [1, size],
-  ] as const)
-    source = boxPass(source, size, line, step);
-  return source;
-}
-
-function boxPass(source: Float32Array, size: number, line: number, step: number): Float32Array {
-  const out = new Float32Array(source.length);
-  for (let a = 0; a < size; a++)
-    for (let b = 0; b < size; b++) {
-      let sum = 0;
-      for (let k = -2; k <= 2; k++)
-        sum += source[a * line + Math.min(size - 1, Math.max(0, b + k)) * step] as number;
-      out[a * line + b * step] = sum / 5;
-    }
-  return out;
-}
 
 /**
  * `world/horizon.json`, fetched once per page and installed here. A failed fetch clears the memo
@@ -71,7 +53,6 @@ export function loadHorizonSurroundings(assets: Pick<IAssetLoader, "resolve">): 
 /** Installs the surroundings `createHorizonCollar` reads; call once before building terrain. */
 export function setHorizonSurroundings(baked: HorizonSurroundings): void {
   sources = baked;
-  prefilteredFields = {};
   continuationFields = Object.fromEntries(
     Object.entries(baked).map(([name, source]) => [
       name,
@@ -96,15 +77,29 @@ function field(source: HorizonSurroundings[string], heights: Float32Array): Heig
   });
 }
 
-/** Built on first use: only the world being shown pays the filter at load. */
-function prefilteredField(name: string): Heightfield | undefined {
-  const source = sources[name];
-  if (!source) return undefined;
-  prefilteredFields[name] ??= field(
-    source,
-    prefiltered(new Float32Array(source.heights), source.resolution),
-  );
-  return prefilteredFields[name];
+const catmullRom = (a: number, b: number, c: number, d: number, t: number): number =>
+  b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
+
+/**
+ * The survey at `(x, z)` through a Catmull-Rom patch of its 4×4 nearest samples: C1 across cell
+ * edges, so a diagonal wall draws a straight skyline, and it passes through every sample, so no
+ * ridge or gully is lost to a blur. Throws outside the survey, as `Heightfield.heightAt` does.
+ */
+export function cubicAt(world: string, x: number, z: number): number {
+  const source = sources[world];
+  if (!source) throw new RangeError(`Missing surveyed surroundings for '${world}'`);
+  const { heights, resolution: n, size } = source;
+  const column = (x / size + 0.5) * (n - 1);
+  const row = (z / size + 0.5) * (n - 1);
+  if (!(column >= 0 && row >= 0 && column <= n - 1 && row <= n - 1))
+    throw new RangeError(`Survey query (${x}, ${z}) is outside '${world}'`);
+  const c0 = Math.min(n - 2, Math.floor(column));
+  const r0 = Math.min(n - 2, Math.floor(row));
+  const at = (r: number, c: number): number =>
+    heights[Math.min(n - 1, Math.max(0, r)) * n + Math.min(n - 1, Math.max(0, c))] as number;
+  const line = (r: number): number =>
+    catmullRom(at(r, c0 - 1), at(r, c0), at(r, c0 + 1), at(r, c0 + 2), column - c0);
+  return catmullRom(line(r0 - 1), line(r0), line(r0 + 1), line(r0 + 2), row - r0);
 }
 
 /**
@@ -115,45 +110,83 @@ export const HORIZON_WALK_BAND = 200;
 
 /** Rings of the far collar, and the radius they reach: the survey's own rim, at 2.1 km. */
 const HORIZON_RINGS = 384;
-const HORIZON_REACH = 2100;
+export const HORIZON_REACH = 2100;
 
 /**
  * The far collar for one world: the square's edge continued onto that site's surveyed surroundings,
  * 384 rings out to 2.1 km. Every height it answers is this game's look — the survey itself, its
- * prefiltered copy blended in past 300 m, and the seam step that closes the detail boundary.
+ * Catmull-Rom sample blended in past 300 m, and the seam step that closes the detail boundary.
  */
 export function createHorizonCollar(data: IBakedWorld, world: WorldName): HeightfieldCollar {
-  const surveyed = continuationFields[world];
-  const smooth = prefilteredField(world);
-  if (!surveyed || !smooth) throw new RangeError(`Missing surveyed surroundings for '${world}'`);
-  const segments = data.resolution - 1;
-  const half = data.size / 2;
-  const height = ({ distance, x, z }: IHeightfieldCollarSite): number => {
-    // The square's edge point this vertex grew from: the seam is stated there, not out at the ring.
-    const scale = (half + distance) / half;
-    const edgeX = x / scale;
-    const edgeZ = z / scale;
-    const column = Math.round((edgeX / data.size + 0.5) * segments);
-    const row = Math.round((edgeZ / data.size + 0.5) * segments);
-    const near = surveyed.heightAt(x, z);
-    // Past 300 m the collar draws the prefiltered copy, blended in over 600 m, as a mip level does
-    // for a far texture: bilinear heights turn a diagonal wall into grid-aligned skyline stairs.
-    const fold = Math.min(1, Math.max(0, (distance - 300) / 600));
-    const smoothed = fold > 0 ? (smooth.heightAt(x, z) - near) * fold * fold * (3 - 2 * fold) : 0;
-    // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
-    // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real.
-    const seam =
-      (data.heights[row * data.resolution + column] as number) - surveyed.heightAt(edgeX, edgeZ);
-    return near + smoothed + seam * Math.exp(-distance / 40);
-  };
   return new HeightfieldCollar({
-    height,
+    height: collarHeight(data, world),
     resolution: data.resolution,
     ringDistance: (ring) => (ring / HORIZON_RINGS) ** 1.65 * HORIZON_REACH,
     rings: HORIZON_RINGS,
     size: data.size,
     walkBand: HORIZON_WALK_BAND,
   });
+}
+
+/** The square's own heights as a bilinear query, centred on the origin. */
+function squareField(data: IBakedWorld): Heightfield {
+  return new Heightfield({
+    rows: data.resolution,
+    columns: data.resolution,
+    width: data.size,
+    depth: data.size,
+    origin: { x: 0, z: 0 },
+    heights: Float32Array.from(data.heights),
+  });
+}
+
+/**
+ * The ground at any `(x, z)` of one world: the playable square inside it, the collar's own height
+ * past its edge (`distance` is how far past the edge the point stands). Streamed tiles sample this,
+ * so a tile that crosses the edge draws the same surface the square and the collar draw.
+ */
+export function createWorldHeight(
+  data: IBakedWorld,
+  world: WorldName,
+): (x: number, z: number) => number {
+  const square = squareField(data);
+  const collar = collarHeight(data, world);
+  const half = data.size / 2;
+  return (x, z) => {
+    const distance = Math.max(Math.abs(x), Math.abs(z)) - half;
+    return distance <= 0
+      ? square.heightAt(x, z)
+      : collar({ distance, x, z } as IHeightfieldCollarSite);
+  };
+}
+
+function collarHeight(
+  data: IBakedWorld,
+  world: WorldName,
+): (site: IHeightfieldCollarSite) => number {
+  const surveyed = continuationFields[world];
+  if (!surveyed || !sources[world])
+    throw new RangeError(`Missing surveyed surroundings for '${world}'`);
+  const square = squareField(data);
+  const half = data.size / 2;
+  return ({ distance, x, z }: IHeightfieldCollarSite): number => {
+    // The square's edge point this vertex grew from: the seam is stated there, not out at the ring.
+    const scale = (half + distance) / half;
+    const edgeX = Math.min(half, Math.max(-half, x / scale));
+    const edgeZ = Math.min(half, Math.max(-half, z / scale));
+    const near = surveyed.heightAt(x, z);
+    // Past 300 m the collar takes a Catmull-Rom sample of the survey, blended in over 600 m:
+    // bilinear heights turn a diagonal wall into grid-aligned skyline stairs, and the curve has no
+    // stairs while it keeps every ridge and gully the survey holds. The box-filtered copy it
+    // replaces erased them, and a 1 km peak read as smooth clay.
+    const fold = Math.min(1, Math.max(0, (distance - 300) / 600));
+    const smoothed = fold > 0 ? (cubicAt(world, x, z) - near) * fold * fold * (3 - 2 * fold) : 0;
+    // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
+    // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real. The
+    // square's edge is read between its vertices too, so a streamed tile meets it with no step.
+    const seam = square.heightAt(edgeX, edgeZ) - surveyed.heightAt(edgeX, edgeZ);
+    return near + smoothed + seam * Math.exp(-distance / 40);
+  };
 }
 
 /**

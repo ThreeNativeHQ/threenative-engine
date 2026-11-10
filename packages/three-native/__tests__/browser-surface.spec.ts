@@ -293,6 +293,42 @@ it("carries a material's TSL slots through clone and copy, as the engine carries
   expect(target.alphaTestNode).toBe(null);
 });
 
+it("writes a material's own output and normal nodes, for a render target's textures of those names (PRD-858)", () => {
+  let serial = 0;
+  const tslRuntime: ITslRuntime = {
+    call: vi.fn(() => ++serial),
+    release: vi.fn(),
+    set: vi.fn(),
+    setUniform: vi.fn(),
+    effectParameter: vi.fn(() => 0),
+    setPost: vi.fn(),
+    compute: vi.fn(),
+    readStorage: vi.fn(),
+    deleteStorage: vi.fn(),
+  };
+  const runtime = sceneRuntime(new Map(), new Set());
+  const { classes } = defineBrowserClasses(registry, { ...runtime, tsl: tslRuntime }, catalog);
+  const authoring = defineTsl(tslRuntime);
+  const tsl = authoring.exports as unknown as {
+    uniform(value: number): { readonly [TSL_NODE]: number };
+  };
+  const { mrt } = definePass(authoring.exports as never);
+  const color = tsl.uniform(0.25);
+  const normal = tsl.uniform(0.5);
+  const material = new (classes.MeshStandardNodeMaterial as new () => { mrtNode: unknown })();
+  material.mrtNode = mrt({ output: color, normal });
+  expect(tslRuntime.set).toHaveBeenCalledWith(
+    engineRef(material),
+    "mrtNode.output",
+    color[TSL_NODE],
+  );
+  expect(tslRuntime.set).toHaveBeenCalledWith(
+    engineRef(material),
+    "mrtNode.normal",
+    normal[TSL_NODE],
+  );
+});
+
 it("writes only a material's custom MRT slots, since the scene pass draws the reserved targets", () => {
   let serial = 0;
   const tslRuntime: ITslRuntime = {

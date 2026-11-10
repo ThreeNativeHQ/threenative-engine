@@ -589,6 +589,10 @@ export class WorldCells extends Group implements IComputeDriven {
         canonical: (id) => this.#canonical(id),
         renderer: () => this.#chunks.renderer,
         camera: () => this.#chunks.camera,
+        // Live, not a snapshot: three refreshes `matrixWorld` before it renders, so a game that moves
+        // the root reads its own frame from the next update on — the same answer `stepCellProxies`
+        // is handed below.
+        root: () => this.matrixWorld,
         now: () => this.#now(),
         stats: () => this.stats(),
         residentCells: () => this.#residency.resident.values(),
@@ -801,6 +805,7 @@ export class WorldCells extends Group implements IComputeDriven {
       },
       released: () => this.#released,
       ring: () => this.#ring,
+      root: () => this.matrixWorld,
     });
     this.#readiness = new CellReadiness({
       asset: (id) => this.#models.asset(id),

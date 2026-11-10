@@ -269,19 +269,30 @@
       "symbol": "materialStateOf"
     },
     {
-      "aliases": [],
+      "aliases": [
+        "model texture codec ladder",
+        "keep smaller source texture",
+        "TN_ASSETS_COMPRESSION_SKIPPED"
+      ],
       "constraints": [
-        "the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output"
+        "the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output",
+        "each colour texture climbs a codec ladder (ETC1S, then UASTC with RDO, then plain UASTC) and keeps the smallest rung that meets the quality floor (SSIM 0.95, ΔE00 3); a data slot such as a normal or metallic-roughness map takes UASTC only, as ETC1S is forbidden there (`TN_ASSETS_TEXTURE_SLOT_CODEC`); a result is kept only when it is smaller than the source, else the source stays and the report says `not-smaller`",
+        "a PNG or JPEG source can always be kept; a WebP source can be kept only on a web target, whose runtimes all decode WebP, so on desktop and mobile it always becomes KTX2"
       ],
       "example": "const pass = modelPass({ simplify: { ratio: 0.5 } });",
       "importPath": "@threenative/assets",
       "kind": "function",
-      "overrides": [],
+      "overrides": [
+        "`textures: { overrides: [{ slot: \"baseColorTexture\", codec: \"uastc\" }] }` forces one glTF slot's codec (`etc1s`, `uastc` or `none`); `textures: { floor }` moves the quality floor; `textures: \"none\"` keeps every embedded texture as authored"
+      ],
       "package": "@threenative/assets",
       "signature": "export function modelPass(options: IModelPassOptions = { … }",
       "situations": [
         "reduce a model's download and GPU footprint",
-        "optimize a GLB before shipping it with a game"
+        "optimize a GLB before shipping it with a game",
+        "texture bytes too big after the model cook",
+        "a KTX2 model texture came out larger than its WebP or JPEG source",
+        "choose ETC1S or UASTC for a model's embedded textures"
       ],
       "summary": "Optimizes self-contained GLB models through the configured geometry and embedded-texture passes.",
       "supersedes": [],
@@ -1320,17 +1331,40 @@
       "symbol": "counterDeviceOf"
     },
     {
-      "aliases": ["different area props", "first playable screen external assets"],
+      "aliases": [
+        "different area props",
+        "coarse first model streaming",
+        "mip streaming textures",
+        "TN_STREAMING_POOL",
+        "TN_ASSET_LATE",
+        "first playable screen external assets",
+        "KTX2Loader on the owned engine",
+        "CompressedTexture upload",
+        "TN_TEXTURE_TRANSCODE_TARGET",
+        "TN_NATIVE_TEXTURE_UNSUPPORTED",
+        "webRuntimeDecoders meshopt ktx2"
+      ],
       "constraints": [
         "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches",
         "await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world",
-        "web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once"
+        "a whole-file load requested after the reveal that the game had not `prefetch`ed logs one `TN_ASSET_LATE` line with its bytes, so a pop-in is countable from a playtest",
+        "web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once",
+        "streaming is engine-owned and on by default: a cooked LOD-chained model loads its `.coarse.<digest>.glb` companion first, then the full file at \"soon\" priority, and the full geometry replaces the coarse in place (clones and the projection mirror included); a failed coarse load falls back to the whole file and logs `TN_ASSETS_STREAM_FAILED`",
+        "texture streaming rides on the coarse parse: each shared `.ktx2` of that model is read by `Range` as its resident mips (the header and the tail), and the whole files replace them when the full model lands; a host without `Range` sends the whole file and keeps it whole. `TN_STREAMING_POOL` reports `files`, `residentBytes`, `fullBytes`, `deferredBytes` and `upgraded` once, two seconds after the last change",
+        "the whole texture keeps what the game set on the resident one (`anisotropy`, wrap, filters, offset, repeat, `userData`), so the swap changes the mips and nothing else",
+        "every web build cooks meshopt geometry and KTX2 textures for both engines (`webRuntimeDecoders` in create-threenative answers `{ ktx2: true, meshopt: true }`); the owned engine's glTF loader decodes both itself, with no JS decoder",
+        "the owned engine transcodes a KTX2 image to BC7 on a device with `texture-compression-bc`, else ETC2, else RGBA8 with an engine mip chain, and prints `TN_TEXTURE_TRANSCODE_TARGET <target>` once; a block format needs a width and height that are multiples of 4, so any other size stays RGBA8 and the same line names it",
+        "a three `CompressedTexture` (format plus `mipmaps`) uploads one GPU write per level; a block format the device lacks throws `TN_NATIVE_TEXTURE_UNSUPPORTED` by name instead of drawing garbage",
+        "levels are coarse-first: a level whose `mipmaps[i].data` is null is not resident and the texture samples its finest resident level; set `mipmaps[i].data` and `needsUpdate = true` to write that one finer level in place, without re-creating the texture or rewriting the other levels"
       ],
       "example": "const assets = createAssetLoader({ basePath: \"/assets\" });\nconst rock = await assets.texture(\"rock.png\");",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [
-        "`assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`"
+        "`assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`",
+        "`ctx.assets.model(path, { whole: true })` resolves only once the full file has replaced the coarse companion, for a collider or navmesh that copies vertices once",
+        "`assets.streamMeshes: false` loads every model whole (reported once as `TN_ASSETS_STREAM_MESHES_OFF`); `assets.streamTextures: false` loads every model texture whole (`TN_ASSETS_STREAM_TEXTURES_OFF`)",
+        "`engine: \"threejs\"` runs three's own `KTX2Loader` and `MeshoptDecoder` in JS instead of the owned engine's decoders"
       ],
       "package": "@threenative/core",
       "signature": "export function createAssetLoader(options: IAssetLoaderOptions = { … }",
@@ -1340,7 +1374,17 @@
         "download the next scene before the player gets there",
         "free the disk cache from a settings menu",
         "prefetch assets into the Cache Storage disk cache of a large web game",
-        "load assets from a nonstandard base path or a compiled asset manifest"
+        "load assets from a nonstandard base path or a compiled asset manifest",
+        "stream a large game: boot on the spawn bytes and prefetch the rest",
+        "make the first scene play before the whole game finishes downloading",
+        "draw a heavy model's coarsest level first and its full detail when the file lands",
+        "draw a model's textures at their resident mips first and the whole files later",
+        "an asset pops in after the reveal and the game needs to count it",
+        "a model texture looks blurry or low resolution right after load, then sharpens",
+        "build a collider or navmesh from a streamed model only once its full file landed",
+        "compressed texture upload on the owned engine (KTX2 to BC7 or ETC2 on the GPU)",
+        "load a model with KHR_texture_basisu or EXT_meshopt_compression on the owned engine",
+        "stream a finer mip level into a CompressedTexture that already draws"
       ],
       "summary": "Create the portable asset loader a scene also receives as `ctx.assets`.",
       "supersedes": [],
@@ -2342,6 +2386,25 @@
       "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
       "supersedes": [],
       "symbol": "isStatic"
+    },
+    {
+      "aliases": ["whole model before collision", "TN_COLLIDER_COARSE"],
+      "constraints": [
+        "`CollisionShape3D.fromMesh` with \"trimesh\" or \"convexHull\" on a streamed geometry warns `TN_COLLIDER_COARSE` naming the mesh and the `{ whole: true }` override, and still builds"
+      ],
+      "example": "const coarse = isStreamedGeometry(mesh.geometry);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function isStreamedGeometry(geometry: BufferGeometry): boolean { … }",
+      "situations": [
+        "collider or navmesh built from a model is coarser than what is drawn",
+        "wait for the full model before copying its vertices"
+      ],
+      "summary": "True while a geometry is the coarse companion a streamed model draws first (PRD-860), before its full file replaces it in place. A caller that copies vertices (a trimesh collider, a navmesh bake, a merge) waits with `ctx.assets.model(path, { whole: true })` instead of copying the coarse ones.",
+      "supersedes": [],
+      "symbol": "isStreamedGeometry"
     },
     {
       "aliases": [],
@@ -5083,6 +5146,25 @@
     {
       "aliases": [],
       "constraints": [
+        "open a new budget each frame; a unit always finishes, so one unit can cross the limit"
+      ],
+      "example": "tiles.follow(player.position, new AdmissionBudget(2, () => performance.now()));",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class AdmissionBudget implements IAdmissionBudget { … }",
+      "situations": [
+        "streamed terrain tiles or cells hitch the frame that admits them",
+        "cap how many milliseconds a frame spends building streamed content"
+      ],
+      "summary": "One frame's admission allowance, shared by every path that puts streamed content on screen. A streaming world has no frame-time ceiling anywhere else: a cell row arriving builds a batch per asset run over every placement in it, a terrain tile builds every LOD level, and the game's `createCollider` runs for every resident tile — all in the one frame that discovers them. That is the 100-330 ms hitch a 60 m/s camera feels every time the ring moves, and it is admission cost, not streaming: the loads never fail. The budget is opened once per `update` and drawn down by the units it admits. A unit always finishes, so a frame spends at most the limit plus the unit that crossed it, and the rest of the backlog waits for the next frame rather than being dropped.",
+      "supersedes": [],
+      "symbol": "AdmissionBudget"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON"
       ],
       "example": "await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: \"world/world.glb\" });",
@@ -5135,6 +5217,24 @@
     {
       "aliases": [],
       "constraints": [
+        "throws `TN_STATIC_POSE_GROUND` where the ground does not answer; check `samples` before trusting `gap`"
+      ],
+      "example": "const ring = baseRingGap(geometry, matrix, ground); if (ring.samples >= 4) matrix.elements[13] -= ring.gap + 0.5;",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function baseRingGap( geometry: BufferGeometry, matrix: Matrix4, ground: StaticGroundQuery, options: { … }",
+      "situations": [
+        "a cliff or crag model rests on a buried stem while its wide base hangs over the downhill ground"
+      ],
+      "summary": "The highest gap between a wide model's rim and the ground, one sample per angular sector: in each sector, the lowest vertex beyond `rim` of that sector's reach. A narrow buried stem then cannot hold a wide base up in the air on the downhill side. Sink the pose by `gap` (plus any burial the game wants) to close it.",
+      "supersedes": [],
+      "symbol": "baseRingGap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the returned view aliases the caller's buffer; writing to it mutates the source"
       ],
       "example": "const records = cellPlacements(buffer, { asset: \"tree\", offset: 0, count: 120 });",
@@ -5147,6 +5247,22 @@
       "summary": "Borrow the run's placement records as a live view over the placement buffer.",
       "supersedes": [],
       "symbol": "cellPlacements"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the footprint is every vertex at the geometry's lowest local y; throws `TN_STATIC_POSE_GROUND` where the ground does not answer"
+      ],
+      "example": "matrix.elements[13] -= footprintGap(geometry, matrix, ground, 0.08);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function footprintGap( geometry: BufferGeometry, matrix: Matrix4, ground: StaticGroundQuery, margin = 0, ): number { … }",
+      "situations": ["a rock snapped to a slope shows a lip or a gap under its downhill side"],
+      "summary": "How far the flat underside of a static geometry rises above the ground at its highest point. Snapping the lowest point leaves the downhill side of a flat-bottomed rock hanging; sinking the pose by this much buries the whole footprint. Returns 0 when the footprint is already buried.",
+      "supersedes": [],
+      "symbol": "footprintGap"
     },
     {
       "aliases": [],
@@ -5268,6 +5384,25 @@
     {
       "aliases": [],
       "constraints": [
+        "the lake row and field come from the game's bake; the game's material shades the geometry"
+      ],
+      "example": "const geometry = lakeSurfaceGeometry({ ...lake, margin: 1.12 }, field, { maxDepth: 1.6 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lakeSurfaceGeometry( lake: IWaterLake, field: Heightfield, options: ILakeSurfaceOptions = { … }",
+      "situations": [
+        "draw a lake's water surface from the baked level and seed",
+        "a lake's drawn water and the swimmer's water disagree"
+      ],
+      "summary": "A lake's water surface: a level disc out to `lakeReach`, the footprint `WaterBodies` floods, with a `metres` attribute (water depth over the ground). Only cells with water at a corner get triangles, so the surface does not hover over dry hillside and the shore follows the ground's contour. The rings pack towards the middle, so an irregular basin costs vertices where the camera sees them. Returns `undefined` when the basin holds no water at its level.",
+      "supersedes": [],
+      "symbol": "lakeSurfaceGeometry"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe",
         "WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left"
       ],
@@ -5304,6 +5439,22 @@
     {
       "aliases": [],
       "constraints": [
+        "a section's `material` can be `undefined` for a group naming a missing material slot; skip it"
+      ],
+      "example": "for (const section of meshSections(mesh)) parts.push(sectionGeometry(mesh, box, section));",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function meshSections(mesh: Mesh): IMeshSection[] { … }",
+      "situations": ["scatter or instance an imported glTF model that has several materials"],
+      "summary": "A mesh's material sections: one per geometry group for a material array, else the whole mesh. Instanced props draw one batch per material, so an imported model splits here first.",
+      "supersedes": [],
+      "symbol": "meshSections"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "baked once per page on the main thread (about 0.15 s); every channel is an independent field"
       ],
       "example": "const volume = noiseVolume();",
@@ -5316,6 +5467,81 @@
       "summary": "The one volume every material shares: baked on first use, 1 MiB of RGBA8 (it stays in L2).",
       "supersedes": [],
       "symbol": "noiseVolume"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "one bad normal recomputes them all; an intentionally hard-edged model loses its authored split normals only if one is bad"
+      ],
+      "example": "geometry.scale(1.1, 1, 1.1); repairZeroNormals(geometry);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function repairZeroNormals(geometry: BufferGeometry): boolean { … }",
+      "situations": ["an imported model draws black or unlit because it ships zero normals"],
+      "summary": "Recompute the normals of a geometry whose normals are missing, zero or not finite, and leave authored normals alone. Some exported art ships zero normals and draws black under any light. Run it after any reshape, so the recomputed normals fit the final shape.",
+      "supersedes": [],
+      "symbol": "repairZeroNormals"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "stations, width and reach come from the game's bake; the game's material shades the geometry"
+      ],
+      "example": "const geometry = riverRibbonGeometry(rivers, field, { maxDepth: 1.6 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function riverRibbonGeometry( rivers: readonly { … }",
+      "situations": [
+        "draw a river's water surface from the baked stations",
+        "a river's water stops in a straight edge, or a swimmer floats where no water is drawn",
+        "share one river shape between the drawn water and the swimmer",
+        "river water hangs over dry ground past the river's head or tail"
+      ],
+      "summary": "The water surface of every river, as one geometry with one group per river. Each station is a row across the river at its own surface height, out to `reach` widths either side of the centreline, the reach `WaterBodies` floods; one more row a reach past each end stands where `WaterBodies` clamps a segment, so the water a swimmer finds past a river's end is drawn there too (cut at the end station, the surface stopped in a straight edge with its carved bed dry beyond). Quads dry on both rows against `field` are dropped, so the surface ends at the shore. Past an end where the ground falls below the end's bed, the water would run off: that cap is not drawn, and the end stays cut at its last station. Attributes for the game's water material: `flow` (the unit downstream heading), `flowUv` (metres down the centreline, metres across it) and `metres` (water depth over the ground). It decides no colour, ripple or opacity: the game shades it.",
+      "supersedes": [],
+      "symbol": "riverRibbonGeometry"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "`box` is the whole model's world bounds after any unit normalisation; call `mesh.updateWorldMatrix` first"
+      ],
+      "example": "const box = new Box3().setFromObject(root); const geometry = sectionGeometry(mesh, box, section);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function sectionGeometry( mesh: Mesh, box: Box3, section: IMeshSection, options: { … }",
+      "situations": [
+        "the crown of an instanced tree floats off its trunk, or the parts of a model separate",
+        "turn each part of an imported model into a geometry for an instanced prop batch"
+      ],
+      "summary": "One section's geometry in model space, standing on y = 0. Every section of a model takes the same base from the whole model's `box`, so a crown keeps its place on its trunk: basing each section on its own bounds detaches them. The mesh's LOD0 geometry is cloned under its world matrix, and a group becomes the clone's draw range.",
+      "supersedes": [],
+      "symbol": "sectionGeometry"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "heights are row-major, `resolution` by `resolution`, across `size` metres; measured once, never per frame"
+      ],
+      "example": "const { distance, exposed } = shoreField(world.heights, world.resolution, world.size, world.waterLevel);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function shoreField( heights: ArrayLike<number>, resolution: number, size: number, level: number, options: IShoreFieldOptions = { … }",
+      "situations": [
+        "surf breaks only on water open to the sea, not in a sheltered lagoon",
+        "distance from each water cell to the shore, for a foam or depth mask"
+      ],
+      "summary": "Distance to the shore and open-sea exposure for every node of a square height grid, measured once from the bake. `distance` is a two-pass chamfer distance to the nearest node at or above `level` (0 on dry ground). `exposed` floods from the grid's edge through water deeper than `openDepth`, then `carry` metres further into shallow water, so a sheltered lagoon behind a sand bar stays out of it. Both feed the game's surf and shore masks; neither decides a colour.",
+      "supersedes": [],
+      "symbol": "shoreField"
     },
     {
       "aliases": [],
@@ -5363,6 +5589,44 @@
       "symbol": "SnowField"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "static geometry only; a skinned model uses `GroundSnap`; the sort is cached per geometry, so do not mutate its positions"
+      ],
+      "example": "placed.position.y += ground - staticLowestY(geometry, matrix);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function staticLowestY(geometry: BufferGeometry, matrix: Matrix4): number { … }",
+      "situations": [
+        "stand a scattered rock, tree or crate on the ground by its lowest point, not its origin",
+        "props hover or sink because their pivot is not at their base"
+      ],
+      "summary": "Exact lowest world Y of a static geometry under `matrix`, the precise measurement `GroundSnap` audits against, cheap enough for a load that poses hundreds of thousands of props. An upright pose reads the bounding box. A tilted pose scans the vertices bottom first (sorted once per geometry) and stops once no later vertex can be lower: `|x e1 + z e9| <= reach * hypot(e1, e9)`.",
+      "supersedes": [],
+      "symbol": "staticLowestY"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the mesh is `field.toGeometry()` drawn upright under a uniform scale; read `matrixWorld` after it settles"
+      ],
+      "example": "const ground = surfaceSampler(field, mesh.matrixWorld); const y = ground(x, z) ?? fallback;",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function surfaceSampler(field: Heightfield, matrixWorld: Matrix4): SurfaceSampler { … }",
+      "situations": [
+        "stand props or a player on the drawn terrain triangles under a moved or scaled mesh",
+        "props float or sink where the terrain mesh is drawn under a transform"
+      ],
+      "summary": "`Heightfield.surfaceAt` under the transform the game draws the field's mesh with, so a prop or a player stands on the triangles the eye sees rather than on the bilinear field between them. Answers `null` outside the field and for a transform it does not model (any rotation, or an unequal scale), so the caller keeps its own fallback there.",
+      "supersedes": [],
+      "symbol": "surfaceSampler"
+    },
+    {
       "aliases": ["stream terrain across chunks"],
       "constraints": [
         "sampleHeight and surface are required game choices; no landform or surface preset is installed",
@@ -5380,7 +5644,9 @@
       "situations": [
         "stream terrain without cracks",
         "keep generated terrain resident around a moving player",
-        "put a generated terrain tile into a game-owned physics world"
+        "put a generated terrain tile into a game-owned physics world",
+        "a hole or a flicker where streamed terrain tiles are still building (`settledHalf`)",
+        "split the ground between streamed tiles and a far mesh around the player (`settledHalf`)"
       ],
       "summary": "Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.",
       "supersedes": [],
@@ -5421,6 +5687,25 @@
       "summary": "Validate a `world.json` manifest against the v1 contract. Never throws on garbage input: a non-object manifest is `WORLD_MALFORMED`. Every problem is collected, so an exporter sees the complete list at once.",
       "supersedes": [],
       "symbol": "validateWorldPackage"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "`ctx.beforeRender` runs on every world draw, also behind the curtain; join the promise to the curtain's hold"
+      ],
+      "example": "const warm = warmUnculled(ctx, lake.mesh); ctx.startup.hold(\"lake\", () => warm);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function warmUnculled( ctx: { … }",
+      "situations": [
+        "the first frames after the loading curtain hitch on pipeline builds for content behind the camera",
+        "streamed terrain or a lake compiles its pipelines after the reveal"
+      ],
+      "summary": "Draw `root` with frustum culling off until it has drawn `draws` times, then cull it again and resolve. A pipeline is built by its first real draw (a startup warm-up compiles a different pass), so content the spawn view does not see — streamed tiles behind the player, a mirror that draws only when its water does — builds its pipelines after the reveal and hitches the first frames that see it. Join the promise to the loading curtain to build them behind it. Objects that join `root` while it warms draw unculled too.",
+      "supersedes": [],
+      "symbol": "warmUnculled"
     },
     {
       "aliases": [],
@@ -8463,8 +8748,15 @@
       "package": "@threenative/terrain",
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome { … }",
-      "situations": ["bake one biome's world package from an evaluated recipe and a biome file"],
-      "summary": "Bake one biome: the recipe's evaluated state and the world package it streams. This is the composition `terrain_generate` and a game's build script both call, so the file layout a player streams is decided in one place. The biome is validated first — an inline spec from a request is checked here, not trusted — and the package's own placement runs are checked against the state they came from, so a bake can never ship a cell list that lost instances.",
+      "situations": [
+        "bake one biome's world package from an evaluated recipe and a biome file",
+        "generate terrain with mountains, hills, a river, a lake or an island from a request in words",
+        "generate a landscape or open world map for a game",
+        "procedural terrain for a level: a volcanic island, a mountain valley or a coast",
+        "make a canyon, a volcano, a fjord, a desert, a tundra or a forest world",
+        "cook the real terrain of a place on Earth from its latitude and longitude"
+      ],
+      "summary": "Bake one biome: the recipe's evaluated state and the world package it streams. This is the composition `terrain_generate` and a game's build script both call, so the file layout a player streams is decided in one place. The biome is validated first — an inline spec from a request is checked here, not trusted — and the package's own placement runs are checked against the state they came from, so a bake can never ship a cell list that lost instances. An agent does not write this call to get a world: the `threenative-terrain` MCP tool `terrain_generate` takes the request in words (\"a pine forest under snowy mountains with a river\", \"a volcanic island\", or `ground: { location }` for a real place) and cooks the world.glb, recipe.json and world.json a game loads with `ctx.assets.model`.",
       "supersedes": [],
       "symbol": "bakeBiome"
     },
@@ -8591,6 +8883,25 @@
       "summary": "CRC-checked bounded non-interlaced grayscale PNG height decoder.",
       "supersedes": [],
       "symbol": "decodeHeightPNG"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "throws `TN_PROP_BUCKET_INVALID` when the record buffer, the IDs and the runs disagree"
+      ],
+      "example": "for (const record of decodePropBucket(bucket)) pose(record.key, record.position, record.quaternion);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function decodePropBucket(bucket: IPropBucketPackage): IPropBucketRecord[] { … }",
+      "situations": [
+        "read a baked prop bucket back into placements to ground them on this machine's terrain"
+      ],
+      "summary": "The records of one compiled prop bucket, read back in record order: the inverse of `compilePropBuckets`, so a loader that fetched a bake's files gets each record's ID, model, pose and reach without re-deriving the container layout.",
+      "supersedes": [],
+      "symbol": "decodePropBucket"
     },
     {
       "aliases": [],
@@ -8781,6 +9092,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["the tile must cover the whole mountain; a summit crop lifts as a cone"],
+      "example": "const lifted = liftMassif({ id: \"hill\", size: 400, resolution: 3, heights: [0, 0, 0, 0, 90, 0, 0, 0, 0] });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function liftMassif(tile: IMassifTile): Float32Array { … }",
+      "situations": [
+        "measure how tall a surveyed mountain stands above the valley floor around it"
+      ],
+      "summary": "A tile's mountain above its own foot: the heights minus a smooth surface through its border, so its edge is exactly zero and stands on any ground with no wall or ramp. Signed: a valley inside the mountain cuts below the foot, as it does in the survey.",
+      "supersedes": [],
+      "symbol": "liftMassif"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), \"project\");",
       "importPath": "@threenative/terrain",
@@ -8827,6 +9155,27 @@
       "summary": "A biome's rows as the ordered generators read them. The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune field and a tundra, so the biome file names them rather than the code. A biome whose tree is not one this generator has art for fails here, naming the species, rather than planting nothing.",
       "supersedes": [],
       "symbol": "orderedScatterRules"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the tile must be a whole mountain whose border is valley floor; erosion after it carves the survey"
+      ],
+      "example": "const { terrain, placement } = placeMassif(new Terrain({ size: 5000, resolution: 129 }), { seed: 3, tile: { id: \"cone\", size: 2000, resolution: 3, heights: [0, 0, 0, 0, 900, 0, 0, 0, 0] } });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [
+        "`at`, `bearing`, `distance`, `height`, `top`, `face` and `keepOut` on the same call"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function placeMassif( terrain: Terrain, options: IPlaceMassifOptions, ): { … }",
+      "situations": [
+        "put a real-shaped mountain behind a generated world, a different one per seed"
+      ],
+      "summary": "Stands one surveyed mountain behind a world, chosen and posed by a seed: the tile from a list, a point on a bearing and distance, a turn that faces its steepest wall to the centre within 20 degrees, a mirror and a summit height. It stands on the host's own foot (a smooth surface through the host under its border), replacing the host's hills inside its square, and leaves the centre square untouched. Appends one `heightmap` layer; the placement carries the tile-spacing heights a relief map reads.",
+      "supersedes": [],
+      "symbol": "placeMassif"
     },
     {
       "aliases": [],
@@ -9104,6 +9453,23 @@
       "summary": "Gesture and transaction mechanics; the caller owns the controls, proxy and all rendering.",
       "supersedes": [],
       "symbol": "createEditorSelection"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function createTweakBox<K extends string>(options: ITweakBoxOptions<K>): ITweakBox<K> { … }",
+      "situations": [
+        "tune look numbers by eye with live range bars and colour pickers while the game runs"
+      ],
+      "summary": "A box of range bars and colour pickers over the running game, for tuning numbers by eye. The game names its knobs and applies each change itself; the box owns the page elements, the stored values and the Copy button, whose JSON is what gets pasted back and written into the game's own source. With no `document` (a native launch, a test) it draws nothing and still holds the values, so the game code that reads them is the same on every target.",
+      "supersedes": [],
+      "symbol": "createTweakBox"
     },
     {
       "aliases": [],

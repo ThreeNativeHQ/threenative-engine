@@ -29,6 +29,14 @@ namespace tn::engine {
 
 namespace {
 
+// three's geometry.setIndirect (PRD-857), read every frame: a GPU world scene points a geometry at its key's
+// record after the mesh is built, and points it at a grown buffer when the scene resizes.
+void indirectOf(const Mesh& mesh, DrawItem& d) {
+    const BufferGeometry* geometry = mesh.geometry.get();
+    d.indirect = geometry && geometry->indirect ? geometry->indirect->store.get() : nullptr;
+    d.indirectOffset = d.indirect ? static_cast<uint64_t>(geometry->indirectOffset) : 0;
+}
+
 // What a material's node graphs read from outside the material: the texture pmremTexture
 // prefilters and the reflectors a reflector() node samples. One pmrem source per material: a second,
 // different one is refused rather than silently sharing the first one's. Reflectors are a list, as
@@ -377,6 +385,7 @@ void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Materi
 // A skinned mesh feeds skinIndex and skinWeight to three's skinning(); on any other mesh they are ordinary
 // attributes a TSL attribute() reads (procedural-animals' DQS skin), so they join the list as float copies.
 void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d, bool skinned) {
+    d.geometryBox = geometry.boundingBox ? std::optional<Box3>(*geometry.boundingBox) : std::nullopt;
     d.attributes->clear();
     for (const auto& [name, attribute] : geometry.attributes) {
         if (!attribute || name == "position" || name == "normal" || name == "uv" || name == "color" ||
@@ -399,13 +408,20 @@ void RenderDatabase::sortCenterOf(const BufferGeometry& geometry, DrawItem& d) {
         d.sortCenter = std::array<double, 3>{sphere->center.x, sphere->center.y, sphere->center.z};
         return;
     }
-    // BufferGeometry.js:1074-1080: the sphere is centred on the box, so the box centre is the key.
-    Box3 box;
-    Vector3 point, center;
-    box.makeEmpty();
-    for (uint64_t i = 0, count = position->count(); i < count; ++i) box.expandByPoint(position->getXYZ(i, point));
-    box.getCenter(center);
-    d.sortCenter = std::array<double, 3>{center.x, center.y, center.z};
+    // BufferGeometry.js:1074-1080: the sphere is centred on the box, so the box centre is the key. A material
+    // edited every frame refreshes its draw every frame; the centre moves only with the vertices.
+    if (geometry.sortCenterRevision_ != geometry.revision() || geometry.sortCenterVersion_ != position->version()) {
+        Box3 box;
+        Vector3 point, center;
+        box.makeEmpty();
+        for (uint64_t i = 0, count = position->count(); i < count; ++i) box.expandByPoint(position->getXYZ(i, point));
+        box.getCenter(center);
+        geometry.sortCenter_ = {center.x, center.y, center.z};
+        geometry.sortCenterRevision_ = geometry.revision();
+        geometry.sortCenterVersion_ = position->version();
+        ++projection::detail::sortCenterPassCount();
+    }
+    d.sortCenter = geometry.sortCenter_;
 }
 
 // three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.
@@ -547,6 +563,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         r.draw->item.renderOrder = mesh.renderOrder();
         // A game moves an InstancedBufferGeometry's instanceCount every frame (Midway's particles).
         if (mesh.geometry && mesh.geometry->instanced) geometryInputsOf(*mesh.geometry, r.draw->item, mesh.type() == "SkinnedMesh");
+        indirectOf(mesh, r.draw->item);
         return r;
     }
     r.draw = std::make_unique<Record::Draw>();
@@ -560,6 +577,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.normals = r.buffers[1];
     d.uvs = r.buffers[2];
     d.indices = r.buffers[3];
+    indirectOf(mesh, d);
     // The diffuse map is sampled only when its image is decoded and the geometry carries uv; an
     // image-less glTF placeholder (source only) keeps drawing its flat colour as before.
     if (d.uvs != nullptr) {

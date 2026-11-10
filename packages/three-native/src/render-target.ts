@@ -53,8 +53,11 @@ export function pixelsOfType(
 
 /** The engine's two calls for a back end's render targets. */
 export interface IRenderTargetEngine {
-  /** Draws `root` through `camera` into `target` (over its contents when the renderer's autoClear is false); throws the engine's refusal. */
-  draw(target: unknown, root: unknown, camera: unknown): void;
+  /**
+   * Draws `root` through `camera` into `layer` of `target` (over its contents when the renderer's autoClear is false);
+   * throws the engine's refusal, which names a layer outside the target's `depth`.
+   */
+  draw(target: unknown, root: unknown, camera: unknown, layer: number): void;
   /** Clears `target`'s colour (to the renderer's clear colour) and/or depth. */
   clear(target: unknown, color: boolean, depth: boolean): void;
   /**
@@ -132,8 +135,8 @@ function copyLayer(
 }
 
 /**
- * Adds three's setRenderTarget, getRenderTarget, getActiveCubeFace, getActiveMipmapLevel, clear,
- * clearColor, clearDepth, clearStencil and readRenderTargetPixelsAsync to a renderer facade's prototype,
+ * Adds three's setRenderTarget, getRenderTarget, getActiveCubeFace, getActiveMipmapLevel, getMRT, setMRT,
+ * initRenderTarget, clear, clearColor, clearDepth, clearStencil and readRenderTargetPixelsAsync to a renderer facade's prototype,
  * and routes its render() into the current target. `engineOf(renderer)` reaches the engine for that renderer.
  * A cube face or 3D slice (`activeCubeFace`) draws into the target's 2D layer target, then is copied into
  * its texture at that layer.
@@ -145,7 +148,9 @@ export function defineRenderTargets(
   engineOf: (renderer: object) => IRenderTargetEngine,
 ): void {
   const targets = new WeakMap<object, unknown>();
+  // three's activeCubeFace: a cube face, a 3D slice, or the layer of an array target (`depth` > 1).
   const faces = new WeakMap<object, number>();
+  const mrts = new WeakMap<object, unknown>();
   const render = prototype.render;
   Object.assign(prototype, {
     // three's WebGPURenderer works in WebGPU clip space (z in [0, 1]); CubeCamera orients its faces by it.
@@ -162,9 +167,12 @@ export function defineRenderTargets(
         throw new Error(
           "TN_NATIVE_RENDER_TARGET_UNSUPPORTED: a mip level other than 0 is not drawn natively",
         );
-      if (activeCubeFace !== 0 && layers === undefined)
+      if (
+        layers === undefined &&
+        (!Number.isInteger(activeCubeFace) || activeCubeFace < 0 || activeCubeFace > 255)
+      )
         throw new Error(
-          "TN_NATIVE_RENDER_TARGET_UNSUPPORTED: a layer other than 0 needs a CubeRenderTarget or RenderTarget3D",
+          `TN_NATIVE_RENDER_TARGET_UNSUPPORTED: layer ${activeCubeFace} is not 0 to 255 natively`,
         );
       if (
         layers !== undefined &&
@@ -189,13 +197,30 @@ export function defineRenderTargets(
       const target = targets.get(this);
       const layer = target ? layered.get(target)?.layer : undefined;
       if (target === null || target === undefined) render.call(this, scene, camera);
-      else if (layer === undefined) engineOf(this).draw(target, scene, camera);
+      // A cube face or 3D slice draws its 2D layer target and copies it in; an array target's layer
+      // draws natively.
+      else if (layer === undefined)
+        engineOf(this).draw(target, scene, camera, faces.get(this) ?? 0);
       else {
         assertWholeLayer(target as Parameters<typeof assertWholeLayer>[0]);
-        engineOf(this).draw(layer, scene, camera);
+        engineOf(this).draw(layer, scene, camera, 0);
         copyLayer(this, target as { texture: object }, layer, faces.get(this) ?? 0);
       }
     },
+    // three's renderer-wide MRT. A material's own mrtNode draws natively; a renderer-wide one is refused by name.
+    getMRT(this: object): unknown {
+      return mrts.get(this) ?? null;
+    },
+    setMRT(this: object, mrt: unknown): object {
+      if (mrt !== null && mrt !== undefined)
+        throw new Error(
+          "TN_NATIVE_MRT_UNSUPPORTED: renderer.setMRT takes null natively; set mrtNode on the material or the pass",
+        );
+      mrts.set(this, null);
+      return this;
+    },
+    // three allocates the target's textures here; the engine allocates them on the first draw.
+    initRenderTarget(): void {},
     // ponytail: on the canvas clear() is a no-op, because the canvas render clears every frame. A target has no stencil.
     clear(this: object, color = true, depth = true): void {
       const target = targets.get(this);

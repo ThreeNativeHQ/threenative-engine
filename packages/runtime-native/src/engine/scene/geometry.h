@@ -13,9 +13,8 @@
 //     (PRD-508 phase 3).
 //   - `onUpload`/`onUploadCallback`, `toJSON`, `clone` and `dispose`: a callback, a serializer and a
 //     GPU lifecycle that belong to the renderer (PRD-514), not the object model.
-//   - BufferGeometry's `computeTangents`, `setIndirect`/`getIndirect`, `lookAt`,
-//     `applyQuaternion`, `toJSON`: tangents and the indirect draw buffer are later work; the rest is
-//     a serializer or a call the caller can write.
+//   - BufferGeometry's `computeTangents`, `lookAt`, `applyQuaternion`, `toJSON`: tangents are later
+//     work; the rest is a serializer or a call the caller can write.
 
 #include "engine/foundation/buffers.h"
 #include "engine/scene/object3d.h"
@@ -24,6 +23,7 @@
 #include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/math/Vector.h"
 
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -138,6 +138,13 @@ public:
 
     std::map<std::string, std::shared_ptr<BufferAttribute>> attributes;
     std::shared_ptr<BufferAttribute> index;
+    /**
+     * three's `setIndirect(attribute, offset)`: the storage attribute holding this geometry's indirect
+     * draw records, and the byte offset of the record that draws it. three also takes one offset per
+     * record; the engine draws one record per geometry, which is what a GPU scene submits.
+     */
+    std::shared_ptr<BufferAttribute> indirect;
+    double indirectOffset = 0;
     // three's morphAttributes.position / .normal (one attribute per target) and morphTargetsRelative.
     std::vector<std::shared_ptr<BufferAttribute>> morphPositions;
     std::vector<std::shared_ptr<BufferAttribute>> morphNormals;
@@ -166,6 +173,11 @@ public:
     [[nodiscard]] std::shared_ptr<BufferAttribute> getIndex() const { return index; }
     void setIndex(const std::shared_ptr<BufferAttribute>& attribute);
     void setIndexFromArray(const std::vector<uint32_t>& values);
+    [[nodiscard]] std::shared_ptr<BufferAttribute> getIndirect() const { return indirect; }
+    void setIndirect(const std::shared_ptr<BufferAttribute>& attribute, double offset = 0) {
+        indirect = attribute;
+        indirectOffset = offset;
+    }
 
     void setAttribute(const std::string& name, std::shared_ptr<BufferAttribute> attribute);
     [[nodiscard]] std::shared_ptr<BufferAttribute> getAttribute(const std::string& name) const;
@@ -177,6 +189,12 @@ public:
     void setDrawRange(double start, double count);
 
     void computeBoundingBox();
+    /**
+     * computeBoundingBox's box (the positions, then each morph target's reach) without setting `boundingBox`:
+     * it holds the vertices at every influence, so a morphed draw is bounded without morphing each vertex.
+     * Cached for one revision and the position and target attributes and versions it was taken at.
+     */
+    [[nodiscard]] const Box3& morphReachBox() const;
     void computeBoundingSphere();
     void computeVertexNormals();
     void normalizeNormals();
@@ -223,6 +241,24 @@ public:
     mutable uint64_t contentKey_ = 0;
     mutable uint64_t contentEpoch_ = 0;
     mutable bool contentStreamed_ = false;
+    // RenderDatabase::sortCenterOf: the box centre a geometry with no bounding sphere is keyed by, and the
+    // revision and position version it was taken at, so a draw whose material moves every frame re-keys
+    // without a pass over every vertex.
+    mutable std::array<double, 3> sortCenter_{};
+    mutable uint64_t sortCenterRevision_ = std::numeric_limits<uint64_t>::max();
+    mutable uint32_t sortCenterVersion_ = 0;
+    // Renderer: the morph targets packed as its morph storage reads them (a vec4 per vertex and target, the
+    // normal after the position), and the revision and each target's attribute and version they were packed at.
+    mutable std::vector<float> morphPacked_;
+    mutable uint64_t morphPackedRevision_ = std::numeric_limits<uint64_t>::max();
+    mutable std::vector<std::pair<const BufferAttribute*, uint32_t>> morphPackedAt_;
+
+private:
+    mutable Box3 morphReachBox_;
+    mutable uint64_t morphReachRevision_ = std::numeric_limits<uint64_t>::max();
+    mutable std::vector<std::pair<const BufferAttribute*, uint32_t>> morphReachAt_;
+
+public:
 
 private:
     uint64_t revision_ = 0;

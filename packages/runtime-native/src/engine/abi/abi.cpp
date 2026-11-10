@@ -798,8 +798,6 @@ void setMrtOutput(tn_handle_t handle, const std::string& name, engine::shader::g
     auto* context = contextFor(handle.context);
     auto* object = context ? context->object(handle) : nullptr;
     if (!object || !binding::isMaterialClass(object->cls)) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");
-    if (engine::shader::engineTargetName(name))
-        throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: '" + name + "' is an engine pass target, not a custom slot");
     auto& material = *static_cast<engine::Material*>(object->ptr.get());
     auto& slots = material.nodes.mrt;
     const auto found = std::find_if(slots.begin(), slots.end(), [&](const engine::shader::MrtOutput& slot) { return slot.name == name; });
@@ -831,11 +829,7 @@ void setMrtOutputs(tn_handle_t handle, std::vector<std::pair<std::string, engine
     auto& material = *static_cast<engine::Material*>(object->ptr.get());
     std::vector<engine::shader::MrtOutput> next;
     next.reserve(slots.size());
-    for (auto& [name, node] : slots) {
-        if (engine::shader::engineTargetName(name))
-            throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: '" + name + "' is an engine pass target, not a custom slot");
-        next.push_back({name, std::move(node)});
-    }
+    for (auto& [name, node] : slots) next.push_back({name, std::move(node)});
     if (material.nodes.mrt == next) return;
     material.nodes.mrt = std::move(next);
     material.needsUpdate();

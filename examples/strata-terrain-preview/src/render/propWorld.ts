@@ -27,11 +27,22 @@ import {
   type IPropPackage,
   PROP_CELL_SIZE,
   compilePropBuckets,
+  decodePropBucket,
   propAssetOf,
 } from "@threenative/terrain";
-import { Box3, type Camera, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
+import {
+  Box3,
+  type Camera,
+  Group,
+  InstancedMesh,
+  type Material,
+  Mesh,
+  Quaternion,
+  Vector3,
+} from "three";
 import { fetchBakedFile } from "./bakedFile.js";
 import { FAR_FOREST_IMPOSTOR, FAR_FOREST_LAYER } from "./farForest.js";
+import { standShaded } from "./propMaterials.js";
 import type { IPropPreparationProgress } from "./propProgress.js";
 import {
   type IPropInstance,
@@ -41,6 +52,7 @@ import {
   PROP_ASSETS,
   type PropGroundQuery,
   impostorDistanceForScale,
+  lodSteps,
   preparePose,
   propKey,
   propRatio,
@@ -71,12 +83,35 @@ export interface IPropWorldOptions {
   readonly size: number;
   readonly horizonDistance?: number;
   readonly castShadows?: boolean;
+  /** The biome row's `standShade`: the tint a spruce takes where no sun shadow is drawn on it. */
+  readonly standShade?: readonly [number, number, number];
+  /** The sun's outer shadow window, metres; a local spruce takes `standShade` past it. */
+  readonly shadowReach?: number;
   readonly bundles?: boolean;
   readonly assets?: IAssetLoader;
   readonly whileCurrent: () => boolean;
   readonly invalidateShadows?: (region?: IShadowRegion) => void;
   readonly onProgress?: (progress: IPropPreparationProgress) => void;
   readonly onPublication?: (bounds: Box3) => void;
+}
+
+// One shaded copy per source material and bucket kind: every tree of a variant shares its crown.
+const standMaterials = {
+  far: new WeakMap<Material, Material>(),
+  local: new WeakMap<Material, Material>(),
+};
+function standMaterial(
+  source: Material,
+  shade: readonly [number, number, number],
+  shadowReach?: number,
+): Material {
+  const copies = standMaterials[shadowReach === undefined ? "far" : "local"];
+  let shaded = copies.get(source);
+  if (!shaded) {
+    shaded = standShaded(source, shade, shadowReach);
+    copies.set(source, shaded);
+  }
+  return shaded;
 }
 
 /** Keep WorldCells' changed caster bounds when forwarding to the existing shadow renderer. */
@@ -191,47 +226,34 @@ export async function loadCanopy(
   return new Float32Array(await response.arrayBuffer());
 }
 
-/** The bucket's records, decoded from the eight float32 per record its container holds. */
+/** The share of the sky each terrain vertex sees past the relief, as `skyVisibility` baked it. */
+export async function loadSky(
+  assets: Pick<IAssetLoader, "resolve">,
+  world: string,
+): Promise<Float32Array> {
+  const response = await fetchBakedFile(assets, `world/${world}.sky.bin`, "sky visibility map");
+  return Float32Array.from(new Uint8Array(await response.arrayBuffer()), (byte) => byte / 255);
+}
+
+/** The bucket's records as placements: the bake's own decode, with the record's model and pose. */
 function recordsOf(bucket: IPropBucketPackage): IRecord[] {
-  const floats = new Float32Array(
-    bucket.placements.buffer,
-    bucket.placements.byteOffset,
-    bucket.placements.byteLength / 4,
-  );
-  if (floats.length !== bucket.ids.length * 8)
-    throw new Error(`Prop package '${bucket.bucket}': the record buffer disagrees with its IDs`);
-  const keys: string[] = new Array(bucket.ids.length);
-  for (const cell of bucket.cells)
-    for (const run of cell.runs)
-      for (let index = 0; index < run.count; index++) keys[run.offset + index] = run.asset;
-  return bucket.ids.map((id, index) => {
-    const key = keys[index];
-    if (key === undefined) throw new Error(`Prop package '${bucket.bucket}': '${id}' has no run`);
+  return decodePropBucket(bucket).map((record) => ({
+    key: record.key,
     // A run names the model it draws: the asset, the variant, and the shape when one scale cannot
     // carry the placement. The asset alone is what `preparePose` grounds.
-    const asset = propAssetOf(key);
-    const at = index * 8;
-    return {
-      key,
-      placement: {
-        alignToNormal: false,
-        asset,
-        id,
-        layer: `temperate-${asset}`,
-        normal: [0, 1, 0],
-        position: [floats[at] as number, floats[at + 1] as number, floats[at + 2] as number],
-        rotation: 0,
-        scale: floats[at + 7] as number,
-      },
-      quaternion: [
-        floats[at + 3] as number,
-        floats[at + 4] as number,
-        floats[at + 5] as number,
-        floats[at + 6] as number,
-      ],
-      reach: bucket.reach[index] ?? bucket.reach[0] ?? Number.POSITIVE_INFINITY,
-    };
-  });
+    placement: {
+      alignToNormal: false,
+      asset: record.asset,
+      id: record.id,
+      layer: `temperate-${record.asset}`,
+      normal: [0, 1, 0],
+      position: [...record.position],
+      rotation: 0,
+      scale: record.scale,
+    },
+    quaternion: record.quaternion,
+    reach: record.reach,
+  }));
 }
 
 /** The variant counters the bake left: a live placement's fade continues the stream it joined. */
@@ -486,15 +508,28 @@ export async function streamProps(options: IPropWorldOptions) {
           const levels = [...new Set(shape.parts.map((part) => part.level ?? 0))].sort(
             (a, b) => a - b,
           );
-          const lods = levels.slice(1).map((level, i) => ({
+          // A far spruce stands 55 m or more from any eye (`clear` around the vista): it draws its
+          // coarsest cooked level until the impostor. Its full chain put 14 M triangles in the vista.
+          const far = plan.bucket.startsWith("far:") && record.key.startsWith("spruce:");
+          const lods = (far ? [] : levels.slice(1)).map((level, i) => ({
             glb: `${record.key}/${level}.glb`,
-            distance: i === 0 ? LOD_BANDS.mid : LOD_BANDS.far,
+            distance: lodSteps(record.placement.asset)[i === 0 ? 0 : 1],
           }));
           const bounds = new Box3();
           for (const level of levels) {
             const group = new Group();
             for (const part of shape.parts.filter((part) => (part.level ?? 0) === level)) {
-              const mesh = new Mesh(part.geometry, part.material ?? options.materials[part.role]);
+              const own = part.material ?? options.materials[part.role];
+              const mesh = new Mesh(
+                part.geometry,
+                options.standShade && record.key.startsWith("spruce:")
+                  ? standMaterial(
+                      own,
+                      options.standShade,
+                      plan.bucket.startsWith("far:") ? undefined : options.shadowReach,
+                    )
+                  : own,
+              );
               mesh.scale.copy(shape.ratio);
               group.add(mesh);
             }
@@ -503,7 +538,7 @@ export async function streamProps(options: IPropWorldOptions) {
             models.set(`${record.key}/${level}.glb`, group);
           }
           definitions[record.key] = {
-            glb: `${record.key}/0.glb`,
+            glb: `${record.key}/${far ? levels.at(-1) : 0}.glb`,
             ...(record.key.startsWith("spruce:")
               ? {
                   // The package rejects a terminal gate at or inside the last authored step.

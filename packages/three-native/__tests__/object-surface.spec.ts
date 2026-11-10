@@ -135,6 +135,31 @@ describe("defineTypeFlags", () => {
     texture.isTexture = true;
     expect(Object.hasOwn(texture, "isTexture")).toBe(true);
   });
+
+  it("flags the instanced attribute and geometry, which a particle batch tests before its upload", () => {
+    // A game re-sends only `a.isInstancedBufferAttribute` attributes each frame, as three's idiom
+    // has it; without the flag Midway's smoke never left the zeros it was created with.
+    class InstancedBufferAttribute {}
+    class InstancedBufferGeometry {}
+    class InterleavedBufferAttribute {}
+    defineTypeFlags({
+      InstancedBufferAttribute,
+      InstancedBufferGeometry,
+      InterleavedBufferAttribute,
+    });
+    expect(
+      (new InstancedBufferAttribute() as { isInstancedBufferAttribute?: boolean })
+        .isInstancedBufferAttribute,
+    ).toBe(true);
+    expect(
+      (new InstancedBufferGeometry() as { isInstancedBufferGeometry?: boolean })
+        .isInstancedBufferGeometry,
+    ).toBe(true);
+    expect(
+      (new InterleavedBufferAttribute() as { isInterleavedBufferAttribute?: boolean })
+        .isInterleavedBufferAttribute,
+    ).toBe(true);
+  });
 });
 
 describe("defineReleaseNoops", () => {

@@ -11,8 +11,9 @@ Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime r
 - The forest uses the owner's licensed Project Nature Spruce Forest, Grass Library, Ground Foliage,
   Meadow Flowers and Fern Collection, plus Epic Kite Demo photoscanned rocks. `src/render/pack.ts`
   loads this example's gitignored `local-assets/temperate/`; `scripts/prep-fab-temperate.mjs`
-  repairs atlas/opacity bindings and calls the installed asset cook. Set `FAB_TEMPERATE` to the
-  imported library. Licensed bytes are LOCAL-ONLY and never committed; provenance is in `CREDITS.md`.
+  repairs atlas/opacity bindings and calls the installed asset cook. `pnpm dev` runs it with `--auto`:
+  the library defaults to the asset MCP's import folder `~/.cache/threenative-fab/temperate`
+  (`FAB_TEMPERATE` overrides), a machine without it skips, and an unchanged library skips on a stamp. Licensed bytes are LOCAL-ONLY and never committed; provenance is in `CREDITS.md`.
   Missing models keep the procedural spruce, rock, fern, grass and flower fallback drawing.
   Cutout vegetation draws with its imported albedo, normal map and cutoff, lit by the CC0
   Kloofendal HDRI as each material's `envMap` (`local-assets/prepared/kloofendal_48d_2k.hdr`,
@@ -64,6 +65,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `playtests/export.playtest.json`: playtest scenario checking static GLB export loading and appearance.
   - `playtests/lod.playtest.json`: run with `?world=forest&meadow=off`: at the vista, 685 m from the player, the props draw at the level the camera sees (`propTriangles` at most 18 M); `?tnLodFromCamera=0` is its before arm.
   - `playtests/loop.playtest.json`: checks the owner's loop (reveal, 10 s walk, camera turn, idle) builds no pipeline after the reveal.
+  - `playtests/stream.playtest.json`: run with `?stream=1&tnTerrainValidate=1` (PRD-790): the player sprints 1.8 km past the square over ground `TerrainTiles` streams around it, then along a slope, 2 km in all, stays grounded, and the tile edges meet with no height gap.
   - `playtests/swim.playtest.json`: checks the player walks into the forest river, swims across it afloat (`CharacterBody3D.water`, immersion 0.62, off the bed) with the UAL1 swim clip, and climbs out on the far bank, and floats with no key held while the river carries it downstream (`CharacterBody3D.waterCurrent`, `swimDrift` at least 1.5 m); `?swim=off` and `?current=off` are its before arms.
   - `playtests/switch.playtest.json`: checks the world keys re-enter scenes: forest ready, `Digit2` to a ready coast, `Digit1` back to a ready forest, on one page with no console error. Before the fix it aborted the Wasm engine in the switch frame (`TN_VIRTUAL_SHADOW_UNINITIALISED`'s cause, a `t_vsm0` binding with no atlas view).
   - `playtests/terrain.playtest.json`: primary playtest scenario for shared web/desktop showcase views.

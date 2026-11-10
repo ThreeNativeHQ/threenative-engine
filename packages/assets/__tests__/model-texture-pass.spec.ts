@@ -1616,6 +1616,35 @@ describe("embedded EXT_texture_webp", () => {
     expect(cooked?.getImage()?.byteLength ?? 0).toBeGreaterThan(authored ?? 0);
   });
 
+  it("keeps a WebP whose KTX2 would be larger on a target that decodes WebP", async () => {
+    // PRD-867: Midway's 300 KB WebP metallic-roughness maps became 4 MB UASTC files on the web,
+    // where every runtime (browsers and the owned Wasm engine) reads a WebP.
+    const authored = (await readOutput(await fixtureWithWebp(256)))
+      .getRoot()
+      .listTextures()
+      .find((texture) => texture.getName() === "checker")
+      ?.getImage()?.byteLength;
+    const { buffer, entry } = await compiled(await fixtureWithWebp(256), {
+      textures: { webp: true },
+    });
+    const summary = entry.embeddedTextures as {
+      readonly formats: Readonly<Record<string, string>>;
+      readonly skippedCompression: Readonly<Record<string, string>>;
+    };
+    expect(summary.formats.checker).toBe("none");
+    expect(summary.skippedCompression.checker).toBe("not-smaller");
+    const json = JSON.parse(buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString("utf8")) as {
+      extensionsRequired?: string[];
+    };
+    expect(json.extensionsRequired ?? []).toContain("EXT_texture_webp");
+    const cooked = (await readOutput(buffer))
+      .getRoot()
+      .listTextures()
+      .find((texture) => texture.getName() === "checker");
+    expect(cooked?.getMimeType()).toBe("image/webp");
+    expect(cooked?.getImage()?.byteLength).toBe(authored);
+  });
+
   it("should still keep a PNG whose KTX2 would be larger", async () => {
     // The other half of the same rule, and the reason it is a container test rather than a size
     // test: PNG and JPEG need no extension, so retaining them costs a reader nothing.

@@ -81,6 +81,11 @@ export class ModelLoadLimiter {
  * The budget is opened once per `update` and drawn down by the units it admits. A unit always
  * finishes, so a frame spends at most the limit plus the unit that crossed it, and the rest of the
  * backlog waits for the next frame rather than being dropped.
+ *
+ * @situation streamed terrain tiles or cells hitch the frame that admits them
+ * @situation cap how many milliseconds a frame spends building streamed content
+ * @constraint open a new budget each frame; a unit always finishes, so one unit can cross the limit
+ * @example tiles.follow(player.position, new AdmissionBudget(2, () => performance.now()));
  */
 export class AdmissionBudget implements IAdmissionBudget {
   readonly #limitMs: number;

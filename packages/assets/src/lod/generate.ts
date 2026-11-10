@@ -950,6 +950,17 @@ function generateCardsChain(
   };
 }
 
+/** A normalized integer attribute's array decoded to its float values, one per component. */
+function decodedComponents(accessor: Accessor, array: TypedArray): Float32Array {
+  const floats = new Float32Array(array.length);
+  for (let index = 0; index < array.length; index += 1)
+    floats[index] = MathUtils.decodeNormalizedInt(
+      array[index] as number,
+      accessor.getComponentType(),
+    );
+  return floats;
+}
+
 /**
  * Appends a card chain's scaled copies to every attribute of `primitive`, in level order, so the
  * levels' indices resolve. Each attribute gets a new accessor: another primitive sharing the old one
@@ -974,7 +985,13 @@ function appendCardCopies(primitive: Primitive, copies: readonly ICardCopies[]):
         grown.set(array.subarray(vertex * size, vertex * size + size), at * size);
         at += 1;
       }
-    const extended = accessor.clone().setArray(grown);
+    // A cooked POSITION is a normalized int16 spanning [-1, 1], and `setElement` encodes through
+    // `encodeNormalizedInt`, which clamps to those bounds: a card scaled past the primitive's
+    // quantized volume would be pinned onto its edge and the level would stop covering the crown.
+    // So the grown copy is written in metres, and the writer derives POSITION's min/max from it.
+    const metres = semantic === "POSITION" && accessor.getNormalized();
+    const extended = accessor.clone().setArray(metres ? decodedComponents(accessor, grown) : grown);
+    if (metres) extended.setNormalized(false);
     if (semantic === "POSITION") {
       at = base;
       for (const level of copies)

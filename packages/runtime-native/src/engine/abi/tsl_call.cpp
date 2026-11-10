@@ -1459,6 +1459,8 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"materialEmissive", g::materialInput("emissive", Type::vec(3))},
             {"materialMetalness", g::materialInput("metalness", Type::f32())},
             {"materialRoughness", g::materialInput("roughness", Type::f32())},
+            // three's diffuseColor: the material's colour and opacity after its map (standard.cpp materialInputs).
+            {"diffuseColor", g::materialInput("diffuseColor", Type::vec(4))},
             // three's time (utils/Timer.js): the frame's elapsed seconds, a uniform the renderer fills.
             {"time", g::uniform("time", Type::f32())},
             // three's deltaTime: seconds since the frame before, filled the same way.

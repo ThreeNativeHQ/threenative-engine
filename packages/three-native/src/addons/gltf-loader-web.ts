@@ -15,10 +15,12 @@ import { __tnLoadGltf } from "three";
 
 interface IEngineModel {
   readonly scene: object;
+  /** Every scene in file order: a model can keep each LOD level as a named scene (`fir_lod1`). */
+  readonly scenes: readonly object[];
   readonly animations: readonly object[];
 }
 
-/** GLTFLoader's result: one default scene, its clips, and the members three's callers read. */
+/** GLTFLoader's result: the default scene, every scene, its clips, and the members three's callers read. */
 export interface IGltfResult {
   readonly scene: object;
   readonly scenes: readonly object[];
@@ -30,7 +32,7 @@ export interface IGltfResult {
 }
 
 const load = __tnLoadGltf as
-  | ((bytes: Uint8Array, files: ReadonlyMap<string, Uint8Array>) => IEngineModel)
+  | ((bytes: Uint8Array, files: ReadonlyMap<string, Uint8Array>) => Promise<IEngineModel>)
   | undefined;
 
 interface IGltfJson {
@@ -42,12 +44,41 @@ interface IGltfJson {
     sparse?: unknown;
     type?: string;
   }[];
-  bufferViews?: { byteLength?: number; byteOffset?: number; byteStride?: number }[];
+  bufferViews?: {
+    byteLength?: number;
+    byteOffset?: number;
+    byteStride?: number;
+    extensions?: Record<string, IMeshoptView | undefined>;
+  }[];
   images?: { uri?: unknown }[];
   meshes?: { primitives?: unknown[] }[];
   nodes?: { children?: number[]; mesh?: number }[];
   scene?: number;
   scenes?: { nodes?: number[] }[];
+}
+
+/** An EXT/KHR_meshopt_compression buffer view: the compressed stream and how it decodes. */
+interface IMeshoptView {
+  buffer?: number;
+  byteLength?: number;
+  byteOffset?: number;
+  byteStride?: number;
+  count?: number;
+  filter?: string;
+  mode?: string;
+}
+
+/** three's MeshoptDecoder, as core hands it to `setMeshoptDecoder`. */
+interface IMeshoptDecoder {
+  readonly ready: Promise<void>;
+  decodeGltfBuffer(
+    target: Uint8Array,
+    count: number,
+    size: number,
+    source: Uint8Array,
+    mode: string,
+    filter?: string,
+  ): void;
 }
 
 /** The JSON and, for a GLB, the binary chunk. Throws on a file that is neither. */
@@ -108,12 +139,48 @@ type PluginFactory = (parser: IEngineParser) => IHostedPlugin;
 
 const ELEMENTS = { 5121: Uint8Array, 5123: Uint16Array, 5125: Uint32Array } as const;
 
+/**
+ * A buffer view's bytes from the GLB's binary chunk: as stored, or decoded when the cook
+ * meshopt-compressed it (the engine's own loader decodes the mesh; this reads only the LOD chain).
+ */
+async function viewBytes(
+  view: NonNullable<IGltfJson["bufferViews"]>[number],
+  bin: Uint8Array,
+  decoder: IMeshoptDecoder | undefined,
+  index: number,
+): Promise<Uint8Array> {
+  const meshopt =
+    view.extensions?.EXT_meshopt_compression ?? view.extensions?.KHR_meshopt_compression;
+  if (meshopt === undefined) return bin.subarray(view.byteOffset ?? 0);
+  const { byteLength = 0, byteOffset = 0, byteStride = 0, count = 0, mode = "" } = meshopt;
+  if (
+    decoder === undefined ||
+    (meshopt.buffer ?? 0) !== 0 ||
+    byteOffset + byteLength > bin.byteLength
+  )
+    throw new Error(
+      `TN_WASM_GLTF_LOD_ACCESSOR: accessor ${String(index)} is meshopt-compressed ${decoder === undefined ? "and no meshopt decoder was set" : "outside the binary chunk"}`,
+    );
+  await decoder.ready;
+  const decoded = new Uint8Array(count * byteStride);
+  decoder.decodeGltfBuffer(
+    decoded,
+    count,
+    byteStride,
+    bin.subarray(byteOffset, byteOffset + byteLength),
+    mode,
+    meshopt.filter,
+  );
+  return decoded;
+}
+
 /** An index accessor's values, copied out of the GLB's binary chunk. */
-function readIndices(
+async function readIndices(
   json: IGltfJson,
   bin: Uint8Array | undefined,
   index: number,
-): { array: ArrayLike<number> } {
+  decoder: IMeshoptDecoder | undefined,
+): Promise<{ array: ArrayLike<number> }> {
   const accessor = json.accessors?.[index];
   const view = json.bufferViews?.[accessor?.bufferView ?? -1];
   const Element = ELEMENTS[accessor?.componentType as keyof typeof ELEMENTS];
@@ -131,13 +198,14 @@ function readIndices(
     );
   if (bin === undefined)
     throw new Error("TN_WASM_GLTF_LOD_ACCESSOR: only a GLB's binary chunk is read for a LOD chain");
-  const start = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+  const bytes = await viewBytes(view, bin, decoder, index);
+  const start = accessor.byteOffset ?? 0;
   const end = start + accessor.count * Element.BYTES_PER_ELEMENT;
-  if (!Number.isInteger(start) || end > bin.byteLength)
+  if (!Number.isInteger(start) || end > bytes.byteLength)
     throw new Error(
       `TN_WASM_GLTF_LOD_ACCESSOR: accessor ${String(index)} reads past the binary chunk`,
     );
-  return { array: new Element(bin.slice(start, end).buffer) };
+  return { array: new Element(bytes.slice(start, end).buffer) };
 }
 
 /**
@@ -179,13 +247,14 @@ function associate(json: IGltfJson, scene: object, into: IEngineParser["associat
 function hostPlugins(
   factories: readonly PluginFactory[],
   data: ArrayBuffer | string,
+  decoder: IMeshoptDecoder | undefined,
 ): { parser: IEngineParser; plugins: IHostedPlugin[] } | undefined {
   if (factories.length === 0) return undefined;
   const { bin, json } = readGltf(data);
   const parser: IEngineParser = {
     associations: new Map(),
     getDependency: async (type, index) => {
-      if (type === "accessor") return readIndices(json, bin, index);
+      if (type === "accessor") return readIndices(json, bin, index, decoder);
       throw new Error(
         `TN_WASM_GLTF_DEPENDENCY_UNSUPPORTED: the engine glTF loader returns no '${type}'`,
       );
@@ -226,9 +295,15 @@ function imageBytes(url: string): Promise<Uint8Array> {
 
 export class GLTFLoader {
   path = "";
+  /**
+   * Serves one image file's bytes in place of a plain fetch: core hands the resident levels of a
+   * KTX2 here (PRD-860). `undefined` from it means "fetch it as usual".
+   */
+  imageSource: ((url: string) => Promise<Uint8Array | undefined>) | undefined = undefined;
   /** A plugin defect (a chain the file declares and cannot deliver) rejects the load; core's plugin logs it on stock three. */
   readonly failClosed = true;
   readonly #factories: PluginFactory[] = [];
+  #meshopt: IMeshoptDecoder | undefined;
 
   setPath(path: string): this {
     this.path = path;
@@ -247,12 +322,18 @@ export class GLTFLoader {
     return this;
   }
 
-  setKTX2Loader(): never {
-    return refuse("KTX2");
+  /** The engine's loader transcodes KHR_texture_basisu itself (PRD-861), so the JS loader goes unused. */
+  setKTX2Loader(_loader?: unknown): this {
+    return this;
   }
 
-  setMeshoptDecoder(): never {
-    return refuse("MESHOPT");
+  /**
+   * The engine's loader decodes EXT/KHR_meshopt_compression itself (PRD-861); the JS decoder reads
+   * only a hosted LOD chain's compressed index views.
+   */
+  setMeshoptDecoder(decoder?: IMeshoptDecoder): this {
+    this.#meshopt = decoder;
+    return this;
   }
 
   setDRACOLoader(): never {
@@ -279,11 +360,11 @@ export class GLTFLoader {
           throw new Error("TN_WASM_GLTF_UNAVAILABLE: this web engine has no glTF loader");
         const bytes =
           typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
-        const hosted = hostPlugins(this.#factories, data);
-        const model = load(bytes, files);
+        const hosted = hostPlugins(this.#factories, data, this.#meshopt);
+        const model = await load(bytes, files);
         result = {
           scene: model.scene,
-          scenes: [model.scene],
+          scenes: [...model.scenes],
           animations: [...model.animations],
           cameras: [],
           asset: { version: "2.0" },
@@ -308,7 +389,13 @@ export class GLTFLoader {
     }
     Promise.all(
       // The engine loader asks for the uri with its percent escapes decoded.
-      uris.map(async (uri) => [decodeURIComponent(uri), await imageBytes(path + uri)] as const),
+      uris.map(
+        async (uri) =>
+          [
+            decodeURIComponent(uri),
+            (await this.imageSource?.(path + uri)) ?? (await imageBytes(path + uri)),
+          ] as const,
+      ),
     ).then(
       (files) => settle(new Map(files)),
       (error: unknown) => {

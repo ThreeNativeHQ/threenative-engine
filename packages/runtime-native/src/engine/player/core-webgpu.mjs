@@ -17,7 +17,7 @@ for (const name of ["DirectionalLightShadow", "PointLightShadow", "SpotLightShad
 }
 import { BufferAttribute, Color, DataTexture, Material, NormalBlending } from "./core-three.mjs";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
-import { PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";
+import { IndirectStorageBufferAttribute, PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";
 import { readStorageBytes } from "../../../../three-native/src/storage.ts";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
 import { defineToneMappingLibrary } from "../../../../three-native/src/tone-mapping.ts";
@@ -63,11 +63,11 @@ class NativeBackend {
   }
 }
 
-function drawTarget(renderer, target, root, camera, deferred) {
+function drawTarget(renderer, target, root, camera, deferred, layer = 0) {
   syncUniforms();
   renderer.library.apply(renderer.toneMapping);
   globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
-  globalThis.tn.renderTarget(target, root, camera, deferred === true, renderer.autoClear !== false);
+  globalThis.tn.renderTarget(target, root, camera, deferred === true, renderer.autoClear !== false, layer);
 }
 
 // Every offscreen PassNode plans its draw into its own target; the player records it in this frame, after the post
@@ -230,7 +230,7 @@ export class WebGPURenderer {
 // three's render targets (shared with the Wasm back end): render() while a target is set draws into
 // it at the call, and readRenderTargetPixelsAsync reads it back once the GPU copy lands.
 defineRenderTargets(WebGPURenderer.prototype, (renderer) => ({
-  draw: (target, root, camera) => drawTarget(renderer, target, root, camera),
+  draw: (target, root, camera, layer) => drawTarget(renderer, target, root, camera, false, layer),
   clear: (target, color, depth) => {
     globalThis.tn.setRendererState(renderer);  // the clear colour
     globalThis.tn.clearTarget(target, color, depth);
@@ -289,9 +289,10 @@ export class RenderPipeline {
 export { PassNode };
 // three's NodeUpdateType, the constants a node's update schedule names.
 export const NodeUpdateType = Object.freeze({ NONE: "none", FRAME: "frame", RENDER: "render", OBJECT: "object" });
-// three's StorageBufferAttribute and StorageInstancedBufferAttribute: BufferAttributes that TSL storage() binds
-// as storage buffers (defined with the storage nodes, in core-tsl.mjs).
-export { StorageBufferAttribute, StorageInstancedBufferAttribute };
+// three's StorageBufferAttribute, StorageInstancedBufferAttribute and IndirectStorageBufferAttribute: BufferAttributes
+// that TSL storage() binds as storage buffers, and that a geometry's setIndirect() takes (defined with the storage
+// nodes, in core-tsl.mjs).
+export { StorageBufferAttribute, StorageInstancedBufferAttribute, IndirectStorageBufferAttribute };
 export const MeshLambertNodeMaterial = unsupportedExport("MeshLambertNodeMaterial");
 export const MeshMatcapNodeMaterial = unsupportedExport("MeshMatcapNodeMaterial");
 export const MeshNormalNodeMaterial = unsupportedExport("MeshNormalNodeMaterial");
@@ -327,7 +328,6 @@ export const RendererUtils = defineRendererUtils(Color);
 export const AssignNode = unsupportedExport("AssignNode");
 export const BundleGroup = unsupportedExport("BundleGroup");
 export const EventNode = unsupportedExport("EventNode");
-export const IndirectStorageBufferAttribute = unsupportedExport("IndirectStorageBufferAttribute");
 
 WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
   async (scene, x, y, z, size, face, renderer) => {
