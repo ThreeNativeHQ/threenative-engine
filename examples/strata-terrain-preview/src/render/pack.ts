@@ -5,7 +5,7 @@ import {
   normaliseToMetres,
   thinCards,
 } from "@threenative/core";
-/** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
+
 import {
   type IMeshSection,
   bakedNoise,
@@ -86,6 +86,13 @@ import {
   skyEnvironment,
 } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
+
+/**
+ * Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback.
+ * `?fab=off` is the named override: the procedural set alone, as a machine without the library
+ * draws it, for comparing the two at one pose.
+ */
+export const FAB_ART = new URLSearchParams(globalThis.location?.search ?? "").get("fab") !== "off";
 
 export interface IPackSpecies {
   readonly asset: string;
@@ -955,7 +962,7 @@ export async function loadPack(
   const sky = assets ? await loadSkyLight(assets) : undefined;
   const loaded = await Promise.all(
     selected.map(async (one) => {
-      if (!assets) return undefined;
+      if (!assets || !FAB_ART) return undefined;
       try {
         const root = one.path.startsWith("landscape-pro/") ? "" : "temperate/";
         return await assets.model<{ scene?: Group }>(`${root}${one.path}.glb`);
