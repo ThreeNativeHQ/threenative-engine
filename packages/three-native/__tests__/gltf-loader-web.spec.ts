@@ -124,6 +124,28 @@ describe("the web GLTFLoader's image files", () => {
     expect(loadGltf).toHaveBeenCalledWith(expect.any(Uint8Array), new Map());
   });
 
+  // PRD-861: core wires three's MeshoptDecoder for every model that declares meshopt, and the web bake
+  // emits meshopt for this engine. The engine's own loader decodes it, so the JS decoder is not needed.
+  it("takes a meshopt decoder and hands a meshopt model to the engine", async () => {
+    const loader = new GLTFLoader();
+    expect(loader.setMeshoptDecoder({})).toBe(loader);
+    await loader.parseAsync(
+      glb({ asset: { version: "2.0" }, extensionsUsed: ["EXT_meshopt_compression"] }),
+      "",
+    );
+    expect(loadGltf).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes a KTX2 loader and hands a KHR_texture_basisu model to the engine", async () => {
+    const loader = new GLTFLoader();
+    expect(loader.setKTX2Loader({})).toBe(loader);
+    await loader.parseAsync(
+      glb({ asset: { version: "2.0" }, extensionsUsed: ["KHR_texture_basisu"] }),
+      "",
+    );
+    expect(loadGltf).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses a plugin it does not host by name, rather than skipping it", async () => {
     const loader = new GLTFLoader().register(() => ({ name: "KHR_other" }));
     await expect(loader.parseAsync(glb({ asset: { version: "2.0" } }), "")).rejects.toThrow(

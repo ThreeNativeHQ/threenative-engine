@@ -247,12 +247,14 @@ export class GLTFLoader {
     return this;
   }
 
-  setKTX2Loader(): never {
-    return refuse("KTX2");
+  /** The engine's loader transcodes KHR_texture_basisu itself (PRD-861), so the JS loader goes unused. */
+  setKTX2Loader(_loader?: unknown): this {
+    return this;
   }
 
-  setMeshoptDecoder(): never {
-    return refuse("MESHOPT");
+  /** The engine's loader decodes EXT/KHR_meshopt_compression itself (PRD-861), so the JS decoder goes unused. */
+  setMeshoptDecoder(_decoder?: unknown): this {
+    return this;
   }
 
   setDRACOLoader(): never {

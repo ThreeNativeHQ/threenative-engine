@@ -14,7 +14,15 @@ export default defineConfig({
     rollupOptions: {
       input:
         process.env.WASM_BOOT_PAGES === "renderer"
-          ? ["renderer.html", "post.html", "ssgi.html", "compute.html", "array.html", "limits.html"]
+          ? [
+              "renderer.html",
+              "post.html",
+              "ssgi.html",
+              "compute.html",
+              "array.html",
+              "limits.html",
+              "compressed.html",
+            ]
           : [
               "index.html",
               "renderer.html",
@@ -23,6 +31,7 @@ export default defineConfig({
               "compute.html",
               "array.html",
               "limits.html",
+              "compressed.html",
             ],
     },
   },

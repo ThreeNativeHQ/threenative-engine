@@ -22,6 +22,7 @@ import {
   createWasmRuntime,
   defineBrowserClasses,
 } from "./browser-backend.js";
+import { LOADERS } from "./browser-loaders.js";
 import { ColorManagement } from "./browser-math.js";
 import {
   PIPELINE_POST,
@@ -345,13 +346,19 @@ export async function bindWebEngine(
 
 /**
  * The engine classes plus what plain JS adds over them: three's texture sources (typed array,
- * canvas, image, ImageBitmapLoader), `DataUtils`, and the `ColorManagement` singleton.
+ * canvas, image, ImageBitmapLoader), three's loader base classes, `DataUtils`, and the `ColorManagement` singleton.
  */
 export function withTextureSources(
   classes: Readonly<Record<string, unknown>>,
   runtime: IBrowserRuntime,
 ): Record<string, unknown> {
-  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils, ColorManagement };
+  return {
+    ...classes,
+    ...defineTextureSources(classes, runtime),
+    ...LOADERS,
+    DataUtils,
+    ColorManagement,
+  };
 }
 
 interface IPipelineRenderer {

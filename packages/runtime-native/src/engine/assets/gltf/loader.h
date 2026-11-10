@@ -9,12 +9,12 @@
 // KHR_texture_transform, EXT_mesh_gpu_instancing, and the sheen, transmission, volume, iridescence, anisotropy,
 // dispersion and EXT_materials_bump factors (the standard program does not draw those yet, so the renderer
 // refuses such a mesh by name, TN_NATIVE_MATERIAL_UNSUPPORTED, and the rest of the model draws). An extension
-// GLTFLoader implements that needs a decoder this loader does not have (draco, basisu, avif) is refused
+// GLTFLoader implements that needs a decoder this loader does not have (draco, avif) is refused
 // by name (TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED) instead of being dropped, as is a required
 // extension nobody knows; an unknown optional extension is ignored, as GLTFLoader ignores it.
 // A malformed meshopt buffer view is TN_NATIVE_GLTF_MESHOPT_INVALID naming its index, never a crash.
-// Images: PNG and JPEG decode to RGBA8 (a texture also takes its sampler); WebP, AVIF, KTX2 and
-// external image files stay undecoded. Not yet:
+// Images: PNG, JPEG, WebP and KTX2 (KHR_texture_basisu, transcoded) decode to RGBA8 where this build
+// carries the decoder (a texture also takes its sampler); AVIF and external image files stay undecoded. Not yet:
 // a node shared between scenes, external buffer files.
 //
 // Engine code never throws: a refusal is the result's `error`, a TN_NATIVE_GLTF_* code and detail.

@@ -191,6 +191,16 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_output_screen_size=output_screen_size
         native_engine_post_stage_is_metered=post_stage_is_metered)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
+    # PRD-867: a KTX2 model's texture uploads as BC7 levels and draws; a device without the feature refuses it.
+    if(TARGET tn_engine_gltf AND TARGET tn_engine_basisu)
+        tn_native_engine_test(tn-native-engine-compressed-texture-test tests/native-engine/compressed_texture_test.cpp
+            native_engine_compressed_texture_bc7=bc7_draws
+            native_engine_compressed_texture_refused=bc7_refused_without_feature
+            native_engine_compressed_texture_finer_level=finer_level_writes_in_place)
+        target_link_libraries(tn-native-engine-compressed-texture-test PRIVATE tn_engine_renderer tn_engine_gltf tn_host_services)
+        target_compile_definitions(tn-native-engine-compressed-texture-test PRIVATE
+            TN_GLTF_KTX2_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/ktx2-textured.glb")
+    endif()
 
     # A texture's retirement reaches every renderer that caches it, and a probe capture waits for a
     # scene environment's frame-pumped PMREM before it reads a face; startup warm-up bakes it with no frame.

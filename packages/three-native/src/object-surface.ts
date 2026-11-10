@@ -220,6 +220,7 @@ const FLAGGED_CLASSES = [
   "InstancedBufferAttribute",
   "InstancedBufferGeometry",
   "InterleavedBufferAttribute",
+  "CompressedTexture",
   "Object3D",
   "Scene",
   "Group",

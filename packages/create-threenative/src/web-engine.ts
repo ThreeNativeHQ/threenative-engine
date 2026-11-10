@@ -4,16 +4,27 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
- * The asset decoders the web engine ships: its glTF loader decodes neither KTX2 nor Meshopt (addons/gltf-loader-web.ts), so a
- * native-engine game's models are cooked without it, which is also the cooker's default. `engine: "threejs"` names both.
- * `threenative build` and each template's dev-server asset watch both read it, so the two cook the same bytes.
+ * The asset decoders the web build ships, per format.
+ *
+ * Meshopt geometry decodes on both engines: on `engine: "threenative"` the engine's own glTF loader
+ * decompresses EXT/KHR_meshopt_compression with meshoptimizer, which `pnpm wasm:build` provisions
+ * and without which the `tn-native-engine-web` target refuses to link (PRD-861).
+ *
+ * KTX2 stays off for the owned engine by measurement, not by capability. The engine transcodes
+ * KHR_texture_basisu to BC7 or ETC2 and uploads the blocks (PRD-867), and three's KTX2Loader runs on
+ * it, but the download costs more: Midway's KTX2 cook is 189,852,625 B against 125,132,608 B with
+ * WebP model textures, mostly UASTC images of 4 MB and more. Turn it on when the cook's KTX2 bytes
+ * are not above WebP's.
+ *
+ * `threenative build` and each template's dev-server asset watch both read it, so the two cook the
+ * same bytes.
  */
 export function webRuntimeDecoders(config: {
   readonly engine?: "threejs" | "threenative";
 }): { readonly ktx2: boolean; readonly meshopt: boolean } {
   return config.engine === "threejs"
     ? { ktx2: true, meshopt: true }
-    : { ktx2: false, meshopt: false };
+    : { ktx2: false, meshopt: true };
 }
 
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */
@@ -73,9 +84,15 @@ const ENGINE_MATH_MODULES = new Set([
   "three/src/math/Vector2.js",
   "three/src/math/Vector3.js",
   "three/src/math/Vector4.js",
+  // three's loader base classes (browser-loaders.ts): fetch and request tracking, no drawing.
+  "three/src/loaders/Cache.js",
+  "three/src/loaders/FileLoader.js",
+  "three/src/loaders/Loader.js",
+  "three/src/loaders/LoadingManager.js",
 ]);
 /** Where the browser back end's value classes live: only these may import three's math modules. */
-const ENGINE_MATH_IMPORTER = /[\\/](?:browser-math\.ts|web-engine-runtime\.js)(?:\?.*)?$/u;
+const ENGINE_MATH_IMPORTER =
+  /[\\/](?:browser-math\.ts|browser-loaders\.ts|web-engine-runtime\.js)(?:\?.*)?$/u;
 
 export interface IWebEnginePlugin {
   readonly name: string;

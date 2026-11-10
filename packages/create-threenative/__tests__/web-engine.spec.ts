@@ -467,9 +467,11 @@ describe("createWebEnginePlugin", () => {
 });
 
 describe("the web engine's asset decoders", () => {
-  it("cooks without KTX2 or Meshopt unless the game pins the legacy engine", () => {
-    expect(webRuntimeDecoders({})).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual({ ktx2: false, meshopt: false });
+  it("cooks meshopt on both engines and KTX2 only on the legacy one", () => {
+    // The engine's loader decodes both, but transcodes KTX2 to RGBA8: smaller WebP wins there.
+    const owned = { ktx2: false, meshopt: true };
+    expect(webRuntimeDecoders({})).toEqual(owned);
+    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual(owned);
     expect(webRuntimeDecoders({ engine: "threejs" })).toEqual({ ktx2: true, meshopt: true });
   });
 

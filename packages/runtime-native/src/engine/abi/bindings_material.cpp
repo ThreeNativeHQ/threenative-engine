@@ -1012,6 +1012,50 @@ void registerTextureBindings(Registry& classes) {
     registerTextureClass(classes["DataTexture"], true, "DataTexture");
     classes["DataTexture"].ctorTakesBytes = true;
     classes["DataTexture"].settersTakeBytes = {"image.data"};
+    // three's CompressedTexture (PRD-867): block levels uploaded as they are, BC7 or ETC2 RGBA. The ABI takes
+    // (levelCount, width, height, format); three's facade turns its `mipmaps` into those and one
+    // `mipmaps.N.data = bytes` per level, which is also how a streamed finer level arrives (writeMipLevel).
+    {
+        ClassBinding& compressed = classes["CompressedTexture"];
+        registerTextureClass(compressed, false, "CompressedTexture");
+        compressed.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+            if (a.size() < 4 || a[0].kind != Value::Kind::Number)
+                throw Unsupported{"CompressedTexture takes (levelCount, width, height, format) on the engine ABI"};
+            auto texture = std::make_shared<Texture>();
+            texture->width = static_cast<uint32_t>(number(a[1]));
+            texture->height = static_cast<uint32_t>(number(a[2]));
+            texture->flipY = false;  // three's CompressedTexture: blocks cannot be flipped
+            texture->generateMipmaps = false;
+            try {
+                texture->allocateMipmaps(static_cast<uint16_t>(number(a[3])), static_cast<uint32_t>(number(a[0])));
+            } catch (const std::invalid_argument& refused) {
+                throw Unsupported{refused.what()};
+            }
+            return std::static_pointer_cast<void>(texture);
+        };
+        // three's `format` is the block format; the engine's own `format` stays the RGBA one its RGBA paths read.
+        compressed.getters["format"] = [](void* self) { return Value::of(double(as<Texture>(self)->imageSource->mipmapFormat)); };
+        compressed.setters["format"] = [](void* self, const Value& v) {
+            if (static_cast<uint16_t>(number(v)) != as<Texture>(self)->imageSource->mipmapFormat)
+                throw Unsupported{"CompressedTexture format is fixed by its constructor (BC7 or ETC2 RGBA)"};
+        };
+        for (uint32_t level = 0; level < 16; ++level) {  // 16 levels: a full chain of a 32768 px texture
+            const std::string path = "mipmaps." + std::to_string(level) + ".data";
+            compressed.setters[path] = [level](void* self, const Value& v) {
+                // The C ABI hands the typed array's bytes (settersTakeBytes); V8 hands numbers.
+                if (v.kind != Value::Kind::Numbers || (!v.bytes.empty() && typedArrayElementBytes(v.text) != 1))
+                    throw Unsupported{"CompressedTexture mipmaps[" + std::to_string(level) + "].data must be a Uint8Array"};
+                std::vector<uint8_t> blocks(v.bytes.begin(), v.bytes.end());
+                if (v.bytes.empty()) blocks.assign(v.numbers.begin(), v.numbers.end());
+                try {
+                    as<Texture>(self)->writeMipLevel(level, std::move(blocks));
+                } catch (const std::invalid_argument& refused) {
+                    throw Unsupported{refused.what()};
+                }
+            };
+            compressed.settersTakeBytes.insert(path);
+        }
+    }
     // three's StorageTexture(width, height) and Storage3DTexture(width, height, depth): a texture a compute kernel
     // writes and a material samples. The 3D one is a volume (prd476's density), sampled with texture3D.
     for (const bool volume : {false, true}) {

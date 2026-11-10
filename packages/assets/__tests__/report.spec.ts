@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { skippedCompressionRows } from "../src/compile-rows.js";
+import type { ICompileLayout } from "../src/compile-types.js";
 import { imageQuality } from "../src/image-quality.js";
 import { formatTextureQualityTotals } from "../src/report.js";
 import { formatModelSizes, formatSkippedCompression, formatTextureSizes } from "../src/report.js";
@@ -159,6 +161,29 @@ describe("formatSkippedCompression", () => {
     expect(lines[0]).toContain("KTX2");
     expect(lines[1]).toContain("KTX2");
     expect(lines.join("\n")).not.toContain("dedupe");
+  });
+
+  // PRD-861: the owned web engine decodes meshopt but its cook keeps KTX2 off, so the model row
+  // names only KTX2 and says meshopt ran, instead of claiming no decoder-backed compression ran.
+  it("names only the decoder a target lacks when the other one ran", () => {
+    const layout = {
+      builtinRegistry: true,
+      modelCompressionDecoders: ["meshopt", "KTX2"],
+      modelCompressionReason: "platform",
+      runtimeDecoderCapabilities: { ktx2: false, meshopt: true },
+      skippedPasses: [],
+      textureCompressionReason: undefined,
+    } as unknown as ICompileLayout;
+    const rows = skippedCompressionRows(
+      { "ship.glb": { bytes: 240, kind: "model", output: "ship.0.glb" } } as never,
+      layout,
+    );
+    const [line] = formatSkippedCompression(rows);
+    expect(line).toContain("no qualified KTX2 decoder");
+    expect(line).not.toContain("meshopt and KTX2");
+    expect(line).toContain(
+      "kept its textures out of KTX2 while meshopt and the decoder-free model passes ran",
+    );
   });
 });
 
