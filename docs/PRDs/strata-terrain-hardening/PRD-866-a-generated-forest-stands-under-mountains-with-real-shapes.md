@@ -1,6 +1,6 @@
 # PRD-866: A generated forest stands under mountains with real shapes
 
-**Status:** PARTIAL — phases 1-3 landed (7/7 boxes); AC-1 to AC-3 open (judges, far-forest shadow cost)
+**Status:** PARTIAL — phases 1-3 landed (7/7 boxes); AC-1 to AC-3 open (judges; the far band costs about 23 ms GPU)
 **Priority:** P1 — the owner named the mountains as one of the two defects that keep the forest from "good to go" (2026-11-09); AC-1 is that defect.
 **Complexity:** 6 (MEDIUM) — 6 to 10 files (2), a new placement module (2), state across bake and cook (2); risk override: none
 **Owner:** João
@@ -124,7 +124,8 @@ Auto by default: the cook adds the ring and a massif when the landform is `alpin
 - 2026-11-09 (executor): a forest under a backdrop cooks a true-scale floor: a 512 m crop at z15, scale 1, at a seeded spot within 0.4 of the row's extent; the first spot with relief under 90 m per 512 m of side and a slope p90 under 28 degrees wins, the row's own centre last. The preset's fluvial erosion is replaced by hydraulic plus thermal erosion, because it lowered the square's border 10-40 m under its ring.
 - 2026-11-09 (executor): curvature kurtosis gates the massif only on a flat host (spec); inside a real ring the smooth survey around it dilutes the number to 9-30 with the same mountain.
 - 2026-11-09 (executor): the forest look's treeline and snow are metres above the floor (`bandSpan: 41`), not shares of the square's own range, so a hillier cooked square keeps the pinned forest's bands.
-- 2026-11-09 (executor): the far forest's default is the band 700 m past the square (`?farForest=near`); `on` plants the whole ring, `off` none. A far spruce draws its coarsest cooked level until the impostor (vista props 28.6 M -> 16.3 M triangles). Its remaining cost is about 28 ms of GPU shadow work although it casts nothing (gpuShadow 53 ms with it, 0.1 ms without; investigation open, AC-3 not met yet).
+- 2026-11-09 (executor): the far forest's default is the band 700 m past the square (`?farForest=near`); `on` plants the whole ring, `off` none. A far spruce draws its coarsest cooked level until the impostor (vista props 28.6 M -> 16.3 M triangles).
+- 2026-11-10 (executor): the far forest's remaining cost is its impostors' main-pass fragments, not shadow work. The `gpuShadow` span was mislabelled: three@0.187.0 `WebGPUBackend.js:3268` (`copyFramebufferToTexture`) reuses the shared `_renderPassTimestampWrites`, so the main pass's time lands on the shadow pass's slot; the GPU total is right. Each impostor quad was its bounding sphere's square, about four times a spruce's silhouette; the quad now fits the baked box (`packages/core`, e92ff9c54, judge NEUTRAL). GPU ms at 1600x900 on the RTX 2080, four windows: overview off 37.6 -> 34.6, near 66.5 -> 57.7; vista off 46.0 -> 40.7, near 72.8 -> 64.0. The band still costs about 23 ms, so AC-3 stays open; `near` stays the default because AC-1's look asks for a wooded ring, and the threshold is the owner's call.
 
 ## Notes for the executor
 
