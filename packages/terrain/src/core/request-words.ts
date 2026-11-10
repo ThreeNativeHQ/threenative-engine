@@ -12,13 +12,14 @@ import type { LandformKind } from "./presets.js";
  * `terrain-mcp.spec.ts` has a case per row.
  */
 export const LANDFORM_WORD_ROWS: readonly (readonly [LandformKind, readonly string[]])[] = [
-  ["alpine", ["alpine", "mountain", "mountains", "peaks"]],
+  // First: a volcano is the more specific shape, so "a volcanic island" is a volcano in the sea.
+  ["volcanic", ["volcano", "volcanoes", "volcanic"]],
+  ["alpine", ["alpine", "alps", "mountain", "mountains", "peaks"]],
   ["temperateMountains", ["foothills", "valley", "valleys"]],
   ["rollingHills", ["hill", "hills", "rolling"]],
   ["desertMesa", ["butte", "buttes", "canyon", "canyons", "mesa", "mesas"]],
-  ["coastalCliffs", ["cliff", "cliffs", "coast", "coastal", "island", "islands"]],
+  ["coastalCliffs", ["cliff", "cliffs", "coast", "coastal", "fjord", "fjords", "island", "islands"]],
   ["tundra", ["arctic", "tundra"]],
-  ["volcanic", ["volcano", "volcanoes", "volcanic"]],
 ];
 
 /**
@@ -29,8 +30,25 @@ export const LANDFORM_WORD_ROWS: readonly (readonly [LandformKind, readonly stri
 export const WATER_WORD_ROWS: readonly (readonly [IBiomeWaterBody, readonly string[]])[] = [
   [{ kind: "river", width: 5.32 }, ["creek", "creeks", "river", "rivers", "stream", "streams"]],
   [{ kind: "lake", radius: 105 }, ["lake", "lakes", "pond", "ponds"]],
-  [{ kind: "ocean", level: 1.5 }, ["island", "islands", "ocean", "oceans", "sea", "seas"]],
+  [{ kind: "ocean", level: 1.5 }, ["fjord", "fjords", "island", "islands", "ocean", "oceans", "sea", "seas"]],
 ];
+
+/**
+ * The starter whose surface and assets suit a landform, for a request that names a shape but no
+ * biome: "rolling hills" grow the forest's grass and trees, "a canyon" the desert's sand and rock.
+ */
+export const LANDFORM_BIOME: Readonly<Record<LandformKind, TerrainKit>> = {
+  alpine: "alpine",
+  temperateMountains: "forest",
+  rollingHills: "forest",
+  desertMesa: "desert",
+  coastalCliffs: "coastal",
+  tundra: "tundra",
+  volcanic: "alpine",
+};
+
+/** The starter a request with no biome, landform or sea word cooks: the forest, reported as such. */
+export const DEFAULT_BIOME: TerrainKit = "forest";
 
 /** How a size word scales the biome's own `sizeMeters`: "huge" doubles 512 m, "small" halves it. */
 export const SIZE_WORD_ROWS: readonly (readonly [number, readonly string[]])[] = [

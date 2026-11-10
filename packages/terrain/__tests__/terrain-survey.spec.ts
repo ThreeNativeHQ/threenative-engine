@@ -359,7 +359,8 @@ describe("the far ring", () => {
     const under = parseGenerateRequest({ request: "a spruce forest under mountains" });
     expect(under.input).toMatchObject({ landform: "temperateMountains", backdropRange: "alpine" });
     expect(under.decided.backdrop).toEqual({ value: "massif", source: "default" });
-    expect(under.unused).toEqual(["spruce"]);
+    // "spruce" is a forest word, so nothing in the request went unread.
+    expect(under.unused).toEqual([]);
   });
 
   it("writes ring.json with the survey continued and a surveyed mountain past the square", async () => {

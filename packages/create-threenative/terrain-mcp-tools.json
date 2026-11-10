@@ -1,19 +1,32 @@
 {
-  "comment": "The terrain MCP surface a generated project gets once it installs @threenative/terrain. `tools` is set-equal to the tool table version 0.1.7 serves. Regenerate with `pnpm tsx scripts/capture-terrain-mcp-tools.ts`.",
-  "version": "0.1.7",
+  "comment": "The terrain MCP surface a generated project gets once it installs @threenative/terrain. `tools` is set-equal to the tool table version 0.1.9 serves. Regenerate with `pnpm tsx scripts/capture-terrain-mcp-tools.ts`.",
+  "version": "0.1.9",
   "serverInfo": {
     "name": "threenative-terrain",
-    "version": "0.1.7"
+    "version": "0.1.9"
   },
-  "recommended": ["terrain_generate", "terrain_patch"],
-  "tools": ["terrain_biome_new", "terrain_generate", "terrain_patch"],
+  "recommended": [
+    "terrain_generate",
+    "terrain_patch"
+  ],
+  "tools": [
+    "terrain_biome_new",
+    "terrain_generate",
+    "terrain_patch"
+  ],
   "inputSchemas": {
     "terrain_generate": {
       "type": "object",
       "properties": {
         "kit": {
           "type": "string",
-          "enum": ["forest", "coastal", "alpine", "desert", "tundra"]
+          "enum": [
+            "forest",
+            "coastal",
+            "alpine",
+            "desert",
+            "tundra"
+          ]
         },
         "biome": {
           "description": "A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with `kit`'s surface and assets, forest's when kit is absent.",
@@ -42,7 +55,7 @@
         "request": {
           "type": "string",
           "minLength": 1,
-          "description": "What the world should be, in words: a biome, a landform (mountains, hills, ...), water (river, lake, ...) and a size (huge, small); an explicit argument wins over a word."
+          "description": "What the world should be, in any words: a biome, a landform (mountains, hills, canyon, volcano, fjord, ...), water (river, lake, sea, ...) and a size (huge, small); an explicit argument wins over a word. A request with no biome word takes the biome its sea or shape suits, else the forest; `decided` names the word behind each choice and `unused` the words that named nothing. A real place's name is not geocoded: pass its latitude and longitude as `ground: { location }` to cook that place's survey."
         },
         "sizeMeters": {
           "type": "number",
@@ -63,7 +76,9 @@
           "anyOf": [
             {
               "type": "string",
-              "enum": ["procedural"]
+              "enum": [
+                "procedural"
+              ]
             },
             {
               "type": "object",
@@ -81,7 +96,9 @@
                   "description": "Highest elevation in the file, metres."
                 }
               },
-              "required": ["heightmap"],
+              "required": [
+                "heightmap"
+              ],
               "additionalProperties": false
             },
             {
@@ -97,14 +114,26 @@
                       "type": "number"
                     }
                   },
-                  "required": ["lat", "lon"],
+                  "required": [
+                    "lat",
+                    "lon"
+                  ],
                   "additionalProperties": false
                 }
               },
-              "required": ["location"],
+              "required": [
+                "location"
+              ],
               "additionalProperties": false
             }
           ]
+        },
+        "backdrop": {
+          "type": "string",
+          "enum": [
+            "none"
+          ],
+          "description": "\"none\" cooks no far ring. Omitted, an alpine or temperateMountains world on a survey gets ring.json: its survey continued to ten times the world's size, with one real whole mountain (a seeded pick, pose and height) standing past the playable square."
         },
         "out": {
           "type": "string",
@@ -113,13 +142,19 @@
       },
       "anyOf": [
         {
-          "required": ["request"]
+          "required": [
+            "request"
+          ]
         },
         {
-          "required": ["kit"]
+          "required": [
+            "kit"
+          ]
         },
         {
-          "required": ["biome"]
+          "required": [
+            "biome"
+          ]
         }
       ],
       "additionalProperties": false
@@ -129,7 +164,13 @@
       "properties": {
         "from": {
           "type": "string",
-          "enum": ["forest", "coastal", "alpine", "desert", "tundra"]
+          "enum": [
+            "forest",
+            "coastal",
+            "alpine",
+            "desert",
+            "tundra"
+          ]
         },
         "name": {
           "type": "string",
@@ -145,7 +186,9 @@
           "anyOf": [
             {
               "type": "string",
-              "enum": ["procedural"]
+              "enum": [
+                "procedural"
+              ]
             },
             {
               "type": "object",
@@ -163,7 +206,9 @@
                   "description": "Highest elevation in the file, metres."
                 }
               },
-              "required": ["heightmap"],
+              "required": [
+                "heightmap"
+              ],
               "additionalProperties": false
             },
             {
@@ -179,11 +224,16 @@
                       "type": "number"
                     }
                   },
-                  "required": ["lat", "lon"],
+                  "required": [
+                    "lat",
+                    "lon"
+                  ],
                   "additionalProperties": false
                 }
               },
-              "required": ["location"],
+              "required": [
+                "location"
+              ],
               "additionalProperties": false
             }
           ]
@@ -193,7 +243,10 @@
           "description": "Relative directory under the project's assets.source that must not exist yet; the default is assets.source/biomes/<name>/world."
         }
       },
-      "required": ["from", "name"],
+      "required": [
+        "from",
+        "name"
+      ],
       "additionalProperties": false
     },
     "terrain_patch": {
@@ -209,12 +262,15 @@
           }
         }
       },
-      "required": ["recipe", "commands"],
+      "required": [
+        "recipe",
+        "commands"
+      ],
       "additionalProperties": false
     }
   },
   "descriptions": {
-    "terrain_generate": "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. A landform preset's ground is a real survey of the place its kind names, fetched from the AWS terrain tiles, resampled onto the recipe's grid, cooked with the attribution its source requires, and reported as `ground`; the preset's erosion and grain still run on top of it. `ground` replaces that choice: \"procedural\" cooks the preset's own noise, { heightmap } reads a 16-bit grayscale PNG or a square .r16 grid, { location } cuts a survey at a latitude and longitude. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+    "terrain_generate": "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. A landform preset's ground is a real survey of the place its kind names, fetched from the AWS terrain tiles, resampled onto the recipe's grid, cooked with the attribution its source requires, and reported as `ground`; the preset's erosion and grain still run on top of it. `ground` replaces that choice: \"procedural\" cooks the preset's own noise, { heightmap } reads a 16-bit grayscale PNG or a square .r16 grid, { location } cuts a survey at a latitude and longitude. An alpine or temperateMountains world on a survey also writes ring.json, its survey continued to ten times the world's size with one real whole mountain from that range past the square, reported as `backdrop`; `backdrop: \"none\"` cooks none. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
     "terrain_biome_new": "Make a new biome from a shipped one and cook it: copies the base biome's biome.data.json into <assets.source>/biomes/<name>/, applies the overrides, validates the file with validateBiome, then cooks it with the base kit's surface and assets and the biome's own landform preset. One call writes only under <assets.source>/biomes/<name>/, its cooked world included. Its ground comes from the biome's landform, the real survey that kind names unless `ground` names another source. Returns the same cook result as terrain_generate plus the biome file path and the biome's resolved `bands`. No code changes anywhere: the biome is data.",
     "terrain_patch": "Apply editor commands (upsert, update, remove, move, toggle) to a terrain recipe and return the edited recipe."
   }

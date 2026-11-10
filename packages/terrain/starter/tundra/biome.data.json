@@ -137,5 +137,5 @@
     "focus": [150, 160]
   },
   "species": ["boulder", "bush", "riverrock", "sapling", "scree", "scrub"],
-  "aliases": ["tundra", "arctic", "ice"]
+  "aliases": ["tundra", "arctic", "ice", "frozen", "permafrost", "glacial"]
 }

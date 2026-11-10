@@ -120,5 +120,5 @@
     "focus": [180, -190]
   },
   "species": ["boulder", "grass", "mountain", "riverrock", "sapling", "scree", "scrub", "spruce"],
-  "aliases": ["alpine", "mountain", "mountains", "snowy", "peaks"]
+  "aliases": ["alpine", "mountain", "mountains", "snowy", "peaks", "alps", "glacier", "glaciers", "snow"]
 }

@@ -142,28 +142,30 @@ describe("terrain_generate input", () => {
     expect(parseGenerateInput({ request: "beach forest" })).toEqual({ kit: "forest" });
   });
 
-  it("rejects unmatched requests with every biome and the words it answers to", () => {
-    let message = "";
-    try {
-      parseGenerateInput({ request: "castle" });
-    } catch (error) {
-      message = (error as Error).message;
+  it("cooks any request: a word with no row takes the forest and is reported unused", () => {
+    // "Queries anything": a request never fails for its words. The biome is the reported default,
+    // and every word that named nothing comes back so the caller can see what was not read.
+    const castle = parseGenerateRequest({ request: "castle ruins" });
+    expect(castle.input).toEqual({ kit: "forest" });
+    expect(castle.decided.biome).toEqual({ value: "forest", source: "default" });
+    expect(castle.unused).toEqual(["castle", "ruins"]);
+    // A sea or a shape with no biome word picks the starter that suits it, naming the word.
+    for (const [request, kit, word] of [
+      ["a volcanic island", "coastal", "island"],
+      ["rolling hills with a lake", "forest", "rolling"],
+      ["a misty fjord", "coastal", "fjord"],
+      ["the grand canyon", "desert", "canyon"],
+      ["swiss alps", "alpine", "alps"],
+      ["a frozen wasteland", "tundra", "frozen"],
+    ] as const) {
+      expect(parseGenerateRequest({ request }).decided.biome).toEqual({
+        value: kit,
+        source: { word },
+      });
     }
-    expect(message).toContain("request 'castle' matches no biome");
-    // The aliases, not just the five kit names: a caller retries with a word, not with a folder.
-    for (const word of [
-      "forest",
-      "pine",
-      "coastal",
-      "sea",
-      "alpine",
-      "snowy",
-      "desert",
-      "sand",
-      "tundra",
-      "ice",
-    ])
-      expect(message).toContain(word);
+    expect(parseGenerateRequest({ request: "a volcanic island" }).decided.landform.value).toBe(
+      "volcanic",
+    );
     for (const request of [null, 1, "", "   "]) {
       expect(() => parseGenerateInput({ request, kit: "forest" })).toThrow(/request/);
     }
@@ -1063,7 +1065,7 @@ describe("terrain_generate biome", () => {
 
   it("fails an unmatched biome and lists every biome word", () => {
     expect(() => parseGenerateInput({ biome: "castle" })).toThrow(
-      /biome 'castle' matches no biome\. Try one of: .*forest \(pine, pines, woods, woodland\)/,
+      /biome 'castle' matches no biome\. Try one of: .*forest \(pine, pines, woods, woodland/,
     );
     for (const biome of [2, [], null]) {
       expect(() => parseGenerateInput({ biome })).toThrow(/biome must be a starter name/);

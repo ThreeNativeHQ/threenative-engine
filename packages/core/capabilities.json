@@ -8748,8 +8748,15 @@
       "package": "@threenative/terrain",
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome { … }",
-      "situations": ["bake one biome's world package from an evaluated recipe and a biome file"],
-      "summary": "Bake one biome: the recipe's evaluated state and the world package it streams. This is the composition `terrain_generate` and a game's build script both call, so the file layout a player streams is decided in one place. The biome is validated first — an inline spec from a request is checked here, not trusted — and the package's own placement runs are checked against the state they came from, so a bake can never ship a cell list that lost instances.",
+      "situations": [
+        "bake one biome's world package from an evaluated recipe and a biome file",
+        "generate terrain with mountains, hills, a river, a lake or an island from a request in words",
+        "generate a landscape or open world map for a game",
+        "procedural terrain for a level: a volcanic island, a mountain valley or a coast",
+        "make a canyon, a volcano, a fjord, a desert, a tundra or a forest world",
+        "cook the real terrain of a place on Earth from its latitude and longitude"
+      ],
+      "summary": "Bake one biome: the recipe's evaluated state and the world package it streams. This is the composition `terrain_generate` and a game's build script both call, so the file layout a player streams is decided in one place. The biome is validated first — an inline spec from a request is checked here, not trusted — and the package's own placement runs are checked against the state they came from, so a bake can never ship a cell list that lost instances. An agent does not write this call to get a world: the `threenative-terrain` MCP tool `terrain_generate` takes the request in words (\"a pine forest under snowy mountains with a river\", \"a volcanic island\", or `ground: { location }` for a real place) and cooks the world.glb, recipe.json and world.json a game loads with `ctx.assets.model`.",
       "supersedes": [],
       "symbol": "bakeBiome"
     },

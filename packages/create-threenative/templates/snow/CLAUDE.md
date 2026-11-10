@@ -32,7 +32,7 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 - `threenative-assets`: a texture, HDRI, sound or model. `asset_search_sources`, `asset_download_file`, `audio_search_assets`, `mesh_optimize`.
 - `threenative-sculpt`: a bespoke mesh or character from a reference image. `sculpt_plan`, `sculpt_spec_gate`, `sculpt_compare`, `sculpt_pass_gate`.
 - `threenative-animation`: a rigged GLB with a held prop, foot slide or loop seam. `animation_inspect`, `animation_attach`, `animation_verify`.
-- `threenative-terrain`: a starter terrain kit. `terrain_generate`.
+- `threenative-terrain`: any terrain, from words. `terrain_generate`.
 - `threenative-devtools`: after `npx @threenative/playtest trace` names no cause. `performance_start_trace`, `performance_analyze_insight`.
 <!-- /shared -->
 

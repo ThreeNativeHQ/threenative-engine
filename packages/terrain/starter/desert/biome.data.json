@@ -120,5 +120,5 @@
     "focus": [170, 180]
   },
   "species": ["boulder", "grass", "reveal", "riverrock", "scree", "scrub", "volcanic"],
-  "aliases": ["desert", "dune", "dunes", "sand"]
+  "aliases": ["desert", "dune", "dunes", "sand", "canyon", "canyons", "arid", "badlands", "mesa"]
 }

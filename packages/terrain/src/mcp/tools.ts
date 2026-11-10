@@ -8,6 +8,8 @@ import { LANDFORMS, type LandformKind } from "../core/presets.js";
 import {
   BACKDROP_WORDS,
   BIOME_OWN,
+  DEFAULT_BIOME,
+  LANDFORM_BIOME,
   LANDFORM_WORD_ROWS,
   REQUEST_KNOWN_WORDS,
   REQUEST_STOP_WORDS,
@@ -128,7 +130,7 @@ export const TERRAIN_TOOLS = [
           type: "string",
           minLength: 1,
           description:
-            "What the world should be, in words: a biome, a landform (mountains, hills, ...), water (river, lake, ...) and a size (huge, small); an explicit argument wins over a word.",
+            "What the world should be, in any words: a biome, a landform (mountains, hills, canyon, volcano, fjord, ...), water (river, lake, sea, ...) and a size (huge, small); an explicit argument wins over a word. A request with no biome word takes the biome its sea or shape suits, else the forest; `decided` names the word behind each choice and `unused` the words that named nothing. A real place's name is not geocoded: pass its latitude and longitude as `ground: { location }` to cook that place's survey.",
         },
         sizeMeters: { type: "number", exclusiveMinimum: 0 },
         seed: { type: "integer" },
@@ -402,21 +404,30 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   if (request !== undefined && (typeof request !== "string" || request.trim() === "")) {
     throw new TypeError("terrain_generate: request must be a non-empty string.");
   }
+  if (request === undefined && args.kit === undefined && args.biome === undefined) {
+    throw new TypeError("terrain_generate: give a request, a kit or a biome.");
+  }
   const words = typeof request === "string" ? request.toLowerCase().split(/[^a-z]+/u) : [];
   const { kit: biomeKit, spec } = parseBiomeArgument(args.biome);
   const biomeWord = rowHit(BIOME_WORD_ROWS, words);
   const arguedKit = args.kit ?? biomeKit;
+  // A request that names no biome still names a world: its sea or its shape picks the starter whose
+  // surface suits it, and with neither the forest cooks. `decided.biome` says which word chose it.
+  let inferred: { readonly kit: TerrainKit; readonly word: string } | undefined;
+  if (arguedKit === undefined && spec === undefined && biomeWord === undefined) {
+    const sea = rowHit(WATER_WORD_ROWS, words);
+    const shape = rowHit(LANDFORM_WORD_ROWS, words);
+    if (sea?.row.kind === "ocean") inferred = { kit: "coastal", word: sea.word };
+    else if (shape !== undefined && !backdropWordAt(words, shape.word))
+      inferred = { kit: LANDFORM_BIOME[shape.row], word: shape.word };
+  }
   const kit =
     arguedKit ??
     // A spec carries no appearance, so it cooks with the forest starter's surface and assets.
-    (spec === undefined ? biomeWord?.row : "forest");
+    (spec === undefined ? (biomeWord?.row ?? inferred?.kit ?? DEFAULT_BIOME) : "forest");
   if (typeof kit !== "string" || !(TERRAIN_KITS as readonly string[]).includes(kit)) {
-    // A request that matched nothing names what it could have matched, so the caller can retry
-    // without guessing: every biome and the words it answers to, never a silent default.
     throw new TypeError(
-      request === undefined
-        ? `terrain_generate: kit must be one of ${TERRAIN_KITS.join(", ")}.`
-        : `terrain_generate: request '${request}' matches no biome. Try one of: ${biomeWordList()}.`,
+      `terrain_generate: kit must be one of ${TERRAIN_KITS.join(", ")}. Words a request may use: ${biomeWordList()}.`,
     );
   }
   const parsed: IGenerateInput = { kit: kit as TerrainKit };
@@ -515,6 +526,7 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   let biomeSource: IRequestSource = "default";
   if (arguedKit !== undefined) biomeSource = "argument";
   else if (biomeWord !== undefined) biomeSource = { word: biomeWord.word };
+  else if (inferred !== undefined) biomeSource = { word: inferred.word };
   return {
     input: parsed,
     decided: {
