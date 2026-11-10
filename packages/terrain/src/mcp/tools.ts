@@ -13,7 +13,7 @@ import {
   SIZE_WORD_ROWS,
   WATER_WORD_ROWS,
 } from "../core/request-words.js";
-import { locationSurvey } from "../core/surveys.js";
+import { MASSIFS, locationSurvey } from "../core/surveys.js";
 import type { IGroundChoice, IGroundRequest } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
 import type { LayerPatch, PatchCommand } from "../core/terrain.js";
@@ -33,6 +33,8 @@ export interface IGenerateInput {
   water?: readonly IBiomeWaterBody[];
   /** Where the ground comes from; a landform preset's own survey unless this names another source. */
   ground?: IGroundRequest;
+  /** `"none"` cooks no far ring; omitted, a mountain landform on a survey gets one with a massif. */
+  backdrop?: "none";
   out?: string;
 }
 
@@ -52,6 +54,8 @@ export interface IGenerateDecided {
   readonly water: IChoice<readonly IBiomeWaterBody[] | null>;
   readonly sizeMeters: IChoice<number | null>;
   readonly ground: IChoice<IGroundChoice>;
+  /** The far ring: `"massif"` for a mountain landform cooked on a survey, else `"none"`. */
+  readonly backdrop: IChoice<"massif" | "none">;
 }
 
 /** A parsed request: the cook's own input, and the record of what its words and arguments decided. */
@@ -106,7 +110,7 @@ export const TERRAIN_TOOLS = [
   {
     name: "terrain_generate",
     description:
-      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. A landform preset's ground is a real survey of the place its kind names, fetched from the AWS terrain tiles, resampled onto the recipe's grid, cooked with the attribution its source requires, and reported as `ground`; the preset's erosion and grain still run on top of it. `ground` replaces that choice: \"procedural\" cooks the preset's own noise, { heightmap } reads a 16-bit grayscale PNG or a square .r16 grid, { location } cuts a survey at a latitude and longitude. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. A landform preset's ground is a real survey of the place its kind names, fetched from the AWS terrain tiles, resampled onto the recipe's grid, cooked with the attribution its source requires, and reported as `ground`; the preset's erosion and grain still run on top of it. `ground` replaces that choice: \"procedural\" cooks the preset's own noise, { heightmap } reads a 16-bit grayscale PNG or a square .r16 grid, { location } cuts a survey at a latitude and longitude. An alpine or temperateMountains world on a survey also writes ring.json, its survey continued to ten times the world's size with one real whole mountain from that range past the square, reported as `backdrop`; `backdrop: \"none\"` cooks none. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
     inputSchema: {
       type: "object",
       properties: {
@@ -132,6 +136,12 @@ export const TERRAIN_TOOLS = [
             "IBiomeWaterBody rows that replace the biome's declared water: river (width), lake (radius), ocean (level).",
         },
         ground: GROUND_SCHEMA,
+        backdrop: {
+          type: "string",
+          enum: ["none"],
+          description:
+            '"none" cooks no far ring. Omitted, an alpine or temperateMountains world on a survey gets ring.json: its survey continued to ten times the world\'s size, with one real whole mountain (a seeded pick, pose and height) standing past the playable square.',
+        },
         out: {
           type: "string",
           description:
@@ -225,6 +235,7 @@ const GENERATE_FIELDS = [
   "seed",
   "water",
   "ground",
+  "backdrop",
   "out",
 ];
 const BIOME_NEW_FIELDS = ["from", "name", "overrides", "ground", "out"];
@@ -463,6 +474,20 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   } else {
     ground = { value: presetKind === undefined ? "starter" : "survey", source: "default" };
   }
+  // The far ring follows the ground: only a mountain preset that stands on a real survey has a range
+  // to continue, so a procedural or file ground cooks none and fetches nothing more.
+  let backdrop: IChoice<"massif" | "none">;
+  if (args.backdrop !== undefined) {
+    if (args.backdrop !== "none")
+      throw new TypeError('terrain_generate: backdrop must be "none" when given.');
+    parsed.backdrop = "none";
+    backdrop = { value: "none", source: "argument" };
+  } else {
+    const surveyed =
+      ground.value === "survey" || (typeof ground.value === "object" && "location" in ground.value);
+    const mountain = presetKind !== undefined && MASSIFS[presetKind] !== undefined;
+    backdrop = { value: surveyed && mountain ? "massif" : "none", source: "default" };
+  }
   if (seed !== undefined) {
     if (typeof seed !== "number" || !Number.isSafeInteger(seed)) {
       throw new TypeError("terrain_generate: seed must be a safe integer.");
@@ -481,6 +506,7 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
       water,
       sizeMeters: size,
       ground,
+      backdrop,
     },
     // What is left is what the tool could not act on: a retry names a word, not a guess.
     unused: [...new Set(words)].filter(

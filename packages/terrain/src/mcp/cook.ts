@@ -6,12 +6,13 @@ import { type IBakeBiomeOptions, bakeBiome, foliageScatterRules } from "../core/
 import { type IBiomeSpec, type IBiomeWaterBody, validateBiome } from "../core/biome.js";
 import { createFlow, fillDepressions, routeFlow } from "../core/fluvial.js";
 import { decodeHeightPNG, decodeRAW16 } from "../core/io.js";
+import { placeMassif } from "../core/massif.js";
 import { finalizeState } from "../core/operations.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { LANDFORMS, landform } from "../core/presets.js";
 import type { LandformKind } from "../core/presets.js";
-import { SURVEYS, locationSurvey } from "../core/surveys.js";
-import type { IGroundDecision, IGroundRequest } from "../core/surveys.js";
+import { MASSIFS, SURVEYS, locationSurvey } from "../core/surveys.js";
+import type { IGroundDecision, IGroundRequest, ISurveyRow } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
 import type {
   IScatterClear,
@@ -44,6 +45,8 @@ export interface ICookRequest {
   water?: readonly IBiomeWaterBody[];
   /** The ground the recipe starts from; omitted, a landform preset is grounded on its kind's survey. */
   ground?: IGroundRequest;
+  /** `"none"` cooks no far ring; omitted, a mountain landform on a survey gets one. */
+  backdrop?: "none";
 }
 
 export interface IBounds {
@@ -498,6 +501,8 @@ function applyGroundLayer(layers: Layer[], grid: IGroundGrid, scale: number, off
 interface IGroundResult {
   readonly ground: IGroundDecision;
   readonly readme?: string;
+  /** The survey the ground was cut from, and the metres it was mapped through: world = raw·scale + offset. */
+  readonly survey?: { readonly row: ISurveyRow; readonly scale: number; readonly offset: number };
 }
 
 /**
@@ -532,6 +537,7 @@ async function applyGround(
   const scale = relief === undefined ? 1 : relief / (grid.max - grid.min || 1);
   applyGroundLayer(document.layers, grid, scale, -grid.min * scale);
   return {
+    survey: { row: survey, scale, offset: -grid.min * scale },
     ground: {
       source: "survey",
       name: survey.name,
@@ -551,6 +557,102 @@ async function applyGround(
       survey.attribution,
       "",
     ].join("\n"),
+  };
+}
+
+/**
+ * The far ring's side as a multiple of the world's: the ground's survey continued past its edge, as
+ * far as a collar a game draws around its square (the Strata preview's is 5 km around 512 m).
+ */
+const RING_SCALE = 10;
+
+/** The far ring a cook writes beside the world (`ring.json`), and what the result reports of it. */
+interface IFarRing {
+  readonly decision:
+    | { readonly source: "none" }
+    | {
+        readonly source: "massif";
+        readonly name: string;
+        readonly lat: number;
+        readonly lon: number;
+        readonly attribution: string;
+        readonly at: readonly [number, number];
+        readonly rotation: number;
+        readonly mirror: boolean;
+        readonly height: number;
+      };
+  readonly file?: string;
+}
+
+/**
+ * The ground's survey continued to ten times the world's side, with one real whole mountain from the
+ * landform's own range placed past the playable square (`placeMassif`, PRD-866). The ring takes the
+ * ground's own scale, so it meets the world's edge; the mountain keeps its true metres, because a
+ * preset squeezes kilometres of survey into its square and Longs Peak at that scale is a 60 m hill.
+ * Every tile is fetched before the bake; one that is neither cached nor fetchable fails the cook
+ * naming it, as the ground does.
+ */
+async function farRing(
+  request: ICookRequest,
+  kind: LandformKind | undefined,
+  ground: IGroundResult,
+  config: { readonly size: number; readonly seed: number },
+): Promise<IFarRing> {
+  const rows = kind === undefined ? undefined : MASSIFS[kind];
+  if (request.backdrop === "none" || rows === undefined || ground.survey === undefined)
+    return { decision: { source: "none" } };
+  const { row, scale, offset } = ground.survey;
+  const resolution = 257;
+  const fetchMassif = async (massif: ISurveyRow) => {
+    const grid = await surveyHeights(massif, 129).catch((error: unknown) => {
+      throw new Error(
+        `cook: far-ring massif '${massif.name}': ${error instanceof Error ? error.message : String(error)} Pass backdrop: "none" to cook without the far ring.`,
+      );
+    });
+    return {
+      id: massif.name,
+      size: massif.extentMeters,
+      resolution: 129,
+      heights: grid.values,
+    };
+  };
+  const [ringGrid, ...tiles] = await Promise.all([
+    surveyHeights(
+      { ...row, extentMeters: row.extentMeters * RING_SCALE, zoom: Math.max(1, row.zoom - 2) },
+      resolution,
+    ),
+    ...rows.map(fetchMassif),
+  ]);
+  const size = config.size * RING_SCALE;
+  const host = new Terrain({ size, resolution, seed: config.seed }).heightmap({
+    id: "ring",
+    data: {
+      width: resolution,
+      height: resolution,
+      values: Array.from(ringGrid.values, (value) => value * scale + offset),
+    },
+  });
+  const { terrain, placement } = placeMassif(host, {
+    seed: request.seed ?? config.seed,
+    tile: tiles,
+    keepOut: config.size * 1.25,
+  });
+  const picked = rows[tiles.findIndex((tile) => tile.id === placement.tile)] as ISurveyRow;
+  const decision = {
+    source: "massif" as const,
+    name: picked.name,
+    lat: picked.lat,
+    lon: picked.lon,
+    attribution: picked.attribution,
+    at: [round(placement.at[0]), round(placement.at[1])] as const,
+    rotation: round(placement.rotation),
+    mirror: placement.mirror,
+    height: round(placement.height),
+  };
+  const heights = Array.from(terrain.evaluate().height, round);
+  return {
+    decision,
+    file: `${JSON.stringify({ size, resolution, heights, massif: decision })}\n`,
   };
 }
 
@@ -593,6 +695,7 @@ async function cookInto(
   // Before any evaluation: the ground is what the preset's later layers reshape, and a survey that
   // cannot be read fails here rather than after a long bake.
   const ground = await applyGround(recipe.recipe, request, kind);
+  const farRingResult = await farRing(request, kind, ground, recipe.recipe.config);
   // shortcut: starter heights use a 0.1 m lattice; revise decoding if their precision changes.
   for (const layer of recipe.recipe.layers) {
     const data = layer.params?.data;
@@ -648,7 +751,13 @@ async function cookInto(
     extraLayers: { table: "terrain-table.json" },
   });
 
-  if (ground.readme !== undefined) await writeFile(join(request.out, "README.md"), ground.readme);
+  const readme =
+    farRingResult.decision.source === "massif"
+      ? `${ground.readme ?? ""}\n## Far ring\n\nring.json continues the survey to ${RING_SCALE} times the world's size, with ${farRingResult.decision.name} (${farRingResult.decision.lat}, ${farRingResult.decision.lon}) standing past the playable square.\n\n${farRingResult.decision.attribution}\n`
+      : ground.readme;
+  if (readme !== undefined) await writeFile(join(request.out, "README.md"), readme);
+  if (farRingResult.file !== undefined)
+    await writeFile(join(request.out, "ring.json"), farRingResult.file);
 
   await writeFile(
     join(request.out, "water.json"),
@@ -735,6 +844,7 @@ async function cookInto(
     placementCounts: cooked.placementCounts,
     biome: biome.look,
     ground: ground.ground,
+    backdrop: farRingResult.decision,
     water: floodedBodies(state),
     bands,
     worldGlbBytes: cooked.worldGlb.length,

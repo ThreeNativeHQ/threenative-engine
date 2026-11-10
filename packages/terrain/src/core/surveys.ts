@@ -102,6 +102,44 @@ export const SURVEYS: Readonly<Record<LandformKind, ISurveyRow>> = {
   },
 };
 
+/**
+ * Whole mountains a cooked world's far ring stands behind it (PRD-866), keyed by the landform whose
+ * ring they rise from and drawn from its own kind of range: a Front Range peak behind Rocky Mountain
+ * ground, sharp alpine peaks behind the alpine survey. Each row is cut foot to foot, its border
+ * valley floor or a col, so the lifted mountain has no cliff at its edge; the cook's seed picks one.
+ * Zoom 12 keeps their main ridges, which is all a ring past the playable square shows.
+ */
+export const MASSIFS: Readonly<Partial<Record<LandformKind, readonly ISurveyRow[]>>> = {
+  temperateMountains: [
+    {
+      name: "Longs Peak and Mount Meeker, Rocky Mountain National Park, Colorado",
+      lat: 40.2549,
+      lon: -105.6101,
+      extentMeters: 4_400,
+      zoom: 12,
+      attribution: `${USGS_3DEP} ${TILES}`,
+    },
+  ],
+  alpine: [
+    {
+      name: "Grand Teton and the Cathedral Group, Wyoming",
+      lat: 43.7455,
+      lon: -110.8024,
+      extentMeters: 3_600,
+      zoom: 12,
+      attribution: `${USGS_3DEP} ${TILES}`,
+    },
+    {
+      name: "Maroon Bells, Elk Mountains, Colorado",
+      lat: 39.0708,
+      lon: -106.989,
+      extentMeters: 3_600,
+      zoom: 12,
+      attribution: `${USGS_3DEP} ${TILES}`,
+    },
+  ],
+};
+
 /** How much ground a bare `{ location }` covers, and how finely: the survey rows' own defaults. */
 const LOCATION_EXTENT_METERS = 6_000;
 const LOCATION_ZOOM = 12;

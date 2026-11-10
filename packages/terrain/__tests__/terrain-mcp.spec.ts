@@ -1353,6 +1353,8 @@ describe("terrain_generate request words", () => {
       sizeMeters: { value: 300, source: "argument" },
       // PRD-854 phase 2: the argument's landform is grounded on its kind's real survey.
       ground: { value: "survey", source: "default" },
+      // PRD-866: rolling hills carry no massif rows, so the ring is not cooked.
+      backdrop: { value: "none", source: "default" },
     });
     // A word that named a row is spent even when an argument overruled it, so it is not unused.
     expect(unused).toEqual([]);
@@ -1377,6 +1379,8 @@ describe("terrain_generate request words", () => {
       water: { value: [{ kind: "river", width: 5.32 }], source: { word: "river" } },
       sizeMeters: { value: 1024, source: { word: "huge" } },
       ground: { value: "survey", source: "default" },
+      // PRD-866: a mountain preset on its survey cooks the far ring with a real massif.
+      backdrop: { value: "massif", source: "default" },
     });
     // "create", "with", "and", "a" are scaffolding; only the words that named nothing are listed.
     expect(unused).toEqual(["floating", "castles"]);
@@ -1391,6 +1395,7 @@ describe("terrain_generate request words", () => {
       sizeMeters: { value: null, source: "default" },
       // No landform preset, so the ground is the crop the starter authored, not a fetched survey.
       ground: { value: "starter", source: "default" },
+      backdrop: { value: "none", source: "default" },
     });
     expect(unused).toEqual([]);
   });

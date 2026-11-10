@@ -1,4 +1,4 @@
-import { readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { cp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
@@ -12,7 +12,7 @@ import { cookKit } from "../src/mcp/cook.js";
 import { surveyHeights } from "../src/mcp/survey.js";
 import { TERRAIN_TOOLS, parseGenerateInput, parseGenerateRequest } from "../src/mcp/tools.js";
 
-/** The one checked-in terrarium tile, used as the whole tile cache these tests read. */
+/** The checked-in terrarium tiles, used as the whole tile cache these tests read. */
 const FIXTURE_CACHE = new URL("./fixtures/terrarium/", import.meta.url).pathname;
 
 const OFFLINE = () => {
@@ -294,4 +294,120 @@ describe("the ground argument", () => {
     };
     expect(schema.properties.ground?.anyOf).toHaveLength(3);
   });
+});
+
+// PRD-866: a mountain preset on a survey cooks a far ring with one real whole mountain past the
+// square. The fixture holds the Rocky Mountain ground (z12), its ring (z10) and Longs Peak (z12).
+describe("the far ring", () => {
+  beforeEach(() => {
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", FIXTURE_CACHE);
+    vi.stubGlobal("fetch", OFFLINE);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("is decided by a mountain landform on a survey, and named off by the argument", () => {
+    const decided = (args: Record<string, unknown>) => parseGenerateRequest(args).decided.backdrop;
+    expect(decided({ kit: "forest", landform: "temperateMountains" })).toEqual({
+      value: "massif",
+      source: "default",
+    });
+    expect(decided({ kit: "forest", landform: "alpine", ground: "procedural" })).toEqual({
+      value: "none",
+      source: "default",
+    });
+    expect(decided({ kit: "forest", landform: "volcanic" })).toEqual({
+      value: "none",
+      source: "default",
+    });
+    expect(decided({ kit: "forest" })).toEqual({ value: "none", source: "default" });
+    const off = parseGenerateRequest({ kit: "forest", landform: "alpine", backdrop: "none" });
+    expect(off.decided.backdrop).toEqual({ value: "none", source: "argument" });
+    expect(off.input.backdrop).toBe("none");
+    expect(() => parseGenerateRequest({ kit: "forest", backdrop: "massif" })).toThrow(/backdrop/);
+  });
+
+  it("writes ring.json with the survey continued and a surveyed mountain past the square", async () => {
+    const root = await gameProject();
+    const out = join(root, "assets", "worlds", "world");
+    const result = JSON.parse(
+      await cookKit({
+        kit: "forest",
+        landform: "temperateMountains",
+        seed: 4,
+        out,
+        projectRoot: root,
+      }),
+    );
+    expect(result.backdrop).toMatchObject({
+      source: "massif",
+      name: "Longs Peak and Mount Meeker, Rocky Mountain National Park, Colorado",
+    });
+    const ring = JSON.parse(await readFile(join(out, "ring.json"), "utf8")) as {
+      size: number;
+      resolution: number;
+      heights: number[];
+      massif: { at: [number, number]; height: number };
+    };
+    expect(ring.size).toBe(512 * 10);
+    expect(ring.heights).toHaveLength(ring.resolution ** 2);
+    expect(ring.massif).toEqual(result.backdrop);
+    // The mountain stands outside the square, and its summit rises over the ring around it.
+    expect(Math.max(Math.abs(ring.massif.at[0]), Math.abs(ring.massif.at[1]))).toBeGreaterThan(256);
+    // Longs Peak in its own metres: 649 m above its perimeter, drawn at 0.85 to 1.15 of that.
+    expect(ring.massif.height).toBeGreaterThan(450);
+    const n = ring.resolution;
+    const cell = ring.size / (n - 1);
+    const at = (x: number, z: number) =>
+      ring.heights[
+        Math.round((z + ring.size / 2) / cell) * n + Math.round((x + ring.size / 2) / cell)
+      ] as number;
+    const centre = at(0, 0);
+    expect(at(...ring.massif.at) - centre).toBeGreaterThan(ring.massif.height * 0.5);
+    const readme = await readFile(join(out, "README.md"), "utf8");
+    expect(readme).toContain("Longs Peak");
+    // The same request cooks the same ring.
+    const again = join(root, "assets", "worlds", "again");
+    await cookKit({
+      kit: "forest",
+      landform: "temperateMountains",
+      seed: 4,
+      out: again,
+      projectRoot: root,
+    });
+    expect(await readFile(join(again, "ring.json"), "utf8")).toBe(
+      await readFile(join(out, "ring.json"), "utf8"),
+    );
+  }, 240_000);
+
+  it("writes no ring under backdrop: none", async () => {
+    const root = await gameProject();
+    const out = join(root, "assets", "worlds", "world");
+    const result = JSON.parse(
+      await cookKit({
+        kit: "forest",
+        landform: "temperateMountains",
+        backdrop: "none",
+        out,
+        projectRoot: root,
+      }),
+    );
+    expect(result.backdrop).toEqual({ source: "none" });
+    await expect(readFile(join(out, "ring.json"))).rejects.toThrow(/ENOENT/);
+  }, 120_000);
+
+  it("fails closed naming the massif tile when it is not cached and the network is down", async () => {
+    const root = await gameProject();
+    const cache = join(root, "cache");
+    await cp(FIXTURE_CACHE, cache, { recursive: true });
+    // Longs Peak's own tile; the ground and the ring are still cached.
+    await rm(join(cache, "12", "846", "1547.png"));
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", cache);
+    const out = join(root, "assets", "worlds", "world");
+    await expect(
+      cookKit({ kit: "forest", landform: "temperateMountains", out, projectRoot: root }),
+    ).rejects.toThrow(/Longs Peak[\s\S]*terrarium\/12\/846\/1547\.png[\s\S]*backdrop: "none"/);
+  }, 120_000);
 });
