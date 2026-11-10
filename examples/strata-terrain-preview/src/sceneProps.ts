@@ -15,7 +15,7 @@ import {
   Vector3,
 } from "three";
 import type { IRevealProbe } from "./diagnostics.js";
-import { BENCHMARK } from "./render/benchmark.js";
+import { posesFor } from "./render/benchmark.js";
 import type { IBiome, IWorldBiome, WorldName } from "./render/biomes.js";
 import {
   FAR_FOREST,
@@ -345,9 +345,9 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
       if (released()) return;
       propsStage = "streaming";
       // A fixed view standing on the surroundings gets the meadow the bake cannot place there.
-      const vista = OPEN_MEADOW ? BENCHMARK[world].poses.vista : undefined;
+      const vista = OPEN_MEADOW ? posesFor(world, data.size).vista : undefined;
       // Spruce across the valley past the square; `?farForest=on` plants them.
-      const vistaEye = BENCHMARK[world].poses.vista?.at;
+      const vistaEye = posesFor(world, data.size).vista?.at;
       const far =
         FAR_FOREST_WORLDS.includes(world) && FAR_FOREST && ridges instanceof Mesh
           ? farForestPlacements({

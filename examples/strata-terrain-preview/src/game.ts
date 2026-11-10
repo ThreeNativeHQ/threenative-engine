@@ -34,7 +34,7 @@ import {
   publish,
 } from "./diagnostics.js";
 import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.js";
-import { BENCHMARK, type ViewName } from "./render/benchmark.js";
+import { BENCHMARK, type ViewName, posesFor } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
 import { HORIZON_REACH, HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
@@ -694,7 +694,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // Distance detail, once the camera is placed for this frame: a prepared tree draws from its
       // full geometry inside the near band and from the mid level beyond it, with a fifth of the
       // band of slack so a camera on the boundary does not alternate the tree between two levels.
-      const { poses, views } = BENCHMARK[world];
+      const { views } = BENCHMARK[world];
+      const poses = posesFor(world, data.size);
       const at = (x: number, z: number, up: number): Vector3 =>
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {

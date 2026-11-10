@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { type IBiomeSpec, LANDFORMS, type LandformKind, validateBiome } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import { BENCHMARK } from "../src/render/benchmark.js";
+import { BENCHMARK, posesFor } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";
 import { BIOMES, type IVistaAim, type WorldName, measureBiome } from "../src/render/biomes.js";
 import { FAR_FOREST_IMPOSTOR, FAR_FOREST_WORLDS } from "../src/render/farForest.js";
@@ -963,4 +963,15 @@ it("keeps the forest's bands in metres above the floor for any ground", () => {
     expect(measured.heightBands.cap).toEqual([100 + 17 * 41, 100 + 21 * 41]);
     expect(measured.elevationRange).toEqual([100, 100 + span]);
   }
+});
+
+// A cooked forest of another size keeps its framings past its own edge: the vista stands 104 m
+// outside the pinned 512 m square, and 208 m outside a 1024 m one.
+it("scales the forest's poses with its square and leaves the pinned square's alone", () => {
+  expect(posesFor("forest", 512)).toBe(BENCHMARK.forest.poses);
+  const huge = posesFor("forest", 1024);
+  expect(huge.vista?.at).toEqual([720, 400]);
+  expect(huge.vista?.look).toEqual([-1800, -1400]);
+  expect(huge.vista?.eyeY).toBe(BENCHMARK.forest.poses.vista?.eyeY);
+  expect(posesFor("alpine", 1024)).toBe(BENCHMARK.alpine.poses);
 });
