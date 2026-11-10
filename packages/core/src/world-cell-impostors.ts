@@ -94,6 +94,7 @@ interface IImpostorRecord {
   readonly atlas: WorldImpostorAtlas;
   readonly center: Vector3;
   readonly radius: number;
+  readonly halfExtents: Vector3;
   readonly bytes: number;
   users: number;
 }
@@ -686,6 +687,7 @@ export class CellImpostors {
       atlas,
       bytes: atlas.bytes,
       center: bounds.center,
+      halfExtents: bounds.halfExtents,
       key,
       radius: bounds.radius,
       users: 0,
@@ -722,6 +724,7 @@ export class CellImpostors {
         alphaTest: source.alphaTest,
         atlas: record.atlas,
         center: record.center,
+        halfExtents: record.halfExtents,
         radius: record.radius,
         source: source.source,
       });
@@ -952,6 +955,7 @@ export class CellImpostors {
         atlas: cohort.record.atlas,
         center: cohort.record.center,
         cull: true,
+        halfExtents: cohort.record.halfExtents,
         radius: cohort.record.radius,
         source: cohort.source,
       });

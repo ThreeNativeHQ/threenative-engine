@@ -1,7 +1,9 @@
 import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
+  BufferGeometry,
   DoubleSide,
+  Float32BufferAttribute,
   Group,
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
@@ -23,6 +25,7 @@ import {
   WorldImpostorSurface,
   impostorFrameBasis,
   impostorFrameUv,
+  impostorQuadExtents,
   instanceSyncEvent,
   syncInstanceRanges,
   worldLodMaterial,
@@ -31,6 +34,7 @@ import {
   IMPOSTOR_VIEWS,
   VIEW_DIRECTIONS,
   WorldImpostorAtlas,
+  impostorBounds,
   impostorViewCamera,
 } from "../src/render/world-impostor.js";
 
@@ -607,4 +611,56 @@ it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold"
     pack.dispose();
     source.dispose();
   }
+});
+
+// PRD-866: a far spruce's quad was its bounding sphere's square, about four times the tree's own
+// silhouette; every fragment outside the silhouette ran the lit shader to be discarded, and 46k far
+// spruce cost 30 ms of GPU. The quad now fits the baked box's projection.
+describe("the fitted impostor quad", () => {
+  const half = new Vector3(3, 12.5, 3);
+  const radius = half.length();
+
+  it("holds every baked box corner's projection from any view", () => {
+    let seed = 7;
+    const next = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    for (let i = 0; i < 500; i += 1) {
+      const direction = new Vector3(next() * 2 - 1, next() * 2 - 1, next() * 2 - 1).normalize();
+      const { right, up } = impostorFrameBasis(direction);
+      const extent = impostorQuadExtents(direction, half, radius);
+      for (const sx of [-1, 1])
+        for (const sy of [-1, 1])
+          for (const sz of [-1, 1]) {
+            const corner = new Vector3(sx * half.x, sy * half.y, sz * half.z);
+            expect(Math.abs(corner.dot(right))).toBeLessThanOrEqual(extent.across + 1e-9);
+            expect(Math.abs(corner.dot(up))).toBeLessThanOrEqual(extent.up + 1e-9);
+          }
+    }
+  });
+
+  it("draws a tall tree seen from the side in under half the sphere's square", () => {
+    const side = impostorQuadExtents(new Vector3(1, 0.1, 0).normalize(), half, radius);
+    expect((side.across * side.up) / (radius * radius)).toBeLessThan(0.45);
+    const top = impostorQuadExtents(new Vector3(0, 1, 0), half, radius);
+    expect(top.up).toBeCloseTo(3 * 1.1, 6);
+    // Never larger than the sphere, whatever the box.
+    const cube = impostorQuadExtents(new Vector3(1, 1, 1).normalize(), new Vector3(1, 1, 1), 1.2);
+    expect(cube.across).toBeLessThanOrEqual(1.2);
+    expect(cube.up).toBeLessThanOrEqual(1.2);
+  });
+
+  it("is measured from the parts' own box", () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new Float32BufferAttribute([-3, 0, -2, 3, 25, 2, 0, 10, 0], 3),
+    );
+    const bounds = impostorBounds([
+      { geometry, local: new Matrix4(), material: new MeshStandardNodeMaterial() },
+    ]);
+    expect(bounds.halfExtents.toArray()).toEqual([3, 12.5, 2]);
+    expect(bounds.center.toArray()).toEqual([0, 12.5, 0]);
+  });
 });

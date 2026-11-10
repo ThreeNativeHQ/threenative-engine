@@ -37,6 +37,7 @@ import {
   mat3,
   mat4,
   max,
+  min,
   modelWorldMatrix,
   normalize,
   positionGeometry,
@@ -170,6 +171,13 @@ export interface IImpostorSurfaceOptions {
   readonly center: Vector3;
   /** The baked bounds' radius in asset-local space. */
   readonly radius: number;
+  /**
+   * The baked box's half size per asset-local axis (`impostorBounds`). With it the quad fits the
+   * box's projection instead of the bounding sphere: a spruce is a quarter of its sphere's square,
+   * and every fragment outside it ran the whole lit shader only to be discarded. Omitted, the quad
+   * is the sphere's square.
+   */
+  readonly halfExtents?: Vector3;
   /** The dominant source material; its class, roughness and metalness set the lit surface. */
   readonly source: Material;
   /** The source's own cutoff, or the scatter default. Kept positive for the shadow alpha caster. */
@@ -455,6 +463,8 @@ export class WorldImpostorSurface {
 
     const centerUniform = uniform(center);
     const radiusUniform = uniform(radius);
+    const halfUniform =
+      options.halfExtents === undefined ? undefined : uniform(options.halfExtents.clone());
     const cull = options.cull === true;
     const name = `WorldImpostorSurface${surfaceId}`;
     surfaceId += 1;
@@ -479,7 +489,22 @@ export class WorldImpostorSurface {
       const dAsset = normalize(asMat3(view).inverse().mul(eyeView));
       const basis = frameBasisNode(dAsset);
       const corner = positionGeometry.xy;
-      const rel = basis.right.mul(corner.x).add(basis.up.mul(corner.y)).mul(radiusUniform);
+      // `impostorQuadExtents` on the GPU: the box's footprint circle across, its projection on `up`
+      // down, each with the slack a neighbouring frame's blend reaches, never past the sphere.
+      const extent = halfUniform
+        ? vec2(
+            min(radiusUniform, length(halfUniform.xz).mul(QUAD_ACROSS_SLACK)),
+            min(
+              radiusUniform,
+              abs(basis.up.x)
+                .mul(halfUniform.x)
+                .add(abs(basis.up.y).mul(halfUniform.y))
+                .add(abs(basis.up.z).mul(halfUniform.z))
+                .mul(QUAD_UP_SLACK),
+            ),
+          )
+        : vec2(radiusUniform, radiusUniform);
+      const rel = basis.right.mul(corner.x.mul(extent.x)).add(basis.up.mul(corner.y.mul(extent.y)));
       // A main-pass horizontal-distance gate: when the instance centre is past the asset's own cull
       // the quad collapses to a point, which the rasteriser drops. The cull is a per-instance
       // attribute, so one surface serves every canonical asset over this atlas each at its own
@@ -801,6 +826,37 @@ function buildFragmentNodes(
     coverage,
     normalAsset,
     threshold: mipThresholdNode(uvs, atlas.pixels, cutoff, mipScale),
+  };
+}
+
+/**
+ * Slack on the fitted quad. Across: a frame blended in from a neighbouring azimuth reprojects the
+ * footprint up to `1 / cos(45 deg)` wider, but its weight there is small, so a quarter covers it.
+ * Down: elevation neighbours shift the projection a little. Both stay inside the sphere's square.
+ */
+const QUAD_ACROSS_SLACK = 1.25;
+const QUAD_UP_SLACK = 1.1;
+
+/**
+ * The quad's half width and half height for a view `direction` (asset space, toward the eye), as
+ * the surface's vertex shader computes them: the box footprint's circle across (any azimuth), the
+ * box's projection on the frame's `up` down, each with its slack and capped by the sphere radius.
+ */
+export function impostorQuadExtents(
+  direction: Vector3,
+  halfExtents: Vector3,
+  radius: number,
+): { readonly across: number; readonly up: number } {
+  const { up } = impostorFrameBasis(direction);
+  return {
+    across: Math.min(radius, Math.hypot(halfExtents.x, halfExtents.z) * QUAD_ACROSS_SLACK),
+    up: Math.min(
+      radius,
+      (Math.abs(up.x) * halfExtents.x +
+        Math.abs(up.y) * halfExtents.y +
+        Math.abs(up.z) * halfExtents.z) *
+        QUAD_UP_SLACK,
+    ),
   };
 }
 

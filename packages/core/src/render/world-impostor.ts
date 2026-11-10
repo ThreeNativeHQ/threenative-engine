@@ -152,6 +152,8 @@ export function impostorViewWeights(direction: Vector3): IViewBlend {
 export function impostorBounds(parts: readonly IImpostorPart[]): {
   readonly center: Vector3;
   readonly radius: number;
+  /** Half the baked box's size per asset-local axis, which fits the quad (`impostorQuadExtents`). */
+  readonly halfExtents: Vector3;
 } {
   const whole = new Box3();
   whole.makeEmpty();
@@ -168,10 +170,11 @@ export function impostorBounds(parts: readonly IImpostorPart[]): {
     whole.union(localBox);
     any = true;
   }
-  if (!any) return { center: new Vector3(), radius: 0.5 };
+  if (!any) return { center: new Vector3(), radius: 0.5, halfExtents: new Vector3(0.5, 0.5, 0.5) };
   const center = whole.getCenter(new Vector3());
   const radius = whole.getBoundingSphere(new Sphere()).radius;
-  return { center, radius: radius > 0 ? radius : 0.5 };
+  const halfExtents = whole.getSize(new Vector3()).multiplyScalar(0.5);
+  return { center, radius: radius > 0 ? radius : 0.5, halfExtents };
 }
 
 /** The exact byte cost of a mip chain of `levels` RGBA8 levels at `pixels` square and `depth` deep. */
