@@ -503,6 +503,7 @@ describe("generated template ordinary-frame runtime cost", () => {
       player.dispose();
 
       const fox = new platformer.Fox(ctx as never, new Vector3(0, 0.75, 0));
+      fox.attach(ctx as never);
       expect(
         measureVectorAllocations(() => fox.update(ctx as never, DT)),
         "platformer Fox.update vector allocation sentinel",
@@ -514,6 +515,7 @@ describe("generated template ordinary-frame runtime cost", () => {
         move: new Vector2(),
       });
       const dashingFox = new platformer.Fox(dashCtx as never, new Vector3(0, 0.75, 0));
+      dashingFox.attach(dashCtx as never);
       expect(
         measureVectorAllocations(() => dashingFox.update(dashCtx as never, DT)),
         "platformer dash fallback vector allocation sentinel",
