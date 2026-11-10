@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Terrain } from "@threenative/terrain";
 import { afterAll, expect, it } from "vitest";
 
@@ -10,29 +10,22 @@ import { afterAll, expect, it } from "vitest";
 // world: its recipe (ground, layers, seed) and its far ring. The fixture is what the cook writes
 // there, `recipe.json` (a terrain document) and `ring.json`, built small in a temporary folder.
 const example = fileURLToPath(new URL("..", import.meta.url));
+// The bake writes to its own folder, so the pinned `src/world` the other specs read never changes.
+const out = mkdtempSync(join(tmpdir(), "strata-bake-"));
 const bake = (env: NodeJS.ProcessEnv) =>
   execFileSync(process.execPath, ["scripts/bake.mjs", "--force"], {
     cwd: example,
-    env: { ...process.env, ...env },
+    env: { ...env, STRATA_BAKE_OUT: out },
     stdio: ["ignore", "pipe", "pipe"],
   });
-const read = (file: string) =>
-  JSON.parse(readFileSync(join(example, "src", "world", file), "utf8"));
+const read = (file: string) => JSON.parse(readFileSync(join(out, file), "utf8"));
+const outUrl = pathToFileURL(`${out}/`);
 
-afterAll(() => {
-  // The pinned bake is the one every other spec and the game read.
-  const { STRATA_WORLD: _, ...pinned } = process.env;
-  execFileSync(process.execPath, ["scripts/bake.mjs", "--force"], {
-    cwd: example,
-    env: pinned,
-    stdio: "ignore",
-  });
-}, 300_000);
+afterAll(() => rmSync(out, { recursive: true, force: true }));
 
 it("bakes the forest from a cooked world's ground and ring, and the pinned bake when unset", async () => {
   // This process has no STRATA_WORLD, so its stamp is the pinned bake's.
   const { isFresh } = await import("../scripts/stamp.mjs");
-  const { outputDir } = await import("../scripts/recipe.mjs");
   const cook = mkdtempSync(join(tmpdir(), "strata-cooked-"));
   // The cook's own layer order (`terrain_generate` writes ground, hydraulic and thermal erosion,
   // smoothing), on a seeded ground that needs no survey tile.
@@ -46,17 +39,17 @@ it("bakes the forest from a cooked world's ground and ring, and the pinned bake 
     join(cook, "ring.json"),
     JSON.stringify({ size: 5120, resolution: 129, heights: Array.from(ring.height) }),
   );
-  bake({ STRATA_WORLD: cook });
+  bake({ ...process.env, STRATA_WORLD: cook });
   const forest = read("baked.json").forest as { size: number; heights: number[] };
   expect(forest.size).toBe(512);
   expect(forest.heights).toEqual(Array.from(Terrain.fromJSON(recipe).evaluate().height));
   const horizon = read("horizon.json").forest as { size: number; heights: number[] };
   expect(horizon.size).toBe(5120);
   expect(horizon.heights).toEqual(Array.from(ring.height, (h: number) => Math.round(h * 10) / 10));
-  expect(await isFresh(outputDir)).toBe(false);
+  expect(await isFresh(outUrl)).toBe(false);
   // Unset, the bake is the pinned one again, and the stamp calls it fresh.
   const { STRATA_WORLD: _, ...pinned } = process.env;
   bake(pinned);
-  expect(await isFresh(outputDir)).toBe(true);
+  expect(await isFresh(outUrl)).toBe(true);
   expect(read("horizon.json").forest.size).toBe(5000);
 }, 600_000);

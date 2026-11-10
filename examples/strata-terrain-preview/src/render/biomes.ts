@@ -762,21 +762,18 @@ export interface IWorldBiome extends IBiome {
 
 /** Resolve game-owned fractions once against this world's actual samples (`measureBands` owns the arithmetic). */
 export function measureBiome(biome: IBiome, heights: readonly number[]): IWorldBiome {
-  const floor = biome.bandSpan === undefined ? 0 : heights.reduce((low, h) => Math.min(low, h));
-  const measured = measureBands(
-    [
-      ...Object.entries(biome.heightFractions).map(([layer, [from, to]]) => ({ layer, from, to })),
-      { layer: "snow", from: biome.snowFractions[0], to: biome.snowFractions[1] },
-    ],
-    biome.bandSpan === undefined ? heights : [floor, floor + biome.bandSpan],
-  );
+  const rows = [
+    ...Object.entries(biome.heightFractions).map(([layer, [from, to]]) => ({ layer, from, to })),
+    { layer: "snow", from: biome.snowFractions[0], to: biome.snowFractions[1] },
+  ];
+  // The ground's own range, measured (and validated) whatever span the bands scale by.
+  const ground = measureBands(rows, heights);
+  const floor = ground.elevationRange[0];
+  const measured =
+    biome.bandSpan === undefined ? ground : measureBands(rows, [floor, floor + biome.bandSpan]);
   return {
     ...biome,
-    // The ground's own range, reported as measured, whatever span the bands scale by.
-    elevationRange:
-      biome.bandSpan === undefined
-        ? measured.elevationRange
-        : [floor, heights.reduce((high, h) => Math.max(high, h))],
+    elevationRange: ground.elevationRange,
     heightBands: measured.bands as HeightBands,
     // The snow row above is always passed, so measureBands always returns its band.
     snowBand: measured.snowBand as readonly [number, number],

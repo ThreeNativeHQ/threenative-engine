@@ -146,7 +146,7 @@ if (!isEntry) {
     `Continuation (five same-site USGS DEMs): ${((performance.now() - started) / 1000).toFixed(2)} s; ${Buffer.byteLength(horizon)} JSON bytes`,
   );
   await writeFile(
-    new URL("../src/world/baked.json", import.meta.url),
+    new URL("baked.json", outputDir),
     JSON.stringify(Object.fromEntries(Object.entries(worlds).filter(([name]) => drawn.has(name)))),
   );
   for (const [name, world] of Object.entries(worlds))

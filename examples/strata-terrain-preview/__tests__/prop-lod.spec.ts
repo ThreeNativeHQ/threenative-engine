@@ -300,9 +300,12 @@ describe("licensed pack characterization", () => {
         for (const [index, part] of after.entries()) {
           const original = present(before[index]);
           for (const key of ["position", "uv", "inner"]) {
-            expect(Array.from(part.geometry.getAttribute(key).array)).toEqual(
-              Array.from(original.geometry.getAttribute(key).array),
-            );
+            // The loader normalises the root to metres in place, so a second load of the same root
+            // rescales a 13 m tree by 13/13 and lands within float noise of the first.
+            const want = Array.from(original.geometry.getAttribute(key).array);
+            const got = Array.from(part.geometry.getAttribute(key).array);
+            expect(got).toHaveLength(want.length);
+            for (const [i, value] of got.entries()) expect(value).toBeCloseTo(want[i] as number, 9);
           }
           expect(part.geometry.index?.array).toEqual(original.geometry.index?.array);
           expect(part.geometry.drawRange).toEqual(original.geometry.drawRange);
@@ -489,8 +492,9 @@ describe("licensed pack characterization", () => {
           present(part.geometry.boundingBox).max.y,
         ]),
       ).toEqual([
-        [0, 6],
-        [6, 12],
+        // Variant 0 is a 13 m spruce (SPRUCE_METRES).
+        [0, 6.5],
+        [6.5, 13],
       ]);
     } finally {
       pack.dispose();
@@ -510,8 +514,8 @@ describe("licensed pack characterization", () => {
     const geometry = present(present(pack.parts.get("spruce:0"))[0]).geometry;
     geometry.computeBoundingBox();
     expect(present(geometry.boundingBox).min.y).toBe(0);
-    expect(present(geometry.boundingBox).max.y).toBe(12);
-    expect(present(geometry.boundingBox).min.x).toBeCloseTo(10.08, 5);
+    expect(present(geometry.boundingBox).max.y).toBe(13);
+    expect(present(geometry.boundingBox).min.x).toBeCloseTo(10.92, 5);
     expect(
       ["position", "normal", "uv"].map((key) =>
         Array.from((near.geometry.getAttribute(key) as BufferAttribute).array),

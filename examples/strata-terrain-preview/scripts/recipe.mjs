@@ -401,7 +401,11 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
 // baked world is a 257-square of heights/colours, so bundling all five would add about 15 MB
 // to the initial page module.
 export const drawn = new Set(["forest", "coastal"]);
-export const outputDir = new URL("../src/world/", import.meta.url);
+// `STRATA_BAKE_OUT=<dir>` writes the bake there instead: a spec's cooked bake must not rewrite the
+// world files every other spec and the game read while they run.
+export const outputDir = process.env.STRATA_BAKE_OUT
+  ? pathToFileURL(`${process.env.STRATA_BAKE_OUT}/`)
+  : new URL("../src/world/", import.meta.url);
 export const forest = cooked ? Terrain.fromJSON(cooked.recipe) : pinnedForest;
 export const recipes = { forest, coastal, alpine, desert, tundra };
 
