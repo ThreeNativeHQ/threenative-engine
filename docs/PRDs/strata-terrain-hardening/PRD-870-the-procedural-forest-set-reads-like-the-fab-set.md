@@ -35,7 +35,7 @@ The forest draws the owner's licensed Fab packs (Project Nature Spruce Forest, G
 
 - [ ] The procedural boulder reads as a photoscanned rock (displaced, layered, lichen) at `player` and `river`. proof: a judge verdict on the rock crops
 - [ ] Frame time with `?fab=off` is not above the Fab arm at `overview` and `vista`. proof: `measure-steady-state-fps`, paired arms, the numbers in this box
-  - reading (2026-11-10, after the crown regrade, crown base and flowers; GPU ms, two middle windows of four, Fab -> procedural): overview 34.6 -> 53.7, vista 40.0 -> 37.6. The vista passes; the overview does not: the procedural crowns' large cards overdraw from above.
+  - reading (2026-11-10, after the crown regrade, crown base and flowers; GPU ms, two middle windows of four, Fab -> procedural): overview 34.6 -> 53.7, vista 40.0 -> 37.6. The vista passes; the overview does not. A scene ablation (hide one mesh group, read the GPU total) puts the gap on the spruce's far level (80 m to the impostor): about 5-6 ms per variant, three variants. One card per spray there instead of two read 38.3 ms at the overview and 31.6 at the vista, but the judge found the 80-200 m canopy thinner (dark-gap share 8.1% -> 10.6%, REGRESSION); widening the card 1.4-2x or an earlier solid alpha ramp left the gap at 4.7-5.3% against 4.05%, so it was reverted. Next lever: a cheaper far-crown shader (no relief bump, no mip measure) at two cards, or a nearer impostor with a denser atlas.
 
 ## Acceptance Criteria
 
