@@ -8,6 +8,7 @@ import { createFlow, fillDepressions, routeFlow } from "../core/fluvial.js";
 import { decodeHeightPNG, decodeRAW16 } from "../core/io.js";
 import { hashString, random } from "../core/math.js";
 import { placeMassif } from "../core/massif.js";
+import { terrainStats } from "../core/stats.js";
 import { finalizeState } from "../core/operations.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { LANDFORMS, landform } from "../core/presets.js";
@@ -48,6 +49,8 @@ export interface ICookRequest {
   ground?: IGroundRequest;
   /** `"none"` cooks no far ring; omitted, a mountain landform on a survey gets one. */
   backdrop?: "none";
+  /** The range the far ring's massif comes from, when the request names it apart from the ground. */
+  backdropRange?: LandformKind;
 }
 
 export interface IBounds {
@@ -523,6 +526,105 @@ function seededCrop(row: ISurveyRow, seed: number | undefined): ISurveyRow {
 }
 
 /**
+ * The ground of a world under mountains (PRD-866): a true-scale patch of the kit's survey, the world's
+ * own size at its own metres, so the far ring around it and the massif past it keep real proportions.
+ * Squeezing the row's 6 km into the square shrank a valley into a model range. The seed picks the
+ * spot inside the row's extent; a spot too steep or too tall for a forest floor takes the next one,
+ * and the row's own centre (a surveyed forest) is the last.
+ */
+async function forestFloor(
+  document: { config: { resolution: number; size: number }; layers: Layer[] },
+  row: ISurveyRow,
+  seed: number | undefined,
+): Promise<IGroundResult> {
+  const { resolution, size } = document.config;
+  const next = random(hashString(`floor:${seed ?? 0}`));
+  const spots = Array.from({ length: seed === undefined ? 0 : 12 }, () => {
+    const east = (next() * 2 - 1) * 0.4 * row.extentMeters;
+    const north = (next() * 2 - 1) * 0.4 * row.extentMeters;
+    return [north, east] as const;
+  });
+  // Terrarium's finest zoom: about 3.7 m at 40 degrees, for a 2 m grid over 512 m.
+  const patch = (north: number, east: number): ISurveyRow => ({
+    ...row,
+    lat: row.lat + north / 111_320,
+    lon: row.lon + east / (111_320 * Math.cos((row.lat * Math.PI) / 180)),
+    extentMeters: size,
+    zoom: 15,
+  });
+  let picked: { survey: ISurveyRow; grid: Awaited<ReturnType<typeof surveyHeights>> } | undefined;
+  for (const [north, east] of [...spots, [0, 0] as const]) {
+    const survey = patch(north, east);
+    const grid = await surveyHeights(survey, resolution);
+    const stats = terrainStats(grid.values, resolution, size);
+    picked = { survey, grid };
+    // A forest floor: the pinned valley spans 41 m and its steepest tenth 22 degrees.
+    if (grid.max - grid.min <= FLOOR_RELIEF && stats.slopeP90 <= FLOOR_SLOPE) break;
+  }
+  const { survey, grid } = picked as NonNullable<typeof picked>;
+  applyGroundLayer(document.layers, grid, 1, -grid.min);
+  // Real ground is already eroded. The preset's fluvial pass, built to wear a scaled or noise ground,
+  // lowered this border 10-40 m under the ring that continues it, so a true-scale floor takes the
+  // surveyed worlds' surface pass instead: runoff and talus that move the geology under a metre and
+  // still write the flow, sediment, deposition and talus channels.
+  const at = document.layers.findIndex((layer) => layer.type === "erode");
+  document.layers = document.layers.filter((layer) => layer.type !== "erode");
+  document.layers.splice(at < 0 ? 1 : at, 0, ...structuredClone(SURVEYED_EROSION));
+  return {
+    survey: { row: survey, scale: 1, offset: -grid.min },
+    ground: {
+      source: "survey",
+      name: survey.name,
+      lat: survey.lat,
+      lon: survey.lon,
+      attribution: survey.attribution,
+    },
+    readme: groundReadme(survey),
+  };
+}
+
+/** The attribution rides with the kit: the data source requires it wherever the world is shipped. */
+const groundReadme = (survey: ISurveyRow): string =>
+  [
+    "# Cooked terrain world",
+    "",
+    `The ground is a real survey: ${survey.name} at ${survey.lat}, ${survey.lon},`,
+    `${survey.extentMeters} m across at zoom ${survey.zoom}, resampled onto the recipe's grid.`,
+    "",
+    "## Data attribution",
+    "",
+    survey.attribution,
+    "",
+  ].join("\n");
+
+/** The surveyed worlds' surface pass (the strata example's forest recipe), as recipe layers. */
+const SURVEYED_EROSION: Layer[] = [
+  {
+    type: "erode",
+    id: "surface-runoff",
+    params: {
+      method: "hydraulic",
+      droplets: 20_000,
+      maxSteps: 45,
+      capacity: 2,
+      erosion: 0.015,
+      strength: 0.002,
+      deposition: 0.2,
+      evaporation: 0.035,
+    },
+  } as Layer,
+  {
+    type: "erode",
+    id: "loose-talus",
+    params: { method: "thermal", talus: 38, iterations: 1, rate: 0.004 },
+  } as Layer,
+];
+
+/** The forest floor gate: metres of relief and the 90th-percentile slope, degrees. */
+const FLOOR_RELIEF = 90;
+const FLOOR_SLOPE = 28;
+
+/**
  * The ground the world starts from, and what it came from. A landform preset is grounded on the real
  * survey its kind names unless the request says otherwise, scaled to the preset's own relief so the
  * world keeps the slopes it was calibrated for; a survey a request located is scaled the same way. A
@@ -547,6 +649,9 @@ async function applyGround(
         ? undefined
         : seededCrop(SURVEYS[kind], request.seed);
   if (survey === undefined) return { ground: { source: "procedural" } };
+  if (request.backdropRange !== undefined && asked === undefined)
+    // The row itself, not the seeded crop above: the floor picks its own spot inside the row.
+    return forestFloor(document, kind === undefined ? survey : SURVEYS[kind], request.seed);
   const grid = await surveyHeights(survey, document.config.resolution);
   const relief =
     kind === undefined ? undefined : LANDFORMS[kind].reliefRatio * document.config.size;
@@ -563,17 +668,7 @@ async function applyGround(
       attribution: survey.attribution,
     },
     // The attribution rides with the kit: the data source requires it wherever the world is shipped.
-    readme: [
-      "# Cooked terrain world",
-      "",
-      `The ground is a real survey: ${survey.name} at ${survey.lat}, ${survey.lon},`,
-      `${survey.extentMeters} m across at zoom ${survey.zoom}, resampled onto the recipe's grid.`,
-      "",
-      "## Data attribution",
-      "",
-      survey.attribution,
-      "",
-    ].join("\n"),
+    readme: groundReadme(survey),
   };
 }
 
@@ -615,21 +710,26 @@ async function farRing(
   ground: IGroundResult,
   config: { readonly size: number; readonly seed: number },
 ): Promise<IFarRing> {
-  const rows = kind === undefined ? undefined : MASSIFS[kind];
+  const range = request.backdropRange ?? kind;
+  const rows = range === undefined ? undefined : MASSIFS[range];
   if (request.backdrop === "none" || rows === undefined || ground.survey === undefined)
     return { decision: { source: "none" } };
   const { row, scale, offset } = ground.survey;
   const resolution = 257;
+  // One zoom finer than its row (about 15 m at z13): the massif's detail is a game's relief map.
+  const MASSIF_RESOLUTION = 257;
   const fetchMassif = async (massif: ISurveyRow) => {
-    const grid = await surveyHeights(massif, 129).catch((error: unknown) => {
-      throw new Error(
-        `cook: far-ring massif '${massif.name}': ${error instanceof Error ? error.message : String(error)} Pass backdrop: "none" to cook without the far ring.`,
-      );
-    });
+    const grid = await surveyHeights({ ...massif, zoom: massif.zoom + 1 }, MASSIF_RESOLUTION).catch(
+      (error: unknown) => {
+        throw new Error(
+          `cook: far-ring massif '${massif.name}': ${error instanceof Error ? error.message : String(error)} Pass backdrop: "none" to cook without the far ring.`,
+        );
+      },
+    );
     return {
       id: massif.name,
       size: massif.extentMeters,
-      resolution: 129,
+      resolution: MASSIF_RESOLUTION,
       heights: grid.values,
     };
   };
@@ -667,9 +767,16 @@ async function farRing(
     height: round(placement.height),
   };
   const heights = Array.from(terrain.evaluate().height, round);
+  // The massif at its own tile spacing: a game's relief map reads it where the ring's cells are too
+  // coarse for its ridges.
+  const { detail } = placement;
+  const massif = {
+    ...decision,
+    detail: { ...detail, heights: Array.from(detail.heights, (h) => Math.round(h * 10) / 10) },
+  };
   return {
     decision,
-    file: `${JSON.stringify({ size, resolution, heights, massif: decision })}\n`,
+    file: `${JSON.stringify({ size, resolution, heights, massif })}\n`,
   };
 }
 

@@ -7,6 +7,7 @@ import { OPERATION_TYPES } from "../core/operations.js";
 import { LANDFORMS, type LandformKind } from "../core/presets.js";
 import {
   BIOME_OWN,
+  BACKDROP_WORDS,
   LANDFORM_WORD_ROWS,
   REQUEST_KNOWN_WORDS,
   REQUEST_STOP_WORDS,
@@ -35,6 +36,8 @@ export interface IGenerateInput {
   ground?: IGroundRequest;
   /** `"none"` cooks no far ring; omitted, a mountain landform on a survey gets one with a massif. */
   backdrop?: "none";
+  /** The range the far ring's massif comes from, when a request word names it apart from the ground. */
+  backdropRange?: LandformKind;
   out?: string;
 }
 
@@ -356,6 +359,13 @@ function parseGround(value: unknown, tool: string): IGroundRequest | undefined {
  * The first row a request names, in table order, with the word that named it: the tables decide
  * ties, and the record names the word the caller wrote first, so it reads back like the request.
  */
+/** Whether `word` follows a backdrop word ("under", "below", ...), with at most "the" between. */
+function backdropWordAt(words: readonly string[], word: string): boolean {
+  const at = words.indexOf(word);
+  const before = words[at - 1] === "the" ? words[at - 2] : words[at - 1];
+  return before !== undefined && BACKDROP_WORDS.includes(before);
+}
+
 function rowHit<ROW>(
   rows: readonly (readonly [ROW, readonly string[]])[],
   words: readonly string[],
@@ -425,6 +435,12 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
     landform = { value: spec.landform, source: "argument" };
   } else if (landformWord === undefined) {
     landform = { value: null, source: "default" };
+  } else if (backdropWordAt(words, landformWord.word)) {
+    // "under mountains": the ground stays the kit's own landform, cut from its survey so a seed moves
+    // it, and the word's range stands past the square.
+    parsed.landform = own.landform;
+    parsed.backdropRange = landformWord.row;
+    landform = { value: own.landform, source: "default" };
   } else {
     landform = { value: landformWord.row, source: { word: landformWord.word } };
     if (landformWord.row !== own.landform) parsed.landform = landformWord.row;
@@ -485,7 +501,8 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   } else {
     const surveyed =
       ground.value === "survey" || (typeof ground.value === "object" && "location" in ground.value);
-    const mountain = presetKind !== undefined && MASSIFS[presetKind] !== undefined;
+    const range = parsed.backdropRange ?? presetKind;
+    const mountain = range !== undefined && MASSIFS[range] !== undefined;
     backdrop = { value: surveyed && mountain ? "massif" : "none", source: "default" };
   }
   if (seed !== undefined) {

@@ -464,8 +464,10 @@ export const realContinuation = Object.fromEntries(
         seed: 1,
       }).heightmap({ id: "usgs-surroundings", data: source.data });
     if (name === "forest" && cooked) {
-      // The cook's own ring: its survey continued, its massif already standing in it.
+      // The cook's own ring: its survey continued, its massif already standing in it, and the
+      // massif's own heights for the relief map where the ring's cells are too coarse.
       const { size, resolution, heights } = cooked.ring;
+      if (cooked.ring.massif?.detail) massif.forest = cooked.ring.massif;
       return [
         [
           name,

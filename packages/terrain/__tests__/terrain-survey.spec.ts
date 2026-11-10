@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { encodeHeightPNG } from "../src/core/io.js";
 import { LANDFORMS, type LandformKind } from "../src/core/presets.js";
-import { SURVEYS, locationSurvey } from "../src/core/surveys.js";
+import { placeMassif } from "../src/core/massif.js";
+import { terrainStats } from "../src/core/stats.js";
+import { MASSIFS, SURVEYS, locationSurvey } from "../src/core/surveys.js";
 import { Terrain } from "../src/core/terrain.js";
 import { cookKit } from "../src/mcp/cook.js";
 import { surveyHeights } from "../src/mcp/survey.js";
@@ -308,6 +310,31 @@ describe("the far ring", () => {
     vi.unstubAllGlobals();
   });
 
+  // PRD-866 Phase 1 gates on the cook's own massif data (Terrarium, one zoom finer than its row for a
+  // 17 m relief map), on the flat host `massif.spec.ts` isolates a mountain with. Inside a real ring
+  // the smooth survey around it dilutes curvature kurtosis, so that is where the gate is comparable.
+  it("fetches a massif sharp enough for the Phase 1 gates", async () => {
+    const row = MASSIFS.temperateMountains?.[0] as (typeof SURVEYS)["alpine"];
+    const grid = await surveyHeights({ ...row, zoom: row.zoom + 1 }, 257);
+    const tile = { id: "longs", size: row.extentMeters, resolution: 257, heights: grid.values };
+    for (const seed of [1, 2, 3]) {
+      const { terrain } = placeMassif(
+        new Terrain({ size: 8000, resolution: 257, seed: 1 }).flatten({
+          id: "flat",
+          at: [0, 0],
+          radius: 1e5,
+          falloff: 0,
+          height: 0,
+        }),
+        { seed, tile: [tile] },
+      );
+      const state = terrain.evaluate();
+      const stats = terrainStats(state.height, state.resolution, state.size);
+      expect(stats.relief).toBeGreaterThan(550);
+      expect(stats.curvatureKurtosis).toBeGreaterThan(40);
+    }
+  });
+
   it("is decided by a mountain landform on a survey, and named off by the argument", () => {
     const decided = (args: Record<string, unknown>) => parseGenerateRequest(args).decided.backdrop;
     expect(decided({ kit: "forest", landform: "temperateMountains" })).toEqual({
@@ -327,6 +354,12 @@ describe("the far ring", () => {
     expect(off.decided.backdrop).toEqual({ value: "none", source: "argument" });
     expect(off.input.backdrop).toBe("none");
     expect(() => parseGenerateRequest({ kit: "forest", backdrop: "massif" })).toThrow(/backdrop/);
+    // "Under mountains" names the range past the square: the forest keeps its own ground, cut from
+    // its survey, and the massif comes from the word's range.
+    const under = parseGenerateRequest({ request: "a spruce forest under mountains" });
+    expect(under.input).toMatchObject({ landform: "temperateMountains", backdropRange: "alpine" });
+    expect(under.decided.backdrop).toEqual({ value: "massif", source: "default" });
+    expect(under.unused).toEqual(["spruce"]);
   });
 
   it("writes ring.json with the survey continued and a surveyed mountain past the square", async () => {
@@ -352,11 +385,19 @@ describe("the far ring", () => {
       size: number;
       resolution: number;
       heights: number[];
-      massif: { at: [number, number]; height: number };
+      massif: {
+        at: [number, number];
+        height: number;
+        detail: { columns: number; rows: number; heights: number[] };
+      };
     };
     expect(ring.size).toBe(512 * 10);
     expect(ring.heights).toHaveLength(ring.resolution ** 2);
-    expect(ring.massif).toEqual(result.backdrop);
+    // The decision, plus the massif at its own spacing for a game's relief map.
+    expect(ring.massif).toMatchObject(result.backdrop);
+    expect(ring.massif.detail.heights).toHaveLength(
+      ring.massif.detail.columns * ring.massif.detail.rows,
+    );
     // The mountain stands outside the square, and its summit rises over the ring around it.
     expect(Math.max(Math.abs(ring.massif.at[0]), Math.abs(ring.massif.at[1]))).toBeGreaterThan(256);
     // Longs Peak in its own metres: 649 m above its perimeter, drawn at 0.85 to 1.15 of that.
@@ -406,11 +447,11 @@ describe("the far ring", () => {
     const cache = join(root, "cache");
     await cp(FIXTURE_CACHE, cache, { recursive: true });
     // Longs Peak's own tile; the ground and the ring are still cached.
-    await rm(join(cache, "12", "846", "1547.png"));
+    await rm(join(cache, "13", "1692", "3093.png"));
     vi.stubEnv("TN_TERRAIN_TILE_CACHE", cache);
     const out = join(root, "assets", "worlds", "world");
     await expect(
       cookKit({ kit: "forest", landform: "temperateMountains", out, projectRoot: root }),
-    ).rejects.toThrow(/Longs Peak[\s\S]*terrarium\/12\/846\/1547\.png[\s\S]*backdrop: "none"/);
+    ).rejects.toThrow(/Longs Peak[\s\S]*terrarium\/13\/1692\/3093\.png[\s\S]*backdrop: "none"/);
   }, 120_000);
 });

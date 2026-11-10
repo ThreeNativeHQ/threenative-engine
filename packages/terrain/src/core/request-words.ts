@@ -102,8 +102,22 @@ export const REQUEST_STOP_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 /** Every word any row answers to: a request word in this set named a choice, whatever won. */
-export const REQUEST_KNOWN_WORDS: ReadonlySet<string> = new Set(
-  [...BIOME_WORD_ROWS, ...LANDFORM_WORD_ROWS, ...WATER_WORD_ROWS, ...SIZE_WORD_ROWS].flatMap(
+/**
+ * A landform word after one of these names the mountains past the square, not the ground: "a spruce
+ * forest under mountains" stands on the forest's own ground with a massif of that range behind it.
+ */
+export const BACKDROP_WORDS: readonly string[] = [
+  "under",
+  "below",
+  "beneath",
+  "behind",
+  "among",
+  "beside",
+];
+
+export const REQUEST_KNOWN_WORDS: ReadonlySet<string> = new Set([
+  ...[...BIOME_WORD_ROWS, ...LANDFORM_WORD_ROWS, ...WATER_WORD_ROWS, ...SIZE_WORD_ROWS].flatMap(
     ([, names]) => names,
   ),
-);
+  ...BACKDROP_WORDS,
+]);

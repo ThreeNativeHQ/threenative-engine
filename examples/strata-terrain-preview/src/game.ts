@@ -720,7 +720,16 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         ctx.camera.position.copy(
           pose.eyeY === undefined
             ? at(pose.at[0], pose.at[1], pose.eye)
-            : new Vector3(pose.at[0], pose.eyeY, pose.at[1]),
+            : // Never under the drawn ground: a cooked world (`STRATA_WORLD`) has other hills there.
+              new Vector3(
+                pose.at[0],
+                Math.max(
+                  pose.eyeY,
+                  (collar?.heightAt(pose.at[0], pose.at[1]) ??
+                    field.heightAt(pose.at[0], pose.at[1])) + 1.7,
+                ),
+                pose.at[1],
+              ),
         );
         ctx.camera.lookAt(
           pose.lookY === undefined
