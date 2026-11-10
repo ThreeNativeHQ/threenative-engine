@@ -474,7 +474,7 @@ async function measureArm(browser, arm, { pass, settle, commit }) {
       wasm === undefined
         ? { kind: "js", sha256: sha12(...bundle.map(([, body]) => body)), commit }
         : // The engine is the Wasm and the JS around it (core, the facade): a core-only change left the Wasm hash
-          // equal, so a paired window could not prove its two arms were two builds (rows #317-#322).
+          // equal, so a paired window could not prove its two arms were two builds (rows #319-#322).
           { kind: "wasm", sha256: sha12(await wasm, ...bundle.map(([, body]) => body)), commit };
     return {
       ...arm,
