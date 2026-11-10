@@ -269,11 +269,7 @@
       "symbol": "materialStateOf"
     },
     {
-      "aliases": [
-        "model texture codec ladder",
-        "keep smaller source texture",
-        "TN_ASSETS_COMPRESSION_SKIPPED"
-      ],
+      "aliases": [],
       "constraints": [
         "the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output",
         "each colour texture climbs a codec ladder (ETC1S, then UASTC with RDO, then plain UASTC) and keeps the smallest rung that meets the quality floor (SSIM 0.95, ΔE00 3); a data slot such as a normal or metallic-roughness map takes UASTC only, as ETC1S is forbidden there (`TN_ASSETS_TEXTURE_SLOT_CODEC`); a result is kept only when it is smaller than the source, else the source stays and the report says `not-smaller`",
@@ -292,7 +288,10 @@
         "optimize a GLB before shipping it with a game",
         "texture bytes too big after the model cook",
         "a KTX2 model texture came out larger than its WebP or JPEG source",
-        "choose ETC1S or UASTC for a model's embedded textures"
+        "choose ETC1S or UASTC for a model's embedded textures",
+        "model texture codec ladder",
+        "keep smaller source texture",
+        "TN_ASSETS_COMPRESSION_SKIPPED"
       ],
       "summary": "Optimizes self-contained GLB models through the configured geometry and embedded-texture passes.",
       "supersedes": [],
@@ -1331,19 +1330,7 @@
       "symbol": "counterDeviceOf"
     },
     {
-      "aliases": [
-        "different area props",
-        "coarse first model streaming",
-        "mip streaming textures",
-        "TN_STREAMING_POOL",
-        "TN_ASSET_LATE",
-        "first playable screen external assets",
-        "KTX2Loader on the owned engine",
-        "CompressedTexture upload",
-        "TN_TEXTURE_TRANSCODE_TARGET",
-        "TN_NATIVE_TEXTURE_UNSUPPORTED",
-        "webRuntimeDecoders meshopt ktx2"
-      ],
+      "aliases": ["different area props", "first playable screen external assets"],
       "constraints": [
         "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches",
         "await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world",
@@ -1379,12 +1366,22 @@
         "make the first scene play before the whole game finishes downloading",
         "draw a heavy model's coarsest level first and its full detail when the file lands",
         "draw a model's textures at their resident mips first and the whole files later",
+        "coarse first model streaming",
+        "streamMeshes and streamTextures: stream the meshes and textures of a model",
+        "mip streaming textures",
+        "TN_STREAMING_POOL",
+        "TN_ASSET_LATE",
         "an asset pops in after the reveal and the game needs to count it",
         "a model texture looks blurry or low resolution right after load, then sharpens",
         "build a collider or navmesh from a streamed model only once its full file landed",
         "compressed texture upload on the owned engine (KTX2 to BC7 or ETC2 on the GPU)",
         "load a model with KHR_texture_basisu or EXT_meshopt_compression on the owned engine",
-        "stream a finer mip level into a CompressedTexture that already draws"
+        "stream a finer mip level into a CompressedTexture that already draws",
+        "KTX2Loader on the owned engine",
+        "CompressedTexture upload",
+        "TN_TEXTURE_TRANSCODE_TARGET",
+        "TN_NATIVE_TEXTURE_UNSUPPORTED",
+        "webRuntimeDecoders meshopt ktx2"
       ],
       "summary": "Create the portable asset loader a scene also receives as `ctx.assets`.",
       "supersedes": [],
@@ -1758,6 +1755,23 @@
       "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
       "supersedes": [],
       "symbol": "exposureFromEv100"
+    },
+    {
+      "aliases": [],
+      "constraints": ["reads the response once; call `.json()` or `.arrayBuffer()` on the result"],
+      "example": "const heights = new Float32Array(await (await fetchAsset(ctx.assets, \"world/forest.bin\")).arrayBuffer());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export async function fetchAsset( assets: Pick<IAssetLoader, \"resolve\">, path: string, ): Promise<Response> { … }",
+      "situations": [
+        "load a baked JSON or binary file (a heightmap, a placement buffer, a data table) that the loader has no typed method for",
+        "a data file loads in dev but 404s in the built game"
+      ],
+      "summary": "Fetch a data file the asset loader serves: each url `assets.resolve(path)` names, in order, until one answers ok. A built game serves the hashed output and a dev server the source path, so taking only the first url 404s on one of them. When none answers it throws `TN_ASSET_NOT_SERVED` naming every url tried and why, so a missing file is never a half-drawn world.",
+      "supersedes": [],
+      "symbol": "fetchAsset"
     },
     {
       "aliases": [],
@@ -2388,7 +2402,7 @@
       "symbol": "isStatic"
     },
     {
-      "aliases": ["whole model before collision", "TN_COLLIDER_COARSE"],
+      "aliases": [],
       "constraints": [
         "`CollisionShape3D.fromMesh` with \"trimesh\" or \"convexHull\" on a streamed geometry warns `TN_COLLIDER_COARSE` naming the mesh and the `{ whole: true }` override, and still builds"
       ],
@@ -2400,7 +2414,9 @@
       "signature": "export function isStreamedGeometry(geometry: BufferGeometry): boolean { … }",
       "situations": [
         "collider or navmesh built from a model is coarser than what is drawn",
-        "wait for the full model before copying its vertices"
+        "wait for the full model before copying its vertices",
+        "whole model before collision",
+        "TN_COLLIDER_COARSE"
       ],
       "summary": "True while a geometry is the coarse companion a streamed model draws first (PRD-860), before its full file replaces it in place. A caller that copies vertices (a trimesh collider, a navmesh bake, a merge) waits with `ctx.assets.model(path, { whole: true })` instead of copying the coarse ones.",
       "supersedes": [],
@@ -9457,7 +9473,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const box = createTweakBox({ title: \"Fog\", knobs: { density: { min: 0, max: 0.1, value: 0.02 } }, onChange: (name, value) => console.info(name, value) });",
       "importPath": "@threenative/terrain/editor",
       "kind": "function",
       "overrides": [],

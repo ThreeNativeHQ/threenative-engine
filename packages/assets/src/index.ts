@@ -56,9 +56,9 @@ export type {
  * @situation texture bytes too big after the model cook
  * @situation a KTX2 model texture came out larger than its WebP or JPEG source
  * @situation choose ETC1S or UASTC for a model's embedded textures
- * @alias model texture codec ladder
- * @alias keep smaller source texture
- * @alias TN_ASSETS_COMPRESSION_SKIPPED
+ * @situation model texture codec ladder
+ * @situation keep smaller source texture
+ * @situation TN_ASSETS_COMPRESSION_SKIPPED
  * @constraint the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output
  * @constraint each colour texture climbs a codec ladder (ETC1S, then UASTC with RDO, then plain UASTC) and keeps the smallest rung that meets the quality floor (SSIM 0.95, ΔE00 3); a data slot such as a normal or metallic-roughness map takes UASTC only, as ETC1S is forbidden there (`TN_ASSETS_TEXTURE_SLOT_CODEC`); a result is kept only when it is smaller than the source, else the source stays and the report says `not-smaller`
  * @constraint a PNG or JPEG source can always be kept; a WebP source can be kept only on a web target, whose runtimes all decode WebP, so on desktop and mobile it always becomes KTX2
