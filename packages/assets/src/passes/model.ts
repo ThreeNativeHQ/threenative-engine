@@ -272,6 +272,17 @@ const MODEL_REORDER_VERSION = 1;
  * stay float32 in the source metre space.
  */
 const MODEL_QUANTIZE_VERSION = 1;
+/**
+ * Bumped when which authored containers the texture cook may keep changes. 1 = a WebP is kept on a
+ * target whose runtimes all decode it, unless a KTX2 undercuts it (PRD-867).
+ */
+const MODEL_WEBP_RETAIN_VERSION = 1;
+/** The retention rule as a cache key, so a warm entry cooked under the old rule is not served. */
+function keepSmallerSource(textures: IModelTexturesOptions | undefined): string {
+  return textures?.webp === true
+    ? `universal-containers+webp-v${String(MODEL_WEBP_RETAIN_VERSION)}`
+    : "universal-containers";
+}
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -893,7 +904,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               // Retention is now conditioned on the container, so it is spelled out rather than
               // named by a boolean: a warm cache keyed on the old rule would keep shipping the
               // WebP-requiring models this replaced.
-              keepSmallerSource: "universal-containers",
+              keepSmallerSource: keepSmallerSource(options.textures),
               overrides: options.textures?.overrides ?? [],
               quality: options.textures?.quality ?? null,
             },
@@ -1188,7 +1199,7 @@ function sharedSettings(
             jpeg: textureOptions.jpeg ?? null,
             jpegLadder: "colour-opaque-q75-90-v1",
             floor: resolveImageQualityFloor(textureOptions.floor),
-            keepSmallerSource: "universal-containers",
+            keepSmallerSource: keepSmallerSource(textureOptions),
             maxSize: resolveTextureMaxSize(textureOptions.maxSize, listTextureSlots(texture)),
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,

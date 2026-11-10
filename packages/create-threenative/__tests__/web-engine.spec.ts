@@ -467,12 +467,12 @@ describe("createWebEnginePlugin", () => {
 });
 
 describe("the web engine's asset decoders", () => {
-  it("cooks meshopt on both engines and KTX2 only on the legacy one", () => {
-    // The engine's loader decodes both, but transcodes KTX2 to RGBA8: smaller WebP wins there.
-    const owned = { ktx2: false, meshopt: true };
-    expect(webRuntimeDecoders({})).toEqual(owned);
-    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual(owned);
-    expect(webRuntimeDecoders({ engine: "threejs" })).toEqual({ ktx2: true, meshopt: true });
+  it("cooks meshopt and KTX2 on both engines", () => {
+    // PRD-867: the owned engine uploads BC7 or ETC2 blocks, and its KTX2 cook is the smaller one.
+    const both = { ktx2: true, meshopt: true };
+    expect(webRuntimeDecoders({})).toEqual(both);
+    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual(both);
+    expect(webRuntimeDecoders({ engine: "threejs" })).toEqual(both);
   });
 
   it("is what every template's dev-server asset watch cooks with, as its build does", async () => {

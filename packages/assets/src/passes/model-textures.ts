@@ -57,6 +57,13 @@ export type TextureMaxSize = number | Readonly<Record<string, number>>;
 export interface IModelTexturesOptions {
   /** Internal target-selected raw ASTC output. */
   readonly astc?: boolean;
+  /**
+   * Internal: every runtime of this target decodes WebP (the web: browsers and the owned Wasm
+   * engine), so an authored WebP is a source the cook may keep, and a KTX2 must undercut its bytes
+   * to replace it, as it must a JPEG or PNG. PRD-867: without it, Midway's 300 KB WebP
+   * metallic-roughness and normal maps became 4 MB UASTC files.
+   */
+  readonly webp?: boolean;
   readonly floor?: Partial<IImageQualityFloor>;
   /** Internal reporting switch; selection still measures and enforces the floor. */
   readonly measureQuality?: boolean;
@@ -649,6 +656,9 @@ export async function compressEmbeddedTextures(
   const textures = root.listTextures();
   if (textures.length === 0) return undefined;
   const decoderFree = options.decoderFree === true;
+  /** A container every runtime of this target reads, so its authored bytes may stay as they are. */
+  const retainable = (mime: string): boolean =>
+    UNIVERSAL_IMAGE_CONTAINERS.has(mime) || (mime === "image/webp" && options.webp === true);
   const transcoderBytes = Math.max(0, options.transcoderBytes ?? BASIS_TRANSCODER_BYTES);
   const quality = Math.min(255, Math.max(1, Math.round(options.quality ?? DEFAULT_ETC1S_QUALITY)));
   const keys = textureKeys(root);
@@ -890,7 +900,7 @@ export async function compressEmbeddedTextures(
       !explicit &&
       target.width === decoded.width &&
       target.height === decoded.height &&
-      UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType());
+      retainable(texture.getMimeType());
     const charged = automatic && options.astc !== true;
 
     let selected: Awaited<ReturnType<typeof encodeTextureLadder>>;
@@ -968,7 +978,7 @@ export async function compressEmbeddedTextures(
         target.width === decoded.width &&
         target.height === decoded.height &&
         !explicit &&
-        UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType()))
+        retainable(texture.getMimeType()))
     ) {
       const downsampled = target.width !== decoded.width || target.height !== decoded.height;
       let retained: Uint8Array = image;

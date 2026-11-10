@@ -10,21 +10,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * decompresses EXT/KHR_meshopt_compression with meshoptimizer, which `pnpm wasm:build` provisions
  * and without which the `tn-native-engine-web` target refuses to link (PRD-861).
  *
- * KTX2 stays off for the owned engine by measurement, not by capability. The engine transcodes
- * KHR_texture_basisu to BC7 or ETC2 and uploads the blocks (PRD-867), and three's KTX2Loader runs on
- * it, but the download costs more: Midway's KTX2 cook is 189,852,625 B against 125,132,608 B with
- * WebP model textures, mostly UASTC images of 4 MB and more. Turn it on when the cook's KTX2 bytes
- * are not above WebP's.
+ * KTX2 decodes on both engines too: the owned engine transcodes KHR_texture_basisu to BC7 or ETC2
+ * and uploads the blocks, or RGBA8 on a device with neither (PRD-867), and three's KTX2Loader runs
+ * on it. The web cook keeps an authored WebP a KTX2 cannot undercut, so Midway's KTX2 cook is
+ * 98,236,952 B against 125,132,608 B with WebP model textures.
  *
  * `threenative build` and each template's dev-server asset watch both read it, so the two cook the
  * same bytes.
  */
-export function webRuntimeDecoders(config: {
+export function webRuntimeDecoders(_config: {
   readonly engine?: "threejs" | "threenative";
 }): { readonly ktx2: boolean; readonly meshopt: boolean } {
-  return config.engine === "threejs"
-    ? { ktx2: true, meshopt: true }
-    : { ktx2: false, meshopt: true };
+  return { ktx2: true, meshopt: true };
 }
 
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */
