@@ -18,8 +18,8 @@ import {
   setLodBias,
   updateModelLods,
   upgradeStreamedGeometry,
-  upgradeStreamedTextures,
 } from "../src/model-lod.js";
+import { streamedTextureUpgrade } from "../src/streamed-textures.js";
 
 // PRD-377 §6 — the runtime side: the loader's reader builds index-only levels that share the base
 // attributes, and the engine's per-frame selection swaps the mesh's geometry by projected error.
@@ -381,7 +381,7 @@ describe("streamed coarse geometry", () => {
   });
 });
 
-describe("upgradeStreamedTextures (PRD-860 Phase 2)", () => {
+describe("streamedTextureUpgrade (PRD-860 Phase 2)", () => {
   /** A texture stand-in: only `dispose` matters to the swap. */
   const texture = () => ({ dispose: vi.fn(), isTexture: true });
 
@@ -396,7 +396,7 @@ describe("upgradeStreamedTextures (PRD-860 Phase 2)", () => {
     const full = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
     Object.assign(coarse.material, { map: coarseMap, normalMap: coarseNormal });
     Object.assign(full.material, { map: fullMap, normalMap: fullNormal });
-    expect(upgradeStreamedTextures([coarse], [full])).toBe(2);
+    expect(streamedTextureUpgrade([coarse])([full], true)).toBe(2);
     expect((coarse.material as unknown as { map: unknown }).map).toBe(fullMap);
     expect((coarse.material as unknown as { normalMap: unknown }).normalMap).toBe(fullNormal);
     expect(coarseMap.dispose).toHaveBeenCalledTimes(1);
@@ -410,7 +410,7 @@ describe("upgradeStreamedTextures (PRD-860 Phase 2)", () => {
     const full = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
     Object.assign(coarse.material, { map: shared, emissiveMap: kept });
     Object.assign(full.material, { map: shared, roughnessMap: only });
-    expect(upgradeStreamedTextures([coarse], [full])).toBe(0);
+    expect(streamedTextureUpgrade([coarse])([full], true)).toBe(0);
     expect((coarse.material as unknown as { emissiveMap: unknown }).emissiveMap).toBe(kept);
     expect(kept.dispose).not.toHaveBeenCalled();
     expect(shared.dispose).not.toHaveBeenCalled();
@@ -430,7 +430,57 @@ describe("upgradeStreamedTextures (PRD-860 Phase 2)", () => {
       new Mesh(new BufferGeometry(), fullMaterial),
       new Mesh(new BufferGeometry(), fullMaterial),
     ];
-    expect(upgradeStreamedTextures(meshes, fulls)).toBe(1);
+    expect(streamedTextureUpgrade(meshes)(fulls, true)).toBe(1);
     expect(old.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  // Review of #643: the game may set its own texture or material while the full model downloads.
+  it("leaves a texture or material the game set before the full model landed, and releases the unused full copy", () => {
+    const [resident, team, whole] = [texture(), texture(), texture()];
+    const coarse = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
+    const swapped = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
+    Object.assign(coarse.material, { map: resident });
+    Object.assign(swapped.material, { map: resident });
+    const upgrade = streamedTextureUpgrade([coarse, swapped]);
+    Object.assign(coarse.material, { map: team });
+    const own = new MeshBasicMaterial();
+    swapped.material = own;
+    const full = [
+      new Mesh(new BufferGeometry(), new MeshBasicMaterial()),
+      new Mesh(new BufferGeometry(), new MeshBasicMaterial()),
+    ];
+    for (const mesh of full) Object.assign(mesh.material, { map: whole });
+    expect(upgrade(full, true)).toBe(0);
+    expect((coarse.material as unknown as { map: unknown }).map).toBe(team);
+    expect(swapped.material).toBe(own);
+    expect(team.dispose).not.toHaveBeenCalled();
+    expect(whole.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a clone of the coarse material on the mesh the whole texture too", () => {
+    const [resident, whole] = [texture(), texture()];
+    const coarse = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
+    Object.assign(coarse.material, { map: resident });
+    const upgrade = streamedTextureUpgrade([coarse]);
+    coarse.material = (coarse.material as MeshBasicMaterial).clone();
+    Object.assign(coarse.material, { map: resident });
+    const full = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
+    Object.assign(full.material, { map: whole });
+    expect(upgrade([full], true)).toBe(1);
+    expect((coarse.material as unknown as { map: unknown }).map).toBe(whole);
+    expect(resident.dispose).toHaveBeenCalledTimes(1);
+    expect(whole.dispose).not.toHaveBeenCalled();
+  });
+
+  it("keeps the coarse textures and releases the full model's copies when no resident mips were served", () => {
+    const [coarseMap, fullMap] = [texture(), texture()];
+    const coarse = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
+    const full = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
+    Object.assign(coarse.material, { map: coarseMap });
+    Object.assign(full.material, { map: fullMap });
+    expect(streamedTextureUpgrade([coarse])([full], false)).toBe(0);
+    expect((coarse.material as unknown as { map: unknown }).map).toBe(coarseMap);
+    expect(coarseMap.dispose).not.toHaveBeenCalled();
+    expect(fullMap.dispose).toHaveBeenCalledTimes(1);
   });
 });

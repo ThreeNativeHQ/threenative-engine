@@ -205,7 +205,10 @@ namespace {
 // three's `_object3DId`, and the first Object3D this process builds takes 0 as three's does.
 // Atomic: the web host builds models on its glTF loader thread while the main thread builds too (PRD-860).
 std::atomic<uint64_t> nextObjectId{0};
-uint64_t hierarchyRevision = 0;
+// Atomic for the same reason: a lost increment would hide a main-thread hierarchy change. The facade
+// reads it as a plain u64 at hierarchyVersionAddress(), which a lock-free atomic lays out the same.
+std::atomic<uint64_t> hierarchyRevision{0};
+static_assert(std::atomic<uint64_t>::is_always_lock_free && sizeof(std::atomic<uint64_t>) == sizeof(uint64_t));
 
 // three's module-level scratch values.
 Vector3 scratchV1;
@@ -275,12 +278,12 @@ void EventDispatcher::dispatchEvent(Event& event) {
 
 // ------------------------------------------------------------------------------ Object3D
 
-uint64_t Object3D::hierarchyVersion() { return hierarchyRevision; }
+uint64_t Object3D::hierarchyVersion() { return hierarchyRevision.load(std::memory_order_relaxed); }
 void Object3D::markHierarchy(Object3D* node) {
-    ++hierarchyRevision;
-    for (; node != nullptr; node = node->parent) node->subtreeVersion_ = hierarchyRevision;
+    const uint64_t revision = hierarchyRevision.fetch_add(1, std::memory_order_relaxed) + 1;
+    for (; node != nullptr; node = node->parent) node->subtreeVersion_ = revision;
 }
-const uint64_t* Object3D::hierarchyVersionAddress() { return &hierarchyRevision; }
+const uint64_t* Object3D::hierarchyVersionAddress() { return reinterpret_cast<const uint64_t*>(&hierarchyRevision); }
 
 Object3D::Object3D() : transform_(acquireTransform()),
     position(transform_.page->positions[transform_.index]), rotation(transform_.page->rotations[transform_.index]),

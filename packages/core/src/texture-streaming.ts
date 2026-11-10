@@ -126,56 +126,6 @@ export function parseKtx2LevelIndex(bytes: Uint8Array): IKtx2LevelIndex {
   };
 }
 
-/**
- * Resident mip levels worth having for a texture covering `screenSizePx`, by Unreal's rule
- * (`StreamingTexture.cpp:309`): `ceil(1 + log2(size))`, one level per doubling. Reads as "keep the
- * mips until a texel covers about a pixel". A non-finite size cannot be measured, so the whole
- * chain stays resident and the caller falls back to the file's own resolution.
- */
-export function wantedMipLevels(
-  screenSizePx: number,
-  levelCount: number,
-  minResidentLevels = 1,
-): number {
-  const levels = levelEntryCount(levelCount);
-  if (!Number.isFinite(screenSizePx)) return levels;
-  const wanted = Math.ceil(1 + Math.log2(Math.max(1, screenSizePx)));
-  const floor = Number.isFinite(minResidentLevels) ? Math.max(0, Math.trunc(minResidentLevels)) : 1;
-  // Upper clamp last: residency is never reported above the mips the file actually holds.
-  return Math.min(levels, Math.max(floor, wanted));
-}
-
-/**
- * Byte ranges still missing to reach `wantedLevels`, smallest mip first — coarse before fine, so
- * each fetch coarsens the whole image in instead of sharpening one corner.
- */
-export function mipRangesToFetch(
-  index: IKtx2LevelIndex,
-  residentLevels: number,
-  wantedLevels: number,
-): { level: number; start: number; end: number }[] {
-  const total = index.levels.length;
-  // An unmeasurable count reads as 0: a NaN resident count still fetches the shortfall, a NaN want
-  // asks for nothing.
-  const clamp = (count: number): number =>
-    Math.min(total, Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0);
-  const resident = clamp(residentLevels);
-  const wanted = clamp(wantedLevels);
-  const ranges: { level: number; start: number; end: number }[] = [];
-  // Resident levels are the `resident` highest indices (levelCount - resident .. levelCount - 1),
-  // so the shortfall is the block just finer than them, walked from its highest index down.
-  for (let level = total - resident - 1; level >= total - wanted; level -= 1) {
-    const entry = index.levels[level];
-    if (entry === undefined) break;
-    ranges.push({
-      level,
-      start: entry.byteOffset,
-      end: entry.byteOffset + entry.byteLength,
-    });
-  }
-  return ranges;
-}
-
 /** The first read of a streamed file: the header, level index and metadata, and usually the tail too. */
 const KTX2_PROBE_BYTES = 64 * 1024;
 /** Mips at or below this side stay resident from the first read (Unreal keeps a mip tail, `TextureDerivedData.cpp:2658`). */
@@ -235,7 +185,14 @@ function trimBasisLzGlobalData(sgd: Uint8Array, index: IKtx2LevelIndex, first: n
  */
 function trimmedKtx2(src: Uint8Array, index: IKtx2LevelIndex, first: number): Uint8Array {
   const view = new DataView(src.buffer, src.byteOffset, src.byteLength);
-  const slice = (offset: number, length: number) => src.subarray(offset, offset + length);
+  // A section past the bytes on hand is a broken file or a short read, never a shorter section.
+  const slice = (offset: number, length: number) => {
+    if (offset + length > src.byteLength)
+      throw new Error(
+        `TN_KTX2_HEADER: a section at ${String(offset)}+${String(length)} lies past the ${String(src.byteLength)} bytes read`,
+      );
+    return src.subarray(offset, offset + length);
+  };
   const dfd = slice(view.getUint32(48, true), view.getUint32(52, true));
   const kvd = slice(view.getUint32(56, true), view.getUint32(60, true));
   let sgd = slice(index.sgdByteOffset, index.sgdByteLength);
@@ -343,6 +300,11 @@ export async function openKtx2Stream(
   };
   const file = (): Uint8Array => {
     const count = resident();
+    // A host that answered a short 206 left not even the 1x1 level: no file to hand on.
+    if (count === 0)
+      throw new Error(
+        `TN_KTX2_FETCH: '${url}' sent ${String(have.byteLength)} bytes, short of its smallest mip level`,
+      );
     return count === levels.length && !ranged
       ? have
       : trimmedKtx2(have, index, levels.length - count);

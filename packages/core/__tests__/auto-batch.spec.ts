@@ -19,6 +19,7 @@ import {
   isAutoBatchSource,
 } from "../src/auto-batch.js";
 import { Registry } from "../src/entities.js";
+import { markStreamedGeometry, upgradeStreamedGeometry } from "../src/model-lod.js";
 import { ScenePicker } from "../src/picking.js";
 import { type IViewportSize, Viewport } from "../src/viewport.js";
 import { warmUpScene } from "../src/warmup.js";
@@ -168,6 +169,22 @@ describe("AutoBatch", () => {
     run(batch, 8);
     expect(draws(scene)).toBe(6);
     expect(batch.census.optedOut).toBe(6);
+  });
+
+  // Review of #643: the full model replaces a streamed coarse geometry in place, and a merged copy
+  // of the coarse vertices would keep drawing coarse after it lands.
+  it("leaves a streamed coarse model out of the merge until its full file lands", () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    town(6, group);
+    const coarse = group.children[0] as Mesh;
+    markStreamedGeometry(coarse.geometry);
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    expect(draws(scene)).toBe(3);
+    expect(isAutoBatchSource(coarse)).toBe(false);
+    upgradeStreamedGeometry(coarse.geometry, new BoxGeometry());
   });
 
   it("leaves a mesh that moves while the scene settles out of the merge", () => {

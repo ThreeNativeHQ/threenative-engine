@@ -937,6 +937,11 @@ export function markStreamedGeometry(coarse: BufferGeometry): void {
   streaming.add(coarse);
 }
 
+/** True while a geometry is a streamed coarse companion the full model has not replaced yet. */
+export function isStreamedGeometry(geometry: BufferGeometry): boolean {
+  return streaming.has(geometry);
+}
+
 /**
  * The full model landed: the coarse geometry takes the full base's index and attributes in place,
  * so every mesh holding it (a game's clones, a projection mirror) draws the full model with no
@@ -954,62 +959,6 @@ export function upgradeStreamedGeometry(coarse: BufferGeometry, full: BufferGeom
   const registered = chains.get(full);
   if (registered !== undefined) chains.set(coarse, registered);
   streaming.delete(coarse);
-}
-
-/** The material texture slots a model's images reach (glTF's own, plus the physical extensions). */
-const TEXTURE_SLOTS = [
-  "map",
-  "normalMap",
-  "roughnessMap",
-  "metalnessMap",
-  "aoMap",
-  "emissiveMap",
-  "alphaMap",
-  "bumpMap",
-  "lightMap",
-  "displacementMap",
-  "clearcoatMap",
-  "clearcoatNormalMap",
-  "clearcoatRoughnessMap",
-  "sheenColorMap",
-  "sheenRoughnessMap",
-  "transmissionMap",
-  "thicknessMap",
-  "iridescenceMap",
-  "specularColorMap",
-  "specularIntensityMap",
-] as const;
-
-type SlottedMaterial = Record<string, unknown> & { needsUpdate?: boolean };
-
-/**
- * PRD-860 Phase 2: the coarse model drew with each texture's resident mips; the full model parsed
- * with the whole files. Every coarse material takes the full model's texture in each slot both
- * hold, so the clones and the projection mirror that share the material get the full image too,
- * and the resident-mip texture is released. Returns how many slots swapped.
- */
-export function upgradeStreamedTextures(coarse: readonly Mesh[], full: readonly Mesh[]): number {
-  const replaced = new Set<{ dispose?: () => void }>();
-  let swapped = 0;
-  coarse.forEach((mesh, index) => {
-    const coarseMaterials = ([] as unknown[]).concat(mesh.material) as SlottedMaterial[];
-    const fullMaterials = ([] as unknown[]).concat(full[index]?.material) as SlottedMaterial[];
-    coarseMaterials.forEach((material, slot) => {
-      const source = fullMaterials[slot];
-      if (material === undefined || source === undefined) return;
-      for (const name of TEXTURE_SLOTS) {
-        const next = source[name] as { dispose?: () => void } | null | undefined;
-        const previous = material[name] as { dispose?: () => void } | null | undefined;
-        if (!next || !previous || next === previous) continue;
-        material[name] = next;
-        replaced.add(previous);
-        swapped += 1;
-      }
-      material.needsUpdate = true;
-    });
-  });
-  for (const texture of replaced) texture.dispose?.();
-  return swapped;
 }
 
 /**

@@ -1208,6 +1208,35 @@ describe("IAssetLoader compressed textures", () => {
     expect(io.fallback).not.toHaveBeenCalled();
   });
 
+  // PRD-867 review: the owned engine's loader transcodes KHR_texture_basisu itself (BC7, ETC2 or
+  // RGBA8), so a device with no compressed format three's KTX2Loader accepts still loads the model.
+  it("a Basis model loads on the engine's own glTF loader where three's KTX2Loader has no format", async () => {
+    Object.defineProperty(GLTFLoader.prototype, "failClosed", { value: true, configurable: true });
+    try {
+      const setKtx2Spy = vi.spyOn(GLTFLoader.prototype, "setKTX2Loader");
+      vi.spyOn(GLTFLoader.prototype, "parse").mockImplementation(function (
+        this: GLTFLoader,
+        _data: ArrayBuffer,
+        _path: string,
+        onLoad: never,
+      ) {
+        (onLoad as (value: unknown) => void)({ scene: new Group(), animations: [] });
+        return this;
+      } as never);
+      const json = JSON.stringify({
+        asset: { version: "2.0" },
+        extensionsUsed: ["KHR_texture_basisu"],
+        extensionsRequired: ["KHR_texture_basisu"],
+      });
+      astcImageIo(json);
+      const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
+      await expect(assets.model("astc.gltf")).resolves.toBeDefined();
+      expect(setKtx2Spy).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(GLTFLoader.prototype, "failClosed");
+    }
+  });
+
   it("should not reject an unsupported renderer when the manifest has no KTX2 output", async () => {
     vi.stubGlobal(
       "fetch",

@@ -4,10 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   type IKtx2LevelIndex,
   ktx2HeaderBytes,
-  mipRangesToFetch,
   openKtx2Stream,
   parseKtx2LevelIndex,
-  wantedMipLevels,
 } from "../src/texture-streaming.js";
 
 const KTX2_IDENTIFIER = [
@@ -137,61 +135,6 @@ describe("parseKtx2LevelIndex", () => {
   });
 });
 
-describe("wantedMipLevels", () => {
-  it("keeps the 1x1 mip for a one-pixel covering", () => {
-    expect(wantedMipLevels(1, 12)).toBe(1);
-  });
-
-  it("follows Unreal's ceil(1 + log2(size)) rule across a doubling", () => {
-    // StreamingTexture.cpp:309 — 256 px covers 2**8 texels, so 9 mips are worth keeping.
-    expect(wantedMipLevels(256, 12)).toBe(9);
-    expect(wantedMipLevels(255, 12)).toBe(9);
-    expect(wantedMipLevels(257, 12)).toBe(10);
-    expect(wantedMipLevels(512, 12)).toBe(10);
-  });
-
-  it("clamps to the mips the file actually holds", () => {
-    expect(wantedMipLevels(1024, 8)).toBe(8);
-    expect(wantedMipLevels(16_384, 3)).toBe(3);
-  });
-
-  it("clamps up to minResidentLevels and never above the level count", () => {
-    expect(wantedMipLevels(4, 12, 6)).toBe(6);
-    expect(wantedMipLevels(1024, 8, 8)).toBe(8);
-    // A floor above the file's level count cannot be honoured for a file that does not have it.
-    expect(wantedMipLevels(1, 2, 9)).toBe(2);
-  });
-
-  it("keeps the whole chain when the screen size is not a number", () => {
-    expect(wantedMipLevels(Number.NaN, 12)).toBe(12);
-    expect(wantedMipLevels(Number.POSITIVE_INFINITY, 7)).toBe(7);
-  });
-});
-
-describe("mipRangesToFetch", () => {
-  it("fetches coarse before fine, one range per missing mip, end exclusive", () => {
-    const ranges = mipRangesToFetch(parsed(), 1, 3);
-    expect(ranges).toEqual([
-      { level: 1, start: 524_288, end: 655_360 },
-      { level: 0, start: 0, end: 524_288 },
-    ]);
-    expect(ranges.map((range) => range.level)).toEqual([1, 0]);
-  });
-
-  it("fetches only what is missing when some mips are already resident", () => {
-    expect(mipRangesToFetch(parsed(), 2, 3)).toEqual([{ level: 0, start: 0, end: 524_288 }]);
-  });
-
-  it("fetches nothing when the wanted levels are already resident", () => {
-    expect(mipRangesToFetch(parsed(), 2, 2)).toEqual([]);
-    expect(mipRangesToFetch(parsed(), 3, 1)).toEqual([]);
-  });
-
-  it("clamps a want beyond the file to the mips it has", () => {
-    expect(mipRangesToFetch(parsed(), 0, 9).map((range) => range.level)).toEqual([2, 1, 0]);
-  });
-});
-
 /**
  * A whole KTX2 file as the cook writes one: header, level index, descriptor, key/value data, BasisLZ
  * global data (one image descriptor per level, then codebooks) and the levels smallest first. Each
@@ -304,8 +247,8 @@ describe("openKtx2Stream", () => {
     expect(levelBytes(tail, 0)).toEqual(levelBytes(whole, 4));
     expect(levelBytes(tail, 8)).toEqual(levelBytes(whole, 12));
 
-    // A 300 px footprint wants ceil(1 + log2 300) = 10 levels: one Range read past the bytes on hand.
-    const sharper = await stream.want(wantedMipLevels(300, 13));
+    // Ten levels: one Range read past the bytes on hand.
+    const sharper = await stream.want(10);
     expect(asked).toHaveLength(2);
     expect(asked[1]).toMatch(/^bytes=65536-\d+$/u);
     expect(parseKtx2LevelIndex(sharper as Uint8Array)).toMatchObject({
@@ -331,6 +274,26 @@ describe("openKtx2Stream", () => {
     expect(stream.file()).toEqual(whole);
     expect(await stream.want(11)).toBeUndefined();
     expect(asked).toHaveLength(1);
+  });
+
+  // Review of #643: a host that answers 206 with fewer bytes than asked left no level to hand on.
+  it("refuses by name a short 206 that leaves not even the smallest level", async () => {
+    const whole = wholeKtx2(1024, 11, 0);
+    const levels = parseKtx2LevelIndex(whole).levels;
+    const cap = levels[levels.length - 1]?.byteOffset ?? 0;
+    const fetchRange = async (_url: string, init: RequestInit) => {
+      const start = Number(
+        /^bytes=(\d+)-/u.exec(new Headers(init.headers).get("range") ?? "")?.[1],
+      );
+      const body = whole.slice(start, Math.max(start, cap));
+      return new Response(body, {
+        status: 206,
+        headers: { "content-range": `bytes ${String(start)}-${String(start + body.byteLength)}/*` },
+      });
+    };
+    const stream = await openKtx2Stream("short.ktx2", fetchRange);
+    expect(stream.residentLevels).toBe(0);
+    expect(() => stream.file()).toThrow(/TN_KTX2_FETCH: 'short.ktx2' sent \d+ bytes/u);
   });
 
   it("keeps the BasisLZ image descriptors of the kept levels, so a partial file transcodes", async () => {

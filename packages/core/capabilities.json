@@ -2358,6 +2358,23 @@
       "symbol": "isStatic"
     },
     {
+      "aliases": ["whole model before collision"],
+      "constraints": [],
+      "example": "const coarse = isStreamedGeometry(mesh.geometry);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function isStreamedGeometry(geometry: BufferGeometry): boolean { … }",
+      "situations": [
+        "collider or navmesh built from a model is coarser than what is drawn",
+        "wait for the full model before copying its vertices"
+      ],
+      "summary": "True while a geometry is the coarse companion a streamed model draws first (PRD-860), before its full file replaces it in place. A caller that copies vertices (a trimesh collider, a navmesh bake, a merge) waits with `ctx.assets.model(path, { whole: true })` instead of copying the coarse ones.",
+      "supersedes": [],
+      "symbol": "isStreamedGeometry"
+    },
+    {
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",

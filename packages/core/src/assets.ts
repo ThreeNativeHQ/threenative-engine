@@ -30,9 +30,9 @@ import {
   TN_DISCRETE_LOD,
   markStreamedGeometry,
   upgradeStreamedGeometry,
-  upgradeStreamedTextures,
 } from "./model-lod.js";
 import { countDebug, debugRequested, measureDebug } from "./profiling/debug-telemetry.js";
+import { streamedTextureUpgrade } from "./streamed-textures.js";
 import { openKtx2Stream } from "./texture-streaming.js";
 
 export interface IAssetLoaderOptions {
@@ -111,6 +111,13 @@ export interface IAssetRequestOptions {
    * calls default to `now`.
    */
   readonly priority?: AssetPriority;
+  /**
+   * PRD-860: `true` resolves a model only once its full file has replaced the coarse companion the
+   * first scene draws (the same object, upgraded in place). For a caller that copies the vertices:
+   * a trimesh or convex-hull collider, a navmesh bake, a geometry merge. Default: the coarse model,
+   * so the scene plays before the download ends.
+   */
+  readonly whole?: boolean;
 }
 
 /** What a `prefetch` asked for and what the download produced. */
@@ -968,17 +975,20 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     }, 2000);
   };
   /** One KTX2 image as its resident mips only; any other image, or a host with no `Range`, loads whole. */
-  const residentImage = async (url: string): Promise<Uint8Array | undefined> => {
+  const residentImage = async (
+    url: string,
+  ): Promise<{ readonly file: Uint8Array; readonly partial: boolean } | undefined> => {
     if (!/\.ktx2(?:$|\?)/iu.test(url)) return undefined;
     const stream = await openKtx2Stream(url);
-    if (!stream.ranged) return undefined;
+    // A host with no Range support sent the whole file already: hand it on, not fetched again.
+    if (!stream.ranged) return { file: stream.file(), partial: false };
     const file = stream.file();
     pool.files += 1;
     pool.ranged += 1;
     pool.residentBytes += file.byteLength;
     pool.fullBytes += stream.index.levels.reduce((sum, level) => sum + level.byteLength, 0);
     reportPool();
-    return file;
+    return { file, partial: true };
   };
   // `assets` is what `@threenative/assets` compiles from unless a project says otherwise, so it is
   // where an unbaked game's files are. A project that moved its sources passes `sourcePath`.
@@ -1218,6 +1228,15 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   let settledBytes = 0;
   /** Logical paths asked for and not yet settled, in request order — what a loading view names. */
   const pending = new Set<string>();
+  /** A streamed model's full-file upgrade, settled when it landed or failed (`whole: true` waits on it). */
+  const wholeOf = new WeakMap<object, Promise<void>>();
+  const wholeWhen = <T>(wait: boolean, loading: Promise<T>): Promise<T> =>
+    wait
+      ? loading.then(async (value) => {
+          if (typeof value === "object" && value !== null) await wholeOf.get(value);
+          return value;
+        })
+      : loading;
   /** Logical paths the game warmed ahead of time; a load of one is a stream, not a pop-in. */
   const warmed = new Set<string>();
   /** When the reveal made the player play; `undefined` until then. */
@@ -1276,6 +1295,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     path: string,
     load: (url: string, priority: AssetPriority) => Promise<T>,
     priority: AssetPriority = "now",
+    whole = false,
   ): Promise<T> => {
     const key = `${kind}:${path}`;
     const existing = cache.get(key);
@@ -1286,7 +1306,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         existing.priority = priority;
         if (existing.url !== undefined) assetCache.promote(existing.url, priority);
       }
-      return existing.promise as Promise<T>;
+      return wholeWhen(whole, existing.promise as Promise<T>);
     }
     requested += 1;
     // The size is only knowable once the manifest lands, so this load's weight joins the
@@ -1376,7 +1396,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     };
     entry.promise.then(note, note);
     cache.set(key, entry);
-    return entry.promise as Promise<T>;
+    return wholeWhen(whole, entry.promise as Promise<T>);
   };
 
   const releaseEntry = (entry: IAssetEntry): void => {
@@ -1521,13 +1541,17 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
             const loader = new GLTFLoader();
             if (resident !== undefined && "imageSource" in loader)
               (loader as { imageSource?: unknown }).imageSource = async (imageUrl: string) => {
-                const file = await residentImage(imageUrl);
-                if (file !== undefined) resident.used = true;
-                return file;
+                const served = await residentImage(imageUrl);
+                if (served?.partial === true) resident.used = true;
+                return served?.file;
               };
             // Both glTF texture extensions use the same support-detected instance as texture().
             const astcExtension = "EXT_texture_astc";
-            const hasBasis = extensions.has("KHR_texture_basisu");
+            // The owned engine's loader (`failClosed`) transcodes KHR_texture_basisu itself, to BC7,
+            // ETC2 or RGBA8, so three's KTX2Loader and its format check do not gate it (PRD-867).
+            const hasBasis =
+              extensions.has("KHR_texture_basisu") &&
+              (loader as { failClosed?: boolean }).failClosed !== true;
             const hasAstc = extensions.has(astcExtension);
             let shared: IKTX2LoaderLike | undefined;
             if (compressedTextures !== undefined && (hasBasis || hasAstc)) {
@@ -1670,20 +1694,35 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           if (value === undefined) value = await parse(url, await bytesOf(path), priority);
           else {
             const coarseMeshes = meshesOf(value);
-            for (const mesh of coarseMeshes) markStreamedGeometry(mesh.geometry);
-            void bytesOf(path)
-              .then((bytes) => parse(url, bytes, "soon"))
+            // What the coarse model brought, recorded now: the game may set a geometry, material
+            // or texture of its own before the full model lands, and the upgrade leaves that alone.
+            const coarseGeometries = coarseMeshes.map((mesh) => mesh.geometry);
+            const upgradeTextures = streamedTextureUpgrade(coarseMeshes);
+            for (const geometry of coarseGeometries) markStreamedGeometry(geometry);
+            // Released, cleared or the loader disposed while the full file was on its way: the
+            // coarse model is gone, so the full one is not parsed, or is released unused.
+            const gone = (): boolean =>
+              loaderDisposed ||
+              coarseGeometries.some((geometry) => disposed.geometries.has(geometry));
+            const landed = bytesOf(path)
+              .then((bytes) => (gone() ? undefined : parse(url, bytes, "soon")))
               .then((full) => {
+                if (full === undefined) return;
+                if (gone()) {
+                  disposeModel(full, disposed);
+                  return;
+                }
                 const fullMeshes = meshesOf(full);
                 if (fullMeshes.length !== coarseMeshes.length)
                   throw new Error(
                     `the full model has ${String(fullMeshes.length)} mesh(es), the coarse ${String(coarseMeshes.length)}`,
                   );
-                coarseMeshes.forEach((mesh, index) =>
-                  upgradeStreamedGeometry(mesh.geometry, (fullMeshes[index] as Mesh).geometry),
+                coarseGeometries.forEach((geometry, index) =>
+                  upgradeStreamedGeometry(geometry, (fullMeshes[index] as Mesh).geometry),
                 );
+                const swapped = upgradeTextures(fullMeshes, residentState?.used === true);
                 if (residentState?.used === true) {
-                  pool.upgraded += upgradeStreamedTextures(coarseMeshes, fullMeshes);
+                  pool.upgraded += swapped;
                   reportPool();
                 }
               })
@@ -1692,12 +1731,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
                   `TN_ASSETS_STREAM_FAILED ${path}: the coarse model stays; ${error instanceof Error ? error.message : String(error)}`,
                 ),
               );
+            if (typeof value === "object" && value !== null) wholeOf.set(value, landed);
           }
           stampAssetProvenance(value, path);
           await attachCompiledLightmaps(path, value);
           return value;
         },
         request?.priority ?? "now",
+        request?.whole === true,
       ),
     get cache() {
       return { ...assetCache.report, clear: () => assetCache.clear() };

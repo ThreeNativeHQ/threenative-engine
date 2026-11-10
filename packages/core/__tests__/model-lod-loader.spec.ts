@@ -595,6 +595,38 @@ describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
     loader.clear();
   }, 120_000);
 
+  // Review of #643: a collider, navmesh bake or merge copies vertices once; the coarse ones stay.
+  it("resolves a { whole: true } request only once the full file has replaced the coarse model", async () => {
+    const { release } = stubStreamed();
+    const loader = createAssetLoader({ basePath: "" });
+    const first = await loader.model<{ scene: Object3D }>("ship.glb");
+    let settled = false;
+    const whole = loader.model<{ scene: Object3D }>("ship.glb", { whole: true }).then((value) => {
+      settled = true;
+      return value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    release();
+    const value = await whole;
+    expect(value).toBe(first);
+    expect(firstMesh(value.scene).geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+    loader.clear();
+  }, 120_000);
+
+  it("does not put the full file onto a model released while it was on its way", async () => {
+    const { release } = stubStreamed();
+    const loader = createAssetLoader({ basePath: "" });
+    const value = await loader.model<{ scene: Object3D }>("ship.glb");
+    const mesh = firstMesh(value.scene);
+    const landed = loader.model("ship.glb", { whole: true });
+    expect(loader.release("model", "ship.glb")).toBe(true);
+    release();
+    await landed;
+    expect(mesh.geometry.index?.count).toBe(COARSE_TRIANGLES * 3);
+    loader.clear();
+  }, 120_000);
+
   it("loads the whole file at once under assets.streamMeshes: false, and says so", async () => {
     const { fetched, release } = stubStreamed();
     release();
