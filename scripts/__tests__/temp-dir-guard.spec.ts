@@ -53,6 +53,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The tarball gate packs into a scratch directory removed in finally.",
   ],
   ["scripts/profile-starter.ts", "The production profile removes its root in finally."],
+  [
+    "scripts/capability-search-ab.ts",
+    "The search A/B removes its base checkout and each live arm workdir in finally.",
+  ],
   ["scripts/sweep-proof.ts", "The production proof gate removes roots in finally."],
   [
     "scripts/performance-regression/cpu.ts",

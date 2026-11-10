@@ -200,6 +200,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // ------------------------------------------------------------------ actors
     const fox = this.#fox;
     if (fox === undefined) throw new Error("Play.enter ran before load() created the fox.");
+    fox.attach(ctx);
     const checkpoints = new Checkpoints(stage.checkpoints, 3);
     const pickups: Pickup[] = [];
     const effects: ((dt: number) => boolean)[] = [];

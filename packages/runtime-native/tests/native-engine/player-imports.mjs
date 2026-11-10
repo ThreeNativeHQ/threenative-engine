@@ -523,6 +523,9 @@ const loader = createAssetLoader({ cache: false, backgroundFill: false });
 check(loader.cache.enabled === false && loader.cache.reason === "native host reads installed files" &&
   loader.cache.bytesOnDisk === 0 && typeof loader.cache.clear === "function", "native asset cache report");
 check(typeof loader.prefetch === "function" && typeof loader.startBackgroundFill === "function", "native prefetch and fill");
+// ctx.assets.memo (PRD-860): no Cache API on native, so the build runs and its value comes back.
+const memoValue = { pixels: new Uint8Array([7]) };
+check(typeof loader.memo === "function" && (await loader.memo("sky", () => memoValue)) === memoValue, "native memo runs build");
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
 // "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the
