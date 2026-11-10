@@ -2084,6 +2084,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   let webgpuFailure: string | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
+    // The renderer this attempt built, once it has one: a failure after that point must free it.
+    let attempted: RendererInstance | undefined;
     try {
       const raw = options.webgpuFactory
         ? await options.webgpuFactory(canvas, rendererParameters)
@@ -2097,6 +2099,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
             });
           });
       const instance = raw as RendererInstance;
+      attempted = instance;
       await instance.init?.();
       // A game that sets `toneMapping` on the renderer later (WorldEnvironment, Daylight) replaces this.
       applyRendererToneMapping(instance, options.toneMapping ?? "filmic", report);
@@ -2124,6 +2127,17 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       // A facade and Wasm engine from two builds is an install fault, not a device without
       // WebGPU: falling back would report TN_NO_RENDERER and hide the fix.
       if (error instanceof Error && error.message.startsWith("TN_WASM_ABI_MISMATCH")) throw error;
+      // Another renderer holds the page's one slot: WebGPU works, and the Wasm engine has no WebGL
+      // fallback to try, so "no WebGPU on this device" would send the reader to the wrong cause.
+      if (error instanceof Error && error.message.startsWith("TN_WASM_RENDERER_SINGLE"))
+        throw error;
+      // The Wasm engine drives one renderer per page and this attempt built it: leaving it live
+      // would turn the next try into TN_WASM_RENDERER_SINGLE and bury this failure.
+      try {
+        (attempted as { dispose?: () => void } | undefined)?.dispose?.();
+      } catch {
+        // The failure being reported is the start's, not the release's.
+      }
       webgpuFailure = error instanceof Error ? error.message : String(error);
       renderer = undefined;
     }

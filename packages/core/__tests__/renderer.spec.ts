@@ -1154,6 +1154,63 @@ describe("createRenderer", () => {
     }
   });
 
+  it("releases the renderer a failed WebGPU start built, so the page's one slot is free for the next try", async () => {
+    // The Wasm engine drives one renderer per page and claims the slot in the constructor. A start
+    // that built it and then failed in init() kept the slot for good: the retry saw
+    // TN_WASM_RENDERER_SINGLE and the first failure was gone.
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const dispose = vi.fn();
+    try {
+      await expect(
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory: () => {
+            throw new Error("no WebGL");
+          },
+          webgpuFactory: () => ({
+            dispose,
+            init: () => Promise.reject(new Error("device lost during init")),
+          }),
+        }),
+      ).rejects.toThrow(/WebGPU failed: device lost during init$/u);
+      expect(dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("names a second live renderer as that, not as a device without WebGPU or a failed WebGL fallback", async () => {
+    // WebGPU is fine here: another renderer holds the page's one slot. The old message said the
+    // device had no WebGPU and that the WebGL fallback could not start, and the Wasm engine has no
+    // WebGL fallback to start, so the player was sent to the wrong cause.
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const webgl2Factory = vi.fn(() => {
+      throw new Error("no WebGL");
+    });
+    try {
+      await expect(
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory,
+          webgpuFactory: () => {
+            throw new Error(
+              "TN_WASM_RENDERER_SINGLE: the Wasm engine drives one renderer per page.",
+            );
+          },
+        }),
+      ).rejects.toThrow(/^TN_WASM_RENDERER_SINGLE: /u);
+      expect(webgl2Factory).not.toHaveBeenCalled();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("reports a facade and Wasm engine of two web host ABIs as that, not as a device without WebGPU", async () => {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
