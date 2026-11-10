@@ -66,7 +66,12 @@ interface IFarForestOptions {
   readonly rivers?: readonly IBakedRiver[];
   readonly lakes?: readonly IBakedLake[];
   /** Circles kept open, [x, z, radius]: the vista's meadow. */
-  readonly clear?: readonly (readonly [number, number, number])[];
+  readonly clear?: readonly (readonly [
+    number,
+    number,
+    number,
+  ])[] /** The sea's surface height when the world has one (`data.waterLevel`): no tree under it. */;
+  readonly seaLevel?: number | null;
 }
 
 /** Spruce placements on the collar; also paints the collar's `canopy` attribute under each crown. */
@@ -82,6 +87,7 @@ export function farForestPlacements(options: IFarForestOptions): IPlacement[] {
     rivers: options.rivers,
     lakes: options.lakes,
     clear: options.clear,
+    seaLevel: options.seaLevel,
     rules: far,
     asset: "spruce",
     layer: FAR_FOREST_LAYER,
