@@ -1,3 +1,4 @@
+import { MeshoptEncoder } from "meshoptimizer";
 import {
   BufferAttribute,
   BufferGeometry,
@@ -58,19 +59,24 @@ function padTo4(bytes: Uint8Array, fill: number): Uint8Array {
   return padded;
 }
 
-/** Two primitives on two nodes; only the second carries a chain, so the mapping is exercised. */
-function cookedGlb(extension: object = {}, alsoUsed: readonly string[] = []): Uint8Array {
+/**
+ * Two primitives on two nodes; only the second carries a chain, so the mapping is exercised.
+ * `meshopt` stores the chain's indices as the cook does: an EXT_meshopt_compression view over a
+ * fallback buffer that holds no bytes, its compressed stream in the binary chunk.
+ */
+function cookedGlb(
+  extension: object = {},
+  alsoUsed: readonly string[] = [],
+  meshopt?: Uint8Array,
+): Uint8Array {
   const positions = gridPositions();
   const lod0 = gridIndices(LOD0_TRIANGLES);
   const level = gridIndices(COARSE_TRIANGLES);
-  const bin = padTo4(
-    new Uint8Array([
-      ...new Uint8Array(positions.buffer),
-      ...new Uint8Array(lod0.buffer),
-      ...new Uint8Array(level.buffer),
-    ]),
-    0,
-  );
+  const plain = new Uint8Array([
+    ...new Uint8Array(positions.buffer),
+    ...new Uint8Array(lod0.buffer),
+  ]);
+  const bin = padTo4(new Uint8Array([...plain, ...(meshopt ?? new Uint8Array(level.buffer))]), 0);
   const chain = {
     absoluteErrors: [0.05],
     counts: [COARSE_TRIANGLES],
@@ -92,14 +98,40 @@ function cookedGlb(extension: object = {}, alsoUsed: readonly string[] = []): Ui
     bufferViews: [
       { buffer: 0, byteLength: positions.byteLength, byteOffset: 0 },
       { buffer: 0, byteLength: lod0.byteLength, byteOffset: positions.byteLength },
-      {
-        buffer: 0,
-        byteLength: level.byteLength,
-        byteOffset: positions.byteLength + lod0.byteLength,
-      },
+      meshopt === undefined
+        ? { buffer: 0, byteLength: level.byteLength, byteOffset: plain.byteLength }
+        : {
+            buffer: 1,
+            byteLength: level.byteLength,
+            byteOffset: 0,
+            extensions: {
+              EXT_meshopt_compression: {
+                buffer: 0,
+                byteLength: meshopt.byteLength,
+                byteOffset: plain.byteLength,
+                byteStride: 4,
+                count: level.length,
+                mode: "ATTRIBUTES",
+              },
+            },
+          },
     ],
-    buffers: [{ byteLength: bin.length }],
-    extensionsUsed: ["TN_discrete_lod", ...alsoUsed],
+    buffers: [
+      { byteLength: bin.length },
+      ...(meshopt === undefined
+        ? []
+        : [
+            {
+              byteLength: level.byteLength,
+              extensions: { EXT_meshopt_compression: { fallback: true } },
+            },
+          ]),
+    ],
+    extensionsUsed: [
+      "TN_discrete_lod",
+      ...alsoUsed,
+      ...(meshopt === undefined ? [] : ["EXT_meshopt_compression"]),
+    ],
     meshes: [
       { primitives: [{ attributes: { POSITION: 0 }, indices: 1, mode: 4 }] },
       {
@@ -200,6 +232,30 @@ describe("a TN_discrete_lod model on the Wasm engine's glTF loader", () => {
       baseGeometryOf(chained).getAttribute("position"),
     );
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("TN_DISCRETE_LOD_UNAVAILABLE"));
+  });
+
+  it("reads a chain whose indices the cook meshopt-compressed", async () => {
+    // PRD-861 turned meshopt on for this engine's cook; the chain's index view then lives in a
+    // compressed stream, and reading the raw binary chunk failed every Midway model with
+    // `TN_WASM_GLTF_LOD_ACCESSOR: accessor N reads past the binary chunk`.
+    await MeshoptEncoder.ready;
+    const level = gridIndices(COARSE_TRIANGLES);
+    const stream = MeshoptEncoder.encodeGltfBuffer(
+      new Uint8Array(level.buffer),
+      level.length,
+      4,
+      "ATTRIBUTES",
+    );
+    const { meshes, scene } = engineScene();
+    await load(cookedGlb({}, [], stream), scene);
+    const chained = meshes[1] as Mesh;
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 0, 100);
+    camera.updateMatrixWorld(true);
+    const root = new Scene();
+    root.add(scene);
+    updateModelLods(root, camera, 1080);
+    expect(Array.from(chained.geometry.index?.array ?? [])).toEqual(Array.from(level));
   });
 
   it("loads a file whose cluster bake is optional, drawing the chain the engine hosts", async () => {

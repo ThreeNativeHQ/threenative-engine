@@ -125,10 +125,12 @@ describe("the web GLTFLoader's image files", () => {
   });
 
   // PRD-861: core wires three's MeshoptDecoder for every model that declares meshopt, and the web bake
-  // emits meshopt for this engine. The engine's own loader decodes it, so the JS decoder is not needed.
+  // emits meshopt for this engine. The engine's own loader decodes the mesh; the JS decoder reads only a
+  // hosted LOD chain's compressed index views (model-lod-engine-loader.spec.ts).
   it("takes a meshopt decoder and hands a meshopt model to the engine", async () => {
     const loader = new GLTFLoader();
-    expect(loader.setMeshoptDecoder({})).toBe(loader);
+    const decoder = { decodeGltfBuffer: () => undefined, ready: Promise.resolve() };
+    expect(loader.setMeshoptDecoder(decoder)).toBe(loader);
     await loader.parseAsync(
       glb({ asset: { version: "2.0" }, extensionsUsed: ["EXT_meshopt_compression"] }),
       "",
