@@ -32,10 +32,18 @@ bool decodeImage(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32
 /**
  * As above into `image`, except a KTX2 becomes every level in `target`'s block format (`image.mipmaps`)
  * when `target` is kTextureBC7Format or kTextureETC2RGBAFormat and the size is a multiple of 4.
- * Otherwise RGBA8, and the first KTX2 says which in a TN_TEXTURE_TRANSCODE_TARGET line.
+ * Otherwise RGBA8; `reportKtx2` says which.
  */
 bool decodeImage(const uint8_t* bytes, std::size_t size, TextureSource& image,
                  uint16_t target = compressedTextureTarget().load());
+
+/**
+ * The stdout lines for a decoded KTX2: TN_TEXTURE_TRANSCODE_TARGET once per process, and an RGBA8
+ * line for a size no block format takes. `decodeImage` writes nothing, because the loader runs it on
+ * pool workers: on the threaded web engine a worker's stdout write waits on the main thread, which is
+ * blocked joining the pool, and Midway's load hung there. Call this on the loading thread.
+ */
+void reportKtx2(const TextureSource& image, uint16_t target = compressedTextureTarget().load());
 
 /** Radiance HDR to RGBA32F, with three's RGBE /255 scale (stb's decoder uses /256). */
 bool decodeHdr(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32_t& height,

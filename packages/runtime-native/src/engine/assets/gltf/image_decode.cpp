@@ -43,18 +43,28 @@ bool startKtx2(basist::ktx2_transcoder& ktx2, const uint8_t* bytes, std::size_t 
     return ktx2.start_transcoding();
 }
 
-// The first KTX2 of the process names the format its images take, so an RGBA8 fallback is never silent.
-void reportTarget(uint16_t target) {
+#endif
+}  // namespace
+
+void reportKtx2(const TextureSource& image, uint16_t target) {
+#if TN_ENGINE_BASISU
+    // The first KTX2 of the process names the format its images take, so an RGBA8 fallback is never silent.
     static std::once_flag reported;
     std::call_once(reported, [target] {
         if (target == kTextureBC7Format) std::printf("TN_TEXTURE_TRANSCODE_TARGET bc7\n");
         else if (target == kTextureETC2RGBAFormat) std::printf("TN_TEXTURE_TRANSCODE_TARGET etc2\n");
         else std::printf("TN_TEXTURE_TRANSCODE_TARGET rgba8: this process has no device with texture-compression-bc or texture-compression-etc2\n");
-        std::fflush(stdout);
     });
-}
+    if ((target == kTextureBC7Format || target == kTextureETC2RGBAFormat) && image.mipmaps.empty())
+        // WebGPU creates a block-compressed texture only at a multiple of the block size.
+        std::printf("TN_TEXTURE_TRANSCODE_TARGET rgba8 for a %ux%u image: a block format needs a multiple of 4\n",
+                    image.width, image.height);
+    std::fflush(stdout);
+#else
+    (void)image;
+    (void)target;
 #endif
-}  // namespace
+}
 
 ImageFormat imageFormat(const uint8_t* bytes, std::size_t size) {
     static const uint8_t png[] = {0x89, 'P', 'N', 'G'};
@@ -128,15 +138,9 @@ bool decodeImage(const uint8_t* bytes, std::size_t size, TextureSource& image, u
 #if TN_ENGINE_BASISU
     if (imageFormat(bytes, size) == ImageFormat::Ktx2) {
         const bool blockTarget = target == kTextureBC7Format || target == kTextureETC2RGBAFormat;
-        reportTarget(target);
         basist::ktx2_transcoder ktx2;
         if (!startKtx2(ktx2, bytes, size)) return false;
         const uint32_t w = ktx2.get_width(), h = ktx2.get_height();
-        if (blockTarget && (w % 4 != 0 || h % 4 != 0)) {
-            // WebGPU creates a block-compressed texture only at a multiple of the block size.
-            std::printf("TN_TEXTURE_TRANSCODE_TARGET rgba8 for a %ux%u image: a block format needs a multiple of 4\n", w, h);
-            std::fflush(stdout);
-        }
         if (blockTarget && w % 4 == 0 && h % 4 == 0) {
             const auto format = target == kTextureBC7Format ? basist::transcoder_texture_format::cTFBC7_RGBA
                                                             : basist::transcoder_texture_format::cTFETC2_RGBA;

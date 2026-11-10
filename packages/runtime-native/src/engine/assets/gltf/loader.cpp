@@ -1120,6 +1120,8 @@ class Builder {
             !gltf::decodeImage(bytes, size, *texture.imageSource)) {
             texture.width = texture.height = 0;
             refuse("TN_NATIVE_GLTF_IMAGE_INVALID image " + std::to_string(texture.source));
+        } else if (bytes && imageFormat(bytes, size) == ImageFormat::Ktx2) {
+            gltf::reportKtx2(*texture.imageSource);
         }
         std::free(freeAfter);
     }
@@ -1167,8 +1169,12 @@ class Builder {
             Job& job = jobs[i];
             job.decoded = gltf::decodeImage(job.bytes.data(), job.bytes.size(), job.image);
         });
-        for (Job& job : jobs)
-            if (job.decoded) predecoded_.emplace(job.source, std::move(job.image));
+        for (Job& job : jobs) {
+            if (!job.decoded) continue;
+            // Here, not on the worker: see reportKtx2.
+            if (imageFormat(job.bytes.data(), job.bytes.size()) == ImageFormat::Ktx2) gltf::reportKtx2(job.image);
+            predecoded_.emplace(job.source, std::move(job.image));
+        }
     }
 
     // SkinnedMesh.normalizeSkinWeights: each vertex's weights over their sum; all zero becomes (1,0,0,0).
