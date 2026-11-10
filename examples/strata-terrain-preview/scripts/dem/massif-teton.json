@@ -7,27 +7,11 @@
   "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
   "crs": "EPSG:26912",
   "verticalCRS": "NAVD88 metres",
-  "center": [
-    515911,
-    4843626
-  ],
-  "bbox": [
-    514111,
-    4841826,
-    517711,
-    4845426
-  ],
-  "bboxWGS84": [
-    -110.82479011757982,
-    43.72925500109633,
-    -110.77997215136067,
-    43.76174619193746
-  ],
+  "center": [515911, 4843626],
+  "bbox": [514111, 4841826, 517711, 4845426],
+  "bboxWGS84": [-110.82479011757982, 43.72925500109633, -110.77997215136067, 43.76174619193746],
   "elevationOffset": 2297,
-  "relativeElevationRange": [
-    0,
-    1900.2
-  ],
+  "relativeElevationRange": [0, 1900.2],
   "lidarTiles": [
     "USGS 1 Meter 12 x51y485 WY_GrandTetonNP_D22",
     "USGS 1 Meter 12 x51y485 WY_North_Converse_2020_D20",

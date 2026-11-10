@@ -7,27 +7,11 @@
   "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
   "crs": "EPSG:26913",
   "verticalCRS": "NAVD88 metres",
-  "center": [
-    327934,
-    4326516
-  ],
-  "bbox": [
-    326134,
-    4324716,
-    329734,
-    4328316
-  ],
-  "bboxWGS84": [
-    -107.01025061090645,
-    39.05423130051966,
-    -106.96774947135793,
-    39.08736184907339
-  ],
+  "center": [327934, 4326516],
+  "bbox": [326134, 4324716, 329734, 4328316],
+  "bboxWGS84": [-107.01025061090645, 39.05423130051966, -106.96774947135793, 39.08736184907339],
   "elevationOffset": 3073,
-  "relativeElevationRange": [
-    0,
-    1243.5
-  ],
+  "relativeElevationRange": [0, 1243.5],
   "lidarTiles": [
     "USGS 1 Meter 13 x32y433 CO_SanLuisJuanMiguel_2020_D20",
     "USGS 1 Meter 13 x32y433 CO_WestCentral_2019_A19"

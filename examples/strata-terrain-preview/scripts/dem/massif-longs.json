@@ -7,27 +7,11 @@
   "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
   "crs": "EPSG:26913",
   "verticalCRS": "NAVD88 metres",
-  "center": [
-    448114,
-    4456231
-  ],
-  "bbox": [
-    445914,
-    4454031,
-    450314,
-    4458431
-  ],
-  "bboxWGS84": [
-    -105.63617811630117,
-    40.23497033193388,
-    -105.58408554259573,
-    40.27488222757851
-  ],
+  "center": [448114, 4456231],
+  "bbox": [445914, 4454031, 450314, 4458431],
+  "bboxWGS84": [-105.63617811630117, 40.23497033193388, -105.58408554259573, 40.27488222757851],
   "elevationOffset": 3153,
-  "relativeElevationRange": [
-    0,
-    1191.3
-  ],
+  "relativeElevationRange": [0, 1191.3],
   "lidarTiles": [
     "USGS 1 Meter 13 x44y446 CO_DRCOG_2020_B20",
     "USGS 1 Meter 13 x45y446 CO_ArapahoRooseveltPikeNF_D23",
