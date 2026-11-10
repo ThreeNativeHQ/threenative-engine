@@ -697,6 +697,8 @@ interface INeedleLook {
    * this way shades as one volume instead of as a stack of separately lit paddles.
    */
   readonly bent?: boolean;
+  /** How dark a bent crown's trunk end is against its tips, 0..1 (`inner` 0 against 1). */
+  readonly interior?: number;
 }
 
 /** The shared grade: new growth is lighter than the shaded interior, and both ends stay honest. */
@@ -771,6 +773,7 @@ function needleMaterial(
     tip,
     light = 0.1,
     bent = false,
+    interior = 0.3,
   } = look;
   const material = new MeshStandardNodeMaterial({
     metalness: 0,
@@ -816,7 +819,7 @@ function needleMaterial(
     .mul(mix(float(0.45), float(1), smoothstep(float(cutout * 0.6), float(0.92), card.a)))
     // Deep inside the crown a needle sees little sky: the trunk end of a branch is the dark of a
     // spruce, and its tips are where the light is.
-    .mul(bent ? mix(float(0.3), float(1), attribute<"float">("inner", "float")) : float(1))
+    .mul(bent ? mix(float(interior), float(1), attribute<"float">("inner", "float")) : float(1))
     .mul(tint ? vec3(...tint) : vec3(1));
   // The floor. Nothing in a canopy is black: a needle in the shade is lit by the needles around it
   // and by the ground under the tree, so the shaded half of a crown has to keep a floor or it goes
@@ -1038,12 +1041,19 @@ export async function createPropSurfaces(
     // Low, because the floor is a lift *to* this level: at the shared 0.14 every needle darker than it
     // comes out exactly 0.14, and a crown whose texels all share one brightness is a flat paddle with
     // the needle detail scaled away.
-    floor: 0.03,
+    floor: 0.004,
     // Half the shared glow: with the crown lit as a volume its sun side already faces the light, and
     // the full translucency on top of that washed the near trees out to pale grey-green.
     light: 0.05,
-    tint: [0.5, 0.7, 0.6],
-    tip: [1.08, 1.14, 1.04],
+    // Matched to the Fab spruce at `meadow-close` (PRD-870, 2026-11-10), tree band, sky dropped: the
+    // middle tenth went from sRGB (65, 88, 66) to (56, 69, 63) against Fab's (47, 55, 44), the
+    // darkest from (43, 61, 52) to (38, 49, 47) against (22, 30, 28). The floor 0.03 lifted every
+    // texel of this grade to one value, which is what made the crown a flat paddle; the rest of the
+    // gap is the mist and sky fill both arms share (a black crown still reads (63, 63, 68) at the
+    // overview), not the needle.
+    tint: [0.3, 0.36, 0.26],
+    tip: [1.4, 1.25, 0.8],
+    interior: 0.05,
   });
   const firMaps = await Promise.all([
     map(assets, FIR_MAPS.surface, false),
