@@ -7,6 +7,7 @@ import { Area3D } from "../src/Area3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import { PHYSICS_TRANSFORM_STRIDE } from "../src/index.js";
+import { recast } from "../src/navigation/index.js";
 import { type IPhysicsContext, rapier } from "../src/plugin.js";
 
 const plugins: Array<ReturnType<typeof rapier>> = [];
@@ -26,6 +27,49 @@ afterEach(() => {
 });
 
 describe("rapier plugin", () => {
+  it("initializes while the scene loads and holds enter() until ctx.physics is set (PRD-860)", async () => {
+    await RAPIER.init();
+    const plugin = rapier();
+    const navigation = recast();
+    const ctx = { physics: undefined } as unknown as ICtx<Record<string, unknown>, IPhysicsContext>;
+    const gates: Promise<void>[] = [];
+    const runtime = {
+      fixedStep: () => 0,
+      holdStart: (gate: Promise<void>) => {
+        gates.push(gate);
+        return gate;
+      },
+      observations: { contribute: () => () => undefined, contributions: () => [] },
+      rapier: null,
+      seed: 1,
+      step: 1 / 60,
+      tick: () => 0,
+    } satisfies IGamePluginRuntime;
+
+    const cleanup = plugin.setup?.(ctx, runtime);
+    const navigationCleanup = navigation.setup?.(ctx, runtime);
+
+    // Neither setup waits for its Wasm: both return at once and leave a gate that holds enter().
+    expect(cleanup).toBeTypeOf("function");
+    expect(navigationCleanup).toBeUndefined();
+    expect(gates).toHaveLength(2);
+    expect(ctx.physics).toBeUndefined();
+    expect(
+      () =>
+        new RigidBody3D({
+          object: new Object3D(),
+          physics: ctx.physics,
+          shape: CollisionShape3D.box(1, 1, 1),
+        }),
+    ).toThrow("TN_PHYSICS_NOT_READY");
+    await Promise.all(gates);
+    expect(ctx.physics?.numBodies()).toBe(0);
+    expect(ctx.physics?.navigation).toBeDefined();
+    expect(runtime.rapier).toBe(RAPIER.version());
+    navigation.dispose?.(ctx);
+    plugin.dispose?.(ctx);
+  });
+
   it("should register the actual Rapier runtime version", async () => {
     await RAPIER.init();
     const plugin = rapier();

@@ -114,8 +114,9 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     }
     const game = defineGame({
       frameBudget: { report: (line) => lines.push(line), reportEvery: 2 },
-      render: { android: { resolutionScale: 0.32 }, resolutionScale: 0.5 },
       renderer: {
+        android: { resolutionScale: 0.32 },
+        resolutionScale: 0.5,
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({

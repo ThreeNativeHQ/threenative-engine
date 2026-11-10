@@ -350,7 +350,9 @@ describe("registry publication", () => {
       await fixture.close();
       await rm(root, { force: true, recursive: true });
     }
-  }, 30_000);
+    // It packs and scaffolds like the PRD-826 pack test below, so it gets that test's budget: 9 s on
+    // an idle desktop, past 30 s on a loaded tn-local runner (PR #646 test-unit 3/4).
+  }, 120_000);
 
   it("packs create-threenative without maintainer notes, a duplicate manifest or a stale patch (PRD-826)", async () => {
     const packageDirectory = path.resolve("packages/create-threenative");
@@ -378,9 +380,13 @@ describe("registry publication", () => {
       for (const patch of Object.values(kit.pnpm?.patchedDependencies ?? {}))
         declared.add(path.basename(patch));
     }
+    // The manifest is the list, not a patch: it ships so `copyFrameworkPatches` can resolve a
+    // kit's `patchedDependencies` through it, and `framework-patches.spec.ts` holds the two to
+    // each other.
     const shipped = (packed ?? [])
       .filter((file) => file.startsWith("template-assets/patches/"))
       .map((file) => path.basename(file))
+      .filter((file) => file !== "manifest.json")
       .sort();
     expect(shipped).toEqual([...declared].sort());
   }, 120_000);

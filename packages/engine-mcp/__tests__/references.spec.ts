@@ -7,7 +7,7 @@ import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const liveUrl = process.env.THREENATIVE_REFERENCES_URL;
 const fixture = path.resolve("packages/engine-mcp/__tests__/fixtures/refs");
-const manifest = path.resolve("packages/create-threenative/capabilities.json");
+const manifest = path.resolve("packages/core/capabilities.json");
 const game = JSON.parse(readFileSync(path.join(fixture, "game-sm64.json"), "utf8"));
 const index = JSON.parse(readFileSync(path.join(fixture, "index.json"), "utf8"));
 let server: Server;

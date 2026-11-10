@@ -25,9 +25,10 @@ import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { postTier, setupPost } from "../render/postprocessing.js";
 import { GRASS_SHARE } from "../render/quality.js";
-import { setupSky, skyTexture } from "../render/sky.js";
+import { setupSky, skyPixels, skyTexture } from "../render/sky.js";
 import { loadSurfaces, updateSurfaceSampling } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
+import { primeRipplePixels, ripplePixels } from "../render/water.js";
 import { type GameState, HUD_PILL } from "../state.js";
 
 export type { GameCtx };
@@ -90,16 +91,28 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     this.#loading = createLoadingScreen(ctx);
     // The HUD is page UI the cover cannot hide, so it waits for the same readiness.
     void ctx.startup.whenReady().then(() => ctx.state.set({ loaded: true }));
-    const surfaces = await loadSurfaces(ctx.assets);
-    this.#sky = skyTexture();
-    this.#fill = skyTexture(0.3, 128);
+    // The sky is the same every run of this build: paint it once, then read the pixels back. A first
+    // visit paints it (~600 ms on a laptop) while the surface textures download, not after them.
+    const [surfaces, painted] = await Promise.all([
+      loadSurfaces(ctx.assets),
+      ctx.assets.memo("sky", () => ({
+        fill: skyPixels(0.3, 128),
+        ripples: ripplePixels(),
+        sky: skyPixels(),
+      })),
+    ]);
+    primeRipplePixels(painted.ripples);
+    this.#sky = skyTexture(1, 2048, painted.sky);
+    this.#fill = skyTexture(0.3, 128, painted.fill);
     setupSky(ctx.scene, this.#sky, this.#fill);
     const tier = postTier({
       gpuClass: ctx.renderer.gpuClass?.class,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
     });
-    const course = buildCourse(makeRng(6402), surfaces, GRASS_SHARE[tier]);
+    // The island is the same every run of this build: the first run draws it, a repeat reads it
+    // back from `ctx.assets.memo` (~105 ms of the load on a laptop).
+    const course = await buildCourse(makeRng(6402), surfaces, GRASS_SHARE[tier], ctx.assets.memo);
     this.#course = course;
     ctx.add(course.group);
     ctx.entities.add("course", { debug: () => course.audit });

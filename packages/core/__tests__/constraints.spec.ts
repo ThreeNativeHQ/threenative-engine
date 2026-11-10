@@ -301,6 +301,12 @@ describe("core constraints", () => {
           // AGENTS.md rule 3, second exception (owner, 2026-10-31): every `@threenative/core/spells`
           // factory ships a stock look, and each colour, size and timing is a named override.
           !file.startsWith("spells/") &&
+          // PRD-833 moved the environment measure-and-sample mechanism out of the twelve kits that
+          // held byte-identical copies. None of it originates appearance: it reads the scene's own
+          // environment and refuses by name. The backlight is NOT here — its shader constants decide
+          // how a surface looks — so it stays in each kit's `src/render/`.
+          !file.startsWith("render/environment/") &&
+          file !== "render-environment.ts" &&
           // The spells' particle kind table; PRD-789 deletes it with the from-scratch spells.
           file !== "particle-kinds.ts" &&
           file !== "index.ts",
@@ -315,6 +321,42 @@ describe("core constraints", () => {
       .join("\n");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);
+
+    // The environment mechanism (PRD-833): it may read the game's environment and copy the game's
+    // own material into a node twin, and it may not originate a material, a light, a colour or a
+    // shader of its own. `source` above excludes it, so this is what keeps the exclusion honest.
+    const environment = [
+      "render-environment.ts",
+      ...[
+        "environmentContribution.ts",
+        "environmentRadiance.ts",
+        "environmentSampleCache.ts",
+        "environmentSampling.ts",
+        "environmentSnapshot.ts",
+        "gate.ts",
+      ].map((file) => `render/environment/${file}`),
+    ]
+      .map((file) =>
+        withoutComments(
+          readFileSync(path.join(sourceDirectory, file), "utf8").replace(
+            /export\s+type\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?/gu,
+            " ",
+          ),
+        ),
+      )
+      .join("\n");
+    expect(environment).not.toMatch(/postprocessing|\.wgsl|new\s+\w*Light|new\s+Color/iu);
+    // One shader material, and it is plumbing: the sampling quad that reads the environment into an
+    // offscreen target and is never attached to the scene. The backlight's node twin left with the
+    // backlight, which now lives in each kit's `src/render/` where its constants are the game's.
+    expect(environment.match(/new\s+\w*Material/gu) ?? []).toHaveLength(1);
+    expect(environment).toMatch(/new MeshBasicNodeMaterial\(/u);
+    // Tone mapping appears only as the readback's own bracket: the sample is taken with tone
+    // mapping off and the renderer's previous value is put back in the same `finally`. No curve is
+    // chosen here - `applyRendererToneMapping` is the one writer of it.
+    const toneMappingUses = environment.match(/[^\n]*toneMapping[^\n]*/giu) ?? [];
+    expect(toneMappingUses).toHaveLength(6);
+    expect(toneMappingUses.join("\n")).not.toMatch(/ACES|AgX|Neutral|filmic|applyToneMapping/iu);
 
     // `assets.ts` assigns compiler-produced textures to game-authored materials. It transports
     // appearance data but originates none: no material, light, colour, or shader may be created.

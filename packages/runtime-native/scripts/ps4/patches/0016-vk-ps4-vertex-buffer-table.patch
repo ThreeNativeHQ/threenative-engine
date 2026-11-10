@@ -1,0 +1,282 @@
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -1444,6 +1444,105 @@
+ 
+ /* CmdBindDescriptorSets moved to vk_ps4_descriptor.c */
+ 
++/* VkFormat -> the GNM data format the fetch shader's buffer_load_format_*
++ * reads this attribute with. */
++static GnmDataFormat vk_ps4_attribute_gnm_format(VkFormat format) {
++    switch (format) {
++    case VK_FORMAT_R32_SFLOAT:           return GNM_FMT_R32_FLOAT;
++    case VK_FORMAT_R32G32_SFLOAT:        return GNM_FMT_R32G32_FLOAT;
++    case VK_FORMAT_R32G32B32_SFLOAT:     return GNM_FMT_R32G32B32_FLOAT;
++    case VK_FORMAT_R32G32B32A32_SFLOAT:  return GNM_FMT_R32G32B32A32_FLOAT;
++    case VK_FORMAT_R16G16_SFLOAT:        return GNM_FMT_R16G16_FLOAT;
++    case VK_FORMAT_R16G16B16A16_SFLOAT:  return GNM_FMT_R16G16B16A16_FLOAT;
++    case VK_FORMAT_R8G8B8A8_UNORM:       return GNM_FMT_R8G8B8A8_UNORM;
++    case VK_FORMAT_R8G8B8A8_SRGB:        return GNM_FMT_R8G8B8A8_SRGB;
++    default: vk_ps4_log("vertex attribute format %d has no GNM mapping: reads as R32_FLOAT", (int)format); return GNM_FMT_R32_FLOAT;
++    }
++}
++
++/* The PTR_VERTEXBUFFERTABLE user data points at one V# per vertex input, in
++ * semantic order: sceGnmCreateFetchShader loads the V# for input i from
++ * dword offset i*4 of that table (opengnm src/shader.c, "s_load_dwordx4 ...,
++ * s[vbtableregister], semanticidx * 4"). So the table is indexed by attribute,
++ * each V# describing where that attribute's first element is, its binding's
++ * stride, its own data format and how many records follow. Building it per
++ * *binding* with a fixed GNM_FMT_R32_FLOAT (what CmdBindVertexBuffers used to
++ * do) described neither a vec3 colour at offset 8 nor its per-vertex stride,
++ * so the fetch shader read four R32 floats per attribute and the geometry
++ * arrived folded onto one point. */
++static void vk_ps4_build_vertex_buffer_table(VkPs4CommandBuffer *cmd) {
++    VkPs4Pipeline *pipe = cmd->current_pipeline;
++    const VkPipelineVertexInputStateCreateInfo *vi =
++        pipe ? &pipe->vertex_input_state : NULL;
++    uint32_t n = (vi && vi->pVertexAttributeDescriptions)
++                     ? vi->vertexAttributeDescriptionCount
++                     : 0;
++    /* The semantic table is ordered by location, not by the order the
++     * descriptions were declared in, so walk the attributes in location order.
++     * ponytail: selection sort over <=16 attributes; the GNM V# table the user
++     * data points at has VK_PS4_MAX_VERTEX_BINDINGS entries. */
++    bool used[VK_PS4_MAX_VERTEX_BINDINGS] = {false};
++
++    if (n > VK_PS4_MAX_VERTEX_BINDINGS) n = VK_PS4_MAX_VERTEX_BINDINGS;
++    memset(cmd->gnm_vertex_buffers, 0, sizeof(cmd->gnm_vertex_buffers));
++
++    for (uint32_t i = 0; i < n; i++) {
++        uint32_t pick = VK_PS4_MAX_VERTEX_BINDINGS;
++        for (uint32_t j = 0; j < n; j++) {
++            if (used[j]) continue;
++            if (pick == VK_PS4_MAX_VERTEX_BINDINGS ||
++                vi->pVertexAttributeDescriptions[j].location <
++                    vi->pVertexAttributeDescriptions[pick].location) {
++                pick = j;
++            }
++        }
++        if (pick == VK_PS4_MAX_VERTEX_BINDINGS) break;
++        used[pick] = true;
++
++        const VkVertexInputAttributeDescription *attrib =
++            &vi->pVertexAttributeDescriptions[pick];
++        uint32_t stride = 0;
++        if (vi->pVertexBindingDescriptions) {
++            for (uint32_t b = 0; b < vi->vertexBindingDescriptionCount; b++) {
++                if (vi->pVertexBindingDescriptions[b].binding == attrib->binding) {
++                    stride = vi->pVertexBindingDescriptions[b].stride;
++                    break;
++                }
++            }
++        }
++        if (attrib->binding >= VK_PS4_MAX_VERTEX_BINDINGS) continue;
++        VkPs4Buffer *vk_buf = (VkPs4Buffer *)cmd->vertex_buffers[attrib->binding].buffer;
++        if (!vk_buf || !vk_buf->memory || !vk_buf->memory->gnm_mem.mapped) continue;
++        if (attrib->offset > vk_buf->create_info.size) continue;
++
++        void *gpu_addr = (char *)vk_buf->memory->gnm_mem.mapped +
++                         vk_buf->memory_offset +
++                         cmd->vertex_buffers[attrib->binding].offset +
++                         attrib->offset;
++        const uint64_t remaining = vk_buf->create_info.size - attrib->offset;
++        const uint32_t num_records =
++            stride ? (uint32_t)(remaining / stride) : (uint32_t)remaining;
++
++        cmd->gnm_vertex_buffers[i] = sceGnmCreateVertexBuffer(
++            gpu_addr, vk_ps4_attribute_gnm_format(attrib->format), stride, num_records);
++    }
++}
++
++/* Emit the V# table pointer the fetch shader reads: it holds a pointer in its
++ * user SGPR pair (parsed by shadPS4 as ReadUdReg, i.e. dereferenced), so one
++ * SetPointerUserData covers every bound attribute. */
++static void vk_ps4_emit_vertex_buffer_table(VkPs4CommandBuffer *cmd) {
++    VkPs4Pipeline *pipe = cmd->current_pipeline;
++    if (!pipe || !pipe->has_vb_table_slot) return;
++    if (!cmd->vertex_binding_count && !pipe->vertex_input_state.vertexAttributeDescriptionCount)
++        return;
++    vk_ps4_build_vertex_buffer_table(cmd);
++    sceGnmDrawCmdSetPointerUserData(&cmd->gnm_cmd, GNM_STAGE_VS,
++                                    pipe->vertex_buffer_table_slot,
++                                    cmd->gnm_vertex_buffers);
++    cmd->vertex_buffers_dirty = false;
++}
++
+ VKAPI_ATTR void VKAPI_CALL
+ vk_ps4_CmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t firstBinding,
+                              uint32_t bindingCount, const VkBuffer *pBuffers, const VkDeviceSize *pOffsets) {
+@@ -1455,38 +1554,9 @@
+         if (idx < VK_PS4_MAX_VERTEX_BINDINGS) {
+             cmd->vertex_buffers[idx].buffer = pBuffers[i];
+             cmd->vertex_buffers[idx].offset = pOffsets ? pOffsets[i] : 0;
+-
+-            /* Build GnmBuffer descriptor for this vertex buffer */
+-            VkPs4Buffer *vk_buf = (VkPs4Buffer *)pBuffers[i];
+-            if (vk_buf && vk_buf->memory && vk_buf->memory->gnm_mem.mapped) {
+-                void *gpu_addr = (char *)vk_buf->memory->gnm_mem.mapped +
+-                                 vk_buf->memory_offset +
+-                                 (pOffsets ? pOffsets[i] : 0);
+-                /* Create a vertex buffer descriptor.
+-                 * Format and stride will be set by the fetch shader based
+-                 * on the vertex input layout. For now, use a raw buffer
+-                 * with the stride from the vertex input binding. */
+-                uint32_t stride = 0;
+-                uint32_t num_elements = 0;
+-                /* Get stride from pipeline vertex input state if available */
+-                if (cmd->current_pipeline && cmd->current_pipeline->vertex_input_state.pVertexBindingDescriptions) {
+-                    const VkPipelineVertexInputStateCreateInfo *vi =
+-                        &cmd->current_pipeline->vertex_input_state;
+-                    for (uint32_t b = 0; b < vi->vertexBindingDescriptionCount; b++) {
+-                        if (vi->pVertexBindingDescriptions[b].binding == idx) {
+-                            stride = vi->pVertexBindingDescriptions[b].stride;
+-                            break;
+-                        }
+-                    }
+-                }
+-                if (stride == 0) stride = (uint32_t)vk_buf->create_info.size;
+-                num_elements = (uint32_t)(vk_buf->create_info.size / stride);
+-                cmd->gnm_vertex_buffers[idx] = sceGnmCreateVertexBuffer(
+-                    gpu_addr, GNM_FMT_R32_FLOAT, stride, num_elements
+-                );
+-            } else {
+-                memset(&cmd->gnm_vertex_buffers[idx], 0, sizeof(GnmBuffer));
+-            }
++            /* The V#s are built at draw time: the format and stride of each
++             * attribute come from the pipeline bound then, not from the buffer
++             * bound here. */
+         }
+     }
+     /* Update vertex_binding_count only for bindings that were actually stored.
+@@ -1532,18 +1602,7 @@
+     if (!commandBuffer) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+ 
+-    /* Emit vertex buffer table if dirty and pipeline has a VB table slot */
+-    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+-        cmd->current_pipeline->has_fetch_shader &&
+-        cmd->current_pipeline->has_vb_table_slot &&
+-        cmd->vertex_binding_count > 0) {
+-        sceGnmDrawCmdSetPointerUserData(
+-            &cmd->gnm_cmd, GNM_STAGE_VS,
+-            cmd->current_pipeline->vertex_buffer_table_slot,
+-            cmd->gnm_vertex_buffers
+-        );
+-        cmd->vertex_buffers_dirty = false;
+-    }
++    vk_ps4_emit_vertex_buffer_table(cmd);
+ 
+     /* Always set instance count to avoid state leak from previous draw */
+     sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, instanceCount);
+@@ -1606,18 +1665,7 @@
+     if (!commandBuffer) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+ 
+-    /* Emit vertex buffer table if dirty and pipeline has a VB table slot */
+-    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+-        cmd->current_pipeline->has_fetch_shader &&
+-        cmd->current_pipeline->has_vb_table_slot &&
+-        cmd->vertex_binding_count > 0) {
+-        sceGnmDrawCmdSetPointerUserData(
+-            &cmd->gnm_cmd, GNM_STAGE_VS,
+-            cmd->current_pipeline->vertex_buffer_table_slot,
+-            cmd->gnm_vertex_buffers
+-        );
+-        cmd->vertex_buffers_dirty = false;
+-    }
++    vk_ps4_emit_vertex_buffer_table(cmd);
+ 
+     /* Always set instance count to avoid state leak from previous draw */
+     sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, instanceCount);
+@@ -1695,18 +1743,7 @@
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+     VkPs4Buffer *buf = (VkPs4Buffer *)buffer;
+ 
+-    /* Emit vertex buffer table if dirty */
+-    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+-        cmd->current_pipeline->has_fetch_shader &&
+-        cmd->current_pipeline->has_vb_table_slot &&
+-        cmd->vertex_binding_count > 0) {
+-        sceGnmDrawCmdSetPointerUserData(
+-            &cmd->gnm_cmd, GNM_STAGE_VS,
+-            cmd->current_pipeline->vertex_buffer_table_slot,
+-            cmd->gnm_vertex_buffers
+-        );
+-        cmd->vertex_buffers_dirty = false;
+-    }
++    vk_ps4_emit_vertex_buffer_table(cmd);
+ 
+     if (!buf->memory || !buf->memory->gnm_mem.mapped) return;
+ 
+@@ -1738,18 +1775,7 @@
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+     VkPs4Buffer *buf = (VkPs4Buffer *)buffer;
+ 
+-    /* Emit vertex buffer table if dirty */
+-    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+-        cmd->current_pipeline->has_fetch_shader &&
+-        cmd->current_pipeline->has_vb_table_slot &&
+-        cmd->vertex_binding_count > 0) {
+-        sceGnmDrawCmdSetPointerUserData(
+-            &cmd->gnm_cmd, GNM_STAGE_VS,
+-            cmd->current_pipeline->vertex_buffer_table_slot,
+-            cmd->gnm_vertex_buffers
+-        );
+-        cmd->vertex_buffers_dirty = false;
+-    }
++    vk_ps4_emit_vertex_buffer_table(cmd);
+ 
+     if (!buf->memory || !buf->memory->gnm_mem.mapped) return;
+ 
+diff --git a/src/vk_ps4_pipeline.c b/src/vk_ps4_pipeline.c
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -596,16 +596,31 @@
+                 goto skip_fetch_shader;
+             }
+ 
+-            /* Build instancing modes from Vulkan vertex input binding descriptions */
++            /* Instancing modes are per vertex *input*, not per binding:
++             * sceGnmCreateFetchShader walks ci->vtxinputs and rejects the shader
++             * with GNM_ERROR_INVALID_ARGS unless instancedata[] has an entry for
++             * every one of them (opengnm src/shader.c, "i + cursem >=
++             * ci->numinstancedata"). One mode per binding left the second
++             * attribute of a shared binding with no entry, so no fetch shader
++             * was created and the VS ran with an empty VGPR argument block. */
+             GnmFetchShaderInstancingMode inst_modes[VK_PS4_MAX_VERTEX_BINDINGS];
+             uint32_t num_inst_modes = 0;
+             if (ci->pVertexInputState) {
+                 const VkPipelineVertexInputStateCreateInfo *vi = ci->pVertexInputState;
+-                num_inst_modes = vi->vertexBindingDescriptionCount;
++                num_inst_modes = vi->vertexAttributeDescriptionCount;
+                 if (num_inst_modes > VK_PS4_MAX_VERTEX_BINDINGS) num_inst_modes = VK_PS4_MAX_VERTEX_BINDINGS;
+-                for (uint32_t b = 0; b < num_inst_modes; b++) {
+-                    VkVertexInputRate rate = vi->pVertexBindingDescriptions[b].inputRate;
+-                    inst_modes[b] = (rate == VK_VERTEX_INPUT_RATE_INSTANCE) ?
++                for (uint32_t a = 0; a < num_inst_modes; a++) {
++                    VkVertexInputRate rate = VK_VERTEX_INPUT_RATE_VERTEX;
++                    const uint32_t binding = vi->pVertexAttributeDescriptions[a].binding;
++                    if (vi->pVertexBindingDescriptions) {
++                        for (uint32_t b = 0; b < vi->vertexBindingDescriptionCount; b++) {
++                            if (vi->pVertexBindingDescriptions[b].binding == binding) {
++                                rate = vi->pVertexBindingDescriptions[b].inputRate;
++                                break;
++                            }
++                        }
++                    }
++                    inst_modes[a] = (rate == VK_VERTEX_INPUT_RATE_INSTANCE) ?
+                         GNM_FETCH_MODE_INSTANCEID : GNM_FETCH_MODE_VERTEXINDEX;
+                 }
+             }
+@@ -637,6 +652,10 @@
+                         pipe->has_fetch_shader = true;
+                         pipe->has_fetch_shader_slot = has_fs_slot;
+                         pipe->has_vb_table_slot = has_vb_slot;
++                        vk_ps4_log("fetch shader size=%u ptr=%p fs_slot=%u vb_slot=%u",
++                                   fetch_size, pipe->fetch_shader,
++                                   pipe->fetch_shader_slot,
++                                   pipe->vertex_buffer_table_slot);
+                     } else {
+                         vk_ps4_free(alloc, pipe->fetch_shader);
+                         pipe->fetch_shader = NULL;

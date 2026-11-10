@@ -13,8 +13,13 @@ const recordLaunch = vi.hoisted(() => <T>(args: string[], browser: T): T => {
   state.launchArgs = args;
   return browser;
 });
+// Named exports as well as `default`: the perf verdict reads `loadavg` and `availableParallelism`
+// as named bindings, and a factory that only shapes `default` leaves those undefined — which the
+// reader reports as an unreadable host load rather than a mock gap.
 vi.mock("node:os", () => ({
+  availableParallelism: () => 8,
   default: { availableParallelism: () => 8, loadavg: () => [state.load, 0, 0] },
+  loadavg: () => [state.load, 0, 0],
 }));
 vi.mock("@playwright/test", () => ({
   chromium: {

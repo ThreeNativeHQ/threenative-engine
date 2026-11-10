@@ -21,6 +21,7 @@
  * instead of skipping.
  */
 
+import { CONSOLE_MARKER } from "./generated/console-markers.js";
 import type { IFrameCounters } from "./profiling/FrameCounters.js";
 import { type IFrameStageSample, RENDER_STAGES, STAGE_PARTS } from "./profiling/FrameStages.js";
 import {
@@ -62,9 +63,9 @@ function requireTarget(target: ITargetFps): ITargetFps {
 }
 
 /** Marker printed once per report window. */
-export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET";
+export const FRAME_BUDGET_MARKER = CONSOLE_MARKER.frameBudget;
 /** Marker printed the moment a gap between presented frames exceeds `hitchMs`. */
-export const FRAME_HITCH_MARKER = "TN_FRAME_HITCH";
+export const FRAME_HITCH_MARKER = CONSOLE_MARKER.frameHitch;
 
 /**
  * The named parts of one presented frame. They partition the frame: `hostGap` is the time before
@@ -997,6 +998,7 @@ export class FrameBudget {
           `Frame budget gpu frame must be a non-negative integer, received ${String(frame)}.`,
         );
       }
+      // A repeated frame id is the previous resolve still in flight, not a new measurement.
       if (frame === this.#lastGpuFrame) {
         this.#gpuStaleThisFrame = true;
         return;

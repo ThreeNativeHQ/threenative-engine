@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { CONSOLE_MARKER } from "../protocol.js";
 import { hostDisplayRequested } from "../runner/captureEnvironment.js";
 
-const FRAME_BUDGET = "TN_FRAME_BUDGET:";
+const FRAME_BUDGET = `${CONSOLE_MARKER.frameBudget}:`;
 
 /** Which display paced the frames: the runner's private Xvfb (`virtual`) or a real one. */
 export type FrameDisplay = "real" | "virtual";

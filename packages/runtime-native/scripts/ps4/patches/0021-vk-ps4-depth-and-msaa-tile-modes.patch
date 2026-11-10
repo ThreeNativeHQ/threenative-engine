@@ -1,0 +1,44 @@
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -84,13 +84,21 @@
+         /* Create as render target */
+         img->is_render_target = true;
+         GnmRenderTargetCreateInfo rt_ci;
++        /* A single-sampled render target keeps the display-linear tile mode the
++         * rest of this ICD was brought up on; a multisampled one cannot: a
++         * display array mode is a scanout surface, and GNM's multisampled colour
++         * target is a thin macro-tiled one (GNM_TM_THIN_2D_THIN, the tile mode
++         * sceGnmRtInitColorTargetCreateInfo is documented with in opengnm's
++         * gnm_helpers.h). */
++        const GnmTileMode rt_tilemode =
++            samples > 1 ? GNM_TM_THIN_2D_THIN : GNM_TM_DISPLAY_2D_THIN;
+         sceGnmRtInitColorTargetCreateInfo(
+             &rt_ci, gnm_fmt,
+             pCreateInfo->extent.width, pCreateInfo->extent.height,
+             pCreateInfo->arrayLayers,  /* numslices */
+             samples,                   /* numsamples */
+             samples,                   /* numfragments */
+-            GNM_TM_DISPLAY_2D_THIN,    /* tilemode */
++            rt_tilemode,               /* tilemode */
+             gpu_mode
+         );
+ 
+@@ -139,7 +147,17 @@
+         drt_ci.numslices = pCreateInfo->arrayLayers;
+         drt_ci.zfmt = zfmt;
+         drt_ci.stencilfmt = sfmt;
+-        drt_ci.tilemodehint = GNM_TM_DISPLAY_2D_THIN;
++        /* A depth target takes a DEPTH tile mode, not a display one:
++         * sceGnmDrtSetTileMode (opengnm src/depthrendertarget.c) accepts only
++         * GNM_TM_DEPTH_2D_THIN_64 .. GNM_TM_DEPTH_2D_THIN_PRT_1K (0x0..0x7) and
++         * returns GNM_ERROR_INVALID_ARGS for anything above, so every depth
++         * image here fell through to the "zeroed DRT" fallback below and was
++         * bound as a plain texture -- no depth render target ever existed.
++         * GNM_TM_DEPTH_2D_THIN_1K (0x4) is the 1 KiB tile-split depth mode the
++         * GnmTileMode enum groups with GNM_TM_DEPTH_2D_THIN_256/512 for exactly
++         * this 1080p case. */
++        drt_ci.tilemodehint = GNM_TM_DEPTH_2D_THIN_1K;
++        drt_ci.pitch = pCreateInfo->extent.width;
+         drt_ci.mingpumode = gpu_mode;
+         drt_ci.numfragments = 1;
+         GnmError err = sceGnmCreateDepthRenderTarget(&img->gnm_drt, &drt_ci);

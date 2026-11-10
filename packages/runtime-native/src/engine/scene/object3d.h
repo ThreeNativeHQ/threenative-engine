@@ -332,9 +332,15 @@ public:
     /** core's alwaysRender() marker, mirrored for the engine's projected-size cull (projected_cull.h). */
     bool alwaysRender = false;
 
-    /** The renderer's inputs. Each setter bumps `revision()`; a direct field write cannot. */
-    [[nodiscard]] bool visible() const { return visible_; }
+    /** The renderer's inputs. Each setter bumps `revision()`; a direct field write cannot.
+     *  `visible()` is whether the object draws: the game's own `visible`, unless core's AutoBatch draws it
+     *  inside a merged mesh. The game reads and writes only its own value (`authoredVisible`), so a game
+     *  that saves and restores visibility, or clones a merged source, never sees or copies the batch's hide. */
+    [[nodiscard]] bool visible() const { return visible_ && !batchHidden_; }
+    [[nodiscard]] bool authoredVisible() const { return visible_; }
     void setVisible(bool value);
+    [[nodiscard]] bool batchHidden() const { return batchHidden_; }
+    void setBatchHidden(bool value);
     /** Where each flag sits from `flags()`, for a back end that reads it in place (Wasm). The
      *  offsets count from the first flag, not the object, so they hold for every pointer size. */
     struct FlagOffsets { uint32_t visible, castShadow, receiveShadow, matrixWorldNeedsUpdate; };
@@ -468,6 +474,7 @@ public:
 private:
     bool worldStale_ = false;  // hidden and skipped by the pruned walk: recompose it and force its subtree when shown
     int8_t holdsBones_ = -1;   // a Bone anywhere under this node: -1 not yet asked (a rig is built whole)
+    bool batchHidden_ = false;  // drawn inside core's AutoBatch merge; never copied, never seen by the game
     int renderOrder_ = 0;
     Layers layers_;
     uint64_t id_ = 0;

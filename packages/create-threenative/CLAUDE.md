@@ -65,9 +65,9 @@ template's Commands block is a fail-closed statement, not marketing; narrow it w
 
 ## Keep the tests in sync
 
-Adding, renaming, or deleting a template file means updating `__tests__/scaffold.spec.ts`
-(`STARTER_PATHS`), and possibly `looks.spec.ts` and `playtest.spec.ts` — the only proof a shipped
-template still contains what the design promises.
+Adding, renaming, or deleting a template file means running `pnpm scaffold:pin` (it rewrites each
+kit's two hashes, naming what moved), and possibly `looks.spec.ts` and `playtest.spec.ts` — the
+only proof a template still holds what the design promises; the hashes pin bytes, the allowlist kinds.
 
 A bug fixed in one kit becomes one row of `packages/playtest/src/kit-contract.ts`, checked for every
 kit by `pnpm test:templates`. Each kit declares what the rows need in

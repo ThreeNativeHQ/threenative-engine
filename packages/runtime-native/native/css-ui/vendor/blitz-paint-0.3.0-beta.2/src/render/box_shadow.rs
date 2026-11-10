@@ -43,6 +43,7 @@ impl ElementCx<'_, '_> {
             &self.frame.shadow_clip(max_shadow_rect),
             None,
             None,
+            Mix::Normal,
             |scene| {
                 for shadow in box_shadow.iter().filter(|s| !s.inset).rev() {
                     let shadow_color = shadow
@@ -122,11 +123,31 @@ impl ElementCx<'_, '_> {
                 None,
                 None,
             );
+            // VENDOR HUNK (threenative/css-ui): the shadow's *spread* is the width of an inset
+            // shadow's band, and it was ignored — the cut-out was the border box itself, so an inset
+            // shadow with a spread and no blur (Tailwind's `ring-inset` + a ring width, which is
+            // `box-shadow: inset 0 0 0 4px …`) painted nothing at all. Measured: the parity scene's
+            // `ring-inset` cell showed no ring where Chromium paints one, and a 48x48 box with
+            // `inset 0 0 0 4px #ffffff` stayed entirely blue.
+            let spread = shadow.spread.px() as f64 * self.scale;
+            let cutout = Rect::from_origin_size(
+                (
+                    self.frame.border_box.x0 + spread,
+                    self.frame.border_box.y0 + spread,
+                ),
+                (
+                    (self.frame.border_box.width() - 2.0 * spread).max(0.0),
+                    (self.frame.border_box.height() - 2.0 * spread).max(0.0),
+                ),
+            );
             scene.draw_box_shadow(
                 transform,
-                self.frame.border_box,
+                cutout,
                 Color::WHITE,
                 radius,
+                // Not halved, unlike the outset path: measured, halving it moved the inset shadow
+                // *away* from Chromium (0.9809 -> 0.9638) because the `DestOut` cut-out is the
+                // blurred rect itself, so this path's geometry needs its own measurement.
                 shadow.base.blur.px() as f64 * self.scale,
             );
 

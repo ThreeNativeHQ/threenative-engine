@@ -347,6 +347,26 @@ void modifierContract() {
           "only the DOM key name counts");
 }
 
+/**
+ * A game's first commit comes while its bundle boots, before the window the CSS UI attaches to
+ * exists (PRD-784: the PS4 HUD attached and painted an empty document). Held, those frames reach
+ * the document at attach, in order, instead of being refused by a backend that is not there yet.
+ */
+void heldPostsContract() {
+    mystral::platform::detachDesktopUiOverlay();
+    setEnvironment("TN_CSS_UI_FIXED_STEP_MS", nullptr);
+    mystral::platform::holdUiPostsUntilCssAttach();
+    check(mystral::platform::postUiMessage(kHudBatch), "a batch posted before the attach is held");
+    check(mystral::platform::attachDesktopCssUi("/nonexistent-css-ui-root"), "the held attach succeeds");
+    mystral::platform::UiOverlayFrame held = {};
+    check(mystral::platform::uiOverlayFrame(held), "and paints");
+    size_t lit = 0;
+    for (size_t i = 3; held.pixels != nullptr && i < held.length; i += 4) lit += held.pixels[i] != 0;
+    check(lit > 0, "the held batch is in the first painted document");
+    mystral::platform::detachDesktopUiOverlay();
+    check(!mystral::platform::postUiMessage(kHudBatch), "after the attach, a detached backend holds nothing");
+}
+
 int runCssBackend() {
     setEnvironment("TN_CSS_UI_FIXED_STEP_MS", nullptr);
     modifierContract();
@@ -461,6 +481,7 @@ int runCssBackend() {
     check(!mystral::platform::uiOverlayKeyboardCaptured(), "and holds no key");
 
     fixedClockContract();
+    heldPostsContract();
     return failures;
 }
 

@@ -5,10 +5,12 @@ import {
   type SceneFrame,
   createRandom,
   getPlatform,
+  isConsole,
   isMobile,
   isTouchscreenAvailable,
   resolveTargetFps,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import {
   BufferAttribute,
@@ -24,8 +26,8 @@ import { Goal, ISLAND } from "../entities/Goal.js";
 import { type IPlayerModel, PLAYER_STAND_Y, Player } from "../entities/Player.js";
 import { createArena, platform } from "../render/arena.js";
 import { createSpringArm } from "../render/camera.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { pickupRiseEase } from "../render/easing.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
@@ -64,6 +66,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     levelX: -99,
     lives: STARTING_LIVES,
     odometer: 0,
+    pad: false,
     paused: false,
     peakRise: 0,
     playerX: -2,
@@ -84,6 +87,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ]);
     this.#playerModel = playerModel;
     this.#sky = sky;
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(ctx.scene, sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
@@ -299,7 +304,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.add(fixed(floorMesh));
     ctx.add(fixed(floorBase));
     lensBlockers.push(...arena.solids, floorMesh, floorBase);
-    ctx.entities.add("crate", new Crate(ctx, levelX, 4, -1.5, propMaterial));
+    ctx.entities.add(
+      "crate",
+      new Crate(ctx, levelX, 4, -1.5, propMaterial, () => this.#post?.tier === "low"),
+    );
     const pickupBase = block(0.42, 0.14, 0.42, propMaterial);
     const pickupStem = tube(0.08, 0.08, 0.3, propMaterial);
     const pickupOrb = ball(0.16, propMaterial);
@@ -346,7 +354,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (body === player.body) overGoal = true;
     });
     let entityCount = 4;
-    ctx.state.set({ entityCount });
+    // A console has a pad and no keyboard: the menu reads `pad` to show DualShock prompts.
+    ctx.state.set({ entityCount, pad: isConsole() });
     const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: pickupX, y: 0.5, z: 0 },

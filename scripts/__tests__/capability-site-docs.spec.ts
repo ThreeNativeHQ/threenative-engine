@@ -55,7 +55,7 @@ const GENERATED_FROM: readonly string[] = [
   "packages/ui/src/index.ts",
   "packages/create-threenative/templates/starter/package.json",
   "packages/create-threenative/templates/starter/src/game.ts",
-  "packages/create-threenative/capabilities.json",
+  "packages/core/capabilities.json",
   "packages/core/capabilities.json",
 ];
 

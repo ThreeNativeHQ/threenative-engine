@@ -1,7 +1,7 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
-// A baked blob under a prop: what makes a crate sit on the floor on every tier. Unreal grounds a
+// A baked blob under a prop: what makes a crate sit on the floor on the `low` tier. Unreal grounds a
 // contact with ambient occlusion, which is on by default (UE 5.8.3: Engine/Source/Runtime/Engine/
 // Private/SceneView.cpp:168-173, Scene.cpp:567) and off at its Low scalability level
 // (Engine/Config/BaseScalability.ini:568-569); its lights add no contact shadow of their own

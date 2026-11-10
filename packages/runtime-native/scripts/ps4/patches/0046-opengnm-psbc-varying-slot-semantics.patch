@@ -1,0 +1,97 @@
+diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
+index dc7c576..7c8c37a 100644
+--- a/libpsbc/psbc_compile.c
++++ b/libpsbc/psbc_compile.c
+@@ -221,6 +221,24 @@ typedef struct {
+ } BuildContext;
+ 
+ /* Build the shader binary into a memory buffer instead of a file. */
++/* VS/TES parameter exports as GNM export semantics. The semantic is the varying slot (the
++ * SPIR-V location, VARYING_SLOT_VAR0 + n), outindex the parameter radv assigned it. The pixel
++ * shader names its inputs by the same slot, so the driver can program SPI_PS_INPUT_CNTL by
++ * matching slots: a PS that reads a subset of the VS outputs then still reads the right ones. */
++static uint32_t psbc_vs_exports(const struct radv_shader_info *ri, GnmVertexExportSemantic *out)
++{
++    uint32_t n = 0;
++    for (unsigned slot = 0; slot < VARYING_SLOT_MAX; slot++) {
++        const uint8_t param = ri->outinfo.vs_output_param_offset[slot];
++        if (slot == VARYING_SLOT_POS || param == AC_EXP_PARAM_UNDEFINED || param >= 32)
++            continue;
++        if (out)
++            out[n] = (GnmVertexExportSemantic){.semantic = slot, .outindex = param};
++        n += 1;
++    }
++    return n;
++}
++
+ static PsbcResult buildshaderbinary(
+     const BuildContext* ctx,
+     const uint32_t* code, uint32_t code_dw, uint32_t exec_dw,
+@@ -286,8 +304,12 @@ static PsbcResult buildshaderbinary(
+     shspecificsize += numinputslots * sizeof(GnmInputUsageSlot);
+ 
+     /* exclude position as it doesn't count as an export semantic in PSB */
++    const bool slotexports =
++        (ctx->stage == MESA_SHADER_VERTEX || ctx->stage == MESA_SHADER_TESS_EVAL) &&
++        ctx->rinfo->outinfo.param_exports > 0;
+     const uint32_t outputswritten =
+-        util_bitcount64(ctx->nir->info.outputs_written & ~VARYING_BIT_POS);
++        slotexports ? psbc_vs_exports(ctx->rinfo, NULL)
++                    : util_bitcount64(ctx->nir->info.outputs_written & ~VARYING_BIT_POS);
+ 
+     switch (ctx->stage) {
+     case MESA_SHADER_VERTEX:
+@@ -750,25 +772,42 @@ static PsbcResult buildshaderbinary(
+             memcpy(buf + offset, &input, sizeof(input));
+             offset += sizeof(input);
+         }
+-        for (uint32_t i = 0; i < outputswritten; i += 1) {
+-            const GnmVertexExportSemantic out = {
+-                .semantic = 15 + i,
+-                .outindex = i,
+-                .exportf16 = 0,
+-            };
+-            memcpy(buf + offset, &out, sizeof(out));
+-            offset += sizeof(out);
++        if (slotexports) {
++            GnmVertexExportSemantic outs[32];
++            const uint32_t n = psbc_vs_exports(ctx->rinfo, outs);
++            memcpy(buf + offset, outs, n * sizeof(outs[0]));
++            offset += n * sizeof(outs[0]);
++        } else {
++            for (uint32_t i = 0; i < outputswritten; i += 1) {
++                const GnmVertexExportSemantic out = {
++                    .semantic = 15 + i,
++                    .outindex = i,
++                    .exportf16 = 0,
++                };
++                memcpy(buf + offset, &out, sizeof(out));
++                offset += sizeof(out);
++            }
+         }
+         break;
+     case MESA_SHADER_FRAGMENT:
+-        for (uint32_t i = 0;
+-             i < util_bitcount64(ctx->nir->info.inputs_read); i += 1) {
++    {
++        /* Input i (its base after nir_recompute_io_bases, in location order) is named by its
++         * varying slot, the semantic the VS export table uses. Inputs no interpolated load
++         * reads (integer and flat varyings) are flat shaded. */
++        const uint32_t smooth = ctx->rinfo->ps.float32_shaded_mask |
++                                ctx->rinfo->ps.float16_shaded_mask |
++                                ctx->rinfo->ps.float16_hi_shaded_mask;
++        uint32_t i = 0;
++        u_foreach_bit64(slot, ctx->nir->info.inputs_read) {
+             const GnmPixelInputSemantic input = {
+-                .semantic = 15 + i,
++                .semantic = slot,
++                .isflatshaded = !(smooth & (1u << i)),
+             };
+             memcpy(buf + offset, &input, sizeof(input));
+             offset += sizeof(input);
++            i += 1;
+         }
++    }
+         break;
+     case MESA_SHADER_GEOMETRY:
+         /* GS input/export semantics use the same vertex semantic format */

@@ -73,13 +73,13 @@ const ACCESS_REFRESH_MS = 3_600_000;
 /** Lower is more urgent. */
 export const PRIORITY_ORDER: Record<AssetPriority, number> = { now: 0, soon: 1, idle: 2 };
 
-type CacheStorageLike = {
+export type CacheStorageLike = {
   delete(name: string): Promise<boolean>;
   keys(): Promise<readonly string[]>;
   open(name: string): Promise<CacheLike>;
 };
 
-type CacheLike = {
+export type CacheLike = {
   delete(request: string): Promise<boolean>;
   keys(): Promise<readonly Request[]>;
   match(request: string): Promise<Response | undefined>;
@@ -94,7 +94,7 @@ interface IJob {
   priority: AssetPriority;
 }
 
-function cacheStorage(): CacheStorageLike | undefined {
+export function cacheStorage(): CacheStorageLike | undefined {
   return (globalThis as { caches?: CacheStorageLike }).caches;
 }
 

@@ -26,6 +26,7 @@
 #include "engine/renderer/compute.h"
 #include "engine/renderer/frame_gpu_timer.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/renderer/render_features.h"
 #include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
 #include "engine/shader/output.h"
@@ -372,8 +373,12 @@ uint64_t outputPassesRecorded();
  */
 class Renderer {
 public:
-    Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events);
+    /** `features` is the host's (PRD-840): web_host passes RenderFeatures::web(), the native hosts native(). */
+    Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events,
+             RenderFeatures features = kBuildRenderFeatures);
     ~Renderer();
+    /** The render choices this renderer makes; a pinned build returns a constant (render_features.h). */
+    const RenderFeatures& features() const { return effectiveRenderFeatures(features_); }
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
@@ -460,7 +465,7 @@ public:
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
     std::unique_ptr<Renderer> sibling(bool sceneOnly = false) {
-        auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+        auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_, features_);
         child->sceneOnly_ = sceneOnly;
         child->cpuMetered_ = false;
         child->textures_ = textures_;
@@ -497,6 +502,7 @@ public:
     void copySceneColorToLayer(WGPUTexture array, uint32_t layer, uint32_t layers, uint32_t levels, bool mipmaps);
     /** Mip `level` of `layer` of an array made by createLayerArray, as readProbePixels rows. */
     GpuStatus readLayerPixels(WGPUTexture array, uint32_t layer, uint32_t level, ReadbackCallback done);
+    WGPUTexture sceneColorTexture() const { return sceneColor_; }
     /** The RGBA8 output frame a render() with no present target draws, and blitTo copies to the window. */
     WGPUTextureView outputColorView() const { return colorView_; }
     /** The format the scene colour is drawn and read in: RGBA16Float, RGBA32Float for a FloatType render target, RG16Float/RG32Float for an RGFormat one (a 32-bit target is never multisampled). */
@@ -813,7 +819,8 @@ public:
     enum RecordCause : uint8_t { RecordNone, RecordOrder, RecordOffset, RecordCount, RecordOther };
     /** Each key's rows start at the matching offsets: one row per draw, its length set by the program's attributes. */
     static RecordCause recordCause(const std::vector<uint64_t>& was, const std::vector<uint32_t>& wasRows,
-                                   const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows);
+                                   const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows,
+                                   bool hashes = true);  // RenderFeatures::recordCauseHashes
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
     /** One draw of the last planned frame's shadow passes, as the plan selected it: a test comparing two plans
@@ -875,26 +882,30 @@ public:
      */
     void setGpuTimer(bool on) { passTimer_->enabled = on; }
     /**
-     * PRD-754, native only and on by default: the shadow passes replay recorded bundles and each opaque draw keeps a uniform slot, so a
+     * PRD-754, on in RenderFeatures::native(): the shadow passes replay recorded bundles and each opaque draw keeps a uniform slot, so a
      * cull or a moved caster records no shadow pass. Off encodes them as before; a paired A/B runs from one build.
      */
-#ifndef __EMSCRIPTEN__
     void setStablePasses(bool on) {
-        if (on != stablePasses_) dropBundles();
-        stablePasses_ = on;
+        RenderFeatures next = features_;
+        next.stablePasses = on;
+        setFeatures(next);
     }
-#endif
     /**
-     * PRD-754, native only and off by default (owner, 2026-10-28): with stable passes on, the main, aux and velocity passes also replay
+     * PRD-754, off by default (owner, 2026-10-28): with stable passes on, the main, aux and velocity passes also replay
      * retained rows in state order, so a camera turn records nothing. State order swaps the winner of exactly coplanar
      * draws (the shooter's door trim), and three's depth order cost more than it saved, so it waits for a fix there.
      */
-#ifndef __EMSCRIPTEN__
     void setStableRows(bool on) {
-        if (on != stableRows_) dropBundles();
-        stableRows_ = on;
+        RenderFeatures next = features_;
+        next.stableRows = on;
+        setFeatures(next);
     }
-#endif
+    /** A paired A/B from one build: other features drop the cached bundles. A pinned build refuses a change. */
+    void setFeatures(RenderFeatures features) {
+        features = checkedRenderFeatures(features);
+        if (features.stablePasses != features_.stablePasses || features.stableRows != features_.stableRows) dropBundles();
+        features_ = features;
+    }
     /**
      * The caller's frame id for the next timed render, reported with its sample once the readback
      * lands. The caller owns the id: the engine's own render ids are not one per present.
@@ -1100,11 +1111,15 @@ private:
             // A DataArrayTexture: `depth` layers of one 2D texture, sampled as a 2DArray view. Part of the key
             // because the same width/height/depth with and without it needs a different view dimension.
             bool array = false;
+            bool cube = false;  // a CubeTexture: six `array` layers with a cube view
+            // A 3D texture: a Data3DTexture (kVolume) or a Storage3DTexture (kStorage), with a 3D view.
+            bool volume = false;
             uint16_t wrapS = 0, wrapT = 0, wrapR = 0, magFilter = 0, minFilter = 0;
             double anisotropy = 0;
             [[nodiscard]] bool operator==(const Key& other) const {
                 return kind == other.kind && width == other.width && height == other.height && depth == other.depth &&
                        levels == other.levels && format == other.format && usage == other.usage && array == other.array &&
+                       cube == other.cube && volume == other.volume &&
                        wrapS == other.wrapS && wrapT == other.wrapT && wrapR == other.wrapR &&
                        magFilter == other.magFilter && minFilter == other.minFilter && anisotropy == other.anisotropy;
             }
@@ -1183,10 +1198,12 @@ private:
         std::vector<PmremPacket> packets;
         std::size_t next = 0;
         uint64_t awaitSerial = 0;        // the last submitted packet's serial, awaited before the next
+        uint32_t waits = 0;              // calls that found the last group still on the GPU
         WGPUBindGroup group = nullptr;   // the current packet's bind group, rebuilt per packet
         uint32_t groupUniform = UINT32_MAX;
         uint64_t stride = 0;
-        uint64_t budget = 0;             // the costliest packet's cost: the per-call submission cap
+        uint64_t heaviest = 0;           // the costliest packet's cost: the smallest per-call cap
+        uint64_t budget = 0;             // the per-call submission cap, heaviest..4x heaviest
     };
     std::optional<EnvironmentPreparation> envPrep_;
     bool environmentPending_ = false;
@@ -1486,15 +1503,7 @@ private:
         FrameStats::SkinnedPass skinned;
     };
     std::vector<ShadowBundle> shadowBundles_;
-#ifdef __EMSCRIPTEN__
-    // The web engine compiles the stable passes out: the shooter's web camera turn recorded no less with them (PRD-754),
-    // and 4 MiB is its budget.
-    static constexpr bool stablePasses_ = false;
-    static constexpr bool stableRows_ = false;
-#else
-    bool stablePasses_ = true;
-    bool stableRows_ = false;
-#endif
+    RenderFeatures features_ = kBuildRenderFeatures;  // the host's (PRD-840); read through features()
     /** Releases every cached bundle: the bind groups or targets they reference are about to change. */
     void dropBundles();
     FrameStats mainBundleStats_;

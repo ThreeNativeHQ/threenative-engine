@@ -1,4 +1,5 @@
 import type { WebHostModule } from "./browser-renderer.js";
+import { WEB_FRAME_FIELD } from "./generated/web-frame-fields.js";
 /** Native VSM owns the clip cameras and sampling; core keeps its public option validation. */
 let nextId = 0;
 const installed = new Set<ShadowBaseNode>();
@@ -60,7 +61,7 @@ function walkStillCurrent(node: ShadowBaseNode, root: IShadowObject): boolean {
  */
 export function reportVirtualShadowFrame(module: Pick<WebHostModule, "_tnw_web_frame">): void {
   if (installed.size === 0) return; // no host call for a scene without one
-  const pending = module._tnw_web_frame(87);
+  const pending = module._tnw_web_frame(WEB_FRAME_FIELD.virtualShadowPendingLevels);
   if (pending < 0) return;
   for (const node of installed) {
     const stats = (node as { stats?: { frame: number; held: number; deferred: number } }).stats;

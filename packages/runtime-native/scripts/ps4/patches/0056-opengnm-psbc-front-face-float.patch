@@ -1,0 +1,15 @@
+--- a/libpsbc/psbc_compile.c	2026-11-07 10:28:02.406033966 -0700
++++ b/libpsbc/psbc_compile.c	2026-11-07 10:28:02.423463269 -0700
+@@ -518,7 +518,11 @@
+                             ctx->rinfo->wave_size == 32
+                         ) |
+                         S_0286D8_PARAM_GEN(param_gen),
+-                    .spibaryccntl = S_0286E0_FRONT_FACE_ALL_BITS(1),
++                    /* Float front face (+1.0 front, -1.0 back): the Mesa this compiler is built
++                     * from lowers load_front_face to fgt(face, 0) and load_front_face_fsign to the
++                     * raw VGPR, both float reads. ALL_BITS(1) wrote it as an integer, so 1 read as
++                     * a flushed denormal: every face back-facing and faceDirection 0 (PRD-784). */
++                    .spibaryccntl = S_0286E0_FRONT_FACE_ALL_BITS(0),
+                     .dbshadercontrol = compute_db_shader_control(ctx->rinfo),
+                     .cbshadermask = ac_get_cb_shader_mask(
+                         ctx->rinfo->ps.spi_shader_col_format

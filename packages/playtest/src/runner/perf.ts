@@ -11,6 +11,22 @@ import { formatPipelineCacheObservations, parsePipelineCacheObservations, type I
 import { PlaytestCliUsageError } from "./config.js";
 import { parsePipelineEventMarkers, type IPipelineCaptureEvent } from "./pipeline-summary.js";
 import { parseSchedstatCpuNs } from "./linuxCpuWindow.js";
+import {
+  CONSOLE_MARKER,
+  type IFrameBudgetWindowJson,
+  type IFrameSurfaceJson,
+  type IPassJson,
+  type IPerfPassJson,
+  type IPerfSummary,
+} from "../protocol.js";
+
+export type {
+  IFrameBudgetWindowJson,
+  IFrameSurfaceJson,
+  IPassJson,
+  IPerfPassJson,
+  IPerfSummary,
+} from "../protocol.js";
 
 /**
  * `threenative-playtest perf` — read the frame the host already reports, without opening a log by
@@ -27,24 +43,24 @@ import { parseSchedstatCpuNs } from "./linuxCpuWindow.js";
  * is a failure, never a healthy-looking empty report.
  */
 
-export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET:";
+export const FRAME_BUDGET_MARKER = `${CONSOLE_MARKER.frameBudget}:`;
 /**
  * The per-window scene-projection line. Read here rather than in the game so an agent can rank
  * what the optimizer is still leaving on its one-draw-each lane without owning the device it ran
  * on. The literal is duplicated from `@threenative/core` deliberately: this module parses a log,
  * it does not import the runtime that wrote it.
  */
-export const PROJECTION_MARKER = "TN_PROJECTION:";
-export const HOST_GAP_MARKER = "TN_HOST_GAP:";
+export const PROJECTION_MARKER = `${CONSOLE_MARKER.projection}:`;
+export const HOST_GAP_MARKER = `${CONSOLE_MARKER.hostGap}:`;
 /** The native engine player's per-frame sample; its pass-recording fields need `TN_RENDER_PREPARE_SPLIT=1`. */
-export const PLAYER_FRAME_MARKER = "TN_PLAYER_FRAME:";
-export const HITCH_MARKER = "TN_FRAME_HITCH:";
+export const PLAYER_FRAME_MARKER = `${CONSOLE_MARKER.playerFrame}:`;
+export const HITCH_MARKER = `${CONSOLE_MARKER.frameHitch}:`;
 
 /**
  * The host's own stall report, emitted after any phase that took at least 250 ms
  * (`runtime-native/src/runtime.cpp`, `SlowPhaseWatch`). `atMs` is the phase's **end**.
  */
-export const SLOW_PHASE_MARKER = "TN_SLOW_PHASE:";
+export const SLOW_PHASE_MARKER = `${CONSOLE_MARKER.slowPhase}:`;
 
 /**
  * The host's own frames-versus-presents counter (`runtime-native/src/webgpu/bindings_presentation.cpp`,
@@ -55,7 +71,7 @@ export const SLOW_PHASE_MARKER = "TN_SLOW_PHASE:";
  * loop's rate rather than the display's. Measured on midway's native launch: 1740 loop frames, 133
  * presents, cap 60 Hz, beside a window reporting 2631 fps.
  */
-export const PRESENTS_TICK_MARKER = "TN_PRESENTS_TICK:";
+export const PRESENTS_TICK_MARKER = `${CONSOLE_MARKER.presentsTick}:`;
 
 export interface IPresentsTickJson {
   readonly bufferMB?: number;
@@ -64,72 +80,6 @@ export interface IPresentsTickJson {
   readonly presents: number;
   readonly textureMB?: number;
   readonly textures?: number;
-}
-
-export interface IPerfSummary {
-  readonly mean: number;
-  readonly p50: number;
-  readonly p95: number;
-}
-
-/**
- * One pass's submissions in a window, as the runtime reported them.
- *
- * `triangles` is three's CPU figure — `instanceCount * count / 3` per draw, and an indirect batch's
- * `count` is its merged geometry's capacity, so a streamed world reads in the hundreds of millions.
- * `gpuTriangles` is what the kernel selected, which is the number to bound work against.
- */
-export interface IPerfPassJson extends IPassJson {
-  readonly triangles?: IPerfSummary;
-  readonly gpuTriangles?: number;
-}
-
-/** What the window's frames were drawn at, when the loop reported it. */
-export interface IFrameSurfaceJson {
-  /** Present only when the runtime measured whether asynchronous pipeline compilation remained active. */
-  readonly compiling?: boolean;
-  readonly resolutionScale: number;
-  readonly scaleSource: string;
-  readonly sampleCount: number;
-  readonly drawingBufferWidth: number;
-  readonly drawingBufferHeight: number;
-  readonly atFloor?: boolean;
-}
-
-/**
- * One render pass's submissions, as `packages/core/src/render-pass-budget.ts` reports them.
- *
- * `drawsBySource` is PRD-494's per-origin split of the main pass's draws: the frame-level counts sum
- * to `draws`, so the percentiles of two different sources need not, and the line below is read as
- * "which origin owns the pass", not as arithmetic.
- */
-export interface IPassJson {
-  readonly draws?: IPerfSummary;
-  readonly drawsBySource?: Readonly<Record<string, IPerfSummary>>;
-  readonly frames?: number;
-}
-
-export interface IFrameBudgetWindowJson {
-  /**
-   * The loop's cadence. It is the display's where the loop presents every frame — the web, via rAF —
-   * and is inflated by the presentation-cap ratio where it does not, so prefer
-   * {@link presentedFps} whenever the engine reports it.
-   */
-  readonly fps: number;
-  readonly frames: number;
-  readonly frame?: IPerfSummary;
-  readonly hitches: number;
-  readonly phases?: Readonly<Record<string, IPerfSummary>>;
-  /** Frames that reached the display in this window, when the host can count them. */
-  readonly presents?: number;
-  /** The rate those presents imply, over the window's own duration. */
-  readonly presentedFps?: number;
-  readonly surface?: IFrameSurfaceJson;
-  /** GPU milliseconds from `timestamp-query`, absent when the adapter has none. */
-  readonly gpuMs?: number;
-  /** Per-pass draws and triangles, absent on a runtime that measured no passes. */
-  readonly passes?: Readonly<Record<string, IPerfPassJson>>;
-  readonly window: number;
 }
 
 export interface IHostGapSegmentJson {
@@ -205,9 +155,9 @@ export interface IPerfViolation {
  * The one-minute load average and the core count of the machine that ran the report. Absolute
  * milliseconds measured while more than half the cores are busy are somebody else's contention.
  *
- * The verdict rule and the reading are copied from `scripts/engine-load-test/report.ts`
- * (`readHostLoad`, `absolutesVerdict`) rather than imported: a package must not reach into scripts/,
- * and the rule is ten lines.
+ * This is the rule's one home: `scripts/engine-load-test/report.ts` imports it from here, because a
+ * package must not reach into `scripts/` and the benchmark lane must not keep a second copy that can
+ * drift from the verdict a playtest gives.
  */
 export interface IPerfHostLoadReading {
   readonly cores: number;

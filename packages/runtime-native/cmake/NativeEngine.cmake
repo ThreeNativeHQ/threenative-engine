@@ -37,6 +37,10 @@ if(SDL3_STATIC_TARGET)
 elseif(SDL3_LIBRARY)
     target_link_libraries(tn_host_services PRIVATE ${SDL3_LIBRARY})
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
+elseif(SDL3_INCLUDE_DIR)
+    # PS4: headers without an archive (no PS4 SDL3 driver exists yet), so the engine compiles and
+    # slice 2 picks the driver. Nothing links, which is all a cross configure can do here anyway.
+    target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
 endif()
 
 # The same pacing checks must link with the JS-free host, not only the legacy bindings.
@@ -50,16 +54,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "android" AND NOT MYSTRAL_PLATFORM STREQUAL "io
 endif()
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
-add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
-tn_native_engine_target(tn_engine_renderer)
-target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-    tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes tn_host_services)
+set(tn_renderer_backend)
 if(TARGET dawn::webgpu)
-    target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
+    set(tn_renderer_backend dawn::webgpu)
 elseif(TARGET wgpu::wgpu)
-    target_link_libraries(tn_engine_renderer PUBLIC wgpu::wgpu)
+    set(tn_renderer_backend wgpu::wgpu)
 endif()
-target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+tn_engine_renderer_target(tn_host_services ${tn_renderer_backend})
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     # Gate E: clear, submit and read back 300 headless frames with no JS engine linked.
@@ -160,6 +161,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_mipmaps_share_one_submit=mipmaps_share_one_submit
         native_engine_traa_alpha=traa_alpha
         native_engine_traa_reset_seed=traa_reset_seed
+        native_engine_traa_resolve_blend=traa_resolve_blend
         native_engine_traa_camera_velocity=traa_camera_velocity
         native_engine_traa_skinned_velocity=traa_skinned_velocity
         native_engine_traa_camera_held_skinned_velocity=traa_camera_held_skinned_velocity
@@ -688,6 +690,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     option(TN_ENGINE_PLAYER_UI_OVERLAY "Link the desktop web-view UI overlay into the engine players (Linux; needs node scripts/build-native-ui-overlay.mjs and webkit2gtk-4.1)" OFF)
     if(TN_ENGINE_PLAYER_UI_OVERLAY)
         include(cmake/NativeEnginePlayerUiOverlay.cmake)
+    elseif(TN_PS4 AND TN_ENABLE_CSS_UI)
+        # PS4 (PRD-784): the HUD is the CSS backend, a pure-Rust staticlib with no web view. Only the
+        # define is set here; scripts/ps4/e5-build.sh links the archive by hand beside the physics one.
+        target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=1)
     else()
         target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
     endif()

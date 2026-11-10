@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { CaptureGuardError } from "../src/capture.js";
-import { retakeWhileBlank } from "../src/runner/capture-retry.js";
+import { captureWithRetry, retakeWhileBlank } from "../src/runner/capture-retry.js";
 
 const blank = (): CaptureGuardError => new CaptureGuardError("after.png", "uniform frame");
 
@@ -50,4 +50,40 @@ test("an error that is not a blank verdict is never retried", async () => {
   );
   await expect(failure).rejects.toThrow("page closed");
   expect(shots).toBe(1);
+});
+
+test("captureWithRetry shoots once, with no grace, when the first frame is good", async () => {
+  const graces: number[] = [];
+  const result = await captureWithRetry(async () => "world", async () => void graces.push(1));
+  expect(result).toBe("world");
+  expect(graces).toEqual([]);
+});
+
+test("captureWithRetry retakes a blank first frame and tells the capture it is a retake", async () => {
+  const seen: boolean[] = [];
+  const result = await captureWithRetry(async (retake) => {
+    seen.push(retake);
+    if (seen.length < 3) throw blank();
+    return "world";
+  }, async () => undefined);
+  expect(result).toBe("world");
+  expect(seen).toEqual([false, true, true]);
+});
+
+test("captureWithRetry does not retry an error that is not a blank verdict", async () => {
+  let shots = 0;
+  await expect(captureWithRetry(async () => {
+    shots += 1;
+    throw new Error("page.screenshot: closed");
+  }, async () => undefined)).rejects.toThrow("page.screenshot: closed");
+  expect(shots).toBe(1);
+});
+
+test("captureWithRetry fails closed on a surface that stays blank to the bound", async () => {
+  const clock = { now: 0 };
+  await expect(captureWithRetry(async () => {
+    throw blank();
+  }, async () => {
+    clock.now += 4_000;
+  }, 10_000, () => clock.now)).rejects.toBeInstanceOf(CaptureGuardError);
 });

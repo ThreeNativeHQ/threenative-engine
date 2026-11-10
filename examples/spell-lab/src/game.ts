@@ -17,7 +17,7 @@ const game = defineGame<LabState>({
     thunderstrike: { keys: ["Digit2"] },
   },
   plugins: [playtest({ events: Lab.drainEvents })],
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { lab: Lab },
   seed: 777,
   start: "lab",

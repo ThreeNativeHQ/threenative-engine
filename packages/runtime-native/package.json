@@ -1,6 +1,6 @@
 {
   "name": "@threenative/runtime-native",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "ThreeNative-owned native host for desktop and Android",
   "keywords": [
     "threenative",
@@ -89,7 +89,7 @@
     "native:physics:parity": "pnpm --dir ../.. exec vitest run packages/physics/__tests__/parity.spec.ts && cargo test --manifest-path native/physics/Cargo.toml --lib --test parity -- --nocapture",
     "native:physics:parity:device": "node scripts/verify-android-physics-parity.mjs",
     "native:qualify:physical": "node scripts/qualify-physical-mobile.mjs",
-    "native:verify:desktop": "node scripts/verify-desktop-audio.mjs && node scripts/verify-desktop-stability.mjs && node scripts/verify-desktop-core.mjs && node scripts/verify-desktop-physics.mjs && sh ../../scripts/xvfb.sh node scripts/verify-native-contracts.mjs && pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs && sh ../../scripts/xvfb.sh node scripts/verify-desktop-ui-frame.mjs && vitest run --config vitest.config.ts tests/external-bundle-discovery.test.mjs",
+    "native:verify:desktop": "node scripts/verify-desktop-audio.mjs && node scripts/verify-desktop-stability.mjs && node scripts/verify-desktop-core.mjs && node scripts/verify-desktop-physics.mjs && sh ../../scripts/xvfb.sh node scripts/verify-native-contracts.mjs && pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs && sh ../../scripts/xvfb.sh node scripts/verify-desktop-ui-frame.mjs && vitest run --config vitest.config.ts tests/external-bundle-discovery.test.mjs tests/host-cli.test.mjs tests/host-window.test.mjs",
     "native:verify:metahuman": "node scripts/verify-desktop-metahuman.mjs",
     "native:verify:loading": "pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs",
     "native:verify:ui-frame": "pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-ui-frame.mjs",

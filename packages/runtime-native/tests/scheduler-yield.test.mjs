@@ -15,8 +15,8 @@
 // These assertions execute the installer exactly as the runtime ships it: the script is read from
 // `src/runtime-scripts/scheduler-yield.js` rather than retyped, so a test cannot pass against a
 // copy that has drifted from the source. That is the whole point — a hand-copied snippet would
-// keep passing after someone edited the real one. PRD-207 moved every shim out of `runtime.cpp`
-// raw-string literals into that directory, so the bootstrap is asserted separately below.
+// keep passing after someone edited the real one. That the host loads the script is proved by
+// running it: `tests/shim_bootstrap_test.cpp` probes `scheduler.yield` on a booted Runtime.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -25,15 +25,9 @@ import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const runtimeSource = readFileSync(join(root, "src/runtime.cpp"), "utf8");
 
-/** Reads the installer as it ships, and fails closed if the bootstrap stopped loading it. */
+/** Reads the installer as it ships. */
 function installerSource() {
-  assert.match(
-    runtimeSource,
-    /evalRuntimeScriptWithResult\(\s*\*jsEngine_, "scheduler-yield"/u,
-    "runtime.cpp must still load the scheduler-yield runtime script",
-  );
   return readFileSync(join(root, "src/runtime-scripts/scheduler-yield.js"), "utf8");
 }
 

@@ -114,14 +114,12 @@ export function childEnvForDisplay(env: NodeJS.ProcessEnv, display: string): Nod
 }
 
 /**
- * Does this run produce pixels at all — headed, screenshotting, or evaluating visual or
- * framebuffer assertions? Only those runs need a display and participate in the capture lock.
+ * Does this scenario read a frame at all: a screenshot (on by default), a named screenshot step,
+ * or a visual, tone or framebuffer assertion? The display, the capture lock, the capture
+ * provenance and the headless-Linux advice all ask this one question. A headed run needs a
+ * display whatever the scenario says, so its caller adds `config.headless !== true`.
  */
-export function runNeedsPixels(
-  config: Pick<IStandalonePlaytestConfig, "headless">,
-  scenario: Pick<IPlaytestScenario, "artifacts" | "assert" | "steps">,
-): boolean {
-  if (config.headless !== true) return true;
+export function requiresPixels(scenario: Pick<IPlaytestScenario, "artifacts" | "assert" | "steps">): boolean {
   const takesScreenshot = scenario.artifacts?.screenshots !== false
     || scenario.steps.some(({ screenshot }) => screenshot !== undefined);
   const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0 || (scenario.assert?.tone?.length ?? 0) > 0;

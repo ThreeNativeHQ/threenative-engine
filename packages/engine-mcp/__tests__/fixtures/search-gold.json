@@ -1,0 +1,1356 @@
+{
+  "heldoutSha256": "0cb517f250f2965a6c37fbb487a8d95b98277893dfe8389f7e57f52c199aa78c",
+  "rows": [
+    {
+      "expect": ["compileAssets"],
+      "id": "exact.dev.01",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'compileAssets'",
+      "query": "compileAssets",
+      "source": "log-detail",
+      "split": "dev"
+    },
+    {
+      "expect": ["prewarm"],
+      "id": "exact.dev.02",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'prewarm'",
+      "query": "prewarm",
+      "source": "log-search",
+      "split": "dev"
+    },
+    {
+      "expect": ["loadTerrainSplat"],
+      "id": "exact.dev.03",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'loadTerrainSplat'",
+      "query": "loadTerrainSplat",
+      "source": "log-search",
+      "split": "dev"
+    },
+    {
+      "expect": ["TerrainTiles"],
+      "id": "exact.dev.04",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'TerrainTiles'",
+      "query": "TerrainTiles",
+      "source": "log-detail",
+      "split": "dev"
+    },
+    {
+      "expect": ["texturePass"],
+      "id": "exact.dev.05",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'texturePass'",
+      "query": "texturePass",
+      "source": "log-detail",
+      "split": "dev"
+    },
+    {
+      "expect": ["addInSlices"],
+      "id": "exact.dev.06",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'addInSlices'",
+      "query": "addInSlices",
+      "source": "log-search",
+      "split": "dev"
+    },
+    {
+      "expect": ["VirtualShadowNode"],
+      "id": "exact.dev.07",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'VirtualShadowNode'",
+      "query": "VirtualShadowNode",
+      "source": "log-search",
+      "split": "dev"
+    },
+    {
+      "expect": ["GPUReadback"],
+      "id": "exact.dev.08",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'GPUReadback'",
+      "query": "GPUReadback",
+      "source": "log-detail",
+      "split": "dev"
+    },
+    {
+      "expect": ["Heightfield"],
+      "id": "exact.dev.09",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'Heightfield'",
+      "query": "Heightfield",
+      "source": "log-search",
+      "split": "dev"
+    },
+    {
+      "expect": ["heightSamplerFromHeightmap"],
+      "id": "exact.dev.10",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'heightSamplerFromHeightmap'",
+      "query": "heightSamplerFromHeightmap",
+      "source": "log-search",
+      "split": "dev"
+    },
+    {
+      "expect": ["DebugOverlay"],
+      "id": "exact.dev.11",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'DebugOverlay'",
+      "query": "DebugOverlay",
+      "source": "log-detail",
+      "split": "dev"
+    },
+    {
+      "expect": ["FrameBudget"],
+      "id": "exact.dev.12",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'FrameBudget'",
+      "query": "FrameBudget",
+      "source": "log-detail",
+      "split": "dev"
+    },
+    {
+      "expect": ["mergeParts"],
+      "id": "exact.dev.13",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'mergeParts'",
+      "query": "mergeParts",
+      "source": "log-detail",
+      "split": "dev"
+    },
+    {
+      "expect": ["PhysicsDirectSpaceState3D"],
+      "id": "exact.heldout.01",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'PhysicsDirectSpaceState3D'",
+      "query": "PhysicsDirectSpaceState3D",
+      "source": "log-detail",
+      "split": "heldout"
+    },
+    {
+      "expect": ["SkeletalMesh3D"],
+      "id": "exact.heldout.02",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'SkeletalMesh3D'",
+      "query": "SkeletalMesh3D",
+      "source": "log-detail",
+      "split": "heldout"
+    },
+    {
+      "expect": ["readVelocityPreviousMatrices"],
+      "id": "exact.heldout.03",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'readVelocityPreviousMatrices'",
+      "query": "readVelocityPreviousMatrices",
+      "source": "log-detail",
+      "split": "heldout"
+    },
+    {
+      "expect": ["getWorldCapabilities"],
+      "id": "exact.heldout.04",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'getWorldCapabilities'",
+      "query": "getWorldCapabilities",
+      "source": "log-detail",
+      "split": "heldout"
+    },
+    {
+      "expect": ["renderer.projection"],
+      "id": "exact.heldout.05",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'renderer.projection'",
+      "query": "renderer.projection",
+      "source": "log-detail",
+      "split": "heldout"
+    },
+    {
+      "expect": ["advanceFixedStep"],
+      "id": "exact.heldout.06",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'advanceFixedStep'",
+      "query": "advanceFixedStep",
+      "source": "log-detail",
+      "split": "heldout"
+    },
+    {
+      "expect": ["readVelocityPreviousBoneMatrices"],
+      "id": "exact.heldout.07",
+      "kind": "exact-symbol",
+      "note": "the manifest exports 'readVelocityPreviousBoneMatrices'",
+      "query": "readVelocityPreviousBoneMatrices",
+      "source": "log-detail",
+      "split": "heldout"
+    },
+    {
+      "expect": ["bridgeWaitTimeoutMs"],
+      "id": "mechanic.dev.01",
+      "kind": "mechanic",
+      "note": "runner wait bounded by the protocol operation timeout policy",
+      "query": "Bound a stalled live-clock playtest runner requestAnimationFrame wait using existing runner operation timeout policy, failing closed while preserving scenario assertions and normal frame ordering.",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["landform"],
+      "id": "mechanic.dev.02",
+      "kind": "mechanic",
+      "note": "calibrated landform recipe per environment kind",
+      "query": "generate a realistic mountain heightmap for terrain (ridges, erosion, valleys) for several environment kinds",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["withBrowserCapture"],
+      "id": "mechanic.dev.03",
+      "kind": "mechanic",
+      "note": "custom capture reusing runner display, lock and browser ownership",
+      "query": "Need reuse headed WebGPU playtest screenshot capture at a single settled camera pose for temporary shadow-intensity causal diagnosis; preserve adapter, readiness and capture lease checks.",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["GPUParticles3D"],
+      "id": "mechanic.dev.04",
+      "kind": "mechanic",
+      "note": "ambient particle emitter",
+      "query": "particles fireflies floating motes emitter",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["SnowField", "attachSnowPhysics"],
+      "id": "request.dev.05",
+      "kind": "request",
+      "note": "cross-system brief; the engine-owned core is deformable snow",
+      "query": "character walks on deformable snow terrain leaving footprints, snowfall particles, third person orbit camera, trees and rocks",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["Daylight", "Atmosphere"],
+      "id": "mechanic.dev.06",
+      "kind": "mechanic",
+      "note": "physical sky, sun and aerial-perspective haze",
+      "query": "physical sky atmosphere with sun disc, aerial perspective distance haze, height fog and volumetric clouds",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["GPUReadback"],
+      "id": "mechanic.dev.07",
+      "kind": "mechanic",
+      "note": "debug readback of GPU-computed data",
+      "query": "Debug GPU shader computed root distance and published instance LOD ranges with float render target readback or debug color; no gameplay feature.",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["compileAssets"],
+      "id": "mechanic.dev.08",
+      "kind": "mechanic",
+      "note": "asset compiler bake behaviour",
+      "query": "asset compiler bake receipt reject newly created undeclared output files preserve timestamps and preexisting authored static files",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["runDesktopPlaytest", "assertDesktopCaptureNotBlank"],
+      "id": "mechanic.dev.09",
+      "kind": "mechanic",
+      "note": "desktop playtest with nonblank desktop capture",
+      "query": "native desktop playtest stepFrames rendered frame completion nonblank screenshot",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["requestedPlaytestClockMode"],
+      "id": "mechanic.dev.10",
+      "kind": "mechanic",
+      "note": "vague; live-clock playtest mode is the only concrete hook",
+      "query": "playtest resource wait live clock FixedStepLoop bridge performance",
+      "source": "log-search:merged-pr-447",
+      "split": "dev"
+    },
+    {
+      "expect": ["updateModelLods", "lodPixelScale"],
+      "id": "mechanic.dev.11",
+      "kind": "mechanic",
+      "note": "projected-error LOD selection",
+      "query": "selectLodLevel projectedLodError screen space error geometric LOD selection hysteresis",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["installFilmicToneMapping", "WorldEnvironment"],
+      "id": "mechanic.dev.12",
+      "kind": "mechanic",
+      "note": "tone mapping curve and override",
+      "query": "renderer tone mapping named override ACES filmic",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["updateModelLods"],
+      "id": "mechanic.dev.13",
+      "kind": "mechanic",
+      "note": "automatic cooked LOD chain selected by projected error",
+      "query": "automatic LOD generation for imported meshes (AutoLOD) so dense trees draw fewer triangles at distance",
+      "source": "log-search:machinefall",
+      "split": "dev"
+    },
+    {
+      "expect": ["TracedReflections"],
+      "id": "mechanic.dev.14",
+      "kind": "mechanic",
+      "note": "reflect off-screen objects in a chrome sphere",
+      "query": "a mirror-like metal sphere should reflect nearby objects that are offscreen, using a local reflection probe or cube capture",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["Scene"],
+      "id": "mechanic.dev.15",
+      "kind": "mechanic",
+      "note": "per-render scene work and interpolation alpha",
+      "query": "live clock per-render transform motion regression Scene.render ctx.alpha ctx.frameTime component assertion SpectralOcean vertical velocity readback",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["FrameBudget", "BudgetLadder"],
+      "id": "mechanic.dev.16",
+      "kind": "mechanic",
+      "note": "read measured budget and step effects down",
+      "query": "read the measured frame budget compute bucket to degrade effects",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["CharacterBody3D", "GroundSnap"],
+      "id": "mechanic.dev.17",
+      "kind": "mechanic",
+      "note": "character movement plus visual foot grounding",
+      "query": "walk a character over heightfield terrain and stairs, feet meet the floor",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["FrameBudget"],
+      "id": "request.dev.18",
+      "kind": "request",
+      "note": "frame-time attribution; benchmark reporting part is harness work",
+      "query": "Profile native runtime game CPU GPU frame time bottlenecks benchmark real games startup memory sustained frame pacing compare performance experiments and generate benchmark reports",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["createAssetLoader"],
+      "id": "mechanic.dev.19",
+      "kind": "mechanic",
+      "note": "load and prefetch assets on demand",
+      "query": "stream aircraft and ship GLB models and textures on demand instead of loading every asset before the game starts",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["Scene"],
+      "id": "mechanic.dev.20",
+      "kind": "mechanic",
+      "note": "per-world-draw scene hook",
+      "query": "Await asynchronous work after an actual rendered game frame and block next render and fixed-step simulation until GPU readback completes in defineGame GameLoop SceneContext afterRender",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["GPUParticles3D", "FrameBudget"],
+      "id": "mechanic.dev.21",
+      "kind": "mechanic",
+      "note": "particle system and GPU budget buckets",
+      "query": "Preserve game-authored particle visibility while offscreen particle simulation culling suppresses drawing, and budget particle compute using separate render and compute GPU time buckets",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["scatterProps"],
+      "id": "mechanic.dev.22",
+      "kind": "mechanic",
+      "note": "biome scatter placement rules",
+      "query": "procedural foliage placement density by altitude slope and water mask with noise clearings",
+      "source": "log-search:threenative-engine",
+      "split": "dev"
+    },
+    {
+      "expect": ["CharacterBody3D"],
+      "id": "mechanic.dev.23",
+      "kind": "mechanic",
+      "note": "character movement over stairs",
+      "query": "character walks up and down stairs smoothly without jitter",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["attachToBone"],
+      "id": "mechanic.dev.24",
+      "kind": "mechanic",
+      "note": "attach equipment to a named bone",
+      "query": "Attach shield and sword to a humanoid's chest bone so back equipment follows a breathing idle animation.",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["Area3D"],
+      "id": "mechanic.dev.25",
+      "kind": "mechanic",
+      "note": "non-blocking overlap sensor",
+      "query": "trigger volume sensor that detects a moving body passing through without blocking it",
+      "source": "log-search:starlance",
+      "split": "dev"
+    },
+    {
+      "expect": ["clipPoseError", "boneLengthDeviations"],
+      "id": "mechanic.dev.26",
+      "kind": "mechanic",
+      "note": "diagnose a bad retarget and stretched bones",
+      "query": "skinned character walk animation arms stretched wrong bone pose retarget",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["BudgetLadder"],
+      "id": "mechanic.dev.27",
+      "kind": "mechanic",
+      "note": "GPU-time driven quality step",
+      "query": "automatically reduce render surface scale using GPU frame time and report chosen quality",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["FrameBudget", "stageGpuReading", "warmUpScene"],
+      "id": "request.dev.28",
+      "kind": "request",
+      "note": "cross-system perf brief",
+      "query": "frame budget profiling, GPU per-pass timing, auto LOD, texture compression, shader precompile warm-up without hitch",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["VirtualShadowNode"],
+      "id": "mechanic.dev.29",
+      "kind": "mechanic",
+      "note": "open-world directional shadow",
+      "query": "streamed instanced trees cast shadows onto streamed terrain near the player",
+      "source": "log-search:machinefall",
+      "split": "dev"
+    },
+    {
+      "expect": ["traa", "temporalReproject"],
+      "id": "mechanic.dev.30",
+      "kind": "mechanic",
+      "note": "temporal resolve and reprojection",
+      "query": "temporal reconstruction of jittered lower-resolution raw samples with per-display-pixel confidence and first second colour moments reset on disocclusion",
+      "source": "log-search:task-15",
+      "split": "dev"
+    },
+    {
+      "expect": ["Daylight", "Atmosphere"],
+      "id": "mechanic.dev.31",
+      "kind": "mechanic",
+      "note": "distance haze",
+      "query": "Persistent distance fog",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["PhysicsDirectSpaceState3D", "TracerPool3D"],
+      "id": "mechanic.dev.32",
+      "kind": "mechanic",
+      "note": "hitscan raycasts and tracers",
+      "query": "shotgun fires several hitscan pellets with spread",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["createAssetLoader"],
+      "id": "mechanic.dev.33",
+      "kind": "mechanic",
+      "note": "runtime texture loading via ctx.assets",
+      "query": "load a PNG texture from content/ at runtime and assign it to a three.js material map",
+      "source": "log-search:metahuman-lab",
+      "split": "dev"
+    },
+    {
+      "expect": ["godrays", "Daylight"],
+      "id": "mechanic.dev.34",
+      "kind": "mechanic",
+      "note": "sun shafts and haze",
+      "query": "match forest fog and sunlight shafts",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["AudioBus"],
+      "id": "mechanic.dev.35",
+      "kind": "mechanic",
+      "note": "audio playback and bus volume",
+      "query": "play looping music track and fade its volume in over time",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["buildStaticColliders"],
+      "id": "mechanic.dev.36",
+      "kind": "mechanic",
+      "note": "static model collision; placement is level design",
+      "query": "place a giant landmark tree model with a face at the end of the forest path, with leaves on its branches, that the player cannot walk through",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["attachSnowPhysics", "SnowField"],
+      "id": "request.dev.37",
+      "kind": "request",
+      "note": "game brief; engine part is ball carving snow",
+      "query": "snow golf: push a ball through deep powder into a cup pressed into the snow within par and a time limit",
+      "source": "log-search:snow-demo",
+      "split": "dev"
+    },
+    {
+      "expect": ["GPUReadback"],
+      "id": "mechanic.dev.38",
+      "kind": "mechanic",
+      "note": "GPU readback diagnostics",
+      "query": "fluid GPU readback capture diagnostics lifetime",
+      "source": "log-search:source",
+      "split": "dev"
+    },
+    {
+      "expect": ["createAssetLoader"],
+      "id": "mechanic.dev.39",
+      "kind": "mechanic",
+      "note": "load and cache an image; minimap itself is game-owned",
+      "query": "Load and cache a static image for a canvas minimap player marker",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["GPUParticles3D"],
+      "id": "mechanic.dev.40",
+      "kind": "mechanic",
+      "note": "pooled GPU particle system",
+      "query": "render game-authored particles with partial buffer uploads and pooled compute",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["AudioBus"],
+      "id": "mechanic.dev.41",
+      "kind": "mechanic",
+      "note": "bus volume control",
+      "query": "fade the music out while a menu is open and back in when it closes",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["AnimationComposer", "BlendSpace1D"],
+      "id": "mechanic.dev.42",
+      "kind": "mechanic",
+      "note": "locomotion blending",
+      "query": "rigged hero with finger bones, smoother animation blending during movement",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["AnimationPlayer", "SkeletalMesh3D"],
+      "id": "mechanic.dev.43",
+      "kind": "mechanic",
+      "note": "play and blend clips on a rigged GLB",
+      "query": "play and blend skeletal animation clips on a rigged glb hero (idle, walk)",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["AudioBus"],
+      "id": "mechanic.dev.44",
+      "kind": "mechanic",
+      "note": "music playback; quest trigger is game logic",
+      "query": "play a calm music track in the opening area and a different urgent one after the quest advances",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["heightSamplerFromHeightmap"],
+      "id": "mechanic.dev.45",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "query ground height from a Blender-authored world package",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["SkeletalMesh3D", "AnimationPlayer"],
+      "id": "mechanic.dev.46",
+      "kind": "mechanic",
+      "note": "seated animated rig",
+      "query": "Render a rigged human radioman/gunner seated in the rear cockpit of the Douglas aircraft, playing a sitting animation while following the moving aircraft.",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["TerrainTiles", "WorldCells"],
+      "id": "mechanic.dev.47",
+      "kind": "mechanic",
+      "note": "stream terrain and cells around player",
+      "query": "stream world chunks/cells around the player, including procedurally generated terrain",
+      "source": "log-search:machinefall",
+      "split": "dev"
+    },
+    {
+      "expect": ["AnimationPlayer"],
+      "id": "mechanic.dev.48",
+      "kind": "mechanic",
+      "note": "foot slide and speed matching",
+      "query": "walk cycle feet slide on ground, animation speed matched to movement speed",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["CharacterBody3D", "NavigationAgent3D", "Area3D"],
+      "id": "request.dev.49",
+      "kind": "request",
+      "note": "FPS brief: movement, chasing enemies, pickups",
+      "query": "first-person shooter like Doom: fast movement, demons that rush and throw projectiles, health and ammo pickups, waves of enemies in an arena, no aim down sights",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["UiLayer"],
+      "id": "mechanic.dev.50",
+      "kind": "mechanic",
+      "note": "portable HUD layer; theme content is game-owned",
+      "query": "Configure React UI global CSS reset, full-screen game canvas styling, themes and HUD overlay styles instead of a hand-authored src/style.css file",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["createFireball"],
+      "id": "mechanic.dev.51",
+      "kind": "mechanic",
+      "note": "fireball projectile",
+      "query": "slow visible enemy projectile fireball",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["UiLayer", "createAssetLoader"],
+      "id": "mechanic.dev.52",
+      "kind": "mechanic",
+      "note": "portable HUD plus packaged asset URL",
+      "query": "Render a PNG image in a portable React HUD and load its packaged asset URL",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["withBrowserCapture"],
+      "id": "mechanic.dev.53",
+      "kind": "mechanic",
+      "note": "capture under the runner capture lock",
+      "query": "fixed pose screenshot performance assertions capture lock",
+      "source": "log-search:task-11",
+      "split": "dev"
+    },
+    {
+      "expect": ["AnimationComposer"],
+      "id": "mechanic.dev.54",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "synchronize walk run strafe clips with different durations",
+      "source": "log-search:ggez-installed-consumer",
+      "split": "dev"
+    },
+    {
+      "expect": ["loadPlaytestScenario"],
+      "id": "mechanic.dev.55",
+      "kind": "mechanic",
+      "note": "scenario authoring for a fixed-view capture",
+      "query": "playtest scenario places the player at a world position and camera aim to capture a screenshot from a fixed viewpoint",
+      "source": "log-search:zelda-clone",
+      "split": "dev"
+    },
+    {
+      "expect": ["Daylight", "VirtualShadowNode"],
+      "id": "mechanic.dev.56",
+      "kind": "mechanic",
+      "note": "sun rig and open-world shadow",
+      "query": "outdoor sun lighting with cascaded shadows over a large open world",
+      "source": "log-search:machinefall",
+      "split": "dev"
+    },
+    {
+      "expect": ["Area3D"],
+      "id": "mechanic.dev.57",
+      "kind": "mechanic",
+      "note": "pickup trigger",
+      "query": "pickup item trigger area",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["DebugOverlay"],
+      "id": "mechanic.dev.58",
+      "kind": "mechanic",
+      "note": "per-object triangle and draw inspection",
+      "query": "Inspect per-object triangle counts and draw calls in a scene profiler",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["traa", "temporalReproject"],
+      "id": "mechanic.dev.59",
+      "kind": "mechanic",
+      "note": "temporal AA and reprojection",
+      "query": "temporal reprojection AA upscale",
+      "source": "log-search:task-15",
+      "split": "dev"
+    },
+    {
+      "expect": ["bridgeWaitTimeoutMs"],
+      "id": "mechanic.dev.60",
+      "kind": "mechanic",
+      "note": "bounded wait for the playtest bridge",
+      "query": "wait for a semantic playtest bridge during bounded native startup compilation before deterministic scenario warmup; identify missing bridge and unavailable startup observation",
+      "source": "log-search:task-14",
+      "split": "dev"
+    },
+    {
+      "expect": ["RigidBody3D", "Area3D"],
+      "id": "mechanic.dev.61",
+      "kind": "mechanic",
+      "note": "physical projectile with hit detection; damage is game logic",
+      "query": "enemy projectile that flies at the player and damages on hit",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["SnowField", "snowDiscFootprint"],
+      "id": "mechanic.dev.62",
+      "kind": "mechanic",
+      "note": "press a disc footprint into snow",
+      "query": "press a cup or crater into the snow at a fixed spot",
+      "source": "log-search:snow-demo",
+      "split": "dev"
+    },
+    {
+      "expect": ["mergeByMaterial", "mergeParts"],
+      "id": "mechanic.dev.63",
+      "kind": "mechanic",
+      "note": "merge static meshes per material",
+      "query": "reduce draw calls for a static multi-mesh ship model: merge meshes by material, shadow caster proxy, batching, instancing, render bundles",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["NavigationAgent3D", "recast"],
+      "id": "mechanic.dev.64",
+      "kind": "mechanic",
+      "note": "navmesh chase",
+      "query": "enemy chase pathfinding",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["mergeParts", "mergeByMaterial"],
+      "id": "mechanic.dev.65",
+      "kind": "mechanic",
+      "note": "exact situation on mergeParts",
+      "query": "Merge multiple static Three.js meshes into one mesh per material while preserving texture UV coordinates and authored normals and baking object transforms.",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["addInSlices", "useUiStateDuringStartup"],
+      "id": "mechanic.dev.66",
+      "kind": "mechanic",
+      "note": "sliced build behind loading curtain with progress",
+      "query": "show loading percentage on the launch curtain while a heavy synchronous procedural build runs, without freezing the page",
+      "source": "log-search:starlance",
+      "split": "dev"
+    },
+    {
+      "expect": ["CharacterBody3D", "NavigationAgent3D", "Area3D"],
+      "id": "request.dev.67",
+      "kind": "request",
+      "note": "FPS brief: movement, chasing enemies, pickups",
+      "query": "make me a first-person shooter like Doom: fast run-and-gun movement, melee-rushing and projectile-throwing monsters, health/armor/ammo pickups, multiple weapons (shotgun), enclosed arena level, kill all monsters to win",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["VirtualShadowNode"],
+      "id": "mechanic.dev.68",
+      "kind": "mechanic",
+      "note": "clip levels re-render only when they move",
+      "query": "static shadow caching: stop redrawing unmoving world into shadow map every frame",
+      "source": "log-search:machinefall",
+      "split": "dev"
+    },
+    {
+      "expect": ["SkeletalMesh3D", "MatrixWorldPass"],
+      "id": "mechanic.dev.69",
+      "kind": "mechanic",
+      "note": "animation rate and matrix walk cost",
+      "query": "animate skinned characters without redundant hierarchy updates",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["Area3D"],
+      "id": "mechanic.dev.70",
+      "kind": "mechanic",
+      "note": "trigger volume pickup",
+      "query": "fuel canister pickup: ship flies through a trigger volume and refills boost",
+      "source": "log-search:starlance",
+      "split": "dev"
+    },
+    {
+      "expect": ["DebugOverlay"],
+      "id": "mechanic.dev.71",
+      "kind": "mechanic",
+      "note": "scene node inspection",
+      "query": "Inspect individual scene nodes by name, geometry triangle counts, bounds, instances and camera frustum membership",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["temporalReproject"],
+      "id": "mechanic.dev.72",
+      "kind": "mechanic",
+      "note": "temporal reprojection internals",
+      "query": "temporal sample mass visibility content change material epochs motion reprojection coverage",
+      "source": "log-search:task-15",
+      "split": "dev"
+    },
+    {
+      "expect": ["AnimationComposer", "BlendSpace1D"],
+      "id": "mechanic.dev.73",
+      "kind": "mechanic",
+      "note": "phase-synced normalized locomotion weights",
+      "query": "animation clip weights normalized phase gait stride synchronization",
+      "source": "log-search:evidence395/local-verification/engine-mcp.log",
+      "split": "dev"
+    },
+    {
+      "expect": ["captureMouse"],
+      "id": "mechanic.dev.74",
+      "kind": "mechanic",
+      "note": "pointer lock for FPS aim",
+      "query": "Capture and hide mouse cursor using pointer lock for first person weapon aiming; unlock and restore cursor for menus and Escape",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["Area3D"],
+      "id": "mechanic.dev.75",
+      "kind": "mechanic",
+      "note": "pickup trigger",
+      "query": "pickup item trigger",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["loadTerrainSplat", "applyTerrainSurface"],
+      "id": "mechanic.dev.76",
+      "kind": "mechanic",
+      "note": "splat-mask terrain layers",
+      "query": "terrain material blending grass rock dirt layers by splat masks on a streamed heightmap",
+      "source": "log-search:machinefall",
+      "split": "dev"
+    },
+    {
+      "expect": ["mergeByMaterial"],
+      "id": "mechanic.dev.77",
+      "kind": "mechanic",
+      "note": "runtime merged stand-in per material",
+      "query": "Generate a low-draw merged stand-in level of detail at runtime from an already-loaded model that has no cooked discrete LOD chain, merging its meshes and using a representative material",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["bakeWolfToFile"],
+      "id": "mechanic.dev.78",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "publish a generated wolf without replacing the last valid bake on interruption",
+      "source": "log-search:wolf-hitch-478a876",
+      "split": "dev"
+    },
+    {
+      "expect": ["animalBakePass"],
+      "id": "mechanic.dev.79",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "cook staged animal bakes through the ordinary asset pipeline",
+      "source": "log-search:wolf-hitch-478a876",
+      "split": "dev"
+    },
+    {
+      "expect": ["adviseThreeRenderWorkload", "observeSceneResources"],
+      "id": "mechanic.dev.80",
+      "kind": "mechanic",
+      "note": "diagnose performance and rendering",
+      "query": "playtest doctor: diagnose a running game's performance and rendering problems",
+      "source": "log-search:machinefall",
+      "split": "dev"
+    },
+    {
+      "expect": ["WaterSurface3D", "WaveField"],
+      "id": "mechanic.dev.81",
+      "kind": "mechanic",
+      "note": "stop repeating water bands with analytic waves",
+      "query": "Render a realistic animated open ocean without square repeating wave or reflection patterns while keeping the existing analytic wave shader and GPU frame budget.",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["TracerPool3D", "AudioBus", "AnimationComposer"],
+      "id": "request.dev.82",
+      "kind": "request",
+      "note": "gun brief: tracers, positional shots, recoil and reload layers",
+      "query": "Repair aircraft rear gun mouse aiming and left button firing, audible positional gun shots, shot synchronized weapon recoil and ammunition reload animation, and tracer bullets rendering as crosses.",
+      "source": "log-search:midway-open-pacific",
+      "split": "dev"
+    },
+    {
+      "expect": ["AnimationComposer"],
+      "id": "mechanic.dev.83",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "synchronize walk/run/strafe clips with different durations",
+      "source": "log-search:ggez-installed-consumer",
+      "split": "dev"
+    },
+    {
+      "expect": ["createAnimalActor"],
+      "id": "mechanic.dev.84",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "follow a baked animal from accepted fixed-step Rapier state",
+      "source": "log-search:wolf-hitch-478a876",
+      "split": "dev"
+    },
+    {
+      "expect": ["createAssetLoader"],
+      "id": "mechanic.dev.85",
+      "kind": "mechanic",
+      "note": "await launch assets before the reveal",
+      "query": "hold startup until game launch work has finished",
+      "source": "log-search:sailing-readiness",
+      "split": "dev"
+    },
+    {
+      "expect": ["thinCards", "thinFoliageCards"],
+      "id": "mechanic.dev.86",
+      "kind": "mechanic",
+      "note": "far foliage card thinning",
+      "query": "distant trees with alpha-tested leaves draw far fewer triangles (foliage LOD / impostor)",
+      "source": "log-search:machinefall",
+      "split": "dev"
+    },
+    {
+      "expect": ["Area3D"],
+      "id": "mechanic.dev.87",
+      "kind": "mechanic",
+      "note": "pickup trigger",
+      "query": "pickup item the player walks over to collect health or ammo",
+      "source": "log-search:game",
+      "split": "dev"
+    },
+    {
+      "expect": ["packAtlas", "dedupeMaterials"],
+      "id": "mechanic.heldout.01",
+      "kind": "mechanic",
+      "note": "atlas private textures then collapse identical materials",
+      "query": "too many draw calls from many unique materials; merge or atlas materials so props batch together",
+      "source": "log-search:machinefall",
+      "split": "heldout"
+    },
+    {
+      "expect": ["CharacterBody3D"],
+      "id": "mechanic.heldout.02",
+      "kind": "mechanic",
+      "note": "collision-aware character movement over steps and slopes",
+      "query": "character steps up stairs and slopes, snaps to ground, walks around trees",
+      "source": "log-search:threenative-engine",
+      "split": "heldout"
+    },
+    {
+      "expect": ["VirtualShadowNode", "readVirtualShadowMarker"],
+      "id": "mechanic.heldout.03",
+      "kind": "mechanic",
+      "note": "virtual shadow clipmap and its diagnostics marker",
+      "query": "VirtualShadowNode cached clipmap shadow receiver plane bias and shadow quality diagnostics for streamed foliage shadows",
+      "source": "log-search:threenative-engine",
+      "split": "heldout"
+    },
+    {
+      "expect": ["RenderChain"],
+      "id": "mechanic.heldout.04",
+      "kind": "mechanic",
+      "note": "template render chain composition; no MSAA-specific entry",
+      "query": "Configure Three.js world scene pass multisample count while retaining screen space antialiasing in a template render chain",
+      "source": "log-search:threenative-engine",
+      "split": "heldout"
+    },
+    {
+      "expect": ["connect"],
+      "id": "request.heldout.05",
+      "kind": "request",
+      "note": "replication is game-owned (networked-multiplayer); connect is the owned transport",
+      "query": "server-authoritative multiplayer: client prediction and reconciliation, snapshot interpolation, lag compensation for hitscan",
+      "source": "log-search:machinefall",
+      "split": "heldout"
+    },
+    {
+      "expect": ["Daylight", "Atmosphere"],
+      "id": "mechanic.heldout.06",
+      "kind": "mechanic",
+      "note": "sky, atmosphere and distance haze",
+      "query": "sky with cumulus clouds, atmosphere and height fog distance haze",
+      "source": "log-search:threenative-engine",
+      "split": "heldout"
+    },
+    {
+      "expect": ["WorldCells"],
+      "id": "mechanic.heldout.07",
+      "kind": "mechanic",
+      "note": "stream a cooked world package by cell with LODs",
+      "query": "Load an MCP-generated instanced forest GLB in a game on browser and native desktop, using its authored LODs and streaming cells so distant trees do not all render near geometry and the forest can meet a 60 FPS budget.",
+      "source": "log-search:threenative-engine",
+      "split": "heldout"
+    },
+    {
+      "expect": ["createCssUiRoot"],
+      "id": "mechanic.heldout.08",
+      "kind": "mechanic",
+      "note": "native CSS React HUD root",
+      "query": "Native CSS scrolling inside scaled or rotated HUD container, accurate CPU paint and pointer click targeting through installed affine transforms",
+      "source": "log-search:threenative-engine",
+      "split": "heldout"
+    },
+    {
+      "expect": ["SkeletalMesh3D"],
+      "id": "mechanic.heldout.09",
+      "kind": "mechanic",
+      "note": "updateRateReport exposes evaluated versus skipped rig ticks",
+      "query": "Measure animation update CPU spans and report evaluated versus skipped rig ticks using existing frame profiling diagnostics",
+      "source": "log-search:threenative-engine",
+      "split": "heldout"
+    },
+    {
+      "expect": ["WorldCells"],
+      "id": "mechanic.heldout.10",
+      "kind": "mechanic",
+      "note": "cell streaming with per-asset LOD",
+      "query": "stream world cells with automatic tree impostor LOD",
+      "source": "log-search:threenative-engine",
+      "split": "heldout"
+    },
+    {
+      "expect": ["createFireball"],
+      "id": "mechanic.heldout.11",
+      "kind": "mechanic",
+      "note": "visible fireball projectile",
+      "query": "enemy throws a slow visible projectile (fireball) at the player that can be dodged",
+      "source": "log-search:game",
+      "split": "heldout"
+    },
+    {
+      "expect": ["FrameBudget"],
+      "id": "mechanic.heldout.12",
+      "kind": "mechanic",
+      "note": "CPU budget and GPU timestamp frame time",
+      "query": "profile frame CPU budget and actual GPU timestamp render duration",
+      "source": "log-search:midway-open-pacific",
+      "split": "heldout"
+    },
+    {
+      "expect": ["buildStaticColliders"],
+      "id": "mechanic.heldout.13",
+      "kind": "mechanic",
+      "note": "static trimesh collision from a placed model",
+      "query": "place a static glb model in the world with collision so the player cannot walk through it",
+      "source": "log-search:zelda-clone",
+      "split": "heldout"
+    },
+    {
+      "expect": ["AnimationPlayer"],
+      "id": "mechanic.heldout.14",
+      "kind": "mechanic",
+      "note": "stride-synced clip playback; clip authoring is offline",
+      "query": "replace a rigged character's walk animation clip with one authored from a reference video, loop-closed, stride-synced to movement speed",
+      "source": "log-search:zelda-clone",
+      "split": "heldout"
+    },
+    {
+      "expect": ["NavigationAgent3D"],
+      "id": "mechanic.heldout.15",
+      "kind": "mechanic",
+      "note": "chasing enemies; melee and waves are game logic",
+      "query": "waves of melee monsters that chase the player and attack up close",
+      "source": "log-search:game",
+      "split": "heldout"
+    },
+    {
+      "expect": ["Buoyancy3D", "WaveField"],
+      "id": "mechanic.heldout.16",
+      "kind": "mechanic",
+      "note": "hull floats on sampled wave heights",
+      "query": "derive a ship hull's heave pitch and roll by sampling a wave height field at four points around the hull",
+      "source": "log-search:midway-open-pacific",
+      "split": "heldout"
+    },
+    {
+      "expect": ["InstancedBatch"],
+      "id": "mechanic.heldout.17",
+      "kind": "mechanic",
+      "note": "instance repeated meshes",
+      "query": "batch repeated meshes using instancing and frustum culling",
+      "source": "log-search:midway-open-pacific",
+      "split": "heldout"
+    },
+    {
+      "expect": ["GPUReadback", "SpectralOcean"],
+      "id": "mechanic.heldout.18",
+      "kind": "mechanic",
+      "note": "read GPU ocean height on CPU",
+      "query": "sample asynchronous spectral ocean height before floating the ship",
+      "source": "log-search:sailing-readiness",
+      "split": "heldout"
+    },
+    {
+      "expect": ["bakeWolf"],
+      "id": "mechanic.heldout.19",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "bake high and crowd wolf geometry before the ordinary asset cook",
+      "source": "log-search:wolf-hitch-478a876",
+      "split": "heldout"
+    },
+    {
+      "expect": ["createAnimalGeometry"],
+      "id": "mechanic.heldout.20",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "construct a Three.js geometry from a validated procedural wolf bake",
+      "source": "log-search:wolf-hitch-478a876",
+      "split": "heldout"
+    },
+    {
+      "expect": ["buildStaticColliders"],
+      "id": "request.heldout.21",
+      "kind": "request",
+      "note": "level fix brief; collision part is the engine piece",
+      "query": "Make the forest map maze walls continuous, collide with the same world coordinates, and procedurally render both traced whitewater falls; remove floating outside-map tree curtain.",
+      "source": "log-search:zelda-clone",
+      "split": "heldout"
+    },
+    {
+      "expect": ["audioPass", "AudioBus"],
+      "id": "mechanic.heldout.22",
+      "kind": "mechanic",
+      "note": "condition a seamless loop then play it",
+      "query": "author a track made outside the engine as a looping game soundtrack",
+      "source": "log-search:zelda-clone",
+      "split": "heldout"
+    },
+    {
+      "expect": ["Scheduler"],
+      "id": "mechanic.heldout.23",
+      "kind": "mechanic",
+      "note": "countdown timer situation",
+      "query": "countdown timer that ends the round",
+      "source": "log-search:snow-demo",
+      "split": "heldout"
+    },
+    {
+      "expect": ["AudioBus"],
+      "id": "mechanic.heldout.24",
+      "kind": "mechanic",
+      "note": "audio volume",
+      "query": "background music fade in volume",
+      "source": "log-search:zelda-clone",
+      "split": "heldout"
+    },
+    {
+      "expect": ["createFireball"],
+      "id": "mechanic.heldout.25",
+      "kind": "mechanic",
+      "note": "fireball projectile",
+      "query": "enemy projectile fireball",
+      "source": "log-search:game",
+      "split": "heldout"
+    },
+    {
+      "expect": ["InstancedBatch", "mergeByMaterial"],
+      "id": "mechanic.heldout.26",
+      "kind": "mechanic",
+      "note": "collapse repeated static geometry",
+      "query": "load GLB forest trees and merge repeated static geometry",
+      "source": "log-search:zelda-clone",
+      "split": "heldout"
+    },
+    {
+      "expect": ["TracerPool3D", "GPUParticles3D"],
+      "id": "mechanic.heldout.27",
+      "kind": "mechanic",
+      "note": "shot streaks and muzzle flash",
+      "query": "projectile trail ribbon and muzzle flash for laser shots",
+      "source": "log-search:sandbox",
+      "split": "heldout"
+    },
+    {
+      "expect": ["loadAnimalBake"],
+      "id": "mechanic.heldout.28",
+      "kind": "mechanic",
+      "note": "exact situation",
+      "query": "load a cooked animal from ctx.assets without runtime generation",
+      "source": "log-search:wolf-hitch-478a876",
+      "split": "heldout"
+    },
+    {
+      "expect": ["godrays"],
+      "id": "mechanic.heldout.29",
+      "kind": "mechanic",
+      "note": "godrays stage install",
+      "query": "Await first rendered frame and shadow map readiness before installing godrays post processing",
+      "source": "log-search:zelda-clone",
+      "split": "heldout"
+    },
+    {
+      "expect": ["Daylight", "Atmosphere"],
+      "id": "mechanic.heldout.30",
+      "kind": "mechanic",
+      "note": "sky scattering and aerial perspective",
+      "query": "daytime sky with atmospheric scattering and aerial perspective fog so distant terrain fades into the sky color",
+      "source": "log-search:machinefall",
+      "split": "heldout"
+    },
+    {
+      "expect": ["CharacterBody3D", "NavigationAgent3D", "Area3D"],
+      "id": "request.heldout.31",
+      "kind": "request",
+      "note": "FPS brief: movement, chasing enemies, pickups",
+      "query": "Doom-like first-person shooter: fast strafing movement through a corridor-and-room base, shotgun and chaingun hitscan, monsters that chase and throw fireball projectiles, health, armor and ammo pickups, keycard-locked doors, exit switch",
+      "source": "log-search:game",
+      "split": "heldout"
+    },
+    {
+      "expect": ["DebugOverlay"],
+      "id": "mechanic.heldout.32",
+      "kind": "mechanic",
+      "note": "per-object cost inspection",
+      "query": "Authoring profiler that identifies each scene object or model's triangle count and draw calls, camera distance and screen coverage, repeated instances and active LOD to find expensive barely visible geometry and prioritize optimization",
+      "source": "log-search:midway-open-pacific",
+      "split": "heldout"
+    },
+    {
+      "expect": ["GPUParticles3D"],
+      "id": "mechanic.heldout.33",
+      "kind": "mechanic",
+      "note": "explosion particles",
+      "query": "explosion visual effect with flash, shockwave, debris and smoke particles",
+      "source": "log-search:sandbox",
+      "split": "heldout"
+    },
+    {
+      "expect": ["connect"],
+      "id": "request.heldout.34",
+      "kind": "request",
+      "note": "AOI replication is game-owned; connect is the owned transport",
+      "query": "interest management / area of interest replication for hundreds of players",
+      "source": "log-search:machinefall",
+      "split": "heldout"
+    },
+    {
+      "expect": ["Area3D"],
+      "id": "mechanic.heldout.35",
+      "kind": "mechanic",
+      "note": "approach trigger; key logic is game-owned",
+      "query": "sliding door that opens when player approaches with key",
+      "source": "log-search:game",
+      "split": "heldout"
+    },
+    {
+      "expect": ["InstancedBatch", "mergeByMaterial", "updateModelLods"],
+      "id": "mechanic.heldout.36",
+      "kind": "mechanic",
+      "note": "draw call reduction set",
+      "query": "instanced rendering of many identical cloned GLTF models, batching static meshes into fewer draw calls, mesh merging, level of detail LOD for aircraft, draw call reduction",
+      "source": "log-search:midway-open-pacific",
+      "split": "heldout"
+    },
+    {
+      "expect": ["Area3D", "RigidBody3D"],
+      "id": "mechanic.heldout.37",
+      "kind": "mechanic",
+      "note": "goal zone overlap with a resting body",
+      "query": "detect the ball coming to rest inside a goal area",
+      "source": "log-search:snow-demo",
+      "split": "heldout"
+    },
+    {
+      "expect": ["PhysicsDirectSpaceState3D"],
+      "id": "mechanic.heldout.38",
+      "kind": "mechanic",
+      "note": "hitscan raycast",
+      "query": "hitscan shotgun pellets against colliders",
+      "source": "log-search:game",
+      "split": "heldout"
+    },
+    {
+      "expect": ["RippleField", "GPUReadback"],
+      "id": "mechanic.heldout.39",
+      "kind": "mechanic",
+      "note": "GPU ripple sim with CPU sampling",
+      "query": "simulate a water ripple heightfield on the GPU while sampling heights on CPU",
+      "source": "log-search:midway-open-pacific",
+      "split": "heldout"
+    },
+    {
+      "expect": ["WorldCells", "TerrainTiles"],
+      "id": "mechanic.heldout.40",
+      "kind": "mechanic",
+      "note": "cell streaming with physics units",
+      "query": "streaming large open world cells with collision and navmesh loading/unloading around the player",
+      "source": "log-search:machinefall",
+      "split": "heldout"
+    },
+    {
+      "expect": ["advanceTimeoutMs"],
+      "id": "mechanic.heldout.41",
+      "kind": "mechanic",
+      "note": "bounded fixed-step advance in playtest",
+      "query": "bounded GPU queue completion for accelerated fixed-step playtest simulation",
+      "source": "log-search:source",
+      "split": "heldout"
+    },
+    {
+      "expect": ["WorldCells", "VirtualShadowNode", "InstancedBatch"],
+      "id": "request.heldout.42",
+      "kind": "request",
+      "note": "open-world streaming brief",
+      "query": "stream a large open world map in cells with instanced props, texture streaming/upload budget, shadow caching for static geometry, keep frame rate while walking",
+      "source": "log-search:machinefall",
+      "split": "heldout"
+    },
+    {
+      "expect": ["runDesktopPlaytest"],
+      "id": "mechanic.heldout.43",
+      "kind": "mechanic",
+      "note": "native desktop playtest scenario",
+      "query": "Automated native desktop React UI playtests: click WebView buttons and select aircraft, assert resulting game state, and capture the composited overlay.",
+      "source": "log-search:midway-open-pacific",
+      "split": "heldout"
+    }
+  ],
+  "version": 1
+}

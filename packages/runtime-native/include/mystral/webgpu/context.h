@@ -223,7 +223,10 @@ public:
         PLATFORM_WAYLAND = 2,
         PLATFORM_XCB = 3,
         PLATFORM_XLIB = 4,
-        PLATFORM_ANDROID = 5
+        PLATFORM_ANDROID = 5,
+        // PS4: no window system at all. vulkan-ps4's swapchain is the VideoOut scanout, so the
+        // surface is created from a null carrier (PRD-784, patches/dawn-0003).
+        PLATFORM_PS4 = 6
     };
 
 private:

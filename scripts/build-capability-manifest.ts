@@ -14,10 +14,12 @@ import {
 import { RENDER_CHAIN_MANIFEST_ENTRIES } from "./render-chain-capabilities.js";
 import { publicWorkspacePackagesWithExports } from "./workspace-packages.js";
 
-export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/create-threenative/capabilities.json";
+/** The one committed manifest. `create-threenative` reads this copy; it keeps none of its own. */
+export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/core/capabilities.json";
 // `@threenative/core` ships the same manifest so the capability MCP server still answers in a
 // project that was not scaffolded and therefore has no committed copy of its own.
-export const CAPABILITY_MANIFEST_MIRROR_PATH = "packages/core/capabilities.json";
+/** Where the copy sat before PRD-836; kept so a stale one is reported rather than silently used. */
+export const CAPABILITY_MANIFEST_LEGACY_PATH = "packages/create-threenative/capabilities.json";
 
 const MANIFEST_VERSION = 2 as const;
 
@@ -761,7 +763,7 @@ function manifestPath(root: string): string {
 }
 
 function manifestPaths(root: string): readonly string[] {
-  return [manifestPath(root), path.join(root, CAPABILITY_MANIFEST_MIRROR_PATH)];
+  return [manifestPath(root)];
 }
 
 export interface IScaffoldDependencyClosure {

@@ -1,0 +1,246 @@
+diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
+index ba3511f..36d66de 100644
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -601,6 +601,12 @@ struct VkPs4DescriptorPool {
+     uint32_t free_count;
+ };
+ 
++/* Bytes between two bindings inside a set's descriptor memory: psbc lays a set
++ * out at a fixed stride per binding (PSBC_BINDING_STRIDE in
++ * libpsbc/psbc_compile.c) so the runtime can build that memory from the
++ * VkDescriptorSetLayout alone. Keep the two numbers equal. */
++#define VK_PS4_DESCRIPTOR_SET_STRIDE 64u
++
+ struct VkPs4DescriptorSet {
+     VkPs4ObjectType type;
+     VkPs4Device *device;
+@@ -611,6 +617,13 @@ struct VkPs4DescriptorSet {
+     /* VK_EXT_descriptor_indexing: variable descriptor count for the
+      * last binding (0 if layout doesn't use variable count). */
+     uint32_t variable_descriptor_count;
++    /* Descriptor memory the shader reads through this set's 64-bit base
++     * pointer: binding N's GNM descriptors at N * VK_PS4_DESCRIPTOR_SET_STRIDE,
++     * as psbc reports the set. Composed at bind time from the bindings above
++     * because a statement of the same set can be bound with other dynamic
++     * offsets, and radv's SMEM load reads whatever is here then. */
++    void *memory;
++    uint32_t memory_size;
+ };
+ 
+ /* === Sync === */
+diff --git a/src/vk_ps4_descriptor.c b/src/vk_ps4_descriptor.c
+index c9d6e1c..f2ec260 100644
+--- a/src/vk_ps4_descriptor.c
++++ b/src/vk_ps4_descriptor.c
+@@ -416,6 +416,90 @@ vk_ps4_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
+     }
+ }
+ 
++/* One consumed dynamic offset, keyed by the (set, binding, element) it belongs
++ * to: Vulkan consumes them set-major, binding ascending, one per dynamic
++ * descriptor, and both a VS/PS stage loop and the set composition read them. */
++struct vk_ps4_dyn_offset {
++    uint32_t set_idx;
++    uint32_t binding;
++    uint32_t array_elem;
++    uint32_t offset;
++};
++
++static uint32_t dyn_offset_for(const struct vk_ps4_dyn_offset *map, uint32_t count,
++                               uint32_t set_idx, uint32_t binding, uint32_t elem) {
++    for (uint32_t i = 0; i < count; i++) {
++        if (map[i].set_idx == set_idx && map[i].binding == binding &&
++            map[i].array_elem == elem)
++            return map[i].offset;
++    }
++    return 0;
++}
++
++/* Fill a set's descriptor memory: binding N's descriptors at
++ * N * VK_PS4_DESCRIPTOR_SET_STRIDE, array elements back to back, the layout
++ * psbc reports for the set. radv lowers every descriptor access to an SMEM read
++ * at set_base + binding offset, so the set's own GNM descriptors (16 bytes for a
++ * V#/S#, 32 for a T#, 48 for an image+sampler with the sampler at +32) copied
++ * there are exactly the bytes the shader loads -- the field layouts are the
++ * hardware ones on both sides. Dynamic offsets shift a buffer's base address in
++ * the copy, leaving the binding's own descriptor untouched. */
++static void compose_set_memory(VkPs4DescriptorSet *set, uint32_t set_index,
++                               const struct vk_ps4_dyn_offset *dyn, uint32_t dyn_count) {
++    if (!set || !set->memory) return;
++
++    memset(set->memory, 0, set->memory_size);
++
++    for (uint32_t bi = 0; bi < set->binding_count; bi++) {
++        VkPs4DescriptorBinding *b = &set->bindings[bi];
++        if (b->count == 0) continue;
++
++        uint8_t *slot = (uint8_t *)set->memory +
++                        (size_t)b->binding_number * VK_PS4_DESCRIPTOR_SET_STRIDE;
++
++        switch (b->type) {
++        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
++        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
++        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
++        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
++        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
++        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
++            if (!b->buffers) break;
++            for (uint32_t e = 0; e < b->count; e++) {
++                GnmBuffer *dst = (GnmBuffer *)(slot + e * sizeof(GnmBuffer));
++                *dst = b->buffers[e];
++                const uint32_t off =
++                    dyn_offset_for(dyn, dyn_count, set_index, b->binding_number, e);
++                if (off) {
++                    char *base = (char *)sceGnmBufGetBaseAddress(dst);
++                    sceGnmBufSetBaseAddress(dst, base + off);
++                }
++            }
++            break;
++        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
++        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
++        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
++            if (b->textures)
++                memcpy(slot, b->textures, b->count * sizeof(GnmTexture));
++            break;
++        case VK_DESCRIPTOR_TYPE_SAMPLER:
++            if (b->samplers)
++                memcpy(slot, b->samplers, b->count * sizeof(GnmSampler));
++            break;
++        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
++            for (uint32_t e = 0; e < b->count; e++) {
++                uint8_t *elem = slot + e * (sizeof(GnmTexture) + sizeof(GnmSampler));
++                if (b->textures) memcpy(elem, &b->textures[e], sizeof(GnmTexture));
++                if (b->samplers)
++                    memcpy(elem + sizeof(GnmTexture), &b->samplers[e], sizeof(GnmSampler));
++            }
++            break;
++        default:
++            break;
++        }
++    }
++}
++
+ /* === vkCmdBindDescriptorSets === */
+ VKAPI_ATTR void VKAPI_CALL
+ vk_ps4_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
+@@ -445,13 +529,7 @@ vk_ps4_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint
+      * offsets for bindings shared between VS and PS. */
+     uint32_t dyn_map_cap = dynamicOffsetCount;
+     if (dyn_map_cap > 256) dyn_map_cap = 256;
+-    struct dyn_offset_map {
+-        uint32_t set_idx;
+-        uint32_t binding;
+-        uint32_t array_elem;
+-        uint32_t offset;
+-    };
+-    struct dyn_offset_map dyn_map[256];
++    struct vk_ps4_dyn_offset dyn_map[256];
+     uint32_t dyn_map_count = 0;
+     uint32_t dyn_off_consumed = 0;
+ 
+@@ -479,8 +557,12 @@ vk_ps4_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint
+         }
+     }
+ 
+-    /* Helper to look up a dynamic offset for a given (set_idx, binding) */
+-    /* (defined as a lambda-like macro for brevity) */
++    /* Compose each bound set's descriptor memory once with this bind's dynamic
++     * offsets; the stage loops below then only write base pointers. */
++    for (uint32_t si = 0; si < setCount; si++) {
++        compose_set_memory((VkPs4DescriptorSet *)pDescriptorSets[si], firstSet + si,
++                           dyn_map, dyn_map_count);
++    }
+ 
+     if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+         /* Emit for both VS and PS stages */
+@@ -499,6 +581,23 @@ vk_ps4_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint
+                 const GnmInputUsageSlot *slot = &slots[i];
+                 uint32_t apislot = slot->apislot;
+ 
++                /* A descriptor-set base names its set in apislot: psbc emits one
++                 * such slot per set the shader uses, so binding set S writes only
++                 * S's base (firstSet is S when a caller binds sets one at a
++                 * time, which is what Dawn does). The pointer is the set memory
++                 * composed above; SetPointerUserData writes both SGPRs, lo then
++                 * hi, the 64-bit convention radv's set args expect. */
++                if (slot->usagetype == GNM_SHINPUTUSAGE_PTR_INDIRECTRESOURCETABLE) {
++                    if (apislot < firstSet || apislot >= firstSet + setCount) continue;
++                    VkPs4DescriptorSet *want =
++                        (VkPs4DescriptorSet *)pDescriptorSets[apislot - firstSet];
++                    if (!want || !want->memory) continue;
++                    sceGnmDrawCmdSetPointerUserData(&cmd->gnm_cmd, stage,
++                                                    slot->startregister,
++                                                    want->memory);
++                    continue;
++                }
++
+                 /* Find the binding across all bound sets.
+                  * Track which set it was found in for dynamic offset lookup.
+                  * The actual Vulkan set index is firstSet + si. */
+@@ -632,6 +731,18 @@ vk_ps4_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint
+             const GnmInputUsageSlot *slot = &slots[i];
+             uint32_t apislot = slot->apislot;
+ 
++            /* A descriptor-set base names its set in apislot (see the graphics
++             * loop above): write that set's base pointer and nothing else. */
++            if (slot->usagetype == GNM_SHINPUTUSAGE_PTR_INDIRECTRESOURCETABLE) {
++                if (apislot < firstSet || apislot >= firstSet + setCount) continue;
++                VkPs4DescriptorSet *want =
++                    (VkPs4DescriptorSet *)pDescriptorSets[apislot - firstSet];
++                if (!want || !want->memory) continue;
++                sceGnmDrawCmdSetPointerUserData(&cmd->gnm_cmd, stage,
++                                                slot->startregister, want->memory);
++                continue;
++            }
++
+             VkPs4DescriptorBinding *b = NULL;
+             uint32_t found_set_idx = 0;
+             for (uint32_t si = 0; si < setCount; si++) {
+diff --git a/src/vk_ps4_pipeline.c b/src/vk_ps4_pipeline.c
+index ae7b3b8..7f155f4 100644
+--- a/src/vk_ps4_pipeline.c
++++ b/src/vk_ps4_pipeline.c
+@@ -1160,6 +1160,28 @@ vk_ps4_AllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo
+                 set->bindings[vb].count = var_counts[i];
+                 set->variable_descriptor_count = var_counts[i];
+             }
++
++            /* Descriptor memory for the set's 64-bit base pointer: one
++             * VK_PS4_DESCRIPTOR_SET_STRIDE leaf per binding number, composed in
++             * vkCmdBindDescriptorSets. */
++            {
++                uint32_t max_binding = 0;
++                for (uint32_t b = 0; b < set->binding_count; b++) {
++                    if (set->bindings[b].binding_number + 1u > max_binding)
++                        max_binding = set->bindings[b].binding_number + 1u;
++                }
++                set->memory_size = max_binding * VK_PS4_DESCRIPTOR_SET_STRIDE;
++                if (set->memory_size) {
++                    set->memory = vk_ps4_alloc_zero(alloc, set->memory_size, 16);
++                    if (!set->memory) {
++                        for (uint32_t j = 0; j <= i; j++) {
++                            vk_ps4_free(alloc, (void *)pDescriptorSets[j]);
++                            pDescriptorSets[j] = VK_NULL_HANDLE;
++                        }
++                        return VK_ERROR_OUT_OF_HOST_MEMORY;
++                    }
++                }
++            }
+         }
+ 
+         if (pool) pool->sets_allocated++;
+@@ -1184,6 +1206,13 @@ vk_ps4_FreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
+             if (set->bindings[b].textures) vk_ps4_free(alloc, set->bindings[b].textures);
+             if (set->bindings[b].samplers) vk_ps4_free(alloc, set->bindings[b].samplers);
+         }
++        /* The composed set memory goes with them: allocation memsets a reused
++         * set, so a stale pointer here would leak the old block. */
++        if (set->memory) {
++            vk_ps4_free(alloc, set->memory);
++            set->memory = NULL;
++            set->memory_size = 0;
++        }
+         /* Add to the pool's free list for reuse, or free if pool is full */
+         if (pool && pool->free_count < VK_PS4_MAX_POOLED_SETS) {
+             pool->free_list[pool->free_count++] = set;

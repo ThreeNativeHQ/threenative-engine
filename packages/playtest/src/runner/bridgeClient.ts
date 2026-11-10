@@ -23,6 +23,7 @@ import {
 } from "../index.js";
 import type { Page } from "playwright";
 
+import { laneOfScenarioTarget, PLAYTEST_LANES, type PlaytestLane } from "../lanes.js";
 import { HOST_PLAYTEST_OBSERVATION_FIELDS, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 import { setupApplication as resolveSetupApplication } from "./setup-confirmation.js";
 import { composeScenarioSetupRequest } from "./setup-request.js";
@@ -222,7 +223,7 @@ export async function connectPlaytestBridgeTransport(
       { capability: missing[0] },
     ));
   }
-  const unavailable = unavailableObservation(scenario);
+  const unavailable = unavailableObservation(scenario, laneOfRun(scenario, target));
   if (unavailable !== undefined) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
@@ -295,14 +296,15 @@ async function applySetupBeforeDescribe(
 
 function unavailableObservation(
   scenario: IPlaytestScenario,
+  lane: PlaytestLane,
 ): { assertion: string; path: string; reason: string } | undefined {
   for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
     if (scenario.assert?.[entry.kind] === undefined) continue;
-    if (!entry.supportedOn.includes(scenario.target)) {
+    if (!entry.supportedOn.includes(lane)) {
       return {
         assertion: entry.kind,
         path: entry.observationPath,
-        reason: `Assertion '${entry.kind}' is not supported on target '${scenario.target}'.`,
+        reason: `Assertion '${entry.kind}' is not supported on the ${lane} lane; it runs on: ${entry.supportedOn.join(", ")}.`,
       };
     }
     for (const path of requiredObservationPaths(scenario, entry.kind, entry.observationPath)) {
@@ -336,6 +338,12 @@ function unavailableObservation(
     }
   }
   return undefined;
+}
+
+/** The lane this run executes on: the runner's own name for it, else the scenario file's `target`. */
+function laneOfRun(scenario: IPlaytestScenario, target: string | undefined): PlaytestLane {
+  const named = PLAYTEST_LANES.find((lane) => lane === target);
+  return named ?? laneOfScenarioTarget(scenario.target);
 }
 
 function requiredObservationPaths(

@@ -52,6 +52,7 @@ import {
   ShadowBaseNode,
   type UniformNode,
 } from "three/webgpu";
+import { readLaunchFlag } from "../debug.js";
 import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
 import { frustumPlanes } from "../world-gpu-types.js";
@@ -2174,13 +2175,19 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (builder.renderer.shadowMap.enabled === false) return null;
     // Read once, like tnShadowStats. Build no diagnostic nodes unless the URL switch is on.
     if (this.#levelsRequested === undefined) {
-      const search = globalThis.location?.search ?? "";
-      this.#levelsRequested = /[?&]tnShadowLevels=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(search);
+      // One read of the URL for both switches: setup runs once, before the shader graph exists.
+      const search = globalThis.location?.search;
+      // Query only, as it always was: no environment variable and no global named these switches.
+      this.#levelsRequested = readLaunchFlag(
+        { environment: "", query: "tnShadowLevels" },
+        "on",
+        search,
+      );
       // Counter runs: a fixed refreshStep, since the adaptive step follows measured render cost and
       // two runs of one route would move their windows at different ticks. Set once, before a frame.
       if (
         this.#adaptiveRefreshGiven === undefined &&
-        /[?&]tnAdaptiveRefresh=(?:0|false)(?:&|$)/u.test(search)
+        readLaunchFlag({ environment: "", query: "tnAdaptiveRefresh" }, "off", search)
       ) {
         (this.options as { adaptiveRefresh: boolean }).adaptiveRefresh = false;
       }
@@ -2844,9 +2851,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** Whether `?tnShadowStats=1` is on this launch's URL, read once. */
   #statsWalkRequested(): boolean {
-    this.#statsRequested ??= /[?&]tnShadowStats=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(
-      globalThis.location?.search ?? "",
-    );
+    this.#statsRequested ??= readLaunchFlag({ environment: "", query: "tnShadowStats" });
     return this.#statsRequested;
   }
 

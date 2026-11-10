@@ -511,7 +511,9 @@ test('clean consumers retain failure logs and use the measured device timeout', 
   expect(releaseWorkflow.match(/--timeout 30000/gu)).toHaveLength(9);
   const consumers = releaseWorkflow.slice(releaseWorkflow.indexOf('  clean-consumer:'));
   expect(consumers.match(/if: always\(\)/gu)).toHaveLength(2);
-  expect(releaseWorkflow.match(/if-no-files-found: warn/gu)).toHaveLength(2);
+  // Both clean-consumer legs keep their logs on a failed gate. Scoped to the consumers: the iOS
+  // simulator evidence upload warns for its own reason (a red launch still writes the variant log).
+  expect(consumers.match(/if-no-files-found: warn/gu)).toHaveLength(2);
   expect(releaseWorkflow).toContain('cat "$RUNNER_TEMP/ios-wrong-value.log"');
 });
 

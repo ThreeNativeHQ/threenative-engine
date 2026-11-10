@@ -989,6 +989,21 @@ void basicNormalView() {
     CHECK(p.vertex.dump().find("output normalView = ") != std::string::npos);
 }
 
+// three's TangentUtils: a zero det (uv constant across the pixel) scales the frame to 0. Without the
+// guard the frame is 0 * inf = NaN, and post spreads it over the whole image (PRD-784 P4-3, PS4).
+void normalMapZeroDet() {
+    VertexVariant variant;
+    variant.normalMap = true;
+    const std::string code = WgslEmitter::emit(buildStandard({}, variant).fragment, 1).code;
+    const size_t at = code.find("(1f / sqrt(");
+    CHECK(at != std::string::npos);
+    const size_t start = code.rfind('\n', at), end = code.find('\n', at);
+    const std::string line = code.substr(start, end - start);
+    const bool guarded = line.find("select((1f / sqrt(") != std::string::npos && line.find(" == 0f)") != std::string::npos;
+    if (!guarded) std::fprintf(stderr, "perturbNormal2Arb divides by sqrt(det) unguarded:%s\n", line.c_str());
+    CHECK(guarded);
+}
+
 }  // namespace
 
 // PRD-539 lever 7: every implicit-LOD material texture reads at the view mip bias (UE 5.8.3:
@@ -1016,4 +1031,4 @@ void viewMipBiasSamples() {
     CHECK(colored.code.find("u.f_viewMipBias") != std::string::npos);
 }
 
-TN_TEST_MAIN({"alpha_hash", [] { alphaHash(); alphaTestCompiled(); }}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode}, {"basic_normal_view", basicNormalView})
+TN_TEST_MAIN({"alpha_hash", [] { alphaHash(); alphaTestCompiled(); }}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode}, {"basic_normal_view", basicNormalView}, {"normal_map_zero_det", normalMapZeroDet});

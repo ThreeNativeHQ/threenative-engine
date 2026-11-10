@@ -1,6 +1,6 @@
 {
   "comment": "The engine capability MCP surface shipped through @threenative/core. The golden path also calls a mechanically explicit cross-system request so a packaged consumer proves full-request discovery without repository source.",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "tools": [
     "engine_capability_detail",
     "engine_reference_detail",
@@ -110,7 +110,7 @@
     }
   },
   "descriptions": {
-    "engine_search_capabilities": "Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope \"request\" for the mechanically explicit full request and \"mechanic\" for each focused search; matchedSituation and score explain every result. The response verdict \"none\" is an actionable answer with guidance, not a failed search.",
+    "engine_search_capabilities": "Search the installed engine by concrete gameplay mechanic or by an exact exported symbol name. Decompose genres first. Use scope \"request\" for the mechanically explicit full request and \"mechanic\" for each focused search; matchedSituation and score explain every result. A row carries the answer (importPath, signature, example, constraints, overrides, deprecations), so call engine_capability_detail only for a symbol the search did not return. The response verdict \"none\" is an actionable answer with guidance, not a failed search.",
     "engine_capability_detail": "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`.",
     "engine_search_references": "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
     "engine_reference_detail": "Reverse engineer a game: read its pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",

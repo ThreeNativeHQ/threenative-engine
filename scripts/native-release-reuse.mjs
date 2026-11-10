@@ -3,19 +3,13 @@
 // PRD-630: a tag run publishes the bytes its promotion proof already built and installed.
 // `find <sha>` prints `proof_run=<id>`, empty when no proof qualifies, so the tag run builds.
 
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { gh } from "./lib/gh.mjs";
 
 const repository = () => process.env.GITHUB_REPOSITORY ?? "";
-
-function gh(args) {
-  const result = spawnSync("gh", args, { encoding: "utf8", maxBuffer: 1 << 26 });
-  if (result.status !== 0) throw new Error(`gh ${args[0]} ${args[1]}: ${result.stderr.trim()}`);
-  return result.stdout;
-}
 
 const api = (path) => JSON.parse(gh(["api", `repos/${repository()}/${path}`]));
 const treeOf = (sha) => api(`commits/${sha}`).commit.tree.sha;

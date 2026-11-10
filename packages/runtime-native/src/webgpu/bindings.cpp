@@ -116,23 +116,15 @@ namespace webgpu {
 
 
 static js::JSValueHandle evalEmbeddedRuntimeScriptWithResult(
-    js::Engine& engine, std::string_view name, const char* filename) {
-    const auto script = runtime_scripts::find(name);
-    if (!script.data) {
-        std::cerr << "[WebGPU] missing embedded runtime script: " << name << std::endl;
-        return {};
-    }
+    js::Engine& engine, runtime_scripts::Script name, const char* filename) {
+    const auto script = runtime_scripts::require(name);
     const std::string source(script.data, script.size);
     return engine.evalScriptWithResult(source.c_str(), filename);
 }
 
 static bool evalEmbeddedRuntimeScript(
-    js::Engine& engine, std::string_view name, const char* filename) {
-    const auto script = runtime_scripts::find(name);
-    if (!script.data) {
-        std::cerr << "[WebGPU] missing embedded runtime script: " << name << std::endl;
-        return false;
-    }
+    js::Engine& engine, runtime_scripts::Script name, const char* filename) {
+    const auto script = runtime_scripts::require(name);
     const std::string source(script.data, script.size);
     return engine.eval(source.c_str(), filename);
 }
@@ -2102,7 +2094,7 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                         // are built, so pass-local installation was a dead path. The device/queue
                         // entry points are the stable surface that every command must cross through.
                         const auto installer = evalEmbeddedRuntimeScriptWithResult(
-                            *state->engine, "frame-op-stream", "frame-op-stream.js");
+                            *state->engine, runtime_scripts::Script::frame_op_stream, "frame-op-stream.js");
                         const auto host = state->engine->newObject();
                         state->engine->setProperty(host, "device", device);
                         state->engine->setProperty(host, "queue", queue);
@@ -2130,7 +2122,7 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                         js::JSValueGuard asyncInstaller(
                             *state->engine,
                             evalEmbeddedRuntimeScriptWithResult(
-                                *state->engine, "install-async-pipelines",
+                                *state->engine, runtime_scripts::Script::install_async_pipelines,
                                 "install-async-pipelines.js"));
                         js::JSValueGuard installed(*state->engine, {});
                         if (asyncInstaller) {
@@ -2788,7 +2780,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
         !copyGlobalBinding(globalBindingHost, "__decodeImageDataAsync")) return false;
 
     // JavaScript polyfill for createImageBitmap
-    if (!evalEmbeddedRuntimeScript(*engine, "image-bitmap-polyfill", "image-bitmap-polyfill.js")) {
+    if (!evalEmbeddedRuntimeScript(*engine, runtime_scripts::Script::image_bitmap_polyfill, "image-bitmap-polyfill.js")) {
         return false;
     }
 

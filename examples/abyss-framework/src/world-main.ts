@@ -28,8 +28,7 @@ const game = defineGame<WorldState>({
   plugins: [playtest<WorldState>()],
   // WorldProbe's objects carry their own render hooks, which the batching projection declines
   // (`renderHook`), so the game states the opt-out.
-  render: { projection: false },
-  renderer: { preferWebGPU: true },
+  renderer: { preferWebGPU: true, projection: false },
   scenes: { world: worldScene },
   seed: 20260925,
   start: "world",

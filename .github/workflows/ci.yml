@@ -208,6 +208,9 @@ jobs:
         run: |
           set -euo pipefail
           pnpm lint
+          # PRD-836: the capability reference and the context skill are build output, not tracked
+          # files, and `check:docs` resolves links against the working tree.
+          pnpm capabilities:sync
           pnpm check:docs
           pnpm exec vitest run \
             scripts/__tests__/check-doc-links.spec.ts \
@@ -1451,6 +1454,9 @@ jobs:
           shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
+      # The capability reference is build output (PRD-836): `budgets --check`s it, so a clean
+      # checkout generates it first, exactly as the docs lane does.
+      - run: pnpm capabilities:sync
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
@@ -1564,8 +1570,9 @@ jobs:
         run: |
           set -euo pipefail
           ccache --zero-stats
-          # The core reads the web engine's pinned sources too (stb decodes SMAANode's tables).
-          for dependency in stb cgltf webp-source; do
+          # The core reads the web engine's pinned sources too (stb decodes SMAANode's tables), and
+          # the glTF loader decodes meshopt-compressed models with the pinned meshoptimizer.
+          for dependency in stb cgltf webp-source meshopt; do
             node scripts/download-deps.mjs --only "$dependency"
           done
           cmake -S . -B build/native-engine -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTN_ENGINE_CORE_ONLY=ON

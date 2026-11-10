@@ -1,0 +1,54 @@
+// PS4 shim: OpenOrbis libc++ 11 ships an EMPTY <concepts> header (the std concept
+// library only landed in libc++ 13). Dawn/Tint use std::same_as/integral/
+// convertible_to/... ~60 times, so define the C++20 concept library over
+// <type_traits> rather than rebuilding libc++. Put this dir BEFORE
+// .../include/c++/v1 on -isystem.
+#ifndef _PS4_SHIM_CONCEPTS
+#define _PS4_SHIM_CONCEPTS
+#include <type_traits>
+#include <utility>
+
+namespace std {
+
+template <class T, class U> concept same_as = is_same_v<T, U>;
+template <class Derived, class Base> concept derived_from =
+    is_base_of_v<Base, Derived> && is_convertible_v<const volatile Derived*, const volatile Base*>;
+template <class From, class To> concept convertible_to =
+    is_convertible_v<From, To> && requires { static_cast<To>(declval<From>()); };
+template <class T> concept integral = is_integral_v<T>;
+template <class T> concept signed_integral = integral<T> && is_signed_v<T>;
+template <class T> concept unsigned_integral = integral<T> && !signed_integral<T>;
+template <class T> concept floating_point = is_floating_point_v<T>;
+template <class T> concept object = is_object_v<T>;
+template <class T> concept destructible = is_nothrow_destructible_v<T>;
+template <class T, class... Args> concept constructible_from =
+    destructible<T> && is_constructible_v<T, Args...>;
+template <class T> concept move_constructible = constructible_from<T, T> && convertible_to<T, T>;
+template <class T> concept copy_constructible =
+    move_constructible<T> && constructible_from<T, T&> && convertible_to<const T&, T>;
+template <class T> concept default_initializable = constructible_from<T> && requires { T{}; };
+template <class T> concept movable = object<T> && move_constructible<T> && is_assignable_v<T&, T>;
+template <class T> concept copyable =
+    copy_constructible<T> && movable<T> && is_assignable_v<T&, const T&>;
+template <class T> concept equality_comparable =
+    requires(const remove_reference_t<T>& a, const remove_reference_t<T>& b) {
+        { a == b } -> convertible_to<bool>;
+        { a != b } -> convertible_to<bool>;
+    };
+template <class T> concept semiregular = copyable<T> && default_initializable<T>;
+template <class T> concept regular = semiregular<T> && equality_comparable<T>;
+template <class T> concept totally_ordered =
+    equality_comparable<T> && requires(const remove_reference_t<T>& a, const remove_reference_t<T>& b) {
+        { a < b } -> convertible_to<bool>;
+    };
+template <class F, class... Args> concept invocable =
+    requires(F&& f, Args&&... args) { std::forward<F>(f)(std::forward<Args>(args)...); };
+template <class F, class... Args> concept predicate =
+    invocable<F, Args...> && convertible_to<invoke_result_t<F, Args...>, bool>;
+template <class T> concept swappable = requires(T& a, T& b) { swap(a, b); };
+template <class T, class U> concept assignable_from =
+    is_lvalue_reference_v<T> && same_as<remove_cvref_t<T>, remove_cvref_t<U>> &&
+    requires(T t, U&& u) { { t = std::forward<U>(u) } -> same_as<T>; };
+
+}  // namespace std
+#endif

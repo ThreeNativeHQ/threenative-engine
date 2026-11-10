@@ -111,7 +111,7 @@ test("display.maxFps configures the native presentation ceiling", () => {
   );
   assert.match(runtime, /setPresentationCapHz\(config_\.maxFps\)/u);
   assert.match(androidMain, /config\.maxFps/u);
-  assert.match(nativeDefinition("reportPresentTick").text, /TN_PRESENTS_TICK:[\s\S]*capHz/u);
+  assert.match(nativeDefinition("reportPresentTick").text, /TN_MARKER_PRESENTS_TICK[\s\S]*capHz/u);
 });
 
 test("native profiling reports direct and bundled render commands per submit", () => {

@@ -10,8 +10,10 @@
 import catalogJson from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
 import { DataUtils } from "./addons/data-utils.js";
+import { AnimationUtils, defineCreateInterpolant } from "./animation-utils.js";
 import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import { BlendMode } from "./blend-mode.js";
+import { defineBox2 } from "./box2.js";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
@@ -29,8 +31,12 @@ import {
   isWebHostModule,
 } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
+import { defineTypedBufferAttribute } from "./buffer-attributes.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
+import { defineEdgesGeometry } from "./edges-geometry.js";
+import { WEB_FRAME_FIELD } from "./generated/web-frame-fields.js";
 import { CPU_STAGE_FIELDS } from "./gpu-stages.js";
+import { defineGridHelper } from "./grid-helper.js";
 import { withMathUtilsExtras } from "./math-utils.js";
 import {
   Material,
@@ -42,6 +48,7 @@ import { type PassDraw, definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
+import { defineLayeredTargets } from "./render-target.js";
 import { defineRendererUtils } from "./renderer-utils.js";
 import { ShadowBaseNode } from "./shadow-node.js";
 import { ReadbackBuffer } from "./storage.js";
@@ -170,7 +177,7 @@ export async function bindWebEngine(
       ? () => {
           const totals = { ...counters() };
           // Off, the engine reads no clock and the totals stand at their last value: listing them would report a stale cost.
-          if (module._tnw_web_frame(84) !== 0)
+          if (module._tnw_web_frame(WEB_FRAME_FIELD.cpuMetersActive) !== 0)
             for (const [name, field] of Object.entries(CPU_STAGE_FIELDS))
               totals[name] = module._tnw_web_frame(field);
           return totals;
@@ -227,6 +234,22 @@ export async function bindWebEngine(
   Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   // three's QuadMesh over the engine Mesh (quad-mesh.ts), shared with the V8 player.
   bound.QuadMesh = defineQuadMesh(classes as never);
+  // three's GridHelper over the engine LineSegments (grid-helper.ts), shared with the V8 player.
+  bound.GridHelper = defineGridHelper(classes as never);
+  // three's CubeRenderTarget, RenderTarget3D and CubeCamera (render-target.ts), shared with the V8 player.
+  Object.assign(bound, defineLayeredTargets(classes as never));
+  // three's EdgesGeometry, Box2, typed BufferAttributes and AnimationUtils: JS ports shared with V8.
+  bound.EdgesGeometry = defineEdgesGeometry(classes as never);
+  bound.Box2 = defineBox2(classes as never);
+  const attribute = classes.BufferAttribute as Parameters<typeof defineTypedBufferAttribute>[0];
+  bound.Uint8BufferAttribute = defineTypedBufferAttribute(attribute, Uint8Array);
+  bound.Uint16BufferAttribute = defineTypedBufferAttribute(attribute, Uint16Array);
+  bound.Uint32BufferAttribute = defineTypedBufferAttribute(attribute, Uint32Array);
+  bound.AnimationUtils = AnimationUtils;
+  // three's track.createInterpolant over the engine tracks, shared with V8 (PRD-854).
+  defineCreateInterpolant(classes);
+  // three's viewportCoordinate is screenCoordinate minus viewport.xy, which is (0, 0) on a full-target pass.
+  if (bound.screenCoordinate !== undefined) bound.viewportCoordinate = bound.screenCoordinate;
   // three/webgpu's BlendMode, the record mrt().setBlendMode takes (data only, as on the engine's scene pass).
   bound.BlendMode = BlendMode;
   // The engine's four MathUtils functions, with the rest of three's number-only ones beside them.
@@ -308,10 +331,10 @@ export async function bindWebEngine(
             // The frame pass draws at the engine's input size, at the frame's sample count (tnw_web_frame's
             // 35, 36 and 18), so a game reads the size and MSAA the engine actually drew.
             surface: () => ({
-              width: hostFrame?.call(module, 35) ?? 0,
-              height: hostFrame?.call(module, 36) ?? 0,
+              width: hostFrame?.call(module, WEB_FRAME_FIELD.inputWidth) ?? 0,
+              height: hostFrame?.call(module, WEB_FRAME_FIELD.inputHeight) ?? 0,
             }),
-            samples: () => hostFrame?.call(module, 18) ?? 0,
+            samples: () => hostFrame?.call(module, WEB_FRAME_FIELD.sampleCount) ?? 0,
           },
     );
     drawSecondaryPasses = passes.updateSecondaryPasses;

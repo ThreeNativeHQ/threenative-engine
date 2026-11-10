@@ -301,7 +301,7 @@ test("an animation assertion reads the runtime animation channel", async () => {
   expect(evaluated.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(true);
 });
 
-test("all six held-value assertions reject an unchanged pre-run match", async () => {
+test("all held-value assertions reject an unchanged pre-run match", async () => {
   const physicsSnapshot = {
     artifact: {
       primitives: [{ category: "sleep", entity: "body", value: 1 }],
@@ -337,7 +337,6 @@ test("all six held-value assertions reject an unchanged pre-run match", async ()
   const evaluated = await evaluate(
     {
       animation: [{ advancedFrames: 4, clip: "run", entity: "player" }],
-      occluded: [{ entity: "listener", target: "wall" }],
       settled: [{ entity: "body", minBodies: 1 }],
       states: [{ entity: "player", equals: "idle" }],
       tags: [{ count: 1, tag: "coin" }],
@@ -357,10 +356,10 @@ test("all six held-value assertions reject an unchanged pre-run match", async ()
     },
   );
 
-  for (const id of ["tags.coin", "states.player", "visibility.player", "settled.body", "occluded.listener", "animation.player"]) {
+  for (const id of ["tags.coin", "states.player", "visibility.player", "settled.body", "animation.player"]) {
     expect(evaluated.assertions).toContainEqual(expect.objectContaining({ id, pass: false }));
   }
-  expect(evaluated.diagnostics.filter(({ code }) => code === "TN_PLAYTEST_ASSERTION_TRIVIAL")).toHaveLength(6);
+  expect(evaluated.diagnostics.filter(({ code }) => code === "TN_PLAYTEST_ASSERTION_TRIVIAL")).toHaveLength(5);
 });
 
 test("a finished animation assertion requires exact runtime completion evidence", async () => {

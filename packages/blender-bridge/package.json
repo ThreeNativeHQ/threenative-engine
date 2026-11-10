@@ -1,6 +1,6 @@
 {
   "name": "@threenative/blender-bridge",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "license": "MIT",
   "description": "Runs an installed Blender headlessly so a downloaded .fbx becomes a GLB a ThreeNative game loads. Ships no Blender.",
   "keywords": ["threenative", "blender", "fbx", "gltf"],

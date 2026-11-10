@@ -7,6 +7,7 @@ import { NodeMaterial, QuadMesh } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { defineScreenSpaceGi } from "../src/addons/screen-space.js";
 import { TSL_NODE } from "../src/browser-backend.js";
+import { REF } from "../src/browser-marshal.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { definePass } from "../src/pass-node.js";
 import { defineRtt } from "../src/rtt.js";
@@ -293,6 +294,22 @@ describe("mutable texture values", () => {
     expect(runtime.call).toHaveBeenLastCalledWith("textureValue", id, [
       { kind: "named", text: "second" },
     ]);
+  });
+
+  it("rebinds a texture3D or cubeTexture node's replacement too", () => {
+    const { runtime } = setup();
+    const { exports } = defineTsl(runtime);
+    const engineTexture = (key: string) => ({ [REF]: { key, type: 9 } });
+    for (const name of ["texture3D", "cubeTexture"]) {
+      const make = exports[name] as (value: unknown) => { value: unknown; [TSL_NODE]: number };
+      const sampled = make(engineTexture("first"));
+      const second = engineTexture("second");
+      sampled.value = second;
+      expect(sampled.value).toBe(second);
+      expect(runtime.call).toHaveBeenLastCalledWith("textureValue", sampled[TSL_NODE], [
+        { kind: "handle", ref: second[REF] },
+      ]);
+    }
   });
 });
 

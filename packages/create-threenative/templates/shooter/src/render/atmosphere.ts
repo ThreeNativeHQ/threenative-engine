@@ -235,7 +235,13 @@ function march(
  * approximation in RenderMultiScatteredLuminanceLutCS); the full sphere gather overestimated the
  * ground bounce against the Unreal frames by up to 1.6x, so this uses the same two rays.
  */
+// The table depends on no input: build it once a run, not once a sky refresh.
+let multipleScattering: Multi | undefined;
 function multipleScatteringTable(): Multi {
+  multipleScattering ??= buildMultipleScatteringTable();
+  return multipleScattering;
+}
+function buildMultipleScatteringTable(): Multi {
   const nh = 12;
   const nc = 16;
   const dirs: Vec3[] = [

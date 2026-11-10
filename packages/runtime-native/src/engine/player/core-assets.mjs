@@ -66,5 +66,10 @@ export function createAssetLoader(options = {}) {
     },
     prefetch: async () => ({ requested: 0, requestedBytes: 0, settled: 0, settledBytes: 0 }),
     startBackgroundFill: async () => {},
+    // core's memo (PRD-860) stores on the web Cache API; a native host has none, so `build` runs every time.
+    memo: async (key, build) => {
+      if (typeof key !== "string" || key === "") throw new Error("TN_ASSET_MEMO_INVALID: key must be a non-empty string.");
+      return build();
+    },
   };
 }

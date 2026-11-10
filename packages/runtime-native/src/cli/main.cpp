@@ -10,6 +10,7 @@
  *   mystral --help                             Show help
  */
 
+#include "mystral/config_keys.h"
 #include "mystral/js/engine.h"
 #include "mystral/cold_start.h"
 #include "mystral/runtime.h"
@@ -627,9 +628,9 @@ static void applyEmbeddedConfig(CLIOptions& opts) {
     std::vector<uint8_t> bytes;
     if (!mystral::vfs::readEmbeddedFile(".threenative/config.json", bytes)) return;
     const std::string config(bytes.begin(), bytes.end());
-    const std::string title = extractJsonString(config, "title");
+    const std::string title = extractJsonString(config, kConfigKeyTitle);
     if (!title.empty()) opts.title = title;
-    const std::string icon = extractJsonString(config, "icon");
+    const std::string icon = extractJsonString(config, kConfigKeyIcon);
     if (!icon.empty()) {
         opts.iconPath = icon;
 #ifdef _WIN32
@@ -638,23 +639,23 @@ static void applyEmbeddedConfig(CLIOptions& opts) {
         setenv("THREENATIVE_WINDOW_ICON_BUNDLE", icon.c_str(), 1);
 #endif
     }
-    const double width = extractJsonNumber(config, "width", opts.width);
-    const double height = extractJsonNumber(config, "height", opts.height);
+    const double width = extractJsonNumber(config, kConfigKeyWidth, opts.width);
+    const double height = extractJsonNumber(config, kConfigKeyHeight, opts.height);
     if (width > 0) opts.width = static_cast<int>(width);
     if (height > 0) opts.height = static_cast<int>(height);
     if (!opts.windowModeOverride) {
-        opts.fullscreen = extractJsonBool(config, "fullscreen", opts.fullscreen);
-        opts.maximized = extractJsonBool(config, "maximized", opts.maximized);
+        opts.fullscreen = extractJsonBool(config, kConfigKeyFullscreen, opts.fullscreen);
+        opts.maximized = extractJsonBool(config, kConfigKeyMaximized, opts.maximized);
     }
-    opts.resizable = extractJsonBool(config, "resizable", opts.resizable);
-    const double maxFps = extractJsonNumber(config, "maxFps", opts.maxFps);
+    opts.resizable = extractJsonBool(config, kConfigKeyResizable, opts.resizable);
+    const double maxFps = extractJsonNumber(config, kConfigKeyMaxFps, opts.maxFps);
     if (maxFps >= 0 && maxFps <= 1000 && std::floor(maxFps) == maxFps) {
         opts.maxFps = static_cast<uint32_t>(maxFps);
     }
     // `ui.renderer`, flattened by the packager to `uiRenderer` because `renderer` already means
     // the WebGPU preference here. Anything but "web" and "native-css" is the native renderer, which
     // ships no overlay at all — the same fail-closed reading the Android manifest metadata gets.
-    const std::string uiRenderer = extractJsonString(config, "uiRenderer");
+    const std::string uiRenderer = extractJsonString(config, kConfigKeyUiRenderer);
     if (uiRenderer == "web" || uiRenderer == "native-css") {
         // Both renderers read the same built bundle from the same place; they differ only in who
         // rasterises it, which is decided once here rather than at every call site below.
@@ -1744,10 +1745,9 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
 #ifndef MYSTRAL_CLI_NO_MAIN
     exitCode = finalizeCpuProfile(exitCode);
 #ifdef __APPLE__
-    // SDL3's audio callback threads can prevent graceful shutdown, so give them a moment then kill.
+    // SDL3's audio callback threads block destructors: wait, then `_exit` (SIGKILL lost the code).
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    kill(getpid(), SIGKILL);
-    return exitCode;
+    _exit(exitCode);
 #elif !defined(_WIN32)
     dumpLlvmProfile();
     _exit(exitCode);

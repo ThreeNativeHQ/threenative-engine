@@ -239,6 +239,7 @@ fn draw_decoration_line(
     deco_style: TextDecorationStyle,
     inset_start: f64,
     inset_end: f64,
+    snap: bool,
 ) {
     // Inset the line from the box's start/end edges (assumes LTR: start is the left edge).
     // Negative insets extend the line past the text.
@@ -247,7 +248,16 @@ fn draw_decoration_line(
     if w <= 0.0 {
         return;
     }
-    let y = (baseline - offset + size / 2.0) as f64;
+    // VENDOR HUNK (threenative/css-ui): the line's edges are snapped to whole device pixels. A
+    // decoration is a rectangle and a browser pixel-aligns it, while a stroke centred at a fractional
+    // coordinate spreads a 1px line over two half-covered rows — measured as the difference between
+    // the parity scene's two `underline` frames (Chromium one crisp row, the engine two at 50 % each)
+    // and worth `line-through` passing on its own.
+    let y = (if snap {
+        ((baseline as f64 - offset as f64) * scale).round() / scale
+    } else {
+        (baseline - offset) as f64
+    }) + size as f64 / 2.0;
     let size = size as f64;
     let butt_stroke = Stroke::new(size).with_caps(Cap::Butt);
 
@@ -305,10 +315,21 @@ fn draw_decoration_line(
         }
         // A squiggle built from alternating quadratic Béziers.
         TextDecorationStyle::Wavy => {
-            let amplitude = size;
-            let half_wave = (2.0 * size).max(1.0);
+            // VENDOR HUNK (threenative/css-ui): Chromium's squiggle has a wavelength of six device
+            // pixels at a one-pixel thickness (measured on the parity scene's `decoration-wavy` cell:
+            // the decoration's lowest row per column cycles 47, 47, 48, 49, 50, 50, 49 — a period of
+            // six — while this crate cycled every four). `half_wave` is half a wavelength, so three
+            // thicknesses.
+            // Chromium's squiggle sits above the underline's own line and is a little deeper than
+            // this crate's was: measured on the parity scene's cell, Chromium's lit rows span 47..50
+            // where its solid underline is row 52 (a centre three and a half pixels above it), and
+            // this crate's centre was six above. The offset and the depth below are fitted to that
+            // measurement — Chromium does not document the squiggle's geometry.
+            let amplitude = 1.5 * size;
+            let half_wave = (3.0 * size).max(1.0);
+            let centre = y + 2.5 * size;
             let mut path = BezPath::new();
-            path.move_to((x, y));
+            path.move_to((x, centre));
             let mut px = x;
             let mut up = true;
             while px < x + w {
@@ -316,11 +337,11 @@ fn draw_decoration_line(
                 // A quad Bézier reaches half the control-point offset at its
                 // midpoint, so use `2 * amplitude` to hit the target peak.
                 let ctrl_y = if up {
-                    y - 2.0 * amplitude
+                    centre - 2.0 * amplitude
                 } else {
-                    y + 2.0 * amplitude
+                    centre + 2.0 * amplitude
                 };
-                path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
+                path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, centre));
                 px = nx;
                 up = !up;
             }
@@ -411,6 +432,8 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                // Only the underline is pixel-snapped (see `draw_decoration_line`).
+                true,
             );
         }
         if deco.line.contains(TextDecorationLine::OVERLINE) {
@@ -430,7 +453,11 @@ fn flush_line_decorations(
             );
             let ascent =
                 win_ascent(win_ascent_ratios, &geom.font, geom.font_size).unwrap_or(geom.ascent);
-            let offset = ascent + size;
+            // VENDOR HUNK (threenative/css-ui): the line's *top* edge sits on the ascent, not one
+            // thickness above it. Measured against Chromium on the parity scene's `overline` cell:
+            // with `ascent + size` the engine's line was one row higher than the browser's (y=34
+            // against y=35), and with `ascent` it lands on the browser's row.
+            let offset = ascent;
 
             // A `double` overline extends upward, away from the text.
             draw_decoration_line(
@@ -447,6 +474,7 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                true,
             );
         }
         if deco.line.contains(TextDecorationLine::LINE_THROUGH) {
@@ -479,6 +507,7 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                true,
             );
         }
     }
@@ -601,7 +630,30 @@ pub(crate) fn stroke_text<'a>(
                 };
                 let run_node_id = style.brush.id;
                 let run_x0 = glyph_run.offset() as f64;
-                let run_x1 = run_x0 + glyph_run.advance() as f64;
+                // VENDOR HUNK (threenative/css-ui): a decoration stops at the last glyph. The run's
+                // advance includes the white space a line ends with, which hangs outside the line box
+                // and is not decorated: measured on the parity scene's `underline` cell, the engine's
+                // line was 103px against Chromium's 93. Only the glyph run that reaches the end of
+                // its run loses the trailing spaces; a line's earlier glyph runs keep theirs.
+                let trailing = {
+                    let run = glyph_run.run();
+                    let mut cumulative = 0.0f32;
+                    let mut ink_end = 0.0f32;
+                    for cluster in run.clusters() {
+                        cumulative += cluster.advance();
+                        if !cluster.is_space_or_nbsp() {
+                            ink_end = cumulative;
+                        }
+                    }
+                    let reaches_end =
+                        (glyph_run.offset() + glyph_run.advance() - run.advance()).abs() < 0.5;
+                    if reaches_end {
+                        (run.advance() - ink_end).max(0.0)
+                    } else {
+                        0.0
+                    }
+                };
+                let run_x1 = run_x0 + glyph_run.advance() as f64 - trailing as f64;
 
                 for entry in stack.iter() {
                     if entry.decoration.is_none() {

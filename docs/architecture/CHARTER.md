@@ -335,7 +335,7 @@ import { rapier } from '@threenative/physics';
 import { Boot, Play } from './scenes';
 
 export default defineGame({
-  render: { webgpu: true },        // WebGL2 fallback automatic. Nothing visual here.
+  renderer: { webgpu: true },        // WebGL2 fallback automatic. Nothing visual here.
   plugins: [
     rapier({ gravity: [0, -9.81, 0], fixedStep: 1 / 60 }),
   ],

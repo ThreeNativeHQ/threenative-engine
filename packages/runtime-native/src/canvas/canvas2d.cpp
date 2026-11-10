@@ -6,6 +6,7 @@
  */
 
 #include "mystral/canvas/canvas2d.h"
+#include "mystral/canvas/font_backend.h"
 #include <iostream>
 #include <unordered_map>
 #include <cmath>
@@ -305,16 +306,30 @@ bool CanvasGradient::addColorStop(float offset, const std::string& text) {
  * change. This is worth having because a font manager is process state, not because it is fast.
  * SkFontMgr lookups are thread-safe, so one instance serves every canvas on every thread.
  */
-sk_sp<SkFontMgr> sharedFontMgr() {
+// One factory per backend. A backend that the platform's mapping (font_backend.h) picks and this
+// file does not define fails to link, so the choice cannot drift without a build failing.
+template <FontBackend B>
+sk_sp<SkFontMgr> makeFontMgr();
+
 #if defined(__APPLE__)
-    static sk_sp<SkFontMgr> manager = SkFontMgr_New_CoreText(nullptr);
+template <>
+sk_sp<SkFontMgr> makeFontMgr<FontBackend::CoreText>() { return SkFontMgr_New_CoreText(nullptr); }
 #elif defined(__ANDROID__)
-    static sk_sp<SkFontMgr> manager = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
-#elif defined(__linux__) && !defined(__ANDROID__)
-    static sk_sp<SkFontMgr> manager = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
-#else
-    static sk_sp<SkFontMgr> manager = SkFontMgr::RefEmpty();  // Fallback
+template <>
+sk_sp<SkFontMgr> makeFontMgr<FontBackend::AndroidSystem>() {
+    return SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
+}
+#elif defined(__linux__)
+template <>
+sk_sp<SkFontMgr> makeFontMgr<FontBackend::FontConfig>() {
+    return SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+}
 #endif
+template <>
+sk_sp<SkFontMgr> makeFontMgr<FontBackend::Empty>() { return SkFontMgr::RefEmpty(); }
+
+sk_sp<SkFontMgr> sharedFontMgr() {
+    static sk_sp<SkFontMgr> manager = makeFontMgr<fontBackendFor(kBuildFontPlatform)>();
     return manager;
 }
 

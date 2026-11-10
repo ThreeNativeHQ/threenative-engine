@@ -7,6 +7,7 @@ import {
   getPlatform,
   isMobile,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import type {
   AnimationClip,
@@ -35,8 +36,8 @@ import { MAGAZINE, RESERVE, Rifle } from "../entities/Rifle.js";
 import { Target } from "../entities/Target.js";
 import { TouchControls } from "../entities/TouchControls.js";
 import { onAfterPhysics } from "../postPhysics.js";
+import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { DecalField, bulletHoleTexture } from "../render/decals.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { ImpactBursts, MuzzleFlash, MuzzleFlashPool, softCircleTexture } from "../render/gunfx.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -143,6 +144,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // The town's five generated surfaces (`render/surface.ts`), before `enter` builds the town.
     await loadSurfaces(ctx.assets);
     this.#assets = { enemy, viewmodel, sky };
+    // The cloud noise is the same every run of this build: generate it once, then read it back.
+    primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
     setupSky(ctx.scene, this.#assets.sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",

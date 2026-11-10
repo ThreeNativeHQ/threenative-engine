@@ -46,6 +46,8 @@ void clearRenderTarget(Renderer& main, RenderTarget& target, std::array<double, 
 
 /** The colour view a material samples for `target`, drawing an empty frame first if it never rendered. */
 WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target);
+/** The colour texture behind `renderTargetView` (its last render), which a texture copy reads. */
+WGPUTexture renderTargetTexture(Renderer& main, RenderTarget& target);
 
 /**
  * The region [x, y, width, height] of the target's last render, as tightly packed rows (top row first)

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { handleLine, runCli } from "../src/index.js";
 
-const manifestFile = path.resolve("packages/create-threenative/capabilities.json");
+const manifestFile = path.resolve("packages/core/capabilities.json");
 
 function frame(id: unknown, method: string, params?: unknown): string {
   return JSON.stringify({ id, jsonrpc: "2.0", method, params });
@@ -32,7 +32,7 @@ describe("threenative-engine-mcp stdio contract", async () => {
         capabilities: { tools: { listChanged: false } },
         instructions: expect.stringContaining("threenative-capabilities"),
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.12" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.13" },
       },
     });
   });

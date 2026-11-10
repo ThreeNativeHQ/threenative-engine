@@ -22,6 +22,11 @@ const KINDS = Object.keys(CLASSES);
 globalThis.__tnMathInstall = function install(target, layoutText) {
   const layout = JSON.parse(layoutText);
   const NativeBox3 = target.Box3;
+  // The hook core copies world matrices out through (`COPY_MATRIX_WORLD_HOOK`, packages/core/src/engine-hooks.ts).
+  // A host without it sends every caller down the aliasing read, so say so once, here, rather than
+  // leave a rename to surface as a slow frame. `__tests__/engine-hooks.spec.ts` pins this literal.
+  if (typeof target.Object3D?.prototype?.__tnCopyMatrixWorld !== "function")
+    console.error("TN_ENGINE_HOOK_MISSING: __tnCopyMatrixWorld is not on the host's Object3D; core falls back to matrixWorld.");
   // Scene queries stay native: borrowing a live matrix view would permanently escape tracked transforms.
   for (const name of ["setFromObject", "expandByObject"]) {
     const fallback = Box3.prototype[name];

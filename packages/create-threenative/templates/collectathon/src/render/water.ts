@@ -85,12 +85,39 @@ function depthMap(floor: ISeaFloor): DataTexture {
 }
 
 /** Tiling ripples: periodic value noise, its slope in red/green and its height in alpha. */
+const RIPPLE_SIZE = 256;
+let primedRipples: Uint8Array | undefined;
+/** Hand the ripple pixels back from a store (`ctx.assets.memo`), so `seaMaterial` skips painting them. */
+export function primeRipplePixels(pixels: Uint8Array): void {
+  if (pixels.length !== RIPPLE_SIZE * RIPPLE_SIZE * 4)
+    throw new Error("ripple pixels do not match RIPPLE_SIZE.");
+  primedRipples = pixels;
+}
 function rippleMap(): DataTexture {
-  const n = 256;
+  const n = RIPPLE_SIZE;
+  const map = new DataTexture(primedRipples ?? ripplePixels(), n, n);
+  map.wrapS = RepeatWrapping;
+  map.wrapT = RepeatWrapping;
+  map.magFilter = LinearFilter;
+  map.minFilter = LinearMipmapLinearFilter;
+  map.generateMipmaps = true;
+  map.needsUpdate = true;
+  return map;
+}
+/** The sea's ripple normal (RG) and height (A), the same every run: no input, no randomness. */
+export function ripplePixels(): Uint8Array {
+  const n = RIPPLE_SIZE;
   const hash = (x: number, z: number): number => {
     const a = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
     return a - Math.floor(a);
   };
+  // Each octave's lattice is k x k whole points, hashed once: a texel reads 64 of them.
+  const lattices = new Map<number, Float64Array>();
+  for (const k of [8, 16, 32, 64]) {
+    const lattice = new Float64Array(k * k);
+    for (let x = 0; x < k; x += 1) for (let z = 0; z < k; z += 1) lattice[x * k + z] = hash(x, z);
+    lattices.set(k, lattice);
+  }
   const noise = (u: number, v: number, k: number): number => {
     const x = u * k;
     const z = v * k;
@@ -100,7 +127,9 @@ function rippleMap(): DataTexture {
     let b = z - j;
     a = a * a * a * (a * (a * 6 - 15) + 10);
     b = b * b * b * (b * (b * 6 - 15) + 10);
-    const h = (hx: number, hz: number): number => hash(((hx % k) + k) % k, ((hz % k) + k) % k);
+    const lattice = lattices.get(k) as Float64Array;
+    const h = (hx: number, hz: number): number =>
+      lattice[(((hx % k) + k) % k) * k + (((hz % k) + k) % k)] as number;
     return (
       (h(i, j) * (1 - a) + h(i + 1, j) * a) * (1 - b) +
       (h(i, j + 1) * (1 - a) + h(i + 1, j + 1) * a) * b
@@ -126,14 +155,7 @@ function rippleMap(): DataTexture {
       data[at + 3] = height(u, v) * 255;
     }
   }
-  const map = new DataTexture(data, n, n);
-  map.wrapS = RepeatWrapping;
-  map.wrapT = RepeatWrapping;
-  map.magFilter = LinearFilter;
-  map.minFilter = LinearMipmapLinearFilter;
-  map.generateMipmaps = true;
-  map.needsUpdate = true;
-  return map;
+  return data;
 }
 
 export function seaMaterial(floor: ISeaFloor, swell: ISwell): MeshStandardNodeMaterial {

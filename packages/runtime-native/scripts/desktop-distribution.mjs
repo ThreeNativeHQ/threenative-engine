@@ -357,6 +357,9 @@ export function containerMetadata({ platform = process.platform, config }) {
         `  <key>CFBundleVersion</key><string>${xml(build)}</string>`,
         `  <key>CFBundleIconFile</key><string>${xml(slug)}</string>`,
         '  <key>LSMinimumSystemVersion</key><string>11.0</string>',
+        // PRD-859: macOS starts Game Mode for a fullscreen game (CPU and GPU priority, lower input latency).
+        '  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>',
+        '  <key>LSSupportsGameMode</key><true/>',
         '  <key>NSHighResolutionCapable</key><true/>',
         '</dict>',
         '</plist>',

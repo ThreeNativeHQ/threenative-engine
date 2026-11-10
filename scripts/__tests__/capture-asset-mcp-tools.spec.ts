@@ -1,11 +1,11 @@
+// `listTools` reads every page and refuses to overwrite the snapshot with a partial surface. The
+// transport underneath it is `scripts/lib/mcp-client.ts`, whose own spec covers the wire: exit,
+// timeout, a JSON-RPC error and a malformed envelope. Here a fake client stands in for the server, so
+// each case is about pagination and the surface contract.
 import assert from "node:assert/strict";
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { EventEmitter } from "node:events";
-import { createInterface } from "node:readline";
-import { PassThrough, Writable } from "node:stream";
 import { describe, it } from "vitest";
-
-import { listTools, request } from "../capture-asset-mcp-tools.js";
+import { listTools } from "../capture-asset-mcp-tools.js";
+import { type IMcpClient, startMcpServer } from "../lib/mcp-client.js";
 
 const recommended = [
   "ambientcg_list_files",
@@ -22,125 +22,38 @@ const recommended = [
   "asset_preview_animation",
 ];
 
-function fixture() {
-  const stdin = new PassThrough();
-  const stdout = new PassThrough();
-  const child = Object.assign(new EventEmitter(), {
-    stdin,
-    stdout,
-    exitCode: null,
-    signalCode: null,
-  }) as unknown as ChildProcessWithoutNullStreams;
-  const lines = createInterface({ input: stdout });
-  const originalCloseListeners = new Set(lines.listeners("close"));
+/** A client whose `request` answers from `reply`, recording the params it was asked with. */
+function fakeClient(
+  reply: (params: Record<string, unknown>) => Record<string, unknown>,
+): IMcpClient & { readonly params: readonly Record<string, unknown>[] } {
+  const params: Record<string, unknown>[] = [];
   return {
-    child,
-    lines,
-    next: { value: 1 },
-    reply: (value: unknown) => stdout.write(`${JSON.stringify(value)}\n`),
-    assertClean() {
-      assert.equal(lines.listenerCount("line"), 0);
-      assert.ok(lines.listeners("close").every((listener) => originalCloseListeners.has(listener)));
-      assert.equal(child.listenerCount("error"), 0);
-      assert.equal(child.listenerCount("exit"), 0);
-      assert.equal(stdin.listenerCount("error"), 0);
+    alive: () => true,
+    close: () => undefined,
+    initialize: async () => ({}),
+    notify: () => undefined,
+    params,
+    request: async (_method, sent = {}) => {
+      params.push(sent);
+      return reply(sent);
     },
-    close() {
-      lines.close();
-      stdin.destroy();
-      stdout.destroy();
-    },
+    stderr: () => "",
   };
 }
 
 describe("published asset MCP capture", () => {
-  for (const [name, response, pattern] of [
-    [
-      "JSON-RPC error",
-      { error: { code: -32601, message: "method unavailable" } },
-      /method unavailable/,
-    ],
-    ["array result", { result: [] }, /invalid result/],
-    ["missing result", {}, /invalid result/],
-    ["wrong protocol", { jsonrpc: "1.0", result: {} }, /invalid JSON-RPC/],
-  ] as const) {
-    it(`rejects ${name} and releases request listeners`, async () => {
-      const f = fixture();
-      try {
-        const pending = request(f.child, f.lines, f.next, "tools/list");
-        f.reply({ jsonrpc: "2.0", id: 1, ...response });
-        await assert.rejects(pending, pattern);
-        f.assertClean();
-      } finally {
-        f.close();
-      }
-    });
-  }
-
-  it("ignores nonresponses without losing a later matching response", async () => {
-    const f = fixture();
-    try {
-      const pending = request(f.child, f.lines, f.next, "initialize");
-      for (const value of [null, [], 42, { id: 99, result: {} }, { method: "notification" }])
-        f.reply(value);
-      f.reply({ jsonrpc: "2.0", id: 1, result: { capabilities: {} } });
-      assert.deepEqual(await pending, { capabilities: {} });
-      f.assertClean();
-    } finally {
-      f.close();
-    }
-  });
-
-  it("releases listeners after a timeout", async () => {
-    const f = fixture();
-    try {
-      await assert.rejects(request(f.child, f.lines, f.next, "initialize", {}, 10), /timed out/);
-      f.assertClean();
-    } finally {
-      f.close();
-    }
-  });
-
-  for (const event of ["exit", "error", "stdin-error", "close"] as const) {
-    it(`rejects immediately on ${event}`, async () => {
-      const f = fixture();
-      try {
-        const pending = request(f.child, f.lines, f.next, "initialize");
-        if (event === "stdin-error") f.child.stdin.emit("error", new Error("broken pipe"));
-        else if (event === "close") f.lines.close();
-        else if (event === "error") f.child.emit(event, new Error("spawn failed"));
-        else f.child.emit(event, 1, null);
-        await assert.rejects(pending, /exited|closed|broken pipe|spawn failed/);
-        f.assertClean();
-      } finally {
-        f.close();
-      }
-    });
-  }
-
   it("captures every page, validates the recommended surface, and sorts names", async () => {
-    const f = fixture();
-    const params: unknown[] = [];
-    f.child.stdin.on("data", (data: Buffer) => {
-      const sent = JSON.parse(data.toString());
-      params.push(sent.params);
-      const result =
-        sent.params.cursor === undefined
-          ? { tools: recommended.slice(0, 6).map((name) => ({ name })), nextCursor: "page-2" }
-          : { tools: recommended.slice(6).map((name) => ({ name })) };
-      f.reply({ jsonrpc: "2.0", id: sent.id, result });
-    });
-    try {
-      const captured = await listTools(f.child, f.lines, f.next, recommended);
-      assert.deepEqual(captured.map((tool) => tool.name).sort(), [...recommended].sort());
-      // The snapshot's arguments come from this same response, so a tool with no schema here would
-      // publish a tool page that cannot say what the tool takes.
-      assert.ok(captured.every((tool) => tool.name.length > 0));
-      assert.deepEqual(params, [{}, { cursor: "page-2" }]);
-      f.assertClean();
-    } finally {
-      f.close();
-    }
+    const client = fakeClient((sent) =>
+      sent.cursor === undefined
+        ? { nextCursor: "page-2", tools: recommended.slice(0, 6).map((name) => ({ name })) }
+        : { tools: recommended.slice(6).map((name) => ({ name })) },
+    );
+    const captured = await listTools(client, recommended);
+    assert.deepEqual(captured.map((tool) => tool.name).sort(), [...recommended].sort());
+    // The snapshot's arguments come from this same response, so a tool with no schema here would
+    // publish a tool page that cannot say what the tool takes.
+    assert.ok(captured.every((tool) => tool.name.length > 0));
+    assert.deepEqual(client.params, [{}, { cursor: "page-2" }]);
   });
 
   for (const [name, result, pattern] of [
@@ -152,70 +65,42 @@ describe("published asset MCP capture", () => {
       { tools: [{ name: "asset_inspect_rig" }, { name: "asset_inspect_rig" }] },
       /invalid or duplicate/,
     ],
-    ["cursor loop", { tools: [], nextCursor: "repeat" }, /repeated pagination/],
+    ["cursor loop", { nextCursor: "repeat", tools: [] }, /repeated pagination/],
   ] as const) {
     it(`refuses a snapshot from ${name}`, async () => {
-      const f = fixture();
-      f.child.stdin.on("data", (data: Buffer) => {
-        const sent = JSON.parse(data.toString());
-        f.reply({ jsonrpc: "2.0", id: sent.id, result });
-      });
-      try {
-        await assert.rejects(listTools(f.child, f.lines, f.next, recommended), pattern);
-        f.assertClean();
-      } finally {
-        f.close();
-      }
+      await assert.rejects(
+        listTools(
+          fakeClient(() => result),
+          recommended,
+        ),
+        pattern,
+      );
     });
   }
 
-  it("handles an asynchronous write failure without an uncaught stream error", async () => {
-    const stdin = new Writable({
-      write(_chunk, _encoding, callback) {
-        callback(new Error("broken transport"));
-      },
-    });
-    const stdout = new PassThrough();
-    const child = Object.assign(new EventEmitter(), {
-      stdin,
-      stdout,
-      exitCode: null,
-      signalCode: null,
-    }) as unknown as ChildProcessWithoutNullStreams;
-    const lines = createInterface({ input: stdout });
-    try {
-      await assert.rejects(request(child, lines, { value: 1 }, "initialize"), /broken transport/);
-      assert.equal(lines.listenerCount("line"), 0);
-    } finally {
-      lines.close();
-      stdout.destroy();
-      stdin.destroy();
-    }
-  });
-
-  it("drives a real child over newline-delimited stdio", async () => {
-    const child = spawn(
-      process.execPath,
-      [
+  it("reads a real server over newline-delimited stdio", async () => {
+    const client = startMcpServer({
+      args: [
         "-e",
         `
       const lines = require('node:readline').createInterface({input:process.stdin});
       lines.on('line', line => {
         const message = JSON.parse(line);
-        process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:message.id,result:{method:message.method}})+'\\n');
+        if (message.id === undefined) return;
+        process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:message.id,result:{tools:[{name:'asset_inspect_rig'}]}})+'\\n');
       });
     `,
       ],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-    const lines = createInterface({ input: child.stdout });
+      command: process.execPath,
+      label: "fake asset server",
+      timeoutMs: 2_000,
+    });
     try {
-      assert.deepEqual(await request(child, lines, { value: 1 }, "initialize", {}, 2_000), {
-        method: "initialize",
+      assert.deepEqual(await client.request("tools/list"), {
+        tools: [{ name: "asset_inspect_rig" }],
       });
     } finally {
-      child.kill();
-      lines.close();
+      client.close();
     }
   });
 });

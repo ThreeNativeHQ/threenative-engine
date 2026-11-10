@@ -1,4 +1,5 @@
 #include "engine/foundation/waste_counters.h"
+#include "engine/foundation/flags.h"
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/scene/raycaster.h"
 #include "engine/foundation/prefetch.h"
@@ -381,12 +382,14 @@ void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Materi
 // The geometry's attributes beyond the ones the programs name (a TSL attribute() reads them), and an
 // InstancedBufferGeometry's instance count: instanceCount, at most what its per-instance attributes
 // hold, as three's WebGL backend clamps it (_maxInstanceCount).
-void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d) {
+// A skinned mesh feeds skinIndex and skinWeight to three's skinning(); on any other mesh they are ordinary
+// attributes a TSL attribute() reads (procedural-animals' DQS skin), so they join the list as float copies.
+void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d, bool skinned) {
     d.geometryBox = geometry.boundingBox ? std::optional<Box3>(*geometry.boundingBox) : std::nullopt;
     d.attributes->clear();
     for (const auto& [name, attribute] : geometry.attributes) {
         if (!attribute || name == "position" || name == "normal" || name == "uv" || name == "color" ||
-            name == "skinIndex" || name == "skinWeight")
+            (skinned && (name == "skinIndex" || name == "skinWeight")))
             continue;
         d.attributes->push_back({name, floatStore(geometry, name.c_str()), attribute->perInstance});
     }
@@ -559,7 +562,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         r.draw->item.matrixWorld = toArray(mesh.matrixWorld);
         r.draw->item.renderOrder = mesh.renderOrder();
         // A game moves an InstancedBufferGeometry's instanceCount every frame (Midway's particles).
-        if (mesh.geometry && mesh.geometry->instanced) geometryInputsOf(*mesh.geometry, r.draw->item);
+        if (mesh.geometry && mesh.geometry->instanced) geometryInputsOf(*mesh.geometry, r.draw->item, mesh.type() == "SkinnedMesh");
         indirectOf(mesh, r.draw->item);
         return r;
     }
@@ -591,7 +594,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.normalScaleY = material->normalScale.y;
     vertexColorsOf(*r.canonical, *material, d);
     depthBiasOf(*material, d);
-    geometryInputsOf(*r.canonical, d);
+    geometryInputsOf(*r.canonical, d, mesh.type() == "SkinnedMesh");
     sortCenterOf(*r.canonical, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     r.draw->nodes = material->nodes;
@@ -668,7 +671,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         d.normalScaleY = r.material->normalScale.y;
         if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
         depthBiasOf(*r.material, d);
-        if (r.canonical) geometryInputsOf(*r.canonical, d);
+        if (r.canonical) geometryInputsOf(*r.canonical, d, mesh.type() == "SkinnedMesh");
         if (r.canonical) sortCenterOf(*r.canonical, d);
         // A non-float colour or custom attribute reaches the draw as a converted copy that `needsUpdate` replaces
         // without moving the geometry revision: such a record re-reads those inputs every frame, as before FM1.
@@ -680,7 +683,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
                     r.convertedInputs = true;
     } else if (r.convertedInputs) {
         vertexColorsOf(*r.canonical, *r.material, d);
-        geometryInputsOf(*r.canonical, d);
+        geometryInputsOf(*r.canonical, d, mesh.type() == "SkinnedMesh");
     }
     // An InstancedBufferGeometry's instanceCount moves freely (a game counts its particles per frame), and a
     // mesh's own count is read below, so a held material half still reads this one.
@@ -1238,7 +1241,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
                     if (const auto* rig = dynamic_cast<const SkinnedMesh*>(object))
                         batchRigs_.emplace_back(rig, projection::detail::rigLaneKey(*rig));
             // TN_BATCH_DECISION_CACHE=0 (diagnostic): a projecting decision is judged again next frame, as before PRD-613.
-            static const bool held = [] { const char* flag = std::getenv("TN_BATCH_DECISION_CACHE"); return !flag || std::strcmp(flag, "0") != 0; }();
+            static const bool held = [] { const char* flag = flags::once<flags::BatchDecisionCache>(); return !flag || std::strcmp(flag, "0") != 0; }();
             framesSinceDeclineScan_ = batchDecision_.sourceRenderables == 0 || (!held && batchDecision_.projecting) ? kDeclineRescanFrames : 0;
         }
         decision = &batchDecision_;
@@ -1449,10 +1452,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
 }
 
 std::size_t RenderDatabase::batchSlot(uint64_t identity) {
-#ifdef __EMSCRIPTEN__
-    (void)identity;
-    return batchGroups_ - 1;  // the web engine compiles the stable passes out: a batch takes the next slot each frame
-#else
+    if (!features().batchSlotReuse) return batchGroups_ - 1;  // RenderFeatures::web(): a batch takes the next slot each frame
     auto [slot, fresh] = batchSlotOf_.try_emplace(identity, 0);
     if (fresh) {
         if (batchSlotFree_.empty()) {
@@ -1465,7 +1465,6 @@ std::size_t RenderDatabase::batchSlot(uint64_t identity) {
     }
     batchSlotSeen_[slot->second] = frame_;
     return slot->second;
-#endif
 }
 
 void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
@@ -1550,11 +1549,9 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         d.mainPass = firstMember.mainPass;
         d.castShadow = firstMember.shadowCaster;
         d.layers = firstMember.layers;
-#ifndef __EMSCRIPTEN__
         // PRD-754: the group, not its nearest member, keys the draw, so culling a member moves no uniform slot. The id
         // stays the member's: it breaks three's depth ties, and with it the winner of two coplanar draws.
-        d.key = uint64_t{1} << 62 | (group.identity & ((uint64_t{1} << 62) - 1));
-#endif
+        if (features().batchSlotReuse) d.key = uint64_t{1} << 62 | (group.identity & ((uint64_t{1} << 62) - 1));
         ++batchGroups_;
         const auto slot = batchSlot(group.identity);
         if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
@@ -1772,13 +1769,11 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     }
     if (erased) std::fill(slotRecords_.begin(), slotRecords_.end(), nullptr);  // one of these may have been erased
     batchGroups_ = batchMembers_ = 0;
-#ifndef __EMSCRIPTEN__
-    for (auto slot = batchSlotOf_.begin(); slot != batchSlotOf_.end();) {
+    for (auto slot = batchSlotOf_.begin(); features().batchSlotReuse && slot != batchSlotOf_.end();) {
         if (frame_ - batchSlotSeen_[slot->second] <= 600) { ++slot; continue; }
         batchSlotFree_.push_back(slot->second);
         slot = batchSlotOf_.erase(slot);
     }
-#endif
     const auto beforeBatch = profiling ? Clock::now() : Clock::time_point{};
     if (batching) {
         CameraState state;
@@ -1936,7 +1931,7 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     const auto previousJoints = gpuJoints_;
     gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
     const auto jointsDone = profiling ? Clock::now() : Clock::time_point{};
-    static const bool drawUse = [] { const auto* flag = std::getenv("TN_GPU_JOINT_DRAW_USE"); return flag && std::strcmp(flag, "1") == 0; }();
+    static const bool drawUse = [] { const auto* flag = flags::once<flags::GpuJointDrawUse>(); return flag && std::strcmp(flag, "1") == 0; }();
     if (drawUse && !reflecting_ && gpuJoints_) gpuJoints_->drawUse.assign(gpuJoints_->rigs.size(), 0);
     if (previousJoints && previousJoints != gpuJoints_) scene.updateMatrixWorld(true);
     gpuPreparing_ = true;
@@ -2000,7 +1995,7 @@ RenderDatabase::ReflectionPass& RenderDatabase::reflectionPass(Renderer& rendere
     if (!pass.database || reflectionPassIsStale(pass.owner)) {
         pass.owner = reflector;
         pass.renderer = &renderer.reflectionRenderer(reflector);
-        pass.database = std::make_unique<RenderDatabase>();
+        pass.database = std::make_unique<RenderDatabase>(features_);
         pass.database->reflecting_ = true;
     }
     pass.database->batching = batching;

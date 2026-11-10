@@ -13,6 +13,7 @@ command and be able to bake a new biome quickly".
 |---|---|---|
 | [strata-refactoring](strata-refactoring/README.md) | The terrain MCP answers any terrain request and bakes a new biome from one data file. | PRD-791 to PRD-799 |
 | [god-files](../done/god-files/README.md) | No source file is a god file, and none can grow back into one. | PRD-800 to PRD-804 |
+| [untangle-2026-11-06](untangle-2026-11-06/README.md) | Each value has one owner: a change lands in one place and drift goes red. | PRD-832 to PRD-842 |
 
 ## Decision: no new terrain package
 

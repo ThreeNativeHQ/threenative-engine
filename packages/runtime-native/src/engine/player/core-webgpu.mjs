@@ -23,14 +23,15 @@ import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
 import { defineToneMappingLibrary } from "../../../../three-native/src/tone-mapping.ts";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineSphereReflectionCapture } from "../../../../three-native/src/sphere-reflection-capture.ts";
-import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
+import { defineRenderTargets, textureCopyArguments } from "../../../../three-native/src/render-target.ts";
 import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
 import { defineTempNode } from "../../../../three-native/src/temp-node.ts";
 import { defineRendererUtils } from "../../../../three-native/src/renderer-utils.ts";
 import { GPU_STAGES, SHADOW_STAGE } from "../../../../three-native/src/gpu-stages.ts";
 
-export const { StorageTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, SpriteNodeMaterial } = globalThis;
+export const { StorageTexture, Storage3DTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, SpriteNodeMaterial } = globalThis;
 Object.setPrototypeOf(StorageTexture.prototype, globalThis.Texture.prototype);
+Object.setPrototypeOf(Storage3DTexture.prototype, globalThis.Texture.prototype);
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
 Object.setPrototypeOf(MeshStandardNodeMaterial.prototype, globalThis.MeshStandardMaterial.prototype);
 Object.setPrototypeOf(MeshPhysicalNodeMaterial.prototype, globalThis.MeshPhysicalMaterial.prototype);
@@ -158,6 +159,9 @@ export class WebGPURenderer {
     const { width, height } = globalThis.tn.surfaceSize();
     return target.set(width, height);
   }
+  // render() publishes the frame, and the player draws it after the frame callback: the engine runs
+  // onBeforeRender then, so core's geometry capture keeps its hooks until the next frame.
+  drawsAfterFrame = true;
   render(scene, camera) {
     updateTempNodes(this, scene, camera);
     drawSecondaryPasses(this);
@@ -214,6 +218,12 @@ export class WebGPURenderer {
   }
   // Drops the attribute's GPU copy; the next use uploads its CPU contents again.
   deleteAttribute(attribute) { globalThis.tn.deleteStorage(attribute); return this; }
+  // three's initTexture and copyTextureToTexture (as the Wasm back end's): `source.dataReady = false` uploads nothing,
+  // because the copies write the texels. A call before the player opens its renderer runs when it opens.
+  initTexture(texture) { globalThis.tn.initTexture(texture, texture?.source?.dataReady === false); }
+  copyTextureToTexture(source, destination, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0) {
+    globalThis.tn.copyTexture(source, destination, ...textureCopyArguments(srcRegion, dstPosition, srcLevel, dstLevel));
+  }
   dispose() {}
 }
 
@@ -316,6 +326,9 @@ NodeMaterial.prototype.isNodeMaterial = true;
 export const RendererUtils = defineRendererUtils(Color);
 // Refused at use: only VirtualShadowNode.setup builds one, and the engine draws that map in C++.
 export const AssignNode = unsupportedExport("AssignNode");
+export const BundleGroup = unsupportedExport("BundleGroup");
+export const EventNode = unsupportedExport("EventNode");
+export const IndirectStorageBufferAttribute = unsupportedExport("IndirectStorageBufferAttribute");
 
 WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
   async (scene, x, y, z, size, face, renderer) => {

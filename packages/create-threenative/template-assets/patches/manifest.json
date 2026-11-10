@@ -1,0 +1,18 @@
+{
+  "$comment": "The dependency patches every scaffold applies. `name` is the file inside a generated project's `patches/` directory, which each kit's `pnpm.patchedDependencies` names; `source` is where the bytes live in this repository, relative to its root. The prepack step copies exactly these into the tarball, and `copyFrameworkPatches` copies exactly the ones a kit declares.",
+  "version": 1,
+  "patches": [
+    {
+      "name": "three@0.187.0.patch",
+      "source": "packages/core/patches/three@0.187.0.patch"
+    },
+    {
+      "name": "vite@8.2.0.patch",
+      "source": "patches/vite@8.2.0.patch"
+    },
+    {
+      "name": "@tailwindcss__node@4.3.3.patch",
+      "source": "patches/@tailwindcss__node@4.3.3.patch"
+    }
+  ]
+}

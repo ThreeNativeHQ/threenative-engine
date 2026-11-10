@@ -16,7 +16,7 @@ const constructorScript = readFileSync(
 function constructorSource(runtime, script) {
   assert.match(
     runtime,
-    /evalRuntimeScript\(\*jsEngine_, "event-constructors-setup"/u,
+    /evalRuntimeScript\(\*jsEngine_, runtime_scripts::Script::event_constructors_setup/u,
     "runtime must load executable event constructors",
   );
   for (const name of ["Event", "PointerEvent", "TouchEvent", "KeyboardEvent", "ErrorEvent"]) {
@@ -87,7 +87,7 @@ test("canvas, document, and window dispatch through native listener storage", ()
 test("event plumbing contract fails closed when a constructor or target route disappears", () => {
   assert.throws(() =>
     constructorSource(
-      source.replace('evalRuntimeScript(*jsEngine_, "event-constructors-setup"', "removed"),
+      source.replace("evalRuntimeScript(*jsEngine_, runtime_scripts::Script::event_constructors_setup", "removed"),
       constructorScript,
     ),
   );

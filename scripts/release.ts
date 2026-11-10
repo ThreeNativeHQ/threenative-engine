@@ -36,6 +36,7 @@ import {
   npmLookup,
   publishSet,
 } from "./check-publish-state.js";
+import { run } from "./lib/exec.js";
 import {
   type INativeStaged,
   stageNativeRelease,
@@ -330,7 +331,13 @@ async function defaultArtifactSteps(): Promise<IReleaseArtifactSteps> {
         return false;
       }
     },
-    buildWebEngine: () => run("pnpm", ["wasm:build"], "pnpm wasm:build"),
+    buildWebEngine: () =>
+      run("pnpm", ["wasm:build"], {
+        code: "TN_RELEASE_STEP_FAILED",
+        cwd: REPO,
+        detail: "Nothing further was published.",
+        label: "pnpm wasm:build",
+      }),
     ensureGradleWrapper: (output) => android.ensureGradleWrapper({ output }),
   };
 }
@@ -351,15 +358,6 @@ export async function provisionReleaseArtifacts(
   await resolved.ensureGradleWrapper(
     path.join(runtimeRoot, "android", "gradle", "wrapper", "gradle-wrapper.jar"),
   );
-}
-
-function run(command: string, args: readonly string[], label: string): void {
-  process.stdout.write(`\n▸ ${label}\n`);
-  try {
-    execFileSync(command, [...args], { cwd: REPO, stdio: "inherit" });
-  } catch {
-    throw new Error(`TN_RELEASE_STEP_FAILED: ${label}. Nothing further was published.`);
-  }
 }
 
 function runConcurrently(command: string, args: readonly string[], label: string): Promise<void> {
@@ -480,17 +478,25 @@ export function packedTarballName(name: string, version: string): string {
   return `${prefix}${version}.tgz`;
 }
 
-function packReleaseSet(
+/**
+ * Packs the cohort into `destination`. `execute` is the seam a spec drives: the default is the real
+ * runner, and the third argument it takes is *options*, never a bare label — a bare string is read as
+ * a working directory, which is how a release step once tried to run `pnpm` in a folder named after
+ * its own progress line.
+ */
+export function packReleaseSet(
   packages: readonly IPublishPackage[],
   destination: string,
+  execute: typeof run = run,
 ): Readonly<Record<string, string>> {
   const tarballs: Record<string, string> = {};
   for (const item of packages) {
-    run(
-      "pnpm",
-      ["--filter", item.name, "pack", "--pack-destination", destination],
-      `pack ${item.name}`,
-    );
+    execute("pnpm", ["--filter", item.name, "pack", "--pack-destination", destination], {
+      code: "TN_RELEASE_STEP_FAILED",
+      cwd: REPO,
+      detail: "Nothing further was published.",
+      label: `pack ${item.name}`,
+    });
     tarballs[item.name] = path.join(destination, packedTarballName(item.name, item.version));
   }
   return tarballs;
@@ -614,11 +620,20 @@ async function main(args: readonly string[]): Promise<void> {
   }
 
   if (!skipGates) {
-    run("pnpm", ["typecheck"], "pnpm typecheck");
-    run("pnpm", ["lint"], "pnpm lint");
-    run("pnpm", ["test"], "pnpm test");
+    run("pnpm", ["typecheck"], {
+      code: "TN_RELEASE_STEP_FAILED",
+      cwd: REPO,
+      label: "pnpm typecheck",
+    });
+    run("pnpm", ["lint"], { code: "TN_RELEASE_STEP_FAILED", cwd: REPO, label: "pnpm lint" });
+    run("pnpm", ["test"], { code: "TN_RELEASE_STEP_FAILED", cwd: REPO, label: "pnpm test" });
   }
-  run("pnpm", ["build"], "pnpm build");
+  run("pnpm", ["build"], {
+    code: "TN_RELEASE_STEP_FAILED",
+    cwd: REPO,
+    detail: "Nothing further was published.",
+    label: "pnpm build",
+  });
 
   // Assemble the native payload before any npm publish: a declared key with no staged binary must
   // refuse the whole release while nothing irreversible has happened, not after the cohort is up.
@@ -760,11 +775,12 @@ async function main(args: readonly string[]): Promise<void> {
     process.stdout.write(`\nPublished ${result.tag} with ${result.uploaded.length} asset(s).\n`);
   }
 
-  run(
-    "pnpm",
-    ["tsx", "scripts/verify-registry-install.ts"],
-    "clean-room install from the registry",
-  );
+  run("pnpm", ["tsx", "scripts/verify-registry-install.ts"], {
+    code: "TN_RELEASE_STEP_FAILED",
+    cwd: REPO,
+    detail: "Nothing further was published.",
+    label: "clean-room install from the registry",
+  });
   process.stdout.write("\nPublished, and installable from the registry.\n");
 }
 

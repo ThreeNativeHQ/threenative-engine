@@ -29,6 +29,7 @@ import {
   animationPacketTimeReaders,
 } from "./animation-packet-state.js";
 import { clipTrackBindings } from "./clip-audit.js";
+import { copyMatrixWorld } from "./engine-hooks.js";
 import {
   type IAnimationRateState,
   animationRateStates,
@@ -267,13 +268,9 @@ function worldOf(object: Object3D | null, target: Float64Array): void {
     target.set(IDENTITY);
     return;
   }
-  const source = object as Object3D & { __tnCopyMatrixWorld?: (target: Matrix4) => void };
   // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
-  if (source.__tnCopyMatrixWorld === undefined) target.set(object.matrixWorld.elements);
-  else {
-    source.__tnCopyMatrixWorld(scratchMatrixWorld);
-    target.set(scratchMatrixWorld.elements);
-  }
+  if (copyMatrixWorld(object, scratchMatrixWorld)) target.set(scratchMatrixWorld.elements);
+  else target.set(object.matrixWorld.elements);
 }
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -922,15 +919,10 @@ export class AnimationPlayer {
 
   #uniformWorldScale(): number | undefined {
     const root = this.mixer.getRoot() as Object3D;
-    const owner = (root.parent ?? root) as Object3D & {
-      __tnCopyMatrixWorld?: (target: Matrix4) => void;
-    };
+    const owner = (root.parent ?? root) as Object3D;
     owner.updateWorldMatrix(true, false);
-    if (owner.__tnCopyMatrixWorld !== undefined) {
-      // Native copies into owned storage so this read cannot escape the live transform alias.
-      owner.__tnCopyMatrixWorld(scratchMatrixWorld);
-      return uniformYawScale(scratchMatrixWorld);
-    }
+    // Native copies into owned storage so this read cannot escape the live transform alias.
+    if (copyMatrixWorld(owner, scratchMatrixWorld)) return uniformYawScale(scratchMatrixWorld);
     return uniformYawScale(owner.matrixWorld);
   }
 

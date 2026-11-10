@@ -179,6 +179,10 @@ export class FogProbe extends GameScene<FogState> {
     box(new Vector3(-1.4, 1, -5), new Vector3(1, 2, 1));
     this.#wall = box(new Vector3(0.4, 1.6, 3.6), new Vector3(2, 3.2, 0.4));
     this.#wall.name = "fog-wall";
+    // The streamed wall is compared byte for byte with a freshly loaded one. AutoBatch draws a merged
+    // mesh from world-space vertices, which rasterizes an edge pixel differently from the wall drawn on
+    // its own after it streams back in, so the wall keeps one draw path.
+    this.#wall.userData.batch = "off";
     this.#sun.name = "fog-directional";
     this.#point.name = "fog-point";
     this.#sun.position.set(-3, 7, 1);

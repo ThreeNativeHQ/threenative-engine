@@ -60,7 +60,7 @@ GpuStatus captureFace(Renderer& renderer, Object3D& scene, const Vector3& positi
     camera.lookAt(target);
     camera.updateMatrixWorld(true);
     capture.setSize(size, size);
-    RenderDatabase database;
+    RenderDatabase database{capture.features()};
     database.shadowMapEnabled = shadows;
     // Frame-pumped PMREM: render() returns 0 and draws nothing while the capture renderer's
     // environment is still baking, so reading now would publish the previous target as this face.

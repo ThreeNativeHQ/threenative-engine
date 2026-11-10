@@ -403,6 +403,7 @@ interface IInstancedMesh {
   instanceColor: IAttribute | null;
   setMatrixAt(index: number, matrix: unknown): unknown;
   setColorAt(index: number, color: unknown): unknown;
+  computeBoundingSphere(): void;
 }
 
 // The typed array a value crossed as, by the marker `toEngine` puts on it: the mock keeps the same
@@ -595,6 +596,7 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
       };
       const index = Number(args[0]);
       const argument = args[1] as IEngineRef;
+      if (method === "computeBoundingSphere") return null;
       if (method === "setColorAt") {
         // three makes the colour attribute on the first call, every colour white.
         if (instance.color === null) {
@@ -1025,12 +1027,51 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     expect(writes.at(-1)?.values.slice(0, 3)).toEqual([0, 0.5, 0.25]);
   });
 
-  it("creates no shadow for a setMatrixAt the game holds no array for", () => {
-    const { classes, counts } = facade();
+  it("writes setMatrixAt into the instance array and sends the items once, before the next engine call (PRD-860)", () => {
+    const { runtime, counts, writes } = engine();
+    const calls: string[] = [];
+    const invoke = runtime.invoke.bind(runtime);
+    runtime.invoke = (self, method, args) => {
+      calls.push(method);
+      return invoke(self, method, args);
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
     const { mesh, translation } = instanced(classes);
     mesh.setMatrixAt(0, translation(4, 5, 6));
-    // No shadow: the mesh-level write costs no array read, and the first read is the engine's own.
-    expect(counts.reads).toBe(0);
-    expect(Array.from(mesh.instanceMatrix.array.subarray(12, 15))).toEqual([4, 5, 6]);
+    mesh.setMatrixAt(1, translation(7, 8, 9));
+    // One array read for the mesh, no engine call an instance, and nothing sent yet.
+    expect(calls).not.toContain("setMatrixAt");
+    expect(counts.reads).toBe(32);
+    expect(writes).toEqual([]);
+    mesh.computeBoundingSphere();
+    // The written items reach the engine before the call that reads them, as one range.
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.offset).toBe(0);
+    expect(writes[0]?.values.slice(12, 15)).toEqual([4, 5, 6]);
+    expect(writes[0]?.values.slice(28, 31)).toEqual([7, 8, 9]);
+    expect(Array.from(mesh.instanceMatrix.array.subarray(28, 31))).toEqual([7, 8, 9]);
+    // An index three would not write keeps the engine's call, and its refusal.
+    mesh.setMatrixAt(5, translation(1, 1, 1));
+    expect(calls).toContain("setMatrixAt");
+  });
+
+  it("writes setColorAt into the instance colours once the engine made them (PRD-860)", () => {
+    const { runtime, writes } = engine();
+    const calls: string[] = [];
+    const invoke = runtime.invoke.bind(runtime);
+    runtime.invoke = (self, method, args) => {
+      calls.push(method);
+      return invoke(self, method, args);
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+    const { mesh, color } = instanced(classes);
+    // The first colour makes the attribute in the engine, as three makes it on first use.
+    mesh.setColorAt(0, color(1, 0, 0));
+    expect(calls.filter((method) => method === "setColorAt")).toHaveLength(1);
+    mesh.setColorAt(1, color(0, 0.5, 0.25));
+    expect(calls.filter((method) => method === "setColorAt")).toHaveLength(1);
+    mesh.computeBoundingSphere();
+    expect(writes.at(-1)).toMatchObject({ offset: 3, values: [0, 0.5, 0.25] });
+    expect(Array.from((mesh.instanceColor as IAttribute).array)).toEqual([1, 0, 0, 0, 0.5, 0.25]);
   });
 });

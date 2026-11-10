@@ -1,3 +1,4 @@
+import { readLaunchFlag } from "../debug.js";
 import type { IFrameBudgetWindow } from "../frame-budget.js";
 
 export interface IDebugSource {
@@ -34,12 +35,7 @@ export function isContentScaled(name: string): boolean {
 const DEBUG_GLOBAL = "__THREENATIVE_DEBUG__";
 
 export function debugRequested(): boolean {
-  const host = globalThis as IDebugHost;
-  return (
-    host.process?.env?.TN_DEBUG === "1" ||
-    (globalThis as Record<string, unknown>)[DEBUG_GLOBAL] === true ||
-    /[?&]tnDebug=1(?:&|$)/u.test(globalThis.location?.search ?? "")
-  );
+  return readLaunchFlag({ environment: "TN_DEBUG", global: DEBUG_GLOBAL, query: "tnDebug" });
 }
 
 /** Debug-only producers call this; the existing engine-cost reader owns the per-frame difference. */

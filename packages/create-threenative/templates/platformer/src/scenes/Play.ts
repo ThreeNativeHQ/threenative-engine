@@ -8,6 +8,7 @@ import {
   isTouchscreenAvailable,
   mergeByMaterial,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { type IPhysicsContext, buildStaticColliders } from "@threenative/physics";
 import {
   type Group,
@@ -25,7 +26,6 @@ import { Checkpoints } from "../level/Checkpoints.js";
 import { STAGE_SPAWN, buildStage, makeRng } from "../level/Stage.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { type LensObstruction, followCamera, setupCamera } from "../render/camera.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
@@ -200,6 +200,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // ------------------------------------------------------------------ actors
     const fox = this.#fox;
     if (fox === undefined) throw new Error("Play.enter ran before load() created the fox.");
+    fox.attach(ctx);
     const checkpoints = new Checkpoints(stage.checkpoints, 3);
     const pickups: Pickup[] = [];
     const effects: ((dt: number) => boolean)[] = [];

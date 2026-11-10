@@ -45,6 +45,37 @@ describe("starter post import bindings", () => {
     expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
   });
 
+  // PRD-784 P5-9: FluidField2D (prd249) imports three/tsl's compute(), which the facade did not export.
+  it("bundles three/tsl compute as node.compute", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(entry, `import { compute } from "three/tsl"; globalThis.bound = compute;`);
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
+
+  // PRD-784 P5-9: the names prd476, animation-composition, prd493 and prd268 import, which the facade
+  // did not export: JS ports over bound classes, engine globals and three's constants.
+  it("bundles the P5-9 three, three/tsl and CCDIKSolver names", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(
+      entry,
+      `
+      import { AdditiveAnimationBlendMode, AnimationUtils, Box2, DataArrayTexture, EdgesGeometry, InterpolateDiscrete, InterpolateLinear, InterpolateSmooth, NormalAnimationBlendMode, Uint8BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute } from "three";
+      import { viewportCoordinate } from "three/tsl";
+      import { CCDIKSolver } from "three/addons/animation/CCDIKSolver.js";
+      globalThis.bound = { AdditiveAnimationBlendMode, AnimationUtils, Box2, DataArrayTexture, EdgesGeometry, InterpolateDiscrete, InterpolateLinear, InterpolateSmooth, NormalAnimationBlendMode, Uint8BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute, viewportCoordinate, CCDIKSolver };
+    `,
+    );
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
+
   it("bundles defineGame without a web-only renderer import", async () => {
     // Every game reaches game.ts and renderer.ts; neither may drag an unbound import onto native.
     const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
@@ -75,6 +106,9 @@ describe("starter post import bindings", () => {
   // `version` is the one value core declares in the barrel itself rather than re-exporting, so a
   // binding list that only read `export { … } from` refused it: every game that stamps the engine
   // version into its HUD could not be packaged for the native engine (TN_NATIVE_ENGINE_UNBOUND).
+  // The literal lives in `version.ts` (generated from `package.json`); the barrel re-names it with a
+  // local `const`, and `export { CORE_VERSION as version } from` is what broke the native bundler
+  // for a second time — it reads a name from the module that the module does not export.
   it("binds a value core declares in its own barrel", async () => {
     const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
     directories.push(directory);
@@ -87,10 +121,13 @@ describe("starter post import bindings", () => {
     await bundleNativeEngine({ entry, outfile, boot: false, host: false });
     const bundle = await readFile(outfile, "utf8");
     expect(bundle).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
-    const declaration = /^export const version = "([^"]+)";$/mu.exec(
-      await readFile("packages/core/src/index.ts", "utf8"),
+    const barrel = await readFile("packages/core/src/index.ts", "utf8");
+    expect(barrel).toMatch(/^export const version = CORE_VERSION;$/mu);
+    const declared = /^export const CORE_VERSION = "([^"]+)";$/mu.exec(
+      await readFile("packages/core/src/version.ts", "utf8"),
     );
-    expect(bundle).toContain(declaration?.[1]);
+    expect(declared?.[1]).toBeDefined();
+    expect(bundle).toContain(declared?.[1]);
   });
 
   it.each([
