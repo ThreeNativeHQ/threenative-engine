@@ -1,6 +1,6 @@
 # PRD-870: The procedural forest set reads like the Fab set
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 measured (2026-11-10); spruce colour first
 **Priority:** P2 — a generated forest on a machine without the owner's licensed library draws the procedural set (AC-1 open); the owner asked for it to match the Fab art (2026-11-09).
 **Complexity:** 6 (MEDIUM) — 4 to 6 files in `examples/strata-terrain-preview/src/render/` and `scripts/` (2), procedural geometry and atlas generation (2), a judged look target (2); risk override: none
 **Owner:** João
@@ -19,8 +19,10 @@ The forest draws the owner's licensed Fab packs (Project Nature Spruce Forest, G
 
 ### Phase 1 — measure the gap
 
-- [ ] Capture `?fab=off` and the Fab arm at `player`, `meadow-close`, `overview` and `vista`, two runs per arm, and give both to a fresh read-only judge who ranks the species by how far each procedural one is from its Fab one (silhouette, colour, density, detail). proof: the sheets in `~/Downloads/strata-forest-aaa/prd870/` and the ranked list in this box
-- [ ] Measure triangles and draws per arm at each pose. proof: `propTriangles`/`propDraws` from the capture probe, both arms in this box
+- [x] Capture `?fab=off` and the Fab arm at `player`, `meadow-close`, `overview` and `vista`, two runs per arm, and give both to a fresh read-only judge who ranks the species by how far each procedural one is from its Fab one (silhouette, colour, density, detail). proof: the sheets in `~/Downloads/strata-forest-aaa/prd870/` and the ranked list in this box
+  - result (2026-11-10, judge, `farForest=off`, two runs per arm stable): player FAR, meadow-close FAR, overview FAR, vista MEDIUM. Ranked by gap x screen share: (1) spruce canopy colour, value and spacing: procedural crowns are flat light yellow-green cards with no dark core, an even carpet of identical spires; Fab is dark blue-green, shadowed inside, olive lit tips, mixed sizes and gaps. (2) near spruce structure: large flat paddle cards hide the trunk; Fab is open with orange-brown trunks and dead lower branches. (3) flowers: a salmon carpet about 10-20x Fab's density with big star heads. (4) grass shorter and brighter, far forest more even, rocks tan and smooth (Fab dark grey scan). Procedural does better: a clearer spruce spire silhouette. Saplings and ferns unverified (hidden at these poses).
+- [x] Measure triangles and draws per arm at each pose. proof: `propTriangles`/`propDraws` from the capture probe, both arms in this box
+  - result (GPU ms p50 of 4 windows, props triangles, prop draws; Fab -> procedural): player 21.6 -> 20.7, 16.4 M -> 6.2 M, 104 -> 65; meadow-close 45.4 -> 28.0, 61.8 M -> 26.4 M, 103 -> 70; overview 35.6 -> 53.9, 28.4 M -> 19.2 M, 93 -> 64; vista 41.4 -> 40.4, 14.8 M -> 7.3 M, 84 -> 57. The overview costs 18 ms more with fewer triangles: the procedural crowns' large cards overdraw.
 
 ### Phase 2 — the species that cover the screen
 
