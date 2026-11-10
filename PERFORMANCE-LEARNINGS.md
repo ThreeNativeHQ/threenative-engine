@@ -77,6 +77,59 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   published state re-renders at the publish rate, not the rate of what it shows. `useUiState(selector)` compares
   the result by identity, so a selector that builds a new object or array renders as often as no selector.
 
+## 2026-11-10 Stress lab audit (method, the `play` preset, auto batch)
+
+An audit of the stress loop for benchmark tuning. Rows #313-#322 in `docs/stress-loop/ledger.json`.
+
+Method traps found, each one fixed in the tool unless it says open:
+
+- **One GPU per comparison.** The scoreboard put laptop Iris Xe rows of one engine beside desktop RTX 2080 rows of
+  Unreal. It now compares engines on the adapter of the latest row only (`86927f76c`).
+- **A keep needs a real game.** `record` defaulted to `keep`. It now defaults to `measure`, and a keep needs
+  `--holdout "<game>: <metric> <before> -> <after>"`. "No effect" is a valid holdout result when the game does not
+  use the path (`3dc61adc8`).
+- **The lab scene was benchmark-shaped.** `real` has flat colours, one clip, a fixed orbit and no object that is
+  added or removed. `?stress&play` adds textures, a walk with camera cuts, clip changes and ten spawns a second, in
+  both labs. The first engine bug below shows only there.
+- **fps counted frames the engine did not draw.** The Wasm engine declines a loop frame while the GPU queue is
+  full. On Iris Xe the `play` lab read 41.5 fps while it drew 3.6 frames a second (92% declined, 260 ms of GPU per
+  drawn frame). `fps` now counts drawn frames and every row carries `renderSkipPct` (`c3f8083a5`).
+- **The tail was hidden.** A median of window p95 values hides one bad window. Rows carry frame p99 and the worst
+  window p95.
+- **A build hash of the Wasm alone cannot tell two arms apart** when the change is in core or the facade (rows
+  #319-#322 share one hash). The hash now covers the Wasm and every script the page loads.
+- **The bridge census does not bill the auto batch scan** (`unbilled()`), by design. A 4 ms per frame cost had no
+  meter. Read `__tnEngineCounters().childrenReads` per frame when the census and the frame time disagree.
+- **Lab on the published kit, production bundle.** The lab was pinned to 0.3.12 on the dev server. It now installs
+  the develop tarballs and serves `dist`.
+- **Desktop host.** A headed GPU browser launch with the RTX 2080 near full memory came just before a hard restart
+  of the desktop (cause not proven). Read `nvidia-smi` memory first, and send the run to the laptop when the other
+  browsers hold the GPU: the idle guard refuses the run after 10 minutes anyway.
+- Open: the goals are proxies (main draws, JS render p50) and fps counts twice in the score. Unreal has no `play`
+  arm. The vanilla arm has no physics engine and one sun map.
+
+### 2026-11-10 — Auto batch scans what arrived, not the scene, after each add or remove — KEEP
+
+- Where: `packages/core/src/auto-batch.ts` (`#pending`, `#hangs`, `#visit`, `#finish`); `744a9321c`.
+- Cause: every `childadded` or `childremoved` at the top two scene levels re-walked the whole scene twice (quiet,
+  then watching). The facade drops every `children` cache on any hierarchy move, so each walk crossed the bridge
+  once per node. Ten spawns a second kept the scan running in every frame.
+- Probe (desktop, one run each, diagnosis): crossings 2,085 to 389 per frame, `children` reads 3,030 to 12.
+- Laptop paired window, Iris Xe, uncapped, 2 ABBA pairs (#317, #318): CPU frame p50 11.14 to 7.71 ms, p95 55.24 to
+  36.34 ms, p99 78.21 to 62.22 ms. Drawn fps is flat at 3.5: that host is GPU-bound.
+- Desktop RTX 2080, uncapped, single runs because the GPU guard refused the rest (#319-#322): `play` 39.71 to 49.36
+  fps, CPU frame p50 25.52 to 17.01 ms; `real` 86.81 to 92.68 fps (second pair 89.13 to 93.98).
+- Holdout: no effect on the tower defense kit (its performance scenario) or on Midway with auto batch on. Neither
+  adds objects at the top two levels during play (`hierarchyMoves` 0.01 per frame). The merged meshes and draws
+  are equal in both arms on the lab, the kit and Midway.
+- Visual judge (fresh, read-only, Midway cockpit, 2 runs per arm): NEUTRAL on all 4 pairs. The control stick and
+  every gauge needle are present (the parts that `4a8abe0a3` fixed).
+- Tests: `auto-batch.spec.ts` "scans what arrived, not the scene" (the settled town's `children` are not read
+  again, 78 reads before), a mover merges after it rests, lone meshes wait for a partner, a hidden subtree merges
+  after it is shown.
+- Ceiling: a mesh with no partner is walked by every scan, and `heldObjects()` and `mergeByMaterial` are still
+  O(scene) per merge. Index by material when a scene holds thousands of lone meshes.
+
 ## 2026-10-29 Stress lab (web Wasm engine, Chrome DevTools MCP, RTX 2080)
 
 The sandbox scene `sandbox/stress-lab` (`?stress`, real preset) holds houses, a forest, a skinned crowd, physics
