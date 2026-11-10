@@ -592,6 +592,51 @@ describe("automatic discrete LOD generation", () => {
     expect(property?.getErrorScale()).toBeGreaterThan(0);
   }, 120_000);
 
+  it("writes a coarse companion that draws the coarsest level over its own vertices", async () => {
+    // PRD-860 Phase 3: a chain's levels share the base vertices, so it cannot arrive coarse first.
+    // The companion can: its own compacted vertex and index ranges, no chain, a fraction of the bytes.
+    const result = await modelPass({ lod: GENERATE, virtual: "none" }).apply(
+      await mediumGlb(),
+      "hull.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("unchanged");
+    const coarse = result.auxiliaryOutputs?.find((output) => output.role === "coarse");
+    expect(coarse).toMatchObject({ extension: ".glb", manifestField: "streamedLods" });
+    if (coarse === undefined) throw new Error("no coarse companion");
+    const chain = (await readWithLod(result.buffer))
+      .getRoot()
+      .listMeshes()[0]
+      ?.listPrimitives()[0]
+      ?.getExtension(TN_DISCRETE_LOD) as DiscreteLod;
+    const coarsest = chain.getCounts().at(-1) ?? 0;
+    const read = await readWithLod(coarse.buffer);
+    const primitive = read.getRoot().listMeshes()[0]?.listPrimitives()[0];
+    expect(primitive?.getExtension(TN_DISCRETE_LOD)).toBeNull();
+    expect(
+      read
+        .getRoot()
+        .listExtensionsUsed()
+        .map((e) => e.extensionName),
+    ).not.toContain(TN_DISCRETE_LOD);
+    expect((primitive?.getIndices()?.getCount() ?? 0) / 3).toBe(coarsest);
+    expect(coarse.metadata).toMatchObject({ triangles: coarsest });
+    // Compacted: no vertex the coarsest level does not draw.
+    const used = new Set(primitive?.getIndices()?.getArray() ?? []);
+    expect(primitive?.getAttribute("POSITION")?.getCount()).toBe(used.size);
+    expect(coarse.buffer.length).toBeLessThan(result.buffer.length / 4);
+  }, 120_000);
+
+  it("writes no coarse companion for a model without a chain", async () => {
+    const result = await modelPass({ lod: GENERATE, virtual: "none" }).apply(
+      await torusGlb(4, 3),
+      "pebble.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("unchanged");
+    expect(result.auxiliaryOutputs?.some((output) => output.role === "coarse") ?? false).toBe(
+      false,
+    );
+  }, 120_000);
+
   it("leaves a primitive under minTriangles untouched and says why", async () => {
     const input = await smallGlb();
     const summary = await cook(input, {

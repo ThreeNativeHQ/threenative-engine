@@ -36,6 +36,7 @@ import {
   resolveImageQualityFloor,
 } from "../image-quality.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
+import { coarseDocument } from "../lod/coarse.js";
 import { deformingMesh, skinnedMeshes } from "../lod/eligibility.js";
 import { TNDiscreteLod } from "../lod/extension.js";
 import {
@@ -1111,6 +1112,25 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Fails closed on a malformed chain in the bytes that will ship, not in the in-memory graph
       // that produced them.
       if (lod !== undefined && lod.generated > 0) validateDiscreteLod(verified);
+      // The coarse companion a streaming loader draws first (PRD-860 Phase 3). Written through the
+      // same writer, so its images are the same shared files; their declarations are the full
+      // model's, already above.
+      const coarse =
+        lod !== undefined && lod.generated > 0 ? await coarseDocument(document) : undefined;
+      if (coarse !== undefined) {
+        const written =
+          store === undefined || shared === undefined || shared.keys.length === 0
+            ? await writeAndVerify(coarse, logicalPath, options.vertexLayout)
+            : await writeAndVerifyShared(coarse, logicalPath, store, shared, options.vertexLayout);
+        const stats = reachableStats(written.verified);
+        auxiliaryOutputs.push({
+          buffer: written.buffer,
+          extension: ".glb",
+          manifestField: "streamedLods",
+          metadata: { level: "coarsest", triangles: stats.triangles, vertices: stats.vertices },
+          role: "coarse",
+        });
+      }
       const entry: IModelPassOutputEntry = {
         ...(compact === undefined ? {} : { compact }),
         ...(embeddedTextures === undefined ? {} : { embeddedTextures }),
