@@ -28,6 +28,28 @@ type SlottedMaterial = Record<string, unknown> & { needsUpdate?: boolean };
 
 type Releasable = { dispose?: () => void };
 
+/** Texture state a game sets after load (sampler, transform, tags); the whole file keeps it. */
+const CARRIED = [
+  "anisotropy",
+  "wrapS",
+  "wrapT",
+  "magFilter",
+  "minFilter",
+  "colorSpace",
+  "channel",
+  "rotation",
+  "matrixAutoUpdate",
+  "userData",
+] as const;
+const CARRIED_VECTORS = ["offset", "repeat", "center", "matrix"] as const;
+
+/** Gives `next` what the game set on `from`, so the swap changes the mips and nothing else. */
+function carry(from: Record<string, unknown>, next: Record<string, unknown>): void {
+  for (const name of CARRIED) if (name in from) next[name] = from[name];
+  for (const name of CARRIED_VECTORS)
+    (next[name] as { copy?: (value: unknown) => void } | undefined)?.copy?.(from[name]);
+}
+
 const materialsOf = (mesh: Mesh | undefined): SlottedMaterial[] =>
   ([] as unknown[]).concat(mesh?.material).filter(Boolean) as SlottedMaterial[];
 
@@ -36,7 +58,8 @@ const materialsOf = (mesh: Mesh | undefined): SlottedMaterial[] =>
  * with the whole files. Call this at the coarse load: it records the textures the coarse model
  * brought. The returned function takes the full model's meshes when they land and puts the whole
  * texture in every slot that still holds a recorded one, on whatever material the mesh has now, so a
- * clone of the material takes it too while a texture or material the game set meanwhile stays. It
+ * clone of the material takes it too while a texture or material the game set meanwhile stays. The
+ * whole texture takes what the game set on the resident one (anisotropy, wrap, transform). It
  * releases the replaced resident textures and every full-model texture nothing took. With
  * `swap: false` (no resident mips were served, so the coarse textures are already whole) it only
  * releases the full model's copies. Returns how many slots swapped.
@@ -71,6 +94,8 @@ export function streamedTextureUpgrade(
           const resident = material[name] as Releasable | null | undefined;
           const next = resident ? whole.get(resident) : undefined;
           if (resident === null || resident === undefined || next === undefined) continue;
+          if (!taken.has(next))
+            carry(resident as Record<string, unknown>, next as Record<string, unknown>);
           material[name] = next;
           replaced.add(resident);
           taken.add(next);

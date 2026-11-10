@@ -6,7 +6,9 @@ import {
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
+  RepeatWrapping,
   Scene,
+  Texture,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -384,6 +386,25 @@ describe("streamed coarse geometry", () => {
 describe("streamedTextureUpgrade (PRD-860 Phase 2)", () => {
   /** A texture stand-in: only `dispose` matters to the swap. */
   const texture = () => ({ dispose: vi.fn(), isTexture: true });
+
+  // PRD-860 AC-6 judge, 2026-11-10: Midway sets `anisotropy` on each loaded texture; the whole
+  // texture swapped in with the default 1, and the SBD's wing star smeared at a grazing angle.
+  it("carries what the game set on the resident texture onto the whole one", () => {
+    const resident = new Texture();
+    resident.anisotropy = 8;
+    resident.wrapS = RepeatWrapping;
+    resident.repeat.set(2, 3);
+    resident.userData.team = "blue";
+    const whole = new Texture();
+    const coarse = new Mesh(new BufferGeometry(), new MeshBasicMaterial({ map: resident }));
+    const full = new Mesh(new BufferGeometry(), new MeshBasicMaterial({ map: whole }));
+    expect(streamedTextureUpgrade([coarse])([full], true)).toBe(1);
+    expect((coarse.material as MeshBasicMaterial).map).toBe(whole);
+    expect(whole.anisotropy).toBe(8);
+    expect(whole.wrapS).toBe(RepeatWrapping);
+    expect(whole.repeat.toArray()).toEqual([2, 3]);
+    expect(whole.userData).toEqual({ team: "blue" });
+  });
 
   it("gives each coarse material the full model's texture in every slot both hold, and releases the old", () => {
     const [coarseMap, coarseNormal, fullMap, fullNormal] = [
