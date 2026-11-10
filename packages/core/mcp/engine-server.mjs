@@ -704,8 +704,11 @@ function suffixStripped(token) {
   return token;
 }
 var STOP_WORD_STEMS = new Set([...STOP_WORDS].map(stem));
+function splitSymbolCase(value) {
+  return value.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2");
+}
 function capabilitySituationTokens(value) {
-  return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem).filter((token) => !STOP_WORD_STEMS.has(token));
+  return splitSymbolCase(value).toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem).filter((token) => !STOP_WORD_STEMS.has(token));
 }
 var tokens = capabilitySituationTokens;
 function tokenWeights(entries) {
@@ -724,6 +727,36 @@ function tokenWeights(entries) {
 }
 function weightOf(weights, token) {
   return weights.get(token) ?? 0;
+}
+function nameWords(value) {
+  return tokens(value.replace(/([a-zA-Z])(\d+)/gu, "$1 $2")).filter((token) => !/\d/u.test(token));
+}
+function normaliseName(value) {
+  return value.toLocaleLowerCase().replace(/[^a-z0-9]+/gu, "");
+}
+function spelledWords(value) {
+  return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((word) => word.length > 0);
+}
+function spellsName(situation, symbol) {
+  const words = spelledWords(situation);
+  const whole = normaliseName(symbol);
+  for (let start = 0; start < words.length; start += 1) {
+    let piece = "";
+    for (let end = start; end < words.length && end < start + 4; end += 1) {
+      piece += normaliseName(words[end] ?? "");
+      if (piece === whole) return true;
+      if (piece.length >= whole.length) break;
+    }
+  }
+  return false;
+}
+function nameTokenWeights(entries) {
+  return tokenWeights(
+    entries.map((entry) => ({
+      aliases: [nameWords(entry.symbol).join(" ")],
+      situations: [entry.summary]
+    }))
+  );
 }
 var DISTINCTIVE_SITUATION_SHARE = 0.02;
 var DISTINCTIVE_FLOOR = Math.log(1 + 1 / DISTINCTIVE_SITUATION_SHARE);
@@ -784,6 +817,62 @@ function situationScore(query, situations, aliases, weights) {
   const best = Math.max(readable.best, scoreAliases(aliases, queryTokens, queryText, weights));
   const matchedSituation = readable.matchedSituation.length > 0 ? readable.matchedSituation : best >= RELEVANCE_FLOOR ? readable.bestReadableSituation : "";
   return matchedSituation.length > 0 ? { matchedSituation, score: best } : { matchedSituation: "", score: 0 };
+}
+var EXACT_SYMBOL_LEAD = 4;
+var NAME_BASE_LEAD = 2;
+var NAME_SHARE_LEAD = 1.4;
+var SYMBOL_WEIGHT_FLOOR = 4.2;
+var SINGLE_WORD_SHARE_FLOOR = 0.3;
+function scoreSymbolName(symbol, situation, queryTokens, weights) {
+  const name = [...new Set(nameWords(symbol))];
+  if (name.length === 0) return void 0;
+  const nameWeights = name.map((token) => weightOf(weights, token));
+  const specificity = nameWeights.reduce((sum, weight) => sum + weight, 0);
+  const requestTotal = [...queryTokens].reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const share = requestTotal === 0 ? 0 : specificity / requestTotal;
+  const nameScore = NAME_BASE_LEAD + NAME_SHARE_LEAD * Math.min(1, share);
+  if (spellsName(situation, symbol)) {
+    if (normaliseName(situation) === normaliseName(symbol)) {
+      return { score: EXACT_SYMBOL_LEAD, specificity };
+    }
+    if (name.length === 1) {
+      if (weightOf(weights, name[0] ?? "") < SYMBOL_WEIGHT_FLOOR) return void 0;
+      if (share < SINGLE_WORD_SHARE_FLOOR) return void 0;
+      return { score: (NAME_BASE_LEAD + NAME_SHARE_LEAD) * Math.min(1, share), specificity };
+    }
+    return { score: nameScore, specificity };
+  }
+  if (name.length < 2) return void 0;
+  const queryWords = new Set(nameWords(situation));
+  if (!name.every((token) => queryWords.has(token))) return void 0;
+  if (Math.max(...nameWeights) < SYMBOL_WEIGHT_FLOOR) return void 0;
+  return { score: nameScore, specificity };
+}
+var SUMMARY_WEIGHT = 0.4;
+function summaryScore(summary, queryTokens, queryText, weights) {
+  const candidate = scorePhrase(summary, queryTokens, queryText, weights);
+  return candidate === void 0 ? 0 : candidate.score * SUMMARY_WEIGHT;
+}
+function capabilityScore(query, entry, weights, nameWeights, situation) {
+  const situations = {
+    ...situationScore(query, entry.situations, entry.aliases, weights),
+    specificity: 0
+  };
+  if (query.length === 0) return situations;
+  const queryTokens = new Set(query);
+  const symbol = scoreSymbolName(entry.symbol, situation, queryTokens, nameWeights);
+  const summary = summaryScore(entry.summary, queryTokens, query.join(" "), nameWeights);
+  const symbolScore = symbol?.score ?? 0;
+  const best = Math.max(situations.score, symbolScore, summary);
+  if (best <= situations.score) return situations;
+  if (symbol !== void 0 && symbolScore >= best) {
+    return { matchedSituation: entry.symbol, score: symbolScore, specificity: symbol.specificity };
+  }
+  return {
+    matchedSituation: situations.matchedSituation || entry.situations[0] || entry.summary,
+    score: best,
+    specificity: 0
+  };
 }
 function notOwnedSituationScore(query, situations) {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
@@ -885,6 +974,7 @@ function searchMechanics(situation, manifest, scope) {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);
+  const nameWeights = nameTokenWeights(manifest.entries);
   const notOwned = notOwnedMatch(manifest, query);
   if (notOwned !== void 0 && isSpecificNotOwnedMatch(query, notOwned.matchedSituation)) {
     return {
@@ -893,10 +983,10 @@ function searchMechanics(situation, manifest, scope) {
       verdict: "none"
     };
   }
-  const results = manifest.entries.map((entry) => ({ entry, ...situationScore(query, entry.situations, entry.aliases, weights) })).filter(
+  const results = manifest.entries.map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) })).filter(
     ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR
   ).sort(
-    (left, right) => right.score - left.score || `${left.entry.importPath}:${left.entry.symbol}`.localeCompare(
+    (left, right) => right.score - left.score || right.specificity - left.specificity || `${left.entry.importPath}:${left.entry.symbol}`.localeCompare(
       `${right.entry.importPath}:${right.entry.symbol}`
     )
   ).filter(
@@ -905,11 +995,14 @@ function searchMechanics(situation, manifest, scope) {
     ) === index
   ).slice(0, limit).map(({ entry, matchedSituation, score }) => ({
     constraints: entry.constraints,
+    ...entry.deprecated === void 0 ? {} : { deprecated: entry.deprecated },
     example: entry.example,
     importPath: entry.importPath,
     matchedSituation,
+    ...entry.overrides === void 0 ? {} : { overrides: entry.overrides },
     ...entry.requires === void 0 ? {} : { requires: entry.requires },
     score,
+    signature: entry.signature,
     summary: entry.summary,
     symbol: entry.symbol
   }));
@@ -944,7 +1037,7 @@ var TOOL_DEFINITIONS = [
   {
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_search_capabilities",
-    description: 'Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. The response verdict "none" is an actionable answer with guidance, not a failed search.',
+    description: 'Search the installed engine by concrete gameplay mechanic or by an exact exported symbol name. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. A row carries the answer (importPath, signature, example, constraints, overrides, deprecations), so call engine_capability_detail only for a symbol the search did not return. The response verdict "none" is an actionable answer with guidance, not a failed search.',
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -1073,7 +1166,7 @@ function writeLine(value) {
 `);
 }
 function toolText(value) {
-  return { content: [{ text: JSON.stringify(value, null, 2), type: "text" }] };
+  return { content: [{ text: JSON.stringify(value), type: "text" }] };
 }
 async function searchReferences(situation, limit = 5) {
   const local = loadLocalReferenceGames();
@@ -1293,7 +1386,12 @@ async function runCli(argv, manifestFile = defaultManifestPath(), io = {
       { arguments: JSON.parse(json), name },
       manifestFile
     );
-    io.stdout(`${result.content[0].text}
+    let text2 = result.content[0].text;
+    try {
+      text2 = JSON.stringify(JSON.parse(text2), null, 2);
+    } catch {
+    }
+    io.stdout(`${text2}
 `);
     return 0;
   } catch (error) {

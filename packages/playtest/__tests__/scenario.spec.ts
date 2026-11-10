@@ -1,5 +1,5 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 
@@ -612,11 +612,8 @@ const FAMILY_SCENARIO_ASSERTS = {
   framebufferCoverage: { backdrop: [5, 7, 11], tolerance: 8, window: { endStep: "loading-end", startStep: "loading-start" } },
   hud: [{ id: "score-label", textIncludes: "Score" }],
   movement: { entity: "player", minDistance: 0.5 },
-  occluded: [{ entity: "listener", target: "emitter" }],
-  overlayNodes: [{ equals: "true", overlayId: "game-ui", selector: "[data-testid=fps-crosshair]" }],
   parity: { minFpsRatio: 0.85, reference: { fps: 100, serial: "fixture-phone", thermallyConfounded: false }, referenceReport: "native.json", referenceSide: "native" },
   performance: { maxDrawCalls: 10, maxFrameMsP95: 16, maxTriangles: 10_000 },
-  reachability: { artifact: "artifacts/envelope.json", entities: ["platform.a", "platform.b"] },
   resources: [{ changed: true, gte: 1, id: "GameState", path: "coins" }],
   renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } },
   pipelineCensus: {
@@ -629,6 +626,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   sightLine: { maxBlockedRatio: 0.02 },
   hudAudit: { minContrast: 3, noDebugText: true },
   engineCost: { maxPerFrame: { bridgeCrossings: 2000 }, source: "family dispatch fixture bound" },
+  geometry: { limit: 5 },
   causedBy: [
     {
       cause: { contact: { entity: "fox", kind: "trigger", with: "coin" } },
@@ -654,8 +652,6 @@ const FAMILY_PASS_IDS = [
   "deviceMetrics.notThermallyConfounded",
   "deviceMetrics.maxTemperatureRiseC",
   "framebufferCoverage",
-  "reachability.0.platform.a.platform.b",
-  "overlayNode.game-ui:[data-testid=fps-crosshair]",
   "visual.0.frameDiff",
   "visual.0.region",
   "parity.fpsRatio",
@@ -690,6 +686,7 @@ const FAMILY_PASS_IDS = [
   "hudAudit.contrast",
   "engineCost.observed",
   "engineCost.maxPerFrame.bridgeCrossings",
+  "geometry.observed",
   "causedBy[0].neverBefore",
   "causedBy[0].withinTicks",
   "startup.readyMs",
@@ -698,17 +695,11 @@ const FAMILY_PASS_IDS = [
   "visibility.player",
   "contact.fox",
   "settled.crate",
-  "occluded.listener",
   "animation.player",
 ] as const;
 
 async function loadFamilyScenario() {
   const directory = await makeTempDir("playtest-family-contract-");
-  await mkdir(join(directory, "artifacts"), { recursive: true });
-  await writeFile(
-    join(directory, "artifacts", "envelope.json"),
-    JSON.stringify({ jump: { fallDistanceToGround: 4, forwardReach: 3, maxRise: 1.2 } }),
-  );
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: FAMILY_SCENARIO_ASSERTS,
     name: "family-contract",
@@ -763,17 +754,12 @@ function familyReportObservations(fulfilled: boolean) {
     effectLog: {
       entries: [
         { kind: "service", payload: { request: { entity: "aircraft", inputs: { surfaces: { elevator: 0.5 } } } }, service: "physics.aerodynamics.setInputs" },
-        { kind: "service", payload: { request: { entity: "listener", target: "emitter" }, result: { hit: true } }, service: "physics.raycast" },
       ],
     },
-    entityTransforms: {
-      "platform.a": { halfExtents: [1, 1, 1], position: [0, 0, 0] },
-      "platform.b": { halfExtents: [1, 1, 1], position: [1, 0.5, 0] },
-    },
+    geometry: { status: "captured" },
     framebufferCoverage: { boundarySource: "scenario-steps", frameCount: 3, windowCompleted: true, windowStarted: true },
     hud: { "score-label": { after: { text: "Score: 10" }, before: { text: "—" } } },
     network: [],
-    overlayNodes: { "game-ui:[data-testid=fps-crosshair]": { after: { text: "true", visible: true } } },
     performanceSeries: [{ drawCalls: 5, frameMs: 10, phases: { render: 1, update: 0.1 }, triangles: 100 }],
     physicsDebugBefore: physicsSample([
       { category: "sleep", entity: "crate.1", value: 0 },
@@ -938,7 +924,7 @@ test("should preserve every assertion family's result contract", async () => {
       before: { frame: 0, position: [0, 0, 0], tick: 0 },
       diagnostics: [],
       distance: 5,
-      // occluded reads the retained effect log from the report, not from observations.
+      // movement facing reads the retained effect log from the report, not from observations.
       effectLog: (observations as { effectLog?: unknown }).effectLog,
       entity: "player",
       expectMoved: false,
@@ -973,8 +959,6 @@ test("should preserve every assertion family's result contract", async () => {
     "tone.0.observed",
     "deviceMetrics.observed",
     "framebufferCoverage",
-    "reachability.0.platform.a.platform.b",
-    "overlayNode.game-ui:[data-testid=fps-crosshair]",
     "visual.0",
     "parity.observed",
     "performance.samples",
@@ -1002,6 +986,7 @@ test("should preserve every assertion family's result contract", async () => {
     "sightLine.observed",
     "hudAudit.observed",
     "engineCost.observed",
+    "geometry.observed",
     "causedBy.observed",
     "startup.readyMs",
     "diagnostics",
@@ -1009,7 +994,6 @@ test("should preserve every assertion family's result contract", async () => {
     "visibility.player",
     "contact.fox",
     "settled.crate",
-    "occluded.listener",
     "animation.player",
   ]);
   // Exactly two results survive with no evidence: `diagnostics` is the health check whose clean
@@ -1023,8 +1007,6 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_TONE_UNOBSERVED",
     "TN_PLAYTEST_DEVICE_METRICS_UNAVAILABLE",
     "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED",
-    "TN_PLAYTEST_REACHABILITY_ASSERTION_FAILED",
-    "TN_PLAYTEST_OVERLAY_NODE_ASSERTION_FAILED",
     "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
     "TN_PLAYTEST_PARITY_SERIES_MISSING",
     "TN_PLAYTEST_PERFORMANCE_SAMPLES_MISSING",
@@ -1050,12 +1032,12 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_SIGHT_LINE_UNOBSERVED",
     "TN_PLAYTEST_HUD_AUDIT_UNOBSERVED",
     "TN_PLAYTEST_ENGINE_COST_UNOBSERVED",
+    "TN_PLAYTEST_GEOMETRY_UNOBSERVED",
     "TN_PLAYTEST_TRANSITIONS_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",
     "TN_PLAYTEST_CONTACT_NOT_OBSERVED",
     "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
-    "TN_PLAYTEST_OCCLUSION_NOT_OBSERVED",
     "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
   ]);
   expect(empty.diagnostics.every(({ severity }) => severity === "error"), "RED observed: diagnostic severity changed").toBe(true);
@@ -1068,11 +1050,6 @@ test("should preserve every assertion family's result contract", async () => {
  */
 test("should evaluate all registered families through the public entry", async () => {
   const directory = await makeTempDir("playtest-family-dispatch-");
-  await mkdir(join(directory, "artifacts"), { recursive: true });
-  await writeFile(
-    join(directory, "artifacts", "envelope.json"),
-    JSON.stringify({ jump: { fallDistanceToGround: 4, forwardReach: 3, maxRise: 1.2 } }),
-  );
   const observations = familyReportObservations(true);
 
   for (const entry of PLAYTEST_ASSERTION_REGISTRY) {

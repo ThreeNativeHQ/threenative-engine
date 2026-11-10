@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { handleLine, runCli } from "../src/index.js";
 
-const manifestFile = path.resolve("packages/create-threenative/capabilities.json");
+const manifestFile = path.resolve("packages/core/capabilities.json");
 
 function frame(id: unknown, method: string, params?: unknown): string {
   return JSON.stringify({ id, jsonrpc: "2.0", method, params });

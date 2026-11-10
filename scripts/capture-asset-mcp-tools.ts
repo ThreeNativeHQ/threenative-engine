@@ -6,11 +6,11 @@
 // mistake made the shipped server serve nothing at all.
 //
 //   pnpm tsx scripts/capture-asset-mcp-tools.ts
-import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createInterface } from "node:readline";
+import { type IMcpClient, startMcpServer } from "./lib/mcp-client.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const SNAPSHOT_DIR = path.join(REPO, "packages/create-threenative");
@@ -66,93 +66,13 @@ const SERVERS: readonly PublishedServer[] = [
 
 const scratch: string[] = [];
 
-/** Fail closed: an MCP error is not an empty successful tool surface. */
-export async function request(
-  child: ChildProcessWithoutNullStreams,
-  lines: ReturnType<typeof createInterface>,
-  next: { value: number },
-  method: string,
-  params: Record<string, unknown> = {},
-  timeoutMs = 30_000,
-): Promise<Record<string, unknown>> {
-  const id = next.value++;
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const cleanup = (): void => {
-      clearTimeout(timer);
-      lines.off("line", onLine);
-      lines.off("close", onClose);
-      child.off("error", onError);
-      child.off("exit", onExit);
-      child.stdin.off("error", onError);
-    };
-    const fail = (error: Error): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const onError = (error: Error): void => fail(error);
-    const onClose = (): void => fail(new Error(`MCP ${method}: stdout closed before a response`));
-    const onExit = (): void => fail(new Error(`MCP ${method}: server exited before a response`));
-    const onLine = (line: string): void => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        return; // Ignore non-protocol diagnostic lines.
-      }
-      if (!isRecord(parsed) || parsed.id !== id) return;
-      if (parsed.jsonrpc !== "2.0") {
-        fail(new Error(`MCP ${method}: invalid JSON-RPC response`));
-        return;
-      }
-      if (Object.hasOwn(parsed, "error")) {
-        const error = parsed.error;
-        const detail = isRecord(error)
-          ? `${String(error.code)}: ${String(error.message)}`
-          : "malformed error";
-        fail(new Error(`MCP ${method}: ${detail}`));
-        return;
-      }
-      if (!isRecord(parsed.result)) {
-        fail(new Error(`MCP ${method}: invalid result in response`));
-        return;
-      }
-      settled = true;
-      cleanup();
-      resolve(parsed.result);
-    };
-    const timer = setTimeout(() => fail(new Error(`MCP ${method} timed out`)), timeoutMs);
-    lines.on("line", onLine);
-    lines.on("close", onClose);
-    child.on("error", onError);
-    child.on("exit", onExit);
-    child.stdin.on("error", onError);
-    if (child.exitCode !== null || child.signalCode !== null) {
-      onExit();
-      return;
-    }
-    try {
-      // Let the stream error listener settle asynchronous write failures.
-      // A write callback runs before the error event; cleaning up there would
-      // remove the listener too early and turn EPIPE into an uncaught error.
-      child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`);
-    } catch (error) {
-      fail(error instanceof Error ? error : new Error(String(error)));
-    }
-  });
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /** Read every page and refuse to overwrite the snapshot with a partial surface. */
 export async function listTools(
-  child: ChildProcessWithoutNullStreams,
-  lines: ReturnType<typeof createInterface>,
-  next: { value: number },
+  client: IMcpClient,
   required: readonly string[],
 ): Promise<readonly { name: string; description?: unknown; inputSchema?: unknown }[]> {
   const names = new Set<string>();
@@ -162,13 +82,7 @@ export async function listTools(
   // `for (;;)` rather than `do … while (true)`: the exit is the `break` on a missing cursor, and
   // biome rejects the constant condition.
   for (;;) {
-    const listed = await request(
-      child,
-      lines,
-      next,
-      "tools/list",
-      cursor === undefined ? {} : { cursor },
-    );
+    const listed = await client.request("tools/list", cursor === undefined ? {} : { cursor });
     if (!Array.isArray(listed.tools)) throw new Error("MCP tools/list: invalid tools array");
     for (const tool of listed.tools) {
       if (
@@ -221,8 +135,7 @@ async function capture(server: PublishedServer): Promise<void> {
   const PACKAGE = server.package;
   const SNAPSHOT = path.join(SNAPSHOT_DIR, server.snapshot);
   const RECOMMENDED = server.recommended;
-  let child: ChildProcessWithoutNullStreams | undefined;
-  let lines: ReturnType<typeof createInterface> | undefined;
+  let client: IMcpClient | undefined;
   try {
     const version = versionPin(server);
     const install = installPublished(server, version);
@@ -237,17 +150,15 @@ async function capture(server: PublishedServer): Promise<void> {
       );
     }
     const entry = path.join(installed, manifest.bin[PACKAGE] ?? "");
-    child = spawn(process.execPath, [entry], { cwd: install, stdio: ["pipe", "pipe", "pipe"] });
-    lines = createInterface({ input: child.stdout });
-    child.stderr.resume();
-    const next = { value: 1 };
-    await request(child, lines, next, "initialize", {
-      capabilities: {},
-      clientInfo: { name: "tool-snapshot", version: "0" },
-      protocolVersion: "2025-06-18",
+    client = startMcpServer({
+      args: [entry],
+      command: process.execPath,
+      cwd: install,
+      label: `${server.package} server`,
+      timeoutMs: 30_000,
     });
-    child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
-    const listedTools = await listTools(child, lines, next, RECOMMENDED);
+    await client.initialize("tool-snapshot");
+    const listedTools = await listTools(client, RECOMMENDED);
     const tools = listedTools.map((tool) => tool.name).sort();
     // The schemas come from the same live response, so no doc restates an argument by hand.
     const inputSchemas = Object.fromEntries(
@@ -268,8 +179,7 @@ async function capture(server: PublishedServer): Promise<void> {
     writeFileSync(SNAPSHOT, `${JSON.stringify(snapshot, null, 2)}\n`);
     process.stdout.write(`${PACKAGE} surface: ${tools.length} tool(s) -> ${SNAPSHOT}\n`);
   } finally {
-    child?.kill();
-    lines?.close();
+    client?.close();
     for (const root of scratch.splice(0)) rmSync(root, { force: true, recursive: true });
   }
 }

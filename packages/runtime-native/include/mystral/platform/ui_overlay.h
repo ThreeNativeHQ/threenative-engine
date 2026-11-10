@@ -13,6 +13,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -82,6 +83,11 @@ void setUiOverlayWindow(SDL_Window* window);
 void setUiOverlayKeyboardReset(void (*reset)());
 /** Applies a page's `tn:hit-regions` frame (true), or returns false for any other frame. */
 bool applyUiHitRegionsFrame(const std::string& frame);
+/**
+ * Drain the frames the page queued. A `tn:hit-regions` frame stops at the host (it owns the hit
+ * test); every other frame goes to `forward`, in order. Returns how many frames went to `forward`.
+ */
+size_t drainUiFramesToGame(const std::function<void(const std::string&)>& forward);
 
 /**
  * Bring up the CSS UI backend over the game window, serving the built UI from `uiRoot`.

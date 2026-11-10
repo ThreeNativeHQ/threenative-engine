@@ -20,12 +20,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverKitManifests, templateRoot } from "../packages/create-threenative/src/index.js";
+import { waitForServer } from "./lib/dev-server.js";
+import { startMcpServer } from "./lib/mcp-client.js";
 import { workspacePackageSourceFlag } from "./workspace-packages.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_FILE = "package.json";
 const REQUIRED_DEPENDENCIES = ["vite", "create-threenative"] as const;
-const MCP_PROTOCOL_VERSION = "2025-06-18";
 // A cold MCP server start has to answer `initialize`, and on a loaded runner that start can
 // outlive 30s through no fault of the server: four golden-path template legs across runs
 // 33829801266, 33830264158 and 33831658062 timed `initialize` out at 30s at layer 'mcp' while
@@ -111,16 +112,6 @@ export interface IGoldenPathTemplateActions {
   readonly mcp: () => Promise<void>;
   readonly scaffold: () => Promise<void>;
   readonly test: () => Promise<void>;
-}
-
-interface IMcpPendingRequest {
-  readonly reject: (reason?: unknown) => void;
-  readonly resolve: (value: unknown) => void;
-  readonly timer: ReturnType<typeof setTimeout>;
-}
-
-interface IMcpOutputState {
-  buffer: string;
 }
 
 export function assertGoldenPathSteps(steps: readonly string[]): void {
@@ -488,34 +479,6 @@ export async function assertEngineCapabilityDiscovery(
   assertNetworkingDetail(parseMcpToolPayload(detailCall, "networking detail"));
 }
 
-function resolveMcpMessage(value: unknown, pending: Map<number, IMcpPendingRequest>): void {
-  if (!isRecord(value) || typeof value.id !== "number") return;
-  const waiter = pending.get(value.id);
-  if (waiter === undefined) return;
-  pending.delete(value.id);
-  clearTimeout(waiter.timer);
-  if (value.error !== undefined) waiter.reject(new Error(JSON.stringify(value.error)));
-  else waiter.resolve(value.result);
-}
-
-function consumeMcpOutput(
-  chunk: Buffer | string,
-  state: IMcpOutputState,
-  pending: Map<number, IMcpPendingRequest>,
-): void {
-  state.buffer += chunk.toString();
-  const lines = state.buffer.split(/\r?\n/u);
-  state.buffer = lines.pop() ?? "";
-  for (const line of lines) {
-    if (!line.trim().startsWith("{")) continue;
-    try {
-      resolveMcpMessage(JSON.parse(line) as unknown, pending);
-    } catch {
-      // MCP servers may log non-JSON lines to stdout; pending requests still time out.
-    }
-  }
-}
-
 async function stopProcess(child: ChildProcess): Promise<void> {
   if (child.exitCode === null) {
     if (process.platform === "win32" || child.pid === undefined) child.kill("SIGTERM");
@@ -600,89 +563,19 @@ export async function probeMcpServer(
   surface: IMcpSurface,
   cwd: string,
 ): Promise<void> {
-  const child = spawn(server.command, [...server.args], {
+  const client = startMcpServer({
+    args: [...server.args],
+    command: server.command,
     cwd,
-    env: { ...process.env, ...server.env },
-    stdio: ["pipe", "pipe", "pipe"],
+    env: server.env,
+    label: serverName,
+    timeoutMs: MCP_REQUEST_TIMEOUT_MS,
   });
-  const output: IMcpOutputState = { buffer: "" };
-  let stderr = "";
-  let terminalError: Error | undefined;
-  const pending = new Map<number, IMcpPendingRequest>();
-  const failPending = (error: Error): void => {
-    terminalError = error;
-    for (const waiter of pending.values()) {
-      clearTimeout(waiter.timer);
-      waiter.reject(error);
-    }
-    pending.clear();
-  };
-  child.stdout?.on("data", (chunk: Buffer | string) => consumeMcpOutput(chunk, output, pending));
-  child.stderr?.on("data", (chunk: Buffer | string) => {
-    stderr += chunk.toString();
-  });
-  child.once("error", (error) => {
-    failPending(error instanceof Error ? error : new Error(String(error)));
-  });
-  child.once("exit", (code, signal) => {
-    const detail = stderr.trim().slice(-500);
-    failPending(
-      new Error(
-        `${serverName} exited before completing MCP requests (${code ?? `signal ${signal ?? "unknown"}`})${detail.length > 0 ? `: ${detail}` : ""}.`,
-      ),
-    );
-  });
-
-  let nextId = 1;
-  const request = (method: string, params: Record<string, unknown> = {}): Promise<unknown> => {
-    if (terminalError !== undefined) return Promise.reject(terminalError);
-    const id = nextId++;
-    return new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        const detail = stderr.trim().slice(-500);
-        reject(
-          new Error(
-            `${serverName} ${method} timed out after ${MCP_REQUEST_TIMEOUT_MS}ms${detail.length > 0 ? `: ${detail}` : ""}.`,
-          ),
-        );
-      }, MCP_REQUEST_TIMEOUT_MS);
-      pending.set(id, { reject, resolve, timer });
-      try {
-        child.stdin?.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-      } catch (error) {
-        clearTimeout(timer);
-        pending.delete(id);
-        reject(error);
-      }
-    });
-  };
-
-  // One re-send, for `initialize` only: the timeout above fires while a cold server is still
-  // starting, and the request that proves the server works is the one that pays for it. The
-  // timed-out id is already deleted from `pending`, so a late first response resolves nothing
-  // and cannot double-complete; a server that cannot answer twice will not answer at all.
-  const requestWithOneRetry = async (
-    method: string,
-    params: Record<string, unknown> = {},
-  ): Promise<unknown> => {
-    try {
-      return await request(method, params);
-    } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes("timed out")) throw error;
-      return await request(method, params);
-    }
-  };
-
+  // The assertions take a plain request function; the client's carries the same contract.
+  const request = (method: string, params: Record<string, unknown> = {}): Promise<unknown> =>
+    client.request(method, params);
   try {
-    await requestWithOneRetry("initialize", {
-      protocolVersion: MCP_PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: "threenative-golden-path", version: "0" },
-    });
-    child.stdin?.write(
-      `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`,
-    );
+    await client.initialize("threenative-golden-path");
     const listed = await request("tools/list");
     assertMcpToolSurface(serverName, surface.tools, listed);
     if (serverName === "threenative-sculpt") await assertSculptResources(request);
@@ -691,7 +584,7 @@ export async function probeMcpServer(
       `${serverName} ok: ${surface.tools.length} tools from ${surface.version}\n`,
     );
   } finally {
-    await stopProcess(child);
+    client.close();
   }
 }
 
@@ -1066,7 +959,9 @@ async function freePort(): Promise<number> {
   return address.port;
 }
 
-async function waitForDevServer(
+/** The dev server answers only after the cold asset cook: one ETC1S encode of a template's
+ * 4096x2048 sky is 21 s on an idle desktop and passed 30 s on a loaded merge-queue runner (PR 473). */
+function waitForDevServer(
   child: ChildProcess,
   url: string,
   template: string,
@@ -1076,28 +971,13 @@ async function waitForDevServer(
   const correctiveCommand = formatCorrectiveCommand(
     goldenPathCorrectiveCommands(project, port).dev,
   );
-  // The dev server answers only after the cold asset cook. One ETC1S encode of a template's
-  // 4096x2048 sky is 21 s on an idle desktop and passed 30 s on a loaded merge-queue runner (PR 473).
-  const deadline = Date.now() + 90_000;
-  let lastError = "no response";
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `TN_GOLDEN_PATH_DEV_UNAVAILABLE: project '${project}' searched '${url}'; corrective command: ${correctiveCommand}. Dev server exited before responding with code ${child.exitCode}.`,
-      );
-    }
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-      lastError = `HTTP ${response.status}`;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(
-    `TN_GOLDEN_PATH_DEV_UNAVAILABLE: project '${project}' searched '${url}'; corrective command: ${correctiveCommand}. Dev server for '${template}' did not answer: ${lastError}.`,
-  );
+  return waitForServer({
+    child,
+    detail: `TN_GOLDEN_PATH_DEV_UNAVAILABLE: dev server for '${template}' at project '${project}'; corrective command: ${correctiveCommand}.`,
+    label: "golden path dev server",
+    timeoutMs: 90_000,
+    url,
+  });
 }
 
 async function runDev(target: string, template: string, port: number): Promise<void> {
@@ -1329,7 +1209,11 @@ export async function verifyPackedMutationControl(
       "packages/create-threenative/template-assets/patches",
     );
     await cp(path.join(REPO_ROOT, "packages/create-threenative"), mutatedPackage, {
-      filter: (source) => path.basename(source) !== "node_modules" && source !== generatedPatches,
+      // Only the generated `.patch` copies are left out: prepack rebuilds them from the sources
+      // reproduced below, and the manifest that names those sources is source itself.
+      filter: (source) =>
+        path.basename(source) !== "node_modules" &&
+        !(source.startsWith(generatedPatches) && source.endsWith(".patch")),
       recursive: true,
     });
     // Reproduce prepack's repository-relative inputs, including Vite and Tailwind's patches.

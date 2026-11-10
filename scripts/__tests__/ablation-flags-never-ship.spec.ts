@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -88,5 +88,93 @@ describe("PRD-226 ablation flags never ship", () => {
       );
     }
     expect(header).toContain("#endif  // TN_ABLATE_BACKEND");
+  });
+});
+
+/**
+ * PRD-840 (H4): every TN_* environment flag the owned engine reads is declared once in `engine/foundation/flags.h`,
+ * as read once per process or live (each call), and no other engine file calls getenv. A flag added without a
+ * declaration here, or read around flags.h, fails.
+ *
+ * The mutation that reddens this file: add `std::getenv("TN_X")` to any file under `src/engine/`, or change a
+ * flag's `Read::` in flags.h.
+ */
+const ENGINE_FLAGS: Readonly<Record<string, "Once" | "Live">> = {
+  TN_JOB_WORKERS: "Live",
+  TN_ANIMATION_POSE_OBSERVATION: "Live",
+  TN_MATERIAL_DIAGNOSTICS: "Once",
+  TN_GPU_PASSES: "Live",
+  TN_SHADOW_INSTANCE_GROUPS: "Live",
+  TN_SHADOW_INSTANCE_CULL: "Live",
+  TN_PROGRAM_PROBES: "Once",
+  TN_SHADOW_PAGE_SCAN: "Once",
+  TN_PROJECTION_WALKS: "Once",
+  TN_BATCH_DECISION_CACHE: "Once",
+  TN_GPU_JOINT_DRAW_USE: "Once",
+  TN_GAME_SPANS: "Live",
+  TN_PLAYER_WIDTH: "Live",
+  TN_PLAYER_HEIGHT: "Live",
+  TN_PLAYER_TITLE: "Live",
+  TN_PLAYER_VSYNC: "Live",
+  TN_PLAYER_PRIORITY: "Live",
+  TN_PLAYER_METRICS: "Live",
+  TN_PLAYER_GPU_TIMING: "Live",
+  TN_PLAYER_MAIN_THREAD_CPU: "Live",
+  TN_RENDER_THREAD: "Live",
+  TN_STABLE_PASSES: "Live",
+  TN_STABLE_ROWS: "Live",
+  TN_GPU_THREAD: "Live",
+  TN_RENDER_PREPARE_SPLIT: "Live",
+  TN_BENCH_LAUNCH_MS: "Live",
+  TN_PLAYTEST_MAILBOX_ROOT: "Live",
+  TN_NATIVE_ASSET_PACKAGE: "Live",
+  TN_NATIVE_JS_MATH: "Live",
+  TN_DEBUG: "Live",
+  TN_PLAYER_CROSSINGS: "Live",
+  TN_FRAME_SPANS: "Live",
+  TN_UI_RENDERER: "Live",
+  TN_JS_CPU_PROFILE_START_FRAME: "Once",
+  TN_PS4_PAD_TRACE: "Once",
+};
+
+function engineSources(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const file = join(directory, entry.name);
+    if (entry.isDirectory()) return engineSources(file);
+    return /\.(?:cpp|h|hpp|inl)$/u.test(entry.name) ? [file] : [];
+  });
+}
+
+describe("PRD-840 engine flags are declared in flags.h", () => {
+  const engine = join(runtimeNative, "src", "engine");
+  const flagsHeader = join(engine, "foundation", "flags.h");
+  const header = readFileSync(flagsHeader, "utf8");
+  const declared = [
+    ...header.matchAll(/inline constexpr Flag (\w+)\{"(TN_\w+)", Read::(Once|Live)\}/gu),
+  ].map(([, id, name, read]) => ({ id: id as string, name: name as string, read }));
+
+  it("declares exactly the enumerated flags, each read once or live", () => {
+    expect(declared.length).toBeGreaterThan(0);
+    expect(Object.fromEntries(declared.map(({ name, read }) => [name, read]))).toEqual(
+      ENGINE_FLAGS,
+    );
+  });
+
+  it("reads the environment nowhere in the engine but flags.h", () => {
+    const sources = engineSources(engine).filter((file) => file !== flagsHeader);
+    expect(sources.length).toBeGreaterThan(0);
+    const readers = sources.filter((file) => /\bgetenv\s*\(/u.test(readFileSync(file, "utf8")));
+    expect(readers).toEqual([]);
+  });
+
+  it("reads each declared flag through its declared kind", () => {
+    const all = engineSources(engine)
+      .filter((file) => file !== flagsHeader)
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    for (const { id, read } of declared) {
+      const call = `flags::${read === "Once" ? "once" : "read"}<flags::${id}>()`;
+      expect(all.includes(call), `${id} must be read as ${call}`).toBe(true);
+    }
   });
 });

@@ -22,6 +22,7 @@
  */
 
 import { debugRequested } from "./debug-telemetry.js";
+import { CONSOLE_MARKER } from "./generated/console-markers.js";
 
 export const BRIDGE_WARNING_MARKER = "TN_BRIDGE_WARNING";
 /**
@@ -34,7 +35,7 @@ export const BRIDGE_WARNING_MARKER = "TN_BRIDGE_WARNING";
  * crossed. The counters themselves ride TN_FRAME_BUDGET.counters.engine.
  */
 export const ENGINE_COST_KNOB = "__THREENATIVE_ENGINE_COST__";
-export const BRIDGE_CENSUS_MARKER = "TN_BRIDGE_CENSUS";
+export const BRIDGE_CENSUS_MARKER = CONSOLE_MARKER.bridgeCensus;
 /**
  * How many crossing classes one census line names. Ten is what a measurement sweep reads: the top five
  * of a scene usually share one caller, and a lever that moves the sixth is invisible at five (PRD-828).

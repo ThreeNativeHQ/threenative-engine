@@ -35,7 +35,7 @@ import { sampleVisualElementBounds, screenshotObservations } from "../src/runner
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
 import { chromium, type Page } from "playwright";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../src/index.js";
-import { HOST_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/observationFields.js";
+import { unproducedAssertionKinds } from "../src/runner/observationFields.js";
 import { waitForStartupReady } from "../src/runner/startupReady.js";
 import { SCREENSHOT_TIMEOUT_MS } from "../src/runner/shared.js";
 
@@ -676,20 +676,12 @@ test("standalone reports retain framebuffer coverage observations", () => {
 test("every registered assertion kind names an observation some runner produces", () => {
   // A kind registered with an observation path no runner lists fails every scenario with
   // 'The standalone runner does not produce an X observation' — which is how the startup kind
-  // shipped: evaluator, schema and docs green, the runner unable to run it.
-  const produced = new Set<string>([
-    ...STANDALONE_PLAYTEST_OBSERVATION_FIELDS,
-    ...HOST_PLAYTEST_OBSERVATION_FIELDS,
-  ]);
-  const orphans = PLAYTEST_ASSERTION_REGISTRY.filter(
-    (entry) => !produced.has(entry.observationPath),
-  ).map((entry) => `${entry.kind} -> ${entry.observationPath}`);
-  // Three kinds predate this guard and are not produced by either runner today; they are pinned
-  // here as known debt so that a fourth cannot join them unnoticed.
-  expect(orphans).toEqual([
-    "reachability -> entityTransforms",
-    "overlayNodes -> overlayNodes",
-    "occluded -> effectLog",
+  // shipped: evaluator, schema and docs green, the runner unable to run it. Three kinds
+  // (reachability, overlayNodes, occluded) were pinned here as debt until PRD-835 removed them:
+  // no scenario, template or doc used them and no runner could produce their observations.
+  expect(unproducedAssertionKinds()).toEqual([]);
+  expect(unproducedAssertionKinds([...PLAYTEST_ASSERTION_REGISTRY, { kind: "ghost", observationPath: "ghostFrames" }])).toEqual([
+    "ghost -> ghostFrames",
   ]);
 });
 

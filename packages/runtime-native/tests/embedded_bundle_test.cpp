@@ -220,6 +220,33 @@ int main() {
     _putenv_s("MYSTRAL_BUNDLE", "");
 #endif
 
+    // --- resolveFetchPath: the mobile fetch path mapping ---------------------
+    using mystral::vfs::FetchPathPlatform;
+    using mystral::vfs::resolveFetchPath;
+    // Android serves the game directory from the APK: relative and leading-slash URLs land in it,
+    // a path that already carries the prefix is not doubled, file:// URLs are left to the filesystem.
+    expect(resolveFetchPath("textures/x.png", FetchPathPlatform::Android) == "game/textures/x.png",
+           "android relative");
+    expect(resolveFetchPath("/textures/x.png", FetchPathPlatform::Android) == "game/textures/x.png",
+           "android leading slash");
+    expect(resolveFetchPath("./textures/x.png", FetchPathPlatform::Android) == "game/textures/x.png",
+           "android dot segment");
+    expect(resolveFetchPath("game/x.png", FetchPathPlatform::Android) == "game/x.png",
+           "android prefix kept once");
+    expect(resolveFetchPath("file:///data/x.png", FetchPathPlatform::Android) == "/data/x.png",
+           "android file url");
+    // iOS runs from the game directory (the host changes into it), so only a leading slash moves.
+    expect(resolveFetchPath("/textures/x.png", FetchPathPlatform::Ios) == "textures/x.png",
+           "ios leading slash");
+    expect(resolveFetchPath("textures/x.png", FetchPathPlatform::Ios) == "textures/x.png",
+           "ios relative unchanged");
+    expect(resolveFetchPath("file:///data/x.png", FetchPathPlatform::Ios) == "/data/x.png",
+           "ios file url");
+    expect(resolveFetchPath("/abs/x.png", FetchPathPlatform::Desktop) == "/abs/x.png",
+           "desktop keeps absolute paths");
+    expect(resolveFetchPath("file:///abs/x.png", FetchPathPlatform::Desktop) == "/abs/x.png",
+           "desktop strips the scheme only");
+
     if (failures > 0) {
         std::cerr << failures << " embedded-bundle assertion(s) failed\n";
         return 1;

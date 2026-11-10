@@ -1,8 +1,6 @@
 import { flushAnimationTicks } from "./animation-batch.js";
-import { type AutoBatch, drawWorld } from "./auto-batch.js";
+import { drawWorld } from "./auto-batch.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
-import type { ComputeDrivenRegistry } from "./compute-driven.js";
-import type { Registry } from "./entities.js";
 import { FrameBudget } from "./frame-budget.js";
 import { isDevLaunch } from "./game-dev-tools.js";
 import {
@@ -13,17 +11,10 @@ import {
 } from "./game-renderer-metrics.js";
 import { STARTUP_HANDOFF_FRAMES } from "./game-startup.js";
 import type { IGameStartup } from "./game-startup.js";
-import type { IGameConfig, IGamePlatformSource, IGamePluginHooks, PluginCleanup } from "./game.js";
 import { GeometryCapture, rendererBackendIdentity } from "./geometry-capture.js";
-import type { InputMap } from "./input.js";
-import type { PhysicsInterpolation } from "./interpolation.js";
-import type { IAfterPhysicsPhase } from "./loop.js";
 import { FixedStepLoop, type IRenderPerformanceMetrics } from "./loop.js";
-import type { MatrixWorldPass } from "./matrix-world.js";
 import { updateModelLods } from "./model-lod.js";
-import type { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
-import type { PointerEvents3D } from "./pointer-events.js";
 import {
   FrameCounters,
   counterDeviceOf,
@@ -60,18 +51,12 @@ import {
 } from "./profiling/scene-warning.js";
 import { installSpanProbes } from "./profiling/span-probes.js";
 import { formatProjectionWindow } from "./projection-marker.js";
-import type { RenderCameraCull } from "./render-camera-cull.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
 import type { VirtualShadowNode } from "./render/virtual-shadow.js";
-import type { SceneRenderProjection } from "./renderProjection.js";
 import { resolvePlatformResolutionFloor } from "./renderer-config.js";
-import type { IRendererLike } from "./renderer.js";
 import { rendererFrameGateSkips, rendererWorldPresented } from "./renderer.js";
 import { RESOLUTION_SCALER, ResolutionScaler } from "./resolution-scaler.js";
-import type { ICtx, Scene, SceneFrame } from "./scene.js";
-import type { Scheduler } from "./schedule.js";
 import { STARTUP_STABLE_WINDOW_MS } from "./startup-readiness.js";
-import type { GameStore } from "./state.js";
 import {
   STATIC_TRANSFORM_MARKER,
   refreshStaticTransforms,
@@ -80,73 +65,10 @@ import {
 } from "./static-transform.js";
 import { endSliceFrames, noteSliceFrame } from "./streaming.js";
 import { resolveTargetFps } from "./target-fps.js";
-import type { IUiBridge } from "./ui-bridge.js";
 import { UI_DEV_METRICS_MESSAGE } from "./ui-bridge.js";
-import type { Viewport } from "./viewport.js";
-import type { IWarmUpOptions } from "./warmup.js";
-
-/**
- * The game's own state, as a boot phase sees it: every member is the private field of the same
- * name, so a phase assigns and reads exactly what it did inside the class.
- */
-export interface IGameBootGame<TState extends Record<string, unknown>, TPhysics> {
-  /** The cleanups `#teardown` drains in its own release step, in the order they were pushed. */
-  readonly cleanup: Array<() => void>;
-  readonly computeDriven: ComputeDrivenRegistry;
-  readonly config: IGameConfig<TState, TPhysics>;
-  readonly platform: IGamePlatformSource | undefined;
-  readonly state: GameStore<TState>;
-  readonly beforeRenderCallbacks: Set<() => void>;
-  readonly activePlugins: Array<IGamePluginHooks<TState, TPhysics>>;
-  readonly uiBridge: IUiBridge | undefined;
-  readonly sceneFrame: SceneFrame<TState, TPhysics> | undefined;
-  readonly sceneEntered: boolean;
-  readonly sceneGeneration: number;
-  readonly pendingSceneEnter: Promise<void> | undefined;
-  readonly paused: boolean;
-  readonly aborted: boolean;
-  readonly uiReady: boolean;
-  // Assigned by a phase, exactly as the field was.
-  renderer: IRendererLike | undefined;
-  scene: Scene<TState, TPhysics> | undefined;
-  sceneName: string | undefined;
-  ctx: ICtx<TState, TPhysics> | undefined;
-  input: InputMap | undefined;
-  viewport: Viewport | undefined;
-  picker: ScenePicker | undefined;
-  pointerEvents: PointerEvents3D | undefined;
-  matrixWorld: MatrixWorldPass | undefined;
-  projection: SceneRenderProjection | undefined;
-  autoBatch: AutoBatch | undefined;
-  cameraCull: RenderCameraCull | undefined;
-  entities: Registry | undefined;
-  scheduler: Scheduler | undefined;
-  afterPhysicsPhase: IAfterPhysicsPhase | undefined;
-  frameBudget: FrameBudget | undefined;
-  interpolation: PhysicsInterpolation | undefined;
-  geometryCapture: GeometryCapture | undefined;
-  beforeRenderSnapshots: Array<Array<() => void>>;
-  beforeRenderDepth: number;
-  hasDepthCoupledOutput: boolean;
-  startupGateStarted: boolean;
-  onStartSceneEntered: (() => void) | undefined;
-  renderMetricsEnabled: boolean;
-  uiRevealed: boolean;
-  started: boolean;
-  resumeScene: string | undefined;
-  connectUi(): IUiBridge;
-  enterScene(scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): boolean;
-  goto(name: string, ctx: ICtx<TState, TPhysics>): Promise<void>;
-  postUiStartup(): void;
-  teardown(ctx?: ICtx<TState, TPhysics>): void;
-  warmUpConfiguredExplicitly(): boolean;
-  warmUpOptions(): IWarmUpOptions;
-}
 
 /** The frame loop, and the instruments that only exist while it runs. */
 export interface IGameFrameLoop {
-  /** Stops the loop, where `#teardown` always stopped it. Its frame budget is `game.frameBudget`. */
-  readonly dispose: PluginCleanup;
   readonly geometryCapture: GeometryCapture;
   readonly loop: FixedStepLoop;
 }
@@ -365,6 +287,8 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
           },
         });
   game.frameBudget = frameBudget;
+  // The loop that reports into it stops first: `startScenes` pushes the loop's stop after this.
+  if (frameBudget !== undefined) game.cleanup.push(() => frameBudget.dispose());
   // Per-pass draws and triangles ride the frame budget's window by default. The same property
   // that makes `info.render` an aggregate — one reset per frame before the world render, and
   // nested shadow/reflection renders sharing that counter — is what this recorder unwinds.
@@ -1013,12 +937,9 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
     step: game.config.step,
   });
   loopState.current = gameLoop;
+  game.cleanup.push(endSliceFrames);
 
   return {
-    dispose: () => {
-      gameLoop.stop();
-      endSliceFrames();
-    },
     geometryCapture,
     loop: gameLoop,
   };

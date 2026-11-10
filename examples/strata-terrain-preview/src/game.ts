@@ -717,7 +717,7 @@ const game = defineGame<TerrainState, IPhysicsContext>({
   },
   plugins: [rapier({ deterministicRestart: true }), playtest(), waterProof],
   // HiDPI displays ask for 2-3x the pixels; the engine scaler trims to what the GPU affords.
-  render: {
+  renderer: {
     preferWebGPU: true,
     resolutionScale:
       forestStageArm(typeof location === "undefined" ? "" : location.search) === undefined

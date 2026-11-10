@@ -40,7 +40,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   // curve. The world still needs a solver to answer those questions, so gravity is simply zero.
   plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), playtest({ events })],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { battle: Battle, boot: Boot },
   seed: 47021,
   start: "boot",

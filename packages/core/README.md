@@ -30,7 +30,7 @@ import type { GameState } from "./state.js";
 
 const game = defineGame<GameState, IPhysicsContext>({
   plugins: [rapier(), playtest()],
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { play: Play },
   start: "play",
 });

@@ -2,7 +2,7 @@
 
 Date: 2026-11-06. Snapshot: `origin/develop` 58a83ce4b. No code changed.
 Method: 8 read-only leanpi scouts on DeepSeek v4.1 flash max (0 Claude escalations), one per key area. The coordinator merged the findings and spot-checked the highest-impact ones.
-Raw scout reports (local to the owner machine, not tracked): `~/.cache/tmp-tn/untangle/out/{A..H}.md`. The urgent slice is [PRD-832](PRD-832-urgent-single-sources.md).
+Raw scout reports (local to the owner machine, not tracked): `~/.cache/tmp-tn/untangle/out/{A..H}.md`. The urgent slice is [PRD-832](../../done/PRD-832-urgent-single-sources.md).
 
 | Scout | Area |
 | --- | --- |
@@ -21,17 +21,18 @@ Verified by the coordinator (re-ran the command): B1/F2 (7 render files, 12 copi
 
 | PRD | Report id | Goal | Priority |
 | --- | --- | --- | --- |
-| [PRD-832](PRD-832-urgent-single-sources.md) | Q1-Q5, R2 slice | Urgent single sources: kit inventory, render drift guard, launch flags, tone curve, core version, named `tnw_web_frame` fields | P1 |
-| [PRD-833](PRD-833-template-mechanism-lives-once.md) | R1 | Template mechanism lives once | P1 |
-| [PRD-835](PRD-835-one-registry-entry-per-assertion.md) | R3 | One registry entry per assertion | P1 |
-| [PRD-840](PRD-840-platform-difference-is-a-value.md) | N3 | Platform difference is a value, not a scattered `#ifdef` | P1 |
-| [PRD-834](PRD-834-cross-language-contracts-are-generated.md) | R2 | Cross-language contracts are generated | P2 |
-| [PRD-836](PRD-836-one-committed-capability-manifest.md) | R4 | One committed capability manifest | P2 |
-| [PRD-837](PRD-837-core-owns-each-shared-fact-once.md) | R5 | Core owns each shared fact once | P2 |
-| [PRD-838](PRD-838-scripts-share-one-runtime-layer.md) | N1 | Scripts share one runtime layer | P2 |
-| [PRD-839](PRD-839-ci-contract-is-a-model-not-text.md) | N2 | The CI contract is a model, not text matches | P2 |
-| [PRD-841](PRD-841-game-ts-stops-being-the-hub.md) | N4 | `game.ts` stops being the hub | P2 |
-| [PRD-842](PRD-842-native-tests-check-behaviour-not-source-text.md) | N5 | Native tests check behaviour, not source text | P2 |
+| [PRD-832](../../done/PRD-832-urgent-single-sources.md) | Q1-Q5, R2 slice | Urgent single sources: kit inventory, render drift guard, launch flags, tone curve, core version, named `tnw_web_frame` fields | P1 |
+| [PRD-833](../../done/PRD-833-template-mechanism-lives-once.md) | R1 | Template mechanism lives once | P1 |
+| [PRD-835](../../done/PRD-835-one-registry-entry-per-assertion.md) | R3 | One registry entry per assertion | P1 |
+| [PRD-840](../../done/PRD-840-platform-difference-is-a-value.md) | N3 | Platform difference is a value, not a scattered `#ifdef` | P1 |
+| [PRD-834](../../done/PRD-834-cross-language-contracts-are-generated.md) | R2 | Cross-language contracts are generated | P2 |
+| [PRD-836](../../done/PRD-836-one-committed-capability-manifest.md) | R4 | One committed capability manifest | P2 |
+| [PRD-837](../../done/PRD-837-core-owns-each-shared-fact-once.md) | R5 | Core owns each shared fact once | P2 |
+| [PRD-838](../../done/PRD-838-scripts-share-one-runtime-layer.md) | N1 | Scripts share one runtime layer | P2 |
+| [PRD-839](../../done/PRD-839-ci-contract-is-a-model-not-text.md) | N2 | The CI contract is a model, not text matches | P2 |
+| [PRD-841](../../done/PRD-841-game-ts-stops-being-the-hub.md) | N4 | `game.ts` stops being the hub | P2 |
+| [PRD-842](../../done/PRD-842-native-tests-check-behaviour-not-source-text.md) | N5 | Native tests check behaviour, not source text | P2 |
+| [PRD-862](PRD-862-untangle-native-leftovers.md) | N3, N5 | The untangle batch's native leftovers (moved from PRD-840 and PRD-842) | P2 |
 
 The "Later" god-file splits below have no PRD yet. Each one gets its own PRD when it is picked.
 
@@ -140,6 +141,13 @@ Later (impact 3-4, god-file splits along their own seams): B5 `renderer.ts`, B7 
 | **Total** | **365** | about 150 swallowed catches |
 
 ## Defects found on the way (not a bug hunt)
+
+- ✅ fixed, measured 2026-11-07: `pnpm budgets` had failed on the capability-recall floor after this
+  branch added public API — `recallAtK` 0.9279 against 0.9369, with `snow.refill` ("fresh snowfall
+  slowly fills old tracks back in") no longer returning `SnowField`. That entry was byte-identical to
+  the merge base, so it was a ranking shift from the fifteen new entries, not a doc regression; the
+  class's own doc now names the recovery it already performs, and recall is back at the floor exactly
+  (0.9369, 104/111). The same run also caught a stale native-coverage digest, regenerated.
 
 - ✅ verified: `scripts/capability-recall.ts:120` skips kits `puzzle`, `rts`, `runner` (fixed by Q2).
 - ✅ verified: LOD near-plane default disagrees (`?? 0.1` vs `?? 0`) (fixed by R5).

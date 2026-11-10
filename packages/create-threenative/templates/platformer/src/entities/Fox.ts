@@ -55,7 +55,7 @@ export type FoxState = "dash" | "fall" | "jump" | "run" | "idle";
 export class Fox {
   /** The body object. Its origin is the fox's waist, because that is what a capsule is centred on. */
   readonly mesh: Group;
-  readonly body: CharacterBody3D;
+  #body: CharacterBody3D | undefined;
   readonly rig: IFox;
   readonly tags = ["player"];
   coyoteJumps = 0;
@@ -85,7 +85,15 @@ export class Fox {
     this.mesh.position.copy(spawn);
     this.#groundY = spawn.y - FOOT_OFFSET;
     ctx.add(this.mesh);
-    this.body = new CharacterBody3D({
+  }
+
+  /**
+   * Builds the body in `Play.enter()`: Rapier initializes while the scene loads, so `ctx.physics`
+   * exists only from `enter()` on (TN_PHYSICS_NOT_READY). The body starts where `load()` or a
+   * scenario's `setup.place` left the mesh.
+   */
+  attach(ctx: GameCtx): void {
+    this.#body ??= new CharacterBody3D({
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
       collisionMask: 0xffff,
       entity: "player",
@@ -97,6 +105,12 @@ export class Fox {
       // Sticking to a downslope is what makes a dash across the islands land instead of skipping.
       snapToGround: 0.4,
     });
+  }
+
+  /** The capsule body, from `attach()` on. */
+  get body(): CharacterBody3D {
+    if (this.#body === undefined) throw new Error("Fox.body is built by attach() in Play.enter().");
+    return this.#body;
   }
 
   /** The height of the last surface the fox stood on, at its feet. */
@@ -189,19 +203,20 @@ export class Fox {
       coyoteJumps: this.coyoteJumps,
       dashes: this.dashes,
       facing: this.#facing,
-      grounded: this.body.grounded,
+      grounded: this.#body?.grounded ?? false,
       groundY: this.#groundY,
       jumps: this.jumps,
       position: this.mesh.position.toArray(),
-      speed: Math.hypot(this.body.velocity.x, this.body.velocity.z),
+      speed:
+        this.#body === undefined ? 0 : Math.hypot(this.#body.velocity.x, this.#body.velocity.z),
       standingSwing: this.standingSwing,
       state: this.state,
-      velocity: this.body.velocity.toArray(),
+      velocity: this.#body?.velocity.toArray() ?? [0, 0, 0],
     };
   }
 
   dispose(): void {
-    this.body.dispose();
+    this.#body?.dispose();
     this.mesh.removeFromParent();
   }
 

@@ -59,13 +59,21 @@ export interface IStarterKitResult {
   readonly command: string;
 }
 
+/**
+ * One search answer, equal to the capability detail minus `situations` and `aliases`. `signature`,
+ * `overrides` and `deprecated` were the three fields a row lacked, so every hit cost a detail call
+ * that added nothing else an author works from.
+ */
 export interface ICapabilitySearchResult {
   readonly symbol: string;
   readonly importPath: string;
+  readonly signature: string;
   readonly summary: string;
   readonly example: string;
   readonly constraints: readonly string[];
+  readonly overrides?: readonly string[];
   readonly requires?: readonly string[];
+  readonly deprecated?: readonly string[];
   readonly matchedSituation: string;
   readonly score: number;
 }
@@ -438,8 +446,18 @@ function suffixStripped(token: string): string {
  */
 const STOP_WORD_STEMS = new Set([...STOP_WORDS].map(stem));
 
+/**
+ * `mergeParts` in a request and `merge parts` in a situation are the same two words, and only the
+ * second one used to be findable: the index read `mergeparts` as one token while the request that
+ * named the symbol read `mergeParts`. Splitting the case boundary here, on both sides, is what
+ * makes a symbol name searchable; it costs nothing on prose, which has no case boundary to split.
+ */
+function splitSymbolCase(value: string): string {
+  return value.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2");
+}
+
 export function capabilitySituationTokens(value: string): string[] {
-  return value
+  return splitSymbolCase(value)
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
@@ -478,6 +496,65 @@ function tokenWeights(
 /** A word the index has never used narrows nothing here, whatever it means elsewhere. */
 function weightOf(weights: ReadonlyMap<string, number>, token: string): number {
   return weights.get(token) ?? 0;
+}
+
+/**
+ * The weights a name and a summary are read with, indexed apart from the situations on purpose.
+ * Folding one summary and one symbol document per entry into the situation index moved the coverage
+ * of every existing match: `SnowField` fell under `RELEVANCE_FLOOR` for "fresh snowfall slowly
+ * fills old tracks back in", a row the recall budget had held. A channel added to help a name must
+ * not retune the prose index it is added beside.
+ */
+/**
+ * The words a name is spelled with, on both sides of a match. `GPUParticles3D` is "gpu particles"
+ * to a reader: glueing the digit run on (`particles3d`) meant that capability matched no request
+ * that said "particles", and a digit carries no name in this manifest, so `Area3D` is `area` and
+ * `Joint3D` is `joint`.
+ */
+function nameWords(value: string): readonly string[] {
+  return tokens(value.replace(/([a-zA-Z])(\d+)/gu, "$1 $2")).filter((token) => !/\d/u.test(token));
+}
+
+/** `mergeParts`, `MERGEPARTS`, `merge parts` and `merge-parts` are the same name to a reader. */
+function normaliseName(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^a-z0-9]+/gu, "");
+}
+
+/** The words a request spells, before the stemmer and the stop list: a name is matched as written. */
+function spelledWords(value: string): readonly string[] {
+  return value
+    .toLocaleLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter((word) => word.length > 0);
+}
+
+/**
+ * Does the request spell this name, as whole words and in order? `CharacterBody3D movement` and
+ * `character body 3d` both spell `CharacterBody3D`; `physics` does not spell `afterPhysics`, and
+ * `the viewer` does not spell the `View` symbol, because a run of whole words has to match the
+ * whole name. A run longer than four words is never a name an author types.
+ */
+function spellsName(situation: string, symbol: string): boolean {
+  const words = spelledWords(situation);
+  const whole = normaliseName(symbol);
+  for (let start = 0; start < words.length; start += 1) {
+    let piece = "";
+    for (let end = start; end < words.length && end < start + 4; end += 1) {
+      piece += normaliseName(words[end] ?? "");
+      if (piece === whole) return true;
+      if (piece.length >= whole.length) break;
+    }
+  }
+  return false;
+}
+
+function nameTokenWeights(entries: readonly ICapabilityEntry[]): ReadonlyMap<string, number> {
+  return tokenWeights(
+    entries.map((entry) => ({
+      aliases: [nameWords(entry.symbol).join(" ")],
+      situations: [entry.summary],
+    })),
+  );
 }
 
 /**
@@ -612,6 +689,139 @@ function situationScore(
   return matchedSituation.length > 0
     ? { matchedSituation, score: best }
     : { matchedSituation: "", score: 0 };
+}
+
+/**
+ * A request that names a symbol the manifest exports is the strongest statement it can make, and
+ * the situation scorer cannot see it: `godrays` is a name, and the index held only its prose. The
+ * lead is gated on how much of the request the symbol accounts for, so a request that mentions
+ * `view` or `read` in passing does not get answered with the `View` or `readFile` symbol.
+ */
+const EXACT_SYMBOL_LEAD = 4;
+/**
+ * A name match scores on how much of the request the name accounts for: a request that is mostly
+ * one name leads at full strength, and a name mentioned inside a rich sentence barely moves. That
+ * is what separates `Area3D trigger` (about the area) from `first person view with a weapon held
+ * in the hand` (about the camera, which merely says "view") without a list of English homonyms.
+ */
+const NAME_BASE_LEAD = 2;
+const NAME_SHARE_LEAD = 1.4;
+/**
+ * A name the name index uses everywhere names nothing. `playtest` reaches 81 of its 1 062
+ * documents and `Scene` 44, so a request mentioning either is asking about a scene or a playtest,
+ * not for a symbol; `godrays` and `traa` reach 2 and `mergeParts`' own words reach 11 and 15.
+ */
+const SYMBOL_WEIGHT_FLOOR = 4.2;
+/**
+ * A one-word name spelled in passing also has to hold this much of the request. `depth` is rare
+ * enough for the weight floor, and a request about underwater fog still says it once; below this
+ * share the word is scenery and the row it would lead is a wrong answer at a weak score.
+ */
+const SINGLE_WORD_SHARE_FLOOR = 0.3;
+
+interface ISymbolScore {
+  readonly score: number;
+  /** How much a name narrows this index, so `godrays` outranks `Scene` when both are spelled. */
+  readonly specificity: number;
+}
+
+function scoreSymbolName(
+  symbol: string,
+  situation: string,
+  queryTokens: ReadonlySet<string>,
+  weights: ReadonlyMap<string, number>,
+): ISymbolScore | undefined {
+  const name = [...new Set(nameWords(symbol))];
+  if (name.length === 0) return undefined;
+  const nameWeights = name.map((token) => weightOf(weights, token));
+  // Summing, not taking the max, is what makes `gpu particles` prefer `GPUParticles3D` over the
+  // generic `Particles`: the longer name accounts for more of the request.
+  const specificity = nameWeights.reduce((sum, weight) => sum + weight, 0);
+  const requestTotal = [...queryTokens].reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const share = requestTotal === 0 ? 0 : specificity / requestTotal;
+  const nameScore = NAME_BASE_LEAD + NAME_SHARE_LEAD * Math.min(1, share);
+  // A request that spells the name — `add godrays`, `use rapier`, `GPUParticles3D sparks`,
+  // `use addInSlices for loading` — is asking for that symbol: equality with the whole name, not
+  // with what the stemmer leaves of it, which is how `afterPhysics` once answered "physics".
+  if (spellsName(situation, symbol)) {
+    if (normaliseName(situation) === normaliseName(symbol)) {
+      return { score: EXACT_SYMBOL_LEAD, specificity };
+    }
+    // A one-word name spelled inside a longer request is the weakest form of the signal: `view`,
+    // `scene`, `depth`, `velocity` and `connect` are ordinary English that a request uses without
+    // naming the symbol. It must then earn its place twice — the word has to be one the name index
+    // rarely uses, and it has to hold a real share of the request — or `camera follows the player
+    // with a third person view` answers the React `View` rectangle over the camera it asks for.
+    if (name.length === 1) {
+      if (weightOf(weights, name[0] ?? "") < SYMBOL_WEIGHT_FLOOR) return undefined;
+      if (share < SINGLE_WORD_SHARE_FLOOR) return undefined;
+      return { score: (NAME_BASE_LEAD + NAME_SHARE_LEAD) * Math.min(1, share), specificity };
+    }
+    return { score: nameScore, specificity };
+  }
+  // A one-word name has to be spelled; a name scattered through the prose needs the gates below.
+  if (name.length < 2) return undefined;
+  const queryWords = new Set(nameWords(situation));
+  if (!name.every((token) => queryWords.has(token))) return undefined;
+  // A name made of words the index uses everywhere names nothing; the share-scaled score already
+  // keeps a name mentioned in passing behind the mechanic the request is actually about.
+  if (Math.max(...nameWeights) < SYMBOL_WEIGHT_FLOOR) return undefined;
+  return { score: nameScore, specificity };
+}
+
+/**
+ * The summary corroborates; it never outranks a situation. It is the one line written for a reader
+ * who already knows the name (`ThreeNative equivalent for realism-effects traa`), so it answers a
+ * retired or thinly described capability and stays quiet next to a real situation match.
+ */
+const SUMMARY_WEIGHT = 0.4;
+
+function summaryScore(
+  summary: string,
+  queryTokens: ReadonlySet<string>,
+  queryText: string,
+  weights: ReadonlyMap<string, number>,
+): number {
+  const candidate = scorePhrase(summary, queryTokens, queryText, weights);
+  return candidate === undefined ? 0 : candidate.score * SUMMARY_WEIGHT;
+}
+
+/** Every channel a capability answer can come from, combined; the symbol leads and explains itself. */
+interface ICapabilityScore {
+  readonly matchedSituation: string;
+  readonly score: number;
+  /** Only a name carries one; it orders two names spelled in the same request. */
+  readonly specificity: number;
+}
+
+function capabilityScore(
+  query: readonly string[],
+  entry: ICapabilityEntry,
+  weights: ReadonlyMap<string, number>,
+  nameWeights: ReadonlyMap<string, number>,
+  situation: string,
+): ICapabilityScore {
+  const situations = {
+    ...situationScore(query, entry.situations, entry.aliases, weights),
+    specificity: 0,
+  };
+  if (query.length === 0) return situations;
+  const queryTokens = new Set(query);
+  const symbol = scoreSymbolName(entry.symbol, situation, queryTokens, nameWeights);
+  const summary = summaryScore(entry.summary, queryTokens, query.join(" "), nameWeights);
+  const symbolScore = symbol?.score ?? 0;
+  const best = Math.max(situations.score, symbolScore, summary);
+  if (best <= situations.score) return situations;
+  if (symbol !== undefined && symbolScore >= best) {
+    return { matchedSituation: entry.symbol, score: symbolScore, specificity: symbol.specificity };
+  }
+  // A summary-only answer still needs a readable explanation, and the entry's own first situation
+  // is the sentence a reader recognises; an entry with no situations keeps the summary itself.
+  return {
+    matchedSituation: situations.matchedSituation || entry.situations[0] || entry.summary,
+    score: best,
+    specificity: 0,
+  };
 }
 
 function notOwnedSituationScore(
@@ -776,6 +986,7 @@ function searchMechanics(
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);
+  const nameWeights = nameTokenWeights(manifest.entries);
   const notOwned = notOwnedMatch(manifest, query);
   if (notOwned !== undefined && isSpecificNotOwnedMatch(query, notOwned.matchedSituation)) {
     return {
@@ -785,13 +996,14 @@ function searchMechanics(
     };
   }
   const results = manifest.entries
-    .map((entry) => ({ entry, ...situationScore(query, entry.situations, entry.aliases, weights) }))
+    .map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) }))
     .filter(
       ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR,
     )
     .sort(
       (left, right) =>
         right.score - left.score ||
+        right.specificity - left.specificity ||
         `${left.entry.importPath}:${left.entry.symbol}`.localeCompare(
           `${right.entry.importPath}:${right.entry.symbol}`,
         ),
@@ -805,11 +1017,14 @@ function searchMechanics(
     .slice(0, limit)
     .map(({ entry, matchedSituation, score }) => ({
       constraints: entry.constraints,
+      ...(entry.deprecated === undefined ? {} : { deprecated: entry.deprecated }),
       example: entry.example,
       importPath: entry.importPath,
       matchedSituation,
+      ...(entry.overrides === undefined ? {} : { overrides: entry.overrides }),
       ...(entry.requires === undefined ? {} : { requires: entry.requires }),
       score,
+      signature: entry.signature,
       summary: entry.summary,
       symbol: entry.symbol,
     }));
@@ -866,7 +1081,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_search_capabilities",
     description:
-      'Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. The response verdict "none" is an actionable answer with guidance, not a failed search.',
+      'Search the installed engine by concrete gameplay mechanic or by an exact exported symbol name. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. A row carries the answer (importPath, signature, example, constraints, overrides, deprecations), so call engine_capability_detail only for a symbol the search did not return. The response verdict "none" is an actionable answer with guidance, not a failed search.',
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -1013,8 +1228,13 @@ function writeLine(value: string): void {
   process.stdout.write(`${value}\n`);
 }
 
+/**
+ * The tool's text payload. Compact, because it is model context: indentation cost 11.6% of every
+ * response and answered nothing. `runCli` re-indents its own copy, so the human-facing command
+ * stays readable (PRD-865).
+ */
 function toolText(value: unknown): { content: [{ type: "text"; text: string }] } {
-  return { content: [{ text: JSON.stringify(value, null, 2), type: "text" }] };
+  return { content: [{ text: JSON.stringify(value), type: "text" }] };
 }
 
 async function searchReferences(situation: string, limit = 5) {
@@ -1286,7 +1506,13 @@ export async function runCli(
       { arguments: JSON.parse(json) as unknown, name },
       manifestFile,
     );
-    io.stdout(`${result.content[0].text}\n`);
+    let text = result.content[0].text;
+    try {
+      text = JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      // Not JSON: print it as the tool wrote it.
+    }
+    io.stdout(`${text}\n`);
     return 0;
   } catch (error) {
     io.stderr(`${name}: ${error instanceof Error ? error.message : String(error)}\n`);

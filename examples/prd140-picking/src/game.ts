@@ -362,7 +362,7 @@ function readStressAssertions(
 const game = defineGame<IStressState>({
   camera: { projection: "perspective", fov: 60 },
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { picking: SemanticStressScene },
   start: "picking",
 });

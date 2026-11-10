@@ -138,6 +138,7 @@ nor changes relative step counts. Absent `startTick` leaves existing behavior un
 | `perf` markers → fps, p95, host-gap segments | `runner/perf.ts` |
 | audio verdicts, parsing, analysis | `runner/audio.ts` (`runner/audioRun.ts` only drives ffmpeg) |
 | device thermal and power parsers | `runner/deviceMetrics.ts` |
+| the shared device flow and its lane refusals | `runner/deviceRunner.ts` (reads `supportedOn` from the registry) |
 | the four target runners | `runner/androidRunner.ts`, `runner/desktopRunner.ts`, `runner/iosRunner.ts`, `runner/deviceTransport.ts` |
 | capability registry | `src/capabilities.ts` |
 

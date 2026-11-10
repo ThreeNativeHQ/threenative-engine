@@ -1,9 +1,35 @@
 import type { IThreeNativeConfig } from "./config.js";
 import type { MatrixWorldMode } from "./matrix-world.js";
 import type { PlatformOS } from "./platform.js";
+import type { IRendererOptions } from "./renderer.js";
 import { RESOLUTION_SCALER } from "./resolution-scaler.js";
 
 type RendererConfig = NonNullable<IThreeNativeConfig["renderer"]>;
+
+/**
+ * What `defineGame({ renderer })` accepts: the project's portable renderer config (`threenative.config.ts`
+ * `renderer`, including its `android` block and `"auto"` scale) beside the live renderer options.
+ *
+ * One key for both. `defineGame` once took the portable config as `render` and the live options as
+ * `renderer`, so a game wrote `render: config.renderer` beside a second `renderer:` and the
+ * antialias and scale resolvers each fell back from one to the other. The scale is the one field
+ * the two disagreed on, and the portable form (a number or `"auto"`) is the superset.
+ */
+export type GameRendererConfig = Omit<IRendererOptions, "resolutionScale" | "scaleSource"> &
+  RendererConfig;
+
+/**
+ * Fail closed on the retired `render` key, naming the one that replaced it.
+ *
+ * A game that still passes `render` would otherwise lose its settings without a word: the key is
+ * not read any more, so its scale, sampling and Android overrides would all fall back to defaults.
+ */
+export function assertNoLegacyRenderKey(config: object): void {
+  if ("render" in config && (config as { render?: unknown }).render !== undefined)
+    throw new Error(
+      'TN_GAME_RENDER_KEY_RENAMED: defineGame({ render }) is now defineGame({ renderer }). Move the object to `renderer` with no other change: preferWebGPU, antialias, alphaAntialiasing, resolutionScale (a number in (0, 1] or "auto"), the android block, matrixWorld, projection and minimumProjectedPixels keep their names and meaning, and `config.renderer` from threenative.config.ts passes through unchanged. `scaleSource` is reported by the engine and is not an input. Where a game set both keys, `render` won, so merge them with the `render` values on top.',
+    );
+}
 
 /** How the active drawing-buffer scale was arrived at, reported beside every fps number. */
 export type ScaleSource = "pinned" | "auto";

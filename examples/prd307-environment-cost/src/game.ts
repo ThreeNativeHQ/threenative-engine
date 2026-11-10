@@ -170,7 +170,7 @@ class EnvironmentCost extends Scene<Record<string, unknown>, undefined> {
 
 export default defineGame<Record<string, unknown>>({
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { play: EnvironmentCost },
   start: "play",
 });

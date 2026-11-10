@@ -6,9 +6,10 @@ import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { LEVEL_EXPOSURE } from "../unreal-look/scaffold/render/atmosphere.js";
 
 /**
- * The scaffold copies the starter's `rendererGate.ts` beside `quality.ts`, which re-exports it. The
- * return type names only what this spec reads: a `typeof import()` of `quality.ts` would pull the
- * scaffold's own imports (`./grade.js`, `./rendererGate.js`) into the repository typecheck.
+ * The scaffold's own `rendererGate.ts` is copied beside `quality.ts`, which re-exports it; the
+ * framework's copy moved to `@threenative/core/render/environment` (PRD-833) and this capture harness
+ * stays independent of the engine. The return type names only what this spec reads: a
+ * `typeof import()` of `quality.ts` would pull the scaffold's own imports into the typecheck.
  */
 async function loadQuality(): Promise<{
   giPreset(tier: string): object;
@@ -25,11 +26,10 @@ async function loadQuality(): Promise<{
     join(__dirname, "../unreal-look/scaffold/render/atmosphere.ts"),
     join(dir, "atmosphere.ts"),
   );
+  // The scaffold's own gate, not a borrowed one: the starter's copy is the engine's now
+  // (`@threenative/core/render/environment`), and this capture harness stays independent of it.
   copyFileSync(
-    join(
-      __dirname,
-      "../../packages/create-threenative/templates/starter/src/render/rendererGate.ts",
-    ),
+    join(__dirname, "../unreal-look/scaffold/render/rendererGate.ts"),
     join(dir, "rendererGate.ts"),
   );
   return import(/* @vite-ignore */ pathToFileURL(join(dir, "quality.ts")).href);

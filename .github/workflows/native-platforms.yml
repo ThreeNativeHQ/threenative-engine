@@ -1513,6 +1513,14 @@ jobs:
           pnpm --filter @threenative/runtime-native native:build
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Install the Linux display probe's tools
+        if: runner.os == 'Linux'
+        run: |
+          # `host-window.test.mjs` reads the window the X server reports. The hosted image ships
+          # Xvfb, xwininfo and xprop but no xdotool, so the verify lane below failed on the
+          # prerequisite instead of running the probe. Installed here, not trusted to the image.
+          sh scripts/retry-download.sh sudo apt-get update
+          sh scripts/retry-download.sh sudo apt-get install -y xdotool xvfb x11-utils
       - name: Report the compiler cache hit rate
         if: always() && env.CCACHE_UNAVAILABLE != '1'
         shell: bash

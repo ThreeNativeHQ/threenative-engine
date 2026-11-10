@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "name": "native-smoke-android-tone",
+  "target": "web",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 2,
+  "steps": [{ "waitFrames": 2 }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "tone": [{ "mean": { "min": 8 } }]
+  }
+}

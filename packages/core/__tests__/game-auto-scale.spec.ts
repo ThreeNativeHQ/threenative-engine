@@ -54,8 +54,8 @@ async function run(
         compileWindows.push(window.surface?.compiling === true);
       },
     },
-    render,
     renderer: {
+      ...render,
       canvas,
       preferWebGPU: false,
       webgl2Factory: () => ({
@@ -223,8 +223,8 @@ describe('resolutionScale: "auto"', () => {
     const game = defineGame({
       display: { maxFps: 60 },
       frameBudget: { onWindow: (w) => windows.push(w), report: () => {}, reportEvery: 1 },
-      render: { resolutionScale: "auto" },
       renderer: {
+        resolutionScale: "auto",
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({
@@ -282,8 +282,8 @@ describe('resolutionScale: "auto"', () => {
     const game = defineGame({
       display: { maxFps: 60 },
       frameBudget: { report: () => {}, reportEvery: 1 },
-      render: { resolutionScale: "auto" },
       renderer: {
+        resolutionScale: "auto",
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({
@@ -376,8 +376,8 @@ describe('resolutionScale: "auto"', () => {
           if (w.surface !== undefined) postReadiness.push(w.surface.resolutionScale);
         },
       },
-      render: { resolutionScale: "auto" },
       renderer: {
+        resolutionScale: "auto",
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({
@@ -470,8 +470,8 @@ describe('resolutionScale: "auto"', () => {
           if (window.surface !== undefined) surfaces.push(window.surface.resolutionScale);
         },
       },
-      render: { resolutionScale: "auto" },
       renderer: {
+        resolutionScale: "auto",
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => rawRenderer,

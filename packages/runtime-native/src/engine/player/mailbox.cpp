@@ -1,4 +1,5 @@
 #include "engine/player/mailbox.h"
+#include "engine/foundation/flags.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -46,7 +47,7 @@ bool writeFile(const std::string& path, const std::string& payload) {
 }  // namespace
 
 std::string Mailbox::rootFromEnvironment() {
-    const char* root = std::getenv("TN_PLAYTEST_MAILBOX_ROOT");
+    const char* root = flags::read<flags::PlaytestMailboxRoot>();
     return root == nullptr ? std::string() : std::string(root);
 }
 

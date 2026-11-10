@@ -6,53 +6,19 @@ import { fileURLToPath } from "node:url";
  * Shared harness for the behavioral tests of the runtime's JavaScript shims.
  * The host evals each script into the game's JS engine at startup; every global
  * those scripts install is part of the host surface TypeScript framework code
- * may rely on (see AGENTS.md, "The host surface is a contract"). PRD-207 moved
- * the sources out of `runtime.cpp` raw-string literals into
- * `src/runtime-scripts/*.js`, so these helpers read the shipped file and still
- * fail closed when runtime.cpp stops loading it.
+ * may rely on (see AGENTS.md, "The host surface is a contract").
  */
-
-/** C++ block name -> the runtime script that now carries that source. */
-const SCRIPT_FOR_BLOCK = {
-  createElementSetup: "create-element-setup",
-  eventConstructorsSetup: "event-constructors-setup",
-  fetchPolyfill: "fetch-polyfill",
-  imageSupportInit: "image-support-init",
-  storagePolyfill: "storage-polyfill",
-  streamsPolyfill: "streams-polyfill",
-  urlPolyfill: "url-worker-polyfill",
-};
-
-export function readRuntimeCpp() {
-  return readFileSync(
-    fileURLToPath(new URL("../src/runtime.cpp", import.meta.url)),
-    "utf8",
-  );
-}
 
 /**
- * Reads one shim's source by its historical C++ block name.
+ * Reads one shipped runtime script, such as `fetch-polyfill`, from `src/runtime-scripts/`.
  *
- * `source` is runtime.cpp: the script only ships if the host still evals it, so
- * a shim that was renamed or dropped from the bootstrap fails here rather than
- * leaving the owning tests silently covering nothing.
+ * Whether the host evaluates that script, and in which order, is proved by running the host:
+ * `tests/shim_bootstrap_test.cpp` boots a headless `Runtime` and probes the globals the scripts
+ * install. These helpers only load the JavaScript so a guest realm can exercise it.
  */
-export function extractEmbeddedJs(source, blockName) {
-  const script = SCRIPT_FOR_BLOCK[blockName];
-  if (!script) {
-    throw new Error(
-      `no runtime script is mapped to the shim "${blockName}" — ` +
-        "add it to SCRIPT_FOR_BLOCK or update the owning tests",
-    );
-  }
-  if (!source.includes(`evalRuntimeScript(*jsEngine_, "${script}"`)) {
-    throw new Error(
-      `runtime.cpp no longer loads the runtime script "${script}" — ` +
-        "the shim was renamed or removed; update the owning tests",
-    );
-  }
+export function readRuntimeScript(name) {
   return readFileSync(
-    fileURLToPath(new URL(`../src/runtime-scripts/${script}.js`, import.meta.url)),
+    fileURLToPath(new URL(`../src/runtime-scripts/${name}.js`, import.meta.url)),
     "utf8",
   );
 }

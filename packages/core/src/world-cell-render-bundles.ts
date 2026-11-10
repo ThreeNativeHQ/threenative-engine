@@ -2,6 +2,7 @@ import type { Object3D } from "three";
 import type { Material } from "three";
 import { BundleGroup } from "three/webgpu";
 import { lodChainOf } from "./model-lod.js";
+import { rendererFacts } from "./renderer-facts.js";
 import type { IRendererLike } from "./renderer.js";
 import { markStatic } from "./static-transform.js";
 import { BundleSurfaceSafety, bundleSafe, ownHook } from "./world-bundle-safety.js";
@@ -209,8 +210,7 @@ export class CellBundles {
     if (this.#ownsBundles !== undefined) return this.#ownsBundles;
     const renderer = this.#host.renderer();
     if (renderer === undefined) return false;
-    const info = (renderer.raw as { info?: object } | undefined)?.info;
-    this.#ownsBundles = info !== undefined && "engine" in info;
+    this.#ownsBundles = rendererFacts(renderer).ownedEngine;
     return this.#ownsBundles;
   }
 

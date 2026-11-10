@@ -177,7 +177,7 @@ export default defineGame({
   plugins: [playtest()],
   // One mannequin and a few unique props: the batching projection measures `notWorthwhile` and
   // falls back, so the game states the opt-out.
-  render: { preferWebGPU: true, projection: false },
+  renderer: { preferWebGPU: true, projection: false },
   scenes: { locomotion: VqLocomotion },
   start: "locomotion",
 });

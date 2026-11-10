@@ -13,7 +13,7 @@ import {
   toolDefinitions,
 } from "../src/index.js";
 
-const workspaceManifest = path.resolve("packages/create-threenative/capabilities.json");
+const workspaceManifest = path.resolve("packages/core/capabilities.json");
 
 function searchResults(
   situation: string,
@@ -677,6 +677,101 @@ describe("threenative-engine-mcp", () => {
     expect(results.map((result) => result.symbol)).toEqual(
       expect.arrayContaining(["PointerEvents3D"]),
     );
+  });
+
+  /**
+   * The request an author writes once they know the name: "turn on godrays", "what is traa",
+   * "use mergeParts". Every one of those answered `verdict: none` because the index read only the
+   * situations and aliases, so a symbol the manifest exports by that exact name was invisible.
+   */
+  it.each([
+    ["godrays", "godrays"],
+    ["traa", "traa"],
+    ["mergeParts", "mergeParts"],
+    ["request the godrays stage for this scene", "godrays"],
+  ])("finds '%s' by the symbol name the manifest exports", (query, symbol) => {
+    expect(searchResults(query, workspaceManifest)[0]?.symbol).toBe(symbol);
+  });
+
+  /**
+   * Spelling a name is a lead in proportion to how much of the request the name accounts for. `view`
+   * is also a symbol, so a camera request that says "view" in passing ranks it below the camera it
+   * asks for; it does not lead.
+   */
+  it("does not answer a request with a common word that also names a symbol", () => {
+    const results = searchResults(
+      "first person view with a weapon held in the hand",
+      workspaceManifest,
+    );
+    expect(results[0]?.symbol).not.toBe("View");
+  });
+
+  /**
+   * A request that spells a node's name inside a sentence is asking for that node. The name channel
+   * matched only whole-query equality once, so `GPUParticles3D sparks` and `Area3D trigger` fell
+   * back to situation scoring and missed the node the request named outright.
+   */
+  it.each([
+    ["GPUParticles3D sparks", "GPUParticles3D"],
+    ["Area3D trigger", "Area3D"],
+    ["CharacterBody3D movement", "CharacterBody3D"],
+    ["RigidBody3D crate", "RigidBody3D"],
+    ["NavigationAgent3D chase", "NavigationAgent3D"],
+    ["enable ssgi", "ssgi"],
+    ["use rapier", "rapier"],
+    ["add atmosphere", "Atmosphere"],
+    ["use addInSlices for loading", "addInSlices"],
+    ["check isMobile", "isMobile"],
+  ])("finds '%s' when the request spells the node name", (query, symbol) => {
+    expect(searchResults(query, workspaceManifest)[0]?.symbol).toBe(symbol);
+  });
+
+  /**
+   * A one-word name is also an ordinary English word. Spelled inside a longer request it must not
+   * displace the mechanic the request is about: `View` is a React rectangle, `scene`, `depth`,
+   * `velocity` and `connect` are `three/tsl` buffers and a transport. The word has to hold a real
+   * share of the request, and it has to be rare in the name index, or the row is a wrong lead.
+   */
+  it.each([
+    ["camera follows the player with a third person view", "View"],
+    ["the enemy velocity should push the player back when hit", "velocity"],
+    ["make the water depth fog darker underwater", "depth"],
+    ["make the scene feel foggy and moody", "Scene"],
+  ])("does not answer '%s' with the ordinary word '%s'", (query, symbol) => {
+    expect(searchResults(query, workspaceManifest)[0]?.symbol).not.toBe(symbol);
+  });
+
+  it("keeps a one-word name that holds the request", () => {
+    expect(searchResults("add godrays", workspaceManifest)[0]?.symbol).toBe("godrays");
+    expect(searchResults("enable ssgi", workspaceManifest)[0]?.symbol).toBe("ssgi");
+    expect(searchResults("use rapier", workspaceManifest)[0]?.symbol).toBe("rapier");
+  });
+
+  /** Spelling `characterbody3d` or `Area3D` as words means the same node as the camel case. */
+  it.each([
+    ["character body 3d movement", "CharacterBody3D"],
+    ["area 3d trigger", "Area3D"],
+    ["gpu particles trailing the runner", "GPUParticles3D"],
+  ])("finds '%s' spelled as words", (query, symbol) => {
+    expect(searchResults(query, workspaceManifest)[0]?.symbol).toBe(symbol);
+  });
+
+  /**
+   * The row has to equal the detail minus its situations and aliases, or the authoring rule still
+   * forces a detail call per hit: `signature` was the only field those calls added.
+   */
+  it("answers a search row with the signature, overrides and deprecations detail carries", () => {
+    const merged = searchResults("merge static meshes into one mesh", workspaceManifest).find(
+      (result) => result.symbol === "mergeParts",
+    );
+    expect(merged?.signature.length).toBeGreaterThan(0);
+    expect(merged?.overrides?.join(" ")).toContain("color");
+
+    const body = searchResults(
+      "move a character with collision against the level",
+      workspaceManifest,
+    ).find((result) => result.symbol === "CharacterBody3D");
+    expect(body?.deprecated?.join(" ")).toContain("world");
   });
 
   it("finds the batching and particle capabilities a runner request names outright", () => {

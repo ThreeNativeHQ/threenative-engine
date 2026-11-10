@@ -5,11 +5,9 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import {
-  runAndroidPlaytest,
-  runDevicePlaytest,
-  type IDevicePlaytestDriver,
-} from "../src/runner/androidRunner.js";
+import { runAndroidPlaytest } from "../src/runner/androidRunner.js";
+import { PLAYTEST_ASSERTION_REGISTRY } from "../src/assertion-schema.js";
+import { runDevicePlaytest, unsupportedAssertion, type IDevicePlaytestDriver } from "../src/runner/deviceRunner.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { DeviceBridgeTransport, androidMailboxPaths } from "../src/runner/deviceTransport.js";
 import { runIosPlaytest } from "../src/runner/iosRunner.js";
@@ -35,7 +33,7 @@ async function runnerSource(name: string): Promise<string> {
 
 test("runner lane helpers have one implementation", async () => {
   const steps = await runnerSource("steps.ts");
-  const android = await runnerSource("androidRunner.ts");
+  const android = await runnerSource("deviceRunner.ts");
   const cli = await runnerSource("cli.ts");
   const deviceSignal = await runnerSource("deviceSignal.ts");
   const runner = await runnerSource("runner.ts");
@@ -60,8 +58,48 @@ test("runner lane helpers have one implementation", async () => {
   expect(shared.match(/function safePart\(/gu)).toHaveLength(1);
   expect(runner).toMatch(/activeConfig\.target \?\? "browser"/u);
   expect(deviceSignal).toMatch(/process\.once\("SIGINT", handleSignal\)/u);
-  expect(android).toMatch(/abortSignal:/u);
+  expect(await runnerSource("androidRunner.ts")).toMatch(/abortSignal:/u);
   expect(ios).toMatch(/withTargetAbortSignal/u);
+});
+
+test("a device lane refuses an assertion exactly when the registry does not list that lane", () => {
+  // The registry said `tone` was unsupported on android while the android runner ran it, because
+  // the runner kept its own eleven `if` blocks. The refusal now reads `supportedOn`, so the two
+  // cannot disagree: every kind, on every device lane, is refused if and only if it is unlisted.
+  for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
+    for (const lane of ["android", "desktop", "ios"] as const) {
+      // `diagnostics.noNetworkErrors` is the one lane-specific field of a kind that runs everywhere;
+      // device-playtest.spec.ts pins its own refusal.
+      const assert = entry.kind === "diagnostics" ? { diagnostics: { noConsoleErrors: true } } : entry.example;
+      const scenario = { assert, steps: [] } as unknown as IPlaytestScenario;
+      const refusal = unsupportedAssertion(scenario, lane, true, true);
+      const listed = entry.supportedOn.includes(lane);
+      expect(refusal === undefined, `${entry.kind} on ${lane}: listed=${String(listed)}`).toBe(listed);
+      if (refusal !== undefined) {
+        expect(refusal.code).toBe("TN_PLAYTEST_UNSUPPORTED_ON_TARGET");
+        for (const supported of entry.supportedOn) expect(refusal.fix.instruction).toContain(`--target ${supported}`);
+      }
+    }
+  }
+});
+
+test("the android runner file holds the android lane only; the shared flow lives in deviceRunner", async () => {
+  const android = await runnerSource("androidRunner.ts");
+  const device = await runnerSource("deviceRunner.ts");
+  expect(android).toMatch(/export async function runAndroidPlaytest/u);
+  expect(android).not.toMatch(/function runDevicePlaytest|function unsupportedAssertion/u);
+  expect(device).toMatch(/export async function runDevicePlaytest/u);
+  // No hand-written per-assertion refusal survives: the registry loop is the only one.
+  expect(device).not.toMatch(/scenario\.assert\?\.(deviceMetrics|visual|hud)\b/u);
+});
+
+test("both lanes retake a blank capture through captureWithRetry and nothing else", async () => {
+  const runner = await runnerSource("runner.ts");
+  const device = await runnerSource("deviceRunner.ts");
+  for (const [name, source] of [["runner.ts", runner], ["deviceRunner.ts", device]] as const) {
+    expect(source, name).toMatch(/captureWithRetry\(/u);
+    expect(source, `${name} must not call retakeWhileBlank directly`).not.toMatch(/retakeWhileBlank\(/u);
+  }
 });
 
 test("sampling.ts contains sampling concerns only", async () => {

@@ -41,7 +41,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   // of each 20 fps frame re-simulating, which made the next frame slower still.
   maxSteps: 2,
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { play: Play },
   seed: 1986,
   start: "play",

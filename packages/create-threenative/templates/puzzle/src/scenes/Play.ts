@@ -7,6 +7,7 @@ import {
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import {
   BufferAttribute,
@@ -23,7 +24,6 @@ import { Seal } from "../entities/Seal.js";
 import { WARDEN_SPAWN, Warden } from "../entities/Warden.js";
 import { createVaultCamera } from "../render/camera.js";
 import { CRATE_SIZE } from "../render/crateShape.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";

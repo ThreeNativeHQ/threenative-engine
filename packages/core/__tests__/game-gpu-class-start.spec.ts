@@ -41,8 +41,8 @@ async function startOn(
   const game = defineGame({
     display: { maxFps: 60 },
     frameBudget: { report: () => {} },
-    render,
     renderer: {
+      ...render,
       canvas,
       report: () => {},
       webgpuFactory: () => ({

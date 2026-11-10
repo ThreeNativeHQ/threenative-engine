@@ -12,7 +12,7 @@
   "scripts": {
     "alpha:bar": "tsx scripts/alpha-bar.ts",
     "api:surface:check": "tsx scripts/check-api-surface.ts",
-    "api:surface:sync": "tsx scripts/check-api-surface.ts --update && biome format --write scripts/api-surface.json",
+    "api:surface:sync": "tsx scripts/check-api-surface.ts --update && biome format --write --no-errors-on-unmatched scripts/api-surface.json",
     "bake:delete-test": "sh scripts/xvfb.sh tsx scripts/bake-delete-test.ts",
     "bench:engines": "tsx scripts/engine-load-test/cli.ts",
     "bench:load": "tsx scripts/load-bench.ts",
@@ -70,8 +70,10 @@
     "round:deletions": "tsx scripts/round-deletions.ts",
     "round:next": "tsx scripts/round-next.ts",
     "sandbox": "tsx scripts/make-sandbox.ts",
+    "scaffold:pin": "tsx scripts/scaffold-pin.ts",
     "stamp:template-loading": "tsx scripts/stamp-template-loading.ts",
     "stamp:template-render": "tsx scripts/stamp-template-render.ts",
+    "stamp:template-plumbing": "tsx scripts/stamp-template-plumbing.ts",
     "sweep:archive": "tsx scripts/sweep-archive.ts",
     "sweep:capture": "sh scripts/xvfb.sh tsx scripts/sweep-capture.ts",
     "sweep:delta": "tsx scripts/sweep-delta.ts",
@@ -130,6 +132,7 @@
     "tsx": "4.23.5",
     "typescript": "catalog:",
     "vitest": "4.1.10",
+    "yaml": "2.9.1",
     "@typescript/native": "catalog:"
   },
   "description": "ThreeNative is an application framework for games whose same vanilla Three.js source runs in the browser on WebGPU and on an owned C++ runtime for desktop and Android. It uses Godot-shaped node names, React and Tailwind for UI, and vanilla `three` underneath on every surface.",

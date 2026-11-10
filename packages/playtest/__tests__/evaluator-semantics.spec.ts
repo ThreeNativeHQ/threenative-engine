@@ -315,30 +315,16 @@ describe("evaluator semantics (characterization)", () => {
   test("composite scenarios keep a stable assertion order across families", () => {
     const result = evaluate(
       {
-        reachability: { artifact: "unused", entities: ["a", "b"] },
         world: {},
+        framebufferCoverage: { backdrop: [0, 0, 0], tolerance: 0, window: { endStep: "x", startStep: "x" } },
       } as never,
-      {
-        observations: {
-          console: [],
-          hud: {},
-          network: [],
-          resources: {},
-          entityTransforms: {
-            a: { position: [0, 0, 0], scale: [1, 1, 1] },
-            b: { position: [1, 0, 0], scale: [1, 1, 1] },
-          },
-        },
-      },
+      { observations: { console: [], hud: {}, network: [], resources: {} } },
     );
+    // framebufferCoverage's emitter runs before world's, whatever order the scenario spells them in.
     expect(result.assertions.map(({ id }) => id)).toEqual([
-      "reachability.0.a.b",
+      "framebufferCoverage",
       "world.seed",
       "diagnostics",
-    ]);
-    expect(result.diagnostics.map(({ code }) => code)).toEqual([
-      "TN_PLAYTEST_REACHABILITY_ASSERTION_FAILED",
-      "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
     ]);
   });
 

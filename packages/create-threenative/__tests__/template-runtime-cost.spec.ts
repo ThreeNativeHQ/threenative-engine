@@ -503,6 +503,7 @@ describe("generated template ordinary-frame runtime cost", () => {
       player.dispose();
 
       const fox = new platformer.Fox(ctx as never, new Vector3(0, 0.75, 0));
+      fox.attach(ctx as never);
       expect(
         measureVectorAllocations(() => fox.update(ctx as never, DT)),
         "platformer Fox.update vector allocation sentinel",
@@ -514,6 +515,7 @@ describe("generated template ordinary-frame runtime cost", () => {
         move: new Vector2(),
       });
       const dashingFox = new platformer.Fox(dashCtx as never, new Vector3(0, 0.75, 0));
+      dashingFox.attach(dashCtx as never);
       expect(
         measureVectorAllocations(() => dashingFox.update(dashCtx as never, DT)),
         "platformer dash fallback vector allocation sentinel",
@@ -962,10 +964,8 @@ describe("generated template ordinary-frame runtime cost", () => {
   });
 
   it("forwards a cached-sky sample to the controller entered while sampling was pending", async () => {
-    const sampling = await import("../templates/racing/src/render/environmentSampling.js");
-    const { captureEnvironmentSnapshot } = await import(
-      "../templates/racing/src/render/environmentSnapshot.js"
-    );
+    const sampling = await import("@threenative/core/render/environment");
+    const { captureEnvironmentSnapshot } = await import("@threenative/core/render/environment");
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
     const physics = await physicsFixture(RACING_GRAVITY);
     const context = sceneContext(physics.physics, Race.initialState);

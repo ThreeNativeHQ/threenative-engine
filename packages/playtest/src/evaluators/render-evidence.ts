@@ -422,15 +422,6 @@ export function mergeEffectLogs(effectLog: unknown, series: IPlaytestObservation
   };
 }
 
-export function matchingOccludedRaycasts(effectLog: unknown, entity: string | undefined, target: string | undefined): number {
-  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) return 0;
-  return effectLog.entries.filter((entry) => {
-    if (!isRecord(entry) || (entry.service !== "render.sceneRayQuery" && entry.service !== "physics.raycast") || !isRecord(entry.payload) || !isRecord(entry.payload.result) || entry.payload.result.hit !== true) return false;
-    const request = JSON.stringify(entry.payload.request ?? null);
-    return (entity === undefined || request.includes(entity)) && (target === undefined || request.includes(target));
-  }).length;
-}
-
 export function summarizeMatchingEntries(effectLog: unknown, tokens: readonly string[]): { entryCount: number; sourcePath?: string; systemId?: string; systems: string } | undefined {
   if (tokens.length === 0 || !isRecord(effectLog) || !Array.isArray(effectLog.entries)) {
     return undefined;

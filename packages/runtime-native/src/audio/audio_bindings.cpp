@@ -28,12 +28,8 @@ static std::unordered_map<void*, std::unique_ptr<DynamicsCompressorNode>> g_comp
 
 static js::Engine* g_jsEngine = nullptr;
 
-static bool evalAudioScript(js::Engine& engine, std::string_view name, const char* filename) {
-    const auto script = runtime_scripts::find(name);
-    if (!script.data) {
-        std::cerr << "[Audio] Embedded runtime script not found: " << name << std::endl;
-        return false;
-    }
+static bool evalAudioScript(js::Engine& engine, runtime_scripts::Script name, const char* filename) {
+    const auto script = runtime_scripts::require(name);
     const std::string source(script.data, script.size);
     if (!engine.eval(source.c_str(), filename)) {
         std::cerr << "[Audio] Failed to evaluate " << filename << ": " << engine.getException()
@@ -166,7 +162,7 @@ static void wrapAudioParams(js::Engine& engine, const std::vector<js::JSValueHan
     if (type.ptr) engine.setProperty(bundle, "type", type);
     if (reduction.ptr) engine.setProperty(bundle, "reduction", reduction);
     engine.setGlobalProperty("__tnAudioParamBundle", bundle);
-    evalAudioScript(engine, "audio-param", "audio-param.js");
+    evalAudioScript(engine, runtime_scripts::Script::audio_param, "audio-param.js");
     engine.setGlobalProperty("__tnAudioParamBundle", engine.newUndefined());
 }
 
@@ -342,7 +338,7 @@ js::JSValueHandle createSourceNodeJS(js::Engine* engine, AudioBufferSourceNode* 
     engine->setProperty(jsNode, "playbackRate", createPassiveAudioParamJS(engine, 1.0f));
 
     engine->setGlobalProperty("__tnAudioSourceTemp", jsNode);
-    evalAudioScript(*engine, "audio-source-properties", "audio-source-properties.js");
+    evalAudioScript(*engine, runtime_scripts::Script::audio_source_properties, "audio-source-properties.js");
 
     return jsNode;
 }
@@ -401,7 +397,7 @@ js::JSValueHandle createGainNodeJS(js::Engine* engine, GainNode* nodePtr, js::JS
         })
     );
     engine->setGlobalProperty("__tnAudioGainParamTemp", gainParam);
-    evalAudioScript(*engine, "audio-gain-param", "audio-gain-param.js");
+    evalAudioScript(*engine, runtime_scripts::Script::audio_gain_param, "audio-gain-param.js");
     engine->setProperty(jsNode, "gain", gainParam);
 
     return jsNode;
@@ -457,7 +453,7 @@ js::JSValueHandle createPannerNodeJS(js::Engine* engine, PannerNode* nodePtr,
         })
     );
     engine->setGlobalProperty("__tnAudioPannerTemp", jsNode);
-    evalAudioScript(*engine, "audio-panner-properties", "audio-panner-properties.js");
+    evalAudioScript(*engine, runtime_scripts::Script::audio_panner_properties, "audio-panner-properties.js");
     return jsNode;
 }
 
@@ -781,10 +777,10 @@ void initializeAudioBindings(js::Engine* engine) {
     // constructor receiver. Copy the native context surface onto a JavaScript
     // receiver so Three.js gets the browser constructor contract on every engine.
     engine->setGlobalProperty("__tnCreateAudioContext", audioContextCtor);
-    if (!evalAudioScript(*engine, "audio-context-constructor", "audio-context-constructor.js")) {
+    if (!evalAudioScript(*engine, runtime_scripts::Script::audio_context_constructor, "audio-context-constructor.js")) {
         std::cerr << "[Audio] Failed to install AudioContext constructor" << std::endl;
     }
-    if (!evalAudioScript(*engine, "install-async-audio-decode", "install-async-audio-decode.js")) {
+    if (!evalAudioScript(*engine, runtime_scripts::Script::install_async_audio_decode, "install-async-audio-decode.js")) {
         std::cerr << "[Audio] Failed to install the async audio decode drain" << std::endl;
     }
 

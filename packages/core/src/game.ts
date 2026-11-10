@@ -1,58 +1,38 @@
-import type { Scene as ThreeScene } from "three";
 import type { IAssetLoaderOptions } from "./assets.js";
-import type { AutoBatch, IAutoBatchConfig } from "./auto-batch.js";
-import { ComputeDrivenRegistry } from "./compute-driven.js";
+import type { IAutoBatchConfig } from "./auto-batch.js";
 import type { IThreeNativeConfig } from "./config.js";
-import type { Registry } from "./entities.js";
-import type { FrameBudget, IFrameBudgetOptions, IFrameBudgetWindow } from "./frame-budget.js";
-import { startFrameLoop } from "./game-frame-loop.js";
-import type { IGameBootGame } from "./game-frame-loop.js";
-import { startGameWorld, startScenes } from "./game-startup.js";
-import { assertCarry, validateCameraConfig } from "./game-validate.js";
-import type {
-  GeometryCapture,
-  IGeometryCaptureReport,
-  IGeometryCaptureRequest,
-} from "./geometry-capture.js";
-import type { ContextMenuPolicy, InputBindings, InputMap } from "./input.js";
-import type { PhysicsInterpolation } from "./interpolation.js";
-import { reportLaunchFailure, reportSceneLoadFailure } from "./launch-diagnostics.js";
-import type { IAfterPhysicsPhase, IRenderPerformanceSample } from "./loop.js";
-import type { MatrixWorldPass } from "./matrix-world.js";
-import type { ScenePicker } from "./picking.js";
-import type { IPipelineCensus } from "./pipeline-census.js";
-import type { PointerEvents3D } from "./pointer-events.js";
-import { applyOpacityConvention } from "./profiling/opacity-convention.js";
-import { renderTrapAudit } from "./profiling/render-trap-audit.js";
+import type { IFrameBudgetOptions, IFrameBudgetWindow } from "./frame-budget.js";
 import {
-  UNLIT_FOLIAGE_FIX,
-  formatUnlitFoliageWarning,
-  unlitFoliageWarning,
-} from "./profiling/unlit-foliage-warning.js";
+  type IBootGame,
+  clearScene,
+  createBootGame,
+  drainCleanup,
+  throwFirst,
+} from "./game-boot-phase.js";
+import { startFrameLoop } from "./game-frame-loop.js";
+import { startGameWorld, startScenes } from "./game-startup.js";
+import { type IGameUiSeam, createGameUi } from "./game-ui.js";
+import { assertCarry, validateCameraConfig } from "./game-validate.js";
+import type { IGeometryCaptureReport, IGeometryCaptureRequest } from "./geometry-capture.js";
+import type { ContextMenuPolicy, InputBindings, InputMap } from "./input.js";
+import { reportLaunchFailure, reportSceneLoadFailure } from "./launch-diagnostics.js";
+import type { IRenderPerformanceSample } from "./loop.js";
+import type { IPipelineCensus } from "./pipeline-census.js";
 import { installQuietMarkers, uninstallQuietMarkers } from "./quiet-markers.js";
 import type { IRandom } from "./random.js";
-import type { RenderCameraCull } from "./render-camera-cull.js";
-import type { SceneRenderProjection } from "./renderProjection.js";
-import type { IRendererLike, IRendererOptions } from "./renderer.js";
-import type { ICtx, IStartupTimeline, Scene, SceneConstructor, SceneFrame } from "./scene.js";
-import type { Scheduler } from "./schedule.js";
+import { type GameRendererConfig, assertNoLegacyRenderKey } from "./renderer-config.js";
+import type { IRendererOptions } from "./renderer.js";
+import {
+  SCENE_ENTRY_INSPECTORS,
+  type SceneEntryInspector,
+  inspectSceneEntry,
+} from "./scene-entry-inspectors.js";
+import type { ICtx, IStartupTimeline, Scene, SceneConstructor } from "./scene.js";
 import type { IStartupOffscreenBytes } from "./startup-offscreen-bytes.js";
 import { STARTUP_COMPILE_BUDGET_MS } from "./startup-readiness.js";
 import { type GameStore, createGameStore } from "./state.js";
-import {
-  type IUiBridge,
-  UI_READY_INTENT,
-  UI_STARTUP_MESSAGE,
-  connectUiBridge,
-} from "./ui-bridge.js";
-import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
-import type { IViewportOptions, Viewport } from "./viewport.js";
-import {
-  type IWarmUpOptions,
-  prepareSceneEnvironment,
-  warmUpComputeNodes,
-  warmUpScene,
-} from "./warmup.js";
+import type { IViewportOptions } from "./viewport.js";
+import { type IWarmUpOptions, prepareSceneEnvironment, warmUpComputeNodes } from "./warmup.js";
 
 export type PluginCleanup = () => void;
 
@@ -290,8 +270,15 @@ export interface IGameConfig<
    * 60 fps default rather than a scaler with no target.
    */
   readonly display?: NonNullable<IThreeNativeConfig["display"]>;
-  readonly render?: NonNullable<IThreeNativeConfig["renderer"]>;
-  readonly renderer?: IRendererOptions;
+  /**
+   * The project's renderer settings: `config.renderer` from `threenative.config.ts` beside the live
+   * renderer options, as one key.
+   *
+   * `render` once carried the portable half, so a game wrote `render: config.renderer` beside a
+   * second `renderer:` and the antialias and scale resolvers each fell back from one to the other.
+   * The retired key now throws `TN_GAME_RENDER_KEY_RENAMED` and names this one.
+   */
+  readonly renderer?: GameRendererConfig;
   readonly seed?: number;
   readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
   /**
@@ -380,19 +367,9 @@ export interface IGame<
   stop(): void;
 }
 
-function clearScene(scene: ThreeScene, computeDriven: ComputeDrivenRegistry): void {
-  computeDriven.clear();
-  scene.clear();
-  scene.background = null;
-  scene.environment = null;
-  scene.fog = null;
-}
-
 class GameImpl<TState extends Record<string, unknown>, TPhysics>
   implements IGame<TState, TPhysics>
 {
-  #config: IGameConfig<TState, TPhysics>;
-
   /**
    * Whether the caller asked for the pre-start warm-up *by hand*.
    *
@@ -415,106 +392,67 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
    * budget on macOS. Both are gone with the default back where it was.
    */
   #warmUpConfiguredExplicitly(): boolean {
-    return this.#config.warmUp !== undefined && this.#config.warmUp !== false;
+    return this.#boot.config.warmUp !== undefined && this.#boot.config.warmUp !== false;
   }
 
   /** The warm-up options for the pre-start block, once an explicit opt-in has asked for it. */
   #warmUpOptions(): IWarmUpOptions {
-    const configured = this.#config.warmUp;
+    const configured = this.#boot.config.warmUp;
     return configured === undefined || configured === true || configured === false
       ? {}
       : configured;
   }
-  #ctx: ICtx<TState, TPhysics> | undefined;
-  #scene: Scene<TState, TPhysics> | undefined;
-  /** The name of the scene currently entered. Carried across a hot update so a reload resumes
-   * where the session was, instead of restoring the game's state into its start scene. */
-  #sceneName: string | undefined;
-  #resumeScene: string | undefined;
-  #sceneFrame: SceneFrame<TState, TPhysics> | undefined;
-  #renderer: IRendererLike | undefined;
-  #viewport: Viewport | undefined;
-  #input: InputMap | undefined;
-  #state: GameStore<TState>;
   #initialState: TState;
-  #interpolation: PhysicsInterpolation | undefined;
-  #projection: SceneRenderProjection | undefined;
-  #autoBatch: AutoBatch | undefined;
-  #cameraCull: RenderCameraCull | undefined;
-  #matrixWorld: MatrixWorldPass | undefined;
-  #cleanup: Array<() => void> = [];
-  #computeDriven = new ComputeDrivenRegistry();
-  #entities: Registry | undefined;
-  #picker: ScenePicker | undefined;
-  #pointerEvents: PointerEvents3D | undefined;
-  #scheduler: Scheduler | undefined;
-  #afterPhysicsPhase: IAfterPhysicsPhase | undefined;
-  // Unlike afterPhysics, this seam's frame boundary is the world-render block below, so it is a
-  // plain scene-owned set rather than a phase on the loop.
-  #beforeRenderCallbacks = new Set<() => void>();
-  // Reused snapshot buffers, one per nesting depth, so a steady frame allocates no callback array.
-  #beforeRenderSnapshots: Array<Array<() => void>> = [];
-  #beforeRenderDepth = 0;
-  #frameBudget: FrameBudget | undefined;
-  #geometryCapture: GeometryCapture | undefined;
-  /** Bumped on every scene change, so a row id is stable exactly as long as the scene is. */
-  #sceneGeneration = 0;
-  #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
-  #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
   #pendingStart: Promise<void> | undefined;
-  /** Releases the frame loop and its instruments, in the place `#teardown` always released them. */
-  #frameLoopDispose: PluginCleanup | undefined;
-  /** Releases what the startup phase started, in `#teardown`'s cleanups step. */
-  #startupDispose: PluginCleanup | undefined;
-  #aborted = false;
-  #sceneEntered = false;
-  /** Startup readiness has begun its first-use gate; before that, it bakes the entered environment. */
-  #startupGateStarted = false;
-  /** The full `goto()` transition, including first-use warm-up, or undefined when none is. */
-  #pendingSceneEnter: Promise<void> | undefined;
-  /** One-shot notification after the scene that owns the world has entered, before warm-up. */
-  #onStartSceneEntered: (() => void) | undefined;
-  #paused = false;
-  #started = false;
-  #uiBridge: IUiBridge | undefined;
-  #uiPublisher: IUiStatePublisher | undefined;
-  #uiReady = false;
-  /** The loading cover has lifted and page UI may show state; see `UI_STARTUP_MESSAGE`. */
-  #uiRevealed = false;
-  // Flipped only by a diagnostics consumer announcing itself; see enableRuntimeDiagnostics().
-  #renderMetricsEnabled = false;
-  // Depth-coupled output needs the scene hook before its pass; ordinary scenes retain the
-  // historical after-render hook so an atmosphere-free game has the same render path as HEAD.
-  #hasDepthCoupledOutput = false;
+  /**
+   * What the boot phases read and assign. One plain object: a field a phase needs and this object
+   * lacks is a type error, never an `undefined` read at run time.
+   */
+  readonly #boot: IBootGame<TState, TPhysics>;
+
+  /** The scene-entry audits this game runs, in order. The engine's are the default. */
+  #sceneEntryInspectors: readonly SceneEntryInspector[] = SCENE_ENTRY_INSPECTORS;
+  readonly #ui: IGameUiSeam;
 
   constructor(config: IGameConfig<TState, TPhysics>) {
-    this.#config = config;
+    assertNoLegacyRenderKey(config);
     validateCameraConfig(config.camera);
-    const startScene = this.#config.scenes[this.#config.start];
-    if (startScene === undefined) throw new Error(`Unknown start scene '${this.#config.start}'.`);
+    const startScene = config.scenes[config.start];
+    if (startScene === undefined) throw new Error(`Unknown start scene '${config.start}'.`);
     const initialState =
-      this.#config.initialState ??
+      config.initialState ??
       (startScene as SceneConstructor<TState, TPhysics> & { initialState?: TState }).initialState;
     if (initialState === undefined) {
       throw new Error(
-        `Scene '${this.#config.start}' must declare static initialState or provide config.initialState.`,
+        `Scene '${config.start}' must declare static initialState or provide config.initialState.`,
       );
     }
-    this.#state = createGameStore(initialState, this.#config.stateFlushMs);
     this.#initialState = { ...initialState };
+    this.#boot = createBootGame({
+      config,
+      state: createGameStore(initialState, config.stateFlushMs),
+      connectUi: () => this.#ui.connect(),
+      enterScene: (scene, ctx) => this.#enterScene(scene, ctx),
+      goto: (name, ctx) => this.#goto(name, ctx),
+      postUiStartup: () => this.#ui.postStartup(),
+      teardown: () => this.#teardown(),
+      warmUpConfiguredExplicitly: () => this.#warmUpConfiguredExplicitly(),
+      warmUpOptions: () => this.#warmUpOptions(),
+    });
+    this.#ui = createGameUi(this.#boot);
   }
 
   get ctx(): ICtx<TState, TPhysics> | undefined {
-    return this.#ctx;
+    return this.#boot.ctx;
   }
 
   get scene(): Scene<TState, TPhysics> | undefined {
-    return this.#scene;
+    return this.#boot.scene;
   }
 
   /** The name of the entered scene, or undefined before `start()`. */
   get sceneName(): string | undefined {
-    return this.#sceneName;
+    return this.#boot.sceneName;
   }
 
   /**
@@ -528,18 +466,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
    * `initialState`, which would discard the very state being restored.
    */
   resumeScene(name: string, options?: { readonly revealed?: boolean }): void {
-    if (this.#config.scenes[name] === undefined) throw new Error(`Unknown scene '${name}'.`);
-    this.#resumeScene = name;
+    if (this.#boot.config.scenes[name] === undefined) throw new Error(`Unknown scene '${name}'.`);
+    this.#boot.resumeScene = name;
     // An edit restarts the game, and its HUD would blank until this startup lifted the cover
     // again: seconds after every save on a slow GPU. A session that showed its HUD keeps it.
     // The updated module may have connected its UI already and told a waiting HUD to hide.
     if (options?.revealed !== true) return;
-    this.#uiRevealed = true;
-    if (this.#uiBridge?.hasPeer()) this.#postUiStartup();
+    this.#boot.uiRevealed = true;
+    if (this.#boot.uiBridge?.hasPeer()) this.#ui.postStartup();
   }
 
   get state(): GameStore<TState> {
-    return this.#state;
+    return this.#boot.state;
   }
 
   /**
@@ -547,106 +485,65 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
    * connects early so the game can register intents. No state is serialized without a UI peer.
    */
   get ui(): IGameUi {
-    const bridge = this.#connectUi();
-    const ready = () => this.#uiReady;
-    return {
-      get connected() {
-        return bridge.hasPeer() && ready();
-      },
-      onIntent: (listener) => onUiIntent(bridge, listener),
-      publish: () => this.#uiPublisher?.publish(),
-    };
-  }
-
-  #connectUi(): IUiBridge {
-    if (this.#uiBridge !== undefined) return this.#uiBridge;
-    const bridge = connectUiBridge({ end: "game" });
-    this.#uiBridge = bridge;
-    // The store already coalesces writes at flush. Deferring this again waits for the native
-    // host's next microtask pump, after that frame's WebView event pump has already passed.
-    // Ahead of the first state, which `publishUiState` sends at once when a UI is already waiting.
-    if (bridge.hasPeer()) this.#postUiStartup();
-    this.#uiPublisher = publishUiState(bridge, this.#state, { schedule: (flush) => flush() });
-    onUiIntent(bridge, (intent) => {
-      if (intent !== UI_READY_INTENT) return;
-      this.#uiReady = true;
-      // Before the state: a UI that mounts after the reveal must learn the cover is gone, and one
-      // that mounts before it must learn to hide.
-      this.#postUiStartup();
-      // Publish immediately: the UI has just rendered against nothing, and waiting for the store's
-      // next change would leave a HUD showing its initial values for up to a tick.
-      this.#uiPublisher?.publish();
-    });
-    return bridge;
-  }
-
-  #postUiStartup(): void {
-    this.#uiBridge?.post({
-      type: UI_STARTUP_MESSAGE,
-      phase: this.#uiRevealed ? "ready" : "covered",
-    });
-  }
-
-  #disconnectUi(): void {
-    this.#uiRevealed = false;
-    this.#uiPublisher?.stop();
-    this.#uiPublisher = undefined;
-    this.#uiReady = false;
-    this.#uiBridge?.close();
-    this.#uiBridge = undefined;
+    return this.#ui.facade();
   }
 
   goto(name: string, options?: IGotoOptions<TState>): Promise<void> {
-    if (this.#ctx === undefined) throw new Error("Cannot call game.goto() before start().");
+    if (this.#boot.ctx === undefined) throw new Error("Cannot call game.goto() before start().");
     // Validate before the reset: a typo'd scene name must not wipe the live session's state on
     // its way to throwing.
-    const SceneType = this.#config.scenes[name];
+    const SceneType = this.#boot.config.scenes[name];
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
     const carry = options?.carry;
     if (carry !== undefined) assertCarry(carry);
     const destinationInitialState =
       (SceneType as SceneConstructor<TState, TPhysics> & { initialState?: TState }).initialState ??
       this.#initialState;
-    this.#state.stop();
-    this.#state.setState({ ...destinationInitialState, ...(carry as Partial<TState> | undefined) });
-    this.#state.start();
-    return this.#goto(name, this.#ctx);
+    this.#boot.state.stop();
+    this.#boot.state.setState({
+      ...destinationInitialState,
+      ...(carry as Partial<TState> | undefined),
+    });
+    this.#boot.state.start();
+    return this.#goto(name, this.#boot.ctx);
   }
 
   #goto(name: string, ctx: ICtx<TState, TPhysics>): Promise<void> {
-    const SceneType = this.#config.scenes[name];
+    const SceneType = this.#boot.config.scenes[name];
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
 
-    this.#hasDepthCoupledOutput = false;
-    this.#sceneGeneration += 1;
+    this.#boot.hasDepthCoupledOutput = false;
+    this.#boot.sceneGeneration += 1;
     // The objects a pending capture armed are leaving the graph; a report about them would be
     // about a scene that no longer exists.
-    this.#geometryCapture?.cancel("TN_GEOMETRY_CAPTURE_SCENE_EXIT: the scene changed mid-capture.");
-    this.#sceneFrame = undefined;
-    this.#afterPhysicsPhase?.clear();
-    this.#beforeRenderCallbacks.clear();
-    this.#interpolation?.clear();
-    this.#interpolation?.track(ctx.camera);
-    this.#scene?.exit(ctx);
-    this.#pointerEvents?.clear();
-    this.#sceneEntered = false;
-    this.#scheduler?.clear();
-    this.#entities?.clear();
-    for (const plugin of this.#config.plugins ?? []) {
+    this.#boot.geometryCapture?.cancel(
+      "TN_GEOMETRY_CAPTURE_SCENE_EXIT: the scene changed mid-capture.",
+    );
+    this.#boot.sceneFrame = undefined;
+    this.#boot.afterPhysicsPhase?.clear();
+    this.#boot.beforeRenderCallbacks.clear();
+    this.#boot.interpolation?.clear();
+    this.#boot.interpolation?.track(ctx.camera);
+    this.#boot.scene?.exit(ctx);
+    this.#boot.pointerEvents?.clear();
+    this.#boot.sceneEntered = false;
+    this.#boot.scheduler?.clear();
+    this.#boot.entities?.clear();
+    for (const plugin of this.#boot.config.plugins ?? []) {
       if (typeof plugin !== "function") plugin.sceneExit?.(ctx);
     }
     // The projection holds batches built from the outgoing scene's geometry. Released before the
     // scene is cleared, so a scene change cannot leave the next level drawing the last one's
     // props — and released rather than rebuilt, because every source it referenced is about to go.
-    this.#projection?.dispose();
+    this.#boot.projection?.dispose();
     // Put back anything the cull hid before the outgoing scene is cleared, so a scene change never
     // leaves an object invisible if the game keeps a reference to it.
-    this.#cameraCull?.restore();
-    this.#autoBatch?.reset();
-    clearScene(ctx.scene, this.#computeDriven);
+    this.#boot.cameraCull?.restore();
+    this.#boot.autoBatch?.reset();
+    clearScene(ctx.scene, this.#boot.computeDriven);
     const scene = new SceneType();
-    this.#scene = scene;
-    this.#sceneName = name;
+    this.#boot.scene = scene;
+    this.#boot.sceneName = name;
     let loaded: ReturnType<Scene<TState, TPhysics>["load"]>;
     try {
       loaded = scene.load(ctx);
@@ -659,7 +556,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         ? this.#enterTransitionScene(scene, ctx)
         : Promise.resolve(loaded).then(() => this.#enterTransitionScene(scene, ctx));
     const settled = (): void => {
-      if (this.#pendingSceneEnter === transition) this.#pendingSceneEnter = undefined;
+      if (this.#boot.pendingSceneEnter === transition) this.#boot.pendingSceneEnter = undefined;
     };
     // Handled here as well as by the caller: a start scene that navigates inside `enter()` throws
     // its transition away, and the gate below still has to learn that no world arrived. The failure
@@ -672,7 +569,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         message: `Scene '${name}' failed to load: ${error instanceof Error ? error.message : String(error)}`,
       });
     });
-    this.#pendingSceneEnter = transition;
+    this.#boot.pendingSceneEnter = transition;
     return transition;
   }
 
@@ -682,27 +579,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       throw new Error("Scene.enter() must return a frame function or undefined.");
     }
     // A boot scene may navigate synchronously; do not replace the frame installed by #goto().
-    if (this.#scene !== scene) return false;
-    this.#sceneFrame = typeof frame === "function" ? frame : undefined;
-    this.#sceneEntered = true;
+    if (this.#boot.scene !== scene) return false;
+    this.#boot.sceneFrame = typeof frame === "function" ? frame : undefined;
+    this.#boot.sceneEntered = true;
     // What `enter()` built is what the warm-up compiles and the first frame draws, so it merges
     // now, before either: no frame is ever drawn unmerged, and the compile counts merged meshes,
     // not every source. Anything that moves afterwards is given back by the guard.
-    this.#autoBatch?.settleNow();
-    // Before the audit, so an opacity the convention made take effect is reported as a warning.
-    const opacity = applyOpacityConvention(ctx.scene);
-    if (opacity !== undefined) console.warn(opacity);
-    for (const line of renderTrapAudit(ctx.scene)) console.error(line);
-    // Cutout PBR with no image-based light renders as cardboard, and the compensating tint the
-    // author reaches for is invisible in a screenshot review. Once per scene entry, right after
-    // `enter()`: `load()` and `enter()` are where the game builds its meshes and sets its own
-    // environment, so an earlier read would be a census of an empty scene and a later one would be
-    // a census of a scene the author already fixed.
-    const unlit = unlitFoliageWarning(ctx.scene);
-    if (unlit !== undefined)
-      console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
-    const entered = this.#onStartSceneEntered;
-    this.#onStartSceneEntered = undefined;
+    this.#boot.autoBatch?.settleNow();
+    // Every entry audit, in the order `scene-entry-inspectors.ts` states: the opacity convention
+    // first, so an opacity it made take effect is what the render trap audit then reports. Adding a
+    // fourth audit does not edit this file.
+    inspectSceneEntry(ctx.scene, this.#sceneEntryInspectors);
+    const entered = this.#boot.onStartSceneEntered;
+    this.#boot.onStartSceneEntered = undefined;
     entered?.();
     return true;
   }
@@ -714,10 +603,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // A load can finish after the game moved on or stopped. Check before `enter()`, because an
     // entry hook mutates the live Three.js scene and no later check can undo that. The check
     // inside `#enterScene` stays: an entry hook may itself navigate.
-    if (this.#aborted || this.#ctx !== ctx || this.#scene !== scene) return;
+    if (this.#boot.aborted || this.#boot.ctx !== ctx || this.#boot.scene !== scene) return;
     if (!this.#enterScene(scene, ctx)) return;
-    const renderer = this.#renderer;
-    const nodes = this.#computeDriven.warmupNodes;
+    const renderer = this.#boot.renderer;
+    const nodes = this.#boot.computeDriven.warmupNodes;
     // Before startup readiness has begun, its own warm-up bakes the entered scene's environment.
     // Baking here too held the world pass for the whole bake: the runner kit's Boot calls
     // goto("run") from enter(), the bake took 35 s on SwiftShader (about 50 s on CI), the startup
@@ -725,19 +614,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // explicit warm-up runs once, right after the start scene, so a transition keeps its bake.
     const hasEnvironment =
       ctx.scene.environment?.isTexture === true &&
-      (this.#startupGateStarted || this.#warmUpConfiguredExplicitly());
+      (this.#boot.startupGateStarted || this.#warmUpConfiguredExplicitly());
     if (renderer === undefined || (nodes.length === 0 && !hasEnvironment)) return;
-    this.#sceneEntered = false;
+    this.#boot.sceneEntered = false;
     let report: Awaited<ReturnType<typeof warmUpComputeNodes>> | undefined;
     let environmentPrepared: boolean | undefined;
     let failure: string | undefined;
     try {
       const options = this.#warmUpOptions();
       if (hasEnvironment) {
-        const projection = this.#projection;
+        const projection = this.#boot.projection;
         projection?.reconcile();
         const root = projection?.root ?? ctx.scene;
-        this.#matrixWorld?.apply(root);
+        this.#boot.matrixWorld?.apply(root);
         // A new environment skips world draws until its retained bake has completed. Only the bake:
         // a whole-scene warm-up here held the runner kit's first frame for its 45 s budget on
         // SwiftShader, and the first world frame's startup warm-up compiles the scene anyway.
@@ -770,16 +659,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             },
       )}`,
     );
-    if (!this.#aborted && this.#scene === scene) this.#sceneEntered = true;
+    if (!this.#boot.aborted && this.#boot.scene === scene) this.#boot.sceneEntered = true;
   }
 
   start(): Promise<void> {
-    if (this.#started) return Promise.resolve();
+    if (this.#boot.started) return Promise.resolve();
     if (this.#pendingStart !== undefined) return this.#pendingStart;
-    this.#aborted = false;
+    this.#boot.aborted = false;
     installQuietMarkers();
-    const pendingStart = this.#boot().catch((error: unknown) => {
-      this.#disconnectUi();
+    const pendingStart = this.#launch().catch((error: unknown) => {
+      this.#ui.disconnect();
       throw error;
     });
     this.#pendingStart = pendingStart;
@@ -800,342 +689,57 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     return pendingStart;
   }
 
-  /**
-   * The game's own platform source, else the one a worker host installed on the global scope:
-   * worker mode runs the unchanged portable entry, so it cannot pass `platform` here (PRD-752).
-   */
-  get #platform(): IGamePlatformSource | undefined {
-    return (
-      this.#config.platform ??
-      (globalThis as { __tnGamePlatform?: IGamePlatformSource }).__tnGamePlatform
-    );
-  }
-
-  async #boot(): Promise<void> {
-    const startup = await startGameWorld(this.#bootGame());
+  async #launch(): Promise<void> {
+    const startup = await startGameWorld(this.#boot);
     if (startup === undefined) return;
-    this.#startupDispose = startup.dispose;
     const frameLoop = startFrameLoop(startup);
-    this.#frameLoopDispose = frameLoop.dispose;
     await startScenes(startup, frameLoop);
   }
 
-  /**
-   * The boot's view of this game, for the two phases that live beside it.
-   *
-   * Every member is the private field of the same name, so a phase assigns and reads exactly
-   * what `#boot` did: the same resources, in the same order, with nothing in between.
-   */
-  #bootGame(): IGameBootGame<TState, TPhysics> {
-    return Object.defineProperties({} as IGameBootGame<TState, TPhysics>, {
-      // The boot's own calls, bound to this game.
-      connectUi: { value: (): IUiBridge => this.#connectUi() },
-      enterScene: {
-        value: (scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): boolean =>
-          this.#enterScene(scene, ctx),
-      },
-      goto: {
-        value: (name: string, ctx: ICtx<TState, TPhysics>): Promise<void> => this.#goto(name, ctx),
-      },
-      postUiStartup: { value: (): void => this.#postUiStartup() },
-      teardown: { value: (ctx?: ICtx<TState, TPhysics>): void => this.#teardown(ctx) },
-      warmUpConfiguredExplicitly: { value: (): boolean => this.#warmUpConfiguredExplicitly() },
-      warmUpOptions: { value: (): IWarmUpOptions => this.#warmUpOptions() },
-      // Read through the field every time: a phase runs while `#boot` is still assigning it.
-      cleanup: { get: () => this.#cleanup },
-      computeDriven: { get: () => this.#computeDriven },
-      config: { get: () => this.#config },
-      platform: { get: () => this.#platform },
-      state: { get: () => this.#state },
-      beforeRenderCallbacks: { get: () => this.#beforeRenderCallbacks },
-      activePlugins: { get: () => this.#activePlugins },
-      uiBridge: { get: () => this.#uiBridge },
-      sceneFrame: { get: () => this.#sceneFrame },
-      sceneEntered: { get: () => this.#sceneEntered },
-      sceneGeneration: { get: () => this.#sceneGeneration },
-      pendingSceneEnter: { get: () => this.#pendingSceneEnter },
-      paused: { get: () => this.#paused },
-      aborted: { get: () => this.#aborted },
-      uiReady: { get: () => this.#uiReady },
-      // Assigned by a phase, exactly as `#boot` assigned the field.
-      renderer: {
-        get: () => this.#renderer,
-        set: (value) => {
-          this.#renderer = value;
-        },
-      },
-      scene: {
-        get: () => this.#scene,
-        set: (value) => {
-          this.#scene = value;
-        },
-      },
-      sceneName: {
-        get: () => this.#sceneName,
-        set: (value) => {
-          this.#sceneName = value;
-        },
-      },
-      ctx: {
-        get: () => this.#ctx,
-        set: (value) => {
-          this.#ctx = value;
-        },
-      },
-      input: {
-        get: () => this.#input,
-        set: (value) => {
-          this.#input = value;
-        },
-      },
-      viewport: {
-        get: () => this.#viewport,
-        set: (value) => {
-          this.#viewport = value;
-        },
-      },
-      picker: {
-        get: () => this.#picker,
-        set: (value) => {
-          this.#picker = value;
-        },
-      },
-      pointerEvents: {
-        get: () => this.#pointerEvents,
-        set: (value) => {
-          this.#pointerEvents = value;
-        },
-      },
-      matrixWorld: {
-        get: () => this.#matrixWorld,
-        set: (value) => {
-          this.#matrixWorld = value;
-        },
-      },
-      projection: {
-        get: () => this.#projection,
-        set: (value) => {
-          this.#projection = value;
-        },
-      },
-      autoBatch: {
-        get: () => this.#autoBatch,
-        set: (value) => {
-          this.#autoBatch = value;
-        },
-      },
-      cameraCull: {
-        get: () => this.#cameraCull,
-        set: (value) => {
-          this.#cameraCull = value;
-        },
-      },
-      entities: {
-        get: () => this.#entities,
-        set: (value) => {
-          this.#entities = value;
-        },
-      },
-      scheduler: {
-        get: () => this.#scheduler,
-        set: (value) => {
-          this.#scheduler = value;
-        },
-      },
-      afterPhysicsPhase: {
-        get: () => this.#afterPhysicsPhase,
-        set: (value) => {
-          this.#afterPhysicsPhase = value;
-        },
-      },
-      frameBudget: {
-        get: () => this.#frameBudget,
-        set: (value) => {
-          this.#frameBudget = value;
-        },
-      },
-      interpolation: {
-        get: () => this.#interpolation,
-        set: (value) => {
-          this.#interpolation = value;
-        },
-      },
-      geometryCapture: {
-        get: () => this.#geometryCapture,
-        set: (value) => {
-          this.#geometryCapture = value;
-        },
-      },
-      beforeRenderSnapshots: {
-        get: () => this.#beforeRenderSnapshots,
-        set: (value) => {
-          this.#beforeRenderSnapshots = value;
-        },
-      },
-      beforeRenderDepth: {
-        get: () => this.#beforeRenderDepth,
-        set: (value) => {
-          this.#beforeRenderDepth = value;
-        },
-      },
-      hasDepthCoupledOutput: {
-        get: () => this.#hasDepthCoupledOutput,
-        set: (value) => {
-          this.#hasDepthCoupledOutput = value;
-        },
-      },
-      startupGateStarted: {
-        get: () => this.#startupGateStarted,
-        set: (value) => {
-          this.#startupGateStarted = value;
-        },
-      },
-      onStartSceneEntered: {
-        get: () => this.#onStartSceneEntered,
-        set: (value) => {
-          this.#onStartSceneEntered = value;
-        },
-      },
-      renderMetricsEnabled: {
-        get: () => this.#renderMetricsEnabled,
-        set: (value) => {
-          this.#renderMetricsEnabled = value;
-        },
-      },
-      uiRevealed: {
-        get: () => this.#uiRevealed,
-        set: (value) => {
-          this.#uiRevealed = value;
-        },
-      },
-      started: {
-        get: () => this.#started,
-        set: (value) => {
-          this.#started = value;
-        },
-      },
-      resumeScene: {
-        get: () => this.#resumeScene,
-        set: (value) => {
-          this.#resumeScene = value;
-        },
-      },
-    } satisfies Partial<Record<keyof IGameBootGame<TState, TPhysics>, PropertyDescriptor>>);
-  }
-
   pause(): void {
-    this.#paused = true;
+    this.#boot.paused = true;
   }
 
   resume(): void {
-    this.#paused = false;
+    this.#boot.paused = false;
   }
 
   stop(): void {
-    this.#aborted = true;
-    this.#geometryCapture?.cancel("TN_GEOMETRY_CAPTURE_STOPPED: the game stopped mid-capture.");
+    this.#boot.aborted = true;
+    this.#boot.geometryCapture?.cancel(
+      "TN_GEOMETRY_CAPTURE_STOPPED: the game stopped mid-capture.",
+    );
     this.#teardown();
     uninstallQuietMarkers();
   }
 
-  #disposePlugin(plugin: IGamePluginHooks<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): void {
-    if (this.#disposedPlugins.has(plugin)) return;
-    this.#disposedPlugins.add(plugin);
-    plugin.dispose?.(ctx);
-  }
-
-  #teardown(startingCtx?: ICtx<TState, TPhysics>): void {
-    this.#onStartSceneEntered = undefined;
-    const ctx = this.#ctx ?? startingCtx;
-    // Teardown is failure-atomic: one throwing release must not strand the resources after it.
-    // Every attempt runs, errors are collected, and the first — the original cause — is thrown
-    // once all attempts and the final leak check have completed.
-    const failures: unknown[] = [];
-    this.#disconnectUi();
-    this.#frameLoopDispose?.();
-    this.#frameLoopDispose = undefined;
-    // After the loop that reports into it, and reached on every path: the field is set the moment
-    // the budget exists, so a launch that threw inside the frame-loop phase before it could answer
-    // still loses nothing here. This is the release the un-split `#teardown` performed.
-    this.#frameBudget?.dispose();
-    this.#afterPhysicsPhase?.clear();
-    this.#beforeRenderCallbacks.clear();
-    this.#interpolation?.clear();
-    this.#interpolation = undefined;
-    if (this.#sceneEntered && ctx !== undefined) {
-      try {
-        this.#scene?.exit(ctx);
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    this.#sceneFrame = undefined;
-    this.#sceneEntered = false;
-    this.#scheduler?.clear();
-    this.#entities?.clear();
-    this.#entities = undefined;
-    if (ctx !== undefined)
-      for (const plugin of this.#activePlugins) {
-        try {
-          this.#disposePlugin(plugin, ctx);
-        } catch (error) {
-          failures.push(error);
-        }
-      }
-    this.#activePlugins = [];
-    if (this.#startupDispose !== undefined) {
-      const release = this.#startupDispose;
-      this.#startupDispose = undefined;
-      try {
-        release();
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    for (const cleanup of this.#cleanup.splice(0)) {
-      try {
-        cleanup();
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    this.#autoBatch?.reset();
-    if (ctx !== undefined) clearScene(ctx.scene, this.#computeDriven);
-    this.#cameraCull?.dispose();
-    this.#cameraCull = undefined;
-    this.#matrixWorld?.dispose();
-    this.#matrixWorld = undefined;
-    this.#input?.dispose();
-    this.#state.stop();
-    ctx?.canvasLayer.dispose();
-    this.#viewport?.dispose();
-    const renderer = this.#renderer;
-    renderer?.dispose();
-    if (renderer !== undefined) {
-      const platform = this.#platform;
-      if (platform === undefined) renderer.domElement.remove?.();
-      else platform.unmountCanvas(renderer.domElement);
-    }
-    this.#renderer = undefined;
-    this.#viewport = undefined;
-    this.#input = undefined;
-    this.#scene = undefined;
-    this.#ctx = undefined;
-    this.#hasDepthCoupledOutput = false;
-    this.#pointerEvents?.dispose();
-    this.#pointerEvents = undefined;
-    this.#picker?.dispose();
-    this.#picker = undefined;
-    this.#scheduler = undefined;
-    this.#afterPhysicsPhase = undefined;
-    this.#disposedPlugins.clear();
-    this.#paused = false;
-    this.#started = false;
+  /**
+   * Releases everything the boot acquired. Each phase pushed its own release onto `cleanup` as it
+   * acquired the resource, and they run newest first (`drainCleanup`), so nothing is released while
+   * something built on it is still alive. The order the specs pin falls out of the push order:
+   * loop, scene exit, plugin `dispose`, plugin cleanups, input, store, renderer.
+   *
+   * The UI goes first and is not on the stack: its lifetime is the game's, not a boot's, and the
+   * scene exit and plugin `dispose` after it must not publish to a page that is leaving.
+   */
+  #teardown(): void {
+    const boot = this.#boot;
+    boot.onStartSceneEntered = undefined;
+    const ctx = boot.ctx;
+    this.#ui.disconnect();
+    // Failure-atomic: one throwing release does not strand the ones after it. The first failure,
+    // the original cause, is thrown once all have run and the leak check has completed.
+    const failures = drainCleanup(boot.cleanup);
+    boot.scene = undefined;
+    boot.ctx = undefined;
+    boot.hasDepthCoupledOutput = false;
+    boot.paused = false;
+    boot.started = false;
     // Runs even when releases above failed; its verdict loses to a real cleanup error, which is
     // the more actionable diagnosis of what went wrong while stopping.
     if ((ctx?.scene.children.length ?? 0) > 0)
       failures.push(new Error("IGame teardown leaked scene objects."));
-    if (failures.length > 0) throw failures[0];
+    throwFirst(failures);
   }
 }
 

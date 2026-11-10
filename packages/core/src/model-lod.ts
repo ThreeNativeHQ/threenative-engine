@@ -131,6 +131,16 @@ export function biasedLodDistance(distance: number): number {
 const nearest = new Vector3();
 
 /**
+ * The near plane a caller with no camera `near` uses for the degenerate test.
+ *
+ * `degenerate` is whether the sphere's nearest surface reaches the camera plane (`depth <= near`).
+ * Two callers used `0.1` and the rest `0`, so a camera with no `near` answered two different
+ * questions; this is the one value, and it is `0` because the test is about the surface reaching the
+ * camera, not the surface being close to it.
+ */
+export const LOD_NEAR_PLANE = 0;
+
+/**
  * The conservative nearest view-space depth of a world-space bounding sphere.
  *
  * The distance along the view axis to the sphere's centre minus its radius is the closest the
@@ -146,6 +156,29 @@ export function conservativeViewDepth(
   nearest.copy(center).applyMatrix4(camera.matrixWorldInverse);
   const depth = -nearest.z - Math.max(0, radius);
   return { depth, degenerate: depth <= nearPlane };
+}
+
+/**
+ * The LOD recipe every caller repeats: the sphere in the camera's view, how far its nearest surface
+ * is, and that distance biased for the level table.
+ *
+ * `depth` is the raw conservative view depth, which a reporter projects an error from; `biased` is
+ * the same distance with {@link biasedLodDistance} applied, which a level selection compares. The
+ * two are returned together because the six callers each want one of them and each used to spell the
+ * step itself — one of them with a near plane of its own.
+ */
+export function selectLodFor(
+  camera: Camera,
+  sphere: Sphere,
+  nearPlane: number,
+): { readonly depth: number; readonly degenerate: boolean; readonly biased: number } {
+  const { depth, degenerate } = conservativeViewDepth(
+    camera,
+    sphere.center,
+    sphere.radius,
+    nearPlane,
+  );
+  return { biased: biasedLodDistance(depth), degenerate, depth };
 }
 
 /** The world-space bounding sphere of a cached local sphere under a node's world matrix. */
@@ -386,16 +419,15 @@ class ModelLod {
       return;
     }
     const world = worldSphere(this.#chain.sphere, this.#mesh, undefined, this.#mesh.matrixWorld);
-    const { depth, degenerate } = conservativeViewDepth(
+    const { biased, degenerate } = selectLodFor(
       camera,
-      world.center,
-      world.radius,
+      world,
       (camera as ILodCameraLike).near ?? 0,
     );
     const view: ILodView = {
       camera,
       degenerate,
-      depth: biasedLodDistance(depth),
+      depth: biased,
       viewportHeight,
     };
     const index = selectLodLevel(
@@ -423,10 +455,9 @@ class ModelLod {
     const container = this.#container;
     if (container === null) return;
     const world = worldSphere(rung.sphere, container, undefined, container.matrixWorld);
-    const { depth, degenerate } = conservativeViewDepth(
+    const { biased, degenerate } = selectLodFor(
       camera,
-      world.center,
-      world.radius,
+      world,
       (camera as ILodCameraLike).near ?? 0,
     );
     const errors = [...this.#chain.errors, rung.error];
@@ -434,7 +465,7 @@ class ModelLod {
     const view: ILodView = {
       camera,
       degenerate,
-      depth: biasedLodDistance(depth),
+      depth: biased,
       viewportHeight,
     };
     const index = selectLodLevel(

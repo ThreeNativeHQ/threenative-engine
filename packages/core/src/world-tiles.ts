@@ -31,8 +31,8 @@ import type { IComputeDriven } from "./compute-driven.js";
 import {
   type ILodView,
   type IModelLodPolicy,
-  conservativeViewDepth,
   projectedLodError,
+  selectLodFor,
   selectLodLevel,
   worldSphere,
 } from "./model-lod.js";
@@ -995,19 +995,22 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       if (view !== undefined && next !== undefined && finest !== undefined && bounds != null) {
         finest.mesh.updateWorldMatrix(true, false);
         const sphere = worldSphere(bounds, finest.mesh);
-        const depth = conservativeViewDepth(
+        const { degenerate, depth } = selectLodFor(
           view.camera,
-          sphere.center,
-          sphere.radius,
+          sphere,
           (view.camera as Camera & { near?: number }).near ?? 0,
         );
         const errorPixels = projectedLodError(
           next.surfaceError * finest.mesh.matrixWorld.getMaxScaleOnAxis(),
           view.camera,
           view.viewportHeight,
-          depth.depth,
+          depth,
         );
-        projection = { ...depth, ...(Number.isFinite(errorPixels) ? { errorPixels } : {}) };
+        projection = {
+          degenerate,
+          depth,
+          ...(Number.isFinite(errorPixels) ? { errorPixels } : {}),
+        };
       }
       return {
         key: tile.key,
@@ -1419,10 +1422,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (finest === undefined || bounds == null) return 0;
     finest.mesh.updateWorldMatrix(true, false);
     const sphere = worldSphere(bounds, finest.mesh);
-    const depth = conservativeViewDepth(
+    // The raw depth, deliberately: terrain selection never took the adaptive LOD bias, and passing
+    // `biased` here moved a tile's level whenever `setLodBias` raised it.
+    const { depth, degenerate } = selectLodFor(
       view.camera,
-      sphere.center,
-      sphere.radius,
+      sphere,
       (view.camera as Camera & { near?: number }).near ?? 0,
     );
     const scale = finest.mesh.matrixWorld.getMaxScaleOnAxis();
@@ -1431,7 +1435,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#lodErrors[index] = (tile.levels[index] as ILevelGeometry).surfaceError * scale;
     this.#lodErrors.length = floor + 1;
     return selectLodLevel(this.#lodErrors, tile.lodLevel, view.maxPixelError, view.hysteresis, [
-      { ...view, ...depth },
+      { ...view, degenerate, depth },
     ]);
   }
 
