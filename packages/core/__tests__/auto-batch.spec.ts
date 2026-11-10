@@ -601,3 +601,90 @@ describe("AutoBatch leaves what the game reads as the game wrote it", () => {
     expect(drawn(plate)).toBe(true);
   });
 });
+
+describe("AutoBatch scans what arrived, not the scene", () => {
+  /** A settled town of 40 under one group, with a count of the reads of that group's `children`. */
+  const settledTown = () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    town(40, group);
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    expect(batch.census.meshes).toBe(40);
+    const reads = { count: 0 };
+    const list = group.children;
+    Object.defineProperty(group, "children", {
+      configurable: true,
+      get: () => {
+        reads.count += 1;
+        return list;
+      },
+    });
+    return { batch, group, reads, scene };
+  };
+  const bullet = () => new Mesh(new BoxGeometry(0.2, 0.2, 0.2), new MeshStandardMaterial());
+
+  it("a spawn and a despawn every few frames never walk the settled town again", () => {
+    // Stress lab `?play`, 2026-11-10: ten thrown objects a second re-walked 5,000 nodes after each add
+    // and each remove, 4.1 ms of a 9.8 ms frame, and the bridge census hides that walk by design.
+    const { batch, reads, scene } = settledTown();
+    const live: Mesh[] = [];
+    for (let frame = 0; frame < 120; frame += 1) {
+      if (frame % 6 === 0) {
+        const mesh = bullet();
+        scene.add(mesh);
+        live.push(mesh);
+      }
+      if (frame % 6 === 3 && live.length > 3) scene.remove(live.shift() as Mesh);
+      for (const mesh of live) {
+        mesh.position.x += 0.1;
+        mesh.updateMatrixWorld(true);
+      }
+      batch.update();
+    }
+    expect(reads.count).toBe(0);
+    expect(batch.census.meshes).toBe(40);
+  });
+
+  it("merges a mesh that moved while it was watched, once it rests and something else arrives", () => {
+    const { batch, group } = settledTown();
+    const material = new MeshStandardMaterial();
+    const [a, b] = [new Mesh(new BoxGeometry(), material), new Mesh(new BoxGeometry(), material)];
+    group.add(a, b);
+    for (let frame = 0; frame < 8; frame += 1) {
+      a.position.x += 1;
+      a.updateMatrixWorld(true);
+      batch.update();
+    }
+    expect(batch.census.meshes).toBe(40);
+    group.add(new Group());
+    run(batch, 8);
+    expect(batch.census.meshes).toBe(42);
+  });
+
+  it("merges walls a builder places one at a time: a mesh with no partner waits for one", () => {
+    const { batch, scene } = settledTown();
+    const stone = new MeshStandardMaterial({ name: "stone" });
+    scene.add(new Mesh(new BoxGeometry(), stone));
+    run(batch, 8);
+    expect(batch.census.meshes).toBe(40);
+    scene.add(new Mesh(new BoxGeometry(), stone));
+    run(batch, 8);
+    expect(batch.census.meshes).toBe(42);
+  });
+
+  it("merges a hidden subtree after the game shows it and something else arrives", () => {
+    const { batch, scene } = settledTown();
+    const wing = new Group();
+    wing.visible = false;
+    town(6, wing);
+    scene.add(wing);
+    run(batch, 8);
+    expect(batch.census.meshes).toBe(40);
+    wing.visible = true;
+    scene.add(new Group());
+    run(batch, 8);
+    expect(batch.census.meshes).toBe(46);
+  });
+});

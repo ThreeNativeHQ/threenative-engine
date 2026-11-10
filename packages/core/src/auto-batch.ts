@@ -437,12 +437,24 @@ export class AutoBatch {
   readonly #levelOne = new Set<Object3D>();
   /** Children added to or removed from the scene since the last frame, to start or stop counting. */
   #arrived: Object3D[] = [];
-  readonly #onTopChild = (event: { child: Object3D }): void => {
+  /**
+   * The subtrees a scan walks: what was added at the top two levels since the last finished scan, plus what an
+   * earlier scan could not merge yet (a hidden subtree, a mesh that moved while watched, a mesh with no partner).
+   * A scan costs what arrived and what still waits, never the scene: ten thrown objects a second re-walked the
+   * stress lab's 5,000 nodes after every add and every remove, 4.1 ms of a 9.8 ms frame.
+   * ponytail: a mesh with no partner is walked by every scan; index those by material when a scene holds thousands.
+   */
+  #pending = new Set<Object3D>();
+  /** What the scan in progress met and left for the next one: hidden subtrees. */
+  #later = new Set<Object3D>();
+  readonly #onTopChild = (event: { type: string; child: Object3D }): void => {
     this.#shapeChanges += 1;
     this.#arrived.push(event.child);
+    if (event.type === "childadded") this.#pending.add(event.child);
   };
-  readonly #onChild = (): void => {
+  readonly #onChild = (event: { type: string; child: Object3D }): void => {
     this.#shapeChanges += 1;
+    if (event.type === "childadded") this.#pending.add(event.child);
   };
 
   constructor(scene: Object3D, options: IAutoBatchOptions = {}) {
@@ -457,6 +469,7 @@ export class AutoBatch {
     scene.addEventListener("childadded", this.#onTopChild);
     scene.addEventListener("childremoved", this.#onTopChild);
     this.#arrived = [...scene.children];
+    this.#pending = new Set(this.#arrived);
   }
 
   get census(): IAutoBatchCensus {
@@ -506,6 +519,7 @@ export class AutoBatch {
       this.#frames = 0;
       if (this.#watched.size < 2) {
         // Nothing here can share a draw: the pass is finished until the scene's shape changes.
+        this.#finish(this.#watched);
         this.#known = shape;
         this.#state = "idle";
       }
@@ -523,6 +537,7 @@ export class AutoBatch {
     if (!this.#enabled) return;
     const meshes = this.#snapshot();
     if (meshes.size >= 2) this.#merge([...meshes.keys()]);
+    this.#finish(meshes);
     this.#watchEngine();
     this.#known = this.#shape();
     this.#state = "idle";
@@ -537,6 +552,8 @@ export class AutoBatch {
     this.#watched.clear();
     this.#state = "idle";
     this.#known = Number.NaN;
+    // The next scene's content arrives through the events; what stays under the scene is scanned once more.
+    this.#pending = new Set(this.#scene.children);
   }
 
   /**
@@ -562,51 +579,83 @@ export class AutoBatch {
   }
 
   /**
-   * Eligible meshes with the world matrix they were drawn at. Runs only while the scene settles, so
-   * its reads are no game's steady cost and the bridge census leaves them out.
+   * Eligible meshes under the pending subtrees, with the world matrix they were drawn at. Runs only while
+   * the scene settles, so its reads are no game's steady cost and the bridge census leaves them out.
    */
   #snapshot(): Map<Mesh, Float64Array> {
     return unbilled(() => {
-      this.#scene.updateMatrixWorld(true);
       const found = new Map<Mesh, Float64Array>();
       this.#optedOut = 0;
       this.#held = 0;
+      this.#later = new Set();
       const held = heldObjects(this.#entities);
-      this.#walk(this.#scene, false, held, (mesh) => {
+      const visit = (mesh: Mesh): void => {
         found.set(mesh, Float64Array.from(mesh.matrixWorld.elements));
-      });
+      };
+      for (const root of [...this.#pending]) {
+        const off = this.#hangs(root, held);
+        if (off === "gone") this.#pending.delete(root);
+        else if (off === "wait") this.#later.add(root);
+        else {
+          root.updateWorldMatrix(true, true);
+          this.#visit(root, off, held, visit);
+        }
+      }
       return found;
     });
   }
 
-  #walk(
-    object: Object3D,
+  /**
+   * How a pending subtree hangs under the scene. `gone`: it left the scene, or a pending ancestor walks it.
+   * `wait`: an ancestor is hidden, held or an LOD, which the game can change. Else whether an ancestor opted it out.
+   */
+  #hangs(root: Object3D, held: ReadonlySet<Object3D>): boolean | "gone" | "wait" {
+    let off = false;
+    let wait = false;
+    for (let node = root.parent; node !== this.#scene; node = node.parent) {
+      if (node === null || this.#excluded.has(node) || this.#pending.has(node)) return "gone";
+      wait ||= !node.visible || (node as { isLOD?: boolean }).isLOD === true || held.has(node);
+      off ||= node.userData.batch === "off";
+    }
+    return wait ? "wait" : off;
+  }
+
+  /**
+   * Ends a scan: the next one walks what this one left (`#later`) and each mesh it found that no merge took.
+   * A mesh that moved can come to rest, and a mesh with no partner can get one.
+   */
+  #finish(found: ReadonlyMap<Mesh, Float64Array>): void {
+    this.#pending = this.#later;
+    this.#later = new Set();
+    for (const mesh of found.keys()) if (!sourceGroups.has(mesh)) this.#pending.add(mesh);
+  }
+
+  #visit(
+    child: Object3D,
     off: boolean,
     held: ReadonlySet<Object3D>,
     visit: (mesh: Mesh) => void,
   ): void {
-    for (const child of object.children) {
-      if (
-        !child.visible ||
-        this.#excluded.has(child) ||
-        (child as { isLOD?: boolean }).isLOD === true
-      )
-        continue;
-      if (held.has(child)) {
-        const parts = countMeshes(child);
-        if (parts <= HELD_SUBTREE_MAX_MESHES) {
-          this.#held += parts;
-          continue;
-        }
-      }
-      const skip = off || child.userData.batch === "off";
-      // A source already drawn by a merge is not walked into a second one: its `visible` stays true.
-      if (isMesh(child) && !sourceGroups.has(child) && mergeable(child)) {
-        if (skip) this.#optedOut += 1;
-        else visit(child);
-      }
-      this.#walk(child, skip, held, visit);
+    if (!child.visible) {
+      // Hidden now; the game can show it, so the next scan asks again.
+      this.#later.add(child);
+      return;
     }
+    if (this.#excluded.has(child) || (child as { isLOD?: boolean }).isLOD === true) return;
+    if (held.has(child)) {
+      const parts = countMeshes(child);
+      if (parts <= HELD_SUBTREE_MAX_MESHES) {
+        this.#held += parts;
+        return;
+      }
+    }
+    const skip = off || child.userData.batch === "off";
+    // A source already drawn by a merge is not walked into a second one: its `visible` stays true.
+    if (isMesh(child) && !sourceGroups.has(child) && mergeable(child)) {
+      if (skip) this.#optedOut += 1;
+      else visit(child);
+    }
+    for (const part of child.children) this.#visit(part, skip, held, visit);
   }
 
   #settle(): void {
@@ -623,6 +672,7 @@ export class AutoBatch {
     this.#unsettled = moved;
     this.#watched = new Map();
     this.#merge([...stable.keys()]);
+    this.#finish(now);
     this.#watchEngine();
     this.#known = this.#shape();
     this.#state = "idle";
