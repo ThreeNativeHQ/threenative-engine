@@ -80,9 +80,18 @@ case "${1:-}" in
     before_temp_directories="$(sed -n '2p' "$2")"
     after_temp_directories="$(count_temp_directories)"
     # Only growth is a leak. A directory that existed at the baseline and is gone by the end was
-    # cleaned up by whoever owned it, which is the outcome this gate wants.
+    # cleaned up by whoever owned it, which is the outcome this gate wants. A test's async cleanup
+    # can still be running when the last package ends, so growth gets the same settle window as
+    # the browser run before it counts.
+    settle_started="$SECONDS"
+    while [[ "$after_temp_directories" -gt "$before_temp_directories" ]] &&
+      (( SECONDS - settle_started < ${TN_ORPHAN_SETTLE_SECONDS:-30} )); do
+      sleep 1
+      after_temp_directories="$(count_temp_directories)"
+    done
     if [[ "$after_temp_directories" -gt "$before_temp_directories" ]]; then
-      echo "temporary directory count grew in suite namespace '$suite_temp_root': before $before_temp_directories, after $after_temp_directories" >&2
+      echo "temporary directory count grew in suite namespace '$suite_temp_root' and did not settle within ${TN_ORPHAN_SETTLE_SECONDS:-30}s: before $before_temp_directories, after $after_temp_directories" >&2
+      find "$suite_temp_root" -mindepth 1 -maxdepth 1 -type d -print >&2 2>/dev/null || true
       exit 1
     fi
     echo "suite temporary directory count did not grow in '$suite_temp_root': before $before_temp_directories, after $after_temp_directories"

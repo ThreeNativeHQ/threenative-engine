@@ -18,6 +18,7 @@ const binaryAssetExtensions = new Set([
   ".webp",
   ".avif",
   ".glb",
+  ".ktx2",
   ".wasm",
   ".mp3",
   ".wav",

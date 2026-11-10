@@ -66,6 +66,7 @@ function valid(name: string, knob: TweakKnob, value: unknown): value is number {
  *
  * @situation tune look numbers by eye with live range bars and colour pickers while the game runs
  * @requires npm i -D @threenative/terrain
+ * @example const box = createTweakBox({ title: "Fog", knobs: { density: { min: 0, max: 0.1, value: 0.02 } }, onChange: (name, value) => console.info(name, value) });
  */
 export function createTweakBox<K extends string>(options: ITweakBoxOptions<K>): ITweakBox<K> {
   const names = Object.keys(options.knobs) as K[];

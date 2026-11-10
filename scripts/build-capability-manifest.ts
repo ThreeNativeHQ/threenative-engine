@@ -207,7 +207,9 @@ function sourceFileForTarget(packageDirectory: string, target: string): string {
 function parseSource(file: string): ts.SourceFile {
   const source = ts.sys.readFile(file);
   if (source === undefined) throw new Error(`Capability source file is unreadable: ${file}`);
-  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  // A `.ts` file parsed as TSX reads `<T>(…) =>` as JSX and drops every export after it.
+  const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind);
 }
 
 function resolveRelativeModule(from: string, specifier: string): string | undefined {

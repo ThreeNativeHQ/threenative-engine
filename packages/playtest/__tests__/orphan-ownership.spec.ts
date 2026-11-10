@@ -125,6 +125,25 @@ describe("temporary namespace ownership", () => {
     expect(() => run("--suite-finish")).not.toThrow();
   });
 
+  // CI 2026-11-10 (#643): every test passed and the gate still failed, before 1 after 2, because
+  // a test's async cleanup was still removing its directory when the last package finished.
+  it("waits for a late cleanup before it calls a suite leak", () => {
+    const suiteRoot = makeSuiteRoot();
+    const marker = path.join(suiteRoot, "marker");
+    const env = { ...process.env, TN_SUITE_TMPDIR: suiteRoot, TN_ORPHAN_SETTLE_SECONDS: "5" };
+    execFileSync("bash", [script, "--suite-start", marker], { encoding: "utf8", env });
+    const late = path.join(suiteRoot, "cleaned-up-late");
+    mkdirSync(late);
+
+    expect(() =>
+      execFileSync(
+        "bash",
+        ["-c", '( sleep 1; rmdir "$1" ) & bash "$2" --suite-finish "$3"', "_", late, script, marker],
+        { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] },
+      ),
+    ).not.toThrow();
+  });
+
   it("still fails a suite whose temporary directory count went up", () => {
     const suiteRoot = makeSuiteRoot();
     const marker = path.join(suiteRoot, "marker");
@@ -132,13 +151,14 @@ describe("temporary namespace ownership", () => {
     const run = (mode: string) =>
       execFileSync("bash", [script, mode, marker], {
         encoding: "utf8",
-        env: { ...process.env, TN_SUITE_TMPDIR: suiteRoot },
+        env: { ...process.env, TN_SUITE_TMPDIR: suiteRoot, TN_ORPHAN_SETTLE_SECONDS: "1" },
         stdio: ["ignore", "pipe", "pipe"],
       });
 
     run("--suite-start");
     mkdirSync(path.join(suiteRoot, "stranded"));
 
-    expect(() => run("--suite-finish")).toThrow();
+    // The failure names the directory that stayed, so the next leak points at its owner.
+    expect(() => run("--suite-finish")).toThrow(/stranded/u);
   });
 });
