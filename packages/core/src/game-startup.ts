@@ -518,7 +518,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
         );
       }
       // Once, a minute on: an awaited model no scene object came from (TN_ASSET_UNUSED).
-      releases.push(
+      game.cleanup.push(
         reportUnusedModelsLater(
           new Map(assets.resolved),
           threeScene,

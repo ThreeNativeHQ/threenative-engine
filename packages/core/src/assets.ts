@@ -30,8 +30,10 @@ import {
   TN_DISCRETE_LOD,
   markStreamedGeometry,
   upgradeStreamedGeometry,
+  upgradeStreamedTextures,
 } from "./model-lod.js";
 import { countDebug, debugRequested, measureDebug } from "./profiling/debug-telemetry.js";
+import { openKtx2Stream } from "./texture-streaming.js";
 
 export interface IAssetLoaderOptions {
   readonly basePath?: string;
@@ -80,6 +82,13 @@ export interface IAssetLoaderOptions {
    * `TN_ASSETS_STREAM_MESHES_OFF`.
    */
   readonly streamMeshes?: boolean;
+  /**
+   * Draw a streamed model's KTX2 textures with their resident mips first, and the whole files when
+   * they land (PRD-860). On by default; `false` is the named override, reported once as
+   * `TN_ASSETS_STREAM_TEXTURES_OFF`. It rides on `streamMeshes`: the coarse parse is where the
+   * resident mips draw.
+   */
+  readonly streamTextures?: boolean;
 }
 
 /** What one request is worth relative to the rest of the loader's queue. */
@@ -941,6 +950,36 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     console.info(
       "TN_ASSETS_STREAM_MESHES_OFF: assets.streamMeshes is false; every model loads whole.",
     );
+  const streamTextures = options.streamTextures !== false;
+  if (!streamTextures)
+    console.info(
+      "TN_ASSETS_STREAM_TEXTURES_OFF: assets.streamTextures is false; every model texture loads whole.",
+    );
+  // What the texture streaming kept off the first-play path, read from the console as TN_STREAMING_POOL.
+  const pool = { files: 0, fullBytes: 0, ranged: 0, residentBytes: 0, upgraded: 0 };
+  let poolTimer: ReturnType<typeof setTimeout> | undefined;
+  const reportPool = (): void => {
+    clearTimeout(poolTimer);
+    poolTimer = setTimeout(() => {
+      poolTimer = undefined;
+      console.info(
+        `TN_STREAMING_POOL ${JSON.stringify({ ...pool, deferredBytes: pool.fullBytes - pool.residentBytes })}`,
+      );
+    }, 2000);
+  };
+  /** One KTX2 image as its resident mips only; any other image, or a host with no `Range`, loads whole. */
+  const residentImage = async (url: string): Promise<Uint8Array | undefined> => {
+    if (!/\.ktx2(?:$|\?)/iu.test(url)) return undefined;
+    const stream = await openKtx2Stream(url);
+    if (!stream.ranged) return undefined;
+    const file = stream.file();
+    pool.files += 1;
+    pool.ranged += 1;
+    pool.residentBytes += file.byteLength;
+    pool.fullBytes += stream.index.levels.reduce((sum, level) => sum + level.byteLength, 0);
+    reportPool();
+    return file;
+  };
   // `assets` is what `@threenative/assets` compiles from unless a project says otherwise, so it is
   // where an unbaked game's files are. A project that moved its sources passes `sourcePath`.
   const sourcePath = (options.sourcePath ?? "assets").replace(/^\/+|\/+$/gu, "");
@@ -1465,6 +1504,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
             fileUrl: string,
             expected: number,
             at: AssetPriority,
+            resident?: { used: boolean },
           ): Promise<T> => {
             // Fetched here rather than through the loader so the declared extensions decide which
             // decoders load: a game never pays for a codec its assets do not use, and no WASM is
@@ -1479,6 +1519,12 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
             const extensions = declaredExtensions(data);
             const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
             const loader = new GLTFLoader();
+            if (resident !== undefined && "imageSource" in loader)
+              (loader as { imageSource?: unknown }).imageSource = async (imageUrl: string) => {
+                const file = await residentImage(imageUrl);
+                if (file !== undefined) resident.used = true;
+                return file;
+              };
             // Both glTF texture extensions use the same support-detected instance as texture().
             const astcExtension = "EXT_texture_astc";
             const hasBasis = extensions.has("KHR_texture_basisu");
@@ -1611,9 +1657,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           // included. A model the game prefetched is already on its way whole.
           const coarse = warmed.has(path) ? undefined : await coarseOf(path);
           let value: T | undefined;
+          const residentState = streamTextures ? { used: false } : undefined;
           if (coarse !== undefined) {
             try {
-              value = await parse(coarse.url, coarse.bytes, priority);
+              value = await parse(coarse.url, coarse.bytes, priority, residentState);
             } catch (error) {
               console.warn(
                 `TN_ASSETS_STREAM_FAILED ${path}: the coarse model did not load, so the whole file does; ${error instanceof Error ? error.message : String(error)}`,
@@ -1635,6 +1682,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
                 coarseMeshes.forEach((mesh, index) =>
                   upgradeStreamedGeometry(mesh.geometry, (fullMeshes[index] as Mesh).geometry),
                 );
+                if (residentState?.used === true) {
+                  pool.upgraded += upgradeStreamedTextures(coarseMeshes, fullMeshes);
+                  reportPool();
+                }
               })
               .catch((error: unknown) =>
                 console.warn(

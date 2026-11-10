@@ -69,6 +69,32 @@ describe("the web GLTFLoader's image files", () => {
     expect([...(files?.get("shared/images/a b.jpg") ?? [])]).toEqual([1, 2, 3]);
   });
 
+  // PRD-860: core serves a KTX2's resident mips here; an image it declines is fetched as usual.
+  it("takes an image's bytes from imageSource when it answers, and fetches when it does not", async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      return {
+        arrayBuffer: async () => new Uint8Array([9]).buffer,
+        headers: new Headers({ "content-type": "image/jpeg" }),
+        ok: true,
+        status: 200,
+      };
+    });
+    const served = new GLTFLoader();
+    served.imageSource = async () => new Uint8Array([7, 7]);
+    await served.parseAsync(MODEL, "image-source/a/");
+    expect(fetched).toEqual([]);
+    expect([...(loadGltf.mock.calls.at(-1)?.[1]?.get("shared/images/a b.jpg") ?? [])]).toEqual([
+      7, 7,
+    ]);
+
+    const declined = new GLTFLoader();
+    declined.imageSource = async () => undefined;
+    await declined.parseAsync(MODEL, "image-source/b/");
+    expect(fetched).toEqual(["image-source/b/shared/images/a%20b.jpg"]);
+  });
+
   // The Strata forest loads ten spruce models at once that share one 12 MB atlas: ten fetches of it,
   // 835 MB of a 1,051 MB load, before this.
   it("fetches an image once while models that share it load at the same time", async () => {

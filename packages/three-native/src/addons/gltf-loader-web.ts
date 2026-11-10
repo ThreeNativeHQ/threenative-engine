@@ -226,6 +226,11 @@ function imageBytes(url: string): Promise<Uint8Array> {
 
 export class GLTFLoader {
   path = "";
+  /**
+   * Serves one image file's bytes in place of a plain fetch: core hands the resident levels of a
+   * KTX2 here (PRD-860). `undefined` from it means "fetch it as usual".
+   */
+  imageSource: ((url: string) => Promise<Uint8Array | undefined>) | undefined = undefined;
   /** A plugin defect (a chain the file declares and cannot deliver) rejects the load; core's plugin logs it on stock three. */
   readonly failClosed = true;
   readonly #factories: PluginFactory[] = [];
@@ -310,7 +315,13 @@ export class GLTFLoader {
     }
     Promise.all(
       // The engine loader asks for the uri with its percent escapes decoded.
-      uris.map(async (uri) => [decodeURIComponent(uri), await imageBytes(path + uri)] as const),
+      uris.map(
+        async (uri) =>
+          [
+            decodeURIComponent(uri),
+            (await this.imageSource?.(path + uri)) ?? (await imageBytes(path + uri)),
+          ] as const,
+      ),
     ).then(
       (files) => settle(new Map(files)),
       (error: unknown) => {
