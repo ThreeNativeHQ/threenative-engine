@@ -186,6 +186,10 @@ export function measureReport(report, { counted = true } = {}) {
       fps: metric(metrics, "fps"),
       gpuP50Ms: metric(metrics, "gpuP50Ms", true),
       gpuP95Ms: metric(metrics, "gpuP95Ms", true),
+      // The GPU frame by pass (main scene, every shadow pass, the rest): which pass owns a GPU-bound frame.
+      gpuMainMs: metric({ gpuMainMs: metrics.gpuMainMs ?? null }, "gpuMainMs", true),
+      gpuShadowMs: metric({ gpuShadowMs: metrics.gpuShadowMs ?? null }, "gpuShadowMs", true),
+      gpuOtherMs: metric({ gpuOtherMs: metrics.gpuOtherMs ?? null }, "gpuOtherMs", true),
       renderP50Ms: metric(metrics, "renderP50Ms"),
       updateP50Ms: metric(metrics, "updateP50Ms"),
       frameP50Ms: metric(metrics, "frameP50Ms"),
@@ -339,6 +343,9 @@ export const TRACKED = [
 /** The report's other metrics: shown in the history and the engine comparison, no goal. */
 const MORE = [
   { key: "gpuP50Ms", short: "GPU p50", unit: "ms" },
+  { key: "gpuMainMs", short: "GPU main pass", unit: "ms" },
+  { key: "gpuShadowMs", short: "GPU shadow passes", unit: "ms" },
+  { key: "gpuOtherMs", short: "GPU post and other", unit: "ms" },
   { key: "presentedP50Ms", short: "Presented p50", unit: "ms" },
   { key: "frameP50Ms", short: "CPU frame p50", unit: "ms" },
   { key: "updateP50Ms", short: "Update p50", unit: "ms" },
