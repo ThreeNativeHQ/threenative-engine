@@ -91,6 +91,16 @@ export interface IAssetLoaderOptions {
   readonly streamTextures?: boolean;
 }
 
+/**
+ * A streamed model's images for one parse: whether any drew from its resident mips only (`used`),
+ * and the KTX2 files a host with no `Range` sent whole, handed on to the full parse (`keptOnly`).
+ */
+interface IResidentImages {
+  used: boolean;
+  readonly whole: Map<string, Uint8Array>;
+  readonly keptOnly?: boolean;
+}
+
 /** What one request is worth relative to the rest of the loader's queue. */
 /**
  * Report marker for a file a scene asks for after the reveal that the game had not prefetched.
@@ -990,6 +1000,18 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     reportPool();
     return { file, partial: true };
   };
+  /** The engine loader's `imageSource` for one parse of a streamed model. */
+  const imageSourceFor =
+    (resident: IResidentImages) =>
+    async (imageUrl: string): Promise<Uint8Array | undefined> => {
+      // A host with no Range already sent this file whole to the coarse parse.
+      const kept = resident.whole.get(imageUrl);
+      if (kept !== undefined || resident.keptOnly === true) return kept;
+      const served = await residentImage(imageUrl);
+      if (served?.partial === true) resident.used = true;
+      else if (served !== undefined) resident.whole.set(imageUrl, served.file);
+      return served?.file;
+    };
   // `assets` is what `@threenative/assets` compiles from unless a project says otherwise, so it is
   // where an unbaked game's files are. A project that moved its sources passes `sourcePath`.
   const sourcePath = (options.sourcePath ?? "assets").replace(/^\/+|\/+$/gu, "");
@@ -1524,7 +1546,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
             fileUrl: string,
             expected: number,
             at: AssetPriority,
-            resident?: { used: boolean },
+            resident?: IResidentImages,
           ): Promise<T> => {
             // Fetched here rather than through the loader so the declared extensions decide which
             // decoders load: a game never pays for a codec its assets do not use, and no WASM is
@@ -1540,11 +1562,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
             const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
             const loader = new GLTFLoader();
             if (resident !== undefined && "imageSource" in loader)
-              (loader as { imageSource?: unknown }).imageSource = async (imageUrl: string) => {
-                const served = await residentImage(imageUrl);
-                if (served?.partial === true) resident.used = true;
-                return served?.file;
-              };
+              (loader as { imageSource?: unknown }).imageSource = imageSourceFor(resident);
             // Both glTF texture extensions use the same support-detected instance as texture().
             const astcExtension = "EXT_texture_astc";
             // The owned engine's loader (`failClosed`) transcodes KHR_texture_basisu itself, to BC7,
@@ -1681,7 +1699,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           // included. A model the game prefetched is already on its way whole.
           const coarse = warmed.has(path) ? undefined : await coarseOf(path);
           let value: T | undefined;
-          const residentState = streamTextures ? { used: false } : undefined;
+          const residentState: IResidentImages | undefined = streamTextures
+            ? { used: false, whole: new Map() }
+            : undefined;
           if (coarse !== undefined) {
             try {
               value = await parse(coarse.url, coarse.bytes, priority, residentState);
@@ -1705,8 +1725,18 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
               loaderDisposed ||
               coarseGeometries.some((geometry) => disposed.geometries.has(geometry));
             const landed = bytesOf(path)
-              .then((bytes) => (gone() ? undefined : parse(url, bytes, "soon")))
+              .then((bytes) =>
+                gone()
+                  ? undefined
+                  : parse(
+                      url,
+                      bytes,
+                      "soon",
+                      residentState && { keptOnly: true, used: false, whole: residentState.whole },
+                    ),
+              )
               .then((full) => {
+                residentState?.whole.clear();
                 if (full === undefined) return;
                 if (gone()) {
                   disposeModel(full, disposed);

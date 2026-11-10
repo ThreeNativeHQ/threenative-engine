@@ -11,9 +11,11 @@ import {
   type Sphere,
   Vector3,
 } from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { TN_DISCRETE_LOD, baseGeometryOf, lodChainOf, updateModelLods } from "../src/model-lod.js";
+import { wholeKtx2 } from "./support/ktx2.js";
 
 // PRD-377 §5/§6 — the real front door. A GLB carrying `TN_discrete_lod` is loaded through
 // `createAssetLoader` (which fetches the bytes, decides the decoder set from `extensionsUsed`,
@@ -541,8 +543,11 @@ describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
     version: 1,
   };
 
-  /** Serves the manifest and both files; the full file waits until `release` is called. */
-  function stubStreamed(): { fetched: string[]; release: () => void } {
+  /** Serves the manifest, both files and `images` (200, no `Range`); the full file waits for `release`. */
+  function stubStreamed(images: Readonly<Record<string, Uint8Array>> = {}): {
+    fetched: string[];
+    release: () => void;
+  } {
     const fetched: string[] = [];
     let release = () => {};
     const gate = new Promise<void>((resolve) => {
@@ -558,6 +563,8 @@ describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
           ok: true,
           status: 200,
         };
+      const image = images[url];
+      if (image !== undefined) return new Response(image.slice(), { status: 200 });
       const glb = url.includes("coarse") ? coarse : full;
       if (glb === full) await gate;
       return {
@@ -625,6 +632,47 @@ describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
     await landed;
     expect(mesh.geometry.index?.count).toBe(COARSE_TRIANGLES * 3);
     loader.clear();
+  }, 120_000);
+
+  // Review of #643, finding 7: a host with no `Range` sends the whole KTX2 to the coarse parse.
+  // The full parse takes those bytes; it does not download the file a second time.
+  it("hands a no-Range host's whole KTX2 to the full model instead of fetching it again", async () => {
+    const texture = wholeKtx2(256, 9, 0);
+    const { fetched, release } = stubStreamed({ "hull.ktx2": texture });
+    // Stock three has no `imageSource`; the owned engine's loader does, and asks it per image.
+    const proto = GLTFLoader.prototype as unknown as {
+      imageSource?: (url: string) => Promise<Uint8Array | undefined>;
+      parse: (...args: unknown[]) => void;
+    };
+    Object.defineProperty(proto, "imageSource", {
+      configurable: true,
+      value: undefined,
+      writable: true,
+    });
+    const served: (Uint8Array | undefined)[] = [];
+    const parse = proto.parse;
+    vi.spyOn(proto, "parse").mockImplementation(function (this: typeof proto, ...args: unknown[]) {
+      void (this.imageSource?.("hull.ktx2") ?? Promise.resolve(undefined)).then((bytes) => {
+        served.push(bytes);
+        parse.apply(this, args);
+      });
+    });
+    try {
+      const loader = createAssetLoader({ basePath: "" });
+      const landed = loader.model<{ scene: Object3D }>("ship.glb", { whole: true });
+      await vi.waitFor(() => expect(served).toHaveLength(1));
+      release();
+      const value = await landed;
+      expect(firstMesh(value.scene).geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+      expect(fetched.filter((url) => url === "hull.ktx2")).toHaveLength(1);
+      expect(served.map((bytes) => bytes?.byteLength)).toEqual([
+        texture.byteLength,
+        texture.byteLength,
+      ]);
+      loader.clear();
+    } finally {
+      Reflect.deleteProperty(proto, "imageSource");
+    }
   }, 120_000);
 
   it("loads the whole file at once under assets.streamMeshes: false, and says so", async () => {
