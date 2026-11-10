@@ -11,8 +11,21 @@ import type { IBakedWorld } from "./terrain.js";
 /** `world/horizon.json`: each world's same-site USGS surroundings, as `scripts/bake.mjs` writes them. */
 export type HorizonSurroundings = Record<
   string,
-  { resolution: number; size: number; heights: number[] }
+  { resolution: number; size: number; heights: number[]; massif?: IPackedMassif }
 >;
+
+/**
+ * A placed survey massif at its tile's own spacing (`placeMassif`), for the collar's relief map:
+ * int16 decimetres above `offset`, base64, row-major from `origin`, +X east and +Z south.
+ */
+export interface IPackedMassif {
+  readonly origin: readonly [number, number];
+  readonly spacing: number;
+  readonly columns: number;
+  readonly rows: number;
+  readonly offset: number;
+  readonly heights: string;
+}
 
 // Each world keeps its own surroundings in the installed Heightfield query. They are fetched, not
 // imported: as a module the 7 MB file took about 3 s to compile before the first frame.

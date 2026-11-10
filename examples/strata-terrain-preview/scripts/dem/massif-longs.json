@@ -1,0 +1,46 @@
+{
+  "site": "Longs Peak and Mount Meeker from Chasm Lake to Glacier Gorge, Colorado",
+  "size": 4400,
+  "resolution": 1101,
+  "spacing": 4,
+  "encoding": "int16-le-decimetres-relative-to-elevationOffset",
+  "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
+  "crs": "EPSG:26913",
+  "verticalCRS": "NAVD88 metres",
+  "center": [
+    448114,
+    4456231
+  ],
+  "bbox": [
+    445914,
+    4454031,
+    450314,
+    4458431
+  ],
+  "bboxWGS84": [
+    -105.63617811630117,
+    40.23497033193388,
+    -105.58408554259573,
+    40.27488222757851
+  ],
+  "elevationOffset": 3153,
+  "relativeElevationRange": [
+    0,
+    1191.3
+  ],
+  "lidarTiles": [
+    "USGS 1 Meter 13 x44y446 CO_DRCOG_2020_B20",
+    "USGS 1 Meter 13 x45y446 CO_ArapahoRooseveltPikeNF_D23",
+    "USGS 1 Meter 13 x45y446 CO_CameronPeakWildfire_2021_D21",
+    "USGS 1 Meter 13 x45y446 CO_DRCOG_2020_B20",
+    "USGS one meter x45y446 CO SoPlatte-Lot3 2013",
+    "USGS one meter x45y446 CO SoPlatteRiver-Lot2b 2013"
+  ],
+  "downloadURL": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+  "accessed": "2026-11-10",
+  "filter": "3DEP dynamic service resampled bilinearly to 2 m pixels, then a 2x2 box at each 4 m vertex; rounded to 0.1 m; no vertical exaggeration",
+  "sha256": "6e01541bbc831d10b1f045fe7ee231921b4baa45b1cd80aa43acc226bc252e5f",
+  "citation": "U.S. Geological Survey, 3D Elevation Program (3DEP) dynamic elevation service, 1 meter lidar DEMs. Cropped, filtered, translated vertically and quantized by this example; not endorsed by USGS.",
+  "license": "U.S. Government public domain",
+  "licenseURL": "https://www.usgs.gov/3d-elevation-program"
+}

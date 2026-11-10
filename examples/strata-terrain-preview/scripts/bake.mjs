@@ -14,7 +14,7 @@ import { register } from "tsx/esm/api";
 register();
 import { bakeBiome, validateBiome } from "@threenative/terrain";
 
-const { dem, drawn, outputDir, realContinuation, recipes, terrainSurfacePackage, worldOf } =
+const { dem, drawn, massif, outputDir, realContinuation, recipes, terrainSurfacePackage, worldOf } =
   await import("./recipe.mjs");
 const { isFresh, stamp } = await import("./stamp.mjs");
 const { GROUND_MAPS } = await import("../src/world/terrainAssets.js");
@@ -22,6 +22,22 @@ const { BIOMES } = await import("../src/render/biomes.js");
 const { WORLD_NAMES: WORLDS } = await import("../src/render/worldNames.js");
 
 const DRIVEN = ["alpine", "desert", "coastal"];
+
+/**
+ * A placed massif's heights at its tile's own spacing, for the collar's relief map: int16
+ * decimetres above `offset`, base64, row-major from `origin` (+X east, +Z south).
+ */
+function packMassif({ origin, spacing, columns, rows, heights }) {
+  let offset = Number.POSITIVE_INFINITY;
+  for (const height of heights) offset = Math.min(offset, Math.floor(height));
+  const bytes = Buffer.alloc(heights.length * 2);
+  for (let i = 0; i < heights.length; i++) {
+    const quantized = Math.round((heights[i] - offset) * 10);
+    assert(quantized >= 0 && quantized <= 32767, "massif heights exceed int16 decimetres");
+    bytes.writeInt16LE(quantized, i * 2);
+  }
+  return { origin, spacing, columns, rows, offset, heights: bytes.toString("base64") };
+}
 
 /**
  * `STRATA_SEED=<integer>` bakes a variation of every world: the same surveyed ground, biome rules
@@ -107,6 +123,7 @@ if (!isEntry) {
             size: state.size,
             resolution: state.resolution,
             heights: Array.from(state.height, (height) => Math.round(height * 10) / 10),
+            ...(massif[name] && { massif: packMassif(massif[name].detail) }),
           },
         ];
       }),

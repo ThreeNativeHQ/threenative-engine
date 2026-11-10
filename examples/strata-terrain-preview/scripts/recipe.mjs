@@ -7,7 +7,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { MATERIAL_IDS, Mask, Terrain, bakeMesh, landformBackdrop } from "@threenative/terrain";
+import {
+  MATERIAL_IDS,
+  Mask,
+  Terrain,
+  bakeMesh,
+  landformBackdrop,
+  placeMassif,
+} from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
 import { WORLD_NAMES } from "../src/render/worldNames.js";
 
@@ -107,6 +114,32 @@ for (const name of WORLD_NAMES.flatMap((name) => [name, `${name}-horizon`])) {
       values: Array.from({ length: meta.resolution ** 2 }, (_, i) => bytes.readInt16LE(i * 2) / 10),
     },
   };
+}
+
+/** Whole surveyed mountains, foot to foot at 4 m (`scripts/dem/massif.mjs`), for `placeMassif`. */
+export const MASSIF_TILES = [];
+/** The seed the pinned forest stands its massif with. */
+const MASSIF_SEED = Number(process.env.STRATA_MASSIF_SEED ?? 0);
+for (const id of ["longs", "teton", "maroon"]) {
+  const meta = JSON.parse(
+    await readFile(new URL(`dem/massif-${id}.json`, import.meta.url), "utf8"),
+  );
+  const bytes = await readFile(new URL(`dem/massif-${id}.bin`, import.meta.url));
+  assert.equal(bytes.length, meta.resolution ** 2 * 2, `massif-${id}: truncated tile`);
+  assert.equal(
+    createHash("sha256").update(bytes).digest("hex"),
+    meta.sha256,
+    `massif-${id}: tile hash mismatch`,
+  );
+  MASSIF_TILES.push({
+    id,
+    size: meta.size,
+    resolution: meta.resolution,
+    heights: Float32Array.from(
+      { length: meta.resolution ** 2 },
+      (_, i) => meta.elevationOffset + bytes.readInt16LE(i * 2) / 10,
+    ),
+  });
 }
 
 // The Sprague Lake hydro-flattened survey measures the water surface, not its bed.
@@ -388,6 +421,8 @@ const forestBackdrop = landformBackdrop("temperateMountains", {
   centerHeight:
     forestSurvey.data.values[((forestSurvey.resolution - 1) / 2) * (forestSurvey.resolution + 1)],
 });
+/** Each world's placed massif: its tile, pose and 4 m heights, for the bake's relief file. */
+export const massif = {};
 export const realContinuation = Object.fromEntries(
   Object.keys(recipes).flatMap((name) => {
     const source =
@@ -408,40 +443,28 @@ export const realContinuation = Object.fromEntries(
         seed: 1,
       }).heightmap({ id: "usgs-surroundings", data: source.data });
     return name === "forest"
-      ? [[name, alpineCrests(nearMassif(surroundings()))]]
+      ? [[name, nearMassif(alpineCrests(surroundings()))]]
       : [[name, surroundings()]];
   }),
 );
 
 /**
  * The vista's near massif (owner, 2026-11-04: "make sure we have the proper mountain on this
- * capture"). The goal frame's mountain fills the upper left of the picture with its summit near the
- * top edge; the generated backdrop had a valley on that bearing. A ridge 2.2 km long and a summit
- * 1.25 km tall stand 1.1 to 2.4 km from the vista eye (`BENCHMARK.forest.poses.vista`), 15 to 40
- * degrees left of its look line, so the playable forest and lake in front keep their ground.
- * `forest-backdrop.spec.ts` measures the skyline from that eye.
+ * capture"; 2026-11-09: "think about heightmaps etc. real shapes"). A whole surveyed mountain, foot
+ * to foot at 4 m, stands with its summit 1.8 km from the vista eye (`BENCHMARK.forest.poses.vista`),
+ * left of its look line, its steepest wall turned to the forest. `forest-backdrop.spec.ts` measures
+ * the skyline from that eye; `massif` keeps the placement and its 4 m heights for the relief map.
  */
 function nearMassif(terrain) {
-  return terrain
-    .stamp({
-      id: "massif-ridge",
-      shape: "ridge",
-      at: [-1420, -100],
-      radius: [1100, 600],
-      rotation: 90,
-      amplitude: 850,
-      roughness: 0.1,
-      blend: "max",
-    })
-    .stamp({
-      id: "massif-summit",
-      shape: "mountain",
-      at: [-1450, 0],
-      radius: 750,
-      amplitude: 1250,
-      roughness: 0.1,
-      blend: "max",
-    });
+  const placed = placeMassif(terrain, {
+    seed: MASSIF_SEED,
+    tile: MASSIF_TILES,
+    at: [-2050, -150],
+    keepOut: 420,
+    top: [1050, 1150],
+  });
+  massif.forest = placed.placement;
+  return placed.terrain;
 }
 
 /**

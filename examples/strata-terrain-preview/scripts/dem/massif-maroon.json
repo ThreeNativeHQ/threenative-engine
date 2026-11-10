@@ -1,0 +1,42 @@
+{
+  "site": "Maroon Bells above Maroon and Crater Lakes, Colorado",
+  "size": 3600,
+  "resolution": 901,
+  "spacing": 4,
+  "encoding": "int16-le-decimetres-relative-to-elevationOffset",
+  "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
+  "crs": "EPSG:26913",
+  "verticalCRS": "NAVD88 metres",
+  "center": [
+    327934,
+    4326516
+  ],
+  "bbox": [
+    326134,
+    4324716,
+    329734,
+    4328316
+  ],
+  "bboxWGS84": [
+    -107.01025061090645,
+    39.05423130051966,
+    -106.96774947135793,
+    39.08736184907339
+  ],
+  "elevationOffset": 3073,
+  "relativeElevationRange": [
+    0,
+    1243.5
+  ],
+  "lidarTiles": [
+    "USGS 1 Meter 13 x32y433 CO_SanLuisJuanMiguel_2020_D20",
+    "USGS 1 Meter 13 x32y433 CO_WestCentral_2019_A19"
+  ],
+  "downloadURL": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+  "accessed": "2026-11-10",
+  "filter": "3DEP dynamic service resampled bilinearly to 2 m pixels, then a 2x2 box at each 4 m vertex; rounded to 0.1 m; no vertical exaggeration",
+  "sha256": "4947f3a08437de1d6dd2e9d703afd1ad494a48800fd9a6ba239408c4ee86c03c",
+  "citation": "U.S. Geological Survey, 3D Elevation Program (3DEP) dynamic elevation service, 1 meter lidar DEMs. Cropped, filtered, translated vertically and quantized by this example; not endorsed by USGS.",
+  "license": "U.S. Government public domain",
+  "licenseURL": "https://www.usgs.gov/3d-elevation-program"
+}

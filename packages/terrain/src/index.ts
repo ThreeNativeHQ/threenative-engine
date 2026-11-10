@@ -32,6 +32,8 @@ export { Terrain, TerrainEvaluator } from "./core/terrain.js";
 export type { OperationOptions, LayerPatch, PatchCommand } from "./core/terrain.js";
 export { Mask, MATERIAL_IDS } from "./core/masks.js";
 export { landform, landformBackdrop, LANDFORMS } from "./core/presets.js";
+export { liftMassif, placeMassif } from "./core/massif.js";
+export type { IMassifPlacement, IMassifTile, IPlaceMassifOptions } from "./core/massif.js";
 export type {
   IBackdropOptions,
   ILandformBackdrop,

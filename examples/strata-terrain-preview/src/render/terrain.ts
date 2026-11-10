@@ -33,6 +33,7 @@ import {
   fract,
   fwidth,
   max,
+  min,
   mix,
   mx_noise_float,
   normalWorld,
@@ -74,7 +75,12 @@ import {
   elevationBand,
   measureBiome,
 } from "./biomes.js";
-import { collarColors, createHorizonCollar, horizonSurroundings } from "./horizon.js";
+import {
+  type IPackedMassif,
+  collarColors,
+  createHorizonCollar,
+  horizonSurroundings,
+} from "./horizon.js";
 import { LOOK } from "./lookKnobs.js";
 import { loadSkyLight, skyIrradiance } from "./pack.js";
 import { type IBakedLake, type IBakedRiver, REFLECTED_LAYER, surfaceHeights } from "./river.js";
@@ -1648,77 +1654,45 @@ function buildCollarRelief(name: string): ICollarRelief | undefined {
   const source = horizonSurroundings(name);
   if (source === undefined) return undefined;
   const n = source.resolution;
-  const cell = source.size / (n - 1);
-  const heights = source.heights;
-  const at = (row: number, column: number): number =>
-    heights[Math.min(n - 1, Math.max(0, row)) * n + Math.min(n - 1, Math.max(0, column))] as number;
-  const slopes = new Float32Array(n * n);
-  for (let row = 0; row < n; row++)
-    for (let column = 0; column < n; column++)
-      slopes[row * n + column] = Math.atan(
-        Math.hypot(
-          (at(row, column + 1) - at(row, column - 1)) / (2 * cell),
-          (at(row + 1, column) - at(row - 1, column)) / (2 * cell),
-        ),
-      );
-  const degrees = Math.PI / 180;
-  const band = (edge0: number, edge1: number, value: number): number => {
-    const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-    return t * t * (3 - 2 * t);
-  };
-  const pixels = new Uint16Array(n * n * 4);
-  for (let row = 0; row < n; row++)
-    for (let column = 0; column < n; column++) {
-      const vertex = row * n + column;
-      const height = at(row, column);
-      const dx = (at(row, column + 1) - at(row, column - 1)) / (2 * cell);
-      const dz = (at(row + 1, column) - at(row - 1, column)) / (2 * cell);
-      const length = Math.hypot(dx, 1, dz);
-      // A gully 5 m deep across 20 m reads near +1.
-      const laplacian =
-        (at(row, column - 2) +
-          at(row, column + 2) +
-          at(row - 2, column) +
-          at(row + 2, column) -
-          4 * height) /
-        (2 * cell) ** 2;
-      // Talus lies at 25-40 degrees under a face steeper than about 45 degrees within 30 m uphill.
-      let cliffAbove = 0;
-      for (let dr = -3; dr <= 3; dr++)
-        for (let dc = -3; dc <= 3; dc++)
-          if (at(row + dr, column + dc) > height + 8)
-            cliffAbove = Math.max(
-              cliffAbove,
-              band(
-                42 * degrees,
-                50 * degrees,
-                slopes[
-                  Math.min(n - 1, Math.max(0, row + dr)) * n +
-                    Math.min(n - 1, Math.max(0, column + dc))
-                ] as number,
-              ),
-            );
-      const slope = slopes[vertex] as number;
-      const talus =
-        band(22 * degrees, 28 * degrees, slope) * (1 - band(38 * degrees, 44 * degrees, slope));
-      pixels[vertex * 4] = DataUtils.toHalfFloat(-dx / length);
-      pixels[vertex * 4 + 1] = DataUtils.toHalfFloat(-dz / length);
-      pixels[vertex * 4 + 2] = DataUtils.toHalfFloat(Math.max(-1, Math.min(1, laplacian * 20)));
-      pixels[vertex * 4 + 3] = DataUtils.toHalfFloat(talus * cliffAbove);
-    }
-  const cooked = new DataTexture(pixels, n, n, RGBAFormat, HalfFloatType);
+  const massif = source.massif && decodeMassif(source.massif);
+  // One atlas, one binding (the ground already samples sixteen): the collar's cells on the left,
+  // a placed massif's own 4 m cells on the right, each read through its own clamped UV.
+  const width = n + (massif?.columns ?? 0);
+  const height = Math.max(n, massif?.rows ?? 0);
+  const pixels = new Uint16Array(width * height * 4);
+  writeRelief(pixels, width, 0, n, n, source.size / (n - 1), source.heights);
+  if (massif)
+    writeRelief(pixels, width, n, massif.columns, massif.rows, massif.spacing, massif.heights);
+  const cooked = new DataTexture(pixels, width, height, RGBAFormat, HalfFloatType);
   cooked.minFilter = LinearFilter;
   cooked.magFilter = LinearFilter;
   cooked.wrapS = ClampToEdgeWrapping;
   cooked.wrapT = ClampToEdgeWrapping;
   cooked.needsUpdate = true;
-  // Grid points sit on texel centres: column c of n is at (c + 0.5) / n.
-  const uv = vec2(positionWorld.x, positionWorld.z)
+  // Grid points sit on texel centres: column c of the collar is at (c + 0.5) / width.
+  const collarUv = vec2(positionWorld.x, positionWorld.z)
     .div(source.size)
     .add(0.5)
-    .mul((n - 1) / n)
-    .add(0.5 / n);
-  const sampled = texture(cooked, uv);
+    .mul(n - 1)
+    .clamp(0, n - 1)
+    .add(0.5)
+    .div(vec2(width, height));
+  let sampled: Node<"vec4"> = texture(cooked, collarUv);
+  if (massif) {
+    const cell = vec2(positionWorld.x, positionWorld.z)
+      .sub(vec2(massif.origin[0], massif.origin[1]))
+      .div(massif.spacing);
+    const last = vec2(massif.columns - 1, massif.rows - 1);
+    const inner = min(min(cell.x, cell.y), min(last.x.sub(cell.x), last.y.sub(cell.y)));
+    const fine = texture(
+      cooked,
+      cell
+        .clamp(vec2(0, 0), last)
+        .add(vec2(n + 0.5, 0.5))
+        .div(vec2(width, height)),
+    );
+    sampled = mix(sampled, fine, smoothstep(0, 3, inner));
+  }
   return {
     texture: cooked,
     normal: vec3(
@@ -1729,6 +1703,86 @@ function buildCollarRelief(name: string): ICollarRelief | undefined {
     hollow: sampled.b,
     scree: sampled.a,
   };
+}
+
+/** A massif's heights from `horizon.json`: int16 decimetres above `offset`, base64. */
+function decodeMassif(packed: IPackedMassif) {
+  const bytes = Uint8Array.from(atob(packed.heights), (c) => c.charCodeAt(0));
+  const raw = new Int16Array(bytes.buffer, 0, packed.columns * packed.rows);
+  return { ...packed, heights: Float32Array.from(raw, (dm) => packed.offset + dm / 10) };
+}
+
+/**
+ * Normal, hollow and talus texels for a `columns` x `rows` height grid at `cell` metres, written
+ * into the atlas from column `x0`. The talus and hollow reach are in metres, so a 4 m grid reads
+ * the same landforms as the 9.8 m collar, only sharper.
+ */
+function writeRelief(
+  pixels: Uint16Array,
+  width: number,
+  x0: number,
+  columns: number,
+  rows: number,
+  cell: number,
+  heights: ArrayLike<number>,
+): void {
+  const at = (row: number, column: number): number =>
+    heights[
+      Math.min(rows - 1, Math.max(0, row)) * columns + Math.min(columns - 1, Math.max(0, column))
+    ] as number;
+  const slopes = new Float32Array(columns * rows);
+  for (let row = 0; row < rows; row++)
+    for (let column = 0; column < columns; column++)
+      slopes[row * columns + column] = Math.atan(
+        Math.hypot(
+          (at(row, column + 1) - at(row, column - 1)) / (2 * cell),
+          (at(row + 1, column) - at(row - 1, column)) / (2 * cell),
+        ),
+      );
+  const slopeAt = (row: number, column: number): number =>
+    slopes[
+      Math.min(rows - 1, Math.max(0, row)) * columns + Math.min(columns - 1, Math.max(0, column))
+    ] as number;
+  const degrees = Math.PI / 180;
+  const band = (edge0: number, edge1: number, value: number): number => {
+    const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  };
+  // The 9.8 m collar measured a hollow across 2 cells and talus within 3 cells; keep those metres.
+  const span = Math.max(2, Math.round(19.6 / cell));
+  const step = Math.max(1, Math.round(9.8 / cell));
+  for (let row = 0; row < rows; row++)
+    for (let column = 0; column < columns; column++) {
+      const height = at(row, column);
+      const dx = (at(row, column + 1) - at(row, column - 1)) / (2 * cell);
+      const dz = (at(row + 1, column) - at(row - 1, column)) / (2 * cell);
+      const length = Math.hypot(dx, 1, dz);
+      // A gully 5 m deep across 20 m reads near +1.
+      const laplacian =
+        (at(row, column - span) +
+          at(row, column + span) +
+          at(row - span, column) +
+          at(row + span, column) -
+          4 * height) /
+        (span * cell) ** 2;
+      // Talus lies at 25-40 degrees under a face steeper than about 45 degrees within 30 m uphill.
+      let cliffAbove = 0;
+      for (let dr = -3; dr <= 3; dr++)
+        for (let dc = -3; dc <= 3; dc++)
+          if (at(row + dr * step, column + dc * step) > height + 8)
+            cliffAbove = Math.max(
+              cliffAbove,
+              band(42 * degrees, 50 * degrees, slopeAt(row + dr * step, column + dc * step)),
+            );
+      const slope = slopes[row * columns + column] as number;
+      const talus =
+        band(22 * degrees, 28 * degrees, slope) * (1 - band(38 * degrees, 44 * degrees, slope));
+      const texel = (row * width + x0 + column) * 4;
+      pixels[texel] = DataUtils.toHalfFloat(-dx / length);
+      pixels[texel + 1] = DataUtils.toHalfFloat(-dz / length);
+      pixels[texel + 2] = DataUtils.toHalfFloat(Math.max(-1, Math.min(1, laplacian * 20)));
+      pixels[texel + 3] = DataUtils.toHalfFloat(talus * cliffAbove);
+    }
 }
 
 async function get(
