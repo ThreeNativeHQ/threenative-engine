@@ -1018,7 +1018,11 @@ export async function createPropSurfaces(
     // The lift is warm and well under 2, which keeps the plates legible without turning the trunk
     // into a highlight.
     // A set colorNode replaces `map`, so the lift multiplies the sampled bark instead of standing in for it.
-    barkMaterial.colorNode = texture(bark.diffuse).rgb.mul(vec3(1.85, 1.7, 1.55));
+    // Warmer than the texture: with the crown lifted off the trunk (`SPRUCE.standBareTrunk`) the
+    // trunk is most of what a stand shows below eye level, and the Fab spruce's trunks read
+    // orange-brown: a shaded Fab trunk at `meadow-close` is sRGB (92, 72, 58), where the old lift
+    // (1.85, 1.7, 1.55) left a near-black pole (34, 37, 35); this one reads (58, 53, 42).
+    barkMaterial.colorNode = texture(bark.diffuse).rgb.mul(vec3(5.2, 3.7, 2.6));
     // The root flare dies into the soil instead of meeting it at a clean bark line.
     intoGround(
       barkMaterial,

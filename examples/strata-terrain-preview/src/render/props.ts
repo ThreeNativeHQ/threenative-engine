@@ -22,7 +22,7 @@ import {
 } from "three";
 import { WILDFLOWER, boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
 import { FAR_FOREST_LAYER } from "./farForest.js";
-import { ATLAS_CELLS, spruceFarCrown, spruceVariants } from "./spruce.js";
+import { ATLAS_CELLS, SPRUCE, spruceFarCrown, spruceVariants } from "./spruce.js";
 
 /** Which cell of the needle atlas the poppy petals sample. */
 const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
@@ -263,7 +263,7 @@ export function buildPropVariants(
   // procedural spruce on the machine that does not. The saplings' own variants come off the end of
   // the same seeded set, so a seedling and a tree are the same species at two sizes rather than two
   // unrelated shapes.
-  const spruces = spruceVariants(PROP_COUNTS.spruce, VARIANTS.seed);
+  const spruces = spruceVariants(PROP_COUNTS.spruce, VARIANTS.seed, SPRUCE.standBareTrunk);
   const youngs = spruceVariants(PROP_COUNTS.sapling, VARIANTS.seed ^ 0x51ed3a7f);
   for (let index = 0; index < PROP_COUNTS.spruce; index += 1) {
     const ready = prepared?.get(`spruce:${index}`);

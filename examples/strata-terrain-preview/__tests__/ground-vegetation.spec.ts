@@ -1,6 +1,7 @@
 import { Vector3 } from "three";
 import { expect, it } from "vitest";
 import { POPPY, WILDFLOWER, fernClump, grassClump, poppyCluster } from "../src/render/cover.js";
+import { SPRUCE, spruceVariants } from "../src/render/spruce.js";
 
 it("keeps contiguous grass, fern and flower stem vertices together in the wind", () => {
   const flowers = poppyCluster(73, { u0: 0.5, v0: 0, u1: 1, v1: 0.5 });
@@ -89,4 +90,20 @@ it("grows the meadow's fallback flowers as single small heads under the poppy co
   expect(bloom.stems.boundingBox?.max.y ?? 1).toBeLessThan(POPPY.height[0]);
   expect(WILDFLOWER.disc).toBeLessThan(POPPY.disc);
   for (const geometry of [poppy.petals, poppy.stems, bloom.petals, bloom.stems]) geometry.dispose();
+});
+
+// PRD-870: the procedural spruce held its crown to a fifth of its height, so a stand was a wall of
+// cards hiding every trunk; the Fab stand shows trunks to about two fifths.
+it("raises a stand spruce's crown off its trunk and keeps a sapling's low", () => {
+  const lowest = (bare?: number) => {
+    const [tree] = spruceVariants(1, 11, bare);
+    if (!tree) throw new Error("no spruce variant");
+    tree.crown.computeBoundingBox();
+    const share = (tree.crown.boundingBox?.min.y ?? 0) / tree.height;
+    tree.crown.dispose();
+    tree.trunk.dispose();
+    return share;
+  };
+  expect(lowest(SPRUCE.standBareTrunk)).toBeGreaterThan(0.24);
+  expect(lowest()).toBeLessThan(0.22);
 });
