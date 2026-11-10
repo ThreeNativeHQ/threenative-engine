@@ -508,7 +508,10 @@ export async function streamProps(options: IPropWorldOptions) {
           const levels = [...new Set(shape.parts.map((part) => part.level ?? 0))].sort(
             (a, b) => a - b,
           );
-          const lods = levels.slice(1).map((level, i) => ({
+          // A far spruce stands 55 m or more from any eye (`clear` around the vista): it draws its
+          // coarsest cooked level until the impostor. Its full chain put 14 M triangles in the vista.
+          const far = plan.bucket.startsWith("far:") && record.key.startsWith("spruce:");
+          const lods = (far ? [] : levels.slice(1)).map((level, i) => ({
             glb: `${record.key}/${level}.glb`,
             distance: lodSteps(record.placement.asset)[i === 0 ? 0 : 1],
           }));
@@ -535,7 +538,7 @@ export async function streamProps(options: IPropWorldOptions) {
             models.set(`${record.key}/${level}.glb`, group);
           }
           definitions[record.key] = {
-            glb: `${record.key}/0.glb`,
+            glb: `${record.key}/${far ? levels.at(-1) : 0}.glb`,
             ...(record.key.startsWith("spruce:")
               ? {
                   // The package rejects a terminal gate at or inside the last authored step.
