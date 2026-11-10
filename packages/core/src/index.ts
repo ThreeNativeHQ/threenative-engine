@@ -148,13 +148,22 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @situation prefetch assets into the Cache Storage disk cache of a large web game
  * @situation load assets from a nonstandard base path or a compiled asset manifest
  * @situation stream a large game: boot on the spawn bytes and prefetch the rest
+ * @situation make the first scene play before the whole game finishes downloading
+ * @situation draw a heavy model's coarsest level first and its full detail when the file lands
+ * @situation draw a model's textures at their resident mips first and the whole files later
  * @alias different area props
+ * @alias coarse first model streaming
+ * @alias mip streaming textures
+ * @alias TN_STREAMING_POOL
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
  * @constraint await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world
  * @constraint a whole-file load requested after the reveal that the game had not `prefetch`ed logs one `TN_ASSET_LATE` line with its bytes, so a pop-in is countable from a playtest
  * @constraint web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once
+ * @constraint streaming is engine-owned and on by default: a cooked LOD-chained model loads its `.coarse.<digest>.glb` companion first, then the full file at "soon" priority, and the full geometry replaces the coarse in place (clones and the projection mirror included); a failed coarse load falls back to the whole file and logs `TN_ASSETS_STREAM_FAILED`
+ * @constraint texture streaming rides on the coarse parse: each shared `.ktx2` of that model is read by `Range` as its resident mips (the header and the tail), and the whole files replace them when the full model lands; a host without `Range` sends the whole file and keeps it whole. `TN_STREAMING_POOL` reports `files`, `residentBytes`, `fullBytes`, `deferredBytes` and `upgraded` once, two seconds after the last change
  * @override `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
+ * @override `assets.streamMeshes: false` loads every model whole (reported once as `TN_ASSETS_STREAM_MESHES_OFF`); `assets.streamTextures: false` loads every model texture whole (`TN_ASSETS_STREAM_TEXTURES_OFF`)
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
  */
