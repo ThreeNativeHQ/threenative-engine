@@ -3,10 +3,11 @@
 /**
  * Builds the browser Wasm engines (`build/web/tn-native-engine-web{,-threads}.{mjs,wasm}`) in one command.
  *
- * The default web engine is this file. It needs three things that git does not carry: the
- * `stb`, `cgltf` and `webp-source` sources under `third_party/` and an Emscripten SDK. A web
- * engine built without `cgltf` compiles and then refuses every model, so this script fetches the
- * sources first and then runs the `wasm` CMake preset.
+ * The default web engine is this file. It needs what git does not carry: the `stb`, `cgltf`,
+ * `webp-source` and `meshopt` sources under `third_party/` and an Emscripten SDK. A web engine
+ * built without `cgltf` refuses every model, and one without `meshopt` refuses every cooked model
+ * (the bake emits meshopt geometry for it), so this script fetches the sources first and then runs
+ * the `wasm` CMake preset.
  *
  * Usage: pnpm wasm:build   (from the repository root)
  *   EMSDK=<dir>            Emscripten SDK root; default ~/emsdk
@@ -25,6 +26,7 @@ const SOURCES = [
   ['stb', 'third_party/stb/stb_image.h'],
   ['cgltf', 'third_party/cgltf/cgltf.h'],
   ['webp-source', 'third_party/webp-source'],
+  ['meshopt', 'third_party/meshopt/meshoptimizer.h'],
 ];
 
 const run = (command, args, env = process.env) =>

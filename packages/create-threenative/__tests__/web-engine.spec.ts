@@ -467,9 +467,10 @@ describe("createWebEnginePlugin", () => {
 });
 
 describe("the web engine's asset decoders", () => {
-  it("cooks without KTX2 or Meshopt unless the game pins the legacy engine", () => {
-    expect(webRuntimeDecoders({})).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual({ ktx2: false, meshopt: false });
+  it("cooks meshopt on both engines and KTX2 only on the legacy one", () => {
+    // Meshopt decodes in the engine's own glTF loader; KTX2 still needs the JS transcoder path.
+    expect(webRuntimeDecoders({})).toEqual({ ktx2: false, meshopt: true });
+    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual({ ktx2: false, meshopt: true });
     expect(webRuntimeDecoders({ engine: "threejs" })).toEqual({ ktx2: true, meshopt: true });
   });
 

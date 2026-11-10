@@ -4,16 +4,25 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
- * The asset decoders the web engine ships: its glTF loader decodes neither KTX2 nor Meshopt (addons/gltf-loader-web.ts), so a
- * native-engine game's models are cooked without it, which is also the cooker's default. `engine: "threejs"` names both.
- * `threenative build` and each template's dev-server asset watch both read it, so the two cook the same bytes.
+ * The asset decoders the web build ships, per format.
+ *
+ * Meshopt geometry decodes on both engines: on `engine: "threenative"` the engine's own glTF loader
+ * decompresses EXT/KHR_meshopt_compression with meshoptimizer's decoders, which `pnpm wasm:build`
+ * provisions and without which the `tn-native-engine-web` target refuses to link.
+ *
+ * KTX2 still needs `engine: "threejs"`: a model's images reach the GPU through the engine's loader,
+ * which has no Basis transcoder, so the JS `KTX2Loader` serves only the three renderer's models.
+ * A texture loaded straight through `ctx.assets.texture` takes the JS path on either engine.
+ *
+ * `threenative build` and each template's dev-server asset watch both read it, so the two cook the
+ * same bytes.
  */
 export function webRuntimeDecoders(config: {
   readonly engine?: "threejs" | "threenative";
 }): { readonly ktx2: boolean; readonly meshopt: boolean } {
   return config.engine === "threejs"
     ? { ktx2: true, meshopt: true }
-    : { ktx2: false, meshopt: false };
+    : { ktx2: false, meshopt: true };
 }
 
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */

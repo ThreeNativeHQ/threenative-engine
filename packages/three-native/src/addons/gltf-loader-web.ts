@@ -251,8 +251,9 @@ export class GLTFLoader {
     return refuse("KTX2");
   }
 
-  setMeshoptDecoder(): never {
-    return refuse("MESHOPT");
+  /** The engine's loader decodes EXT/KHR_meshopt_compression itself (PRD-861), so the JS decoder goes unused. */
+  setMeshoptDecoder(_decoder?: unknown): this {
+    return this;
   }
 
   setDRACOLoader(): never {

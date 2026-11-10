@@ -1134,6 +1134,14 @@ if(EMSCRIPTEN)
     # its .wasm in build/web/. Outside the default set: build it with `--target tn-native-engine-web`.
     add_executable(tn-native-engine-web EXCLUDE_FROM_ALL src/engine/wasm/web_host.cpp)
     target_link_libraries(tn-native-engine-web PRIVATE tn_engine_abi tn_engine_renderer)
+    if(TARGET tn_engine_gltf AND NOT TARGET tn_engine_meshopt)
+        # The web bake emits meshopt geometry for this engine (create-threenative webRuntimeDecoders),
+        # so a web engine without the decoder would refuse every cooked model: same error as no cgltf.
+        add_custom_command(TARGET tn-native-engine-web PRE_LINK
+            COMMAND ${CMAKE_COMMAND} -E echo "TN_WEB_ENGINE_DEPS_MISSING: third_party/meshopt is not provisioned. Run node scripts/download-deps.mjs --only meshopt, then reconfigure."
+            COMMAND ${CMAKE_COMMAND} -E false
+            VERBATIM)
+    endif()
     if(TARGET tn_engine_gltf)
         target_link_libraries(tn-native-engine-web PRIVATE tn_engine_gltf)
         target_compile_definitions(tn-native-engine-web PRIVATE TN_WEB_GLTF=1)
