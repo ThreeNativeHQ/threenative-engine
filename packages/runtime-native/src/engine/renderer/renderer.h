@@ -1113,6 +1113,7 @@ private:
     const MaterialTexture* materialTexture(const Texture& texture);
     /** The key `texture` would be created with, from the descriptor its kind needs. */
     static MaterialTexture::Key materialTextureKey(const Texture& texture);
+    void uploadCompressedLevels(WGPUTexture destination, const Texture& texture, uint32_t first, uint32_t end);
     /** Creates a material texture, counting the bytes it allocates as GpuResources counts its own. */
     WGPUTexture createMaterialTexture(const MaterialTexture::Key& key);
     /** Writes `texture`'s pixels into `destination` and regenerates the mip chain it was created with. */

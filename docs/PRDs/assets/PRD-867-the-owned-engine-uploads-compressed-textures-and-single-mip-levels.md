@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-867 — The owned engine uploads compressed textures and single mip levels
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 landed: the engine uploads BC7 and ETC2 and the loader transcodes KTX2 to the device's format.
 **Priority:** P1 — the owned engine (the default on web and desktop) holds every texture as RGBA8, so a KTX2 costs bytes and saves no GPU memory; [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md) keeps KTX2 out of its cook for that reason (AC-1, AC-5 open), and PRD-860's texture streaming (its AC-5) needs one mip level uploaded into a texture that already exists.
 **Complexity:** 7 (HIGH) — 5 implementation files (+2): the engine `Texture`, the material upload, the glTF image decode, the three-native texture bridge and the bake gate (+2); a new GPU upload format family with block layouts (+2); the change crosses the C++ engine and the TypeScript packages (+1).
 **Owner:** João (owner); an agent executes
@@ -34,20 +34,19 @@ flowchart LR
 ### Conventions
 
 - Auto by default: the engine measures the device and picks the format; no game option.
-- Named override: `TN_TEXTURE_TRANSCODE=rgba8` keeps RGBA8 for a comparison run, and the line reports it.
 - A size that is not a multiple of 4 cannot be a BC base level on WebGPU; it keeps RGBA8, named in the same line.
 
 ### Risks
 
-- Wasm size: the web engine has 21.9 KB of its 4,194,304-byte budget left after PRD-861. The BC7 transcoder tables may not fit; raising the budget needs its own commit and reason.
+- Wasm size: at -O3 the BC7 and ETC2 paths cost the web engine 145,855 bytes, over its 4,194,304-byte budget. The transcoder now builds at -Oz on the web only (12,201 bytes); its transcode speed at load is not measured yet.
 - Disk bytes: KTX2 on disk was larger than WebP for Midway (115.1 MB against 71.3 MB of shared images). The GPU win is real; the download may not be.
 
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Compressed material texture | a `Texture` with a block `format` and `mipmaps` → `uploadMaterialTexture` | RGBA8-only upload; RGBA8 stays for the no-format device | AC-1, AC-2 |
-| Device-format transcode | `decodeImage` KTX2 → the device's block format | PRD-861's RGBA8-only transcode | AC-2, AC-3 |
+| Compressed material texture | a `Texture` whose source holds `mipmaps` and a `mipmapFormat` (`src/engine/scene/texture.h`) → `Renderer::uploadCompressedLevels` (`renderer_material.cpp`), format from `textureFormat` (`renderer_internal.h`) | RGBA8-only upload; RGBA8 stays for the no-format device | AC-1, AC-2 |
+| Device-format transcode | `Renderer` sets `compressedTextureTarget()` from its device (`renderer.cpp`) → `gltf::decodeImage(bytes, size, TextureSource&)` (`image_decode.cpp`) from the loader's decode and predecode paths | PRD-861's RGBA8-only transcode | AC-2, AC-3 |
 | KTX2 in the owned web cook | `webRuntimeDecoders` → model KTX2 | PRD-861's `ktx2: false` | AC-4, AC-5 |
 | CompressedTexture and one mip level | three-native texture bridge → engine `Texture.mipmaps`; `writeMipLevel` | standalone `.ktx2` on `engine: "threejs"` only | AC-6, AC-7 |
 
@@ -57,11 +56,11 @@ Fill the `file:line` entry points when each phase lands.
 
 #### Phase 1: the engine uploads a compressed texture
 
-- [ ] AC-1 [local]: a `Texture` with `RGBA_BPTC_Format` and its `mipmaps` uploads as `BC7RGBAUnorm` (or `BC7RGBAUnormSrgb`) with one write per level, and a device without `texture-compression-bc` refuses it by name. proof: a C++ test in `packages/runtime-native/tests/native-engine/` on the desktop Dawn device — Evidence: pending.
-- [ ] AC-2 [local]: the glTF loader transcodes a KTX2 image to BC7 on a device with `texture-compression-bc`, to RGBA8 on one without, and prints `TN_TEXTURE_TRANSCODE_TARGET` naming the choice. proof: `ktx2_decode_test.cpp` for both targets, and `tests/web-host-decoders.test.mjs` on the real Wasm engine — Evidence: pending.
-- [ ] AC-3 [local]: the web engine stays within its size budget, or the budget rises in its own commit with the measured reason. proof: `pnpm exec vitest run packages/runtime-native/__tests__/wasm-size-budget.spec.ts` — Evidence: pending.
+- [x] AC-1 [local]: a `Texture` with `RGBA_BPTC_Format` and its `mipmaps` uploads as `BC7RGBAUnorm` (or `BC7RGBAUnormSrgb`) with one write per level, and a device without `texture-compression-bc` refuses it by name. proof: a C++ test in `packages/runtime-native/tests/native-engine/` on the desktop Dawn device — Evidence: 2026-11-09, `tests/native-engine/compressed_texture_test.cpp` on Dawn/Vulkan, NVIDIA GeForce RTX 2080: `bc7_draws` loads `ktx2-textured.glb` as 8x8 BC7 (1 level, 64 bytes, no RGBA bytes) and a mapped plane reads back 253 0 0 against the RGBA control's 255 0 0; `bc7_refused_without_feature` on a device made without the feature: `TN_NATIVE_TEXTURE_UNSUPPORTED: BC7 needs the device feature texture-compression-bc`. 2/2 pass. Before this, the same map loaded as 256 RGBA bytes (`ktx2_decode_test` `transcodes_to_rgba`). ETC2 draws are not run: this adapter has no `texture-compression-etc2`.
+- [x] AC-2 [local]: the glTF loader transcodes a KTX2 image to BC7 on a device with `texture-compression-bc`, to RGBA8 on one without, and prints `TN_TEXTURE_TRANSCODE_TARGET` naming the choice. proof: `ktx2_decode_test.cpp` for both targets, and `tests/web-host-decoders.test.mjs` on the real Wasm engine — Evidence: 2026-11-09, `ktx2_decode_test` `transcodes_to_blocks`: BC7 (36492) and ETC2 (37496) each 8x8, level 0 64 bytes, RGBA bytes empty; target 0 keeps 256 RGBA bytes. Native ctest 9/9 (decode, loader, meshopt, GPU) and the same tests on the Wasm toolchain under node 7/7. The GPU test prints `TN_TEXTURE_TRANSCODE_TARGET bc7`; `web-host-decoders.test.mjs` (no device on that page) asserts `TN_TEXTURE_TRANSCODE_TARGET rgba8: this process has no device with texture-compression-bc or texture-compression-etc2`, 2/2.
+- [x] AC-3 [local]: the web engine stays within its size budget, or the budget rises in its own commit with the measured reason. proof: `pnpm exec vitest run scripts/__tests__/wasm-size-budget.spec.ts` (the spec lives there) — Evidence: 2026-11-09, threaded 4,184,647 and single 4,179,268 of 4,194,304 bytes with the transcoder at -Oz on the web; spec 5/5; `pnpm budgets` reports no web-engine breach. At -O3 the threaded engine was 4,318,301 bytes. The budget did not move.
 
-**Status:** NOT STARTED
+**Status:** DONE — AC-1 to AC-3.
 **Estimate:** about a day.
 **Files:** `src/engine/scene/texture.h`, `src/engine/renderer/renderer_material.cpp`, `renderer_internal.h` (`textureFormat`), `src/engine/assets/gltf/image_decode.cpp`, `cmake/NativeEngineCore.cmake` (BC7 on in the transcoder).
 **Verification:** the AC-1 to AC-3 commands, plus `pnpm native:build`.
@@ -94,4 +93,7 @@ Fill the `file:line` entry points when each phase lands.
 
 - 2026-11-09 (lead): KTX2 stays off in the owned web cook until this PRD's Phase 1 lands (PRD-861 report accepted).
 - 2026-11-09 (agent): BC7 first. Desktop Chrome, Dawn on Vulkan and the RTX 2080 lane all expose `texture-compression-bc`. ASTC and ETC2 follow only if the transcoder tables fit the Wasm budget; otherwise they are deferred here by name.
+- 2026-11-09 (agent, measured): ASTC is deferred. The cook's ETC1S and UASTC levels reach BC7 (desktop web and Dawn) and ETC2 (mobile web) already; ASTC's transcoder tables are 350 KB of source and the web engine has 9,657 bytes left. Revisit when the budget moves or a device has ASTC and no ETC2.
+- 2026-11-09 (agent): the block format and the levels live on the shared `TextureSource`, not on `Texture.format`, so every texture over one decoded image (the loader shares them by uri) carries them. three's `format` stays the RGBA format.
+- 2026-11-09 (agent): no game override for the transcode target. The device decides; a comparison run uses `engine: "threejs"` or the WebP cook.
 - 2026-11-09 (agent): the number PRD-862 is taken (`refactoring/untangle-2026-11-06/PRD-862-untangle-native-leftovers.md`), and so are 863 to 866, so this plan is PRD-867.

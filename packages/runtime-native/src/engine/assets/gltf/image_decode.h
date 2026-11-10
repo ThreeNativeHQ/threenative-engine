@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "engine/scene/texture.h"
+
 namespace tn::engine::gltf {
 
 enum class ImageFormat { Unknown, Png, Jpeg, WebP, Ktx2 };
@@ -18,14 +20,22 @@ ImageFormat imageFormat(const uint8_t* bytes, std::size_t size);
 bool decodesWebP();
 
 /**
- * True when this build transcodes KTX2 (KHR_texture_basisu): ETC1S or UASTC, zstd or not, to RGBA8.
- * The engine's Texture uploads RGBA8 only, so a KTX2 image costs the GPU what its PNG would.
+ * True when this build transcodes KTX2 (KHR_texture_basisu): ETC1S or UASTC, zstd or not, to the
+ * device's block format (compressedTextureTarget) or, with none, to RGBA8.
  */
 bool decodesKtx2();
 
 /** Decodes a PNG, JPEG, WebP or KTX2 (its base level) into `rgba` (width * height * 4 bytes); false for a damaged or oversized image. */
 bool decodeImage(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32_t& height,
                  std::vector<uint8_t>& rgba);
+
+/**
+ * As above into `image`, except a KTX2 becomes every level in `target`'s block format (`image.mipmaps`)
+ * when `target` is kTextureBC7Format or kTextureETC2RGBAFormat and the size is a multiple of 4.
+ * Otherwise RGBA8, and the first KTX2 says which in a TN_TEXTURE_TRANSCODE_TARGET line.
+ */
+bool decodeImage(const uint8_t* bytes, std::size_t size, TextureSource& image,
+                 uint16_t target = compressedTextureTarget().load());
 
 /** Radiance HDR to RGBA32F, with three's RGBE /255 scale (stb's decoder uses /256). */
 bool decodeHdr(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32_t& height,

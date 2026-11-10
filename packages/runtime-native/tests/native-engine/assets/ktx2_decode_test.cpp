@@ -4,6 +4,7 @@
 // as ETC1S, emissiveTexture is solid green as UASTC with zstd supercompression, both written by the
 // asset cook's own encoder (packages/assets/src/ktx2-encoder.ts, basis v2.5) at quality 128.
 #include "check.h"
+#include "engine/assets/gltf/image_decode.h"
 #include "engine/assets/gltf/loader.h"
 #include "engine/scene/nodes.h"
 
@@ -71,6 +72,29 @@ void damagedIsRefused() {
     CHECK(!loaded.scene);
 }
 
+// PRD-867: with a block target the same image becomes that format's levels (4x4 blocks of 16 bytes), and
+// `data` stays empty; a size that is not a multiple of 4 keeps RGBA8.
+void transcodesToBlocks() {
+    const std::string bytes = readFixture();
+    const std::size_t at = bytes.find("\xABKTX 20\xBB");
+    CHECK(at != std::string::npos);
+    if (at == std::string::npos) return;
+    const auto* ktx2 = reinterpret_cast<const uint8_t*>(bytes.data()) + at;
+    const std::size_t size = bytes.size() - at;  // the first image runs to its view's end; the transcoder reads its own length
+    for (const uint16_t target : {kTextureBC7Format, kTextureETC2RGBAFormat}) {
+        TextureSource image;
+        CHECK(gltf::decodeImage(ktx2, size, image, target));
+        std::printf("target %u: %ux%u, %zu levels, level 0 %zu bytes\n", target, image.width, image.height,
+                    image.mipmaps.size(), image.mipmaps.empty() ? 0 : image.mipmaps[0].data.size());
+        CHECK(image.mipmapFormat == target && image.data.empty());
+        CHECK(!image.mipmaps.empty() && image.mipmaps[0].width == 8 && image.mipmaps[0].data.size() == 2 * 2 * 16);
+    }
+    TextureSource rgba;
+    CHECK(gltf::decodeImage(ktx2, size, rgba, 0));
+    CHECK(rgba.mipmaps.empty() && rgba.data.size() == 8 * 8 * 4);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"transcodes_to_rgba", transcodesToRgba}, {"damaged_is_refused", damagedIsRefused})
+TN_TEST_MAIN({"transcodes_to_rgba", transcodesToRgba}, {"damaged_is_refused", damagedIsRefused},
+             {"transcodes_to_blocks", transcodesToBlocks})

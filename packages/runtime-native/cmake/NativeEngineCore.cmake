@@ -157,8 +157,9 @@ else()
     message(STATUS "meshopt not found: the native glTF loader refuses EXT/KHR_meshopt_compression. Run 'node scripts/download-deps.mjs --only meshopt'.")
 endif()
 # Basis Universal's transcoder for KHR_texture_basisu (provisioned by download-deps, PRD-861):
-# Apache-2.0, with its decode-only zstd (BSD) for supercompressed UASTC. The loader transcodes to
-# RGBA8, the one upload format the engine's Texture has, so every GPU block target is compiled out.
+# Apache-2.0, with its decode-only zstd (BSD) for supercompressed UASTC. The loader transcodes to the
+# device's block format (BC7 or ETC2, PRD-867) or RGBA8; the other GPU targets are compiled out, ASTC
+# with them until its tables fit the web engine.
 set(TN_BASISU_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/basisu)
 if(EXISTS ${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp AND EXISTS ${TN_BASISU_DIR}/zstd/zstddeclib.c)
     add_library(tn_engine_basisu STATIC ${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp ${TN_BASISU_DIR}/zstd/zstddeclib.c)
@@ -166,12 +167,19 @@ if(EXISTS ${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp AND EXISTS ${TN_BASI
     target_include_directories(tn_engine_basisu PUBLIC ${TN_BASISU_DIR}/transcoder)
     target_compile_definitions(tn_engine_basisu PUBLIC BASISD_SUPPORT_KTX2=1 BASISD_SUPPORT_KTX2_ZSTD=1
         BASISD_SUPPORT_UASTC=1 BASISD_SUPPORT_DXT1=0 BASISD_SUPPORT_DXT5A=0 BASISD_SUPPORT_BC7=0
-        BASISD_SUPPORT_BC7_MODE5=0 BASISD_SUPPORT_PVRTC1=0 BASISD_SUPPORT_ETC2_EAC_A8=0 BASISD_SUPPORT_ASTC=0
+        BASISD_SUPPORT_BC7_MODE5=1 BASISD_SUPPORT_PVRTC1=0 BASISD_SUPPORT_ETC2_EAC_A8=1 BASISD_SUPPORT_ASTC=0
         BASISD_SUPPORT_ATC=0 BASISD_SUPPORT_ETC2_EAC_RG11=0 BASISD_SUPPORT_FXT1=0 BASISD_SUPPORT_PVRTC2=0
         BASISD_SUPPORT_UASTC_HDR=0 INTERFACE TN_ENGINE_BASISU=1)
-    # Third-party C and C++: its own warnings are not this engine's.
+    # Third-party C and C++: its own warnings are not this engine's. On the web the transcoder is size-
+    # optimized: at -O3 its BC7 and ETC2 paths cost the Wasm engine 145,855 bytes, at -Oz 12,201 (PRD-867).
+    # ponytail: -Oz trades transcode speed at load for bytes; measure a big KTX2 model's load if it shows.
+    if(EMSCRIPTEN)
+        set(TN_BASISU_OPTIONS "-w;-Oz")
+    else()
+        set(TN_BASISU_OPTIONS "-w")
+    endif()
     set_source_files_properties(${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp ${TN_BASISU_DIR}/zstd/zstddeclib.c
-        PROPERTIES COMPILE_OPTIONS "-w")
+        PROPERTIES COMPILE_OPTIONS "${TN_BASISU_OPTIONS}")
 else()
     message(STATUS "basisu not found: the native glTF loader refuses KHR_texture_basisu. Run 'node scripts/download-deps.mjs --only basisu'.")
 endif()
@@ -303,7 +311,7 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
         PRIVATE ${TN_CGLTF_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
     # cgltf is third-party C in a C++ unit: its own warnings are not this engine's.
     set_source_files_properties(src/engine/assets/gltf/cgltf_impl.cpp src/engine/assets/gltf/image_decode.cpp
-        PROPERTIES COMPILE_OPTIONS "-w")
+        PROPERTIES COMPILE_OPTIONS "-w;-Oz")
     # EXT_texture_webp: libwebp built from the pinned `webp-source` (download-deps.mjs), one build
     # for desktop, Android and iOS. Without the source the extension stays refused by name.
     file(GLOB TN_WEBP_SOURCE_CANDIDATES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/webp-source/libwebp-*)
@@ -342,7 +350,8 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
         TN_GLTF_MESHOPT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/meshopt-compressed.glb")
     tn_native_engine_test(tn-native-engine-gltf-ktx2-test tests/native-engine/assets/ktx2_decode_test.cpp
         native_engine_gltf_ktx2_transcoded=transcodes_to_rgba
-        native_engine_gltf_ktx2_damaged=damaged_is_refused)
+        native_engine_gltf_ktx2_damaged=damaged_is_refused
+        native_engine_gltf_ktx2_blocks=transcodes_to_blocks)
     target_link_libraries(tn-native-engine-gltf-ktx2-test PRIVATE tn_engine_gltf)
     target_compile_definitions(tn-native-engine-gltf-ktx2-test PRIVATE
         TN_GLTF_KTX2_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/ktx2-textured.glb")

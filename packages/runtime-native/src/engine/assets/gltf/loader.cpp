@@ -980,7 +980,7 @@ class Builder {
             applySampler(*made, index);
             if (!decoded) {
                 decodeImage(*made);
-                if (!key.empty() && !made->data.empty()) decodedUriImage(key, made->imageSource);
+                if (!key.empty() && (!made->data.empty() || made->compressed())) decodedUriImage(key, made->imageSource);
             }
             texture = made;
         }
@@ -1081,6 +1081,8 @@ class Builder {
             texture.width = found->second.width;
             texture.height = found->second.height;
             texture.data = std::move(found->second.data);
+            texture.mipmaps = std::move(found->second.mipmaps);
+            texture.imageSource->mipmapFormat = found->second.mipmapFormat;
             predecoded_.erase(found);  // a second texture over this image decodes it again, as before
             return;
         }
@@ -1115,7 +1117,7 @@ class Builder {
             size = file.size();
         }
         if (bytes && imageFormat(bytes, size) != ImageFormat::Unknown &&
-            !gltf::decodeImage(bytes, size, texture.width, texture.height, texture.data)) {
+            !gltf::decodeImage(bytes, size, *texture.imageSource)) {
             texture.width = texture.height = 0;
             refuse("TN_NATIVE_GLTF_IMAGE_INVALID image " + std::to_string(texture.source));
         }
@@ -1163,7 +1165,7 @@ class Builder {
         if (jobs.size() < 2) return;  // one image gains nothing from the pool
         JobPool::shared().forEach(static_cast<uint32_t>(jobs.size()), [&](uint32_t i) {
             Job& job = jobs[i];
-            job.decoded = gltf::decodeImage(job.bytes.data(), job.bytes.size(), job.image.width, job.image.height, job.image.data);
+            job.decoded = gltf::decodeImage(job.bytes.data(), job.bytes.size(), job.image);
         });
         for (Job& job : jobs)
             if (job.decoded) predecoded_.emplace(job.source, std::move(job.image));

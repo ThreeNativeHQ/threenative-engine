@@ -875,6 +875,26 @@
           "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
         },
         {
+          "id": "basisu-transcoder/basisu_transcoder_tables_bc7_m5_alpha.inc",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder_tables_bc7_m5_alpha.inc",
+          "sha256": "4d713b839594f429d95f329d60f8ad495e932619111b5dfddffb688e3634b495",
+          "bytes": 17520,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_transcoder_tables_bc7_m5_color.inc",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder_tables_bc7_m5_color.inc",
+          "sha256": "e6f63d3ebce0ac84d801ec54614b6a4eeda3be3e994f3abbfc732377cfe5a531",
+          "bytes": 178391,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
           "id": "basisu-transcoder/basisu_transcoder_uastc.h",
           "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder_uastc.h",
           "sha256": "9f8fa061e1f6e9ae1169b091b6040271a1baf1f426557e3635d73cc408ead81d",

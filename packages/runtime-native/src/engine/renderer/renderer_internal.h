@@ -91,6 +91,10 @@ inline bool gpuJointAncestorEligible(const Object3D& ancestor, const SkinnedMesh
 }
 
 inline WGPUTextureFormat textureFormat(const Texture& texture) {
+    if (texture.compressed())
+        return texture.imageSource->mipmapFormat == kTextureBC7Format
+                   ? (texture.isSRGB() ? WGPUTextureFormat_BC7RGBAUnormSrgb : WGPUTextureFormat_BC7RGBAUnorm)
+                   : (texture.isSRGB() ? WGPUTextureFormat_ETC2RGBA8UnormSrgb : WGPUTextureFormat_ETC2RGBA8Unorm);
     return texture.isFloat() ? WGPUTextureFormat_RGBA32Float
          : texture.isHalfFloat() ? WGPUTextureFormat_RGBA16Float
          : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;

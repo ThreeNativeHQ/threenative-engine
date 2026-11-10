@@ -331,6 +331,8 @@ const DEPS = {
       'transcoder/basisu.h', 'transcoder/basisu_astc_hdr_core.h', 'transcoder/basisu_astc_helpers.h',
       'transcoder/basisu_containers.h', 'transcoder/basisu_containers_impl.h', 'transcoder/basisu_file_headers.h',
       'transcoder/basisu_transcoder.cpp', 'transcoder/basisu_transcoder.h', 'transcoder/basisu_transcoder_internal.h',
+      // The ETC1S-to-BC7 tables (BASISD_SUPPORT_BC7_MODE5, PRD-867); ASTC's tables are not fetched.
+      'transcoder/basisu_transcoder_tables_bc7_m5_alpha.inc', 'transcoder/basisu_transcoder_tables_bc7_m5_color.inc',
       'transcoder/basisu_transcoder_uastc.h', 'zstd/zstd.h', 'zstd/zstddeclib.c',
     ],
   },

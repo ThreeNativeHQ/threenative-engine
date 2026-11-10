@@ -58,6 +58,8 @@ hostTest.each(["meshopt-compressed.glb", "ktx2-textured.glb"])(
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage();
+      const lines = [];
+      page.on("console", (message) => lines.push(message.text()));
       await page.goto(`${origin}/`);
       const result = await page.evaluate(
         async ({ origin, glb }) => {
@@ -93,6 +95,12 @@ hostTest.each(["meshopt-compressed.glb", "ktx2-textured.glb"])(
       assert.equal(result.status, 0);
       assert.equal(result.count, 1, "one scene, no clips");
       assert.notEqual(result.scene, 0, "a scene handle");
+      // PRD-867: no renderer took a device here, so a KTX2 keeps RGBA8, and the engine says so.
+      if (name.startsWith("ktx2"))
+        assert.ok(
+          lines.some((line) => line.startsWith("TN_TEXTURE_TRANSCODE_TARGET rgba8")),
+          `no transcode target line in ${JSON.stringify(lines)}`,
+        );
     } finally {
       await browser.close();
       server.close();

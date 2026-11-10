@@ -37,6 +37,18 @@ inline constexpr uint16_t kTextureHalfFloatType = 1016;     // three's HalfFloat
 inline constexpr uint16_t kTextureRGBAFormat = 1023;        // three's RGBAFormat
 inline constexpr uint16_t kTextureRedFormat = 1028;         // three's RedFormat (widened to RGBA)
 inline constexpr uint16_t kTextureRGFormat = 1030;          // three's RGFormat (render targets only)
+// three's compressed formats the engine uploads (PRD-867): 4x4 blocks of 16 bytes, one byte per texel.
+inline constexpr uint16_t kTextureBC7Format = 36492;        // three's RGBA_BPTC_Format
+inline constexpr uint16_t kTextureETC2RGBAFormat = 37496;   // three's RGBA_ETC2_EAC_Format
+
+/**
+ * The block format this process's GPU device samples, or 0 for none: the renderer sets it when it
+ * takes its device, and the glTF loader transcodes KTX2 to it. One device per process.
+ */
+inline std::atomic<uint16_t>& compressedTextureTarget() {
+    static std::atomic<uint16_t> target{0};
+    return target;
+}
 
 /**
  * A texture's identity for GPU caches: unique for the process lifetime, never reused (an address is),
@@ -130,8 +142,17 @@ struct ExternalImage {
     std::function<void(uint32_t)> release;
 };
 
+/** One level of a compressed image (three's `CompressedTexture.mipmaps[i]`). */
+struct TextureMipmap {
+    std::vector<uint8_t> data;
+    uint32_t width = 0, height = 0;
+};
+
 struct TextureSource {
     std::vector<uint8_t> data;
+    /** A compressed image's levels, finest first, in `mipmapFormat`; `data` stays empty then. */
+    std::vector<TextureMipmap> mipmaps;
+    uint16_t mipmapFormat = 0;  // kTextureBC7Format or kTextureETC2RGBAFormat; 0 for an RGBA image
     uint32_t width = 0, height = 0, depth = 1, version = 0;
     std::shared_ptr<const ExternalImage> external;
     /** three's `source.dataReady`: false when the texels are written on the GPU (copyTextureToTexture), so none are uploaded or held. */
@@ -171,6 +192,7 @@ public:
     // RGBA bytes, width-major: 4 bytes/texel for UnsignedByteType, 8 for HalfFloatType (binary16
     // bits), 16 for FloatType. Empty until a loader or DataTexture fills it.
     std::vector<uint8_t>& data = imageSource->data;
+    std::vector<TextureMipmap>& mipmaps = imageSource->mipmaps;  // three's CompressedTexture.mipmaps
     uint32_t& width = imageSource->width;
     uint32_t& height = imageSource->height;
     uint32_t& depth = imageSource->depth;   // slices of a Data3DTexture, stored one after another
@@ -217,9 +239,11 @@ public:
     [[nodiscard]] bool isFloat() const { return type == kTextureFloatType; }
     [[nodiscard]] bool isHalfFloat() const { return type == kTextureHalfFloatType; }
     /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
-    [[nodiscard]] uint32_t bytesPerTexel() const { return isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
+    [[nodiscard]] uint32_t bytesPerTexel() const { return compressed() ? 1u : isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
+    /** Its image is block-compressed levels (`mipmaps`), uploaded as they are: no flip and no generated chain. */
+    [[nodiscard]] bool compressed() const { return imageSource->mipmapFormat != 0 && !imageSource->mipmaps.empty(); }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
-    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external || !dataReady); }
+    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || compressed() || external || !dataReady); }
     /** A material can sample it: an uploaded image, or a render target's last render. */
     [[nodiscard]] bool sampleable() const { return ((depthTexture || storageTexture) && width > 0 && height > 0) || hasImage() || !renderTarget.expired(); }
 
