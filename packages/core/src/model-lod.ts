@@ -887,7 +887,42 @@ export function registerModelLodController(mesh: Mesh, controller: IModelLodCont
 function isChained(object: object): boolean {
   const mesh = object as Partial<Mesh>;
   const geometry = mesh.geometry;
-  return mesh.isMesh === true && geometry !== undefined && chains.has(geometry);
+  return (
+    mesh.isMesh === true &&
+    geometry !== undefined &&
+    (chains.has(geometry) || streaming.has(geometry))
+  );
+}
+
+/**
+ * Coarse geometries of streamed models (PRD-860) whose full model is still downloading. They are
+ * tracked like a chained mesh, so on the frame the full model lands every mesh over them, a game's
+ * clones included, picks its chain up.
+ */
+const streaming = new WeakSet<BufferGeometry>();
+
+/** A coarse companion's geometry, drawn until {@link upgradeStreamedGeometry} gives it the full model. */
+export function markStreamedGeometry(coarse: BufferGeometry): void {
+  streaming.add(coarse);
+}
+
+/**
+ * The full model landed: the coarse geometry takes the full base's index and attributes in place,
+ * so every mesh holding it (a game's clones, a projection mirror) draws the full model with no
+ * object swapped under the game, and it adopts the full chain.
+ */
+export function upgradeStreamedGeometry(coarse: BufferGeometry, full: BufferGeometry): void {
+  const attributes = full.attributes as Record<string, BufferAttribute>;
+  for (const name of Object.keys(coarse.attributes))
+    if (attributes[name] === undefined) coarse.deleteAttribute(name);
+  for (const [name, attribute] of Object.entries(attributes)) coarse.setAttribute(name, attribute);
+  coarse.setIndex(full.index);
+  coarse.computeBoundingBox();
+  coarse.computeBoundingSphere();
+  levelTriangles.delete(coarse);
+  const registered = chains.get(full);
+  if (registered !== undefined) chains.set(coarse, registered);
+  streaming.delete(coarse);
 }
 
 /**
@@ -1368,7 +1403,8 @@ export function updateModelLods(
   for (const mesh of tracking.items) {
     const entry = controllerFor(mesh);
     if (entry === undefined) {
-      tracking.items.delete(mesh);
+      // A streamed coarse mesh stays tracked until its full model lands and brings the chain.
+      if (!streaming.has(mesh.geometry)) tracking.items.delete(mesh);
       continue;
     }
     entry.update(camera, viewportHeight);

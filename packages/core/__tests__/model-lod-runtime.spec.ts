@@ -14,8 +14,10 @@ import {
   TN_DISCRETE_LOD,
   baseGeometryOf,
   lodBias,
+  markStreamedGeometry,
   setLodBias,
   updateModelLods,
+  upgradeStreamedGeometry,
 } from "../src/model-lod.js";
 
 // PRD-377 §6 — the runtime side: the loader's reader builds index-only levels that share the base
@@ -335,5 +337,45 @@ describe("adaptive LOD bias on the CPU path", () => {
     const coarsest = (target as Mesh & { geometry: BufferGeometry }).geometry;
     expect(coarsest.index?.count).toBe(6);
     expect(coarsest).not.toBe(baseGeometryOf(target));
+  });
+});
+
+describe("streamed coarse geometry", () => {
+  it("draws the full model and its chain on every mesh over it, clones included, once it lands", async () => {
+    // PRD-860 Phase 3: the game builds from the coarse companion; the full file lands later.
+    const full = mesh();
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser(parserFor(full, definition()) as never);
+    await plugin.afterRoot({ scene: full });
+    plugin.attach(full, { hysteresis: 0.15, maxPixelError: 1 });
+
+    const coarse = new BufferGeometry();
+    coarse.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array([0, 0, 0, 2, 0, 0, 0, 0, 1]), 3),
+    );
+    coarse.setAttribute("uv", new BufferAttribute(new Float32Array(6), 2));
+    coarse.setIndex([0, 1, 2]);
+    markStreamedGeometry(coarse);
+    const ship = new Mesh(coarse, new MeshBasicMaterial());
+    const scene = new Scene();
+    scene.add(ship, ship.clone());
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1e6);
+    camera.position.set(0, 0, 3);
+    scene.updateMatrixWorld(true);
+    // Coarse and unchained until the full model lands: nothing selected, both meshes kept.
+    expect(updateModelLods(scene, camera, 2000)).toBe(0);
+
+    upgradeStreamedGeometry(coarse, full.geometry);
+    expect(coarse.getAttribute("position")).toBe(full.geometry.getAttribute("position"));
+    expect(coarse.getAttribute("uv")).toBeUndefined();
+    expect(coarse.index?.count).toBe(BASE_INDICES.length);
+    // Near: both draw the full base, six triangles each.
+    expect(updateModelLods(scene, camera, 2000)).toBe(12);
+    // Far: both walk the full chain to its coarsest level.
+    camera.position.set(0, 0, 1e5);
+    camera.updateMatrixWorld(true);
+    expect(updateModelLods(scene, camera, 2000)).toBe(4);
+    for (const child of scene.children) expect((child as Mesh).geometry.index?.count).toBe(6);
   });
 });

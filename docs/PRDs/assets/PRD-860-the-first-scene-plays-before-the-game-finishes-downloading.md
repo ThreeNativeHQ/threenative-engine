@@ -181,7 +181,7 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 
 - [x] AC-1 [local]: The Midway launch playtest at 40 Mbps records the baseline: bytes before first play, time to first play and total shipped bytes. proof: `TN_PLAYTEST_HOST_DISPLAY=1 DISPLAY=:0 npx threenative-playtest playtests/launch.playtest.json --browser-recipe webgpu --headed` against `vite preview` of Midway `00719cf`+`a52e839`, RTX 2080 (`TN_GPU_CLASS` nvidia/turing) — Evidence (2026-11-09): `TN_STARTUP_OFFSCREEN_BYTES.awaitedBytes` **139,518,197** (visible 42.2 MB, unattributed 21.9, off-screen 75.4, warn); first play (`TN_LOAD_STEP ready`) **38.97 s** in the playtest, 36.8 s in a Playwright probe of the same build at the same link (147.6 MB on the wire before it); **161.4 MB** shipped (manifest outputs plus shared images). The run completed every step; its one red is `maxPassTriangles.main` 1,360,253 > 1,300,000, which the baseline carries.
 - [x] AC-2 [local]: Cooked Midway reaches first play after 50 MB or less, and `TN_STARTUP_OFFSCREEN_BYTES` reports no warn. proof: the same playtest on Midway `f8591d4` — Evidence (2026-11-09): `awaitedBytes` **49,950,371**, `warn: false` (visible 42.2 MB, unattributed 3.2, off-screen 4.5); first play **17.8 s** in the playtest (19.5 s in the probe), from 38.97 s; zero `TN_ASSET_LATE` lines through the run, and the streamed fleet built at 33.0 s. 22.9 MB of the cut were three dead loads (`destroyer.samidare.glb`, `carrier.yorktown.glb`, `weapon.torpedo.glb`) that nothing drew; the rest moved behind `prefetch` after the reveal (Japanese fleet, Akagi, atoll, escorts, cockpit textures, speech, combat cues). Frame time is held open under Phase 1 "Open" below, not under this box.
-- [ ] AC-3 [local]: The flight playtest reaches the enemy fleet with zero `TN_ASSET_LATE` lines, and the engine test proves that a late request emits the line. proof: `<midway>/playtests/flight.playtest.json` at 40 Mbps and `pnpm exec vitest run packages/core/__tests__/assets*.spec.ts` — Evidence: engine half done (`assets-late.spec.ts`, 94 tests green). Launch playtest on `f8591d4`: zero `TN_ASSET_LATE` lines while the whole deferred set streamed in. Not ticked: `flight.playtest.json` repeats the launch climb and never reaches the enemy fleet, about 200 km out, so the box needs a scenario that flies there.
+- [x] AC-3 [local]: The flight playtest reaches the enemy fleet with zero `TN_ASSET_LATE` lines, and the engine test proves that a late request emits the line. proof: `<midway>/playtests/fleet.playtest.json` at 40 Mbps and `pnpm exec vitest run packages/core/__tests__/assets*.spec.ts` — Evidence (2026-11-09): engine half `assets-late.spec.ts` green (assets suites 259/259 with this PR's loader change). Flight half: `fleet.playtest.json` (Midway `c2ab782`; `flight.playtest.json` never left the launch climb) starts airborne, flies 6,622 fixed steps toward Kaga and closes `enemyFleetM` from 16,708 m to **673 m** (bound 2,000 m); **0** `TN_ASSET_LATE`, 0 console and network errors, 0 `TN_BRIDGE_WARNING`, first play 16.5 s, exit 0, RTX 2080 (`TN_GPU_CLASS` nvidia/turing, discrete), loopback-only network namespace at 40 Mbps / 20 ms, engine `9dbe79811`. The first run failed only on 11 `TN_BRIDGE_WARNING` lines (`ModelLod.triangles` re-read `geometry.index` 528 times a frame); fixed in `9dbe79811`, which caches a level's triangle count. ⚠️ The launch and flight scenarios' deck click at (183,542) misses the TAKE THE DECK button (x 90–298, y 577–630): the PRD's recorded deck-click misses are that, not hitches.
 
 #### Phase 2 — Textures stream by mip
 
@@ -202,7 +202,7 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 | Late-asset report | `ctx.assets` request after the reveal → `TN_ASSET_LATE` | New line, no old path | `packages/core/src/assets.ts:84`, `packages/core/__tests__/assets-late.spec.ts` |
 | Cooked Midway | `pnpm build` in the game → `public/assets.manifest.json` | 188 MB of uncompiled sources become a 228-entry manifest | 166.2 MB shipped, 165 MB `dist` |
 | Texture mip streaming | `ctx.assets` KTX2 load → owned-engine mip upload | Whole-file KTX2 load stays only for hosts without `Range` | `openKtx2Stream` (`packages/core/src/texture-streaming.ts`), unit-proven; not yet called by `ctx.assets` (no KTX2 output on the default engine, [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)) |
-| Mesh LOD streaming | `compileAssets` model pass → `ctx.assets` model load | Shared-buffer LOD chains stay for non-streamed models | not started |
+| Mesh LOD streaming | `compileAssets` model pass → `ctx.assets` model load | Shared-buffer LOD chains stay for non-streamed models | cook: `coarseDocument` (`packages/assets/src/lod/coarse.ts`), the model pass writes `<name>.coarse.<digest>.glb` under `streamedLods`; runtime: `ctx.assets.model` draws it first and `upgradeStreamedGeometry` (`packages/core/src/model-lod.ts`) gives every coarse geometry the full model and chain in place; `assets.streamMeshes: false` reports `TN_ASSETS_STREAM_MESHES_OFF` |
 
 Fill the `file:line` entry points when each phase lands.
 
@@ -306,7 +306,10 @@ Update the feature map row to cite this PRD, then run `pnpm unreal:status`.
 
 #### Phase 3: Meshes stream by LOD
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — the cook writes a coarse companion and the loader draws it first (unit-proven:
+`lod-generation.spec.ts` coarse companion tests, `model-lod-runtime.spec.ts` streamed upgrade,
+`model-lod-loader.spec.ts` streamed model). Open: Midway's measured bytes before first play (AC-7) and
+the visual judge and native frame (AC-8).
 **Estimate:** 2 to 3 days.
 **Files:** the model pass in `packages/assets/src/` (per-level vertex and index ranges, coarsest
 first); `packages/core/src/assets.ts` (LOD fetch by projected error, the same `autoLod` error
