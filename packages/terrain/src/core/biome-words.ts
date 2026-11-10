@@ -10,10 +10,43 @@ import { TERRAIN_KITS, type TerrainKit } from "./kits.js";
  * instead of silently losing a word.
  */
 export const BIOME_WORDS: Readonly<Record<TerrainKit, readonly string[]>> = {
-  alpine: ["alpine", "mountain", "mountains", "snowy", "peaks", "alps", "glacier", "glaciers", "snow"],
-  coastal: ["coastal", "beach", "coast", "sea", "ocean", "tropical", "shore", "lagoon", "fjord", "fjords"],
+  alpine: [
+    "alpine",
+    "mountain",
+    "mountains",
+    "snowy",
+    "peaks",
+    "alps",
+    "glacier",
+    "glaciers",
+    "snow",
+  ],
+  coastal: [
+    "coastal",
+    "beach",
+    "coast",
+    "sea",
+    "ocean",
+    "tropical",
+    "shore",
+    "lagoon",
+    "fjord",
+    "fjords",
+  ],
   desert: ["desert", "dune", "dunes", "sand", "canyon", "canyons", "arid", "badlands", "mesa"],
-  forest: ["forest", "pine", "pines", "woods", "woodland", "spruce", "fir", "trees", "jungle", "rainforest", "grove"],
+  forest: [
+    "forest",
+    "pine",
+    "pines",
+    "woods",
+    "woodland",
+    "spruce",
+    "fir",
+    "trees",
+    "jungle",
+    "rainforest",
+    "grove",
+  ],
   tundra: ["tundra", "arctic", "ice", "frozen", "permafrost", "glacial"],
 };
 

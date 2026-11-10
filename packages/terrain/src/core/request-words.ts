@@ -18,7 +18,10 @@ export const LANDFORM_WORD_ROWS: readonly (readonly [LandformKind, readonly stri
   ["temperateMountains", ["foothills", "valley", "valleys"]],
   ["rollingHills", ["hill", "hills", "rolling"]],
   ["desertMesa", ["butte", "buttes", "canyon", "canyons", "mesa", "mesas"]],
-  ["coastalCliffs", ["cliff", "cliffs", "coast", "coastal", "fjord", "fjords", "island", "islands"]],
+  [
+    "coastalCliffs",
+    ["cliff", "cliffs", "coast", "coastal", "fjord", "fjords", "island", "islands"],
+  ],
   ["tundra", ["arctic", "tundra"]],
 ];
 
@@ -30,7 +33,10 @@ export const LANDFORM_WORD_ROWS: readonly (readonly [LandformKind, readonly stri
 export const WATER_WORD_ROWS: readonly (readonly [IBiomeWaterBody, readonly string[]])[] = [
   [{ kind: "river", width: 5.32 }, ["creek", "creeks", "river", "rivers", "stream", "streams"]],
   [{ kind: "lake", radius: 105 }, ["lake", "lakes", "pond", "ponds"]],
-  [{ kind: "ocean", level: 1.5 }, ["fjord", "fjords", "island", "islands", "ocean", "oceans", "sea", "seas"]],
+  [
+    { kind: "ocean", level: 1.5 },
+    ["fjord", "fjords", "island", "islands", "ocean", "oceans", "sea", "seas"],
+  ],
 ];
 
 /**

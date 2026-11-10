@@ -157,5 +157,17 @@
     "scrub",
     "spruce"
   ],
-  "aliases": ["forest", "pine", "pines", "woods", "woodland", "spruce", "fir", "trees", "jungle", "rainforest", "grove"]
+  "aliases": [
+    "forest",
+    "pine",
+    "pines",
+    "woods",
+    "woodland",
+    "spruce",
+    "fir",
+    "trees",
+    "jungle",
+    "rainforest",
+    "grove"
+  ]
 }

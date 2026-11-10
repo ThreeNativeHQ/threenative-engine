@@ -5,28 +5,15 @@
     "name": "threenative-terrain",
     "version": "0.1.9"
   },
-  "recommended": [
-    "terrain_generate",
-    "terrain_patch"
-  ],
-  "tools": [
-    "terrain_biome_new",
-    "terrain_generate",
-    "terrain_patch"
-  ],
+  "recommended": ["terrain_generate", "terrain_patch"],
+  "tools": ["terrain_biome_new", "terrain_generate", "terrain_patch"],
   "inputSchemas": {
     "terrain_generate": {
       "type": "object",
       "properties": {
         "kit": {
           "type": "string",
-          "enum": [
-            "forest",
-            "coastal",
-            "alpine",
-            "desert",
-            "tundra"
-          ]
+          "enum": ["forest", "coastal", "alpine", "desert", "tundra"]
         },
         "biome": {
           "description": "A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with `kit`'s surface and assets, forest's when kit is absent.",
@@ -76,9 +63,7 @@
           "anyOf": [
             {
               "type": "string",
-              "enum": [
-                "procedural"
-              ]
+              "enum": ["procedural"]
             },
             {
               "type": "object",
@@ -96,9 +81,7 @@
                   "description": "Highest elevation in the file, metres."
                 }
               },
-              "required": [
-                "heightmap"
-              ],
+              "required": ["heightmap"],
               "additionalProperties": false
             },
             {
@@ -114,25 +97,18 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "lat",
-                    "lon"
-                  ],
+                  "required": ["lat", "lon"],
                   "additionalProperties": false
                 }
               },
-              "required": [
-                "location"
-              ],
+              "required": ["location"],
               "additionalProperties": false
             }
           ]
         },
         "backdrop": {
           "type": "string",
-          "enum": [
-            "none"
-          ],
+          "enum": ["none"],
           "description": "\"none\" cooks no far ring. Omitted, an alpine or temperateMountains world on a survey gets ring.json: its survey continued to ten times the world's size, with one real whole mountain (a seeded pick, pose and height) standing past the playable square."
         },
         "out": {
@@ -142,19 +118,13 @@
       },
       "anyOf": [
         {
-          "required": [
-            "request"
-          ]
+          "required": ["request"]
         },
         {
-          "required": [
-            "kit"
-          ]
+          "required": ["kit"]
         },
         {
-          "required": [
-            "biome"
-          ]
+          "required": ["biome"]
         }
       ],
       "additionalProperties": false
@@ -164,13 +134,7 @@
       "properties": {
         "from": {
           "type": "string",
-          "enum": [
-            "forest",
-            "coastal",
-            "alpine",
-            "desert",
-            "tundra"
-          ]
+          "enum": ["forest", "coastal", "alpine", "desert", "tundra"]
         },
         "name": {
           "type": "string",
@@ -186,9 +150,7 @@
           "anyOf": [
             {
               "type": "string",
-              "enum": [
-                "procedural"
-              ]
+              "enum": ["procedural"]
             },
             {
               "type": "object",
@@ -206,9 +168,7 @@
                   "description": "Highest elevation in the file, metres."
                 }
               },
-              "required": [
-                "heightmap"
-              ],
+              "required": ["heightmap"],
               "additionalProperties": false
             },
             {
@@ -224,16 +184,11 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "lat",
-                    "lon"
-                  ],
+                  "required": ["lat", "lon"],
                   "additionalProperties": false
                 }
               },
-              "required": [
-                "location"
-              ],
+              "required": ["location"],
               "additionalProperties": false
             }
           ]
@@ -243,10 +198,7 @@
           "description": "Relative directory under the project's assets.source that must not exist yet; the default is assets.source/biomes/<name>/world."
         }
       },
-      "required": [
-        "from",
-        "name"
-      ],
+      "required": ["from", "name"],
       "additionalProperties": false
     },
     "terrain_patch": {
@@ -262,10 +214,7 @@
           }
         }
       },
-      "required": [
-        "recipe",
-        "commands"
-      ],
+      "required": ["recipe", "commands"],
       "additionalProperties": false
     }
   },
