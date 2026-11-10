@@ -350,7 +350,9 @@ describe("registry publication", () => {
       await fixture.close();
       await rm(root, { force: true, recursive: true });
     }
-  }, 30_000);
+    // It packs and scaffolds like the PRD-826 pack test below, so it gets that test's budget: 9 s on
+    // an idle desktop, past 30 s on a loaded tn-local runner (PR #646 test-unit 3/4).
+  }, 120_000);
 
   it("packs create-threenative without maintainer notes, a duplicate manifest or a stale patch (PRD-826)", async () => {
     const packageDirectory = path.resolve("packages/create-threenative");
