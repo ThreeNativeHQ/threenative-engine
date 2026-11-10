@@ -121,6 +121,46 @@ describe("terrain MCP tool contract", () => {
   });
 });
 
+// The catalog tier: a bare starter is the shipped, judged world; a repeat is a copy, not a cook.
+describe("terrain_generate catalog and cook cache", () => {
+  it("serves a repeated request from the project's cook cache at its own path", async () => {
+    const project = await realpath(await makeTempDir("tn-terrain-cache-"));
+    try {
+      await writeFile(
+        join(project, "threenative.config.ts"),
+        'export default { assets: { source: "assets" } };',
+      );
+      await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+      await symlink(
+        new URL("../../assets/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "assets"),
+      );
+      const ask = async (args: Record<string, unknown>) => {
+        const started = performance.now();
+        const reply = await askServer(project, "terrain_generate", args);
+        const text = reply.result?.content?.[0]?.text as string;
+        expect(reply.result?.isError, text).toBe(false);
+        return { ...JSON.parse(text), wall: performance.now() - started };
+      };
+      const first = await ask({ kit: "forest", out: "assets/worlds/first" });
+      const second = await ask({ kit: "forest", out: "assets/worlds/second" });
+      expect([first.source, first.cache, first.seed]).toEqual(["catalog:forest", "miss", 73]);
+      expect([second.source, second.cache, second.seed]).toEqual(["catalog:forest", "hit", 73]);
+      // The copy names its own folder everywhere the cook named the first one.
+      expect(second.worldGlb).toBe("assets/worlds/second/world.glb");
+      expect(JSON.stringify(second)).not.toContain("worlds/first");
+      const glb = (name: string) => readFile(join(project, "assets", "worlds", name, "world.glb"));
+      expect(Buffer.compare(await glb("first"), await glb("second"))).toBe(0);
+      expect(second.wall).toBeLessThan(first.wall / 2);
+      // Any choice of its own is a fresh cook, reported as one, with the seed it asked for.
+      const reroll = await ask({ kit: "forest", seed: 74, out: "assets/worlds/reroll" });
+      expect([reroll.source, reroll.cache, reroll.seed]).toEqual(["cooked", "miss", 74]);
+    } finally {
+      await rm(project, { recursive: true, force: true });
+    }
+  }, 240_000);
+});
+
 describe("terrain_generate input", () => {
   it.each([
     ["forest", "pine forest woods"],

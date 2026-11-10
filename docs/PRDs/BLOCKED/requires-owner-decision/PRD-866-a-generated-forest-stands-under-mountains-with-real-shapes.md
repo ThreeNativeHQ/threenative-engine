@@ -1,6 +1,6 @@
 # PRD-866: A generated forest stands under mountains with real shapes
 
-**Status:** BLOCKED (owner decision) — phases 1-3 landed (7/7 boxes); AC-1 and AC-2 passed; AC-3 open (the far band cost 23 ms GPU; the one-march impostor cut it to about 3.4 ms overview and 1.3 ms vista, unpaired), needs a paired run, then the owner's call if it still falls
+**Status:** BLOCKED (owner decision) — phases 1-3 landed (7/7 boxes); AC-1 and AC-2 passed; AC-3 measured and failed: the paired run on one code state shows the far band at `near` costs 7.5-9 ms GPU and drops the overview from 30 to 20 FPS; the owner picks the threshold
 **Priority:** P1 — the owner named the mountains as one of the two defects that keep the forest from "good to go" (2026-11-09); AC-1 is that defect.
 **Complexity:** 6 (MEDIUM) — 6 to 10 files (2), a new placement module (2), state across bake and cook (2); risk override: none
 **Owner:** João
@@ -103,7 +103,7 @@ Auto by default: the cook adds the ring and a massif when the landform is `alpin
 
 ## Blocked on
 
-- AC-3, owner decision (requires-owner-decision): the wooded band past the square that AC-1 judges (`?farForest=near`, the default) costs about 23 ms GPU and drops the overview and vista from 20 to 15 FPS on the RTX 2080. Pick one: accept the cost and its threshold, set `?farForest=off` as the default (AC-3 holds, the hills past the square go bare again, which the owner flagged as a bug on 2026-11-09), or fund a lossless far-canopy renderer (a canopy-card or merged-cluster impostor) as its own PRD.
+- AC-3, owner decision (requires-owner-decision): the wooded band past the square that AC-1 judges (`?farForest=near`, the default) costs 7.5 ms (overview) and 9 ms (vista) GPU after the one-march impostor, and drops the overview from 30 to 20 FPS and the vista p95 from 50 to 67 ms on the RTX 2080 (paired run, 2026-11-10). Pick one: accept the cost and its threshold, set `?farForest=off` as the default (AC-3 holds, the hills past the square go bare again, which the owner flagged as a bug on 2026-11-09), or fund a lossless far-canopy renderer (a canopy-card or merged-cluster impostor) as its own PRD.
 
 ## Integration Ledger
 
@@ -134,6 +134,7 @@ Auto by default: the cook adds the ring and a massif when the landform is `alpin
 - 2026-11-09 (executor): the far forest's default is the band 700 m past the square (`?farForest=near`); `on` plants the whole ring, `off` none. A far spruce draws its coarsest cooked level until the impostor (vista props 28.6 M -> 16.3 M triangles).
 - 2026-11-10 (executor): the far forest's remaining cost is its impostors' main-pass fragments, not shadow work. The `gpuShadow` span was mislabelled: three@0.187.0 `WebGPUBackend.js:3268` (`copyFramebufferToTexture`) reuses the shared `_renderPassTimestampWrites`, so the main pass's time lands on the shadow pass's slot; the GPU total is right. Each impostor quad was its bounding sphere's square, about four times a spruce's silhouette; the quad now fits the baked box (`packages/core`, e92ff9c54, judge NEUTRAL). GPU ms at 1600x900 on the RTX 2080, four windows: overview off 37.6 -> 34.6, near 66.5 -> 57.7; vista off 46.0 -> 40.7, near 72.8 -> 64.0. The band still costs about 23 ms, so AC-3 stays open; `near` stays the default because AC-1's look asks for a wooded ring, and the threshold is the owner's call.
 - 2026-11-10 (executor): the far impostors march their depth atlas once per pixel, not three times: the heaviest blended frame marches and the other two reproject its hit (`packages/core/src/render/world-impostor-surface.ts`, merged in #635 as f7943d1cd, lock test `world-impostor-surface.spec.ts` "depth march"). GPU ms at 1600x900 on the RTX 2080, band `near`: overview 58 -> 38, vista 64 -> 42; visual judge PASS, NEUTRAL on both views, sky and rock byte-identical. Against the `off` arm measured before this change (overview 34.6, vista 40.7), the band now costs about 3.4 ms and 1.3 ms, down from 23 ms. Those two arms ran in different sessions, so AC-3 stays open until a paired `near`/`off` run on one code state reads the steady-state frame rate.
+- 2026-11-10 (executor): AC-3 paired run, one code state (1143816ce, core rebuilt from source, pinned forest bake, licensed assets), RTX 2080, 1600x900, headed WebGPU, rAF control 16.7 ms. 20 s settle, then 30 s sampled, two passes per arm, arms alternated. Overview: `off` GPU 31.1/31.3 ms, presented p50 33.4 ms (29.9 FPS), p95 50.1; `near` GPU 38.7/38.7, p50 50.0 (20 FPS), p95 50.1. Vista: `off` GPU 35.3/35.6, p50 49.9 (20 FPS), p95 50.1; `near` GPU 44.6/44.4, p50 50.0 (20 FPS), p95 66.7. The band costs 7.5 ms (overview) and 9 ms (vista) GPU, and the frame rate falls, so AC-3 stays unticked and the decision above stands. A first run on a stale core dist read 15 FPS for `near` and was discarded.
 
 ## Notes for the executor
 
