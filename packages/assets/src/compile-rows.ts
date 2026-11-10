@@ -472,7 +472,17 @@ export function skippedCompressionRows(
       bytes,
       files,
       kind,
-      ...(kind === "model" ? { decoders: layout.modelCompressionDecoders } : {}),
+      // The decoders this target lacks, not every one the model pass would use: a target that
+      // decodes meshopt but not KTX2 withheld only KTX2 (PRD-861).
+      ...(kind === "model"
+        ? {
+            decoders: layout.modelCompressionDecoders.filter((decoder) =>
+              decoder === "KTX2"
+                ? !layout.runtimeDecoderCapabilities.ktx2
+                : !layout.runtimeDecoderCapabilities.meshopt,
+            ),
+          }
+        : {}),
       reason,
     });
   }

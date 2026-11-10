@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { addInSlices, loadAll } from "../src/streaming.js";
+import { addInSlices, endSliceFrames, loadAll, noteSliceFrame } from "../src/streaming.js";
 
 /**
  * Two load-time wins measured in a real game, promoted here so no game writes them again.
@@ -308,6 +308,80 @@ describe("addInSlices", () => {
         { marker: false },
       ),
     ).rejects.toThrow("attach failed");
+  });
+});
+
+/** One real macrotask and more: long enough for any host yield the old slicer took to settle. */
+const settleHost = (): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, 20);
+  });
+
+describe("addInSlices once the world is on screen", () => {
+  // In Chrome a `scheduler.yield` continuation runs ahead of rendering, so chained 8 ms slices
+  // never let a frame present until the ~100 ms starvation guard fires. Midway streaming its
+  // cockpit after the reveal read a 102 ms host gap at p95; the baseline read 9 ms.
+  test("a slice waits for the loop's next frame, not for the host's next task", async () => {
+    const clock = fakeClock();
+    try {
+      noteSliceFrame(4, 60, true);
+      let added = 0;
+      const run = addInSlices(
+        [1, 2],
+        () => {
+          added += 1;
+          clock.advance(10);
+        },
+        { marker: false },
+      );
+      await settleHost();
+      expect(added).toBe(1);
+      noteSliceFrame(4, 60, true);
+      const report = await run;
+      expect(added).toBe(2);
+      expect(report.slices).toBe(2);
+    } finally {
+      endSliceFrames();
+      clock.restore();
+    }
+  });
+
+  test("a slice spends the frame's headroom, not a fixed 8 ms", async () => {
+    const clock = fakeClock();
+    // A 12.7 ms frame at 60 Hz leaves 16.67 - 12.7 - 2 = ~2 ms: two 1.5 ms objects, then present.
+    noteSliceFrame(12.7, 60, true);
+    const pump = setInterval(() => noteSliceFrame(12.7, 60, true), 1);
+    try {
+      const report = await addInSlices(
+        Array.from({ length: 6 }, (_unused, index) => index),
+        () => clock.advance(1.5),
+        { marker: false },
+      );
+      expect(report.sliceSize).toBe(2);
+      expect(report.slices).toBe(3);
+    } finally {
+      clearInterval(pump);
+      endSliceFrames();
+      clock.restore();
+    }
+  });
+
+  test("behind the curtain, slices keep the host yield and the 8 ms budget", async () => {
+    const clock = fakeClock();
+    try {
+      noteSliceFrame(4, 60, false);
+      const report = await addInSlices(
+        Array.from({ length: 6 }, (_unused, index) => index),
+        () => clock.advance(1.5),
+        { marker: false },
+      );
+      // No frame was pulsed: a run that waited for one would never settle.
+      expect(report.sliceSize).toBe(6);
+      expect(report.sliceBudgetMs).toBe(8);
+    } finally {
+      endSliceFrames();
+      clock.restore();
+    }
   });
 });
 

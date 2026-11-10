@@ -3,6 +3,7 @@ import { type BufferGeometry, type Layers, type Material, type Mesh, Object3D } 
 import { isEngineRenderHook } from "./engine-render-hook.js";
 import type { Registry } from "./entities.js";
 import { mergeByMaterial } from "./merge-parts.js";
+import { isStreamedGeometry } from "./model-lod.js";
 import { displacesVertices, hasMorphAttributes } from "./projection-plan.js";
 import { unbilled } from "./startup-offscreen-bytes.js";
 
@@ -350,9 +351,17 @@ function bakeable(geometry: BufferGeometry): boolean {
   return true;
 }
 
-/** Whether merging this mesh leaves the frame looking the same. */
+/**
+ * Whether merging this mesh leaves the frame looking the same. A streamed coarse model stays out:
+ * its full file replaces the geometry in place, and a merged copy would keep the coarse vertices.
+ */
 function mergeable(mesh: Mesh): boolean {
-  return plainDraw(mesh) && bakeable(mesh.geometry) && mesh.matrixWorld.determinant() > 0;
+  return (
+    plainDraw(mesh) &&
+    bakeable(mesh.geometry) &&
+    !isStreamedGeometry(mesh.geometry) &&
+    mesh.matrixWorld.determinant() > 0
+  );
 }
 
 /** Meshes with equal keys can share a merged mesh without changing how any of them draws. */

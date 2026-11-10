@@ -721,9 +721,11 @@ export function embeddedTexturesFor(
   configured: IModelTexturesOptions | "none" | undefined,
   ktx2: boolean,
   astc = false,
+  webp = false,
 ): { readonly textures?: IModelTexturesOptions | "none" } {
   if (astc && configured !== "none") return { textures: { ...configured, astc: true } };
-  if (ktx2) return {};
+  // A target whose runtimes all decode WebP keeps an authored WebP a KTX2 cannot undercut (PRD-867).
+  if (ktx2) return webp && configured !== "none" ? { textures: { ...configured, webp: true } } : {};
   if (configured !== undefined && configured !== "none" && configured.maxSize !== undefined) {
     return {
       textures: {

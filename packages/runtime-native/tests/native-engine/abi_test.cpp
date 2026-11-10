@@ -2043,6 +2043,37 @@ void array_offset() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-867: three's CompressedTexture over the C ABI, as the browser facade builds it: (levelCount, width,
+// height, format), then one `mipmaps.N.data` per level, coarse first. Out-of-order, short and ASTC are refused.
+void compressed_texture_levels() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const tn_value_t astc[4] = {num(1), num(4), num(4), num(37808)};  // RGBA_ASTC_4x4_Format
+    tn_handle_t refused{};
+    CHECK(tn_construct(ctx, "CompressedTexture", astc, 4, &refused, &d.value) != TN_OK);
+    const tn_value_t args[4] = {num(2), num(8), num(8), num(36492)};
+    tn_handle_t texture{};
+    CHECK(tn_construct(ctx, "CompressedTexture", args, 4, &texture, &d.value) == TN_OK);
+    auto* engine = engineObject<tn::engine::Texture>(texture);
+    CHECK(engine && engine->mipmaps.size() == 2 && !engine->compressed() && !engine->flipY);
+    tn_value_t format{};
+    CHECK(tn_get(texture, "format", &format, &d.value) == TN_OK && format.number == 36492);  // three's block format
+    uint8_t fine[64] = {1}, coarse[16] = {2};
+    const tn_value_t fineValue = bytes("Uint8Array", fine, 64), coarseValue = bytes("Uint8Array", coarse, 16);
+    CHECK(tn_set(texture, "mipmaps.0.data", &fineValue, &d.value) != TN_OK);  // level 1 is not resident yet
+    const tn_value_t shortValue = bytes("Uint8Array", coarse, 8);
+    CHECK(tn_set(texture, "mipmaps.1.data", &shortValue, &d.value) != TN_OK);
+    CHECK(tn_set(texture, "mipmaps.1.data", &coarseValue, &d.value) == TN_OK);
+    CHECK(engine->compressed() && engine->residentLevel() == 1);
+    const uint32_t version = engine->version();
+    CHECK(tn_set(texture, "mipmaps.0.data", &fineValue, &d.value) == TN_OK);
+    CHECK(engine->residentLevel() == 0 && engine->version() != version && engine->mipmaps[0].data[0] == 1);
+    CHECK(engine->imageSource->writtenLevels == 3u);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // A DataTexture keeps a typed array's bytes when they are already its stored layout, as three
 // uploads them: a Float32Array's bits (a signalling NaN included), a Uint16Array's binary16 bits, a
 // Uint8Array's bytes. Any other array still converts value by value, and half floats still check.
@@ -3811,7 +3842,7 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},

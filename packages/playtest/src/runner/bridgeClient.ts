@@ -4,6 +4,7 @@ import {
   PLAYTEST_ADVANCE_TICK_BUDGET_MS,
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_STARTUP_COMPILE_BUDGET_MS,
+  PLAYTEST_STARTUP_READY_TIMEOUT_MS,
   PLAYTEST_PROTOCOL_VERSION,
   assertJsonSafe,
   jsonByteLength,
@@ -186,7 +187,11 @@ export async function connectPlaytestBridgeTransport(
   // same reason `waitForBridge` does. Left on the plain operation budget it equalled the
   // first-use compile bound exactly, and `tower-defense` timed out on `ready` at `frames: 0` —
   // a software-GPU shader compile that ran out of time inside a request and a reply.
-  const description = await transport.call<IPlaytestBridgeDescription>("describe", undefined, timeoutMs);
+  // It also waits on the start scene's `load()`, which the scenario's own throttled link sizes
+  // (Midway: 139.5 MB, 30 s at 40 Mbps), so it gets the whole startup window. `waitForBridge` keeps
+  // the short budget: a page with no bridge still fails fast.
+  const handshakeMs = Math.max(timeoutMs, PLAYTEST_STARTUP_READY_TIMEOUT_MS);
+  const description = await transport.call<IPlaytestBridgeDescription>("describe", undefined, handshakeMs);
   const unknown = unknownPlaytestCapabilities(description.capabilities);
   if (unknown.length > 0) {
     throw new PlaytestBridgeError(playtestDiagnostic(
@@ -203,7 +208,7 @@ export async function connectPlaytestBridgeTransport(
       "Install matching @threenative/playtest and adapter package versions.",
     ));
   }
-  const ready = await transport.call<IPlaytestBridgeReady>("ready", undefined, timeoutMs);
+  const ready = await transport.call<IPlaytestBridgeReady>("ready", undefined, handshakeMs);
   if (!ready.ready) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_BRIDGE_NOT_READY",

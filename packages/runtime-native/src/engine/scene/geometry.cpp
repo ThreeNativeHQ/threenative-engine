@@ -6,6 +6,7 @@
 #include "engine/scene/geometry.h"
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <charconv>
 #include <cmath>
@@ -18,7 +19,7 @@ namespace tn::engine {
 namespace {
 
 uint64_t nextAttributeId() {
-    static uint64_t id = 0;
+    static std::atomic<uint64_t> id{0};  // the web host's glTF loader thread allocates too (PRD-860)
     return id++;
 }
 
@@ -360,7 +361,7 @@ std::vector<double> BufferAttribute::toNumbers() const {
 // -------------------------------------------------------------------- BufferGeometry
 
 uint64_t BufferGeometry::nextId() {
-    static uint64_t id = 0;
+    static std::atomic<uint64_t> id{0};  // the web host's glTF loader thread allocates too (PRD-860)
     return id++;
 }
 

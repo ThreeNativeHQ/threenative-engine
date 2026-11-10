@@ -1,3 +1,4 @@
+import { isStreamedGeometry } from "@threenative/core";
 import type { Mesh } from "three";
 import { interactionGroups } from "./collision.js";
 import {
@@ -234,6 +235,12 @@ export class CollisionShape3D {
 
   static fromMesh(mesh: Mesh, kind?: CollisionShapeKind): CollisionShape3D {
     const geometry = mesh.geometry;
+    // PRD-860: a streamed model resolves with its coarse companion, and a copied vertex set stays
+    // coarse after the full file lands. Say so by name; the collider still builds.
+    if ((kind === "trimesh" || kind === "convexHull") && isStreamedGeometry(geometry))
+      console.warn(
+        `TN_COLLIDER_COARSE: CollisionShape3D.fromMesh(${JSON.stringify(mesh.name)}, "${kind}") copies the streamed coarse model's vertices; load it with ctx.assets.model(path, { whole: true }) to collide with the full one.`,
+      );
     const inferred =
       kind ??
       (geometry.type.toLowerCase().includes("sphere")

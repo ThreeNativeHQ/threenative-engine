@@ -328,7 +328,6 @@ export const RendererUtils = defineRendererUtils(Color);
 export const AssignNode = unsupportedExport("AssignNode");
 export const BundleGroup = unsupportedExport("BundleGroup");
 export const EventNode = unsupportedExport("EventNode");
-export const IndirectStorageBufferAttribute = unsupportedExport("IndirectStorageBufferAttribute");
 
 WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
   async (scene, x, y, z, size, face, renderer) => {

@@ -1,3 +1,9 @@
+import {
+  type EngineValue,
+  type IBrowserRuntime,
+  type IEngineRef,
+  engineRef,
+} from "./browser-backend.js";
 /**
  * three's texture sources on the browser back end: the typed array a `DataTexture` was built
  * from, a 2D canvas, and an image (`ImageBitmap`, `<img>`, `ImageData`). The engine holds a copy of
@@ -5,12 +11,7 @@
  * before an upload. The V8 player's equivalent is `runtime-native/src/engine/player/core-textures.mjs`;
  * the browser decodes images itself, so no bitmap needs the engine decoder here.
  */
-import {
-  type EngineValue,
-  type IBrowserRuntime,
-  type IEngineRef,
-  engineRef,
-} from "./browser-backend.js";
+import { defineCompressedTexture } from "./compressed-texture.js";
 
 type EngineClass = new (...args: unknown[]) => object;
 
@@ -84,6 +85,10 @@ export function defineTextureSources(
   const BaseLayers = classes.DataArrayTexture as EngineClass | undefined;
   const BaseData = classes.DataTexture as EngineClass;
   const BaseCanvas = classes.CanvasTexture as EngineClass | undefined;
+  const CompressedTexture = defineCompressedTexture(
+    classes.CompressedTexture as EngineClass | undefined,
+    runtime,
+  );
   if (BaseCanvas === undefined) throw new TypeError("TN_BROWSER_UNBOUND: CanvasTexture");
   const sources = new WeakMap<object, unknown>();
   const prototype = BaseData.prototype as object;
@@ -315,6 +320,7 @@ export function defineTextureSources(
 
   return {
     CanvasTexture,
+    ...(CompressedTexture === undefined ? {} : { CompressedTexture }),
     DataTexture,
     ...(BaseVolume === undefined ? {} : { Data3DTexture }),
     ...(BaseLayers === undefined ? {} : { DataArrayTexture }),

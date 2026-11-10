@@ -217,6 +217,7 @@
         "@threenative/core#isNative": "export function isNative(): boolean { … }",
         "@threenative/core#isPs4": "export function isPs4(): boolean { … }",
         "@threenative/core#isStatic": "export function isStatic(root: Object3D): boolean { … }",
+        "@threenative/core#isStreamedGeometry": "export function isStreamedGeometry(geometry: BufferGeometry): boolean { … }",
         "@threenative/core#isTouchscreenAvailable": "export function isTouchscreenAvailable(): boolean { … }",
         "@threenative/core#isWeb": "export function isWeb(): boolean { … }",
         "@threenative/core#lampPenumbraTangent": "export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }",

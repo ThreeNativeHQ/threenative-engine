@@ -88,6 +88,11 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(std::make_shared<PipelineCache>(device)), layouts_(std::make_shared<PipelineLayoutCache>(device)), retired_(TextureId::watch()) {
     features_ = checkedRenderFeatures(features);
     geometry_->gpu.shareSubmissions(gpu_);
+    // The block format the glTF loader transcodes KTX2 to (PRD-867): BC7 where the device samples it, else
+    // ETC2, else none, and the loader keeps RGBA8 by name. ASTC waits for its transcoder tables.
+    compressedTextureTarget() = wgpuDeviceHasFeature(device, WGPUFeatureName_TextureCompressionBC) ? kTextureBC7Format
+                              : wgpuDeviceHasFeature(device, WGPUFeatureName_TextureCompressionETC2) ? kTextureETC2RGBAFormat
+                                                                                                      : uint16_t{0};
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
     WGPUTextureDescriptor lutDesc = {};
     lutDesc.dimension = WGPUTextureDimension_2D;

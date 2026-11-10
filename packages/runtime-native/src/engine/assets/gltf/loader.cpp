@@ -105,8 +105,8 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_volume", "KHR_texture_basisu", "KHR_texture_transform", "KHR_mesh_quantization",
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
-// What stays refused is what needs a decoder this loader does not have (draco, basisu, avif). Meshopt
-// is decoded (below) whenever the provisioned meshoptimizer is compiled in. A material extension the
+// What stays refused is what needs a decoder this loader does not have (draco, avif). Meshopt and
+// KHR_texture_basisu are decoded whenever the provisioned meshoptimizer and Basis Universal are compiled in. A material extension the
 // standard program cannot draw yet still loads: its factors land on the Material and the renderer
 // refuses that mesh by name (TN_NATIVE_MATERIAL_UNSUPPORTED), not the model.
 const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit",
@@ -176,6 +176,7 @@ class Builder {
             used_.insert(name);
             if (name == "EXT_texture_webp" && decodesWebP()) continue;
             if (isMeshoptExtension(name) && decodesMeshopt()) continue;
+            if (name == "KHR_texture_basisu" && decodesKtx2()) continue;
             if (kThreeExtensions.count(name) && !kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
                 return false;
@@ -185,6 +186,7 @@ class Builder {
             const std::string name = data_.extensions_required[i];
             if (name == "EXT_texture_webp" && decodesWebP()) continue;
             if (isMeshoptExtension(name) && decodesMeshopt()) continue;
+            if (name == "KHR_texture_basisu" && decodesKtx2()) continue;
             if (!kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
                 return false;
@@ -968,10 +970,7 @@ class Builder {
         }
         std::shared_ptr<Texture>& texture = textures_[index];
         if (!texture) {
-            // GLTFTextureWebPExtension: a texture with EXT_texture_webp draws its WebP source when
-            // WebP decodes (checkExtensions refused the file otherwise); `source` is the fallback.
-            const Value* webp = member(member(def, "extensions"), "EXT_texture_webp");
-            const int source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
+            const int source = textureSource(def);
             const std::string key = sharedImageKey(source);
             std::shared_ptr<TextureSource> decoded = key.empty() ? nullptr : decodedUriImage(key);
             auto made = decoded ? std::make_shared<Texture>(decoded) : std::make_shared<Texture>();
@@ -981,7 +980,7 @@ class Builder {
             applySampler(*made, index);
             if (!decoded) {
                 decodeImage(*made);
-                if (!key.empty() && !made->data.empty()) decodedUriImage(key, made->imageSource);
+                if (!key.empty() && (!made->data.empty() || made->compressed())) decodedUriImage(key, made->imageSource);
             }
             texture = made;
         }
@@ -1037,6 +1036,18 @@ class Builder {
     // The texture's image bytes (a GLB view or a base64 data URI) become RGBA8. A format this loader
     // does not decode, or an image in an external file the host cannot read, stays undecoded and the player refuses the
     // model by name; a PNG or JPEG that will not decode is a damaged file and fails the load.
+    /**
+     * The image a texture draws, in GLTFLoader's order: GLTFTextureBasisUExtension's KTX2, then
+     * GLTFTextureWebPExtension's WebP, each when this build decodes it (checkExtensions refused the
+     * file otherwise), then `source`, the fallback.
+     */
+    static int textureSource(const Value* def) {
+        const Value* extensions = member(def, "extensions");
+        const Value* basisu = member(extensions, "KHR_texture_basisu");
+        const Value* webp = member(extensions, "EXT_texture_webp");
+        return static_cast<int>(number(member(basisu ? basisu : webp ? webp : def, "source"), -1));
+    }
+
     /** The decode-once key of an image read through readUri; empty for embedded or host-decoded images. */
     std::string sharedImageKey(int source) {
         if (source < 0 || static_cast<std::size_t>(source) >= data_.images_count || options_.externalImage ||
@@ -1070,6 +1081,8 @@ class Builder {
             texture.width = found->second.width;
             texture.height = found->second.height;
             texture.data = std::move(found->second.data);
+            texture.mipmaps = std::move(found->second.mipmaps);
+            texture.imageSource->mipmapFormat = found->second.mipmapFormat;
             predecoded_.erase(found);  // a second texture over this image decodes it again, as before
             return;
         }
@@ -1104,9 +1117,11 @@ class Builder {
             size = file.size();
         }
         if (bytes && imageFormat(bytes, size) != ImageFormat::Unknown &&
-            !gltf::decodeImage(bytes, size, texture.width, texture.height, texture.data)) {
+            !gltf::decodeImage(bytes, size, *texture.imageSource)) {
             texture.width = texture.height = 0;
             refuse("TN_NATIVE_GLTF_IMAGE_INVALID image " + std::to_string(texture.source));
+        } else if (bytes && imageFormat(bytes, size) == ImageFormat::Ktx2) {
+            gltf::reportKtx2(*texture.imageSource);
         }
         std::free(freeAfter);
     }
@@ -1131,9 +1146,7 @@ class Builder {
         std::vector<bool> queued(data_.images_count, false);
         const Value* textures = member(&json_, "textures");
         for (std::size_t index = 0; index < data_.textures_count; ++index) {
-            const Value* def = item(textures, index);
-            const Value* webp = member(member(def, "extensions"), "EXT_texture_webp");
-            const int source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
+            const int source = textureSource(item(textures, index));
             if (source < 0 || static_cast<std::size_t>(source) >= data_.images_count || queued[source]) continue;
             queued[source] = true;
             const cgltf_image& image = data_.images[source];
@@ -1154,10 +1167,14 @@ class Builder {
         if (jobs.size() < 2) return;  // one image gains nothing from the pool
         JobPool::shared().forEach(static_cast<uint32_t>(jobs.size()), [&](uint32_t i) {
             Job& job = jobs[i];
-            job.decoded = gltf::decodeImage(job.bytes.data(), job.bytes.size(), job.image.width, job.image.height, job.image.data);
+            job.decoded = gltf::decodeImage(job.bytes.data(), job.bytes.size(), job.image);
         });
-        for (Job& job : jobs)
-            if (job.decoded) predecoded_.emplace(job.source, std::move(job.image));
+        for (Job& job : jobs) {
+            if (!job.decoded) continue;
+            // Here, not on the worker: see reportKtx2.
+            if (imageFormat(job.bytes.data(), job.bytes.size()) == ImageFormat::Ktx2) gltf::reportKtx2(job.image);
+            predecoded_.emplace(job.source, std::move(job.image));
+        }
     }
 
     // SkinnedMesh.normalizeSkinWeights: each vertex's weights over their sum; all zero becomes (1,0,0,0).

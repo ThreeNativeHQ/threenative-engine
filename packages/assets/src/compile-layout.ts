@@ -105,6 +105,7 @@ export function resolveLayout(cwd: string, options: IAssetCompileOptions): IComp
             configuredModels.textures,
             runtimeDecoderCapabilities.ktx2,
             mobileAstc,
+            options.platform === "web",
           ),
         };
   const textures =

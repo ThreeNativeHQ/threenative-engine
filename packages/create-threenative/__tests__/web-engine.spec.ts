@@ -467,10 +467,12 @@ describe("createWebEnginePlugin", () => {
 });
 
 describe("the web engine's asset decoders", () => {
-  it("cooks without KTX2 or Meshopt unless the game pins the legacy engine", () => {
-    expect(webRuntimeDecoders({})).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "threejs" })).toEqual({ ktx2: true, meshopt: true });
+  it("cooks meshopt and KTX2 on both engines", () => {
+    // PRD-867: the owned engine uploads BC7 or ETC2 blocks, and its KTX2 cook is the smaller one.
+    const both = { ktx2: true, meshopt: true };
+    expect(webRuntimeDecoders({})).toEqual(both);
+    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual(both);
+    expect(webRuntimeDecoders({ engine: "threejs" })).toEqual(both);
   });
 
   it("is what every template's dev-server asset watch cooks with, as its build does", async () => {

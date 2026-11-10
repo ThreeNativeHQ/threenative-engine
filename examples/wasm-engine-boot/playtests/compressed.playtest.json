@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-compressed",
+  "target": "web",
+  "subject": "wasm-compressed",
+  "viewport": {
+    "width": 320,
+    "height": 180
+  },
+  "warmupFrames": 1,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "sampled",
+      "waitTicks": 60
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-compressed",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here."
+      },
+      {
+        "entity": "wasm-compressed",
+        "component": "probe",
+        "path": "done",
+        "equals": true
+      },
+      {
+        "entity": "wasm-compressed",
+        "component": "probe",
+        "path": "software",
+        "equals": false,
+        "allowTrivial": "The adapter is known before any step runs."
+      },
+      {
+        "entity": "wasm-compressed",
+        "component": "probe",
+        "path": "bptcSupported",
+        "equals": true
+      },
+      {
+        "entity": "wasm-compressed",
+        "component": "probe",
+        "path": "loadedFormat",
+        "equals": 36492
+      },
+      {
+        "entity": "wasm-compressed",
+        "component": "probe",
+        "path": "loaded",
+        "equals": "251,0,0,255"
+      },
+      {
+        "entity": "wasm-compressed",
+        "component": "probe",
+        "path": "coarse",
+        "equals": "0,0,0,255"
+      },
+      {
+        "entity": "wasm-compressed",
+        "component": "probe",
+        "path": "streamed",
+        "equals": "253,0,0,255"
+      }
+    ]
+  }
+}

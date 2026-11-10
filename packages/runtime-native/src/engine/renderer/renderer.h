@@ -1131,6 +1131,9 @@ private:
         WGPUTextureView view = nullptr;
         WGPUSampler sampler = nullptr;
         uint32_t version = 0;
+        // A compressed texture: the levels `writeMipLevel` had written at its last upload, and the finest
+        // resident level, which is the base of `view`.
+        uint32_t uploadedLevels = 0, viewBase = 0;
         Key key;
         void release();
     };
@@ -1138,6 +1141,8 @@ private:
     const MaterialTexture* materialTexture(const Texture& texture);
     /** The key `texture` would be created with, from the descriptor its kind needs. */
     static MaterialTexture::Key materialTextureKey(const Texture& texture);
+    /** Writes the resident levels of a compressed texture whose bit is set in `levels`, one write per level. */
+    void uploadCompressedLevels(WGPUTexture destination, const Texture& texture, uint32_t levels);
     /** Creates a material texture, counting the bytes it allocates as GpuResources counts its own. */
     WGPUTexture createMaterialTexture(const MaterialTexture::Key& key);
     /** Writes `texture`'s pixels into `destination` and regenerates the mip chain it was created with. */

@@ -15,7 +15,12 @@ import { GEOMETRY_ASSET_KEY } from "../src/geometry-capture.js";
 import { playtest } from "../src/playtest.js";
 import { Scene } from "../src/scene.js";
 import type { ICtx } from "../src/scene.js";
-import { measureStartupOffscreenBytes } from "../src/startup-offscreen-bytes.js";
+import {
+  ASSET_UNUSED_AFTER_MS,
+  measureStartupOffscreenBytes,
+  measureUnusedModels,
+  reportUnusedModelsLater,
+} from "../src/startup-offscreen-bytes.js";
 
 /** A camera at the origin looking down -z, the way a spawn camera frames the world ahead. */
 function spawnCamera(): PerspectiveCamera {
@@ -404,5 +409,67 @@ describe("the reveal", () => {
     expect(published).toMatchObject({ offscreenBytes: 0, visibleBytes: 501_000, warn: false });
     expect(markerCalls(warn)).toEqual([]);
     expect(markerCalls(log)).toEqual([]);
+  });
+});
+
+describe("measureUnusedModels", () => {
+  it("should name every awaited model that never entered the scene, and only those", () => {
+    // Midway awaited three models at launch that nothing ever drew (22.9 MB). A model placed but
+    // hidden is in use; a texture has no object to look for; a model never placed is dead weight.
+    const scene = new Group();
+    const hidden = placed("hull.glb", -10);
+    hidden.visible = false;
+    scene.add(hidden);
+    const resolved = resolvedModels({
+      "dead.glb": 10_400_000,
+      "hull.glb": 2_000,
+      "spare.glb": 900,
+    });
+    resolved.set("dial.png", {
+      bytes: 700_000,
+      kind: "texture",
+      url: "/dial.png",
+      via: "manifest",
+    });
+
+    const report = measureUnusedModels(resolved, scene, 60_000);
+
+    expect(report?.files).toEqual([
+      { bytes: 10_400_000, path: "dead.glb" },
+      { bytes: 900, path: "spare.glb" },
+    ]);
+    expect(report?.bytes).toBe(10_400_900);
+    expect(report?.sinceRevealMs).toBe(60_000);
+    expect(report?.fix).toContain("prefetch");
+  });
+
+  it("should stay silent when every awaited model is in the scene", () => {
+    const scene = new Group();
+    scene.add(placed("hull.glb", -10));
+    expect(
+      measureUnusedModels(resolvedModels({ "hull.glb": 2_000 }), scene, 60_000),
+    ).toBeUndefined();
+  });
+
+  it("should warn once a minute after the reveal, and never after the game is gone", () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const awaited = resolvedModels({ "dead.glb": 1_000 });
+      reportUnusedModelsLater(awaited, new Group(), () => false);
+      const cancel = reportUnusedModelsLater(awaited, new Group(), () => false);
+      cancel();
+      reportUnusedModelsLater(awaited, new Group(), () => true);
+      vi.advanceTimersByTime(ASSET_UNUSED_AFTER_MS - 1);
+      expect(warn).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(
+        /^TN_ASSET_UNUSED:\{"bytes":1000,"files":\[\{"bytes":1000,"path":"dead.glb"\}\]/,
+      );
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

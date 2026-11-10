@@ -31218,6 +31218,18 @@
           }
         }
       ]
+    },
+    {
+      "name": "CompressedTexture",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "Texture",
+      "constructor": [],
+      "fields": [],
+      "methods": []
     }
   ]
 }

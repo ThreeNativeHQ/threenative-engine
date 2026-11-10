@@ -36,6 +36,7 @@ import {
   resolveImageQualityFloor,
 } from "../image-quality.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
+import { coarseDocument } from "../lod/coarse.js";
 import { deformingMesh, skinnedMeshes } from "../lod/eligibility.js";
 import { TNDiscreteLod } from "../lod/extension.js";
 import {
@@ -272,6 +273,19 @@ const MODEL_REORDER_VERSION = 1;
  * stay float32 in the source metre space.
  */
 const MODEL_QUANTIZE_VERSION = 1;
+/**
+ * Bumped when which authored containers the texture cook may keep changes. 1 = a WebP is kept on a
+ * target whose runtimes all decode it, unless a KTX2 undercuts it (PRD-867).
+ */
+const MODEL_WEBP_RETAIN_VERSION = 1;
+/** The retention rule as a cache key, so a warm entry cooked under the old rule is not served. */
+function keepSmallerSource(textures: IModelTexturesOptions | undefined): string {
+  return textures?.webp === true
+    ? `universal-containers+webp-v${String(MODEL_WEBP_RETAIN_VERSION)}`
+    : "universal-containers";
+}
+/** Moves when the coarse companion (PRD-860) changes, so a warm entry from before it re-cooks. */
+export const MODEL_COARSE_COMPANION_VERSION = 1;
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -865,6 +879,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Same reason again: which positions keep their source metres is part of the output, and a
       // warm entry from before they did would hand a game geometry its sidecars cannot address.
       quantizeVersion: MODEL_QUANTIZE_VERSION,
+      // A warm entry from before the coarse companion carries no `streamedLods`, so a game served
+      // from it never streams: the output gained a file, so the key moves.
+      coarseCompanion: MODEL_COARSE_COMPANION_VERSION,
       // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
       virtual:
         options.virtual === "none"
@@ -893,7 +910,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               // Retention is now conditioned on the container, so it is spelled out rather than
               // named by a boolean: a warm cache keyed on the old rule would keep shipping the
               // WebP-requiring models this replaced.
-              keepSmallerSource: "universal-containers",
+              keepSmallerSource: keepSmallerSource(options.textures),
               overrides: options.textures?.overrides ?? [],
               quality: options.textures?.quality ?? null,
             },
@@ -1111,6 +1128,25 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Fails closed on a malformed chain in the bytes that will ship, not in the in-memory graph
       // that produced them.
       if (lod !== undefined && lod.generated > 0) validateDiscreteLod(verified);
+      // The coarse companion a streaming loader draws first (PRD-860 Phase 3). Written through the
+      // same writer, so its images are the same shared files; their declarations are the full
+      // model's, already above.
+      const coarse =
+        lod !== undefined && lod.generated > 0 ? await coarseDocument(document) : undefined;
+      if (coarse !== undefined) {
+        const written =
+          store === undefined || shared === undefined || shared.keys.length === 0
+            ? await writeAndVerify(coarse, logicalPath, options.vertexLayout)
+            : await writeAndVerifyShared(coarse, logicalPath, store, shared, options.vertexLayout);
+        const stats = reachableStats(written.verified);
+        auxiliaryOutputs.push({
+          buffer: written.buffer,
+          extension: ".glb",
+          manifestField: "streamedLods",
+          metadata: { level: "coarsest", triangles: stats.triangles, vertices: stats.vertices },
+          role: "coarse",
+        });
+      }
       const entry: IModelPassOutputEntry = {
         ...(compact === undefined ? {} : { compact }),
         ...(embeddedTextures === undefined ? {} : { embeddedTextures }),
@@ -1188,7 +1224,7 @@ function sharedSettings(
             jpeg: textureOptions.jpeg ?? null,
             jpegLadder: "colour-opaque-q75-90-v1",
             floor: resolveImageQualityFloor(textureOptions.floor),
-            keepSmallerSource: "universal-containers",
+            keepSmallerSource: keepSmallerSource(textureOptions),
             maxSize: resolveTextureMaxSize(textureOptions.maxSize, listTextureSlots(texture)),
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,

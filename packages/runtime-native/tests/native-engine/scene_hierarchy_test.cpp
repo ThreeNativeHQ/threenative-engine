@@ -27,6 +27,8 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -1489,8 +1491,33 @@ void batch_hidden() {
 
 }  // namespace
 
+// PRD-860: the web host builds glTF models on a loader thread while the main thread builds its own
+// objects, so the id counters three's ids come from must hand out each id once across threads.
+void concurrent_ids() {
+    constexpr int kThreads = 4, kEach = 20000;
+    std::vector<std::vector<uint64_t>> objects(kThreads), geometries(kThreads), materials(kThreads);
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kThreads; ++t)
+        threads.emplace_back([&, t] {
+            for (int i = 0; i < kEach; ++i) {
+                auto geometry = std::make_shared<BufferGeometry>();
+                auto material = std::make_shared<Material>(MaterialType::Basic);
+                Mesh mesh(geometry, material);
+                objects[t].push_back(mesh.id());
+                geometries[t].push_back(geometry->id);
+                materials[t].push_back(material->id);
+            }
+        });
+    for (auto& thread : threads) thread.join();
+    for (const auto* ids : {&objects, &geometries, &materials}) {
+        std::unordered_set<uint64_t> seen;
+        for (const auto& list : *ids) seen.insert(list.begin(), list.end());
+        CHECK(seen.size() == std::size_t(kThreads) * kEach);
+    }
+}
+
 TN_TEST_MAIN({"batch_hidden", batch_hidden}, {"debug_scene_counts", debug_scene_counts}, {"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
              {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh},
              {"transform_layout", transform_layout}, {"transform_lease", transform_lease},
              {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter},
-             {"unlinked_destruction", unlinked_destruction})
+             {"unlinked_destruction", unlinked_destruction}, {"concurrent_ids", concurrent_ids})
