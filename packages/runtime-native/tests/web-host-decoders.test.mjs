@@ -79,12 +79,14 @@ hostTest.each(["meshopt-compressed.glb", "ktx2-textured.glb"])(
           module.HEAPU8.set(glb, bytes);
           const out = module._malloc(4 * 8);
           const count = module._malloc(4);
-          const status = module._tnw_web_load_gltf(context, bytes, glb.length, out, 8, count);
+          const scenes = module._malloc(4);
+          const status = module._tnw_web_load_gltf(context, bytes, glb.length, out, 8, count, scenes);
           return {
             created,
             status,
             error: module.UTF8ToString(module._tnw_web_load_error()),
             count: heap().getUint32(count, true),
+            scenes: heap().getUint32(scenes, true),
             scene: heap().getUint32(out, true),
           };
         },
@@ -93,7 +95,9 @@ hostTest.each(["meshopt-compressed.glb", "ktx2-textured.glb"])(
       assert.equal(result.created, 0, "tn_context_create failed");
       assert.equal(result.error, "", "the engine refused the model");
       assert.equal(result.status, 0);
-      assert.equal(result.count, 1, "one scene, no clips");
+      // ABI 13: the default scene, the clips, then every scene of the file.
+      assert.equal(result.scenes, 1, "one scene");
+      assert.equal(result.count, 2, "the default scene, no clips, the one scene");
       assert.notEqual(result.scene, 0, "a scene handle");
       // PRD-867: no renderer took a device here, so a KTX2 keeps RGBA8, and the engine says so.
       if (name.startsWith("ktx2"))
