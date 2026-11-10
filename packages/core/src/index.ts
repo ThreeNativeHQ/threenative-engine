@@ -152,10 +152,10 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @situation draw a heavy model's coarsest level first and its full detail when the file lands
  * @situation draw a model's textures at their resident mips first and the whole files later
  * @alias different area props
- * @alias coarse first model streaming
- * @alias mip streaming textures
- * @alias TN_STREAMING_POOL
- * @alias TN_ASSET_LATE
+ * @situation coarse first model streaming
+ * @situation mip streaming textures
+ * @situation TN_STREAMING_POOL
+ * @situation TN_ASSET_LATE
  * @alias first playable screen external assets
  * @situation an asset pops in after the reveal and the game needs to count it
  * @situation a model texture looks blurry or low resolution right after load, then sharpens
@@ -173,11 +173,11 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @situation compressed texture upload on the owned engine (KTX2 to BC7 or ETC2 on the GPU)
  * @situation load a model with KHR_texture_basisu or EXT_meshopt_compression on the owned engine
  * @situation stream a finer mip level into a CompressedTexture that already draws
- * @alias KTX2Loader on the owned engine
- * @alias CompressedTexture upload
- * @alias TN_TEXTURE_TRANSCODE_TARGET
- * @alias TN_NATIVE_TEXTURE_UNSUPPORTED
- * @alias webRuntimeDecoders meshopt ktx2
+ * @situation KTX2Loader on the owned engine
+ * @situation CompressedTexture upload
+ * @situation TN_TEXTURE_TRANSCODE_TARGET
+ * @situation TN_NATIVE_TEXTURE_UNSUPPORTED
+ * @situation webRuntimeDecoders meshopt ktx2
  * @constraint every web build cooks meshopt geometry and KTX2 textures for both engines (`webRuntimeDecoders` in create-threenative answers `{ ktx2: true, meshopt: true }`); the owned engine's glTF loader decodes both itself, with no JS decoder
  * @constraint the owned engine transcodes a KTX2 image to BC7 on a device with `texture-compression-bc`, else ETC2, else RGBA8 with an engine mip chain, and prints `TN_TEXTURE_TRANSCODE_TARGET <target>` once; a block format needs a width and height that are multiples of 4, so any other size stays RGBA8 and the same line names it
  * @constraint a three `CompressedTexture` (format plus `mipmaps`) uploads one GPU write per level; a block format the device lacks throws `TN_NATIVE_TEXTURE_UNSUPPORTED` by name instead of drawing garbage
@@ -590,8 +590,8 @@ export { baseGeometryOf } from "./model-lod.js";
  *
  * @situation collider or navmesh built from a model is coarser than what is drawn
  * @situation wait for the full model before copying its vertices
- * @alias whole model before collision
- * @alias TN_COLLIDER_COARSE
+ * @situation whole model before collision
+ * @situation TN_COLLIDER_COARSE
  * @constraint `CollisionShape3D.fromMesh` with "trimesh" or "convexHull" on a streamed geometry warns `TN_COLLIDER_COARSE` naming the mesh and the `{ whole: true }` override, and still builds
  * @example const coarse = isStreamedGeometry(mesh.geometry);
  */
