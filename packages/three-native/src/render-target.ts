@@ -199,7 +199,8 @@ export function defineRenderTargets(
       if (target === null || target === undefined) render.call(this, scene, camera);
       // A cube face or 3D slice draws its 2D layer target and copies it in; an array target's layer
       // draws natively.
-      else if (layer === undefined) engineOf(this).draw(target, scene, camera, faces.get(this) ?? 0);
+      else if (layer === undefined)
+        engineOf(this).draw(target, scene, camera, faces.get(this) ?? 0);
       else {
         assertWholeLayer(target as Parameters<typeof assertWholeLayer>[0]);
         engineOf(this).draw(layer, scene, camera, 0);

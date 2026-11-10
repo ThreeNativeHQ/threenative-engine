@@ -23,8 +23,8 @@ import { HORIZON_WALK_BAND } from "../src/render/horizon.js";
 import { createLoadingScreen } from "../src/render/loading.js";
 import type { IPropPreparationProgress } from "../src/render/propProgress.js";
 import { meadowCover } from "../src/render/scatter.js";
-import { OPEN_MEADOW } from "../src/render/terrain.js";
 import { SHADOW_REACH } from "../src/render/sky.js";
+import { OPEN_MEADOW } from "../src/render/terrain.js";
 
 const GAME_URL = new URL("../src/game.ts", import.meta.url);
 /**

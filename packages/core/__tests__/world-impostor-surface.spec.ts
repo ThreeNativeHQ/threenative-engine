@@ -373,7 +373,8 @@ describe("WorldImpostorSurface depth march", () => {
       };
       const body = graph.shaderNode?.jsFunc;
       if (typeof body === "function" && String(body).includes("previousGap")) marches.add(node);
-      if (typeof graph.getChildren === "function") for (const child of graph.getChildren()) walk(child);
+      if (typeof graph.getChildren === "function")
+        for (const child of graph.getChildren()) walk(child);
     };
     walk(surface.material.colorNode);
     walk(surface.material.normalNode);
