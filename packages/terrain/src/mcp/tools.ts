@@ -466,12 +466,18 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
     water = { value: spec.water, source: "argument" };
   } else if (waterWord === undefined) {
     water = { value: null, source: "default" };
-  } else if (parsed.landform === undefined && declaredWater(own.water, waterWord.row)) {
-    // The biome's authored recipe is the world, and it already floods this body: the word names it.
-    water = { value: own.water, source: { word: waterWord.word } };
   } else {
-    parsed.water = [waterWord.row];
-    water = { value: parsed.water, source: { word: waterWord.word } };
+    // Every body the request names, once each: "a volcanic island with a lake" is a sea and a lake.
+    const bodies = WATER_WORD_ROWS.filter(([, names]) => words.some((w) => names.includes(w))).map(
+      ([row]) => row,
+    );
+    if (parsed.landform === undefined && bodies.every((row) => declaredWater(own.water, row))) {
+      // The biome's authored recipe is the world, and it already floods these bodies: the words name them.
+      water = { value: own.water, source: { word: waterWord.word } };
+    } else {
+      parsed.water = bodies;
+      water = { value: parsed.water, source: { word: waterWord.word } };
+    }
   }
   const sizeArgument = parseSize(sizeMeters);
   const sizeWord = rowHit(SIZE_WORD_ROWS, words);

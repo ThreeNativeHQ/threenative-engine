@@ -207,8 +207,8 @@ interface IWaterLayer {
  * A row has no position and no path, so a river or lake row re-shapes the recipe's own layer of that
  * kind, in order: a river sets the ribbon width (and depth), a lake its radius. A layer with no row
  * is removed, and an ocean row adds a layer, since the ocean needs no seed. A river row with no layer
- * comes back to be routed down the finished ground (`routeRivers`); a lake row with no layer has no
- * basin to sit in, so it fails instead of echoing.
+ * comes back to be routed down the finished ground (`routeRivers`), and a lake row with none to be
+ * placed in its deepest closed basin (`placeLakes`).
  */
 function applyWaterRows(
   layers: IWaterLayer[],
@@ -235,14 +235,9 @@ function applyWaterRows(
       continue;
     }
     const layer = (row.kind === "river" ? rivers : lakes).shift();
-    if (layer === undefined && row.kind === "river") {
+    if (layer === undefined) {
       unrouted.push(row);
       continue;
-    }
-    if (layer === undefined) {
-      throw new Error(
-        `cook: water row '${row.kind}' has no ${row.kind} layer in the recipe to take it.`,
-      );
     }
     if (row.kind === "river") {
       // The row's width is the ribbon the world floods; the layer's own width stays the carved bed.
@@ -265,6 +260,63 @@ function applyWaterRows(
  * from where its catchment is a tenth of the outlet's to the edge, every 16 m. Bed, depth and
  * shoulder are the forest starter's river (7 m bed for a 5.32 m ribbon).
  */
+/**
+ * Places each lake row the recipe had no layer for in the finished ground's deepest closed basin,
+ * filled to the level it spills at: where water would stand. Basins sit inside the square and clear
+ * of the sea and of each other; ground with no basin a metre deep takes the lowest such ground,
+ * flooded two metres. The ground decides, so one request and seed place the same lakes.
+ */
+function placeLakes(
+  recipe: ITerrainDocument & { layers: Layer[] },
+  rows: readonly IBiomeWaterBody[],
+): void {
+  const state = Terrain.fromJSON(recipe).evaluate();
+  const { resolution: n, size } = state;
+  const filled = Float64Array.from(state.height);
+  fillDepressions(filled, n);
+  const sea = Math.max(
+    Number.NEGATIVE_INFINITY,
+    ...recipe.layers.flatMap((layer) =>
+      layer.type === "water" && layer.params.kind === "ocean" ? [layer.params.level ?? 0] : [],
+    ),
+  );
+  const world = (i: number): [number, number] => [
+    ((i % n) / (n - 1) - 0.5) * size,
+    (Math.floor(i / n) / (n - 1) - 0.5) * size,
+  ];
+  const inner: number[] = [];
+  for (let z = Math.floor(n / 8); z < n - Math.floor(n / 8); z += 1)
+    for (let x = Math.floor(n / 8); x < n - Math.floor(n / 8); x += 1)
+      if ((state.height[z * n + x] as number) > sea + 1) inner.push(z * n + x);
+  const depth = (i: number) => (filled[i] as number) - (state.height[i] as number);
+  const placed: [number, number, number][] = [];
+  rows.forEach((row, index) => {
+    const radius = row.radius as number;
+    const free = inner.filter((i) => {
+      const [x, z] = world(i);
+      return placed.every(([px, pz, r]) => Math.hypot(x - px, z - pz) > r + radius);
+    });
+    const basin = free.reduce((best, i) => (best < 0 || depth(i) > depth(best) ? i : best), -1);
+    const low = free.reduce(
+      (best, i) =>
+        best < 0 || (state.height[i] as number) < (state.height[best] as number) ? i : best,
+      -1,
+    );
+    const at = basin >= 0 && depth(basin) >= 1 ? basin : low;
+    if (at < 0) throw new Error("cook: water row 'lake' found no ground above the sea to sit on.");
+    const level = at === basin ? (filled[at] as number) : (state.height[at] as number) + 2;
+    const [x, z] = world(at);
+    placed.push([x, z, radius]);
+    recipe.layers.push({
+      enabled: true,
+      opacity: 1,
+      id: `lake-${String(index)}`,
+      type: "water",
+      params: { kind: "lake", at: [x, z], radius, level },
+    } as Layer);
+  });
+}
+
 function routeRivers(
   recipe: ITerrainDocument & { layers: Layer[] },
   rows: readonly IBiomeWaterBody[],
@@ -949,7 +1001,10 @@ async function cookInto(
   // A landform preset authors the ground and no scatter rules, so the biome file's foliage is placed
   // on it through the stages every starter scatter runs.
   // A river the recipe has no layer for runs down the finished ground, survey or preset alike.
-  if (unrouted.length > 0) routeRivers(recipe.recipe, unrouted);
+  const lakes = unrouted.filter((row) => row.kind === "lake");
+  if (lakes.length > 0) placeLakes(recipe.recipe, lakes);
+  const rivers = unrouted.filter((row) => row.kind === "river");
+  if (rivers.length > 0) routeRivers(recipe.recipe, rivers);
   const evaluated = Terrain.fromJSON(recipe.recipe).evaluate();
   const state = applyPlacementOverrides(
     scatterFoliage(evaluated, biome, kind, assetTable),
