@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-ktx2-model",
+  "target": "web",
+  "subject": "wasm-ktx2-model",
+  "viewport": {
+    "width": 640,
+    "height": 320
+  },
+  "warmupFrames": 1,
+  "artifacts": {
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "drawn",
+      "waitTicks": 60,
+      "screenshot": "ktx2-model-draws.png"
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-ktx2-model",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here."
+      },
+      {
+        "entity": "wasm-ktx2-model",
+        "component": "probe",
+        "path": "done",
+        "equals": true
+      },
+      {
+        "entity": "wasm-ktx2-model",
+        "component": "probe",
+        "path": "software",
+        "equals": false,
+        "allowTrivial": "The adapter is known before any step runs."
+      },
+      {
+        "entity": "wasm-ktx2-model",
+        "component": "probe",
+        "path": "baseInside",
+        "equals": "251,0,0,255"
+      },
+      {
+        "entity": "wasm-ktx2-model",
+        "component": "probe",
+        "path": "baseOutside",
+        "equals": "0,0,255,255"
+      },
+      {
+        "entity": "wasm-ktx2-model",
+        "component": "probe",
+        "path": "emissiveInside",
+        "equals": "0,255,0,255"
+      },
+      {
+        "entity": "wasm-ktx2-model",
+        "component": "probe",
+        "path": "emissiveOutside",
+        "equals": "0,0,255,255"
+      },
+      {
+        "entity": "wasm-ktx2-model",
+        "component": "probe",
+        "path": "transcodeTarget",
+        "equals": "TN_TEXTURE_TRANSCODE_TARGET bc7"
+      }
+    ]
+  }
+}

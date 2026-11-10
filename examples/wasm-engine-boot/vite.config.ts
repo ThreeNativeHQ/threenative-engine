@@ -22,6 +22,7 @@ export default defineConfig({
               "array.html",
               "limits.html",
               "compressed.html",
+              "ktx2-model.html",
             ]
           : [
               "index.html",
@@ -32,6 +33,7 @@ export default defineConfig({
               "array.html",
               "limits.html",
               "compressed.html",
+              "ktx2-model.html",
             ],
     },
   },

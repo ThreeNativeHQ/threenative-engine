@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-860 — The first scene plays before the game finishes downloading
 
-**Status:** IN PROGRESS — Phase 1 boots Midway on 49.95 MB (AC-1, AC-2 met); AC-3 waits on a scenario that flies to the enemy fleet; Phases 2 and 3 wait on the owned engine's KTX2 decoder ([PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
+**Status:** IN PROGRESS — Phase 1 boots Midway on 49.95 MB (AC-1, AC-2 met); AC-3 waits on a scenario that flies to the enemy fleet; Phases 2 and 3 wait on the owned engine's KTX2 decoder ([PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
 **Priority:** P1 — Midway still waits for 136.4 MB before the first frame of play (measured below, AC-1), and texture and mesh streaming (AC-4 to AC-8) do not exist.
 **Complexity:** 8 (HIGH) — 6–10 implementation files (+2): the loader, a mip-streaming module, the KTX2 path in the owned engine, the model cook and the Midway game; a new streaming module (+2); request queues and residency are concurrent state (+2); the change crosses the TypeScript packages and the owned C++ engine build (+2).
 **Owner:** João
@@ -107,7 +107,7 @@ come from Midway's own cooked manifest (`public/assets.manifest.json`, 228 entri
   only: **166.2 MB shipped** (90.1 MB of manifest entries plus 76.1 MB of shared images) from 188 MB
   of sources, and a 165 MB `dist` against 197 MB before. Phase 1's "KTX2 textures, meshopt geometry"
   is unavailable until the owned engine decodes them — filed as
-  [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md): the meshopt decoder is already
+  [PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md): the meshopt decoder is already
   vendored in `third_party/meshopt/` and never compiled, and KTX2 needs a Basis transcoder that is
   not in the tree at all.
 - **The load split, not the cook, is what reaches AC-2's 50 MB — and the runtime now says how much.**
@@ -201,7 +201,7 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 | Spawn-only boot | Midway `src/scenes/Midway.ts` `load()` → `ctx.assets` | One `Promise.all` of every asset becomes spawn awaits plus `prefetch` — **open**: `WorldView` cannot build a hull it has not loaded | 136.4 MB awaited today, 64.3 MB spawn-only |
 | Late-asset report | `ctx.assets` request after the reveal → `TN_ASSET_LATE` | New line, no old path | `packages/core/src/assets.ts:84`, `packages/core/__tests__/assets-late.spec.ts` |
 | Cooked Midway | `pnpm build` in the game → `public/assets.manifest.json` | 188 MB of uncompiled sources become a 228-entry manifest | 166.2 MB shipped, 165 MB `dist` |
-| Texture mip streaming | `ctx.assets` KTX2 load → owned-engine mip upload | Whole-file KTX2 load stays only for hosts without `Range` | `openKtx2Stream` (`packages/core/src/texture-streaming.ts`), unit-proven; not yet called by `ctx.assets` (no KTX2 output on the default engine, [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)) |
+| Texture mip streaming | `ctx.assets` KTX2 load → owned-engine mip upload | Whole-file KTX2 load stays only for hosts without `Range` | `openKtx2Stream` (`packages/core/src/texture-streaming.ts`), unit-proven; not yet called by `ctx.assets` (no KTX2 output on the default engine, [PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)) |
 | Mesh LOD streaming | `compileAssets` model pass → `ctx.assets` model load | Shared-buffer LOD chains stay for non-streamed models | cook: `coarseDocument` (`packages/assets/src/lod/coarse.ts`), the model pass writes `<name>.coarse.<digest>.glb` under `streamedLods`; runtime: `ctx.assets.model` draws it first and `upgradeStreamedGeometry` (`packages/core/src/model-lod.ts`) gives every coarse geometry the full model and chain in place; `assets.streamMeshes: false` reports `TN_ASSETS_STREAM_MESHES_OFF` |
 
 Fill the `file:line` entry points when each phase lands.
@@ -242,7 +242,7 @@ enemy fleet, distant hulls and later audio to `prefetch` in the order the flight
 
 **Measured:** 166.2 MB shipped cooked from 188 MB of sources; the runtime reports 139.5 MB awaited
 before first play (visible 42.2, unattributed 21.9, off-screen 75.4); the bake skips 63.2 MB of model
-and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
+and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
 
 **Landed 2026-11-09:**
 
@@ -287,12 +287,12 @@ and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](PRD-
    fills it when the bytes land, so a game defers a file with one flag instead of Midway's
    restructure. Fully automatic deferral was rejected: games that read geometry at build time
    (Midway measures wingspans and bakes stand-ins) would break silently.
-4. The compression question stays with [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md).
+4. The compression question stays with [PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md).
 
 #### Phase 2: Textures stream by mip
 
 **Status:** IN PROGRESS — the `Range` stream landed (AC-4). The wiring into `ctx.assets` and the
-engine upload (AC-5) wait on the owned engine's KTX2 decoder ([PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)):
+engine upload (AC-5) wait on the owned engine's KTX2 decoder ([PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)):
 the default engine refuses KTX2 output today.
 **Estimate:** 2 to 3 days.
 **Files:** a new `packages/core/src/texture-streaming.ts` (wanted mips, request queue, pool

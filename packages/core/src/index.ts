@@ -164,6 +164,19 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @constraint texture streaming rides on the coarse parse: each shared `.ktx2` of that model is read by `Range` as its resident mips (the header and the tail), and the whole files replace them when the full model lands; a host without `Range` sends the whole file and keeps it whole. `TN_STREAMING_POOL` reports `files`, `residentBytes`, `fullBytes`, `deferredBytes` and `upgraded` once, two seconds after the last change
  * @override `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
  * @override `assets.streamMeshes: false` loads every model whole (reported once as `TN_ASSETS_STREAM_MESHES_OFF`); `assets.streamTextures: false` loads every model texture whole (`TN_ASSETS_STREAM_TEXTURES_OFF`)
+ * @situation compressed texture upload on the owned engine (KTX2 to BC7 or ETC2 on the GPU)
+ * @situation load a model with KHR_texture_basisu or EXT_meshopt_compression on the owned engine
+ * @situation stream a finer mip level into a CompressedTexture that already draws
+ * @alias KTX2Loader on the owned engine
+ * @alias CompressedTexture upload
+ * @alias TN_TEXTURE_TRANSCODE_TARGET
+ * @alias TN_NATIVE_TEXTURE_UNSUPPORTED
+ * @alias webRuntimeDecoders meshopt ktx2
+ * @constraint every web build cooks meshopt geometry and KTX2 textures for both engines (`webRuntimeDecoders` in create-threenative answers `{ ktx2: true, meshopt: true }`); the owned engine's glTF loader decodes both itself, with no JS decoder
+ * @constraint the owned engine transcodes a KTX2 image to BC7 on a device with `texture-compression-bc`, else ETC2, else RGBA8 with an engine mip chain, and prints `TN_TEXTURE_TRANSCODE_TARGET <target>` once; a block format needs a width and height that are multiples of 4, so any other size stays RGBA8 and the same line names it
+ * @constraint a three `CompressedTexture` (format plus `mipmaps`) uploads one GPU write per level; a block format the device lacks throws `TN_NATIVE_TEXTURE_UNSUPPORTED` by name instead of drawing garbage
+ * @constraint levels are coarse-first: a level whose `mipmaps[i].data` is null is not resident and the texture samples its finest resident level; set `mipmaps[i].data` and `needsUpdate = true` to write that one finer level in place, without re-creating the texture or rewriting the other levels
+ * @override `engine: "threejs"` runs three's own `KTX2Loader` and `MeshoptDecoder` in JS instead of the owned engine's decoders
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
  */
