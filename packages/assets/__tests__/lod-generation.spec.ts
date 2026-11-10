@@ -27,7 +27,7 @@ import {
   selectDiscreteLevels,
   terminalLevelTriangles,
 } from "../src/lod/generate.js";
-import { modelPass } from "../src/passes/model.js";
+import { MODEL_COARSE_COMPANION_VERSION, modelPass } from "../src/passes/model.js";
 import { TNVirtualGeometry } from "../src/virtual/extension.js";
 
 // PRD-377 §4/§5 — generation through the real model pass. Every fixture is a self-contained GLB
@@ -625,6 +625,14 @@ describe("automatic discrete LOD generation", () => {
     expect(primitive?.getAttribute("POSITION")?.getCount()).toBe(used.size);
     expect(coarse.buffer.length).toBeLessThan(result.buffer.length / 4);
   }, 120_000);
+
+  it("keys the compile cache on the coarse companion, so a warm entry from before it re-cooks", () => {
+    // The first Midway cook after the companion landed served all 228 models from the cache and
+    // wrote no coarse file.
+    expect(modelPass({ lod: GENERATE }).configuration).toMatchObject({
+      coarseCompanion: MODEL_COARSE_COMPANION_VERSION,
+    });
+  });
 
   it("writes no coarse companion for a model without a chain", async () => {
     const result = await modelPass({ lod: GENERATE, virtual: "none" }).apply(

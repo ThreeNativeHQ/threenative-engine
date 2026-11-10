@@ -273,6 +273,8 @@ const MODEL_REORDER_VERSION = 1;
  * stay float32 in the source metre space.
  */
 const MODEL_QUANTIZE_VERSION = 1;
+/** Moves when the coarse companion (PRD-860) changes, so a warm entry from before it re-cooks. */
+export const MODEL_COARSE_COMPANION_VERSION = 1;
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -866,6 +868,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Same reason again: which positions keep their source metres is part of the output, and a
       // warm entry from before they did would hand a game geometry its sidecars cannot address.
       quantizeVersion: MODEL_QUANTIZE_VERSION,
+      // A warm entry from before the coarse companion carries no `streamedLods`, so a game served
+      // from it never streams: the output gained a file, so the key moves.
+      coarseCompanion: MODEL_COARSE_COMPANION_VERSION,
       // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
       virtual:
         options.virtual === "none"
