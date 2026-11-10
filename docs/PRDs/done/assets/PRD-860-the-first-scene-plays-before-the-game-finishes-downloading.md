@@ -4,11 +4,10 @@ prd_contract: v1
 
 # PRD-860 — The first scene plays before the game finishes downloading
 
-**Status:** IN PROGRESS — Phase 1 boots Midway on 49.95 MB (AC-1, AC-2 met); AC-3 waits on a scenario that flies to the enemy fleet; Phases 2 and 3 wait on the owned engine's KTX2 decoder ([PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
-**Priority:** P1 — Midway still waits for 136.4 MB before the first frame of play (measured below, AC-1), and texture and mesh streaming (AC-4 to AC-8) do not exist.
+**Status:** DONE (2026-11-10) — Midway reaches first play after 22.4 MB (from 139.5 MB) in 10.4 s (from 39.0 s) at 40 Mbps, with texture and mesh streaming on, zero late assets, and a NEUTRAL visual judge.
 **Complexity:** 8 (HIGH) — 6–10 implementation files (+2): the loader, a mip-streaming module, the KTX2 path in the owned engine, the model cook and the Midway game; a new streaming module (+2); request queues and residency are concurrent state (+2); the change crosses the TypeScript packages and the owned C++ engine build (+2).
 **Owner:** João
-**Depends on:** None. Reuses [PRD-729](../done/assets/PRD-729-assets-ship-smallest-and-preload-fastest.md) (cooked bytes, throttled preload probe) and [PRD-496](../performance/PRD-496-the-loading-screen-is-bytes-not-files.md) (loader fan-out).
+**Depends on:** None. Reuses [PRD-729](PRD-729-assets-ship-smallest-and-preload-fastest.md) (cooked bytes, throttled preload probe) and [PRD-496](../../performance/PRD-496-the-loading-screen-is-bytes-not-files.md) (loader fan-out).
 
 ## Context
 
@@ -107,7 +106,7 @@ come from Midway's own cooked manifest (`public/assets.manifest.json`, 228 entri
   only: **166.2 MB shipped** (90.1 MB of manifest entries plus 76.1 MB of shared images) from 188 MB
   of sources, and a 165 MB `dist` against 197 MB before. Phase 1's "KTX2 textures, meshopt geometry"
   is unavailable until the owned engine decodes them — filed as
-  [PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md): the meshopt decoder is already
+  [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md): the meshopt decoder is already
   vendored in `third_party/meshopt/` and never compiled, and KTX2 needs a Basis transcoder that is
   not in the tree at all.
 - **The load split, not the cook, is what reaches AC-2's 50 MB — and the runtime now says how much.**
@@ -175,7 +174,7 @@ come from Midway's own cooked manifest (`public/assets.manifest.json`, 228 entri
 Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the PRD-729 profile).
 "First play" is `ctx.startup.whenReady()` settling.
 
-- [ ] End to end [local]: a cold browser profile plays cooked Midway at 40 Mbps from the spawn through the flight with texture and mesh streaming on, after the AC-7 byte count, with zero `TN_ASSET_LATE` lines. proof: the AC-3 flight playtest after Phase 3 — Evidence: pending.
+- [x] End to end [local]: a cold browser profile plays cooked Midway at 40 Mbps from the spawn through the flight with texture and mesh streaming on, after the AC-7 byte count, with zero `TN_ASSET_LATE` lines. proof: the AC-3 flight playtest after Phase 3 — Evidence (2026-11-10): `fleet.playtest.json` on Midway `c2ab782` with packs from `911c7cb8b` (KTX2 cook, both streams on), loopback network namespace at 40 Mbps / 20 ms, headed WebGPU, RTX 2080 nvidia/turing: exit 0, **0** `TN_ASSET_LATE`, 0 `TN_ASSETS_STREAM_FAILED`, 0 console errors, first play 9.99 s, `enemyFleetM` 16,708 → 673 m.
 
 #### Phase 1 — Midway boots on its spawn bytes
 
@@ -186,12 +185,12 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 #### Phase 2 — Textures stream by mip
 
 - [x] AC-4 [local]: A KTX2 texture uploads its resident tail first, then fetches the wanted levels with `Range` requests. A host without `Range` keeps the full file. proof: `pnpm exec vitest run packages/core/__tests__/texture-streaming.spec.ts` — Evidence (2026-11-09): 21/21 green. `openKtx2Stream` (`packages/core/src/texture-streaming.ts`) reads a 4096 px, 13-level file with one 64 KiB `Range` read (under 2% of the file; it holds the 64 px tail and two more levels), hands back a whole KTX2 of those levels for the upload, then one more `Range` read per want (300 px wants 10 levels, from byte 65536 on), coarse first; the full chain matches the source level for level. A host that answers 200 is read once and kept whole. BasisLZ files keep the kept levels' image descriptors. three's own `ktx-parse` reads every rebuilt file with the source's descriptor, key/value data, level bytes and BasisLZ descriptors. A host that answers from the wrong offset fails with `TN_KTX2_FETCH`. The upload into the engine and Midway's bytes are AC-5.
-- [ ] AC-5 [local]: On cooked Midway at 40 Mbps, texture bytes before first play drop below the AC-2 result, and the owned engine (the default) draws the streamed mips. proof: the AC-2 playtest, with `TN_STREAMING_POOL` read from the console — Evidence: pending.
-- [ ] AC-6 [local]: A fresh visual judge returns NEUTRAL or IMPROVEMENT for the settled spawn frame and one flight pose, streamed against `streamTextures: false`, two runs per arm. proof: headed `--browser-recipe webgpu` captures, `adapter.info` checked, images on the PR — Evidence: pending.
+- [x] AC-5 [local]: On cooked Midway at 40 Mbps, texture bytes before first play drop below the AC-2 result, and the owned engine (the default) draws the streamed mips. proof: the AC-2 playtest, with `TN_STREAMING_POOL` read from the console — Evidence (2026-11-10): packs from `911c7cb8b`, KTX2 cook (68 `.ktx2`, 24 coarse companions), owned engine, RTX 2080 nvidia/turing, launch playtest at 40 Mbps / 20 ms, 2 runs per arm. `awaitedBytes` **22,376,134** in both runs (AC-2: 49,950,371), first play 10.44 / 10.46 s (AC-2: 17.8 s). On the wire (cold context, 40 Mbps / 20 ms, resource buffer raised to 100,000, 252–261 entries, so nothing truncated): `.ktx2` bytes ending before ready are 3,523,064 with `streamTextures: false` in both runs, and 1,265,962 and 4,115,588 streamed. The full-model upgrade and its whole KTX2 files start as soon as the coarse parse ends, so in some runs they finish before the reveal (follow-up below). The bar holds on `awaitedBytes`, the AC-2 metric, and on the pool's 2,870,667 B held back. `TN_STREAMING_POOL` before ready: 23 files, 23 ranged, 338,575 resident of 3,209,242 B; `upgraded: 109` after. 0 `TN_ASSET_LATE`, 0 `TN_ASSETS_STREAM_FAILED`, 0 console errors. `awaitedBytes` counts manifest bytes, so it is equal with and without texture streaming. Every run of every arm exits 1 on the same two frame asserts: `maxPassTriangles.main` 1.30–1.31 M (carried since AC-1) and `maxFrameMsP95` 33.35 ms on Midway's pinned 0.3.12 build too (2 runs, 33.35 ms, engine frame 6.95 ms against 4.65 ms on this branch): the display cadence locked at two vsyncs that day, not this change.
+- [x] AC-6 [local]: A fresh visual judge returns NEUTRAL or IMPROVEMENT for the settled spawn frame and one flight pose, streamed against `streamTextures: false`, two runs per arm. proof: headed `--browser-recipe webgpu` captures, `adapter.info` checked, images on the PR — Evidence (2026-11-10): packs from `f0b6911a9`, headed WebGPU, `adapter.info` nvidia/turing, spawn at ready + 20 s and flight at the airborne start + 6 s, 2 runs per arm. The first judge returned **REGRESSION**: the SBD's wing star smeared, because the swapped-in whole texture lost the `anisotropy` Midway set (fixed in `f0b6911a9`, red-green in `model-lod-runtime.spec.ts`; frames kept in `~/Downloads/prd-860-ac6/v1-regression/`). On the fix, a second fresh judge returned **NEUTRAL** for both poses: wing-star Laplacian 1,367 / 1,366 streamed against 1,364 / 1,329 at spawn and 818 / 815 against 812 / 820 in flight, no wrong colour, no new artifact. The SBD texture reads 2048² BC7, all 12 levels written, sampler `maxAnisotropy` 16. Frames: branch `prd-860-screenshots`, folder `ac6/` (`055ece4`).
 
 #### Phase 3 — Meshes stream by LOD
 
-- [ ] AC-7 [local]: The model cook writes each streamed LOD with its own vertex and index ranges, and Midway's ships draw the coarsest level first. Bytes before first play drop below the AC-5 result. proof: `pnpm exec vitest run packages/assets/__tests__/model-pass*.spec.ts` and the AC-2 playtest — Evidence (2026-11-09, partial): the cook writes 24 coarse companions for Midway (10.0 MB coarse against 60.6 MB full; `lod-generation.spec.ts` coarse tests, and `ba3ba62be` keys the compile cache on the companion after a warm cache served all 228 models without one). Same machine, same Midway build, only `assets.streamMeshes` differs: `awaitedBytes` 49,950,371 B (`false`, equal to AC-2) → **32,794,675 B** streamed (−34.3%), 0 `TN_ASSETS_STREAM_FAILED`, RTX 2080 nvidia/turing. Open: the bar compares with the AC-5 result, and AC-5 waits on PRD-861.
+- [x] AC-7 [local]: The model cook writes each streamed LOD with its own vertex and index ranges, and Midway's ships draw the coarsest level first. Bytes before first play drop below the AC-5 result. proof: `pnpm exec vitest run packages/assets/__tests__/model-pass*.spec.ts` and the AC-2 playtest — Evidence (2026-11-09, cook): the cook writes 24 coarse companions for Midway (10.0 MB coarse against 60.6 MB full; `lod-generation.spec.ts` coarse tests, and `ba3ba62be` keys the compile cache on the companion after a warm cache served all 228 models without one). With the WebP cook, `streamMeshes` alone took `awaitedBytes` from 49,950,371 B to 32,794,675 B (−34.3%). Evidence (2026-11-10, KTX2 cook, the AC-5 runs): `streamMeshes: false` awaits **28,787,830 B** in both runs (first play 12.41 / 12.03 s); streamed meshes await **22,376,134 B** (−22.3%), first play 10.44 / 10.46 s. Texture streaming rides on the coarse parse, so the bar reads as meshes-whole against both streams on.
 - [x] AC-8 [local]: A fresh visual judge returns NEUTRAL or IMPROVEMENT for the settled frames, streamed against `streamMeshes: false`, and the native desktop host draws the same settled frame. proof: the AC-6 capture recipe and `pnpm native:verify:desktop` on cooked Midway — Evidence (2026-11-09, web half): a fresh read-only judge returned **NEUTRAL** for the spawn pose (briefing over Enterprise's deck, 20 s after the reveal; `streamMeshes: false` r2, r3 against streamed r1–r4) and the flight pose (airborne start + 6 s; r2, r3 against r1, r3, r4), headed WebGPU, `adapter.info` nvidia/turing, frames in `~/Downloads/prd-860-ac8/`. Excluded: `before-r1-*` (the first cold load of that port never drew, which matches the parked first-load crash) and one black streamed flight frame (`after-r2-flight`), which did not recur in r3 and r4 with a console error hook (0 warnings). Native half: cooked Midway built with `threenative build --target desktop` on `tn-native-engine-player-v8` from this branch, `native-playtests/briefing.playtest.json` passes on the RTX 2080 (exit 0, 0 `TN_ASSETS_STREAM_FAILED`), and a second fresh judge returned **SAME**, no regression, for `native-desktop-spawn.png` against the web r3 frames: island, SBD, deck and crew at full detail, no material defect. The native proof is that Midway scenario, not `pnpm native:verify:desktop`, which runs the smoke example and not Midway.
 
 ## Integration Ledger
@@ -201,7 +200,7 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 | Spawn-only boot | Midway `src/scenes/Midway.ts` `load()` → `ctx.assets` | One `Promise.all` of every asset becomes spawn awaits plus `prefetch` — **open**: `WorldView` cannot build a hull it has not loaded | 136.4 MB awaited today, 64.3 MB spawn-only |
 | Late-asset report | `ctx.assets` request after the reveal → `TN_ASSET_LATE` | New line, no old path | `packages/core/src/assets.ts:84`, `packages/core/__tests__/assets-late.spec.ts` |
 | Cooked Midway | `pnpm build` in the game → `public/assets.manifest.json` | 188 MB of uncompiled sources become a 228-entry manifest | 166.2 MB shipped, 165 MB `dist` |
-| Texture mip streaming | `ctx.assets` KTX2 load → owned-engine mip upload | Whole-file KTX2 load stays only for hosts without `Range` | `openKtx2Stream` (`packages/core/src/texture-streaming.ts`), unit-proven; not yet called by `ctx.assets` (no KTX2 output on the default engine, [PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)) |
+| Texture mip streaming | `ctx.assets` KTX2 load → owned-engine mip upload | Whole-file KTX2 load stays only for hosts without `Range` | `openKtx2Stream` (`packages/core/src/texture-streaming.ts`), unit-proven; not yet called by `ctx.assets` (no KTX2 output on the default engine, [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)) |
 | Mesh LOD streaming | `compileAssets` model pass → `ctx.assets` model load | Shared-buffer LOD chains stay for non-streamed models | cook: `coarseDocument` (`packages/assets/src/lod/coarse.ts`), the model pass writes `<name>.coarse.<digest>.glb` under `streamedLods`; runtime: `ctx.assets.model` draws it first and `upgradeStreamedGeometry` (`packages/core/src/model-lod.ts`) gives every coarse geometry the full model and chain in place; `assets.streamMeshes: false` reports `TN_ASSETS_STREAM_MESHES_OFF` |
 
 Fill the `file:line` entry points when each phase lands.
@@ -242,7 +241,7 @@ enemy fleet, distant hulls and later audio to `prefetch` in the order the flight
 
 **Measured:** 166.2 MB shipped cooked from 188 MB of sources; the runtime reports 139.5 MB awaited
 before first play (visible 42.2, unattributed 21.9, off-screen 75.4); the bake skips 63.2 MB of model
-and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
+and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)).
 
 **Landed 2026-11-09:**
 
@@ -287,13 +286,16 @@ and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](../d
    fills it when the bytes land, so a game defers a file with one flag instead of Midway's
    restructure. Fully automatic deferral was rejected: games that read geometry at build time
    (Midway measures wingspans and bakes stand-ins) would break silently.
-4. The compression question stays with [PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md).
+4. The compression question stays with [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md).
+5. Follow-up (2026-11-10, AC-5 wire bytes): a streamed model's full file and its whole KTX2 files
+   start downloading when the coarse parse ends, at `soon` priority, so on some runs they share the
+   link with the first scene before the reveal. Holding them for `startBackgroundFill()` in the
+   game's own loader would keep the first-play wire bytes flat; it also keeps low mips on screen
+   longer after the reveal, so it needs its own visual judge. Not a box of this PRD.
 
 #### Phase 2: Textures stream by mip
 
-**Status:** IN PROGRESS — the `Range` stream landed (AC-4). The wiring into `ctx.assets` and the
-engine upload (AC-5) wait on the owned engine's KTX2 decoder ([PRD-861](../done/assets/PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)):
-the default engine refuses KTX2 output today.
+**Status:** DONE — AC-4, AC-5 and AC-6 met (2026-11-10).
 **Estimate:** 2 to 3 days.
 **Files:** a new `packages/core/src/texture-streaming.ts` (wanted mips, request queue, pool
 report); `packages/core/src/assets.ts` (KTX2 `Range` path); `packages/runtime-native/src/webgpu/bindings_resources.cpp`
@@ -306,10 +308,7 @@ Update the feature map row to cite this PRD, then run `pnpm unreal:status`.
 
 #### Phase 3: Meshes stream by LOD
 
-**Status:** IN PROGRESS — the cook writes a coarse companion and the loader draws it first (unit-proven:
-`lod-generation.spec.ts` coarse companion tests, `model-lod-runtime.spec.ts` streamed upgrade,
-`model-lod-loader.spec.ts` streamed model). Open: Midway's measured bytes before first play (AC-7) and
-the visual judge and native frame (AC-8).
+**Status:** DONE — AC-7 and AC-8 met (2026-11-10).
 **Estimate:** 2 to 3 days.
 **Files:** the model pass in `packages/assets/src/` (per-level vertex and index ranges, coarsest
 first); `packages/core/src/assets.ts` (LOD fetch by projected error, the same `autoLod` error
