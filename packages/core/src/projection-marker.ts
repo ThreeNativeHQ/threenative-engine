@@ -1,3 +1,4 @@
+import { CONSOLE_MARKER } from "./generated/console-markers.js";
 import type { IMatrixWorldReport } from "./matrix-world.js";
 import type { IRenderCameraCullReport } from "./render-camera-cull.js";
 import type {
@@ -15,7 +16,7 @@ import type {
  * produces a series rather than a single sentence, and it carries the one thing the projection
  * cannot know on its own: how many draws the renderer was actually handed.
  */
-export const PROJECTION_MARKER = "TN_PROJECTION";
+export const PROJECTION_MARKER = CONSOLE_MARKER.projection;
 
 export interface IProjectionWindowJson {
   /**

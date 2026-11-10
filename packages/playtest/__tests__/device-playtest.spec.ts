@@ -16,7 +16,8 @@ import {
 } from "../src/index.js";
 import type { IAndroidDriver } from "../src/runner/android.js";
 import { AdbAndroidDriver, androidTouchBatches } from "../src/runner/android.js";
-import { runAndroidPlaytest, runDevicePlaytest } from "../src/runner/androidRunner.js";
+import { runAndroidPlaytest } from "../src/runner/androidRunner.js";
+import { runDevicePlaytest } from "../src/runner/deviceRunner.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { androidMailboxPaths, DeviceBridgeTransport } from "../src/runner/deviceTransport.js";

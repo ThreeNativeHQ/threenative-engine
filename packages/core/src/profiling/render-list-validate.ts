@@ -13,6 +13,7 @@
  *
  * Off by default and expensive by construction — it does the work it is checking, twice.
  */
+import { readLaunchFlag } from "../debug.js";
 
 import { Matrix4, type Object3D } from "three";
 import { composeSilencedByFreeze, worldSilencedByFreeze } from "../static-transform.js";
@@ -34,21 +35,11 @@ const TOLERANCE = 1e-6;
 
 /** Whether `TN_RENDERLIST_VALIDATE` asks for validation on this launch. */
 export function renderListValidationRequested(): boolean {
-  const host = globalThis as {
-    process?: { env?: Record<string, unknown> };
-    __tnRenderListValidate?: unknown;
-  };
-  const fromEnv = host.process?.env?.[RENDERLIST_VALIDATE_FLAG];
-  if (typeof fromEnv === "string" && fromEnv !== "" && fromEnv !== "0" && fromEnv !== "false")
-    return true;
-  const query = globalThis.location?.search;
-  if (
-    typeof query === "string" &&
-    /[?&]tnRenderListValidate=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(query)
-  )
-    return true;
-  const fromGlobal = host.__tnRenderListValidate;
-  return fromGlobal === true || fromGlobal === "1";
+  return readLaunchFlag({
+    environment: RENDERLIST_VALIDATE_FLAG,
+    global: "__tnRenderListValidate",
+    query: "tnRenderListValidate",
+  });
 }
 
 /** What one frame's check found. */

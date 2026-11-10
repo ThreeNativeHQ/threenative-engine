@@ -99,7 +99,7 @@ import { ClearwaterDemo } from "./clearwaterDemo.js";
 
 export default defineGame({
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { water: ClearwaterDemo },
   start: "water",
 });

@@ -19,7 +19,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   frameBudget: { onWindow: noteFrameBudget, reportEvery: 10 },
   plugins: [rapier(), playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { kit: KitScene },
   start: "kit",
 });

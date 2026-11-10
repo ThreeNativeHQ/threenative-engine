@@ -67,4 +67,4 @@ export {
   type IMaterialLightingEnvironment,
   isWebGLFallbackRenderer,
   materialLightingEnabled,
-} from "./rendererGate.js";
+} from "@threenative/core/render/environment";

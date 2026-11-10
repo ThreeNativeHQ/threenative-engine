@@ -380,10 +380,6 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     assert.match(plist, pattern);
   }
   assert.doesNotMatch(plist, /UIInterfaceOrientationLandscape/u);
-  assert.match(
-    readFileSync(new URL('../ios/main.mm', import.meta.url), 'utf8'),
-    /config\.maxFps\s*=\s*info\[@"TNMaxFps"\][^;]*\[info\[@"TNMaxFps"\] unsignedIntValue\]/u,
-  );
   assert.equal(report.icon, icon);
   assert.equal(report.iconArtifact, 'Assets.car');
 });

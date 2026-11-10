@@ -19,6 +19,17 @@ const bindingsState = readFileSync(
   join(import.meta.dirname, "..", "src", "webgpu", "bindings_state.h"),
   "utf8",
 );
+// The replay switch names its cases (`case TN_FRAME_OP_RENDER_DRAW:`) from the generated manifest;
+// the guard table below keeps the numeric ids the recorder writes.
+const frameOps = JSON.parse(
+  readFileSync(join(import.meta.dirname, "..", "..", "three-native", "api", "frame-ops.json"), "utf8"),
+).ops;
+const caseLabel = (opcode) =>
+  `case TN_FRAME_OP_${frameOps
+    .find((op) => op.id === opcode)
+    .name.replace(".", "_")
+    .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+    .toUpperCase()}:`;
 const factory = Function(`"use strict"; let factory; factory = ${source}\nreturn factory;`)();
 
 function harness() {
@@ -146,10 +157,11 @@ describe("packed frame op stream", () => {
 
   function assertReplayLookupGuards(replaySource) {
     for (const [opcode, lookup, nativeCall, label] of replayLookupGuards) {
-      const start = replaySource.indexOf(`case ${opcode}:`);
+      const caseText = caseLabel(opcode);
+      const start = replaySource.indexOf(caseText);
       expect(start, `native replay case ${opcode} exists`).toBeGreaterThanOrEqual(0);
-      const remainder = replaySource.slice(start + `case ${opcode}:`.length);
-      const nextCase = remainder.search(/\n\s*case \d+:/u);
+      const remainder = replaySource.slice(start + caseText.length);
+      const nextCase = remainder.search(/\n\s*case TN_FRAME_OP_\w+:/u);
       const body = nextCase < 0 ? remainder : remainder.slice(0, nextCase);
       const lookupIndex = body.indexOf(lookup);
       expect(lookupIndex, `opcode ${opcode} has ${label} lookup`).toBeGreaterThanOrEqual(0);

@@ -9,10 +9,16 @@ export type DebugSnapshot = Record<string, Record<string, unknown>>;
 
 type GeometryRequest = { limit?: number; sort?: GeometryCaptureSort };
 
+// The key is `DEV_GLOBAL_KEY` in `@threenative/core`, and this file may not import it: a static
+// reference from here keeps core's dev-global, and the literal with it, in every game's production
+// chunk — `scripts/check-core-boundary.ts` rejects that (`packages/ui/__tests__` pins the two
+// equal, so a rename in core fails a test instead of silently reading nothing).
+const DEV_GLOBAL_KEY = "__THREENATIVE__" as const;
+
 type DevWindow = Window &
   Partial<
     Record<
-      "__THREENATIVE__",
+      typeof DEV_GLOBAL_KEY,
       {
         snapshot?: () => DebugSnapshot;
         geometry?: (request?: GeometryRequest) => Promise<IGeometryCaptureReport>;
@@ -31,8 +37,8 @@ const DEFAULT_SMALL_PIXELS = 32;
 
 const SORTS: readonly GeometryCaptureSort[] = ["triangles", "draws", "projected"];
 
-function devTools(): NonNullable<DevWindow["__THREENATIVE__"]> | undefined {
-  return (globalThis.window as DevWindow | undefined)?.__THREENATIVE__;
+function devTools(): NonNullable<DevWindow[typeof DEV_GLOBAL_KEY]> | undefined {
+  return (globalThis.window as DevWindow | undefined)?.[DEV_GLOBAL_KEY];
 }
 
 function readSnapshot(): DebugSnapshot {

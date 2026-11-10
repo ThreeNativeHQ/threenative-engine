@@ -34,6 +34,7 @@ import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import { defineTypedBufferAttribute } from "./buffer-attributes.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { defineEdgesGeometry } from "./edges-geometry.js";
+import { WEB_FRAME_FIELD } from "./generated/web-frame-fields.js";
 import { CPU_STAGE_FIELDS } from "./gpu-stages.js";
 import { defineGridHelper } from "./grid-helper.js";
 import { withMathUtilsExtras } from "./math-utils.js";
@@ -176,7 +177,7 @@ export async function bindWebEngine(
       ? () => {
           const totals = { ...counters() };
           // Off, the engine reads no clock and the totals stand at their last value: listing them would report a stale cost.
-          if (module._tnw_web_frame(84) !== 0)
+          if (module._tnw_web_frame(WEB_FRAME_FIELD.cpuMetersActive) !== 0)
             for (const [name, field] of Object.entries(CPU_STAGE_FIELDS))
               totals[name] = module._tnw_web_frame(field);
           return totals;
@@ -326,10 +327,10 @@ export async function bindWebEngine(
             // The frame pass draws at the engine's input size, at the frame's sample count (tnw_web_frame's
             // 35, 36 and 18), so a game reads the size and MSAA the engine actually drew.
             surface: () => ({
-              width: hostFrame?.call(module, 35) ?? 0,
-              height: hostFrame?.call(module, 36) ?? 0,
+              width: hostFrame?.call(module, WEB_FRAME_FIELD.inputWidth) ?? 0,
+              height: hostFrame?.call(module, WEB_FRAME_FIELD.inputHeight) ?? 0,
             }),
-            samples: () => hostFrame?.call(module, 18) ?? 0,
+            samples: () => hostFrame?.call(module, WEB_FRAME_FIELD.sampleCount) ?? 0,
           },
     );
     drawSecondaryPasses = passes.updateSecondaryPasses;

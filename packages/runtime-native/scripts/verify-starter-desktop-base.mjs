@@ -331,8 +331,15 @@ function verifyOwnedDesktop({ frames, project, artifact, artifactDirectory, logP
         TN_PLAYTEST_COMPLETION_WINDOW_TIMEOUT_MS: String(Math.max(1, timeout - 10_000)) },
     });
     writeFileSync(logPath, `${result.stdout ?? ''}\n${result.stderr ?? ''}`);
-    if (result.error || result.signal || result.status !== 0)
-      throw new Error(`TN_NATIVE_STARTER_SMOKE: runner failed: ${result.error?.message ?? result.signal ?? result.stderr ?? result.status}`);
+    if (result.error || result.signal || result.status !== 0) {
+      // An empty-but-present stderr is still a string, so `??` never reached the exit status: every
+      // failed runner read `runner failed: (empty stderr)`, which names neither the status nor the
+      // log the run just wrote. PRD-840's native capture stopped here twice with nothing to read.
+      const output = `${result.stderr ?? ''}${result.stdout ?? ''}`.trim();
+      const why = result.error?.message ?? (result.signal ? `signal ${result.signal}` :
+        output.length > 0 ? output : `exit ${result.status}`);
+      throw new Error(`TN_NATIVE_STARTER_SMOKE: runner failed: ${why} (log: ${logPath})`);
+    }
     const report = JSON.parse(result.stdout);
     if (report?.pass !== true || !report.assertionResults?.length
       || report.assertionResults.some((assertion) => assertion.pass !== true))

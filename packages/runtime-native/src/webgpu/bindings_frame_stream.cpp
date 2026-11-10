@@ -1,6 +1,7 @@
 /** Packed WebGPU frame-operation stream replay. */
 
 #include "bindings_frame_stream.h"
+#include "frame_ops.h"
 
 #include "bindings_commands.h"
 #include "bindings_presentation.h"
@@ -73,8 +74,6 @@ constexpr uint32_t kFramePlanHeaderBytes = 24;
 constexpr uint32_t kFramePlanModeCapture = 1;
 constexpr uint32_t kFramePlanModePatch = 2;
 
-const char* const kFrameOpNames[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy", "resolveQuerySet", "compute.dispatchWorkgroupsIndirect"};
-constexpr size_t kFrameOpCount = std::size(kFrameOpNames);
 
 // Walks a captured record stream and writes its record boundaries into the caller's index. The
 // rules are the ones replay enforces, run once per capture so a later patch can be bounds-checked
@@ -326,7 +325,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
         const auto opProfileStart = beginProfiledBinding();
 #endif
         switch (opcode) {
-        case 1: {
+        case TN_FRAME_OP_WRITE_BUFFER: {
             const uint32_t id = r.u32();
             const double off = r.f64();
             const uint32_t n = r.u32();
@@ -353,8 +352,8 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
 #endif
                 r.cursor = (r.cursor + n + 7) & ~size_t(7); break;
         }
-            case 2: { const uint32_t id = r.u32(); if (!id || encoders.find(id) != encoders.end()) { fail("duplicate command encoder id"); break; } WGPUCommandEncoderDescriptor d{}; auto e = wgpuDeviceCreateCommandEncoder(state->device, &d); if (!e) { fail("createCommandEncoder failed"); break; } encoders[id] = e; break; }
-            case 3: {
+            case TN_FRAME_OP_CREATE_COMMAND_ENCODER: { const uint32_t id = r.u32(); if (!id || encoders.find(id) != encoders.end()) { fail("duplicate command encoder id"); break; } WGPUCommandEncoderDescriptor d{}; auto e = wgpuDeviceCreateCommandEncoder(state->device, &d); if (!e) { fail("createCommandEncoder failed"); break; } encoders[id] = e; break; }
+            case TN_FRAME_OP_BEGIN_RENDER_PASS: {
                 const uint32_t eid = r.u32(), pid = r.u32(), count = r.u32();
                 if (!pid || renderPasses.find(pid) != renderPasses.end()) {
                     fail("duplicate render pass id");
@@ -443,7 +442,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 renderOwners[pid] = e;
                 break;
             }
-            case 4: {
+            case TN_FRAME_OP_RENDER_SET_PIPELINE: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -456,7 +455,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                     wgpuRenderPassEncoderSetPipeline(p, it->second);
                 break;
             }
-            case 5: {
+            case TN_FRAME_OP_RENDER_SET_BIND_GROUP: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -479,7 +478,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                     wgpuRenderPassEncoderSetBindGroup(p, index, it->second, n, dynamicOffsets.data());
                 break;
             }
-            case 6: {
+            case TN_FRAME_OP_RENDER_SET_VERTEX_BUFFER: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -495,7 +494,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                     p, slot, b, off, z < 0 ? WGPU_WHOLE_SIZE : static_cast<uint64_t>(z));
                 break;
             }
-            case 7: {
+            case TN_FRAME_OP_RENDER_SET_INDEX_BUFFER: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -511,7 +510,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                     p, b, f, off, z < 0 ? WGPU_WHOLE_SIZE : static_cast<uint64_t>(z));
                 break;
             }
-            case 8: {
+            case TN_FRAME_OP_RENDER_DRAW: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -521,7 +520,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuRenderPassEncoderDraw(p, a, b, c, d);
                 break;
             }
-            case 9: {
+            case TN_FRAME_OP_RENDER_DRAW_INDEXED: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -533,7 +532,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuRenderPassEncoderDrawIndexed(p, a, b, c, d, e);
                 break;
             }
-            case 10: case 11: {
+            case TN_FRAME_OP_RENDER_DRAW_INDIRECT: case TN_FRAME_OP_RENDER_DRAW_INDEXED_INDIRECT: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -543,13 +542,13 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 const uint64_t off = static_cast<uint64_t>(r.f64());
                 if (!r.ok)
                     break;
-                if (opcode == 10)
+                if (opcode == TN_FRAME_OP_RENDER_DRAW_INDIRECT)
                     wgpuRenderPassEncoderDrawIndirect(p, b, off);
                 else
                     wgpuRenderPassEncoderDrawIndexedIndirect(p, b, off);
                 break;
             }
-            case 12: {
+            case TN_FRAME_OP_RENDER_SET_VIEWPORT: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -559,7 +558,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuRenderPassEncoderSetViewport(p, x, y, w, h, a, b);
                 break;
             }
-            case 13: {
+            case TN_FRAME_OP_RENDER_SET_SCISSOR_RECT: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -569,7 +568,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuRenderPassEncoderSetScissorRect(p, x, y, w, h);
                 break;
             }
-            case 14: {
+            case TN_FRAME_OP_RENDER_SET_BLEND_CONSTANT: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -579,7 +578,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuRenderPassEncoderSetBlendConstant(p, &c);
                 break;
             }
-            case 15: {
+            case TN_FRAME_OP_RENDER_SET_STENCIL_REFERENCE: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -589,7 +588,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuRenderPassEncoderSetStencilReference(p, reference);
                 break;
             }
-            case 16: {
+            case TN_FRAME_OP_RENDER_EXECUTE_BUNDLES: {
                 auto p = renderPass(r.u32());
                 if (!r.ok)
                     break;
@@ -614,7 +613,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuRenderPassEncoderExecuteBundles(p, renderBundles.size(), renderBundles.data());
                 break;
             }
-            case 17: {
+            case TN_FRAME_OP_RENDER_END: {
                 const uint32_t id = r.u32();
                 auto p = renderPass(id);
                 if (!r.ok)
@@ -628,7 +627,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 renderOwners.erase(id);
                 break;
             }
-            case 18: {
+            case TN_FRAME_OP_BEGIN_COMPUTE_PASS: {
                 const uint32_t eid = r.u32(), pid = r.u32();
                 if (!pid || computePasses.find(pid) != computePasses.end()) {
                     fail("duplicate compute pass id");
@@ -663,7 +662,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 }
                 break;
             }
-            case 19: {
+            case TN_FRAME_OP_COMPUTE_SET_PIPELINE: {
                 auto p = computePass(r.u32());
                 if (!r.ok)
                     break;
@@ -676,7 +675,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                     wgpuComputePassEncoderSetPipeline(p, it->second);
                 break;
             }
-            case 20: {
+            case TN_FRAME_OP_COMPUTE_SET_BIND_GROUP: {
                 auto p = computePass(r.u32());
                 if (!r.ok)
                     break;
@@ -699,7 +698,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                     wgpuComputePassEncoderSetBindGroup(p, index, it->second, n, dynamicOffsets.data());
                 break;
             }
-            case 21: {
+            case TN_FRAME_OP_COMPUTE_DISPATCH_WORKGROUPS: {
                 auto p = computePass(r.u32());
                 if (!r.ok)
                     break;
@@ -709,7 +708,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuComputePassEncoderDispatchWorkgroups(p, x, y, z);
                 break;
             }
-            case 22: {
+            case TN_FRAME_OP_COMPUTE_END: {
                 const auto id = r.u32();
                 auto p = computePass(id);
                 if (!r.ok)
@@ -720,7 +719,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 computeOwners.erase(id);
                 break;
             }
-            case 23: {
+            case TN_FRAME_OP_COPY_BUFFER_TO_BUFFER: {
                 auto e = encoder(r.u32());
                 if (!r.ok)
                     break;
@@ -737,7 +736,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuCommandEncoderCopyBufferToBuffer(e, s, so, d, od, z);
                 break;
             }
-            case 24: {
+            case TN_FRAME_OP_COPY_BUFFER_TO_TEXTURE: {
                 auto e = encoder(r.u32());
                 if (!r.ok)
                     break;
@@ -760,7 +759,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuCommandEncoderCopyBufferToTexture(e, &s, &d, &z);
                 break;
             }
-            case 25: {
+            case TN_FRAME_OP_COPY_TEXTURE_TO_BUFFER: {
                 auto e = encoder(r.u32());
                 if (!r.ok)
                     break;
@@ -783,7 +782,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuCommandEncoderCopyTextureToBuffer(e, &s, &d, &z);
                 break;
             }
-            case 26: {
+            case TN_FRAME_OP_COPY_TEXTURE_TO_TEXTURE: {
                 auto e = encoder(r.u32());
                 if (!r.ok)
                     break;
@@ -800,7 +799,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuCommandEncoderCopyTextureToTexture(e, &s, &d, &z);
                 break;
             }
-            case 27: {
+            case TN_FRAME_OP_CLEAR_BUFFER: {
                 auto e = encoder(r.u32());
                 if (!r.ok)
                     break;
@@ -815,7 +814,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                     e, b, o, z < 0 ? WGPU_WHOLE_SIZE : static_cast<uint64_t>(z));
                 break;
             }
-            case 28: {
+            case TN_FRAME_OP_FINISH: {
                 const auto eid = r.u32(), cid = r.u32();
                 if (!r.ok)
                     break;
@@ -836,7 +835,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 wgpuCommandEncoderRelease(e);
                 break;
             }
-            case 29: {
+            case TN_FRAME_OP_SUBMIT: {
                 const uint32_t n = r.u32();
                 if (!r.ok)
                     break;
@@ -889,7 +888,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 }
                 break;
             }
-            case 30: {
+            case TN_FRAME_OP_WRITE_TEXTURE: {
                 WGPUImageCopyTexture_Compat d{};
                 readTextureCopy(d);
                 if (!r.ok)
@@ -917,7 +916,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 r.cursor = (r.cursor + n + 7) & ~size_t(7);
                 break;
             }
-            case 31: {
+            case TN_FRAME_OP_COPY_EXTERNAL_IMAGE_TO_TEXTURE: {
                 const uint32_t sourceWidth = r.u32(), sourceHeight = r.u32(), originX = r.u32();
                 const uint32_t originY = r.u32(), flipY = r.u32();
                 if (!r.ok)
@@ -963,7 +962,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 r.cursor = (r.cursor + n + 7) & ~size_t(7);
                 break;
             }
-            case 32: {
+            case TN_FRAME_OP_BUFFER_DESTROY: {
                 const uint32_t id = r.u32();
                 if (!r.ok)
                     break;
@@ -975,7 +974,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 }
                 break;
             }
-            case 33: {
+            case TN_FRAME_OP_TEXTURE_DESTROY: {
                 const uint32_t id = r.u32();
                 if (!r.ok)
                     break;
@@ -990,7 +989,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
             // resolveQuerySet: the only way timestamps leave the query set for a buffer the game
             // can map. An unknown query set or buffer fails the frame; a resolve that quietly did
             // nothing leaves bytes that read exactly like a measurement of a very fast pass.
-            case 34: {
+            case TN_FRAME_OP_RESOLVE_QUERY_SET: {
                 auto e = encoder(r.u32());
                 if (!r.ok)
                     break;
@@ -1012,7 +1011,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                                                   static_cast<uint64_t>(offset));
                 break;
             }
-            case 35: {
+            case TN_FRAME_OP_COMPUTE_DISPATCH_WORKGROUPS_INDIRECT: {
                 auto p = computePass(r.u32());
                 if (!r.ok)
                     break;
@@ -1026,20 +1025,20 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 break;
             }
             default:
-                fail("unsupported frame op opcode " + std::to_string(opcode));
+                fail("unsupported frame op opcode " + std::to_string(opcode) + ": frame_ops.h (api/frame-ops.json) does not name it, so the recorder that wrote it was built against another table");
                 break;
         }
 #if TN_ANDROID_JS_PROFILE
         switch (opcode) {
-            case 1: endProfiledBinding(state, ProfiledRenderCommand::WriteBuffer, opProfileStart); break;
-            case 4: endProfiledBinding(state, ProfiledRenderCommand::SetPipeline, opProfileStart); break;
-            case 5: endProfiledBinding(state, ProfiledRenderCommand::SetBindGroup, opProfileStart); break;
-            case 6: endProfiledBinding(state, ProfiledRenderCommand::SetVertexBuffer, opProfileStart); break;
-            case 7: endProfiledBinding(state, ProfiledRenderCommand::SetIndexBuffer, opProfileStart); break;
-            case 8: endProfiledBinding(state, ProfiledRenderCommand::Draw, opProfileStart); break;
-            case 9: endProfiledBinding(state, ProfiledRenderCommand::DrawIndexed, opProfileStart); break;
-            case 16: endProfiledBinding(state, ProfiledRenderCommand::ExecuteBundles, opProfileStart); break;
-            case 17: endProfiledBinding(state, ProfiledRenderCommand::EndRenderPass, opProfileStart); break;
+            case TN_FRAME_OP_WRITE_BUFFER: endProfiledBinding(state, ProfiledRenderCommand::WriteBuffer, opProfileStart); break;
+            case TN_FRAME_OP_RENDER_SET_PIPELINE: endProfiledBinding(state, ProfiledRenderCommand::SetPipeline, opProfileStart); break;
+            case TN_FRAME_OP_RENDER_SET_BIND_GROUP: endProfiledBinding(state, ProfiledRenderCommand::SetBindGroup, opProfileStart); break;
+            case TN_FRAME_OP_RENDER_SET_VERTEX_BUFFER: endProfiledBinding(state, ProfiledRenderCommand::SetVertexBuffer, opProfileStart); break;
+            case TN_FRAME_OP_RENDER_SET_INDEX_BUFFER: endProfiledBinding(state, ProfiledRenderCommand::SetIndexBuffer, opProfileStart); break;
+            case TN_FRAME_OP_RENDER_DRAW: endProfiledBinding(state, ProfiledRenderCommand::Draw, opProfileStart); break;
+            case TN_FRAME_OP_RENDER_DRAW_INDEXED: endProfiledBinding(state, ProfiledRenderCommand::DrawIndexed, opProfileStart); break;
+            case TN_FRAME_OP_RENDER_EXECUTE_BUNDLES: endProfiledBinding(state, ProfiledRenderCommand::ExecuteBundles, opProfileStart); break;
+            case TN_FRAME_OP_RENDER_END: endProfiledBinding(state, ProfiledRenderCommand::EndRenderPass, opProfileStart); break;
             default: break;
         }
 #endif

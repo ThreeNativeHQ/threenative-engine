@@ -15,6 +15,8 @@
 // one. Adding a marker here without teaching that script about it is harmless; removing or
 // renaming one fails the instrument, which is the intent.
 
+#include "mystral/console_markers.h"
+
 #include <chrono>
 #include <cstdio>
 #include <thread>
@@ -175,7 +177,7 @@ class FrameHitchRecorder {
         const double p50 = sorted[kWindow / 2];
         const double p99 = sorted[(kWindow * 99) / 100];
         const char* format =
-            "TN_FRAME_HITCH:{\"window\":%d,\"maxMs\":%.3f,\"maxAtFrame\":%d,\"p99Ms\":%.3f,"
+            TN_MARKER_FRAME_HITCH ":{\"window\":%d,\"maxMs\":%.3f,\"maxAtFrame\":%d,\"p99Ms\":%.3f,"
             "\"p50Ms\":%.3f,\"pipelineCompileMs\":%.3f,\"pipelineCompileCalls\":%llu}";
 #ifdef __ANDROID__
         __android_log_print(ANDROID_LOG_INFO, "MystralColdStart", format, kWindow, worst, worstAt,

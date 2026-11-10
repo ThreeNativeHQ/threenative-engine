@@ -49,10 +49,19 @@ describe("native engine game spans", () => {
     expect(webHost).toMatch(/desc\.requiredFeatureCount = features\.size\(\);/u);
     expect(webHost).toMatch(/desc\.requiredFeatures = features\.data\(\);/u);
     expect(webHost).toMatch(/renderer->setGpuTimer\(timestampTracking\)/u);
-    expect(webHost).toMatch(/case 7:\s*return renderer->lastGpuMs\(\);/u);
-    expect(webHost).toMatch(/case 8:\s*return double\(renderer->gpuSamples\(\)\);/u);
-    expect(webHost).toMatch(/case 9:\s*return double\(renderer->gpuSourceFrame\(\)\);/u);
-    expect(webHost).toMatch(/case 10:\s*return renderer->gpuTimerAvailable\(\) \? 1 : 0;/u);
+    // The generated field names, not the numbers they hold: the switch reads the enum PRD-832
+    // derives from `api/web-frame-fields.json`, so a renumbered id is a manifest edit, and this
+    // assertion follows the name rather than pinning a magic number that no longer appears.
+    expect(webHost).toMatch(/case TN_WEB_FRAME_GPU_MS:\s*return renderer->lastGpuMs\(\);/u);
+    expect(webHost).toMatch(
+      /case TN_WEB_FRAME_GPU_SAMPLES:\s*return double\(renderer->gpuSamples\(\)\);/u,
+    );
+    expect(webHost).toMatch(
+      /case TN_WEB_FRAME_GPU_SOURCE_FRAME:\s*return double\(renderer->gpuSourceFrame\(\)\);/u,
+    );
+    expect(webHost).toMatch(
+      /case TN_WEB_FRAME_GPU_TIMER_AVAILABLE:\s*return renderer->gpuTimerAvailable\(\) \? 1 : 0;/u,
+    );
     expect(webHost).toMatch(/renderer->setGpuTimerSourceFrame\(sourceFrame\)/u);
     expect(webHost).toMatch(/int tnw_web_render\([^)]*uint32_t sourceFrame\)/u);
   });
@@ -74,11 +83,13 @@ describe("native engine game spans", () => {
     );
   });
 
-  it("reports the submitted frame id, captured at submission, in renderer.cpp", () => {
-    const renderer = readFileSync(
-      path.resolve("packages/runtime-native/src/engine/renderer/renderer.cpp"),
-      "utf8",
-    );
+  it("reports the submitted frame id, captured at submission, in the renderer", () => {
+    // PRD-840: renderPrepared (renderer_frame.cpp) captures the id, and encodeFrame (renderer.cpp) reports it.
+    const renderer = ["renderer.cpp", "renderer_frame.cpp"]
+      .map((file) =>
+        readFileSync(path.resolve("packages/runtime-native/src/engine/renderer", file), "utf8"),
+      )
+      .join("\n");
     expect(renderer).toMatch(/job\.source = sourceFrame_;/u);
     expect(renderer).toMatch(/\[[^\]]*\bsource\b[^\]]*\][^\n]*\(GpuStatus status/u);
     expect(renderer).toMatch(/t->source = source;[^\n]*\n\s*\+\+t->samples;/u);

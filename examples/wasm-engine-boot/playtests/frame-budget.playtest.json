@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-frame-budget",
+  "target": "web",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 5,
+  "steps": [{ "kind": "wait", "label": "steady", "waitTicks": 400 }],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true }
+  }
+}

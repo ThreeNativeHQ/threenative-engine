@@ -13,7 +13,7 @@ import {
   toolDefinitions,
 } from "../src/index.js";
 
-const workspaceManifest = path.resolve("packages/create-threenative/capabilities.json");
+const workspaceManifest = path.resolve("packages/core/capabilities.json");
 
 function searchResults(
   situation: string,

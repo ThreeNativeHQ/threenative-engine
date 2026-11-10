@@ -204,28 +204,6 @@ test("refuses a scenario whose observation this runner cannot produce", async ()
   expect(error.diagnostic.message).not.toContain("patrol yaw");
 });
 
-// `occluded` evaluates `effect-log.json/entries[service=render.sceneRayQuery|physics.raycast]`,
-// a service log this repository never emits — PRD-033 declined to own a per-call tracing
-// layer for it. Reaching the evaluator would produce TN_PLAYTEST_OCCLUSION_NOT_OBSERVED,
-// which blames the game's geometry for a runner limitation. It must fail closed first.
-test("refuses an occlusion assertion instead of blaming the scene for a missing effect log", async () => {
-  const directory = await writeScenario({ occluded: [{ entity: "listener", target: "emitter" }] });
-  const scenario = await loadPlaytestScenario(directory, "scenario.json");
-  let caught: unknown;
-  try {
-    await connectPlaytestBridge(fakePage(["entity.observe", "runtime.physics"]), scenario);
-  } catch (error) {
-    caught = error;
-  }
-
-  expect(caught).toBeInstanceOf(PlaytestBridgeError);
-  const error = caught as PlaytestBridgeError;
-  expect(error.diagnostic.code).toBe("TN_PLAYTEST_OBSERVATION_UNAVAILABLE");
-  expect(error.diagnostic.path).toBe("effectLog");
-  expect(error.diagnostic.message).toContain("occluded");
-  expect(error.diagnostic.code).not.toBe("TN_PLAYTEST_OCCLUSION_NOT_OBSERVED");
-});
-
 test("names an unavailable labeled movement series", async () => {
   const directory = await writeScenario(
     {

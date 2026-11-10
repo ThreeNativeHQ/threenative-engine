@@ -253,6 +253,10 @@
           }
         }
       }
+    },
+    {
+      "include": ["packages/runtime-native/src/runtime-scripts/frame-op-stream.js"],
+      "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
     }
   ]
 }

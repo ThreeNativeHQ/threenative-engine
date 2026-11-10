@@ -15,6 +15,7 @@
  */
 
 import type { GpuClass } from "./gpu-class.js";
+import { GPU_READING_MAX_AGE_FRAMES, GPU_WINDOW_MIN_SAMPLES } from "./gpu-readings.js";
 
 /** How the active scale was arrived at, reported beside every fps number. */
 export type ScaleSource = "pinned" | "auto" | "auto-pinned";
@@ -104,9 +105,9 @@ export const RESOLUTION_SCALER = {
   downWindows: 1,
   upWindows: 4,
   /** Eight frames for the sampled GPU reading plus eight for asynchronous query resolution. */
-  maxGpuAgeFrames: 16,
+  maxGpuAgeFrames: GPU_READING_MAX_AGE_FRAMES,
   /** Window GPU samples that make the window's own median fresh evidence; see `IScalerWindow.gpu`. */
-  minWindowGpuSamples: 4,
+  minWindowGpuSamples: GPU_WINDOW_MIN_SAMPLES,
   /** The resize frame is itself a hitch and must never feed the controller. */
   cooldownWindows: 1,
   /** Continuous sub-rectangle changes are separated by this many rendered frames. */

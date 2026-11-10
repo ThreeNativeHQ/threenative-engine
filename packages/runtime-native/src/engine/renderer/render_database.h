@@ -42,6 +42,10 @@ struct Reflector;
  */
 class RenderDatabase {
   public:
+    /** `features` is the host's (PRD-840); a nested database takes its parent's. */
+    explicit RenderDatabase(RenderFeatures features = kBuildRenderFeatures) : features_(checkedRenderFeatures(features)) {}
+    /** The render choices this database makes; a pinned build returns a constant (render_features.h). */
+    const RenderFeatures& features() const { return effectiveRenderFeatures(features_); }
     uint64_t render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear = {0, 0, 0, 0},
                     std::array<double, 2>* cpuMs = nullptr);
 
@@ -227,11 +231,10 @@ class RenderDatabase {
     /** PRD-754: each batch keeps one slot (store, colours, cache, material) while its group lives, whichever groups
      *  are in view, so its buffers and draw key hold across culling. A slot unseen for 600 frames is reused. */
     std::size_t batchSlot(uint64_t identity);
-#ifndef __EMSCRIPTEN__
-    std::unordered_map<uint64_t, std::size_t> batchSlotOf_;
+    RenderFeatures features_;
+    std::unordered_map<uint64_t, std::size_t> batchSlotOf_;  // RenderFeatures::batchSlotReuse
     std::vector<uint64_t> batchSlotSeen_;
     std::vector<std::size_t> batchSlotFree_;
-#endif
     std::deque<DrawCache> batchCaches_;  // a deque: a draw keeps its slot's address while later slots grow
     Frustum frustum_;          // this prepare's camera frustum, as three's _frustum
     bool cullExempt_ = false;  // inside a BatchedMesh, which three culls per instance

@@ -271,7 +271,7 @@ describe("capability manifest generator", () => {
       entries: generated.entries,
     });
 
-    const file = path.join(root, "packages/create-threenative/capabilities.json");
+    const file = path.join(root, "packages/core/capabilities.json");
     await writeFile(file, `${await readFile(file, "utf8")}\n`);
     await expect(checkCapabilityManifest(root)).rejects.toThrow(/stale/u);
   });
@@ -286,7 +286,7 @@ describe("capability manifest generator", () => {
     });
 
     await expect(checkCapabilityManifest(root)).rejects.toThrow(
-      path.join(root, "packages/create-threenative/capabilities.json"),
+      path.join(root, "packages/core/capabilities.json"),
     );
   });
 
@@ -302,10 +302,7 @@ describe("capability manifest generator", () => {
   });
 
   it("keeps the IComputeDriven cloth and fluid capability searchable in both manifests", async () => {
-    for (const file of [
-      "packages/core/capabilities.json",
-      "packages/create-threenative/capabilities.json",
-    ]) {
+    for (const file of ["packages/core/capabilities.json", "packages/core/capabilities.json"]) {
       const manifest = JSON.parse(await readFile(file, "utf8")) as {
         entries: Array<{ symbol: string; situations: string[] }>;
       };
@@ -327,10 +324,7 @@ describe("capability manifest generator", () => {
   });
 
   it("keeps the measured Pixel 8 cloth cost in the shipped capability manifests", async () => {
-    for (const file of [
-      "packages/core/capabilities.json",
-      "packages/create-threenative/capabilities.json",
-    ]) {
+    for (const file of ["packages/core/capabilities.json", "packages/core/capabilities.json"]) {
       const manifest = JSON.parse(await readFile(file, "utf8")) as {
         entries: Array<{ constraints: string[]; symbol: string }>;
       };
@@ -938,7 +932,7 @@ describe("capability manifest generator", () => {
         }
         const after = searchCapabilities(
           row.query,
-          "packages/create-threenative/capabilities.json",
+          "packages/core/capabilities.json",
           row.scope,
         ).results.map((result) => result.symbol);
         expect(

@@ -91,6 +91,9 @@ export const executionContracts = {
   "threenative-embedded-bundle-test": {
     invocations: [{ args: [], passLine: "embedded_bundle bindings: all assertions passed" }],
   },
+  "threenative-platform-policy-test": {
+    invocations: [{ args: [], passLine: "native platform policy contract passed" }],
+  },
   "threenative-handle-lifetime-test": {
     invocations: [
       {
@@ -216,6 +219,19 @@ export const executionContracts = {
   "threenative-timer-engine-first-test": {
     invocations: [{ args: [], passLine: "native engine-first timer delivery contract passed" }],
   },
+  "threenative-webgpu-wrapper-bag-test": {
+    invocations: [{ args: [], passLine: "native webgpu wrapper bag contract " }],
+  },
+  "threenative-image-decode-teardown-test": {
+    invocations: [{ args: [], passLine: "native image decode teardown contract passed" }],
+  },
+  "threenative-shim-bootstrap-test": {
+    invocations: [
+      { args: [], passLine: "native shim bootstrap contract passed" },
+      { args: ["--worker-rollback"], passLine: "native worker rollback contract passed" },
+      { args: ["--callback-retention"], passLine: "native callback retention contract passed" },
+    ],
+  },
   "threenative-video-recorder-state-test": {
     invocations: [{ args: [], passLine: "native video recorder missing-state guard passed" }],
   },
@@ -230,6 +246,9 @@ export const executionContracts = {
   },
   "threenative-wgpu-null-handle-test": {
     invocations: [{ args: [], passLine: "native wgpu NULL-handle contract passed" }],
+  },
+  "threenative-buffer-map-lifetime-test": {
+    invocations: [{ args: [], passLine: "native buffer map lifetime contract passed" }],
   },
   "threenative-surface-format-selection-test": {
     invocations: [{ args: [], passLine: "surface-format-selection: PASS" }],

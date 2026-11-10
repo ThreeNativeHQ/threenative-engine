@@ -44,7 +44,7 @@ import {
 import type { IStandalonePlaytestConfig } from "./config.js";
 import {
   provideDisplay,
-  runNeedsPixels,
+  requiresPixels,
   type IProvidedDisplay,
 } from "./captureEnvironment.js";
 import {
@@ -113,11 +113,8 @@ export function preflightDisplay(
   environment: NodeJS.ProcessEnv = process.env,
   platform = process.platform,
 ): IPlaytestDiagnostic | undefined {
-  const takesScreenshot = scenario.artifacts?.screenshots !== false
-    || scenario.steps.some(({ screenshot }) => screenshot !== undefined);
-  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0 || (scenario.assert?.tone?.length ?? 0) > 0;
   const evaluatesFramebuffer = scenario.assert?.framebufferCoverage !== undefined;
-  if (platform !== "linux" || config.headless !== true || environment.DISPLAY || environment.WAYLAND_DISPLAY || (!takesScreenshot && !evaluatesVisual && !evaluatesFramebuffer)) {
+  if (platform !== "linux" || config.headless !== true || environment.DISPLAY || environment.WAYLAND_DISPLAY || !requiresPixels(scenario)) {
     return undefined;
   }
   return {

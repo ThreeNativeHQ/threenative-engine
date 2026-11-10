@@ -1,0 +1,25 @@
+{
+  "$comment": "The keys the native host reads out of the embedded .threenative/config.json with its string scanner. Generation writes the C++ constants from this file, so the host never types a key. `at` is where the key sits in the config the packager writes (a dotted path), and `flattenedBy` names the script that copies it to the top level because the scanner cannot tell two `renderer` keys apart.",
+  "version": 1,
+  "keys": [
+    { "name": "title", "at": "window.title" },
+    { "name": "icon", "at": "app.icon" },
+    { "name": "width", "at": "window.width" },
+    { "name": "height", "at": "window.height" },
+    { "name": "fullscreen", "at": "display.fullscreen" },
+    { "name": "maximized", "at": "window.maximized" },
+    { "name": "resizable", "at": "window.resizable" },
+    {
+      "name": "maxFps",
+      "at": "maxFps",
+      "flattenedBy": "packages/runtime-native/scripts/package-desktop.mjs"
+    },
+    {
+      "name": "uiRenderer",
+      "at": "uiRenderer",
+      "flattenedBy": "packages/runtime-native/scripts/package-desktop.mjs"
+    },
+    { "name": "bootSplash", "at": "bootSplash" },
+    { "name": "backgroundColor", "at": "bootSplash.backgroundColor" }
+  ]
+}

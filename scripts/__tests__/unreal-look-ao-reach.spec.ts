@@ -19,13 +19,9 @@ async function loadQuality(): Promise<{
   copyFileSync(join(SCAFFOLD, "quality.ts"), join(dir, "quality.ts"));
   // `quality.ts` reads the level's fixed exposure from `atmosphere.ts` (PRD-646 round 6).
   copyFileSync(join(SCAFFOLD, "atmosphere.ts"), join(dir, "atmosphere.ts"));
-  copyFileSync(
-    join(
-      __dirname,
-      "../../packages/create-threenative/templates/starter/src/render/rendererGate.ts",
-    ),
-    join(dir, "rendererGate.ts"),
-  );
+  // The scaffold's own gate, not a borrowed one: the starter's copy is the engine's now
+  // (`@threenative/core/render/environment`), and this capture harness stays independent of it.
+  copyFileSync(join(SCAFFOLD, "rendererGate.ts"), join(dir, "rendererGate.ts"));
   return import(/* @vite-ignore */ pathToFileURL(join(dir, "quality.ts")).href);
 }
 

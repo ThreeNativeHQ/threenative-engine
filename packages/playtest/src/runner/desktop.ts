@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { assertDesktopCaptureNotBlank } from "../capture.js";
-import type { IDevicePlaytestDriver } from "./androidRunner.js";
+import type { IDevicePlaytestDriver } from "./deviceRunner.js";
 import { SCREENSHOT_TIMEOUT_MS as OVERALL_SCREENSHOT_TIMEOUT_MS } from "./shared.js";
 
 /** How long the host may leave a screenshot request untouched before the app counts as hung. */

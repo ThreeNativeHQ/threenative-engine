@@ -88,6 +88,7 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/bake-delete-test.ts",
     "The delete-test gate removes the scaffold it created in finally.",
   ],
+  ["scripts/scaffold-pin.ts", "The pin tool removes the scaffolds it measured in finally."],
   [
     "scripts/realism-effects-visual.ts",
     "The production realism-effects visual gate removes its bundle root in finally.",

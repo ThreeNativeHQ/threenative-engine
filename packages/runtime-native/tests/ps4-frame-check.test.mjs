@@ -57,7 +57,11 @@ test('PS4 builds texture mip chains on the CPU, one queue write per level (PRD-7
   // A mipmapped render target never got its upper levels tiled: distant floors sampled zeros.
   const header = readFileSync(`${root}src/engine/renderer/texture_copy.h`, 'utf8');
   assert.match(header, /#if defined\(TN_PS4\)\ninline constexpr bool kCpuMipChain = true;/u);
-  const renderer = readFileSync(`${root}src/engine/renderer/renderer.cpp`, 'utf8');
+  // PRD-840 split renderer.cpp by concern; the material texture paths, and this chain, are in
+  // renderer_material.cpp now. Read the split pair, as native-engine-game-spans.spec.ts does.
+  const renderer = ["renderer.cpp", "renderer_material.cpp"]
+    .map((file) => readFileSync(`${root}src/engine/renderer/${file}`, 'utf8'))
+    .join('\n');
   assert.match(renderer, /if \(kCpuMipChain && key\.levels > 1\) \{/u);
   assert.match(renderer, /downsampleRgba8\(/u);
 });

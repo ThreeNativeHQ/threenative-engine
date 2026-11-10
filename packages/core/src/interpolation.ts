@@ -1,5 +1,7 @@
 import { type Object3D, Quaternion, Vector3 } from "three";
 
+import { hasCopyMatrixWorldHook } from "./engine-hooks.js";
+
 interface ITransformHistory {
   readonly object: Object3D;
   readonly previousPosition: Vector3;
@@ -21,9 +23,8 @@ interface ITransformHistory {
  * a node the walk will not compose.
  */
 function recompose(object: Object3D): void {
-  const engine = object as Object3D & { __tnCopyMatrixWorld?: unknown };
-  if (object.matrixAutoUpdate && engine.__tnCopyMatrixWorld !== undefined) {
-    engine.matrixWorldNeedsUpdate = true;
+  if (object.matrixAutoUpdate && hasCopyMatrixWorldHook(object)) {
+    object.matrixWorldNeedsUpdate = true;
     return;
   }
   object.updateMatrix();

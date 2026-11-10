@@ -655,7 +655,7 @@ test('launches the launcher inside a desktop container, not the container direct
   assert.equal(desktopLaunchTarget(flat, 'flat'), flat);
 });
 
-function ownedSmokeFixture({ count = 300, blank = false, status = 0, source = 'present-return', gap = false } = {}) {
+function ownedSmokeFixture({ count = 300, blank = false, status = 0, source = 'present-return', gap = false, stdout } = {}) {
   const project = makeTempDirSync('owned-kit-smoke-');
   writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'shooter' }));
   const artifact = join(project, 'dist-native', 'shooter');
@@ -677,7 +677,7 @@ function ownedSmokeFixture({ count = 300, blank = false, status = 0, source = 'p
     png.data.fill(255);
     if (!blank) png.data[0] = 0;
     writeFileSync(join(output, 'after.png'), PNG.sync.write(png));
-    return { status, stdout: JSON.stringify({ pass: true, assertionResults: [{ pass: true }], acquisition: { completionWindow: {
+    return { status, stdout: stdout ?? JSON.stringify({ pass: true, assertionResults: [{ pass: true }], acquisition: { completionWindow: {
       source, timebase: 'steady-clock-ms',
       samples: Array.from({ length: count }, (_, i) => ({ sequence: i + 101 + (gap && i > 5 ? 1 : 0), completedAtMs: 2000 + i * 20 })),
     } } }), stderr: '' };
@@ -745,3 +745,17 @@ for (const [name, options, pattern] of [
     assert.equal(existsSync(f.calls[0].args[1]), false);
   });
 }
+
+test('a failed runner with no output names its exit status and the log it wrote', () => {
+  // The capture smoke stopped with `runner failed: (empty stderr)` on both arms: the runner's stderr
+  // was an empty string, so the exit status and the log path never reached the message.
+  const f = ownedSmokeFixture({ status: 1, stdout: '' });
+  assert.throws(
+    () => verifyStarterDesktop({ project: f.project, frames: 300, run: f.run }),
+    (error) => {
+      assert.match(error.message, /runner failed: exit 1/u);
+      assert.match(error.message, /starter-desktop\.log/u);
+      return true;
+    },
+  );
+});

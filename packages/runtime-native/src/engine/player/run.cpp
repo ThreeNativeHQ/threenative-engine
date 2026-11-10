@@ -3,6 +3,7 @@
 // renderer, the presentation of that frame, and the mailbox the runner talks to. It names no game:
 // the C++ demo and a V8 game bundle both arrive as a `player::Game`.
 #include "engine/player/run.h"
+#include "engine/foundation/flags.h"
 
 #include <SDL3/SDL.h>
 #if defined(__ANDROID__)
@@ -65,6 +66,7 @@
 #include "engine/renderer/render_database.h"
 #include "engine/scene/projected_cull.h"
 #include "engine/world/loop/fixed_step.h"
+#include "mystral/console_markers.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
 #include "mystral/webgpu_compat.h"
@@ -131,7 +133,7 @@ double gameSpan(int id, int action) {
         return -1;
     }
     if (id == -1) {
-        const char* flag = std::getenv("TN_GAME_SPANS");
+        const char* flag = flags::read<flags::GameSpans>();
         return flag && std::strcmp(flag, "1") == 0 ? 1 : 0;
     }
     if (id == -2) return wallMs();
@@ -255,8 +257,7 @@ struct SurfaceConfig {
 
 SurfaceConfig readSurfaceConfig() {
     SurfaceConfig config;
-    const auto dimension = [&](const char* name, uint32_t& into) {
-        const char* text = std::getenv(name);
+    const auto dimension = [&](const char* text, const char* name, uint32_t& into) {
         if (text == nullptr || text[0] == '\0') return;
         char* end = nullptr;
         const unsigned long value = std::strtoul(text, &end, 10);
@@ -266,15 +267,15 @@ SurfaceConfig readSurfaceConfig() {
         }
         into = static_cast<uint32_t>(value);
     };
-    dimension("TN_PLAYER_WIDTH", config.width);
-    dimension("TN_PLAYER_HEIGHT", config.height);
-    if (const char* text = std::getenv("TN_PLAYER_TITLE"); text != nullptr && text[0] != '\0') config.title = text;
-    if (const char* text = std::getenv("TN_PLAYER_VSYNC"); text != nullptr && text[0] != '\0') {
+    dimension(flags::read<flags::PlayerWidth>(), flags::PlayerWidth.name, config.width);
+    dimension(flags::read<flags::PlayerHeight>(), flags::PlayerHeight.name, config.height);
+    if (const char* text = flags::read<flags::PlayerTitle>(); text != nullptr && text[0] != '\0') config.title = text;
+    if (const char* text = flags::read<flags::PlayerVsync>(); text != nullptr && text[0] != '\0') {
         if (std::strcmp(text, "0") == 0 || std::strcmp(text, "off") == 0) config.vsync = false;
         else if (std::strcmp(text, "1") == 0 || std::strcmp(text, "on") == 0) config.vsync = true;
         else config.problem = std::string("TN_PLAYER_VSYNC must be 0, 1, off or on, got '") + text + "'";
     }
-    if (const char* text = std::getenv("TN_PLAYER_PRIORITY"); text != nullptr && text[0] != '\0') {
+    if (const char* text = flags::read<flags::PlayerPriority>(); text != nullptr && text[0] != '\0') {
         if (std::strcmp(text, "normal") == 0) config.priority = false;
         else if (std::strcmp(text, "game") != 0)
             config.problem = std::string("TN_PLAYER_PRIORITY must be game or normal, got '") + text + "'";
@@ -961,15 +962,15 @@ struct Session {
     std::function<bool()> refreshView;
     std::chrono::steady_clock::time_point freeRunStart;
     std::optional<std::chrono::steady_clock::time_point> attachWaitStart;
-    RenderDatabase database;
+    RenderDatabase database{RenderFeatures::native()};
     bool runner = false, initialized = false, readbackInFlight = false, firstFrame = true;
     bool viewFailed = false;
-    bool metrics = std::getenv("TN_PLAYER_METRICS") != nullptr || gameSpan(-1, 0) == 1;
-    bool gpuTiming = metrics && std::getenv("TN_PLAYER_GPU_TIMING") && std::strcmp(std::getenv("TN_PLAYER_GPU_TIMING"), "1") == 0;
+    bool metrics = flags::read<flags::PlayerMetrics>() != nullptr || gameSpan(-1, 0) == 1;
+    bool gpuTiming = metrics && flags::read<flags::PlayerGpuTiming>() && std::strcmp(flags::read<flags::PlayerGpuTiming>(), "1") == 0;
     uint64_t previousGpuSamples = 0;
     bool mainThreadCpuEnabled = [] {
-        const char* flag = std::getenv("TN_PLAYER_MAIN_THREAD_CPU");
-        const char* metricsFlag = std::getenv("TN_PLAYER_METRICS");
+        const char* flag = flags::read<flags::PlayerMainThreadCpu>();
+        const char* metricsFlag = flags::read<flags::PlayerMetrics>();
         return metricsFlag && std::strcmp(metricsFlag, "1") == 0 && flag && std::strcmp(flag, "1") == 0;
     }();
     bool spans = gameSpan(-1, 0) == 1;
@@ -1033,7 +1034,7 @@ struct Session {
 };
 
 int Session::initialize() {
-    if (const char* rt = std::getenv("TN_RENDER_THREAD"); gpuTiming && rt && std::strcmp(rt, "1") == 0) {
+    if (const char* rt = flags::read<flags::RenderThread>(); gpuTiming && rt && std::strcmp(rt, "1") == 0) {
         std::fprintf(stderr, "TN_PLAYER_GPU_TIMING_UNSUPPORTED: TN_RENDER_THREAD=1 has no synchronized GPU timing snapshot.\n");
         return 2;
     }
@@ -1085,24 +1086,26 @@ int Session::initialize() {
     watching = true;
 #endif
     startupStage("renderer-begin");
-    renderer = std::make_unique<Renderer>(context->getInstance(), context->getDevice(), context->getQueue(), events);
+    // PRD-840: the native host's render choices. PRD-754's A/B knobs, for a paired run from one build: TN_STABLE_PASSES=0
+    // encodes the shadow passes directly, and TN_STABLE_ROWS=1 also replays the main, aux and velocity passes from
+    // state-ordered rows (off: it moves coplanar pixels).
+    RenderFeatures features = RenderFeatures::native();
+    if (const char* flag = flags::read<flags::StablePasses>(); flag && std::strcmp(flag, "0") == 0) features.stablePasses = false;
+    if (const char* flag = flags::read<flags::StableRows>(); flag && std::strcmp(flag, "1") == 0) features.stableRows = true;
+    renderer = std::make_unique<Renderer>(context->getInstance(), context->getDevice(), context->getQueue(), events, features);
     const uint32_t width = presenter ? presenter->width() : surfaceConfig().width;
     const uint32_t height = presenter ? presenter->height() : surfaceConfig().height;
     renderer->setGpuTimer(gpuTiming);
-    // PRD-754's A/B knobs, for a paired run from one build: TN_STABLE_PASSES=0 encodes the shadow passes directly, and
-    // TN_STABLE_ROWS=1 also replays the main, aux and velocity passes from state-ordered rows (off: it moves coplanar pixels).
-    if (const char* flag = std::getenv("TN_STABLE_PASSES"); flag && std::strcmp(flag, "0") == 0) renderer->setStablePasses(false);
-    if (const char* flag = std::getenv("TN_STABLE_ROWS"); flag && std::strcmp(flag, "1") == 0) renderer->setStableRows(true);
     renderer->setSize(width, height);
     renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
 #if !defined(__ANDROID__)
-    if (const char* flag = std::getenv("TN_GPU_THREAD"); presenter && !(flag && std::strcmp(flag, "0") == 0)) {
+    if (const char* flag = flags::read<flags::GpuThread>(); presenter && !(flag && std::strcmp(flag, "0") == 0)) {
         gpuThread = std::make_shared<GpuThread>();
         gpuThread->post([] { frameCriticalThread("tn-gpu"); });
         gpuThread->wait();
         renderer->gpu().setThread(gpuThread);
         // Only a game that fences its own renderer touches (setRenderBarrier) can share the renderer with a thread.
-        if (const char* rt = std::getenv("TN_RENDER_THREAD"); !gpuTiming && !(rt && std::strcmp(rt, "0") == 0) && game.setRenderBarrier) {
+        if (const char* rt = flags::read<flags::RenderThread>(); !gpuTiming && !(rt && std::strcmp(rt, "0") == 0) && game.setRenderBarrier) {
             renderThread = std::make_shared<GpuThread>();
             renderThread->post([] { frameCriticalThread("tn-render"); });
             renderThread->wait();
@@ -1188,7 +1191,7 @@ int Session::initialize() {
     freeRunStart = std::chrono::steady_clock::now();
     database.shadowMapEnabled = game.shadowMapEnabled;
     // Diagnostic (PRD-613 stage 0): per-frame prepare split and upload bytes in TN_PLAYER_FRAME.
-    database.profiling = metrics && std::getenv("TN_RENDER_PREPARE_SPLIT") != nullptr;
+    database.profiling = metrics && flags::read<flags::RenderPrepareSplit>() != nullptr;
     previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
     renderFrame = [this, lastWorldVisits = Object3D::matrixEvaluations(),
                    lastJoinVisits = Object3D::joinDependencyVisits(),
@@ -1249,7 +1252,7 @@ int Session::initialize() {
         if (!withoutView && (!refreshView() || scene == nullptr || camera == nullptr)) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
         const int overlay = withoutView ? 2 : game.overlay ? game.overlay() : 0;
         if (metrics && measuredFrames == 0) {
-            const char* launch = std::getenv("TN_BENCH_LAUNCH_MS");
+            const char* launch = flags::read<flags::BenchLaunchMs>();
             if (launch) readyMs = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count() - std::strtod(launch, nullptr);
         }
         const double gameMs = metrics ? updateMs + elapsed(frameBegin) : 0;
@@ -1572,7 +1575,7 @@ int Session::initialize() {
                 members.emplace_back("measuredFrames", json::Value::makeNumber(double(measuredFrames)));
                 sample = json::Value::makeObject(std::move(members));
             }
-            std::printf("TN_PLAYER_FRAME:%s\n", json::stringify(sample).c_str());
+            std::printf(TN_MARKER_PLAYER_FRAME ":%s\n", json::stringify(sample).c_str());
             std::fflush(stdout);
             previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
             updateMs = 0;

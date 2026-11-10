@@ -16,12 +16,8 @@
 namespace mystral {
 namespace canvas {
 
-static bool evalCanvasScript(js::Engine& engine, std::string_view name, const char* filename) {
-    const auto script = runtime_scripts::find(name);
-    if (!script.data) {
-        std::cerr << "[Canvas2D] Embedded runtime script not found: " << name << std::endl;
-        return false;
-    }
+static bool evalCanvasScript(js::Engine& engine, runtime_scripts::Script name, const char* filename) {
+    const auto script = runtime_scripts::require(name);
     const std::string source(script.data, script.size);
     if (!engine.eval(source.c_str(), filename)) {
         std::cerr << "[Canvas2D] Failed to evaluate " << filename << ": "
@@ -857,7 +853,7 @@ js::JSValueHandle createCanvas2DContext(
     engine->setGlobalProperty("__canvas2dContextTemp", jsCtx);
 
     // Execute the property interceptor setup.
-    if (!evalCanvasScript(*engine, "canvas2d-properties", "canvas2d-properties.js")) {
+    if (!evalCanvasScript(*engine, runtime_scripts::Script::canvas2d_properties, "canvas2d-properties.js")) {
         std::cerr << "[Canvas2D] Failed to install property interceptors" << std::endl;
     }
 

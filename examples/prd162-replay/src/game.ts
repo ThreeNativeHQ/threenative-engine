@@ -103,7 +103,7 @@ export const game = defineGame<ReplayState>({
   input: { move: { right: ["KeyD"] }, replay: { keys: ["KeyP"] } },
   inputTarget: globalThis,
   plugins: [replayPlugin, playback, playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { replay: ReplayScene },
   seed: 90210,
   start: "replay",

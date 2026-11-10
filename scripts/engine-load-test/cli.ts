@@ -10,6 +10,7 @@ import {
   type IWorkloadAxes,
   parseAxesRecord,
 } from "../../examples/engine-load-test/src/workload.js";
+import { waitForServer } from "../lib/dev-server.js";
 import { runPerformanceRegressionCli } from "../performance-regression/compare.js";
 import { cpuCommand, runCpuCommand } from "../performance-regression/cpu.js";
 import {
@@ -19,7 +20,6 @@ import {
   driveBenchmarkPage,
   serveDirectory,
   startProcess,
-  waitForUrl,
 } from "./browser.js";
 import { pairRows, pairVerdict, renderPairMarkdown } from "./pair.js";
 import {
@@ -191,7 +191,11 @@ async function runTnEngineWeb(options: ILadderOptions): Promise<IRunReport> {
   const dist = path.join(repoRoot, ENGINE_DIST);
   const server = await serveDirectory(dist, TN_PORT);
   try {
-    await waitForUrl(`http://127.0.0.1:${TN_PORT}/index.html`, 60_000);
+    await waitForServer({
+      label: "Benchmark server",
+      timeoutMs: 60_000,
+      url: `http://127.0.0.1:${TN_PORT}/index.html`,
+    });
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[tn-engine-web] ${text}\n`),
       timeoutMs: desktopTimeoutMs(options),
@@ -223,7 +227,12 @@ async function runTnWeb(options: ILadderOptions): Promise<IRunReport> {
     repoRoot,
   );
   try {
-    await waitForUrl(`http://127.0.0.1:${TN_PORT}/`, 120_000);
+    await waitForServer({
+      child: server,
+      label: "Benchmark server",
+      timeoutMs: 120_000,
+      url: `http://127.0.0.1:${TN_PORT}/`,
+    });
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[tn-web] ${text}\n`),
       timeoutMs: desktopTimeoutMs(options),
@@ -240,7 +249,11 @@ async function runTnWebProduction(options: ILadderOptions): Promise<IRunReport> 
   await buildTnExample();
   const server = await serveDirectory(TN_DIST, TN_PORT);
   try {
-    await waitForUrl(`http://127.0.0.1:${TN_PORT}/index.html`, 60_000);
+    await waitForServer({
+      label: "Benchmark server",
+      timeoutMs: 60_000,
+      url: `http://127.0.0.1:${TN_PORT}/index.html`,
+    });
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[tn-web] ${text}\n`),
       timeoutMs: desktopTimeoutMs(options),
@@ -293,7 +306,11 @@ async function runPlainThreeWebProduction(options: ILadderOptions): Promise<IRun
     throw new BenchError("TN_BENCH_TN_BUILD_MISSING", `${TN_DIST}/plain.html does not exist`, 1);
   const server = await serveDirectory(TN_DIST, TN_PORT);
   try {
-    await waitForUrl(`http://127.0.0.1:${TN_PORT}/plain.html`, 60_000);
+    await waitForServer({
+      label: "Benchmark server",
+      timeoutMs: 60_000,
+      url: `http://127.0.0.1:${TN_PORT}/plain.html`,
+    });
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[plain-three-webgpu] ${text}\n`),
       timeoutMs: desktopTimeoutMs(options),
@@ -309,7 +326,11 @@ async function runGodotWeb(options: ILadderOptions): Promise<IRunReport> {
   const exportDir = await exportGodotWeb(repoRoot);
   const server = await serveDirectory(exportDir, GODOT_PORT);
   try {
-    await waitForUrl(`http://127.0.0.1:${GODOT_PORT}/index.html`, 60_000);
+    await waitForServer({
+      label: "Benchmark server",
+      timeoutMs: 60_000,
+      url: `http://127.0.0.1:${GODOT_PORT}/index.html`,
+    });
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[godot-web] ${text}\n`),
       timeoutMs: desktopTimeoutMs(options),

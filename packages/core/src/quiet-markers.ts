@@ -9,24 +9,17 @@
  * Only a real browser page installs it: the native host stubs `document.location` but sets no
  * `globalThis.location`, so a native game keeps its console as the host prints it.
  */
+import { readLaunchFlag } from "./debug.js";
+
 const LOG_FLAG = "TN_LOG";
 const BROWSER_PROTOCOLS = new Set(["http:", "https:", "file:"]);
 
 type ConsoleMethod = (...args: unknown[]) => void;
 let restore: { log: ConsoleMethod; info: ConsoleMethod } | undefined;
 
-const isOn = (value: unknown): boolean =>
-  value === true ||
-  (typeof value === "string" && value !== "" && value !== "0" && value !== "false");
-
 /** Whether `TN_LOG` asks for markers at their own console level on this launch. */
 export function markerLogRequested(): boolean {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } };
-  if (isOn(host.process?.env?.[LOG_FLAG])) return true;
-  const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnLog=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(query))
-    return true;
-  return isOn((globalThis as Record<string, unknown>).__THREENATIVE_LOG__);
+  return readLaunchFlag({ environment: LOG_FLAG, global: "__THREENATIVE_LOG__", query: "tnLog" });
 }
 
 /** Re-routes `TN_` log/info lines to `console.debug`; a second call is a no-op. */

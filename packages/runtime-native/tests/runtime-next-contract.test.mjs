@@ -63,8 +63,8 @@ const RUNTIME_SCRIPT_HASHES = {
 const RUNTIME_SCRIPT_LOADERS = {
   'install-async-pipelines.js': 'evalEmbeddedRuntimeScriptWithResult',
   'image-bitmap-polyfill.js': 'evalEmbeddedRuntimeScript',
-  'webtransport-polyfill.js': 'runtime_scripts::find',
-  'webtransport-stub.js': 'runtime_scripts::find',
+  'webtransport-polyfill.js': 'runtime_scripts::require',
+  'webtransport-stub.js': 'runtime_scripts::require',
   'audio-context-constructor.js': 'evalAudioScript',
   'audio-source-properties.js': 'evalAudioScript',
   'audio-gain-param.js': 'evalAudioScript',
@@ -99,7 +99,7 @@ function assertRuntimeScriptContract(filename, expectedHash, sources) {
   if (consumer) {
     assert.match(
       consumer,
-      new RegExp(`${runtimeScriptLoader(filename)}.*"${scriptName}"`, 's'),
+      new RegExp(`${runtimeScriptLoader(filename)}.*Script::${scriptName.replaceAll('-', '_')}\\b`, 's'),
       `${filename} is not loaded by its native consumer`,
     );
   }
@@ -1189,7 +1189,7 @@ test('native DOM creates namespaced elements through the active element factory'
   assert.match(setup,
     /document\.createElementNS = (?:function\(_namespace, tagName\) \{\s*return document\.createElement\(tagName\);|\(_namespace, tagName\) => document\.createElement\(tagName\);)/,
     'Three.js createElementNS calls must reach the native canvas override');
-  assert.match(read('src/runtime.cpp'), /evalRuntimeScript\(\*jsEngine_, "create-element-setup"/,
+  assert.match(read('src/runtime.cpp'), /evalRuntimeScript\(\*jsEngine_, runtime_scripts::Script::create_element_setup/,
     'the native DOM setup must load the extracted element factory');
 });
 
@@ -1327,7 +1327,7 @@ test('native AudioContext exposes the positional graph used by Three.js', () => 
     'the JavaScript constructor must call the native AudioContext factory');
   assert.match(audioConstructor, /Object\.defineProperties\(this, Object\.getOwnPropertyDescriptors\(native\)\)/,
     'QuickJS must copy the native AudioContext surface onto a JavaScript constructor receiver');
-  assert.match(audio, /evalAudioScript\(\*engine, "audio-context-constructor"/u,
+  assert.match(audio, /evalAudioScript\(\*engine, runtime_scripts::Script::audio_context_constructor/u,
     'the constructor shim must execute as an embedded classic script before game modules load');
   assert.match(audio, /setProperty\(jsCtx, "listener", listener\)/,
     'AudioContext must expose a listener object');

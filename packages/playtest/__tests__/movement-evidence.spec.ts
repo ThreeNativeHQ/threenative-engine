@@ -321,20 +321,13 @@ describe("movement evidence", () => {
     expect(contacts.diagnostics[0]?.code).toBe("TN_PLAYTEST_CONTACT_STEP_NOT_OBSERVED");
   });
 
-  test("fails occlusion and animation assertions when evidence is missing", () => {
+  test("fails animation assertions when evidence is missing", () => {
     const result = evaluate(
-      {
-        animation: [{ entity: "player", finished: true }],
-        occluded: [{ entity: "listener", target: "wall" }],
-      },
+      { animation: [{ entity: "player", finished: true }] },
       { effectLog: effectLog([]) },
     );
-    expect(result.assertions.find(({ id }) => id === "occluded.listener")?.pass).toBe(false);
     expect(result.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(false);
-    expect(result.diagnostics.map(({ code }) => code)).toEqual([
-      "TN_PLAYTEST_OCCLUSION_NOT_OBSERVED",
-      "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
-    ]);
+    expect(result.diagnostics.map(({ code }) => code)).toEqual(["TN_PLAYTEST_ANIMATION_NOT_OBSERVED"]);
   });
 
   test("marks registered assertion families that produce no result as failures", () => {

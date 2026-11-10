@@ -7,6 +7,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as ts from "typescript";
 import { createProject } from "../packages/create-threenative/src/index.js";
+import { runAsync } from "./lib/exec.js";
 import { packageLocalFramework } from "./visual-gate.js";
 import { localPackageEntries } from "./workspace-packages.js";
 
@@ -63,27 +64,15 @@ export function assertUnpinnedEngine(config: string): void {
   visit(source);
 }
 
+/** A native run that also fails on an engine refusal the exit code does not carry. */
 async function run(command: string, args: readonly string[], cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, [...args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let output = "";
-    const timer = setTimeout(() => child.kill("SIGKILL"), 900_000);
-    for (const stream of [child.stdout, child.stderr])
-      stream?.on("data", (chunk) => {
-        output += String(chunk);
-        process.stdout.write(chunk);
-      });
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0 || /TN_ENGINE_[A-Z_]+/u.test(output))
-        reject(new Error(`${command} ${args.join(" ")} failed (${code}):\n${output.slice(-4000)}`));
-      else resolve(output);
-    });
-  });
+  const output = await runAsync(command, args, { cwd, stdio: "capture", timeoutMs: 900_000 });
+  // `TN_ENGINE_CATALOG: off (native host bundle)` is the plugin's info line, not a refusal.
+  if (/TN_ENGINE_(?!CATALOG: off)[A-Z_]+/u.test(output))
+    throw new Error(
+      `${command} ${args.join(" ")} reported an engine refusal:\n${output.slice(-4000)}`,
+    );
+  return output;
 }
 
 export async function checkArchives(

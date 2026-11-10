@@ -183,20 +183,42 @@ target_include_directories(tn_engine_probes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
 set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
     src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
     src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
+    src/engine/renderer/renderer_frame.cpp src/engine/renderer/renderer_material.cpp src/engine/renderer/renderer_output.cpp
+    src/engine/renderer/renderer_program.cpp src/engine/renderer/renderer_shadow.cpp
     src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
     src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp
     src/engine/renderer/render_target_pass.cpp)
+# PRD-840 (H6): the renderer's one link line, for both exclusive builds. The browser build passes no backend library and the
+# native build passes its WebGPU backend and host services (NativeEngine.cmake). At the end of the configure,
+# tn_engine_renderer_link_check fails when the target links anything but this line and the backend the build named.
+set(TN_ENGINE_RENDERER_LINK_LIBRARIES tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
+    tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes)
+function(tn_engine_renderer_link_check expected)
+    get_target_property(actual tn_engine_renderer LINK_LIBRARIES)
+    if(NOT "${actual}" STREQUAL "${expected}")
+        message(FATAL_ERROR "TN_RENDERER_LINK_DRIFT: tn_engine_renderer links '${actual}', but "
+            "tn_engine_renderer_target declared '${expected}'. Add a renderer dependency to "
+            "TN_ENGINE_RENDERER_LINK_LIBRARIES (cmake/NativeEngineCore.cmake), so both builds link it.")
+    endif()
+endfunction()
+function(tn_engine_renderer_target)
+    add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
+    tn_native_engine_target(tn_engine_renderer)
+    set(expected ${TN_ENGINE_RENDERER_LINK_LIBRARIES} ${ARGN})
+    target_link_libraries(tn_engine_renderer PUBLIC ${expected})
+    target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    # A deferred call reads its variables when it runs, so the list is spelled out here.
+    cmake_language(EVAL CODE
+        "cmake_language(DEFER DIRECTORY \"${CMAKE_SOURCE_DIR}\" CALL tn_engine_renderer_link_check \"${expected}\")")
+endfunction()
 if(EMSCRIPTEN)
     # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
     # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.
-    add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
-    tn_native_engine_target(tn_engine_renderer)
-    target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-        tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes)
-    target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN)
+    tn_engine_renderer_target()
+    # PRD-840: the web engine pins RenderFeatures::web(), so each render choice folds at compile time (render_features.h).
+    target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN TN_RENDER_FEATURES_PIN_WEB)
     target_compile_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
     target_link_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
-    target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     # Taking the address of the renderer's entry points pulls every renderer object into the link, so
     # a wgpu* call the browser port lacks fails here rather than in a page.
     add_executable(tn-native-engine-wasm-renderer-link EXCLUDE_FROM_ALL tests/native-engine/wasm/renderer_link.cpp)

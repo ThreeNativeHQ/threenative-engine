@@ -962,10 +962,8 @@ describe("generated template ordinary-frame runtime cost", () => {
   });
 
   it("forwards a cached-sky sample to the controller entered while sampling was pending", async () => {
-    const sampling = await import("../templates/racing/src/render/environmentSampling.js");
-    const { captureEnvironmentSnapshot } = await import(
-      "../templates/racing/src/render/environmentSnapshot.js"
-    );
+    const sampling = await import("@threenative/core/render/environment");
+    const { captureEnvironmentSnapshot } = await import("@threenative/core/render/environment");
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
     const physics = await physicsFixture(RACING_GRAVITY);
     const context = sceneContext(physics.physics, Race.initialState);

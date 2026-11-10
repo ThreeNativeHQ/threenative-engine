@@ -9,6 +9,7 @@ import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
   installableOnRegistry,
+  packReleaseSet,
   packedTarballName,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
@@ -458,17 +459,45 @@ describe("pnpm release cohort guards", () => {
     );
   });
 
+  it("packs every cohort tarball in the repository, never in a label", () => {
+    const calls: { command: string; args: readonly string[]; options: unknown }[] = [];
+    const tarballs = packReleaseSet(
+      [
+        { name: "@threenative/core", version: "0.3.12" },
+        { name: "@threenative/ui", version: "0.3.12" },
+      ] as never,
+      "/tmp/packed",
+      ((command: string, args: readonly string[], options: unknown) => {
+        calls.push({ args, command, options });
+      }) as never,
+    );
+    expect(Object.keys(tarballs)).toEqual(["@threenative/core", "@threenative/ui"]);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      // A bare third argument would be read as a working directory: the release once tried to run
+      // pnpm in a folder named "pack @threenative/core" and failed every pack.
+      expect(typeof call.options).toBe("object");
+      expect(call.options).toMatchObject({ code: "TN_RELEASE_STEP_FAILED" });
+      expect((call.options as { cwd: string }).cwd).toBe(
+        path.resolve(import.meta.dirname, "../.."),
+      );
+    }
+  });
+
   it("keeps the post-build cleanliness and preflight gates before publication", async () => {
     const source = await fs.promises.readFile(
       path.resolve(import.meta.dirname, "../release.ts"),
       "utf8",
     );
-    const build = source.indexOf('run("pnpm", ["build"], "pnpm build")');
+    // The build step is multi-line now that it carries the release code and its sentence.
+    const build = source.indexOf('run("pnpm", ["build"], {');
+    const buildLabel = source.indexOf('label: "pnpm build",', build);
     const clean = source.indexOf("assertCleanPackageTree(REPO);", build);
     const preflight = source.indexOf("const postBuildReport", build);
     const cohort = source.indexOf("const publishPackages = unpublishedReleasePackages", preflight);
     const upgrade = source.indexOf("proveUpgradeFromLatest(packages, tarballs)", cohort);
     expect(build).toBeGreaterThanOrEqual(0);
+    expect(buildLabel).toBeGreaterThan(build);
     expect(clean).toBeGreaterThan(build);
     expect(preflight).toBeGreaterThan(clean);
     // The upgrade proof reads the previous `latest`, so it has to run before the first publish —

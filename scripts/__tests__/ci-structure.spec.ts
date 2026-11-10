@@ -1,11 +1,20 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
-import { declaredNeeds, jobSections } from "../ci-workflow.js";
+import {
+  type ICiStep,
+  type ICiWorkflow,
+  type ICiWorkflowJob,
+  ciTerms,
+  declaredNeeds,
+  jobSections,
+  parseWorkflow,
+} from "../ci-workflow.js";
 import { parsePerformanceLaneManifest } from "../engine-load-test/report.js";
 import {
   collectorCoverage,
@@ -32,6 +41,35 @@ import {
 } from "../performance-regression/run.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
+
+/** A workflow under `.github/workflows`, parsed into the model (PRD-839). */
+function workflow(file: string): ICiWorkflow {
+  return parseWorkflow(readFileSync(path.join(repo, ".github/workflows", file), "utf8"));
+}
+
+/** The steps that restore or save a cache (`actions/cache`, `actions/cache/restore`, `actions/cache/save`). */
+function cacheSteps(job: ICiWorkflowJob): readonly ICiStep[] {
+  return job.steps.filter((step) => step.uses?.startsWith("actions/cache") === true);
+}
+
+/** The one step named `name` anywhere in the workflow. Zero or several throw. */
+function findStep(model: ICiWorkflow, name: string): ICiStep {
+  const found = model.jobs.flatMap((job) => job.steps.filter((step) => step.name === name));
+  if (found.length !== 1) {
+    throw new Error(`expected one step named "${name}", found ${String(found.length)}`);
+  }
+  return found[0] as ICiStep;
+}
+
+/** Every needle is in the subject. A miss names the needle, so a table fails like a single check. */
+function expectIncludes(subject: string, needles: readonly string[], label = ""): void {
+  for (const needle of needles) expect(subject, `${label} ${needle}`.trim()).toContain(needle);
+}
+
+/** No needle is in the subject. */
+function expectExcludes(subject: string, needles: readonly string[], label = ""): void {
+  for (const needle of needles) expect(subject, `${label} ${needle}`.trim()).not.toContain(needle);
+}
 
 it("release engine players include the desktop physics ABI", async () => {
   const presets = JSON.parse(
@@ -129,51 +167,38 @@ it("rejects a workflow-dispatch lane that matches no declared matrix row", async
   expect(() => validateSelectedPerformanceLane("native-windwos", manifest)).toThrow(
     /TN_PERF_UNKNOWN_LANE.*native-windwos.*result keys/u,
   );
-  const performance = await readFile(
-    path.join(repo, ".github/workflows/performance-regression.yml"),
-    "utf8",
-  );
-  const summary = performance.slice(
-    performance.indexOf("  performance-summary:"),
-    performance.indexOf("  weekly-workload-rotation:"),
-  );
-  expect(summary).toContain(
+  const summary = workflow("performance-regression.yml").job("performance-summary");
+  expect(summary.step("Validate requested performance lane").run).toContain(
     'pnpm tsx scripts/performance-regression/ci-summary.ts --validate-selected-lane "$TN_PERF_SELECTED_LANE" --manifest scripts/performance-regression/lanes.json',
   );
-  expect(summary.indexOf("Validate requested performance lane")).toBeLessThan(
-    summary.indexOf("Download every available platform result"),
+  expect(summary.step("Validate requested performance lane").index).toBeLessThan(
+    summary.step("Download every available platform result").index,
   );
 });
 
 it("keeps source-pair preparation failures keyed by matrix identity", async () => {
-  const performance = await readFile(
-    path.join(repo, ".github/workflows/performance-regression.yml"),
-    "utf8",
+  const prepare = workflow("performance-regression.yml")
+    .job("hardware-pairs")
+    .step(/^Prepare isolated source checkouts/u);
+  expect(prepare.env).toMatchObject({
+    TN_PERF_LANE: "${{ matrix.lane }}",
+    TN_PERF_RESULT_KEY: "${{ matrix.result_key }}",
+  });
+  const script = prepare.run ?? "";
+  expect(script.indexOf("TN_PERF_LANE")).toBeLessThan(
+    script.indexOf("TN_PERF_SOURCE_FAILURE_REASON"),
   );
-  const prepare = performance.slice(
-    performance.indexOf("      - name: Prepare isolated source checkouts"),
-    performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
-  );
-  const env = prepare.slice(prepare.indexOf("        env:"), prepare.indexOf("        run:"));
-  expect(env).toContain("TN_PERF_LANE: ${{ matrix.lane }}");
-  expect(env).toContain("TN_PERF_RESULT_KEY: ${{ matrix.result_key }}");
-  expect(prepare.indexOf("TN_PERF_LANE")).toBeLessThan(
-    prepare.indexOf("TN_PERF_SOURCE_FAILURE_REASON"),
-  );
-  expect(prepare).toContain("candidateSourceSha: process.env.TN_PERF_CANDIDATE_SOURCE_SHA");
-  expect(prepare).toContain("sourceSha: process.env.TN_PERF_BASELINE_SOURCE_SHA");
+  expectIncludes(script, [
+    "candidateSourceSha: process.env.TN_PERF_CANDIDATE_SOURCE_SHA",
+    "sourceSha: process.env.TN_PERF_BASELINE_SOURCE_SHA",
+  ]);
 });
 
 it("preserves both source identities in blocked source-pair artifacts", async () => {
-  const performance = await readFile(
-    path.join(repo, ".github/workflows/performance-regression.yml"),
-    "utf8",
-  );
-  const prepare = performance.slice(
-    performance.indexOf("      - name: Prepare isolated source checkouts"),
-    performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
-  );
-  const writerLine = prepare
+  const prepare = workflow("performance-regression.yml")
+    .job("hardware-pairs")
+    .step(/^Prepare isolated source checkouts/u);
+  const writerLine = (prepare.run ?? "")
     .split("\n")
     .find((line) => line.includes("process.env.TN_PERF_SOURCE_FAILURE_REASON"));
   if (writerLine === undefined) throw new Error("source-pair failure writer was not found");
@@ -236,42 +261,29 @@ it("preserves both source identities in blocked source-pair artifacts", async ()
 });
 
 it("requires scheduled pairs to use a distinct reviewed baseline and forwards both identities", async () => {
-  const performance = await readFile(
-    path.join(repo, ".github/workflows/performance-regression.yml"),
-    "utf8",
-  );
-  const prepare = performance.slice(
-    performance.indexOf("      - name: Prepare isolated source checkouts"),
-    performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
-  );
-  expect(prepare).toContain("REVIEWED_BASELINE_INPUT: ${{ vars.TN_PERF_REVIEWED_BASELINE_SHA }}");
-  expect(prepare).toContain('baseline_sha="${BASELINE_INPUT:-${REVIEWED_BASELINE_INPUT:-}}"');
-  expect(prepare).toContain('candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"');
-  expect(prepare).toContain(
+  const performance = workflow("performance-regression.yml");
+  const pairs = performance.job("hardware-pairs");
+  const prepare = pairs.step(/^Prepare isolated source checkouts/u);
+  expect(prepare.env.REVIEWED_BASELINE_INPUT).toBe("${{ vars.TN_PERF_REVIEWED_BASELINE_SHA }}");
+  expectIncludes(prepare.run ?? "", [
+    'baseline_sha="${BASELINE_INPUT:-${REVIEWED_BASELINE_INPUT:-}}"',
+    'candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"',
     'if [ -z "$baseline_sha" ] || [ -z "$candidate_sha" ] || [ "$baseline_sha" = "$candidate_sha" ]; then',
+  ]);
+  expectIncludes(pairs.step(/^Run independent alternating baseline\/candidate pairs/u).run ?? "", [
+    '--baseline-source-sha "$BASELINE_SOURCE_SHA"',
+    '--candidate-source-sha "$CANDIDATE_SOURCE_SHA"',
+  ]);
+  const summary = performance.job("performance-summary");
+  expect(summary.steps.map((step) => step.env.TN_PERF_SELECTED_LANE)).toContain(
+    "${{ inputs.lane }}",
   );
-  const collector = performance.slice(
-    performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
-    performance.indexOf(
-      "      - uses: actions/upload-artifact@v7",
-      performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
-    ),
-  );
-  expect(collector).toContain('--baseline-source-sha "$BASELINE_SOURCE_SHA"');
-  expect(collector).toContain('--candidate-source-sha "$CANDIDATE_SOURCE_SHA"');
-  const summary = performance.slice(
-    performance.indexOf("  performance-summary:"),
-    performance.indexOf("  weekly-workload-rotation:"),
-  );
-  expect(summary).toContain("TN_PERF_SELECTED_LANE: ${{ inputs.lane }}");
-  expect(summary).toContain(
+  expectIncludes(summary.scripts, [
     "const required = (row) => selected(row) || manifestByLane.get(row.lane)?.required === true;",
-  );
-  expect(summary).toContain('status: selected(row) ? "BLOCKED" : "SKIPPED",');
-  expect(summary).toContain(
+    'status: selected(row) ? "BLOCKED" : "SKIPPED",',
     "requiredLanes: expectedRows.filter(required).map(({ resultKey }) => resultKey),",
-  );
-  expect(summary).not.toContain("requiredLanes: expectedResultKeys");
+  ]);
+  expectExcludes(summary.scripts, ["requiredLanes: expectedResultKeys"]);
 
   const plan = plannedPerformancePairs("native-linux", "/repo/baseline", "/repo/candidate");
   expect(plan[0]?.baselineCommand).toContain("--source-sha <baseline-source>");
@@ -312,16 +324,9 @@ it("required coverage cannot be weakened by a result flag", () => {
 });
 
 it("hardware workflow has no matrix context before expansion and uses Bash on Windows", async () => {
-  const source = await readFile(
-    path.join(repo, ".github/workflows/performance-regression.yml"),
-    "utf8",
-  );
-  const job = source.slice(
-    source.indexOf("  hardware-pairs:"),
-    source.indexOf("  performance-summary:"),
-  );
-  expect(job.match(/^ {4}if:[\s\S]*?(?=^ {4}\w)/m)?.[0] ?? "").not.toContain("matrix.");
-  expect(job).toMatch(/defaults:\s+run:\s+shell: bash/);
+  const job = workflow("performance-regression.yml").job("hardware-pairs");
+  expect(job.if ?? "").not.toContain("matrix.");
+  expect(job.require("defaults")).toMatchObject({ run: { shell: "bash" } });
 });
 
 it("gives the moving 1800-frame collector the remaining fifteen-minute budget", () => {
@@ -728,21 +733,25 @@ function classifyScope(
 }
 
 describe("CI pipeline structure", () => {
-  it("uses one fail-closed scope decision before expensive CI and native jobs", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const scope = requiredJob(ci, "scope");
-    expect(scope).toContain("scripts/ci-change-scope.mjs");
-    expect(scope).toContain("fetch-depth: 0");
-    expect(scope).toContain("scope: ${{ steps.classify.outputs.scope }}");
-    expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
-    expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
-    expect(scope).not.toContain("pnpm install");
+  it("uses one fail-closed scope decision before expensive CI and native jobs", () => {
+    const ci = workflow("ci.yml");
+    const scope = ci.job("scope");
+    const classify = scope.stepById("classify");
+    expect(classify.run).toMatch(/node scripts\/ci-change-scope\.mjs/u);
+    expect(scope.steps[0]?.with["fetch-depth"]).toBe(0);
+    expect(scope.outputs).toMatchObject({
+      reason: "${{ steps.classify.outputs.reason }}",
+      scope: "${{ steps.classify.outputs.scope }}",
+      selection: "${{ steps.classify.outputs.selection }}",
+    });
+    expect(scope.runs("pnpm install")).toBe(false);
     // Scope reads only scripts/ and the kit.json files: a full blob-less checkout fetched every
     // HEAD blob (488 MB) and outlasted the 5-minute bound on a loaded runner (runs 41688746026, 41702153229).
-    expect(scope).toMatch(
-      /sparse-checkout: \|\n\s+scripts\n\s+packages\/create-threenative\/templates\n/u,
+    expect(scope.steps[0]?.with["sparse-checkout"]).toBe(
+      "scripts\npackages/create-threenative/templates\n",
     );
 
+    const full = "needs.scope.outputs.selection == 'full'";
     for (const name of [
       "typecheck",
       "test",
@@ -757,30 +766,27 @@ describe("CI pipeline structure", () => {
       "budgets",
       "performance-contracts",
     ]) {
-      const job = requiredJob(ci, name);
-      expect(job, `${name} does not wait for scope`).toContain("scope");
-      expect(job, `${name} does not select the full board explicitly`).toContain(
-        "needs.scope.outputs.selection == 'full'",
+      const job = ci.job(name);
+      expect(job.needs, `${name} does not wait for scope`).toEqual(
+        expect.arrayContaining(["scope"]),
+      );
+      expect(ciTerms(job.if ?? ""), `${name} does not select the full board explicitly`).toEqual(
+        expect.arrayContaining([full]),
       );
     }
 
-    const lint = requiredJob(ci, "lint");
-    expect(lint).toContain("needs: scope");
-    expect(lint).toContain("Run the selected documentation and evidence gates");
-    expect(lint).toContain("pnpm check:docs");
-    expect(lint).toContain("scripts/__tests__/evidence-citations.spec.ts");
-    expect(lint).toContain("scripts/__tests__/ci-needs.spec.ts");
-    expect(lint).not.toContain("pnpm test:browser");
-    expect(lint).not.toContain("native:build");
-
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
+    const lint = ci.job("lint");
+    expect(lint.needs).toEqual(["scope"]);
+    expect(lint.step("Run the selected documentation and evidence gates").run).toMatch(
+      /pnpm check:docs[\s\S]*evidence-citations\.spec\.ts[\s\S]*ci-needs\.spec\.ts/u,
     );
-    const nativeScope = requiredJob(native, "scope");
-    expect(nativeScope).toContain("scripts/ci-change-scope.mjs");
-    expect(nativeScope).toContain("scope: ${{ steps.classify.outputs.scope }}");
-    expect(nativeScope).not.toContain("pnpm install");
+    expect(lint.runs(/pnpm test:browser|native:build/u)).toBe(false);
+
+    const native = workflow("native-platforms.yml");
+    const nativeScope = native.job("scope");
+    expect(nativeScope.stepById("classify").run).toMatch(/node scripts\/ci-change-scope\.mjs/u);
+    expect(nativeScope.outputs.scope).toBe("${{ steps.classify.outputs.scope }}");
+    expect(nativeScope.runs("pnpm install")).toBe(false);
     for (const name of [
       "web-reference",
       "android-emulator-parity",
@@ -789,74 +795,69 @@ describe("CI pipeline structure", () => {
       "starter-linux",
       "ios-simulator",
     ]) {
-      expect(requiredJob(native, name), `${name} does not use shared scope`).toContain("scope");
-      expect(requiredJob(native, name), `${name} has no prose exemption`).toContain(
-        "needs.scope.outputs.selection == 'full'",
+      expect(native.job(name).needs, `${name} does not use shared scope`).toEqual(
+        expect.arrayContaining(["scope"]),
+      );
+      expect(ciTerms(native.job(name).if ?? ""), `${name} has no prose exemption`).toEqual(
+        expect.arrayContaining([full]),
       );
     }
-    const performanceCoverage = requiredJob(native, "performance-coverage");
-    expect(performanceCoverage).toContain("needs.scope.outputs.selection == 'full'");
-    const triggers = triggerSection(native);
-    expect(triggers).toContain("workflow_dispatch:");
-    expect(triggers).toContain("workflow_call:");
-    expect(triggers).toContain("ios_only:");
-    // The release candidate reads its reports from the main CI run, so nothing starts this alone.
-    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
+    expect(ciTerms(native.job("performance-coverage").if ?? "")).toEqual(
+      expect.arrayContaining([full]),
+    );
+    expect(Object.keys(native.on).sort()).toEqual(["workflow_call", "workflow_dispatch"]);
+    expect(native.on.workflow_call).toMatchObject({ inputs: { ios_only: expect.anything() } });
   });
 
-  it("never lets a draft pull request run cancel a ready one", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const group = /^concurrency:\n {2}group: (.*)$/mu.exec(ci)?.[1] ?? "";
+  it("never lets a draft pull request run cancel a ready one", () => {
+    const group = String(workflow("ci.yml").concurrency?.group ?? "");
     // A push then `gh pr ready` fires a synchronize run whose payload still says draft. In the
     // shared `latest` group with cancel-in-progress, that skipped run cancelled the real one
     // (#403, run 37075825121). Only a non-draft pull request run joins the shared group.
-    expect(group).toContain("!github.event.pull_request.draft && 'latest'");
+    expect(group).toMatch(/!github\.event\.pull_request\.draft && 'latest'/u);
   });
 
   it("warms the base-branch caches from a develop push, and lets no push cancel another", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const model = parseWorkflow(ci);
     // `develop` is the only branch a push may name besides main, and it is the base branch every
     // pull request reads its caches from.
-    const push = /^ {2}push:\n(?: {4}.*\n)*/mu.exec(commandText(triggerSection(ci)))?.[0] ?? "";
-    expect([...push.matchAll(/^ {6}- (\S+)$/gmu)].map((match) => match[1])).toEqual([
-      "main",
-      "develop",
-    ]);
+    expect(model.on.push).toEqual({ branches: ["main", "develop"] });
     // The `warm` plan still exists as a selection, and these are the only jobs it runs: the two
     // cache publishers plus the reporting job.
     for (const name of ["build-artifacts", "test-native", "run-summary"]) {
-      expect(requiredJob(ci, name), `${name} never runs on a develop push`).toContain(
-        "needs.scope.outputs.selection == 'warm'",
+      expect(ciTerms(model.job(name).if ?? ""), `${name} never runs on a develop push`).toEqual(
+        expect.arrayContaining(["needs.scope.outputs.selection == 'warm'"]),
       );
     }
     expect(duplicateCommitTriggers(ci)).toEqual([]);
     // Develop pushes share one group, so the next push waits instead of starting a board beside the
     // running one. Nothing but a pull request cancels in progress, so that push cannot kill the
     // running board while it is saving.
-    const group = /^concurrency:\n {2}group: (.*)$/mu.exec(ci)?.[1] ?? "";
-    expect(group).toContain(
-      "github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'latest'",
+    expect(String(model.concurrency?.group)).toMatch(
+      /github\.event_name == 'push' && github\.ref == 'refs\/heads\/develop' && 'latest'/u,
     );
-    expect(ci).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    expect(model.concurrency?.["cancel-in-progress"]).toBe(
+      "${{ github.event_name == 'pull_request' }}",
+    );
   });
 
-  it("does not require skipped performance lanes on a prose-only run", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const summary = requiredJob(ci, "run-summary");
-    const performance = summary.slice(
-      summary.indexOf("Report the performance contract through the shared comparison summary"),
+  it("does not require skipped performance lanes on a prose-only run", () => {
+    const summary = workflow("ci.yml").job("run-summary");
+    const step = summary.step(
+      "Report the performance contract through the shared comparison summary",
     );
-    expect(performance).toContain("TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}");
-    expect(performance).toContain('required_lanes=""');
-    expect(performance).toContain('if [ "$TN_CI_SCOPE" = full ]; then');
-    expect(performance).toContain('required_lanes="performance-contracts"');
-    expect(performance).toContain(
+    expect(step.env.TN_CI_SCOPE).toBe("${{ needs.scope.outputs.selection }}");
+    expectIncludes(step.run ?? "", [
+      'required_lanes=""',
+      'if [ "$TN_CI_SCOPE" = full ]; then',
+      'required_lanes="performance-contracts"',
       'required_lanes="${required_lanes:+$required_lanes,}native-linux-contract"',
-    );
-    expect(performance).toContain('--required-lanes "$required_lanes"');
-    expect(performance).not.toContain(
+      '--required-lanes "$required_lanes"',
+    ]);
+    expectExcludes(step.run ?? "", [
       "--required-lanes performance-contracts,native-linux-contract",
-    );
+    ]);
   });
 
   it("classifies scratch Git histories from the complete merge-base diff", async () => {
@@ -1142,21 +1143,30 @@ describe("CI pipeline structure", () => {
       }
     });
 
-    it("wires one native-engine job: own ccache key, cached emsdk, guarded ctest, reported in the verdict", async () => {
-      const source = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-      const job = requiredJob(source, "native-engine");
-      expect(job).toContain("needs: scope");
-      expect(job).toContain("needs.scope.outputs.selection == 'native-engine'");
-      expect(job).toContain("fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required");
-      expect(job).toContain("key: native-ccache-ci-native-engine-");
-      expect(job).not.toContain("native-ccache-ci-test-native-");
-      expect(job).toContain("emsdk");
-      expect(job).toContain("actions/cache@v4");
-      expect(job).toContain("packages/runtime-native/cmake/NativeEngineCore.cmake");
-      expect(job).toMatch(/ctest [^\n]*-L native-engine/u);
-      expect(job).toContain("steps.engine.outputs.present == 'true'");
-      expect(requiredJob(source, "ci-required")).toMatch(/needs: \[[^\]]*\bnative-engine\b/u);
-      expect(requiredJob(source, "run-summary")).toContain("      - native-engine\n");
+    it("wires one native-engine job: own ccache key, cached emsdk, guarded ctest, reported in the verdict", () => {
+      const ci = workflow("ci.yml");
+      const job = ci.job("native-engine");
+      expect(job.needs).toEqual(["scope"]);
+      expect(ciTerms(job.if ?? "")).toEqual(
+        expect.arrayContaining([
+          "needs.scope.outputs.selection == 'native-engine'",
+          "fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required",
+        ]),
+      );
+      const caches = job.stepsUsing("actions/cache@v4");
+      expect(caches.map((step) => String(step.with.key))).toEqual([
+        expect.stringMatching(/^native-ccache-ci-native-engine-/u),
+        expect.stringMatching(/^native-engine-emsdk-/u),
+      ]);
+      expect(job.mentions("native-ccache-ci-test-native-")).toBe(false);
+      expect(job.stepById("emsdk").uses).toBe("actions/cache@v4");
+      expect(job.stepById("engine").run).toMatch(
+        /packages\/runtime-native\/cmake\/NativeEngineCore\.cmake/u,
+      );
+      expect(job.runs(/ctest [^\n]*-L native-engine/u)).toBe(true);
+      expect(job.step("Install the workspace").if).toBe("steps.engine.outputs.present == 'true'");
+      expect(ci.job("ci-required").needs).toEqual(expect.arrayContaining(["native-engine"]));
+      expect(ci.job("run-summary").needs).toEqual(expect.arrayContaining(["native-engine"]));
     });
   });
 
@@ -1193,48 +1203,60 @@ describe("CI pipeline structure", () => {
     // back. The saving was runner minutes; the price was the only thing a red run produces.
     await expect(stat(path.join(repo, ".github/actions/cancel-run-on-failure"))).rejects.toThrow();
     for (const relative of workflows) {
-      const source = await readFile(path.join(repo, relative), "utf8");
-      expect(source, relative).not.toContain("cancel-run-on-failure");
-      expect(source, `${relative} cancels its own run`).not.toContain(
-        "actions/runs/$GITHUB_RUN_ID/cancel",
-      );
+      const model = workflow(path.basename(relative));
+      for (const job of model.jobs) {
+        expect(job.mentions("cancel-run-on-failure"), `${relative} ${job.id}`).toBe(false);
+        expect(
+          job.runs("actions/runs/$GITHUB_RUN_ID/cancel"),
+          `${relative} ${job.id} cancels its own run`,
+        ).toBe(false);
+      }
       // Nothing calls the Actions API to cancel its own run, so nothing may ask to write to it.
       // `ci-janitor.yml` is the single named exception: it cancels *other* runs, on a closed PR,
       // never from a failure step, and never its own run id — all four pinned in its own case.
       // PRD-731 adds the second: `queue-watch` in ci.yml, which names the first red job on the pull
       // request before it cancels the rest. PRD-782 widens it to full boards (pinned below).
       // PRD-630 adds the third: `ship` in npm-release.yml dispatches the release workflows.
-      const writes =
-        relative === ".github/workflows/ci.yml"
-          ? source.replace(requiredJob(source, "queue-watch"), "")
-          : relative === ".github/workflows/npm-release.yml"
-            ? source.replace(requiredJob(source, "ship"), "")
-            : source;
-      if (relative !== ".github/workflows/ci-janitor.yml") {
-        expect(writes, `${relative} needs no actions: write`).not.toContain("actions: write");
+      const exempt = { "ci-janitor.yml": "*", "ci.yml": "queue-watch", "npm-release.yml": "ship" }[
+        path.basename(relative)
+      ];
+      if (exempt === "*") continue;
+      expect(model.permissions?.actions, `${relative} needs no actions: write`).not.toBe("write");
+      for (const job of model.jobs.filter((entry) => entry.id !== exempt)) {
+        expect(job.permissions?.actions, `${relative} ${job.id} needs no actions: write`).not.toBe(
+          "write",
+        );
       }
     }
 
     // Fail-fast that keeps its evidence: a matrix reports every leg, and an expensive job is
     // skipped by its `needs:` edge rather than cancelled out from under itself.
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    expect(ci).toContain("fail-fast: false");
-    expect(requiredJob(ci, "golden-path-template")).toContain("needs: [scope, build-artifacts]");
+    const ci = workflow("ci.yml");
+    expect(ci.jobs.some((job) => job.strategy?.["fail-fast"] === false)).toBe(true);
+    expect(ci.job("golden-path-template").needs).toEqual(["scope", "build-artifacts"]);
   });
 
-  it("publishes through npm Trusted Publishing: an OIDC token and npm 11.5.1 or later", async () => {
+  it("publishes through npm Trusted Publishing: an OIDC token and npm 11.5.1 or later", () => {
     // NPM_TOKEN was rejected with E404 on every PUT of 0.3.10 and 0.3.11; the OIDC exchange needs
     // `id-token: write` and an npm CLI that knows it, and Node 20.19 bundles npm 10.
-    const ship = requiredJob(
-      await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8"),
-      "ship",
+    const ship = workflow("npm-release.yml").job("ship");
+    expect(ship.permissions?.["id-token"]).toBe("write");
+    const installStep = ship.steps.find((step) =>
+      /npm install -g npm@\d+\.\d+\.\d+/u.test(step.run ?? ""),
     );
-    expect(ship).toContain("id-token: write");
-    const install = /npm install -g npm@(\d+)\.(\d+)\.(\d+)/u.exec(ship);
-    if (!install) throw new Error("ship installs no pinned npm before it publishes");
+    const install = /npm install -g npm@(\d+)\.(\d+)\.(\d+)/u.exec(installStep?.run ?? "");
+    if (!install || installStep === undefined) {
+      throw new Error("ship installs no pinned npm before it publishes");
+    }
     const [major = 0, minor = 0, patch = 0] = install.slice(1).map(Number);
     expect(major * 1_000_000 + minor * 1_000 + patch).toBeGreaterThanOrEqual(11_005_001);
-    expect(ship.indexOf(install[0])).toBeLessThan(ship.indexOf("pnpm release:ship"));
+    const publish = ship.steps.findIndex((step) => /pnpm release:ship/u.test(step.run ?? ""));
+    expect(installStep.index).toBeLessThanOrEqual(publish);
+    if (installStep.index === publish) {
+      expect((installStep.run ?? "").indexOf(install[0])).toBeLessThan(
+        (installStep.run ?? "").indexOf("pnpm release:ship"),
+      );
+    }
   });
 
   it("hands the emulator action a one-line script, so the arguments survive", async () => {
@@ -1246,27 +1268,17 @@ describe("CI pipeline structure", () => {
     // then compared the emulator against the wreckage. The step read as correct in the YAML the
     // whole time — `>-` folds to one line and `|` does not, and only that character separates a
     // working lane from a silent one.
-    const source = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
+    const scripts = workflow("native-platforms.yml").jobs.flatMap((job) =>
+      job.steps.flatMap((step) => (typeof step.with.script === "string" ? [step.with.script] : [])),
     );
-    const blocks = [...source.matchAll(/^(\s+)script: *(\||>-|>|\|-)\n/gmu)].map((match) => {
-      const indent = match[1]?.length ?? 0;
-      const rest = source.slice((match.index ?? 0) + match[0].length).split("\n");
-      const body: string[] = [];
-      for (const line of rest) {
-        if (line.trim() !== "" && line.length - line.trimStart().length <= indent) break;
-        body.push(line);
-      }
-      return { body: body.join("\n"), style: match[2] ?? "" };
-    });
-    expect(blocks.length, "no emulator script block found to check").toBeGreaterThan(0);
-    for (const { body, style } of blocks) {
-      // `|` keeps every newline, which is exactly what the action cannot take.
-      expect(style, `script uses a literal block: ${body.trim().slice(0, 60)}`).not.toMatch(/^\|/u);
-      expect(body, "script continues with a backslash").not.toMatch(/\\\s*\n/u);
-      expect(body, "script lost its target").toContain("--target android");
-      expect(body, "script lost its output path").toContain("--out ");
+    expect(scripts.length, "no emulator script block found to check").toBeGreaterThan(0);
+    for (const body of scripts) {
+      // A literal block keeps its newlines, which is exactly what the action cannot take; a folded
+      // block (`>-`) parses to one line.
+      expect(body.trimEnd(), "script spans lines").not.toMatch(/\n/u);
+      expect(body, "script continues with a backslash").not.toMatch(/\\\s*$/u);
+      expect(body, "script lost its target").toMatch(/--target android/u);
+      expect(body, "script lost its output path").toMatch(/--out /u);
     }
   });
 
@@ -1277,31 +1289,44 @@ describe("CI pipeline structure", () => {
     // Run 36357493470 (2026-09-28) reversed the SDK half: sdkmanager installed platform, NDK,
     // emulator and system image in ~40 s, while the multi-GB save took 240 s every run and
     // evicted the Gradle and Cargo entries from the shared 10 GiB budget, so none of them hit.
-    const source = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
-    const android = requiredJob(source, "android-emulator-parity");
-    expect(android, "the SDK cache costs more to save than to reinstall").not.toContain(
-      "system-images/android-35",
-    );
+    const android = workflow("native-platforms.yml").job("android-emulator-parity");
+    expect(
+      android.mentions("system-images/android-35"),
+      "the SDK cache costs more to save than to reinstall",
+    ).toBe(false);
     for (const [what, needle] of [
       ["the Gradle caches", "~/.gradle/caches"],
       ["the Rust cross-compile output", ".runtime/physics-target"],
+      // The cargo key has to follow the lockfile that actually drives the build; a `**/Cargo.lock`
+      // glob would also hash third_party's and miss on churn that changes nothing here.
+      ["the physics lockfile", "packages/runtime-native/native/physics/Cargo.lock"],
     ] as const) {
-      expect(android, `the Android lane stopped caching ${what}`).toContain(needle);
+      expect(android.mentions(needle), `the Android lane stopped caching ${what}`).toBe(true);
     }
-    // The cargo key has to follow the lockfile that actually drives the build; a `**/Cargo.lock`
-    // glob would also hash third_party's and miss on churn that changes nothing here.
-    expect(android).toContain("packages/runtime-native/native/physics/Cargo.lock");
   });
 
-  it("bounds every runner job with an explicit timeout", async () => {
+  it("fails closed when the workflow model is asked for a field, job or step that is absent", () => {
+    const ci = workflow("ci.yml");
+    const scope = ci.job("scope");
+    expect(() => ci.job("no-such-job")).toThrow(/CI_WORKFLOW_NO_JOB/u);
+    expect(() => scope.require("no-such-field")).toThrow(/CI_WORKFLOW_MISSING_FIELD/u);
+    expect(() => scope.step("no such step")).toThrow(/CI_WORKFLOW_STEP/u);
+    expect(() => scope.stepById("no-such-id")).toThrow(/CI_WORKFLOW_STEP/u);
+    expect(scope.steps[0]?.if).toBeUndefined();
+    expect(() => scope.steps[0]?.require("no-such-field")).toThrow(/CI_WORKFLOW_MISSING_FIELD/u);
+    expect(() => parseWorkflow("name: x\n")).toThrow(/CI_WORKFLOW_MISSING_FIELD/u);
+    expect(() => parseWorkflow("on: push\njobs:\n")).toThrow(/CI_WORKFLOW_SHAPE/u);
+    expect(() => parseWorkflow("on: push\njobs:\n  a:\n    runs-on: x\n")).toThrow(
+      /CI_WORKFLOW_SHAPE/u,
+    );
+  });
+
+  it("bounds every runner job with an explicit timeout", () => {
     for (const relative of workflows) {
-      const source = await readFile(path.join(repo, relative), "utf8");
-      for (const [job, section] of jobSections(source)) {
-        if (section.includes("runs-on:"))
-          expect(section, `${relative} ${job}`).toContain("timeout-minutes:");
+      for (const job of workflow(path.basename(relative)).jobs) {
+        if (job.runsOn !== undefined) {
+          expect(job.timeoutMinutes, `${relative} ${job.id}`).toBeDefined();
+        }
       }
     }
   });
@@ -1623,109 +1648,123 @@ describe("CI pipeline structure", () => {
     ["android-v8-source", "android-v8-${{ needs.scope.outputs.candidate_sha }}"],
   ])(
     "routes native platform prerequisite %s to idle tn-local with exact candidate artifacts",
-    async (job, artifact) => {
-      const native = await readFile(
-        path.join(repo, ".github/workflows/native-platforms.yml"),
-        "utf8",
-      );
-      const section = requiredJob(native, job);
+    (job, artifact) => {
+      const native = workflow("native-platforms.yml");
+      const section = native.job(job);
       // PRD-620: these producers ride the same idle-pool switch with hosted fallback; the
       // snapshot fallback is best-effort and queued jobs may remain local.
-      expect(section.match(/^ {4}runs-on: (.+)$/mu)?.[1]).toBe(heavy(`native:${job}`));
-      expect(declaredNeeds(section)).toEqual(["scope"]);
-      expect(section).toContain("TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}");
-      expect(section).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
-      expect(section).toContain(`name: ${artifact}`);
-      expect(section).toContain("if-no-files-found: error");
-      const android = requiredJob(native, "android-emulator-parity");
-      expect(declaredNeeds(android)).toEqual(["scope", "web-reference", "android-v8-source"]);
-      expect(android).toContain(`name: ${artifact}`);
+      expect(section.require("runs-on")).toBe(heavy(`native:${job}`));
+      expect(section.needs).toEqual(["scope"]);
+      expect(section.env.TN_CI_SHA).toBe("${{ needs.scope.outputs.candidate_sha }}");
+      expect(section.steps[0]?.with.ref).toBe("${{ needs.scope.outputs.candidate_sha }}");
+      const upload = section.stepsUsing("actions/upload-artifact")[0];
+      expect(upload?.with.name).toBe(artifact);
+      expect(upload?.with["if-no-files-found"]).toBe("error");
+      const android = native.job("android-emulator-parity");
+      expect(android.needs).toEqual(["scope", "web-reference", "android-v8-source"]);
+      expect(
+        android.stepsUsing("actions/download-artifact").map((step) => step.with.name),
+      ).toContain(artifact);
       if (job === "android-v8-source") {
-        expect(section).toContain("uses: ./.github/actions/android-v8-source");
-        expect(section).toContain("recipe-hash: ${{ steps.v8.outputs.recipe-hash }}");
-        expect(section).toContain("published: ${{ steps.v8.outputs.published }}");
-        // The release write consumes `trusted`, not `built`: a develop or main push that hits its
-        // own cache must still be able to republish a missing asset (PRD-628 review round 2).
-        expect(section).toContain("trusted: ${{ steps.v8.outputs.trusted }}");
+        const v8 = section.steps.find(
+          (step) => step.uses === "./.github/actions/android-v8-source",
+        );
+        expect(v8).toBeDefined();
+        expect(section.outputs).toMatchObject({
+          "recipe-hash": "${{ steps.v8.outputs.recipe-hash }}",
+          published: "${{ steps.v8.outputs.published }}",
+          // The release write consumes `trusted`, not `built`: a develop or main push that hits its
+          // own cache must still be able to republish a missing asset (PRD-628 review round 2).
+          trusted: "${{ steps.v8.outputs.trusted }}",
+        });
       }
     },
   );
 
-  it("isolates the cached Linux arm64 V8 producer from consumers and release credentials", async () => {
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
-    const source = requiredJob(native, "linux-arm64-v8-source");
-    const publish = requiredJob(native, "publish-linux-arm64-v8");
-    expect(declaredNeeds(source)).toEqual(["scope"]);
-    expect(source).toContain("runs-on: ubuntu-24.04-arm");
-    expect(source).toContain("github.event_name == 'workflow_dispatch'");
-    expect(source).toContain("inputs.build_linux_arm64_v8 == true");
-    expect(native).toMatch(
-      /build_linux_arm64_v8:\n {8}description: .+\n {8}required: false\n {8}type: boolean\n {8}default: false/u,
-    );
-    expect(source).toContain("needs.scope.outputs.selection == 'full'");
-    expect(source).toContain("needs.scope.outputs.native_tier != 'reduced'");
-    expect(source).toContain("inputs.ios_only != true");
-    expect(source).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
-    expect(source).toContain("timeout-minutes: 210");
-    expect(source).toContain("timeout --signal=TERM --kill-after=30s 180m");
-    expect(source).toContain("contents: read");
-    expect(source).not.toContain("contents: write");
-    const recipe = source.match(/hashFiles\(([\s\S]*?)\)/u)?.[1] ?? "";
+  it("isolates the cached Linux arm64 V8 producer from consumers and release credentials", () => {
+    const native = workflow("native-platforms.yml");
+    const source = native.job("linux-arm64-v8-source");
+    const publish = native.job("publish-linux-arm64-v8");
+    const hit =
+      "steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'";
+    expect(source.needs).toEqual(["scope"]);
+    expect(source.runsOn).toBe("ubuntu-24.04-arm");
+    expect(ciTerms(source.if ?? "")).toEqual([
+      "github.event_name == 'workflow_dispatch'",
+      "inputs.build_linux_arm64_v8 == true",
+      "needs.scope.outputs.selection == 'full'",
+      "needs.scope.outputs.native_tier != 'reduced'",
+      "inputs.ios_only != true",
+    ]);
+    expect(
+      (native.on.workflow_dispatch as { inputs: Record<string, unknown> }).inputs
+        .build_linux_arm64_v8,
+    ).toMatchObject({ default: false, required: false, type: "boolean" });
+    expect(source.steps[0]?.with.ref).toBe("${{ needs.scope.outputs.candidate_sha }}");
+    expect(source.timeoutMinutes).toBe(210);
+    expect(source.permissions).toEqual({ contents: "read" });
+    const recipe = String(source.stepById("recipe").env.RECIPE_HASH);
     expect([...recipe.matchAll(/'([^']+)'/gu)].map((match) => match[1])).toEqual([
       "packages/runtime-native/scripts/build-linux-arm64-v8.mjs",
     ]);
-    expect(source).toContain("gh release download ci-v8-linux-arm64");
-    expect(source).toContain("v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz");
-    expect(source).toContain(
+    const published = source.stepById("published");
+    expect(published.env.ASSET).toBe("v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz");
+    expectIncludes(published.run ?? "", [
+      "gh release download ci-v8-linux-arm64",
       "node packages/runtime-native/scripts/build-linux-arm64-v8.mjs --verify",
+      "Published Linux arm64 V8 asset hit: $ASSET; no rebuild.",
+    ]);
+    expect(source.step("Restore resumable Linux arm64 V8 source").if).toBe(hit);
+    expect(String(source.step("Restore resumable Linux arm64 V8 source").with.path)).toMatch(
+      /packages\/runtime-native\/third_party\/\.v8-linux-arm64-source/u,
     );
-    expect(source).toContain(
-      "if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'",
+    expect(source.step("Save the verified Linux arm64 V8 payload").if).toMatch(
+      /steps\.verify\.outcome == 'success'/u,
     );
-    expect(source).toContain("Published Linux arm64 V8 asset hit: $ASSET; no rebuild.");
-    expect(source).toContain("packages/runtime-native/third_party/.v8-linux-arm64-source");
-    expect(source).toContain("steps.verify.outcome == 'success'");
-    expect(source).toContain("steps.build.outcome == 'failure'");
-    expect(source).toContain('ar p "$library" "$member"');
-    expect(source).toContain('file "$RUNNER_TEMP/v8-arm64-member.o"');
-    expect(source).toContain("grep -Eq 'Machine:.*AArch64'");
-    expect(source).toContain('sha256sum "$ASSET"');
-    expect(source).toContain("if-no-files-found: error");
-    expect(declaredNeeds(publish)).toEqual(["scope", "linux-arm64-v8-source"]);
-    expect(publish).toContain("github.event_name != 'pull_request'");
-    expect(publish).toContain(
-      "github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'",
+    expect(source.step("Save interrupted Linux arm64 V8 source").if).toMatch(
+      /steps\.build\.outcome == 'failure'/u,
     );
-    expect(publish).toContain("contents: write");
-    expect(publish).not.toContain("actions/checkout");
-    expect(publish).not.toContain("node ");
-    expect(publish).toContain("sha256sum --check linux-arm64-v8-proof/payload.sha256");
-    expect(publish).toContain('gh release upload ci-v8-linux-arm64 "payload/$ASSET"');
-    expect(publish).not.toContain("--clobber");
-    expect(publish).toContain('cmp -- "payload/$ASSET" "$RUNNER_TEMP/published-v8/$ASSET"');
-    expect(declaredNeeds(requiredJob(native, "starter-linux"))).not.toContain(
-      "linux-arm64-v8-source",
+    expect(source.stepById("build").run).toMatch(/timeout --signal=TERM --kill-after=30s 180m/u);
+    expectIncludes(source.stepById("verify").run ?? "", [
+      'ar p "$library" "$member"',
+      'file "$RUNNER_TEMP/v8-arm64-member.o"',
+      "grep -Eq 'Machine:.*AArch64'",
+      'sha256sum "$ASSET"',
+    ]);
+    expect(source.stepsUsing("actions/upload-artifact")[0]?.with["if-no-files-found"]).toBe(
+      "error",
     );
-    expect(declaredNeeds(requiredJob(native, "completion"))).toEqual(
+    expect(source.mentions("contents: write")).toBe(false);
+    expect(publish.needs).toEqual(["scope", "linux-arm64-v8-source"]);
+    expect(ciTerms(publish.if ?? "")).toEqual(
+      expect.arrayContaining([
+        "github.event_name != 'pull_request'",
+        "github.ref == 'refs/heads/main'",
+        "github.ref == 'refs/heads/develop'",
+      ]),
+    );
+    expect(publish.permissions).toEqual({ contents: "write" });
+    expect(publish.stepsUsing("actions/checkout")).toEqual([]);
+    expect(publish.runs(/\bnode /u)).toBe(false);
+    expectIncludes(publish.scripts, [
+      "sha256sum --check linux-arm64-v8-proof/payload.sha256",
+      'gh release upload ci-v8-linux-arm64 "payload/$ASSET"',
+      'cmp -- "payload/$ASSET" "$RUNNER_TEMP/published-v8/$ASSET"',
+    ]);
+    expectExcludes(publish.scripts, ["--clobber"]);
+    expect(native.job("starter-linux").needs).not.toEqual(
+      expect.arrayContaining(["linux-arm64-v8-source"]),
+    );
+    expect(native.job("completion").needs).toEqual(
       expect.arrayContaining(["linux-arm64-v8-source", "publish-linux-arm64-v8"]),
     );
-    const install =
-      source
-        .split("      - name: Install the pinned Linux arm64 V8 compiler\n")[1]
-        ?.split("      - name:")[0] ?? "";
-    expect(install).toContain(
-      "if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'",
-    );
-    expect(install).toContain("sudo apt-get update");
-    expect(install).toContain(
+    const install = source.step("Install the pinned Linux arm64 V8 compiler");
+    expect(install.if).toBe(hit);
+    expectIncludes(install.run ?? "", [
+      "sudo apt-get update",
       "sudo apt-get install -y --allow-downgrades clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 libclang-rt-18-dev=1:18.1.3-1 ninja-build build-essential python3 git pkg-config libglib2.0-dev",
-    );
-    expect(source.indexOf("Install the pinned Linux arm64 V8 compiler")).toBeLessThan(
-      source.indexOf("Build the Linux arm64 V8 payload"),
-    );
+    ]);
+    expect(install.index).toBeLessThan(source.step("Build the Linux arm64 V8 payload").index);
   });
 
   // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build
@@ -2518,50 +2557,53 @@ describe("CI pipeline structure", () => {
   // actions and Node from, and checks it against a recorded digest, so npm is not in the path of
   // any job and an unexpected binary fails the job rather than running.
   it("bootstraps pnpm from a pinned release digest rather than through npm", async () => {
-    const primary = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    expect(triggerSection(primary), "ci.yml does not run on pull requests").toContain(
-      "pull_request:",
+    const primary = workflow("ci.yml");
+    expect(Object.keys(primary.on), "ci.yml does not run on pull requests").toEqual(
+      expect.arrayContaining(["pull_request"]),
     );
-    for (const [relative, source] of [
-      [".github/workflows/ci.yml", primary],
-      [
-        ".github/workflows/native-platforms.yml",
-        await readFile(path.join(repo, ".github/workflows/native-platforms.yml"), "utf8"),
-      ],
+    for (const [relative, model] of [
+      ["ci.yml", primary],
+      ["native-platforms.yml", workflow("native-platforms.yml")],
     ] as const) {
-      const workflow = relative;
-      expect(source, `${workflow} still bootstraps pnpm through npm`).not.toContain(
-        "pnpm/action-setup",
-      );
-      for (const [name, section] of jobSections(source)) {
-        if (!section.includes("actions/setup-node")) continue;
-        const local = section.indexOf("uses: ./.github/actions/pnpm");
-        expect(local, `${workflow} job ${name} does not install pnpm locally`).toBeGreaterThan(-1);
+      for (const job of model.jobs) {
+        expect(
+          job.stepsUsing("pnpm/action-setup"),
+          `${relative} job ${job.id} still bootstraps pnpm through npm`,
+        ).toEqual([]);
+        const setup = job.steps.findIndex(
+          (step) => step.uses?.startsWith("actions/setup-node") === true,
+        );
+        if (setup < 0) continue;
+        const local = job.steps.findIndex((step) => step.uses === "./.github/actions/pnpm");
+        expect(local, `${relative} job ${job.id} does not install pnpm locally`).toBeGreaterThan(
+          -1,
+        );
         // `cache: pnpm` shells out to `pnpm store path`, so pnpm has to be on PATH already.
         expect(
           local,
-          `${workflow} job ${name} installs pnpm after setup-node reads its store`,
-        ).toBeLessThan(section.indexOf("actions/setup-node"));
+          `${relative} job ${job.id} installs pnpm after setup-node reads its store`,
+        ).toBeLessThan(setup);
       }
     }
 
     const action = await readFile(path.join(repo, ".github/actions/pnpm/action.yml"), "utf8");
     const digests = await readFile(path.join(repo, ".github/actions/pnpm/checksums.txt"), "utf8");
     // Fail closed twice over: an asset with no recorded digest, and a digest that does not match.
-    expect(action).toContain("no recorded digest");
     // The digest is computed here and compared as a string, not handed to `sha256sum --check`:
     // the macOS image ships a `sha256sum` that is not coreutils and has no `--check`, so on run
     // 33831657853 that checker printed a usage line and reported a mismatch on a binary whose
     // bytes were correct. Every tool the action probes must survive an edit, and both failure
     // paths must still name what went wrong and stop the job.
-    expect(action).toContain("digest_of");
-    expect(action).toContain("shasum --algorithm 256");
-    expect(action).toContain("sha256sum");
-    expect(action).toContain("openssl dgst -sha256");
-    expect(action, "a digest the action cannot compute must fail the job").toContain(
+    expectIncludes(action, [
+      "no recorded digest",
+      "digest_of",
+      "shasum --algorithm 256",
+      "sha256sum",
+      "openssl dgst -sha256",
       "could not compute a sha-256 digest",
-    );
-    expect(action, "a wrong binary must still fail the job").toContain("not the recorded");
+      "not the recorded",
+      "packageManager",
+    ]);
 
     const recorded = new Map(
       digests
@@ -2584,53 +2626,57 @@ describe("CI pipeline structure", () => {
     const version = (manifest.packageManager ?? "").replace(/^pnpm@/u, "");
     expect(version, "the workspace pins no pnpm version").toMatch(/^\d+\.\d+\.\d+$/u);
     expect(digests, `checksums.txt does not name pnpm ${version}`).toContain(version);
-    expect(action, `the action does not read the workspace's pinned pnpm`).toContain(
-      "packageManager",
-    );
   });
 
-  it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const supplyChain = requiredJob(ci, "supply-chain");
+  it("PR CI reviews dependencies and scans changed commits for leaked secrets", () => {
+    const supplyChain = workflow("ci.yml").job("supply-chain");
     // Markdown-only PRs skip the scan entirely (owner call 2026-09-12): the nightly develop run
     // and promotions still scan the full git history, so an inert prose PR spends no runner here.
     // PRD-481 added the reused tree to the exempt set and the `ci` selection to the admitted one,
     // so the condition names every selection it admits instead of the one it refuses.
-    expect(supplyChain).toContain("needs: scope");
-    expect(supplyChain).toContain(
-      "if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'",
+    expect(supplyChain.needs).toEqual(["scope"]);
+    expect(ciTerms(supplyChain.if ?? "")).toEqual(
+      ["full", "template", "review", "instructions", "ci", "native-engine"].map(
+        (selection) => `needs.scope.outputs.selection == '${selection}'`,
+      ),
     );
-    expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
-    expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
+    expect(supplyChain.steps[0]?.with["fetch-depth"]).toBe(0);
     // ...but the dependency diff itself stays pull_request-only: it needs a base ref and a head
     // ref, which a push does not supply, and ungating it made every push-to-main run red.
-    expect(
-      supplyChain,
-      "dependency-review must stay pull_request-only; on push it has no base/head ref",
-    ).toContain(
-      "- uses: actions/dependency-review-action@v4\n        if: github.event_name == 'pull_request'",
+    const review = supplyChain.stepsUsing("actions/dependency-review-action@v4");
+    expect(review).toHaveLength(1);
+    expect(review[0]?.if, "dependency-review must stay pull_request-only").toBe(
+      "github.event_name == 'pull_request'",
     );
-    expect(supplyChain).toContain("fail-on-severity: moderate");
-    expect(supplyChain).not.toContain("allow-licenses");
-    expect(supplyChain).toContain("fetch-depth: 0");
-    expect(supplyChain).toContain("ghcr.io/gitleaks/gitleaks@sha256:");
-    expect(supplyChain).toContain("github.event.pull_request.base.sha");
-    expect(supplyChain).toContain("Scan the full git history for leaked secrets");
-    expect(supplyChain).toContain("github.event.pull_request.head.sha");
-    expect(supplyChain).toContain('git rev-list --count "$range"');
-    expect(supplyChain).toContain("git --redact --verbose");
-    expect(supplyChain).toContain('--log-opts="$TN_GITLEAKS_RANGE"');
+    expect(review[0]?.with["fail-on-severity"]).toBe("moderate");
+    expect(review[0]?.with).not.toHaveProperty("allow-licenses");
+    expect(supplyChain.step(/^Scan the full git history for leaked secrets/u).if).toBe(
+      "github.event_name != 'pull_request'",
+    );
+    const range = supplyChain.step(/^Verify the PR commit range is present/u);
+    expect(range.env).toMatchObject({
+      BASE_SHA: "${{ github.event.pull_request.base.sha }}",
+      HEAD_SHA: "${{ github.event.pull_request.head.sha }}",
+    });
+    expect(range.run).toMatch(/git rev-list --count "\$range"/u);
+    const scan = supplyChain.step("Scan PR commits for leaked secrets");
+    expectIncludes(scan.run ?? "", [
+      "ghcr.io/gitleaks/gitleaks@sha256:",
+      "git --redact --verbose",
+      '--log-opts="$TN_GITLEAKS_RANGE"',
+    ]);
   });
 
-  it("the primary workflow owns the nightly run and invokes the native lane", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    expect(triggerSection(ci)).toMatch(/schedule:\n\s+- cron: ["']17 3 \* \* \*["']/u);
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
-    expect(triggerSection(native)).toContain("workflow_call:");
-    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
+  it("the primary workflow owns the nightly run and invokes the native lane", () => {
+    expect(workflow("ci.yml").on.schedule).toEqual([{ cron: "17 3 * * *" }]);
+    const native = workflow("native-platforms.yml");
+    expect(Object.keys(native.on)).toContain("workflow_call");
+    expect(Object.keys(native.on)).not.toEqual(expect.arrayContaining(["pull_request"]));
+    expect(
+      Object.keys(native.on).filter((event) =>
+        ["pull_request", "schedule", "push"].includes(event),
+      ),
+    ).toEqual([]);
   });
 
   it("both emulator lanes share the KVM provisioning commands", async () => {
@@ -2646,54 +2692,65 @@ describe("CI pipeline structure", () => {
     expect(parityCommands).toEqual(releaseCommands);
   });
 
-  it("native cache keys hash their inputs and activate ccache", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
+  it("native cache keys hash their inputs and activate ccache", () => {
+    const ci = workflow("ci.yml");
+    const native = workflow("native-platforms.yml");
     const jobs = [
-      ["ci test-native", requiredJob(ci, "test-native")],
-      ["native desktop parity", requiredJob(native, "desktop-parity")],
-      ["native desktop matrix", requiredJob(native, "desktop")],
-      ["native starter linux", requiredJob(native, "starter-linux")],
+      ["ci test-native", ci.job("test-native")],
+      ["native desktop parity", native.job("desktop-parity")],
+      ["native desktop matrix", native.job("desktop")],
+      ["native starter linux", native.job("starter-linux")],
     ] as const;
-    for (const [name, section] of jobs) {
-      expect(section, name).toContain("packages/runtime-native/third_party");
-      expect(section, name).toContain("packages/runtime-native/scripts/download-deps.mjs");
-      expect(section, name).toContain("CCACHE_DIR");
+    for (const [name, job] of jobs) {
+      expectIncludes(
+        JSON.stringify(job.steps),
+        [
+          "packages/runtime-native/third_party",
+          "packages/runtime-native/scripts/download-deps.mjs",
+          "packages/runtime-native/CMakeLists.txt",
+        ],
+        name,
+      );
       // CMake reads the launcher from the environment under these two names only. It does not
       // read CMAKE_PROJECT_INCLUDE_BEFORE from the environment, so writing a .cmake file and
       // exporting that name compiled without ccache while looking activated.
-      expect(section, name).toContain("CMAKE_C_COMPILER_LAUNCHER: ccache");
-      expect(section, name).toContain("CMAKE_CXX_COMPILER_LAUNCHER: ccache");
-      expect(section, name).not.toMatch(/^\s+echo "CMAKE_PROJECT_INCLUDE_BEFORE=/mu);
-      const keys = [...section.matchAll(/^\s+key:\s*(.+)$/gmu)].map((match) => match[1] ?? "");
+      expect(job.env, name).toMatchObject({
+        CMAKE_C_COMPILER_LAUNCHER: "ccache",
+        CMAKE_CXX_COMPILER_LAUNCHER: "ccache",
+      });
+      expect(job.runs(/echo "CMAKE_PROJECT_INCLUDE_BEFORE=/u), name).toBe(false);
+      const caches = cacheSteps(job);
+      const keys = caches.map((step) => String(step.with.key));
       expect(keys.length, `${name} has no explicit cache keys`).toBeGreaterThanOrEqual(2);
-      for (const key of keys) expect(key, name).toContain("hashFiles(");
-      expect(section, name).toContain("packages/runtime-native/CMakeLists.txt");
+      for (const key of keys) expect(key, name).toMatch(/hashFiles\(/u);
 
       // A compiler cache that ccache writes to one directory and actions/cache saves from
       // another is not a compiler cache: the save finds nothing, no entry is ever stored, and
       // every run recompiles from scratch while the workflow reads as if it were cached. That
       // shipped, and `gh cache list` had no native-ccache entry at all after five runs. These
       // three assertions are the difference between the steps existing and the cache working.
-      const ccacheDir = section.match(/^\s+CCACHE_DIR:\s*(.+)$/mu)?.[1]?.trim();
+      const ccacheDir = job.env.CCACHE_DIR;
       expect(ccacheDir, `${name} does not set CCACHE_DIR`).toBeDefined();
-      const cachedPaths = [...section.matchAll(/^\s+path:\s*(.+)$/gmu)].map((match) =>
-        (match[1] ?? "").trim(),
-      );
-      expect(cachedPaths, `${name} caches ${ccacheDir}`).toContain(ccacheDir);
+      expect(
+        caches.flatMap((step) =>
+          String(step.with.path)
+            .split("\n")
+            .map((entry) => entry.trim()),
+        ),
+        `${name} caches ${ccacheDir}`,
+      ).toEqual(expect.arrayContaining([ccacheDir]));
 
       // GitHub cache keys are immutable: a key that is only a content hash saves once and is
       // never updated again, so the cache stops growing the moment a source file changes. The
       // run id makes every run save, and restore-keys makes every run restore the newest.
       const ccacheKey = keys.find((key) => key.includes("native-ccache"));
       expect(ccacheKey, `${name} has no native-ccache key`).toBeDefined();
-      expect(ccacheKey, `${name} never re-saves its compiler cache`).toContain("github.run_id");
+      expect(ccacheKey, `${name} never re-saves its compiler cache`).toMatch(/github\.run_id/u);
 
       // A cache nobody measures is a cache nobody notices going cold.
-      expect(section, `${name} never reports its ccache hit rate`).toContain("ccache --show-stats");
+      expect(job.runs("ccache --show-stats"), `${name} never reports its ccache hit rate`).toBe(
+        true,
+      );
     }
   });
 
@@ -2706,44 +2763,41 @@ describe("CI pipeline structure", () => {
   // entry sat at 23 MiB run after run instead of growing to hold all three lanes. A restore-key
   // prefix is a namespace; sharing one between jobs that build different things is a cache that
   // reports as warm and behaves as cold.
-  it("gives every native compiler cache a restore namespace no other job writes to", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
+  it("gives every native compiler cache a restore namespace no other job writes to", () => {
+    const ci = workflow("ci.yml");
+    const native = workflow("native-platforms.yml");
     const jobs = [
-      ["ci test-native", requiredJob(ci, "test-native")],
-      ["native desktop parity", requiredJob(native, "desktop-parity")],
-      ["native desktop matrix", requiredJob(native, "desktop")],
-      ["native starter linux", requiredJob(native, "starter-linux")],
+      ["ci test-native", ci.job("test-native")],
+      ["native desktop parity", native.job("desktop-parity")],
+      ["native desktop matrix", native.job("desktop")],
+      ["native starter linux", native.job("starter-linux")],
     ] as const;
 
     const namespaces = new Map<string, string>();
-    for (const [name, section] of jobs) {
+    for (const [name, job] of jobs) {
       // By name, not by position: these jobs restore more than one cache, and `test-native` also
       // restores the compiled build tree. Picking the first `restore-keys` in the block asserted
       // against whichever cache happened to be declared first.
-      const restoreKey = [...section.matchAll(/^\s+restore-keys:\s*(.+)$/gmu)]
-        .map((match) => (match[1] ?? "").trim().replace(/^["']|["']$/gu, ""))
-        .find((key) => key.includes("native-ccache"));
-      expect(restoreKey, `${name} has no ccache restore-keys prefix`).toBeDefined();
-      const previous = namespaces.get(restoreKey ?? "");
+      const ccache = cacheSteps(job).find((step) =>
+        String(step.with.key).includes("native-ccache"),
+      );
+      const restoreKey = String(ccache?.with["restore-keys"] ?? "")
+        .trim()
+        .replace(/^["']|["']$/gu, "");
+      expect(restoreKey, `${name} has no ccache restore-keys prefix`).not.toBe("");
+      const previous = namespaces.get(restoreKey);
       expect(
         previous,
         `${name} shares the ccache restore namespace ${restoreKey} with ${previous}`,
       ).toBeUndefined();
-      namespaces.set(restoreKey ?? "", name);
+      namespaces.set(restoreKey, name);
 
       // The save key must start with the prefix it restores by, or the lane saves into a
       // namespace it never reads back and the restore silently falls through to a sibling's.
-      const saveKey = [...section.matchAll(/^\s+key:\s*(.+)$/gmu)]
-        .map((match) => (match[1] ?? "").trim())
-        .find((key) => key.includes("native-ccache"));
-      expect(saveKey, `${name} has no native-ccache save key`).toBeDefined();
-      expect(saveKey, `${name} saves outside the namespace it restores from`).toContain(
-        restoreKey ?? "",
-      );
+      expect(
+        String(ccache?.with.key).startsWith(restoreKey),
+        `${name} saves outside the namespace it restores from`,
+      ).toBe(true);
     }
   });
 
@@ -2753,58 +2807,52 @@ describe("CI pipeline structure", () => {
   // templates on every event, so the copy inside the golden-path lane proved nothing new and cost
   // 350s of the run's critical path (run 33690597861, step "Run the scaffold's GPU-free
   // assertions"). The verifier is what this lane is for; the sweep belongs to the job that owns it.
-  it("leaves the non-visual scenario sweep to template-nonvisual", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const goldenPath = requiredJob(ci, "golden-path-template");
-    const nonVisual = requiredJob(ci, "template-nonvisual");
+  it("leaves the non-visual scenario sweep to template-nonvisual", () => {
+    const ci = workflow("ci.yml");
+    const goldenPath = ci.job("golden-path-template");
+    const nonVisual = ci.job("template-nonvisual");
 
-    expect(nonVisual).toContain("non-visual-scenarios.mjs");
-    expect(nonVisual).toContain("threenative-playtest");
+    expectIncludes(nonVisual.scripts, ["non-visual-scenarios.mjs", "threenative-playtest"]);
     // Both templates the golden-path matrix drives must be covered by the sweep that replaces it.
-    for (const template of ["starter", "platformer"]) {
-      expect(matrixTemplates(nonVisual)).toContain(template);
-    }
-
-    // Commands, not prose: the job's comments name the classifier and the runner precisely
-    // because it delegates to them, and a raw-text match cannot tell an explanation from a step.
-    const commands = goldenPath
-      .split("\n")
-      .filter((line) => !/^\s*#/u.test(line))
-      .join("\n");
-    expect(
-      commands,
-      "golden-path-template re-runs the sweep template-nonvisual already owns",
-    ).not.toContain("non-visual-scenarios.mjs");
-    expect(commands, "golden-path-template still drives scenarios itself").not.toContain(
-      "threenative-playtest",
+    expect(matrixTemplates(nonVisual.text)).toEqual(
+      expect.arrayContaining(["starter", "platformer"]),
     );
-    expect(goldenPath).toContain("pnpm verify:golden-path");
+
+    // Commands, not prose: a parsed run body has no comments, so an explanation cannot pass for a step.
+    expectExcludes(
+      goldenPath.scripts,
+      ["non-visual-scenarios.mjs", "threenative-playtest"],
+      "golden-path-template drives the sweep template-nonvisual already owns:",
+    );
+    expect(goldenPath.runs("pnpm verify:golden-path")).toBe(true);
   });
 
   // Every matrix leg ran `workspace-packages.ts build` and then `pnpm pack` per package: ten legs
   // paying ~70s each to produce byte-identical tarballs from the same commit. `build` already
   // compiles the workspace, so it packs once and the legs download the result.
-  it("packs the workspace tarballs once and shares them with every matrix leg", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const build = requiredJob(ci, "build-artifacts");
-    expect(build, "build does not publish the packed tarballs").toContain(
-      "actions/upload-artifact",
-    );
-    expect(build).toContain("uses: ./.github/actions/workspace-dist");
-    expect(build).not.toContain("pnpm tsx scripts/workspace-packages.ts --archives");
+  it("packs the workspace tarballs once and shares them with every matrix leg", () => {
+    const ci = workflow("ci.yml");
+    const build = ci.job("build-artifacts");
+    const uploads = build.stepsUsing("actions/upload-artifact");
+    expect(uploads, "build does not publish the packed tarballs").not.toHaveLength(0);
+    expect(build.stepsUsing("./.github/actions/workspace-dist")).not.toHaveLength(0);
+    expect(build.runs("pnpm tsx scripts/workspace-packages.ts --archives")).toBe(false);
 
     for (const name of ["golden-path-template", "template-nonvisual"]) {
-      const job = requiredJob(ci, name);
-      expect(job, `${name} does not consume the shared tarballs`).toContain(
-        "actions/download-artifact",
-      );
-      expect(job, `${name} still packs the workspace itself`).not.toMatch(
-        /pnpm --filter "\$package_name" pack/u,
-      );
+      const job = ci.job(name);
+      expect(
+        job.stepsUsing("actions/download-artifact"),
+        `${name} does not consume the shared tarballs`,
+      ).not.toHaveLength(0);
+      expect(
+        job.runs(/pnpm --filter "\$package_name" pack/u),
+        `${name} still packs the workspace itself`,
+      ).toBe(false);
       // Nothing may re-derive the specs file locally; the artifact is the single source.
-      expect(job, `${name} re-runs the workspace build`).not.toContain(
-        "pnpm tsx scripts/workspace-packages.ts build",
-      );
+      expect(
+        job.runs("pnpm tsx scripts/workspace-packages.ts build"),
+        `${name} re-runs the workspace build`,
+      ).toBe(false);
     }
 
     // The first attempt shipped only `packages/create-threenative/dist` and every scaffold died:
@@ -2812,13 +2860,16 @@ describe("CI pipeline structure", () => {
     // workspace symlink into `packages/assets/dist/index.js`, and the leg no longer builds the
     // workspace. What the legs need is the whole compiled workspace, so the artifact carries it
     // and this asserts the glob rather than any one package's name.
-    const uploaded = build.slice(build.indexOf("actions/upload-artifact"));
-    expect(uploaded, "the shared artifact does not carry the compiled workspace").toMatch(
-      /^\s+packages\/\*\/dist$/mu,
+    const upload = uploads.find((step) => step.with.name === "workspace-packages");
+    expect(upload, "the shared artifact is not named workspace-packages").toBeDefined();
+    const paths = String(upload?.with.path)
+      .split("\n")
+      .map((line) => line.trim());
+    expect(paths, "the shared artifact does not carry the compiled workspace").toEqual(
+      expect.arrayContaining(["packages/*/dist", "artifacts/workspace-packages"]),
     );
-    expect(uploaded).toMatch(/^\s+artifacts\/workspace-packages$/mu);
     // An empty upload must fail the job rather than hand every downstream leg a silent nothing.
-    expect(uploaded).toContain("if-no-files-found: error");
+    expect(upload?.with["if-no-files-found"]).toBe("error");
   });
 
   // `test` used to compile the C++ host for 279s before running a single JS test, because one
@@ -2827,35 +2878,39 @@ describe("CI pipeline structure", () => {
   // runs is a gate that goes green by running less, which is the failure this repository fails
   // closed against everywhere else. So this computes the partition rather than trusting it.
   it("splits the suite in two without dropping a package on the floor", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const js = requiredJob(ci, "test");
-    const native = requiredJob(ci, "test-native");
+    const ci = workflow("ci.yml");
+    const js = ci.job("test");
+    const native = ci.job("test-native");
 
     // The JS half must not compile anything, or the split bought nothing.
-    expect(js, "the JS half still builds the native host").not.toContain("native:build");
-    expect(js, "the JS half still carries the compiler cache").not.toContain("CCACHE_DIR");
-    expect(js).toContain("- run: pnpm test");
+    expect(js.runs("native:build"), "the JS half still builds the native host").toBe(false);
+    expect(js.env.CCACHE_DIR, "the JS half still carries the compiler cache").toBeUndefined();
+    expect(js.steps.some((step) => /^pnpm test(?::ci)?$/u.test(step.run ?? ""))).toBe(true);
 
     // The native half must build what its suite executes, and run only that suite.
-    expect(native).toContain("native:build");
-    expect(native).toContain("CCACHE_DIR");
+    expect(native.runs("native:build")).toBe(true);
+    expect(native.env.CCACHE_DIR).toBeDefined();
     // The contract tests import the compiled workspace. `pnpm test` used to build it for them;
     // this job does not run `pnpm test`, so it has to build it itself or the suite dies on
     // ERR_MODULE_NOT_FOUND for `@threenative/playtest` before it executes a binary.
-    expect(native, "the native half never builds the workspace its tests import").toContain(
-      "uses: ./.github/actions/workspace-dist",
-    );
-    expect(native, "the native half re-runs the whole suite").not.toMatch(
-      /^\s+- run: pnpm test$/mu,
-    );
+    expect(
+      native.stepsUsing("./.github/actions/workspace-dist"),
+      "the native half never builds the workspace its tests import",
+    ).not.toHaveLength(0);
+    expect(
+      native.steps.some((step) => step.run === "pnpm test"),
+      "the native half re-runs the whole suite",
+    ).toBe(false);
 
-    const excluded = (js.match(/TN_SUITE_EXCLUDE_PACKAGES:\s*"([^"]*)"/u)?.[1] ?? "")
+    const excluded = (js.env.TN_SUITE_EXCLUDE_PACKAGES ?? "")
       .split(",")
       .map((name) => name.trim())
       .filter((name) => name !== "");
     expect(excluded.length, "the JS half excludes nothing, so the split is a duplicate").toBe(1);
 
-    const filtered = [...native.matchAll(/pnpm --filter (\S+) test/gu)].map((match) => match[1]);
+    const filtered = [...native.scripts.matchAll(/pnpm --filter (\S+) test/gu)].map(
+      (match) => match[1],
+    );
     expect(
       filtered.sort(),
       "the packages the JS half skips are not the ones the native half runs",
@@ -2879,12 +2934,11 @@ describe("CI pipeline structure", () => {
   // cache is worthless and the hits are this run recompiling shared sources into a second build
   // directory, or 390 objects really do hash differently run over run. A counter read between the
   // builds is what tells those apart, so it is a measurement the job has to keep.
-  it("reads the compiler cache counters between builds, not only at the end", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const native = requiredJob(ci, "test-native");
+  it("reads the compiler cache counters between builds, not only at the end", () => {
+    const native = workflow("ci.yml").job("test-native");
 
-    const readings = [...native.matchAll(/^\s+- name: Compiler cache after (.+)$/gmu)].map(
-      (match) => (match[1] ?? "").trim(),
+    const readings = native.steps.flatMap(
+      (step) => /^Compiler cache after (.+)$/u.exec(step.name ?? "")?.[1]?.trim() ?? [],
     );
     expect(readings, "the native job reports one total for three builds").toEqual([
       "the host build",
@@ -2893,14 +2947,12 @@ describe("CI pipeline structure", () => {
     ]);
     // And the size of what the restore actually put on disk, because a hit rate cannot
     // distinguish a cold cache from one restored into the wrong directory.
-    expect(native).toContain('du -sh "$CCACHE_DIR"');
+    expect(native.runs('du -sh "$CCACHE_DIR"')).toBe(true);
   });
 
-  it("builds V8 native contracts through the configured aggregate target", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const native = requiredJob(ci, "test-native");
-    const commands = commandText(native);
-    const v8Contracts = workflowRunScript(ci, "Build the V8 contract executables").trim();
+  it("builds V8 native contracts through the configured aggregate target", () => {
+    const native = workflow("ci.yml").job("test-native");
+    const v8Contracts = native.step("Build the V8 contract executables").run?.trim() ?? "";
 
     expect(v8Contracts).toBe(
       [
@@ -2908,34 +2960,24 @@ describe("CI pipeline structure", () => {
         'cmake --build build/tn-linux --target threenative-native-tests --parallel "$(nproc)"',
       ].join("\n"),
     );
-    expect(commands, "test-native must not rediscover configured targets lexically").not.toContain(
-      "add_executable",
-    );
-    expect(commands, "test-native must not rebuild a handwritten target vector").not.toContain(
-      "target_args",
-    );
-    expect(commands, "test-native must not swallow a failed aggregate build").not.toContain(
-      "combined contract build failed",
+    expectExcludes(
+      native.scripts,
+      ["add_executable", "target_args", "combined contract build failed"],
+      "test-native must not rediscover or swallow targets:",
     );
     expect(
       v8Contracts,
       "test-native must not turn a failed contract build into echo output",
     ).not.toMatch(/\|\|\s*\\?\s*\n?\s*echo/u);
 
-    const quickJs = workflowRunScript(
-      ci,
-      "Build the QuickJS engine variant the cross-engine contracts need",
-    );
-    expect(quickJs).toContain("node scripts/download-deps.mjs --only quickjs");
-    expect(quickJs).toContain(
+    const quickJs =
+      native.step("Build the QuickJS engine variant the cross-engine contracts need").run ?? "";
+    expectIncludes(quickJs, [
+      "node scripts/download-deps.mjs --only quickjs",
       "cmake -S . -B build/tn-linux-quickjs -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF",
-    );
-    expect(quickJs).toContain(
       "cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test",
-    );
-    expect(quickJs).toContain(
       '--target threenative-rg11b10-renderable-test --target mystral --parallel "$(nproc)"',
-    );
+    ]);
   });
 
   it("wires the native contract aggregate to CMake's configured registration set", async () => {
@@ -2972,21 +3014,25 @@ describe("CI pipeline structure", () => {
   // exact-key: a partial restore can serve a tree built from different code because cached object
   // mtimes are newer than the commit timestamps restored for changed sources.
   it("keys the cached native build tree on the sources it was built from", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const native = requiredJob(ci, "test-native");
+    const native = workflow("ci.yml").job("test-native");
 
-    const keys = [...native.matchAll(/^\s+key:\s*(.+)$/gmu)].map((match) =>
-      (match[1] ?? "").trim(),
-    );
-    const buildKey = keys.find((key) => key.includes("native-build-"));
+    const caches = cacheSteps(native);
+    const buildKey = caches
+      .map((step) => String(step.with.key))
+      .find((key) => key.includes("native-build-"));
     expect(buildKey, "the native build tree is not cached").toBeDefined();
-    for (const input of [
-      "packages/runtime-native/CMakeLists.txt",
-      "packages/runtime-native/src/**",
-      "packages/runtime-native/include/**",
-    ]) {
-      expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
-    }
+    expectIncludes(
+      buildKey ?? "",
+      [
+        "packages/runtime-native/CMakeLists.txt",
+        "packages/runtime-native/src/**",
+        "packages/runtime-native/include/**",
+        "packages/runtime-native/native/**/src/**",
+        "packages/runtime-native/native/**/Cargo.toml",
+        "packages/runtime-native/native/**/Cargo.lock",
+      ],
+      "the build-tree key ignores",
+    );
     // Deliberately NOT run-scoped, unlike the compiler cache. A ccache directory grows with
     // every run and wants a fresh entry; a build tree is a pure function of its sources, so a
     // run-scoped key stores the same 1.1 GiB repeatedly. On 2026-09-03 four entries carried the
@@ -2995,16 +3041,29 @@ describe("CI pipeline structure", () => {
     expect(
       buildKey,
       "a run-scoped build-tree key stores the same tree once per run and evicts the budget",
-    ).not.toContain("github.run_id");
-    expect(native).not.toContain("restore-keys: native-build-");
-    // Both configured build directories, or the QuickJS variant recompiles from nothing.
-    expect(native).toContain("packages/runtime-native/build/tn-linux");
-    expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
-    // The Rust crates too: once the C++ compile was cached away, they were the whole remaining
-    // ~112s of the host build step.
-    // The path the build actually writes, not the one cargo would default to:
-    // `build-native-physics.mjs` passes `--target-dir` because it cross-compiles to five targets.
-    expect(native).toContain("packages/runtime-native/.runtime/physics-target");
+    ).not.toMatch(/github\.run_id/u);
+    expect(
+      caches.map((step) => String(step.with["restore-keys"] ?? "")),
+      "the build tree must not restore a stale sibling",
+    ).not.toContainEqual(expect.stringMatching(/^native-build-/u));
+    // Both configured build directories, or the QuickJS variant recompiles from nothing. The Rust
+    // crates too: once the C++ compile was cached away, they were the whole remaining ~112s of the
+    // host build step. The path is the one the build actually writes, not the one cargo would
+    // default to: `build-native-physics.mjs` passes `--target-dir` because it cross-compiles to
+    // five targets.
+    const treePaths = caches.flatMap((step) =>
+      String(step.with.path)
+        .split("\n")
+        .map((entry) => entry.trim()),
+    );
+    expect(treePaths).toEqual(
+      expect.arrayContaining([
+        "packages/runtime-native/build/tn-linux",
+        "packages/runtime-native/build/tn-linux-quickjs",
+        "packages/runtime-native/.runtime/physics-target",
+        "packages/runtime-native/native/ui-overlay/target",
+      ]),
+    );
     const physicsScript = await readFile(
       path.join(repo, "packages/runtime-native/scripts/build-native-physics.mjs"),
       "utf8",
@@ -3012,24 +3071,16 @@ describe("CI pipeline structure", () => {
     expect(physicsScript, "the physics build no longer writes where the cache looks").toContain(
       "'.runtime', 'physics-target'",
     );
-    expect(native).toContain("packages/runtime-native/native/ui-overlay/target");
-    for (const input of [
-      "packages/runtime-native/native/**/src/**",
-      "packages/runtime-native/native/**/Cargo.toml",
-      "packages/runtime-native/native/**/Cargo.lock",
-    ]) {
-      expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
-    }
     // A cached build tree is only usable if its inputs are older than it. `actions/checkout`
     // stamps everything with the time it ran, so without this the restore is dead weight and
-    // ninja rebuilds the tree it just downloaded.
-    expect(native, "the restored tree is older than its own freshly checked-out inputs").toContain(
-      "restore-source-mtimes.mjs",
-    );
-    // And it needs history to do it. A shallow clone dates every file to HEAD, which is newer
-    // than the cached tree, so the cache is worse than useless — run 33751865452 restamped 299 of
-    // 299 files and rebuilt 78 objects behind a cache it had just restored.
-    expect(native, "the mtime restore runs against a shallow clone").toContain("fetch-depth: 0");
+    // ninja rebuilds the tree it just downloaded. And it needs history to do it. A shallow clone
+    // dates every file to HEAD, which is newer than the cached tree, so the cache is worse than
+    // useless — run 33751865452 restamped 299 of 299 files and rebuilt 78 objects behind a cache
+    // it had just restored.
+    expect(
+      native.steps[0]?.with["fetch-depth"],
+      "the mtime restore runs against a shallow clone",
+    ).toBe(0);
     const script = await readFile(
       path.join(repo, "packages/runtime-native/scripts/restore-source-mtimes.mjs"),
       "utf8",
@@ -3037,10 +3088,15 @@ describe("CI pipeline structure", () => {
     expect(script, "a shallow clone is silently mis-stamped rather than refused").toContain(
       "TN_MTIME_SHALLOW_CLONE",
     );
-    const order = native.indexOf("restore-source-mtimes.mjs");
-    expect(order, "sources are dated after the build has already run").toBeLessThan(
-      native.indexOf("native:build"),
+    const dated = native.steps.findIndex((step) =>
+      /restore-source-mtimes\.mjs/u.test(step.run ?? ""),
     );
+    const built = native.steps.findIndex((step) => /native:build/u.test(step.run ?? ""));
+    expect(
+      dated,
+      "the restored tree is older than its own freshly checked-out inputs",
+    ).toBeGreaterThan(-1);
+    expect(dated, "sources are dated after the build has already run").toBeLessThan(built);
   });
 
   // Within one run the workspace dist compiled about nine times, at 71-95s each. Every consumer
@@ -3049,27 +3105,36 @@ describe("CI pipeline structure", () => {
   // action grows a mode that takes this run's upload instead; a job that keeps the cache path next
   // to a producer it is ordered behind is the arrangement that put the nine builds back.
   it("compiles the workspace dist once and hands the upload to every consumer", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const producer = requiredJob(ci, "build-artifacts");
-    expect(producer).toContain("uses: ./.github/actions/workspace-dist");
-    expect(producer, "the producer no longer publishes what consumers download").toContain(
-      "name: workspace-packages",
-    );
-    expect(producer).toMatch(/^\s+packages\/\*\/dist$/mu);
+    const ci = workflow("ci.yml");
+    const producer = ci.job("build-artifacts");
+    expect(producer.stepsUsing("./.github/actions/workspace-dist")).not.toHaveLength(0);
+    const published = producer
+      .stepsUsing("actions/upload-artifact")
+      .find((step) => step.with.name === "workspace-packages");
+    expect(published, "the producer no longer publishes what consumers download").toBeDefined();
+    expect(
+      String(published?.with.path)
+        .split("\n")
+        .map((line) => line.trim()),
+    ).toContain("packages/*/dist");
 
-    const shared = "shared-artifact: workspace-packages";
-    for (const [name, section] of jobSections(ci)) {
-      if (name === "build-artifacts") continue;
+    for (const job of ci.jobs) {
+      if (job.id === "build-artifacts") continue;
       // The action is what compiles; this job is about which of them compile it themselves.
-      if (!section.includes("uses: ./.github/actions/workspace-dist")) continue;
+      const dist = job.stepsUsing("./.github/actions/workspace-dist");
+      if (dist.length === 0) continue;
       // `lint` keeps the cache path on purpose: its dist lane runs on the `instructions` selection,
       // where `build-artifacts` is skipped and there is no upload to take. Everything that runs on
       // `full` downloads instead.
-      if (name === "lint") continue;
-      expect(section, `${name} restores a key nobody saved before it`).toContain(
-        "needs: [scope, build-artifacts]",
-      );
-      expect(section, `${name} compiles the workspace instead of downloading it`).toContain(shared);
+      if (job.id === "lint") continue;
+      expect(job.needs, `${job.id} restores a key nobody saved before it`).toEqual([
+        "scope",
+        "build-artifacts",
+      ]);
+      expect(
+        dist.map((step) => step.with["shared-artifact"]),
+        `${job.id} compiles the workspace instead of downloading it`,
+      ).toContain("workspace-packages");
     }
 
     const action = await readFile(
@@ -3078,9 +3143,11 @@ describe("CI pipeline structure", () => {
     );
     // Fail closed on the download exactly as on the restore: a partial upload must not be imported
     // from, and the producer's step order — build, validate, publish — is what keeps it complete.
-    expect(action).toContain("Take the compiled workspace from this run's producer");
-    expect(action).toContain("uses: actions/download-artifact@v4");
-    expect(action).toContain("TN_WORKSPACE_DIST_INCOMPLETE");
+    expectIncludes(action, [
+      "Take the compiled workspace from this run's producer",
+      "uses: actions/download-artifact@v4",
+      "TN_WORKSPACE_DIST_INCOMPLETE",
+    ]);
     for (const step of [
       "Restore the compiled workspace",
       "Build missing workspace bundles",
@@ -3100,43 +3167,45 @@ describe("CI pipeline structure", () => {
   // one shared action owns the key so the six cannot drift apart into six different answers about
   // what a bundle is built from.
   it("builds the workspace through one shared action, never inline", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const ci = workflow("ci.yml");
     expect(
-      ci,
+      ci.jobs.some((job) => job.runs("pnpm tsx scripts/workspace-packages.ts build")),
       "a job builds the workspace inline instead of through the shared action",
-    ).not.toContain("pnpm tsx scripts/workspace-packages.ts build");
-    expect(occurrences(ci, /uses: \.\/\.github\/actions\/workspace-dist/gu)).toBeGreaterThanOrEqual(
-      5,
-    );
+    ).toBe(false);
+    expect(
+      ci.jobs.flatMap((job) => job.stepsUsing("./.github/actions/workspace-dist")).length,
+    ).toBeGreaterThanOrEqual(5);
 
     const action = await readFile(
       path.join(repo, ".github/actions/workspace-dist/action.yml"),
       "utf8",
     );
     // The key has to name what the bundles are made of. Miss one and a stale bundle is served to
-    // every consumer, which is the only failure this cache can have.
-    for (const input of [
-      "packages/*/src/**",
-      "packages/*/package.json",
-      "packages/*/tsup.config.ts",
-      "packages/*/scripts/**",
-      "scripts/workspace-packages.ts",
-      "pnpm-lock.yaml",
-    ]) {
-      expect(action, `the workspace-dist key ignores ${input}`).toContain(input);
-    }
-    // And a restore that came back partial must fail rather than be imported from — bundles and
-    // tarballs both, since three lanes take the archives rather than the bundles.
-    expect(action).toContain("TN_WORKSPACE_DIST_INCOMPLETE");
-    expect(action).toContain("TN_WORKSPACE_ARCHIVES_INCOMPLETE");
-    expect(action).toContain("artifacts/workspace-packages");
+    // every consumer, which is the only failure this cache can have. And a restore that came back
+    // partial must fail rather than be imported from — bundles and tarballs both, since three
+    // lanes take the archives rather than the bundles.
+    expectIncludes(
+      action,
+      [
+        "packages/*/src/**",
+        "packages/*/package.json",
+        "packages/*/tsup.config.ts",
+        "packages/*/scripts/**",
+        "scripts/workspace-packages.ts",
+        "pnpm-lock.yaml",
+        "TN_WORKSPACE_DIST_INCOMPLETE",
+        "TN_WORKSPACE_ARCHIVES_INCOMPLETE",
+        "artifacts/workspace-packages",
+      ],
+      "the workspace-dist action lost",
+    );
 
     // `playwright.config.ts` scaffolds from packed tarballs and rebuilds every package to get
     // them unless it is handed a set. Measured at 245s of setup against 40s of testing.
-    const browser = requiredJob(ci, "test-browser");
-    expect(browser, "the browser lane repacks the workspace before it can test").toContain(
-      "THREENATIVE_PACKED_PACKAGES",
-    );
+    expect(
+      ci.job("test-browser").mentions("THREENATIVE_PACKED_PACKAGES"),
+      "the browser lane repacks the workspace before it can test",
+    ).toBe(true);
     const config = await readFile(path.join(repo, "playwright.config.ts"), "utf8");
     expect(config, "the seam the workflow relies on is gone").toContain(
       "process.env.THREENATIVE_PACKED_PACKAGES",
@@ -3152,45 +3221,49 @@ describe("CI pipeline structure", () => {
   // `needs: build` orders the job behind the build but hands it no artifact, so the ordering
   // reads like a guarantee it does not make. The job has to get what it resolves, and it takes it
   // from the shared action like every other consumer rather than compiling its own seventh copy.
-  it("hands the budgets gate the dist it resolves through export maps", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const budgets = requiredJob(ci, "budgets");
+  it("hands the budgets gate the dist it resolves through export maps", () => {
+    const budgets = workflow("ci.yml").job("budgets");
 
-    const dist = "uses: ./.github/actions/workspace-dist";
-    expect(budgets, "the budgets job runs a gate that resolves dist without having it").toContain(
-      dist,
+    const dist = budgets.steps.findIndex(
+      (step) => step.uses === "./.github/actions/workspace-dist",
     );
-    // And it has to arrive before the gate reads it, not after.
     expect(
-      budgets.indexOf(dist),
-      "the budgets job builds after the gate that needs the build",
-    ).toBeLessThan(budgets.indexOf("- run: pnpm budgets"));
+      dist,
+      "the budgets job runs a gate that resolves dist without having it",
+    ).toBeGreaterThan(-1);
+    // And it has to arrive before the gate reads it, not after.
+    const gate = budgets.steps.findIndex((step) => step.run === "pnpm budgets");
+    expect(gate).toBeGreaterThan(-1);
+    expect(dist, "the budgets job builds after the gate that needs the build").toBeLessThan(gate);
   });
 
   it("keeps developer tests self-contained and gives CI an explicit prebuilt path", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const ci = workflow("ci.yml");
     const manifest = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8")) as {
       scripts: Record<string, string>;
     };
-    const test = requiredJob(ci, "test");
-    const native = requiredJob(ci, "test-native");
-    const browser = requiredJob(ci, "test-browser");
-    const playtest = requiredJob(ci, "test-playtest");
-    const browserDist = browser.indexOf("uses: ./.github/actions/workspace-dist");
-    const playtestDist = playtest.indexOf("uses: ./.github/actions/workspace-dist");
-    const nativeDist = native.indexOf("uses: ./.github/actions/workspace-dist");
-    const nativeSmokeBuild = native.indexOf("pnpm --filter threenative-native-smoke build");
-    const nativeTests = native.indexOf("pnpm --filter @threenative/runtime-native test");
+    const test = ci.job("test");
+    const native = ci.job("test-native");
+    const browser = ci.job("test-browser");
+    const playtest = ci.job("test-playtest");
+    const dist = (job: ICiWorkflowJob) =>
+      job.steps.findIndex((step) => step.uses === "./.github/actions/workspace-dist");
+    const runAt = (job: ICiWorkflowJob, command: string) =>
+      job.steps.findIndex((step) => step.run?.includes(command) === true);
+    const nativeDist = dist(native);
+    const nativeSmokeBuild = runAt(native, "pnpm --filter threenative-native-smoke build");
+    const nativeTests = runAt(native, "pnpm --filter @threenative/runtime-native test");
 
     expect(manifest.scripts.test).toBe("bash scripts/run-test-suite.sh");
-    expect(manifest.scripts["test:ci"]).toContain("TN_SUITE_PREBUILT=1");
-    expect(manifest.scripts["test:browser"]).toContain("@threenative/playtest build");
-    expect(manifest.scripts["test:browser:ci"]).not.toContain("@threenative/playtest build");
-    expect(manifest.scripts["test:playtest"]).toContain("@threenative/playtest build");
-    expect(manifest.scripts["test:playtest:ci"]).not.toContain("@threenative/playtest build");
+    expect(manifest.scripts["test:ci"]).toMatch(/TN_SUITE_PREBUILT=1/u);
+    expect(manifest.scripts["test:browser"]).toMatch(/@threenative\/playtest build/u);
+    expect(manifest.scripts["test:browser:ci"]).not.toMatch(/@threenative\/playtest build/u);
+    expect(manifest.scripts["test:playtest"]).toMatch(/@threenative\/playtest build/u);
+    expect(manifest.scripts["test:playtest:ci"]).not.toMatch(/@threenative\/playtest build/u);
 
-    expect(test).toContain('TN_SUITE_PHASES: "docs,build,package-test"');
-    expect(test).toContain("run: pnpm test:ci");
+    const suite = test.steps.find((step) => step.run === "pnpm test:ci");
+    expect(suite).toBeDefined();
+    expect(test.env.TN_SUITE_PHASES).toBe("docs,build,package-test");
     expect(nativeDist).toBeGreaterThanOrEqual(0);
     expect(nativeSmokeBuild, "the native suite has no built smoke bundle").toBeGreaterThan(
       nativeDist,
@@ -3198,135 +3271,119 @@ describe("CI pipeline structure", () => {
     expect(nativeTests, "the smoke bundle is built after the native suite starts").toBeGreaterThan(
       nativeSmokeBuild,
     );
-    expect(browserDist).toBeGreaterThanOrEqual(0);
-    expect(playtestDist).toBeGreaterThanOrEqual(0);
-    expect(browser.indexOf("pnpm test:browser:ci")).toBeGreaterThan(browserDist);
-    expect(playtest.indexOf("pnpm test:playtest:ci")).toBeGreaterThan(playtestDist);
-    expect(browser).toContain("THREENATIVE_PACKED_PACKAGES");
+    expect(dist(browser)).toBeGreaterThanOrEqual(0);
+    expect(dist(playtest)).toBeGreaterThanOrEqual(0);
+    expect(runAt(browser, "pnpm test:browser:ci")).toBeGreaterThan(dist(browser));
+    expect(runAt(playtest, "pnpm test:playtest:ci")).toBeGreaterThan(dist(playtest));
+    expect(browser.mentions("THREENATIVE_PACKED_PACKAGES")).toBe(true);
 
-    const prebuiltSection = test.slice(test.indexOf("run: pnpm test:ci"));
-    expect(prebuiltSection).toContain("run: pnpm test:ci");
-    expect(prebuiltSection).not.toContain("@threenative/playtest build");
+    const prebuilt = test.steps.slice(test.steps.indexOf(suite as ICiStep));
+    expect(prebuilt.some((step) => /@threenative\/playtest build/u.test(step.run ?? ""))).toBe(
+      false,
+    );
   });
 
-  it("reuses iOS archive outputs only after simulator verification and an identity check", async () => {
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
-    const ios = requiredJob(native, "ios-simulator");
-    const initialBuild = ios.indexOf("Build iOS proof workspace dependencies");
-    const verifier = ios.indexOf("verify-ios-simulator.mjs");
-    const pack = ios.indexOf("Pack the exact consumer packages");
-    const packEnd = ios.indexOf("Scaffold the iOS consumer from local tarballs", pack);
-    const packSection = ios.slice(pack, packEnd < 0 ? undefined : packEnd);
+  it("reuses iOS archive outputs only after simulator verification and an identity check", () => {
+    const ios = workflow("native-platforms.yml").job("ios-simulator");
+    const at = (needle: string | RegExp) =>
+      ios.steps.findIndex((step) =>
+        typeof needle === "string"
+          ? step.name?.includes(needle) === true
+          : needle.test(step.run ?? ""),
+      );
+    const initialBuild = at("Build iOS proof workspace dependencies");
+    const verifier = at(/verify-ios-simulator\.mjs/u);
+    const pack = ios.step("Pack the exact consumer packages");
 
     expect(initialBuild).toBeGreaterThanOrEqual(0);
     expect(verifier).toBeGreaterThan(initialBuild);
-    expect(pack).toBeGreaterThan(verifier);
-    expect(ios).toContain("scripts/ios-package-output-snapshot.ts");
-    expect(ios).not.toContain("find packages -type f \\( -path '*/dist/*'");
-    expect(ios).toContain("cmp -s");
-    expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_CHANGED");
-    expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_MISSING");
-    expect(ios, "the output snapshot reads each package main, not dist/index.js").toContain(
-      "package.json').main",
+    expect(pack.index).toBeGreaterThan(verifier);
+    expect(ios.runs("find packages -type f \\( -path '*/dist/*'")).toBe(false);
+    expectIncludes(
+      ios.scripts,
+      [
+        "scripts/ios-package-output-snapshot.ts",
+        "cmp -s",
+        "TN_IOS_PACKAGE_OUTPUTS_CHANGED",
+        "TN_IOS_PACKAGE_OUTPUTS_MISSING",
+        "package.json').main",
+      ],
+      "the iOS reuse check lost",
     );
-    expect(packSection).toContain("workspace-packages.ts --archives");
-    expect(packSection).toContain('pnpm --filter "$package_name" pack --pack-destination');
-    expect(packSection).not.toContain("--if-present run build");
+    expectIncludes(pack.run ?? "", [
+      "workspace-packages.ts --archives",
+      'pnpm --filter "$package_name" pack --pack-destination',
+    ]);
+    expectExcludes(pack.run ?? "", ["--if-present run build"]);
   });
 
-  it("produces one commit-keyed web reference and makes Android and desktop consume it", async () => {
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
-    const producer = requiredJob(native, "web-reference");
-    const android = requiredJob(native, "android-emulator-parity");
-    const desktop = requiredJob(native, "desktop-parity");
-    const commands = (section: string): string =>
-      section
-        .split("\n")
-        .filter((line) => !/^\s*#/u.test(line))
-        .join("\n");
-    const producerCommands = commands(producer);
+  it("produces one commit-keyed web reference and makes Android and desktop consume it", () => {
+    const native = workflow("native-platforms.yml");
+    const producer = native.job("web-reference");
+    const android = native.job("android-emulator-parity");
+    const desktop = native.job("desktop-parity");
     const labelGate = "contains(github.event.pull_request.labels.*.name, 'native')";
-    // Every eligibility assertion below reads the comment-stripped section. A comment that merely
-    // quotes the label gate — the ones explaining why this leg no longer carries it do exactly
-    // that — would otherwise satisfy a `toContain` or trip a `not.toContain` without any condition
-    // changing.
-    const androidCommands = commands(android);
+    // The model has no comments, so a comment that merely quotes the label gate cannot satisfy or
+    // trip an assertion about the condition.
+    const webCapture = "--target web --out artifacts/conformance/web";
 
-    expect(producerCommands).toContain("--target web --out artifacts/conformance/web");
     // Pinned as one exact condition, not a direction. The invariant is that the producer is never
     // gated more tightly than its most permissive consumer, or that consumer runs on a pull request
     // with no reference to compare against — but asserting only that leaves room for the producer
     // to acquire some *other* narrowing condition (a branch test, an actor test) unnoticed. Since
     // 2026-09-06 `android-emulator-parity` carries no label gate, so this is the whole condition
     // the producer may carry.
-    expect(producerCommands, "web reference is an orphan on unlabelled pull requests").toContain(
-      [
-        "if: >-",
-        "      needs.scope.outputs.selection == 'full' &&",
-        "      inputs.ios_only == false",
-      ].join("\n"),
-    );
+    expect(producer.runs(webCapture)).toBe(true);
     expect(
-      androidCommands,
+      ciTerms(producer.if ?? ""),
+      "web reference is an orphan on unlabelled pull requests",
+    ).toEqual(["needs.scope.outputs.selection == 'full'", "inputs.ios_only == false"]);
+    expect(
+      android.if ?? "",
       "the Android leg regained a gate the producer does not carry",
     ).not.toContain(labelGate);
-    expect(producerCommands, "producer is gated more tightly than its consumer").not.toContain(
+    expect(producer.if ?? "", "producer is gated more tightly than its consumer").not.toContain(
       labelGate,
     );
-    expect(producer).toContain("actions/upload-artifact");
-    expect(producer).toContain("native-web-reference-${{ needs.scope.outputs.candidate_sha }}");
-    expect(producer).toContain("if-no-files-found: error");
-    expect(producer).toContain("check-lane-blocks.mjs");
+    const upload = producer.stepsUsing("actions/upload-artifact")[0];
+    expect(upload?.with.name).toBe("native-web-reference-${{ needs.scope.outputs.candidate_sha }}");
+    expect(upload?.with["if-no-files-found"]).toBe("error");
+    expect(producer.runs("check-lane-blocks.mjs")).toBe(true);
 
-    for (const [name, section] of [
+    for (const [name, consumer] of [
       ["android", android],
       ["desktop", desktop],
     ] as const) {
-      const consumer = commands(section);
       // Both consumers share the caller-owned full scope and explicit dispatch conditions.
-      // Matched against the comment-stripped section for the reason given above the producer's
-      // assertion: the comments here quote the very gate being asserted absent.
-      expect(consumer, `${name} eligibility drifted from the web producer`).toContain(
-        [
-          "if: >-",
-          "      needs.scope.outputs.selection == 'full' &&",
-          "      inputs.ios_only != true",
-        ].join("\n"),
+      expect(
+        ciTerms(consumer.if ?? "").slice(0, 2),
+        `${name} eligibility drifted from the web producer`,
+      ).toEqual(["needs.scope.outputs.selection == 'full'", "inputs.ios_only != true"]);
+      expect(consumer.if ?? "", `${name} overrides the caller's full selection`).not.toContain(
+        labelGate,
       );
-      expect(consumer, `${name} overrides the caller's full selection`).not.toContain(labelGate);
       // The property is that the consumer waits on `scope` and the web-reference producer, not
       // that those are its *only* dependencies. PRD-221 adds `android-v8-source` to the Android
       // leg, which is a second producer it legitimately waits on; a literal match on the whole
-      // bracket rejected that correct workflow.
-      const needs = section.match(/\n\x20{4}needs: \[([^\]]*)\]/u)?.[1];
-      expect(needs, `${name} declares no needs list`).toBeDefined();
-      const declared = (needs ?? "").split(",").map((entry) => entry.trim());
-      for (const producer of ["scope", "web-reference"]) {
-        expect(declared, `${name} is not ordered behind ${producer}`).toContain(producer);
-      }
-      expect(section, `${name} does not download the commit-keyed reference`).toContain(
-        "actions/download-artifact",
+      // list rejected that correct workflow.
+      expect(consumer.needs, `${name} is not ordered behind its producers`).toEqual(
+        expect.arrayContaining(["scope", "web-reference"]),
       );
-      expect(section, `${name} can download another commit's reference`).toContain(
-        "native-web-reference-${{ needs.scope.outputs.candidate_sha }}",
-      );
-      expect(section, `${name} does not validate its downloaded reference`).toContain(
-        "check-lane-blocks.mjs",
-      );
-      expect(consumer, `${name} captures a private web fallback`).not.toContain(
-        "--target web --out artifacts/conformance/web",
-      );
+      expect(
+        consumer.stepsUsing("actions/download-artifact").map((step) => step.with.name),
+        `${name} can download another commit's reference`,
+      ).toContain("native-web-reference-${{ needs.scope.outputs.candidate_sha }}");
+      expect(
+        consumer.runs("check-lane-blocks.mjs"),
+        `${name} does not validate its downloaded reference`,
+      ).toBe(true);
+      expect(consumer.runs(webCapture), `${name} captures a private web fallback`).toBe(false);
     }
 
-    expect(occurrences(producerCommands, /--target web --out artifacts\/conformance\/web/gu)).toBe(
-      1,
-    );
+    expect(
+      native.jobs.filter((job) => job.runs(webCapture)).map((job) => job.id),
+      "exactly the producer captures the web reference",
+    ).toEqual(["web-reference"]);
   });
 
   it("uses the cache-aware pnpm and Chromium actions in the Android lane", async () => {
@@ -3868,42 +3925,47 @@ ${script}
     ).toMatchObject({ exitCode: 2, status: "BLOCKED" });
   });
 
-  it("requires the performance workflow structure to retain collectors, failure evidence, and promotion separation", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
+  it("requires the performance workflow structure to retain collectors, failure evidence, and promotion separation", () => {
+    const native = workflow("native-platforms.yml");
+    const performance = workflow("performance-regression.yml");
+    const contracts = workflow("ci.yml").job("performance-contracts");
+    expectIncludes(contracts.scripts, ["profile-production.mjs", "ci-summary.ts"]);
+    const uploads = contracts.stepsUsing("actions/upload-artifact");
+    expect(contracts.steps.map((step) => step.if)).toContain("always()");
+    expect(uploads.map((upload) => upload.with["retention-days"])).toEqual(
+      expect.arrayContaining([14, 30]),
     );
-    const performance = await readFile(
-      path.join(repo, ".github/workflows/performance-regression.yml"),
-      "utf8",
-    );
-    const contracts = requiredJob(ci, "performance-contracts");
-    expect(contracts).toContain("profile-production.mjs");
-    expect(contracts).toContain("ci-summary.ts");
-    expect(contracts).toContain("if: always()");
-    expect(contracts).toContain("retention-days: 14");
-    expect(contracts).toContain("retention-days: 30");
     for (const source of [native, performance]) {
-      expect(source).toContain("production-evidence.mjs");
-      expect(source).toContain("actions/upload-artifact");
-      expect(source).toContain("if: always()");
+      expect(source.jobs.some((job) => job.runs("production-evidence.mjs"))).toBe(true);
+      expect(source.jobs.some((job) => job.stepsUsing("actions/upload-artifact").length > 0)).toBe(
+        true,
+      );
+      expect(source.jobs.some((job) => job.steps.some((step) => step.if === "always()"))).toBe(
+        true,
+      );
     }
-    expect(performance).toContain("workflow_dispatch:");
-    expect(performance).toContain("schedule:");
-    expect(performance).not.toContain("pull_request_target");
-    expect(performance).toContain("max-parallel: 2");
-    expect(performance).toContain("--trusted");
-    expect(performance).toContain("TN_PERF_PHYSICAL_PROVISIONED");
-    expect(performance).toContain("matrix.physical == true");
-    expect(performance).toContain("inputs.trusted == true");
-    expect(performance).toContain("required-check-promotion");
-    expect(performance).toContain("baseline-regeneration");
-    expect(performance).toContain("weekly-workload-rotation");
-    expect(performance).toContain("pnpm test:templates");
-    expect(performance).toContain("release-soak");
-    expect(performance).toContain("pnpm native:qualify:physical");
-    expect(performance).toContain("7200000");
+    expect(Object.keys(performance.on)).toEqual(
+      expect.arrayContaining(["workflow_dispatch", "schedule"]),
+    );
+    expect(Object.keys(performance.on)).not.toContain("pull_request_target");
+    const pairs = performance.job("hardware-pairs");
+    expect(pairs.strategy?.["max-parallel"]).toBe(2);
+    expect(pairs.runsOn).toMatch(/matrix\.physical == true/u);
+    expect(pairs.runsOn).toMatch(/inputs\.trusted == true/u);
+    expect(pairs.runsOn).toMatch(/TN_PERF_PHYSICAL_PROVISIONED/u);
+    expect(pairs.runs("--trusted")).toBe(true);
+    expect(performance.jobs.map((job) => job.id)).toEqual(
+      expect.arrayContaining([
+        "required-check-promotion",
+        "weekly-workload-rotation",
+        "release-soak",
+      ]),
+    );
+    // Baseline regeneration is a separately reviewed change, and the promotion job says so.
+    expect(performance.job("required-check-promotion").runs("baseline-regeneration")).toBe(true);
+    expect(performance.job("weekly-workload-rotation").runs("pnpm test:templates")).toBe(true);
+    const soak = performance.job("release-soak");
+    expectIncludes(soak.scripts, ["pnpm native:qualify:physical", "7200000"]);
   });
 
   // Two crons fire on a Sunday, so every sampled run after the first showed this job as `skipped`
@@ -3911,48 +3973,41 @@ ${script}
   // in 20 s on ERR_MODULE_NOT_FOUND before it measured a template, which is why nothing re-measured
   // the templates for two months. Both halves are guarded here: the condition names the cron that
   // fires it and no other, and the job builds the workspace and the web engine before the rotation.
-  it("aims the weekly template rotation at the cron that fires it, and builds before it measures", async () => {
-    const performance = await readFile(
-      path.join(repo, ".github/workflows/performance-regression.yml"),
-      "utf8",
-    );
-    const crons = [
-      ...performance
-        .slice(0, performance.indexOf("\njobs:\n"))
-        .matchAll(/^\s+- cron: "([^"]+)"$/gmu),
-    ].map((match) => match[1] ?? "");
+  it("aims the weekly template rotation at the cron that fires it, and builds before it measures", () => {
+    const performance = workflow("performance-regression.yml");
+    const schedule = performance.on.schedule as readonly { cron: string }[];
+    const crons = schedule.map((entry) => entry.cron);
     expect(crons.length).toBeGreaterThan(1);
     // A `*` day-of-week fires daily; the weekly rotation is the one cron whose day-of-week is fixed.
     const weekly = crons.filter((cron) => cron.split(/\s+/u)[4] !== "*");
     expect(weekly).toHaveLength(1);
     const weeklyCron = weekly[0] ?? "";
     expect(weeklyCron).not.toBe("");
-    const section =
-      jobSections(performance).find(([name]) => name === "weekly-workload-rotation")?.[1] ?? "";
-    expect(section).not.toBe("");
-    const condition = /^ {4}if: (.+)$/mu.exec(section)?.[1] ?? "";
-    expect(condition).toContain("github.event_name == 'schedule'");
-    expect(condition).toContain(`github.event.schedule == '${weeklyCron}'`);
+    const job = performance.job("weekly-workload-rotation");
+    expect(ciTerms(job.if ?? "")).toEqual(
+      expect.arrayContaining([
+        "github.event_name == 'schedule'",
+        `github.event.schedule == '${weeklyCron}'`,
+      ]),
+    );
     for (const cron of crons.filter((candidate) => candidate !== weeklyCron))
-      expect(condition).not.toContain(cron);
+      expect(job.mentions(cron), `the rotation must not fire on ${cron}`).toBe(false);
     // The rotation imports `@threenative/assets` through the CLI's config and packs the local
     // framework, so the workspace bundles and the web engine are its prerequisites, not its output.
-    const build = section.indexOf("uses: ./.github/actions/workspace-dist");
-    const engine = section.indexOf("uses: ./.github/actions/native-engine-wasm");
-    const rotation = section.indexOf("run: pnpm test:templates");
+    const build = job.steps.findIndex((step) => step.uses === "./.github/actions/workspace-dist");
+    const engine = job.steps.findIndex(
+      (step) => step.uses === "./.github/actions/native-engine-wasm",
+    );
+    const rotation = job.steps.findIndex((step) => step.run === "pnpm test:templates");
     expect(build).toBeGreaterThan(-1);
     expect(engine).toBeGreaterThan(-1);
     expect(rotation).toBeGreaterThan(build);
     expect(rotation).toBeGreaterThan(engine);
     // A hosted runner has no GPU: the scaffold's own test refuses a software adapter without this.
-    expect(section).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
+    expect(job.env.TN_PLAYTEST_ALLOW_SOFTWARE).toBe("1");
   });
 
   it("reports a scheduled missing baseline before fetching or checking out source", async () => {
-    const performance = await readFile(
-      path.join(repo, ".github/workflows/performance-regression.yml"),
-      "utf8",
-    );
     const directory = await makeTempDir("performance-scheduled-baseline-");
     const manifestDirectory = path.join(directory, "scripts/performance-regression");
     const artifactDirectory = path.join(directory, "artifacts/performance-regression");
@@ -3970,9 +4025,10 @@ ${script}
       { mode: 0o755 },
     );
     const envFile = path.join(directory, "github.env");
-    const script = workflowRunScript(
-      performance,
-      "Prepare isolated source checkouts inside the repository worktree",
+    const script = (
+      workflow("performance-regression.yml")
+        .job("hardware-pairs")
+        .step("Prepare isolated source checkouts inside the repository worktree").run ?? ""
     ).replaceAll("${{ matrix.result_key }}", "browser-webgpu");
     const result = spawnSync("bash", ["-e", "-u", "-o", "pipefail", "-c", script], {
       cwd: directory,
@@ -4005,98 +4061,87 @@ ${script}
     expect(await readFile(envFile, "utf8")).toContain("TN_PERF_BASELINE_AVAILABLE=false");
   });
 
-  it("maps every performance matrix row to its declared platform runner and unique result key", async () => {
-    const performance = await readFile(
-      path.join(repo, ".github/workflows/performance-regression.yml"),
-      "utf8",
+  it("maps every performance matrix row to its declared platform runner and unique result key", () => {
+    const pairs = workflow("performance-regression.yml").job("hardware-pairs");
+    const rows = (pairs.strategy?.matrix as { include: Record<string, unknown>[] }).include;
+    const row = (lane: string) => rows.find((entry) => entry.lane === lane);
+    expect(rows.some((entry) => entry.runner === "ubuntu-24.04")).toBe(true);
+    expect(row("native-windows")).toMatchObject({
+      result_key: "native-windows",
+      runner: "windows-2025",
+    });
+    expect(row("native-macos")).toMatchObject({ result_key: "native-macos", runner: "macos-15" });
+    expect(row("native-android")?.runner).toEqual(
+      expect.arrayContaining(["self-hosted", "android"]),
     );
-    expect(performance).toMatch(/matrix:[\s\S]*runner: ubuntu-24\.04/u);
-    expect(performance).toMatch(
-      /lane: native-windows[\s\S]*result_key: native-windows[\s\S]*runner: windows-2025/u,
+    expect(row("native-ios")?.runner).toEqual(
+      expect.arrayContaining(["self-hosted", "macOS", "ios"]),
     );
-    expect(performance).toMatch(
-      /lane: native-macos[\s\S]*result_key: native-macos[\s\S]*runner: macos-15/u,
-    );
-    expect(performance).toMatch(
-      /lane: native-android[\s\S]*runner:\s*\[self-hosted, linux, android,/u,
-    );
-    expect(performance).toMatch(/lane: native-ios[\s\S]*runner:\s*\[self-hosted, macOS, ios,/u);
-    expect(performance).toMatch(/runs-on:.*matrix.runner/u);
-    expect(performance).toContain("result_key");
-    expect(performance).toContain("native-windows");
-    expect(performance).toContain("native-macos");
+    expect(pairs.require("runs-on")).toMatch(/matrix\.runner/u);
+    expect(new Set(rows.map((entry) => entry.result_key)).size).toBe(rows.length);
   });
 
-  it("uses a permitted cancellation source in the performance summary step", async () => {
-    const performance = await readFile(
-      path.join(repo, ".github/workflows/performance-regression.yml"),
-      "utf8",
-    );
-    const summary = requiredJob(performance, "performance-summary");
-    expect(summary).not.toContain("TN_PERF_CANCELLED: ${{ cancelled() }}");
-    expect(summary).toContain(
-      "TN_PERF_CANCELLED: ${{ needs.hardware-pairs.result == 'cancelled' }}",
-    );
+  it("uses a permitted cancellation source in the performance summary step", () => {
+    const summary = workflow("performance-regression.yml").job("performance-summary");
+    expect(summary.steps.flatMap((step) => step.env.TN_PERF_CANCELLED ?? [])).toEqual([
+      "${{ needs.hardware-pairs.result == 'cancelled' }}",
+    ]);
   });
 
-  it("runs bounded native desktop and simulator collectors against built artifacts", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
-    expect(requiredJob(ci, "test-native")).toContain("--hosted-software");
-    const desktopStart = native.indexOf(
+  it("runs bounded native desktop and simulator collectors against built artifacts", () => {
+    const native = workflow("native-platforms.yml");
+    expect(workflow("ci.yml").job("test-native").runs("--hosted-software")).toBe(true);
+    const desktop = findStep(
+      native,
       "Collect bounded desktop performance evidence from the built runtime",
     );
-    const desktopEnd = native.indexOf("uses: actions/upload-artifact", desktopStart);
-    const desktop = native.slice(desktopStart, desktopEnd);
-    expect(desktop).toContain("--target desktop");
-    expect(desktop).toContain('--prebuilt-artifact "$artifact"');
-    expect(desktop).toContain("--duration 1");
-    expect(desktop).toContain("--cold-starts 1");
-    expect(desktop).toContain("--repetitions 1");
-    expect(desktop).toContain("--hosted-software");
-    expect(desktop).toContain("collector_status=FAIL");
-    expect(desktop).toContain("build/tn-windows/mystral.exe");
-    expect(desktop).toContain("build/tn-macos/mystral");
-    expect(desktop).not.toContain("--help");
-    const simulatorStart = native.indexOf(
+    expectIncludes(desktop.run ?? "", [
+      "--target desktop",
+      '--prebuilt-artifact "$artifact"',
+      "--duration 1",
+      "--cold-starts 1",
+      "--repetitions 1",
+      "--hosted-software",
+      "collector_status=FAIL",
+      "build/tn-windows/mystral.exe",
+      "build/tn-macos/mystral",
+    ]);
+    expectExcludes(desktop.run ?? "", ["--help"]);
+    const simulator = findStep(
+      native,
       "Collect bounded iOS simulator evidence without claiming a phone run",
     );
-    const simulatorEnd = native.indexOf("uses: actions/upload-artifact", simulatorStart);
-    const simulator = native.slice(simulatorStart, simulatorEnd);
-    expect(simulator).toContain(
+    expectIncludes(simulator.run ?? "", [
       "find packages/runtime-native/build/tn-ios-simulator -name threenative-ios.app",
-    );
-    expect(simulator).toContain("--target ios");
-    expect(simulator).toContain("--device ios-simulator");
-    expect(simulator).toContain('--prebuilt-artifact "$app"');
-    expect(simulator).toContain("--duration 1");
-    expect(simulator).toContain("--hosted-software");
-    expect(simulator).toContain("--cold-starts 1");
-    expect(simulator).toContain('provenance":"simulator"');
-    expect(simulator).toContain('status":"UNVERIFIED"');
-    expect(simulator).not.toContain("--help");
+      "--target ios",
+      "--device ios-simulator",
+      '--prebuilt-artifact "$app"',
+      "--duration 1",
+      "--hosted-software",
+      'status":"UNVERIFIED"',
+    ]);
+    expectExcludes(simulator.run ?? "", ["--help"]);
   });
 
-  it("proves desktop release signing with test credentials on both hosted hosts", async () => {
-    const native = await readFile(
-      path.join(repo, ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
-    const desktop = requiredJob(native, "desktop");
+  it("proves desktop release signing with test credentials on both hosted hosts", () => {
+    const desktop = workflow("native-platforms.yml").job("desktop");
     // Owner decision 2026-09-23: each developer signs their own game; the engine ships no
     // certificate. The lane proves the credential path with a runner-generated certificate on each
     // host, and reads the signature back independently of the adapter that wrote it. Without this
     // the macOS half signs ad-hoc and the credentialed path the decision names stays unwired.
-    expect(desktop).toContain("Create a self-signed code-signing certificate for the proof");
-    expect(desktop).toContain("Create a self-signed code-signing certificate for the macOS proof");
-    expect(desktop).toContain("THREENATIVE_DESKTOP_SIGN_SUBJECT=ThreeNative CI Signing Proof");
-    expect(desktop).toContain('THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY"');
-    expect(desktop).toContain("Get-AuthenticodeSignature");
-    expect(desktop).toContain("codesign --verify --strict --deep");
-    expect(desktop).toContain("Authority=ThreeNative CI Signing Proof");
+    expect(desktop.steps.map((step) => step.name)).toEqual(
+      expect.arrayContaining([
+        "Create a self-signed code-signing certificate for the proof",
+        "Create a self-signed code-signing certificate for the macOS proof",
+      ]),
+    );
+    expectIncludes(desktop.scripts, [
+      "THREENATIVE_DESKTOP_SIGN_SUBJECT=ThreeNative CI Signing Proof",
+      'THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY"',
+      "Get-AuthenticodeSignature",
+      "codesign --verify --strict --deep",
+      "Authority=ThreeNative CI Signing Proof",
+    ]);
   });
 
   it("plans real alternating pairs and rejects unsafe or incomparable hardware evidence", () => {
@@ -4804,6 +4849,8 @@ describe("a CI-configuration-only pull request", () => {
     ".github/workflows/ci.yml",
     ".github/workflows/integration.yml",
     "scripts/ci-change-scope.mjs",
+    "scripts/ci/classify.mjs",
+    "scripts/ci/reuse.mjs",
     "scripts/ci-local.sh",
     "scripts/ci-workflow.ts",
     "scripts/__tests__/ci-needs.spec.ts",

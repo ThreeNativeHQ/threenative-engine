@@ -1,12 +1,15 @@
 /**
  * The version this library reports.
  *
- * It read `0.1.0` while the package published `0.2.0`, and `__tests__/build.spec.ts` asserted the
- * stale literal, so the test held the bug in place rather than catching it. A literal is
- * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
- * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
+ * `version.ts` is the one owner, generated from `package.json` at build time. Declared here rather
+ * than re-exported under another name: the native engine's bundler reads this barrel for the
+ * bindings a game may import, and `export { CORE_VERSION as version } from …` gave it a name the
+ * module does not export, refusing every game that stamps the version into its HUD
+ * (`TN_NATIVE_ENGINE_UNBOUND`).
  */
-export const version = "0.3.12";
+import { CORE_VERSION } from "./version.js";
+
+export const version = CORE_VERSION;
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -414,7 +417,7 @@ export { mergeByMaterial } from "./merge-parts.js";
 export type { IMergeByMaterialOptions } from "./merge-parts.js";
 /**
  * Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.
- * @situation read a debug toggle from the URL or an environment variable
+ * @situation read a debug toggle from the URL, an environment variable or a harness global
  * @constraint a name in camelCase becomes UPPER_SNAKE: `debugFlag("freeCam")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`
  * @constraint `0` and `false` are off, so a saved URL cannot turn a switch back on
  * @example import { debugFlag } from "@threenative/core";
@@ -430,6 +433,20 @@ export { debugFlag } from "./debug.js";
  * // then from the console: __THREENATIVE__.debug.player
  */
 export { exposeDebug } from "./debug.js";
+/**
+ * The one name every dev surface publishes under, and the reader/writer for it.
+ * @situation read or extend the `__THREENATIVE__` object a dev launch publishes
+ * @constraint every dev surface publishes under this key; the worker's typed mirror tuple names it too
+ * @example import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
+ * const tools = devGlobal(globalThis);
+ */
+export {
+  DEV_GLOBAL_KEY,
+  type DevGlobal,
+  type IDevTools,
+  devGlobal,
+  publishDevGlobal,
+} from "./dev-global.js";
 /**
  * Draw a model too detailed for the screen to resolve, without submitting the part it cannot.
  *

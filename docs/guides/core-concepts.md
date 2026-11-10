@@ -22,7 +22,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     left: ["KeyA", "ArrowLeft"], right: ["KeyD", "ArrowRight"],
   } },
   plugins: [rapier(), playtest()],
-  render: config.renderer,
+  renderer: config.renderer,
   display: config.display,
   scenes: { play: Play },
   start: "play",

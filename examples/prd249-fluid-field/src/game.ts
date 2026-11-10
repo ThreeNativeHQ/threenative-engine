@@ -57,7 +57,7 @@ const game = defineGame<IFluidFieldState>({
     splat: { keys: ["Space"], mouseButtons: [0], pointer: true },
   },
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { fluid: FluidScene },
   start: "fluid",
 });
