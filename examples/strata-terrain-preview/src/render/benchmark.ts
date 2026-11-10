@@ -43,6 +43,11 @@ interface IBenchmarkPose {
 }
 
 interface IBenchmark {
+  /**
+   * The playable square the poses frame, in metres. A cooked world of another size
+   * (`STRATA_WORLD`, "a huge spruce forest") scales them, so the vista still stands past its edge.
+   */
+  readonly size?: number;
   /** Where this world's ground cover is placed. */
   readonly focus: { readonly x: number; readonly z: number };
   readonly poses: Readonly<Record<string, IBenchmarkPose>>;
@@ -76,6 +81,7 @@ export const BENCHMARK: Record<WorldName, IBenchmark> = {
     views: ["player", "plain", "overview"],
   },
   forest: {
+    size: 512,
     focus: { x: 150, z: -100 },
     poses: {
       "meadow-close": { at: [165, -95], eye: 1.7, look: [-70, -180], lookUp: 2.2 },
@@ -97,3 +103,17 @@ export const BENCHMARK: Record<WorldName, IBenchmark> = {
     views: ["player", "meadow-close", "overview", "horizon-sea"],
   },
 };
+
+/** A world's poses for a square of `size` metres: x and z scale with it, heights do not. */
+export function posesFor(world: WorldName, size: number): Readonly<Record<string, IBenchmarkPose>> {
+  const { poses, size: framed } = BENCHMARK[world];
+  const k = framed === undefined ? 1 : size / framed;
+  if (k === 1) return poses;
+  const scaled = ([x, z]: readonly [number, number]) => [x * k, z * k] as const;
+  return Object.fromEntries(
+    Object.entries(poses).map(([name, pose]) => [
+      name,
+      { ...pose, at: scaled(pose.at), look: scaled(pose.look) },
+    ]),
+  );
+}

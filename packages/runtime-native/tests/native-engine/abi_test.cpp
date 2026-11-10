@@ -369,6 +369,33 @@ void scene() {
 
 // PRD-508 phase 3: a catalogued class whose registry lacks a member refuses it by name, so an
 // uncatalogued method is a status a caller can read, never a crash.
+// PRD-762: core's world cull asks Frustum.intersectsObject (three r185), and the kit threw on it.
+void frustum_intersects_object() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t camera{}, frustum{}, geometry{}, material{}, mesh{};
+    CHECK(tn_construct(ctx, "PerspectiveCamera", nullptr, 0, &camera, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Frustum", nullptr, 0, &frustum, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    const tn_value_t parts[2] = {ref(geometry), ref(material)};
+    CHECK(tn_construct(ctx, "Mesh", parts, 2, &mesh, &d.value) == TN_OK);
+    tn_value_t result{}, projection{};
+    CHECK(tn_get(camera, "projectionMatrix", &projection, &d.value) == TN_OK);
+    CHECK(tn_invoke(frustum, "setFromProjectionMatrix", &projection, 1, &result, &d.value) == TN_OK);
+    const tn_value_t force = num(1), object = ref(mesh);
+    for (const double z : {-5.0, 5.0, -1.0e6}) {
+        const tn_value_t depth = num(z);
+        CHECK(tn_set(mesh, "position.z", &depth, &d.value) == TN_OK);
+        CHECK(tn_invoke(mesh, "updateMatrixWorld", &force, 1, &result, &d.value) == TN_OK);
+        CHECK(tn_invoke(frustum, "intersectsObject", &object, 1, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_BOOL && bool(result.boolean) == (z == -5.0));
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void unsupported_member() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -1540,6 +1567,115 @@ void tsl_statements() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// `assign` whose target is an expression rather than a toVar() variable, as three's SkyMesh writes it in its
+// vertex Fn (SkyMesh.js): `varyingProperty('vec3', 'vSunDirection').assign(normalize(sunPosition))` carried to
+// the fragment stage, and `position.z.assign(position.w)` on modelViewProjection, the one constant the engine
+// makes a variable so the stage can assign a lane of it.
+void tsl_assign_expression_target() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto number = [](double n) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NUMBER; a.number = n; return a; };
+    const auto stringArg = [](const char* s) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_STRING; a.text = s; return a; };
+    const auto nodeArg = [](uint64_t id) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NODE; a.node = id; return a; };
+    const auto open = [&] { uint64_t none = 0; return tn_tsl_call(ctx, "scope:open", nullptr, nullptr, 0, &none, &d.value); };
+    const auto close = [&](const tn_tsl_arg_t* result, uint64_t* out) {
+        return tn_tsl_call(ctx, "scope:close", nullptr, result, result ? 1 : 0, out, &d.value);
+    };
+    namespace g = tn::engine::shader::graph;
+    namespace s = tn::engine::shader;
+    uint64_t varying = 0, uniform = 0, renamed = 0, sun = 0, clip = 0, lane = 0, value = 0, fn = 0, done = 0;
+
+    // const vSunDirection = varyingProperty('vec3', 'vSunDirection'): the vertex stage's write and the
+    // fragment stage's read are this one node; the value it is assigned is its own argument.
+    const tn_tsl_arg_t declaration[2] = {stringArg("vec3"), stringArg("vSunDirection")};
+    CHECK(tn_tsl_call(ctx, "varyingProperty", nullptr, declaration, 2, &varying, &d.value) == TN_OK && varying != 0);
+    CHECK(tn::abi::tslNode(ctx, varying)->name == "vSunDirection");
+    const tn_tsl_arg_t axis[3] = {number(0), number(1), number(0)};
+    CHECK(tn_tsl_call(ctx, "vec3", nullptr, axis, 3, &value, &d.value) == TN_OK);
+    const tn_tsl_arg_t axisArg = nodeArg(value), sunPosition = stringArg("sunPosition");
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &axisArg, 1, &uniform, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "setName", &uniform, &sunPosition, 1, &renamed, &d.value) == TN_OK);
+    const tn_tsl_arg_t sunArg = nodeArg(renamed);
+    CHECK(tn_tsl_call(ctx, "normalize", nullptr, &sunArg, 1, &sun, &d.value) == TN_OK);
+
+    CHECK(open() == TN_OK);
+    const tn_tsl_arg_t sunArg2 = nodeArg(sun);
+    CHECK(tn_tsl_call(ctx, "assign", &varying, &sunArg2, 1, &done, &d.value) == TN_OK);
+    CHECK(tn::abi::tslNode(ctx, done) == tn::abi::tslNode(ctx, varying));  // assign answers its target
+    // const position = modelViewProjection; position.z.assign(position.w); return position
+    CHECK(tn_tsl_call(ctx, "constant:modelViewProjection", nullptr, nullptr, 0, &clip, &d.value) == TN_OK);
+    const tn_tsl_arg_t clipArg = nodeArg(clip);
+    CHECK(tn_tsl_call(ctx, "swizzle:z", &clip, nullptr, 0, &lane, &d.value) == TN_OK);
+    const auto base = tn::abi::tslNode(ctx, clip), swizzle = tn::abi::tslNode(ctx, lane);
+    // The swizzle of the variable's read, kept as the variable so lowering reassigns every lane of it.
+    CHECK(base && base->kind == g::Kind::Var && swizzle && swizzle->kind == g::Kind::Swizzle && swizzle->lanes == "z" &&
+          swizzle->args.at(0)->kind == g::Kind::VarRead && swizzle->args.at(0)->args.at(0) == base);
+    CHECK(tn_tsl_call(ctx, "swizzle:w", &clip, nullptr, 0, &value, &d.value) == TN_OK);
+    const tn_tsl_arg_t source = nodeArg(value);
+    CHECK(tn_tsl_call(ctx, "assign", &lane, &source, 1, &done, &d.value) == TN_OK);
+    CHECK(close(&clipArg, &fn) == TN_OK);
+
+    // A value that reads a Fn variable would see the variable's initial value where the vertex stage recomputes
+    // it: refused by name, so the game writes the expression.
+    CHECK(open() == TN_OK);
+    uint64_t variable = 0;
+    const tn_tsl_arg_t zero = number(0);
+    CHECK(tn_tsl_call(ctx, "float", nullptr, &zero, 1, &value, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "toVar", &value, nullptr, 0, &variable, &d.value) == TN_OK);
+    const tn_tsl_arg_t variableArg = nodeArg(variable);
+    CHECK(tn_tsl_call(ctx, "assign", &varying, &variableArg, 1, &done, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    CHECK(d.message() == "TN_ABI_ARGUMENT TN_TSL_VARYING_PROPERTY_VARIABLE: vSunDirection is assigned a value that "
+                         "reads a Fn variable; assign an expression");
+    tn_diagnostic_release(&d.value);
+    CHECK(close(nullptr, &done) == TN_OK);
+
+    // The graph a material keeps: the Fn body is the varying statement, then the lane assignment, and both end
+    // in the vertex stage's program.
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "vertexNode", fn, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", varying, &d.value) == TN_OK);
+    s::VertexVariant variant;
+    variant.nodes.vertexNode = tn::abi::shaderNode(material, "vertexNode");
+    variant.nodes.colorNode = tn::abi::shaderNode(material, "colorNode");
+    CHECK(variant.nodes.vertexNode && variant.nodes.vertexNode->kind == g::Kind::Body);
+    if (!variant.nodes.vertexNode || variant.nodes.vertexNode->kind != g::Kind::Body) return;
+    const auto& statements = variant.nodes.vertexNode->body;
+    CHECK(statements.size() == 2);
+    if (statements.size() == 2) {
+        CHECK(statements[0]->kind == g::Kind::Varying && statements[0]->name == "vSunDirection" &&
+              statements[0]->args.size() == 1 && statements[0]->args[0] == tn::abi::tslNode(ctx, sun));
+        const g::Node assignment = statements[1];
+        CHECK(assignment->kind == g::Kind::Assign);
+        // The variable itself is the target's base, so lowering reassigns every lane of it: the swizzle the author
+        // assigned (`swizzle`, a read of the variable) keeps that read as its argument.
+        const g::Node target = assignment->args.at(0), assigned = assignment->args.at(1);
+        CHECK(target->kind == g::Kind::Swizzle && target->lanes == "z" && target->args.at(0)->kind == g::Kind::Var &&
+              target->args.at(0) == base);
+        CHECK(assigned->kind == g::Kind::Swizzle && assigned->lanes == "w" &&
+              assigned->args.at(0)->kind == g::Kind::VarRead && assigned->args.at(0)->args.at(0) == base);
+    }
+    const auto programs = s::buildBasic(variant);
+    for (const auto& error : programs.diagnostics) std::fprintf(stderr, "assign: %s\n", error.c_str());
+    CHECK(programs.diagnostics.empty());
+    const auto vertex = s::WgslEmitter::emit(programs.vertex, 0), fragment = s::WgslEmitter::emit(programs.fragment, 1);
+    CHECK(vertex.ok() && fragment.ok());
+    // The vertex stage computes the varying and the fragment stage reads it, at the location the link gave it.
+    CHECK(vertex.code.find("@location(0) o_vSunDirection: vec3<f32>") != std::string::npos);
+    CHECK(vertex.code.find("out.o_vSunDirection = normalize(u.f_sunPosition);") != std::string::npos);
+    CHECK(fragment.code.find("@location(0) i_vSunDirection: vec3<f32>") != std::string::npos);
+    CHECK(fragment.code.find("vec4<f32>(i_vSunDirection") != std::string::npos);
+    // z takes w and the other lanes keep their value: one whole-vector reassignment from the variable itself.
+    // The let names (`l15`) carry expression ids, so they are folded out before the lanes are compared.
+    std::string lowered = vertex.code;
+    for (size_t at = lowered.find("(l"); at != std::string::npos; at = lowered.find("(l", at + 3))
+        lowered.erase(at + 2, lowered.find(')', at) - at - 2);
+    CHECK(lowered.find(" = vec4<f32>((l).x, (l).y, (l).w, (l).w);") != std::string::npos);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-617 AC-5: three's Loop(...params, callback) takes one parameter per dimension and nests them, and
 // `condition: "<="` runs up to and including the end. three's own GLSL transpiler emits that shape for a
 // 2D kernel (rain's bloom and ripple shaders, `Loop({ start: int(-1), end: int(1), condition: "<=" },
@@ -2618,6 +2754,27 @@ void join_converts_integer_parts() {
     CHECK(buildStage(program).wgsl.ok());
 }
 
+// PRD-762, the forest kit's sky: three r185's JoinNode cuts an input that runs past the vector's length
+// to the components left (it logs, and builds), and drops any input after it; the engine refused.
+void join_truncates_overflow() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    using namespace tn::engine::shader;
+    uint64_t serial = 0;
+    const auto pair = tn::abi::tslCall("vec2", nullptr, {TslArg::of(0.25), TslArg::of(0.5)}, serial);
+    const auto quad = tn::abi::tslCall("vec4", nullptr, {TslArg::of(0.1), TslArg::of(0.2), TslArg::of(0.3), TslArg::of(0.4)}, serial);
+    const auto cut = tn::abi::tslCall("vec3", nullptr, {TslArg::of(pair), TslArg::of(pair)}, serial);
+    const auto past = tn::abi::tslCall("vec3", nullptr, {TslArg::of(quad), TslArg::of(0.9)}, serial);
+    const auto root = g::vec4({g::swizzle(cut, "z"), g::swizzle(past, "z"), g::float_(0), g::float_(1)});
+    Program program(Stage::Fragment);
+    tn::engine::shader::tsl::Build scope(program);
+    program.output("color", g::lower(root, program));
+    const auto built = buildStage(program);
+    if (!built.wgsl.ok() && !program.diagnostics().empty())
+        std::printf("join_truncates_overflow: %s\n", program.diagnostics().front().reason.c_str());
+    CHECK(built.wgsl.ok());
+}
+
 void struct_function_return() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -3087,6 +3244,25 @@ void starter_post_bindings() {
         tn_handle_t none{};
         CHECK(tn_construct(context, "RenderTarget", rejected, 3, &none, &diagnostic) == TN_ERROR_UNSUPPORTED);
         tn_diagnostic_release(&diagnostic);
+        // The same filter on an array target (three's `depth`, the impostor bake's atlas, PRD-858) keeps a mip chain.
+        const tn_value_t layered[]{
+            {TN_VALUE_STRING, 0, 0, {}, 0, "minFilter", 9, {}}, num(1008.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "depth", 5, {}}, num(16.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "count", 5, {}}, num(2.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "generateMipmaps", 15, {}}, boolean(true)};
+        tn_value_t arrayOptions{};
+        arrayOptions.kind = TN_VALUE_RECORD;
+        arrayOptions.count = 4;
+        arrayOptions.values = layered;
+        const tn_value_t arrayArgs[]{num(8.0), num(8.0), arrayOptions};
+        tn_handle_t array{};
+        CHECK(tn_construct(context, "RenderTarget", arrayArgs, 3, &array, &diagnostic) == TN_OK);
+        if (array.type) {
+            const auto made = std::static_pointer_cast<tn::engine::RenderTarget>(tn::abi::objectOf(array)->ptr);
+            CHECK(made->layers == 16 && made->more.size() == 1 && made->more[0]->layers == 16);
+            for (const auto& texture : tn::engine::RenderTarget::texturesOf(*made))
+                CHECK(texture->array && texture->depth == 16 && texture->generateMipmaps && texture->minFilter == 1008);
+        }
     }
     CHECK(tn_context_destroy(context, &diagnostic) == TN_OK);
     std::string authoredSource = "fn authoredArea(sample: u32, lo: vec2<f32>, hi: vec2<f32>) -> f32 { return f32(sample) + dot(hi-lo, hi-lo); }";
@@ -3666,9 +3842,9 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"compressed_texture_levels", compressed_texture_levels}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
              {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})

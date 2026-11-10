@@ -839,9 +839,11 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     };
     if (game.renderer_ == nullptr) return refuse("TN_NATIVE_RENDER_TARGET: the player has no renderer before its first frame");
     // The optional fourth argument defers the draw to the frame that samples the target (an offscreen PassNode); the
-    // optional fifth is three's autoClear (false draws over the target's contents).
+    // optional fifth is three's autoClear (false draws over the target's contents); the optional sixth is the layer
+    // of an array target the draw writes (three's setRenderTarget(target, layer)).
     const bool shaped = info.Length() == 3 || (info.Length() == 4 && info[3]->IsBoolean()) ||
-                        (info.Length() == 5 && info[3]->IsBoolean() && info[4]->IsBoolean());
+                        (info.Length() == 5 && info[3]->IsBoolean() && info[4]->IsBoolean()) ||
+                        (info.Length() == 6 && info[3]->IsBoolean() && info[4]->IsBoolean() && info[5]->IsUint32());
     auto* target = shaped ? game.engineObject(info[0], "RenderTarget") : nullptr;
     auto* root = shaped ? game.engineObject(info[1], "Object3D") : nullptr;
     auto* camera = shaped ? game.engineObject(info[2], "Camera") : nullptr;
@@ -853,7 +855,8 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     const auto refused = renderToTarget(*game.renderer_, *static_cast<RenderTarget*>(target->ptr.get()),
                                         *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
                                         game.clear_, game.shadowMap_, info.Length() >= 4 && info[3]->BooleanValue(isolate),
-                                        true, info.Length() < 5 || info[4]->BooleanValue(isolate));
+                                        true, info.Length() < 5 || info[4]->BooleanValue(isolate),
+                                        info.Length() == 6 ? info[5].As<v8::Uint32>()->Value() : 0u);
     if (!refused.empty()) refuse(refused.front());
 }
 

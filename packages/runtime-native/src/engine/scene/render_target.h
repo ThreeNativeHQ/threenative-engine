@@ -71,6 +71,11 @@ public:
     std::shared_ptr<Texture> texture = std::make_shared<Texture>();
     /** The MRT colour attachments after the first, each a target of its own (render_target_pass.cpp draws each). */
     std::vector<std::shared_ptr<RenderTarget>> more;
+    /**
+     * three's `depth` option: an array target of this many layers, each its own 2D image. A draw names the layer it
+     * writes (setRenderTarget(target, layer)), and a material samples every layer through `texture.depth(layer)`.
+     */
+    uint32_t layers = 1;
     /** The renderer's state for this target (its own renderer and render database); empty until drawn. */
     std::shared_ptr<void> gpu;
     /** True when this FloatType target is stored as half float because the device lacks float32-blendable; set when the target first draws. */

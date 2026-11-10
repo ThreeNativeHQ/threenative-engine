@@ -9,15 +9,17 @@ import {
   instanceIndex,
   int,
   length,
+  mat4,
   max,
   min,
   storage,
+  uint,
   vec3,
 } from "three/tsl";
 import type { IndirectStorageBufferAttribute, StorageInstancedBufferAttribute } from "three/webgpu";
 import { GATE_STEP } from "./world-gpu-reference.js";
 import type { IGpuKernel, IGpuSceneBuffers } from "./world-gpu-types.js";
-import { PlacementStruct, nodes } from "./world-gpu-types.js";
+import { PLACEMENT_ROWS, nodes } from "./world-gpu-types.js";
 import { DRAW_ARGS_WORDS } from "./world-gpu-validation.js";
 
 /**
@@ -75,7 +77,7 @@ export interface IShadowKernelInput {
  */
 export function buildShadowKernel(input: IShadowKernelInput): IGpuKernel {
   const { buffers, shadow } = input;
-  const source = nodes(storage(buffers.source, PlacementStruct, buffers.source.count));
+  const source = nodes(storage(buffers.source, "vec4", buffers.source.count));
   const drawn = nodes(storage(shadow.drawn, "mat4", shadow.drawn.count));
   const argsPlain = nodes(storage(shadow.args, "uint", shadow.args.count));
   const argsAtomic = nodes(storage(shadow.args, "uint", shadow.args.count).toAtomic());
@@ -113,10 +115,18 @@ export function buildShadowKernel(input: IShadowKernelInput): IGpuKernel {
   })().compute(Math.max(1, buffers.keys.count * clearWidth));
   const cull = Fn(() => {
     If(instanceIndex.greaterThanEqual(counts.x), () => Return());
-    const placement = source.element(instanceIndex);
-    const centre = placement.get("centre");
-    const matrix = placement.get("matrix");
-    const slot = placement.get("info").x;
+    // One placement is `PLACEMENT_ROWS` consecutive `vec4` rows: the world matrix's four columns,
+    // then the sphere, then `info`. The main kernel reads the same rows; see `world-gpu-reference.ts`.
+    const base = instanceIndex.mul(uint(PLACEMENT_ROWS));
+    const matrix = mat4(
+      source.element(base),
+      source.element(base.add(uint(1))),
+      source.element(base.add(uint(2))),
+      source.element(base.add(uint(3))),
+    );
+    const centre = source.element(base.add(uint(4)));
+    const info = source.element(base.add(uint(5)));
+    const slot = info.x;
     If(slot.lessThan(0.0), () => Return());
     If(slot.greaterThanEqual(counts.y), () => Return());
     const radius = centre.w;
@@ -130,7 +140,7 @@ export function buildShadowKernel(input: IShadowKernelInput): IGpuKernel {
     // The main pass's own biased distance and level; see `shadowLevel`, which the reference runs.
     const lodDistance = nodes(distance).mul(bias as never);
     const level = int(0).toVar();
-    const scale = abs(placement.get("info").y);
+    const scale = abs(info.y);
     Loop({ start: int(1), end: asset.y, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
       const candidate = levels.element(asset.x.add(i as never));
       const threshold = nodes(candidate.x).toVar();
@@ -183,7 +193,10 @@ export function buildShadowKernel(input: IShadowKernelInput): IGpuKernel {
         drawn.element(key.x.add(taken)).assign(matrix.mul(locals.element(keyIndex)));
       });
     });
-  })().compute(Math.max(1, buffers.source.count));
+  })().compute(
+    // One thread per placement record, not per `vec4` row of the source buffer.
+    Math.max(1, Math.ceil(buffers.source.count / PLACEMENT_ROWS)),
+  );
   clear.setName("worldGpuSceneShadowClear");
   cull.setName("worldGpuSceneShadowCull");
   return { clear, cull };

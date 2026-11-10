@@ -3377,6 +3377,80 @@ void cameraTurnRecords() {
 // PRD-754: two exactly coplanar quads, where three's order (equal depth, then id) and a state order (material first)
 // disagree. At equal depth the draw order picks the winner (the shooter's door trim), so the stable passes keep three's
 // order: the pixels match direct encode over a camera turn.
+// PRD-857: core's GPU world scene draws an InstancedMesh through geometry.setIndirect, with `count` at capacity and a
+// kernel writing the instance count into the record. The engine drew `instanceCount` (capacity) and never read the
+// record, so stale instances drew. Two instances, left and right; the record draws one, then two, then the record goes.
+void indirectRecord() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized || !rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    BufferStore matrices(Scalar::F32, 32);
+    const float placed[32] = {0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, -1.25f, 0, 0, 1,
+                              0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, 1.25f, 0, 0, 1};
+    matrices.write(0, placed, sizeof placed);
+    // Two records, the second at byte 20: drawIndexedIndirect's five words (index count, instances, first index,
+    // base vertex, first instance).
+    BufferStore records(Scalar::U32, 10);
+    const auto setInstances = [&](uint32_t instances) {
+        const uint32_t words[10] = {0, 0, 0, 0, 0, static_cast<uint32_t>(ball->indices.count()), instances, 0, 0, 0};
+        records.write(0, words, sizeof words);
+        records.needsUpdate();  // three's attribute.needsUpdate after a CPU write
+    };
+    DrawItem item;
+    item.key = item.id = 1; item.kind = MaterialKind::Basic; item.material = &material;
+    item.positions = &ball->positions; item.indices = &ball->indices;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.instanceMatrices = &matrices; item.instanceCount = 2;
+    constexpr uint32_t width = 32, height = 24;
+    const auto halves = [&](const std::vector<uint8_t>& px) {
+        std::array<int, 2> lit{};
+        for (uint32_t y = 0; y < height; ++y)
+            for (uint32_t x = 0; x < width; ++x)
+                if (px.size() >= size_t{width} * height * 4 && px[(size_t{y} * width + x) * 4] > 128) ++lit[x < width / 2 ? 0 : 1];
+        return lit;
+    };
+    for (const bool stable : {false, true}) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setStablePasses(stable);
+        const auto frame = [&]() {
+            std::vector<uint8_t> px;
+            for (int i = 0; i < 3; ++i) {  // a stable pass retains its rows from the second frame on
+                renderer.render({&item, 1}, camera(double(width) / height), LightState{}, {0, 0, 0, 1});
+                px = read(renderer, events);
+            }
+            return halves(px);
+        };
+        item.indirect = &records; item.indirectOffset = 20;
+        setInstances(1);
+        const auto one = frame();
+        setInstances(2);
+        const auto two = frame();
+        // The GPU copy is what an indirect draw reads (PRD-857): core's cull kernel writes the instance buffer on the
+        // GPU and the CPU bytes never change. A CPU write with no needsUpdate leaves the GPU copy as it was, so the
+        // GPU copy and the CPU bytes now disagree the same way: both instances on the right in the CPU bytes only.
+        const float right[32] = {0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, 1.25f, 0, 0, 1,
+                                 0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, 1.25f, 0, 0, 1};
+        matrices.write(0, right, sizeof right);
+        const auto gpuCopy = frame();
+        matrices.write(0, placed, sizeof placed);
+        matrices.needsUpdate();
+        item.indirect = nullptr; item.indirectOffset = 0;
+        const auto direct = frame();
+        std::printf("indirect record (stable %d): one %d|%d, two %d|%d, gpu copy %d|%d, direct %d|%d\n", stable, one[0], one[1],
+                    two[0], two[1], gpuCopy[0], gpuCopy[1], direct[0], direct[1]);
+        CHECK(one[0] > 20 && one[1] == 0);  // the record's one instance, not the capacity's two
+        CHECK(two[0] > 20 && two[1] > 20);  // a rewritten record draws what it now says
+        CHECK(gpuCopy[0] > 20 && gpuCopy[1] > 20);  // the GPU's instances, not the CPU bytes
+        CHECK(direct[0] > 20 && direct[1] > 20);
+    }
+}
+
 void coplanarKeepsWinner() {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
@@ -3833,4 +3907,5 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"alpha_test", alphaTest},
              {"alpha_hash_coverage", alphaHashCoverage},
              {"alpha_hash_shadow_coverage", alphaHashShadowCoverage},
-             {"mipmaps_share_one_submit", mipmapsShareOneSubmit})
+             {"mipmaps_share_one_submit", mipmapsShareOneSubmit},
+             {"indirect_record", indirectRecord})

@@ -9,7 +9,7 @@ import {
   TERRAIN_TOOLS,
   newBiomeSpec,
   parseBiomeNewInput,
-  parseGenerateInput,
+  parseGenerateRequest,
   parsePatchInput,
   patchRecipe,
   resolveAssetSource,
@@ -60,7 +60,7 @@ async function cookInChild(request: Record<string, unknown>, out: string): Promi
 async function callTool(name: string, args: unknown): Promise<ReturnType<typeof toolResult>> {
   try {
     if (name === "terrain_generate") {
-      const input = parseGenerateInput(args);
+      const { input, decided, unused } = parseGenerateRequest(args);
       const projectRoot = process.cwd();
       const assetSource = await resolveAssetSource(projectRoot);
       const out = await resolveOutput(
@@ -68,7 +68,10 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
         input.out ?? relative(projectRoot, join(assetSource, "worlds", input.kit)),
         assetSource,
       );
-      return toolResult(await cookInChild({ ...input, out, projectRoot, assetSource }, out));
+      const text = await cookInChild({ ...input, out, projectRoot, assetSource }, out);
+      // The reply names every choice with the word behind it, and the words nothing answered to, so
+      // an agent retries with a word instead of guessing what the request dropped.
+      return toolResult(JSON.stringify({ ...(JSON.parse(text) as object), decided, unused }));
     }
     if (name === "terrain_biome_new") {
       const input = parseBiomeNewInput(args);
@@ -103,7 +106,15 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
       let text: string;
       try {
         text = await cookInChild(
-          { assetSource, biome: input.name, kit: input.from, out, projectRoot, spec },
+          {
+            assetSource,
+            biome: input.name,
+            kit: input.from,
+            out,
+            projectRoot,
+            spec,
+            ground: input.ground,
+          },
           out,
         );
       } catch (error) {

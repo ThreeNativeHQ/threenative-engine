@@ -1,5 +1,6 @@
 import { hydraulic, thermal } from "./erosion.js";
 import { fluvial } from "./fluvial.js";
+import { gully } from "./gully.js";
 import { MATERIAL_IDS, compileMask, paintWeights, rasterMask } from "./masks.js";
 import {
   clamp,
@@ -16,6 +17,7 @@ import {
   splinePoints,
   world,
 } from "./math.js";
+import { scree } from "./scree.js";
 import type {
   IBrushParams,
   IHeightData,
@@ -570,7 +572,11 @@ export function applyOperation(s: ITerrainState, layer: Layer): void {
                 },
                 observations,
               )
-            : thermal(s.height, n, s.size, p, observations);
+            : p.method === "gully"
+              ? gully(s.height, n, s.size, p)
+              : p.method === "scree"
+                ? scree(s.height, n, s.size, p)
+                : thermal(s.height, n, s.size, p, observations);
       let influence = mask;
       if (p.at || p.points) influence = brushWeights(s, p, mask, seed);
       for (let i = 0; i < s.height.length; i += 1) {

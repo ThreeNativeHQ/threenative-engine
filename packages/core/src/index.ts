@@ -153,6 +153,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @situation draw a model's textures at their resident mips first and the whole files later
  * @alias different area props
  * @situation coarse first model streaming
+ * @situation streamMeshes and streamTextures: stream the meshes and textures of a model
  * @situation mip streaming textures
  * @situation TN_STREAMING_POOL
  * @situation TN_ASSET_LATE
@@ -186,7 +187,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
  */
-export { ASSET_LATE_MARKER, createAssetLoader } from "./assets.js";
+export { ASSET_LATE_MARKER, createAssetLoader, fetchAsset } from "./assets.js";
 export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";

@@ -38,19 +38,17 @@ describe("far forest", () => {
     expect(sampler.at(0, 0)).toBeNull();
   });
 
-  it("names the value that plants the collar as the override, since the collar is off without it", () => {
-    // FAR_FOREST reads `farForest === <enabled>`; here no location means no query, so the default.
-    expect(FAR_FOREST).toBe(false);
-    const flagSource = readFileSync(new URL("../src/render/farForest.ts", import.meta.url), "utf8");
-    const enabled = /get\("farForest"\) === "(\w+)"/.exec(flagSource)?.[1];
-    expect(enabled).toBeDefined();
-    const documented = ["../src/render/farForest.ts", "../src/sceneProps.ts"].flatMap((name) =>
-      [
-        ...readFileSync(new URL(name, import.meta.url), "utf8").matchAll(/`\?farForest=(\w+)`/g),
-      ].map(([, value]) => value),
+  it("plants the near band by default and documents both overrides", () => {
+    // No location means no query: the default, `near` (owner, 2026-11-09: bare hills read as a bug).
+    expect(FAR_FOREST).toBe(true);
+    const documented = new Set(
+      ["../src/render/farForest.ts", "../src/sceneProps.ts"].flatMap((name) =>
+        [
+          ...readFileSync(new URL(name, import.meta.url), "utf8").matchAll(/`\?farForest=(\w+)`/g),
+        ].map(([, value]) => value),
+      ),
     );
-    expect(documented.length).toBeGreaterThan(0);
-    expect(documented).toEqual(documented.map(() => enabled));
+    expect([...documented].sort()).toEqual(expect.arrayContaining(["off", "on"]));
   });
 
   it("plants the valley and lower slopes, never cliffs, peaks, the square or the vista meadow", () => {

@@ -382,8 +382,6 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
         std::vector<shader::MrtOutput> slots;
         slots.reserve(v.fields.size());
         for (const auto& [slot, field] : v.fields) {
-            if (shader::engineTargetName(slot))
-                throw Unsupported{"TN_NATIVE_MRT_UNSUPPORTED: '" + slot + "' is an engine pass target, not a custom slot"};
             if (field.kind != Value::Kind::ShaderNode || !field.node)
                 throw Unsupported{"mrtNode." + slot + " must be a shader node"};
             slots.push_back({slot, field.node});
@@ -1130,14 +1128,16 @@ void registerTextureBindings(Registry& classes) {
         uint16_t type = kTextureUnsignedByteType;
         std::optional<uint16_t> minFilter, magFilter, wrapS, wrapT;
         uint16_t format = kTextureRGBAFormat;
-        uint32_t count = 1;
+        uint32_t count = 1, layers = 1;
+        bool generateMipmaps = false;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
                 if (key == "minFilter" || key == "magFilter") {
-                    // A target has no mip chain: only the two single-level filters apply.
+                    // Only an array target keeps a mip chain, so the mip filters wait for `depth` below.
                     const auto filter = static_cast<uint16_t>(number(value));
-                    if (filter != uint16_t(TextureFilter::Nearest) && filter != uint16_t(TextureFilter::Linear))
-                        throw Unsupported{"RenderTarget " + key + " must be NearestFilter or LinearFilter"};
+                    if (filter < uint16_t(TextureFilter::Nearest) || filter > uint16_t(TextureFilter::LinearMipmapLinear) ||
+                        (key == "magFilter" && filter != uint16_t(TextureFilter::Nearest) && filter != uint16_t(TextureFilter::Linear)))
+                        throw Unsupported{"RenderTarget " + key + " must be a filter constant"};
                     (key == "minFilter" ? minFilter : magFilter) = filter;
                 } else if (key == "type") {
                     type = static_cast<uint16_t>(number(value));
@@ -1154,9 +1154,13 @@ void registerTextureBindings(Registry& classes) {
                         throw Unsupported{"RenderTarget " + key + " must be a wrapping constant"};
                     (key == "wrapS" ? wrapS : wrapT) = wrap;
                 } else if (key == "generateMipmaps") {
-                    // A target holds one level; a mip chain after each draw is not built natively.
-                    if (value.kind != Value::Kind::Bool || value.flag)
-                        throw Unsupported{"RenderTarget generateMipmaps must be false natively"};
+                    if (value.kind != Value::Kind::Bool) throw Unsupported{"RenderTarget generateMipmaps must be a boolean"};
+                    generateMipmaps = value.flag;
+                } else if (key == "depth") {
+                    // three's array target: `depth` layers, each drawn by setRenderTarget(target, layer).
+                    const double n = number(value);
+                    if (!(n >= 1 && n <= 256) || n != std::floor(n)) throw Unsupported{"RenderTarget depth must be 1 to 256"};
+                    layers = static_cast<uint32_t>(n);
                 } else if (key == "count") {
                     // three's MRT: one colour texture per output, 8 at most (WebGPU's maxColorAttachments).
                     const double n = number(value);
@@ -1166,8 +1170,18 @@ void registerTextureBindings(Registry& classes) {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
+        // A plain target holds one level: a mip chain after each draw is built for an array target only.
+        const bool mipFilter = minFilter && *minFilter != uint16_t(TextureFilter::Nearest) && *minFilter != uint16_t(TextureFilter::Linear);
+        if (layers == 1 && (generateMipmaps || mipFilter))
+            throw Unsupported{"RenderTarget mipmaps need an array target (depth > 1) natively"};
         auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type, count);
+        target->layers = layers;
+        for (const auto& attachment : target->more) attachment->layers = layers;
         for (const auto& texture : RenderTarget::texturesOf(*target)) {
+            texture->generateMipmaps = generateMipmaps;
+            // The texture a material samples is the layer array, read with depth(layer) like a DataArrayTexture.
+            texture->array = layers > 1;
+            texture->depth = layers;
             if (minFilter) texture->minFilter = *minFilter;
             if (magFilter) texture->magFilter = *magFilter;
             if (wrapS) texture->wrapS = *wrapS;

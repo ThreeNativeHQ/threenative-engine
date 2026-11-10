@@ -22,7 +22,9 @@ public:
 
     /**
      * The GPU buffer for a store, uploaded or refreshed as its version requires; the update ranges
-     * it consumed are cleared, as three's renderer does. Usage is a WGPUBufferUsage.
+     * it consumed are cleared, as three's renderer does. Usage is a WGPUBufferUsage, and every usage a
+     * store is synced with is kept: a store bound as storage and as vertex or indirect data is one
+     * buffer carrying both, re-created with the union when a later caller needs one it lacks.
      */
     Handle sync(BufferStore& store, uint32_t usage);
     /**
@@ -69,6 +71,7 @@ private:
         uint32_t releases = 0;  // the store's gpuReleases() when this copy was made
         uint64_t bytes = 0;     // the store's byteLength() at its last sync (unpadded)
         Scalar scalar = Scalar::F32;
+        WGPUBufferUsage usage = 0;  // the usages this copy was created with, CopyDst included
     };
     GpuResources& gpu_;
     uint64_t sweptAt_ = ~uint64_t{0};  // BufferStore::released() at the last sweep

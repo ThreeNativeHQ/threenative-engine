@@ -1,3 +1,4 @@
+import { runsGameInWorker } from "./worker-probe.js";
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
 import { advanceFixedStep, completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, sampleSightLine, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
@@ -200,13 +201,6 @@ interface IStandalonePlaytestInternalOptions extends IStandalonePlaytestRunOptio
 /** The page runs its game in a worker, so the run relaunches with that thread's measurement flags. */
 class WorkerGameRelaunch extends Error {}
 
-/** A worker host installs its platform source in the worker before the game starts (PRD-752). */
-async function runsGameInWorker(page: Page): Promise<boolean> {
-  for (const worker of page.workers()) {
-    if ((await worker.evaluate("typeof globalThis.__tnGamePlatform").catch(() => undefined)) === "object") return true;
-  }
-  return false;
-}
 
 export async function runStandalonePlaytest(
   config: IStandalonePlaytestConfig,

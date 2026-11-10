@@ -104,14 +104,16 @@ Why this order:
 
 ## Step 0 — PRD-806 fixes, direct to develop
 
-- [ ] Review `origin/prd806-visual-fixes` (E46, E49, E73, E56) and `origin/prd806-e62-fir-cook` (E62, E52, E41, E40, E39) against `origin/develop`. Neither branch has a PR. A DeepSeek-written diff gets a full review before merge.
-- [ ] Merge each branch, run `pnpm typecheck`, `pnpm lint`, `pnpm exec vitest run packages/terrain/__tests__/`, and the native engine texture and renderer tests for E49 and E73. Tick the PRD-806 boxes with the results.
-- [ ] Refresh `README.md` in this folder: the EPIC is merged, and the scope table and "Current state" date from 2026-11-04.
+- [x] Review `origin/prd806-visual-fixes` (E46, E49, E73, E56) and `origin/prd806-e62-fir-cook` (E62, E52, E41, E40, E39) against `origin/develop`. Neither branch has a PR. A DeepSeek-written diff gets a full review before merge. 2026-11-09: done by content — every non-docs file of the 12 PRD-806 fix commits on both branches is byte-identical in the PR #635 head (`git diff <fix> HEAD -- <file>` empty for all 37 files).
+- [x] Merge each branch, run `pnpm typecheck`, `pnpm lint`, `pnpm exec vitest run packages/terrain/__tests__/`, and the native engine texture and renderer tests for E49 and E73. Tick the PRD-806 boxes with the results. 2026-11-09 on the PR #635 head: `pnpm typecheck` exit 0 at `3817a9529` (exit 1 at `ecebc2fe5` on 3 chain-made spec type errors, fixed in that commit), `pnpm lint` exit 0, `vitest run packages/terrain/__tests__/` 600/600, E49 V8 `clone_listeners` red without the fix and green with it; E73 as ticked in PRD-806.
+- [x] Refresh `README.md` in this folder: the EPIC is merged, and the scope table and "Current state" date from 2026-11-04. 2026-11-09: done in `e1ba845e5` (EPIC merge, pointer to this chain) and `7bad7d910`.
 - [ ] Clean up the stale `strata-*` worktrees (`strata-base`, `strata-forest`, `strata-ground-fix`, `strata-ref-*`, `strata-terrain-hardening`). Check merge evidence and untracked data first, and ask before removing a dirty one.
 
 ## PR-1 — PRD-762 (P0)
 
 Open boxes: the sandbox game starts from the MCP snippet with no game edit, sky gaps 1–4, the kit gaps (`VirtualShadowNode`, world prewarm, `TN_virtual_geometry`, the reflector hook), `verify-starter-kit.mjs` exit 0, a playtest scenario, load and presented FPS on the real display, and a judge against the `engine: "threejs"` arm. Each refusal found on the path gets its own box.
+
+Sub-blockers on the same PR: [PRD-857](PRD-857-the-gpu-world-scene-runs-on-the-owned-engine.md) (the GPU world scene, Acceptance open) and [PRD-858](PRD-858-world-impostors-bake-on-the-owned-web-engine.md) (impostor bake; the kit's overview runs at 15 fps without it, so `verify-starter-kit.mjs` waits on it).
 
 ## PR-2 — PRD-585
 

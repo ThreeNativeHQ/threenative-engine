@@ -551,11 +551,20 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     wgpuRenderPassEncoderRelease(pass);
 }
 
+namespace {
+uint32_t sceneTexelBytes(WGPUTextureFormat format) {
+    return format == WGPUTextureFormat_RGBA32Float ? 16u
+         : format == WGPUTextureFormat_RG32Float  ? 8u
+         : format == WGPUTextureFormat_RG16Float  ? 4u : 8u;
+}
+}  // namespace
+
 GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
-    const uint32_t texelBytes = sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 16u
-                              : sceneFormat_ == WGPUTextureFormat_RG32Float  ? 8u
-                              : sceneFormat_ == WGPUTextureFormat_RG16Float  ? 4u : 8u;
-    return readRgba16(sceneColor_, std::move(done), texelBytes);
+    return readRgba16(sceneColor_, std::move(done), sceneTexelBytes(sceneFormat_));
+}
+
+GpuStatus Renderer::readLayerPixels(WGPUTexture array, uint32_t layer, uint32_t level, ReadbackCallback done) {
+    return readRgba16(array, std::move(done), sceneTexelBytes(sceneFormat_), layer, level);
 }
 
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
@@ -585,15 +594,20 @@ GpuStatus Renderer::readMrtPixels(std::string_view slot, uint32_t x, uint32_t y,
         });
 }
 
-GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes) {
+GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes, uint32_t layer,
+                               uint32_t level) {
     if (!done) return GpuStatus::OutOfRange;
     if (!texture) return GpuStatus::InvalidHandle;
-    const uint32_t width = wgpuTextureGetWidth(texture), height = wgpuTextureGetHeight(texture),
+    if (layer >= wgpuTextureGetDepthOrArrayLayers(texture) || level >= wgpuTextureGetMipLevelCount(texture))
+        return GpuStatus::OutOfRange;
+    const uint32_t width = std::max(1u, wgpuTextureGetWidth(texture) >> level),
+                   height = std::max(1u, wgpuTextureGetHeight(texture) >> level),
                    row = width * texelBytes, pitch = (row + 255u) & ~255u;
     const Handle staging = gpu_.createBuffer(uint64_t(pitch) * height, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     WGPUCommandEncoderDescriptor descriptor{};
     auto encoder = wgpuDeviceCreateCommandEncoder(device_, &descriptor);
     WGPUTexelCopyTextureInfo source{}; source.texture = texture; source.aspect = WGPUTextureAspect_All;
+    source.mipLevel = level; source.origin = {0, 0, layer};
     WGPUTexelCopyBufferInfo destination{}; destination.buffer = gpu_.buffer(staging);
     destination.layout.bytesPerRow = pitch; destination.layout.rowsPerImage = height;
     const WGPUExtent3D extent{width, height, 1};

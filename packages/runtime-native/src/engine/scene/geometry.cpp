@@ -417,24 +417,46 @@ Box3& Box3::setFromBufferAttribute(const BufferAttribute& attribute) {
     return *this;
 }
 
+// three's BufferGeometry.computeBoundingBox: the positions' box, grown by each morph target's.
+static void boxWithMorphs(const BufferGeometry& geometry, const BufferAttribute& position, Box3& box) {
+    box.setFromBufferAttribute(position);
+    Vector3 point;
+    Box3 morphBox;
+    for (const auto& morph : geometry.morphPositions) {
+        morphBox.setFromBufferAttribute(*morph);
+        if (geometry.morphTargetsRelative) {
+            box.expandByPoint(point.addVectors(box.min, morphBox.min));
+            box.expandByPoint(point.addVectors(box.max, morphBox.max));
+        } else {
+            box.expandByPoint(morphBox.min);
+            box.expandByPoint(morphBox.max);
+        }
+    }
+}
+
 void BufferGeometry::computeBoundingBox() {
     if (boundingBox == nullptr) boundingBox = std::make_shared<Box3>();
     boundingBox->makeEmpty();
     const std::shared_ptr<BufferAttribute> position = getAttribute("position");
     if (position == nullptr) return;
-    boundingBox->setFromBufferAttribute(*position);
-    Vector3 point;
-    Box3 morphBox;
-    for (const auto& morph : morphPositions) {
-        morphBox.setFromBufferAttribute(*morph);
-        if (morphTargetsRelative) {
-            boundingBox->expandByPoint(point.addVectors(boundingBox->min, morphBox.min));
-            boundingBox->expandByPoint(point.addVectors(boundingBox->max, morphBox.max));
-        } else {
-            boundingBox->expandByPoint(morphBox.min);
-            boundingBox->expandByPoint(morphBox.max);
-        }
-    }
+    boxWithMorphs(*this, *position, *boundingBox);
+}
+
+const Box3& BufferGeometry::morphReachBox() const {
+    const std::shared_ptr<BufferAttribute> position = getAttribute("position");
+    const auto at = [](const std::shared_ptr<BufferAttribute>& attribute) {
+        return std::pair<const BufferAttribute*, uint32_t>{attribute.get(), attribute ? attribute->version() : 0};
+    };
+    bool fresh = morphReachRevision_ == revision_ && morphReachAt_.size() == 1 + morphPositions.size() && morphReachAt_[0] == at(position);
+    for (std::size_t i = 0; fresh && i < morphPositions.size(); ++i) fresh = morphReachAt_[1 + i] == at(morphPositions[i]);
+    if (fresh) return morphReachBox_;
+    morphReachBox_.makeEmpty();
+    if (position) boxWithMorphs(*this, *position, morphReachBox_);
+    morphReachRevision_ = revision_;
+    morphReachAt_.clear();
+    morphReachAt_.push_back(at(position));
+    for (const auto& morph : morphPositions) morphReachAt_.push_back(at(morph));
+    return morphReachBox_;
 }
 
 void BufferGeometry::computeBoundingSphere() {

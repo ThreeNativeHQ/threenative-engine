@@ -37,14 +37,21 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
         e = Entry{};
         isNew = true;
     }
+    // A store bound as storage and as vertex or indirect data is one buffer carrying every usage it is
+    // bound with: wgpu validates a binding against the buffer's usage, and the first caller's usage used
+    // to be the only one kept, so the second binding was refused (PRD-857). One bit test when nothing new.
+    const bool widened = !isNew && (e.usage & usage) != usage;
     // A resize reallocates, and a disposed geometry let its copy go: the whole store goes up again.
-    if (!isNew && (e.byteLength != byteLength || e.epoch != store.epoch() || e.releases != store.gpuReleases())) {
+    if (!isNew && (widened || e.byteLength != byteLength || e.epoch != store.epoch() || e.releases != store.gpuReleases())) {
         gpu_.destroy(e.buffer);
         isNew = true;
     }
     if (isNew) {
-        e.buffer = gpu_.createBuffer(byteLength == 0 ? 4 : byteLength, usage | WGPUBufferUsage_CopyDst,
+        // The union, so a copy re-created for another reason keeps every usage an earlier caller asked for.
+        const WGPUBufferUsage created = e.usage | usage | WGPUBufferUsage_CopyDst;
+        e.buffer = gpu_.createBuffer(byteLength == 0 ? 4 : byteLength, created,
                                      static_cast<const BufferStore&>(store).data(), store.byteLength());
+        e.usage = created;
         e.byteLength = byteLength;
         e.epoch = store.epoch();
         e.owner = store.weak_from_this();

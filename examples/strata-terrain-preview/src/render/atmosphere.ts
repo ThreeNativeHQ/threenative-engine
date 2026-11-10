@@ -22,6 +22,7 @@ import {
 } from "three/tsl";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import type { IBiome } from "./biomes.js";
+import { LOOK } from "./lookKnobs.js";
 
 export function createAtmosphere(look: IBiome): Atmosphere {
   const air = new Atmosphere({
@@ -151,7 +152,34 @@ export function aerialPerspective(
     color(look.sun.color).mul(1.4),
     dot(direction, sun).max(0).pow(6).mul(look.haze.sunScatter),
   );
-  const localColour = mix(input.rgb, localTint, localAmount);
+  let localColour: Node<"vec3"> = mix(input.rgb, localTint, localAmount);
+  const mist = look.atmosphere.groundMist;
+  if (mist && enabled) {
+    // The density, thickness, ceiling and colour are `LOOK` uniforms, so a tweak box moves them live.
+    const term = {
+      density: LOOK.mistDensity as unknown as number,
+      height: mist.term.height,
+      scale: LOOK.mistScale as unknown as number,
+    };
+    const amount = heightFogAmount(
+      { reach: [0, 0], distanceScale: 1, start: mist.start, terms: [term] },
+      eye,
+      direction,
+      ray.length(),
+      surface.y,
+    ).min(LOOK.mistOpacity);
+    // Toward the low sun the mist carries its light; away from it, the shade's cool air.
+    const lit = dot(direction, sun)
+      .max(0)
+      .pow(4)
+      .mul(look.haze.sunScatter * 2)
+      .min(1);
+    localColour = mix(
+      localColour,
+      mix(LOOK.mistColor, color(look.sun.color).mul(1.2), lit),
+      amount,
+    );
+  }
   return vec4(localColour.mul(transmission).add(scattering.mul(transmission.oneMinus())), input.a);
 }
 
@@ -180,7 +208,14 @@ function heightFogAmount(
       float(1).sub(x.mul(0.5)),
       x.negate().exp().oneMinus().div(x),
     );
-    const atStart = startY.sub(term.height).div(-term.scale).min(60).exp().mul(term.density);
+    // `div` then `negate`, not `div(-scale)`: the mist's scale is a uniform node, and `-node` is NaN.
+    const atStart = startY
+      .sub(term.height)
+      .div(term.scale)
+      .negate()
+      .min(60)
+      .exp()
+      .mul(term.density);
     depth = depth.add(atStart.mul(shape).mul(travelled));
   }
   return depth.negate().exp().oneMinus();

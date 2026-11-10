@@ -388,6 +388,7 @@ uuid: string;
 name: string;
 readonly type: string | "BufferGeometry";
 index: BufferAttribute | null;
+indirect: BufferAttribute | null;
 indirectOffset: number | number[];
 morphAttributes: { position?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; normal?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; color?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; };
 morphTargetsRelative: boolean;
@@ -434,6 +435,8 @@ readonly revision: number;
 
   getIndex(): BufferAttribute | null;
 
+  getIndirect(): BufferAttribute | null;
+
   hasAttribute(name: string): boolean;
   /** callback listener: EventListener */
   hasEventListener(type: string, listener: EventListener): boolean;
@@ -459,6 +462,8 @@ readonly revision: number;
   setFromPoints(points: Vector3[] | Vector2[]): this;
 
   setIndex(index: BufferAttribute | number[] | null): this;
+
+  setIndirect(indirect: BufferAttribute | null, indirectOffset?: number | number[]): this;
 
   toNonIndexed(): BufferGeometry;
 
@@ -891,7 +896,11 @@ constructor();
 
   intersectsBox(box: Box3): boolean;
 
+  intersectsObject(object: Object3D): boolean;
+
   intersectsSphere(sphere: Sphere): boolean;
+
+  intersectsSprite(sprite: Sprite): boolean;
 
   set(p0: Plane, p1: Plane, p2: Plane, p3: Plane, p4: Plane, p5: Plane): Frustum;
 

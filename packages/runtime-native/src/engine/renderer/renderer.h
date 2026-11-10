@@ -130,7 +130,8 @@ struct DrawCache {
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
     std::vector<Box3> shadowInstanceBoxes;
     using ShadowBoundsKey = std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t,
-                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix, double>;
+                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix, double,
+                                      std::array<double, 6>>;  // the geometry box that bounds a displaced draw, else zeros
     std::optional<ShadowBoundsKey> shadowBoundsKey;
     std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
     uint64_t shadowBoundsBuilds = 0;
@@ -181,6 +182,9 @@ struct DrawItem {
      *  world space, not by the object's origin (renderers/common/StandardDrawingPipeline.js:236-241), and
      *  a shape whose vertices sit off-centre ranks the other way round. `sortOrigin` wins when it is set. */
     std::optional<std::array<double, 3>> sortCenter;
+    /** The geometry's own boundingBox, local, when it has one: three's stated bounds for a mesh whose vertices a
+     *  positionNode moves (an impostor quad relocated per instance), which a virtual shadow places it by. */
+    std::optional<Box3> geometryBox;
     const shader::StandardMaterial* material = nullptr;
     /** The material's diffuse `map`, if any: the fragment samples it at `uvTransform * vec3(uv, 1)`. */
     const Texture* map = nullptr;
@@ -252,6 +256,10 @@ struct DrawItem {
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;
     uint32_t instanceCount = 1;
+    // three's geometry.setIndirect (PRD-857): the record a GPU kernel fills, read by the draw in place of
+    // instanceCount; the byte offset of this geometry's record in it. Null draws direct.
+    BufferStore* indirect = nullptr;
+    uint64_t indirectOffset = 0;
     bool sprite = false, spriteSizeAttenuation = true;
     std::array<double, 2> spriteCenter{0.5, 0.5};
     double spriteRotation = 0;
@@ -488,6 +496,12 @@ public:
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
+    /** An array render target's storage: `layers` 2D images of the scene colour's size and format, `levels` mips each. */
+    WGPUTexture createLayerArray(uint32_t width, uint32_t height, uint32_t layers, uint32_t levels);
+    /** Copies the scene colour into mip 0 of `layer`, then builds every layer's mip chain when `mipmaps`. */
+    void copySceneColorToLayer(WGPUTexture array, uint32_t layer, uint32_t layers, uint32_t levels, bool mipmaps);
+    /** Mip `level` of `layer` of an array made by createLayerArray, as readProbePixels rows. */
+    GpuStatus readLayerPixels(WGPUTexture array, uint32_t layer, uint32_t level, ReadbackCallback done);
     WGPUTexture sceneColorTexture() const { return sceneColor_; }
     /** The RGBA8 output frame a render() with no present target draws, and blitTo copies to the window. */
     WGPUTextureView outputColorView() const { return colorView_; }
@@ -508,6 +522,13 @@ public:
         for (const auto& [light, shadow] : virtualShadows_)
             if (!shadow.atlas.initialized()) return false;
         return true;
+    }
+    /** Levels every virtual shadow still owes a render (PageAtlas::pendingLevels), or -1 with none. */
+    int virtualShadowPendingLevels() const {
+        if (virtualShadows_.empty()) return -1;
+        int pending = 0;
+        for (const auto& [light, shadow] : virtualShadows_) pending += shadow.atlas.pendingLevels();
+        return pending;
     }
     /** The page plan of light `light`'s virtual shadow, or null. */
     const shadows::PageAtlas* virtualShadowAtlas(std::size_t light) const {
@@ -535,6 +556,8 @@ public:
         const std::vector<Box3>* instances = nullptr;  // FG1: the draw cache's per-instance boxes, one per instance
     };
     [[nodiscard]] const std::map<std::size_t, std::vector<CasterRecord>>& casterRecords() const { return casterRecords_; }
+    /** Morph-target packs this renderer ran: one per geometry revision and target write, not one per frame. */
+    [[nodiscard]] uint64_t morphPackCount() const { return morphPacks_; }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
@@ -926,6 +949,8 @@ public:
     }
     /** Device limit reads so far; a test bounds it. */
     uint32_t deviceLimitReads() const { return deviceLimitReads_; }
+    /** Whether the device has a feature enabled (a feature the device was not asked for answers false). */
+    bool deviceHasFeature(WGPUFeatureName feature) const { return wgpuDeviceHasFeature(device_, feature) != 0; }
     const GeometryCache& geometry() const { return geometry_->cache; }
     const PipelineCache& pipelines() const { return *pipelines_; }
     const PipelineLayoutCache& layouts() const { return *layouts_; }
@@ -1199,7 +1224,8 @@ private:
     bool ensureVirtualShadowMap(std::size_t light);
     void releaseTargets();
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
-    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
+    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8, uint32_t layer = 0,
+                         uint32_t level = 0);
     void releaseOutputGroup();
     // The output pass's groups for its last two binding sets: a post graph texture that ping-pongs between two
     // render targets (an exposure history) finds its group again. outputGroup_ is borrowed from here.
@@ -1536,6 +1562,7 @@ private:
     static constexpr uint64_t kInstanceSlotPlans = 4096;
     /** Counts the plans (FM2): a program's frame slab is rebuilt when this moves past the plan that wrote it. */
     uint64_t planSerial_ = 0;
+    uint64_t morphPacks_ = 0;
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
     Handle uniformBuffer_;

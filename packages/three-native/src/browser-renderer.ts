@@ -27,7 +27,7 @@ import {
   textureCopyArguments,
 } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
-import { syncVirtualShadowLods } from "./shadow-node.js";
+import { reportVirtualShadowFrame, syncVirtualShadowLods } from "./shadow-node.js";
 import { defineSphereReflectionCapture } from "./sphere-reflection-capture.js";
 import { readStorageBytes } from "./storage.js";
 import type { INodeFrame } from "./temp-node.js";
@@ -57,6 +57,7 @@ type HostCall =
   | "_tnw_web_copy_texture"
   | "_tnw_web_read_mrt"
   | "_tnw_web_device_limit"
+  | "_tnw_web_device_feature"
   | "_tnw_web_threads";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
@@ -73,7 +74,16 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 12;
+export const WEB_HOST_ABI = 13;
+
+/**
+ * The device features three reads by name, as `tnw_web_device_feature`'s argument (web_host.cpp): every
+ * other name answers false, as a WebGPU GPUSupportedFeatures without it does.
+ */
+const WEB_DEVICE_FEATURES: Readonly<Record<string, number>> = {
+  "core-features-and-limits": 0,
+  "indirect-first-instance": 1,
+};
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -345,6 +355,11 @@ export function defineWebRenderer(
       trackTimestamp: boolean;
       getTimestampFrames(type: string): number[];
       pipelineCompiles(): number;
+      /**
+       * three's GPUSupportedFeatures.has, which core reads to gate its GPU world scene
+       * (world-gpu-scene.ts `gpuSceneUnsupported`): the device's own answer, asked of the host.
+       */
+      hasFeature(name: string): boolean;
       /** Resolves as three's GPUDevice.lost does once the host loses its device; core reports it (TN_DEVICE_LOST). */
       readonly device: {
         readonly lost: Promise<{ reason: string; message: string }>;
@@ -412,6 +427,10 @@ export function defineWebRenderer(
         trackTimestamp: Boolean(parameters.trackTimestamp ?? true),
         getTimestampFrames: timestampFrames,
         pipelineCompiles: () => module._tnw_web_frame(WEB_FRAME_FIELD.pipelineCompiles),
+        hasFeature(name: string): boolean {
+          const feature = WEB_DEVICE_FEATURES[name];
+          return feature !== undefined && module._tnw_web_device_feature(feature) === 1;
+        },
         device: {
           lost: new Promise((resolve) => {
             this.#deviceLost = resolve;
@@ -653,6 +672,7 @@ export function defineWebRenderer(
         ),
       );
       this.info.frame += 1;
+      if (!this.#overlay) reportVirtualShadowFrame(module);
       if (
         this.#bakingEnvironment !== undefined &&
         module._tnw_web_frame(WEB_FRAME_FIELD.environmentPending) === 0
@@ -826,7 +846,13 @@ export function defineWebRenderer(
      * render() while a render target is set (render-target.ts): draws into the target. `deferred` (an offscreen PassNode)
      * plans the draw and has the engine record it in the frame that samples the target.
      */
-    [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
+    [DRAW_TARGET](
+      target: unknown,
+      root: unknown,
+      camera: unknown,
+      deferred = false,
+      layer = 0,
+    ): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       if (this.#lost) return;
@@ -842,7 +868,8 @@ export function defineWebRenderer(
           handles,
           handles + 12,
           ...this.#clear,
-          (deferred ? 1 : 0) | (this.autoClear ? 0 : 2),
+          // Bits 8 and up: the layer of an array target (tnw_web_render_target).
+          (deferred ? 1 : 0) | (this.autoClear ? 0 : 2) | (layer << 8),
         ),
       );
     }
@@ -1222,12 +1249,12 @@ export function defineWebRenderer(
       ),
     });
   defineRenderTargets(Renderer.prototype, (renderer) => ({
-    draw: (target, root, camera) =>
-      (renderer as { [DRAW_TARGET](t: unknown, r: unknown, c: unknown): void })[DRAW_TARGET](
-        target,
-        root,
-        camera,
-      ),
+    draw: (target, root, camera, layer) =>
+      (
+        renderer as {
+          [DRAW_TARGET](t: unknown, r: unknown, c: unknown, d: boolean, l: number): void;
+        }
+      )[DRAW_TARGET](target, root, camera, false, layer),
     clear: (target, color, depth) =>
       (renderer as { [CLEAR_TARGET](t: unknown, c: boolean, d: boolean): void })[CLEAR_TARGET](
         target,

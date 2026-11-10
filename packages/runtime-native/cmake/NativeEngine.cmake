@@ -139,6 +139,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_camera_turn_records=camera_turn_records
         native_engine_renderer_coplanar_keeps_winner=coplanar_keeps_winner
+        native_engine_renderer_indirect_record=indirect_record
         native_engine_renderer_cull_keeps_main_bundle=cull_keeps_main_bundle
         native_engine_renderer_emissive_target=emissive_target
         native_engine_renderer_indirect_target=indirect_target
@@ -346,6 +347,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_depth_test_off_draws_over_nearer=depth_test_off_draws_over_nearer
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
+        native_engine_array_render_target=array_render_target
         native_engine_target_samples_late_traa_output=target_samples_late_traa_output
         native_engine_float_render_target=float_render_target_keeps_float32
         native_engine_float_render_target_half=float_render_target_falls_back_to_half
@@ -449,6 +451,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 
     tn_native_engine_test(tn-native-engine-renderer-caches-test tests/native-engine/renderer_caches_test.cpp
         native_engine_renderer_geometry_cache=geometry
+        native_engine_renderer_geometry_usage_union=geometry_usage_union
         native_engine_renderer_pipeline_cache=pipelines
         native_engine_renderer_sibling_pipelines=sibling_pipelines
         native_engine_renderer_sibling_texture_change=sibling_texture_change

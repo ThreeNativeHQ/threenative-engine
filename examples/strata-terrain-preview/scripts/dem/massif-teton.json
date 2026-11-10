@@ -1,0 +1,27 @@
+{
+  "site": "Grand Teton and the Cathedral Group above Jackson Hole, Wyoming",
+  "size": 3600,
+  "resolution": 901,
+  "spacing": 4,
+  "encoding": "int16-le-decimetres-relative-to-elevationOffset",
+  "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
+  "crs": "EPSG:26912",
+  "verticalCRS": "NAVD88 metres",
+  "center": [515911, 4843626],
+  "bbox": [514111, 4841826, 517711, 4845426],
+  "bboxWGS84": [-110.82479011757982, 43.72925500109633, -110.77997215136067, 43.76174619193746],
+  "elevationOffset": 2297,
+  "relativeElevationRange": [0, 1900.2],
+  "lidarTiles": [
+    "USGS 1 Meter 12 x51y485 WY_GrandTetonNP_D22",
+    "USGS 1 Meter 12 x51y485 WY_North_Converse_2020_D20",
+    "USGS one meter x51y485 WY GrandTetonElkRefuge 2014"
+  ],
+  "downloadURL": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+  "accessed": "2026-11-10",
+  "filter": "3DEP dynamic service resampled bilinearly to 2 m pixels, then a 2x2 box at each 4 m vertex; rounded to 0.1 m; no vertical exaggeration",
+  "sha256": "53ce05bc6f18f9bc8066bcd0762bb392fa748cec71d470a07d7f3ba46bd5240a",
+  "citation": "U.S. Geological Survey, 3D Elevation Program (3DEP) dynamic elevation service, 1 meter lidar DEMs. Cropped, filtered, translated vertically and quantized by this example; not endorsed by USGS.",
+  "license": "U.S. Government public domain",
+  "licenseURL": "https://www.usgs.gov/3d-elevation-program"
+}

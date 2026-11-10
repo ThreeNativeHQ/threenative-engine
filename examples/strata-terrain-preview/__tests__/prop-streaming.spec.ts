@@ -968,10 +968,12 @@ function fallbackDigest(parts: ReturnType<typeof buildPropVariants>, species: st
   return hash.digest("hex");
 }
 
+// The spruce digests were re-pinned when the procedural spruce took the Fab spruce's crown colour and
+// trunk (dd5147cda, 422dc3f17); the sapling digests are the originals.
 it("keeps all original fallback near buffers and seeded variant sequence", () => {
   const parts = buildPropVariants();
   expect(fallbackDigest(parts, "spruce")).toBe(
-    "3f82f5b822c63e279fda87b1a375ec62d8bf370c443fe5202e39a7de996ced87",
+    "c67e760a8f4acb94e3f7af73363e854b25fa9b6d1f0dd8f644da82921f0f9e4d",
   );
   expect(fallbackDigest(parts, "sapling")).toBe(
     "e80064530b5b247433945b04337c621fbc6d9e415478a3b2b64566328801697c",
@@ -1028,7 +1030,7 @@ it("provides deterministic reduced fallback crowns with unchanged trunks and sca
   );
   assert.equal(
     fallbackDigest(parts, "spruce", 1),
-    "2e3a43820448d03ee349b90d1dda31a1af11bc4a8ccf3dae682db67fd8716c26",
+    "f3471c64bdbd7f7ff8d4cfaf6f085aad758e3e9e96ed30ec94e7aec2d0e46be4",
   );
 });
 

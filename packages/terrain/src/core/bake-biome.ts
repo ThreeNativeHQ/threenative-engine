@@ -149,7 +149,16 @@ export function withImpostorDistances(
  * request is checked here, not trusted — and the package's own placement runs are checked against
  * the state they came from, so a bake can never ship a cell list that lost instances.
  * @requires npm i -D @threenative/terrain
+ * An agent does not write this call to get a world: the `threenative-terrain` MCP tool
+ * `terrain_generate` takes the request in words ("a pine forest under snowy mountains with a river",
+ * "a volcanic island", or `ground: { location }` for a real place) and cooks the world.glb,
+ * recipe.json and world.json a game loads with `ctx.assets.model`.
  * @situation bake one biome's world package from an evaluated recipe and a biome file
+ * @situation generate terrain with mountains, hills, a river, a lake or an island from a request in words
+ * @situation generate a landscape or open world map for a game
+ * @situation procedural terrain for a level: a volcanic island, a mountain valley or a coast
+ * @situation make a canyon, a volcano, a fjord, a desert, a tundra or a forest world
+ * @situation cook the real terrain of a place on Earth from its latitude and longitude
  * @constraint every instance's asset must be in `assets`; every instance must land in exactly one cell run
  * @example const baked = bakeBiome({ state: terrain.evaluate(), spec: validateBiome(json, "savanna"), assets });
  */

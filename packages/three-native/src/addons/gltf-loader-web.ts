@@ -15,10 +15,12 @@ import { __tnLoadGltf } from "three";
 
 interface IEngineModel {
   readonly scene: object;
+  /** Every scene in file order: a model can keep each LOD level as a named scene (`fir_lod1`). */
+  readonly scenes: readonly object[];
   readonly animations: readonly object[];
 }
 
-/** GLTFLoader's result: one default scene, its clips, and the members three's callers read. */
+/** GLTFLoader's result: the default scene, every scene, its clips, and the members three's callers read. */
 export interface IGltfResult {
   readonly scene: object;
   readonly scenes: readonly object[];
@@ -362,7 +364,7 @@ export class GLTFLoader {
         const model = await load(bytes, files);
         result = {
           scene: model.scene,
-          scenes: [model.scene],
+          scenes: [...model.scenes],
           animations: [...model.animations],
           cameras: [],
           asset: { version: "2.0" },

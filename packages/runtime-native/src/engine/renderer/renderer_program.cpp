@@ -312,11 +312,14 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
             const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
             throw std::runtime_error("TN_NATIVE_SHADER_INVALID: masked shadow depth program: " + (errors.empty() ? std::string("no reason") : errors.front()));
         }
-        // The depth fragment binds the diffuse map and the node's uniforms only: a texture, storage or sampler an
-        // alphaTestNode reads would stay unbound and cut against zero, so the caster fails closed.
+        // The depth fragment binds the diffuse map, the node's own textures (texture(object), an impostor's atlas) and
+        // its uniforms: a storage or any other texture an alphaTestNode reads would stay unbound and cut against zero,
+        // so the caster fails closed.
         for (const auto& binding : fragment.bindings)
-            if (binding.kind != shader::BindingKind::Uniform && binding.name != "t_map" && binding.name != "smp_map")
-                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaTestNode reads " + binding.name + "; a shadow caster's cutoff supports uniforms, uv and the diffuse map only");
+            if (binding.kind != shader::BindingKind::Uniform && binding.name != "t_map" && binding.name != "smp_map" &&
+                !graphTextureBinding(binding.kind == shader::BindingKind::Sampler && binding.name.rfind("smp_", 0) == 0
+                                         ? "t_" + binding.name.substr(4) : binding.name))
+                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaTestNode reads " + binding.name + "; a shadow caster's cutoff supports uniforms, uv, the diffuse map and the node's own textures only");
         return built(std::move(vertex), std::move(fragment));
     }
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.

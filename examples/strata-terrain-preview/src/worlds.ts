@@ -3,28 +3,25 @@ import type { IBiomeSpec } from "@threenative/terrain";
 import { fetchBakedFile } from "./render/bakedFile.js";
 import type { WorldName } from "./render/biomes.js";
 import type { IBakedWorld } from "./render/terrain.js";
+import { WORLD_NAMES } from "./render/worldNames.js";
 
 /**
- * Which key selects which world, in the order the number keys count them.
+ * Which key selects which world: the number keys, in `WORLD_NAMES` order.
  *
  * One list owns the selector: the input map binds these keys, the frame loop reads them, and
  * `__tests__/world-keys.spec.ts` pins them. A world's spawn, camera framing, bake and look rules come
- * from its biome row; its key is the game's own choice, because a biome row describes a place, not a
- * key binding.
+ * from its biome row; its key is its place in the world list, so a new world adds no code here.
  */
-export const WORLD_SELECT = {
-  forest: { keys: ["Digit1"] },
-  coastal: { keys: ["Digit2"] },
-  alpine: { keys: ["Digit3"] },
-  desert: { keys: ["Digit4"] },
-  tundra: { keys: ["Digit5"] },
-} as const satisfies Readonly<Record<WorldName, { readonly keys: readonly string[] }>>;
+const select = {} as Record<WorldName, { readonly keys: readonly string[] }>;
+for (const [index, world] of WORLD_NAMES.entries())
+  select[world] = { keys: [`Digit${String(index + 1)}`] };
+export const WORLD_SELECT: Readonly<typeof select> = select;
 
 /** The world the game opens in. */
 export const START_WORLD: WorldName = "forest";
 
 /** Every world this game offers, in the order the number keys reach them. */
-export const WORLD_ORDER = Object.keys(WORLD_SELECT) as readonly WorldName[];
+export const WORLD_ORDER: readonly WorldName[] = WORLD_NAMES;
 
 /**
  * The baked terrain arrays, fetched rather than imported: as JSON modules the 7–12 MB files cost

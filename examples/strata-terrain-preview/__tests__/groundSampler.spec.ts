@@ -1,8 +1,7 @@
 import { createRequire } from "node:module";
-import { Heightfield } from "@threenative/core/world";
+import { Heightfield, surfaceSampler } from "@threenative/core/world";
 import { Mesh, Raycaster, Vector3 } from "three";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createGroundSampler } from "../src/render/groundSampler.js";
 
 /**
  * The drawn mesh is the reference: every case compares the sampler with a stock Three `Raycaster`
@@ -20,7 +19,7 @@ function sampleCase(heights: number[], size: number, rows: number, columns: numb
   });
   const mesh = new Mesh(field.toGeometry());
   mesh.updateMatrixWorld(true);
-  const sampler = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
+  const sampler = surfaceSampler(field, mesh.matrixWorld);
   const ray = (x: number, z: number): number | null => {
     const hit = new Raycaster(new Vector3(x, 1000, z), new Vector3(0, -1, 0)).intersectObject(
       mesh,
@@ -206,7 +205,7 @@ describe("exact ground sampler", () => {
     const { field, mesh } = sampleCase([0, 1, 1, 0], 2, 2, 2);
     mesh.position.set(12, 3, -7);
     mesh.updateMatrixWorld(true);
-    const moved = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
+    const moved = surfaceSampler(field, mesh.matrixWorld);
     for (const [lx, lz] of [
       [-0.25, -0.25],
       [0.25, 0.25],
@@ -271,7 +270,7 @@ describe("exact ground sampler", () => {
     expect(sampler(0, -2.5)).toBeNull();
     mesh.rotation.y = Math.PI / 2;
     mesh.updateMatrixWorld(true);
-    const rotated = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
+    const rotated = surfaceSampler(field, mesh.matrixWorld);
     expect(rotated(0, 0)).toBeNull();
   });
 });

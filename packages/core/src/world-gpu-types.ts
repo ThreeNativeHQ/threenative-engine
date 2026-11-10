@@ -1,5 +1,4 @@
-import type { BufferAttribute } from "three";
-import { struct } from "three/tsl";
+import type { BufferAttribute, Matrix4 } from "three";
 import type {
   IndirectStorageBufferAttribute,
   ReadbackBuffer,
@@ -7,6 +6,33 @@ import type {
   StorageInstancedBufferAttribute,
 } from "three/webgpu";
 import type { IKernelOcclusion } from "./render/depth-pyramid.js";
+
+/**
+ * The six frustum planes of `matrix` (projection times view) into `out` as `[nx, ny, nz, d]` rows,
+ * the planes three's `Frustum.setFromProjectionMatrix` writes with its default (WebGL) near plane.
+ * Read straight from the elements, not through a `Frustum`: the owned engine's facade has no
+ * `planes` array (`planes.entries()` threw and stopped the render loop, PRD-857), and one
+ * `elements` read replaces 24 bridged getters a frame.
+ */
+export function frustumPlanes(matrix: Matrix4, out: Float32Array): void {
+  const m = matrix.elements;
+  // [column, sign]: left, right, bottom, top, far, near; each plane is row 3 plus sign times row k.
+  const rows = [0, -1, 0, 1, 1, 1, 1, -1, 2, -1, 2, 1] as const;
+  for (let plane = 0; plane < 6; plane += 1) {
+    const k = rows[plane * 2] as number;
+    const sign = rows[plane * 2 + 1] as number;
+    const x = (m[3] as number) + sign * (m[k] as number);
+    const y = (m[7] as number) + sign * (m[4 + k] as number);
+    const z = (m[11] as number) + sign * (m[8 + k] as number);
+    const w = (m[15] as number) + sign * (m[12 + k] as number);
+    const inverse = 1 / Math.hypot(x, y, z);
+    const at = plane * 4;
+    out[at] = x * inverse;
+    out[at + 1] = y * inverse;
+    out[at + 2] = z * inverse;
+    out[at + 3] = w * inverse;
+  }
+}
 
 /** `DrawIndexedIndirect`: indexCount, instanceCount, firstIndex, baseVertex, firstInstance. */
 export const DRAW_ARGS_WORDS = 5;
@@ -54,9 +80,14 @@ export const SLOT_NONE = -1;
  * together, once, and every buffer is allocated from this table and nowhere else.
  */
 export const STORAGE_WORDS = {
-  /** `mat4` + `centre` (vec4) + `info` (vec4), so one placement is 96 bytes and one stride. */
-  // quality-allow: the object key is the WGSL type name the kernel reads, so it keeps that spelling.
-  // biome-ignore lint/style/useNamingConvention: the key is the WGSL type, spelled as the kernel declares it.
+  /**
+   * `mat4` + `centre` (vec4) + `info` (vec4), so one placement is 96 bytes and one stride. Nothing
+   * is allocated from this key any more: the kernels read one placement as {@link PLACEMENT_ROWS}
+   * consecutive `vec4` rows, and the source buffer is allocated in those rows. The key stays as the
+   * name of the record's whole stride.
+   */
+  // quality-allow: the object key names one placement's whole stride, so it keeps that spelling.
+  // biome-ignore lint/style/useNamingConvention: the key names one placement's whole stride, spelled as its record.
   GpuPlacement: PLACEMENT_WORDS,
   /** `mat4`, one per key: the part's own offset inside the model, the same one the CPU composes. */
   mat4: LOCAL_WORDS,
@@ -107,14 +138,11 @@ export const VALIDATE_EVERY = 30;
 export const TALLY_EVERY = 30;
 
 /**
- * A `mat4` world matrix, the placement's bounding-sphere centre and radius, and the asset slot whose
- * gates pick its level. One stride, so the CPU's `Float32Array` is the GPU's storage buffer with no
- * repacking and no type punning: the radius and the slot are small and exactly representable.
+ * How many `vec4` rows one placement record is: the world matrix's four columns, then `centre`, then
+ * `info`. The kernels read the source buffer as these rows rather than as one struct element, which
+ * the owned engine refuses, and the 24 words are the same words either way.
  */
-export const PlacementStruct = struct(
-  { matrix: "mat4", centre: "vec4", info: "vec4" },
-  "GpuPlacement",
-);
+export const PLACEMENT_ROWS = PLACEMENT_WORDS / VEC4_WORDS;
 
 /** One resident placement as the source buffer holds it. */
 export interface IGpuPlacement {
@@ -361,7 +389,7 @@ export const STORAGE_PLAIN: Record<Exclude<BufferName, "args" | "drawn">, Storag
   keys: "vec4",
   levels: "vec4",
   locals: "mat4",
-  source: "GpuPlacement",
+  source: "vec4",
 };
 
 /** Resident placements the source buffer is sized to hold before the first reallocation. */

@@ -4,7 +4,6 @@ import {
   type Camera,
   type DirectionalLight,
   FrontSide,
-  Frustum,
   type InstancedMesh,
   type Material,
   Matrix4,
@@ -56,6 +55,7 @@ import {
 import { readLaunchFlag } from "../debug.js";
 import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
+import { frustumPlanes } from "../world-gpu-types.js";
 import { isLeafReceiver } from "./soft-shadow.js";
 import {
   COST_SMOOTHING,
@@ -197,7 +197,6 @@ const _forward = new Vector3();
 /** A level's own light frustum, read once per level render and handed to its dispatch. */
 const _shadowProjection = new Matrix4();
 const _oldWorld = new Matrix4();
-const _shadowFrustum = new Frustum();
 const _shadowPlanes = new Float32Array(24);
 /** The depth row a level's map was drawn under, and the one this frame proposes: uploaded float32. */
 const _drawnDepth = new Float32Array(4);
@@ -215,8 +214,11 @@ interface IRenderingShadowNode {
 
 /** The slot the native bridge fills with its command sink on a core shadow node. */
 const COMMAND_KEY = Symbol.for("threenative.virtualShadowCommand");
+/** The owned engine runs the clipmap and never calls updateBefore: it answers `settled` here each world render. */
+const ENGINE_SETTLED_KEY = Symbol.for("threenative.virtualShadowSettled");
 interface ICommandSlot {
   [COMMAND_KEY]?: (value: object) => void;
+  [ENGINE_SETTLED_KEY]?: boolean;
 }
 
 /**
@@ -304,6 +306,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** Every map is present and no requested/delayed invalidation remains. */
   get settled(): boolean {
+    const engine = (this as ICommandSlot)[ENGINE_SETTLED_KEY];
+    if (engine !== undefined) return engine;
     return (
       this.#initialised &&
       this.#levels.length > 0 &&
@@ -1705,15 +1709,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       shadow.camera.projectionMatrix,
       shadow.camera.matrixWorldInverse,
     );
-    _shadowFrustum.setFromProjectionMatrix(_shadowProjection);
     const planes = _shadowPlanes;
-    for (const [at, plane] of _shadowFrustum.planes.entries()) {
-      const offset = at * 4;
-      planes[offset] = plane.normal.x;
-      planes[offset + 1] = plane.normal.y;
-      planes[offset + 2] = plane.normal.z;
-      planes[offset + 3] = plane.constant;
-    }
+    frustumPlanes(_shadowProjection, planes);
     // Every compute leaves the one node frame every node shares with its fields at their bare
     // defaults — `scene` among them, which `Nodes.getNodeFrame()` sets with no arguments
     // (three.webgpu.js:56215, reached from `Renderer.compute` at 62235) and nothing puts back; the

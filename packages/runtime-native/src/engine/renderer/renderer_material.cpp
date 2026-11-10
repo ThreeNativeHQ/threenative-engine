@@ -187,6 +187,34 @@ void Renderer::copyDepthToTexture(const Texture& texture) {
     wgpuCommandEncoderRelease(encoder);
 }
 
+WGPUTexture Renderer::createLayerArray(uint32_t width, uint32_t height, uint32_t layers, uint32_t levels) {
+    WGPUTextureDescriptor desc = {};
+    desc.dimension = WGPUTextureDimension_2D;
+    desc.size = {width, height, layers};
+    desc.format = sceneFormat_;
+    // RenderAttachment: generateMipmaps draws each level from the one above.
+    desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc |
+                 WGPUTextureUsage_RenderAttachment;
+    desc.mipLevelCount = levels;
+    desc.sampleCount = 1;
+    return wgpuDeviceCreateTexture(device_, &desc);
+}
+
+void Renderer::copySceneColorToLayer(WGPUTexture array, uint32_t layer, uint32_t layers, uint32_t levels, bool mipmaps) {
+    WGPUImageCopyTexture_Compat source{}, target{};
+    source.texture = sceneColor_; source.aspect = WGPUTextureAspect_All;
+    target.texture = array; target.aspect = WGPUTextureAspect_All; target.origin = {0, 0, layer};
+    const WGPUExtent3D extent{wgpuTextureGetWidth(sceneColor_), wgpuTextureGetHeight(sceneColor_), 1};
+    const auto encoder = wgpuDeviceCreateCommandEncoder(device_, nullptr);
+    wgpuCommandEncoderCopyTextureToTexture(encoder, &source, &target, &extent);
+    submit(wgpuCommandEncoderFinish(encoder, nullptr));
+    wgpuCommandEncoderRelease(encoder);
+    if (!mipmaps || levels < 2) return;
+    FrameGpuTimer::Scope timerScope(nullptr);  // as initTexture: mip passes are not the frame's GPU time
+    generateMipmaps(array, sceneFormat_, levels, layers);
+    flushMipmaps();
+}
+
 void Renderer::initTexture(const Texture& texture) {
     // Mip passes run between frames (a Midway load showed 1199 render passes in one gap). Timed, they wait
     // in the stream, are summed into the next frame's GPU ms, and a few bursts fill it before a frame clears it.
@@ -442,13 +470,15 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
                 sampled.view = view;
                 sampled.key.wrapS = texture.wrapS; sampled.key.wrapT = texture.wrapT;
                 sampled.key.magFilter = texture.magFilter; sampled.key.minFilter = texture.minFilter;
-                WGPUSamplerDescriptor sampler = {};  // one level: the mip filter never applies
+                WGPUSamplerDescriptor sampler = {};  // only an array target has a mip chain for the mip filter
                 sampler.addressModeU = addressMode(texture.wrapS);
                 sampler.addressModeV = addressMode(texture.wrapT);
                 sampler.addressModeW = WGPUAddressMode_ClampToEdge;
                 sampler.magFilter = filterMode(texture.magFilter);
                 sampler.minFilter = filterMode(texture.minFilter);
-                sampler.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+                sampler.mipmapFilter = texture.minFilter == static_cast<uint16_t>(TextureFilter::NearestMipmapLinear) ||
+                                               texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
+                                           ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
                 sampler.maxAnisotropy = 1;
                 sampler.lodMaxClamp = 32;
                 sampled.sampler = samplerFor(sampler);

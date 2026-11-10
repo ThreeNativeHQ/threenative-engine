@@ -61,7 +61,7 @@ export const { storageTexture, textureStore } = defineStorageTextures(globalThis
 
 // three's storage buffers over engine BufferAttributes (shared with the Wasm back end): `storage`,
 // `instancedArray` and `attributeArray` build the engine's storage node, whose kernels `renderer.compute` runs.
-export const { storage, instancedArray, attributeArray, StorageBufferAttribute, StorageInstancedBufferAttribute } =
+export const { storage, instancedArray, attributeArray, StorageBufferAttribute, StorageInstancedBufferAttribute, IndirectStorageBufferAttribute } =
   defineStorage(globalThis.tsl, BufferAttribute);
 
 // three's pass(), mrt() and MRT slots over the player's one scene pass (shared with the Wasm back

@@ -7,6 +7,7 @@ const loadGltf = vi.hoisted(() =>
   vi.fn((_bytes: Uint8Array, _files: ReadonlyMap<string, Uint8Array>) => ({
     animations: [],
     scene: { name: "scene" },
+    scenes: [{ name: "scene" }],
   })),
 );
 vi.mock("three", () => ({ __tnLoadGltf: loadGltf }));
@@ -41,6 +42,22 @@ const MODEL = glb({
 afterEach(() => {
   vi.unstubAllGlobals();
   loadGltf.mockClear();
+});
+
+describe("the web GLTFLoader's scenes", () => {
+  // PRD-762: each LOD level of a cooked model is a named scene; core finds `fir_lod1` in `scenes`.
+  it("returns every scene the engine loaded, the default scene among them", async () => {
+    const scene = { name: "fir" };
+    const levels = [scene, { name: "fir_lod1" }, { name: "fir_lod2" }];
+    loadGltf.mockReturnValueOnce({ animations: [], scene, scenes: levels });
+    const gltf = await new GLTFLoader().parseAsync(glb({ asset: { version: "2.0" } }), "assets/");
+    expect(gltf.scenes.map((s) => (s as { name: string }).name)).toEqual([
+      "fir",
+      "fir_lod1",
+      "fir_lod2",
+    ]);
+    expect(gltf.scenes).toContain(gltf.scene);
+  });
 });
 
 describe("the web GLTFLoader's image files", () => {

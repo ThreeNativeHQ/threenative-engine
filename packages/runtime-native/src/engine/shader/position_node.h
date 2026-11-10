@@ -14,19 +14,16 @@ namespace tn::engine::shader {
 
 class Program;
 
-/** A material's custom MRT output: the colour node written to the scene pass's target named `name` (three's mrt()). */
+/**
+ * A material's MRT output (three's mrt()): the colour node written to the target named `name`, a scene pass's custom
+ * target or a render target's texture. The scene pass draws its own output, depth, velocity, normal and surface targets,
+ * so a slot under one of those names writes only a render target's texture of that name (render_database resolveMrt).
+ */
 struct MrtOutput {
     std::string name;
     graph::Node node;
     bool operator==(const MrtOutput&) const = default;
 };
-
-/** The slot names the engine's own scene pass owns: its colour, depth, velocity and named surface targets. A custom
- *  MRT slot keeps its own name, as pass-node.ts refuses the same reserved names on the game side. */
-inline bool engineTargetName(std::string_view name) {
-    return name == "output" || name == "depth" || name == "velocity" || name == "normal" ||
-           name == "metalness" || name == "roughness" || name == "diffuseColor" || name == "emissive";
-}
 
 /** One graph root per MaterialNodes::pointers(), for the arrays that hold them (the draw's source cache). */
 inline constexpr std::size_t kMaterialGraphRoots = 18;

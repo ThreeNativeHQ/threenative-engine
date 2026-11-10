@@ -6,6 +6,7 @@ import { bindUpstreamExports } from "../src/browser-entry.js";
 import {
   ShadowBaseNode,
   detachVirtualShadow,
+  reportVirtualShadowFrame,
   shadowFilterOptions,
   syncVirtualShadowLods,
   virtualShadowOptions,
@@ -127,6 +128,17 @@ it("constructs core's automatic-depth node and installs through the facade sette
     "shadowNode",
     { command: "untrack", id: caster.id },
   ]);
+  // The engine runs the clipmap, so core's updateBefore never counts a frame: each world render reports one, with the
+  // levels still owed as `deferred` (web frame field 87). -1 is no virtual shadow, and moves nothing (PRD-762).
+  reportVirtualShadowFrame({ _tnw_web_frame: () => 2 });
+  expect(node.stats).toMatchObject({ frame: 1, held: 0, deferred: 2 });
+  // Core's startup gate waits on `settled` once a frame is counted: the engine answers it too.
+  expect(node.settled).toBe(false);
+  reportVirtualShadowFrame({ _tnw_web_frame: () => 0 });
+  expect(node.stats).toMatchObject({ frame: 2, held: 0, deferred: 0 });
+  expect(node.settled).toBe(true);
+  reportVirtualShadowFrame({ _tnw_web_frame: () => -1 });
+  expect(node.stats.frame).toBe(2);
   node.invalidateAll();
   expect(writes.at(-1)).toEqual([expect.any(Object), "shadowNode", { command: "invalidateAll" }]);
   node.invalidateRegion({ min: { x: -1, y: 0, z: -1 }, max: { x: 1, y: 2, z: 1 } });

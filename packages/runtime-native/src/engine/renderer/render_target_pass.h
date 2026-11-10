@@ -32,10 +32,14 @@ class Object3D;
  * texture's name; `primary` is false for those attachment draws (their unnamed outputs write zero).
  *
  * `autoClear` false (three's renderer.autoClear) draws over the target's colour and depth instead of clearing them first.
+ *
+ * An array target (`target.layers` > 1) draws now, never deferred, and its colour is copied into `layer` of the array a
+ * material samples. When the texture's `generateMipmaps` is on, every layer's mip chain is built after that copy, as
+ * three's finishRender does once the last layer is drawn.
  */
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
                                         std::array<double, 4> clear, bool shadowMap, bool deferred = false,
-                                        bool primary = true, bool autoClear = true);
+                                        bool primary = true, bool autoClear = true, uint32_t layer = 0);
 
 /** three's renderer.clear(color, depth) while `target` is set: clears its colour to `clear` and/or its depth, every MRT texture. */
 void clearRenderTarget(Renderer& main, RenderTarget& target, std::array<double, 4> clear, bool color, bool depth);
@@ -49,9 +53,10 @@ WGPUTexture renderTargetTexture(Renderer& main, RenderTarget& target);
  * The region [x, y, width, height] of the target's last render, as tightly packed rows (top row first)
  * in the target's own format: RGBA32Float (16 bytes a pixel) for a FloatType target, else RGBA16Float
  * (8 bytes), delivered from poll(). OutOfRange for a region outside the
- * target, InvalidHandle for a target that never rendered.
+ * target, InvalidHandle for a target that never rendered. An array target reads mip `level` of `layer` (three's
+ * readRenderTargetPixelsAsync faceIndex); a plain target has layer and level 0 only.
  */
 GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
-                           ReadbackCallback done);
+                           ReadbackCallback done, uint32_t layer = 0, uint32_t level = 0);
 
 }  // namespace tn::engine

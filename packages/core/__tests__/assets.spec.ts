@@ -1987,3 +1987,25 @@ describe("IAssetLoader model decoders", () => {
     expect(dracoSpy).toHaveBeenCalledWith("/assets/draco/");
   });
 });
+
+describe("fetchAsset", () => {
+  it("walks the resolved urls past a 404 and a network error, and names every miss", async () => {
+    const { fetchAsset } = await import("../src/assets.js");
+    const original = globalThis.fetch;
+    const served: Record<string, number> = { "/b/x.bin": 404, "/c/x.bin": 200 };
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/a/x.bin") throw new Error("offline");
+      return new Response("ok", { status: served[url] ?? 404 });
+    }) as typeof fetch;
+    try {
+      const assets = { resolve: async () => ["/a/x.bin", "/b/x.bin", "/c/x.bin"] };
+      expect(await (await fetchAsset(assets, "x.bin")).text()).toBe("ok");
+      const missing = { resolve: async () => ["/a/x.bin", "/b/x.bin"] };
+      await expect(fetchAsset(missing, "x.bin")).rejects.toThrow(
+        "TN_ASSET_NOT_SERVED: 'x.bin' is not served by any of 2 candidate url(s): /a/x.bin (offline); /b/x.bin (status 404).",
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

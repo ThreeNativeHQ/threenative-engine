@@ -43,7 +43,6 @@ import {
   type BufferAttribute,
   type Camera,
   type DepthTexture,
-  Frustum,
   Matrix4,
   PerspectiveCamera,
   Vector3,
@@ -103,8 +102,8 @@ export type {
 export {
   DRAW_ARGS_BYTES,
   NO_LOCAL,
+  PLACEMENT_ROWS,
   PLACEMENT_WORDS,
-  PlacementStruct,
   SLOT_NONE,
   SOURCE_FLOOR,
   STORAGE_PLAIN,
@@ -165,8 +164,8 @@ import {
   type IValidationReadbacks,
   type IValidationSnapshot,
   NO_LOCAL,
+  PLACEMENT_ROWS,
   PLACEMENT_WORDS,
-  PlacementStruct,
   SLOT_NONE,
   SOURCE_FLOOR,
   STORAGE_PLAIN,
@@ -176,9 +175,11 @@ import {
   VEC4_WORDS,
   addRange,
   argsWords,
+  frustumPlanes,
   growBuffer,
   storageAttribute,
 } from "./world-gpu-types.js";
+import { localClip, localPoint } from "./world-root-frame.js";
 
 /**
  * The GPU-driven main pass of a streamed world: one compute dispatch culls and LOD-selects every
@@ -258,23 +259,18 @@ export function gpuSceneUnsupported(renderer: IRendererLike): string {
   return "";
 }
 
-/** The six planes of a camera's frustum, as the kernel reads them, into `out`. */
-function cameraPlanes(camera: Camera, out: Float32Array): void {
-  _cullFrustum.setFromProjectionMatrix(
-    _proj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
-  );
-  for (const [index, plane] of _cullFrustum.planes.entries()) {
-    const at = index * 4;
-    out[at] = plane.normal.x;
-    out[at + 1] = plane.normal.y;
-    out[at + 2] = plane.normal.z;
-    out[at + 3] = plane.constant;
-  }
+/**
+ * The six planes of a camera's frustum, as the kernel reads them, into `out`.
+ *
+ * The kernel tests them against placements, which are in the root's local frame, so the planes are
+ * taken in that frame too: a game that moves its world root culls the camera that is actually over
+ * the ring rather than the one it would be if the ring were still at the origin. See `localClip`.
+ */
+function cameraPlanes(camera: Camera, out: Float32Array, root: Matrix4 | undefined): void {
+  frustumPlanes(localClip(_proj, camera, root), out);
 }
 
 const _proj = new Matrix4();
-const _cullFrustum = new Frustum();
-const _eye = new Vector3();
 
 /** Camera travel in one dispatch that the occlusion test reads as a cut rather than a turn. */
 const OCCLUSION_CUT_METRES = 2;
@@ -858,10 +854,28 @@ export class WorldGpuScene {
    * One frame of the main pass: zero every key's instance count, then cull and LOD-select every
    * resident placement into the shared drawn buffer. Nothing else is written.
    */
-  dispatch(renderer: IRendererLike, camera: Camera): void {
+  /**
+   * The LOD eye `WorldCells` grades its CPU path from (`updateLodEye`): the camera, pulled to within
+   * the first gate of `follow`. Levels and `maxDistance` then read one eye on both paths (PRD-857).
+   * Unset, the dispatch measures from the camera.
+   */
+  lodEye(x: number, y: number, z: number): void {
+    this.#lodEye.set(x, y, z);
+    this.#lodEyeSet = true;
+  }
+
+  readonly #lodEye = new Vector3();
+  #lodEyeSet = false;
+
+  /**
+   * `root` is the world's own `matrixWorld`: the frame its placements are recorded in, which is the
+   * frame the planes and the eye have to be taken in. A harness driving the scene on its own leaves
+   * it out, and then the records are read in world space, as they were before the root could move.
+   */
+  dispatch(renderer: IRendererLike, camera: Camera, root?: Matrix4): void {
     if (this.#on === false) return;
     if (this.#buffers === undefined) return;
-    cameraPlanes(camera, this.#planes);
+    cameraPlanes(camera, this.#planes, root);
     for (const [index, plane] of this.#planeVectors.entries()) {
       const at = index * 4;
       plane.set(
@@ -871,8 +885,8 @@ export class WorldGpuScene {
         this.#planes[at + 3] as number,
       );
     }
-    _eye.setFromMatrixPosition(camera.matrixWorld);
-    this.#eye.value.copy(_eye);
+    if (this.#lodEyeSet) this.#eye.value.copy(this.#lodEye);
+    else localPoint(this.#eye.value.setFromMatrixPosition(camera.matrixWorld), root);
     // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
     // one thread per key.
     if (this.#readback.measuring) this.#readback.measure(renderer, camera);
@@ -1016,7 +1030,10 @@ export class WorldGpuScene {
       keys: storageAttribute(StorageBufferAttribute, "vec4", 1),
       levels: storageAttribute(StorageBufferAttribute, "vec4", 1),
       locals: storageAttribute(StorageBufferAttribute, "mat4", 1),
-      source: storageAttribute(StorageBufferAttribute, "GpuPlacement", SOURCE_FLOOR),
+      // Six `vec4` rows per placement, so the count is the rows the kernels index by rather than
+      // the placements: one placement record is 24 words either way, and the CPU's `Float32Array`
+      // stays the GPU's buffer with no repacking.
+      source: storageAttribute(StorageBufferAttribute, "vec4", SOURCE_FLOOR * PLACEMENT_ROWS),
     };
     this.#version += 1;
     return this.#buffers;
@@ -1061,8 +1078,11 @@ export class WorldGpuScene {
   }
 
   #reserve(count: number): boolean {
-    // A ring-sized floor, so the first few placements do not each pay a reallocation.
-    return this.#growOf("source", Math.max(SOURCE_FLOOR, count));
+    // A ring-sized floor, so the first few placements do not each pay a reallocation. The count is
+    // `vec4` rows, the type the kernels bind the source buffer as: `PLACEMENT_ROWS` of them hold
+    // one placement, and the buffer stays a whole number of placements because the floor and every
+    // doubling of it are whole ones.
+    return this.#growOf("source", Math.max(SOURCE_FLOOR, count) * PLACEMENT_ROWS);
   }
 
   #writePlacement(index: number): void {

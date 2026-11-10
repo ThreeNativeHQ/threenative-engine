@@ -233,6 +233,13 @@ inline std::atomic<uint64_t>& materialRefreshCount() {
     return count;
 }
 
+// Vertex passes RenderDatabase::sortCenterOf ran to key a sphere-less geometry: one per geometry revision and
+// position write, however often its draw's material refreshes.
+inline std::atomic<uint64_t>& sortCenterPassCount() {
+    static std::atomic<uint64_t> count{0};
+    return count;
+}
+
 inline std::atomic<uint64_t>& materialNodeCopyCount() {
     static std::atomic<uint64_t> count{0};
     return count;

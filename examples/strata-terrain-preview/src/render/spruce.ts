@@ -34,6 +34,13 @@ export const SPRUCE = {
   /** Bare trunk, as a share of total height: a spruce's crown starts about a fifth of the way up. */
   bareTrunk: 0.22,
   /**
+   * The bare trunk of a tree grown in a closed stand. Its lower whorls die in their neighbours' shade
+   * and fall, so a mature forest spruce shows its trunk to about two fifths of its height; the Fab
+   * spruce it stands in for does (PRD-870 judge, 2026-11-10: "open crowns with visible trunks").
+   * A sapling grows in the light at the stand's edge and keeps `bareTrunk`.
+   */
+  standBareTrunk: 0.4,
+  /**
    * Whorls up the trunk. This is the number that decides whether a spruce is a tree or a pole with
    * a hat on: at 12 the whorls sit a metre apart on a fourteen-metre trunk and the crown reads as
    * bare sticks with foliage on them.
@@ -323,15 +330,15 @@ function crownNormal(point: Vector3, whorlY: number, height: number, tilt: numbe
 }
 
 /** The whole crown: whorls of branches from the top of the bare trunk to the leader. */
-function crown(height: number, seed: number): BufferGeometry {
+function crown(height: number, seed: number, bare: number): BufferGeometry {
   const random = createRandom(seed ^ 0x5bf0);
   const buffer = new MeshBuffer();
   for (let w = 0; w < SPRUCE.whorls; w += 1) {
     // Whorls start above the bare trunk and close on the leader, so the last is a handful of short
     // cards rather than a ring.
-    const at = SPRUCE.bareTrunk + ((1 - SPRUCE.bareTrunk) * w) / (SPRUCE.whorls - 1);
+    const at = bare + ((1 - bare) * w) / (SPRUCE.whorls - 1);
     // Widest at the bottom of the crown, tapering to a spire. A cone of branches is a fir.
-    const taper = (1 - (at - SPRUCE.bareTrunk) / (1 - SPRUCE.bareTrunk)) ** 0.78;
+    const taper = (1 - (at - bare) / (1 - bare)) ** 0.78;
     // Per-whorl wander as well as per-branch: a whorl is not a level ring, it is a burst that starts
     // and stops over half a metre of trunk. Spacing the whorls themselves by the variance is what
     // stops a crown from reading as a stack of identical tiers.
@@ -413,7 +420,11 @@ export interface ISpruceVariant {
  * variants": a forest of three shapes scattered by seed reads as a forest, and a forest of one shape
  * reads as a repeated asset no matter how good that shape is.
  */
-export function spruceVariants(count: number, seed: number): ISpruceVariant[] {
+export function spruceVariants(
+  count: number,
+  seed: number,
+  bare: number = SPRUCE.bareTrunk,
+): ISpruceVariant[] {
   if (!Number.isInteger(count) || count < 1)
     throw new Error(`Spruce variant count must be a positive integer, received ${count}.`);
   const random = createRandom(seed);
@@ -421,7 +432,7 @@ export function spruceVariants(count: number, seed: number): ISpruceVariant[] {
     const height = 12 + random() * 5;
     const variantSeed = (random() * 0xffffffff) >>> 0;
     return {
-      crown: crown(height, variantSeed),
+      crown: crown(height, variantSeed, bare),
       height,
       trunk: trunk(height, variantSeed),
     };

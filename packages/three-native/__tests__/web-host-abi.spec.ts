@@ -30,6 +30,10 @@ const PINNED: Record<number, string> = {
   11: "6ca2e45be11e2c12",
   // 12 = tnw_web_load_gltf_begin / tnw_web_load_gltf_done (PRD-860: a glTF parses on the loader thread).
   12: "a60bf14ce843fbf8",
+  // 13 = the merged host: the Strata lane's 12 (tnw_web_load_gltf returns every scene and their count, so a
+  // model's LOD scenes load, PRD-762) and 13 (tnw_web_device_feature, PRD-857) over PRD-860's 12; the loader
+  // thread's tnw_web_load_gltf_finish returns the scenes too.
+  13: "ce02034f812ee60e",
 };
 
 function signatures(): string[] {

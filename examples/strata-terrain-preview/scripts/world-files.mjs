@@ -24,6 +24,7 @@ export function worldFiles(dir) {
     files.push(
       entry,
       `${world}.canopy.bin`,
+      `${world}.sky.bin`,
       `${world}.world.json`,
       `${world}.layers.json`,
       `${world}.splat.rgba8`,

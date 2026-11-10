@@ -172,6 +172,31 @@ describe("Wasm modelWorldMatrix", () => {
   });
 });
 
+it("answers three's free element(node, index) as the node's element method (PRD-858)", () => {
+  const { tsl, runtime } = setup();
+  const exports = tsl as unknown as {
+    cameraProjectionMatrix: INode;
+    element(node: INode, index: number): INode;
+  };
+  const matrix = exports.cameraProjectionMatrix;
+  exports.element(matrix, 3);
+  expect(runtime.call).toHaveBeenLastCalledWith("element", matrix[TSL_NODE], [
+    { kind: "number", number: 3 },
+  ]);
+});
+
+it("answers three's transformNormal as normalize(mat3(m)^-T * n) (PRD-858)", () => {
+  const { tsl, runtime } = setup();
+  const exports = tsl as unknown as {
+    cameraViewMatrix: INode;
+    normalView: INode;
+    transformNormal(normal: INode, matrix: INode): INode;
+  };
+  exports.transformNormal(exports.normalView, exports.cameraViewMatrix);
+  const names = vi.mocked(runtime.call).mock.calls.map(([name]) => name);
+  expect(names.slice(-5)).toEqual(["mat3", "inverse", "transpose", "mul", "normalize"]);
+});
+
 describe("Wasm TSL Fn parameters", () => {
   it("defers the blue-noise style destructuring callback until called", () => {
     const { tsl, runtime } = setup();

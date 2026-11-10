@@ -65,6 +65,9 @@ describe("core constraints", () => {
           // The automatic caller of `mergeByMaterial`: it reads each mesh's material identity and
           // render flags to decide which meshes share a draw, and constructs or edits no material.
           file !== "auto-batch.ts" &&
+          // `meshSections` splits an imported mesh by its own material slots and hands each section the
+          // game's material instance back; it constructs, configures and reads no material property.
+          file !== "world-model-sections.ts" &&
           // A streamed model's full textures land in the slots its own coarse textures hold
           // (PRD-860). It moves the model's texture objects by identity and constructs, colours or
           // configures no material.

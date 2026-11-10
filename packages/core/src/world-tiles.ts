@@ -212,6 +212,17 @@ export interface IWorldTilesOptions {
     readonly minX: number;
     readonly minZ: number;
   };
+  /**
+   * A region another surface already draws and collides, in tile-local metres: a tile wholly inside
+   * it is never meshed and gets no collider. A tile that only overlaps it is meshed whole; the game
+   * hides the overlap in its own surface.
+   */
+  readonly hole?: {
+    readonly maxX: number;
+    readonly maxZ: number;
+    readonly minX: number;
+    readonly minZ: number;
+  };
   /** How deep each edge skirt extends below its surface. Defaults to one tile width. */
   readonly skirtDepth?: number;
   /** Square tile neighborhood to consider around the followed point. Defaults to 1. */
@@ -332,6 +343,8 @@ export type NeighborPair = readonly [IResidentTile, IResidentTile];
  * @situation stream terrain without cracks
  * @situation keep generated terrain resident around a moving player
  * @situation put a generated terrain tile into a game-owned physics world
+ * @situation a hole or a flicker where streamed terrain tiles are still building (`settledHalf`)
+ * @situation split the ground between streamed tiles and a far mesh around the player (`settledHalf`)
  * @alias stream terrain across chunks
  * @constraint sampleHeight and surface are required game choices; no landform or surface preset is installed
  * @constraint residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
@@ -359,6 +372,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #sampleHeight: IWorldTilesOptions["sampleHeight"];
   readonly #streamRadius: number;
   readonly #extent: IWorldTilesOptions["extent"];
+  readonly #hole: IWorldTilesOptions["hole"];
   /** Diagnostics outlive construction; their canonical field is never used by resident tiles. */
   #topology:
     | (Pick<Heightfield, "columns" | "depth" | "origin" | "rows" | "width"> & {
@@ -462,6 +476,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.skirtDepth = positive(options.skirtDepth ?? this.tileSize, "skirtDepth");
     this.#streamRadius = integerAtLeast(options.streamRadius ?? 1, 0, "streamRadius");
     this.#extent = options.extent;
+    this.#hole = options.hole;
     this.#receiveShadow = options.receiveShadow === true;
     this.#colliderRadius = integerAtLeast(
       options.colliderRadius ?? this.#streamRadius,
@@ -722,6 +737,42 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   getTile(key: string): IWorldTile | undefined {
     return this.#resident.get(key);
+  }
+
+  /**
+   * Half-width, in metres, of the largest square of tiles around `position`'s tile that is fully
+   * settled: each tile in it is resident, or is one the stream never draws (wholly inside `hole` or
+   * past `extent`). Zero while the tile under `position` is still building. A game that draws other
+   * ground where the tiles have not arrived (a collar, a far mesh) clips it to this square, so a tile
+   * still building shows that ground, never a hole.
+   *
+   * @situation a hole or a flicker where streamed terrain tiles are still building
+   * @situation split the ground between streamed tiles and a far mesh around the player
+   * @constraint reads residency only; call it after `follow` in the same frame
+   * @example split.half.value = tiles.settledHalf(player.position);
+   */
+  settledHalf(position: Pick<Vector3, "x" | "z">): number {
+    const centerX = Math.floor(
+      (finite(position.x, "settled x") + this.tileSize / 2) / this.tileSize,
+    );
+    const centerZ = Math.floor(
+      (finite(position.z, "settled z") + this.tileSize / 2) / this.tileSize,
+    );
+    const settled = (tileX: number, tileZ: number): boolean =>
+      this.#resident.has(keyFor(tileX, tileZ)) || !this.#touchesExtent(tileX, tileZ);
+    let ring = -1;
+    for (let k = 0; k <= this.#streamRadius; k += 1) {
+      for (let d = -k; d <= k; d += 1)
+        if (
+          !settled(centerX + d, centerZ - k) ||
+          !settled(centerX + d, centerZ + k) ||
+          !settled(centerX - k, centerZ + d) ||
+          !settled(centerX + k, centerZ + d)
+        )
+          return ring < 0 ? 0 : (ring + 0.5) * this.tileSize;
+      ring = k;
+    }
+    return (ring + 0.5) * this.tileSize;
   }
 
   /**
@@ -1382,11 +1433,23 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#setLodLevel(tile, this.#targetLod(tile, distance), countTransition);
   }
 
-  /** Whether the tile's square overlaps the ground at all; always true when no extent was given. */
+  /**
+   * Whether the tile's square overlaps the ground at all and is not wholly inside the hole; always
+   * true when neither was given.
+   */
   #touchesExtent(tileX: number, tileZ: number): boolean {
+    const half = this.tileSize / 2;
+    const hole = this.#hole;
+    if (
+      hole !== undefined &&
+      tileX * this.tileSize - half >= hole.minX &&
+      tileX * this.tileSize + half <= hole.maxX &&
+      tileZ * this.tileSize - half >= hole.minZ &&
+      tileZ * this.tileSize + half <= hole.maxZ
+    )
+      return false;
     const extent = this.#extent;
     if (extent === undefined) return true;
-    const half = this.tileSize / 2;
     return (
       tileX * this.tileSize + half > extent.minX &&
       tileX * this.tileSize - half < extent.maxX &&

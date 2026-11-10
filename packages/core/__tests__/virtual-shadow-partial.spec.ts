@@ -209,6 +209,22 @@ describe("installPartialRender", () => {
     },
   );
 
+  it("should build the reset quad under the first whole-map render, not on the first reset", () => {
+    // PRD-790: built lazily, the quad's pipeline landed on the first partial reset, which a camera
+    // turn in play triggers. The first whole-map render runs behind the loading curtain.
+    const { draws, frame, node, scene, stock } = harness(undefined);
+    const caller = { camera: frame.camera, material: frame.material, object: frame.object };
+    node.renderShadow(frame);
+    expect(draws).toHaveLength(1);
+    expect(draws[0]?.material?.depthFunc).toBe(AlwaysDepth);
+    expect(stock).toHaveBeenCalledTimes(1);
+    expect(frame.scene).toBe(scene);
+    expect(frame).toMatchObject(caller);
+    node.renderShadow(frame);
+    expect(draws).toHaveLength(1);
+    expect(stock).toHaveBeenCalledTimes(2);
+  });
+
   it("should preserve the caller's frame across a reset followed by an admission draw", () => {
     const pass = { pixels: { height: 2, width: 4, x: 32, y: 32 }, rect: RECT, reset: true };
     const { current, draws, frame, node, scene } = harness(pass);
@@ -229,8 +245,11 @@ describe("installPartialRender", () => {
 
   it("should leave the stock render alone with no pass", () => {
     const { frame, node, renderer, stock } = harness(undefined);
+    // The first whole render also builds the reset quad, once; after it the stock render is alone.
     node.renderShadow(frame);
-    expect(stock).toHaveBeenCalledOnce();
+    renderer.render.mockClear();
+    node.renderShadow(frame);
+    expect(stock).toHaveBeenCalledTimes(2);
     expect(renderer.render).not.toHaveBeenCalled();
   });
 
@@ -240,8 +259,11 @@ describe("installPartialRender", () => {
       rect: RECT,
       reset: false,
     });
+    // The first whole render also builds the reset quad, once; after it the stock render is alone.
     node.renderShadow(frame);
-    expect(stock).toHaveBeenCalledOnce();
+    renderer.render.mockClear();
+    node.renderShadow(frame);
+    expect(stock).toHaveBeenCalledTimes(2);
     expect(renderer.render).not.toHaveBeenCalled();
   });
 

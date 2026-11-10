@@ -1,31 +1,42 @@
 # Strata terrain hardening
 
-**Status:** IN PROGRESS — 6 of 16 PRDs done. Phase boxes 66/97, acceptance boxes 52/68 (counted with `pnpm prd:progress`, 2026-11-04). Draft EPIC [PR #483](https://github.com/ThreeNativeHQ/threenative-engine/pull/483), label `prd:50%`.
+**Status:** MERGED — PR [#483](https://github.com/ThreeNativeHQ/threenative-engine/pull/483) squash-merged into `develop` as `972d1e371` on 2026-11-06. Six of the batch's PRDs are done. The open work runs in the order in [PR-CHAIN.md](PR-CHAIN.md), which is the live plan for this batch. The 13 open PRDs in this folder measure 36/88 phase boxes and 21/38 acceptance boxes with `pnpm prd:progress` on 2026-11-07.
 
 **Delivery decision:** João requested one dedicated EPIC PR for this batch on 2026-10-10, overriding the usual one-PR-per-PRD delivery rule. Each constituent PRD retains its complete scope, phase checkboxes and verification requirements.
 
-## Execution checkout (2026-11-04)
+## Merge state (2026-11-07)
 
-- Active lane: Claude Code forest lane, worktree `/home/joao/projects/threenative/threenative-engine/.worktrees/pr483-sync`, local branch `pr483-sync`, pushed to `epic/strata-terrain-hardening`; target: `develop`.
-- Base: `origin/develop` at `33c69249f`, merged on 2026-11-03 (`23fbfd4b1`). The branch is 6 develop commits behind on 2026-11-04.
-- The first checkout, `.worktrees/strata-terrain-hardening` (Codex lane, at `5f1dca3b9`), is still on disk. It is not the active lane; inspect its data and merge evidence before removal.
+- ✅ The EPIC is merged. PR #483 squash-merged into `develop` as `972d1e371` on 2026-11-06. The tree of `972d1e371` equals the tree of `origin/epic/strata-terrain-hardening` at `1b0de354b`.
+- Open work follows [PR-CHAIN.md](PR-CHAIN.md). The chain runs in one draft PR, [#635](https://github.com/ThreeNativeHQ/threenative-engine/pull/635), from the worktree `.claude/worktrees/strata-chain`. Step 0 holds the PRD-806 fixes, this README refresh and the stale worktree cleanup.
+- The branch `origin/epic/strata-terrain-hardening` stays as history. Do not merge it again.
+- The lane worktrees are still on disk: `strata-base`, `strata-forest`, `strata-ground-fix`, `strata-ref-mrt`, `strata-ref-play` and `strata-ref-walk`. Each of the six has a clean `git status`. The first checkout `.worktrees/strata-terrain-hardening` (Codex lane, at `5f1dca3b9`) is also on disk, and this refresh did not inspect it.
+- ⚠️ `.worktrees/strata-forest` holds 19 commits that `develop` does not contain: the layered MRT targets, the impostor ambient-occlusion atlas and the alpha-to-coverage mask. Inspect that worktree before removal.
 
 ## Scope
 
-Ordered by priority (the `**Priority:**` header of each PRD), then by the execution order below. Done PRDs are last.
+Ordered by priority (the `**Priority:**` header of each PRD), then by the chain step in [PR-CHAIN.md](PR-CHAIN.md). Done PRDs are last. The State column quotes each PRD's `**Status:**` line.
 
 | Priority | PRD | State | Progress (`prd:progress`) | What is open |
 |---|---|---|---|---|
-| P0 | [PRD-762 — An MCP-generated terrain runs on the default engine](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) | In progress | `prd:25%` — boxes 6/14 | Sandbox start with no game edit; sky and kit gaps; playtest, perf and judge |
-| P1 | [PRD-585 — Strata's proof runs in CI, not only by hand](PRD-585-strata-proof-runs-in-ci.md) | Partial | `prd:50%` — boxes 3/6, AC 3/5 | `strata` CI job green on web, consumer and editor scripts; current-head required CI |
-| P1 | [PRD-583 — A Strata world bakes headlessly into an instanced GLB](PRD-583-a-strata-world-bakes-headlessly-into-an-instanced-glb.md) | Partial | `prd:75%` — boxes 6/8, AC 5/5 | Layered PBR surface in the cook; headed render plus visual judge |
-| P1 | [PRD-594 — The engine changes that rode in with #381 get native and visual proof](PRD-594-engine-changes-from-381-get-native-and-visual-proof.md) | Partial | `prd:75%` — boxes 5/6, AC 5/6 | Judge with visible cast-shadow coverage (AC-4) |
-| P1 | [PRD-584 — An agent asks for a forest over MCP and gets a 60 fps GLB](PRD-584-an-agent-asks-for-a-forest-over-mcp-and-gets-a-60-fps-glb.md) | Partial | `prd:50%` — boxes 4/7, AC 3/5 | p95 ≤ 16.7 ms on web (AC-4) and native desktop (AC-5); contact ceiling BC-2 |
-| P1 | [Forest leaf appearance (PRD-584 child)](forest-leaf-alpha.md) | In progress | `prd:50%` — boxes 5/7 | Default forest look kept (AC-4); squared leaf tips (AC-5) |
-| P1 | [Forest loading handoff waits for the visible world](forest-startup-ux.md) | In progress | `prd:50%` — boxes 2/3 | Same-pose handoff comparison with a visual verdict |
-| P2 | [PRD-591 — The preview stops re-implementing engine mechanisms](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) | Partial | `prd:50%` — boxes 3/5, AC 3/5 | `loadTerrainSplat` plumbing and measured height bands (AC-4); five-kit visual judge (AC-5) |
-| P2 | [PRD-595 — `world-cells.ts` splits by seam and survives a load/evict race fuzz](PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md) | Partial | `prd:50%` — boxes 2/3, AC 2/3 | Strata and machinefall walk playtests after the split (AC-3) |
-| P2 | [PRD-790 — A new biome is a data row, and the world streams past one square](PRD-790-a-new-biome-is-a-data-row-and-the-world-streams-past-one-square.md) | Not started | `prd:0%` — boxes 0/8, AC 0/3 | All (filed 2026-11-04 at the owner's request) |
+| P0 | [PRD-762 — An MCP-generated terrain runs on the default engine](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) | IN PROGRESS | `prd:50%` — boxes 11/16 | Sandbox start with no game edit. Sky and kit gaps. Playtest, perf and judge. Chain step PR-1. |
+| P1 | [PRD-858 — World impostors bake on the owned web engine](PRD-858-world-impostors-bake-on-the-owned-web-engine.md) | OPEN | `prd:0%` — boxes 0/6 | Layered MRT bake seam on the facade and engine. Kit overview at 60 fps. Judge. Blocks PRD-762's kit verifier. |
+| P1 | [PRD-585 — Strata's proof runs in CI, not only by hand](PRD-585-strata-proof-runs-in-ci.md) | PARTIAL | `prd:50%` — boxes 3/6, AC 3/5 | `strata` CI job green on web, consumer and editor scripts. Current-head required CI. Chain step PR-2. |
+| P1 | [PRD-583 — A Strata world bakes headlessly into an instanced GLB](PRD-583-a-strata-world-bakes-headlessly-into-an-instanced-glb.md) | PARTIAL | `prd:75%` — boxes 6/8, AC 5/5 | Layered PBR surface in the cook. Headed render plus visual judge. Chain step PR-8. |
+| P1 | [PRD-594 — The engine changes that rode in with #381 get native and visual proof](PRD-594-engine-changes-from-381-get-native-and-visual-proof.md) | PARTIAL | `prd:75%` — boxes 5/6, AC 5/6 | Judge with visible cast-shadow coverage (AC-4). Chain step PR-9. |
+| P1 | [PRD-584 — An agent asks for a forest over MCP and gets a 60 fps GLB](PRD-584-an-agent-asks-for-a-forest-over-mcp-and-gets-a-60-fps-glb.md) | PARTIAL | `prd:50%` — boxes 4/7, AC 3/5 | p95 ≤ 16.7 ms on web (AC-4) and native desktop (AC-5). Contact ceiling BC-2. Chain step PR-10. |
+| P1 | [Forest leaf appearance (PRD-584 child)](forest-leaf-alpha.md) | IN PROGRESS — source/cooked alpha and published budget verified; user still observes squared leaf tips, so final leaf appearance and default-scene preservation remain open | `prd:50%` — boxes 5/7 | Default forest look kept (AC-4). Squared leaf tips (AC-5). Chain step PR-10. |
+| P1 | [Forest loading handoff waits for the visible world](forest-startup-ux.md) | IN PROGRESS | `prd:50%` — boxes 2/3 | Same-pose handoff comparison with a visual verdict. Chain step PR-10. |
+| P1 | [PRD-854 — One terrain request decides the landform, water, size and a real survey](../done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) | DONE | `prd:100%` — boxes 7/7, AC 2/2 | All. The request words pick the landform, the water and the size (Phase 1). Chain step PR-5. |
+| P1 | [PRD-855 — The ground vegetation reads like a real forest floor](PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) | NOT STARTED | `prd:0%` — boxes 0/7, AC 0/2 | All. Soil L 46–51 against the 29–37 reference, and no cover at walking height (Phases 2 and 3). Chain step PR-6. |
+| P2 | [PRD-591 — The preview stops re-implementing engine mechanisms](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) | PARTIAL | `prd:50%` — boxes 3/5, AC 3/5 | `loadTerrainSplat` plumbing and measured height bands (AC-4). Five-kit visual judge (AC-5). Chain step PR-4. |
+| P2 | [PRD-595 — `world-cells.ts` splits by seam and survives a load/evict race fuzz](PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md) | PARTIAL | `prd:50%` — boxes 2/3, AC 2/3 | Strata and machinefall walk playtests after the split (AC-3). Chain step 3. |
+| P2 | [PRD-790 — A new biome is a data row, and the world streams past one square](PRD-790-a-new-biome-is-a-data-row-and-the-world-streams-past-one-square.md) | NOT STARTED | `prd:0%` — boxes 0/8, AC 0/3 | All. Filed 2026-11-04 at the owner's request. Chain step PR-11. |
+| P2 | [PRD-856 — The mountains carry real silhouettes, erosion and rock](PRD-856-the-mountains-carry-real-silhouettes-erosion-and-rock.md) | NOT STARTED | `prd:0%` — boxes 0/7, AC 0/2 | All. Phase 1 names the defects first. Chain step PR-7. |
+| P1 | [PRD-866 — A generated forest stands under mountains with real shapes](../BLOCKED/requires-owner-decision/PRD-866-a-generated-forest-stands-under-mountains-with-real-shapes.md) | BLOCKED (owner decision) | `prd:75%` — boxes 7/7, AC 2/3 | AC-3: the wooded band past the square costs about 23 ms GPU (20 -> 15 FPS); keep it, default it off, or fund a far-canopy renderer. |
+| P2 | [PRD-870 — The procedural forest set reads like the Fab set](PRD-870-the-procedural-forest-set-reads-like-the-fab-set.md) | PARTIAL | `prd:25%` — boxes 2/6, AC 0/2 | All. Phase 1 measures the gap with `?fab=off` against the licensed set. |
+| P2 | [PRD-806 — Fix the medium and low findings of the PR #483 epic review](../done/PRD-806-epic-review-medium-and-low-findings.md) | DONE | `prd:100%` — boxes 9/9, AC 1/1 | Closed 2026-11-09 on PR #635. |
+
+PRD-806 lives in `docs/PRDs/refactoring/strata-refactoring/`. Its status line reads, verbatim, with its relative link resolved from this folder: **Status:** PARTIAL — 4 of 8 Phase 1 and 2 boxes are fixed (lane B, 2026-11-05). Open: E46, E49, E73 and E56/E62 (visual judge or native build), and the 45 low findings (lane C running). Scope: the 14 medium findings (13 after one duplicate) and 45 low findings verified on HEAD `21c713b7d` on 2026-11-05. The high findings are in [PRD-805](../done/PRD-805-epic-review-findings.md). No fix has started.
 | — | [PRD-592 — Terrain core fails closed and erodes without allocating](../done/PRD-592-terrain-core-fails-closed-and-erodes-without-allocating.md) | ✅ Done | `prd:100%` | — |
 | — | [PRD-587 — The terrain editor never drops an edit](../done/PRD-587-the-terrain-editor-never-drops-an-edit.md) | ✅ Done | `prd:100%` | — |
 | — | [PRD-593 — The three.js patch is generated, and the upload lane leaves it](../done/PRD-593-the-three-patch-is-generated-and-the-upload-lane-leaves-it.md) | ✅ Done | `prd:100%` | — |
@@ -35,15 +46,21 @@ Ordered by priority (the `**Priority:**` header of each PRD), then by the execut
 
 ## Execution order
 
-1. **P0:** PRD-762 (an agent that follows the shipped MCP path gets a game that does not start).
-2. **P1:** PRD-585 (CI guards every later PRD), PRD-583 (PRD-584 needs it), PRD-594, then PRD-584 with its two children (leaf alpha, startup handoff).
-3. **P2:** PRD-591, PRD-595, then PRD-790 (it needs PRD-591 AC-4 for its height-band fields).
+The open work runs in the order in [PR-CHAIN.md](PR-CHAIN.md). That file is the live plan. It holds Step 0 and PR-1 to PR-12, the 2026-11-07 spike results and the two-lane split. The earlier priority order no longer governs.
 
-Done, in landing order: 592, 587, 593, 589, 590, 588. This order serializes shared-file edits; all phases and acceptance criteria in each PRD remain required. Coordinate world-cell edits with PRD-473 before changing its shared implementation.
+Done, in landing order: 592, 587, 593, 589, 590, 588. All phases and acceptance criteria in each PRD remain required. Coordinate world-cell edits with PRD-473 before changing its shared implementation.
 
-## Current state (2026-11-04)
+## Current state (2026-11-07)
 
-Landed on the branch on 2026-11-03 and 2026-11-04 (forest preview, NVIDIA Turing, private Xvfb unless named):
+✅ The EPIC is merged. PR #483 squash-merged into `develop` as `972d1e371` on 2026-11-06. The merge carries every commit of `origin/epic/strata-terrain-hardening` at `1b0de354b`.
+
+The merge closed no PRD box on its own. The table above measures the open work on 2026-11-07. [PR-CHAIN.md](PR-CHAIN.md) holds the order for that work.
+
+One item needs a decision before the worktree cleanup in Step 0: `.worktrees/strata-forest` holds 19 commits that `develop` does not contain. The reports below stay open until a current-head run closes them.
+
+### Last pre-merge state (2026-11-04)
+
+Landed on the EPIC branch on 2026-11-03 and 2026-11-04 (forest preview, NVIDIA Turing, private Xvfb unless named):
 
 - ✅ Heightmap generator: fluvial erosion and landform presets in `@threenative/terrain` (`a11d3e6f9`, `c6dfb94e2`); the forest backdrop is a generated fluvial mountain window (`f9252a46f`).
 - ✅ Third-person forest walk with the starter mannequin and an orbit camera (`f839e7246`); the camera cuts crowns it swings through (`72cc9311a`).

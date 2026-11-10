@@ -1943,3 +1943,42 @@ function isSize(bytes: unknown): bytes is number {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
+
+/**
+ * Fetch a data file the asset loader serves: each url `assets.resolve(path)` names, in order, until
+ * one answers ok. A built game serves the hashed output and a dev server the source path, so taking
+ * only the first url 404s on one of them. When none answers it throws `TN_ASSET_NOT_SERVED` naming
+ * every url tried and why, so a missing file is never a half-drawn world.
+ *
+ * @situation load a baked JSON or binary file (a heightmap, a placement buffer, a data table) that the loader has no typed method for
+ * @situation a data file loads in dev but 404s in the built game
+ * @constraint reads the response once; call `.json()` or `.arrayBuffer()` on the result
+ * @example const heights = new Float32Array(await (await fetchAsset(ctx.assets, "world/forest.bin")).arrayBuffer());
+ */
+export async function fetchAsset(
+  assets: Pick<IAssetLoader, "resolve">,
+  path: string,
+): Promise<Response> {
+  const candidates = await assets.resolve(path);
+  const failures: string[] = [];
+  let answered = false;
+  let lastError: unknown;
+  for (const url of candidates) {
+    let response: Response;
+    try {
+      response = await fetch(url);
+    } catch (error) {
+      lastError = error;
+      failures.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
+      continue;
+    }
+    answered = true;
+    if (response.ok) return response;
+    failures.push(`${url} (status ${String(response.status)})`);
+  }
+  // When every fetch rejected, the last rejection is the cause: a native host's file error says why.
+  throw new Error(
+    `TN_ASSET_NOT_SERVED: '${path}' is not served by any of ${String(candidates.length)} candidate url(s): ${failures.join("; ") || "none"}.`,
+    answered || candidates.length === 0 ? undefined : { cause: lastError },
+  );
+}

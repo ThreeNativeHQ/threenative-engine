@@ -71,6 +71,9 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
   "Texture.format": "number",
   "Texture.type": "number",
   "BufferGeometry.groups": "string",
+  // three's `indirect` is an IndirectStorageBufferAttribute, which three/webgpu publishes and this catalog
+  // does not; the binding keeps and shares any BufferAttribute, which is what crosses (PRD-857).
+  "BufferGeometry.indirect": "BufferAttribute | null",
   // The binding answers three's `{ start, count }[]` as its canonical JSON text.
   "BufferAttribute.updateRanges": "string",
   "Scene.background": "Color | Texture | null",
@@ -176,6 +179,17 @@ const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns
       returns: "boolean",
     },
   ],
+  // The indirect record buffer as the binding takes it: any BufferAttribute, or null to clear it.
+  "BufferGeometry.setIndirect": [
+    {
+      parameters: [
+        { name: "indirect", type: "BufferAttribute | null", optional: false },
+        { name: "indirectOffset", type: "number | number[]", optional: true },
+      ],
+      returns: "this",
+    },
+  ],
+  "BufferGeometry.getIndirect": [{ parameters: [], returns: "BufferAttribute | null" }],
   // three r185 has Vector4.clampLength; the pinned @types/three lags it.
   "Vector4.clampLength": [
     {

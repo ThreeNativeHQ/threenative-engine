@@ -117,6 +117,62 @@ describe("markStatic", () => {
     expect((deep as Object3D).matrixWorld.elements[13]).toBeCloseTo(101, 6);
   });
 
+  it("re-arms a root frozen before it joined a moved parent, so a streamed world follows its root", () => {
+    // WorldCells freezes each draw mesh, then attaches it under the world root; a game that seats
+    // the world (`world.position.y = -ground`) drew every tree at the package's absolute height.
+    const scene = new Scene();
+    const world = new Group();
+    world.position.set(0, -11.4, 0);
+    scene.add(world);
+    scene.updateMatrixWorld(true);
+    const mesh = new Mesh();
+    markStatic(mesh);
+    world.add(mesh);
+
+    refreshStaticTransforms();
+    scene.updateMatrixWorld(false);
+
+    expect(mesh.matrixWorld.elements[13]).toBeCloseTo(-11.4, 6);
+    expect(() => validateWorldMatrices(scene)).not.toThrow();
+  });
+
+  it("composes again when a frozen root is marked a second time under a moved parent", () => {
+    // WorldCells marks a draw mesh at every dress: the first freeze turned the root's world compose
+    // off, so the second one snapshotted the moved parent and kept the identity world matrix.
+    const scene = new Scene();
+    const world = new Group();
+    world.position.set(0, -11.4, 0);
+    scene.add(world);
+    scene.updateMatrixWorld(true);
+    const mesh = new Mesh();
+    markStatic(mesh);
+    world.add(mesh);
+    markStatic(mesh);
+
+    refreshStaticTransforms();
+    scene.updateMatrixWorld(false);
+
+    expect(mesh.matrixWorld.elements[13]).toBeCloseTo(-11.4, 6);
+    expect(() => validateWorldMatrices(scene)).not.toThrow();
+  });
+
+  it("re-arms a frozen root whose parent moved", () => {
+    const { scene, island } = scenery(2, 2);
+    const world = new Group();
+    scene.add(world);
+    world.add(island);
+    scene.updateMatrixWorld(true);
+    markStatic(island);
+
+    world.position.y = 5;
+    scene.updateMatrixWorld(false);
+    refreshStaticTransforms();
+    scene.updateMatrixWorld(false);
+
+    expect(island.matrixWorld.elements[13]).toBeCloseTo(5, 6);
+    expect(() => validateWorldMatrices(scene)).not.toThrow();
+  });
+
   it("does not re-arm a subtree that did not move, so a still scene pays a comparison and nothing else", () => {
     const { scene, island } = scenery(2, 3);
     scene.updateMatrixWorld(true);

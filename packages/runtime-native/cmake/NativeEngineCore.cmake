@@ -424,7 +424,8 @@ tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame
     native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
     native_engine_tsl_math=math native_engine_tsl_spell_port=spell_port native_engine_tsl_compute_texture_load=compute_texture_load
-    native_engine_tsl_compute_int_literals=compute_int_literals native_engine_tsl_ivec_bool=tsl_ivec_bool)
+    native_engine_tsl_compute_int_literals=compute_int_literals native_engine_tsl_ivec_bool=tsl_ivec_bool
+    native_engine_tsl_mat3_of_mat4=tsl_mat3_of_mat4)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
 
 # The ROI crop every attachment read hands back (a PassNode MRT slot, a render target): no device needed.
@@ -437,10 +438,12 @@ tn_native_engine_test(tn-native-engine-aux-fragment-test tests/native-engine/aux
     native_engine_aux_fragment_small=fits_without_slots
     native_engine_aux_fragment_custom_slot=refused_with_a_slot)
 
-# Which colour attachments a draw writes: a draw that masks its named targets still writes its own MRT slot.
+# Which colour attachments a draw writes, and the depth test the aux pass runs for it: a draw that masks its named
+# targets still writes its own MRT slot, and one that wrote no depth is not tested for equality.
 tn_native_engine_test(tn-native-engine-attachment-mask-test tests/native-engine/attachment_mask_test.cpp
     native_engine_attachment_mask=custom_slot
-    native_engine_attachment_mask_material=material_mask)
+    native_engine_attachment_mask_material=material_mask
+    native_engine_attachment_mask_depth=depth_test)
 
 # The aux pass's bundle key: a bundle follows the pass's colour-target count, a custom MRT slot included.
 tn_native_engine_test(tn-native-engine-aux-bundle-key-test tests/native-engine/aux_bundle_key_test.cpp
@@ -1231,7 +1234,7 @@ if(EMSCRIPTEN)
         # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue
         # reads `document` while the module loads.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web,worker -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_set_uniforms,_tn_tsl_effect_parameter,_tn_anim_tick,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_gltf_begin,_tnw_web_load_gltf_done,_tnw_web_load_gltf_finish,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture,_tnw_web_read_mrt,_tnw_web_device_limit,_tnw_web_clear_target"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_set_uniforms,_tn_tsl_effect_parameter,_tn_anim_tick,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_gltf_begin,_tnw_web_load_gltf_done,_tnw_web_load_gltf_finish,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture,_tnw_web_read_mrt,_tnw_web_device_limit,_tnw_web_clear_target,_tnw_web_device_feature"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 

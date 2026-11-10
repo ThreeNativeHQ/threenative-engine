@@ -652,6 +652,21 @@ static void materialInputs(Program& f, const VertexVariant& variant,
             else if (name == "roughness" && variant.reads(kRoughnessMap))
                 inputs.emplace(key, pinned(Type::f32(), f.mul(f.uniform("roughness", Type::f32()),
                                                              f.swizzle(pbrTexel(f, variant, kRoughnessMap), "y"))));
+            else if (name == "diffuseColor") {
+                // three's diffuseColor (NodeMaterial.setupDiffuseColor): the colour times its map and vertex colour,
+                // the opacity times the map's alpha. A colorNode or opacityNode replaces those terms first, and
+                // those slots lower only once the program's Lowering exists: nodeDiffuseColor supplies it then.
+                if (nodes.colorNode || nodes.opacityNode) continue;
+                const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
+                const ExprId texel = variant.map && !variant.background ? mapTexel(f, variant) : kInvalid;
+                ExprId rgb = materialColor(f, variant, diffuse), alpha = f.swizzle(diffuse, "w");
+                if (texel != kInvalid) {
+                    rgb = f.mul(rgb, f.swizzle(texel, "xyz"));
+                    alpha = f.mul(alpha, f.swizzle(texel, "w"));
+                }
+                if (variant.vertexColors) alpha = f.mul(alpha, f.swizzle(f.varying("instanceColor", tintType(variant)), "w"));
+                inputs.emplace(key, pinned(Type::vec(4), f.construct(Type::vec(4), {rgb, alpha})));
+            }
         }
 }
 
@@ -703,6 +718,27 @@ static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVaria
         }
     }
     return alpha;
+}
+
+// three's diffuseColor beside a colorNode or opacityNode, for a slot that reads it (the impostor bake's capture `output`
+// becomes the draw's fragmentNode): the colour and alpha the colour output takes, as setupDiffuseColor assigns them. It
+// needs those two slots lowered, so it is supplied once the Lowering exists and before any other slot lowers.
+static void nodeDiffuseColor(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
+    const auto& nodes = variant.nodes;
+    if (!nodes.colorNode && !nodes.opacityNode) return;
+    bool read = false;
+    for (const graph::Node* node : {&nodes.emissiveNode, &nodes.roughnessNode, &nodes.metalnessNode, &nodes.aoNode, &nodes.irradianceNode,
+                                    &nodes.envNode, &nodes.fragmentNode, &nodes.depthNode, &nodes.maskNode, &nodes.alphaTestNode})
+        for (const std::string& name : graph::materialInputs(*node)) read |= name == "diffuseColor";
+    for (const auto& slot : nodes.mrt)
+        for (const std::string& name : graph::materialInputs(slot.node)) read |= name == "diffuseColor";
+    if (!read) return;
+    const ExprId diffuse = slotValue(f, slots, nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
+    const ExprId texel = nodes.colorNode ? kInvalid : mapTexel(f, variant);
+    ExprId rgb = materialColor(f, variant, diffuse);
+    if (texel != kInvalid) rgb = f.mul(rgb, f.swizzle(texel, "xyz"));
+    const ExprId value = f.construct(Type::vec(4), {rgb, diffuseAlpha(f, slots, variant, diffuse, texel)});
+    slots.input("material:diffuseColor", f.load(f.var(Type::vec(4), value)));
 }
 
 // Graph attributes can be first used in any slot. Link the two stages by name, in fragment order.
@@ -1404,7 +1440,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         ? f.call("normalize", {f.call("cross", {f.call("dFdx", {f.varying("positionView", Type::vec(3))}),
                                                  f.call("dFdy", {f.varying("positionView", Type::vec(3))})})})
         : normalViewGeometry);
-    ExprId n = nodeValue(f, variant.nodes.normalNode, Type::vec(3), normalViewFaced, normalViewFaced, normalViewGeometry);
+    // The normalNode lowers through the slots' one lowering, so a node it shares with them (the world impostor's
+    // ray march feeds normal, colour and coverage) lowers once, as three builds a material once (PRD-858). Inside
+    // the normalNode, normalView is the flipped geometry normal; the slots after it read the normal it made.
+    graph::Lowering slots(f, {{"viewMipBias", kInvalid}, {"normalView", normalViewFaced}, {"normalViewGeometry", normalViewGeometry}});
+    ExprId n = slotValue(f, slots, variant.nodes.normalNode, Type::vec(3), normalViewFaced);
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
     if (variant.normalMap && !variant.nodes.normalNode) n = perturbedNormal(f, variant, normalViewFaced);
@@ -1413,7 +1453,14 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    graph::Lowering slots = slotLowering(f, variant, n);
+    {
+        std::unordered_map<std::string, ExprId> inputs;
+        materialInputs(f, variant, inputs);
+        for (const auto& [name, value] : inputs) slots.input(name, value);
+        slots.input("normalView", n);
+        slots.input("normalViewGeometry", std::nullopt);
+    }
+    nodeDiffuseColor(f, slots, variant);
     discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
@@ -1666,7 +1713,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     out.emissive = emissive;
     out.indirectDiffuse = totalIndirectDiffuse;
     out.normal = n;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1767,6 +1814,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     graph::Lowering slots = slotLowering(f, variant, n);
+    nodeDiffuseColor(f, slots, variant);
     discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
@@ -1804,7 +1852,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     out.albedo = diffuseColor;
     out.emissive = emissive;
     out.indirectDiffuse = indirectDiffuse;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1867,6 +1915,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         tsl::Build scope(f);
         // three wraps a fragmentNode in vec4(): a vec3 gains an opaque alpha (rain's world quad is a vec3).
         graph::Lowering slots = slotLowering(f, variant, kInvalid);
+        nodeDiffuseColor(f, slots, variant);
         ExprId color = slots.lower(variant.nodes.fragmentNode);
         if (color != kInvalid && f.expr(color).type == Type::vec(3))
             color = f.construct(Type::vec(4), {color, f.constant(1.0f)});
@@ -1880,6 +1929,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     // MeshBasicNodeMaterial.setupNormal: negateOnBackSide(normalViewGeometry); a normalNode is not read.
     const ExprId normalView = needsNormal ? facedNormal(f, variant, f.call("normalize", {f.varying("normalView", Type::vec(3))})) : kInvalid;
     graph::Lowering slots = slotLowering(f, variant, normalView);
+    nodeDiffuseColor(f, slots, variant);
     discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     ExprId texel = kInvalid;
@@ -1899,7 +1949,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
+    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1916,7 +1966,7 @@ StandardPrograms buildDepth(const VertexVariant& variant) {
     Program& f = out.fragment;
     const ExprId texel = mapTexel(f, variant);
     const ExprId opacity = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
-    materialAlpha(f, texel == kInvalid ? opacity : f.mul(opacity, f.swizzle(texel, "w")), variant.alphaHash);
+    materialAlpha(f, texel == kInvalid ? opacity : f.mul(opacity, f.swizzle(texel, "w")), variant.alphaHash, kInvalid, variant.alphaTest);
     f.output("fragDepth", f.swizzle(f.builtin("position"), "z"));
     linkNodeVaryings(out, variant, local.position, local.normal);
     return out;
@@ -1929,11 +1979,12 @@ StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
     out.fragment = Program{Stage::Fragment};
     Program& f = out.fragment;
     graph::Lowering slots = slotLowering(f, variant, kInvalid);
+    nodeDiffuseColor(f, slots, variant);
     const ExprId texel = mapTexel(f, variant);
     ExprId alpha = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
     if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
     // The stage needs an output; a depth-only pipeline has no colour target, so it is never written.
-    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))}));
+    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)}));
     out.vertex.linkVaryings(out.fragment);
     return out;
 }
@@ -2001,12 +2052,14 @@ static ExprId alphaHashThreshold(Program& f) {
     return f.call("clamp", {f.select(f.less(x, t.oneMinus(a)), f.select(f.less(x, a), c0, c1), c2), t.f(kEpsilon), t.f(1)});
 }
 
-ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash, ExprId cutoff) {
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash, ExprId cutoff, bool tested) {
     const ExprId alphaTest = f.uniform("alphaTest", Type::f32());  // always declared: the uniform layout follows creation order
     const ExprId no = f.constant(false);
-    // alpha <= cutoff is !(cutoff < alpha). three's alphaTestNode tests always; the flat alphaTest only when > 0.
+    // alpha <= cutoff is !(cutoff < alpha). three's alphaTestNode tests always; the flat alphaTest only when > 0, which
+    // the variant states (`tested`), so an opaque program has no discard to keep early depth testing off.
     const ExprId atOrBelow = f.select(f.less(cutoff == kInvalid ? alphaTest : cutoff, alpha), no, f.constant(true));
-    f.If(cutoff == kInvalid ? f.select(f.less(f.constant(0.0f), alphaTest), atOrBelow, no) : atOrBelow, [&] { f.discard(); });
+    if (cutoff != kInvalid || tested)
+        f.If(cutoff == kInvalid ? f.select(f.less(f.constant(0.0f), alphaTest), atOrBelow, no) : atOrBelow, [&] { f.discard(); });
     if (alphaHash) {
         const ExprId threshold = alphaHashThreshold(f);
         f.If(f.less(alpha, threshold), [&] { f.discard(); });

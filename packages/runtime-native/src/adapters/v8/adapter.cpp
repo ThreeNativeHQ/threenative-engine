@@ -1185,9 +1185,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                 engine::shader::graph::Node node;
                                 if (!keys->Get(ctx, i).ToLocal(&key) || !outputsValue.As<v8::Object>()->Get(ctx, key).ToLocal(&value)) return;
                                 v8::String::Utf8Value name(isolate, key);
-                                // mrt() always carries the pass's own slots. The scene pass draws them, so only custom
-                                // slots reach the engine, as pass-node.ts isCustomMrtOutput does on the browser side.
-                                if (engine::shader::engineTargetName(*name ? *name : "")) continue;
+                                // mrt() carries the pass's own slot markers; the scene pass draws those. A node under any
+                                // name reaches the engine, which writes it to a render target's texture of that name.
                                 v8::Local<v8::Value> marker;
                                 if (value->IsObject() && value.As<v8::Object>()->Get(ctx, str(isolate, "isMRTSlot")).ToLocal(&marker) &&
                                     marker->IsTrue()) continue;

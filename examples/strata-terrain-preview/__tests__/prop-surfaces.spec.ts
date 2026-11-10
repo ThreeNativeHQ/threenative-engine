@@ -37,12 +37,14 @@ it("resolves every world's actual bands under scale and offset without sharing s
     const snapshot = JSON.stringify(first);
     heights[1] = 210;
     const moved = measureBiome(authored, [525, 775]);
+    // Fractions of the ground's range scale with it; a `bandSpan` world's bands are metres above
+    // its floor, so they only follow the floor (PRD-866: a hillier cooked square keeps its treeline).
+    const move = (value: number) =>
+      authored.bandSpan === undefined ? value * 2.5 + 500 : value + 515;
     for (const key of Object.keys(first.heightBands) as Array<keyof typeof first.heightBands>) {
-      expect(moved.heightBands[key]).toEqual(
-        first.heightBands[key].map((value) => value * 2.5 + 500),
-      );
+      expect(moved.heightBands[key]).toEqual(first.heightBands[key].map(move));
     }
-    expect(moved.snowBand).toEqual(first.snowBand.map((value) => value * 2.5 + 500));
+    expect(moved.snowBand).toEqual(first.snowBand.map(move));
     expect(first.elevationRange).toEqual([10, 110]);
     expect(JSON.stringify(first)).toBe(snapshot);
     expect(first).not.toBe(moved);

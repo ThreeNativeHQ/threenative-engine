@@ -105,12 +105,22 @@ export interface IBrowserRuntime {
   loadGltf?(
     bytes: Uint8Array,
     files?: ReadonlyMap<string, Uint8Array>,
-  ): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
+  ): {
+    readonly scene: IEngineRef;
+    readonly animations: IEngineRef[];
+    /** Every scene in file order; the default scene is one of them. */
+    readonly scenes: IEngineRef[];
+  };
   /** `loadGltf` on the engine's loader thread (PRD-860), when the module carries it. */
   loadGltfAsync?(
     bytes: Uint8Array,
     files?: ReadonlyMap<string, Uint8Array>,
-  ): Promise<{ readonly scene: IEngineRef; readonly animations: IEngineRef[] }>;
+  ): Promise<{
+    readonly scene: IEngineRef;
+    readonly animations: IEngineRef[];
+    /** Every scene in file order; the default scene is one of them. */
+    readonly scenes: IEngineRef[];
+  }>;
 }
 
 /**
@@ -206,6 +216,16 @@ export interface IAbiHelpers {
   view(): DataView;
 }
 
+/** `tnw_web_load_gltf`'s handles: the default scene, the clips, then every scene in file order. */
+function splitModel(refs: IEngineRef[], scenes: number) {
+  const clipsEnd = refs.length - scenes;
+  return {
+    scene: refs[0] as IEngineRef,
+    animations: refs.slice(1, clipsEnd),
+    scenes: refs.slice(clipsEnd),
+  };
+}
+
 /** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
 export function gltfOf(
   abi: TnAbiModule,
@@ -254,18 +274,25 @@ export function gltfOf(
       });
     }
   };
-  /** The handles `share(out, capacity, count)` writes, retried once at the exact size for a model with many clips. */
-  const handles = (share: (out: number, capacity: number, count: number) => number) =>
+  /**
+   * The handles `share(out, capacity, count, scenes)` writes, retried once at the exact size for a
+   * model with many clips.
+   */
+  const handles = (
+    share: (out: number, capacity: number, count: number, scenes: number) => number,
+  ) =>
     h.scoped(() => {
       const count = h.alloc(4);
+      const sceneCount = h.alloc(4);
       for (let capacity = 64; ; ) {
         const out = h.alloc(HANDLE * capacity);
-        const status = share(out, capacity, count);
+        const status = share(out, capacity, count, sceneCount);
         const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
-        if (status === 0) {
-          const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
-          return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
-        }
+        if (status === 0)
+          return splitModel(
+            Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE)),
+            new DataView(abi.HEAPU8.buffer).getUint32(sceneCount, true),
+          );
         const reason = abi.UTF8ToString(error());
         if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
         capacity = needed;
@@ -277,8 +304,8 @@ export function gltfOf(
         stageFiles(files);
         const data = h.alloc(Math.max(1, bytes.byteLength));
         abi.HEAPU8.set(bytes, data);
-        return handles((out, capacity, count) =>
-          load(context, data, bytes.byteLength, out, capacity, count),
+        return handles((out, capacity, count, scenes) =>
+          load(context, data, bytes.byteLength, out, capacity, count, scenes),
         );
       } finally {
         clearFiles?.();
@@ -303,7 +330,9 @@ export function gltfOf(
       });
       if (ticket === 0) throw new Error("TN_WASM_GLTF: the engine refused the load");
       while (done(ticket) === 0) await new Promise((resolve) => setTimeout(resolve, GLTF_POLL_MS));
-      return handles((out, capacity, count) => finish(context, ticket, out, capacity, count));
+      return handles((out, capacity, count, scenes) =>
+        finish(context, ticket, out, capacity, count, scenes),
+      );
     },
   };
 }

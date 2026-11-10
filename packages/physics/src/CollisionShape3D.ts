@@ -14,23 +14,66 @@ export interface ICollisionShapeHandle {
   readonly raw: unknown;
 }
 
+/** The storage an attribute reads its components from, when it has some of its own. */
+interface IAttributeStorage {
+  readonly array: ArrayLike<number>;
+  readonly count: number;
+  readonly itemSize: number;
+  readonly normalized: boolean;
+  readonly isInterleavedBufferAttribute?: boolean;
+}
+
+/**
+ * The attribute's own array when its components sit contiguously in it, unnormalised.
+ *
+ * `getX`/`getY`/`getZ` are three reads per vertex where the array already is the vertex list, and
+ * on the owned engine each is a call into the wrapper: extracting a 188 416-triangle band one
+ * getter at a time cost 79.6-110.6 ms of a scene enter (strata preview, 2026-11-07). Interleaved
+ * and normalised attributes keep the getter path, because their stored numbers are not what a
+ * position is; the numbers a collider gets are the same for every kind of attribute.
+ */
+function attributeStorage(
+  attribute: IAttributeStorage,
+  itemSize: number,
+): ArrayLike<number> | undefined {
+  if (attribute.isInterleavedBufferAttribute === true) return undefined;
+  if (attribute.normalized || attribute.itemSize !== itemSize) return undefined;
+  // An array longer than the attribute's own items is a view over somebody else's data (a shared
+  // buffer, a strided layout): only a list that is exactly the items may be read positionally.
+  return attribute.array.length === attribute.count * itemSize ? attribute.array : undefined;
+}
+
 function geometryVertices(mesh: Mesh): Float32Array {
   const position = mesh.geometry.getAttribute("position");
   if (position === undefined)
     throw new Error("CollisionShape3D.fromMesh requires vertex positions.");
   const vertices = new Float32Array(position.count * 3);
-  for (let index = 0; index < position.count; index++) {
-    vertices[index * 3] = position.getX(index) * mesh.scale.x;
-    vertices[index * 3 + 1] = position.getY(index) * mesh.scale.y;
-    vertices[index * 3 + 2] = position.getZ(index) * mesh.scale.z;
+  const storage = attributeStorage(position, 3);
+  if (storage === undefined)
+    for (let index = 0; index < position.count; index++) {
+      vertices[index * 3] = position.getX(index);
+      vertices[index * 3 + 1] = position.getY(index);
+      vertices[index * 3 + 2] = position.getZ(index);
+    }
+  else vertices.set(storage);
+  const { x, y, z } = mesh.scale;
+  if (x === 1 && y === 1 && z === 1) return vertices;
+  for (let index = 0; index < vertices.length; index += 3) {
+    vertices[index] = (vertices[index] as number) * x;
+    vertices[index + 1] = (vertices[index + 1] as number) * y;
+    vertices[index + 2] = (vertices[index + 2] as number) * z;
   }
   return vertices;
 }
 
 function geometryIndices(mesh: Mesh): Uint32Array {
   const index = mesh.geometry.getIndex();
-  if (index !== null)
-    return Uint32Array.from({ length: index.count }, (_, offset) => index.getX(offset));
+  if (index !== null) {
+    const storage = attributeStorage(index, 1);
+    return storage === undefined
+      ? Uint32Array.from({ length: index.count }, (_, offset) => index.getX(offset))
+      : Uint32Array.from(storage);
+  }
   const count = mesh.geometry.getAttribute("position")?.count ?? 0;
   if (count === 0 || count % 3 !== 0)
     throw new Error("CollisionShape3D.fromMesh requires triangle indices.");

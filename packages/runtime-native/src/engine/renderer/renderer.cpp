@@ -12,9 +12,14 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     // Engine/Source/Runtime/Engine/Private/InstancedStaticMesh/ISMInstanceDataManager.cpp:490 adds the material's
     // MaxWorldPositionOffsetDisplacement to every instance's bounds).
     const double margin = item.material && (item.positionNode || item.nodes->shadowPositionNode()) ? item.material->maxPositionOffset : 0;
+    const bool stated = displacedByGeometryBox(item);
+    const Box3 none;
+    const Box3& box = stated ? *item.geometryBox : none;
     const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
                              instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
-                             instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld, margin};
+                             instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld, margin,
+                             stated ? std::array<double, 6>{box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z}
+                                    : std::array<double, 6>{}};
     // A released store's address can be reused with the same revisions.
     if (cacheable && shadowBoundsKey == key && !shadowPositionsOwner.expired() &&
         (!instances || !shadowInstancesOwner.expired())) return shadowBounds;
@@ -25,7 +30,13 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     // stress lab's 120-rig crowd about 760 ms a frame.
     const auto* rig = item.boneMatrices && !item.morphGeometry && item.shadowObject && item.shadowObject->type() == "SkinnedMesh"
         ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
-    if (rig && rig->boneReachBounds(bounds)) {
+    if (stated) {
+        bounds = box;  // where the author says the positionNode puts the vertices
+    } else if (rig && rig->boneReachBounds(bounds)) {
+    } else if (item.morphGeometry && !item.boneMatrices) {
+        // three bounds a morphed mesh by computeBoundingBox, which takes every target's reach and no influence;
+        // morphing each vertex on the CPU here, every frame, cost the MCP forest about 6 % of its CPU.
+        bounds = item.morphGeometry->morphReachBox();
     } else if (item.positions->scalar() == Scalar::F32) {
         for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
             float p[3]; item.positions->read(idx * 4, p, sizeof(p));
@@ -715,12 +726,17 @@ void Renderer::encodeFrame(FrameJob& job) {
                 boundIndex = item.indices;
             }
             const uint32_t count = static_cast<uint32_t>(indices.bytes / (wide ? 4 : 2));
-            TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
+            // The record's instance count is the GPU's; the tally below stays the CPU upper bound (capacity).
+            if (item.indirect)
+                TN_ENCODE(DrawIndexedIndirect, geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer), item.indirectOffset);
+            else TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
             if (tally != Tally::Extra)
                 (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
             const uint32_t count = static_cast<uint32_t>(geometry_->cache.resolved(*item.positions).bytes / 12);
-            TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
+            if (item.indirect)
+                TN_ENCODE(DrawIndirect, geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer), item.indirectOffset);
+            else TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
             if (tally != Tally::Extra)
                 (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);
         }
@@ -867,9 +883,11 @@ void Renderer::encodeFrame(FrameJob& job) {
             wgpuRenderBundleEncoderSetBindGroup(bundle, 1, row.mapGroup, row.fragmentBlock ? 1 : 0, &row.fragmentOffset);
             if (row.index) {
                 if (index != row.index) wgpuRenderBundleEncoderSetIndexBuffer(bundle, index = row.index, row.indexFormat, 0, row.indexSize);
-                wgpuRenderBundleEncoderDrawIndexedIndirect(bundle, pass.indirect, r * 20);
+                wgpuRenderBundleEncoderDrawIndexedIndirect(bundle, row.indirect ? row.indirect : pass.indirect,
+                                                           row.indirect ? row.indirectOffset : r * 20);
             } else {
-                wgpuRenderBundleEncoderDrawIndirect(bundle, pass.indirect, r * 20);
+                wgpuRenderBundleEncoderDrawIndirect(bundle, row.indirect ? row.indirect : pass.indirect,
+                                                    row.indirect ? row.indirectOffset : r * 20);
             }
         }
         WGPURenderBundleDescriptor finish{};

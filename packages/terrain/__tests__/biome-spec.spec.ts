@@ -157,17 +157,27 @@ describe("a biome file", () => {
     expect(forest.cover).toEqual({
       ground: "wood",
       seed: 466_468,
-      attempts: 80_000,
+      attempts: 240_000,
       stoneRadius: 1.9,
       clearings: [
         [165, -95, 10],
         [-145, -120, 10],
         [360, 200, 10],
       ],
+      understorey: {
+        attempts: 120_000,
+        litter: 1.6,
+        fern: 2.2,
+        bush: 0.35,
+        flower: 0.5,
+        deadfall: 1.5,
+        shade: 0.8,
+        shadeRadius: 1.2,
+      },
     });
     expect(forest.grass[0]).toMatchObject({
-      drift: { field: "stand", frequency: [3.1, 2.7], offset: 0.65, amplitude: 0.35, band: [0, 1] },
-      bladeScale: 0.8,
+      drift: { field: "stand", frequency: [3.1, 2.7], offset: 0.8, amplitude: 0.2, band: [0, 1] },
+      bladeScale: 1,
       bladeJitter: 0.65,
       scrubChance: 0.3,
       scrubScale: 0.9,
@@ -218,6 +228,26 @@ describe("a biome file", () => {
     });
     rejects("'cover.clearings[0][2]' must be greater than 0", (file) => {
       (file.cover as { clearings: number[][] }).clearings = [[165, -95, 0]];
+    });
+    const under = (file: Record<string, unknown>) =>
+      (file.cover as Record<string, unknown>).understorey as Record<string, unknown>;
+    rejects("'cover.understorey.litter' is missing", (file) => {
+      Reflect.deleteProperty(under(file), "litter");
+    });
+    rejects("'cover.understorey.attempts' must be a whole number", (file) => {
+      under(file).attempts = 1.5;
+    });
+    rejects("'cover.understorey.fern' must be at least 0", (file) => {
+      under(file).fern = -1;
+    });
+    rejects("'cover.understorey.deadfall' must be at least 0", (file) => {
+      under(file).deadfall = -1;
+    });
+    rejects("'cover.understorey.shade' must be at most 1", (file) => {
+      under(file).shade = 1.5;
+    });
+    rejects("'cover.understorey.shadeRadius' must be at least 0", (file) => {
+      under(file).shadeRadius = -1;
     });
     rejects("'grass[0].drift' is missing", (file) => {
       Reflect.deleteProperty(grass(file), "drift");

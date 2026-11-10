@@ -76,6 +76,8 @@ public:
     }
     ExprId expression(Node node);
     void statements(const std::vector<Node>& list);
+    /** An input changed value: no memoized read of it may survive. Variables and lowered bodies stay shared. */
+    void inputsChanged() { exprs_.clear(); temps_.clear(); }
 
 private:
     void statement(Node node);
@@ -132,6 +134,17 @@ ExprId Lowerer::convert(ExprId value, Type target) {
         if (target.rows == 4) part = program_.construct(Type::vec(4), {part, program_.constant(1.0f)});
         return convert(part, target);
     }
+    // three's mat3(mat4) (Matrix3.setFromMatrix4): the upper-left 3x3, column c being (m * e_c).xyz. WGSL has no
+    // matrix-to-matrix constructor of another size, and no column index in this IR.
+    if (source == Type::mat(4, 4) && target == Type::mat(3, 3)) {
+        std::vector<ExprId> columns;
+        for (int c = 0; c < 3; ++c) {
+            std::vector<ExprId> unit;
+            for (int r = 0; r < 4; ++r) unit.push_back(program_.constant(r == c ? 1.0f : 0.0f));
+            columns.push_back(program_.swizzle(program_.mul(value, program_.construct(Type::vec(4), unit)), "xyz"));
+        }
+        return program_.construct(target, columns);
+    }
     return program_.construct(target, {value});
 }
 
@@ -141,13 +154,17 @@ ExprId Lowerer::index(const Node& element) {
 }
 
 // Node.analyze r185 counts each incoming use, descending into children only on the first.
+// A hoisted variable is listed after the ones its value reads (post-order), so declareHoisted declares an input before
+// the variable whose value lowers a loop that reads it; listed first, the input was declared inside that loop.
 void Lowerer::analyze(Node node) {
     if (!node || ++uses_[node.get()] != 1) return;
-    if (node->kind == Kind::Var && node->bits == 1) hoisted_.push_back(node);
-    if (node->kind == Kind::Call) return; // each invocation owns its analysis and early returns
-    for (const auto& arg : node->args) analyze(arg);
-    for (const auto& child : node->body) analyze(child);
-    for (const auto& child : node->otherwise) analyze(child);
+    const bool hoisted = node->kind == Kind::Var && node->bits == 1;
+    if (node->kind != Kind::Call) { // each invocation owns its analysis and early returns
+        for (const auto& arg : node->args) analyze(arg);
+        for (const auto& child : node->body) analyze(child);
+        for (const auto& child : node->otherwise) analyze(child);
+    }
+    if (hoisted) hoisted_.push_back(node);
 }
 
 ExprId Lowerer::expression(Node node) {
@@ -175,9 +192,10 @@ ExprId Lowerer::expression(Node node) {
     const bool shared = uses_[node.get()] > 1 && (kind == Kind::Unary || kind == Kind::Binary ||
         kind == Kind::Math || kind == Kind::Join || kind == Kind::Pmrem ||
         kind == Kind::RenderOutput || kind == Kind::WgslCall);
-    // TextureNode generates a sampled temporary even for a single use.
+    // TextureNode generates a sampled temporary even for a single use. A Fn call is statements, and three
+    // caches its output for the build: re-lowered per read, a loop in it would run once per read.
     const bool sampled = kind == Kind::Texture || kind == Kind::TextureLoad || kind == Kind::RenderTexture ||
-        kind == Kind::Reflector || kind == Kind::ViewportDepth;
+        kind == Kind::Reflector || kind == Kind::ViewportDepth || kind == Kind::Call;
     if (id != kInvalid && (shared || sampled)) {
         id = program_.load(program_.var(program_.expr(id).type, id));
         temps_[node.get()] = {scopes_.back(), id};
@@ -368,12 +386,18 @@ ExprId Lowerer::emit(Node node) {
                 if (d.args[1]->kind == Kind::Constant && literal(b, at)) b = program_.construct(at, {b});
                 else if (d.args[0]->kind == Kind::Constant && literal(a, bt)) a = program_.construct(bt, {a});
             }
-            if (d.bits == 1) {
+            // r185 promotes both operands of an arithmetic or comparison operator to the higher component
+            // rank, uint < int < float (OperatorNode.generate, NodeBuilder.getPromotedComponentType), live
+            // TSL as well as a serialized upstream graph: `instanceIndex.greaterThanEqual(floatUniform)` and
+            // `floatValue.add(intValue)` compile on three, so they compile here (PRD-857).
+            const bool promotes = d.binary == BinOp::Add || d.binary == BinOp::Sub || d.binary == BinOp::Mul ||
+                                  d.binary == BinOp::Div || d.binary == BinOp::Less || d.binary == BinOp::Greater ||
+                                  d.binary == BinOp::Equal || d.binary == BinOp::LessEqual || d.binary == BinOp::GreaterEqual;
+            if (promotes) {
                 auto at = program_.expr(a).type, bt = program_.expr(b).type;
                 if (at.numeric() && bt.numeric() && !at.isMatrix() && !bt.isMatrix() && at.scalar != bt.scalar) {
-                    const bool compare = d.binary == BinOp::Less || d.binary == BinOp::Greater || d.binary == BinOp::Equal ||
-                                         d.binary == BinOp::LessEqual || d.binary == BinOp::GreaterEqual;
-                    const auto scalar = compare && at.isScalar() && bt.isScalar() ? Type::Scalar::F32 : at.rows >= bt.rows ? at.scalar : bt.scalar;
+                    const auto rank = [](Type::Scalar s) { return s == Type::Scalar::F32 ? 3 : s == Type::Scalar::I32 ? 2 : 1; };
+                    const auto scalar = rank(at.scalar) >= rank(bt.scalar) ? at.scalar : bt.scalar;
                     if (at.scalar != scalar) a = program_.construct(Type::vec(at.rows, scalar), {a});
                     if (bt.scalar != scalar) b = program_.construct(Type::vec(bt.rows, scalar), {b});
                 }
@@ -438,8 +462,21 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Swizzle: return program_.swizzle(expression(d.args[0]), d.lanes);
         case Kind::Join: {
             std::vector<ExprId> ids;
+            // three r185 JoinNode: an input that runs past the vector's length is cut to the components
+            // left, and any input after it is dropped (three logs the overflow and still builds).
+            const unsigned length = d.type.isMatrix() ? 0u : d.type.rows;
+            unsigned used = 0;
             for (const Node& part : d.args) {
-                const auto value = expression(part);
+                if (length != 0 && used >= length) break;
+                auto value = expression(part);
+                if (length != 0 && value != kInvalid && !program_.expr(value).type.isMatrix()) {
+                    const auto type = program_.expr(value).type;
+                    if (used + type.rows > length) {
+                        const unsigned left = length - used;
+                        value = convert(value, left == 1 ? Type{type.scalar, 1, 1} : Type::vec(left, type.scalar));
+                    }
+                    used += program_.expr(value).type.rows;
+                }
                 ids.push_back(d.type.scalar == Type::Scalar::U32 && value != kInvalid
                     ? convert(value, Type::vec(program_.expr(value).type.rows, Type::Scalar::U32)) : value);
             }
@@ -1062,6 +1099,11 @@ Lowering::Lowering(Program& program, std::unordered_map<std::string, ExprId> inp
                    std::optional<ToneMapping> toneMapping, bool srgb, Node custom)
     : impl_(std::make_unique<Impl>(program, std::move(inputs), toneMapping, srgb, custom)) {}
 Lowering::~Lowering() = default;
+void Lowering::input(const std::string& name, std::optional<ExprId> value) {
+    if (value) impl_->inputs.insert_or_assign(name, *value);
+    else impl_->inputs.erase(name);
+    impl_->lowerer.inputsChanged();
+}
 ExprId Lowering::lower(const Graph& graph) {
     impl_->lowerer.analyze(graph);
     impl_->lowerer.declareHoisted();

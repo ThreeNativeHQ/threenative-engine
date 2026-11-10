@@ -58,6 +58,7 @@ Add the missing specs and the capability-detail note.
 #### Phase 2: pixels judged
 **Status:** PARTIAL
 - [ ] Judge verdict NEUTRAL or IMPROVEMENT with meaningful effect coverage, under the current owner preservation rule. proof: PR images + verdict — 2026-10-14 fresh review: all six pairs NEUTRAL, but no discernible cast shadow in the shadow frames; coverage repair and runtime captures remain open.
+  2026-11-09, open: the coverage gap is the parent, not the pose. Detached worktree at `1a5314a1d`, BEFORE the parent tree, AFTER the same tree with only `2d2124792`'s `virtual-shadow.ts` (the run's provenance reads `dirty: true`), `run-conformance.mjs --target web --only-tests 33-virtual-shadow`, NVIDIA Turing, 2 runs per arm: all four frames are byte-identical (`f9d4dea8…`), and a fresh judge rates them NO COVERAGE (the floor is flat `#666666`, no cast shadow). Waiting 60 more frames before the capture gives the same bytes, so the virtual shadow draws nothing on this fixture at that commit on web. The same case on this branch's tree draws a clear cast shadow under the sphere. A same-tree before/after with a visible shadow therefore cannot exist at the pre-#381 parent; the owner decides what proves this box.
 
 #### Phase 3: specs and notes
 **Status:** COMPLETE

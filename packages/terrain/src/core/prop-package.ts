@@ -202,6 +202,63 @@ export function propAssetOf(modelKey: string): string {
   return at < 0 ? modelKey : modelKey.slice(0, at);
 }
 
+/** One record of a compiled prop bucket, in record order. */
+export interface IPropBucketRecord {
+  readonly id: string;
+  /** The model the record draws, as its run names it (`spruce:2`, or with a shape suffix). */
+  readonly key: string;
+  /** The asset alone, `propAssetOf(key)`. */
+  readonly asset: string;
+  readonly position: readonly [number, number, number];
+  readonly quaternion: readonly [number, number, number, number];
+  readonly scale: number;
+  readonly reach: number;
+}
+
+/**
+ * The records of one compiled prop bucket, read back in record order: the inverse of
+ * `compilePropBuckets`, so a loader that fetched a bake's files gets each record's ID, model,
+ * pose and reach without re-deriving the container layout.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation read a baked prop bucket back into placements to ground them on this machine's terrain
+ * @constraint throws `TN_PROP_BUCKET_INVALID` when the record buffer, the IDs and the runs disagree
+ * @example for (const record of decodePropBucket(bucket)) pose(record.key, record.position, record.quaternion);
+ */
+export function decodePropBucket(bucket: IPropBucketPackage): IPropBucketRecord[] {
+  const floats = new Float32Array(
+    bucket.placements.buffer,
+    bucket.placements.byteOffset,
+    bucket.placements.byteLength / 4,
+  );
+  if (floats.length !== bucket.ids.length * 8)
+    throw new Error(
+      `TN_PROP_BUCKET_INVALID: bucket '${bucket.bucket}' holds ${floats.length / 8} records for ${bucket.ids.length} IDs.`,
+    );
+  const keys: string[] = new Array(bucket.ids.length);
+  for (const cell of bucket.cells)
+    for (const run of cell.runs)
+      for (let index = 0; index < run.count; index++) keys[run.offset + index] = run.asset;
+  return bucket.ids.map((id, index) => {
+    const key = keys[index];
+    if (key === undefined)
+      throw new Error(
+        `TN_PROP_BUCKET_INVALID: bucket '${bucket.bucket}' record '${id}' sits in no run.`,
+      );
+    const at = index * 8;
+    const f = (k: number): number => floats[at + k] as number;
+    return {
+      id,
+      key,
+      asset: propAssetOf(key),
+      position: [f(0), f(1), f(2)],
+      quaternion: [f(3), f(4), f(5), f(6)],
+      scale: f(7),
+      reach: bucket.reach[index] ?? bucket.reach[0] ?? Number.POSITIVE_INFINITY,
+    };
+  });
+}
+
 /** The files one bake writes for a world's prop package: its bucket list and each bucket's three files. */
 export interface IPropPackageFiles {
   readonly manifest: Uint8Array;
