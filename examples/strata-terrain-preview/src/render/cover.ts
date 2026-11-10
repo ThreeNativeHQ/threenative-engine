@@ -434,6 +434,14 @@ export const POPPY = {
 } as const;
 
 /**
+ * The meadow's flowers where no imported flower draws, poppy and bloom alike. The game places them
+ * as densely as the Fab meadow's single flowers, so a five-stem colony with nine-centimetre heads
+ * per placement made a salmon carpet with 27 times the Fab meadow's flower coverage (PRD-870 judge,
+ * 2026-11-10): one low stem with a six-centimetre head per placement sits in the grass instead.
+ */
+export const WILDFLOWER = { stems: 1, height: [0.4, 0.58], disc: 0.06 } as const;
+
+/**
  * One seeded poppy cluster, as two buffers.
  *
  * Stems and petals are separate because they are separate materials — the petals are alpha-cutout
@@ -447,6 +455,12 @@ export function poppyCluster(
   seed: number,
   /** The atlas cell one petal samples. */
   cell: { u0: number; u1: number; v0: number; v1: number },
+  /** The colony's own size; the meadow's small wildflowers (`WILDFLOWER`) override the poppy's. */
+  shape: {
+    readonly stems: number;
+    readonly height: readonly [number, number];
+    readonly disc: number;
+  } = POPPY,
 ): { petals: BufferGeometry; stems: BufferGeometry } {
   const petal = cell;
   const random = createRandom(seed);
@@ -456,10 +470,10 @@ export function poppyCluster(
   const stemLight = new Vector3(0.34, 0.44, 0.18);
   const white = new Vector3(1, 1, 1);
   const segments = 3;
-  for (let s = 0; s < POPPY.stems; s += 1) {
+  for (let s = 0; s < shape.stems; s += 1) {
     const azimuth = random() * Math.PI * 2;
     const away = 0.02 + random() * 0.11;
-    const height = POPPY.height[0] + random() * (POPPY.height[1] - POPPY.height[0]);
+    const height = shape.height[0] + random() * (shape.height[1] - shape.height[0]);
     const root = new Vector3(Math.cos(azimuth) * away * 0.4, 0, Math.sin(azimuth) * away * 0.4);
     // The head leans out over the stem, further for the taller stems.
     const lean = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth)).multiplyScalar(height * 0.22);
@@ -494,7 +508,7 @@ export function poppyCluster(
     // and as a line from anywhere else, which is what the last captures showed.
     const head = spine(1);
     const twist = random() * Math.PI * 2;
-    const radius = POPPY.disc * (0.8 + random() * 0.4);
+    const radius = shape.disc * (0.8 + random() * 0.4);
     // The dark centre every poppy has: the ring of stamens around the ovary, which is nearly black
     // and which is the single detail that makes a red disc read as a flower.
     const centreR = radius * POPPY.centre;

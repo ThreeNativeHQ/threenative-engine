@@ -20,7 +20,7 @@ import {
   Quaternion,
   Vector3,
 } from "three";
-import { boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
+import { WILDFLOWER, boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
 import { FAR_FOREST_LAYER } from "./farForest.js";
 import { ATLAS_CELLS, spruceFarCrown, spruceVariants } from "./spruce.js";
 
@@ -385,7 +385,7 @@ export function buildPropVariants(
       variants.set(`${asset}:${i}`, [...ready]);
       continue;
     }
-    const cluster = poppyCluster((VARIANTS.seed ^ (i * 0x27d4eb2f)) >>> 0, POPPY_PETAL);
+    const cluster = poppyCluster((VARIANTS.seed ^ (i * 0x27d4eb2f)) >>> 0, POPPY_PETAL, WILDFLOWER);
     variants.set(`${asset}:${i}`, [
       { geometry: cluster.stems, role: "stem", variant: i },
       { geometry: cluster.petals, role: "petal", variant: i },

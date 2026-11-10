@@ -1,6 +1,6 @@
 import { Vector3 } from "three";
 import { expect, it } from "vitest";
-import { fernClump, grassClump, poppyCluster } from "../src/render/cover.js";
+import { POPPY, WILDFLOWER, fernClump, grassClump, poppyCluster } from "../src/render/cover.js";
 
 it("keeps contiguous grass, fern and flower stem vertices together in the wind", () => {
   const flowers = poppyCluster(73, { u0: 0.5, v0: 0, u1: 1, v1: 0.5 });
@@ -73,4 +73,20 @@ it("keeps meadow blades slender with a soft bow and tapered tips", () => {
       geometry.dispose();
     }
   }
+});
+
+// PRD-870: the meadow's fallback flowers drew as poppy colonies, a salmon carpet with 27 times the
+// Fab meadow's flower coverage.
+it("grows the meadow's fallback flowers as single small heads under the poppy colony's", () => {
+  const cell = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
+  const poppy = poppyCluster(73, cell);
+  const bloom = poppyCluster(73, cell, WILDFLOWER);
+  expect(bloom.petals.index?.count ?? 0).toBeLessThanOrEqual(
+    (poppy.petals.index?.count ?? 0) / POPPY.stems,
+  );
+  bloom.stems.computeBoundingBox();
+  poppy.stems.computeBoundingBox();
+  expect(bloom.stems.boundingBox?.max.y ?? 1).toBeLessThan(POPPY.height[0]);
+  expect(WILDFLOWER.disc).toBeLessThan(POPPY.disc);
+  for (const geometry of [poppy.petals, poppy.stems, bloom.petals, bloom.stems]) geometry.dispose();
 });
