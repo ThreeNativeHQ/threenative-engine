@@ -132,8 +132,8 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
     layers: [
       { layer: "alpine", from: 0.95, to: 1.65 },
       { layer: "rock", from: 0.35, to: 1.8 },
-      { layer: "treeline", from: 6.5, to: 10 },
-      { layer: "cap", from: 14, to: 17 },
+      { layer: "treeline", from: 11, to: 14 },
+      { layer: "cap", from: 17, to: 21 },
       { layer: "desertRock", from: 0.18, to: 0.48 },
       { layer: "alpineRock", from: 0.06, to: 0.14 },
       { layer: "alpineHollow", from: 0.05, to: 0.12 },

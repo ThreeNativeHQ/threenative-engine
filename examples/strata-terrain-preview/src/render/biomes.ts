@@ -286,13 +286,11 @@ const temperate: IBiome = {
   heightFractions: {
     alpine: [0.95, 1.65],
     rock: [0.35, 1.8],
-    // The backdrop rises to about 1100 m over a 41 m walkable range, its near massif a surveyed
-    // mountain on 300-500 m of foothills (PRD-866). Spruce climbs to 450-575 m, about half the
-    // relief as on a real range, so the massif's lower slopes are wooded (owner reference
-    // 2026-11-09: "mountains with forested lower slopes"); snow holds above 700-860 m. At 227-315 m
-    // the snow lay across every saddle as a white band.
-    treeline: [11, 14],
-    cap: [17, 21],
+    // The generated backdrop rises to 848 m over a 41 m walkable range. Spruce climbs to about
+    // 260-400 m (its 70th-80th height percentile) and snow holds only on the peaks' gentle ground
+    // above 570-690 m (93rd-97th). At 227-315 m the snow lay across every saddle as a white band.
+    treeline: [6.5, 10],
+    cap: [14, 17],
     desertRock: [0.18, 0.48],
     alpineRock: [0.06, 0.14],
     alpineHollow: [0.05, 0.12],
@@ -404,6 +402,16 @@ const temperate: IBiome = {
 /** The wood itself: the temperate base with its stand rules on. The other four looks are not woods. */
 const forest: IBiome = {
   ...temperate,
+  heightFractions: {
+    ...temperate.heightFractions,
+    // The backdrop rises to about 1100 m over a 41 m walkable range, its near massif a surveyed
+    // mountain on 300-500 m of foothills (PRD-866). Spruce climbs to 450-575 m, about half the
+    // relief as on a real range, so the massif's lower slopes are wooded (owner reference
+    // 2026-11-09: "mountains with forested lower slopes"); snow holds above 700-860 m. At 227-315 m
+    // the snow lay across every saddle as a white band.
+    treeline: [11, 14],
+    cap: [17, 21],
+  },
   oliveMeadow: true,
   openMeadow: true,
   woodedGround: true,

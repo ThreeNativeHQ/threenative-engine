@@ -113,6 +113,38 @@ describe("forest backdrop", () => {
     expect(snowy / collar).toBeLessThan(0.15);
   });
 
+  it("leaves the massif's lower slopes gentle enough for forest", () => {
+    // PRD-866: stamped cones were one 35 to 50 degree wall from foot to summit, so trees stood only on
+    // the valley floor. A real mountain's lower slopes are walkable wood under its rock.
+    const { massif } = JSON.parse(
+      readFileSync(new URL("../src/world/horizon.json", import.meta.url), "utf8"),
+    ).forest as {
+      massif: { spacing: number; columns: number; rows: number; offset: number; heights: string };
+    };
+    const raw = Buffer.from(massif.heights, "base64");
+    const heights = new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+    const at = (row: number, column: number) =>
+      massif.offset + (heights[row * massif.columns + column] as number) / 10;
+    const baked = JSON.parse(
+      readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
+    ) as { forest: { heights: number[] } };
+    const [treeline] = measureBiome(BIOMES.forest, baked.forest.heights).heightBands.treeline;
+    const floor = massif.offset;
+    let lower = 0;
+    let gentle = 0;
+    for (let row = 1; row < massif.rows - 1; row++)
+      for (let column = 1; column < massif.columns - 1; column++) {
+        const height = at(row, column);
+        if (height < floor + 50 || height > treeline) continue;
+        const dx = (at(row, column + 1) - at(row, column - 1)) / (2 * massif.spacing);
+        const dz = (at(row + 1, column) - at(row - 1, column)) / (2 * massif.spacing);
+        lower++;
+        if (Math.atan(Math.hypot(dx, dz)) < (40 * Math.PI) / 180) gentle++;
+      }
+    expect(lower).toBeGreaterThan(1000);
+    expect(gentle / lower).toBeGreaterThanOrEqual(0.6);
+  });
+
   it("meets the surveyed ground at the centre", () => {
     const half = (forest.resolution - 1) / 2;
     expect(forest.heights[half * forest.resolution + half]).toBeCloseTo(13.1, 0);

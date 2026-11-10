@@ -1634,7 +1634,7 @@ function buildCurvature(data: IBakedWorld, field: Heightfield, biome?: IBiome): 
 }
 
 /** The collar's own relief at the survey's 9.8 m cells, for the pixels its prefiltered mesh smooths. */
-interface ICollarRelief {
+export interface ICollarRelief {
   readonly texture: DataTexture;
   /** World normal of the unfiltered surroundings. */
   readonly normal: Node<"vec3">;
@@ -1650,7 +1650,7 @@ interface ICollarRelief {
  * collar draws a prefiltered field on a 14-18 m ring grid, so its cliffs, gullies and ledges exist
  * only in this texture. Half float like the curvature: the normal lanes are signed.
  */
-function buildCollarRelief(name: string): ICollarRelief | undefined {
+export function buildCollarRelief(name: string): ICollarRelief | undefined {
   const source = horizonSurroundings(name);
   if (source === undefined) return undefined;
   const n = source.resolution;

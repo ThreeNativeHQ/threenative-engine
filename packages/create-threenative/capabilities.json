@@ -8721,6 +8721,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["the tile must cover the whole mountain; a summit crop lifts as a cone"],
+      "example": "const lifted = liftMassif({ id: \"hill\", size: 400, resolution: 3, heights: [0, 0, 0, 0, 90, 0, 0, 0, 0] });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function liftMassif(tile: IMassifTile): Float32Array { … }",
+      "situations": [
+        "measure how tall a surveyed mountain stands above the valley floor around it"
+      ],
+      "summary": "A tile's mountain above its own foot: the heights minus a smooth surface through its border, so its edge is exactly zero and stands on any ground with no wall or ramp. Signed: a valley inside the mountain cuts below the foot, as it does in the survey.",
+      "supersedes": [],
+      "symbol": "liftMassif"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), \"project\");",
       "importPath": "@threenative/terrain",
@@ -8767,6 +8784,27 @@
       "summary": "A biome's rows as the ordered generators read them. The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune field and a tundra, so the biome file names them rather than the code. A biome whose tree is not one this generator has art for fails here, naming the species, rather than planting nothing.",
       "supersedes": [],
       "symbol": "orderedScatterRules"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the tile must be a whole mountain whose border is valley floor; erosion after it carves the survey"
+      ],
+      "example": "const { terrain, placement } = placeMassif(new Terrain({ size: 5000, resolution: 129 }), { seed: 3, tile: { id: \"cone\", size: 2000, resolution: 3, heights: [0, 0, 0, 0, 900, 0, 0, 0, 0] } });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [
+        "`at`, `bearing`, `distance`, `height`, `top`, `face` and `keepOut` on the same call"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function placeMassif( terrain: Terrain, options: IPlaceMassifOptions, ): { … }",
+      "situations": [
+        "put a real-shaped mountain behind a generated world, a different one per seed"
+      ],
+      "summary": "Stands one surveyed mountain behind a world, chosen and posed by a seed: the tile from a list, a point on a bearing and distance, a turn that faces its steepest wall to the centre within 20 degrees, a mirror and a summit height. It stands on the host's own foot (a smooth surface through the host under its border), replacing the host's hills inside its square, and leaves the centre square untouched. Appends one `heightmap` layer; the placement carries the tile-spacing heights a relief map reads.",
+      "supersedes": [],
+      "symbol": "placeMassif"
     },
     {
       "aliases": [],

@@ -25,6 +25,11 @@ export interface IPlaceMassifOptions {
   readonly height?: readonly [number, number];
   /** Summit elevation in world metres; wins over `height`, so a world's relief stays bounded. */
   readonly top?: readonly [number, number];
+  /**
+   * Degrees from +X toward +Z the steepest wall faces, within 20 degrees. Default: toward the centre.
+   * A wall facing away from the sun is lit by the sky alone and shows little of its rock.
+   */
+  readonly face?: number;
   /** Half side of the centre square the massif leaves untouched (the playable ground). Default 320. */
   readonly keepOut?: number;
   /** Layer id. Default `massif`. */
@@ -186,7 +191,7 @@ function faceDirection(lifted: Float32Array, n: number, spacing: number): number
  * @situation put a real-shaped mountain behind a generated world, a different one per seed
  * @constraint the tile must be a whole mountain whose border is valley floor; erosion after it carves the survey
  * @example const { terrain, placement } = placeMassif(new Terrain({ size: 5000, resolution: 129 }), { seed: 3, tile: { id: "cone", size: 2000, resolution: 3, heights: [0, 0, 0, 0, 900, 0, 0, 0, 0] } });
- * @override `at`, `bearing`, `distance`, `height` and `keepOut` on the same call
+ * @override `at`, `bearing`, `distance`, `height`, `top`, `face` and `keepOut` on the same call
  */
 export function placeMassif(
   terrain: Terrain,
@@ -233,7 +238,8 @@ export function placeMassif(
   }
   const faceTile = faceDirection(lifted, n, spacing);
   const face = mirror ? Math.PI - faceTile : faceTile;
-  const toCentre = Math.atan2(-at[1], -at[0]);
+  const toCentre =
+    options.face !== undefined ? (options.face * Math.PI) / 180 : Math.atan2(-at[1], -at[0]);
   const jitter = ((draw() - 0.5) * 40 * Math.PI) / 180;
   const turn = toCentre + jitter - face;
   const pick = draw();
@@ -301,6 +307,9 @@ export function placeMassif(
         if (rise < 1) continue;
         const u = column / (n - 1);
         const v = row / (n - 1);
+        // A cell past the world's edge is never drawn, so it does not bound the height.
+        const [x, z] = toWorld(u, v);
+        if (Math.abs(x) > halfWorld || Math.abs(z) > halfWorld) continue;
         scale = Math.min(scale, (top - sampleGrid(hostBase, B, B, u, v)) / rise);
       }
   } else {
@@ -310,23 +319,27 @@ export function placeMassif(
   if (!(scale > 0))
     throw new RangeError(`Massif ${tile.id}: top under its foot at ${foot.toFixed(0)} m`);
   const height = scale * tall;
-  // The tile prefiltered to about the host's spacing, for the host-grid layer.
+  // The tile decimated to about the host's spacing for the host-grid layer, through a separable
+  // tent as wide as the decimation step: a host cell's own area. A box twice as wide smoothed the
+  // ledges a 9.8 m mesh can still draw; none aliased lidar noise into them.
   const factor = Math.max(1, Math.round(cell / spacing));
   const coarseN = Math.floor((n - 1) / factor) + 1;
   const coarse = new Float32Array(coarseN * coarseN);
+  const tent = (d: number) => factor - Math.abs(d);
   for (let row = 0; row < coarseN; row++)
     for (let column = 0; column < coarseN; column++) {
       let sum = 0;
-      let count = 0;
-      for (let dr = -(factor >> 1); dr <= factor >> 1; dr++)
-        for (let dc = -(factor >> 1); dc <= factor >> 1; dc++) {
+      let total = 0;
+      for (let dr = 1 - factor; dr < factor; dr++)
+        for (let dc = 1 - factor; dc < factor; dc++) {
           const r = row * factor + dr;
           const c = column * factor + dc;
           if (r < 0 || c < 0 || r >= n || c >= n) continue;
-          sum += lifted[r * n + c] as number;
-          count++;
+          const w = tent(dr) * tent(dc);
+          sum += w * (lifted[r * n + c] as number);
+          total += w;
         }
-      coarse[row * coarseN + column] = sum / count;
+      coarse[row * coarseN + column] = sum / total;
     }
   /** The final height at a world point, from a lifted grid, and its weight against the host. */
   const finalAt = (x: number, z: number, grid: Float32Array, gridN: number): [number, number] => {

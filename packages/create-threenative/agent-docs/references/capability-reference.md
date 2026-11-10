@@ -7169,6 +7169,22 @@ export function landformBackdrop( kind: LandformKind, options: IBackdropOptions 
 const { size, resolution, heights } = landformBackdrop("temperateMountains", { seed: 7, centerHeight: 13 });
 ```
 
+### `liftMassif`
+
+`function` — A tile's mountain above its own foot: the heights minus a smooth surface through its border, so its edge is exactly zero and stands on any ground with no wall or ramp. Signed: a valley inside the mountain cuts below the foot, as it does in the survey.
+
+```ts
+export function liftMassif(tile: IMassifTile): Float32Array { … }
+```
+
+- **Use when:** measure how tall a surveyed mountain stands above the valley floor around it
+- **Constraints:** the tile must cover the whole mountain; a summit crop lifts as a cone
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const lifted = liftMassif({ id: "hill", size: 400, resolution: 3, heights: [0, 0, 0, 0, 90, 0, 0, 0, 0] });
+```
+
 ### `makeExport`
 
 `function` — Recovered numerical/project exports; GLB/runtime outputs contain terrain only.
@@ -7215,6 +7231,23 @@ export function orderedScatterRules(spec: IBiomeSpec): IOrderedScatterRules { �
 
 ```ts
 const rules = orderedScatterRules(spec);
+```
+
+### `placeMassif`
+
+`function` — Stands one surveyed mountain behind a world, chosen and posed by a seed: the tile from a list, a point on a bearing and distance, a turn that faces its steepest wall to the centre within 20 degrees, a mirror and a summit height. It stands on the host's own foot (a smooth surface through the host under its border), replacing the host's hills inside its square, and leaves the centre square untouched. Appends one `heightmap` layer; the placement carries the tile-spacing heights a relief map reads.
+
+```ts
+export function placeMassif( terrain: Terrain, options: IPlaceMassifOptions, ): { … }
+```
+
+- **Use when:** put a real-shaped mountain behind a generated world, a different one per seed
+- **Constraints:** the tile must be a whole mountain whose border is valley floor; erosion after it carves the survey
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** `at`, `bearing`, `distance`, `height`, `top`, `face` and `keepOut` on the same call
+
+```ts
+const { terrain, placement } = placeMassif(new Terrain({ size: 5000, resolution: 129 }), { seed: 3, tile: { id: "cone", size: 2000, resolution: 3, heights: [0, 0, 0, 0, 900, 0, 0, 0, 0] } });
 ```
 
 ### `propAssetOf`

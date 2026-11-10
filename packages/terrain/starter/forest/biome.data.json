@@ -93,13 +93,13 @@
     },
     {
       "layer": "treeline",
-      "from": 6.5,
-      "to": 10
+      "from": 11,
+      "to": 14
     },
     {
       "layer": "cap",
-      "from": 14,
-      "to": 17
+      "from": 17,
+      "to": 21
     },
     {
       "layer": "desertRock",

@@ -119,7 +119,7 @@ for (const name of WORLD_NAMES.flatMap((name) => [name, `${name}-horizon`])) {
 /** Whole surveyed mountains, foot to foot at 4 m (`scripts/dem/massif.mjs`), for `placeMassif`. */
 export const MASSIF_TILES = [];
 /** The seed the pinned forest stands its massif with. */
-const MASSIF_SEED = Number(process.env.STRATA_MASSIF_SEED ?? 0);
+const MASSIF_SEED = Number(process.env.STRATA_MASSIF_SEED ?? 6);
 for (const id of ["longs", "teton", "maroon"]) {
   const meta = JSON.parse(
     await readFile(new URL(`dem/massif-${id}.json`, import.meta.url), "utf8"),
@@ -451,8 +451,8 @@ export const realContinuation = Object.fromEntries(
 /**
  * The vista's near massif (owner, 2026-11-04: "make sure we have the proper mountain on this
  * capture"; 2026-11-09: "think about heightmaps etc. real shapes"). A whole surveyed mountain, foot
- * to foot at 4 m, stands with its summit 1.8 km from the vista eye (`BENCHMARK.forest.poses.vista`),
- * left of its look line, its steepest wall turned to the forest. `forest-backdrop.spec.ts` measures
+ * to foot at 4 m, stands with its summit 2.4 km from the vista eye (`BENCHMARK.forest.poses.vista`),
+ * left of its look line, its steepest wall turned south into the low sun. `forest-backdrop.spec.ts` measures
  * the skyline from that eye; `massif` keeps the placement and its 4 m heights for the relief map.
  */
 function nearMassif(terrain) {
@@ -460,8 +460,10 @@ function nearMassif(terrain) {
     seed: MASSIF_SEED,
     tile: MASSIF_TILES,
     at: [-2050, -150],
+    // South: the sun stands west-south-west, so a north-east face toward the vista is backlit.
+    face: 90,
     keepOut: 420,
-    top: [1050, 1150],
+    top: [1100, 1160],
   });
   massif.forest = placed.placement;
   return placed.terrain;
