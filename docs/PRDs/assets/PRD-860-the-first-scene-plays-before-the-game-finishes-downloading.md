@@ -185,7 +185,7 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 
 #### Phase 2 — Textures stream by mip
 
-- [ ] AC-4 [local]: A KTX2 texture uploads its resident tail first, then fetches the wanted levels with `Range` requests. A host without `Range` keeps the full file. proof: `pnpm exec vitest run packages/core/__tests__/texture-streaming.spec.ts` — Evidence: pending.
+- [x] AC-4 [local]: A KTX2 texture uploads its resident tail first, then fetches the wanted levels with `Range` requests. A host without `Range` keeps the full file. proof: `pnpm exec vitest run packages/core/__tests__/texture-streaming.spec.ts` — Evidence (2026-11-09): 21/21 green. `openKtx2Stream` (`packages/core/src/texture-streaming.ts`) reads a 4096 px, 13-level file with one 64 KiB `Range` read (under 2% of the file; it holds the 64 px tail and two more levels), hands back a whole KTX2 of those levels for the upload, then one more `Range` read per want (300 px wants 10 levels, from byte 65536 on), coarse first; the full chain matches the source level for level. A host that answers 200 is read once and kept whole. BasisLZ files keep the kept levels' image descriptors. three's own `ktx-parse` reads every rebuilt file with the source's descriptor, key/value data, level bytes and BasisLZ descriptors. A host that answers from the wrong offset fails with `TN_KTX2_FETCH`. The upload into the engine and Midway's bytes are AC-5.
 - [ ] AC-5 [local]: On cooked Midway at 40 Mbps, texture bytes before first play drop below the AC-2 result, and the owned engine (the default) draws the streamed mips. proof: the AC-2 playtest, with `TN_STREAMING_POOL` read from the console — Evidence: pending.
 - [ ] AC-6 [local]: A fresh visual judge returns NEUTRAL or IMPROVEMENT for the settled spawn frame and one flight pose, streamed against `streamTextures: false`, two runs per arm. proof: headed `--browser-recipe webgpu` captures, `adapter.info` checked, images on the PR — Evidence: pending.
 
@@ -201,7 +201,7 @@ Thresholds: the playtest network profile is 40 Mbps down and 20 ms latency (the 
 | Spawn-only boot | Midway `src/scenes/Midway.ts` `load()` → `ctx.assets` | One `Promise.all` of every asset becomes spawn awaits plus `prefetch` — **open**: `WorldView` cannot build a hull it has not loaded | 136.4 MB awaited today, 64.3 MB spawn-only |
 | Late-asset report | `ctx.assets` request after the reveal → `TN_ASSET_LATE` | New line, no old path | `packages/core/src/assets.ts:84`, `packages/core/__tests__/assets-late.spec.ts` |
 | Cooked Midway | `pnpm build` in the game → `public/assets.manifest.json` | 188 MB of uncompiled sources become a 228-entry manifest | 166.2 MB shipped, 165 MB `dist` |
-| Texture mip streaming | `ctx.assets` KTX2 load → owned-engine mip upload | Whole-file KTX2 load stays only for hosts without `Range` | not started (no KTX2 output on the default engine) |
+| Texture mip streaming | `ctx.assets` KTX2 load → owned-engine mip upload | Whole-file KTX2 load stays only for hosts without `Range` | `openKtx2Stream` (`packages/core/src/texture-streaming.ts`), unit-proven; not yet called by `ctx.assets` (no KTX2 output on the default engine, [PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)) |
 | Mesh LOD streaming | `compileAssets` model pass → `ctx.assets` model load | Shared-buffer LOD chains stay for non-streamed models | not started |
 
 Fill the `file:line` entry points when each phase lands.
@@ -291,8 +291,9 @@ and 13.2 MB of texture compression for want of an engine decoder ([PRD-861](PRD-
 
 #### Phase 2: Textures stream by mip
 
-**Status:** NOT STARTED — behind Phase 1's open KTX2 question: a mip stream needs a KTX2 file whose
-header carries a level index, and the default engine refuses KTX2 output today.
+**Status:** IN PROGRESS — the `Range` stream landed (AC-4). The wiring into `ctx.assets` and the
+engine upload (AC-5) wait on the owned engine's KTX2 decoder ([PRD-861](PRD-861-the-owned-engine-decodes-meshopt-and-ktx2.md)):
+the default engine refuses KTX2 output today.
 **Estimate:** 2 to 3 days.
 **Files:** a new `packages/core/src/texture-streaming.ts` (wanted mips, request queue, pool
 report); `packages/core/src/assets.ts` (KTX2 `Range` path); `packages/runtime-native/src/webgpu/bindings_resources.cpp`
