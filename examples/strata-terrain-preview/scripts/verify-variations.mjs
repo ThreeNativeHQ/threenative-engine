@@ -1,4 +1,4 @@
-// PRD-866 Phase 3: three seeds give three forests. Cooks "a spruce forest under mountains" through
+// PRD-866 Phase 3: three seeds give three forests, and a size word gives a small or a huge one. Cooks "a spruce forest under mountains" through
 // the terrain MCP server (stdio JSON-RPC, as an agent calls it) with seeds 1, 2 and 3 in a scratch
 // game project, bakes each with `STRATA_WORLD`, and asserts three ground hashes, three massif poses
 // and the backdrop gates on each ring. Then bakes the pinned forest again.
@@ -17,7 +17,14 @@ const repo = join(example, "..", "..");
 const keep = process.argv.indexOf("--keep");
 const root = keep > 0 ? process.argv[keep + 1] : mkdtempSync(join(tmpdir(), "strata-variations-"));
 const REQUEST = "a spruce forest under mountains";
-const SEEDS = [1, 2, 3];
+// Three seeds at the kit's own size, then a small and a huge forest: a size word scales the square.
+const CASES = [
+  { request: REQUEST, seed: 1, size: 512 },
+  { request: REQUEST, seed: 2, size: 512 },
+  { request: REQUEST, seed: 3, size: 512 },
+  { request: "a small spruce forest under mountains", seed: 4, size: 256 },
+  { request: "a huge spruce forest under mountains", seed: 5, size: 1024 },
+];
 
 // A game project the cook resolves `@threenative/assets` and its asset source from.
 mkdirSync(join(root, "node_modules", "@threenative"), { recursive: true });
@@ -99,14 +106,16 @@ const mcp = server();
 await mcp.start();
 const results = [];
 try {
-  for (const seed of SEEDS) {
+  for (const { request, seed, size } of CASES) {
     const out = `assets/worlds/seed-${seed}`;
-    const cooked = await mcp.call("terrain_generate", { request: REQUEST, seed, out });
+    const cooked = await mcp.call("terrain_generate", { request, seed, out });
     assert.deepEqual(cooked.decided.backdrop, { value: "massif", source: "default" });
     assert.equal(cooked.backdrop.source, "massif", `seed ${seed}: no massif in the far ring`);
     bake(Object.fromEntries([["STRATA_WORLD", join(root, out)]]));
     const ground = readWorld("baked.json");
     const ring = readWorld("horizon.json");
+    assert.equal(ground.size, size, `seed ${seed}: "${request}" baked a ${ground.size} m square`);
+    assert.equal(ring.size, size * 10, `seed ${seed}: the ring spans ${ring.size} m`);
     // The massif at its own spacing: the largest square of its detail grid.
     const { detail } = JSON.parse(readFileSync(join(root, out, "ring.json"), "utf8")).massif;
     const side = Math.min(detail.columns, detail.rows);
@@ -164,6 +173,7 @@ try {
     seam.sort((a, b) => a - b);
     const row = {
       seed,
+      size,
       landform: cooked.decided.landform.value,
       ground: createHash("sha256")
         .update(JSON.stringify(ground.heights))
@@ -195,11 +205,19 @@ try {
   });
 }
 
-assert.equal(new Set(results.map((row) => row.ground)).size, 3, "three seeds, three grounds");
-assert.equal(new Set(results.map((row) => row.pose)).size, 3, "three seeds, three massif poses");
+assert.equal(
+  new Set(results.map((row) => row.ground)).size,
+  CASES.length,
+  "each seed its own ground",
+);
+assert.equal(
+  new Set(results.map((row) => row.pose)).size,
+  CASES.length,
+  "each seed its own massif pose",
+);
 for (const row of results) {
   assert(
-    row.floorRelief <= 90,
+    row.floorRelief <= 90 * Math.max(1, row.size / 512),
     `seed ${row.seed}: the ground spans ${row.floorRelief} m, no forest floor`,
   );
   assert(
@@ -217,4 +235,6 @@ for (const row of results) {
   assert(row.lower > 2000, `seed ${row.seed}: ${row.lower} lower-slope cells, no foot to measure`);
   assert(row.gentle >= 0.6, `seed ${row.seed}: ${row.gentle} of the lower slopes under 40 degrees`);
 }
-console.log(`verify-variations: 3 forests from "${REQUEST}", cooked under ${root}`);
+console.log(
+  `verify-variations: ${CASES.length} forests (512, 256 and 1024 m), cooked under ${root}`,
+);

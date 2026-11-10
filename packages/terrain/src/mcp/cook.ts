@@ -559,7 +559,7 @@ async function forestFloor(
     const stats = terrainStats(grid.values, resolution, size);
     picked = { survey, grid };
     // A forest floor: the pinned valley spans 41 m and its steepest tenth 22 degrees.
-    if (grid.max - grid.min <= FLOOR_RELIEF && stats.slopeP90 <= FLOOR_SLOPE) break;
+    if (isForestFloor(grid.max - grid.min, stats.slopeP90, size)) break;
   }
   const { survey, grid } = picked as NonNullable<typeof picked>;
   applyGroundLayer(document.layers, grid, 1, -grid.min);
@@ -620,9 +620,18 @@ const SURVEYED_EROSION: Layer[] = [
   } as Layer,
 ];
 
-/** The forest floor gate: metres of relief and the 90th-percentile slope, degrees. */
+/**
+ * The forest floor gate: metres of relief per 512 m of side, and the 90th-percentile slope in
+ * degrees. Relief over a square grows with its side at the same slope (a 1024 m valley spans about
+ * 130 m), so the relief bar scales with it and never drops under 90 m; the slope keeps it walkable.
+ */
 const FLOOR_RELIEF = 90;
 const FLOOR_SLOPE = 28;
+
+/** Whether a surveyed square of `size` metres is a forest floor. */
+export function isForestFloor(relief: number, slopeP90: number, size: number): boolean {
+  return relief <= FLOOR_RELIEF * Math.max(1, size / 512) && slopeP90 <= FLOOR_SLOPE;
+}
 
 /**
  * The ground the world starts from, and what it came from. A landform preset is grounded on the real

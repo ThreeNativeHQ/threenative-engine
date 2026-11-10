@@ -1,6 +1,6 @@
 # PRD-866: A generated forest stands under mountains with real shapes
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1-3 landed (7/7 boxes); AC-1 to AC-3 open (judges, far-forest shadow cost)
 **Priority:** P1 — the owner named the mountains as one of the two defects that keep the forest from "good to go" (2026-11-09); AC-1 is that defect.
 **Complexity:** 6 (MEDIUM) — 6 to 10 files (2), a new placement module (2), state across bake and cook (2); risk override: none
 **Owner:** João
@@ -80,14 +80,17 @@ Auto by default: the cook adds the ring and a massif when the landform is `alpin
 
 - [x] `placeMassif(terrain, { seed, tile })` ships in `@threenative/terrain` and the example's `nearMassif` calls it; no mountain stamp code stays in the example. proof: a spec in `packages/terrain/__tests__/` shows the same seed gives the same height hash, and 8 seeds each pass the Phase 1 gates (relief, kurtosis, slope share); `rg "massif-ridge|massif-summit" examples` returns nothing
   - result: `packages/terrain/__tests__/massif.spec.ts` 10/10 on a checked-in 16 m Maroon fixture: same seed gives the same hash, seed 3 differs from seed 4, and seeds 0-7 each give relief 594-758 m, kurtosis 48-178 and a lower-slope share of 0.715-0.837 (bar 0.6). `rg "massif-ridge|massif-summit" examples` exits 1 (no match).
-- [ ] `terrain_generate` writes the far ring with a seeded massif for `alpine` and `temperateMountains`, reports `decided.backdrop`, and writes none under `backdrop: "none"`. Without network it fails closed and names the tile, as the ground fetch does. proof: red-green cases in `packages/terrain/__tests__/terrain-mcp.spec.ts` on a checked-in tile fixture
+- [x] `terrain_generate` writes the far ring with a seeded massif for `alpine` and `temperateMountains`, reports `decided.backdrop`, and writes none under `backdrop: "none"`. Without network it fails closed and names the tile, as the ground fetch does. proof: red-green cases in `packages/terrain/__tests__/terrain-mcp.spec.ts` on a checked-in tile fixture
+  - result: the cases live in `packages/terrain/__tests__/terrain-survey.spec.ts`, "the far ring" (the survey fixtures sit there), on checked-in Terrarium tiles `12/847/{1545,1546}` and `13/{1692,1693}/{3093,3094}`: ring.json with the survey continued and a surveyed massif, `decided.backdrop` by default and off by argument, no ring.json under `backdrop: "none"`, fail closed naming `13/1692/3093.png`, and a z13 massif sharp enough on a flat host (relief > 550 m, kurtosis > 40, seeds 1-3). Red before `farRing`, green after; `vitest run terrain-survey terrain-mcp massif` 172/172 (2026-11-09).
 
 ### Phase 3 — variations of this forest through the MCP
 
 **Files:** `examples/strata-terrain-preview/scripts/bake.mjs`, `scripts/recipe.mjs`, one new verify script.
 
-- [ ] The example bakes its forest from a cooked world: `STRATA_WORLD=<cook out dir> pnpm bake` takes that world's ground, water, scatter seed and far ring, and keeps the example's biome row and look. Unset, the bake is the pinned one. proof: a spec bakes from a fixture cook and asserts the baked heights equal the cook's; `node scripts/stamp.mjs` exits 0 on the pinned bake
-- [ ] Three seeds give three forests. proof: a new `scripts/verify-variations.mjs` cooks "a spruce forest under mountains" with seeds 1, 2 and 3, bakes each, and asserts three different height hashes, three different `decided.backdrop` choices or poses, and the Phase 1 gates on each
+- [x] The example bakes its forest from a cooked world: `STRATA_WORLD=<cook out dir> pnpm bake` takes that world's ground, water, scatter seed and far ring, and keeps the example's biome row and look. Unset, the bake is the pinned one. proof: a spec bakes from a fixture cook and asserts the baked heights equal the cook's; `node scripts/stamp.mjs` exits 0 on the pinned bake
+  - result: `examples/strata-terrain-preview/__tests__/cooked-world.spec.ts` bakes from a fixture cook (seed-9 eroded ground, 5120 m ring) and asserts the baked heights equal the cook's and the horizon is the ring; `isFresh` is false under the cooked bake and true after the pinned re-bake (`stamp.mjs` is a module `bake.mjs` imports, so `isFresh` is its proof, not `node scripts/stamp.mjs`). 24/24 with forest-backdrop, bake-golden, biome-values and the massif specs (2026-11-09).
+- [x] Three seeds give three forests. proof: a new `scripts/verify-variations.mjs` cooks "a spruce forest under mountains" with seeds 1, 2 and 3, bakes each, and asserts three different height hashes, three different `decided.backdrop` choices or poses, and the Phase 1 gates on each
+  - result: `node scripts/verify-variations.mjs` exit 0 (2026-11-09), five cooks through the MCP server over stdio. Seeds 1-3 at 512 m: floor relief 86/32/59 m, slope p90 24/16/7 degrees, seam p90 5.6/0.9/1.6 m, Maroon Bells at three poses, massif relief 1012-1170 m, lower slopes 93-97% under 40 degrees. "a small ..." seed 4: 256 m square, Grand Teton, relief 1089 m. "a huge ..." seed 5: 1024 m square, floor 145 m over 1 km at 16 degrees, seam p90 2.9 m. Five distinct ground hashes and poses. Kurtosis reported only (9-30 in a real ring; the flat-host gate is in the spec).
 
 ## Acceptance Criteria
 
@@ -115,6 +118,13 @@ Auto by default: the cook adds the ring and a massif when the landform is `alpin
 - 2026-11-09 (executor): the forest look's treeline band moves to [11, 14] and its snow cap to [17, 21] walkable ranges (the other four looks keep [6.5, 10] and [14, 17]). Spruce then climbs to about 450-575 m, so the massif's lower slopes can carry forest, and snow holds above 700-860 m.
 - 2026-11-09 (executor, from the first judge): the massif keeps 650 m clear of the centre and fades in over 600 m. At 420 m on a 160 m ramp the near flank rose beside the overview camera as a pale wall inside the haze.
 - 2026-11-09 (executor): bake time is unchanged by the tiles: 13.5 s before, 9.9-10.1 s after on the same machine (both inside machine-load noise).
+
+- 2026-11-09 (executor): the far ring needs a survey ground; it is the ground's survey row continued to ten times the world's size at zoom - 2, and the massif is fetched one zoom finer (z13, 257 cells) with its own detail grid in ring.json, so the example packs it at its own spacing.
+- 2026-11-09 (executor): "a spruce forest under mountains" reads "mountains" after a backdrop word (under, below, beneath, behind, among, beside) as the far ring's range, not the ground's landform. The ground keeps the kit's own temperate survey. Before, the alpine landform squeezed a 6 km alpine crop into the 512 m square as a tan miniature range (owner screenshot, seed 1).
+- 2026-11-09 (executor): a forest under a backdrop cooks a true-scale floor: a 512 m crop at z15, scale 1, at a seeded spot within 0.4 of the row's extent; the first spot with relief under 90 m per 512 m of side and a slope p90 under 28 degrees wins, the row's own centre last. The preset's fluvial erosion is replaced by hydraulic plus thermal erosion, because it lowered the square's border 10-40 m under its ring.
+- 2026-11-09 (executor): curvature kurtosis gates the massif only on a flat host (spec); inside a real ring the smooth survey around it dilutes the number to 9-30 with the same mountain.
+- 2026-11-09 (executor): the forest look's treeline and snow are metres above the floor (`bandSpan: 41`), not shares of the square's own range, so a hillier cooked square keeps the pinned forest's bands.
+- 2026-11-09 (executor): the far forest's default is the band 700 m past the square (`?farForest=near`); `on` plants the whole ring, `off` none. A far spruce draws its coarsest cooked level until the impostor (vista props 28.6 M -> 16.3 M triangles). Its remaining cost is about 28 ms of GPU shadow work although it casts nothing (gpuShadow 53 ms with it, 0.1 ms without; investigation open, AC-3 not met yet).
 
 ## Notes for the executor
 

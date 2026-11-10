@@ -10,7 +10,7 @@ import { LANDFORMS, type LandformKind } from "../src/core/presets.js";
 import { terrainStats } from "../src/core/stats.js";
 import { MASSIFS, SURVEYS, locationSurvey } from "../src/core/surveys.js";
 import { Terrain } from "../src/core/terrain.js";
-import { cookKit } from "../src/mcp/cook.js";
+import { cookKit, isForestFloor } from "../src/mcp/cook.js";
 import { surveyHeights } from "../src/mcp/survey.js";
 import { TERRAIN_TOOLS, parseGenerateInput, parseGenerateRequest } from "../src/mcp/tools.js";
 
@@ -454,4 +454,16 @@ describe("the far ring", () => {
       cookKit({ kit: "forest", landform: "temperateMountains", out, projectRoot: root }),
     ).rejects.toThrow(/Longs Peak[\s\S]*terrarium\/13\/1692\/3093\.png[\s\S]*backdrop: "none"/);
   }, 120_000);
+});
+
+// PRD-866: "a huge spruce forest" is a 1024 m square; its surveyed valley spans 128 m at a 16 degree
+// 90th-percentile slope, a forest floor at that size. The relief bar scales with the side.
+describe("the forest floor gate", () => {
+  it("scales its relief bar with the square and keeps the slope bar", () => {
+    expect(isForestFloor(86, 24, 512)).toBe(true);
+    expect(isForestFloor(128, 16, 512)).toBe(false);
+    expect(isForestFloor(128, 16, 1024)).toBe(true);
+    expect(isForestFloor(80, 19, 256)).toBe(true);
+    expect(isForestFloor(40, 31, 1024)).toBe(false);
+  });
 });
