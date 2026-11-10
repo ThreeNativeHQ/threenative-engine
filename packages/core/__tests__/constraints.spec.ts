@@ -65,6 +65,10 @@ describe("core constraints", () => {
           // The automatic caller of `mergeByMaterial`: it reads each mesh's material identity and
           // render flags to decide which meshes share a draw, and constructs or edits no material.
           file !== "auto-batch.ts" &&
+          // A streamed model's full textures land in the slots its own coarse textures hold
+          // (PRD-860). It moves the model's texture objects by identity and constructs, colours or
+          // configures no material.
+          file !== "streamed-textures.ts" &&
           // The scene trace flattens the game's meshes into triangle and material-texel buffers, and
           // `TracedReflections` walks them. They read the game's materials and write none of them.
           // The tighter check is below.

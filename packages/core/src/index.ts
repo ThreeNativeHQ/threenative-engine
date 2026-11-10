@@ -578,6 +578,17 @@ export {
  */
 export { baseGeometryOf } from "./model-lod.js";
 /**
+ * True while a geometry is the coarse companion a streamed model draws first (PRD-860), before its
+ * full file replaces it in place. A caller that copies vertices (a trimesh collider, a navmesh bake,
+ * a merge) waits with `ctx.assets.model(path, { whole: true })` instead of copying the coarse ones.
+ *
+ * @situation collider or navmesh built from a model is coarser than what is drawn
+ * @situation wait for the full model before copying its vertices
+ * @alias whole model before collision
+ * @example const coarse = isStreamedGeometry(mesh.geometry);
+ */
+export { isStreamedGeometry } from "./model-lod.js";
+/**
  * The cooked automatic LOD chain (`TN_discrete_lod`) a loaded geometry carries, or `undefined`.
  *
  * Its levels share the base's vertex attributes and differ only in index, and `errors` are each

@@ -38,6 +38,17 @@
 #include <emscripten/emscripten.h>
 #include <emscripten/console.h>
 
+#ifdef __EMSCRIPTEN_PTHREADS__
+// A thread that grows the heap refreshes only its own JS views. The loader thread grows it while the
+// main thread draws, and the facade reads the main thread's HEAPU8, so the main thread refreshes its
+// views when a load ends and once per frame; one length compare when nothing grew.
+EM_JS(void, tn_web_refresh_views, (), {
+    if (HEAPU8.length !== wasmMemory.buffer.byteLength) updateMemoryViews();
+});
+#else
+[[maybe_unused]] static void tn_web_refresh_views() {}
+#endif
+
 #include <map>
 #include <memory>
 #include <optional>
@@ -386,6 +397,9 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
                               double b, double a, int overlay, uint32_t sourceFrame) {
     const StagePublisher publisher{!overlay};  // declared first, so it runs after the meter below has closed
     const HostMeter renderMeter(hostRenderMs, !overlay);
+#if TN_WEB_GLTF
+    tn_web_refresh_views();
+#endif
     {
         const HostMeter pollMeter(hostPollMs, !overlay);  // delivers the queue's callbacks: readbacks, work-done
         tnw_web_poll();
@@ -1106,7 +1120,9 @@ extern "C" uint32_t tnw_web_load_gltf_begin(const uint8_t* bytes, uint32_t size)
 extern "C" int tnw_web_load_gltf_done(uint32_t ticket) {
 #if TN_WEB_GLTF
     const auto found = gltfJobs.find(ticket);
-    return found == gltfJobs.end() || found->second->done.load(std::memory_order_acquire) ? 1 : 0;
+    const bool ended = found == gltfJobs.end() || found->second->done.load(std::memory_order_acquire);
+    if (ended) tn_web_refresh_views();
+    return ended ? 1 : 0;
 #else
     (void)ticket;
     return 1;
