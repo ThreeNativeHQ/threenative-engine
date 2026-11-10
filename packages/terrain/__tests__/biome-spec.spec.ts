@@ -170,6 +170,7 @@ describe("a biome file", () => {
         fern: 2.2,
         bush: 0.35,
         flower: 0.5,
+        deadfall: 1.5,
         shade: 0.8,
         shadeRadius: 1.2,
       },
@@ -238,6 +239,9 @@ describe("a biome file", () => {
     });
     rejects("'cover.understorey.fern' must be at least 0", (file) => {
       under(file).fern = -1;
+    });
+    rejects("'cover.understorey.deadfall' must be at least 0", (file) => {
+      under(file).deadfall = -1;
     });
     rejects("'cover.understorey.shade' must be at most 1", (file) => {
       under(file).shade = 1.5;

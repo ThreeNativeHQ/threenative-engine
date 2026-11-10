@@ -72,6 +72,8 @@ export const DRAW_REACH: Record<string, number> = {
   sapling: 160,
   bush: 120,
   litter: 16,
+  /** Fallen boughs and logs: metres long, so they read from across a clearing. */
+  deadfall: 110,
   boulder: 170,
   riverrock: 100,
   /** River-bed cobbles: a 0.2 m stone under water is sub-pixel well before 45 m. */
@@ -402,7 +404,16 @@ export function buildPropVariants(
     twig.scale(1.7, 0.22, 1.7);
     variants.set(`litter:${i}`, [{ geometry: twig, role: "grass", variant: i }]);
   }
-  for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal", "pebble"])
+  for (const asset of [
+    "riverrock",
+    "scree",
+    "cliff",
+    "mountain",
+    "volcanic",
+    "reveal",
+    "pebble",
+    "deadfall",
+  ])
     for (
       let variant = 0;
       variant < (PROP_COUNTS[asset as keyof typeof PROP_COUNTS] ?? 1);
@@ -418,6 +429,8 @@ export function buildPropVariants(
           ? (VARIANTS.seed ^ ((variant + 7) * 0x85ebca6b)) >>> 0
           : VARIANTS.seed ^ variant,
       );
+      // Without the licensed pack a fallen log is a long low lump of the same generator.
+      if (asset === "deadfall") fallback.scale(1.5, 0.22, 0.3);
       if (["mountain", "volcanic", "reveal"].includes(asset)) {
         if (asset === "mountain") fallback.scale(0.65, 1.45, 1.8);
         fallback.computeBoundingBox();
@@ -448,6 +461,8 @@ const PROP_COUNTS = {
   mountain: 2,
   volcanic: 4,
   reveal: 2,
+  /** Three fallen bough groups and one log. */
+  deadfall: 4,
 };
 
 export const PROP_ASSETS: Record<string, number> = Object.fromEntries(

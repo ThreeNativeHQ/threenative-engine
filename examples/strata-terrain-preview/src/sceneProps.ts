@@ -37,6 +37,7 @@ import {
   variantFor,
 } from "./render/props.js";
 import { meadowCover } from "./render/scatter.js";
+import { SHADOW_REACH } from "./render/sky.js";
 import { type IBakedWorld, OPEN_MEADOW } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import type { TerrainCtx } from "./sceneState.js";
@@ -288,7 +289,14 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
       propsStage = "assets";
       const [prepared, pack, skyLight] = await Promise.all([
         loadPreparedProps(ctx.assets),
-        loadPack(ctx.assets, world, data, ctx.state.getState().canopyComparison, biome),
+        loadPack(
+          ctx.assets,
+          world,
+          data,
+          ctx.state.getState().canopyComparison,
+          biome,
+          scatter.canopy,
+        ),
         ctx.assets ? loadSkyLight(ctx.assets) : Promise.resolve(undefined),
       ]);
       preparedDispose = () => {
@@ -385,6 +393,8 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
           },
         },
         size: data.size,
+        standShade: look.standShade,
+        shadowReach: SHADOW_REACH,
         horizonDistance:
           ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera
             ? ctx.camera.far

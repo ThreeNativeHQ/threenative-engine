@@ -23,13 +23,22 @@ const { WORLD_NAMES: WORLDS } = await import("../src/render/worldNames.js");
 
 const DRIVEN = ["alpine", "desert", "coastal"];
 
+/**
+ * `STRATA_SEED=<integer>` bakes a variation of every world: the same surveyed ground, biome rules
+ * and look, with every tree, rock and plant in a new place. 0, the default, is the pinned bake.
+ */
+const VARIATION = Number(process.env.STRATA_SEED ?? 0);
+assert(Number.isSafeInteger(VARIATION), "STRATA_SEED must be an integer");
+
 /** One biome file, validated: the rules this world places by. */
 function biomeOf(name) {
   const file = new URL(
     `../../../packages/terrain/starter/${name}/biome.data.json`,
     import.meta.url,
   );
-  return validateBiome(JSON.parse(readFileSync(file, "utf8")), name);
+  const spec = validateBiome(JSON.parse(readFileSync(file, "utf8")), name);
+  // A variation keeps the rules and moves the stream they draw from.
+  return { ...spec, cover: { ...spec.cover, seed: spec.cover.seed + VARIATION } };
 }
 
 /** The surface and placement outputs of one world, written as the game reads them. */

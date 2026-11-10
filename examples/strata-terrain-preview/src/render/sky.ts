@@ -93,6 +93,9 @@ const RIG = {
   shadowExtents: [24, 320],
 } as const;
 
+/** The sun's outer shadow window, metres: past it the shadow fades out and nothing is shaded. */
+export const SHADOW_REACH: number = RIG.shadowExtents[1];
+
 /** The rig, the sun that can be swung, and the one call that moves both. */
 export interface IOutdoorSky {
   /** Installed follow, fill, shadows and tone mapping. Add it to the scene. */
@@ -104,6 +107,8 @@ export interface IOutdoorSky {
   /** The sun's x in the sun's own metres: what the `L` key swings and the playtest reads. */
   readonly sunX: number;
   setSunX(x: number): void;
+  /** Aim the sun along a world vector: the light, the sky, the air and the needles follow. */
+  setSunDirection(x: number, y: number, z: number): void;
   /**
    * Centre the sun's shadow levels, and the fade of the outer one, on the player instead of the camera
    * (`undefined` hands them back). The orbit camera's eye travels a 9 m arm when it turns; windows, level
@@ -228,7 +233,10 @@ export function createOutdoorSky(
   daylight.sky.add(deck);
 
   function setSunX(x: number): void {
-    sun.position.set(x, direction.y, direction.z);
+    setSunDirection(x, direction.y, direction.z);
+  }
+  function setSunDirection(x: number, y: number, z: number): void {
+    sun.position.set(x, y, z);
     // The sky's sun disc, its brightest quadrant and the cloud deck's lighting all follow the light.
     daylight.sky.sunPosition.value.copy(sun.position).normalize();
     atmosphere.setSunDirection(sun.position);
@@ -244,6 +252,7 @@ export function createOutdoorSky(
       return sun.position.x;
     },
     setSunX,
+    setSunDirection,
     sun,
     focusShadows(point: Vector3 | undefined) {
       shadows.setFocus(point);

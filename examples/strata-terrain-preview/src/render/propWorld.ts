@@ -30,9 +30,19 @@ import {
   decodePropBucket,
   propAssetOf,
 } from "@threenative/terrain";
-import { Box3, type Camera, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
+import {
+  Box3,
+  type Camera,
+  Group,
+  InstancedMesh,
+  type Material,
+  Mesh,
+  Quaternion,
+  Vector3,
+} from "three";
 import { fetchBakedFile } from "./bakedFile.js";
 import { FAR_FOREST_IMPOSTOR, FAR_FOREST_LAYER } from "./farForest.js";
+import { standShaded } from "./propMaterials.js";
 import type { IPropPreparationProgress } from "./propProgress.js";
 import {
   type IPropInstance,
@@ -73,12 +83,35 @@ export interface IPropWorldOptions {
   readonly size: number;
   readonly horizonDistance?: number;
   readonly castShadows?: boolean;
+  /** The biome row's `standShade`: the tint a spruce takes where no sun shadow is drawn on it. */
+  readonly standShade?: readonly [number, number, number];
+  /** The sun's outer shadow window, metres; a local spruce takes `standShade` past it. */
+  readonly shadowReach?: number;
   readonly bundles?: boolean;
   readonly assets?: IAssetLoader;
   readonly whileCurrent: () => boolean;
   readonly invalidateShadows?: (region?: IShadowRegion) => void;
   readonly onProgress?: (progress: IPropPreparationProgress) => void;
   readonly onPublication?: (bounds: Box3) => void;
+}
+
+// One shaded copy per source material and bucket kind: every tree of a variant shares its crown.
+const standMaterials = {
+  far: new WeakMap<Material, Material>(),
+  local: new WeakMap<Material, Material>(),
+};
+function standMaterial(
+  source: Material,
+  shade: readonly [number, number, number],
+  shadowReach?: number,
+): Material {
+  const copies = standMaterials[shadowReach === undefined ? "far" : "local"];
+  let shaded = copies.get(source);
+  if (!shaded) {
+    shaded = standShaded(source, shade, shadowReach);
+    copies.set(source, shaded);
+  }
+  return shaded;
 }
 
 /** Keep WorldCells' changed caster bounds when forwarding to the existing shadow renderer. */
@@ -483,7 +516,17 @@ export async function streamProps(options: IPropWorldOptions) {
           for (const level of levels) {
             const group = new Group();
             for (const part of shape.parts.filter((part) => (part.level ?? 0) === level)) {
-              const mesh = new Mesh(part.geometry, part.material ?? options.materials[part.role]);
+              const own = part.material ?? options.materials[part.role];
+              const mesh = new Mesh(
+                part.geometry,
+                options.standShade && record.key.startsWith("spruce:")
+                  ? standMaterial(
+                      own,
+                      options.standShade,
+                      plan.bucket.startsWith("far:") ? undefined : options.shadowReach,
+                    )
+                  : own,
+              );
               mesh.scale.copy(shape.ratio);
               group.add(mesh);
             }

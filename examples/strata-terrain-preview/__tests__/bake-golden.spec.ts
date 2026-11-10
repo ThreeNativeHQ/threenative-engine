@@ -31,16 +31,17 @@ const DRAWN = new Set<string>(["forest", "coastal"]);
 /** The recipe's own output: the Phase 1 numbers, with the container digest re-measured at AC-2. */
 const GOLDEN = {
   forest: {
-    placements: "b7f0ad63acd0091128182daa5a93a1b9ba480c8f0ac85b66997f45358f5e9474",
+    placements: "d108ef0946632404625e7cd82ec56f0cf22641140d0f627ce782b27476b47c0e",
     counts: {
       boulder: 115,
-      bush: 4211,
-      fern: 30303,
+      bush: 4261,
+      deadfall: 846,
+      fern: 30055,
       grass: 259588,
-      litter: 37440,
+      litter: 37602,
       mountain: 7,
       pebble: 1638,
-      poppy: 4128,
+      poppy: 4082,
       riverrock: 318,
       sapling: 9528,
       scrub: 78269,

@@ -35,6 +35,7 @@ const SPEC = validateBiome(
         fern: 1,
         bush: 1,
         flower: 1,
+        deadfall: 0,
         shade: 0,
         shadeRadius: 3,
       },

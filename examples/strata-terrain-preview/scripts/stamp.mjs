@@ -46,6 +46,8 @@ hash.update(
 );
 hash.update(JSON.stringify(terrainPalette));
 for (const name of WORLDS) hash.update(readFileSync(biomeFile(name)));
+// A variation is another bake: `STRATA_SEED` set or changed re-bakes, unset keeps the pinned stamp.
+if (Number(process.env.STRATA_SEED ?? 0) !== 0) hash.update(`variation:${process.env.STRATA_SEED}`);
 for (const file of SOURCES) hash.update(await readFile(new URL(file, import.meta.url)));
 
 /** This bake's inputs, as one digest. */

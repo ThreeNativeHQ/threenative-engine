@@ -9047,6 +9047,23 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function createTweakBox<K extends string>(options: ITweakBoxOptions<K>): ITweakBox<K> { … }",
+      "situations": [
+        "tune look numbers by eye with live range bars and colour pickers while the game runs"
+      ],
+      "summary": "A box of range bars and colour pickers over the running game, for tuning numbers by eye. The game names its knobs and applies each change itself; the box owns the page elements, the stored values and the Copy button, whose JSON is what gets pasted back and written into the game's own source. With no `document` (a native launch, a test) it draws nothing and still holds the values, so the game code that reads them is the same on every target.",
+      "supersedes": [],
+      "symbol": "createTweakBox"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the point is multiplied in place; the pose needs finite position, quaternion and scale"
       ],

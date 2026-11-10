@@ -7477,6 +7477,17 @@ export function createEditorSelection( { … }
 const selection = createEditorSelection({ gizmo, proxy, controller, grounding, surface, defaultFootprintSize, refreshPose, drawFootprint, restorePlacement, previewPlacement, setSaving, selectedChanged, setNavigation, message });
 ```
 
+### `createTweakBox`
+
+`function` — A box of range bars and colour pickers over the running game, for tuning numbers by eye. The game names its knobs and applies each change itself; the box owns the page elements, the stored values and the Copy button, whose JSON is what gets pasted back and written into the game's own source. With no `document` (a native launch, a test) it draws nothing and still holds the values, so the game code that reads them is the same on every target.
+
+```ts
+export function createTweakBox<K extends string>(options: ITweakBoxOptions<K>): ITweakBox<K> { … }
+```
+
+- **Use when:** tune look numbers by eye with live range bars and colour pickers while the game runs
+- **Requires:** npm i -D @threenative/terrain
+
 ### `editorPlacementCenter`
 
 `function` — Transform the caller's measured geometry centre into the evaluated placement's world space.

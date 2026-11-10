@@ -204,6 +204,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
       boulder: 3,
       bush: 2,
       cliff: 1,
+      deadfall: 4,
       fern: 3,
       grass: 4,
       litter: 2,

@@ -34,10 +34,12 @@ import {
   attribute,
   bumpMap,
   cameraPosition,
+  cameraProjectionMatrix,
   color,
   dFdx,
   dFdy,
   dot,
+  element,
   float,
   length,
   log2,
@@ -49,6 +51,7 @@ import {
   normalWorldGeometry,
   normalize,
   positionLocal,
+  positionView,
   positionWorld,
   pow,
   renderGroup,
@@ -154,6 +157,38 @@ const sunDirection = uniform(new Vector3(-180, 240, 120).normalize()).setGroup(
  */
 export function setCanopySun(direction: Vector3): void {
   (sunDirection as unknown as { value: Vector3 }).value.copy(direction).normalize();
+}
+
+/**
+ * A copy of a tree material for crowns the sun's shadow does not reach: the far forest, which casts
+ * none, and the square's own trees past the shadow window (`shadowReach`, where `sky.ts` fades the
+ * shadow out). In a closed stand each tree stands in its neighbours' shade, more of it the lower the
+ * sun: with no shadow drawn, far trees measured 3 to 4 times brighter and yellower than near ones at
+ * a 20 degree sun. The copy takes the stand's mean shade as a tint that fades out as the sun climbs;
+ * with a `shadowReach` it takes the tint only past that window.
+ */
+export function standShaded(
+  source: Material,
+  shade: readonly [number, number, number],
+  shadowReach?: number,
+): Material {
+  const shaded = source.clone() as MeshStandardNodeMaterial;
+  const stand = mix(vec3(...shade), vec3(1), sunDirection.y.clamp(0, 1).pow(2));
+  const tint =
+    shadowReach === undefined
+      ? stand
+      : mix(
+          vec3(1),
+          stand,
+          // An orthographic view has no eye distance. The engine bakes a tree's impostor through
+          // one, and the impostor draws only past the window, so that view takes the far value.
+          smoothstep(shadowReach * 0.65, shadowReach * 0.8, positionView.length()).max(
+            (element(cameraProjectionMatrix as never, 3) as Node<"vec4">).w,
+          ),
+        );
+  if (shaded.colorNode) shaded.colorNode = (shaded.colorNode as Node<"vec3">).mul(tint);
+  if (shaded.emissiveNode) shaded.emissiveNode = (shaded.emissiveNode as Node<"vec3">).mul(tint);
+  return shaded;
 }
 
 /**

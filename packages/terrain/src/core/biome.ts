@@ -131,6 +131,8 @@ export interface IUnderstoreySpec {
   readonly bush: number;
   /** The meadow flowers of the light gaps, which this stream plants as poppies. */
   readonly flower: number;
+  /** Fallen wood under a closed stand: boughs and logs. 0 grows none. */
+  readonly deadfall: number;
   /** The share of ground-cover candidates dropped under a crown, 0 to 1. */
   readonly shade: number;
   /** How far from a trunk its crown shades the ground, in metres. */
@@ -260,6 +262,7 @@ const UNDERSTOREY_FIELDS = [
   "fern",
   "bush",
   "flower",
+  "deadfall",
   "shade",
   "shadeRadius",
 ] as const;
@@ -511,6 +514,7 @@ function understorey(value: unknown, biome: string): IUnderstoreySpec {
     fern: count(row.fern, biome, "cover.understorey.fern"),
     bush: count(row.bush, biome, "cover.understorey.bush"),
     flower: count(row.flower, biome, "cover.understorey.flower"),
+    deadfall: count(row.deadfall, biome, "cover.understorey.deadfall"),
     shade: share(row.shade, biome, "cover.understorey.shade"),
     shadeRadius: count(row.shadeRadius, biome, "cover.understorey.shadeRadius"),
   };

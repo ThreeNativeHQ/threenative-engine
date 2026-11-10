@@ -51,13 +51,14 @@ const PHASE_1: Record<
   forest: {
     counts: {
       boulder: 115,
-      bush: 4211,
-      fern: 30303,
+      bush: 4261,
+      deadfall: 846,
+      fern: 30055,
       grass: 259588,
-      litter: 37440,
+      litter: 37602,
       mountain: 7,
       pebble: 1638,
-      poppy: 4128,
+      poppy: 4082,
       riverrock: 318,
       sapling: 9528,
       scrub: 78269,
@@ -65,7 +66,7 @@ const PHASE_1: Record<
     },
     heights: "c3b5a7ebe3784e844604799f599950ea52f98477ca3a3e8b0c63cf76c08b6770",
     manifest: "df9936f9e3a31532426972a19c47c168262efc6117040d5a577863500307dd2c",
-    placements: "74edefef7a48688be2d6e5fea0bd9e8292b49962ee8959cf27339f07bc53ec17",
+    placements: "d108ef0946632404625e7cd82ec56f0cf22641140d0f627ce782b27476b47c0e",
   },
   coastal: {
     counts: {
@@ -116,7 +117,7 @@ const PHASE_1: Record<
  * `placements.bin` was encoded from.
  */
 const PHASE_1_CANONICAL: Record<World, string> = {
-  forest: "08b036c936049aacb95ce61c33e3d0d5f7d421a4c318fd3cabe4c93c7d954155",
+  forest: "0458cd3df1ee5c151edae1f93e03f9b223142a073f83d10627c15e9ffadd1099",
   coastal: "5ca73a9acf36f84c536e70b5fe86fd51f88554d871a453eb024d5dc34d304d4e",
   alpine: "10c755d4856a51fabe05f38fe59d9550bc5236edd4a1cb11e1f7f6ced1c9e7f8",
   desert: "fa52459ddcda51b336764219ce033add8ccd90f3fd299cd95d43878cf38813b3",
@@ -378,6 +379,7 @@ describe("the biome files' bake against the Phase 1 table", () => {
       fern: 1,
       bush: 1,
       flower: 1,
+      deadfall: 0,
       shade: 0,
       shadeRadius: 3,
     };
@@ -387,7 +389,7 @@ describe("the biome files' bake against the Phase 1 table", () => {
         state: ground,
       }).scatter?.placements ?? [];
     const plain = placed(graded);
-    const thick = placed({ ...graded, attempts: 60_000, fern: 2, shade: 0.5 });
+    const thick = placed({ ...graded, attempts: 60_000, fern: 2, shade: 0.5, deadfall: 3 });
     const poses = (list: typeof plain, asset: string) =>
       list
         .filter((one) => one.asset === asset)
@@ -398,5 +400,8 @@ describe("the biome files' bake against the Phase 1 table", () => {
     }
     expect(poses(thick, "fern").length).toBeGreaterThan(poses(plain, "fern").length);
     expect(poses(thick, "grass").length).toBeLessThan(poses(plain, "grass").length);
+    // A row that grows fallen wood lays logs under its closed stands, and the graded row grows none.
+    expect(poses(thick, "deadfall").length).toBeGreaterThan(0);
+    expect(poses(plain, "deadfall").length).toBe(0);
   });
 });

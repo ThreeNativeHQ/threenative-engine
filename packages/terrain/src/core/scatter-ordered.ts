@@ -302,7 +302,14 @@ export function coverDriftWeight(drift: ICoverFieldDrift, x: number, z: number):
 }
 
 /** The understorey the starter woods were graded on: the draws every later layer was placed after. */
-const GRADED_UNDERSTOREY = { attempts: 14000, litter: 1, fern: 1, bush: 1, flower: 1 } as const;
+const GRADED_UNDERSTOREY = {
+  attempts: 14000,
+  litter: 1,
+  fern: 1,
+  bush: 1,
+  flower: 1,
+  deadfall: 0,
+} as const;
 const GRASS_FULL = 22;
 const GRASS_THIN = 62;
 
@@ -329,6 +336,7 @@ export function scatterProps(
     [
       "boulder",
       "bush",
+      "deadfall",
       "fern",
       "grass",
       "litter",
@@ -442,7 +450,8 @@ export function scatterProps(
     }
     const index = counts[asset] ?? 0;
     const crag = asset === "mountain" || asset === "volcanic" || asset === "reveal";
-    const bedded = temperate && ["boulder", "riverrock", "scree", "pebble"].includes(asset);
+    const bedded =
+      temperate && ["boulder", "riverrock", "scree", "pebble", "deadfall"].includes(asset);
     const normal = crag || bedded ? data.field.normalAt(x, z) : undefined;
     if (crag && normal) {
       normal.y += 0.65;
@@ -584,6 +593,10 @@ export function scatterProps(
         // Meadow flowers want light and a little soil, so they take the gaps, not the canopy floor.
         if (stand < 0.58 && damp > 0.18 && draw() < (0.02 + damp * 0.05) * row.flower)
           put("poppy", x, z, 0.75 + draw() * 0.6);
+        // Deadfall: boughs and logs lie where the stand is closed. Guarded on the row first, so a row
+        // that grows none takes no draw and every graded wood keeps its stream.
+        if (row.deadfall > 0 && stand > 0.5 && draw() < 0.012 * row.deadfall)
+          put("deadfall", x, z, 0.7 + draw() * 0.9);
       }
     };
     // The shared stream leaves this layer where the graded loop left it, whatever the row grows:
@@ -596,7 +609,8 @@ export function scatterProps(
       row.litter === 1 &&
       row.fern === 1 &&
       row.bush === 1 &&
-      row.flower === 1;
+      row.flower === 1 &&
+      row.deadfall === 0;
     placing = graded;
     understoreyPass(random, { ...row, ...GRADED_UNDERSTOREY });
     placing = true;
@@ -927,7 +941,17 @@ export function scatterProps(
 }
 
 /** What a river or lake must not grow, and what keeps a bank margin: trunks. */
-const GROWING = new Set(["spruce", "sapling", "bush", "fern", "grass", "scrub", "poppy", "litter"]);
+const GROWING = new Set([
+  "spruce",
+  "sapling",
+  "bush",
+  "fern",
+  "grass",
+  "scrub",
+  "poppy",
+  "litter",
+  "deadfall",
+]);
 const TRUNKS = new Set(["spruce", "sapling"]);
 const BANK = [
   [0, 0],

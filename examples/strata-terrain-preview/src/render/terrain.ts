@@ -9,7 +9,6 @@ import {
 import { waterlineRadius } from "@threenative/core/world";
 import { createSegmentIndex } from "@threenative/terrain";
 import {
-  type BufferGeometry,
   ClampToEdgeWrapping,
   DataTexture,
   DataUtils,
@@ -44,7 +43,6 @@ import {
   positionWorld,
   rotateUV,
   sign,
-  sin,
   smoothstep,
   texture,
   transformNormalToView,
@@ -77,8 +75,10 @@ import {
   measureBiome,
 } from "./biomes.js";
 import { collarColors, createHorizonCollar, horizonSurroundings } from "./horizon.js";
+import { LOOK } from "./lookKnobs.js";
 import { loadSkyLight, skyIrradiance } from "./pack.js";
 import { type IBakedLake, type IBakedRiver, REFLECTED_LAYER, surfaceHeights } from "./river.js";
+import { SUN_VECTOR } from "./sky.js";
 
 export interface IBakedWorld {
   size: number;
@@ -169,14 +169,20 @@ const FOREST_MEADOW = vec3(0.4, 0.58, 0.27);
 /** How much of the vegetation's sky light the ground receives; the vegetation's own is 1.13. */
 const GROUND_SKY_LIGHT = 0.6;
 /** Multiplier that turns meadow turf into shaded needle litter under a stand. */
-const FOREST_FLOOR = vec3(0.44, 0.38, 0.3);
+const FOREST_FLOOR = vec3(0.4, 0.4, 0.27);
 /**
  * Bare earth between the stands, on top of the litter tint: a spruce floor's humus reads L* 29-37 at
  * the walk pose (PRD-855), and the litter tint alone left it at 53, brighter than the turf beside it.
  */
 const BARE_SOIL = vec3(0.4, 0.38, 0.37);
-/** Turf multiplier for the backdrop's spruce stands: dark blue-green needles, as in the goal frame. */
-const BACKDROP_SPRUCE = vec3(0.2, 0.3, 0.2);
+/**
+ * Albedo of the backdrop's closed spruce cover, crowns and the shade between them averaged: the hue of
+ * the playable forest's own crowns in the overview (linear 0.74 : 1 : 0.28), a little bluer, so the
+ * far slopes and the near stands read as one forest.
+ */
+const BACKDROP_SPRUCE = vec3(0.019, 0.028, 0.013);
+/** Albedo of the meadow gaps in the backdrop's cover: dull olive turf, not lawn. */
+const BACKDROP_CLEARING = vec3(0.042, 0.052, 0.022);
 /**
  * The surveyed surroundings carry no stands (the bake plants only the playable square), so past the
  * square's edge the forest hillside is an open sunlit meadow: lawn turf, no needle-soil patches, and
@@ -265,7 +271,7 @@ export function groundTurf(
       bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.09), 2),
     ),
   );
-  return mix(
+  const turf = mix(
     sampled.mul(olive ? mix(FOREST_MEADOW, MEADOW, open) : MEADOW),
     field,
     // Open meadow: the photograph's thatch (albedo 0.15) only carries detail under a dark lawn.
@@ -273,6 +279,7 @@ export function groundTurf(
       .mul(0.55)
       .max(open.mul(0.6)),
   ).mul(mix(float(1), sward, open));
+  return turf;
 }
 
 function rockLayer(
@@ -712,6 +719,17 @@ export async function createGroundMaterial(
       .mul(oneMinus(drainage))
       .mul(smoothstep(0.15, 0.025, slope))
       .mul(0.5);
+    if (biome?.woodedGround) {
+      // A spruce floor is moss and needles, not turf and not bare sand: under the placed crowns and
+      // on the wood's bare patches the moss layer grows in broad cushions, frayed by a finer noise,
+      // and the needle soil shows between them. In the low sun the old floor drew as pale sand.
+      const cushions = smoothstep(
+        -0.25,
+        0.3,
+        bakedNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.35)).add(mottling.mul(0.5)),
+      );
+      weights.moss = weights.moss.max(forestFloor.mul(cushions).mul(0.85));
+    }
   }
 
   // --- how each surface looks -------------------------------------------------------------
@@ -899,7 +917,15 @@ export async function createGroundMaterial(
           .mul(look.crestTurf ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
           .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
         if (look.sandRipples) normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
-        return { color: groundTurf(surface.rgb, biome, hollow, open), normal };
+        const turf = groundTurf(surface.rgb, biome, hollow, open);
+        // Open turf in the wood takes the row's `turfTint`; under the crowns the needle litter
+        // (`FOREST_FLOOR`) already owns the tone, so the tint fades out with the canopy.
+        return {
+          color: look.woodedGround
+            ? turf.mul(mix(LOOK.turf, vec3(1), smoothstep(0, 0.6, canopyCover())))
+            : turf,
+          normal,
+        };
       },
       // Geometry, transport and curvature choose placement; the packaged masks remain authored data.
       layerWeight: (_masked, { layer: descriptor }) => {
@@ -945,7 +971,18 @@ export async function createGroundMaterial(
           ? mix(vec3(0.92, 0.94, 0.91), vec3(1.08, 1.03, 0.95), dryness)
           : mix(vec3(0.9, 0.95, 0.84), vec3(1.03, 1.04, 0.95), dryness);
         const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
-        const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
+        // Past the square the forest's hills are its wooded lower slopes: seen from 150 m and more
+        // they take the backdrop's spruce cover from 40 m inside the edge, while the meadow under the
+        // player's feet keeps the playable ground's own turf.
+        const continuation =
+          !otherBiome && !look.surveyedBackdrop
+            ? max(
+                smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside),
+                smoothstep(data.size / 2 - 40, data.size / 2 + 20, outside).mul(
+                  smoothstep(150, 350, positionView.length()),
+                ),
+              )
+            : smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
         const strata = bakedFractalNoise(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
         // The forest's backdrop is alpine (owner goal 2026-11-04); the coast keeps its survey's look.
         const crestBackdrop = !look.surveyedBackdrop;
@@ -966,19 +1003,13 @@ export async function createGroundMaterial(
         // break into bands (owner, 2026-11-04). Real beds dip about 20 degrees, thin and thicken, and
         // break along the strike; level, evenly spaced, unbroken rings read as artificial contour
         // lines (owner, 2026-11-07). The phase is antialiased by its own screen derivative, so a band
-        // thinner than a pixel greys out instead of crawling.
+        // thinner than a pixel greys out instead of crawling. No noise feeds back into its own domain:
+        // that warp curled the beds into marbled swirls (owner, 2026-11-09); beds bend only gently.
         const dipped = positionWorld.y
           .add(positionWorld.x.mul(0.3))
           .sub(positionWorld.z.mul(0.18))
-          .add(bakedFractalNoise(positionWorld.mul(0.004), 2).mul(45));
-        const bedding = dipped
-          .add(
-            bakedFractalNoise(
-              vec3(positionWorld.x.mul(0.002), dipped.mul(0.02), positionWorld.z.mul(0.002)),
-              2,
-            ).mul(14),
-          )
-          .div(34);
+          .add(bakedFractalNoise(positionWorld.mul(0.004), 2).mul(20));
+        const bedding = dipped.div(34);
         const phase = fract(bedding);
         const blur = fwidth(bedding).min(0.25);
         const ledge = smoothstep(float(0.8).sub(blur), float(0.88).add(blur), phase).mul(
@@ -1002,48 +1033,109 @@ export async function createGroundMaterial(
         // Crag ribs that the prefiltered 10 m backdrop mesh cannot carry: 35 m across and 90 m down
         // the fall line, as couloirs and buttresses run. Their gradient tilts the normal and their
         // creases darken the rock, so cliff bands read at two kilometres.
+        // The forest's massif (the only lawn world with a crest backdrop) takes three scales instead:
+        // 350, 120 and 41 m across, each 2.3 times longer down the fall line, as a 110 m relief whose
+        // every octave tilts the face by the same angle, so spurs and couloirs catch the low sun at
+        // every range.
+        const massif = !otherBiome && crestBackdrop;
         const facetAt = (x: number, y: number, z: number) =>
-          bakedFractalNoise(positionWorld.add(vec3(x, y, z)).mul(vec3(0.028, 0.011, 0.028)), 2);
+          massif
+            ? bakedFractalNoise(
+                positionWorld.add(vec3(x, y, z)).mul(vec3(1 / 350, 1 / 800, 1 / 350)),
+                3,
+                2.9,
+                0.33,
+              )
+            : bakedFractalNoise(positionWorld.add(vec3(x, y, z)).mul(vec3(0.028, 0.011, 0.028)), 2);
         const facet = facetAt(0, 0, 0);
         const facetTilt = vec3(
           facet.sub(facetAt(6, 0, 0)),
           facet.sub(facetAt(0, 6, 0)),
           facet.sub(facetAt(0, 0, 6)),
-        ).mul(1.4);
+        ).mul(massif ? 110 / 6 : 1.4);
         // Reuse the resident maps at massif scale: steep faces project onto their own axes.
         const turf = triplanarAlbedo(layer("grass").diffuse, "grass", 12).rgb;
-        // The forest's slopes carry spruce stands with meadow clearings (owner goal 2026-11-04),
-        // not one lawn: kilometre-scale noise picks the stands, crown-scale noise mottles them.
-        const stands = look.surveyedBackdrop
-          ? float(0)
-          : smoothstep(-0.2, 0.2, bakedFractalNoise(positionWorld.mul(0.0035), 3));
-        const forest = turf
-          .mul(
-            mix(
-              MEADOW,
-              BACKDROP_SPRUCE.mul(mix(0.7, 1.2, bakedNoise(positionWorld.mul(0.06)).add(0.5))),
-              stands,
+        // The forest's lower slopes are a closed spruce cover drawn by material alone: 11 m crowns
+        // with dark gaps, denser and sparser stands, darker in the hollows, opened by kilometre meadow clearings.
+        // Past 1 km a crown is a few pixels: its contrast fades, so the cover does not scale over.
+        // One baked read repeats every 8 noise units (88 m at this scale) and drew a checker under the
+        // fog; a second read on a lattice turned 37 degrees and 1.53 times finer breaks the period.
+        const crownField = bakedNoise(positionWorld.div(11))
+          .add(
+            bakedNoise(
+              vec3(
+                positionWorld.x.mul(0.8).add(positionWorld.z.mul(0.6)),
+                positionWorld.y,
+                positionWorld.z.mul(0.8).sub(positionWorld.x.mul(0.6)),
+              ).div(7.2),
+              1,
+              0,
+              2,
             ),
           )
-          .mul(mix(0.5, 0.85, breakUp.add(0.5)));
+          .mul(0.7);
+        const crowns = mix(
+          smoothstep(-0.3, 0.35, crownField),
+          float(0.55),
+          smoothstep(400, 1200, positionView.length()).mul(0.8),
+        );
+        const clumps = bakedFractalNoise(positionWorld.div(160), 2);
+        const clearings = smoothstep(
+          0.28,
+          0.5,
+          bakedFractalNoise(positionWorld.mul(0.008), 2).sub(crestSteep.mul(0.4)),
+        );
+        const cover = mix(
+          BACKDROP_SPRUCE.mul(mix(0.4, 1.3, crowns))
+            .mul(clumps.mul(0.15).add(1))
+            .mul(
+              mix(float(1), float(0.7), collar ? smoothstep(0.1, 0.5, collar.hollow) : float(0)),
+            ),
+          BACKDROP_CLEARING.mul(mix(0.85, 1.1, crowns)),
+          clearings,
+        );
+        // The coast's surveyed backdrop is an open lawn.
+        const forest = crestBackdrop
+          ? cover
+          : turf.mul(MEADOW).mul(mix(0.5, 0.85, breakUp.add(0.5)));
+        // The massif reads at 1-3 km: the rock map tiles at 60 m and 220 m, blended by kilometre
+        // noise, so no face repeats or smears at that range. Unwarped: the ground's 40 m UV warp
+        // swirled a tile this large into marble. The scan is a red-brown boulder; under blue air it
+        // read magenta, so the massif takes its luminance only.
+        const rockAxis = abs(normalWorldGeometry).pow(4);
+        const rockShare = rockAxis.div(rockAxis.x.add(rockAxis.y).add(rockAxis.z));
+        const massifTap = (source: Texture, size: number, offset: number): Node<"vec3"> =>
+          rockShare.x
+            .mul(texture(source, positionWorld.zy.div(size).add(offset)).rgb)
+            .add(rockShare.y.mul(texture(source, positionWorld.xz.div(size).add(offset)).rgb))
+            .add(rockShare.z.mul(texture(source, positionWorld.xy.div(size).add(offset)).rgb));
+        const massifRock = mix(
+          massifTap(layer("rock").diffuse, 60, 0),
+          massifTap(layer("rock").diffuse, 220, 0.37),
+          smoothstep(-0.3, 0.3, bakedNoise(positionWorld.mul(0.0021))),
+        );
         const crag = (
           look.surveyedBackdrop
-            ? triplanarAlbedo(layer("rock").diffuse, "rock", 6)
-            : mix(
-                triplanarAlbedo(layer("rock").diffuse, "rock", 2.6),
-                triplanarAlbedo(layer("rock").diffuse, "rock", 14),
-                patch.mul(0.25).add(0.15),
+            ? triplanarAlbedo(layer("rock").diffuse, "rock", 6).rgb
+            : // At half its contrast the scan's boulder seams stop drawing a crack net over the faces.
+              vec3(
+                dot(massifRock, vec3(0.2126, 0.7152, 0.0722))
+                  .sub(0.07)
+                  .mul(0.5)
+                  .add(0.07),
               )
-        ).rgb
-          .mul(crestBackdrop ? vec3(0.6, 0.59, 0.56) : vec3(0.62, 0.66, 0.67))
-          .mul(strata.mul(0.35).add(1))
+                .mul(vec3(0.93, 0.99, 1.04))
+                .mul(LOOK.rock)
+        )
+          .mul(crestBackdrop ? vec3(0.62) : vec3(0.62, 0.66, 0.67))
+          .mul(strata.mul(crestBackdrop ? 0.15 : 0.35).add(1))
           .mul(crestBackdrop ? mix(0.6, 1.15, smoothstep(-0.4, 0.4, facet)) : float(1))
           // Kilometre-scale warm and cool rock, so whole faces do not read one flat grey.
           .mul(
             crestBackdrop
               ? mix(
-                  vec3(0.94, 0.97, 1.03),
-                  vec3(1.1, 1.02, 0.9),
+                  vec3(0.95, 0.98, 1.03),
+                  vec3(1.05, 1.02, 0.97),
                   smoothstep(-0.3, 0.3, bakedFractalNoise(positionWorld.mul(0.0025), 2)),
                 )
               : vec3(1),
@@ -1054,13 +1146,19 @@ export async function createGroundMaterial(
           0.35,
           bakedFractalNoise(positionWorld.mul(vec3(0.045, 0.006, 0.045)), 3),
         );
-        const rubble = triplanarAlbedo(layer("rock").diffuse, "rock", 1.2)
-          .rgb.mul(vec3(0.66, 0.65, 0.62))
-          .mul(mix(0.85, 1.1, bakedNoise(positionWorld.mul(0.08)).add(0.5)));
+        const talus = triplanarAlbedo(layer("rock").diffuse, "rock", 1.2).rgb;
+        const rubble = (
+          crestBackdrop
+            ? vec3(dot(talus, vec3(0.2126, 0.7152, 0.0722))).mul(vec3(0.66, 0.67, 0.69))
+            : talus.mul(vec3(0.66, 0.65, 0.62))
+        ).mul(mix(0.85, 1.1, bakedNoise(positionWorld.mul(0.08)).add(0.5)));
+        // A ragged treeline: spurs of forest climb 90 m higher or stop 90 m lower along the slope.
         const treeline = elevationBand(
           measured,
           measured.heightBands.treeline,
-          positionWorld.y.add(breakUp.mul(24)),
+          positionWorld.y
+            .add(breakUp.mul(24))
+            .add(crestBackdrop ? bakedFractalNoise(positionWorld.mul(0.006), 2).mul(90) : float(0)),
         );
         const face = smoothstep(0.14, 0.3, crestSteep.add(strata.mul(0.055)));
         const bands = bedded.mul(face);
@@ -1069,35 +1167,37 @@ export async function createGroundMaterial(
           measured.heightBands.cap,
           positionWorld.y.add(breakUp.mul(28)),
         );
-        const cap = snowline
-          .mul(
-            // Snow holds on ledges and slides off faces steeper than about 45 degrees, broken by
-            // the facets into fields between bare ribs; the coast keeps it on gentle ground.
-            oneMinus(
-              crestBackdrop
-                ? smoothstep(
-                    collar ? 0.27 : 0.28,
-                    collar ? 0.44 : 0.5,
-                    crestSteep.sub(facet.mul(0.2)),
-                  ).max(
-                    // Bare patches break the fields; the goal frame's upper third is mostly white.
-                    smoothstep(-0.2, -0.45, bakedFractalNoise(positionWorld.mul(0.006), 2)),
-                  )
-                : smoothstep(0.18, 0.42, steep),
-            ),
-          )
-          // Ledges on the bedded faces hold snow the face itself sheds.
-          .max(snowline.mul(ledge).mul(bands).mul(runs).mul(0.55))
-          // Gullies and hollows hold snow on steeper ground than open faces do.
-          .max(
-            collar
-              ? snowline
-                  .mul(smoothstep(0.1, 0.5, collar.hollow))
-                  .mul(oneMinus(smoothstep(0.45, 0.6, crestSteep)))
-                  .mul(reliefWeight)
-              : float(0),
-          );
-        const snow = triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
+        // Snow fields, not ledge lines (owner, 2026-11-09): full cover above the snowline on faces
+        // that point up, tongues 160 m further down the gullies, broken patches 150 m under the
+        // line, and none on wall rock. The facets lift or drop each field's edge, so its rim follows
+        // the ribs instead of a contour.
+        const gully = collar ? smoothstep(0.05, 0.4, collar.hollow).mul(reliefWeight) : float(0);
+        const lying = oneMinus(
+          smoothstep(0.3, 0.48, crestSteep.sub(facet.mul(0.25)).sub(gully.mul(0.1))),
+        );
+        const fields = elevationBand(
+          measured,
+          measured.heightBands.cap,
+          positionWorld.y.add(breakUp.mul(28)).add(gully.mul(160)),
+        ).mul(oneMinus(smoothstep(-0.25, -0.45, bakedFractalNoise(positionWorld.mul(0.006), 2))));
+        const patches = smoothstep(
+          measured.heightBands.cap[0] - 150,
+          measured.heightBands.cap[0] - 20,
+          positionWorld.y.add(breakUp.mul(28)),
+        ).mul(
+          smoothstep(
+            0.12,
+            0.3,
+            bakedFractalNoise(positionWorld.mul(0.011), 2).add(gully.mul(0.35)).add(facet.mul(0.2)),
+          ),
+        );
+        const cap = crestBackdrop
+          ? fields.max(patches).mul(lying)
+          : snowline.mul(oneMinus(smoothstep(0.18, 0.42, steep)));
+        // The massif's snow is unwarped too: the ground's UV warp at a 96 m tile swirled it.
+        const snow = crestBackdrop
+          ? massifTap(layer("snow").diffuse, 60, 0.21)
+          : triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
         // Each band is a darker wall under a paler ledge.
         const banded = crag
           .mul(mix(float(1), mix(float(1.08), float(0.8), wall), bands))
@@ -1141,8 +1241,10 @@ export async function createGroundMaterial(
         }
         // Distant faces resolve broad rock strata, rather than subpixel meadow normals.
         const rockNormal = layer("rock").normal;
+        // The forest's massif takes its relief from the facets alone: the rock normal map reads
+        // through the ground's UV warp, which at a 30 m tile drew curled lines over every face.
         const mountainTilt = (
-          rockNormal === undefined
+          rockNormal === undefined || massif
             ? vec3(0)
             : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32)
         ).add(
@@ -1162,9 +1264,22 @@ export async function createGroundMaterial(
           .mul(ledge.mul(0.7))
           .add(outward.sub(surveyedNormal).mul(wall.mul(0.35)))
           .mul(bands);
-        const tangent = tilt
+        const detail = tilt
           .add(bandTilt)
           .sub(surveyedNormal.mul(dot(surveyedNormal, tilt.add(bandTilt))));
+        // A bump cannot light a face its own slope turns from the sun: the face's relief would
+        // self-shadow it. Without this the low sun lit the massif's shaded walls in soft, cloud-like
+        // wisps wherever the relief tilted toward it (owner, 2026-11-09). In shade the relief still
+        // turns the face to more or less sky.
+        const tangent = massif
+          ? detail.sub(
+              SUN_VECTOR.mul(
+                max(dot(detail, SUN_VECTOR), 0)
+                  .mul(oneMinus(smoothstep(-0.05, 0.25, dot(surveyedNormal, SUN_VECTOR))))
+                  .mul(continuation),
+              ),
+            )
+          : detail;
         const crystals = microGrain()
           .mul(snowCover)
           .mul(oneMinus(smoothstep(4, 22, positionView.length())));

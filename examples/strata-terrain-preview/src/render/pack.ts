@@ -18,14 +18,17 @@ import {
   Box3,
   BufferAttribute,
   type BufferGeometry,
+  DataTexture,
   DataUtils,
   DoubleSide,
   EquirectangularReflectionMapping,
   FrontSide,
   type Group,
+  LinearFilter,
   type Material,
   type Mesh,
   type MeshStandardMaterial,
+  RedFormat,
   RepeatWrapping,
   type Texture,
   Vector3,
@@ -75,6 +78,7 @@ import {
   desertRockColor,
   measureBiome,
 } from "./biomes.js";
+import { LOOK } from "./lookKnobs.js";
 import {
   type IPropGround,
   createRockGround,
@@ -107,20 +111,26 @@ export function canopyComparison(
     throw new Error(`Unsupported canopySpecular '${specular}'`);
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
+/**
+ * Crown heights of the five spruce models. The first three keep their skirt to the ground and stand
+ * at a stand's edge height; the last two are the pack's bare-trunk trees, and stand as the wood's
+ * veterans: a closed spruce stand is tall poles with the crown above a clean trunk.
+ */
+const SPRUCE_METRES = [13, 15, 14, 19, 21];
 const species: IPackSpecies[] = [];
 for (let i = 0; i < 5; i++) {
   species.push({
     asset: "spruce",
     variant: i,
     path: `spruce/${i}`,
-    metres: [12, 14, 13, 10, 11][i] ?? 12,
+    metres: SPRUCE_METRES[i] ?? 12,
   });
   // Whole-card thinning keeps the authored trunk and caps surviving card area growth at 4x.
   species.push({
     asset: "spruce",
     variant: i,
     path: `spruce/${i}-far`,
-    metres: [12, 14, 13, 10, 11][i] ?? 12,
+    metres: SPRUCE_METRES[i] ?? 12,
     level: 1,
   });
 }
@@ -144,6 +154,21 @@ for (const [asset, heights] of Object.entries({
     species.push({ asset, variant, metres, path: `${asset}/${variant}` }),
   );
 }
+/**
+ * Fallen wood on a spruce floor (`cover.understorey.deadfall`): Landscape Pro's three bough groups
+ * and its log, each given by its longest side in metres. `scripts/prep-landscape-pro.mjs` stages them.
+ */
+const LANDSCAPE_PRO = "landscape-pro/fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models";
+(
+  [
+    ["SM_BoughGroup01", 2.4],
+    ["SM_BoughGroup02", 1.9],
+    ["SM_BoughGroup03", 2.8],
+    ["SM_tree_dead", 3.4],
+  ] as const
+).forEach(([model, metres], variant) =>
+  species.push({ asset: "deadfall", variant, metres, path: `${LANDSCAPE_PRO}/${model}` }),
+);
 /** The species drawn as stone: they stand on their lowest point and take a hull collider. */
 export const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
 /** Meadow Flowers species: photographed petals kept, stems lifted, no foliage tint. */
@@ -395,7 +420,7 @@ function tintedFoliage(
         : FLOWERS.has(asset)
           ? ([1, 1, 0.85] as const)
           : canopy && source.name === "branch"
-            ? ([0.45, 0.38, 0.25] as const)
+            ? ([0.26, 0.21, 0.15] as const)
             : ([1, 1, 1] as const);
 
   material.colorNode = sampled.rgb.mul(vec3(...tint));
@@ -410,11 +435,11 @@ function tintedFoliage(
     // one-hue impostor past the far gate still matches. A crown is paler at its sunlit top and
     // darker in its skirt, which is geometry and so bakes into the impostor too.
     const lean = sin(phase.mul(1.7)).mul(0.5).add(0.5);
-    const hue = mix(vec3(0.45, 0.81, 0.34), vec3(0.56, 0.86, 0.26), lean);
+    const hue = mix(vec3(0.33, 0.64, 0.43), vec3(0.42, 0.7, 0.35), lean);
     const value = mix(0.9, 1.08, sin(phase.mul(2.9)).mul(0.5).add(0.5));
     const crownTop = mix(0.8, 1.14, smoothstep(1.5, 11, positionGeometry.y));
     material.colorNode = mix(
-      needle.mul(hue).mul(value).mul(crownTop),
+      needle.mul(hue).mul(value).mul(crownTop).mul(LOOK.crown),
       vec3(0.05, 0.03, 0.015),
       smoothstep(0.02, 0.12, sampled.r.sub(sampled.g)),
     );
@@ -434,7 +459,21 @@ function tintedFoliage(
     );
   }
   if (!otherBiome && canopy && !cutout && !kite)
-    material.colorNode = sampled.rgb.mul(vec3(0.42, 0.27, 0.15));
+    // A limb is photographed pale and smooth: lit by the low sun it drew as a tan tube beside the
+    // dark trunk it grows from, so it takes about half the trunk's value.
+    material.colorNode = sampled.rgb.mul(
+      source.name === "branch"
+        ? vec3(0.11, 0.1, 0.085).mul(LOOK.limb)
+        : vec3(0.2, 0.18, 0.15).mul(LOOK.bark),
+    );
+  if (!otherBiome && asset === "deadfall" && !cutout) {
+    // Wood that has lain a few winters: dark, damp bark, and moss on the side that faces the sky.
+    const bark = sampled.rgb.mul(vec3(0.3, 0.26, 0.2));
+    const moss = smoothstep(0.25, 0.8, normalWorldGeometry.y).mul(
+      smoothstep(-0.3, 0.3, bakedNoise(positionWorld.mul(2.1))),
+    );
+    material.colorNode = mix(bark, vec3(0.085, 0.12, 0.035), moss.mul(0.85));
+  }
   if (!otherBiome && asset === "litter") {
     // Needle litter is the spruce atlas photographed dry: pull it toward bark brown and lay it
     // flat, so the forest floor carries a dead layer instead of more green.
@@ -517,6 +556,7 @@ function surface(
   skyLight?: Texture,
   comparison?: ICanopyComparison,
   biome?: IWorldBiome,
+  canopyCover?: Node<"float">,
 ): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
@@ -605,7 +645,7 @@ function surface(
       const each = mix(0.85, 1.08, sin(phase.mul(2.3)).mul(0.5).add(0.5));
       const heart = mix(0.5, 1, smoothstep(0.0, 0.4, positionGeometry.y));
       material.colorNode = (material.colorNode as Node<"vec3">)
-        .mul(vec3(0.68, 0.8, 0.5))
+        .mul(vec3(0.5, 0.66, 0.38))
         .mul(each)
         .mul(heart);
       material.aoNode = mix(0.5, 1, smoothstep(0.0, 0.3, positionGeometry.y));
@@ -620,11 +660,13 @@ function surface(
       const heart = mix(0.45, 1, smoothstep(0.0, 0.3, positionGeometry.y));
       material.colorNode = mix(sampled, sampled.mul(vec3(0.5, 0.66, 0.4)).mul(heart), leaf);
     }
+    if (look.swardTint && !FLOWERS.has(asset))
+      material.colorNode = (material.colorNode as Node<"vec3">).mul(LOOK.sward);
     if (look.woodCanopy) {
       // Blades and fronds a cell thick pass the sun through; without it a meadow seen against the
       // sun is lit almost only by the sky. Same shadowed term as the needles, without their fill.
       // Roots and the gaps between blades stay dark; the upper blade carries the glow.
-      lightNeedles(material, smoothstep(0.02, 0.4, positionGeometry.y), 0.6);
+      lightNeedles(material, smoothstep(0.02, 0.4, positionGeometry.y), 0.4);
       material.emissiveNode = null;
     }
   } else if (source.map) tintedFoliage(material, context, snowMap);
@@ -642,6 +684,13 @@ function surface(
   if (skyLight && !stone) skyEnvironment(material, skyLight);
   // At full sky light a forest crown is ~85% lit by sky and emissive, so it shows no sun side.
   if (skyLight && look.woodCanopy && canopy) material.envMapIntensity = 0.35;
+  // A plant under the crowns sees the sky through a few gaps: its ambient and sky-image light fall
+  // to the row's share where the baked canopy closes over it, and the sun's own light is untouched,
+  // so a sunlit meadow keeps its full sky and a fern in deep shade stops glowing.
+  if (canopyCover && look.understoreySkyLight !== undefined && !canopy && !stone)
+    material.aoNode = ((material.aoNode as Node<"float"> | null) ?? float(1)).mul(
+      mix(float(1), LOOK.plantShade, smoothstep(0.05, 0.6, canopyCover)),
+    );
   return material;
 }
 
@@ -849,6 +898,25 @@ export function speciesFor(world: WorldName): IPackSpecies[] {
   return selected;
 }
 
+/** The baked crown weight, 0 in the open and about 1 under a closed stand, at a world position. */
+function canopyCoverNode(ground: IPropGround, canopy: Float32Array): Node<"float"> {
+  const map = new DataTexture(
+    Uint8Array.from(canopy, (weight) => Math.round(Math.min(1, Math.max(0, weight)) * 255)),
+    ground.resolution,
+    ground.resolution,
+    RedFormat,
+  );
+  map.minFilter = LinearFilter;
+  map.magFilter = LinearFilter;
+  map.needsUpdate = true;
+  const at = positionWorld.xz
+    .div(float(ground.size))
+    .add(0.5)
+    .mul((ground.resolution - 1) / ground.resolution)
+    .add(0.5 / ground.resolution);
+  return texture(map, at).r;
+}
+
 export interface IPackProps {
   readonly parts: Map<string, IPropPart[]>;
   readonly dispose: () => void;
@@ -859,6 +927,8 @@ export async function loadPack(
   ground?: IPropGround,
   comparison?: ICanopyComparison,
   biome?: IWorldBiome,
+  /** The baked crown weight per ground vertex (`scatter.canopy`), row-major like the heights. */
+  canopy?: Float32Array,
 ): Promise<IPackProps> {
   const measured = biome ?? (ground ? measureBiome(BIOMES[world], ground.heights) : undefined);
   const look = BIOMES[world];
@@ -867,6 +937,7 @@ export async function loadPack(
   const parts = new Map<string, IPropPart[]>();
   const built: { geometry: BufferGeometry; material: Material }[] = [];
   const selected = speciesFor(world);
+  const canopyCover = ground && canopy ? canopyCoverNode(ground, canopy) : undefined;
   const rockface =
     look.crestRock && assets
       ? await Promise.all(
@@ -886,7 +957,8 @@ export async function loadPack(
     selected.map(async (one) => {
       if (!assets) return undefined;
       try {
-        return await assets.model<{ scene?: Group }>(`temperate/${one.path}.glb`);
+        const root = one.path.startsWith("landscape-pro/") ? "" : "temperate/";
+        return await assets.model<{ scene?: Group }>(`${root}${one.path}.glb`);
       } catch {
         return undefined;
       }
@@ -898,7 +970,7 @@ export async function loadPack(
     if (!root || !one) return;
     normaliseToMetres(root, {
       metres: one.metres,
-      axis: STONE.has(one.asset) ? "longest" : "height",
+      axis: STONE.has(one.asset) || one.asset === "deadfall" ? "longest" : "height",
     });
     const box = new Box3().setFromObject(root); // engine-override: center baked geometry after unit normalization
     const size = box.getSize(new Vector3());
@@ -930,7 +1002,16 @@ export async function loadPack(
         const material =
           inherited instanceof MeshPhysicalNodeMaterial
             ? inherited
-            : surface(source, one.asset, world, rockface[2], sky, comparison, measured);
+            : surface(
+                source,
+                one.asset,
+                world,
+                rockface[2],
+                sky,
+                comparison,
+                measured,
+                canopyCover,
+              );
         if (stone) rockGround?.apply(material);
         else declareWindReach(material, one.asset, geometry);
         if (source !== section.material) source.dispose();

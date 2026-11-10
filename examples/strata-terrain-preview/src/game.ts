@@ -3,6 +3,7 @@ import {
   Scene,
   VirtualShadowNode,
   addInSlices,
+  debugFlag,
   defineGame,
   markStatic,
 } from "@threenative/core";
@@ -38,6 +39,7 @@ import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
 import { HORIZON_REACH, HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
+import { openLookTweaks } from "./render/lookTweaks.js";
 import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/propWorld.js";
 import { invalidatePropShadows } from "./render/propWorld.js";
@@ -192,6 +194,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     }
 
     override enter(ctx: TerrainCtx): void {
+      (globalThis as { __tnProbe?: unknown }).__tnProbe = ctx; // TEMP-PROFILE: remove before commit
       const enterStart = performance.now();
       ctx.add(ctx.camera);
       const data = this.#data;
@@ -361,6 +364,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.add(sky.atmosphere);
       ctx.add(sky.sun);
       this.#sky = sky;
+      // `?tweak`: range bars over the wood's look, on the running scene (`src/render/lookTweaks.ts`).
+      if (world === "forest" && debugFlag("tweak")) openLookTweaks(sky, ctx.renderer);
       ctx.entities.add("sun", {
         object: sky.sun,
         debug: () => ({ x: sky.sunX }),

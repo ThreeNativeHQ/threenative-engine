@@ -136,21 +136,22 @@ async function measure(world: WorldName): Promise<IWorldPin> {
 /** The picture of every world, measured on the compile this box deleted (`8d118a9bb`). */
 const GOLDEN: Readonly<Record<WorldName, IWorldPin>> = {
   forest: {
-    placements: 431194,
+    placements: 431958,
     buckets: {
       "horizon:true": 5649,
-      "local:false": 420894,
-      "local:true": 4651,
+      "local:false": 420762,
+      "local:true": 5547,
     },
     species: {
       boulder: { count: 115, x: 856.58, y: 2192.15, z: 7957.531 },
-      bush: { count: 4211, x: 16585.992, y: 62783.27, z: 61333.346 },
-      fern: { count: 30303, x: 525840.353, y: 489399.773, z: 1614636.284 },
+      bush: { count: 4261, x: 25698.9, y: 63617.3, z: 60067.611 },
+      deadfall: { count: 846, x: 25821.36, y: 13428.405, z: 8774.001 },
+      fern: { count: 30055, x: 551062.574, y: 484463.21, z: 1595374.939 },
       grass: { count: 259588, x: 6131295.664, y: 3428950.856, z: -5809487.928 },
-      litter: { count: 37440, x: 945524.515, y: 585038.523, z: 714727.42 },
+      litter: { count: 37602, x: 991258.286, y: 585849.163, z: 700350.279 },
       mountain: { count: 7, x: -486.17, y: 159.127, z: 1109.642 },
       pebble: { count: 1638, x: -174227.954, y: 18847.816, z: -221424.512 },
-      poppy: { count: 4128, x: 217218.302, y: 40686.113, z: -294258.724 },
+      poppy: { count: 4082, x: 219622.254, y: 39420.941, z: -304859.172 },
       riverrock: { count: 318, x: -34376.854, y: 4042.729, z: -45401.142 },
       sapling: { count: 9528, x: 119493.05, y: 140754.167, z: 26790.6 },
       scrub: { count: 78269, x: 1823716.128, y: 1034398.312, z: -1749543.624 },

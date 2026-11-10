@@ -505,6 +505,7 @@
         "@threenative/terrain/editor/server#TerrainEditorDocument": "export class TerrainEditorDocument { … }",
         "@threenative/terrain/editor#checkEnvironmentAssets": "export function checkEnvironmentAssets( environment: IEnvironment, assets: readonly { … }",
         "@threenative/terrain/editor#createEditorSelection": "export function createEditorSelection( { … }",
+        "@threenative/terrain/editor#createTweakBox": "export function createTweakBox<K extends string>(options: ITweakBoxOptions<K>): ITweakBox<K> { … }",
         "@threenative/terrain/editor#editorPlacementCenter": "export function editorPlacementCenter(point: Vector3, pose: IPlacementOverride): Vector3 { … }",
         "@threenative/terrain/editor#editorPointToClient": "export function editorPointToClient( point: Vector3, camera: Camera, box: { … }",
         "@threenative/terrain/editor#editorSurfaceHeight": "export function editorSurfaceHeight( ctx: { … }",
