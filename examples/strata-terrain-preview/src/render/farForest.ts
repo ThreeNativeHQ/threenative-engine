@@ -27,7 +27,8 @@ import type { IBakedLake, IBakedRiver } from "./river.js";
  * bare lawn read as a bug (owner, 2026-11-09: "why some hills have barely any vegetation?");
  * `?farForest=on` plants the whole ring up the massif's slopes; `?farForest=off` plants none.
  */
-const FAR_FOREST_MODE = new URLSearchParams(globalThis.location?.search ?? "").get("farForest") ?? "near";
+const FAR_FOREST_MODE =
+  new URLSearchParams(globalThis.location?.search ?? "").get("farForest") ?? "near";
 export const FAR_FOREST = FAR_FOREST_MODE !== "off";
 /** Metres past the square's edge the default band reaches (`?farForestReach=` while tuning). */
 const NEAR_REACH = Number(
@@ -87,5 +88,7 @@ export function farForestPlacements(options: IFarForestOptions): IPlacement[] {
   });
   if (FAR_FOREST_MODE !== "near") return placed;
   const reach = options.size / 2 + NEAR_REACH;
-  return placed.filter((tree) => Math.max(Math.abs(tree.position[0]), Math.abs(tree.position[2])) <= reach);
+  return placed.filter(
+    (tree) => Math.max(Math.abs(tree.position[0]), Math.abs(tree.position[2])) <= reach,
+  );
 }

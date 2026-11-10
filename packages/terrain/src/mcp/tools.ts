@@ -6,8 +6,8 @@ import { TERRAIN_KITS, type TerrainKit } from "../core/kits.js";
 import { OPERATION_TYPES } from "../core/operations.js";
 import { LANDFORMS, type LandformKind } from "../core/presets.js";
 import {
-  BIOME_OWN,
   BACKDROP_WORDS,
+  BIOME_OWN,
   LANDFORM_WORD_ROWS,
   REQUEST_KNOWN_WORDS,
   REQUEST_STOP_WORDS,

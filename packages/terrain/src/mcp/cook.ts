@@ -6,13 +6,13 @@ import { type IBakeBiomeOptions, bakeBiome, foliageScatterRules } from "../core/
 import { type IBiomeSpec, type IBiomeWaterBody, validateBiome } from "../core/biome.js";
 import { createFlow, fillDepressions, routeFlow } from "../core/fluvial.js";
 import { decodeHeightPNG, decodeRAW16 } from "../core/io.js";
-import { hashString, random } from "../core/math.js";
 import { placeMassif } from "../core/massif.js";
-import { terrainStats } from "../core/stats.js";
+import { hashString, random } from "../core/math.js";
 import { finalizeState } from "../core/operations.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { LANDFORMS, landform } from "../core/presets.js";
 import type { LandformKind } from "../core/presets.js";
+import { terrainStats } from "../core/stats.js";
 import { MASSIFS, SURVEYS, locationSurvey } from "../core/surveys.js";
 import type { IGroundDecision, IGroundRequest, ISurveyRow } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
