@@ -462,7 +462,7 @@ function nearMassif(terrain) {
     at: [-2050, -150],
     // South: the sun stands west-south-west, so a north-east face toward the vista is backlit.
     face: 90,
-    keepOut: 420,
+    keepOut: 650,
     top: [1100, 1160],
   });
   massif.forest = placed.placement;

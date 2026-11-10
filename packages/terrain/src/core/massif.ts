@@ -181,6 +181,12 @@ function faceDirection(lifted: Float32Array, n: number, spacing: number): number
 }
 
 /**
+ * Metres over which a massif fades into the host inside `keepOut`. A 160 m ramp cut the near flank
+ * into a smooth artificial wall, read from the vista as a cone; 600 m lowers it as a foothill.
+ */
+const KEEP_OUT_RAMP = 600;
+
+/**
  * Stands one surveyed mountain behind a world, chosen and posed by a seed: the tile from a list, a
  * point on a bearing and distance, a turn that faces its steepest wall to the centre within 20
  * degrees, a mirror and a summit height. It stands on the host's own foot (a smooth surface through
@@ -347,7 +353,7 @@ export function placeMassif(
     if (u <= 0 || u >= 1 || v <= 0 || v >= 1) return [0, 0];
     const edge = Math.min(u, v, 1 - u, 1 - v);
     const reach = Math.max(Math.abs(x), Math.abs(z));
-    const weight = smoothstep(0, 0.04, edge) * smoothstep(keepOut, keepOut + 160, reach);
+    const weight = smoothstep(0, 0.04, edge) * smoothstep(keepOut, keepOut + KEEP_OUT_RAMP, reach);
     if (weight === 0) return [0, 0];
     const raw = sampleGrid(hostBase, B, B, u, v) + scale * sampleGrid(grid, gridN, gridN, u, v);
     // A valley inside the mountain fills to the lowest ground its border leaves by, as a real

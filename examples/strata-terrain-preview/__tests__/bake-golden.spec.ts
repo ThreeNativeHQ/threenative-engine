@@ -86,7 +86,7 @@ const GOLDEN = {
     heights: "dc182307fa2789f7297d53e96c77720b7fac97119489f725d8ebbb44e1d60533",
     manifest: "72c72e6f86b2a800aeae246b4800390b6c57fe6b95dc87510193549f9106c943",
   },
-  horizon: "65b7ca8ada0dca6fe633f317b3f0e115b5e89dedd1dea823bdde6bde44d650f4",
+  horizon: "f9726916885d79f137891288240cfe8ed7ae12cf36d032b315c22b6c39f4f277",
 } as const;
 
 const read = (name: string): Uint8Array => readFileSync(new URL(name, worldDir));
