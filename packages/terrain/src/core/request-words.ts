@@ -56,6 +56,18 @@ export const LANDFORM_BIOME: Readonly<Record<LandformKind, TerrainKit>> = {
 /** The starter a request with no biome, landform or sea word cooks: the forest, reported as such. */
 export const DEFAULT_BIOME: TerrainKit = "forest";
 
+/** A shape a word carves into whatever ground the world stands on, preset, survey or starter crop. */
+export type TerrainFeature = "canyon" | "fjord";
+
+/**
+ * The words that carve a feature. A landform word only picks a preset, and a preset that is the
+ * kit's own keeps the kit's ground, so "a desert canyon" needs its cut made explicitly.
+ */
+export const FEATURE_WORD_ROWS: readonly (readonly [TerrainFeature, readonly string[]])[] = [
+  ["canyon", ["canyon", "canyons", "gorge", "gorges", "ravine", "ravines"]],
+  ["fjord", ["fjord", "fjords", "inlet", "inlets"]],
+];
+
 /** How a size word scales the biome's own `sizeMeters`: "huge" doubles 512 m, "small" halves it. */
 export const SIZE_WORD_ROWS: readonly (readonly [number, readonly string[]])[] = [
   [2, ["big", "huge", "large"]],
@@ -140,8 +152,12 @@ export const BACKDROP_WORDS: readonly string[] = [
 ];
 
 export const REQUEST_KNOWN_WORDS: ReadonlySet<string> = new Set([
-  ...[...BIOME_WORD_ROWS, ...LANDFORM_WORD_ROWS, ...WATER_WORD_ROWS, ...SIZE_WORD_ROWS].flatMap(
-    ([, names]) => names,
-  ),
+  ...[
+    ...BIOME_WORD_ROWS,
+    ...LANDFORM_WORD_ROWS,
+    ...WATER_WORD_ROWS,
+    ...SIZE_WORD_ROWS,
+    ...FEATURE_WORD_ROWS,
+  ].flatMap(([, names]) => names),
   ...BACKDROP_WORDS,
 ]);
