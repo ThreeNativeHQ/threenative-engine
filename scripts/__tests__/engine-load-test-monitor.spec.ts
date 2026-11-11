@@ -1119,3 +1119,13 @@ describe("the scoreboard's ladder measures the owned-engine arm too", () => {
     expect(run).toContain(`ladder tn-engine ${repeat}`);
   });
 });
+
+describe("the ladder names the owned engine's own arm", () => {
+  it("gives `tn-engine` a column and its run files, so a collected ladder is never dropped", () => {
+    const html = renderProgressHtml(data());
+    // The column, beside the legacy `tn` arm it must not be confused with.
+    expect(html).toContain("ThreeNative engine");
+    // And the files `scoreboard.sh` now writes for it are named even before any exist.
+    expect(html).toContain("ladder-tn-engine-r1-");
+  });
+});
