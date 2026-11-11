@@ -101,7 +101,7 @@ Risks:
 
 ## Acceptance criteria
 
-- [ ] AC-1 [shared]: on the Iris Xe laptop, `main.html?stress&adaptive` draws at 53 fps or more, uncapped, two runs per arm, with no stress lab source change that removes content. proof: ledger rows from a laptop fair window (`~/.agents/skills/laptop-offload/offload.sh start <job> --gpu`) — Evidence: pending (34.8 fps today).
+- [ ] AC-1 [shared]: on the Iris Xe laptop, `main.html?stress&adaptive` draws at 60 fps or more in every run, uncapped, two runs per arm, with no stress lab source change that removes content. proof: ledger rows from a laptop fair window (`~/.agents/skills/laptop-offload/offload.sh start <job> --gpu`) — Evidence: pending (34.8 fps today).
 - [ ] AC-2 [local]: on the RTX 2080, `main.html?stress&arm=head` holds a frame p50 of 8.4 ms or less (about 120 fps, the scoreboard goal) in a valid fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: pending (9.84 ms today).
 - [ ] AC-3 [local]: on the RTX 2080, `main.html?stress&play&arm=head` draws at 60 fps or more in a valid fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: pending (49.4 fps today).
 
@@ -134,6 +134,9 @@ Risks:
   not in core. Repository rule: what decides how anything looks ships as generated source in `src/render/`; core supplies
   only `qualityTiers.shadow(tier).castShadows`. The named override is `setupPost(..., { shadows })`, reported as
   `shadows=on|off(tier|override)` on `TN_QUALITY_TIER`.
+- 2026-11-10 (João): "laptop needs 60fps min". AC-1 rises from 53 fps to 60 fps, and every run must hold it, not the mean.
+  The laptop reaches 97 C and then draws the same build at half speed (head 63 fps cool, 35 fps hot), so a window starts
+  with the package under 80 C and the GPU frame at the low tier needs about 2x headroom: 12 ms or less cool.
 - 2026-11-10 (João): no Midway work in this lane. Midway still ships `autoBatch: false`; that is a game-side note, not a
   box here.
 
@@ -153,11 +156,12 @@ Risks:
 #### Phase 2: the laptop adaptive lane reaches vanilla speed
 
 **Status:** IN PROGRESS
+**Blocker:** AC-1 (60 fps in every laptop run) needs the `low` frame at about 12 ms GPU cool. `cac3780a4` (no SSR at `low`) removes the `aux` G-buffer pass, 6.7 of 26.7 ms hot.
 **Files:** `packages/core/src/look/adaptiveQuality.ts`, `packages/core/src/look/qualityPolicy.ts`, their specs under `packages/core/__tests__/`, `packages/create-threenative/conventions.json` when the rule becomes a convention.
 **Implementation:** run `engine_search_capabilities` for the shadow tier first. Decide the layer in writing (engine policy or kit source) and quote the repository rule that decides it. Apply the tier's `castShadows` where the tier changes, keep the named override, and report the overridden state. Feed the owned engine's GPU pass split into `TN_FRAME_BUDGET`, so a game reads it without the lab's hook.
 **Verification:** a laptop fair window with base and candidate lab builds, arms `?stress&adaptive&arm=base` and `?stress&adaptive&arm=head`, plus a visual judge at each tier the change touches.
 
-- [ ] At the `low` tier a game with no shadow wiring of its own draws no shadow pass, and a game that sets its own shadow option keeps it. proof: a core spec red-green, and `gpuShadowMs` under 1 ms on `?stress&adaptive` in the laptop window.
+- [x] At the `low` tier a game with no shadow wiring of its own draws no shadow pass, and a game that sets its own shadow option keeps it. proof: a core spec red-green, and `gpuShadowMs` under 1 ms on `?stress&adaptive` in the laptop window. — `6dd609eca` (+ `99c719d30`, the rule moved to `tierShadows` in the starter's `quality.ts`; the spec is the starter's, see Decisions). `starter-shadow-tier.spec.ts` red before, green after: `low` off, `medium`/`high` on, `shadows: true` kept and reported `source: "override"`. Laptop rows #345-#346: `gpuShadowMs` 11.3 → 0, 35.8 → 63.2 fps. Visual judge (fresh Opus, `judge-p2c/`, still and town, two runs per arm at `low`): NEUTRAL; only cast shadows go, plus a uniform 2% auto-exposure re-meter. The tier flap this exposed (low ↔ medium every few seconds, shadows blinking) is fixed by `97c33a831` and `b3c90884b` (a failed raise waits until its measured cost would fit; `template-quality` red-green).
 - [x] `TN_FRAME_BUDGET` carries the GPU frame by pass (shadow, scene, other) on the owned engine. proof: a core spec, and one native desktop run read with `node packages/playtest/dist/runner/cli.js perf --file <log>`. — `4bd398993` (Wasm facade, core) and `52876410f` (V8 player). `renderer.spec.ts` "hands out the engine's own pass split" red before, green after (65 passed). Stress lab `TN_FRAME_BUDGET`: desktop `gpu 4.8 = gpuMain 1.0 + gpuShadow 1.2 + gpuOther 2.6`; laptop at `low` `gpuMain 5.2, gpuShadow 0, gpuOther 5.9`. Native: `player-gpu-stages.mjs` on the V8 player, RTX 2080, PASS (the split names the sampled frame). The `perf --file` reading is replaced by that test (see Decisions).
 
 #### Phase 3: the desktop frame loses its shadow planning cost
@@ -172,7 +176,7 @@ Risks:
   `7482c204c` (a rig box reads each bone stretch alone): bounds rebuild 1.38 → 1.06 ms a frame by sub-timer. The stage still
   reads 1.25-1.6 ms under host load 12-20; the desktop window `shadow-plan` (#347-#348) is inconclusive (one valid base
   run). Most of what remains is the walking crowd (see Handover notes).
-- [ ] No buffer with unchanged content uploads on `?stress&still`. proof: `tnDebug=1` upload counters before and after, in the ledger row notes.
+- [x] No buffer with unchanged content uploads on `?stress&still`. proof: `tnDebug=1` upload counters before and after, in the ledger row notes. — The 39 KB a frame that `uniformUploadBytes` showed was the arena size, not an upload: the FM2 diff already sent only changed blocks. `a3ee875b2` makes the counter count written bytes; `bd1cd887d` stops the last unchanged write (the output pass block, 4 B a frame). `frame_slab_is_per_program` red-green both times: a still frame now uploads 0 bytes; 136 render database, 98 renderer and 14 post cases pass. Desktop `?stress&still&tnDebug=1`: 74.0 KB a frame, of it 6.7 KB uniforms (changed blocks only, by per-block compare) and the rest the walking crowd's bone palettes, which change each frame; with `noCrowd&noFires&noBodies` 516 → 512 B, all changed uniform blocks. No ledger row: the counters are not a window metric.
 - [ ] The `play` frame has a stage split that covers 95% of the frame, and its largest removable term is cut. proof: the split and the paired window in ledger rows; the DevTools trace named in the learnings entry.
 
 ## Handover notes
@@ -188,6 +192,11 @@ Risks:
   `planVirtualPages` (temporary sub-timers, not committed): 240 rig draws 0.72 ms, 1,174 bounds lookups 0.35 ms, 11
   instanced draws 0.20 ms, 214 moving rigid draws 0.13 ms. The next lever is per-rig engine work for a rig that moves
   rigidly (Unreal keeps bones in component space), not more shadow-plan micro cuts.
+- The laptop `low` frame by pass (hot, 2026-11-10, `pass-probe.mjs`, `TN_GPU_PASSES`): scene 11.6 ms, `aux` G-buffer 6.7 ms (SSR's
+  normal and material reads; gone with `cac3780a4`), post 4.3 ms over 8 passes, output 0.6 ms. The walking crowd is about 5 ms
+  of the scene pass and 4.5 ms of `aux`.
+- The `p2c` laptop window (2026-11-10) is void: an orphaned probe browser from a stopped job rendered beside it. Its rows were
+  not recorded. Check `ps` for `ms-playwright/chromium` with PPID 1 after any `offload.sh stop`.
 - The laptop reaches 100 C between runs; `offload.sh start` refuses then. Retry in a loop with 60 s waits. Head runs with the
   same GPU frame differ 50 to 76 fps from throttling: read `gpu` and `shadow` beside `fps`.
 - Before a headed GPU browser on the desktop: read `nvidia-smi --query-gpu=memory.used --format=csv,noheader` and keep 3 GB free. Check `uptime`: a fair window is void above load 18.
