@@ -109,7 +109,7 @@ Rules:
 **Sizing gate (measure lane, before Phase 2):** on `?stress&tnDebug=1`, read the p50 of the three entries summed, and `sharedTransformWrites`. Record them under `## Decisions`. Below 0.3 ms a frame, set this PRD to `DEFERRED` with the number and stop. The 0.3 ms floor is a proposal (2026-11-10), not a measurement.
 
 #### Phase 2: The pose history in C++
-**Status:** NOT STARTED
+**Status:** built and proven, one step blocked on drift that predates this PRD (see below).
 **Files:** new `packages/runtime-native/src/engine/scene/pose_history.h` and `pose_history.cpp` (add the `.cpp` to the engine source list in `packages/runtime-native/cmake/NativeEngineCore.cmake`, beside `animation/tick_batch.cpp` near line 125), `packages/runtime-native/src/engine/abi/bindings_scene.cpp`, new `packages/runtime-native/tests/native-engine/scene/pose_history_test.cpp` (an existing case `native_engine_skinned_pose_history` is a different thing, the bone palette history; register the new one as `native_engine_physics_pose_history` the way `native_engine_animation_tick_batch` is registered near line 945), `packages/runtime-native/native-registry.json` (regenerated, not hand-edited).
 **Implementation:**
 1. Run `engine_search_capabilities` for "interpolation" and "pose" first (AGENTS.md rule 1). If the engine already has a pose history, stop and report.
@@ -117,8 +117,17 @@ Rules:
 3. `PoseHistory`: a `std::vector<std::weak_ptr<Object3D>>`, three `std::vector<double>` of 7 values per object (previous, current, saved), and the list of the last blend. Methods `watch`, `reset`, `tick(phase)`, `blend(alpha)`, `restore()` as in the Solution table. `blend` rejects an alpha that is not finite or is outside 0 to 1 by throwing, as the JavaScript does.
 4. In `bindings_scene.cpp`, add the five `b.methods["__tnPose…"]` entries beside `__tnGuardWatch` (`:453`). Keep one `PoseHistory` per owner object with the same side-table pattern that `sourceGuardOf` uses. Read object lists with `refsOf` and `objectArg`, as `__bandRigs` does (`:428-433`).
 5. Regenerate the registry: build `tn-native-engine-registry-dump` and run it with `--check native-registry.json` (`NativeEngineCore.cmake:911-919` shows the exact invocation). Commit the regenerated file.
-- [ ] For 3 objects over 2 ticks: after `blend(0.25)` each object holds the lerp and slerp of its two poses within 1e-12, its Euler matches its quaternion, and its local transform is marked dirty. After `restore()` each holds its solved pose bit-equal. A pose changed between the tick and the blend makes that one object reset and not blend. proof: `ctest -R native_engine_physics_pose_history`.
-- [ ] `watch` with one object added keeps the history of the two that stay. An object destroyed between `blend` and `restore` is skipped with no crash. `blend(1.5)` and `blend(NaN)` throw. The case runs clean under `TN_ENGINE_SANITIZE`. proof: `ctest -R native_engine_physics_pose_history` in the normal and the sanitizer build.
+**Step 5 is blocked, and not by this change.** `tn-native-engine-registry-dump --out` rewrites
+`packages/three-native/api/native-registry.json` with 375 insertions and **9,471 deletions**, and it
+does that on the bindings **as they stand at HEAD too** — regenerating with my five `__tnPose*`
+methods stashed produced the identical 9,846-line diff. So the committed snapshot is stale
+repo-wide and `native_engine_registry_snapshot` is red before this PRD touches it. Committing a
+9,471-line deletion to "fix" it would delete entries nothing in this worktree can account for, so
+the file is left untouched and the drift is reported instead of papered over. The five methods are
+bound and build (`tn_engine_abi` exits 0); they are simply not in the snapshot yet.
+
+- [x] For 3 objects over 2 ticks: after `blend(0.25)` each object holds the lerp and slerp of its two poses within 1e-12, its Euler matches its quaternion, and its local transform is marked dirty. After `restore()` each holds its solved pose bit-equal. A pose changed between the tick and the blend makes that one object reset and not blend. proof: `ctest -R native_engine_physics_pose_history` — **100% passed**. The case compares against poses snapshotted before the blend, not against the live objects `blend` overwrites; that mistake in the first draft made the test measure the result against itself. Writing it caught a real bug: the reset path kept a stale `latest`, so the next tick blended from a pose the body had already left (expected 109.5, got 61). `latest` now rebases on where the body actually is.
+- [x] `watch` with one object added keeps the history of the two that stay. An object destroyed between `blend` and `restore` is skipped with no crash. `blend(1.5)` and `blend(NaN)` throw. The case runs clean under `TN_ENGINE_SANITIZE`. proof: `ctest -R native_engine_physics_pose_history` in the normal and the sanitizer build — **100% passed in both**, no ASan or UBSan report. The full `native-engine` label is **293/293** in `build/native-engine`, up from 292 with this case added.
 
 #### Phase 3: Core uses it, on both hosts
 **Status:** NOT STARTED
