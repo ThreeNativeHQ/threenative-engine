@@ -1383,6 +1383,68 @@ void tsl_matrix_columns() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-878: a draw of a mesh, or a compute dispatch, names which hooked uniforms it reads, so the facade runs
+// only those uniforms' render callbacks before it (the material graphs under the root, and the kernels).
+void tsl_reads() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_tsl_arg_t scalar{};
+    scalar.kind = TN_TSL_ARG_NUMBER;
+    uint64_t a = 0, b = 0, c = 0, unused = 0;
+    for (uint64_t* id : {&a, &b, &c, &unused}) CHECK(tn_tsl_call(ctx, "uniform", nullptr, &scalar, 1, id, &d.value) == TN_OK);
+    const auto colour = [&](uint64_t lane) {
+        tn_tsl_arg_t parts[4]{};
+        parts[0].kind = TN_TSL_ARG_NODE;
+        parts[0].node = lane;
+        for (int i = 1; i < 4; ++i) parts[i].kind = TN_TSL_ARG_NUMBER, parts[i].number = 1;
+        uint64_t out = 0;
+        CHECK(tn_tsl_call(ctx, "vec4", nullptr, parts, 4, &out, &d.value) == TN_OK);
+        return out;
+    };
+    tn_handle_t geometry{}, first{}, second{}, meshA{}, meshB{}, group{};
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &first, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &second, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, first, "colorNode", colour(a), &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, second, "colorNode", colour(b), &d.value) == TN_OK);
+    const tn_value_t partsA[2] = {ref(geometry), ref(first)}, partsB[2] = {ref(geometry), ref(second)};
+    CHECK(tn_construct(ctx, "Mesh", partsA, 2, &meshA, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", partsB, 2, &meshB, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    tn_value_t added{};
+    for (const tn_handle_t child : {meshA, meshB}) {
+        const tn_value_t arg = ref(child);
+        CHECK(tn_invoke(group, "add", &arg, 1, &added, &d.value) == TN_OK);
+    }
+    uint64_t kernel = 0;
+    tn_tsl_arg_t two{};
+    two.kind = TN_TSL_ARG_NUMBER;
+    two.number = 2;
+    CHECK(tn_tsl_call(ctx, "mul", &c, &two, 1, &kernel, &d.value) == TN_OK);
+
+    const uint64_t candidates[4] = {unused, c, b, a};
+    uint32_t out[4]{}, count = 9;
+    const auto reads = [&](const tn_handle_t* root, const uint64_t* kernels, uint32_t kernelCount) {
+        count = 9;
+        CHECK(tn_tsl_reads(ctx, root, kernels, kernelCount, candidates, 4, out, &count, &d.value) == TN_OK);
+        return std::vector<uint32_t>(out, out + count);
+    };
+    CHECK((reads(&meshA, nullptr, 0) == std::vector<uint32_t>{3}));      // one mesh: its material's uniform
+    CHECK((reads(&group, nullptr, 0) == std::vector<uint32_t>{2, 3}));   // a group: every mesh under it, candidate order
+    CHECK((reads(nullptr, &kernel, 1) == std::vector<uint32_t>{1}));     // a dispatch: the kernel's
+    CHECK((reads(&meshB, &kernel, 1) == std::vector<uint32_t>{1, 2}));
+    CHECK(reads(nullptr, nullptr, 0).empty());
+
+    const uint64_t stale = 999999;  // a released or unknown node id refuses, as tn_tsl_set_uniforms does
+    CHECK(tn_tsl_reads(ctx, nullptr, &stale, 1, candidates, 4, out, &count, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_tsl_reads(ctx, &geometry, nullptr, 0, candidates, 4, out, &count, &d.value) != TN_OK);  // not an Object3D
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-828: one sync's changed uniforms cross as one span; a stale id writes nothing, a refused value stops there.
 void tsl_set_uniforms() {
     const tn_version_info_t own = tn_engine_version();
@@ -4105,7 +4167,7 @@ void binding_fn() {
 
 TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"frustum_intersects_boxes", frustum_intersects_boxes}, {"material_witness", material_witness}, {"world_records", world_records}, {"world_stale_entries", world_stale_entries}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_reads", tsl_reads}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
              {"projected_cull_band_animation", projected_cull_band_animation},

@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <atomic>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -23,6 +24,7 @@
 #include <new>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -31,6 +33,7 @@
 #include "engine/foundation/waste_counters.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/object3d.h"
+#include "engine/scene/nodes.h"
 #include "engine/abi/tsl_call.h"
 #include "engine/scene/material.h"
 #include "engine/abi/bindings.h"
@@ -1223,6 +1226,47 @@ extern "C" tn_status_t tn_tsl_set_uniforms(tn_context_t* context, const uint64_t
     return guarded(diagnostic, [&]() -> tn_status_t {
         for (uint32_t i = 0, at = 0; i < count; at += lane_counts[i++])
             tn::abi::tslSetUniform(context->tslNodes.at(nodes[i]), lanes + at, lane_counts[i]);
+        return ok(diagnostic);
+    });
+}
+
+extern "C" tn_status_t tn_tsl_reads(tn_context_t* context, const tn_handle_t* root, const uint64_t* kernels,
+                                     uint32_t kernel_count, const uint64_t* candidates, uint32_t candidate_count,
+                                     uint32_t* out, uint32_t* count, tn_diagnostic_t* diagnostic) {
+    if (!context || !count || (kernel_count && !kernels) || (candidate_count && (!candidates || !out)))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    for (uint32_t i = 0; i < kernel_count; ++i)
+        if (!context->tslNodes.contains(kernels[i])) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    for (uint32_t i = 0; i < candidate_count; ++i)
+        if (!context->tslNodes.contains(candidates[i])) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    const tn::engine::Object3D* drawn = nullptr;
+    if (root) {
+        const tn::binding::Object* object = root->context == context->objects.context() ? context->object(*root) : nullptr;
+        if (!object || !tn::binding::isObject3DClass(object->cls))
+            return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_TSL_READS_ROOT");
+        drawn = static_cast<const tn::engine::Object3D*>(object->ptr.get());
+    }
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        namespace g = tn::engine::shader::graph;
+        std::unordered_set<const g::NodeData*> read;
+        const auto take = [&](const g::Node& graph) {
+            if (graph) for (const g::Node& uniform : g::uniformList(graph)) read.insert(uniform.get());
+        };
+        for (uint32_t i = 0; i < kernel_count; ++i) take(context->tslNodes.at(kernels[i]));
+        const auto materials = [&](const tn::engine::Material* material) {
+            if (material) material->nodes.forEachGraph(take);
+        };
+        const std::function<void(const tn::engine::Object3D&)> walk = [&](const tn::engine::Object3D& object) {
+            if (const auto* mesh = dynamic_cast<const tn::engine::Mesh*>(&object)) {
+                materials(mesh->material.get());
+                for (const auto& each : mesh->materials) materials(each.get());
+            }
+            for (const tn::engine::Object3D* child : object.children) walk(*child);
+        };
+        if (drawn) walk(*drawn);
+        *count = 0;
+        for (uint32_t i = 0; i < candidate_count; ++i)
+            if (read.contains(context->tslNodes.at(candidates[i]).get())) out[(*count)++] = i;
         return ok(diagnostic);
     });
 }

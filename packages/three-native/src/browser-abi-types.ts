@@ -206,6 +206,7 @@ type TslCall =
   | "_tn_tsl_set"
   | "_tn_tsl_set_uniform"
   | "_tn_tsl_set_uniforms"
+  | "_tn_tsl_reads"
   | "_tn_tsl_effect_parameter"
   | "_tnw_web_set_post"
   | "_tnw_web_compute"
@@ -369,6 +370,7 @@ export function tslOf(
     _tn_tsl_set: set,
     _tn_tsl_set_uniform: setUniform,
     _tn_tsl_set_uniforms: setUniforms,
+    _tn_tsl_reads: reads,
     _tn_tsl_effect_parameter: effectParameter,
     _tnw_web_set_post: setPost,
     _tnw_web_compute: computeNode,
@@ -388,6 +390,11 @@ export function tslOf(
     effectParameter === undefined
   )
     return undefined;
+  // PRD-878: the hooked uniform ids `reads` checks, kept in engine memory: the facade only appends to its list, so a
+  // query writes just the ids added since the last one.
+  let candidateAt = 0;
+  let candidateRoom = 0;
+  let candidatesWritten = 0;
   // Writes tn_tsl_arg_t values; text is allocated first, since an allocation can grow the memory.
   const writeArgs = (args: readonly TslArgValue[]): number => {
     const pointer = h.alloc(Math.max(TSL_ARG, args.length * TSL_ARG));
@@ -528,6 +535,62 @@ export function tslOf(
           const diag = h.diagnostic();
           h.check(setUniform(context, pointer, values, lanes.length, diag), diag, "uniform.value");
         }),
+      ...(reads === undefined
+        ? {}
+        : {
+            reads: (
+              root: IEngineRef | undefined,
+              kernels: readonly number[],
+              candidates: readonly number[],
+            ): number[] => {
+              if (candidates.length > candidateRoom) {
+                if (candidateAt !== 0) abi._free(candidateAt);
+                candidateRoom = Math.max(16, candidates.length * 2);
+                // The ids, then room for as many u32 answers.
+                candidateAt = abi._malloc(candidateRoom * 12) >>> 0;
+                candidatesWritten = 0;
+              }
+              const ids = h.view();
+              for (; candidatesWritten < candidates.length; candidatesWritten += 1)
+                ids.setBigUint64(
+                  candidateAt + candidatesWritten * 8,
+                  BigInt(candidates[candidatesWritten] as number),
+                  true,
+                );
+              return h.scoped(() => {
+                const rootAt = root === undefined ? 0 : h.alloc(HANDLE);
+                if (root !== undefined) h.writeHandle(rootAt, root);
+                const kernelAt = h.alloc(Math.max(8, kernels.length * 8));
+                const countAt = h.alloc(4);
+                const v = h.view();
+                kernels.forEach((kernel, i) =>
+                  v.setBigUint64(kernelAt + i * 8, BigInt(kernel), true),
+                );
+                const out = candidateAt + candidateRoom * 8;
+                const diag = h.diagnostic();
+                h.check(
+                  reads(
+                    context,
+                    rootAt,
+                    kernelAt,
+                    kernels.length,
+                    candidateAt,
+                    candidates.length,
+                    out,
+                    countAt,
+                    diag,
+                  ),
+                  diag,
+                  "uniform reads",
+                );
+                const after = h.view();
+                const picked: number[] = [];
+                for (let i = 0, count = after.getUint32(countAt, true); i < count; i += 1)
+                  picked.push(after.getUint32(out + i * 4, true));
+                return picked;
+              });
+            },
+          }),
       // PRD-828: a sync's changed uniforms as one `tn_tsl_set_uniforms` span; absent on an older module.
       ...(setUniforms === undefined
         ? {}

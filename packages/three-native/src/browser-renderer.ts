@@ -156,7 +156,8 @@ function markBaked(environment: IBakedEnvironment): void {
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
-  beforeRender: (frame?: INodeFrame) => void = () => {},
+  /** The frame hook: a draw passes its frame; a dispatch passes none, with its kernels' engine node ids. */
+  beforeRender: (frame?: INodeFrame, kernels?: readonly number[]) => void = () => {},
   tsl?: ITslRuntime,
   /** Draws the offscreen PassNodes into their targets (pass-node.ts); given the drawing buffer and the target draw. */
   drawSecondaryPasses: (
@@ -1080,14 +1081,15 @@ export function defineWebRenderer(
         throw new Error(
           "TN_COMPUTE_DISPATCH_SIZE: renderer.compute(nodes, dispatchSize) is not available on the Wasm engine; give the node its count.",
         );
-      beforeRender();
-      for (const node of Array.isArray(computeNodes) ? computeNodes : [computeNodes]) {
+      const kernels = (Array.isArray(computeNodes) ? computeNodes : [computeNodes]).map((node) => {
         if (!isTslNode(node))
           throw new TypeError(
             "TN_COMPUTE_NODE: renderer.compute takes the node Fn(() => { ... })().compute(count) makes",
           );
-        tsl.compute(node[TSL_NODE]);
-      }
+        return node[TSL_NODE];
+      });
+      beforeRender(undefined, kernels);
+      for (const kernel of kernels) tsl.compute(kernel);
     }
 
     async computeAsync(computeNodes: unknown, dispatchSize: unknown = null): Promise<void> {
