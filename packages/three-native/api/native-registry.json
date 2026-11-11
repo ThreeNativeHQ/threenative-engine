@@ -2657,6 +2657,7 @@
     "Frustum": {
       "constructor": true,
       "methods": [
+        "__tnIntersectsBoxes",
         "clone",
         "containsPoint",
         "copy",

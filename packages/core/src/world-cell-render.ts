@@ -1459,10 +1459,7 @@ export class CellRender {
       // whenever a neighbour still holds the cluster, and a stale box only ever shows a cell that
       // is there.
       if (this.#bundles.wanted)
-        this.#cull
-          .cells()
-          .get(clusterOf(cell.x, cell.z, this.#cellsPerCullCell))
-          ?.box.union(box);
+        this.#cull.widenCell(clusterOf(cell.x, cell.z, this.#cellsPerCullCell), box);
     }
   }
 

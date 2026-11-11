@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  Box3,
   BoxGeometry,
+  Frustum,
   Group,
   InstancedMesh,
   Matrix4,
@@ -310,6 +312,41 @@ describe("WorldCells main-pass cluster cull", () => {
     expect(mesh.count).toBe(pineIn("0,1"));
     expectInstances(mesh, "0,1");
     expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
+  it("tests every visibility cell in one engine call when the engine binds it", async () => {
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await loadWorld(follow);
+    world.update();
+    await flushed(world);
+    // The owned engine's `Frustum.__tnIntersectsBoxes` (PRD-879), answered here as three would.
+    const box = new Box3();
+    const engine = vi.fn(function (this: Frustum, boxes: Float64Array): number[] {
+      const hits: number[] = [];
+      for (let at = 0; at < boxes.length; at += 6) {
+        box.min.fromArray(boxes, at);
+        box.max.fromArray(boxes, at + 3);
+        if (this.intersectsBox(box)) hits.push(at / 6);
+      }
+      return hits;
+    });
+    Object.defineProperty(Frustum.prototype, "__tnIntersectsBoxes", {
+      configurable: true,
+      value: engine,
+    });
+    try {
+      const perBox = vi.spyOn(Frustum.prototype, "intersectsBox");
+      frame(world, playerCamera());
+      // One crossing for the frame's whole set; every per-cell test ran inside it.
+      expect(engine).toHaveBeenCalledTimes(1);
+      expect(perBox.mock.calls.length).toBe((engine.mock.calls[0]?.[0] as Float64Array).length / 6);
+      expect(mainMesh(world).count).toBe(pineIn("0,1"));
+      expectInstances(mainMesh(world), "0,1");
+    } finally {
+      Reflect.deleteProperty(Frustum.prototype, "__tnIntersectsBoxes");
+    }
     world.dispose();
   });
 
