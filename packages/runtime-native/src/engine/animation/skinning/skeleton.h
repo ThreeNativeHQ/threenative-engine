@@ -132,9 +132,6 @@ class Skeleton {
     /** A fresh stamp for one planning pass. A pass that does not share one passes 0 and reads the bones itself. */
     static uint64_t nextPlanStamp();
     uint64_t planPoseBuilds = 0;
-    /** A fold of every bone's local matrix, once per `stamp`: a rig whose pose did not change reads the same value,
-     *  and a mesh-space bounds that depends only on the pose and the rig-relative root can be kept (PRD-872). */
-    uint64_t poseFold(uint64_t stamp);
     /** Every bone's world position in the space `inverse` takes it to, once per `stamp` and `inverse`: the two meshes a
      *  mannequin binds share one skeleton and one bind space, so the plan transforms its bones once (PRD-872). */
     const std::vector<Vector3>& planCenters(uint64_t stamp, const Matrix4& inverse);
@@ -144,7 +141,6 @@ class Skeleton {
     std::vector<Bone*> boneAddresses_;  // `bones` is set once, by the constructor
     std::vector<PlanPose> planPoses_;
     uint64_t planStamp_ = 0;
-    uint64_t poseFold_ = 0, poseFoldStamp_ = 0;
     std::vector<Vector3> centers_;
     std::array<double, 16> centerInverse_{};
     uint64_t centerStamp_ = 0;
@@ -208,7 +204,7 @@ class SkinnedMesh : public Mesh {
     // the mesh scale — the three things this key holds (PRD-872).
     mutable Box3 boneReachBox_;
     mutable std::array<double, 16> boneReachBoxRoot_{};
-    mutable uint64_t boneReachBoxFold_ = 0, boneReachBoxStamp_ = 0;
+    mutable uint64_t boneReachBoxPose_ = 0, boneReachBoxStamp_ = 0;
     mutable double boneReachBoxScale_ = 0;
 };
 

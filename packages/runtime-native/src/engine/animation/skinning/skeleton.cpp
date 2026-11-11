@@ -250,22 +250,6 @@ uint64_t Skeleton::nextPlanStamp() {
     return ++stamp;
 }
 
-uint64_t Skeleton::poseFold(uint64_t stamp) {
-    if (stamp != 0 && stamp == poseFoldStamp_) return poseFold_;
-    uint64_t fold = 0xcbf29ce484222325ull;
-    for (std::size_t i = 0; i < bones.size(); ++i) {
-        const Bone* bone = this->bone(i);
-        if (bone == nullptr) { fold = (fold ^ 0xffull) * 0x100000001b3ull; continue; }
-        // A bone's local write is deferred: materialize it, or the fold of an unchanged matrix would be a lie.
-        const_cast<Bone*>(bone)->materializeWorldTransformIfPending();
-        for (const double value : bone->matrix.elements) {
-            fold = (fold ^ std::bit_cast<uint64_t>(value)) * 0x100000001b3ull;
-        }
-    }
-    if (stamp != 0) { poseFold_ = fold; poseFoldStamp_ = stamp; }
-    return fold;
-}
-
 const std::vector<Skeleton::PlanPose>& Skeleton::planPoses(uint64_t stamp) {
     if (stamp != 0 && stamp == planStamp_ && planPoses_.size() == bones.size()) return planPoses_;
     planStamp_ = stamp;
@@ -346,12 +330,12 @@ bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
     // the rig-relative root (`inv(mesh world) * root world`), and the mesh scale. A rig that translates and turns
     // with the same pose reads the same three, and keeps the box it built (PRD-872: 0.64 ms a frame for 242 meshes).
     const double meshScale = linearStretch(bindMatrixInverse);
-    const uint64_t fold = skeleton->poseFold(planStamp);
+    const uint64_t pose = skeleton->poseVersion();  // a stamp, not a fold of 65 bones (PRD-878)
     const Bone* root = nullptr;
     for (std::size_t j = 0; j < bones && root == nullptr; ++j) root = skeleton->bone(j);
     Matrix4 relative;
     if (root != nullptr) { relative.copy(bindMatrixInverse); relative.multiply(root->matrixWorld); }
-    if (boneReachBoxStamp_ != 0 && boneReachBoxFold_ == fold && nearScale(boneReachBoxScale_, meshScale) &&
+    if (boneReachBoxStamp_ != 0 && boneReachBoxPose_ == pose && nearScale(boneReachBoxScale_, meshScale) &&
         nearRoot(boneReachBoxRoot_, relative.elements)) {
         target = boneReachBox_;
         return !target.isEmpty();
@@ -373,7 +357,7 @@ bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
         target.max.z = std::max(target.max.z, center.z + radius);
     }
     boneReachBox_ = target;
-    boneReachBoxFold_ = fold;
+    boneReachBoxPose_ = pose;
     boneReachBoxScale_ = meshScale;
     boneReachBoxRoot_ = relative.elements;
     boneReachBoxStamp_ = 1;

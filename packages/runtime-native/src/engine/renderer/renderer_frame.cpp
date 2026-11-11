@@ -163,6 +163,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             inputs.cache = item.cache;
             inputs.casts = item.castShadow;
             inputs.controlEpoch = controlEpoch;
+            inputs.nodeDeformed = item.positionNode || item.nodes->shadowPositionNode() || item.morphGeometry;
+            inputs.skinned = item.boneMatrices != nullptr;
+            // One rig's own skeleton; a batch of rigs has no single version to read.
+            if (item.skinnedRig && item.skinnedRig->skeleton && !item.instanceMatrices)
+                inputs.pose = item.skinnedRig->skeleton->poseVersion();
             bool stale = false;
             shadows::PlannedCaster& caster = plan.slot(index, item.matrixWorld, inputs, stale);
             if (stale) {
@@ -175,7 +180,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 shadows::CasterState& state = caster.state;
                 state.key = item.key; state.bounds = bounds;
                 state.signature = shadows::CasterSignature{item.positions->version(), inputs.instanceVersion, item.instanceCount};
-                state.deforming = item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry;
                 state.tracked = (item.layers & (1u << 29)) != 0;
                 state.automatic = (item.layers & 1u) != 0;
                 state.pinned = false;

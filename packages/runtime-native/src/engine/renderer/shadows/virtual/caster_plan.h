@@ -22,6 +22,11 @@ struct CasterInputs {
     uint64_t positionsVersion = 0, instanceVersion = 0, controlEpoch = 0;
     uint32_t instanceCount = 0, layers = 0;
     bool casts = false;
+    /** A node graph or a morph moves its vertices every frame. */
+    bool nodeDeformed = false;
+    /** Bones move its vertices. `pose` is its one skeleton's pose version, or 0 when no single skeleton is read. */
+    bool skinned = false;
+    uint64_t pose = 0;
 };
 
 /** One caster's planned state, kept across frames: the bounds, the state the atlas reads, and the inputs it came from. */
@@ -67,7 +72,13 @@ class CasterPlan {
      */
     PlannedCaster& slot(std::size_t index, const std::array<double, 16>& world, const CasterInputs& inputs, bool& stale) {
         PlannedCaster& slot = slots_[index];
-        stale = !slot.valid || slot.state.world.elements != world ||
+        // A rig deforms on a frame its pose version moved, and only then: with the version held it is a rigid mover,
+        // whose record only its world moves (PRD-878). With no single skeleton to read, it deforms every frame.
+        const bool deforming = inputs.nodeDeformed ||
+            (inputs.skinned && (inputs.pose == 0 || !slot.valid || slot.inputs.pose != inputs.pose));
+        stale = !slot.valid || slot.state.world.elements != world || slot.state.deforming != deforming ||
+                slot.inputs.pose != inputs.pose || slot.inputs.skinned != inputs.skinned ||
+                slot.inputs.nodeDeformed != inputs.nodeDeformed ||
                 slot.inputs.positions != inputs.positions || slot.inputs.positionsVersion != inputs.positionsVersion ||
                 slot.inputs.instances != inputs.instances || slot.inputs.instanceVersion != inputs.instanceVersion ||
                 slot.inputs.instanceCount != inputs.instanceCount || slot.inputs.layers != inputs.layers ||
@@ -75,6 +86,7 @@ class CasterPlan {
                 slot.inputs.controlEpoch != inputs.controlEpoch;
         if (stale) {
             slot.state.world.elements = world;
+            slot.state.deforming = deforming;
             slot.inputs = inputs;
             slot.valid = true;
             ++rebuilds_;

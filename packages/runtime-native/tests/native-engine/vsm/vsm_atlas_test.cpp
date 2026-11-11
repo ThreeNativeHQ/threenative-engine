@@ -965,6 +965,23 @@ void casterPlanRebuildsOnlyWhatMoved() {
     CHECK(plan.rebuilds() == 2);
     plan.begin(2);
     { bool stale = true; plan.slot(0, world, tracked, stale); CHECK(!stale); }
+    // PRD-878: a rig deforms only on a frame its pose version moved. With the version held it is a rigid mover: a
+    // record moved by its world alone, kept like any rigid caster's (UE 5.8.3:
+    // Engine/Source/Runtime/Engine/Private/Components/PrimitiveComponent.cpp:655-664 sends a move as a transform).
+    CasterInputs rig = inputs; rig.skinned = true; rig.pose = 3;
+    const auto plan1 = [&](const std::array<double, 16>& at, const CasterInputs& in, bool& stale) -> const PlannedCaster& {
+        plan.begin(1); return plan.slot(0, at, in, stale);
+    };
+    { bool stale = false; CHECK(plan1(world, rig, stale).state.deforming && stale); }  // new: its pose is new
+    { bool stale = false; CHECK(!plan1(world, rig, stale).state.deforming && stale); }  // held: it stops deforming
+    { bool stale = true; CHECK(!plan1(world, rig, stale).state.deforming && !stale); }  // and keeps its record
+    { bool stale = false; CHECK(!plan1(moved, rig, stale).state.deforming && stale); }  // a rigid move
+    rig.pose = 4;
+    { bool stale = false; CHECK(plan1(moved, rig, stale).state.deforming && stale); }  // a bone write
+    CasterInputs batch = rig; batch.pose = 0;  // no single skeleton to read: it deforms every frame, as before
+    { bool stale = false; plan1(moved, batch, stale); bool again = true; CHECK(plan1(moved, batch, again).state.deforming && !again); }
+    CasterInputs node = inputs; node.nodeDeformed = true;
+    { bool stale = false; plan1(world, node, stale); bool again = true; CHECK(plan1(world, node, again).state.deforming && !again); }
 }
 
 TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung}, {"caster_plan", casterPlanRebuildsOnlyWhatMoved})
