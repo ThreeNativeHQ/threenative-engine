@@ -432,8 +432,10 @@ void RenderDatabase::depthBiasOf(const Material& material, DrawItem& d) {
 
 BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* name) {
     const auto it = g.attributes.find(name);
-    if (it == g.attributes.end() || !it->second) return nullptr;
-    const BufferAttribute& attribute = *it->second;
+    return it == g.attributes.end() || !it->second ? nullptr : floatStore(*it->second);
+}
+
+BufferStore* RenderDatabase::floatStore(const BufferAttribute& attribute) {
     if (attribute.store->scalar() == Scalar::F32) return attribute.store.get();
     // Entries whose source is gone are dropped once the table doubles, so a scene that loads and
     // unloads geometry does not keep their copies.
@@ -544,6 +546,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const BufferGeometry& geometry = *r.canonical;
         r.buffers = {floatStore(geometry, "position"), floatStore(geometry, "normal"), floatStore(geometry, "uv"),
                      geometry.index ? geometry.index->store.get() : nullptr};
+        for (const auto& [name, attribute] : {std::pair{"skinIndex", &r.skinIndex}, std::pair{"skinWeight", &r.skinWeight}})
+            if (const auto it = geometry.attributes.find(name); it != geometry.attributes.end()) *attribute = it->second.get();
         // Match three's (0, 1, 0) fallback: geometry roughness still reads it when normalNode overrides lighting.
         // Flat shading instead derives its normals from position derivatives.
         if (!r.buffers[1] && r.buffers[0] && !material->flatShading && !material->nodes.fragmentNode &&
@@ -997,8 +1001,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             const auto& skinned = static_cast<const SkinnedMesh&>(mesh);
                             DrawItem& d = items.back();
                             d.skinnedRig = static_cast<SkinnedMesh*>(&object);
-                            d.skinIndices = store(*mesh.geometry, "skinIndex");
-                            d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
+                            d.skinIndices = r.skinIndex ? r.skinIndex->store.get() : nullptr;
+                            d.skinWeights = r.skinWeight ? floatStore(*r.skinWeight) : nullptr;
                             if (skinned.skeleton && d.skinIndices && d.skinWeights) {
                                 const void* skeleton = skinned.skeleton.get();
                                 const bool gpu = gpuJoints_ && *gpuJoints_->valid && gpuJoints_->byMesh.count(&skinned);

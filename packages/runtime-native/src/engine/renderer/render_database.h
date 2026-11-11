@@ -209,6 +209,9 @@ class RenderDatabase {
         DrawCache cache;
         GeometryKey buffers{};
         std::shared_ptr<BufferStore> zeroNormals;  // buffers[1] when the geometry has none (see record())
+        // A rig's skin attributes, held for the geometry revision as `buffers` are: a setAttribute bumps it.
+        const BufferAttribute* skinIndex = nullptr;
+        const BufferAttribute* skinWeight = nullptr;
         struct Draw {
             shader::StandardMaterial params;
             // Owned here, pointed at by the draw: a steady frame copies neither, and the record's own storage
@@ -359,6 +362,7 @@ class RenderDatabase {
     std::unordered_map<const BufferAttribute*, Converted> converted_;
     std::size_t convertedSweepAt_ = 64;
     BufferStore* floatStore(const BufferGeometry& g, const char* name);
+    BufferStore* floatStore(const BufferAttribute& attribute);
     uint64_t frame_ = 0;
     std::size_t previousDrawCount_ = 0;
     std::array<double, 3> renderPhaseMs_{};
