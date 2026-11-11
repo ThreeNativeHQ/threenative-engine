@@ -66,6 +66,11 @@ export function createAdaptiveQuality(
   let lastChange = Number.NEGATIVE_INFINITY;
   let overloaded = 0;
   let healthy = 0;
+  // Raises in a row that the next change undid. Each doubles the wait before the next raise (up to 32 cooldowns),
+  // so a tier that cannot hold is not retried every cooldown: medium's shadow pass on a tier that fits only without
+  // it switched the shadows on and off every few seconds (PRD-871).
+  let failedRaises = 0;
+  let lastDirection = 0;
   const finite = (value: number | undefined): value is number =>
     value !== undefined && Number.isFinite(value);
   return {
@@ -158,11 +163,15 @@ export function createAdaptiveQuality(
       if (next === undefined) return report(direction < 0 ? "at-floor" : "at-ceiling");
       const time = now();
       if (!Number.isFinite(time)) throw new Error("quality clock must return finite milliseconds.");
-      if (time - lastChange < policy.cooldownMs) {
+      const wait = policy.cooldownMs * (direction > 0 ? 2 ** Math.min(failedRaises, 5) : 1);
+      if (time - lastChange < wait) {
         overloaded = 0;
         healthy = 0;
         return report("cooldown");
       }
+      if (direction < 0 && lastDirection > 0) failedRaises += 1;
+      else if (direction > 0 && lastDirection > 0) failedRaises = 0;
+      lastDirection = direction;
       tier = next;
       lastChange = time;
       overloaded = 0;
