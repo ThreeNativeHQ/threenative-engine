@@ -557,25 +557,27 @@ export class CellPlacements {
     seen.clear();
     const eye = this.#host.eye();
     const [eyeNear, eyeFar] = this.#span(cell, eye.x, eye.z);
+    const gpuOn = this.#host.gpuOn();
+    const followY = this.followY();
     for (const entry of cell.batches) {
       const reach = this.#reachRanges.get(cell.cell)?.get(entry.asset);
-      if ((entry.threshold === undefined && reach === undefined) || seen.has(entry.asset)) continue;
+      // With the GPU scene on, only a placementReach boundary can make an entry stale: its LOD and
+      // maxDistance gates are the dispatch's, so an entry without one is settled before any math.
+      if (reach === undefined && (gpuOn || entry.threshold === undefined)) continue;
+      if (seen.has(entry.asset)) continue;
       // Deferred runs of one asset can start at different camera snapshots. Only deduplicate
       // after one entry proves the asset stale: an earlier matching run cannot settle the others.
       const step = (entry.threshold ?? 6) / 8;
       if (
-        Math.hypot(
-          x - entry.lastFilterX,
-          this.followY() - entry.lastFilterY,
-          z - entry.lastFilterZ,
-        ) <= step &&
+        Math.hypot(x - entry.lastFilterX, followY - entry.lastFilterY, z - entry.lastFilterZ) <=
+          step &&
         Math.hypot(eye.x - entry.lastLodX, eye.y - entry.lastLodY, eye.z - entry.lastLodZ) <= step
       )
         continue;
       const asset = this.#host.asset(entry.asset);
       if (asset === undefined) continue;
       // GPU dispatch handles maxDistance and LOD gates; placementReach remains a CPU boundary.
-      const gates = this.#host.gpuOn() ? [] : asset.gates;
+      const gates = gpuOn ? [] : asset.gates;
       // Gates bracket the LOD eye's distances, reach the follow point's: see `#addPlacements`.
       const [builtNear, builtFar] = this.#span(cell, entry.lastLodX, entry.lastLodZ);
       let low = Math.min(eyeNear, builtNear);
@@ -596,7 +598,7 @@ export class CellPlacements {
           entry.lastFilterX,
           entry.lastFilterZ,
         );
-        const current = vertical(this.followY());
+        const current = vertical(followY);
         const previous = vertical(entry.lastFilterY);
         const reachLow = Math.min(
           Math.hypot(near, current[0]),
@@ -681,7 +683,10 @@ export class CellPlacements {
    * which the follow point has not yet reached anything that switches.
    */
   #collectStale(x: number, z: number): void {
+    const gpuOn = this.#host.gpuOn();
     for (const cell of this.#host.resident()) {
+      // GPU on: the dispatch owns every LOD and cull gate, so only a placementReach cell can be stale.
+      if (gpuOn && !this.#reachRanges.has(cell.cell)) continue;
       // Gates are measured from the LOD eye, and `filterNear`/`filterFar` hold the eyes built from.
       const [eyeNear, eyeFar] = this.#span(cell, this.#host.eye().x, this.#host.eye().z);
       const low = eyeNear < cell.filterNear ? eyeNear : cell.filterNear;
