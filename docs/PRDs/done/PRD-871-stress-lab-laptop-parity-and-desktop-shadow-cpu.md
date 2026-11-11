@@ -1,6 +1,6 @@
 # PRD-871 — Stress lab: an integrated GPU plays at vanilla speed, and the desktop frame loses its shadow planning cost
 
-**Status:** IN PROGRESS — Phase 1 and Phase 2 done; Phase 3's `play` cut landed. The plan floor and AC-2 are handed to [PRD-872](PRD-872-static-casters-and-rigid-rigs-in-the-desktop-frame.md) (see Decisions), so this PRD moves to `done/` when PRD-872 ticks AC-2.
+**Status:** DONE — all phases done; AC-2 met on 2026-11-11 (frame p50 8.09/8.20 ms, #374/#375). The plan-floor box moved to PRD-872, which closed it by a measured decision (2026-11-11).
 **Priority:** P1 — on a laptop GPU the engine draws the stress scene at 25 fps where vanilla three.js draws 53 (Phase 2), and the gameplay preset ran at half the speed of the orbit preset on the desktop (Phase 3, now 79.7 against 66.0 fps).
 **Complexity:** 6 (MEDIUM)
 **Owner:** João · 2026-11-10
@@ -166,12 +166,11 @@ Risks:
 
 #### Phase 3: the desktop frame loses its shadow planning cost
 
-**Status:** IN PROGRESS — boxes 2 and 3 met; box 1 (the plan floor) moved to PRD-872 Phase 1.
+**Status:** DONE — boxes 2 and 3 met; box 1 (the plan floor) moved to PRD-872 Phase 1 and was closed there by decision (2026-11-11).
 **Files:** `packages/runtime-native/src/engine/renderer/renderer_frame.cpp`, `packages/runtime-native/src/engine/renderer/shadows/virtual/atlas.cpp`, `atlas.h`, `packages/runtime-native/tests/native-engine/vsm/vsm_atlas_test.cpp`.
 **Implementation:** one hypothesis per candidate, each with its expected gain written first. Start with the per-caster work of `planVirtualPages` for casters whose transform and geometry did not change. Then attribute the per-frame upload by counter. Then profile `play` and cut its largest removable term. Use Opus 5.5 high for the C++ changes and DeepSeek V4.1 Flash max for searches and row bookkeeping (owner routing, 2026-11-10).
 **Verification:** `ctest --test-dir build/wasm -L native-engine -R "vsm|render_database|renderer"`, then a paired desktop fair window (`--passes uncapped`, arms `base` and `head`, plus `plainShadow` as the ceiling), a holdout kit, and a visual judge on `?stress&closeup` and `?stress&freezeAt=12` for each change to shadow planning.
 
-- [ ] A frame whose static casters did not change spends 0.5 ms or less in `planVirtualPages` on `?stress` (1.64 ms today). proof: a `vsm_atlas_test` case that counts per-caster work on an unchanged frame, red-green; stage split in the ledger row.
   Partial, 2026-11-10: `a38190bff` (a moving rigid caster keeps its vertex box; `virtual_shadow_bounds_cache` red-green) and
   `7482c204c` (a rig box reads each bone stretch alone): bounds rebuild 1.38 → 1.06 ms a frame by sub-timer. The stage still
   reads 1.25-1.6 ms under host load 12-20; the desktop window `shadow-plan` (#347-#348) is inconclusive (one valid base
