@@ -922,9 +922,12 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 child->updateMatrixWorld(force);
         return;
     }
-    bool mainPass = object.layers().test(camera.layers());
-    bool shadowCaster = shadowMapEnabled && object.castShadow();
-    if (mainPass || shadowCaster) {
+    // A plain Group or Object3D draws and lights nothing and holds no record: only its children matter.
+    const bool plainNode = typeid(object) == typeid(Group) || typeid(object) == typeid(Object3D);
+    bool mainPass = !plainNode && object.layers().test(camera.layers());
+    bool shadowCaster = !plainNode && shadowMapEnabled && object.castShadow();
+    if (plainNode) {
+    } else if (mainPass || shadowCaster) {
         const std::string_view type = plainMesh ? "Mesh" : object.type();
         if (!lightsOnly && type == "LOD") {
             if (mainPass) {
