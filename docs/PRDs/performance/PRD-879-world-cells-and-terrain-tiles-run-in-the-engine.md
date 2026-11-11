@@ -61,12 +61,13 @@ what needs a browser API (fetch of tile bytes, GPU readback callbacks) and game 
 
 #### Phase 1: Measure and bind terrain tiles
 **Status:** OPEN
-- [ ] Measured per-frame JS cost of the world systems on the forest walk (profile). proof: numbers under Decisions.
+- [x] Measured per-frame JS cost of the world systems on the forest walk (profile). proof: numbers under Decisions — Evidence: the 2026-11-11 measured-walk decision (two baseline runs, owned engine, RTX 2080).
 - [ ] The admission drain (`#step` → swap → `SharedBatch.clear/write/#regroup`, 4.17 ms a frame on the walk) writes engine-owned instance buffers through one engine call; the JS drain is deleted. proof: red-green case, profile before/after.
 
 #### Phase 2: Bind world cells
 **Status:** OPEN
-- [ ] `cullMainPass`'s visibility-cell loop (1.2-2.0 ms) and the refilter `#staleIn` scan (0.9-1.05 ms) each run as one engine call; the JS loops are deleted. proof: red-green case and the world-cells specs.
+- [x] `cullMainPass`'s visibility-cell loop runs as one engine call; the JS per-cell loop is deleted. proof: red-green `native_engine_abi_frustum_intersects_boxes` and `world-cells-main-cull.spec` ("tests every visibility cell in one engine call") — Evidence: `2a8174815` (`Frustum.__tnIntersectsBoxes`), plus `59599292c` (the bundle proof's material flags in one call, red-green `native_engine_abi_material_witness`, `world-bundle-safety.spec`). Profile, 2 runs: main cull walk 1.20/1.23 → 0.74/0.54 ms, turn and idle 2.08/1.49 → 0.80/0.59; `WorldCells.update` turn and idle 2.49/1.81 → 1.11/0.86. Merged tree: 23 world spec files, 274 tests pass; native-engine label 678/678 (lane tree). Visual judge NEUTRAL on walk and turn (one after-run framed differently, traced to the walk's travel nondeterminism, open under AC-2).
+- [ ] The refilter `#staleIn` scan (0.86-1.05 ms on the walk) runs as one engine call over packed entry state. proof: red-green case and a profile. — `ad5a7d062` skips entries only a `placementReach` can make stale (GPU scene on); the forest gives every cell a reach, so the scan still costs 0.86/0.88 ms.
 - [ ] Native parity: the V8 desktop player runs the same binding. proof: the native-engine label and a desktop run of the forest scene.
 - [ ] A regression guard fails if core's world streaming runs its per-frame pass in JS again: one frame of `WorldCells.update` makes one engine call per system and runs no JS cell or tile loop. proof: the guard case red on the pre-change code, green after.
 
