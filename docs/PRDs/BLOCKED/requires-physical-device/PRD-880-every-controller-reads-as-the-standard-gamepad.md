@@ -90,6 +90,10 @@ The phase boxes below carry the unit and native proofs. This box is the consumer
 | Native standard pad | Game JS → `navigator.getGamepads` (`v8_main.cpp:177`; `runtime.cpp:3868`) → `fillStandardPad` | Both duplicate tables delegate to one function | Phase 2 box |
 | Capability search | Agent → `engine_search_capabilities` → `InputMap` row | New `@situation`, `@alias`, `@constraint` and `@override` tags on the existing row | Phase 3 box |
 
+## Review
+
+- 2026-11-11: an independent reviewer subagent (fresh context, read-only, Opus at high thinking — `opencode/claude-opus-5-5` is disabled on this key, so `claude-cli/opus`) gated PR #664 over six rounds. Rounds 1 to 5 each found a real defect and blocked; every one is fixed and locked by a spec: the highest-slot-with-input steal, a per-tick `RegExp` allocation, a level-based hand-over that kept a stolen slot, a pad-wide edge that made jitter steal and blocked a button reclaim, and two unproven fixes (the `config.ts` temp-name collision, and the shrinking-source claim). Round 6 returned `VERDICT: AUTHORIZE`, unverified items named: CI's board, the full `pnpm native:build`, the Android/iOS/PS4 compiles, and the owner's device read below. Its two documentation nits are folded into `2a6d52a`.
+
 ## Decisions
 
 - 2026-11-11 (Claude, on the owner's "your call"): the adapter is data per backend (SDL's controller database natively, a vendor:product table on the web), not a class per device. SDL already maintains about 2 000 device mappings, and a class hierarchy would duplicate them in TypeScript. The existing `InputPlatformSource` seam stays the single injection point.
