@@ -495,6 +495,7 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
+    native_engine_material_lamp_range_branch=lamp_range_branch
     native_engine_material_emissive_output=emissive_output
     native_engine_fog_math=fog
     native_engine_fog_node_mixes_color=fog_node_mixes_color
