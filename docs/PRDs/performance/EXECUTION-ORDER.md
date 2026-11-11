@@ -37,7 +37,7 @@ flowchart TD
 
 | # | Work | Who | Starts when | Verification that must be green | Stop rule |
 |---|---|---|---|---|---|
-| 1a | [PRD-875](PRD-875-rigs-evaluate-their-poses-on-every-core.md) Phase 1 | executor | now | `ctest -R native_engine_animation_tick_batch`, `ctest -R native_engine_animation_mixer`, the new race case red then green in the TSan build, then `ctest -L native-engine` | — |
+| 1a | [PRD-875](../done/PRD-875-rigs-evaluate-their-poses-on-every-core.md) Phase 1 | executor | now | `ctest -R native_engine_animation_tick_batch`, `ctest -R native_engine_animation_mixer`, the new race case red then green in the TSan build, then `ctest -L native-engine` | — |
 | 1b | PRD-875 sizing gate | measure lane | 1a pushed | `animationTickMicros` p50 on `?stress&tnDebug=1`, written under the PRD's `## Decisions` | below 300 µs: PRD becomes `DEFERRED` |
 | 1c | PRD-875 Phases 2 and 3 | executor | 1b says go | the 0-against-3-workers bit-equal case, the pool-not-called case, the revoke case, all in the normal and the TSan build; `animation-tick-batch.playtest.json` | two failures with one cause |
 | 2a | [PRD-877](PRD-877-the-engine-blends-and-restores-physics-poses-in-one-call.md) Phase 1 | executor | now, parallel with 1a | `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts packages/core/__tests__/debug-telemetry.spec.ts` | — |

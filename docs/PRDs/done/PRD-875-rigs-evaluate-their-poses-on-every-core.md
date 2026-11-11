@@ -1,17 +1,17 @@
 # PRD-875 — Rigs evaluate their poses on every core
 
-**Status:** PARTIAL — Phase 1 is DONE (counter, H1, H2, all three boxes green). Phases 2 and 3 wait on the measure lane's sizing gate.
+**Status:** DONE — Phase 1 landed (counter, H1, H2). The sizing gate closed Phases 2 and 3 on 2026-11-11: the whole tick is 0.27 ms a frame on average, so no pool can buy the 3% AC-1 asked for (see Decisions). The parked split is commit `9d288233b` on the local branch `perf/prd-875-pool`.
 **Priority:** P1 — `TickBatch::run` advances every rig of a frame in one serial loop while up to 8 pool workers idle, so every game with a crowd pays the whole animation tick on one thread (Phases 1-3 open).
 **Complexity:** 6 (MEDIUM) — 6-10 implementation files (2), concurrency (+2), one build boundary: the C++ engine serves native and web Wasm (+2). Risk override: none.
 **Owner:** João
-**Depends on:** None. It takes over the open half of [PRD-573](./PRD-573-unreal-class-performance-in-release-cycles.md) Phase v3.1 box 2 (mixers as jobs).
+**Depends on:** None. It takes over the open half of [PRD-573](../performance/PRD-573-unreal-class-performance-in-release-cycles.md) Phase v3.1 box 2 (mixers as jobs).
 
-Executor: read [EXECUTION-ORDER.md](./EXECUTION-ORDER.md) first. Its rules and commands apply to every box here.
+Executor: read [EXECUTION-ORDER.md](../performance/EXECUTION-ORDER.md) first. Its rules and commands apply to every box here.
 All code paths below are under `packages/runtime-native/src/engine/` unless they start with `packages/`.
 
 ## Context
 
-One JS call a frame, `tn_anim_tick`, advances every batched rig in C++ ([PRD-828](../done/PRD-828-js-keeps-only-game-logic.md), done 2026-11-07).
+One JS call a frame, `tn_anim_tick`, advances every batched rig in C++ ([PRD-828](./PRD-828-js-keeps-only-game-logic.md), done 2026-11-07).
 `TickBatch::run` (`animation/tick_batch.cpp:21-119`) then runs one serial loop over the rigs (`:25`). For each rig it does:
 
 1. reset (`:31-35`) and the stride measure through `strideRoot->getWorldPosition` (`:56-63`);
@@ -90,12 +90,11 @@ flowchart LR
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local, measure lane]: On the stress lab, uncapped pass of one fair window, `head` against `develop`, CPU frame p50 is lower by more than 3% in both ABBA pairs, frame p95 is no more than 5% worse, and a fresh visual judge reads NEUTRAL or IMPROVEMENT on `?stress&closeup` with two runs per arm. proof: `pnpm stress:loop fair` ledger rows plus the judge verdict — Evidence: pending.
 - [x] AC-2 [local]: The whole `native-engine` label is green in a ThreadSanitizer build with the new cases in it. proof: the TSan commands in EXECUTION-ORDER.md, `ctest -L native-engine` — Evidence (2026-11-10): `cmake -S . -B build/native-engine-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTN_ENGINE_CORE_ONLY=ON -DTN_ENGINE_TSAN=ON`, built with `--target all tn-native-engine-core-tests`, then `ctest --test-dir build/native-engine-tsan -L native-engine --no-tests=error --output-on-failure`: **292 of 292 passed, exit 0, zero `data race` reports in the log**. The label carries both of Phase 1's new cases, `native_engine_concurrent_quaternion_writes` and `native_engine_animation_evaluate_then_flush_events`, plus `native_engine_animation_tick_micros_counted`. The same 292 pass in the normal RelWithDebInfo build. This is the AC that made H1 and H2 worth splitting out: before H1 the label reports the `Euler::setFromQuaternion` race immediately.
 
 ## Blocked on
 
-- Nothing outside the repository. AC-1 needs a calm host and the measure lane (see EXECUTION-ORDER.md, "Who runs what").
+- Nothing. AC-1 and Phases 2-3 were closed by the sizing gate (Decisions, 2026-11-11).
 
 ## Integration Ledger
 
@@ -119,27 +118,25 @@ flowchart LR
 **Sizing gate (measure lane, before Phase 2):** read `animationTickMicros` p50 on `?stress&tnDebug=1`. Record it under `## Decisions`. Below 300 µs a frame, set this PRD to `DEFERRED` with the number and stop: the pool cannot return more than the tick costs. The 300 µs floor is a proposal (2026-11-10), not a measurement.
 
 #### Phase 2: Three passes, pooled in the middle
-**Status:** NOT STARTED
-**Files:** `animation/tick_batch.h`, `animation/tick_batch.cpp`, `animation/skinning/skeleton.h`, `animation/skinning/skeleton.cpp`, `packages/runtime-native/tests/native-engine/animation/tick_batch_test.cpp`.
-**Implementation:**
-1. In `tick_batch.h` add `constexpr std::size_t kParallelTickRigs = 16;` with a comment that the value is proposed and Phase 3 measures it.
-2. Split the loop body of `TickBatch::run` (`tick_batch.cpp:25-118`) into three functions on the same per-rig scratch record: `prepare(i)` (everything before `mixer->update`, lines `:31-92`), `step(i)` (only `mixer->evaluate(delta)` in place of `mixer->update` at `:96` and `:41`), and `finish(i)` (`mixer->flushEvents()`, then status and rate handback, `:100-116`).
-3. Run `prepare` for every rig in order. Then decide: pooled only when the pool has workers (`JobPool::shared().workers() > 0`), `!JobPool::inJob()`, the count of stepping rigs is at least `kParallelTickRigs`, pose observation and `cpuTiming` are off (H7), and the pre-check finds no duplicate mixer and no mixer root that is an ancestor of another (H6). Otherwise call `step` in a plain loop.
-4. When pooled: rigs with a material track (H4) go to a serial list. Call `JobPool::shared().forEach(count, step)` for the others, then `step` for the serial list.
-5. Run `finish` for every rig in order.
-6. H5. Change `std::shared_ptr<bool> streamValid_` (`skeleton.h:67`) to `std::shared_ptr<std::atomic<bool>>`, and read and write it with `load` and `store` (`skeleton.cpp:32,35,51,80` and every other use that `rg -n streamValid` finds).
-- [ ] With 0 workers and with 3 workers, 64 rigs over 40 frames give bit-equal bone values, bit-equal status words and the same event order. Model the case on `native_engine_matrix_walk_jobs` (`tests/native-engine/scene/job_pool_test.cpp:141`), and use `JobPool::resetShared`. The case fails first when `step` is given a deliberate per-thread difference, then passes. proof: a new case in `tick_batch_test.cpp`, normal and TSan builds, `ctest -R native_engine_animation_tick_batch`.
-- [ ] A batch of 8 rigs, a batch with a duplicate mixer, a batch with a nested root and a batch with pose observation on each leave `JobPool::shared().runs()` unchanged. A batch of 64 plain rigs raises it by 1. proof: a new case in `tick_batch_test.cpp`.
-- [ ] GPU-joint rigs revoked while a pooled step runs report no data race. proof: a new case in `tick_batch_test.cpp` or `skinned_crowd_test.cpp`, TSan build.
+**Status:** NOT BUILT — closed by the sizing gate (Decisions, 2026-11-11). The Solution above stays as the plan if a
+scene ever measures a tick above about 1 ms a frame.
 
 #### Phase 3: Prove it on the game path
-**Status:** NOT STARTED
-**Files:** `animation/tick_batch.h` (the gate value only), this PRD.
-**Implementation:** The measure lane runs the window. The executor runs the scenario and the TSan label.
-- [ ] `examples/skinned-crowd/playtests/animation-tick-batch.playtest.json` passes on a threaded page built from the head, with `animationTickBatches` p50 still 1. proof: the playtest command in EXECUTION-ORDER.md.
-- [ ] `kParallelTickRigs` is the measured crossover: the smallest rig count where the pooled batch is faster than the serial one on the lab host, from a 3-run sweep of 8, 16, 32, 64 and 120 rigs. The value and the sweep are written in the constant's comment. proof: `animationTickMicros` p50 per count, recorded under `## Decisions`.
+**Status:** NOT BUILT — closed with Phase 2.
 
 ## Decisions
 
 - 2026-11-10 (Claude, from a read of `UE 5.8.3` and of develop at `d6b1630b8`): the stride measure and the events stay serial, and only `evaluate` is pooled. The stride measure walks parent matrices that two rigs can share, and events reach JS.
 - 2026-11-10 (Claude): the palette build is out of scope. It runs in `RenderDatabase::project`, not in the tick, and GPU-joint rigs skip it.
+- 2026-11-11 (Claude, measure lane, sizing gate): **the pool cannot pass AC-1, so Phases 2-3 and AC-1 are closed, not
+  built.** Read on the stress lab built from `81901d260` (core, three-native, runtime-native and the Wasm pair packed from
+  that commit; the `dist` Wasm checked byte-equal to `build/web`), `main.html?stress&tnDebug=1`, 1280x720, RTX 2080,
+  three windows of 390-428 samples, load 4.3-5.7: `animationTickMs` (the C++ `animationTickMicros`) **p50 0.35, 0.36,
+  0.36 ms; mean 0.27 ms; p95 0.44-0.50 ms**. The p50 clears the proposed 300 µs floor by 50 µs, but the floor is the
+  wrong test: the pool returns at most the tick times (1 - 1/(workers + 1)), so with 3 workers about 0.20 ms of the
+  mean frame, before any dispatch cost. The non-debug `?stress` frame is about 9 ms (PRD-872 window `plan-floor-c`), and
+  AC-1 asks for more than 3% (0.27 ms) in both ABBA pairs. The best case misses it, so the split could only have been
+  rejected by its own window. The tick fell from the 1.25 ms the PRD-877 read saw on 2026-11-10 to 0.27 ms mean on this
+  head. Phase 1 (the counter, and the H1/H2 races) stays landed and is what any later attempt needs. Reopen only on a
+  scene that measures the tick above about 1 ms a frame.
+
