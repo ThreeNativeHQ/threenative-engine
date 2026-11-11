@@ -1,13 +1,10 @@
-import { type OutputRenderer, WorldEnvironment, qualityTiers } from "@threenative/core";
+import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
-//
-// This file wires two things together and decides nothing itself. `quality.ts` owns which stages
-// run at which tier and records what each one measured. Core's `WorldEnvironment` builds them and
-// prints `TN_WORLD_ENVIRONMENT`, naming every stage as applied or refused **with a reason**.
-//
-// To make the game cheaper or prettier everywhere, edit `quality.ts`. To force one tier for one run
-// (a slow desktop, a capture to compare), pass `setupPost(renderer, scene, camera, { tier: "low" })`.
-// `TN_QUALITY_TIER` names the tier that ran either way.
+// This file wires two things together and decides nothing itself. `quality.ts` owns which stages run at which
+// tier and records what each one measured; core's `WorldEnvironment` builds them and prints `TN_WORLD_ENVIRONMENT`,
+// naming every stage as applied or refused **with a reason**.
+// To make the game cheaper or prettier everywhere, edit `quality.ts`. To force one tier for one run (a slow desktop,
+// a capture to compare), pass `setupPost(renderer, scene, camera, { tier: "low" })`; `TN_QUALITY_TIER` names it.
 import { type Camera, type DirectionalLight, FloatType, type Scene } from "three";
 import { LUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
 import {
@@ -17,7 +14,7 @@ import {
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
 import { type IGradeTable, filterableTable, gradeStages } from "./grade.js";
-import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
+import { type QualityTier, gradePreset, qualityPreset, tierShadows } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
 import { temporalDetailRequested, temporalDetailStages } from "./temporalDetailStage.js";
 import type { FogMedium } from "./volumetricFog.js";
@@ -64,12 +61,7 @@ export function setupPost(
     tier?: QualityTier;
     /** Scene-owned material assignments follow the same resolved tier. */
     onTierChanged?: (tier: QualityTier) => void;
-    /**
-     * Whether the sun and the lamps cast shadows. Omit it and the tier decides: `low` casts none, as
-     * Unreal's `sg.ShadowQuality` 0. Set it and every tier keeps this game's choice; `TN_QUALITY_TIER`
-     * and `debug().shadows` name which one ran.
-     */
-    shadows?: boolean;
+    shadows?: boolean; // on or off at every tier; omitted, the tier decides (`tierShadows` in `quality.ts`)
     /**
      * The bounded participating medium from `volumetricFog.ts`, built once per graph: a tier change
      * replaces the graph, and a fog controller owns one graph, so it is released and rebuilt here
@@ -91,7 +83,6 @@ export function setupPost(
   let temporal: TemporalAAProvider | undefined;
   // The chain's own temporal AA (`temporalAA` in `quality.ts`) reads the engine's live frame, history and jitter.
   let engineTemporal: (() => Record<string, unknown>) | undefined;
-  const shadowSource = environment.shadows === undefined ? "tier" : "override";
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",
@@ -102,12 +93,8 @@ export function setupPost(
     medium?.dispose();
     medium = environment.fog?.();
     const composed = medium;
-    // The tier's shadow switch. An integrated GPU lands on `low`, where the shadow pass was the
-    // largest GPU cost of the frame while the tier table already said "no shadow".
-    const castShadows = environment.shadows ?? qualityTiers.shadow(policy.tier).castShadows;
-    const shadowMap = (renderer.raw as { shadowMap?: { enabled: boolean } }).shadowMap;
-    if (shadowMap !== undefined) shadowMap.enabled = castShadows;
-    observation = { ...observation, shadows: { enabled: castShadows, source: shadowSource } };
+    const shadows = tierShadows(policy.tier, environment.shadows, renderer.raw);
+    observation = { ...observation, shadows };
     const settings = qualityPreset(policy.tier);
     const detail = temporalDetailRequested(renderer, settings) ? temporalDetailStages() : [];
     const world = new WorldEnvironment({
@@ -170,7 +157,7 @@ export function setupPost(
   console.info(
     `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} software=${
       environment.software === true
-    } source=${source} shadows=${(environment.shadows ?? qualityTiers.shadow(policy.tier).castShadows) ? "on" : "off"}(${shadowSource})`,
+    } source=${source} shadows=${tierShadows(policy.tier, environment.shadows).label}`,
   );
   const controller = {
     get tier(): QualityTier {
