@@ -43,8 +43,8 @@ what needs a browser API (fetch of tile bytes, GPU readback callbacks) and game 
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: on the forest walk, per-frame JS in `world-*` and `compute-driven` falls to one engine call per system, and frame p50 is lower in both runs. proof: CPU profile before/after and the playtest's `TN_FRAME_BUDGET` — Evidence: pending.
-- [ ] AC-2 [local]: the forest playtest passes and a fresh visual judge reads NEUTRAL on the walk and turn frames, two runs per arm. proof: `loop.playtest.json` exit 0 and the verdict — Evidence: pending.
+- [ ] AC-1 [local]: on the forest walk, per-frame JS in `world-*` and `compute-driven` falls to one engine call per system, and frame p50 is lower in both runs. proof: CPU profile before/after and the playtest's `TN_FRAME_BUDGET` — Evidence: PARTLY MET — frame p50 is lower in both runs (walk 10.43/10.03 -> 6.71/6.54 ms before the final lane; final lane `WorldCells.update` walk 1.98/3.62 -> 2.78/2.65 ms is inside run noise), and the cull, material witness, records and stale scan are one engine call each (guard `world-cells-main-cull.spec`). NOT MET for the drain's bookkeeping (placement building, segment maps, settle/regroup) which still runs per record in JS, so the "one engine call per system" clause fails. Left open for that box.
+- [x] AC-2 [local]: the forest playtest passes and a fresh visual judge reads NEUTRAL on the walk and turn frames, two runs per arm. proof: `loop.playtest.json` exit 0 and the verdict — Evidence: the forest playtest `loop.playtest.json` exits 0, 0, 0 on the final tree (`TN_PROGRAM_LATE` 0, `TN_HOT_CALL` 0, travel 58.5 m, adapter turing). Fresh Opus visual judge (read-only, criteria set before viewing) on the 8 walk and turn captures in `~/Downloads/prd-879-final/` (BEFORE/AFTER, 2 runs per arm): NEUTRAL on all four pairs; the two run 2 BEFORE frames show a different spot on the walk, so they are weak evidence, and AFTER run 2 matches BEFORE run 1 as a second same-place comparison. A faint vertical dark striping appears in all 8 frames, before and after. Not judgeable from stills: pop-in over time, hitches.
 
 ## Blocked on
 
