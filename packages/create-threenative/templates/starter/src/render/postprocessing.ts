@@ -1,4 +1,4 @@
-import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
+import { type OutputRenderer, WorldEnvironment, qualityTiers } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This file wires two things together and decides nothing itself. `quality.ts` owns which stages
@@ -65,6 +65,12 @@ export function setupPost(
     /** Scene-owned material assignments follow the same resolved tier. */
     onTierChanged?: (tier: QualityTier) => void;
     /**
+     * Whether the sun and the lamps cast shadows. Omit it and the tier decides: `low` casts none, as
+     * Unreal's `sg.ShadowQuality` 0. Set it and every tier keeps this game's choice; `TN_QUALITY_TIER`
+     * and `debug().shadows` name which one ran.
+     */
+    shadows?: boolean;
+    /**
      * The bounded participating medium from `volumetricFog.ts`, built once per graph: a tier change
      * replaces the graph, and a fog controller owns one graph, so it is released and rebuilt here
      * rather than composed twice. Omit it and the chain starts from the beauty pass unchanged.
@@ -85,6 +91,7 @@ export function setupPost(
   let temporal: TemporalAAProvider | undefined;
   // The chain's own temporal AA (`temporalAA` in `quality.ts`) reads the engine's live frame, history and jitter.
   let engineTemporal: (() => Record<string, unknown>) | undefined;
+  const shadowSource = environment.shadows === undefined ? "tier" : "override";
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",
@@ -95,6 +102,12 @@ export function setupPost(
     medium?.dispose();
     medium = environment.fog?.();
     const composed = medium;
+    // The tier's shadow switch. An integrated GPU lands on `low`, where the shadow pass was the
+    // largest GPU cost of the frame while the tier table already said "no shadow".
+    const castShadows = environment.shadows ?? qualityTiers.shadow(policy.tier).castShadows;
+    const shadowMap = (renderer.raw as { shadowMap?: { enabled: boolean } }).shadowMap;
+    if (shadowMap !== undefined) shadowMap.enabled = castShadows;
+    observation = { ...observation, shadows: { enabled: castShadows, source: shadowSource } };
     const settings = qualityPreset(policy.tier);
     const detail = temporalDetailRequested(renderer, settings) ? temporalDetailStages() : [];
     const world = new WorldEnvironment({
@@ -157,7 +170,7 @@ export function setupPost(
   console.info(
     `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} software=${
       environment.software === true
-    } source=${source}`,
+    } source=${source} shadows=${(environment.shadows ?? qualityTiers.shadow(policy.tier).castShadows) ? "on" : "off"}(${shadowSource})`,
   );
   const controller = {
     get tier(): QualityTier {
@@ -174,6 +187,7 @@ export function setupPost(
       observation = {
         stages: observation.stages,
         dropped: observation.dropped,
+        shadows: observation.shadows,
         ...decision,
         ...(Number.isInteger(window.window) ? { window: window.window } : {}),
       };
