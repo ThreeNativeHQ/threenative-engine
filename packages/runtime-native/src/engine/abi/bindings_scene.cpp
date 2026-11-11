@@ -457,14 +457,21 @@ void registerObject3D(ClassBinding& b) {
             counts.push_back(Value::of(double(count)));
         return Value::array(std::move(counts));
     };
-    // Engine-internal: core's animation rate bands in one call. `__bandRigs(camera, cameraResolved, scale, rigs)`
-    // answers each rig's rate (1, 2, 4 or 8; 0 when no part was visited), kept with this root's cull state.
-    b.methods["__bandRigs"] = [](void* self, const Args& a, Store& store) {
+    // Engine-internal (PRD-878): core's animation rate bands, the rig loop included, in one call a frame.
+    // `rig.__trackAnimationRate(id)` registers a player's rig root under core's handle (a negative id forgets it);
+    // `scene.__bandAnimation(camera, cameraResolved, scale, frame)` answers [id, rate] pairs, or undefined when a
+    // tracked rig sits inside another and core must walk them (ProjectedCull::bandAnimation).
+    b.methods["__trackAnimationRate"] = [](void* self, const Args& a, Store&) {
+        ProjectedCull::trackRate(*as<Object3D>(self), number(a.at(0)));
+        return Value::undefined();
+    };
+    b.methods["__bandAnimation"] = [](void* self, const Args& a, Store& store) {
         auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
-        if (camera == nullptr) throw Unsupported{"__bandRigs needs a camera"};
-        std::vector<Object3D*> rigs;
-        for (const Value& ref : refsOf(a.at(3))) rigs.push_back(&objectArg(store, ref));
-        return Value::list(projectedCullOf(*as<Object3D>(self)).bandRates(rigs, *camera, flag(a.at(1)), number(a.at(2))));
+        if (camera == nullptr) throw Unsupported{"__bandAnimation needs a camera"};
+        auto& root = *as<Object3D>(self);
+        const auto pairs = projectedCullOf(root).bandAnimation(root, *camera, flag(a.at(1)), number(a.at(2)),
+                                                               uint64_t(number(a.at(3))));
+        return pairs ? Value::list(*pairs) : Value::undefined();
     };
     // Engine-internal (PRD-828): GPUParticles3D's view test in one call. `__boundsInView(camera, localBox, padding)`
     // updates both world matrices as three's would, carries the local box to world space, pads it (a NaN

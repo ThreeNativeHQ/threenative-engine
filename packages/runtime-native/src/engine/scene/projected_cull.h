@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -70,6 +71,23 @@ public:
     std::vector<double> bandRates(const std::vector<Object3D*>& rigs, const Camera& camera, bool cameraResolved,
                                   double scale);
 
+    /**
+     * core's AnimationPlayer registers its rig root under `id` (core's handle for the rate state); a negative id
+     * forgets it. Process-wide and in registration order, as core's rate roots are; a re-registered rig keeps
+     * its place.
+     */
+    static void trackRate(Object3D& rig, double id);
+    /**
+     * core's `RenderCameraCull.prepareAnimation` for every tracked rig, in one call a frame: each rig that reaches
+     * `root` (it and every parent up to `root` shown) is banded by bandRates(); from 32 tracked rigs a rig is
+     * measured on its turn, one frame in four counted from `frame`, and holds the rate it had at `frame - 1`
+     * between turns. Answers [id, rate] pairs for the rigs measured or held (rate 0 is left out, as core leaves
+     * that state alone), led by [id, -1] for each tracked rig that was freed. A tracked rig inside a tracked rig
+     * answers nullopt: its rate comes from the outer rig's walk, which core makes.
+     */
+    std::optional<std::vector<double>> bandAnimation(Object3D& root, const Camera& camera, bool cameraResolved,
+                                                     double scale, uint64_t frame);
+
 private:
     /**
      * The tree under the root in three's traverse order, built once per hierarchy version: a node, where its
@@ -112,6 +130,8 @@ private:
         std::weak_ptr<const Object3D> rig;
         std::vector<Node> nodes;
         uint64_t version = 0;
+        uint64_t frame = 0;  // the bandAnimation() frame that last measured or held this rig, and its rate then
+        double rate = 0;
     };
     std::unordered_map<const Object3D*, RigWalk> rigWalks_;
     static void walk(std::vector<Node>& nodes, Object3D& root, const Camera& camera);

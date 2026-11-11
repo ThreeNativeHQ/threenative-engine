@@ -1295,16 +1295,16 @@ void collectVisits() {
     const uint64_t temporaries = adapter.collectVisits() - beforeTemporaries;
     if (temporaries != 0) std::fprintf(stderr, "releasing math temporaries visited %llu wrappers\n", (unsigned long long)temporaries);
     CHECK(temporaries == 0);
-    // A call that only reads a list of objects (core's animation bands, every frame) keeps none of them.
-    CHECK(js("globalThis.cam = new PerspectiveCamera(); globalThis.rigs = scene.children.slice(0, 64); scene.__bandRigs(cam, true, 1, rigs); 'ok'") == "ok");
+    // Core's animation bands, every frame, in one call over the rigs the engine tracks: it keeps none of them.
+    CHECK(js("globalThis.cam = new PerspectiveCamera(); globalThis.rigs = scene.children.slice(0, 64); rigs.forEach((rig, i) => rig.__trackAnimationRate(i)); scene.__bandAnimation(cam, true, 1, 1); 'ok'") == "ok");
     adapter.collect();
     const uint64_t beforeBands = adapter.collectVisits();
-    CHECK(js("scene.__bandRigs(cam, true, 1, rigs).length") == "64");
+    CHECK(js("typeof scene.__bandAnimation(cam, true, 1, 2).length") == "number");
     adapter.collect();
     const uint64_t bands = adapter.collectVisits() - beforeBands;
-    if (bands != 0) std::fprintf(stderr, "a read-only list argument visited %llu wrappers\n", (unsigned long long)bands);
+    if (bands != 0) std::fprintf(stderr, "a band call visited %llu wrappers\n", (unsigned long long)bands);
     CHECK(bands == 0);
-    CHECK(js("globalThis.rigs = null; globalThis.cam = null; 'ok'") == "ok");
+    CHECK(js("rigs.forEach((rig) => rig.__trackAnimationRate(-1)); globalThis.rigs = null; globalThis.cam = null; 'ok'") == "ok");
 
     // A change of ownership is not missed. Removed with the object as the argument:
     CHECK(js("globalThis.child = scene.children[10]; child.hp = 5; scene.remove(child); globalThis.child = null; 'ok'") == "ok");

@@ -594,6 +594,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_world_space_conversions=world_space_conversions
     native_engine_abi_projected_cull_list=projected_cull_list
     native_engine_abi_projected_cull_bands=projected_cull_bands
+    native_engine_abi_projected_cull_band_animation=projected_cull_band_animation
     native_engine_abi_bounds_in_view=bounds_in_view
     native_engine_abi_frustum_intersects_boxes=frustum_intersects_boxes
     native_engine_abi_material_witness=material_witness

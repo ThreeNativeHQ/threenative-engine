@@ -3,7 +3,7 @@
     "AmbientLight": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -22,6 +22,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -293,7 +294,7 @@
     "BatchedMesh": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -312,6 +313,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -622,7 +624,7 @@
     "Bone": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -641,6 +643,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -1076,7 +1079,7 @@
     "Camera": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -1095,6 +1098,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -2154,7 +2158,7 @@
     "DirectionalLight": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -2173,6 +2177,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -2721,7 +2726,7 @@
     "Group": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -2740,6 +2745,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -2900,7 +2906,7 @@
     "HemisphereLight": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -2919,6 +2925,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -3336,7 +3343,7 @@
     "InstancedMesh": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -3355,6 +3362,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -3666,7 +3674,7 @@
     "LOD": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -3685,6 +3693,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -3964,7 +3973,7 @@
     "Line": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -3983,6 +3992,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -4364,7 +4374,7 @@
     "LineSegments": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -4383,6 +4393,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -4773,7 +4784,7 @@
     "Mesh": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -4792,6 +4803,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -6324,7 +6336,7 @@
     "Object3D": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -6343,6 +6355,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -6594,7 +6607,7 @@
     "OrthographicCamera": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -6613,6 +6626,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -6827,7 +6841,7 @@
     "PerspectiveCamera": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -6846,6 +6860,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -7162,7 +7177,7 @@
     "PointLight": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -7181,6 +7196,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -7393,7 +7409,7 @@
     "Points": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -7412,6 +7428,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -8098,7 +8115,7 @@
     "Scene": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -8117,6 +8134,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -8447,7 +8465,7 @@
     "SkinnedMesh": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -8466,6 +8484,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -8909,7 +8928,7 @@
     "SpotLight": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -8928,6 +8947,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",
@@ -9146,7 +9166,7 @@
     "Sprite": {
       "constructor": true,
       "methods": [
-        "__bandRigs",
+        "__bandAnimation",
         "__boundsInView",
         "__cullProjected",
         "__restoreCull",
@@ -9165,6 +9185,7 @@
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
         "__tnVisibleInWorld",
+        "__trackAnimationRate",
         "__walk",
         "add",
         "addEventListener",

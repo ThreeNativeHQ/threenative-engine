@@ -2652,6 +2652,96 @@ void projected_cull_bands() {
     cull.restore();
 }
 
+// PRD-878: core's whole prepareAnimation in one call: the engine keeps the tracked rigs, checks which reach the
+// root, holds a crowd's rates between turns and answers [id, rate] pairs, so a frame runs no JS rig loop.
+void projected_cull_band_animation() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto unit = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    unit->setXYZ(0, -1, 0, 0).setXYZ(1, 1, 0, 0);
+    geometry->setAttribute("position", unit);
+    std::vector<std::shared_ptr<Object3D>> rigs;
+    const auto rigAt = [&](double x, double z, Object3D& under) {
+        auto rig = std::make_shared<Object3D>();
+        auto part = std::make_shared<Mesh>(geometry, nullptr);
+        rig->position.set(x, 0, z);
+        rig->add(*part);
+        under.add(*rig);
+        rigs.push_back(rig);
+        rigs.push_back(part);
+        return rig;
+    };
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    ProjectedCull cull;
+    using Pairs = std::optional<std::vector<double>>;
+
+    // Three rigs: band 2, band 8, and one whose only part is hidden (left alone, so not answered).
+    auto mid = rigAt(5, -40, *scene);
+    auto far = rigAt(20, -400, *scene);
+    auto hidden = rigAt(5, -40, *scene);
+    hidden->children.front()->setVisible(false);
+    auto untracked = rigAt(5, -40, *scene);
+    ProjectedCull::trackRate(*mid, 10);
+    ProjectedCull::trackRate(*far, 11);
+    ProjectedCull::trackRate(*hidden, 12);
+    scene->updateMatrixWorld();
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 1) == Pairs(std::vector<double>{10, 2, 11, 8}));
+    // A rig that does not reach the root is skipped: hidden itself, or in another scene.
+    far->setVisible(false);
+    auto elsewhere = std::make_shared<Scene>();
+    auto away = rigAt(5, -40, *elsewhere);
+    ProjectedCull::trackRate(*away, 13);
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 2) == Pairs(std::vector<double>{10, 2}));
+    far->setVisible(true);
+    // Untracked (a disposed player), it is no longer answered; a freed rig is reported once as -1.
+    ProjectedCull::trackRate(*far, -1);
+    elsewhere->remove(*away);
+    std::erase(rigs, away);
+    away.reset();
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 3) == Pairs(std::vector<double>{13, -1, 10, 2}));
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 4) == Pairs(std::vector<double>{10, 2}));
+    // A rig inside a rig: the inner rate comes from the outer walk, which this call does not make.
+    auto inner = rigAt(5, -40, *mid);
+    ProjectedCull::trackRate(*inner, 14);
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 5) == std::nullopt);
+    ProjectedCull::trackRate(*inner, -1);
+    ProjectedCull::trackRate(*mid, -1);
+    ProjectedCull::trackRate(*hidden, -1);
+    (void)untracked;
+
+    // From 32 rigs a rig is measured one frame in four, on its turn, and holds its rate between turns.
+    auto crowd = std::make_shared<Scene>();
+    std::vector<std::shared_ptr<Object3D>> walkers;
+    for (int i = 0; i < 32; ++i) {
+        walkers.push_back(rigAt(5, -40, *crowd));
+        ProjectedCull::trackRate(*walkers.back(), 100 + i);
+    }
+    crowd->updateMatrixWorld();
+    const auto first = cull.bandAnimation(*crowd, camera, true, scale, 1);
+    CHECK(first.has_value() && first->size() == 64 && (*first)[1] == 2 && (*first)[63] == 2);
+    // Both walkers move far: walker 0 (turn 1 + 2 = 3) holds band 2, walker 1 (turn 4) is measured: band 8.
+    walkers[0]->position.z = -400;
+    walkers[1]->position.z = -400;
+    crowd->updateMatrixWorld();
+    // Pairs come held first, then measured; core reads them by id.
+    const auto rateOf = [](const Pairs& pairs, double id) {
+        for (std::size_t i = 0; pairs && i + 1 < pairs->size(); i += 2)
+            if ((*pairs)[i] == id) return (*pairs)[i + 1];
+        return 0.0;
+    };
+    const auto second = cull.bandAnimation(*crowd, camera, true, scale, 2);
+    CHECK(second.has_value() && second->size() == 64);
+    CHECK(rateOf(second, 100) == 2);
+    CHECK(rateOf(second, 101) == 8);
+    // A frame skipped by the caller breaks the hold: every walker is measured again.
+    const auto skipped = cull.bandAnimation(*crowd, camera, true, scale, 4);
+    CHECK(rateOf(skipped, 100) == 8);
+    for (auto& walker : walkers) ProjectedCull::trackRate(*walker, -1);
+}
+
 void projected_cull_list() {
     using namespace tn::engine;
     auto scene = std::make_shared<Scene>();
@@ -3907,4 +3997,5 @@ TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_fiel
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
+             {"projected_cull_band_animation", projected_cull_band_animation},
              {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})

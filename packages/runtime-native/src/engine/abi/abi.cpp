@@ -623,7 +623,7 @@ public:
     OwnershipProbe(tn_context* context, const tn_value_t* args, uint32_t count, bool classHoldsObjects, bool arraysOpaque = false)
         : context_(context), args_(args), count_(count) {
         if (!classHoldsObjects) return;
-        // An array of handles is counted like handles (`scene.__bandRigs(camera, ..., rigs)` reads its rigs every
+        // An array of handles is counted like handles (a list a call reads every
         // frame and keeps none). A record, or an array inside an array, is not looked into, nor an array a
         // property takes (`mesh.material = [a, b]` can let go of a material the list no longer names).
         for (uint32_t i = 0; i < count; ++i) {
