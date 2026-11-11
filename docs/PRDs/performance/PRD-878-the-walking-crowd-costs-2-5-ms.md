@@ -92,8 +92,10 @@ Facts the levers rest on (PRD-872 Decisions, 2026-11-11):
 - [ ] The largest attributed cost is cut, or closed by decision with its ceiling under 0.3 ms. proof: red-green case if behaviour changes; probe numbers.
 
 #### Phase 3: JS animation and sync
-**Status:** DONE — attributed; every JS-ownable item is under the 0.3 ms floor, so no cut (Decisions, 2026-11-11).
+**Status:** OPEN — attributed; reopened by the owner on 2026-11-11: per-frame engine JS that is not game scripting moves into C++ (Decisions).
 - [x] Attribution of the ≈0.9 ms JS side of the crowd. proof: main-thread CPU profiles (200 µs sampling, 10 s; 3 runs `?stress`, 2 runs `&noCrowd`, head `6ed423488`, RTX 2080) — Evidence: crowd delta ≈0.8-0.9 ms, of which JS-ownable ≈0.25. `flushAnimationTicks → tn_anim_tick` +0.27 (≈0.04 glue, the rest C++ mixer evaluation); `SceneUpdate.apply → __tnUpdateMatrixWorld` +0.13-0.20 (C++ bone walk); `RenderCameraCull.prepareAnimation` rate bands +0.16 (≈0.10 JS); engine cull +0.11 (≈0.01 JS); lab walker loop +0.10 (core 0.03-0.06); reconcile +0.02. Bridge crossings 43 against 42; shared-transform writes 1,394 a frame, setter ≈0.02 ms. Trap: the `update` stage p50 is a rate artifact (fixed 60 Hz ticks land on ≈52% of crowd frames, ≈26% without).
+- [ ] The animation rate bands (`RenderCameraCull.prepareAnimation`, ≈0.16 ms with the crowd) run in C++: one engine call a frame, the rig check and band loop out of JS. proof: a red-green case (native-engine or spec) and the main-thread profile before/after.
+- [ ] Every per-frame engine JS function (`packages/core`, `packages/three-native`; not game scripts) costing 0.05 ms or more on `?stress` or `&noCrowd` runs in C++, or is listed under Decisions with the reason it must stay JS (browser API, a game callback). proof: the profile inventory before/after (`jsBefore`, `engineJs`).
 
 ## Decisions
 
@@ -102,4 +104,9 @@ Facts the levers rest on (PRD-872 Decisions, 2026-11-11):
   JS-ownable lever, the rate-band loop, is ≈0.10 ms; all JS-ownable crowd work sums to ≈0.25 ms, under the 0.3 ms floor.
   The JS side's crowd cost is C++ work it calls: mixer evaluation (Phase 1's stamps let an unchanged pose skip it), the
   bone world walk and the cull, which visits 9,818 matrices against 1,298 without the crowd (a Phase 2 lead).
+- 2026-11-11 (owner, João: "can we move this animation rate bands to C++ too? whatever else is on JS tahts not game
+  scripting should move to C++"): Phase 3 reopens. The 0.3 ms floor does not apply to these moves: the goal is that
+  per-frame engine work runs in the C++ engine that serves native and web Wasm, so the JS around engine calls
+  (`jsBefore` 0.66 ms and `engineJs` 0.78 ms a frame even with `&noCrowd`) shrinks to game code and single calls.
+  Lead's note: the rate bands alone are ≈0.10 ms of JS; the payoff is the whole inventory.
 
