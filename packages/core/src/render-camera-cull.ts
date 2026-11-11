@@ -118,7 +118,7 @@ export function untrackAnimationRate(root: Object3D, state: IAnimationRateState)
   animationRateStates.delete(root);
   const id = engineRateIds.get(root);
   if (id === undefined) return;
-  engineRateStates[id] = undefined;
+  setEngineRateState(id, undefined);
   (root as unknown as IEngineRateRig).__trackAnimationRate(-1);
 }
 
@@ -137,6 +137,13 @@ export function observeAnimationRates(
  */
 const engineRateIds = new WeakMap<Object3D, number>();
 const engineRateStates: (IAnimationRateState | undefined)[] = [];
+/** The live entries of {@link engineRateStates}: with none, a frame makes no band call at all. */
+let engineRateRigs = 0;
+
+function setEngineRateState(id: number, state: IAnimationRateState | undefined): void {
+  engineRateRigs += (state === undefined ? 0 : 1) - (engineRateStates[id] === undefined ? 0 : 1);
+  engineRateStates[id] = state;
+}
 
 interface IEngineRateRig {
   __trackAnimationRate(id: number): void;
@@ -152,7 +159,7 @@ export function trackAnimationRate(root: Object3D, state: IAnimationRateState): 
       id = engineRateStates.length;
       engineRateIds.set(root, id);
     }
-    engineRateStates[id] = state;
+    setEngineRateState(id, state);
     engineRig.__trackAnimationRate(id);
   }
   // One ref per root: a respawn's new player on the same root must not add a second walk of it.
@@ -505,6 +512,7 @@ export class RenderCameraCull {
    */
   #bandOnEngine(root: unknown, camera: Camera): boolean {
     const engine = animationRateCarriers.size === 0 ? engineBandRoot(root) : undefined;
+    if (engine !== undefined && engineRateRigs === 0) return true;
     const pairs = engine?.__bandAnimation(
       camera,
       this.#cameraResolved,
@@ -522,7 +530,7 @@ export class RenderCameraCull {
       const id = pairs[index] as number;
       const rate = pairs[index + 1] as number;
       if (rate < 0) {
-        engineRateStates[id] = undefined;
+        setEngineRateState(id, undefined);
         continue;
       }
       const state = engineRateStates[id];

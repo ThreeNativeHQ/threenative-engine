@@ -674,6 +674,25 @@ describe("render camera cull", () => {
     expect(third).toBeGreaterThanOrEqual(0);
   });
 
+  it("makes no band call while the engine tracks no rig", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/render-camera-cull.js");
+    const rig = Object.assign(new Group(), { __trackAnimationRate: vi.fn() });
+    const scene = sceneWith(rig);
+    const bandAnimation = vi.fn(() => []);
+    Object.assign(scene, { __bandAnimation: bandAnimation });
+    const cull = new fresh.RenderCameraCull();
+    cull.prepareAnimation(scene, camera(), 720);
+    expect(bandAnimation).not.toHaveBeenCalled();
+    const state = rateState();
+    fresh.trackAnimationRate(rig, state);
+    cull.prepareAnimation(scene, camera(), 720);
+    expect(bandAnimation).toHaveBeenCalledTimes(1);
+    fresh.untrackAnimationRate(rig, state);
+    cull.prepareAnimation(scene, camera(), 720);
+    expect(bandAnimation).toHaveBeenCalledTimes(1);
+  });
+
   // The scene of `projected_cull_bands` (runtime-native abi_test.cpp), through the JS walk: the engine's
   // answers there are these, so the port and the rule it ports cannot drift apart silently.
   it("answers the engine band case's rates through the JS walk", () => {
