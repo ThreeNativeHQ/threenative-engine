@@ -287,6 +287,17 @@ void relativeSlotKeepsAnUnchangedPose() {
     head->rotation.x = 0.4;  // a bone write
     CHECK(frame(next) == 1);
     CHECK(next != first);
+    // The walkers' backlit sheen is an emissive node over view space (normalView, the view direction): a relative slot
+    // leaves every view and world value as it was, so it is admitted. A node that reads the skinned local position
+    // would see the root's space instead of the world's: refused.
+    namespace g = shader::graph;
+    material->nodes.emissiveNode = g::normalize(g::varying("normalView", shader::Type::vec(3)));
+    frame(next);
+    material->nodes.emissiveNode = g::normalize(g::positionLocal());
+    scene.updateMatrixWorld();
+    rig->skeleton->update();
+    SkinnedPalette local(2, 1, false);
+    CHECK(local.writeRelative(*local.claim(rig.get()), *rig) == nullptr);
 }
 
 }  // namespace

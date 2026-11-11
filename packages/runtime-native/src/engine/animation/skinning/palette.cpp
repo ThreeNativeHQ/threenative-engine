@@ -6,6 +6,7 @@
 
 #include "engine/animation/skinning/palette.h"
 #include "engine/scene/material.h"
+#include "engine/shader/graph/graph.h"
 
 #include <algorithm>
 #include <cmath>
@@ -178,6 +179,25 @@ void SkinnedPalette::write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkel
 }
 
 namespace {
+// True when a material graph reads a space a relative slot changes: the skinned local position, a geometry attribute
+// in local space, a model matrix, or a named local varying. View, world and screen values, uniforms and textures read
+// the same through a slot and its placement as through a world palette (PRD-878: the stress walkers' emissive sheen
+// reads normalView and the view direction).
+bool readsLocalSpace(const shader::graph::NodeData* node, std::vector<const void*>& seen) {
+    using shader::graph::Kind;
+    if (!node || std::find(seen.begin(), seen.end(), node) != seen.end()) return false;
+    seen.push_back(node);
+    if (node->kind == Kind::PositionLocal) return true;
+    if (node->kind == Kind::Attribute && (node->name == "position" || node->name == "normal" || node->name == "tangent"))
+        return true;
+    if (node->kind == Kind::Uniform && node->name.starts_with("model")) return true;
+    if (node->kind == Kind::Varying && node->args.empty() && node->name.find("Local") != std::string::npos) return true;
+    for (const auto* list : {&node->args, &node->body, &node->otherwise})
+        for (const auto& next : *list)
+            if (readsLocalSpace(next.get(), seen)) return true;
+    return false;
+}
+
 // The lowest ancestor that holds the mesh and every bone, short of the Scene, or null. A bone chain with a render
 // callback refuses: the callback could move it after the slot is written.
 const Object3D* placementOf(const SkinnedMesh& rig) {
@@ -202,14 +222,32 @@ const Object3D* SkinnedPalette::writeRelative(std::uint32_t slot, SkinnedMesh& r
         write(slot, rig, false);  // The render database already updated the skeleton this frame.
         return nullptr;
     };
-    // A node material with no node set compiles its plain class's program, so only a set node refuses (the stress
-    // crowd's MeshStandardNodeMaterial kept every walker on the world palette, PRD-872).
+    // A node material compiles its plain class's program around its nodes, so only a node that reads local space
+    // refuses (the stress crowd's MeshStandardNodeMaterial kept every walker on the world palette, PRD-872).
     if (velocity_ || !rig.attached || !rig.skeleton || rig.skeleton->bones.empty() ||
         !isSimilarityTransform(rig.matrixWorld.elements.data()) || !rig.material || rig.material->positionNode)
         return refuse();
-    for (const auto* node : rig.material->nodes.pointers())
-        if (node)
-            return refuse();
+    // A graph is walked once per set of node objects: they are immutable, and the cache holds them, so a frame
+    // compares addresses that cannot be reused.
+    auto& cache = rig.relativeSlot;
+    const auto& set = rig.material->nodes;
+    std::size_t at = 0;
+    bool same = true;
+    set.forEachGraph([&](const auto& node) {
+        same = same && at < cache.nodes.size() && cache.nodes[at].get() == node.get();
+        ++at;
+    });
+    if (!same || at != cache.nodes.size()) {
+        cache.nodes.clear();
+        set.forEachGraph([&](const auto& node) { cache.nodes.push_back(node); });
+        std::vector<const void*> seen;  // a node whose output is a local or clip position refuses outright
+        cache.nodesHold = !set.positionNode && !set.vertexNode && !set.castShadowPositionNode &&
+            std::none_of(cache.nodes.begin(), cache.nodes.end(), [&](const auto& node) {
+                return readsLocalSpace(static_cast<const shader::graph::NodeData*>(node.get()), seen);
+            });
+    }
+    if (!cache.nodesHold)
+        return refuse();
     // Attached skinning cancels meshWorld against bindMatrixInverse. Refuse stale/custom binds.
     Matrix4 cancellation;
     cancellation.multiplyMatrices(rig.matrixWorld, rig.bindMatrixInverse);
@@ -223,7 +261,6 @@ const Object3D* SkinnedPalette::writeRelative(std::uint32_t slot, SkinnedMesh& r
     // The placement depends only on the hierarchy: found once per hierarchy change, not per frame. Any transform the
     // walk composes eagerly is exact here (the web engine tracks none), because the slot and the placement below are
     // read from the same world matrices this frame (PRD-878).
-    auto& cache = rig.relativeSlot;
     if (const uint64_t hierarchy = Object3D::hierarchyVersion(); cache.hierarchy != hierarchy || !cache.root) {
         cache.root = placementOf(rig);
         cache.hierarchy = hierarchy;

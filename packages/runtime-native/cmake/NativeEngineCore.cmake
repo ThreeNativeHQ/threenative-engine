@@ -984,7 +984,7 @@ tn_native_engine_test(tn-native-engine-animation-skinned-palette-test tests/nati
     native_engine_skinned_pose_history=pose_history
     native_engine_skinned_update_frequency=update_frequency
     native_engine_skinned_relative_slot_keeps_an_unchanged_pose=relative_slot_keeps_an_unchanged_pose)
-target_link_libraries(tn-native-engine-animation-skinned-palette-test PRIVATE tn_engine_animation)
+target_link_libraries(tn-native-engine-animation-skinned-palette-test PRIVATE tn_engine_animation tn_engine_shader)
 target_include_directories(tn-native-engine-animation-skinned-palette-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 
 # PRD-531 raycasting and LOD: real three, binary64 oracle tables (CPU only).

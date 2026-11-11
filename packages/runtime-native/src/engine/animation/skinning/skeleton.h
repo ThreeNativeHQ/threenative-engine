@@ -184,6 +184,8 @@ class SkinnedMesh : public Mesh {
         const Object3D* root = nullptr;     // the placement found at `hierarchy`; null refuses
         std::array<double, 16> anchor{};    // root^-1 * the first bone's world when `matrices` was written
         std::vector<float> matrices;        // bones x 16, root-relative
+        std::vector<std::shared_ptr<const void>> nodes;  // the material graphs the verdict below was read from
+        bool nodesHold = false;             // none of them reads local space
     };
     RelativeSlot relativeSlot;
     bool attached = true; // bindMode: "attached" (true) or "detached"
