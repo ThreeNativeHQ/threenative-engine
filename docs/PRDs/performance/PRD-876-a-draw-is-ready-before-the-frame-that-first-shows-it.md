@@ -102,6 +102,11 @@ and the page clear (`renderer_frame.cpp:1489-1501,1955-1969`), which waits for P
 
 **Sizing gate (measure lane, before Phase 2):** on the forest turn with `?tnDebug=1`, record `pipelineSyncCreates`, `programBuilds` and `pipelineCreateMicros` for each frame of the turn, and the per-frame growth of `programKeyBuilds` on a still camera. Write the numbers under `## Decisions`. If the turn shows 0 synchronous creates and 0 program builds, the spike has another cause: set this PRD to `DEFERRED` and stop.
 
+**Sizing gate attempt (2026-11-10, executor, inconclusive — recorded so the next lane does not repeat it):** the Wasm engine was built from this head (`pnpm wasm:build`, exit 0, both `tn-native-engine-web.wasm` and the threaded pair; `node scripts/web-engine-stamp.mjs --check` exit 0; `animationTickMicros` present in both `.wasm` files, so the build carries this branch's counters). `examples/strata-terrain-preview` was served and `playtests/loop.playtest.json` was run against it with `?tnDebug=1`: **844 frames, exit 1, and the counters the gate needs are not obtainable on that lane**.
+- The scenario's own census is unavailable: `reveal.pipelineCensusAvailable` is `false` and `pipelinesSinceReveal` is `-1` on both the before and after reads, so its `equals: 0` assertion is silence rather than a measurement.
+- The captured `TN_FRAME_BUDGET.counters.engine` bag carries 97 entries and **none of the renderer counters** — `pipelineSyncCreates`, `programBuilds` and `pipelineCompiles`, `computePasses`, `shadowPageEvictions` are all absent. So this is not this PRD's two counters failing to publish; the lane does not publish the renderer group at all.
+The gate therefore still needs a lane that publishes them, or the census path repaired first. `?stress&tnDebug=1` on the stress lab is the documented route and was not attempted here.
+
 #### Phase 2: A culled mesh is prepared inside a per-frame budget
 **Status:** NOT STARTED
 **Files:** `renderer/render_database.h`, `renderer/render_database.cpp`, `renderer/renderer.h`, `renderer/renderer_frame.cpp`, `packages/runtime-native/tests/native-engine/renderer_caches_test.cpp`, `packages/runtime-native/cmake/NativeEngine.cmake`.
