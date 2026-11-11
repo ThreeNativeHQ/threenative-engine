@@ -15,8 +15,6 @@ double mixValue(double a, double b, double t) { return a + (b - a) * t; }
 } // namespace
 
 bool PoseHistory::Pose::operator==(const Pose& other) const {
-    // Bit equality, not tolerance: `restore` promises the solved pose back exactly, and a slerp that
-    // lands one ulp away from it is the bug this operator exists to catch.
     for (int i = 0; i < 3; ++i)
         if (position[i] != other.position[i]) return false;
     for (int i = 0; i < 4; ++i)
@@ -36,50 +34,60 @@ PoseHistory::Pose PoseHistory::poseOf(const Object3D& object) {
     return pose;
 }
 
-void PoseHistory::watch(const std::vector<Object3D*>& objects) {
+std::size_t PoseHistory::watch(const std::vector<Object3D*>& objects) {
     std::vector<Entry> next;
     next.reserve(objects.size());
     for (Object3D* object : objects) {
         if (object == nullptr) continue;
         Entry entry;
         entry.object = object->weak_from_this();
-        // A watched object that was already watched keeps its pair, so the frame a game adds a body
-        // does not reset the bodies beside it.
+        // A body that was already watched keeps its three poses, so the frame a game adds one does
+        // not reset the bodies beside it.
         const auto found = std::find_if(entries_.begin(), entries_.end(), [object](const Entry& existing) {
             const std::shared_ptr<Object3D> held = existing.object.lock();
             return held.get() == object;
         });
-        if (found != entries_.end())
+        if (found != entries_.end()) {
             entry = *found;
-        else
-            entry.latest = poseOf(*object);
+        } else {
+            entry.previous = poseOf(*object);
+            entry.current = entry.previous;
+            entry.saved = entry.previous;
+        }
         next.push_back(std::move(entry));
     }
     entries_ = std::move(next);
+    blended_.clear();
+    return entries_.size();
 }
 
-void PoseHistory::reset() {
-    for (Entry& entry : entries_) {
-        entry.hasPrevious = false;
-        entry.enabled = true;
-        if (const std::shared_ptr<Object3D> object = entry.object.lock()) entry.latest = poseOf(*object);
+void PoseHistory::reset(const std::vector<Object3D*>& objects) {
+    for (Object3D* object : objects) {
+        if (object == nullptr) continue;
+        const auto found = std::find_if(entries_.begin(), entries_.end(), [object](const Entry& existing) {
+            const std::shared_ptr<Object3D> held = existing.object.lock();
+            return held.get() == object;
+        });
+        if (found == entries_.end()) continue;
+        found->previous = poseOf(*object);
+        found->current = found->previous;
     }
 }
 
 void PoseHistory::tick(double phase) {
-    if (!std::isfinite(phase) || phase >= 1.0) return;
     for (Entry& entry : entries_) {
         const std::shared_ptr<Object3D> object = entry.object.lock();
         if (!object) continue;
-        const Pose solved = poseOf(*object);
-        entry.previous = entry.latest;
-        entry.hasPrevious = true;
-        entry.latest = solved;
-        entry.enabled = true;
+        const Pose pose = poseOf(*object);
+        if (phase >= 1.0)
+            entry.current = pose;
+        else
+            entry.previous = pose;
     }
 }
 
 void PoseHistory::writePose(Object3D& object, const Pose& pose) {
+    // The same four calls physics_sync.cpp:112-115 makes for a solved body.
     object.prepareLocalTransformWrite();
     object.position.set(pose.position[0], pose.position[1], pose.position[2]);
     // The synced quaternion notifies, so the object's Euler follows it, as three's own does.
@@ -90,28 +98,28 @@ void PoseHistory::writePose(Object3D& object, const Pose& pose) {
 void PoseHistory::blend(double alpha) {
     if (!std::isfinite(alpha) || alpha < 0.0 || alpha > 1.0)
         throw std::invalid_argument("PoseHistory::blend needs a finite alpha in [0, 1]");
-    for (Entry& entry : entries_) {
+    blended_.clear();
+    for (std::size_t index = 0; index < entries_.size(); ++index) {
+        Entry& entry = entries_[index];
         const std::shared_ptr<Object3D> object = entry.object.lock();
         if (!object) continue;
-        if (!entry.hasPrevious || !entry.enabled) continue;
-        // Somebody wrote this body since `tick`: blending against the pose the engine solved would
-        // draw it somewhere the simulation never put it, so forget the pair and let the next tick
-        // rebuild it from wherever the body is now.
-        if (poseOf(*object) != entry.latest) {
-            // Rebuild the pair from where the body actually is, so the next tick blends from that
-            // and not from a pose the body has already left.
-            entry.latest = poseOf(*object);
-            entry.hasPrevious = false;
-            entry.enabled = false;
-            continue;
+        Pose now = poseOf(*object);
+        // Somebody wrote this body since the tick: blending against the pose the engine solved would
+        // draw it somewhere the simulation never put it, so it resets instead and the blend below
+        // lands it exactly where it already is.
+        if (now != entry.current) {
+            entry.previous = now;
+            entry.current = now;
         }
+        entry.saved = now;
+        blended_.push_back(index);
         Pose blended;
         for (int i = 0; i < 3; ++i)
-            blended.position[i] = mixValue(entry.previous.position[i], entry.latest.position[i], alpha);
+            blended.position[i] = mixValue(entry.previous.position[i], entry.current.position[i], alpha);
         Quaternion from{entry.previous.quaternion[0], entry.previous.quaternion[1], entry.previous.quaternion[2],
                         entry.previous.quaternion[3]};
-        Quaternion to{entry.latest.quaternion[0], entry.latest.quaternion[1], entry.latest.quaternion[2],
-                      entry.latest.quaternion[3]};
+        Quaternion to{entry.current.quaternion[0], entry.current.quaternion[1], entry.current.quaternion[2],
+                      entry.current.quaternion[3]};
         Quaternion out;
         out.slerpQuaternions(from, to, alpha);
         blended.quaternion[0] = out.x;
@@ -123,11 +131,15 @@ void PoseHistory::blend(double alpha) {
 }
 
 void PoseHistory::restore() {
-    for (Entry& entry : entries_) {
+    for (const std::size_t index : blended_) {
+        if (index >= entries_.size()) continue;
+        Entry& entry = entries_[index];
         const std::shared_ptr<Object3D> object = entry.object.lock();
         if (!object) continue;
-        writePose(*object, entry.latest);
+        if (poseOf(*object) == entry.saved) continue;
+        writePose(*object, entry.saved);
     }
+    blended_.clear();
 }
 
 } // namespace tn::engine

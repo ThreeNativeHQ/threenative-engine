@@ -1,9 +1,14 @@
 // PRD-877 phase 2: the engine blends and restores a body's poses without leaving C++.
 //
 // The gate this feature exists for was measured at 1.05 ms a frame in JavaScript; these cases prove
-// the replacement is the same picture and a smaller one. Every check is against the arithmetic three
-// would have done: a `lerp` per position component, one `slerp` for the orientation, the Euler derived
-// from that quaternion, and the solved pose back bit for bit after `restore`.
+// the replacement is the same picture. Every expectation is three's own arithmetic, written out here
+// independently of PoseHistory so a bug in the blend cannot define its own expectation: a `lerp` per
+// position component, one `slerp` for the orientation, the Euler derived from that quaternion, and
+// the solved pose back bit for bit after `restore`.
+//
+// The phases are the PRD's Solution table, not an interpretation of it: `tick(0)` copies each pose to
+// previous, `tick(1)` copies it to current, `blend` writes between them, `restore` puts back what
+// `blend` saved.
 #include "check.h"
 #include "engine/scene/pose_history.h"
 
@@ -27,8 +32,6 @@ std::shared_ptr<Object3D> body(double x, double y, double z) {
     return object;
 }
 
-// What three's `Vector3.lerpVectors` plus `Quaternion.slerpQuaternions` would have produced, written
-// independently of PoseHistory so a bug in the blend cannot define its own expectation.
 struct Expected {
     double x, y, z;
     Quaternion quaternion;
@@ -58,10 +61,6 @@ PoseHistory::Pose poseOfValues(double x, double y, double z, double qx, double q
     return pose;
 }
 
-bool holdsPose(const Object3D& object, const PoseHistory::Pose& pose) {
-    return PoseHistory::poseOf(object) == pose;
-}
-
 void blendingThreeBodiesOverTwoTicks() {
     auto a = body(0, 0, 0);
     auto b = body(1, 0, 0);
@@ -69,33 +68,30 @@ void blendingThreeBodiesOverTwoTicks() {
     std::vector<Object3D*> watched{a.get(), b.get(), c.get()};
 
     PoseHistory history;
-    history.watch(watched);
+    CHECK(history.watch(watched) == 3);
     CHECK(history.size() == 3);
 
-    // The first tick has no earlier pose to blend from, so it records and does not invent one.
+    // Phase 0 records what the bodies held when the tick began; phase 1 records where the physics
+    // step put them. A frame blends across that pair.
     history.tick(0.0);
-    history.blend(0.25);
-    CHECK(near(a->position.x, 0));
 
-    // The physics step moves all three; the tick that follows is the pair a frame blends across.
     a->position.set(3, 0, 0);
     b->position.set(1, 5, 0);
     c->position.set(-4, 2, 2);
     a->quaternion.set(0, 0, 0.3826834323650898, 0.9238795325112867); // 45 degrees about z
     b->quaternion.set(0, 0.7071067811865476, 0, 0.7071067811865476); // 90 degrees about y
     c->quaternion.set(0.25881904510252074, 0, 0, 0.9659258262890683); // 30 degrees about x
+    history.tick(1.0);
 
     const PoseHistory::Pose solvedA = PoseHistory::poseOf(*a);
     const PoseHistory::Pose solvedB = PoseHistory::poseOf(*b);
     const PoseHistory::Pose solvedC = PoseHistory::poseOf(*c);
 
-    // What each body held before the step, and what the step put it at. Both are poses, taken before
-    // the blend touches anything.
+    // What each body held before the step. Taken now, because `blend` overwrites the objects.
     const PoseHistory::Pose wasA = poseOfValues(0, 0, 0, 0, 0, 0, 1);
     const PoseHistory::Pose wasB = poseOfValues(1, 0, 0, 0, 0, 0, 1);
     const PoseHistory::Pose wasC = poseOfValues(0, 2, 0, 0, 0, 0, 1);
 
-    history.tick(0.5);
     history.blend(0.25);
 
     for (const auto& [object, from, to] : {std::tuple{a.get(), wasA, solvedA}, std::tuple{b.get(), wasB, solvedB},
@@ -124,15 +120,16 @@ void blendingThreeBodiesOverTwoTicks() {
     // `restore` puts the solved pose back exactly, so the next physics step reads the body and not
     // the picture of the body.
     history.restore();
-    CHECK(holdsPose(*a, solvedA));
-    CHECK(holdsPose(*b, solvedB));
-    CHECK(holdsPose(*c, solvedC));
+    CHECK(PoseHistory::poseOf(*a) == solvedA);
+    CHECK(PoseHistory::poseOf(*b) == solvedB);
+    CHECK(PoseHistory::poseOf(*c) == solvedC);
 
-    // A second tick keeps working after a restore (the pair is not consumed by it).
+    // A second frame keeps working after a restore.
+    history.tick(0.0);
     a->position.set(6, 0, 0);
-    history.tick(0.5);
+    history.tick(1.0);
     history.blend(0.5);
-    CHECK(near(a->position.x, 4.5, 1e-12));
+    CHECK(near(a->position.x, 4.5, 1e-12)); // between the restored 3 and the new 6
     history.restore();
     CHECK(near(a->position.x, 6, 1e-12));
 }
@@ -147,19 +144,21 @@ void aPoseChangedBetweenTickAndBlendResetsThatBody() {
     history.tick(0.0);
     a->position.set(2, 0, 0);
     b->position.set(2, 0, 0);
-    history.tick(0.5);
+    history.tick(1.0);
 
     // Something outside the history moves `a` after the tick: a teleport, a kinematic driver, a game
     // writing the transform. Blending it would draw it where the simulation never put it.
     a->position.set(99, 0, 0);
     history.blend(0.5);
 
-    CHECK(near(a->position.x, 99, 0));  // left alone, not blended toward 1.0
-    CHECK(near(b->position.x, 1.0));    // its neighbour still blends
+    CHECK(near(a->position.x, 99, 0)); // left where the game put it
+    CHECK(near(b->position.x, 1.0));   // its neighbour still blends between 0 and 2
 
-    // The next tick rebuilds `a`'s pair from where the body actually is.
+    // The frame after a discontinuity is exact, and the next one blends from where the body now is.
+    a->position.set(99, 0, 0);
+    history.tick(0.0);
     a->position.set(120, 0, 0);
-    history.tick(0.25);
+    history.tick(1.0);
     history.blend(0.5);
     CHECK(near(a->position.x, 109.5, 1e-12));
 }
@@ -174,12 +173,11 @@ void watchingKeepsTheBodiesThatStay() {
     history.tick(0.0);
     a->position.set(10, 0, 0);
     b->position.set(10, 0, 0);
-    history.tick(0.5);
+    history.tick(1.0);
 
-    // Adding a third body must not forget the two that were already watched, or the frame a game
-    // spawns something every body beside it snaps.
-    history.watch({a.get(), b.get(), c.get()});
-    CHECK(history.size() == 3);
+    // Adding a third body must not forget the two already watched, or the frame a game spawns
+    // something every body beside it snaps.
+    CHECK(history.watch({a.get(), b.get(), c.get()}) == 3);
     history.blend(0.5);
     CHECK(near(a->position.x, 5, 1e-12));
     CHECK(near(b->position.x, 5, 1e-12));
@@ -195,7 +193,7 @@ void aDestroyedBodyIsSkipped() {
     history.tick(0.0);
     a->position.set(4, 0, 0);
     doomed->position.set(4, 0, 0);
-    history.tick(0.5);
+    history.tick(1.0);
 
     history.blend(0.25);
     doomed.reset(); // freed between the blend and the restore, as a despawn does
@@ -203,10 +201,11 @@ void aDestroyedBodyIsSkipped() {
     history.restore(); // must not touch the dead weak_ptr
     CHECK(near(a->position.x, 4, 1e-12));
 
+    history.tick(0.0);
     a->position.set(8, 0, 0);
-    history.tick(0.25);
+    history.tick(1.0);
     history.blend(0.5);
-    CHECK(near(a->position.x, 6, 1e-12)); // blended from the restored 4, not from a stale pose
+    CHECK(near(a->position.x, 6, 1e-12)); // blended from the restored 4
 }
 
 void blendRejectsAnAlphaItCannotUse() {
@@ -226,21 +225,24 @@ void blendRejectsAnAlphaItCannotUse() {
     }
     // A good alpha still works after the rejections.
     a->position.set(2, 0, 0);
-    history.tick(0.25);
+    history.tick(1.0);
     history.blend(0.5);
     CHECK(near(a->position.x, 1, 1e-12));
 }
 
-void phaseAtOrPastOneRecordsNothing() {
+void resetForgetsTheDiscontinuity() {
+    // What a teleport does: the game calls reset, so the next blend does not cross the gap.
     auto a = body(0, 0, 0);
     PoseHistory history;
     history.watch({a.get()});
     history.tick(0.0);
-
     a->position.set(10, 0, 0);
-    history.tick(1.0); // the step is not interpolating; there is no earlier pose to cross into
+    history.tick(1.0);
+
+    a->position.set(500, 0, 0); // teleported, and announced
+    history.reset({a.get()});
     history.blend(0.5);
-    CHECK(near(a->position.x, 10, 0));
+    CHECK(near(a->position.x, 500, 0));
 }
 
 } // namespace
@@ -251,6 +253,6 @@ TN_TEST_MAIN({"pose_history", [] {
                   watchingKeepsTheBodiesThatStay();
                   aDestroyedBodyIsSkipped();
                   blendRejectsAnAlphaItCannotUse();
-                  phaseAtOrPastOneRecordsNothing();
+                  resetForgetsTheDiscontinuity();
                   std::printf("pose history: 6 cases\n");
               }})

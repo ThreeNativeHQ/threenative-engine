@@ -518,9 +518,7 @@ void registerObject3D(ClassBinding& b) {
     b.methods["__tnPoseWatch"] = [](void* self, const Args& a, Store& store) {
         std::vector<Object3D*> objects;
         for (const Value& ref : refsOf(a.at(0))) objects.push_back(&objectArg(store, ref));
-        PoseHistory& history = poseHistoryOf(*as<Object3D>(self));
-        history.watch(objects);
-        return Value::of(double(history.size()));
+        return Value::of(double(poseHistoryOf(*as<Object3D>(self)).watch(objects)));
     };
     // `__tnPoseTick(phase)` records this frame's solved pose for every watched body.
     b.methods["__tnPoseTick"] = [](void* self, const Args& a, Store&) {
@@ -538,9 +536,12 @@ void registerObject3D(ClassBinding& b) {
         poseHistoryOf(*as<Object3D>(self)).restore();
         return Value{};
     };
-    // `__tnPoseReset()` forgets the pairs, for a teleport.
-    b.methods["__tnPoseReset"] = [](void* self, const Args&, Store&) {
-        poseHistoryOf(*as<Object3D>(self)).reset();
+    // `__tnPoseReset(objects)` sets those bodies' previous and current pose to where they are now,
+    // which is what a teleport announces so the next blend does not cross the gap.
+    b.methods["__tnPoseReset"] = [](void* self, const Args& a, Store& store) {
+        std::vector<Object3D*> objects;
+        for (const Value& ref : refsOf(a.at(0))) objects.push_back(&objectArg(store, ref));
+        poseHistoryOf(*as<Object3D>(self)).reset(objects);
         return Value{};
     };
     b.methods["__restoreCull"] = [](void* self, const Args&, Store&) {
