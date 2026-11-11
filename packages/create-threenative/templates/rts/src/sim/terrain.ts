@@ -5,8 +5,6 @@
  * asks where something is asks it in these units.
  */
 
-import { MathUtils } from "three";
-
 export const MAP_SIZE = 224;
 export const MAP_CELL = 2;
 export const WORLD = MAP_SIZE;
@@ -104,7 +102,8 @@ export const ROCK_FIELDS: readonly (readonly [number, number, number])[] = [
 
 const smooth01 = (t: number): number => {
   const c = Math.max(0, Math.min(1, t));
-  return MathUtils.smoothstep(c, 0, 1);
+  // eslint-disable-next-line no-restricted-syntax -- a sim module must not import three (rts-runtime-cost.spec), so the inline form stays here.
+  return c * c * (3 - 2 * c);
 };
 
 const noiseHash = (x: number, z: number): number => {

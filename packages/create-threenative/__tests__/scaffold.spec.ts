@@ -153,7 +153,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   rts: {
     shared: "94c096399f971506d873735610fc2759b108d672e200472279a8d0d4fcd92e09",
-    kit: "b97e2fc08525da6e4411162482ef9bb8d0debb9d95e8d515c59fc46c78e00afe",
+    kit: "11c32528f07476b2a5ac2a214529e611c22a4317a8c89aa96b9c5648208f84b8",
   },
   runner: {
     shared: "e522646cf7dc0567c1496c1abda755fb13d9bdba62d98e18cc3e1c68264db3af",
