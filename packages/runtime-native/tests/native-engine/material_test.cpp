@@ -360,6 +360,19 @@ void lampRangeBranch() {
         for (size_t at = fragment.code.find("if ("); at != std::string::npos; at = fragment.code.find("if (", at + 1)) ++count;
         return count;
     };
+    for (bool phong : {false, true}) {
+        const auto lit = [&](const char* kinds) {
+            const auto programs = phong ? buildPhong(VertexVariant{}, LightLayout{kinds}) : buildLambert(VertexVariant{}, LightLayout{kinds});
+            CHECK(programs.diagnostics.empty());
+            const auto fragment = WgslEmitter::emit(programs.fragment, 1);
+            CHECK(fragment.ok());
+            size_t count = 0;
+            for (size_t at = fragment.code.find("if ("); at != std::string::npos; at = fragment.code.find("if (", at + 1)) ++count;
+            return count;
+        };
+        CHECK(lit("dps") == lit("d") + 2);
+        CHECK(lit("dP") == lit("d"));
+    }
     VertexVariant rough; rough.roughDiffuse = true;
     VertexVariant mapped; mapped.environment = true;
     for (bool physical : {false, true}) {

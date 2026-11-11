@@ -1861,14 +1861,35 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
+    // As in buildStandardProgram: an unshadowed lamp shades only the fragments its range reaches, and what every light
+    // reads (a normal map, a colour texel) is evaluated once, before the first branch.
+    const auto ranged = [&](std::size_t i) { return lights.kinds[i] == 'p' || lights.kinds[i] == 's'; };
+    bool branches = false;
+    for (std::size_t i = 0; i < lights.kinds.size(); ++i) branches = branches || ranged(i);
+    const auto held = [&](ExprId value) { return branches ? f.load(f.var(f.expr(value).type, value)) : value; };
+    const ExprId lightNormal = held(n), lightView = held(positionViewDirection), lightLambert = held(brdfLambert);
+    const VarId diffuseSum = branches ? f.var(Type::vec(3), directDiffuse) : VarId{};
+    const VarId specularSum = branches && phong ? f.var(Type::vec(3), directSpecular) : VarId{};
+    const auto accumulate = [&](ExprId& sum, VarId var, ExprId term) {
+        if (branches) f.assign(var, f.add(f.load(var), term));
+        else sum = f.add(sum, term);
+    };
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
         if (lights.kinds[i] == LightLayout::kExcluded) continue;  // not in the material's lightsNode
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver);
-        const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
-        directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
-        if (phong)
-            directSpecular = f.add(directSpecular, f.mul(irradiance, brdfBlinnPhong(t, n, positionViewDirection, light.direction,
-                                                                                 f.uniform("specular", Type::vec(3)), shininess)));
+        const auto shade = [&] {
+            const ExprId irradiance = f.mul(t.saturate(t.dot(lightNormal, light.direction)), light.color);
+            accumulate(directDiffuse, diffuseSum, f.mul(irradiance, lightLambert));
+            if (phong)
+                accumulate(directSpecular, specularSum, f.mul(irradiance, brdfBlinnPhong(t, lightNormal, lightView, light.direction,
+                                                                                       f.uniform("specular", Type::vec(3)), shininess)));
+        };
+        if (ranged(i)) f.If(f.less(t.f(0), light.mask), shade);
+        else shade();
+    }
+    if (branches) {
+        directDiffuse = f.load(diffuseSum);
+        if (phong) directSpecular = f.load(specularSum);
     }
 
     // Hemisphere and ambient irradiance, then PhongLightingModel.indirect diffuse.
