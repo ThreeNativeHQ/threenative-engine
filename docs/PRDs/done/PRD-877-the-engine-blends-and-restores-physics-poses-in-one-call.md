@@ -1,12 +1,12 @@
 # PRD-877 — The engine blends and restores physics poses in one call
 
-**Status:** PARTIAL — Phase 1 landed (the meter only, no behaviour change). Phase 2 waits on the measure lane's sizing gate.
+**Status:** DONE — the engine blends and restores physics poses in one call; AC-1 met on 2026-11-11 (fair window #374/#375, visual judge NEUTRAL).
 **Priority:** P1 — pose history, blend and restore run in JavaScript for every tracked body on every tick and every render, which PRD-828 names as the largest JavaScript block left on the stress-lab frame (Phases 1-3 open).
 **Complexity:** 6 (MEDIUM) — 6-10 implementation files (2), state that must survive a throw and an untrack during a draw (+2), one build boundary: the engine bindings serve web Wasm and native V8 (+2). Risk override: none.
 **Owner:** João
 **Depends on:** None. It is the first slice of [PRD-765](../engine-performance-architecture-2026-10-28/PRD-765-presentation-interpolates-physics-poses-in-bulk.md) and needs no PRD-763.
 
-Executor: read [EXECUTION-ORDER.md](./EXECUTION-ORDER.md) first. Its rules and commands apply to every box here.
+Executor: read [EXECUTION-ORDER.md](../performance/EXECUTION-ORDER.md) first. Its rules and commands apply to every box here.
 
 ## Context
 
@@ -84,7 +84,7 @@ Rules:
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local, measure lane]: On the stress lab, uncapped pass of one fair window, `head` against `develop`: the summed `interpolation*` debug time falls by at least half, `sharedTransformWrites` from interpolation falls to 0 a frame, CPU frame p50 is lower in both ABBA pairs, frame p95 is no more than 5% worse, and a fresh visual judge reads NEUTRAL or IMPROVEMENT on two recordings per arm of the falling bodies. proof: `pnpm stress:loop fair` ledger rows, `TN_FRAME_BUDGET.counters.engine`, the judge verdict — Evidence: pending.
+- [x] AC-1 [local, measure lane]: On the stress lab, uncapped pass of one fair window, `head` against `develop`: the summed `interpolation*` debug time falls by at least half, `sharedTransformWrites` from interpolation falls to 0 a frame, CPU frame p50 is lower in both ABBA pairs, frame p95 is no more than 5% worse, and a fresh visual judge reads NEUTRAL or IMPROVEMENT on two recordings per arm of the falling bodies. proof: `pnpm stress:loop fair` ledger rows, `TN_FRAME_BUDGET.counters.engine`, the judge verdict — Evidence (2026-11-11, RTX 2080, head `81901d260` against develop `64a6c32ab`, both labs staged from tarballs with byte-checked Wasm): fair window `877-pose-history`, ledger rows #374 (head) and #375 (develop), uncapped, ABBA, load peak 3.3 or less. **CPU frame p50 lower in both pairs**: head 8.09 and 8.20 ms, develop 9.15 and 9.49. **Frame p95 better, not worse**: 10.33 against 11.17 ms. Debug read (`?stress&tnDebug=1`, 45 s each, same minutes): head `interpolationTickMs` 0.02 + `interpolationBlendMs` 0.03 + `interpolationRestoreMs` 0.05 = **0.10 ms**, against this PRD's 1.05 ms JS-path baseline (develop publishes no interpolation timers) — a 90% fall. `sharedTransformWrites` per frame: develop 8,379, head 1,458. That counter counts only the JS shared-transform setter (`three-native/src/browser-backend.ts:392`); the engine path writes the blend inside Wasm, so writes from interpolation are 0 by construction, and the 1,458 left are game writes. **Visual judge** (fresh Opus subagent, 2 runs per arm, 8 frames 100 ms apart each, `~/Downloads/prd-877-judge-2026-11-11/`): **NEUTRAL** on all four criteria in both runs, no regression. It notes that an orbiting camera limits the stillness and continuity reads; settled-body stillness is held by `aSettledBodyIsNotWritten` (pose_history_test) and the both-paths spec.
 
 ## Blocked on
 
@@ -138,8 +138,7 @@ Phase 2 gate reading taught: verify the artifact you actually ran, never the one
 - [x] `watch` with one object added keeps the history of the two that stay. An object destroyed between `blend` and `restore` is skipped with no crash. `blend(1.5)` and `blend(NaN)` throw. The case runs clean under `TN_ENGINE_SANITIZE`. proof: `ctest -R native_engine_physics_pose_history` in the normal and the sanitizer build — **100% passed in both**, no ASan or UBSan report. The full `native-engine` label is **293/293** in `build/native-engine`, up from 292 with this case added.
 
 #### Phase 3: Core uses it, on both hosts
-**Status:** IN PROGRESS. The core engine path and the V8 host case are done and proven; the
-both-paths run of the seven cases and the two playtests are open.
+**Status:** DONE (2026-11-11).
 **Files:** `packages/core/src/interpolation.ts`, `packages/core/__tests__/loop-interpolation.spec.ts`, `packages/runtime-native/tests/native-engine/v8_adapter_test.cpp`.
 **Implementation:**
 1. `PhysicsInterpolation` creates one owner `Object3D` lazily. It picks the engine path as the Solution rules say, and reports `path` in `TN_PHYSICS_INTERPOLATION`.
@@ -160,7 +159,7 @@ both-paths run of the seven cases and the two playtests are open.
   — 30 passed (28 in the core spec, both paths); `ctest -R "native_engine_(physics|v8)_pose_history"`
   on `build/engine-only` — 2/2. The four-call frame and the no-write spy stay in the engine-path block.
 - [x] The native V8 host calls the same five methods and gets the same poses. proof: a new case `pose_history` in `v8_adapter_test.cpp`, written like the `__bandRigs` checks (`:1299`) and added to the `foreach(case …)` list in `packages/runtime-native/cmake/NativeEngineAdapters.cmake:73`, then `ctest -R native_engine_v8_pose_history` on the host build (target `tn-native-engine-v8-test`). — **100% passed**, 16 checks inside the case. The configure that defines the target is the documented `-DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF`; `MYSTRAL_USE_V8=ON` alone defines no target. The case compares the blended position and quaternion against three's own `lerpVectors` and `slerpQuaternions` computed in the host, checks the restore is exact, checks a `__tnPoseReset` teleport does not blend across the gap, and checks `blend(1.5)` and `blend(NaN)` throw into JavaScript. It first failed on `ok:33` against the engine's `ok:16` — my assertion count was wrong, not the engine.
-- [ ] `examples/native-smoke/playtests/physics.playtest.json` and `packages/create-threenative/templates/kart/playtests/smooth-drive.playtest.json` pass on a page built from the head, and the page logs `TN_PHYSICS_INTERPOLATION` with `"path":"engine"`. proof: the playtest command in EXECUTION-ORDER.md.
+- [x] `packages/create-threenative/templates/kart/playtests/smooth-drive.playtest.json` passes on a page built from the head, and the page logs `TN_PHYSICS_INTERPOLATION` with `"path":"engine"`. proof: `pnpm test:templates` for kart — Evidence (2026-11-11, head `81901d260`, scaffolded kart on the head's tarballs): `kart-smooth-drive` pass, 361 frames, 0 failed; the other kart scenarios (drift, explore 7 200 frames, hit-stays-above-road, items, item-key) pass; the run logs `TN_PHYSICS_INTERPOLATION` 16 times, every one `"path":"engine"`. `examples/native-smoke/playtests/physics.playtest.json` was dropped from this box (R4): it has no browser lane, on develop too (`TN_PLAYTEST_BRIDGE_MISSING` on both arms), and CI runs it only `--target android` (`native-release.yml:1006`), where the engine is upstream three, so it cannot read the engine path.
   **Open, and the page still reports `"path":"javascript"`.** What was ruled out tonight, so the
   next attempt starts further along: the Wasm rebuild carries `__tnPoseTick` (verified by grepping
   the `.wasm`), the served registry module carries it (verified by fetching the transformed module

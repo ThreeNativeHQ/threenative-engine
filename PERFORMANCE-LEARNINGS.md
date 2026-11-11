@@ -77,6 +77,20 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   published state re-renders at the publish rate, not the rate of what it shows. `useUiState(selector)` compares
   the result by identity, so a selector that builds a new object or array renders as often as no selector.
 
+## 2026-11-11 Physics interpolation in the engine (PRD-877, PRD-875, PRD-876)
+
+- **Keep — blend and restore poses in one engine call (PRD-877).** `PhysicsInterpolation` on the owned engine makes one
+  Wasm call per phase instead of a JS write per body. Stress lab, RTX 2080: interpolation 1.05 → 0.10 ms a frame;
+  JS shared-transform writes 8,379 → 1,458 a frame; the branch's fair window (#374/#375) read frame p50 9.32 → 8.15 ms.
+  Trap found on the way: a settled body was written every frame (blend onto the same pose), which dirtied its
+  transform and made the walk recompose an unchanged matrix. Skip the write when the blended pose equals the pose.
+- **Inconclusive by sizing gate — pool the animation tick across cores (PRD-875).** The tick is 0.27 ms mean
+  (p95 0.44-0.50) on the stress lab; a pool can save about 0.20 ms, under 3% of the frame. Parked WIP: 9d288233b.
+- **Inconclusive by sizing gate — prepare pipelines inside a per-frame budget (PRD-876).** On the real GPU the Strata
+  forest makes every sync create and program build in the load window; startup warm-up holds 319/319 pipelines
+  before reveal. Measure the owned engine on the real adapter (`TN_ENGINE=threenative`, `TN_PLAYTEST_HOST_DISPLAY=1`):
+  Xvfb gives SwiftShader, which loses the device and reads every renderer counter as 0.
+
 ## 2026-11-10 Stress lab audit (method, the `play` preset, auto batch)
 
 An audit of the stress loop for benchmark tuning. Rows #313-#322 in `docs/stress-loop/ledger.json`.
