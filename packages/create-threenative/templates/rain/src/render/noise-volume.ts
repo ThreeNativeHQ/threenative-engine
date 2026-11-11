@@ -25,7 +25,6 @@ export const SEED = 13291;
 function mulberry32(seed: number): () => number {
   let a = seed | 0;
   return () => {
-    // eslint-disable-next-line no-restricted-syntax -- The storm's identity is this mulberry32 sequence; the engine's seeded RNG is an LCG, so swapping it renders a different storm.
     a += 0x6d2b79f5;
     let t = a;
     t = Math.imul(t ^ (t >>> 15), t | 1);

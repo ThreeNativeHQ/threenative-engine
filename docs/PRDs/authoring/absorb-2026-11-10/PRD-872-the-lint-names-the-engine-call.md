@@ -44,6 +44,12 @@ that. This PRD takes the cheaper route that already runs in each game: `pnpm lin
    | `(keys.has(a) ? 1 : 0) - (keys.has(b) ? 1 : 0)` | `ctx.input.axis` |
    | `x * x * (3 - 2 * x)` outside TSL | `MathUtils.smoothstep` |
 
+   Amended 2026-11-10, after review: the PRNG row also excludes `src/render/**`. A kit's render
+   sources may not import a core symbol outside `RENDER_PORTABLE_CORE_SYMBOLS`
+   (`scripts/check-core-boundary.ts`), so they keep their own generators; the row still covers a
+   level, an entity, a scene and a sim. The smoothstep and damp rows name `three`, which every
+   render source already imports, so those stay everywhere.
+
 4. **Export `debugValue(name)`.** It wraps `readLaunchValue` with the `debugFlag` naming rule
    (`?name` on web, `TN_DEBUG_NAME` on native).
 5. **Add manifest rows** for `ctx.assets.memo`, `ctx.startup.progress`, `ctx.after`, `ctx.beforeRender`
@@ -92,7 +98,7 @@ Not in scope: the detector of PRD-355, capability search ranking (PRD-865), auto
 **Verification:** the spec is red before the tracker change and green after it.
 
 - [x] An entity class whose `update` method calls `new Vector2()` fails `threenative/hot-callback-allocation`. proof: `pnpm exec vitest run packages/create-threenative/__tests__/quality-rules.spec.ts` — 14 passed at this phase (red before the tracker change: the entity `update` returned no finding). `update`, `fixedUpdate`, `tick` and `step` are tracked; a static method and a method named otherwise stay quiet. The widened rule found 12 real sites in 9 kits, 0 false positives, so the `dt`-parameter narrowing the PRD held in reserve was not needed.
-- [x] The 16 kits pass the widened rules with no suppression. proof: `pnpm exec tsx scripts/check-template-quality.ts` — exit 0; the three hot rules at `error` over all 16 `templates/*/src` trees report 0 findings. Fixes: 9 `touch-controls.ts` files reuse one `knobPosition`, `Warden.update` reuses `toHero`, `LockOn.update` caches the target's mesh list and the reticle's own box instead of `setFromObject` each frame.
+- [x] The 16 kits pass the widened rules with no suppression. proof: `pnpm exec vitest run packages/create-threenative/__tests__/quality-rules.spec.ts` — the new "should pass every kit's own source under the hot rules and the rows" case lints all 16 `templates/*/src` trees with the three hot rules and the six rows at `error` and expects `[]` (it fails closed under 300 discovered files; ~3.8 s). Fixes: 9 `touch-controls.ts` files reuse one `knobPosition`, `Warden.update` reuses `toHero`, `LockOn.update` caches the target's mesh list and the reticle's own box instead of `setFromObject` each frame. `scripts/check-template-quality.ts` checks the quality presets, not ESLint — quoting it here was wrong.
 
 #### Phase 2: One table rejects the six reinventions
 
@@ -102,7 +108,7 @@ Not in scope: the detector of PRD-355, capability search ranking (PRD-865), auto
 **Verification:** the spec fails when a row's `capability` is not in `capabilities.json`.
 
 - [x] Each row fails its fixture, and each row's `capability` is a manifest symbol. proof: `pnpm exec vitest run packages/create-threenative/__tests__/quality-rules.spec.ts` — 17 passed. `scripts/../src/quality/reinventions.ts` is data only; `qualityConfig` feeds it to `no-restricted-syntax`. The spec resolves each `capability` against `packages/core/capabilities.json` (`createRandom`, `debugFlag`, `renderer.matrixWorld`, `InputMap.axis`) or against `three` (`MathUtils.damp`, `MathUtils.smoothstep`), and proves the `src/ui/**` / `src/audio*` exclusions keep only the intended rows.
-- [ ] The 16 kits pass the rows, and the touched kits pass their playtests. proof: `pnpm exec tsx scripts/check-template-quality.ts && pnpm test:templates` — kits pass the rows (scan at `error`: 0 findings; 109 sites replaced: 38 smoothstep, 23 damp, 34 PRNG, 3 launch seams; 4 authored mulberry32 sequences — adventure, kart, rts, rain-noise — keep a described `eslint-disable-next-line ... -- <why>` because replacing them would change the authored level, replay or storm). `pnpm test:templates` result recorded when the run finishes: pending.
+- [ ] The 16 kits pass the rows, and the touched kits pass their playtests. proof: `pnpm exec vitest run packages/create-threenative/__tests__/quality-rules.spec.ts && pnpm test:templates` — the kit-wide spec is green (18 tests), with two suppressions left, one per authored mulberry32 stream outside `src/render/` (adventure's level, rts's replay world); kart's course and rain's storm are `src/render/` and now need none. The render PRNG edits were reverted after review: a kit's `src/render/` may not import `createRandom` (`pnpm exec tsx scripts/check-core-boundary.ts` now passes; it failed on 13 render files before). 109 sites replaced outside render: the launch seams, damp factors and smoothsteps stay. `pnpm test:templates` was run after rebuilding the web engine (`node scripts/build-wasm.mjs`) and **failed for environment reasons, not game reasons**: 8 kits report `TN_PLAYTEST_PERF_FEW_GPU_SAMPLES` (software adapter), 6 templates' managed dev servers miss their 15 s readiness window while cooking KTX2 assets, and 2 report `TN_PLAYTEST_ENGINE_COST_OVER_BOUND` under software. No green playtest is claimed.
 
 #### Phase 3: The missing `ctx` members are searchable, and the sandbox games adopt the rules
 

@@ -1,4 +1,3 @@
-import { createRandom } from "@threenative/core";
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
 // A blue gradient with the sun's warm halo and a deck of big cumulus, painted per texel from seeded
@@ -30,8 +29,11 @@ export const SUN_DIRECTION = new Vector3(0.9, 0.38, 0.16).normalize();
 
 /** A 256 x 256 lattice of seeded values: the noise reads a table, far cheaper than a hash per call. */
 const LATTICE = (() => {
-  const random = createRandom(9137);
-  return Float32Array.from({ length: 256 * 256 }, () => random());
+  let state = 9137;
+  return Float32Array.from({ length: 256 * 256 }, () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x1_0000_0000;
+  });
 })();
 
 /** Smooth 2D value noise on the lattice, for the cloud deck: deterministic, repeats every 256 units. */

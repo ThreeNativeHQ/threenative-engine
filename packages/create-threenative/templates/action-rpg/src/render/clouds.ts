@@ -1,4 +1,3 @@
-import { createRandom } from "@threenative/core";
 // Generated for you. Plain maths, edit or delete it freely: the cloud layer Unreal's default level draws.
 // Model references (UE 5.8.3): Engine/Content/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud
 // (the default cloud material; its node graph and parameter defaults are read through the editor),
@@ -116,6 +115,14 @@ const smooth = (v: number): number => {
   return MathUtils.smoothstep(t, 0, 1);
 };
 const mod = (a: number, n: number): number => ((a % n) + n) % n;
+
+function rng(seed: number): () => number {
+  let state = seed | 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) | 0;
+    return (state >>> 0) / 4294967296;
+  };
+}
 
 /**
  * One axis of a periodic lattice, per voxel: the two cells it blends (wrapped), and the blend weight of
@@ -293,7 +300,7 @@ export function primeCloudTextures(textures: ICloudTextures, seed = 631): void {
 export function cloudTextures(seed = 631): ICloudTextures {
   const cached = textureCache.get(seed);
   if (cached) return cached;
-  const next = createRandom(seed);
+  const next = rng(seed);
   const n = PATTERN_SIZE;
   const pattern = new Float32Array(n * n * 4);
   for (let c = 0; c < 3; c++) {

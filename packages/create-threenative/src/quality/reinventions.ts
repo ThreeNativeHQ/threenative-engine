@@ -24,9 +24,16 @@ export interface IReinvention {
   readonly outside?: readonly string[];
 }
 
-/** The engine's launch seam is the URL query on web and an environment variable on native; audio
- * synthesis and UI animation may use the platform RNG without a seed to preserve. */
-export const PRNG_OUTSIDE = ["src/audio.ts", "src/audio/**", "src/ui/**"] as const;
+/**
+ * Where a hand-written PRNG is the content, not a reinvention of the engine's seeded stream.
+ *
+ * `src/render/` stays plain Three.js by rule: a kit's render sources may not import a core
+ * symbol that is not in `RENDER_PORTABLE_CORE_SYMBOLS` (`scripts/check-core-boundary.ts`), and
+ * their noise and placement streams are authored against those exact numbers — a different
+ * generator draws different clouds. Audio synthesis and UI animation likewise keep the platform
+ * RNG. A level, an entity or a scene uses `createRandom`.
+ */
+export const PRNG_OUTSIDE = ["src/audio.ts", "src/audio/**", "src/render/**", "src/ui/**"] as const;
 
 export const REINVENTIONS: readonly IReinvention[] = [
   {
@@ -40,7 +47,7 @@ export const REINVENTIONS: readonly IReinvention[] = [
   },
   {
     selector:
-      'BinaryExpression[operator="-"][right.callee.object.name="Math"][right.callee.property.name="exp"]',
+      'BinaryExpression[operator="-"][left.value=1][right.callee.object.name="Math"][right.callee.property.name="exp"]',
     capability: "MathUtils.damp",
     source: "three",
     message:
@@ -59,7 +66,7 @@ export const REINVENTIONS: readonly IReinvention[] = [
     capability: "renderer.matrixWorld",
     source: "core",
     message:
-      "Turning `matrixWorldAutoUpdate` off by hand is the engine's batched pass: set `renderer.matrixWorld` in the game config and let `MatrixWorldPass` walk the scene.",
+      "Turning `matrixWorldAutoUpdate` off by hand is the engine's own walk: set `renderer.matrixWorld` in the game config for a whole scene, or `markStatic(node)` for one node that never moves.",
   },
   {
     selector:

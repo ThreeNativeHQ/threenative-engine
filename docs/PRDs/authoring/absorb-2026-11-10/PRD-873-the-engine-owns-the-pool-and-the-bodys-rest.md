@@ -1,6 +1,6 @@
 # PRD-873 — The engine owns the pool and the body's rest
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (2026-11-10) — the store's changed-only publication landed on `absorb-2026-11-10`; `ObjectPool`, the body rest options and the `prewarm` restore are open
 **Priority:** P2 — three games and three kits hand-write object pools, two games work around a `RigidBody3D` with no damping, and three games work around `prewarm` (all phases open)
 **Complexity:** 7 (HIGH); risk override: the pool changes the draw path, so the visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -99,14 +99,14 @@ Proposed, not run.
 
 #### Phase 2: A body rests, a warm-up restores, an unchanged state stays quiet
 
-**Status:** NOT STARTED
-**Files:** `packages/physics/src/RigidBody3D.ts`, `packages/physics/__tests__/rigidbody.spec.ts`, `packages/core/src/renderer.ts`, `packages/core/src/state.ts`, `packages/core/__tests__/state.spec.ts`, the native host body options, the 5 kit scenes with a changed-only check.
+**Status:** IN PROGRESS (2026-11-10) — the store skip landed; the body options and the `prewarm` restore are open
+**Files:** `packages/physics/src/RigidBody3D.ts`, `packages/physics/__tests__/rigidbody.spec.ts`, `packages/core/src/renderer.ts`, `packages/core/src/state.ts`, `packages/core/__tests__/state.spec.ts`, the native host body options, the 4 kit scenes that carried a changed-only check (`starter`, `action-rpg`, `tower-defense`, `runner` — the survey counted 5, a grep finds 4).
 **Implementation:** Each body option is validated (a negative damping throws). Native proof ships in the same commit as the option (root `AGENTS.md` rule 5).
 **Verification:** red-green unit specs; one desktop-target playtest for the body options.
 
 - [ ] A body with `angularDamping` stops and reports `sleeping`, on web and on the desktop target. proof: `pnpm exec vitest run packages/physics/__tests__/rigidbody.spec.ts` and one `--target desktop` playtest scenario
 - [ ] `prewarm` on a live root leaves each material at its authored opacity, or throws `TN_PREWARM_LIVE_SCENE`. proof: `pnpm exec vitest run packages/core/__tests__/prewarm.spec.ts`
-- [ ] `state.set` with unchanged values publishes nothing, and the 5 kits pass with their hand checks deleted. proof: `pnpm exec vitest run packages/core/__tests__/state.spec.ts && TN_TEMPLATE_ONLY=action-rpg,runner,tower-defense,racing,rts pnpm test:templates`
+- [ ] `state.set` with unchanged values publishes nothing, and the kits pass with their hand checks deleted. proof: `pnpm exec vitest run packages/core/__tests__/state.spec.ts && TN_TEMPLATE_ONLY=action-rpg,runner,tower-defense,racing,rts pnpm test:templates` — engine proof green: `state.spec.ts` has 3 new cases (600 unchanged frames publish 0 times; one changed key publishes once; the same object mutated and set again publishes nothing), red on the previous store. The four hand-written checks are deleted. The playtest arm is not green: `pnpm test:templates` fails this machine's software adapter (`TN_PLAYTEST_PERF_FEW_GPU_SAMPLES`, 15 s dev-server readiness while cooking KTX2), not the store.
 
 #### Phase 3: The sandbox games adopt it
 

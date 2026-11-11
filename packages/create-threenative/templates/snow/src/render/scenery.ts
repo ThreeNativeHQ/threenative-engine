@@ -1,4 +1,3 @@
-import { createRandom } from "@threenative/core";
 // Generated for you. The forest, rocks, grass stems and the far ridge are this game's look.
 // Everything here is ordinary Three.js built from code; nothing is loaded.
 import {
@@ -29,7 +28,11 @@ export interface IObstacle {
 }
 
 function seededRandom(seed: number): () => number {
-  return createRandom(seed);
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
 }
 const smoothstep = (edge0: number, edge1: number, value: number) => {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));

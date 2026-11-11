@@ -1,4 +1,3 @@
-import { createRandom } from "@threenative/core";
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
@@ -171,5 +170,9 @@ export function sculpture(material: Material): Mesh {
  * from a reroll.
  */
 export function makeRandom(seed = 1337): () => number {
-  return createRandom(seed);
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
 }

@@ -30,7 +30,6 @@ import { C } from "./palette.js";
 export function makeRng(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
-    // eslint-disable-next-line no-restricted-syntax -- The tree and grass placement is authored against this mulberry32 stream; the engine's seeded RNG is an LCG, so swapping it places a different course.
     s = (s + 0x6d2b79f5) >>> 0;
     let t = s;
     t = Math.imul(t ^ (t >>> 15), t | 1);

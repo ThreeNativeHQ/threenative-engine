@@ -108,9 +108,11 @@ export class LockOn {
       // The target's live bounds, not a fixed offset: a rearing Warden or a hopping Mossling keeps
       // the arrow over its real top. The meshes are collected once per target and each frame only
       // transforms its own box, which is what `setFromObject` did without the per-frame walk.
+      // The root and every group between it and the meshes move this frame, so the chain is
+      // updated once here; a leaf-only update leaves the reticle a frame behind.
+      target.mesh.updateWorldMatrix(true, true);
       const box = this.bounds.makeEmpty();
       for (const mesh of this.#meshesOf(target)) {
-        mesh.updateWorldMatrix(false, false);
         if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
         const part = mesh.geometry.boundingBox;
         if (part === null) continue;
