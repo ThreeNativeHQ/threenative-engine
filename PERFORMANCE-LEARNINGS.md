@@ -195,6 +195,34 @@ Method traps found, each one fixed in the tool unless it says open:
 - Open: a game that does register chains and churns its hierarchy still walks every frame. Fix it with an
   added/removed subtree walk when such a game shows it.
 
+### 2026-11-10 — The shadow plan's per-caster rebuild and the rig box: 0.13 ms, not 0.6 — and how three runs measured one binary
+
+- Where: `renderer_frame.cpp` (the plan loop), `shadows/virtual/atlas.{h,cpp}` (`CasterSignature`, presence stamp),
+  new `shadows/virtual/caster_plan.h` (`da185d67e`); `animation/skinning/skeleton.{h,cpp}` `poseFold`,
+  `boneReachBounds` box cache (`f95ea2eb6`).
+- What the code did: every frame rebuilt, per caster, its bounds, a `std::to_string` signature, the parent-chain
+  tracked/pinned walk and a `CasterState`; and per rig mesh, 65 bone transforms. The plan now compares a caster's
+  inputs (world, store, versions, layers, cast bit, cache pointer, one fold of the atlas control sets) and keeps the
+  record when they hold; a rig's box is keyed on the fold of the bone locals, `inv(mesh world) * root world` (to
+  1e-12) and the mesh scale, so a rigid move keeps it.
+- **The trap that cost three runs: the lab is cross-origin isolated, so it loads `tn-native-engine-web-threads.wasm`.**
+  `stage-engine.sh` swaps both wasm files, but rebuilding only the non-threads module (`build/wasm`) stages the new
+  glue beside an *unchanged* threads engine. Two "identical" windows and several probes compared one binary with
+  itself (its `tn-native-engine-web-threads-*.wasm` hash never moved). Rebuild `build/wasm-threads --target
+  tn-native-engine-web` too, then check the staged threads hash.
+- Result (alternating probes, desktop `?stress`, uncapped, same host minutes, base `c5619ec` vs head `06418f6`):
+  `planVirtualPages` 1.09/1.15 → 1.02/0.96 ms; with `&noCrowd` 0.59 → 0.44; cpu p50 9.03 → 8.93 (inside the run-to-run
+  spread of 0.5). Fair window `plan-floor-b` (#370-#371, ABBA, load 2.2-3.6): base 105.1 fps / p50 8.98, head 107.3 /
+  9.01.
+- What that means: the plan's own per-caster work was never 0.6 ms of the frame. The stage is 1.0 ms with the crowd,
+  0.44 without it, and 0.44 again with the crowd's boxes free — so a plan change cannot reach the 0.5 ms the
+  acceptance criterion asked for while 240 rig meshes are posed every frame.
+- The frame on a quiet host: `wasmPlan` 2.0-2.2 (of it `planVirtualPages` 1.0, `planShadowLists` 0.3, the rest the
+  frame's own planning), `wasmScene` 1.9-2.1, `jsBefore` 1.29, `update` 1.0, `engineJs` 0.85, `wasmTargets` 0.73. The
+  crowd is 5.2 ms of it, and only 0.5 of that is shadow planning.
+- Rule: a sub-timer attribution is a hypothesis until a same-binary A/B agrees with it. And a staged engine proves
+  nothing until the hash you served is the hash you built.
+
 ### 2026-11-10 — Uploads on a still frame: the counter was wrong, then one 4-byte write — KEEP
 
 - Where: `renderer_frame.cpp` (counter at each arena write, `a3ee875b2`), `renderer_output.cpp` (output block written

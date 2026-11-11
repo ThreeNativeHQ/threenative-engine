@@ -1,7 +1,7 @@
 # PRD-872 — The desktop `?stress` frame reaches 8.4 ms: a static caster plans once, and a rig that moves rigidly does not re-do world-space bones
 
-**Status:** NOT STARTED
-**Priority:** P1 — carries the one acceptance criterion PRD-871 did not reach: a 120 fps desktop frame (frame p50 8.4 ms or less). Today 10.00-10.65 ms.
+**Status:** PARTIAL — both phases landed (`da185d67e`, `f95ea2eb6`) and measured. Neither target is met: the plan reads 0.97-1.02 ms, the frame 8.98-9.01 ms on a quiet host. The numbers say the criterion was written against work the frame does not pay (see Decisions).
+**Priority:** P1 — carries the one acceptance criterion PRD-871 did not reach: a 120 fps desktop frame (frame p50 8.4 ms or less).
 **Complexity:** 7 (MEDIUM-HIGH)
 **Owner:** João · 2026-11-10
 **Depends on:** PRD-871 (its ledger rows, the stage attribution and the sub-timers this PRD builds on). Filed by PRD-871 when its two remaining items — Phase 3 box 1 and AC-2 — turned out to need a structural change, not one more micro cut.
@@ -20,6 +20,8 @@ Measured state (RTX 2080, 1280x720, uncapped, `docs/stress-loop/ledger.json`):
 | `?stress&play&arm=head` | #361 | 77.0 | 11.54 ms | 19.07 ms | 7.09 ms | 5.24 |
 
 A quieter single run of the same base build read frame p50 9.12 ms (load 2.1-5.5), so the host moves the number by about a millisecond: the acceptance window below is the number that counts, not this table.
+
+**Landed and measured 2026-11-10** (rows #370-#371, window `plan-floor-b`, uncapped ABBA, load 2.2-3.6, base `c5619ec` vs head `06418f6`): base 105.1 fps / frame p50 8.98 ms, head 107.3 fps / 9.01 ms. Alternating probes in the same minutes: `planVirtualPages` 1.09/1.15 → 1.02/0.96 ms, and 0.59 → 0.44 with `&noCrowd`. The two changes are worth about 0.13 ms of the plan and nothing measurable of the frame. What the 9.0 ms is made of: `wasmPlan` 2.0-2.2 (of it `planVirtualPages` 1.0, `planShadowLists` 0.3, the rest the frame's own planning), `wasmScene` 1.9-2.1, `jsBefore` 1.29, `update` 1.0, `engineJs` 0.85, `wasmTargets` 0.73. The crowd is 5.2 ms, and only 0.5 ms of that is shadow planning.
 
 Frame by stage (`?stress`, `TN_FRAME_BUDGET`, load 12-20): `wasmPlan` 2.4-3.0 ms of which `planVirtualPages` 1.02-1.64, `wasmScene` 2.2-2.8, `jsBefore` 1.4-1.8, `update` 1.4, `engineJs` 0.9-1.0, `wasmTargets` 0.8-0.9. With `&noCrowd` the whole frame is 5.6 ms.
 
@@ -53,9 +55,9 @@ Risks:
 
 ## Acceptance criteria
 
-- [ ] AC-1 [local]: on the RTX 2080, `main.html?stress&arm=head` holds a frame p50 of 8.4 ms or less in a valid fair window, two runs per arm. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: pending (10.00-10.65 ms today, rows #362-#363 of PRD-871).
-- [ ] AC-2 [local]: a frame whose casters did not change spends 0.5 ms or less in `planVirtualPages` on `?stress`. proof: a `vsm_atlas_test` case that counts per-caster work on an unchanged frame, red-green; the stage split in the ledger row — Evidence: pending (1.02-1.64 ms today).
-- [ ] AC-3 [local]: the walking crowd costs at most 2.5 ms of the `?stress` frame (from 4.5-6.5 ms), and a visual judge calls the skinning NEUTRAL against base. proof: ledger rows and the judge's captures, named in the box — Evidence: pending.
+- [ ] AC-1 [local]: on the RTX 2080, `main.html?stress&arm=head` holds a frame p50 of 8.4 ms or less in a valid fair window, two runs per arm. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: **9.01 ms** head against 8.98 base (window `plan-floor-b`, rows #370-#371, load 2.2-3.6, 107.3 against 105.1 fps). Not met.
+- [ ] AC-2 [local]: a frame whose casters did not change spends 0.5 ms or less in `planVirtualPages` on `?stress`. proof: `native_engine_vsm_caster_plan`; the stage split — Evidence: **0.97-1.02 ms** (1.09-1.15 base), 0.44 with `&noCrowd`. Not met.
+- [ ] AC-3 [local]: the walking crowd costs at most 2.5 ms of the `?stress` frame (from 4.5-6.5 ms), and a visual judge calls the skinning NEUTRAL against base. proof: ledger rows and the judge's captures — Evidence: **4.33 ms** (5.18 before). Not met; no judge, because the skinning path was not touched.
 
 ## Blocked on
 
@@ -70,27 +72,35 @@ Risks:
 
 ## Decisions
 
+- 2026-11-10 (Claude, PRD-872 session): the three acceptance numbers above are measured and none is met, and the
+  measurement moves what the PRD should ask for. `planVirtualPages` is 0.44 ms with no crowd at all, so a 0.5 ms
+  target with 240 animated rig meshes plans was never the planner's to reach; the frame's 9.0 ms is 5.2 ms of crowd
+  work spread over animation (`update` 1.0), skinning submission (`wasmScene` ~1.4) and the plan (0.5), plus 3.8 ms of
+  everything else. Two levers are worth naming before anyone writes code against this PRD again: **a pose rate**
+  (the crowd re-derives 120 skeletons every frame; Unreal fits skinned bounds from component space and a pose, not from
+  bones each frame) and **the frame's own planning** (`wasmPlan` minus `planVirtualPages` is ~1.0 ms, untouched here).
+  The owner decides which; they are not shadow-planning cuts and do not belong in this PRD.
 - 2026-11-10 (Claude, PRD-871 session): this work is a separate PRD, not two more boxes in PRD-871. The target needs both phases at once — a perfect `planVirtualPages` still reads about 9.0-9.6 ms against an 8.4 ms goal — so a half-landed PRD-871 would have had to stay open on an AC it cannot reach. PRD-871 closes with AC-1 and AC-3 met and hands AC-2 here.
 
 ## Execution Phases
 
 #### Phase 1: a caster whose inputs did not change costs nothing
 
-**Status:** NOT STARTED
+**Status:** DONE — landed, measured short of its target.
 **Files:** `packages/runtime-native/src/engine/renderer/renderer_frame.cpp`, `packages/runtime-native/src/engine/renderer/shadows/virtual/atlas.h`, `atlas.cpp`, `packages/runtime-native/tests/native-engine/vsm/vsm_atlas_test.cpp`.
 **Implementation:** hold one record per caster across frames keyed by the draw key; compare the world matrix, the geometry version, the instance version and count, and the layer bits; rebuild bounds, signature and state only for a record that moved; keep the parent-chain `tracked`/`pinned` collection off the per-frame path. Do not weaken the automatic/pinned/tracked rules in `updateCasters`: a skipped caster must still be capable of dirtying its pages on the frame it moves.
 **Verification:** `ctest --test-dir build/wasm -L native-engine -R "vsm|render_database|renderer"` (from `packages/runtime-native`, after `source ~/emsdk/emsdk_env.sh`), then a paired desktop window with `?stress`, `?stress&still`, `?stress&plainShadow` (the ceiling) and the holdout kit.
 
-- [ ] An unchanged frame does no per-caster work, and the frame after a move does exactly the moved caster's work. proof: a `vsm_atlas_test` case, red-green on the count.
-- [ ] `planVirtualPages` reads 0.5 ms or less on `?stress`, with the pages unchanged. proof: the stage split in the ledger row; `ctest -R "vsm"` green.
+- [x] An unchanged frame does no per-caster work, and the frame after a move does exactly the moved caster's work. proof: `native_engine_vsm_caster_plan` — a static frame rebuilds 0, one mover rebuilds 1, and each input invalidates it; red with the plan forced to rebuild everything (three CHECK failures). — `da185d67e`; 14 vsm cases green.
+- [ ] `planVirtualPages` reads 0.5 ms or less on `?stress`, with the pages unchanged. proof: the stage split in the ledger row. — **Measured 0.97-1.02 ms** (was 1.29-1.30), and 0.44 with `&noCrowd`: not met, and 0.5 was never reachable with the crowd's 240 rig meshes in the pass (see Decisions).
 
 #### Phase 2: a rig that moves rigidly plans and skins once
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — the box is cached; the pose and the skinning are not.
 **Files:** `packages/runtime-native/src/engine/renderer/renderer.cpp` (`virtualShadowBounds`), `packages/runtime-native/src/engine/scene/skeleton.cpp`, whichever skinning and crowd path the Unreal reading names.
 **Implementation:** read the Unreal subsystem and cite it before writing code. A rig whose bone poses did not change since its last plan must stop being `deforming`; a rig that only translates and turns must not re-derive world-space bone matrices. Keep the named override for a game that needs per-bone world transforms.
 **Verification:** a native test that a rigidly-moving rig plans once and draws the same vertices, then a paired desktop window with `?stress`, `?stress&noCrowd` (the ceiling), `?stress&play` and the holdout kit, plus a visual judge on `?stress&closeup` and `?stress&play&freezeAt=8`.
 
-- [ ] A rig that translates and turns without changing its pose plans once, and its drawn vertices match the old path. proof: a native test, red-green.
-- [ ] The crowd costs 2.5 ms or less of the `?stress` frame. proof: `?stress` against `?stress&noCrowd` in one window, both arms in ledger rows.
-- [ ] Visual judge NEUTRAL on the three poses, two runs per arm. proof: captures and the verdict, named in the box.
+- [x] A rig that translates and turns without changing its pose plans once, and its drawn vertices match the old path. proof: `native_engine_rigid_rig_keeps_its_reach_bounds` — one box build across a rigid move with no bone read, then a rebuild for a bone, a scale and a mesh that moves alone. — `f95ea2eb6`. `native_engine_bone_reach_bounds_hold_posed_vertices` is registered now (it never was, so ctest never ran it) and its stale `first.max.x + 2` assertion is a containment check instead.
+- [ ] The crowd costs 2.5 ms or less of the `?stress` frame. proof: `?stress` against `?stress&noCrowd`. — **Measured 5.18 → 4.33 ms**: not met. The crowd's plan cost is 0.5 of it; the rest is the animation and skinning submission every walker pays each frame (see Decisions).
+- [ ] Visual judge NEUTRAL on the three poses, two runs per arm. proof: captures and the verdict, named in the box — Not run: no pixel moved (the box is the same box, the plan the same plan), and both changes measured short of the criteria a judge would qualify.
