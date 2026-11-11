@@ -1327,6 +1327,10 @@ export class CellRender {
     this.#dress.refreshLodMaterials(asset);
   }
 
+  lodSurface(asset: string, level: number, part: number, source: Material): Material {
+    return this.#dress.lodSurface(asset, level, part, source);
+  }
+
   impostorDrawn(): number {
     return this.#dress.impostorDrawn();
   }

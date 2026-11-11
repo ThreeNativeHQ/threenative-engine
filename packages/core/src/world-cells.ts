@@ -369,6 +369,8 @@ export class WorldCells extends Group implements IComputeDriven {
       followCluster: () => this.#render.followCluster(),
       wideShape: (asset, level, part, fallback) =>
         this.#render.wideShape(asset, level, part, fallback),
+      lodSurface: (asset, level, part, source) =>
+        this.#render.lodSurface(asset, level, part, source),
     });
     this.#init = { ...init };
     this.#budgets = {
