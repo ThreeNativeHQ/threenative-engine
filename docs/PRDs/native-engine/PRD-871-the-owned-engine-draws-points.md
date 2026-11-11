@@ -1,6 +1,6 @@
 # PRD-871: The owned engine draws Points
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE — web and desktop rows pass against upstream three at 0 mismatched pixels; re-verified on this head (frame-diff 0.235, cost p95 0.7 ms)
 **Priority:** P1 — a game that builds `THREE.Points` does not start on the default web engine (AC-1 open); the owner hit it on 2026-11-10.
 **Complexity:** 6 (MEDIUM) — the Wasm/C++ engine draw path (3), the TypeScript binding and catalog (1), conformance on web and native (2); risk override: none
 **Owner:** João
