@@ -277,7 +277,8 @@ export async function bindWebEngine(
         // A compute dispatch passes no frame: it belongs to the frame already collected.
         const frameId = frame?.frameId ?? collectedFrame;
         if (updating || (frameId !== undefined && frameId === collectedFrame)) {
-          tsl?.sync(frame);
+          // A dispatch's sync carries that frame, so the frame hooks that already ran do not run again for it.
+          tsl?.sync(frame ?? (frameId === undefined ? undefined : { frameId }));
           return;
         }
         collectedFrame = frameId;
