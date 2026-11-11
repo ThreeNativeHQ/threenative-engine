@@ -68,8 +68,12 @@ what needs a browser API (fetch of tile bytes, GPU readback callbacks) and game 
 **Status:** OPEN
 - [ ] `WorldCells::update` runs through one ABI call; the JS `cullMainPass`, `stepCellProxies`, `publishCasterAdmission` and `stepImpostor` loops are deleted. proof: red-green case and the world-cells specs.
 - [ ] Native parity: the V8 desktop player runs the same binding. proof: the native-engine label and a desktop run of the forest scene.
+- [ ] A regression guard fails if core's world streaming runs its per-frame pass in JS again: one frame of `WorldCells.update` makes one engine call per system and runs no JS cell or tile loop. proof: the guard case red on the pre-change code, green after.
 
 ## Decisions
 
 - 2026-11-11 (Claude, lead): filed from the owner's "move engine JS to C++" direction and the core probe; the world
   systems are their own PRD because they are not crowd work (PRD-878) and carry their own validation scene.
+- 2026-11-11 (owner, João: "make sure this is fixed and proven fixed"): the PRD closes only with all four proofs run — the
+  profile before/after, the forest playtest exit 0, a fresh visual judge, the native-engine label plus a desktop run — and
+  the regression guard. Any proof that cannot run stays an open box with the reason, never a pass.
