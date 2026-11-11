@@ -21,7 +21,7 @@ std::vector<std::weak_ptr<Object3D>> gHeld;  // hides a held restoreAfterDraw() 
 // projection-plan.ts isRenderable: three's isMesh, isSprite, isPoints and isLine classes.
 bool renderable(std::string_view type) {
     return type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "BatchedMesh" ||
-           type == "Sprite" || type == "Line" || type == "LineSegments";
+           type == "Sprite" || type == "Line" || type == "LineSegments" || type == "Points";
 }
 
 }  // namespace

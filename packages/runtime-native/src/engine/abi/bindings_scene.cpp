@@ -2184,6 +2184,23 @@ void registerSceneBindings(Registry& classes) {
             return std::static_pointer_cast<void>(std::make_shared<Line>(geometry, material));
         };
     }
+    {
+        // three's Points draws its geometry's vertices as one-pixel points; its default material is a
+        // new PointsMaterial, which stays opaque and fogged as three's does (Points.js:60-75).
+        auto& points = classes["Points"];
+        registerMesh(points);
+        points.methods.erase("getVertexPosition");  // three's Points is no Mesh: it has no vertex reader
+        points.ctor = [](const Args& a, Store& store) {
+            auto geometry = !a.empty() && a.at(0).kind == Value::Kind::Ref ? geometryArg(store, a.at(0))
+                                                                         : std::make_shared<BufferGeometry>();
+            auto material = a.size() >= 2 && a.at(1).kind == Value::Kind::Ref ? materialArg(store, a.at(1)) : nullptr;
+            if (!material) {
+                material = std::make_shared<Material>(MaterialType::Basic);
+                material->pointsMaterial = true;
+            }
+            return std::static_pointer_cast<void>(std::make_shared<Points>(geometry, material));
+        };
+    }
     auto& sprite = classes["Sprite"];
     registerMesh(sprite);
     sprite.methods.erase("getVertexPosition");  // three's Sprite is no Mesh: it has no vertex reader

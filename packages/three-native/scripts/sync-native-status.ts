@@ -82,6 +82,10 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
   // @types/three spells Line's members over its own type parameters, which no entry publishes.
   "Line.geometry": "BufferGeometry",
   "Line.material": "Material",
+  // Points' declaration spans three lines, so the reader cannot bind its type parameters either; it draws
+  // the same one geometry and one material every other drawable keeps (PRD-871).
+  "Points.geometry": "BufferGeometry",
+  "Points.material": "Material",
   "AnimationClip.tracks":
     "Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>",
 };

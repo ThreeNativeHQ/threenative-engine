@@ -913,7 +913,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         if (!lightsOnly && type == "Mesh" && !static_cast<const Mesh&>(object).materials.empty()) {
             projectGroups(static_cast<const Mesh&>(object), camera, items, lights, excluded);
         } else if (!lightsOnly && (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
-            type == "LineSegments")) {
+            type == "LineSegments" || type == "Points")) {
             const auto& mesh = static_cast<const Mesh&>(object);
             if (mesh.frustumCulled && !cullExempt_) {
                 waste::debugAdd(waste::counters().cullCandidates);
@@ -1021,6 +1021,19 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             DrawItem& d = items.back();
                             d.topology = type == "Line" ? WGPUPrimitiveTopology_LineStrip : WGPUPrimitiveTopology_LineList;
                             d.castShadow = false;  // ponytail: three's shadow pass draws lines; no corpus line casts one
+                            if (!mainPass) items.pop_back();
+                        }
+                        if (type == "Points") {
+                            DrawItem& d = items.back();
+                            // three's WebGPU topology for a Points object (WebGPUUtils.getPrimitiveTopology:
+                            // `object.isPoints` is PointList), which rasterizes one pixel per vertex.
+                            d.topology = WGPUPrimitiveTopology_PointList;
+                            d.castShadow = false;  // three's shadow pass draws points; no corpus point casts one
+                            // Upstream's node path samples no map at all (no `materialMap` accessor exists: a
+                            // PointsMaterial becomes a PointsNodeMaterial, StandardNodeLibrary.js:84), so a
+                            // mapped point cloud draws its flat colour there. Dropping it here is the same frame,
+                            // and one texel is all a one-pixel point could ever read.
+                            d.map = nullptr;
                             if (!mainPass) items.pop_back();
                         }
                         if (type == "Sprite") {

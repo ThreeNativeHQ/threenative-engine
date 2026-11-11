@@ -265,7 +265,8 @@ inline WGPUFilterMode filterMode(uint16_t filter) {
         ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest;
 }
 
-// A Line or LineSegments draw: its topology, no culling, and an indexed strip's index format.
+// A non-triangle draw (Line, LineSegments, Points): its topology, no culling, and an indexed strip's index
+// format. A point list needs neither an index format nor culling, as upstream's WebGPU backend has it.
 inline void lineTopology(PipelineTarget& target, const DrawItem& item) {
     if (item.topology == WGPUPrimitiveTopology_TriangleList) return;
     target.topology = item.topology;

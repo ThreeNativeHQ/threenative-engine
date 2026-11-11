@@ -312,6 +312,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_gpu_joint_production=gpu_joint_production
         native_engine_unchanged_frame_storage=unchanged_frame_storage
+        native_engine_points_rewrite_keeps_one_buffer=points_rewrite_keeps_one_buffer
         native_engine_instance_upload_is_stable_across_a_camera_turn=instance_upload_is_stable_across_a_camera_turn
         native_engine_instance_places_survive_a_draw_leaving_the_view=instance_places_survive_a_draw_leaving_the_view
         native_engine_static_instances_are_not_recopied=static_instances_are_not_recopied

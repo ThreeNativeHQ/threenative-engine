@@ -95,6 +95,20 @@ describe("browser back end object surface", () => {
     expect(material.isMeshStandardMaterial && material.isMaterial).toBe(true);
   });
 
+  // PRD-871: `THREE.Points` and `THREE.PointsMaterial` are bound, not refused. Before the fix the catalog
+  // marked both unsupported, so browser-entry built a refused proxy and a game that created a star field
+  // threw `TN_NATIVE_UNSUPPORTED_POINTSMATERIAL` at its first frame. The registry is what the engine binds
+  // and the catalog is what it publishes; either one dropping these classes fails here, before a game runs.
+  it("binds Points and PointsMaterial instead of refusing them", () => {
+    const { classes } = defineBrowserClasses(registry, sceneRuntime(new Map(), new Set()), catalog);
+    for (const name of ["Points", "PointsMaterial"])
+      expect(typeof classes[name], `${name} is bound by the engine`).toBe("function");
+    for (const name of ["Points", "PointsMaterial"])
+      expect(catalog.entries.find((entry) => entry.name === name)?.status.kind, name).toBe(
+        "supported",
+      );
+  });
+
   it("fires three's dispose event from Object3D.dispose(), so a subclass's super.dispose() works", () => {
     const { classes } = defineBrowserClasses(registry, sceneRuntime(new Map(), new Set()), catalog);
     // WorldCells extends Group and ends its dispose() with super.dispose(), as three r187 allows.

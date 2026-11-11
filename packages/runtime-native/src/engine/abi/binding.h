@@ -86,7 +86,8 @@ struct Object {
 
 /** Only registered classes backed by engine::Material may unwrap as that base type. */
 inline bool isMaterialClass(std::string_view cls) {
-    return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "LineBasicMaterial" || cls == "Material" ||
+    return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "PointsMaterial" || cls == "PointsNodeMaterial" ||
+           cls == "LineBasicMaterial" || cls == "Material" ||
            cls == "MeshBasicMaterial" || cls == "MeshLambertMaterial" ||
            cls == "MeshPhongMaterial" || cls == "MeshStandardMaterial" || cls == "MeshPhysicalMaterial" ||
            cls == "NodeMaterial" || cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial" ||
@@ -99,7 +100,7 @@ inline bool isObject3DClass(std::string_view cls) {
         "Object3D",   "Group",       "Mesh",          "Scene",      "Camera",       "PerspectiveCamera",
         "OrthographicCamera", "AmbientLight", "DirectionalLight", "HemisphereLight", "InstancedMesh",
         "PointLight", "Sprite",      "SpotLight",     "Bone",       "SkinnedMesh",  "LOD",
-        "Line",       "LineSegments", "BatchedMesh"};
+        "Line",       "LineSegments", "BatchedMesh",   "Points"};
     for (const std::string_view known : kClasses)
         if (cls == known) return true;
     return false;
