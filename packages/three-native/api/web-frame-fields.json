@@ -76,6 +76,7 @@
     { "name": "shadowTriangles", "id": 85 },
     { "name": "firstWorldFrameDrawn", "id": 86 },
     { "name": "textureCompressionBc", "id": 87 },
-    { "name": "virtualShadowPendingLevels", "id": 88 }
+    { "name": "virtualShadowPendingLevels", "id": 88 },
+    { "name": "frameSnapshot", "id": 89 }
   ]
 }
