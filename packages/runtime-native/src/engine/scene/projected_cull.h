@@ -130,10 +130,17 @@ private:
         std::weak_ptr<const Object3D> rig;
         std::vector<Node> nodes;
         uint64_t version = 0;
+        uint64_t root = 0;
         uint64_t frame = 0;  // the bandAnimation() frame that last measured or held this rig, and its rate then
         double rate = 0;
     };
-    std::unordered_map<const Object3D*, RigWalk> rigWalks_;
+    struct RateView {
+        std::weak_ptr<const Object3D> camera;
+        bool shared = false;
+        std::unordered_map<const Object3D*, RigWalk> rigs;
+    };
+    std::unordered_map<uint64_t, RateView> rateViews_;
+    RateView& rateView(const Camera& camera);
     static void walk(std::vector<Node>& nodes, Object3D& root, const Camera& camera);
 };
 

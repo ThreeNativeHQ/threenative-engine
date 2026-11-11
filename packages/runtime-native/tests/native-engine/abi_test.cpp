@@ -2943,6 +2943,71 @@ void projected_cull_band_animation() {
     for (auto& walker : walkers) ProjectedCull::trackRate(*walker, -1);
 }
 
+// Independent culls and the root-owned bridge must keep each camera's held bands.
+void projected_cull_multiple_views() {
+    using namespace tn::engine;
+    auto firstScene = std::make_shared<Scene>(), secondScene = std::make_shared<Scene>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto unit = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    unit->setXYZ(0, -1, 0, 0).setXYZ(1, 1, 0, 0);
+    geometry->setAttribute("position", unit);
+    std::vector<std::shared_ptr<Mesh>> first, second;
+    const auto crowd = [&](Scene& scene, auto& rigs, int start) {
+        for (int i = 0; i < 32; ++i) {
+            auto rig = std::make_shared<Mesh>(geometry, nullptr);
+            rig->position.set(5, 0, -40);
+            scene.add(*rig);
+            ProjectedCull::trackRate(*rig, start + i);
+            rigs.push_back(rig);
+        }
+        scene.updateMatrixWorld();
+    };
+    crowd(*firstScene, first, 100);
+    crowd(*secondScene, second, 200);
+    PerspectiveCamera near(50, 1, 0.1, 5000), far(50, 1, 0.1, 5000);
+    far.position.z = 400;
+    near.updateMatrixWorld();
+    far.updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    using Pairs = std::optional<std::vector<double>>;
+    const auto rate = [](const Pairs& pairs, double id) {
+        for (std::size_t i = 0; pairs && i + 1 < pairs->size(); i += 2)
+            if ((*pairs)[i] == id) return (*pairs)[i + 1];
+        return 0.0;
+    };
+    ProjectedCull a, b, rootBridge;
+    CHECK(rate(a.bandAnimation(*firstScene, near, true, scale, 1), 100) == 2);
+    CHECK(rate(b.bandAnimation(*firstScene, far, true, scale, 1), 100) == 8);
+    CHECK(rate(rootBridge.bandAnimation(*firstScene, near, true, scale, 1), 100) == 2);
+    CHECK(rate(rootBridge.bandAnimation(*firstScene, far, true, scale, 1), 100) == 8);
+    first[0]->position.z = first[1]->position.z = -400;
+    firstScene->updateMatrixWorld();
+    const auto checkHeld = [&](ProjectedCull& cull, const Camera& camera, double held) {
+        const auto pairs = cull.bandAnimation(*firstScene, camera, true, scale, 2);
+        CHECK(pairs && pairs->size() == 64);
+        CHECK(rate(pairs, 100) == held);  // turn 3: held
+        CHECK(rate(pairs, 101) == 8);     // turn 4: measured
+    };
+    checkHeld(a, near, 2);
+    checkHeld(b, far, 8);
+    // The ABI keeps its cull on the scene, so the same instance also sees both cameras.
+    checkHeld(rootBridge, near, 2);
+    checkHeld(rootBridge, far, 8);
+    first[1]->position.z = -40;
+    firstScene->updateMatrixWorld();
+    checkHeld(a, near, 2);  // a repeated call in frame 2 neither advances nor remeasures the hold turn
+    const auto other = b.bandAnimation(*secondScene, far, true, scale, 2);
+    CHECK(other && other->size() == 64 && rate(other, 200) == 8 && rate(other, 100) == 0);
+    second[0]->position.z = second[1]->position.z = 360;
+    secondScene->updateMatrixWorld();
+    const auto thirdA = a.bandAnimation(*firstScene, near, true, scale, 3);
+    const auto thirdB = b.bandAnimation(*secondScene, far, true, scale, 3);
+    CHECK(rate(thirdA, 100) == 8 && rate(thirdA, 101) == 8 && rate(thirdA, 200) == 0);
+    CHECK(rate(thirdB, 200) == 2 && rate(thirdB, 201) == 8 && rate(thirdB, 100) == 0);
+    for (const auto& rigs : {first, second})
+        for (const auto& rig : rigs) ProjectedCull::trackRate(*rig, -1);
+}
+
 void projected_cull_list() {
     using namespace tn::engine;
     auto scene = std::make_shared<Scene>();
@@ -4199,4 +4264,5 @@ TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_fiel
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
              {"projected_cull_band_animation", projected_cull_band_animation},
+             {"projected_cull_multiple_views", projected_cull_multiple_views},
              {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})

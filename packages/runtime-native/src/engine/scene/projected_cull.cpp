@@ -199,8 +199,18 @@ void ProjectedCull::walk(std::vector<Node>& nodes, Object3D& root, const Camera&
     add(add, root, rootUnderCamera);
 }
 
+ProjectedCull::RateView& ProjectedCull::rateView(const Camera& camera) {
+    for (auto it = rateViews_.begin(); it != rateViews_.end();)
+        it = it->second.shared && it->second.camera.expired() ? rateViews_.erase(it) : std::next(it);
+    auto& view = rateViews_[camera.id()];
+    view.camera = camera.weak_from_this();
+    view.shared = !view.camera.expired();
+    return view;
+}
+
 std::vector<double> ProjectedCull::bandRates(const std::vector<Object3D*>& rigs, const Camera& camera,
                                              bool cameraResolved, double scale) {
+    auto& rigWalks_ = rateView(camera).rigs;
     std::vector<double> rates(rigs.size(), 0.0);
     const auto& e = camera.matrixWorld.elements;
     const double cameraX = e[12], cameraY = e[13], cameraZ = e[14];
@@ -308,6 +318,7 @@ void ProjectedCull::trackRate(Object3D& rig, double id) {
 
 std::optional<std::vector<double>> ProjectedCull::bandAnimation(Object3D& root, const Camera& camera,
                                                                 bool cameraResolved, double scale, uint64_t frame) {
+    auto& rigWalks_ = rateView(camera).rigs;
     std::vector<double> pairs;
     // A freed rig is reported once, so core drops the state it kept under that id.
     std::erase_if(gRateRigs, [&](const RateRig& entry) {
@@ -342,11 +353,12 @@ std::optional<std::vector<double>> ProjectedCull::bandAnimation(Object3D& root, 
         Object3D& rig = *const_cast<Object3D*>(entry.address);
         if (!reaches(rig)) continue;
         turn += 1;
-        if (holds && turn % kRateMeasureFrames != 0) {
-            // #holdRate: carried only when the previous frame measured or held it.
-            const auto known = rigWalks_.find(&rig);
-            if (known != rigWalks_.end() && !known->second.rig.expired() && known->second.rig.lock().get() == &rig &&
-                known->second.frame + 1 == frame && known->second.rate > 0) {
+        const auto known = rigWalks_.find(&rig);
+        if (known != rigWalks_.end() && known->second.root == root.id() &&
+            !known->second.rig.expired() && known->second.rig.lock().get() == &rig && known->second.rate > 0) {
+            // A repeated view in the same frame neither advances nor measures the hold turn twice.
+            if (known->second.frame == frame ||
+                (holds && turn % kRateMeasureFrames != 0 && known->second.frame + 1 == frame)) {
                 known->second.frame = frame;
                 pairs.push_back(entry.id);
                 pairs.push_back(known->second.rate);
@@ -360,6 +372,7 @@ std::optional<std::vector<double>> ProjectedCull::bandAnimation(Object3D& root, 
     for (std::size_t i = 0; i < rates.size(); ++i) {
         if (rates[i] == 0) continue;  // no part visited: core leaves that state alone
         RigWalk& rigWalk = rigWalks_[measured[i]];
+        rigWalk.root = root.id();
         rigWalk.frame = frame;
         rigWalk.rate = rates[i];
         pairs.push_back(measuredIds[i]);
