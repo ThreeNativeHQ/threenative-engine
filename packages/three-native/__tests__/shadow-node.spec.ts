@@ -360,7 +360,8 @@ it("transfers registered LOD chain data once and clears its dispatch on disposal
   ]);
   const versionKey = Symbol.for("threenative.discreteLodChainsVersion");
   const previousVersion = (globalThis as Record<symbol, unknown>)[versionKey];
-  (globalThis as Record<symbol, unknown>)[versionKey] = ((previousVersion as number | undefined) ?? 0) + 1;
+  (globalThis as Record<symbol, unknown>)[versionKey] =
+    ((previousVersion as number | undefined) ?? 0) + 1;
   try {
     syncVirtualShadowLods();
     syncVirtualShadowLods();
