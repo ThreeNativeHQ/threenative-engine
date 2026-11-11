@@ -480,14 +480,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         for (int i = 0; i < 16; ++i) key = (key ^ std::bit_cast<uint32_t>(matrix[i])) * 1099511628211ull;
         return key;
     };
+    std::unordered_map<const std::vector<float>*, double> placedPalettes;  // a palette two draws read is compared once
     const auto placePalette = [&](const std::vector<float>& matrices, uint32_t stride) {
         const auto baseOf = [&](std::size_t at) { return double(jointPrefix / 64 + at / 16); };
         if (matrices.size() < 16) return baseOf(bones.size());
+        if (const auto placed = placedPalettes.find(&matrices); placed != placedPalettes.end()) return placed->second;
+        const auto remember = [&](double base) { placedPalettes.emplace(&matrices, base); return base; };
         const auto [from, to] = paletteStarts.equal_range(firstMatrixKey(matrices.data()));
         for (auto start = from; start != to; ++start) {
             if (start->second + matrices.size() <= bones.size() &&
                 std::memcmp(bones.data() + start->second, matrices.data(), matrices.size() * sizeof(float)) == 0)
-                return baseOf(start->second);
+                return remember(baseOf(start->second));
         }
         const std::size_t at = bones.size();
         const std::size_t step = stride ? std::size_t{stride} * 16 : matrices.size();
@@ -495,7 +498,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             paletteStarts.emplace(firstMatrixKey(matrices.data() + o), uint32_t(at + o));
         bones.insert(bones.end(), matrices.begin(), matrices.end());
         ++paletteWrites;
-        return baseOf(at);
+        return remember(baseOf(at));
     };
     for (const auto& [depthKey, drawn] : opaque) {
         if (drawn->boneMatrices && drawn->boneStride && !drawn->gpuJoints)
@@ -520,7 +523,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
                 paletteWrites += drawn->gpuJointRigs.empty() ? 1u : uint32_t(drawn->gpuJointRigs.size());
             } else if (!drawn->boneStride) {
-                d.boneBase = placePalette(*drawn->boneMatrices, 0);
+                d.boneBase = placePalette(*drawn->boneMatrices, 0) + drawn->boneOffset;
             }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {

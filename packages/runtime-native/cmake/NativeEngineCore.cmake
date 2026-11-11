@@ -982,7 +982,8 @@ target_include_directories(tn-native-engine-animation-skeleton-test PRIVATE ${CM
 tn_native_engine_test(tn-native-engine-animation-skinned-palette-test tests/native-engine/animation/skinned_palette_test.cpp
     native_engine_skinned_slot_reuse=slot_reuse
     native_engine_skinned_pose_history=pose_history
-    native_engine_skinned_update_frequency=update_frequency)
+    native_engine_skinned_update_frequency=update_frequency
+    native_engine_skinned_relative_slot_keeps_an_unchanged_pose=relative_slot_keeps_an_unchanged_pose)
 target_link_libraries(tn-native-engine-animation-skinned-palette-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-skinned-palette-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 

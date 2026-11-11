@@ -279,6 +279,7 @@ class RenderDatabase {
     std::vector<DrawItem> items_;
     std::vector<DrawItem> twoPasses_;
     std::vector<std::vector<std::size_t>> batchGroupsList_;
+    std::unordered_map<const SkinnedMesh*, std::size_t> shadowCopies_;  // a batched rig's shadow copy, by rig
     std::unordered_map<std::size_t, std::vector<std::size_t>> candidatesByKey_;
     std::vector<bool> absorbed_;
     std::vector<DrawItem> merged_;

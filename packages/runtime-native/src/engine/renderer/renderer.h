@@ -238,6 +238,8 @@ struct DrawItem {
     uint32_t gpuJointRig = 0;
     std::vector<uint32_t> gpuJointRigs; // Batch instance order; singleton draws use gpuJointRig.
     uint32_t boneStride = 0;           // palette matrices per instance; zero on exact skinned draws
+    uint32_t boneOffset = 0;           // matrices into `boneMatrices` where this draw's rig starts: a rig's shadow
+                                       // copy reads its own slot of the batch's root-relative palette (PRD-872)
     /** A virtual shadow page's grouped caster (FM8): one instanced row draws every caster the page selected
      *  for this geometry and material, and the vertex stage reads each one's own placement from the frame's
      *  `instances` storage and its own bone base and bind pair from `shadowSkin`, so one palette per rig per

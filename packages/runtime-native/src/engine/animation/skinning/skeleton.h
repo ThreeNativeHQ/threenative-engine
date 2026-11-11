@@ -182,6 +182,14 @@ class SkinnedMesh : public Mesh {
     bool gpuBindExposed = false;
     void revokeGpuSkinning() { if (const auto valid = gpuSkinValidity.lock()) *valid = false; }
     void exposeGpuBind() { gpuBindExposed = true; revokeGpuSkinning(); }
+    /** The renderer's root-relative palette for this mesh, kept while the pose version holds (PRD-878). */
+    struct RelativeSlot {
+        uint64_t pose = 0, hierarchy = 0;
+        const Object3D* root = nullptr;     // the placement found at `hierarchy`; null refuses
+        std::array<double, 16> anchor{};    // root^-1 * the first bone's world when `matrices` was written
+        std::vector<float> matrices;        // bones x 16, root-relative
+    };
+    RelativeSlot relativeSlot;
     bool attached = true; // bindMode: "attached" (true) or "detached"
     Matrix4 bindMatrix;
     Matrix4 bindMatrixInverse;

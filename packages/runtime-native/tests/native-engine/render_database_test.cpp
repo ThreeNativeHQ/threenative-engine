@@ -107,8 +107,10 @@ void rigRelativePreparation() {
     LightState lights;
     for (int frame = 0; frame < 3; ++frame) {
         // A legacy slot can share the same draw with relative slots without applying placement twice.
-        if (frame == 2)
-            Object3D::transformTrackingAddress(&bones[0]->position)[2] = 1;
+        if (frame == 2) {  // a root that is no similarity, under a rig whose own scale makes it one: a world slot
+            roots[0]->scale.set(1.4, 2.8, 1.4);
+            rigs[0]->scale.set(1, 0.5, 1);
+        }
         bones[0]->rotation.z = double(bones[0]->rotation.z) + 0.17;
         roots[0]->position.x += 0.7;
         for (int pass = 0; pass < 2; ++pass) {
@@ -184,12 +186,10 @@ void rigRelativePreparation() {
         CHECK(actual.writeRelative(*actual.claim(&rig), rig) == nullptr);
         CHECK(actual.matrices() == expected.matrices());
     };
-    fallback(0); // escaped bone
+    fallback(0); // a non-uniform root
     rigs[1]->attached = false;
     fallback(1);
     rigs[1]->attached = true;
-    Object3D::transformTrackingAddress(&bones[2]->position)[0] = 0;
-    fallback(2); // raw C++ transform
     roots[3]->scale.set(1, 2, 1);
     rigs[3]->scale.set(1, 0.5, 1);
     fallback(3);
@@ -204,8 +204,13 @@ void rigRelativePreparation() {
         [](const RenderCallbackArgs&, std::string&) { return true; });
     fallback(7);
     roots[7]->onBeforeRender.reset();
-    material->nodeMaterial = true;
-    fallback(7);
+    material->nodeMaterial = true;  // a node material that sets no node draws its plain program (PRD-878)
+    {
+        scene.updateMatrixWorld(true);
+        rigs[7]->skeleton->update();
+        SkinnedPalette admitted(2, 1, false);
+        CHECK(admitted.writeRelative(*admitted.claim(rigs[7].get()), *rigs[7]) == roots[7].get());
+    }
     material->nodeMaterial = false;
     scene.updateMatrixWorld(true);
     rigs[7]->bindMatrixInverse.identity();
@@ -8649,8 +8654,9 @@ void shadowPagesInstanceSkinnedCasters() {
     }
     // (d) set once: the palette is written once per rig per frame, not once per page, and a grouped row is a batch.
     CHECK(capture[0].stats.paletteWrites == capture[1].stats.paletteWrites);
-    // Old code: 18 writes. 16 shadow draws read 8 skeletons' bytes, so 8 copies, plus 2 main batches whose bind matrices differ.
-    CHECK(capture[0].stats.paletteWrites == 10);
+    // Old code: 18 writes, then 10 (16 shadow draws read 8 skeletons' bytes, plus 2 main batches). Now each shadow
+    // copy reads its rig's slot of the main batch's root-relative palette, so a rig has one palette a frame (PRD-878).
+    CHECK(capture[0].stats.paletteWrites == 2);
     CHECK(capture[0].stats.shadowSkinned.exactDraws == 48 && capture[0].stats.shadowSkinned.batches == 0);
     CHECK(capture[1].stats.shadowSkinned.exactDraws == 0 && capture[1].stats.shadowSkinned.batches == capture[1].rows.size());
     // Mover pages share their rows: three pages draw them, and one plans them.

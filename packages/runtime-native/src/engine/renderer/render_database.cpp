@@ -1281,6 +1281,10 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     skinnedPalettes_.clear();
     batchGroupsList_.clear();
     candidatesByKey_.clear();
+    shadowCopies_.clear();
+    if (virtualShadows_)
+        for (std::size_t i = 0; i < items.size(); ++i)
+            if (items[i].skinnedRig && !items[i].mainPass && !items[i].gpuJoints) shadowCopies_.emplace(items[i].skinnedRig, i);
     for (const auto& [depth, item] : ordered) {
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
@@ -1357,8 +1361,22 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         for (std::size_t i : g) {
             const Object3D* placement = nullptr;
             if (palette) {
-                const auto slot = palette->claim(items[i].skinnedRig);
-                placement = palette->writeRelative(*slot, *items[i].skinnedRig);
+                SkinnedMesh& rig = *items[i].skinnedRig;
+                const auto slot = palette->claim(&rig);
+                placement = palette->writeRelative(*slot, rig);
+                // The rig's shadow copy reads the same root-relative slot instead of the skeleton's world palette, so a
+                // rig has one palette a frame: the copy keeps its own model matrix (its shadow bounds read it) and its
+                // bind pair folds the placement back in, meshWorld * (meshWorld^-1 * R) * (R^-1 * boneWorld * ...).
+                const auto copy = placement ? shadowCopies_.find(&rig) : shadowCopies_.end();
+                if (copy != shadowCopies_.end() && items[copy->second].boneMatrices == &rig.skeleton->boneMatrices) {
+                    DrawItem& shadow = items[copy->second];
+                    Matrix4 prefix;
+                    prefix.multiplyMatrices(rig.bindMatrixInverse, placement->matrixWorld);
+                    shadow.boneMatrices = &palette->matrices();
+                    shadow.boneOffset = *slot * palette->bones();
+                    shadow.bindMatrix = Matrix4{}.elements;
+                    shadow.bindMatrixInverse = toArray(prefix);
+                }
             }
             // Relative palettes carry placement here; eager world palettes retain identity.
             const Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};

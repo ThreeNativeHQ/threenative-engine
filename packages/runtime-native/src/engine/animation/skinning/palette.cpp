@@ -177,62 +177,97 @@ void SkinnedPalette::write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkel
     }
 }
 
+namespace {
+// The lowest ancestor that holds the mesh and every bone, short of the Scene, or null. A bone chain with a render
+// callback refuses: the callback could move it after the slot is written.
+const Object3D* placementOf(const SkinnedMesh& rig) {
+    const Object3D* root = &rig;
+    for (; root && root->type() != "Scene"; root = root->parent) {
+        bool containsBones = root->type() != "Bone";
+        for (std::size_t i = 0; containsBones && i < rig.skeleton->bones.size(); ++i) {
+            const Object3D* bone = rig.skeleton->bone(i);
+            if (!bone) return nullptr;
+            for (; bone && bone != root; bone = bone->parent)
+                if (bone->onBeforeRender) return nullptr;
+            containsBones = bone == root;
+        }
+        if (containsBones) return root->type() == "Scene" ? nullptr : root;
+    }
+    return nullptr;
+}
+}  // namespace
+
 const Object3D* SkinnedPalette::writeRelative(std::uint32_t slot, SkinnedMesh& rig) {
-    write(slot, rig, false); // The render database already updated the skeleton this frame.
-    if (velocity_ || !rig.attached || !rig.skeleton || rig.skeleton->bones.empty() ||
-        !isSimilarityTransform(rig.matrixWorld.elements.data()) || !rig.material || rig.material->nodeMaterial ||
-        rig.material->positionNode)
+    const auto refuse = [&]() -> const Object3D* {
+        write(slot, rig, false);  // The render database already updated the skeleton this frame.
         return nullptr;
+    };
+    // A node material with no node set compiles its plain class's program, so only a set node refuses (the stress
+    // crowd's MeshStandardNodeMaterial kept every walker on the world palette, PRD-872).
+    if (velocity_ || !rig.attached || !rig.skeleton || rig.skeleton->bones.empty() ||
+        !isSimilarityTransform(rig.matrixWorld.elements.data()) || !rig.material || rig.material->positionNode)
+        return refuse();
     for (const auto* node : rig.material->nodes.pointers())
         if (node)
-            return nullptr;
-    const auto tracked = [](const Object3D* object) {
-        const auto* flags = Object3D::transformTrackingAddress(&object->position);
-        return flags && flags[0] && !flags[2] && !object->onBeforeRender;
-    };
+            return refuse();
     // Attached skinning cancels meshWorld against bindMatrixInverse. Refuse stale/custom binds.
     Matrix4 cancellation;
     cancellation.multiplyMatrices(rig.matrixWorld, rig.bindMatrixInverse);
     for (int k = 0; k < 16; ++k)
         if (!std::isfinite(cancellation.elements[k]) ||
             std::abs(cancellation.elements[k] - (k % 5 == 0 ? 1.0 : 0.0)) > 1e-8)
-            return nullptr;
+            return refuse();
     for (const Object3D* ancestor = &rig; ancestor; ancestor = ancestor->parent)
-        if (!tracked(ancestor))
-            return nullptr;
-    // Find the lowest actual mesh/bone ancestor; the Scene is never a rig placement.
-    const Object3D* root = &rig;
-    for (; root && root->type() != "Scene"; root = root->parent) {
-        bool containsBones = root->type() != "Bone";
-        for (std::size_t i = 0; containsBones && i < rig.skeleton->bones.size(); ++i) {
-            const Object3D* bone = rig.skeleton->bone(i);
-            if (!bone) {
-                containsBones = false;
-                break;
-            }
-            for (; bone && bone != root; bone = bone->parent)
-                if (!tracked(bone))
-                    return nullptr;
-            containsBones = bone == root;
-        }
-        if (containsBones)
-            break;
+        if (ancestor->onBeforeRender)
+            return refuse();
+    // The placement depends only on the hierarchy: found once per hierarchy change, not per frame. Any transform the
+    // walk composes eagerly is exact here (the web engine tracks none), because the slot and the placement below are
+    // read from the same world matrices this frame (PRD-878).
+    auto& cache = rig.relativeSlot;
+    if (const uint64_t hierarchy = Object3D::hierarchyVersion(); cache.hierarchy != hierarchy || !cache.root) {
+        cache.root = placementOf(rig);
+        cache.hierarchy = hierarchy;
+        cache.matrices.clear();
     }
-    if (!root || root->type() == "Scene" || !isSimilarityTransform(root->matrixWorld.elements.data()))
-        return nullptr;
+    const Object3D* root = cache.root;
+    if (!root || !isSimilarityTransform(root->matrixWorld.elements.data()))
+        return refuse();
     for (double element : root->matrixWorld.elements)
         if (!std::isfinite(element))
-            return nullptr;
+            return refuse();
     if (root->matrixWorld.elements[15] != 1)
-        return nullptr;
+        return refuse();
     Matrix4 inverse;
     inverse.copy(root->matrixWorld).invert();
-    const std::size_t begin = static_cast<std::size_t>(slot) * bones_ * 16;
+    // The slot is R^-1 * boneWorld * inverseBind * bind: the local pose (its version), the nodes between the root and
+    // the bones (the first bone's place under the root) and the bind (in the version). A frame where all three held
+    // keeps the slot the last write made, however the root moved (UE 5.8.3:
+    // Engine/Source/Runtime/Engine/Private/Components/SkinnedMeshComponent.cpp:1514 sends bones only when marked).
+    const Bone* first = nullptr;
+    for (std::size_t i = 0; i < rig.skeleton->bones.size() && !first; ++i) first = rig.skeleton->bone(i);
+    std::array<double, 16> anchor{};
+    multiplyAffine(inverse.elements.data(), 0, first->matrixWorld.elements.data(), 0, anchor.data(), 0);
+    const std::size_t begin = static_cast<std::size_t>(slot) * bones_ * 16, count = std::size_t{bones_} * 16;
+    const uint64_t pose = rig.skeleton->poseVersion();
+    const auto near = [&] {
+        for (int k = 0; k < 16; ++k)
+            if (std::abs(anchor[k] - cache.anchor[k]) > 1e-9 * (1 + std::abs(anchor[k]))) return false;
+        return true;
+    };
+    if (cache.pose == pose && cache.matrices.size() == count && near()) {
+        std::copy(cache.matrices.begin(), cache.matrices.end(), current_.begin() + static_cast<std::ptrdiff_t>(begin));
+        return root;
+    }
+    write(slot, rig, false);
     // W = boneWorld * inverseBind * bind. Store R^-1 * W; the instance supplies R.
     for (std::uint32_t bone = 0; bone < bones_; ++bone) {
         const std::size_t at = begin + static_cast<std::size_t>(bone) * 16;
         multiplyAffine(inverse.elements.data(), 0, current_.data(), at, current_.data(), at);
     }
+    cache.pose = pose;
+    cache.anchor = anchor;
+    cache.matrices.assign(current_.begin() + static_cast<std::ptrdiff_t>(begin),
+                          current_.begin() + static_cast<std::ptrdiff_t>(begin + count));
     return root;
 }
 
