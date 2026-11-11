@@ -14,6 +14,18 @@ export interface IPackedRef extends IEngineRef {
   w2: number;
 }
 
+/**
+ * The ref's handle words. A ref the runtime made carries them; any other ref is parsed once and keeps them, so
+ * writing a handle is three stores and never a key parse per call.
+ */
+export function packedRef(ref: IEngineRef): IPackedRef {
+  const known = ref as Partial<IPackedRef>;
+  if (known.w0 !== undefined) return known as IPackedRef;
+  const [type = 0, context = 0, index = 0, generation = 0] = ref.key.split(":").map(Number);
+  const words = { w0: (type | (context << 16)) >>> 0, w1: index, w2: generation };
+  return Object.isExtensible(ref) ? Object.assign(ref, words) : { ...ref, ...words };
+}
+
 /** An engine object as the back end sees it: an opaque key and its catalog type id. */
 export interface IEngineRef {
   readonly key: string;

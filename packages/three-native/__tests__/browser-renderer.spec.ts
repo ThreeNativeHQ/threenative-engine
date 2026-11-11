@@ -157,6 +157,25 @@ describe("the owned engine's CPU stage totals (PRD-771)", () => {
     ).toEqual([78]);
   });
 
+  // PRD-878: a render writes the scene's and camera's handles every call; their keys are parsed once, not per frame.
+  it("writes a render's handles without parsing their keys again", async () => {
+    const { Renderer, canvas, scene, camera } = host();
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    const split = vi.spyOn(String.prototype, "split");
+    try {
+      renderer.render(scene, camera);
+      const parsed = split.mock.contexts.filter((text) => /^\d+:\d+:\d+:\d+$/u.test(String(text)));
+      expect(parsed).toEqual([]);
+    } finally {
+      split.mockRestore();
+    }
+  });
+
   it("publishes no totals on a module without the array, so core reads them as unmeasured", async () => {
     const { Renderer, canvas, scene, camera } = host(() => 0);
     const renderer = new Renderer({ canvas }) as {

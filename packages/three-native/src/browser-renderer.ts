@@ -4,6 +4,7 @@
  * surface and every draw; this class turns three's calls into host calls and reports what the
  * engine did. What it does not implement throws its diagnostic rather than doing nothing.
  */
+import { packedRef } from "./browser-abi-types.js";
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import { debugTelemetry } from "./debug-telemetry.js";
@@ -181,17 +182,11 @@ export function defineWebRenderer(
     const ref = typeof object === "object" && object !== null ? engineRef(object) : undefined;
     if (ref === undefined)
       throw new TypeError(`TN_WASM_RENDER: the ${what} is not an engine object.`);
-    const [type, context, slot, generation] = ref.key.split(":").map(Number) as [
-      number,
-      number,
-      number,
-      number,
-    ];
+    const { w0, w1, w2 } = packedRef(ref);
     const view = new DataView(module.HEAPU8.buffer);
-    view.setUint16(handles + offset, type, true);
-    view.setUint16(handles + offset + 2, context, true);
-    view.setUint32(handles + offset + 4, slot, true);
-    view.setUint32(handles + offset + 8, generation, true);
+    view.setUint32(handles + offset, w0, true);
+    view.setUint32(handles + offset + 4, w1, true);
+    view.setUint32(handles + offset + 8, w2, true);
   };
 
   const Renderer = class WebGPURenderer {
