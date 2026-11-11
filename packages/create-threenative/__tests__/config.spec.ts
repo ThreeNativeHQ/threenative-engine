@@ -94,14 +94,14 @@ const TRNS_PNG = Buffer.from(
   "base64",
 );
 
-it("loads two configs in the same millisecond, because the temp name must not collide", async () => {
+it("loads concurrent configs, which is how vite resolves one project's config", async () => {
   const root = await project();
   await config(root, 'export default { engine: "threenative" };');
-  // `vite` resolves a project's config more than once in one process (its plugin and its command,
-  // through `resolveConfig`'s `Promise.all`). With the temp file named from the clock alone, both
-  // loads picked the same path and the first one's `unlink` deleted the second one's file, which
-  // surfaced as TN_CONFIG_LOAD_FAILED: cannot find module '.threenative.config.<pid>.<ms>.mjs'.
-  // Freezing the clock is what makes that deterministic: only a distinguishing suffix can save it.
+  // Loader coverage, not the lock for the temp-name collision: `vite` resolves a project's config
+  // more than once in one process (its plugin and its command, through `resolveConfig`'s
+  // `Promise.all`), and these loads must all answer. The collision itself is locked by the
+  // `configTempName` spec below — under a frozen clock this one still passes without the suffix,
+  // because the second `import()` is served from the module cache and never re-reads the deleted file.
   const frozen = Date.now;
   Date.now = () => 1_700_000_000_000;
   try {

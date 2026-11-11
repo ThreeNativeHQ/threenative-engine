@@ -227,6 +227,41 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("lets a pad that connects into a reused slot claim on the press it already holds", () => {
+    const target = new EventTarget();
+    // Slot 1 claims with button 0, the source shrinks for a tick, then a different pad occupies slot 1
+    // already holding button 0. Unless the emptied slot forgets its claim history, the new pad looks
+    // like it was already down and never claims — and an owned, idle slot 0 keeps the input.
+    const ownerButton = { pressed: true };
+    const owner = { axes: [0, 0, 0, 0], buttons: [{ pressed: false }, ownerButton] };
+    const firstButton = { pressed: true };
+    const first = { axes: [0, 0, 0, 0], buttons: [firstButton] };
+    const replacementButton = { pressed: true };
+    const replacement = { axes: [0, 0, 0, 0], buttons: [replacementButton] };
+    let pads = [owner, first];
+    const input = new InputMap(
+      { fire: { buttons: [1] }, jump: { buttons: [0] } },
+      target,
+      target,
+      () => pads,
+    );
+
+    input.tick();
+    expect(input.pressed("jump")).toBe(false);
+    ownerButton.pressed = false;
+    input.tick();
+    // Slot 0 owns the input now, idle, so its releases stay readable.
+    expect(input.pressed("jump")).toBe(false);
+
+    pads = [owner];
+    input.tick();
+
+    pads = [owner, replacement];
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    input.dispose();
+  });
+
   it("reads a gently held stick on a later pad while the first slot has never claimed", () => {
     const target = new EventTarget();
     // Slot 0 is a dongle with no pad on it: it is only "first" because it is first. A player who
