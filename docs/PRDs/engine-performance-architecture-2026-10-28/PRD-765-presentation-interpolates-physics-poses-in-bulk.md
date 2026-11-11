@@ -1,7 +1,7 @@
 # PRD-765 — Presentation interpolates physics poses in bulk
 
 **Status:** NOT STARTED
-**Priority:** P2 — reduce repeated presentation pose copies for large interpolated populations.
+**Priority:** P1 — physics apply and interpolation is the largest JS block left on the stress-lab frame, about 1.2 ms a frame, after [PRD-828](../done/PRD-828-js-keeps-only-game-logic.md) cut crossings from 1,912 to 40 (its follow-up 7, survey of 2026-11-07). Raised from P2 on 2026-11-10 on that reading. Every box below is open, and Phase 1 must confirm the 1.2 ms before any code.
 **Complexity:** 9 (HIGH)
 **Owner:** Engine implementation agent
 **Depends on:** PRD-763

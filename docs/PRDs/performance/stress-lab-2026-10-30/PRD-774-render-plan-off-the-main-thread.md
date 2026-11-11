@@ -60,6 +60,30 @@ Closed without code: see the 2026-10-30 lane decision under `## Decisions`.
 - [ ] `renderPrepared` splits at the GPU phase. A guard keeps a frame with a lazy-creation miss serial, and a plan task joins at the first engine export. proof: native case where a mutation before the join is impossible
 - [ ] A named override `oneFrameThreadLag: false` restores the serial path and is reported when set. Paired A/B shows CPU frame p50 lower by more than 3%. proof: PRD-770 window rows
 
+## Unreal reference (2026-11-10 read)
+
+Each line was re-checked against the `UE 5.8.3` clone on 2026-11-10. Paths are under `Engine/Source/Runtime/`.
+
+- **Phase 3 is Unreal's late join.** Pass setup runs as a task, and the render thread waits for it only where the pass draws
+  (`r.MeshDrawCommands.ParallelPassSetup` 1 and `r.DeferredMeshPassSetupTaskSync` 1, `Renderer/Private/MeshDrawCommands.cpp:22-23,54-55`).
+  It hides plan time behind the JS update. It removes no work, so the ceiling stays the 2.0 ms JS window.
+- **The lazy-creation guard of box 2 gets smaller when programs are built at add time.** Unreal builds a draw command when the
+  primitive is added (`Renderer/Private/PrimitiveSceneInfo.cpp:51-53`). PRD-573 Phase v2.4 box 3 owns that step. With it, fewer
+  frames hit a lazy-creation miss and fall back to the serial path.
+- **State the lag in frames.** Unreal holds the render thread at most one frame behind (`RenderCore/Private/RenderingThread.cpp:2435`).
+  The web `FrameGate` allows 6 unfinished frames (`renderer/frame_gate.h:30`, `kMaxFrames`). The override box should report frames
+  in flight beside the CPU gain, so a latency cost cannot hide behind a frame-time win.
+- **The join must not park the thread.** Unreal waits on a fence in 1 ms slices and keeps serving OS messages
+  (`RenderingThread.cpp:1081-1084,1189`). Our `join()` spins with `yield`, which matches (Phase 3 box 1 review).
+- **Flush before a surface change.** Unreal flushes every render command before a viewport resize
+  (`SlateRHIRenderer/Private/SlateRHIRenderer.cpp:564`). The plan task must join before a canvas resize, surface loss or device loss.
+- **Shadow planning is not this PRD.** PRD-871 Phase 3 (PR #659, lane `perf/stress-lab-audit`) owns `planVirtualPages` and
+  `planShadowLists`. Reference for that lane: Unreal gathers shadow subjects in parallel packets and merges them in packet order
+  (`Renderer/Private/ShadowSetup.cpp:324-325,331-332`), and it invalidates virtual shadow pages only from instances that moved or
+  deform (`Renderer/Private/VirtualShadowMaps/VirtualShadowMapCacheManager.cpp:105,110-112`). On our side, caster selection goes to
+  the pool above 16,384 page-caster pairs, a gate the code calls proposed and not measured (`renderer/renderer_internal.h:243`), and
+  the row build after it is serial (`renderer/renderer_frame.cpp:1199`).
+
 ## Blocked on
 
 - Nothing outside the repo.
