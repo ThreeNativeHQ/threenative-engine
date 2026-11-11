@@ -6,9 +6,7 @@
   "viewport": { "width": 640, "height": 360 },
   "warmupFrames": 10,
   "artifacts": { "screenshots": true },
-  "steps": [
-    { "kind": "wait", "label": "spinning", "waitTicks": 400, "release": true }
-  ],
+  "steps": [{ "kind": "wait", "label": "spinning", "waitTicks": 400, "release": true }],
   "assert": {
     "diagnostics": {
       "noConsoleErrors": true,

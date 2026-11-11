@@ -41,7 +41,10 @@ class StarField extends Scene<IStarState> {
 
     // A fixed linear congruential sequence: the same sky every run, so a frame diff is the rotation's.
     let seed = 871;
-    const random = (): number => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const random = (): number => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
     const positions = new Float32Array(STAR_COUNT * 3);
     const colors = new Float32Array(STAR_COUNT * 3);
     const tint = new Color();
@@ -57,7 +60,11 @@ class StarField extends Scene<IStarState> {
       positions[index * 3 + 1] = star.y;
       positions[index * 3 + 2] = star.z;
       // Three-quarters of the stars are white-hot, the rest blue or amber, as a night sky reads.
-      tint.setHSL(random() < 0.75 ? 0.58 : random() < 0.5 ? 0.08 : 0.62, 0.35, 0.72 + random() * 0.28);
+      tint.setHSL(
+        random() < 0.75 ? 0.58 : random() < 0.5 ? 0.08 : 0.62,
+        0.35,
+        0.72 + random() * 0.28,
+      );
       colors[index * 3] = tint.r;
       colors[index * 3 + 1] = tint.g;
       colors[index * 3 + 2] = tint.b;
