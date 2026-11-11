@@ -3197,6 +3197,7 @@
     "InstancedBufferAttribute": {
       "constructor": true,
       "methods": [
+        "__tnRecords",
         "addEventListener",
         "addUpdateRange",
         "applyMatrix3",

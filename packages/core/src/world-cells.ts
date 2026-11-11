@@ -61,7 +61,7 @@ import { InstancedBatch } from "./instanced-batch.js";
 import { biasedLodDistance, setLodBias, worldSphere } from "./model-lod.js";
 import { type OcclusionMode, occlusionMode } from "./render/depth-pyramid.js";
 
-import { advanceWriteEpoch, drainMeshPool } from "./render/mesh-pool.js";
+import { drainMeshPool } from "./render/mesh-pool.js";
 import type { IRendererLike } from "./renderer.js";
 
 import { addInSlices } from "./streaming.js";
@@ -81,6 +81,7 @@ import { CellPrewarm } from "./world-cell-prewarm.js";
 import { CellLodBias } from "./world-cell-lod-bias.js";
 import { CellPlacements, newBatches, newBoxes, publishCount } from "./world-cell-placements.js";
 import { CellReadiness } from "./world-cell-readiness.js";
+import { batchRecords } from "./world-cell-records.js";
 import { CellResidency } from "./world-cell-residency.js";
 import {
   type IShadowLevel,
@@ -321,6 +322,8 @@ export class WorldCells extends Group implements IComputeDriven {
 
   readonly #render: CellRender;
   readonly #onPublication: IWorldCellsInit["onPublication"];
+  /** Publications told after the frame's records reach the engine, so a told batch is drawable. */
+  readonly #publications: Box3[] = [];
   /** The spawn and view gates, and the waiters they settle. */
   readonly #readiness: CellReadiness;
   readonly #prewarm: CellPrewarm;
@@ -801,7 +804,7 @@ export class WorldCells extends Group implements IComputeDriven {
       parts: () => parts,
       prefetchSeconds: () => this.#prefetchSeconds,
       published: (bounds) => {
-        this.#onPublication?.(bounds);
+        if (this.#onPublication !== undefined) this.#publications.push(bounds.clone());
       },
       released: () => this.#released,
       ring: () => this.#ring,
@@ -1158,9 +1161,6 @@ export class WorldCells extends Group implements IComputeDriven {
       // earlier, which is the state the run that found this was in.
       this.#render.announceGpu();
     }
-    // A new upload epoch, so no batch's pending span outlives the render that consumed it. See
-    // `SharedBatch#touched`.
-    advanceWriteEpoch();
     const x = this.#follow.position.x;
     const z = this.#follow.position.z;
     // Terrain admits first, and a tile is one unit of several milliseconds, so after a jump (a
@@ -1242,6 +1242,10 @@ export class WorldCells extends Group implements IComputeDriven {
       camera,
     );
     this.#render.reportMainCull();
+    // Last, after every write, clear, compact, grow and cull repack above: the frame's instance
+    // records reach the engine in one call (see `world-cell-records.ts`).
+    batchRecords.flush();
+    this.#tellPublications();
     this.#admission = {
       backlog: this.#residency.backlog(),
       deferred: this.#residency.queuedBuilds,
@@ -1249,6 +1253,11 @@ export class WorldCells extends Group implements IComputeDriven {
     };
     // After this frame's admissions, so a region admitted by this update answers its waiters in it.
     this.#readiness.settleWaiters();
+  }
+
+  /** The frame's publications, told once their records are in the engine's buffers. */
+  #tellPublications(): void {
+    for (const bounds of this.#publications.splice(0)) this.#onPublication?.(bounds);
   }
 
   process(renderer?: IRendererLike, camera?: Camera, covered = false): void {
