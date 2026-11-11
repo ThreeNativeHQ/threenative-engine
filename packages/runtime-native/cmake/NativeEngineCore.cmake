@@ -85,7 +85,7 @@ target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scene/camera.cpp
     src/engine/scene/nodes.cpp src/engine/scene/raycaster.cpp src/engine/scene/geometry.cpp src/engine/scene/geometries.cpp src/engine/scene/curves.cpp src/engine/scene/shape_utils.cpp
     src/engine/scene/material.cpp src/engine/scene/lights.cpp src/engine/scene/static_transform.cpp
-    src/engine/scene/projected_cull.cpp)
+    src/engine/scene/projected_cull.cpp src/engine/scene/pose_history.cpp)
 tn_native_engine_target(tn_engine_scene)
 if(EMSCRIPTEN)
     # The web engine ships under a 4 MiB budget (native-engine-wasm action). The ray BVH (PRD-752) and
@@ -949,6 +949,11 @@ tn_native_engine_test(tn-native-engine-animation-tick-batch-test tests/native-en
 # PRD-875 Phase 1: the counter's case drives the real `tn_anim_tick`, which lives in tn_engine_abi.
 target_link_libraries(tn-native-engine-animation-tick-batch-test PRIVATE tn_engine_animation tn_engine_abi)
 target_include_directories(tn-native-engine-animation-tick-batch-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+# PRD-877 phase 2: the engine blends and restores a body's poses without leaving C++.
+tn_native_engine_test(tn-native-engine-scene-pose-history-test tests/native-engine/scene/pose_history_test.cpp
+    native_engine_physics_pose_history=pose_history)
+target_link_libraries(tn-native-engine-scene-pose-history-test PRIVATE tn_engine_scene)
+target_include_directories(tn-native-engine-scene-pose-history-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene)
 # PRD-517: property tracks on materials, lights, cameras and visibility.
 tn_native_engine_test(tn-native-engine-animation-property-tracks-test tests/native-engine/animation/property_tracks_test.cpp
     native_engine_animation_property_tracks=property_tracks)
