@@ -635,6 +635,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     const std::size_t signature = materialSignature(*r.material);
     if (!r.materialResolved || r.materialSignature != signature || r.refreshRevision != revision) {
         r.materialResolved = true;
+        d.variantStamp = ++variantStamps_;
         r.materialSignature = signature;
         r.refreshRevision = revision;
         ++projection::detail::materialRefreshCount();
@@ -686,6 +687,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
                     name != "skinWeight" && attribute->store->scalar() != Scalar::F32)
                     r.convertedInputs = true;
     } else if (r.convertedInputs) {
+        d.variantStamp = ++variantStamps_;
         vertexColorsOf(*r.canonical, *r.material, d);
         geometryInputsOf(*r.canonical, d, mesh.type() == "SkinnedMesh");
     }

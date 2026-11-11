@@ -601,6 +601,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo") ||
         postEffects_->reads("emissive") || postEffects_->reads("indirectDiffuse") || postEffects_->reads("metalness") ||
         postEffects_->reads("roughness"))) || traa_;
+    // variantOf's inputs that refresh()'s material half does not own (see DepthRowKey).
+    const auto depthRowKey = [invariantPosition](const DrawItem& item) {
+        DepthRowKey k;
+        k.material = item.material; k.nodes = item.nodes; k.fogNode = item.nodes->fogNode.get(); k.morph = item.morphGeometry;
+        k.side = item.side; k.colorSize = item.colorSize; k.map = item.map != nullptr;
+        if (item.morphGeometry) {
+            k.morphTargets = uint32_t(item.morphGeometry->morphPositions.size());
+            k.morphNormals = !item.morphGeometry->morphNormals.empty();
+        }
+        k.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
+        k.invariantPosition = invariantPosition; k.background = item.background; k.sprite = item.sprite;
+        k.receiveShadow = item.receiveShadow; k.envMap = item.envMap != nullptr;
+        k.instanced = item.instanceMatrices != nullptr; k.instanceColor = item.instanceColors != nullptr;
+        k.indirect = item.indirect != nullptr; k.skinned = item.boneMatrices != nullptr; k.palette = item.boneStride != 0;
+        k.shadowGroup = item.shadowGroup;
+        return k;
+    };
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
@@ -1313,24 +1330,36 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             }
             const DrawItem& item = *selected;
-            shader::VertexVariant variant = variantOf(item);
-            // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
-            if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
-                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
-            const bool masked = alphaTested(*item.material, *item.nodes);
             DrawCache* cache = item.cache;
             Program* cachedDepth = nullptr;
-            if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
+            bool masked = false, alphaHash = false;
+            const DepthRowKey rowKey = depthRowKey(item);
+            if (cache && cache->depthProgram && item.variantStamp != 0 && cache->depthStamp == item.variantStamp &&
+                cache->depthKey == rowKey) {
+                // Nothing the variant reads has moved since this draw last resolved it: no variant to build.
                 cachedDepth = static_cast<Program*>(cache->depthProgram);
-            else {
-                cachedDepth = &depthProgram(variant, masked);
-                if (cache) {
-                    cache->variant = variant;  // a shadow-only draw has no main program to set it
-                    cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
-                    cache->depthMasked = masked;
+                masked = cache->depthMasked;
+                alphaHash = cache->variant.alphaHash;
+            } else {
+                shader::VertexVariant variant = variantOf(item);
+                // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
+                if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
+                    throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
+                masked = alphaTested(*item.material, *item.nodes);
+                alphaHash = variant.alphaHash;
+                if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
+                    cachedDepth = static_cast<Program*>(cache->depthProgram);
+                else {
+                    cachedDepth = &depthProgram(variant, masked);
+                    if (cache) {
+                        cache->variant = variant;  // a shadow-only draw has no main program to set it
+                        cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
+                        cache->depthMasked = masked;
+                    }
                 }
+                if (cache) { cache->depthStamp = item.variantStamp; cache->depthKey = rowKey; }
             }
-            const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &cachedDepth->fragment : nullptr;
+            const shader::StageModule* depthFragment = (masked || alphaHash) ? &cachedDepth->fragment : nullptr;
             Program& program = *cachedDepth;
             // material.shadowSide names the faces drawn; when null, three's _shadowSide: a front-sided
             // caster draws its back faces, a back-sided one its front faces, a double-sided one both.

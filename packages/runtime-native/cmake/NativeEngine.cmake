@@ -312,6 +312,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_bone_chains_are_not_projected=bone_chains_are_not_projected
         native_engine_batch_compacts_in_place=batch_compacts_in_place
+        native_engine_shadow_row_follows_material_change=shadow_row_follows_material_change
         native_engine_bone_reach_bounds_hold_posed_vertices=bone_reach_bounds_hold_posed_vertices
         native_engine_rigid_rig_keeps_its_reach_bounds=rigid_rig_keeps_its_reach_bounds
         native_engine_gpu_joint_production=gpu_joint_production

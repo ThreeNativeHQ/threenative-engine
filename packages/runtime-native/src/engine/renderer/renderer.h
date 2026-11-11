@@ -113,6 +113,18 @@ bool& flatShadowSelection();
  * are the renderer's opaque types (Program*, WGPURenderPipeline, WGPUBindGroup).
  */
 struct DrawItem;
+/** What a shadow row's depth variant reads beyond the record's material half: the frame, the scene and the batch
+ *  set these per draw, so they are matched exactly; the material half is matched by DrawItem::variantStamp. */
+struct DepthRowKey {
+    const void* material = nullptr; const void* nodes = nullptr; const void* fogNode = nullptr; const void* morph = nullptr;
+    uint32_t morphTargets = 0;
+    uint8_t fog = 0, side = 0, colorSize = 0;
+    bool map = false;
+    bool invariantPosition = false, background = false, sprite = false, receiveShadow = false, envMap = false,
+         instanced = false, instanceColor = false, indirect = false, skinned = false, palette = false,
+         shadowGroup = false, morphNormals = false;
+    bool operator==(const DepthRowKey&) const = default;
+};
 struct DrawCache {
     MaterialKind kind = MaterialKind::Standard;
     shader::VertexVariant variant;
@@ -123,6 +135,8 @@ struct DrawCache {
     void* program = nullptr;
     void* depthProgram = nullptr;
     bool depthMasked = false;     // the depth program runs the material's alpha test (PRD-651)
+    uint64_t depthStamp = 0;      // the DrawItem::variantStamp and per-draw key depthProgram was resolved for
+    DepthRowKey depthKey;
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
@@ -146,6 +160,9 @@ struct DrawCache {
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
+    /** Moves whenever refresh() re-resolves the material half (material, maps, nodes, vertex colours); 0 for a
+     *  draw no record refreshes. A shadow row with an unmoved stamp and key keeps its depth program. */
+    uint64_t variantStamp = 0;
     const Object3D* shadowObject = nullptr;
     uint32_t layers = 1;
     bool mainPass = true;
