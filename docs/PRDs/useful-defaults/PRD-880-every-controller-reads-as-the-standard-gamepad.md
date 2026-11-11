@@ -1,6 +1,6 @@
 # PRD-880 — Every controller reads as the standard gamepad: Xbox, 8BitDo, Steam Deck
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — Phases 1 to 3 land; the kit consumes them.
 **Priority:** P2 — no box is done: an idle stick still drifts a character, a phantom pad still steals input, and a non-standard browser pad still fires the wrong action (AC-1 to AC-8).
 **Complexity:** 4 (MEDIUM)
 **Owner:** João (owner); an agent executes
@@ -57,7 +57,7 @@ flowchart LR
 
 Conventions (on by default, each with a named override on the same object, reported):
 
-- **Dead zone:** radial, rescaled so output still reaches 1. Default 0.2, the stock Enhanced Input dead zone: `UInputModifierDeadZone` defaults to `LowerThreshold = 0.2`, `UpperThreshold = 1` and `EDeadZoneType::Radial` (`UE release: Engine/Plugins/EnhancedInput/Source/EnhancedInput/Public/InputModifiers.h:182,190,193`, read 2026-11-11 through `gh api`). Override: `input.gamepadDeadZone = 0` for raw axes.
+- **Dead zone:** radial, rescaled so output still reaches 1. Default 0.2, the stock Enhanced Input dead zone: `UInputModifierDeadZone` defaults to `LowerThreshold = 0.2`, `UpperThreshold = 1` and `EDeadZoneType::Radial` (`UE release: Engine/Plugins/EnhancedInput/Source/EnhancedInput/Public/InputModifiers.h:182,190,193`, read 2026-11-11 through `gh api`). Override: `defineGame({ gamepadDeadZone: 0 })`, or `input.gamepadDeadZone = 0` on a running map, for raw axes.
 - **Active pad:** the pad that last moved past the dead zone or pressed a button. It becomes active and stays active until another pad does.
 - **Report:** one `TN_GAMEPAD` line per connect, naming `id`, normalizer (`standard`, `table`, `unmapped`) and dead zone. An unmapped pad is ignored, never read with raw indices.
 
@@ -72,11 +72,15 @@ Risks:
 
 The phase boxes below carry the unit and native proofs. This box is the consumer proof: a real kit, driven through `navigator.getGamepads`, using the Phase 3 `gamepad` playtest step.
 
-- [ ] AC-1 [local]: In the platformer kit, a scripted standard pad with the left stick at 1 moves the player right, button 0 jumps it, and a stick at 0.1 leaves it still. proof: `node packages/playtest/dist/runner/cli.js <platformer gamepad scenario> --browser-recipe webgpu` — Evidence: pending.
+- [x] AC-1 [local]: In the platformer kit, a scripted standard pad with the left stick at 1 moves the player right, button 0 jumps it, and a stick at 0.1 leaves it still. proof: `node packages/playtest/dist/runner/cli.js <platformer gamepad scenario> --browser-recipe webgpu` — Evidence: the kit scaffolded from local tarballs (`createProject` + `packageLocalFramework`), built with `pnpm build:web`, then both scenarios through the repository runner against `vite preview`, headed, `--browser-recipe webgpu`. `playtests/gamepad.playtest.json` → `pass: true`: `movementDelta` x = 28.87 against `minAxisDelta: 3`, and `state.jumps` 0 → 1. `playtests/gamepad-idle.playtest.json` → `pass: true`: `movement.maxDistance` observed 0 against `maximum: 0.5`, so a stick resting at 0.1 moves nothing. Each run prints `TN_GAMEPAD {"deadZone":0.2,"id":"TN Playtest Pad (STANDARD GAMEPAD Vendor: 045e Product: 028e)","mapping":"standard"}`.
 
 ## Blocked on
 
-- Physical-device confirmation of the web table rows and of native reads: the owner holds an official Xbox pad, an 8BitDo Ultimate C 2.4G and a Steam Deck, opens a kit in Chromium and Firefox and in the native desktop player, and confirms that the left stick moves and the south button jumps. Record each `TN_GAMEPAD` line. — unblocked by João with the three devices.
+- Physical-device confirmation of the web table rows and of native reads: the owner holds an official Xbox pad, an 8BitDo Ultimate C 2.4G and a Steam Deck, opens a kit in Chromium and Firefox and in the native desktop player, and confirms that the left stick moves and the south button jumps. Record each `TN_GAMEPAD` line. — unblocked by João with the three devices. What is still missing is the device's own vendor:product: SDL 3.2.30 carries `2dc8:301b` (8BitDo Ultimate 2C Wireless) and `2dc8:3013` (8BitDo Ultimate Wireless Controller) but no `Ultimate C 2.4G` row, so the owner's device either matches one of those ids in the browser or needs its own row, which is what that device read settles.
+
+## Known follow-ups, not this PRD
+
+- The default web engine runs the game in a worker (`templates/*/src/worker.ts`), and that worker starts forwarding pads only on a `gamepadconnected` event. The browser fires one for a real pad, so a game is unaffected; the playtest `gamepad` step now announces its scripted pad the same way, which is why AC-1 passes. A game that polls `navigator.getGamepads` from the page and never listens for the event sees its pad from the first frame.
 
 ## Integration Ledger
 
@@ -90,34 +94,39 @@ The phase boxes below carry the unit and native proofs. This box is the consumer
 
 - 2026-11-11 (Claude, on the owner's "your call"): the adapter is data per backend (SDL's controller database natively, a vendor:product table on the web), not a class per device. SDL already maintains about 2 000 device mappings, and a class hierarchy would duplicate them in TypeScript. The existing `InputPlatformSource` seam stays the single injection point.
 - 2026-11-11 (Claude): an unmapped non-standard pad is ignored and reported. Reading it with raw indices fires the wrong action, which is worse than no input.
+- 2026-11-11 (agent, executing): `fillStandardPad` lives in `src/platform/input.cpp` and is declared in `mystral/platform/input.h`, not in `gamepads.cpp`. `src/platform/input.cpp` is the only file both hosts already compile (`mystral-runtime`, which the legacy `runtime.cpp` bindings poll, and `tn_engine_player`, which the V8 player links), so one definition resolves for both with no new engine source in the legacy host and no new include path. `src/engine/player/gamepads.cpp` moved from the V8 adapter executable into `tn_engine_player` for the same reason: the C++ test links both entry points into one binary.
+- 2026-11-11 (agent, executing): the dead zone applies to both stick pairs, axes 0/1 and 2/3, and never past index 3. The standard's triggers are buttons 6 and 7, so a legacy `gamepadAxes: [4]` reading no longer sees a trigger — the standard mapping replaced it (see the risk above; no kit or example binds `[4]` or `[5]`).
+- 2026-11-11 (agent, executing): a pad with no `mapping` field counts as standard. A browser always reports `"standard"` or `""`, both native hosts now set `mapping: "standard"`, and a fixture that omits it is standard by construction. Only the empty string — the browser's own word for "I do not know this device" — is looked up in the table.
+- 2026-11-11 (agent, executing): the `gamepad` playtest step writes the pad to `sessionStorage` as well as to a global, because a startup retry reloads the page and a held pad would otherwise vanish mid-step.
+- 2026-11-11 (agent, executing): the d-pad stays unmapped for a `mapping: ""` pad. Every SDL row expresses it as a hat (`h0.1`), which a browser delivers as two extra axes in a device-specific order; no kit binds buttons 12 to 15, so a row that guessed would add a wrong-axis bug with no consumer.
 
 ## Execution Phases
 
 #### Phase 1: Core reads any standard pad cleanly
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/input.ts` (dead zone, active pad, `mapping`/`id` on `IInputGamepad`), `packages/core/src/gamepad-mappings.ts` (new: the web vendor:product table and `toStandardPad`), `packages/core/__tests__/input.spec.ts`.
 **Implementation:** parse vendor and product from the browser `id` (Chromium `Vendor: 045e Product: 028e`, Firefox `045e-028e-…`). Normalize into the reused buffers, with no per-tick allocation (PRD-189). Apply the radial dead zone before `vector`, `axis` and `raw.gamepad.axes`.
 **Verification:** `pnpm exec vitest run packages/core/__tests__/input.spec.ts`, red first on each new test.
 
-- [ ] A stick resting at 0.1 gives `vector("move")` zero, a stick at 0.6 gives 0.5 ((0.6 - 0.2) / 0.8), and `gamepadDeadZone = 0` returns the raw 0.1. proof: `input.spec.ts` dead-zone test — Evidence: pending.
-- [ ] An idle pad in slot 0 does not take input from a pad in slot 1 whose button is pressed, and the slot 1 pad stays active after release. proof: `input.spec.ts` active-pad test — Evidence: pending.
-- [ ] Fixtures for an Xbox pad (`standard`), an 8BitDo Ultimate C 2.4G and a Steam Deck (both `mapping: ""`, rows from SDL_GameControllerDB) all fire `jump` on the south button, and an unknown `mapping: ""` pad fires nothing and logs `TN_GAMEPAD … unmapped` once. proof: `input.spec.ts` mapping tests — Evidence: pending.
+- [x] A stick resting at 0.1 gives `vector("move")` zero, a stick at 0.6 gives 0.5 ((0.6 - 0.2) / 0.8), and `gamepadDeadZone = 0` returns the raw 0.1. proof: `input.spec.ts` dead-zone test — Evidence: `pnpm exec vitest run packages/core/__tests__/input.spec.ts` → 52 passed. "dead-zones an idle stick, rescales what is past it, and publishes raw axes at 0": 0.1 → `vector("move").length()` 0, 0.6 → `x` 0.5, `gamepadDeadZone = 0` → `x` 0.1.
+- [x] An idle pad in slot 0 does not take input from a pad in slot 1 whose button is pressed, and the slot 1 pad stays active after release. proof: `input.spec.ts` active-pad test — Evidence: same run, "keeps the pad the player last used, not the first slot the browser lists": slot 1's press reads `jump` true while slot 0 stays idle, and its release reads false. The "stays active" half is internal state only — after release both pads normalize to the same all-zero standard pad, so no public reading distinguishes them; what the rule buys is that the release is read at all, which the test asserts.
+- [x] Fixtures for an Xbox pad (`standard`), an 8BitDo Ultimate C 2.4G and a Steam Deck (both `mapping: ""`, rows from SDL_GameControllerDB) all fire `jump` on the south button, and an unknown `mapping: ""` pad fires nothing and logs `TN_GAMEPAD … unmapped` once. proof: `input.spec.ts` mapping tests — Evidence: same run, "reads a standard, an 8BitDo and a Steam Deck through one mapping" reports `["standard","table","table"]` from the `TN_GAMEPAD` lines, and the 8BitDo row also raises `crouch` from the trigger axis the row puts on raw axis 5; "ignores an unmapped pad and reports it once" holds after two ticks. The 8BitDo fixture is SDL 3.2.30's `8BitDo Ultimate 2C Wireless` (`2dc8:301b`) and `Ultimate Wireless Controller` (`2dc8:3013`) rows: the owner's Ultimate C 2.4G is not in that database under that name, so its own vendor:product is still the device read in Blocked on.
 
 #### Phase 2: One native table for every host
 
-**Status:** NOT STARTED
-**Files:** `packages/runtime-native/src/engine/player/gamepads.cpp` (exports `fillStandardPad`), `packages/runtime-native/src/platform/input.cpp` (`getGamepadState` calls it), `packages/runtime-native/src/engine/player/gamepads.h`, one test under `packages/runtime-native/tests/`.
+**Status:** DONE
+**Files:** `packages/runtime-native/src/platform/input.cpp` (defines and exports `fillStandardPad`), `packages/runtime-native/include/mystral/platform/input.h` (declares it), `packages/runtime-native/src/engine/player/gamepads.cpp` (SDL branch calls it), `packages/runtime-native/tests/native-engine/player/gamepad_standard_test.cpp` (new), `cmake/NativeEngine.cmake` (the test target; `gamepads.cpp` joins `tn_engine_player`), `cmake/NativeEngineAdapters.cmake` (the adapter stops compiling its own copy). File placement differs from the plan above; see Decisions.
 **Implementation:** move the SDL branch's per-pad body into `fillStandardPad(SDL_Gamepad*, GamepadState&)`. Point the legacy host at it, so both report 4 axes and 16 buttons with the triggers as buttons 6 and 7. Leave the PS4 branch as it is.
 **Verification:** a C++ test attaches an SDL3 virtual gamepad (`SDL_AttachVirtualJoystick`), sets the stick, the trigger and the south button, and compares both entry points field by field. `pnpm native:build` compiles.
 
-- [ ] `tnPollGamepads` and `platform::getGamepadState` return identical state for one virtual pad: the left stick on axes 0 and 1, the right trigger on button 7, the south button on button 0. proof: the new `tests/gamepad_standard_test.cpp` through `ctest -R gamepad_standard` — Evidence: pending.
+- [x] `tnPollGamepads` and `platform::getGamepadState` return identical state for one virtual pad: the left stick on axes 0 and 1, the right trigger on button 7, the south button on button 0. proof: the new `tests/gamepad_standard_test.cpp` through `ctest -R gamepad_standard` — Evidence: `cmake --build build/tn-engine-only --target tn-native-engine-gamepad-standard-test` then `ctest -R gamepad_standard` → 1/1 passed (0.09 s) in `packages/runtime-native/build/tn-engine-only`. The test attaches an SDL virtual gamepad with `SDL_AttachVirtualJoystick`, adds a mapping, sets left x full, the right trigger past halfway and the south button, and requires both entry points to report 4 axes, 16 buttons and identical fields. Red check: setting `state.numAxes = 6` in the one shared table fails the same test with "the legacy host reports 4 stick axes" and "the engine player reports 4 stick axes".
 
 #### Phase 3: Agents find it, kits prove it
 
-**Status:** NOT STARTED
-**Files:** `packages/core/src/input.ts` (TSDoc tags on `InputMap`), `packages/create-threenative/conventions.json` (row `gamepad`), `packages/engine-mcp/__tests__/search.spec.ts`, `packages/playtest/src/runner/steps.ts` (a `gamepad` step that installs a fake standard pad through an init script), one kit scenario.
+**Status:** DONE
+**Files:** `packages/core/src/index.ts` (TSDoc tags on `InputMap`), `packages/create-threenative/conventions.json` (row `gamepad`) and `agent-docs/references/conventions.md` (its anchor), `packages/engine-mcp/__tests__/search.spec.ts`, `packages/playtest/src/runner/steps.ts` and `runner/browserSession.ts` and `runner/deviceRunner.ts` and `scenario/schema-*.ts` (the `gamepad` step), `packages/playtest/__tests__/gamepad-step.spec.ts` (new), two platformer scenarios.
 **Implementation:** add `@alias gamepad`, `controller`, `joypad`, `xbox`, `8bitdo`, `steam deck`. Add `@situation` lines for "support an Xbox or generic controller", "the character drifts while the stick is idle", "the controller does nothing in Firefox" and "a second pad steals input". Add `@constraint` lines for standard indices, the dead zone and the active pad, and `@override gamepadDeadZone`. The convention row names the default, the override and the `TN_GAMEPAD` marker, so `pnpm build` renders it into every kit `AGENTS.md`.
 
-- [ ] `engine_search_capabilities` returns `InputMap` as the first row for "xbox controller", "steam deck" and "stick drift". proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` after `pnpm build` — Evidence: pending.
-- [ ] The `gamepad` convention row renders into each kit `AGENTS.md`, and the convention-index check passes. proof: `pnpm build && pnpm exec vitest run packages/create-threenative/__tests__` (the conventions spec) — Evidence: pending.
+- [x] `engine_search_capabilities` returns `InputMap` as the first row for "xbox controller", "steam deck" and "stick drift". proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` after `pnpm build` — Evidence: `pnpm build` regenerated `packages/core/capabilities.json` with the six aliases, four situations, three constraints and one override; the search spec → 108 passed, and the probe ranks `InputMap` first at 2.00, 2.40 and 0.61.
+- [x] The `gamepad` convention row renders into each kit `AGENTS.md`, and the convention-index check passes. proof: `pnpm build && pnpm exec vitest run packages/create-threenative/__tests__` (the conventions spec) — Evidence: the check lives in `scripts/__tests__/kit-conventions.spec.ts` (it is the spec that reads `conventions.json`, every kit's `AGENTS.md` and `CLAUDE.md`). `pnpm sync:agents` wrote 32 mirrors and the spec → 36 passed, including every kit's index carrying the row with its override.

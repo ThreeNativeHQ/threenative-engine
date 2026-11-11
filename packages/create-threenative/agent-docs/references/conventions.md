@@ -233,6 +233,13 @@ Default: none; browser-only WASM. Override: import `@threenative/physics/navigat
 
 This kit needs no navmesh and imports none, so it runs on every target; adding `@threenative/physics/navigation` would make it web and desktop only.
 
+<a id="gamepad"></a>
+## Controller
+
+Default: W3C standard mapping on every pad, radial dead zone `0.2`, and the pad that last moved is the one read. Override: `gamepadDeadZone: 0` for raw axes. Reports: TN_GAMEPAD.
+
+A game binds standard indices and nothing else: `buttons: [0]` is the south face button on an Xbox pad, an 8BitDo and a Steam Deck, `buttons: [6, 7]` are the triggers, and `ctx.input.vector("move")` reads the left stick. A pad the browser reports without a mapping is normalized from a vendor:product row in `@threenative/core`; a pad nothing knows is ignored and reported once as `TN_GAMEPAD … unmapped`, never read with raw indices, because raw index 0 fires whatever action that device happened to number 0. One pad at a time is read — the one the player last touched — so an idle wheel or a paired-but-idle dongle in the first slot cannot take the input. Both sticks carry the radial dead zone: a stick resting at `0.08` reads zero, and one past the zone is rescaled so full tilt is still `1`.
+
 <a id="move-axis"></a>
 ## Move input
 

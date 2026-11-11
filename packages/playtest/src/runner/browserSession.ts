@@ -53,8 +53,50 @@ export function openRunnerPage(
   // This copy is navigation-only. Reports and operator diagnostics retain the URL supplied on
   // the command line, while Android Chrome reaches the same server through its reverse tunnel.
   return installBootFailure(page, scenario)
+    .then(() => installScriptedGamepad(page))
     .then(() => (scenario.reducedMotion === undefined ? undefined : page.emulateMedia({ reducedMotion: scenario.reducedMotion })))
     .then(() => openPageAndConnectBridge(page, { ...config, url: navigationUrl }, scenario));
+}
+
+/**
+ * `navigator.getGamepads` answers the pad a `gamepad` step scripts, and the browser's own pads when
+ * no step scripts one. Installed before navigation because a game samples pads from its first frame;
+ * a plain object is enough, since a game reads `axes`, `buttons[i].pressed`, `id` and `mapping`.
+ */
+export async function installScriptedGamepad(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const KEY = "tn-playtest-gamepad";
+    const native = navigator.getGamepads?.bind(navigator);
+    const scripted = () => {
+      // Session storage, not a global: a scenario's step survives the page reload a startup retry
+      // performs, and still belongs to this tab alone.
+      const stored = globalThis.sessionStorage?.getItem(KEY);
+      const state = stored === null || stored === undefined
+        ? (globalThis as { __tnPlaytestGamepad?: { axes?: number[]; buttons?: number[] } }).__tnPlaytestGamepad
+        : (JSON.parse(stored) as { axes?: number[]; buttons?: number[] });
+      if (state === undefined) return native ? native() : [];
+      const held = new Set(state.buttons ?? []);
+      const axes = state.axes ?? [];
+      const buttons = [];
+      for (let index = 0; index < 16; index += 1) {
+        const pressed = held.has(index);
+        buttons.push({ pressed, touched: pressed, value: pressed ? 1 : 0 });
+      }
+      return [{
+        axes: [axes[0] ?? 0, axes[1] ?? 0, axes[2] ?? 0, axes[3] ?? 0],
+        buttons,
+        connected: true,
+        id: "TN Playtest Pad (STANDARD GAMEPAD Vendor: 045e Product: 028e)",
+        index: 0,
+        mapping: "standard",
+        timestamp: performance.now(),
+      }];
+    };
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: scripted,
+    });
+  });
 }
 
 async function installBootFailure(page: Page, scenario: IPlaytestScenario): Promise<void> {

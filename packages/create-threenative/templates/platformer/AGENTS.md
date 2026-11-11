@@ -38,7 +38,7 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `entities/`, `game.ts`, `level/`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `ui/`, `worker-page.ts`, `worker.ts`.
-18 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+20 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-platformer.md`.
 <!-- /shared -->
@@ -92,6 +92,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **CPU priority** `#cpu-priority`: game threads first. Override: `display.priority: "normal"`. Marker: `TN_PROCESS_PRIORITY`.
 - **Terrain** `#terrain`: authored in the game. Override: optional `@threenative/terrain`; `references/terrain-authoring.md`.
 - **Navigation** `#navigation`: none; browser-only WASM. Override: import `@threenative/physics/navigation` on purpose.
+- **Controller** `#gamepad`: W3C standard mapping on every pad, radial dead zone `0.2`, and the pad that last moved is the one read. Override: `gamepadDeadZone: 0` for raw axes. Marker: `TN_GAMEPAD`.
 - **Move input** `#move-axis`: `input.vector("move").y` is +up. Override: one explicit `-move.y` conversion.
 - **Scene change** `#scene-change`: `ctx.goto(name)` keeps state. Override: `game.goto(name)` resets state.
 - **Randomness** `#seed`: unseeded. Override: `defineGame({ seed })`.

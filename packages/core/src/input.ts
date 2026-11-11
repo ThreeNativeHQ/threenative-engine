@@ -1,4 +1,10 @@
 import { Vector2 } from "three";
+import {
+  type GamepadNormalizer,
+  type IStandardPad,
+  createStandardPad,
+  toStandardPad,
+} from "./gamepad-mappings.js";
 
 /**
  * One action, read either as a button through `pressed`/`justPressed`, a 2D axis through
@@ -81,9 +87,26 @@ function mouseButtonMask(button: number): number {
 export interface IInputGamepad {
   readonly axes: ArrayLike<number>;
   readonly buttons: readonly { readonly pressed: boolean }[];
+  /** The browser's device name, which carries the vendor:product an unmapped pad is looked up by. */
+  readonly id?: string;
+  /**
+   * `"standard"` when the pad already uses the W3C standard layout, and `""` when the browser does
+   * not know the device. A source with no `mapping` at all is standard by construction: the owned
+   * native host builds standard pads, and so does a fixture.
+   */
+  readonly mapping?: string;
 }
 
 export type InputPlatformSource = () => readonly (IInputGamepad | null)[];
+
+export interface IInputMapOptions {
+  /**
+   * Radial dead zone for both sticks, `0`..`1`. Default `0.2`, the stock Enhanced Input dead zone
+   * (`UInputModifierDeadZone`, `LowerThreshold = 0.2`, `EDeadZoneType::Radial`). A stick inside it
+   * reads zero, one outside it is rescaled so full tilt is still `1`. `0` publishes raw axes.
+   */
+  readonly gamepadDeadZone?: number;
+}
 
 export interface IRawInputPointer {
   readonly id: number;
@@ -158,6 +181,33 @@ function pointerLockDocument(): PointerLockDocument | undefined {
 const browserGamepads: InputPlatformSource = () =>
   (globalThis.navigator as Navigator | undefined)?.getGamepads?.() ?? [];
 
+const DEFAULT_GAMEPAD_DEAD_ZONE = 0.2;
+
+/** Stable names for pads a fixture reports with no `id`, so reporting allocates nothing per tick. */
+const PAD_SLOT_KEYS: readonly string[] = Array.from({ length: 16 }, (_, index) => `slot-${index}`);
+
+/**
+ * The radial dead zone, in place. A stick inside `deadZone` reads zero; one outside is rescaled by
+ * `(magnitude - deadZone) / (1 - deadZone)` so the edge of the zone is still `0` and full tilt is
+ * still `1`, which is what makes a 0.6 stick read 0.5 rather than 0.4.
+ */
+function applyStickDeadZone(axes: number[], x: number, y: number, deadZone: number): void {
+  const zone = Number.isFinite(deadZone)
+    ? Math.min(Math.max(deadZone, 0), 1)
+    : DEFAULT_GAMEPAD_DEAD_ZONE;
+  const stickX = axes[x] ?? 0;
+  const stickY = axes[y] ?? 0;
+  const magnitude = Math.sqrt(stickX * stickX + stickY * stickY);
+  if (magnitude <= zone || zone >= 1) {
+    axes[x] = 0;
+    axes[y] = 0;
+    return;
+  }
+  const scale = Math.min(1, (magnitude - zone) / (1 - zone)) / magnitude;
+  axes[x] = stickX * scale;
+  axes[y] = stickY * scale;
+}
+
 /**
  * Ask the browser to lock the pointer to `target`, the capture every first-person mouse look needs.
  *
@@ -195,6 +245,12 @@ export class InputMap {
   #pinchSample = 0;
   #gamepadAxes: number[] = [];
   #gamepadButtons: boolean[] = [];
+  /** The pad every read goes through: one reused buffer, filled once per read and never allocated. */
+  #padScratch: IStandardPad = createStandardPad();
+  /** Which source slot the player last used. It stays active until another pad reports input. */
+  #activePadSlot = -1;
+  #padSeen = new Set<string>();
+  #padReports = new Map<string, GamepadNormalizer>();
   #previousPressed = new Map<string, boolean>();
   #justPressed = new Set<string>();
   #justReleased = new Set<string>();
@@ -214,13 +270,21 @@ export class InputMap {
   #tracksPinch = false;
   #listeners: Array<[EventTarget, string, EventListener]> = [];
 
+  /**
+   * Radial dead zone for both sticks; `0` publishes the raw axes. Read on every tick, so a game may
+   * change it while running. `defineGame({ gamepadDeadZone })` sets the starting value.
+   */
+  gamepadDeadZone: number;
+
   constructor(
     bindings: InputBindings = DEFAULT_BINDINGS,
     target: EventTarget = globalThis,
     pointerTarget: EventTarget = target,
     source: InputPlatformSource = browserGamepads,
     contextMenu: ContextMenuPolicy = "suppress",
+    options: IInputMapOptions = {},
   ) {
+    this.gamepadDeadZone = options.gamepadDeadZone ?? DEFAULT_GAMEPAD_DEAD_ZONE;
     this.#bindings = { ...DEFAULT_BINDINGS, ...bindings };
     // Bindings are fixed at construction; freezing the key list keeps tick() from calling
     // Object.keys every step.
@@ -426,29 +490,7 @@ export class InputMap {
     this.#scrollSample = this.#clampAxis(this.#scrollDelta);
     this.#scrollDelta = 0;
     this.#samplePinch();
-    const sources = this.#source();
-    let gamepad: IInputGamepad | undefined;
-    for (let index = 0; index < sources.length; index += 1) {
-      const candidate = sources[index];
-      if (candidate !== null) {
-        gamepad = candidate;
-        break;
-      }
-    }
-    // Reused buffers: fresh arrays here were four allocations per update step, device or not.
-    this.#gamepadAxes.length = 0;
-    this.#gamepadButtons.length = 0;
-    if (gamepad?.axes) {
-      const axes = gamepad.axes;
-      for (let axis = 0; axis < axes.length; axis += 1)
-        this.#gamepadAxes.push(axes[axis] as number);
-    }
-    if (gamepad?.buttons) {
-      for (let index = 0; index < gamepad.buttons.length; index += 1)
-        this.#gamepadButtons.push(gamepad.buttons[index]?.pressed ?? false);
-    }
-    this.raw.gamepad.axes = this.#gamepadAxes;
-    this.raw.gamepad.buttons = this.#gamepadButtons;
+    this.#sampleGamepad();
     this.#justPressed.clear();
     this.#justReleased.clear();
     for (let index = 0; index < this.#bindingNames.length; index += 1) {
@@ -486,6 +528,8 @@ export class InputMap {
     this.#pinchPair = undefined;
     this.#pinchDistance = 0;
     this.#pinchSample = 0;
+    this.#activePadSlot = -1;
+    this.#padReports.clear();
     this.#previousPressed.clear();
     this.#justPressed.clear();
     this.#justReleased.clear();
@@ -503,6 +547,78 @@ export class InputMap {
       target.removeEventListener(type, listener);
     this.#listeners = [];
     this.clear();
+  }
+
+  /**
+   * Reads every pad once, normalizes each to the standard mapping, and publishes the one pad the
+   * player is holding. Reading the first non-null slot instead let a wheel or a paired-but-idle
+   * dongle at slot 0 swallow the pad in the player's hands.
+   */
+  #sampleGamepad(): void {
+    const sources = this.#source();
+    this.#padSeen.clear();
+    let pending = -1;
+    let firstMapped = -1;
+    let activeStillMapped = false;
+    for (let index = 0; index < sources.length; index += 1) {
+      const pad = sources[index];
+      if (pad === null || pad === undefined) continue;
+      if (this.#readPad(pad, index) === "unmapped") continue;
+      if (firstMapped < 0) firstMapped = index;
+      if (index === this.#activePadSlot) activeStillMapped = true;
+      if (this.#padHasInput()) pending = index;
+    }
+    for (const key of this.#padReports.keys())
+      if (!this.#padSeen.has(key)) this.#padReports.delete(key);
+    // A pad that reported input wins for the rest of the session; with none, the pad already in the
+    // player's hands keeps the slot so its releases are still read.
+    const active =
+      pending >= 0
+        ? pending
+        : activeStillMapped && this.#activePadSlot >= 0
+          ? this.#activePadSlot
+          : firstMapped;
+    this.#activePadSlot = active;
+    // Reused buffers: fresh arrays here were four allocations per update step, device or not.
+    this.#gamepadAxes.length = 0;
+    this.#gamepadButtons.length = 0;
+    const pad = active < 0 ? undefined : sources[active];
+    if (pad === null || pad === undefined || this.#readPad(pad, active) === "unmapped") {
+      this.raw.gamepad.axes = this.#gamepadAxes;
+      this.raw.gamepad.buttons = this.#gamepadButtons;
+      return;
+    }
+    for (const axis of this.#padScratch.axes) this.#gamepadAxes.push(axis);
+    for (const button of this.#padScratch.buttons) this.#gamepadButtons.push(button.pressed);
+    this.raw.gamepad.axes = this.#gamepadAxes;
+    this.raw.gamepad.buttons = this.#gamepadButtons;
+  }
+
+  /** Normalizes one pad into the scratch buffer and reports it once per connect. */
+  #readPad(pad: IInputGamepad, index: number): GamepadNormalizer {
+    const normalizer = toStandardPad(pad, this.#padScratch);
+    const key = pad.id ?? (PAD_SLOT_KEYS[index] as string);
+    this.#padSeen.add(key);
+    if (this.#padReports.get(key) !== normalizer) {
+      this.#padReports.set(key, normalizer);
+      console.info(
+        `TN_GAMEPAD ${JSON.stringify({
+          deadZone: this.gamepadDeadZone,
+          id: pad.id ?? key,
+          mapping: normalizer,
+        })}`,
+      );
+    }
+    applyStickDeadZone(this.#padScratch.axes, 0, 1, this.gamepadDeadZone);
+    applyStickDeadZone(this.#padScratch.axes, 2, 3, this.gamepadDeadZone);
+    return normalizer;
+  }
+
+  /** Whether the normalized pad in the scratch buffer has moved past its dead zone or pressed anything. */
+  #padHasInput(): boolean {
+    for (const axis of this.#padScratch.axes) if (axis !== 0) return true;
+    for (const button of this.#padScratch.buttons) if (button.pressed) return true;
+    return false;
   }
 
   /** Was this action pressed at any point since the last tick, even if already released? */

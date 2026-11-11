@@ -2175,21 +2175,28 @@
       "symbol": "GroundSnap"
     },
     {
-      "aliases": [],
+      "aliases": ["gamepad", "controller", "joypad", "xbox", "8bitdo", "steam deck"],
       "constraints": [
         "`buttons` is the gamepad and `mouseButtons` the mouse; `up`/`down`/`left`/`right` are the directions of `vector(name)`, not the keys that press it",
-        "scroll, pinch and pointer-relative sources are declared on the binding and read through `axis(name)`; a game adds no window listener of its own"
+        "scroll, pinch and pointer-relative sources are declared on the binding and read through `axis(name)`; a game adds no window listener of its own",
+        "gamepad buttons are W3C standard indices on every pad: 0 south (A/Cross), 1 east, 2 west, 3 north, 4/5 shoulders, 6/7 triggers, 8 select, 9 start, 10/11 stick clicks; axes 0..3 are the sticks",
+        "both sticks carry a radial dead zone, `0.2` by default, reported per connected pad as `TN_GAMEPAD`; a pad the browser reports unmapped and the table does not know is ignored, never read with raw indices",
+        "the pad that last moved past the dead zone or pressed a button is the active one, so an idle pad in the first slot cannot steal input"
       ],
       "example": "const game = defineGame({ input: { move: { up: [\"KeyW\"], down: [\"KeyS\"], left: [\"KeyA\"], right: [\"KeyD\"] } }, scenes: { Play } });\n// inside the scene, per frame: ctx.input.axis(\"move\") is 0 at rest and 1 at full tilt",
       "importPath": "@threenative/core",
       "kind": "class",
-      "overrides": [],
+      "overrides": ["defineGame({ gamepadDeadZone: 0 }) publishes raw axes"],
       "package": "@threenative/core",
       "signature": "export class InputMap { … }",
       "situations": [
         "map WASD keys to a movement axis instead of reading the held key set in the update loop",
         "read a jump, a fire or a reload as one named action bound to key, gamepad button and mouse button together",
-        "read mouse look, wheel zoom or a two-finger pinch as an axis the frame loop already ticks"
+        "read mouse look, wheel zoom or a two-finger pinch as an axis the frame loop already ticks",
+        "support an Xbox pad, a generic XInput clone, an 8BitDo or a Steam Deck controller",
+        "the character drifts while the controller stick is idle",
+        "the controller does nothing in Firefox on Linux",
+        "a second controller or a wheel steals the input from the pad the player holds"
       ],
       "summary": "The map a game reads input through: named actions, 2D vectors and scalar axes resolved from keyboard, gamepad, mouse, wheel, pinch and touch. `defineGame({ input })` builds one and hands it to the running game as `ctx.input`, so the usual route is a binding in the config and `ctx.input.axis(\"move\")` in the update. Construct one directly to drive a menu, a replay or a test outside a running game.",
       "supersedes": [],

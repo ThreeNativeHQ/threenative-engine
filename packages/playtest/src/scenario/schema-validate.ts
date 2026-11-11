@@ -503,6 +503,7 @@ export function validateSetupEntity(value: unknown, scenarioPath: string, index:
 /** Keys one step accepts; exported for the documentation-drift gate alongside {@link PLAYTEST_ROOT_KEYS}. */
 export const PLAYTEST_STEP_KEYS = [
   "at",
+  "gamepad",
   "holdFrames",
   "holdTicks",
   "kind",
@@ -640,6 +641,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     rejectUnknownKeys(value.wheel, ["deltaX", "deltaY", "x", "y"], scenarioPath, `steps[${index}].wheel`);
   }
   const media = validateMedia(value.media, scenarioPath, index);
+  const gamepad = validateGamepad(value.gamepad, scenarioPath, index);
   if (pointers !== undefined && new Set(pointers.map(({ id }) => id)).size !== pointers.length) {
     throw invalidStep(scenarioPath, `Scenario step ${index} pointers must use unique ids.`);
   }
@@ -744,6 +746,12 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (value.wheel !== undefined && wheel === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} wheel must define finite deltaY, optional finite deltaX, and optionally both normalized x and y from 0 through 1.`);
   }
+  if (value.gamepad !== undefined && gamepad === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} gamepad must define axes (up to 4 numbers from -1 through 1) and/or unique button indices from 0 through 15.`);
+  }
+  if (gamepad !== undefined && kind === "lifecycle") {
+    throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'lifecycle' cannot define gamepad; a lifecycle step is one device operation and nothing else.`);
+  }
   if (value.screenshot !== undefined && screenshot === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} screenshot must be a stable file-safe name.`);
   }
@@ -793,8 +801,8 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
       }
     }
   }
-  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && media === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined && waitForResource === undefined && lifecycle === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, wheel, media, window, aimAt target, lifecycle operation, or waitFrames/waitTicks.`);
+  if (at === undefined && press === undefined && gamepad === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && media === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined && waitForResource === undefined && lifecycle === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, gamepad, overlayMessage, pointerPosition, pointers, wheel, media, window, aimAt target, lifecycle operation, or waitFrames/waitTicks.`);
   }
   if (value.holdFrames !== undefined && holdFrames === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} holdFrames must be a positive integer.`);
@@ -822,6 +830,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   }
   return {
     ...(kind === undefined ? {} : { kind }),
+    ...(gamepad === undefined ? {} : { gamepad }),
     ...(holdFrames === undefined ? {} : { holdFrames }),
     ...(holdTicks === undefined ? {} : { holdTicks }),
     ...(typeof value.label === "string" ? { label: value.label } : {}),
@@ -864,6 +873,47 @@ function validateMedia(value: unknown, scenarioPath: string, index: number): IPl
     ...(colorScheme === undefined ? {} : { colorScheme }),
     ...(reducedMotion === undefined ? {} : { reducedMotion }),
   };
+}
+
+/**
+ * A `gamepad` step's held pad: at most the standard's 4 stick axes and its 16 buttons, and nothing
+ * this runner would then have to interpret. Bounded here so a typo fails the scenario, not the run.
+ */
+function validateGamepad(value: unknown, scenarioPath: string, index: number): IPlaytestStep["gamepad"] {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} gamepad must be an object.`);
+  }
+  rejectUnknownKeys(value, ["axes", "buttons"], scenarioPath, `steps[${index}].gamepad`);
+  const axes = gamepadAxes(value.axes);
+  const buttons = gamepadButtons(value.buttons);
+  // Any malformed half throws the caller's one message, so the scenario never runs with a pad it
+  // silently trimmed: `axes.length > 4` or a repeated button would otherwise test something else.
+  if (value.axes !== undefined && (axes === undefined || axes.length > 4)) return undefined;
+  if (value.buttons !== undefined && buttons === undefined) return undefined;
+  if (buttons !== undefined && new Set(buttons).size !== buttons.length) return undefined;
+  if (axes === undefined && buttons === undefined) return undefined;
+  return {
+    ...(axes === undefined ? {} : { axes }),
+    ...(buttons === undefined ? {} : { buttons }),
+  };
+}
+
+function gamepadAxes(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const valid = value.every(
+    (axis) => typeof axis === "number" && Number.isFinite(axis) && axis >= -1 && axis <= 1,
+  );
+  return valid ? ([...value] as number[]) : undefined;
+}
+
+function gamepadButtons(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const valid = value.every(
+    (button) =>
+      typeof button === "number" && Number.isInteger(button) && button >= 0 && button <= 15,
+  );
+  return valid ? ([...value] as number[]) : undefined;
 }
 
 function validateLifecycleStep(

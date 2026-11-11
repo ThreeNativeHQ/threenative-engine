@@ -115,11 +115,10 @@ if(TN_PS4)
     # reaches src/platform/ps4_main.cpp, which supplies the bundle path, the scanout size and V8's
     # flags a console cannot pass on a command line.
     add_library(tn-native-engine-player-v8 STATIC EXCLUDE_FROM_ALL
-        src/engine/player/v8_main.cpp src/engine/player/gamepads.cpp src/platform/ps4_main.cpp)
+        src/engine/player/v8_main.cpp src/platform/ps4_main.cpp)
     set_source_files_properties(src/engine/player/v8_main.cpp PROPERTIES COMPILE_DEFINITIONS "main=tn_player_v8_main")
 else()
-    add_executable(tn-native-engine-player-v8 EXCLUDE_FROM_ALL src/engine/player/v8_main.cpp
-        src/engine/player/gamepads.cpp)
+    add_executable(tn-native-engine-player-v8 EXCLUDE_FROM_ALL src/engine/player/v8_main.cpp)
 endif()
 target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_adapter_v8 tn_engine_player tn_engine_assets)
 if(TARGET tn_engine_gltf)

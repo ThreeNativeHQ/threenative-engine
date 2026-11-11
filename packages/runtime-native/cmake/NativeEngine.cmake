@@ -692,8 +692,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # the executable names its game. It reaches no JS engine: inspect-js-free.mjs proves it. The loop
     # links SDL, never a VM. Neither player is part of the default build (EXCLUDE_FROM_ALL).
     add_library(tn_engine_player STATIC src/engine/player/mailbox.cpp src/engine/player/demo.cpp
-        src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp src/engine/player/world_walk.cpp
-        src/platform/ui_overlay.cpp src/platform/input.cpp)
+        src/engine/player/gamepads.cpp src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp
+        src/engine/player/world_walk.cpp src/platform/ui_overlay.cpp src/platform/input.cpp)
     tn_native_engine_target(tn_engine_player)
     # The UI seam is shared with the legacy host; the CSS backend is never linked here. The web view is
     # opt-in (a game with ui.renderer "web" draws its HUD through it), so the default graph stays JS- and
@@ -753,6 +753,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-skinned-crowd-test tests/native-engine/animation/skinned_crowd_test.cpp
         native_engine_skinned_crowd_cpu=crowd_cpu)
     target_link_libraries(tn-native-engine-skinned-crowd-test PRIVATE tn_engine_player)
+
+    # PRD-880 phase 2: the engine player's `tnPollGamepads` and the legacy host's
+    # `platform::getGamepadState` read one SDL3 -> W3C standard table, so they cannot report different
+    # counts or a different index for the same pad. Links tn_engine_player, which compiles both.
+    tn_native_engine_test(tn-native-engine-gamepad-standard-test
+        tests/native-engine/player/gamepad_standard_test.cpp
+        gamepad_standard=gamepad_standard)
+    target_link_libraries(tn-native-engine-gamepad-standard-test PRIVATE tn_engine_player)
 endif()
 
 # PRD-528 boxes 53/54: native Rapier stepped by the engine's FixedStepClock, with every body's

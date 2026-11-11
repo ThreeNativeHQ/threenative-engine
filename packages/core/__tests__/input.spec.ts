@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InputMap, type InputPlatformSource } from "../src/input.js";
 
 function keyEvent(type: string, code: string): Event {
@@ -84,12 +84,142 @@ describe("InputMap", () => {
   it("should read a bound gamepad axis through the same scalar input", () => {
     const target = new EventTarget();
     const input = new InputMap({ zoom: { gamepadAxes: [3] } }, target, target, () => [
-      { axes: [0, 0, 0, 0.75], buttons: [] },
+      { axes: [0, 0, 0, 1], buttons: [] },
     ]);
 
     input.tick();
 
-    expect(input.axis("zoom")).toBeCloseTo(0.75);
+    expect(input.axis("zoom")).toBe(1);
+    input.dispose();
+  });
+
+  it("dead-zones an idle stick, rescales what is past it, and publishes raw axes at 0", () => {
+    const target = new EventTarget();
+    const axes = [0.1, 0, 0, 0];
+    const input = new InputMap(undefined, target, target, () => [{ axes, buttons: [] }]);
+
+    input.tick();
+    expect(input.vector("move").length()).toBe(0);
+
+    axes[0] = 0.6;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.5);
+
+    input.gamepadDeadZone = 0;
+    axes[0] = 0.1;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.1);
+    input.dispose();
+  });
+
+  it("keeps the pad the player last used, not the first slot the browser lists", () => {
+    const target = new EventTarget();
+    const idleButton = { pressed: false };
+    const heldButton = { pressed: false };
+    const idle = { axes: [0, 0, 0, 0], buttons: [idleButton] };
+    const held = { axes: [0, 0, 0, 0], buttons: [heldButton] };
+    const input = new InputMap({ jump: { buttons: [0] } }, target, target, () => [idle, held]);
+
+    input.tick();
+    expect(input.pressed("jump")).toBe(false);
+
+    heldButton.pressed = true;
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+
+    // The release is read from the pad that pressed, not from the idle slot 0 that a first-pad
+    // rule would have sampled — and `raw.gamepad` is that pad's, normalized, not slot 0's.
+    heldButton.pressed = false;
+    input.tick();
+    expect(input.pressed("jump")).toBe(false);
+    input.dispose();
+  });
+
+  it("reads a standard, an 8BitDo and a Steam Deck through one mapping", () => {
+    const target = new EventTarget();
+    const reports: string[] = [];
+    const info = vi.spyOn(console, "info").mockImplementation((line: string) => {
+      reports.push(line);
+    });
+    const xboxButton = { pressed: true };
+    const eightBitDoButton = { pressed: true };
+    const deckButton = { pressed: true };
+    const xbox = {
+      id: "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)",
+      mapping: "standard",
+      axes: [0, 0, 0, 0],
+      buttons: [xboxButton],
+    };
+    const eightBitDoAxes = [0, 0, 0, 0, 0, 1];
+    const eightBitDo = {
+      id: "8BitDo Ultimate 2C Wireless Controller (Vendor: 2dc8 Product: 301b)",
+      mapping: "",
+      // The row's own order: the left trigger is raw axis 5, the sticks are 0..3.
+      axes: eightBitDoAxes,
+      buttons: [eightBitDoButton],
+    };
+    const deck = {
+      id: "28de-1205-Steam Deck Controller",
+      mapping: "",
+      axes: [0, 0, 0, 0],
+      buttons: [deckButton],
+    };
+    let pads = [xbox];
+    const input = new InputMap(
+      { crouch: { buttons: [6, 7] }, jump: { buttons: [0] } },
+      target,
+      target,
+      () => pads,
+    );
+
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    expect(input.pressed("crouch")).toBe(false);
+
+    xboxButton.pressed = false;
+    pads = [xbox, eightBitDo];
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    expect(input.pressed("crouch")).toBe(true);
+
+    eightBitDoButton.pressed = false;
+    eightBitDoAxes[5] = 0;
+    pads = [xbox, eightBitDo, deck];
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    expect(reports.map((line) => JSON.parse(line.slice("TN_GAMEPAD ".length)).mapping)).toEqual([
+      "standard",
+      "table",
+      "table",
+    ]);
+    info.mockRestore();
+    input.dispose();
+  });
+
+  it("ignores an unmapped pad and reports it once", () => {
+    const target = new EventTarget();
+    const reports: string[] = [];
+    const info = vi.spyOn(console, "info").mockImplementation((line: string) => {
+      reports.push(line);
+    });
+    const input = new InputMap({ jump: { buttons: [0] } }, target, target, () => [
+      {
+        id: "Generic Wheel (Vendor: 1234 Product: 5678)",
+        mapping: "",
+        axes: [0, 0, 0, 0],
+        buttons: [{ pressed: true }],
+      },
+    ]);
+
+    input.tick();
+    input.tick();
+
+    expect(input.pressed("jump")).toBe(false);
+    expect(input.raw.gamepad.buttons).toHaveLength(0);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toContain("TN_GAMEPAD");
+    expect(reports[0]).toContain('"mapping":"unmapped"');
+    info.mockRestore();
     input.dispose();
   });
 
@@ -264,10 +394,7 @@ describe("InputMap", () => {
 
   it("uses the first connected gamepad after empty browser slots", () => {
     const target = new EventTarget();
-    const gamepads = [
-      null,
-      { axes: [0, 0, 0, 0.75], buttons: [] },
-    ] as ReturnType<InputPlatformSource>;
+    const gamepads = [null, { axes: [0, 0, 0, 1], buttons: [] }] as ReturnType<InputPlatformSource>;
     Object.defineProperty(gamepads, "find", {
       configurable: true,
       value: () => {
@@ -278,7 +405,7 @@ describe("InputMap", () => {
 
     input.tick();
 
-    expect(input.axis("zoom")).toBeCloseTo(0.75);
+    expect(input.axis("zoom")).toBe(1);
     input.dispose();
   });
 
