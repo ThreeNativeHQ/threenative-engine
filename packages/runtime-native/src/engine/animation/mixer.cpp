@@ -848,6 +848,12 @@ AnimationMixer& AnimationMixer::stopAllAction() {
 }
 
 AnimationMixer& AnimationMixer::update(double deltaTime) {
+    evaluate(deltaTime);
+    flushEvents();
+    return *this;
+}
+
+AnimationMixer& AnimationMixer::evaluate(double deltaTime) {
     MixerCpuScope cpu;
     if (poseObservation.enabled) closePoseInterval(this);
     struct ObservationUnwind {
@@ -876,12 +882,15 @@ AnimationMixer& AnimationMixer::update(double deltaTime) {
         bindings_[i]->apply(accuIndex);
     }
     updating_ = false;
+    cpu.stop(); // listener callbacks may run arbitrary game code or reenter update
+    return *this;
+}
+
+void AnimationMixer::flushEvents() {
     std::vector<MixerEvent> pending;
     pending.swap(pendingEvents_);
-    cpu.stop(); // listener callbacks may run arbitrary game code or reenter update
     for (const MixerEvent& event : pending)
         dispatchEvent(event);
-    return *this;
 }
 
 AnimationMixer& AnimationMixer::setTime(double t) {

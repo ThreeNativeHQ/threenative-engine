@@ -932,7 +932,8 @@ target_link_libraries(tn-native-engine-animation-binding-test PRIVATE tn_engine_
 target_include_directories(tn-native-engine-animation-binding-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 tn_native_engine_test(tn-native-engine-animation-mixer-test tests/native-engine/animation/mixer_test.cpp
     native_engine_animation_mixer=mixer native_engine_animation_events=events
-    native_engine_animation_track_hot_fields=track_hot_fields)
+    native_engine_animation_track_hot_fields=track_hot_fields
+    native_engine_animation_evaluate_then_flush_events=evaluate_then_flush_events)
 target_link_libraries(tn-native-engine-animation-mixer-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 if(EMSCRIPTEN)
@@ -1026,6 +1027,7 @@ tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/j
     native_engine_job_pool_workers_cover_the_machine=workers_cover_the_machine
     native_engine_job_pool_fails_closed=pool_fails_closed_when_no_worker_starts
     native_engine_matrix_walk_jobs=matrix_walk_jobs
+    native_engine_concurrent_quaternion_writes=concurrent_quaternion_writes
     native_engine_matrix_walk_threshold=matrix_walk_threshold
     native_engine_job_pool_starts_on_need=pool_starts_on_need
     native_engine_job_pool_is_always_on=pool_is_always_on)
