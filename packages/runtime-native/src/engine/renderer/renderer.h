@@ -615,6 +615,8 @@ public:
      * turns it on at core's startup reveal, after compileAsync built what the first frames draw.
      */
     void deferUncompiledDraws(bool on) { deferUncompiled_ = on; }
+    /** Whether the startup cover is gone; a program built behind the cover is precache progress, not late. */
+    void setPresentationRevealed(bool on) { revealed_ = on; }
     /** Pipelines still compiling off the queue: a frame planned while one is pending skipped the draws that need it. */
     size_t pipelinesCompiling() { return pipelines_->pending(); }
     /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
@@ -962,6 +964,8 @@ public:
     const PipelineLayoutCache& layouts() const { return *layouts_; }
     /** Material programs built or refused so far; a steady frame adds none. */
     size_t programCount() const { return programs_.size(); }
+    /** Programs first built after the startup reveal while draws defer their pipelines; a covered build is not late. */
+    std::uint64_t lateProgramBuilds() const { return lateProgramBuilds_; }
     /** Program key strings built and Program* lookups done so far; a steady frame adds none. */
     uint64_t programKeyBuilds() const { return programKeyBuilds_; }
     uint64_t programLookups() const { return programLookups_; }
@@ -1265,6 +1269,8 @@ private:
     // compiled for one layout serves them all only if the layout handles are the same too.
     std::shared_ptr<PipelineCache> pipelines_;
     bool deferUncompiled_ = false;  // see deferUncompiledDraws(); a sibling() keeps three's draw-time compile
+    bool revealed_ = true;  // see setPresentationRevealed(); hosts that never hold start revealed
+    std::uint64_t lateProgramBuilds_ = 0;
     std::shared_ptr<PipelineLayoutCache> layouts_;
     // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.

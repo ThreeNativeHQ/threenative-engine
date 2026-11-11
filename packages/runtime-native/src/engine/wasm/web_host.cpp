@@ -224,6 +224,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     renderer = std::make_unique<Renderer>(instance, device, queue, events, RenderFeatures::web());
     renderer->setGpuTimer(timestampTracking);
     if (presentationHeld) renderer->deferUncompiledDraws(true);
+    renderer->setPresentationRevealed(!presentationHeld);
     configureWebSurface();
     renderer->setOutput(output);
     outputChanged = false;
@@ -389,6 +390,7 @@ extern "C" void tnw_web_set_presentation_hold(int held) {
     // while the cover held, the forest's frame before the reveal compiled them in a row: 1368 ms of plan, then 2.5 s of
     // GPU wait. Async compiles run in parallel in Chrome's GPU process; field 72 keeps the cover up until they land.
     if ((held || presentationHeld) && renderer) renderer->deferUncompiledDraws(true);
+    if (renderer) renderer->setPresentationRevealed(held == 0);
     presentationHeld = held != 0;
 }
 

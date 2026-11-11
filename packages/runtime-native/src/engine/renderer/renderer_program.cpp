@@ -396,9 +396,13 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
         }
     }
     // A program first built after the startup reveal is a precache miss (Unreal's PSO precache validation): its
-    // shader build and GPU compile land mid-play as a hitch. Debug runs name it so prewarm can cover it.
-    if (deferUncompiled_ && waste::debugEnabled().load(std::memory_order_relaxed))
-        std::fprintf(stderr, "TN_PROGRAM_LATE %s\n", key.substr(0, 240).c_str());
+    // shader build and GPU compile land mid-play as a hitch. A build behind the cover is precache progress, not
+    // late. Debug runs name a late one so prewarm can cover it.
+    if (deferUncompiled_ && revealed_) {
+        ++lateProgramBuilds_;
+        if (waste::debugEnabled().load(std::memory_order_relaxed))
+            std::fprintf(stderr, "TN_PROGRAM_LATE %s\n", key.substr(0, 240).c_str());
+    }
     buildLayouts(*built);
     if (uniformCapacity_ != 0) {
         const DrawProbes probes = probesOf(*built);

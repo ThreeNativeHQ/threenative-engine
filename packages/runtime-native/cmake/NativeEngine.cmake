@@ -416,6 +416,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
         native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
         native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once
+        native_engine_late_program_builds_only_after_reveal=late_program_builds_only_after_reveal
         native_engine_maps_share_one_pipeline=maps_share_one_pipeline
         native_engine_serial_uniforms_share_one_pipeline=serial_uniforms_share_one_pipeline
         native_engine_mirror_programs_precompiled=mirror_programs_precompiled)

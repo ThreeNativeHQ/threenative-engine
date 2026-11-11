@@ -9740,6 +9740,38 @@ void programProbesAreResolvedOnce() {
     waste::setDebugEnabled(false);
 }
 
+// A program first built behind the startup cover is precache progress, not a late build: the Wasm host turns
+// deferUncompiledDraws(true) on when the presentation hold starts, before the cover reveals, so the deferred flag
+// alone named every covered program late. Only a build after the reveal is counted.
+void lateProgramBuildsOnlyAfterReveal() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.deferUncompiledDraws(true);
+    renderer.setPresentationRevealed(false);
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    Scene scene;
+    auto covered = std::make_shared<Mesh>(makePlaneGeometry(1, 1), std::make_shared<Material>(MaterialType::Basic));
+    covered->position.x = -1;
+    scene.add(*covered);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(renderer.programCount() > 0);          // the covered draw built its program
+    CHECK(renderer.lateProgramBuilds() == 0);    // and was not reported late
+    renderer.setPresentationRevealed(true);
+    auto after = std::make_shared<Mesh>(makePlaneGeometry(1, 1), std::make_shared<Material>(MaterialType::Lambert));
+    after->position.x = 1;
+    scene.add(*after);
+    scene.updateMatrixWorld(true);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(renderer.lateProgramBuilds() == 1);    // the post-reveal build is the one late program
+}
+
 // FM1 review: the material half of a draw is held while its signature and geometry revision hold, so two
 // writes that move neither must still reach the pixels. (1) A normalized byte colour attribute reaches the
 // draw as a converted float copy, and `setNeedsUpdate` replaces that copy without a geometry revision.
@@ -9945,7 +9977,7 @@ TN_TEST_MAIN({"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"vi
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"alpha_test_node", alphaTestNode}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled}, {"bone_chains_are_not_projected", boneChainsAreNotProjected})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"alpha_test_node", alphaTestNode}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"late_program_builds_only_after_reveal", lateProgramBuildsOnlyAfterReveal}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled}, {"bone_chains_are_not_projected", boneChainsAreNotProjected})
 
 
 
