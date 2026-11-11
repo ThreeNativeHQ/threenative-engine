@@ -175,6 +175,12 @@ Risks:
   `7482c204c` (a rig box reads each bone stretch alone): bounds rebuild 1.38 → 1.06 ms a frame by sub-timer. The stage still
   reads 1.25-1.6 ms under host load 12-20; the desktop window `shadow-plan` (#347-#348) is inconclusive (one valid base
   run). Most of what remains is the walking crowd (see Handover notes).
+  Attribution, 2026-11-10 (temporary sub-timers, desktop `?stress`, 1174 items, 1145 casters): bounds 0.95 ms (242 rig
+  meshes about 0.64, 902 rigid cached casters about 0.28), caster states 0.08, `updateCasters` 0.18, atlas update 0.15.
+  The rigs' bone joins are only about 0.2 ms of it. `3883e79f0`: two meshes on one skeleton read its bone poses once per
+  plan (`bone_reach_bounds_hold_posed_vertices` red-green): bounds median 1.21 → 1.08 ms at load 17-23. Floor: with zero
+  rig cost the stage stays near 0.7 ms, because every caster is re-verified each frame. 0.5 ms needs a scene dirty list
+  that skips unchanged casters in all four loops; that is a structural change, not started.
 - [x] No buffer with unchanged content uploads on `?stress&still`. proof: `tnDebug=1` upload counters before and after, in the ledger row notes. — The 39 KB a frame that `uniformUploadBytes` showed was the arena size, not an upload: the FM2 diff already sent only changed blocks. `a3ee875b2` makes the counter count written bytes; `bd1cd887d` stops the last unchanged write (the output pass block, 4 B a frame). `frame_slab_is_per_program` red-green both times: a still frame now uploads 0 bytes; 136 render database, 98 renderer and 14 post cases pass. Desktop `?stress&still&tnDebug=1`: 74.0 KB a frame, of it 6.7 KB uniforms (changed blocks only, by per-block compare) and the rest the walking crowd's bone palettes, which change each frame; with `noCrowd&noFires&noBodies` 516 → 512 B, all changed uniform blocks. No ledger row: the counters are not a window metric.
 - [ ] The `play` frame has a stage split that covers 95% of the frame, and its largest removable term is cut. proof: the split and the paired window in ledger rows; the DevTools trace named in the learnings entry.
 

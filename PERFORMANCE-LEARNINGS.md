@@ -169,6 +169,23 @@ Method traps found, each one fixed in the tool unless it says open:
 - Next lever on that frame (cool, 8.1 ms): the scene pass is 5.3 ms, about half of it the 120 walkers (1.65 M
   triangles, 13.7 k each, no LOD: `updateModelLods` skips skinned meshes).
 
+### 2026-11-10 — `play`: the shadow LOD sync walked the whole scene each frame for no chain — KEEP
+
+- Where: `packages/three-native/src/shadow-node.ts` `syncVirtualShadowLods` (`e4fe59cb8`).
+- Cause: the walk is skipped only while the light root's hierarchy revision holds. `play` adds and removes objects
+  every frame, so each frame walked about 10k objects through engine proxies (`child.geometry` is a bridge get, and
+  each argument goes through the recursive converter `J`). The lab registers no LOD chain, so every walk found nothing.
+- Attribution: the stage split covers the frame (`stageSum` p50 = frame p50). A CPU profile of `?stress&play`
+  (`prof-probe.mjs`, 200 µs sampling, 10 s) put 15% of main-thread time under `Pn → traverse → value → J`. Profile
+  self time with Wasm names is not readable; inclusive time by JS caller chain found it in one pass.
+- Result (same build, the old walk forced by setting `discreteLodChainsVersion` to 0 in an init script, 3 pairs,
+  load 7-20): 42.5/35.2/45.6 → 57.8/59.5/54.2 fps, frame p50 27.1/30.9/15.7 → 16.0/17.3/12.6 ms. `update` fell as well
+  (less garbage from the converter). No pixel can change: with no chain registered, the walk dispatched nothing.
+- Rule: a per-frame scan that a registry gates must also gate on "nothing registered yet". A forced-old-path init
+  script gives an exact same-build control when the switch is a global.
+- Open: a game that does register chains and churns its hierarchy still walks every frame. Fix it with an
+  added/removed subtree walk when such a game shows it.
+
 ### 2026-11-10 — Uploads on a still frame: the counter was wrong, then one 4-byte write — KEEP
 
 - Where: `renderer_frame.cpp` (counter at each arena write, `a3ee875b2`), `renderer_output.cpp` (output block written
@@ -187,6 +204,13 @@ Method traps found, each one fixed in the tool unless it says open:
   the 0.5 ms target is not met. The desktop window `shadow-plan` (#347-#348) is inconclusive (one valid base run).
 - `?stress` frame 10-12 ms against 5.6 ms with `&noCrowd`: the 120 rigs are the desktop lever too (bones move in
   world space each frame, so every rig re-plans).
+- Sub-timers (1174 items, 1145 casters): bounds 0.95 ms (242 rig meshes about 0.64, 902 rigid cached casters about
+  0.28), caster states 0.08, `updateCasters` 0.18, atlas 0.15. The bone joins are only about 0.2 ms. Each mannequin
+  binds 2 meshes to 1 skeleton: `3883e79f0` reads the poses once per plan (bounds median 1.21 → 1.08 ms, load 17-23).
+  Floor with zero rig cost: about 0.7 ms, because every caster is re-verified each frame; 0.5 ms needs a dirty list.
+- Trap: a probe timer that adds a new JS import (`emscripten_get_now`) breaks a staged build, because the staged glue
+  is the old one (`writeTexture ... GPUTexelCopyTextureInfo`). Use `std::chrono::steady_clock`, which the engine
+  already imports.
 
 ### 2026-11-10 — Method traps: laptop probes, prebuilt CLI facade, native engine-only tests
 
