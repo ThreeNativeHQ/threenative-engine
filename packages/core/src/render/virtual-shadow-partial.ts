@@ -129,10 +129,23 @@ export function installPartialRender(
   current: () => IPartialPass | undefined,
 ): void {
   const stock = node.renderShadow.bind(node);
+  let quadBuilt = false;
   node.renderShadow = (frame) => {
     const pass = current();
     const pixels = pass?.pixels;
     if (pass === undefined || pixels === undefined) {
+      // The reset quad's pipeline is built on its first draw. Drawn once here, under the whole
+      // map's own clear, it is built with the first shadow render, behind a loading curtain, not on
+      // the first partial reset that a camera turn in play triggers (PRD-790).
+      if (!quadBuilt && frame.renderer !== null) {
+        quadBuilt = true;
+        const { scene, camera, object, material } = frame;
+        resetDepth(frame.renderer, node.shadow.camera.reversedDepth === true);
+        frame.scene = scene;
+        frame.camera = camera;
+        frame.object = object;
+        frame.material = material;
+      }
       stock(frame);
       return;
     }

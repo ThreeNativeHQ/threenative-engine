@@ -37,6 +37,10 @@ if(SDL3_STATIC_TARGET)
 elseif(SDL3_LIBRARY)
     target_link_libraries(tn_host_services PRIVATE ${SDL3_LIBRARY})
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
+elseif(SDL3_INCLUDE_DIR)
+    # PS4: headers without an archive (no PS4 SDL3 driver exists yet), so the engine compiles and
+    # slice 2 picks the driver. Nothing links, which is all a cross configure can do here anyway.
+    target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
 endif()
 
 # The same pacing checks must link with the JS-free host, not only the legacy bindings.
@@ -50,16 +54,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "android" AND NOT MYSTRAL_PLATFORM STREQUAL "io
 endif()
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
-add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
-tn_native_engine_target(tn_engine_renderer)
-target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-    tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes tn_host_services)
+set(tn_renderer_backend)
 if(TARGET dawn::webgpu)
-    target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
+    set(tn_renderer_backend dawn::webgpu)
 elseif(TARGET wgpu::wgpu)
-    target_link_libraries(tn_engine_renderer PUBLIC wgpu::wgpu)
+    set(tn_renderer_backend wgpu::wgpu)
 endif()
-target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+tn_engine_renderer_target(tn_host_services ${tn_renderer_backend})
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     # Gate E: clear, submit and read back 300 headless frames with no JS engine linked.
@@ -138,8 +139,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_camera_turn_records=camera_turn_records
         native_engine_renderer_coplanar_keeps_winner=coplanar_keeps_winner
+        native_engine_renderer_indirect_record=indirect_record
         native_engine_renderer_cull_keeps_main_bundle=cull_keeps_main_bundle
         native_engine_renderer_emissive_target=emissive_target
+        native_engine_renderer_indirect_target=indirect_target
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
         native_engine_renderer_aux_routes_written_normals=aux_routes_written_normals
@@ -158,6 +161,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_mipmaps_share_one_submit=mipmaps_share_one_submit
         native_engine_traa_alpha=traa_alpha
         native_engine_traa_reset_seed=traa_reset_seed
+        native_engine_traa_resolve_blend=traa_resolve_blend
         native_engine_traa_camera_velocity=traa_camera_velocity
         native_engine_traa_skinned_velocity=traa_skinned_velocity
         native_engine_traa_camera_held_skinned_velocity=traa_camera_held_skinned_velocity
@@ -188,6 +192,16 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_output_screen_size=output_screen_size
         native_engine_post_stage_is_metered=post_stage_is_metered)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
+    # PRD-867: a KTX2 model's texture uploads as BC7 levels and draws; a device without the feature refuses it.
+    if(TARGET tn_engine_gltf AND TARGET tn_engine_basisu)
+        tn_native_engine_test(tn-native-engine-compressed-texture-test tests/native-engine/compressed_texture_test.cpp
+            native_engine_compressed_texture_bc7=bc7_draws
+            native_engine_compressed_texture_refused=bc7_refused_without_feature
+            native_engine_compressed_texture_finer_level=finer_level_writes_in_place)
+        target_link_libraries(tn-native-engine-compressed-texture-test PRIVATE tn_engine_renderer tn_engine_gltf tn_host_services)
+        target_compile_definitions(tn-native-engine-compressed-texture-test PRIVATE
+            TN_GLTF_KTX2_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/ktx2-textured.glb")
+    endif()
 
     # A texture's retirement reaches every renderer that caches it, and a probe capture waits for a
     # scene environment's frame-pumped PMREM before it reads a face; startup warm-up bakes it with no frame.
@@ -298,6 +312,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_gpu_joint_production=gpu_joint_production
         native_engine_unchanged_frame_storage=unchanged_frame_storage
+        native_engine_points_rewrite_keeps_one_buffer=points_rewrite_keeps_one_buffer
         native_engine_instance_upload_is_stable_across_a_camera_turn=instance_upload_is_stable_across_a_camera_turn
         native_engine_instance_places_survive_a_draw_leaving_the_view=instance_places_survive_a_draw_leaving_the_view
         native_engine_static_instances_are_not_recopied=static_instances_are_not_recopied
@@ -333,6 +348,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_depth_test_off_draws_over_nearer=depth_test_off_draws_over_nearer
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
+        native_engine_array_render_target=array_render_target
         native_engine_target_samples_late_traa_output=target_samples_late_traa_output
         native_engine_float_render_target=float_render_target_keeps_float32
         native_engine_float_render_target_half=float_render_target_falls_back_to_half
@@ -436,6 +452,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 
     tn_native_engine_test(tn-native-engine-renderer-caches-test tests/native-engine/renderer_caches_test.cpp
         native_engine_renderer_geometry_cache=geometry
+        native_engine_renderer_geometry_usage_union=geometry_usage_union
         native_engine_renderer_pipeline_cache=pipelines
         native_engine_renderer_sibling_pipelines=sibling_pipelines
         native_engine_renderer_sibling_texture_change=sibling_texture_change
@@ -684,6 +701,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     option(TN_ENGINE_PLAYER_UI_OVERLAY "Link the desktop web-view UI overlay into the engine players (Linux; needs node scripts/build-native-ui-overlay.mjs and webkit2gtk-4.1)" OFF)
     if(TN_ENGINE_PLAYER_UI_OVERLAY)
         include(cmake/NativeEnginePlayerUiOverlay.cmake)
+    elseif(TN_PS4 AND TN_ENABLE_CSS_UI)
+        # PS4 (PRD-784): the HUD is the CSS backend, a pure-Rust staticlib with no web view. Only the
+        # define is set here; scripts/ps4/e5-build.sh links the archive by hand beside the physics one.
+        target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=1)
     else()
         target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
     endif()

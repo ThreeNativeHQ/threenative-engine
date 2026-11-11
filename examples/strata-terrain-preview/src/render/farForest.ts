@@ -22,8 +22,18 @@ import { biomeSpec } from "./biomeData.js";
 import type { WorldName } from "./biomes.js";
 import type { IBakedLake, IBakedRiver } from "./river.js";
 
-export const FAR_FOREST =
-  new URLSearchParams(globalThis.location?.search ?? "").get("farForest") === "on";
+/**
+ * Which far trees stand: `near` (the default) plants the band of hills just past the square, where a
+ * bare lawn read as a bug (owner, 2026-11-09: "why some hills have barely any vegetation?");
+ * `?farForest=on` plants the whole ring up the massif's slopes; `?farForest=off` plants none.
+ */
+const FAR_FOREST_MODE =
+  new URLSearchParams(globalThis.location?.search ?? "").get("farForest") ?? "near";
+export const FAR_FOREST = FAR_FOREST_MODE !== "off";
+/** Metres past the square's edge the default band reaches (`?farForestReach=` while tuning). */
+const NEAR_REACH = Number(
+  new URLSearchParams(globalThis.location?.search ?? "").get("farForestReach") ?? 700,
+);
 
 /** The worlds that plant the collar past the square: the forest's surveyed valley. */
 export const FAR_FOREST_WORLDS: readonly WorldName[] = ["forest"];
@@ -56,7 +66,12 @@ interface IFarForestOptions {
   readonly rivers?: readonly IBakedRiver[];
   readonly lakes?: readonly IBakedLake[];
   /** Circles kept open, [x, z, radius]: the vista's meadow. */
-  readonly clear?: readonly (readonly [number, number, number])[];
+  readonly clear?: readonly (readonly [
+    number,
+    number,
+    number,
+  ])[] /** The sea's surface height when the world has one (`data.waterLevel`): no tree under it. */;
+  readonly seaLevel?: number | null;
 }
 
 /** Spruce placements on the collar; also paints the collar's `canopy` attribute under each crown. */
@@ -64,7 +79,7 @@ export function farForestPlacements(options: IFarForestOptions): IPlacement[] {
   const far = biomeSpec(options.world).foliage[0]?.far;
   if (far === undefined || far === null)
     throw new RangeError(`${options.world}: the biome file carries no far field rule`);
-  return farFieldPlacements({
+  const placed = farFieldPlacements({
     size: options.size,
     resolution: options.resolution,
     collar: options.collar,
@@ -72,8 +87,14 @@ export function farForestPlacements(options: IFarForestOptions): IPlacement[] {
     rivers: options.rivers,
     lakes: options.lakes,
     clear: options.clear,
+    seaLevel: options.seaLevel,
     rules: far,
     asset: "spruce",
     layer: FAR_FOREST_LAYER,
   });
+  if (FAR_FOREST_MODE !== "near") return placed;
+  const reach = options.size / 2 + NEAR_REACH;
+  return placed.filter(
+    (tree) => Math.max(Math.abs(tree.position[0]), Math.abs(tree.position[2])) <= reach,
+  );
 }

@@ -217,6 +217,30 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                     elements[k].text = texts.back().c_str();
                     elements[k].count = texts.back().size();
                 }
+                else if (e->IsObject() && !e->IsFunction() && !e->IsArray() && !e->IsArrayBufferView() &&
+                         e.As<v8::Object>()->InternalFieldCount() == 0) {
+                    // A record of numbers, as the Wasm back end passes one: CubeRenderTarget's six `{ width, height,
+                    // depth }` faces. A null or undefined field is left out.
+                    v8::Local<v8::Object> object = e.As<v8::Object>();
+                    v8::Local<v8::Array> keys;
+                    if (!object->GetOwnPropertyNames(ctx).ToLocal(&keys)) return false;
+                    values.emplace_back();
+                    auto& pairs = values.back();
+                    for (uint32_t i = 0; i < keys->Length(); ++i) {
+                        v8::Local<v8::Value> key, field;
+                        if (!keys->Get(ctx, i).ToLocal(&key) || !object->Get(ctx, key).ToLocal(&field)) return false;
+                        if (field->IsNullOrUndefined()) continue;
+                        if (!field->IsNumber()) return false;
+                        v8::String::Utf8Value name(isolate, key);
+                        texts.emplace_back(*name ? *name : "");
+                        tn_value_t keyValue{}, number{};
+                        keyValue.kind = TN_VALUE_STRING; keyValue.text = texts.back().c_str(); keyValue.count = texts.back().size();
+                        number.kind = TN_VALUE_NUMBER; number.number = field.As<v8::Number>()->Value();
+                        pairs.push_back(keyValue);
+                        pairs.push_back(number);
+                    }
+                    elements[k].kind = TN_VALUE_RECORD; elements[k].values = pairs.data(); elements[k].count = pairs.size() / 2;
+                }
                 else return false;
             }
             if (std::all_of(elements.begin(), elements.end(), [](const auto& e) { return e.kind == TN_VALUE_NUMBER; })) {
@@ -1056,6 +1080,35 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     handler->Set(ctx, str(isolate, "set"), set).Check();
                     v8::Local<v8::Proxy> proxy;
                     if (v8::Proxy::New(ctx, list.As<v8::Object>(), handler).ToLocal(&proxy)) info.GetReturnValue().Set(proxy);
+                }, v8::External::New(isolate_, live)),
+                // A whole-array assignment (core's projection and LOD rebuild copy another mesh's) writes each index,
+                // as the Wasm back end does (browser-backend.ts). ponytail: a shorter array leaves the engine's tail;
+                // a whole-list setter in the registry when a game shrinks one.
+                v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                    v8::Isolate* isolate = info.GetIsolate();
+                    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                    tn_handle_t h{};
+                    if (!d->adapter->unwrap(info.This(), h) || !info[0]->IsObject()) return;
+                    const v8::Local<v8::Object> list = info[0].As<v8::Object>();
+                    v8::Local<v8::Value> length;
+                    if (!list->Get(ctx, str(isolate, "length")).ToLocal(&length)) return;
+                    for (uint32_t i = 0; i < length->Uint32Value(ctx).FromMaybe(0); ++i) {
+                        v8::Local<v8::Value> item;
+                        if (!list->Get(ctx, i).ToLocal(&item)) return;
+                        if (!item->IsNumber()) {
+                            isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI: " + d->name + " takes numbers")));
+                            return;
+                        }
+                        tn_value_t value{};
+                        value.kind = TN_VALUE_NUMBER;
+                        value.number = item.As<v8::Number>()->Value();
+                        tn_diagnostic_t diagnostic{nullptr, 0};
+                        if (tn_set(h, (d->name + "." + std::to_string(i)).c_str(), &value, &diagnostic) != TN_OK) {
+                            throwStatus(isolate, diagnostic);
+                            return;
+                        }
+                    }
                 }, v8::External::New(isolate_, live)));
         }
         // Member objects read as properties too; tn_get answers them with the one alias Ref.
@@ -1132,9 +1185,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                 engine::shader::graph::Node node;
                                 if (!keys->Get(ctx, i).ToLocal(&key) || !outputsValue.As<v8::Object>()->Get(ctx, key).ToLocal(&value)) return;
                                 v8::String::Utf8Value name(isolate, key);
-                                // mrt() always carries the pass's own slots. The scene pass draws them, so only custom
-                                // slots reach the engine, as pass-node.ts isCustomMrtOutput does on the browser side.
-                                if (engine::shader::engineTargetName(*name ? *name : "")) continue;
+                                // mrt() carries the pass's own slot markers; the scene pass draws those. A node under any
+                                // name reaches the engine, which writes it to a render target's texture of that name.
                                 v8::Local<v8::Value> marker;
                                 if (value->IsObject() && value.As<v8::Object>()->Get(ctx, str(isolate, "isMRTSlot")).ToLocal(&marker) &&
                                     marker->IsTrue()) continue;

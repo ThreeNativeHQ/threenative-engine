@@ -38,19 +38,17 @@ describe("far forest", () => {
     expect(sampler.at(0, 0)).toBeNull();
   });
 
-  it("names the value that plants the collar as the override, since the collar is off without it", () => {
-    // FAR_FOREST reads `farForest === <enabled>`; here no location means no query, so the default.
-    expect(FAR_FOREST).toBe(false);
-    const flagSource = readFileSync(new URL("../src/render/farForest.ts", import.meta.url), "utf8");
-    const enabled = /get\("farForest"\) === "(\w+)"/.exec(flagSource)?.[1];
-    expect(enabled).toBeDefined();
-    const documented = ["../src/render/farForest.ts", "../src/sceneProps.ts"].flatMap((name) =>
-      [
-        ...readFileSync(new URL(name, import.meta.url), "utf8").matchAll(/`\?farForest=(\w+)`/g),
-      ].map(([, value]) => value),
+  it("plants the near band by default and documents both overrides", () => {
+    // No location means no query: the default, `near` (owner, 2026-11-09: bare hills read as a bug).
+    expect(FAR_FOREST).toBe(true);
+    const documented = new Set(
+      ["../src/render/farForest.ts", "../src/sceneProps.ts"].flatMap((name) =>
+        [
+          ...readFileSync(new URL(name, import.meta.url), "utf8").matchAll(/`\?farForest=(\w+)`/g),
+        ].map(([, value]) => value),
+      ),
     );
-    expect(documented.length).toBeGreaterThan(0);
-    expect(documented).toEqual(documented.map(() => enabled));
+    expect([...documented].sort()).toEqual(expect.arrayContaining(["off", "on"]));
   });
 
   it("plants the valley and lower slopes, never cliffs, peaks, the square or the vista meadow", () => {
@@ -84,6 +82,30 @@ describe("far forest", () => {
     console.log(`far forest: ${trees.length} trees, highest at ${highest.toFixed(0)} m`);
     // The loop above asserts over 106 000 trees one at a time, so the 5 s default is a machine-speed
     // limit rather than a claim about the rule; the count and the highest tree are the claim.
+  }, 25_000);
+
+  it("plants no tree under a cooked coast's sea", () => {
+    const treeline = measureBiome(BIOMES.forest, data.heights).heightBands.treeline;
+    const options = {
+      size: data.size,
+      resolution: data.resolution,
+      collar,
+      treeline,
+      world: "forest" as const,
+    };
+    const dry = farForestPlacements(options);
+    // A sea at the band's median ground height: half the collar it planted is now under water.
+    const heights = dry
+      .map((tree) => sampler.at(tree.position[0], tree.position[2]) ?? 0)
+      .sort((a, b) => a - b);
+    const seaLevel = heights[Math.floor(heights.length / 2)] as number;
+    const coast = farForestPlacements({ ...options, seaLevel });
+    expect(coast.length).toBeGreaterThan(0);
+    expect(coast.length).toBeLessThan(dry.length * 0.6);
+    for (const tree of coast)
+      expect(sampler.at(tree.position[0], tree.position[2]) ?? 0).toBeGreaterThanOrEqual(
+        seaLevel + 0.35,
+      );
   }, 25_000);
 
   it("streams the far bucket with the licensed spruce's three-level chain", async () => {

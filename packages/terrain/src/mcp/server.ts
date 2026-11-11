@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -9,7 +10,7 @@ import {
   TERRAIN_TOOLS,
   newBiomeSpec,
   parseBiomeNewInput,
-  parseGenerateInput,
+  parseGenerateRequest,
   parsePatchInput,
   patchRecipe,
   resolveAssetSource,
@@ -56,11 +57,66 @@ async function cookInChild(request: Record<string, unknown>, out: string): Promi
   return child.stdout.trim().split("\n").at(-1) ?? "";
 }
 
+/** Stand-ins for the two output paths a cached reply names, swapped for the next call's own. */
+const CACHED_OUT = "@@TN_TERRAIN_OUT@@";
+const CACHED_URL = "@@TN_TERRAIN_URL@@";
+
+/**
+ * Cooks a request, or copies the world an identical request already cooked in this project. The key
+ * is everything the cook reads but where it writes: the request, the server version, the cook
+ * child's build and the starter's files, so a rebuilt package or an edited starter cooks again.
+ * The cache lives in `node_modules/.cache/threenative-terrain`, which installs already ignore.
+ * ponytail: no eviction; a project that cooks hundreds of distinct worlds can delete the folder.
+ */
+async function cookCached(
+  request: Record<string, unknown> & { kit: string; projectRoot: string; assetSource: string },
+  out: string,
+): Promise<{ text: string; cache: "hit" | "miss" }> {
+  const { out: _out, projectRoot, ...inputs } = request;
+  const starter = new URL(`../../starter/${request.kit}/`, import.meta.url);
+  const starterFiles = await readdir(starter).catch(() => [] as string[]);
+  const stamps = await Promise.all(
+    [COOK_CHILD, ...starterFiles.map((f) => fileURLToPath(new URL(f, starter)))].map(
+      async (file) => `${file}:${(await stat(file)).mtimeMs}`,
+    ),
+  );
+  const key = createHash("sha256")
+    .update(JSON.stringify({ inputs, version: SERVER_VERSION, stamps }))
+    .digest("hex")
+    .slice(0, 32);
+  const dir = join(projectRoot, "node_modules", ".cache", "threenative-terrain", key);
+  const shown = relative(realpathSync(projectRoot), out).split(sep).join("/");
+  const url = relative(request.assetSource, out).split(sep).join("/");
+  const stored = await readFile(join(dir, "reply.json"), "utf8").catch(() => undefined);
+  if (stored !== undefined) {
+    await cp(join(dir, "world"), out, { recursive: true });
+    return {
+      text: stored.replaceAll(CACHED_OUT, shown).replaceAll(CACHED_URL, url),
+      cache: "hit",
+    };
+  }
+  const text = await cookInChild(request, out);
+  // A cache that cannot be written costs the next call a cook, never this call its world.
+  const staging = `${dir}.${String(process.pid)}`;
+  try {
+    await cp(out, join(staging, "world"), { recursive: true });
+    await writeFile(
+      join(staging, "reply.json"),
+      text.replaceAll(shown, CACHED_OUT).replaceAll(url, CACHED_URL),
+    );
+    await rename(staging, dir);
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true });
+    console.error(`terrain: cook cache not written: ${(error as Error).message}`);
+  }
+  return { text, cache: "miss" };
+}
+
 /** Runs one tool. A rejected argument or a failed cook becomes a tool error result, not a crash. */
 async function callTool(name: string, args: unknown): Promise<ReturnType<typeof toolResult>> {
   try {
     if (name === "terrain_generate") {
-      const input = parseGenerateInput(args);
+      const { input, decided, unused } = parseGenerateRequest(args);
       const projectRoot = process.cwd();
       const assetSource = await resolveAssetSource(projectRoot);
       const out = await resolveOutput(
@@ -68,7 +124,16 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
         input.out ?? relative(projectRoot, join(assetSource, "worlds", input.kit)),
         assetSource,
       );
-      return toolResult(await cookInChild({ ...input, out, projectRoot, assetSource }, out));
+      const { text, cache } = await cookCached({ ...input, out, projectRoot, assetSource }, out);
+      // A request that names only a starter is that starter as shipped, judged and measured: the
+      // catalog. Any shape, water, feature, size, seed or ground of its own makes it a fresh cook.
+      const { kit, out: _out, ...own } = input;
+      const source = Object.keys(own).length === 0 ? `catalog:${kit}` : "cooked";
+      // The reply names every choice with the word behind it, and the words nothing answered to, so
+      // an agent retries with a word instead of guessing what the request dropped.
+      return toolResult(
+        JSON.stringify({ ...(JSON.parse(text) as object), source, cache, decided, unused }),
+      );
     }
     if (name === "terrain_biome_new") {
       const input = parseBiomeNewInput(args);
@@ -103,7 +168,15 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
       let text: string;
       try {
         text = await cookInChild(
-          { assetSource, biome: input.name, kit: input.from, out, projectRoot, spec },
+          {
+            assetSource,
+            biome: input.name,
+            kit: input.from,
+            out,
+            projectRoot,
+            spec,
+            ground: input.ground,
+          },
           out,
         );
       } catch (error) {

@@ -87,11 +87,11 @@ quadrantChart
 | 1 | PRD-632 | Filmic tone curve, EV100, auto exposure | L1 | 6 | 5 | 23/23 | PRD-631 | Every pixel. Every later layer compares at matched exposure |
 | 2 | PRD-633 | Sky atmosphere and sky light capture | L2 | 6 | 5 | 2/12 | PRD-632 | The sky fills the frame and lights the scene |
 | 2 | PRD-636 | Finishing post: bloom, vignette, local exposure, motion blur | L9 | 5 | 3 | 18/29 | PRD-632 | Half done; a cheap finish |
-| 2 | PRD-635 | AO on indirect light only | L6 | 5 | 3 | 8/17 | PRD-632 | Low cost, visible in every contact area |
+| 2 | PRD-635 | AO on indirect light only | L6 | 5 | 3 | 15/17 | PRD-632 | Low cost, visible in every contact area |
 | 2 | PRD-651 | Leaf cards cast leaf shadows | L5 | 6 | 4 | 7/12 | — | Phase 1 is an engine bug on the default engine |
 | 2 | PRD-649 | Shadow calibration scenes | L5 | 5 | 4 | 3/12 | PRD-646 | Unblocks PRD-634, 650, 652 |
 | 2 | PRD-646 | ThreeNative recreates the GI calibration scenes | L7 | 6 | 4 | 13/15 | PRD-632 | Unblocks every GI verdict |
-| 2 | PRD-603 | `RadianceCache` traces the packed scene | L7 | 7 | 5 | 0/10 | — | The GI foundation; README says it can start now |
+| 2 | PRD-603 | `RadianceCache` traces the packed scene | L7 | 7 | 5 | 9/9 | — | The GI foundation; README says it can start now |
 | 2 | PRD-539 | TSR quality and cost at low resolution | Perf | 6 est. | 4 | 10/10 | — | Independent. Lower render resolution pays for every other layer |
 | 3 | PRD-562 | Aerial perspective from a froxel volume | L3 | 4 | 3 | 0/8 | PRD-633 | Needs the atmosphere |
 | 3 | PRD-VQ-08 | Volumetric clouds and overhead transmittance | L4 | 7 est. | 3 | 0/9 | PRD-633 | The default Unreal map has clouds |
@@ -262,7 +262,7 @@ flowchart LR
 | Niagara runtime (+ shader, vertex factories) | 255,512 | in C++ | **255,512** | 9 | High | **Partial.** `GPUParticles3D`; PRD-569, 609 done; PRD-610, 611 (`vfx/`) open; graph editor out of scope (the repo rules close editors) |
 | Landscape (incl. editor code in runtime) | 86,937 | 2,567 | 89,504 | 8 | High | **Partial.** PRD-566, 567 done; PRD-493 open |
 | World Partition and HLOD (incl. editor code) | 70,618 | 0 | 70,618 | 9 | High | **Partial.** `WorldCells`, `streaming.ts`; PRD-456, 459, 460, 606, 607 open |
-| Texture and mesh streaming | 20,414 | 0 | 20,414 | 7 | Medium | **Open.** PRD-VQ-10 |
+| Texture and mesh streaming | 20,414 | 0 | 20,414 | 7 | Medium | **Partial.** [PRD-860](../../done/assets/PRD-860-the-first-scene-plays-before-the-game-finishes-downloading.md) done on #643, not yet in `develop` (was PRD-VQ-10) |
 | Anim budget, sharing, AnimGraphRuntime | 29,104 | 0 | 29,104 | 6 | Medium | **Open.** PRD-570 (prd:75), PRD-486 |
 | GPU skinning | 6,782 | 1,207 | 7,989 | 5 | Low | Shipped through three.js and the owned engine |
 

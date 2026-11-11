@@ -93,14 +93,14 @@ describe("threenative build asset compilation", () => {
     expect(spawnIndex).toBeGreaterThan(compileIndex);
   });
 
-  it("should cook decoder-free models and textures for the web native engine", async () => {
+  it("should cook Meshopt models and KTX2 textures for the web native engine", async () => {
     const root = await makeTempDir("threenative-build-assets-web-native-");
     await writeProject(root, "threenative");
 
     await build({ cwd: root, target: "web" });
 
-    // The Wasm engine's glTF loader refuses Meshopt and KTX2, so the web cook must not emit them.
-    expect(compiled[0]?.runtimeDecoders).toEqual({ ktx2: false, meshopt: false });
+    // The Wasm engine's glTF loader decodes Meshopt (PRD-861) and transcodes KTX2 (PRD-867).
+    expect(compiled[0]?.runtimeDecoders).toEqual({ ktx2: true, meshopt: true });
     expect(compiled[0]?.runtimeIdentity).toBe("web:native-engine");
   });
 

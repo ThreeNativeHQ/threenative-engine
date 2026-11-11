@@ -7,6 +7,7 @@ import { NodeMaterial, QuadMesh } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { defineScreenSpaceGi } from "../src/addons/screen-space.js";
 import { TSL_NODE } from "../src/browser-backend.js";
+import { REF } from "../src/browser-marshal.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { definePass } from "../src/pass-node.js";
 import { defineRtt } from "../src/rtt.js";
@@ -171,6 +172,31 @@ describe("Wasm modelWorldMatrix", () => {
   });
 });
 
+it("answers three's free element(node, index) as the node's element method (PRD-858)", () => {
+  const { tsl, runtime } = setup();
+  const exports = tsl as unknown as {
+    cameraProjectionMatrix: INode;
+    element(node: INode, index: number): INode;
+  };
+  const matrix = exports.cameraProjectionMatrix;
+  exports.element(matrix, 3);
+  expect(runtime.call).toHaveBeenLastCalledWith("element", matrix[TSL_NODE], [
+    { kind: "number", number: 3 },
+  ]);
+});
+
+it("answers three's transformNormal as normalize(mat3(m)^-T * n) (PRD-858)", () => {
+  const { tsl, runtime } = setup();
+  const exports = tsl as unknown as {
+    cameraViewMatrix: INode;
+    normalView: INode;
+    transformNormal(normal: INode, matrix: INode): INode;
+  };
+  exports.transformNormal(exports.normalView, exports.cameraViewMatrix);
+  const names = vi.mocked(runtime.call).mock.calls.map(([name]) => name);
+  expect(names.slice(-5)).toEqual(["mat3", "inverse", "transpose", "mul", "normalize"]);
+});
+
 describe("Wasm TSL Fn parameters", () => {
   it("defers the blue-noise style destructuring callback until called", () => {
     const { tsl, runtime } = setup();
@@ -268,6 +294,22 @@ describe("mutable texture values", () => {
     expect(runtime.call).toHaveBeenLastCalledWith("textureValue", id, [
       { kind: "named", text: "second" },
     ]);
+  });
+
+  it("rebinds a texture3D or cubeTexture node's replacement too", () => {
+    const { runtime } = setup();
+    const { exports } = defineTsl(runtime);
+    const engineTexture = (key: string) => ({ [REF]: { key, type: 9 } });
+    for (const name of ["texture3D", "cubeTexture"]) {
+      const make = exports[name] as (value: unknown) => { value: unknown; [TSL_NODE]: number };
+      const sampled = make(engineTexture("first"));
+      const second = engineTexture("second");
+      sampled.value = second;
+      expect(sampled.value).toBe(second);
+      expect(runtime.call).toHaveBeenLastCalledWith("textureValue", sampled[TSL_NODE], [
+        { kind: "handle", ref: second[REF] },
+      ]);
+    }
   });
 });
 

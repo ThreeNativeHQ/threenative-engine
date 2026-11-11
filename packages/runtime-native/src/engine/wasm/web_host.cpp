@@ -15,11 +15,19 @@
 #include "engine/renderer/compute.h"
 #include "engine/scene/geometry.h"
 #include "engine/shader/graph/graph.h"
+#include "engine/wasm/web_frame_fields.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <deque>
+#include <utility>
+#include <thread>
+#include <span>
+#include <mutex>
+#include <condition_variable>  // TN_WORKER_ONLY: the glTF loader thread parks on it
+#include <atomic>
 #include <vector>
 #include <map>
 #include <set>
@@ -29,6 +37,17 @@
 
 #include <emscripten/emscripten.h>
 #include <emscripten/console.h>
+
+#ifdef __EMSCRIPTEN_PTHREADS__
+// A thread that grows the heap refreshes only its own JS views. The loader thread grows it while the
+// main thread draws, and the facade reads the main thread's HEAPU8, so the main thread refreshes its
+// views when a load ends and once per frame; one length compare when nothing grew.
+EM_JS(void, tn_web_refresh_views, (), {
+    if (HEAPU8.length !== wasmMemory.buffer.byteLength) updateMemoryViews();
+});
+#else
+[[maybe_unused]] static void tn_web_refresh_views() {}
+#endif
 
 #include <map>
 #include <memory>
@@ -48,7 +67,10 @@ namespace {
 // 9 = tnw_web_clear_target, and tnw_web_render_target flags (bit 2: autoClear false).
 // 10 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
 // 11 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
-constexpr uint32_t kWebHostAbi = 11;
+// 12 = tnw_web_load_gltf_begin/done/finish (PRD-860, the loader thread).
+// 13 = the merged host: the Strata lane's 12 and 13 (tnw_web_load_gltf returns every scene, tnw_web_device_feature)
+// over PRD-860's 12, with tnw_web_load_gltf_finish returning the scenes too.
+constexpr uint32_t kWebHostAbi = 13;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -64,8 +86,9 @@ WGPUSurface surface = nullptr;
 WGPUTextureFormat surfaceFormat = WGPUTextureFormat_Undefined;
 EventQueue events;
 std::unique_ptr<Renderer> renderer;
-RenderDatabase database;
-RenderDatabase overlayDatabase;  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
+// PRD-840: the web host's render choices, the ones the web engine drew with before they were values (render_features.h).
+RenderDatabase database{RenderFeatures::web()};
+RenderDatabase overlayDatabase{RenderFeatures::web()};  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
 // The startup environment bake's own records: preparation runs beside the frame loop and must not overwrite the
 // draws the frame database keeps for the frame it plans next.
 RenderDatabase environmentDatabase;
@@ -198,7 +221,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     device = result;
     queue = wgpuDeviceGetQueue(device);
     setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
-    renderer = std::make_unique<Renderer>(instance, device, queue, events);
+    renderer = std::make_unique<Renderer>(instance, device, queue, events, RenderFeatures::web());
     renderer->setGpuTimer(timestampTracking);
     if (presentationHeld) renderer->deferUncompiledDraws(true);
     configureWebSurface();
@@ -228,10 +251,12 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     callback.callback = onDevice;
     // The features the desktop host asks for (webgpu/context.cpp buildRequiredFeatures), each when
     // the adapter has it: without float32-filterable a linear-filtered FloatType texture is refused.
+    // indirect-first-instance is what core's GPU world scene gates on (world-gpu-scene.ts), PRD-857.
     std::vector<WGPUFeatureName> features;
     for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable, WGPUFeatureName_Float32Blendable,
                                     WGPUFeatureName_RG11B10UfloatRenderable, WGPUFeatureName_TextureCompressionBC,
-                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC})
+                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC,
+                                    WGPUFeatureName_IndirectFirstInstance})
         if (wgpuAdapterHasFeature(adapter, feature)) features.push_back(feature);
     WGPUDeviceDescriptor desc = {};
     desc.requiredFeatureCount = features.size();
@@ -377,6 +402,9 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
                               double b, double a, int overlay, uint32_t sourceFrame) {
     const StagePublisher publisher{!overlay};  // declared first, so it runs after the meter below has closed
     const HostMeter renderMeter(hostRenderMs, !overlay);
+#if TN_WEB_GLTF
+    tn_web_refresh_views();
+#endif
     {
         const HostMeter pollMeter(hostPollMs, !overlay);  // delivers the queue's callbacks: readbacks, work-done
         tnw_web_poll();
@@ -595,6 +623,7 @@ extern "C" int tnw_web_compile_status(uint32_t id) {
  * target, the linear scene colour, as r185 writes a target. Fails, naming the first refusal, when the
  * target's render refused or skipped anything. `flags` bit 1 plans the draw now and records it in the frame that
  * samples the target (Renderer::deferTarget); bit 2 is three's autoClear false (draw over the target's contents).
+ * Bits 8 and up name the layer of an array target the draw writes (three's setRenderTarget(target, layer)).
  */
 extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_handle_t* rootHandle,
                                      const tn_handle_t* cameraHandle, double r, double g, double b, double a,
@@ -616,7 +645,7 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
         {
             const HostMeter targetMeter(hostTargetMs, true);
             refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, (flags & 1) != 0, true,
-                                     (flags & 2) == 0);
+                                     (flags & 2) == 0, uint32_t(flags) >> 8);
         }
         if (!refused.empty()) return refuse(refused.front());
         return 0;
@@ -674,9 +703,8 @@ namespace {
 /** Any texture class, as the renderer reads it: the cast every material map takes (abi/bindings_material.cpp). */
 Texture* textureOf(const tn_handle_t* handle) {
     auto* object = handle == nullptr ? nullptr : tn::abi::objectOf(*handle);
-    // The array and volume classes are no material map (isTextureClass), but a texture copy writes into them.
-    if (object == nullptr || !(tn::binding::isTextureClass(object->cls) || object->cls == "DataArrayTexture" ||
-                               object->cls == "Data3DTexture"))
+    // The array, volume and cube classes are no material map (isTextureClass), but a texture copy writes into them.
+    if (object == nullptr || !tn::binding::isGpuTextureClass(object->cls))
         return nullptr;
     return static_cast<Texture*>(object->ptr.get());
 }
@@ -763,6 +791,25 @@ extern "C" double tnw_web_device_limit(int field) {
     switch (field) {
         case 0: return double(limits.maxColorAttachments);
         case 1: return double(limits.maxColorAttachmentBytesPerSample);
+        default: return 0;
+    }
+}
+
+/**
+ * A device feature three reads by name (`renderer.backend.hasFeature`): 1 when the device has it, else 0.
+ * 1 = `indirect-first-instance`, asked of the device. The host requests it from the adapter (onAdapter),
+ * so a device that reports it is one an indirect record's non-zero firstInstance may be read from.
+ * 0 = `core-features-and-limits`, which three reads as `compatibilityMode = !device.features.has(...)`; a
+ * false answer silently costs MSAA and switches three's depth-texture, MRT-blending and texture paths.
+ * Answer about the device, not about the header: compatibility mode is a level a caller opts into, this
+ * host never requests one, so every device it creates is a core device (webgpu/bindings.cpp answers the
+ * native shim the same way). Any other number names no feature and answers 0.
+ */
+extern "C" int tnw_web_device_feature(int which) {
+    if (!renderer) return 0;
+    switch (which) {
+        case 0: return 1;
+        case 1: return renderer->deviceHasFeature(WGPUFeatureName_IndirectFirstInstance) ? 1 : 0;
         default: return 0;
     }
 }
@@ -941,6 +988,117 @@ std::string loadFailure;  // why the last tnw_web_load_gltf refused; never fails
 // The files a model names by relative uri (shared images the cook writes beside it), put there by the
 // page before the load, since the host reads no files of its own.
 std::map<std::string, std::vector<uint8_t>> modelFiles;
+
+#if TN_WEB_GLTF
+gltf::LoadResult loadModel(std::span<const uint8_t> bytes, const std::map<std::string, std::vector<uint8_t>>& files) {
+    gltf::LoadOptions options;
+    options.readUri = [&files](const std::string& uri) -> std::span<const uint8_t> {
+        const auto found = files.find(uri);
+        return found == files.end() ? std::span<const uint8_t>{} : std::span<const uint8_t>(found->second);
+    };
+    try {
+        return gltf::load(bytes, options);
+    } catch (const std::exception& error) {
+        // A decode that ran the heap out (std::bad_alloc on a job pool worker) is named, not an opaque Wasm throw.
+        gltf::LoadResult failed;
+        failed.error = std::string("TN_WASM_GLTF_LOAD_FAILED: ") + error.what();
+        return failed;
+    }
+}
+
+/**
+ * A loaded model into `context`: the default scene, each clip, then every scene in file order; the default
+ * scene is the same handle as its entry in the list. 0, or 1 with loadFailure set.
+ */
+int shareModel(tn_context_t* context, const gltf::LoadResult& loaded, tn_handle_t* out, uint32_t capacity,
+               uint32_t* count, uint32_t* scenes) {
+    if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
+    if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
+    bool undecoded = false;
+    loaded.scene->traverse([](Object3D& object, void* result) {
+        auto* mesh = dynamic_cast<Mesh*>(&object);
+        if (!mesh || !mesh->material) return;
+        for (const auto& [slot, map] : mesh->material->maps)
+            if (map && !map->hasImage()) *static_cast<bool*>(result) = true;
+    }, &undecoded);
+    if (undecoded) return loadFailure = "TN_NATIVE_GLTF_IMAGE_UNSUPPORTED: the model has undecoded images", 1;
+    const auto clips = static_cast<uint32_t>(loaded.animations.size());
+    *scenes = static_cast<uint32_t>(loaded.scenes.size());
+    *count = 1 + clips + *scenes;
+    if (!out || capacity < *count) return loadFailure = "TN_WASM_GLTF_CAPACITY", 1;
+    for (uint32_t i = 0; i < clips; ++i)
+        out[1 + i] = tn::abi::shareObject(context, "AnimationClip", loaded.animations[i]);
+    bool shared = false;
+    for (uint32_t i = 0; i < *scenes; ++i) {
+        out[1 + clips + i] = tn::abi::shareObject(context, "Group", loaded.scenes[i]);
+        if (loaded.scenes[i] == loaded.scene) out[0] = out[1 + clips + i], shared = true;
+    }
+    if (!shared) out[0] = tn::abi::shareObject(context, "Group", loaded.scene);
+    return 0;
+}
+
+/**
+ * One model loading off the main thread (PRD-860): Midway's late fleet spent 2.4 s of play in
+ * tnw_web_load_gltf, one synchronous 100-500 ms task per hull. The loader thread owns `bytes` and
+ * `files` until `done`; then the main thread owns `result`.
+ */
+struct GltfJob {
+    std::vector<uint8_t> bytes;
+    std::map<std::string, std::vector<uint8_t>> files;
+    gltf::LoadResult result;
+    std::atomic<bool> done{false};
+};
+std::map<uint32_t, std::shared_ptr<GltfJob>> gltfJobs;  // main thread only
+uint32_t lastGltfJob = 0;
+
+void runGltfJob(GltfJob& job) {
+    job.result = loadModel(job.bytes, job.files);
+    job.bytes = {};
+    job.files = {};
+    job.done.store(true, std::memory_order_release);
+}
+
+#ifdef __EMSCRIPTEN_PTHREADS__
+// One loader thread, models in order: a model's own image decodes already fan out over the JobPool,
+// and a second loader would only split those workers. Started on the first load, never joined.
+struct GltfLoaderThread {
+    std::mutex mutex_;
+    std::condition_variable work_;  // TN_WORKER_ONLY: the loader parks here; the main thread only notifies
+    std::deque<std::shared_ptr<GltfJob>> pending_;
+    bool stopping_ = false;  // never set: the loader lives as long as the page
+
+    void run() {
+        for (;;) {
+            std::shared_ptr<GltfJob> next;
+            {
+                std::unique_lock lock(mutex_);
+                work_.wait(lock, [this] { return stopping_ || !pending_.empty(); }); // TN_WORKER_ONLY: the glTF loader thread's own entry; begin only notifies.
+                if (pending_.empty()) return;
+                next = std::move(pending_.front());
+                pending_.pop_front();
+            }
+            runGltfJob(*next);
+        }
+    }
+};
+
+void queueGltfJob(std::shared_ptr<GltfJob> job) {
+    static GltfLoaderThread* const loader = [] {
+        auto* thread = new GltfLoaderThread();  // never freed: the detached loader outlives every static
+        std::thread([thread] { thread->run(); }).detach();
+        return thread;
+    }();
+    {
+        std::lock_guard lock(loader->mutex_);
+        loader->pending_.push_back(std::move(job));
+    }
+    loader->work_.notify_one();
+}
+#else
+// No threads in this build (no cross-origin isolation): the load runs at begin, as tnw_web_load_gltf does.
+void queueGltfJob(std::shared_ptr<GltfJob> job) { runGltfJob(*job); }
+#endif
+#endif
 }
 
 /** Keeps one file for the next tnw_web_load_gltf calls, by the uri the model names it with. */
@@ -958,172 +1116,224 @@ extern "C" const char* tnw_web_load_error() { return loadFailure.c_str(); }
 
 /**
  * A GLB through the engine's own glTF loader (PRD-540), the same C++ the V8 player's loadAsset runs:
- * the default scene, then each animation clip, as handles in `context`. `out` holds `capacity`
- * handles; `count` answers how many there are (scene + clips), so a short buffer can be retried.
+ * the default scene, then each animation clip, then every scene in file order, as handles in
+ * `context`. `out` holds `capacity` handles; `count` answers how many there are (scene + clips +
+ * scenes), so a short buffer can be retried, and `scenes` how many of them are scenes. The default
+ * scene is the same handle as its entry in the scene list, as GLTFLoader's `scene` is one of its
+ * `scenes`: a model that keeps each LOD level as a named scene (`fir_lod1`) finds every level.
  * Returns 0, or 1 with tnw_web_load_error set. A model whose images did not decode is refused by
  * name, as on V8, rather than drawn without its textures.
  */
 extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, uint32_t size, tn_handle_t* out,
-                                 uint32_t capacity, uint32_t* count) {
+                                 uint32_t capacity, uint32_t* count, uint32_t* scenes) {
     loadFailure.clear();
 #if TN_WEB_GLTF
-    if (!context || !bytes || !size || !count) return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
-    gltf::LoadOptions options;
-    options.readUri = [](const std::string& uri) -> std::span<const uint8_t> {
-        const auto found = modelFiles.find(uri);
-        return found == modelFiles.end() ? std::span<const uint8_t>{} : std::span<const uint8_t>(found->second);
-    };
-    gltf::LoadResult loaded;
-    try {
-        loaded = gltf::load(std::span<const uint8_t>(bytes, size), options);
-    } catch (const std::exception& error) {
-        // A decode that ran the heap out (std::bad_alloc on a job pool worker) is named, not an opaque Wasm throw.
-        return loadFailure = std::string("TN_WASM_GLTF_LOAD_FAILED: ") + error.what(), 1;
-    }
-    if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
-    if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
-    bool undecoded = false;
-    loaded.scene->traverse([](Object3D& object, void* result) {
-        auto* mesh = dynamic_cast<Mesh*>(&object);
-        if (!mesh || !mesh->material) return;
-        for (const auto& [slot, map] : mesh->material->maps)
-            if (map && !map->hasImage()) *static_cast<bool*>(result) = true;
-    }, &undecoded);
-    if (undecoded) return loadFailure = "TN_NATIVE_GLTF_IMAGE_UNSUPPORTED: the model has undecoded images", 1;
-    *count = 1 + static_cast<uint32_t>(loaded.animations.size());
-    if (!out || capacity < *count) return loadFailure = "TN_WASM_GLTF_CAPACITY", 1;
-    out[0] = tn::abi::shareObject(context, "Group", loaded.scene);
-    for (uint32_t i = 0; i < loaded.animations.size(); ++i)
-        out[1 + i] = tn::abi::shareObject(context, "AnimationClip", loaded.animations[i]);
-    return 0;
+    if (!context || !bytes || !size || !count || !scenes) return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
+    return shareModel(context, loadModel(std::span<const uint8_t>(bytes, size), modelFiles), out, capacity, count, scenes);
 #else
-    (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count;
+    (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count; (void)scenes;
+    loadFailure = "TN_WASM_GLTF_UNAVAILABLE: this web engine was built without cgltf";
+    return 1;
+#endif
+}
+
+/// The last id that arrived without a manifest entry, so the report prints once per id, not per frame.
+static int unknownFrameField = 0;
+
+/**
+ * tnw_web_load_gltf off the main thread: copies `bytes`, takes every file tnw_web_gltf_file kept, and
+ * returns a ticket (0 on bad arguments or a build without cgltf). Poll tnw_web_load_gltf_done, then
+ * tnw_web_load_gltf_finish shares the model into a context.
+ */
+extern "C" uint32_t tnw_web_load_gltf_begin(const uint8_t* bytes, uint32_t size) {
+#if TN_WEB_GLTF
+    if (!bytes || !size) return 0;
+    auto job = std::make_shared<GltfJob>();
+    job->bytes.assign(bytes, bytes + size);
+    job->files = std::exchange(modelFiles, {});
+    gltfJobs[++lastGltfJob] = job;
+    queueGltfJob(std::move(job));
+    return lastGltfJob;
+#else
+    (void)bytes; (void)size;
+    return 0;
+#endif
+}
+
+/** 1 once the ticket's load ended (or the ticket is unknown, so finish answers why), else 0. */
+extern "C" int tnw_web_load_gltf_done(uint32_t ticket) {
+#if TN_WEB_GLTF
+    const auto found = gltfJobs.find(ticket);
+    const bool ended = found == gltfJobs.end() || found->second->done.load(std::memory_order_acquire);
+    if (ended) tn_web_refresh_views();
+    return ended ? 1 : 0;
+#else
+    (void)ticket;
+    return 1;
+#endif
+}
+
+/**
+ * tnw_web_load_gltf's answer for a finished ticket: 0 with the handles in `out`, or 1 with
+ * tnw_web_load_error set. A short `out` (TN_WASM_GLTF_CAPACITY) keeps the ticket for a retry.
+ */
+extern "C" int tnw_web_load_gltf_finish(tn_context_t* context, uint32_t ticket, tn_handle_t* out, uint32_t capacity,
+                                        uint32_t* count, uint32_t* scenes) {
+    loadFailure.clear();
+#if TN_WEB_GLTF
+    const auto found = gltfJobs.find(ticket);
+    if (!context || !count || !scenes || found == gltfJobs.end() || !found->second->done.load(std::memory_order_acquire))
+        return loadFailure = "TN_WASM_GLTF: no finished load for this ticket", 1;
+    const int status = shareModel(context, found->second->result, out, capacity, count, scenes);
+    if (status == 0 || loadFailure != "TN_WASM_GLTF_CAPACITY") gltfJobs.erase(found);
+    return status;
+#else
+    (void)context; (void)ticket; (void)out; (void)capacity; (void)count; (void)scenes;
     loadFailure = "TN_WASM_GLTF_UNAVAILABLE: this web engine was built without cgltf";
     return 1;
 #endif
 }
 
 /**
- * The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them, then
- * the setup work done so far, which a steady frame must not add to: pipeline compiles (2), pipeline
- * text-key lookups (3), bind groups created (4), graph keys serialized (5), programs built (6),
- * the last resolved GPU frame time in ms (7), how many GPU times have resolved (8), the caller
- * frame id that sample was submitted under (9), whether frames are timed at all (10), and 1 while
- * two drawn frames are still on the GPU, so the caller draws none (11), and 1 while the last render skipped
- * its frame for an environment that is not baked yet (12). The temporal pass follows: 1 while a traa() effect is in
- * the post graph (13), the frames it has begun (14), 1 when the next resolve has history (15), and the last
- * sub-pixel jitter in pixels, x (16) and y (17). Then the samples the scene draws with (18): 1 while the temporal pass
- * replaces the multisampling the renderer asked for.
- * The temporal pass's counted frame follows the lamp fields, 30 to 33. The kept shadow maps and the uniform bytes are 40 and 41.
+ * One number of the last frame's telemetry, by the field names in
+ * `packages/three-native/api/web-frame-fields.json`: draws and triangles, the setup work a steady
+ * frame must not add to, the GPU sample and its segments, the temporal pass, the shadow maps and the
+ * CPU stage meters. Generation writes the names here (`web_frame_fields.h`) and in the facade
+ * (`src/generated/web-frame-fields.ts`) from that one file.
+ *
+ * An id the manifest does not declare is refused: it prints `TN_WEB_FRAME_UNKNOWN_FIELD` once and
+ * answers NaN, because a zero would read as a real measurement from a table that never had it.
  */
 extern "C" double tnw_web_frame(int field) {
-    // -3 and -4: the CPU stage meters on and off (PRD-771); a static switch, so it answers before the renderer exists.
-    // On until a page asks otherwise.
-    if (field == -3 || field == -4) {
-        Renderer::setCpuMeters(field == -3);
+    // An id the manifest does not declare is a facade built against another field table. Refused
+    // before anything else, because a renderer that does not exist yet would answer a silent zero.
+    if (!tn_is_web_frame_field(field)) {
+        if (unknownFrameField != field) {
+            unknownFrameField = field;
+            std::fprintf(stderr, "TN_WEB_FRAME_UNKNOWN_FIELD %d\n", field);
+        }
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    // The CPU stage meters on and off (PRD-771); a static switch, so it answers before the renderer
+    // exists. On until a page asks otherwise.
+    if (field == TN_WEB_FRAME_CPU_METERS_ON || field == TN_WEB_FRAME_CPU_METERS_OFF) {
+        Renderer::setCpuMeters(field == TN_WEB_FRAME_CPU_METERS_ON);
         return 0;
     }
     if (!renderer) return 0;
     if (!lastDrawn) lastDrawn = renderer.get();
     switch (field) {
-        case -1: renderer->setDebugTimestampRequested(true); return 0;
-        case -2: renderer->setDebugTimestampRequested(false); return 0;
+        case TN_WEB_FRAME_DEBUG_TIMESTAMP_ON: renderer->setDebugTimestampRequested(true); return 0;
+        case TN_WEB_FRAME_DEBUG_TIMESTAMP_OFF: renderer->setDebugTimestampRequested(false); return 0;
         // three's renderer.info.render counts every pass of a render(), the shadow pass's included, as the
         // V8 player's frameDrawn does: one scene is counted the same on every backend.
-        case 0: return double(lastDrawn->lastFrame().draws + lastDrawn->lastFrame().shadowDraws);
-        case 1: return double(lastDrawn->lastFrame().triangles + lastDrawn->lastFrame().shadowTriangles);
-        case 2: return double(renderer->pipelines().compiles());
-        case 3: return double(renderer->pipelines().textLookups());
-        case 4: return double(bindGroupsCreated());
-        case 5: return double(shader::graph::keyBuilds());
-        case 6: return double(renderer->programCount());
-        case 7: return renderer->lastGpuMs();
-        case 8: return double(renderer->gpuSamples());
-        case 9: return double(renderer->gpuSourceFrame());
-        case 10: return renderer->gpuTimerAvailable() ? 1 : 0;
-        case 11:
+        case TN_WEB_FRAME_DRAWS: return double(lastDrawn->lastFrame().draws + lastDrawn->lastFrame().shadowDraws);
+        case TN_WEB_FRAME_TRIANGLES: return double(lastDrawn->lastFrame().triangles + lastDrawn->lastFrame().shadowTriangles);
+        case TN_WEB_FRAME_PIPELINE_COMPILES: return double(renderer->pipelines().compiles());
+        case TN_WEB_FRAME_PIPELINE_LOOKUPS: return double(renderer->pipelines().textLookups());
+        case TN_WEB_FRAME_BIND_GROUPS_CREATED: return double(bindGroupsCreated());
+        case TN_WEB_FRAME_GRAPH_KEY_BUILDS: return double(shader::graph::keyBuilds());
+        case TN_WEB_FRAME_PROGRAMS: return double(renderer->programCount());
+        case TN_WEB_FRAME_GPU_MS: return renderer->lastGpuMs();
+        case TN_WEB_FRAME_GPU_SAMPLES: return double(renderer->gpuSamples());
+        case TN_WEB_FRAME_GPU_SOURCE_FRAME: return double(renderer->gpuSourceFrame());
+        case TN_WEB_FRAME_GPU_TIMER_AVAILABLE: return renderer->gpuTimerAvailable() ? 1 : 0;
+        // PRD-867: the renderer's device takes BC7 (texture-compression-bc), so a KTX2 transcodes to it.
+        case TN_WEB_FRAME_TEXTURE_COMPRESSION_BC: return compressedTextureTarget().load() == kTextureBC7Format ? 1 : 0;
+        case TN_WEB_FRAME_GPU_BUSY:
             tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
             return frameGate.decline(renderer->gpu().completedSerial(), emscripten_get_now()) ? 1 : 0;
-        case 12: return renderer->environmentPending() ? 1 : 0;
-        case 13: return renderer->temporalStatus().active ? 1 : 0;
-        case 14: return double(renderer->temporalStatus().frame);
-        case 15: return renderer->temporalStatus().historyValid ? 1 : 0;
-        case 16: return renderer->temporalStatus().jitterX;
-        case 17: return renderer->temporalStatus().jitterY;
-        case 18: return double(renderer->sampleCount());
+        case TN_WEB_FRAME_ENVIRONMENT_PENDING: return renderer->environmentPending() ? 1 : 0;
+        case TN_WEB_FRAME_TEMPORAL_ACTIVE: return renderer->temporalStatus().active ? 1 : 0;
+        case TN_WEB_FRAME_TEMPORAL_FRAME: return double(renderer->temporalStatus().frame);
+        case TN_WEB_FRAME_TEMPORAL_HISTORY_VALID: return renderer->temporalStatus().historyValid ? 1 : 0;
+        case TN_WEB_FRAME_TEMPORAL_JITTER_X: return renderer->temporalStatus().jitterX;
+        case TN_WEB_FRAME_TEMPORAL_JITTER_Y: return renderer->temporalStatus().jitterY;
+        case TN_WEB_FRAME_SAMPLE_COUNT: return double(renderer->sampleCount());
         // The sample field 7 reports, by what drew it: 19 shadow passes, 20 the scene pass, 21 other passes, 22 the
         // output pass, 23 the screen-space gather (frame_gpu_timer.h). They sum to field 7.
-        case 19: case 20: case 21: case 22: case 23: return renderer->lastGpuSegments()[size_t(field - 19)];
+        case TN_WEB_FRAME_GPU_SEGMENT_SHADOW: case TN_WEB_FRAME_GPU_SEGMENT_SCENE: case TN_WEB_FRAME_GPU_SEGMENT_OTHER: case TN_WEB_FRAME_GPU_SEGMENT_OUTPUT: case TN_WEB_FRAME_GPU_SEGMENT_GATHER: return renderer->lastGpuSegments()[size_t(field - TN_WEB_FRAME_GPU_SEGMENT_SHADOW)];
         // PRD-650: the lamp maps apart from the sun's. 24 their GPU time (a part of field 7, beside 19), 25 the
         // lamp maps the last frame redrew, 26 their draws, and 27 every shadow draw, so 27 - 26 is the sun's.
-        case 24: return renderer->lastGpuSegments()[kGpuLampShadowSegment];
-        case 25: return double(renderer->lastFrame().lampRedraws);
-        case 26: return double(renderer->lastFrame().lampShadowDraws);
-        case 27: return double(renderer->lastFrame().shadowDraws);
+        case TN_WEB_FRAME_GPU_SEGMENT_LAMP_SHADOW: return renderer->lastGpuSegments()[kGpuLampShadowSegment];
+        case TN_WEB_FRAME_LAMP_REDRAWS: return double(renderer->lastFrame().lampRedraws);
+        case TN_WEB_FRAME_LAMP_SHADOW_DRAWS: return double(renderer->lastFrame().lampShadowDraws);
+        case TN_WEB_FRAME_SHADOW_DRAWS: return double(renderer->lastFrame().shadowDraws);
         // 28 and 29: the smallest and largest edge of the lamp maps the footprint sized (0 without one).
-        case 28: return double(renderer->lampShadowExtent()[0]);
-        case 29: return double(renderer->lampShadowExtent()[1]);
+        case TN_WEB_FRAME_LAMP_MAP_MIN: return double(renderer->lampShadowExtent()[0]);
+        case TN_WEB_FRAME_LAMP_MAP_MAX: return double(renderer->lampShadowExtent()[1]);
         // 30 to 33: the temporal resolve's newest counted frame (one in 16): the pixels whose history it discarded, the
         // pixels whose history it pulled into the colour neighbourhood, the pixel count of that frame and its frame number.
-        case 30: return double(renderer->temporalStatus().rejected);
-        case 31: return double(renderer->temporalStatus().clamped);
-        case 32: return double(renderer->temporalStatus().pixels);
-        case 33: return double(renderer->temporalStatus().countedFrame);
-        case 34: return renderer->temporalUpscale() ? 1 : 0;
-        case 35: return renderer->inputWidth();
-        case 36: return renderer->inputHeight();
-        case 37: return renderer->traaDebugPass() ? renderer->traaDebugPass()->status().jitterLength : 0;
-        case 38: return renderer->width();
-        case 39: return renderer->height();
+        case TN_WEB_FRAME_TEMPORAL_REJECTED: return double(renderer->temporalStatus().rejected);
+        case TN_WEB_FRAME_TEMPORAL_CLAMPED: return double(renderer->temporalStatus().clamped);
+        case TN_WEB_FRAME_TEMPORAL_PIXELS: return double(renderer->temporalStatus().pixels);
+        case TN_WEB_FRAME_TEMPORAL_COUNTED_FRAME: return double(renderer->temporalStatus().countedFrame);
+        case TN_WEB_FRAME_TEMPORAL_UPSCALE: return renderer->temporalUpscale() ? 1 : 0;
+        case TN_WEB_FRAME_INPUT_WIDTH: return renderer->inputWidth();
+        case TN_WEB_FRAME_INPUT_HEIGHT: return renderer->inputHeight();
+        case TN_WEB_FRAME_TEMPORAL_JITTER_LENGTH: return renderer->traaDebugPass() ? renderer->traaDebugPass()->status().jitterLength : 0;
+        case TN_WEB_FRAME_WIDTH: return renderer->width();
+        case TN_WEB_FRAME_HEIGHT: return renderer->height();
         // PRD-754, 60 to 65: the draws the main pass recorded into its bundle,
         // why its key moved (Renderer::RecordCause), the draws the aux and velocity passes recorded, the ms spent
         // recording bundles, and the ms spent encoding the shadow passes directly. Zero while every bundle holds.
-        case 60: return double(renderer->lastFrame().mainRecorded);
-        case 61: return double(renderer->lastFrame().recordCause);
-        case 62: return double(renderer->lastFrame().auxRecorded);
-        case 63: return renderer->lastFrame().recordMs;
-        case 64: return renderer->lastFrame().shadowEncodeMs;
-        case 65: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
+        case TN_WEB_FRAME_MAIN_RECORDED: return double(renderer->lastFrame().mainRecorded);
+        case TN_WEB_FRAME_RECORD_CAUSE: return double(renderer->lastFrame().recordCause);
+        case TN_WEB_FRAME_AUX_RECORDED: return double(renderer->lastFrame().auxRecorded);
+        case TN_WEB_FRAME_RECORD_MS: return renderer->lastFrame().recordMs;
+        case TN_WEB_FRAME_SHADOW_ENCODE_MS: return renderer->lastFrame().shadowEncodeMs;
+        case TN_WEB_FRAME_SHADOW_RECORDED: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
         // 66 to 70: running CPU ms of the renderer's costly stages, every render summed (Renderer::CpuStage): the virtual
         // shadow pages and caster bounds, the draw plan, the shadow passes' draw lists, the whole prepare half, the encode half.
-        case 66: case 67: case 68: case 69: case 70: return renderer->cpuStageMs(Renderer::CpuStage(field - 66));
+        case TN_WEB_FRAME_CPU_VIRTUAL_PAGES_MS: case TN_WEB_FRAME_CPU_PLAN_MS: case TN_WEB_FRAME_CPU_SHADOW_BUILD_MS: case TN_WEB_FRAME_CPU_PREPARE_MS: case TN_WEB_FRAME_CPU_ENCODE_MS: return renderer->cpuStageMs(Renderer::CpuStage(field - TN_WEB_FRAME_CPU_VIRTUAL_PAGES_MS));
         // 71 and 72: the startup's first real frame (ABI 8). 71 counts the ordinary world submissions that encoded since
         // the page started drawing: a bake step, a compile, an overlay, a declined frame or a failed one never advances it,
         // and core compares it with the generation it saw when it engaged the hold. 72 is 1 once the shadow inputs those
         // frames sample exist: every active virtual shadow has mapped its clip levels, and a scene with none, or with only
         // the ordinary maps a successful encode already drew, is ready. A shadow draw count is not this answer, and only a
         // held frame recomputes it.
-        case 71: return double(worldSubmissions);
-        case 72: return shadowInputsReady ? 1 : 0;
+        case TN_WEB_FRAME_WORLD_SUBMISSIONS: return double(worldSubmissions);
+        case TN_WEB_FRAME_SHADOW_INPUTS_READY: return shadowInputsReady ? 1 : 0;
         // 86: 1 once the first world frame drawn after the hold came off has finished on the GPU, so the display shows
         // it. A draw the gate accepted only says it was queued: a software rasteriser takes tens of seconds to finish it.
-        case 86:
+        case TN_WEB_FRAME_FIRST_WORLD_FRAME_DRAWN:
             tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
             return firstPresentedSerial != 0 && renderer->gpu().completedSerial() >= firstPresentedSerial ? 1 : 0;
         // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
         // 41: the bytes of per-draw uniforms it uploaded.
         // 85 (PRD-770): the shadow passes' triangles, which field 1 adds in. With 27 (every shadow draw) it splits fields
         // 0 and 1 into the main pass and the shadow passes, as three counts a nested shadow render apart from the main one.
-        case 85: return double(lastDrawn->lastFrame().shadowTriangles);
-        case 40: return double(renderer->lastFrame().keptShadowMaps);
-        case 41: return double(renderer->lastFrame().uniformBytes);
+        case TN_WEB_FRAME_SHADOW_TRIANGLES: return double(lastDrawn->lastFrame().shadowTriangles);
+        case TN_WEB_FRAME_KEPT_SHADOW_MAPS: return double(renderer->lastFrame().keptShadowMaps);
+        case TN_WEB_FRAME_UNIFORM_BYTES: return double(renderer->lastFrame().uniformBytes);
         // PRD-771, 73 to 77: running ms, every render summed, like 66 to 70. 73 the post effects' and output pass's share of
         // the encode half (inside 70); 74 the scene half of RenderDatabase::render (joints, scene walk, shadow sync);
         // 75 the whole main-view tnw_web_render, of which 76 is the queued kernels' flush and 77 the batched queue submit.
-        case 73: return renderer->cpuStageMs(Renderer::CpuPost);
-        case 74: return database.sceneMs();
-        case 75: return hostRenderMs;
-        case 76: return hostComputeMs;
-        case 77: return hostSubmitMs;
+        case TN_WEB_FRAME_CPU_POST_MS: return renderer->cpuStageMs(Renderer::CpuPost);
+        case TN_WEB_FRAME_SCENE_MS: return database.sceneMs();
+        case TN_WEB_FRAME_HOST_RENDER_MS: return hostRenderMs;
+        case TN_WEB_FRAME_HOST_COMPUTE_MS: return hostComputeMs;
+        case TN_WEB_FRAME_HOST_SUBMIT_MS: return hostSubmitMs;
         // 79 and 80: the tnw_web_poll that opens a render, and the render's tail (surface texture release, frame gate, diagnostics).
-        case 79: return hostPollMs;
-        case 80: return hostTailMs;
-        case 81: return database.rendererMs();
-        case 82: return hostDatabaseMs;
-        case 83: return hostTargetMs;
-        case 84: return Renderer::cpuMeters() ? 1 : 0;  // the stage meters on (the page lists the totals only while they run)
+        case TN_WEB_FRAME_HOST_POLL_MS: return hostPollMs;
+        case TN_WEB_FRAME_HOST_TAIL_MS: return hostTailMs;
+        case TN_WEB_FRAME_RENDERER_MS: return database.rendererMs();
+        case TN_WEB_FRAME_HOST_DATABASE_MS: return hostDatabaseMs;
+        case TN_WEB_FRAME_HOST_TARGET_MS: return hostTargetMs;
+        // PRD-762: the levels the virtual shadows still owe a render after the last one, -1 with none. Core's
+        // VirtualShadowNode reads it as `deferred`, so a game waiting for its shadow to cover new terrain sees it settle.
+        case TN_WEB_FRAME_VIRTUAL_SHADOW_PENDING_LEVELS: return double(renderer->virtualShadowPendingLevels());
+        case TN_WEB_FRAME_CPU_METERS_ACTIVE: return Renderer::cpuMeters() ? 1 : 0;  // the stage meters on (the page lists the totals only while they run)
         // 78: the address of the array above, as a number; the page reads 18 doubles from it after each render.
-        case 78: return double(reinterpret_cast<uintptr_t>(stageTotals));
-        default: return 0;
+        case TN_WEB_FRAME_STAGE_TOTALS_ADDRESS: return double(reinterpret_cast<uintptr_t>(stageTotals));
+        default:
+            // An id the manifest does not declare: a facade built against another field table.
+            // Say which one once, and answer NaN so the caller sees a broken number rather than a
+            // zero it would read as a real measurement.
+            if (unknownFrameField != field) {
+                unknownFrameField = field;
+                std::fprintf(stderr, "TN_WEB_FRAME_UNKNOWN_FIELD %d\n", field);
+            }
+            return std::numeric_limits<double>::quiet_NaN();
     }
 }

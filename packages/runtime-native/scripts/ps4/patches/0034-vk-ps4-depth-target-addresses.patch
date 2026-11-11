@@ -1,0 +1,218 @@
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+index cbc23b7..23e92ec 100644
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -537,8 +537,19 @@ static void vk_ps4_clear_color(VkPs4CommandBuffer *cmd,
+ /* Draw-based depth/stencil clear using embedded fullscreen VS + dummy PS.
+  * Triggers the GCN lazy clear by doing a draw that accesses depth.
+  * Temporarily enables depth write to guarantee the lazy clear fires,
+- * even if the currently bound pipeline has depth disabled. */
+-static void vk_ps4_clear_depth_draw(GnmCommandBuffer *cmd) {
++ * even if the currently bound pipeline has depth disabled.
++ *
++ * The draw is only a vehicle for the clear registers, and a clear is a DRAW:
++ * it rasterizes into whatever depth target and viewport the context still
++ * holds, so the target being cleared is bound and named here, exactly as
++ * vk_ps4_clear_color_draw does for a colour target. DB_RENDER_CONTROL's
++ * clear bits are dropped again right after the draw: they are consumed by
++ * the draw that opens the surface (shadPS4 runs the clear as that draw's
++ * depth load op, vk_rasterizer.cpp BeginRendering), and a stale bit would
++ * clear the depth buffer at EVERY later draw of the pass while the same bit
++ * turns depth writes off (`SetDepthWriteEnabled(... && !depth_clear_enable)`)
++ * -- no depth test at all, the symptom this path exists to fix. */
++static void vk_ps4_clear_depth_draw(VkPs4CommandBuffer *cmd, VkPs4Image *img) {
+     /* Temporarily enable depth write so the draw accesses the depth buffer.
+      * This guarantees the lazy clear fires regardless of the bound pipeline's
+      * depth state. DB_DEPTH_CONTROL is restored by the next CmdBindPipeline. */
+@@ -549,18 +560,46 @@ static void vk_ps4_clear_depth_draw(GnmCommandBuffer *cmd) {
+     ds_write.zfunc = GNM_DEPTH_COMPARE_ALWAYS;
+     ds_write.stencilenable = 0;
+     ds_write.depthboundsenable = 0;
+-    sceGnmDrawCmdSetDepthStencilControl(cmd, &ds_write);
++    sceGnmDrawCmdSetDepthStencilControl(&cmd->gnm_cmd, &ds_write);
++
++    if (img) {
++        /* The clear covers the whole surface of THIS target: bind it, and give
++         * the draw the target's own scissor, viewport and sample count. */
++        sceGnmDrawCmdSetDepthRenderTarget(&cmd->gnm_cmd, &img->gnm_drt);
++        sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd, 0, 0,
++            img->create_info.extent.width, img->create_info.extent.height);
++
++        GnmSetViewportInfo vp;
++        memset(&vp, 0, sizeof(vp));
++        vp.dmin = 0.0f;
++        vp.dmax = 1.0f;
++        vp.scale[0] = img->create_info.extent.width * 0.5f;
++        vp.scale[1] = img->create_info.extent.height * 0.5f;
++        vp.scale[2] = 0.5f;
++        vp.offset[0] = vp.scale[0];
++        vp.offset[1] = vp.scale[1];
++        vp.offset[2] = 0.5f;
++        sceGnmDrawCmdSetViewport(&cmd->gnm_cmd, 0, &vp);
++
++        vk_ps4_emit_aa_config(cmd, (uint32_t)img->create_info.samples);
++    }
+ 
+     /* Use embedded fullscreen VS + dummy PS */
+-    sceGnmDrawCmdSetEmbeddedVsShader(cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+-    sceGnmDrawCmdSetEmbeddedPsShader(cmd, GNM_EMBEDDED_PSH_DUMMY);
++    sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
++    sceGnmDrawCmdSetEmbeddedPsShader(&cmd->gnm_cmd, GNM_EMBEDDED_PSH_DUMMY);
+ 
+     /* Draw a fullscreen triangle to trigger the lazy clear.
+      * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky and may
+      * have been set to a large value by a previous draw. */
+-    sceGnmDrawCmdSetPrimitiveType(cmd, GNM_PT_TRILIST);
+-    sceGnmDrawCmdSetNumInstances(cmd, 1);
+-    sceGnmDrawCmdDrawIndexAuto(cmd, 3);
++    sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd, GNM_PT_TRILIST);
++    sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);
++    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 3);
++
++    /* The clear has fired at that draw; the pass's own draws must test, not
++     * clear. */
++    GnmDbRenderControl db_off;
++    memset(&db_off, 0, sizeof(db_off));
++    sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_off);
+ }
+ 
+ /* Bind render targets for the current subpass.
+@@ -2673,8 +2712,8 @@ vk_ps4_CmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBegin
+                 db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+                 sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+ 
+-                /* Trigger the lazy clear with a fullscreen draw. */
+-                vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++                /* Trigger the lazy clear with a fullscreen draw on this target. */
++                vk_ps4_clear_depth_draw(cmd, view->image);
+ 
+             } else if (view->image->is_render_target) {
+                 const VkClearColorValue *cc =
+@@ -2824,7 +2863,7 @@ vk_ps4_CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
+                         db_ctrl.depthclearenable = has_depth ? 1 : 0;
+                         db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+                         sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+-                        vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++                        vk_ps4_clear_depth_draw(cmd, view->image);
+                     }
+                 }
+             }
+@@ -2856,7 +2895,7 @@ vk_ps4_CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
+                         db_ctrl.depthclearenable = has_depth ? 1 : 0;
+                         db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+                         sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+-                        vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++                        vk_ps4_clear_depth_draw(cmd, view->image);
+                     }
+                 }
+             }
+@@ -3122,13 +3161,9 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
+     db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+     sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+ 
+-    /* Bind the depth target and draw to trigger the lazy clear. */
+-    sceGnmDrawCmdSetDepthRenderTarget(&cmd->gnm_cmd, &img->gnm_drt);
+-    sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd,
+-        0, 0,
+-        img->create_info.extent.width,
+-        img->create_info.extent.height);
+-    vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++    /* Bind the depth target and draw to trigger the lazy clear (the clear
++     * binds its own target, scissor, viewport and sample count). */
++    vk_ps4_clear_depth_draw(cmd, img);
+ 
+     /* Iterate ranges to validate bounds (API contract). The lazy clear
+      * covers the entire target regardless of ranges. */
+@@ -3192,7 +3227,14 @@ vk_ps4_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t attachmentCou
+                     rect->rect.offset.x + rect->rect.extent.width,
+                     rect->rect.offset.y + rect->rect.extent.height);
+             }
+-            vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++            {
++                /* The clear binds the pass's depth target itself; it names the
++                 * target's own scissor/viewport/sample count. */
++                uint32_t ds_idx = vk_ps4_subpass_depth_attachment(cmd);
++                VkPs4ImageView *ds_view = ds_idx == VK_ATTACHMENT_UNUSED
++                    ? NULL : vk_ps4_get_attachment_view(cmd, ds_idx);
++                vk_ps4_clear_depth_draw(cmd, ds_view ? ds_view->image : NULL);
++            }
+ 
+             /* Restore scissor to render area */
+             if (cmd->current_render_pass.pass) {
+diff --git a/src/vk_ps4_image.c b/src/vk_ps4_image.c
+index 66d3e1e..79e628a 100644
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -159,7 +159,11 @@ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+         drt_ci.tilemodehint = GNM_TM_DEPTH_2D_THIN_1K;
+         drt_ci.pitch = pCreateInfo->extent.width;
+         drt_ci.mingpumode = gpu_mode;
+-        drt_ci.numfragments = 1;
++        /* numfragments is the sample COUNT (1, 2, 4, 8), as sceGnmDrtSetNumFragments
++         * reads it: a 4x Z plane laid out as 1x was a quarter of the surface the
++         * render pass samples, and its DB_Z_INFO.NUM_SAMPLES said 1x to a 4x
++         * colour attachment. */
++        drt_ci.numfragments = samples;
+         GnmError err = sceGnmCreateDepthRenderTarget(&img->gnm_drt, &drt_ci);
+         if (err != GNM_ERROR_OK) {
+             vk_ps4_log("CreateImage #%lu: sceGnmCreateDepthRenderTarget FAILED err=%d "
+@@ -242,12 +246,28 @@ vk_ps4_GetImageMemoryRequirements(VkDevice device, VkImage image, VkMemoryRequir
+     if (!image || !pMemoryRequirements) return;
+     VkPs4Image *img = (VkPs4Image *)image;
+ 
+-    if (img->is_render_target) {
++    if (img->is_depth_target) {
++        /* A depth target's surface is not its texture's: the depth tile mode,
++         * the sample count (an MSAA Z plane is samples times the 1x surface)
++         * and the stencil plane that follows the Z plane all size it, and only
++         * the descriptor knows them. Sizing it as a DISPLAY_2D_THIN texture
++         * (the else branch) allocated one quarter of a 4x Z plane. */
++        uint64_t size = 0;
++        uint32_t align = 0;
++        if (sceGnmDrtCalcByteSize(&size, &align, &img->gnm_drt) != GNM_ERROR_OK || size == 0) {
++            const uint32_t samples = img->create_info.samples ? img->create_info.samples : 1;
++            size = (uint64_t)img->create_info.extent.width *
++                   img->create_info.extent.height * 4 * samples;
++            align = 0x100;
++        }
++        pMemoryRequirements->size = size;
++        pMemoryRequirements->alignment = align ? align : 0x100;
++    } else if (img->is_render_target) {
+         uint64_t size = 0;
+         uint32_t align = 0;
+         sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt);
+         if (size == 0) {
+-            /* Fallback for depth targets or unconfigured RTs */
++            /* Fallback for unconfigured RTs */
+             GnmDataFormat fmt = vk_ps4_vk_format_to_gnm(img->create_info.format);
+             uint32_t bpp = 4; /* default 4 bytes per pixel */
+             (void)fmt;
+@@ -295,6 +315,28 @@ vk_ps4_BindImageMemory(VkDevice device, VkImage image, VkDeviceMemory memory, Vk
+ 
+     if (img->is_render_target) {
+         sceGnmRtSetBaseAddr(&img->gnm_rt, gpu_addr);
++    } else if (img->is_depth_target) {
++        /* A depth target carries FOUR addresses of its own -- Z read, Z write,
++         * stencil read, stencil write -- and its bind has to publish them. A
++         * depth image is neither an RT nor a plain texture, so it used to fall
++         * into the texture arm below and only its sample-time T# got an
++         * address: the DRT stayed at zero, sceGnmDrtGetZReadAddress() answered
++         * NULL, and sceGnmDrawCmdSetDepthRenderTarget (opengnm
++         * src/drawcommandbuffer.c) took its no-target arm on every bind --
++         * DB_Z_INFO = DB_STENCIL_INFO = 0, so every draw ran with no depth
++         * buffer and therefore no depth test. */
++        sceGnmDrtSetZReadAddress(&img->gnm_drt, gpu_addr);
++        sceGnmDrtSetZWriteAddress(&img->gnm_drt, gpu_addr);
++        if (img->gnm_drt.stencilinfo.format != GNM_STENCIL_INVALID) {
++            uint64_t stencil_offset = 0;
++            sceGnmDrtCalcStencilByteOffset(&stencil_offset, &img->gnm_drt);
++            void *stencil_addr = (char *)gpu_addr + stencil_offset;
++            sceGnmDrtSetStencilReadAddress(&img->gnm_drt, stencil_addr);
++            sceGnmDrtSetStencilWriteAddress(&img->gnm_drt, stencil_addr);
++        }
++        /* Sampling a depth image reads its T#, which is a separate
++         * descriptor over the same memory. */
++        sceGnmTexSetBaseAddress(&img->gnm_texture, gpu_addr);
+     } else {
+         sceGnmTexSetBaseAddress(&img->gnm_texture, gpu_addr);
+     }

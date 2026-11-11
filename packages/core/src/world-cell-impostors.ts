@@ -94,6 +94,7 @@ interface IImpostorRecord {
   readonly atlas: WorldImpostorAtlas;
   readonly center: Vector3;
   readonly radius: number;
+  readonly halfExtents: Vector3;
   readonly bytes: number;
   users: number;
 }
@@ -601,9 +602,9 @@ export class CellImpostors {
           const staged: IImpostorPart[] = impostorParts(parts);
           try {
             this.#baker.begin(asset.id, staged, { pixels: IMPOSTOR_FRAME_PIXELS });
-          } catch {
+          } catch (error) {
             this.#host.addFailure();
-            this.#reportImpostor(asset, "begin-failed");
+            this.#reportImpostor(asset, "begin-failed", error);
             continue;
           }
           this.#impostorReservedBytes = IMPOSTOR_ATLAS_BYTES;
@@ -623,11 +624,11 @@ export class CellImpostors {
           atlas = this.#baker.step(raw);
           if (atlas !== undefined || this.#baker.pending?.view === view) break;
         }
-      } catch {
+      } catch (error) {
         this.#host.addFailure();
         this.#impostorBaking = undefined;
         this.#impostorReservedBytes = 0;
-        this.#reportImpostor(baking, "bake-failed");
+        this.#reportImpostor(baking, "bake-failed", error);
         return;
       }
       if (atlas === undefined) return;
@@ -686,6 +687,7 @@ export class CellImpostors {
       atlas,
       bytes: atlas.bytes,
       center: bounds.center,
+      halfExtents: bounds.halfExtents,
       key,
       radius: bounds.radius,
       users: 0,
@@ -722,12 +724,13 @@ export class CellImpostors {
         alphaTest: source.alphaTest,
         atlas: record.atlas,
         center: record.center,
+        halfExtents: record.halfExtents,
         radius: record.radius,
         source: source.source,
       });
-    } catch {
+    } catch (error) {
       this.#host.addFailure();
-      this.#reportImpostor(asset, "surface-failed");
+      this.#reportImpostor(asset, "surface-failed", error);
       return;
     }
     // The terminal gate is stored as the BASE-sphere projected distance — the distance at which the
@@ -952,6 +955,7 @@ export class CellImpostors {
         atlas: cohort.record.atlas,
         center: cohort.record.center,
         cull: true,
+        halfExtents: cohort.record.halfExtents,
         radius: cohort.record.radius,
         source: cohort.source,
       });
@@ -1097,6 +1101,12 @@ export class CellImpostors {
     const mesh = new InstancedMesh(surface.geometry, surface.material, capacity);
     mesh.count = capacity;
     mesh.frustumCulled = false;
+    // Every nearer draw occludes the far tier, so it draws after them and depth rejects its hidden
+    // quads. three sorts opaques front to back anyway; the owned engine orders a pass's rows by state
+    // with no depth prepass, where drawn first the far quads shaded every pixel the trees then covered
+    // (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/BasePassRendering.cpp:333-341 orders by
+    // occlusion class for the same reason when there is no early-Z pass).
+    mesh.renderOrder = 1;
     // Three's default usage uploads by version; grow/write/zero announce every matrix change through
     // needsUpdate. DynamicDrawUsage would upload the same whole-map buffer on every settled draw.
     mesh.name = `tn-far:${assetId}`;
@@ -1421,7 +1431,8 @@ export class CellImpostors {
    * `TN_WORLD_IMPOSTOR`, one bounded line per asset: its terminal level, the metres it takes over at,
    * the views the atlas holds, its GPU bytes, and — when the world can name it — why it did not land.
    */
-  #reportImpostor(asset: IAssetState, reason: string): void {
+  /** One line per asset; a failure carries its error, so the cause is on the line and not swallowed. */
+  #reportImpostor(asset: IAssetState, reason: string, error?: unknown): void {
     if (this.#impostorReported.has(asset.id)) return;
     this.#impostorReported.add(asset.id);
     const impostor = asset.impostor;
@@ -1430,7 +1441,8 @@ export class CellImpostors {
       `${WORLD_IMPOSTOR_MARKER} asset=${asset.id} level=${String(asset.levels.length - 1)} ` +
         `switch=${(asset.distances.at(-1) ?? 0).toFixed(1)} ` +
         `views=${String(atlas === undefined ? 0 : IMPOSTOR_VIEWS)} ` +
-        `bytes=${String(atlas?.bytes ?? 0)} reason=${reason}`,
+        `bytes=${String(atlas?.bytes ?? 0)} reason=${reason}` +
+        `${error === undefined ? "" : ` error=${error instanceof Error ? error.message : String(error)}`}`,
     );
   }
 }

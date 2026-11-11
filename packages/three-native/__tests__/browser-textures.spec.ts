@@ -160,6 +160,29 @@ describe("browser texture sources", () => {
     ]);
   });
 
+  it("builds a CompressedTexture from its mipmaps, coarse first, and sends a streamed finer level alone", () => {
+    const { bound, constructed, writes } = recording();
+    const CompressedTexture = bound.CompressedTexture as Ctor;
+    const coarse = new Uint8Array(16);
+    const mipmaps = [
+      { data: null as Uint8Array | null, width: 8, height: 8 },
+      { data: coarse, width: 4, height: 4 },
+    ];
+    const texture = new CompressedTexture(mipmaps, 8, 8, 36492);
+    expect(texture).toBeInstanceOf(CompressedTexture);
+    expect(constructed.at(-1)).toEqual(["CompressedTexture", [2, 8, 8, 36492]]);
+    expect(writes.map(([, field]) => field)).toEqual(["mipmaps.1.data"]);
+    expect(texture.mipmaps).toBe(mipmaps);
+    expect(texture.image).toEqual({ width: 8, height: 8 });
+    const fine = new Uint8Array(64);
+    (mipmaps[0] as { data: Uint8Array | null }).data = fine;
+    texture.needsUpdate = true;
+    expect(writes.slice(1).map(([, field, value]) => [field, value])).toEqual([
+      ["mipmaps.0.data", Array.from(fine)],
+      ["needsUpdate", true],
+    ]);
+  });
+
   it("reads a canvas through its 2D context when built and again on needsUpdate", () => {
     const { bound, constructed, writes } = recording();
     let reads = 0;

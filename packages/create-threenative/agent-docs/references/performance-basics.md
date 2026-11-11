@@ -33,10 +33,14 @@ revisit later is the engine's job, not yours.
 - **Web threads.** The dev and preview servers send `Cross-Origin-Opener-Policy: same-origin` and
   `Cross-Origin-Embedder-Policy: require-corp`, and the build writes both into `dist/_headers`, so the
   page is cross-origin isolated and loads the threaded engine: the world-matrix walk splits over up
-  to 8 workers. `TN_FRAME_BUDGET` reports `threads: "on (N)"`. The page always loads the threaded
-  engine and fails closed with `TN_WEB_THREADS_OFF` when it is not cross-origin isolated or the pool
-  starts no worker, so a host must send the two headers; `TN_WASM_THREADS_MISSING` names a missing
-  threaded build. A cross-origin asset without a `Cross-Origin-Resource-Policy` header needs
+  to 8 workers. `TN_FRAME_BUDGET` reports `threads: "on (N)"`. A host that sends no headers (GitHub
+  Pages, a plain static server) gets them from the build's `tn-isolation-sw.js` service worker,
+  which reloads the page once; it needs https or localhost. The dev server, playtests and
+  conformance fail closed with `TN_WEB_THREADS_OFF` when the page is not isolated or the pool starts
+  no worker. A shipped build still loads there: it falls back to the single-thread engine, warns
+  `TN_WEB_THREADS_OFF` with the fix, and reports `threads: "off (<reason>)"`. Plain http on a LAN
+  address and an itch.io frame without its "SharedArrayBuffer support" option are such pages.
+  `TN_WASM_THREADS_MISSING` names a missing threaded build. A cross-origin asset without a `Cross-Origin-Resource-Policy` header needs
   `credentialless` in place of `require-corp`. `?tnIsolation=0` serves a page without the headers.
 - **Per-pass culling.** The main camera, each shadow and each reflection pass cull their own way,
   and the engine owns that. Do not set `frustumCulled = false` on a batch, and do not give one

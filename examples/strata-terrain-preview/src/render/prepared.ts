@@ -1,3 +1,6 @@
+import type { IAssetLoader } from "@threenative/core";
+import { BufferAttribute, type BufferGeometry, type Group, type Mesh, type Object3D } from "three";
+import { PREPARED } from "../world/terrainAssets.js";
 // The prepared props of the Temperate starter, loaded as models: the CC0 rocks and firs that ship
 // with the terrain package, and the licensed Fab Scots pine this example prepared for itself.
 //
@@ -22,9 +25,7 @@
 // the starter ships a procedural spruce and a procedural boulder for exactly this reason. A game
 // with no prepared art still has a forest. An unregistered asset id still fails by name, in
 // `props.ts`, because that is a mistake rather than a missing optional file.
-import type { IAssetLoader } from "@threenative/core";
-import { BufferAttribute, type BufferGeometry, type Group, type Mesh, type Object3D } from "three";
-import { PREPARED } from "../world/terrainAssets.js";
+import { FAB_ART } from "./pack.js";
 import type { IPropPart, PropRole } from "./props.js";
 
 /**
@@ -161,7 +162,7 @@ export interface IPreparedProps {
 export async function loadPreparedProps(assets?: IAssetLoader): Promise<IPreparedProps> {
   const parts = new Map<string, IPropPart[]>();
   const geometries: BufferGeometry[] = [];
-  if (assets === undefined)
+  if (assets === undefined || !FAB_ART)
     return { parts, dispose: () => undefined, lodBaseSpread: 0, levelsWithoutSolid: 0 };
 
   const loaded = await Promise.all(

@@ -15,7 +15,12 @@ withConstValues(constants, { Vector2, Vector3, Vector4, Color });
 
 // three's `uniform.value = x` (shared with the Wasm back end): a number goes through at once; an
 // edited Color or VectorN goes through `syncUniforms`, which the renderer calls before each frame.
-const live = liveUniforms(globalThis.tsl.uniform, (node, lanes) => globalThis.tsl.setUniform(node, ...lanes));
+const live = liveUniforms(
+  globalThis.tsl.uniform,
+  (node, lanes) => globalThis.tsl.setUniform(node, ...lanes),
+  // PRD-828: a sync's changed uniforms cross as one call.
+  globalThis.tsl.setUniforms && ((nodes, counts, lanes) => globalThis.tsl.setUniforms(nodes, counts, lanes)),
+);
 // A boolean uniform (the exposure meter's `enabled`) is the live float compared with zero, as on the Wasm back end.
 export const uniform = booleanUniforms(live.uniform, (scalar) => globalThis.tsl.notEqual(scalar, 0));
 export const uniformArray = live.uniformArray;
@@ -25,15 +30,19 @@ export const syncUniforms = live.sync;
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const Fn = withFnBuilder(globalThis.tsl.Fn);
+// three's compute(node, count, workgroupSize) is node.compute(...), which the engine binds (PRD-784 P5-9).
+// An absent workgroup size stays absent: the engine refuses an undefined argument.
+export const compute = (node, count, workgroupSize) =>
+  workgroupSize === undefined ? node.compute(count) : node.compute(count, workgroupSize);
 // three's lights([...]) takes one array; each light crosses as its own engine object.
 export const lights = (list = []) => globalThis.tsl.lights(...list);
 export const {
-  atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, Discard, log, lightShadowMatrix, attribute, uv, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
+  atomicAdd, atomicSub, atomicMax, atomicMin, atomicAnd, atomicOr, atomicXor, atomicStore, atomicLoad, Break, Continue, Return, Discard, log, lightShadowMatrix, attribute, uv, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld, positionWorldDirection,
-  normalViewGeometry, instanceIndex, cameraViewMatrix, modelWorldMatrix, ivec2, uvec2, nodeObject, reflect, textureLoad, textureSize,
-  mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
+  normalViewGeometry, instanceIndex, cameraViewMatrix, modelWorldMatrix, ivec2, ivec3, ivec4, uvec2, uvec3, uvec4, nodeObject, reflect, textureLoad, textureSize,
+  mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
   cameraNear, cameraFar, screenSize, depth, viewportSharedTexture, viewportDepthTexture, linearDepth, viewportLinearDepth,
@@ -44,12 +53,15 @@ export const {
   atan, mod, fwidth, saturation, mat2, hash, time, deltaTime, transformDirection, normalWorldGeometry,
   getViewPosition, frameGroup, renderGroup, objectGroup, transformNormalToView, property,
 } = globalThis.tsl;
+// three's viewportCoordinate is screenCoordinate.sub(viewport.xy) (ScreenNode.js). Every native pass
+// draws the full target, so viewport.xy is (0, 0) and the two are equal.
+export const viewportCoordinate = screenCoordinate;
 
 export const { storageTexture, textureStore } = defineStorageTextures(globalThis.tsl);
 
 // three's storage buffers over engine BufferAttributes (shared with the Wasm back end): `storage`,
 // `instancedArray` and `attributeArray` build the engine's storage node, whose kernels `renderer.compute` runs.
-export const { storage, instancedArray, attributeArray, StorageBufferAttribute, StorageInstancedBufferAttribute } =
+export const { storage, instancedArray, attributeArray, StorageBufferAttribute, StorageInstancedBufferAttribute, IndirectStorageBufferAttribute } =
   defineStorage(globalThis.tsl, BufferAttribute);
 
 // three's pass(), mrt() and MRT slots over the player's one scene pass (shared with the Wasm back
@@ -87,8 +99,9 @@ export const rtt = defineRtt(globalThis.tsl.rtt, { NodeMaterial: globalThis.Node
 import { defineWgslFn } from "../../../../three-native/src/wgsl-fn.ts";
 export const wgslFn = defineWgslFn(globalThis.tsl.wgslFunction);
 
-export function texture(value, ...args) {
-  const node = globalThis.tsl.texture(value, ...args);
+// three's TextureNode.value: assigning another texture swaps the one the node samples (ProbeVolume swaps its volume).
+const swappable = (make) => (value, ...args) => {
+  const node = make(value, ...args);
   let current = value;
   return Object.defineProperty(node, "value", {
     get: () => current,
@@ -98,7 +111,10 @@ export function texture(value, ...args) {
       current = next;
     },
   });
-}
+};
+export const texture = swappable((...args) => globalThis.tsl.texture(...args));
+export const texture3D = swappable((...args) => globalThis.tsl.texture3D(...args));
+export const cubeTexture = swappable((...args) => globalThis.tsl.cubeTexture(...args));
 
 export const {
   EPSILON, INFINITY, PI, PI2, TWO_PI, HALF_PI, radians,
@@ -114,11 +130,16 @@ export const {
 // Refused at use, as on Wasm: the engine draws a lamp's cube shadow taps (shadowFilterOptions) and the
 // virtual shadow map (virtualShadowOptions) in C++, so the three-only bodies of core's soft-shadow.ts
 // and VirtualShadowNode.setup name these and never call them here.
-export const cubeTexture = unsupportedExport("cubeTexture");
 export const Stack = unsupportedExport("Stack");
 export const getShadowMaterial = unsupportedExport("getShadowMaterial");
 export const shadow = unsupportedExport("shadow");
 export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");
+export const element = unsupportedExport("element");
+export const instancedBufferAttribute = unsupportedExport("instancedBufferAttribute");
+export const instancedDynamicBufferAttribute = unsupportedExport("instancedDynamicBufferAttribute");
+export const positionView = unsupportedExport("positionView");
+export const transformNormal = unsupportedExport("transformNormal");
+export const varyingProperty = unsupportedExport("varyingProperty");
 // Core's rough diffuse lighting model reads these on three's renderer only; the engine shades roughDiffuse in C++.
 // biome-ignore lint/style/useNamingConvention: the name is three/tsl's export, which core imports.
 export const F_Schlick = unsupportedExport("F_Schlick");

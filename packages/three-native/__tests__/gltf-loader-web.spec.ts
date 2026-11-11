@@ -7,6 +7,7 @@ const loadGltf = vi.hoisted(() =>
   vi.fn((_bytes: Uint8Array, _files: ReadonlyMap<string, Uint8Array>) => ({
     animations: [],
     scene: { name: "scene" },
+    scenes: [{ name: "scene" }],
   })),
 );
 vi.mock("three", () => ({ __tnLoadGltf: loadGltf }));
@@ -43,6 +44,22 @@ afterEach(() => {
   loadGltf.mockClear();
 });
 
+describe("the web GLTFLoader's scenes", () => {
+  // PRD-762: each LOD level of a cooked model is a named scene; core finds `fir_lod1` in `scenes`.
+  it("returns every scene the engine loaded, the default scene among them", async () => {
+    const scene = { name: "fir" };
+    const levels = [scene, { name: "fir_lod1" }, { name: "fir_lod2" }];
+    loadGltf.mockReturnValueOnce({ animations: [], scene, scenes: levels });
+    const gltf = await new GLTFLoader().parseAsync(glb({ asset: { version: "2.0" } }), "assets/");
+    expect(gltf.scenes.map((s) => (s as { name: string }).name)).toEqual([
+      "fir",
+      "fir_lod1",
+      "fir_lod2",
+    ]);
+    expect(gltf.scenes).toContain(gltf.scene);
+  });
+});
+
 describe("the web GLTFLoader's image files", () => {
   it("names only the relative uris, once each", () => {
     expect(externalImageUris(MODEL)).toEqual(["shared/images/a%20b.jpg"]);
@@ -67,6 +84,32 @@ describe("the web GLTFLoader's image files", () => {
     const files = loadGltf.mock.calls[0]?.[1];
     expect([...(files?.keys() ?? [])]).toEqual(["shared/images/a b.jpg"]);
     expect([...(files?.get("shared/images/a b.jpg") ?? [])]).toEqual([1, 2, 3]);
+  });
+
+  // PRD-860: core serves a KTX2's resident mips here; an image it declines is fetched as usual.
+  it("takes an image's bytes from imageSource when it answers, and fetches when it does not", async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      return {
+        arrayBuffer: async () => new Uint8Array([9]).buffer,
+        headers: new Headers({ "content-type": "image/jpeg" }),
+        ok: true,
+        status: 200,
+      };
+    });
+    const served = new GLTFLoader();
+    served.imageSource = async () => new Uint8Array([7, 7]);
+    await served.parseAsync(MODEL, "image-source/a/");
+    expect(fetched).toEqual([]);
+    expect([...(loadGltf.mock.calls.at(-1)?.[1]?.get("shared/images/a b.jpg") ?? [])]).toEqual([
+      7, 7,
+    ]);
+
+    const declined = new GLTFLoader();
+    declined.imageSource = async () => undefined;
+    await declined.parseAsync(MODEL, "image-source/b/");
+    expect(fetched).toEqual(["image-source/b/shared/images/a%20b.jpg"]);
   });
 
   // The Strata forest loads ten spruce models at once that share one 12 MB atlas: ten fetches of it,
@@ -122,6 +165,30 @@ describe("the web GLTFLoader's image files", () => {
     });
     await new GLTFLoader().parseAsync(glb({ asset: { version: "2.0" } }), "");
     expect(loadGltf).toHaveBeenCalledWith(expect.any(Uint8Array), new Map());
+  });
+
+  // PRD-861: core wires three's MeshoptDecoder for every model that declares meshopt, and the web bake
+  // emits meshopt for this engine. The engine's own loader decodes the mesh; the JS decoder reads only a
+  // hosted LOD chain's compressed index views (model-lod-engine-loader.spec.ts).
+  it("takes a meshopt decoder and hands a meshopt model to the engine", async () => {
+    const loader = new GLTFLoader();
+    const decoder = { decodeGltfBuffer: () => undefined, ready: Promise.resolve() };
+    expect(loader.setMeshoptDecoder(decoder)).toBe(loader);
+    await loader.parseAsync(
+      glb({ asset: { version: "2.0" }, extensionsUsed: ["EXT_meshopt_compression"] }),
+      "",
+    );
+    expect(loadGltf).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes a KTX2 loader and hands a KHR_texture_basisu model to the engine", async () => {
+    const loader = new GLTFLoader();
+    expect(loader.setKTX2Loader({})).toBe(loader);
+    await loader.parseAsync(
+      glb({ asset: { version: "2.0" }, extensionsUsed: ["KHR_texture_basisu"] }),
+      "",
+    );
+    expect(loadGltf).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a plugin it does not host by name, rather than skipping it", async () => {

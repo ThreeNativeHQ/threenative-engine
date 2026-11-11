@@ -23,7 +23,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   },
   plugins: [rapier(), playtest()],
   display: config.display,
-  render: config.renderer,
+  renderer: config.renderer,
   scenes: { play: Play },
   seed: 6132,
   start: "play",

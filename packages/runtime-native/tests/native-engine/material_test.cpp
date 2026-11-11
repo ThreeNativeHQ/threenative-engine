@@ -47,6 +47,25 @@ void stagesAgree(const Program& fragment, const std::string& vertex, const std::
     }
 }
 
+// three r187 builds the flat alphaTest cutoff only when alphaTest > 0 (NodeMaterial.setupDiffuseColor). A discard the
+// program always carries turns early depth testing off for every opaque draw: the forest spawn view's terrain, rocks
+// and trunks paid it on the engine and not on three (PRD-858). An alphaTestNode still tests always.
+void alphaTestCompiled() {
+    for (int material = 0; material < 5; ++material)
+        for (int mode = 0; mode < 3; ++mode) {
+            VertexVariant variant;
+            variant.alphaTest = mode == 1;
+            if (mode == 2) variant.nodes.alphaTestNode = tn::engine::shader::graph::float_(0.5);
+            const auto p = material == 0 ? buildBasic(variant) : material == 1 ? buildLambert(variant) :
+                material == 2 ? buildPhong(variant) : material == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+            const auto fs = buildStage(p.fragment, 1);
+            CHECK(fs.wgsl.ok());
+            CHECK((fs.wgsl.code.find("discard") != std::string::npos) == (mode != 0));
+        }
+    VertexVariant opaque, cut;
+    cut.alphaTest = true;
+    CHECK(opaque.key() != cut.key());
+}
 void alphaHash() {
     VertexVariant variant;
     variant.alphaHash = true;
@@ -290,6 +309,7 @@ void maskNode() {
 void alphaTestNodeProgram() {
     namespace g = tn::engine::shader::graph;
     VertexVariant plain;
+    plain.alphaTest = true;  // the flat cutoff path: material.alphaTest > 0
     VertexVariant cut;
     cut.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.2f});
     CHECK(plain.key() != cut.key());
@@ -969,6 +989,21 @@ void basicNormalView() {
     CHECK(p.vertex.dump().find("output normalView = ") != std::string::npos);
 }
 
+// three's TangentUtils: a zero det (uv constant across the pixel) scales the frame to 0. Without the
+// guard the frame is 0 * inf = NaN, and post spreads it over the whole image (PRD-784 P4-3, PS4).
+void normalMapZeroDet() {
+    VertexVariant variant;
+    variant.normalMap = true;
+    const std::string code = WgslEmitter::emit(buildStandard({}, variant).fragment, 1).code;
+    const size_t at = code.find("(1f / sqrt(");
+    CHECK(at != std::string::npos);
+    const size_t start = code.rfind('\n', at), end = code.find('\n', at);
+    const std::string line = code.substr(start, end - start);
+    const bool guarded = line.find("select((1f / sqrt(") != std::string::npos && line.find(" == 0f)") != std::string::npos;
+    if (!guarded) std::fprintf(stderr, "perturbNormal2Arb divides by sqrt(det) unguarded:%s\n", line.c_str());
+    CHECK(guarded);
+}
+
 }  // namespace
 
 // PRD-539 lever 7: every implicit-LOD material texture reads at the view mip bias (UE 5.8.3:
@@ -996,4 +1031,4 @@ void viewMipBiasSamples() {
     CHECK(colored.code.find("u.f_viewMipBias") != std::string::npos);
 }
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode}, {"basic_normal_view", basicNormalView})
+TN_TEST_MAIN({"alpha_hash", [] { alphaHash(); alphaTestCompiled(); }}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode}, {"basic_normal_view", basicNormalView}, {"normal_map_zero_det", normalMapZeroDet});

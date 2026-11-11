@@ -65,6 +65,13 @@ describe("core constraints", () => {
           // The automatic caller of `mergeByMaterial`: it reads each mesh's material identity and
           // render flags to decide which meshes share a draw, and constructs or edits no material.
           file !== "auto-batch.ts" &&
+          // `meshSections` splits an imported mesh by its own material slots and hands each section the
+          // game's material instance back; it constructs, configures and reads no material property.
+          file !== "world-model-sections.ts" &&
+          // A streamed model's full textures land in the slots its own coarse textures hold
+          // (PRD-860). It moves the model's texture objects by identity and constructs, colours or
+          // configures no material.
+          file !== "streamed-textures.ts" &&
           // The scene trace flattens the game's meshes into triangle and material-texel buffers, and
           // `TracedReflections` walks them. They read the game's materials and write none of them.
           // The tighter check is below.
@@ -154,6 +161,10 @@ describe("core constraints", () => {
           // appearance inputs without constructing or choosing any visual output.
           file !== "pipeline-census.ts" &&
           file !== "render/probe-volume.ts" &&
+          // PRD-603 reads each game material's colour and emission into a flat table that the probe trace
+          // shades from. It constructs no material or light and writes no look property; the only colours it
+          // makes are table values (black, and grey for a material with no colour). The tighter check is below.
+          file !== "render/probe-trace.ts" &&
           // PRD-633 captures the game's sky; its only authored surface masks the lower hemisphere
           // with black when requested. It supplies no sky, scattering coefficient or lighting look.
           file !== "render/sky-capture.ts" &&
@@ -185,6 +196,9 @@ describe("core constraints", () => {
           file !== "look/exposure-readback.ts" &&
           file !== "look/exposure-settings.ts" &&
           file !== "look/filmic-tone-mapping.ts" &&
+          // The look passes above draw their own materials through one quad each (PRD-828); it takes the
+          // material it is given and constructs or configures none.
+          file !== "look/quad-pass.ts" &&
           // PRD-653 swaps the Lambert term of three's own lighting model for Unreal's published EON fit when the game marks
           // a material. Albedo, roughness, lights and a lamp's radius come from the game's own materials and lamps, and
           // the game chooses which materials take it. It constructs no material, light or colour and sets no appearance
@@ -291,6 +305,12 @@ describe("core constraints", () => {
           // AGENTS.md rule 3, second exception (owner, 2026-10-31): every `@threenative/core/spells`
           // factory ships a stock look, and each colour, size and timing is a named override.
           !file.startsWith("spells/") &&
+          // PRD-833 moved the environment measure-and-sample mechanism out of the twelve kits that
+          // held byte-identical copies. None of it originates appearance: it reads the scene's own
+          // environment and refuses by name. The backlight is NOT here — its shader constants decide
+          // how a surface looks — so it stays in each kit's `src/render/`.
+          !file.startsWith("render/environment/") &&
+          file !== "render-environment.ts" &&
           // The spells' particle kind table; PRD-789 deletes it with the from-scratch spells.
           file !== "particle-kinds.ts" &&
           file !== "index.ts",
@@ -305,6 +325,42 @@ describe("core constraints", () => {
       .join("\n");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);
+
+    // The environment mechanism (PRD-833): it may read the game's environment and copy the game's
+    // own material into a node twin, and it may not originate a material, a light, a colour or a
+    // shader of its own. `source` above excludes it, so this is what keeps the exclusion honest.
+    const environment = [
+      "render-environment.ts",
+      ...[
+        "environmentContribution.ts",
+        "environmentRadiance.ts",
+        "environmentSampleCache.ts",
+        "environmentSampling.ts",
+        "environmentSnapshot.ts",
+        "gate.ts",
+      ].map((file) => `render/environment/${file}`),
+    ]
+      .map((file) =>
+        withoutComments(
+          readFileSync(path.join(sourceDirectory, file), "utf8").replace(
+            /export\s+type\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?/gu,
+            " ",
+          ),
+        ),
+      )
+      .join("\n");
+    expect(environment).not.toMatch(/postprocessing|\.wgsl|new\s+\w*Light|new\s+Color/iu);
+    // One shader material, and it is plumbing: the sampling quad that reads the environment into an
+    // offscreen target and is never attached to the scene. The backlight's node twin left with the
+    // backlight, which now lives in each kit's `src/render/` where its constants are the game's.
+    expect(environment.match(/new\s+\w*Material/gu) ?? []).toHaveLength(1);
+    expect(environment).toMatch(/new MeshBasicNodeMaterial\(/u);
+    // Tone mapping appears only as the readback's own bracket: the sample is taken with tone
+    // mapping off and the renderer's previous value is put back in the same `finally`. No curve is
+    // chosen here - `applyRendererToneMapping` is the one writer of it.
+    const toneMappingUses = environment.match(/[^\n]*toneMapping[^\n]*/giu) ?? [];
+    expect(toneMappingUses).toHaveLength(6);
+    expect(toneMappingUses.join("\n")).not.toMatch(/ACES|AgX|Neutral|filmic|applyToneMapping/iu);
 
     // `assets.ts` assigns compiler-produced textures to game-authored materials. It transports
     // appearance data but originates none: no material, light, colour, or shader may be created.
@@ -445,6 +501,19 @@ describe("core constraints", () => {
         /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
       );
     }
+
+    // The probe trace copies the game's material colours into a table. Its `Color` values are table entries,
+    // so the check drops `Color` from the constructor list and keeps the rest.
+    const probeTrace = withoutComments(
+      readFileSync(path.join(sourceDirectory, "render/probe-trace.ts"), "utf8"),
+    );
+    expect(probeTrace).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(probeTrace).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
+    expect(probeTrace.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // The surface cache reads the game's maps and colours and writes none of them.
     const surfaceCacheRaw = readFileSync(
@@ -695,10 +764,13 @@ describe("core constraints", () => {
     // `render/probe-volume.ts` is the one render-mechanism exception admitted by PRD-268: the
     // WebGPU bake needs a TSL projection node and a render target, but all lighting and surface
     // inputs still come from the game scene. It must never construct a light or choose a visible
-    // property, and the port must stay on common WebGPU render targets.
+    // property, and the port must stay on common WebGPU render targets. The PRD-603 trace reads the game's
+    // sun colour into its lighting record, so the check rejects a write of a look property, not a read.
     const probeVolume = readFileSync(path.join(sourceDirectory, "render/probe-volume.ts"), "utf8");
     expect(probeVolume).not.toMatch(/new\s+\w*Light|new\s+Color|\.wgsl/iu);
-    expect(probeVolume).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(probeVolume).not.toMatch(
+      /\.(color|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
     expect(probeVolume).toMatch(/RenderTarget3D|texture3D|ATLAS_PADDING/u);
   });
 

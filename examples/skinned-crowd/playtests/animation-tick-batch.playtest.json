@@ -1,0 +1,18 @@
+{
+  "name": "animation-tick-batch-on-a-128-rig-crowd",
+  "schemaVersion": 1,
+  "subject": "PRD-828 Phase 2: 128 single-clip rigs that each crossed into the engine four times a frame now cross once for the whole crowd. Run with TN_BENCH_TARGET=web-engine and ?crowdCount=128&crowdRate=auto so the page is the owned Wasm engine and publishes TN_FRAME_BUDGET windows.",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 120,
+  "artifacts": { "console": true, "screenshots": false },
+  "steps": [{ "label": "measured windows", "release": true, "waitFrames": 700 }],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "engineCost": {
+      "minWindows": 1,
+      "maxPerFrame": { "animationTickBatches": 2 },
+      "source": "One batch advances the frame's whole crowd. Two allows a frame that settles a queued tick and then queues the next; a reader that settles the queue mid-frame turns one batch into one per rig, which is the failure this bound exists to catch."
+    }
+  }
+}

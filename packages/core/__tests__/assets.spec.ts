@@ -1208,6 +1208,35 @@ describe("IAssetLoader compressed textures", () => {
     expect(io.fallback).not.toHaveBeenCalled();
   });
 
+  // PRD-867 review: the owned engine's loader transcodes KHR_texture_basisu itself (BC7, ETC2 or
+  // RGBA8), so a device with no compressed format three's KTX2Loader accepts still loads the model.
+  it("a Basis model loads on the engine's own glTF loader where three's KTX2Loader has no format", async () => {
+    Object.defineProperty(GLTFLoader.prototype, "failClosed", { value: true, configurable: true });
+    try {
+      const setKtx2Spy = vi.spyOn(GLTFLoader.prototype, "setKTX2Loader");
+      vi.spyOn(GLTFLoader.prototype, "parse").mockImplementation(function (
+        this: GLTFLoader,
+        _data: ArrayBuffer,
+        _path: string,
+        onLoad: never,
+      ) {
+        (onLoad as (value: unknown) => void)({ scene: new Group(), animations: [] });
+        return this;
+      } as never);
+      const json = JSON.stringify({
+        asset: { version: "2.0" },
+        extensionsUsed: ["KHR_texture_basisu"],
+        extensionsRequired: ["KHR_texture_basisu"],
+      });
+      astcImageIo(json);
+      const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
+      await expect(assets.model("astc.gltf")).resolves.toBeDefined();
+      expect(setKtx2Spy).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(GLTFLoader.prototype, "failClosed");
+    }
+  });
+
   it("should not reject an unsupported renderer when the manifest has no KTX2 output", async () => {
     vi.stubGlobal(
       "fetch",
@@ -1956,5 +1985,27 @@ describe("IAssetLoader model decoders", () => {
     await expect(assets.model("legacy.glb")).rejects.toThrow();
 
     expect(dracoSpy).toHaveBeenCalledWith("/assets/draco/");
+  });
+});
+
+describe("fetchAsset", () => {
+  it("walks the resolved urls past a 404 and a network error, and names every miss", async () => {
+    const { fetchAsset } = await import("../src/assets.js");
+    const original = globalThis.fetch;
+    const served: Record<string, number> = { "/b/x.bin": 404, "/c/x.bin": 200 };
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/a/x.bin") throw new Error("offline");
+      return new Response("ok", { status: served[url] ?? 404 });
+    }) as typeof fetch;
+    try {
+      const assets = { resolve: async () => ["/a/x.bin", "/b/x.bin", "/c/x.bin"] };
+      expect(await (await fetchAsset(assets, "x.bin")).text()).toBe("ok");
+      const missing = { resolve: async () => ["/a/x.bin", "/b/x.bin"] };
+      await expect(fetchAsset(missing, "x.bin")).rejects.toThrow(
+        "TN_ASSET_NOT_SERVED: 'x.bin' is not served by any of 2 candidate url(s): /a/x.bin (offline); /b/x.bin (status 404).",
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

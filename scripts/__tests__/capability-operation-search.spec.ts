@@ -15,7 +15,9 @@ beforeAll(async () => {
   manifestFile = join(directory, "capabilities.json");
   // Rebuild from source: a hand-edited JSON fixture cannot prove a metadata correction.
   await writeFile(manifestFile, JSON.stringify(buildCapabilityManifest(root)));
-}, 30_000);
+  // No local cap: the manifest is rebuilt from source, and a 30 s one timed out on a loaded hosted
+  // runner (merge-group run 42339946231, 3960 tests passed around it). The suite's `hookTimeout`.
+});
 
 afterAll(async () => {
   if (directory !== undefined) await rm(directory, { force: true, recursive: true });

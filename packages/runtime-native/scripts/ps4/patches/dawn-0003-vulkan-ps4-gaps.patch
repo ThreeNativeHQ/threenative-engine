@@ -1,0 +1,70 @@
+diff --git a/src/dawn/native/Surface.cpp b/src/dawn/native/Surface.cpp
+--- a/src/dawn/native/Surface.cpp
++++ b/src/dawn/native/Surface.cpp
+@@ -208,6 +208,15 @@ ResultOrError<UnpackedPtr<SurfaceDescriptor>> ValidateSurfaceDescriptor(
+             return descriptor;
+         }
+ #endif  // defined(DAWN_USE_X11)
++#if DAWN_PLATFORM_IS(PS4) && !defined(DAWN_USE_X11)
++        case wgpu::SType::SurfaceSourceXlibWindow: {
++            // PS4: there is no window system. The surface is vulkan-ps4's VideoOut swapchain
++            // (see CreateVulkanSurface in SwapChainVk.cpp), so the Xlib source is used purely
++            // as an opaque chain carrier: the client passes null display/window and the
++            // backend reads neither. Any real X11 build above takes the case instead.
++            return descriptor;
++        }
++#endif  // DAWN_PLATFORM_IS(PS4) && !defined(DAWN_USE_X11)
+         default:
+             return DAWN_VALIDATION_ERROR("Unsupported sType (%s)", type);
+     }
+diff --git a/src/dawn/native/vulkan/PhysicalDeviceVk.cpp b/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
+--- a/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
++++ b/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
+@@ -908,6 +908,15 @@ bool PhysicalDevice::SupportsFeatureLevel(wgpu::FeatureLevel featureLevel,
+ 
+ void PhysicalDevice::SetupBackendAdapterToggles(dawn::platform::Platform* platform,
+                                                 TogglesState* adapterToggles) const {
++#if DAWN_PLATFORM_IS(PS4)
++    // PS4: vulkan-ps4 advertises VK_KHR_vulkan_memory_model (and both feature bits), but the
++    // SPIR-V consumer behind it -- libpsbc's Mesa SPIR-V-to-NIR -- rejects the capability it
++    // implies: "Unsupported SPIR-V capability: SpvCapabilityVulkanMemoryModel" and "Vulkan memory
++    // model is unsupported by this driver", after which the pipeline compile fails. The toggle is
++    // forced off so Dawn emits the plain SPIR-V memory model this ICD can compile; the adapter
++    // therefore reports exactly one WebGPU adapter with no memory-model extension behind it.
++    adapterToggles->ForceSet(Toggle::UseVulkanMemoryModel, false);
++#else
+     // The environment can only request to use the Vulkan Memory Model when the extension is present
+     // and the capabilities are available. Override the decision if they are not supported.
+     if (!GetDeviceInfo().HasExt(DeviceExt::VulkanMemoryModel) ||
+@@ -916,6 +925,7 @@ void PhysicalDevice::SetupBackendAdapterToggles(dawn::platform::Platform* platfo
+         adapterToggles->ForceSet(Toggle::UseVulkanMemoryModel, false);
+     }
+     adapterToggles->Default(Toggle::UseVulkanMemoryModel, true);
++#endif  // DAWN_PLATFORM_IS(PS4)
+ 
+     adapterToggles->Default(
+         Toggle::DecomposeUniformBuffers,
+diff --git a/src/dawn/native/vulkan/SwapChainVk.cpp b/src/dawn/native/vulkan/SwapChainVk.cpp
+--- a/src/dawn/native/vulkan/SwapChainVk.cpp
++++ b/src/dawn/native/vulkan/SwapChainVk.cpp
+@@ -596,6 +596,20 @@ void SwapChain::DetachFromSurfaceImpl() {
+ ResultOrError<VkSurfaceKHR> CreateVulkanSurface(InstanceBase* instance,
+                                                 const PhysicalDevice* physicalDevice,
+                                                 const Surface* surface) {
++#if DAWN_PLATFORM_IS(PS4)
++    // PS4: there is no window system, so there is no platform vkCreate*SurfaceKHR either. The
++    // surface is what vulkan-ps4's swapchain presents to -- the GnmVideoOut display
++    // (vk_ps4_swapchain.c) -- and the driver answers the VK_KHR_surface queries for that one
++    // display. This handle is the opaque token those queries and vkCreateSwapchainKHR take: it
++    // is never dereferenced, and vkDestroySurfaceKHR on this driver is a no-op. It is non-null
++    // because VK_NULL_HANDLE already means "surface creation failed" to every caller.
++    (void)instance;
++    (void)physicalDevice;
++    (void)surface;
++    static int sPs4SurfaceToken;
++    return VkSurfaceKHR::CreateFromHandle(
++        reinterpret_cast<VkSurfaceKHR_T*>(&sPs4SurfaceToken));
++#endif
+     // May not be used in the platform-specific switches below.
+     [[maybe_unused]] const VulkanGlobalInfo& info =
+         physicalDevice->GetVulkanInstance()->GetGlobalInfo();

@@ -43,6 +43,7 @@ import {
 } from "./render/chain.js";
 import { type IResolutionSubrect, ResolutionSubrect } from "./render/resolution-subrect.js";
 
+import { GPU_STALE_FRAME_LIMIT, GpuReadings } from "./gpu-readings.js";
 import type { IStartupImageState } from "./startup-readiness.js";
 import {
   type IStorageBufferLease,
@@ -768,6 +769,20 @@ function wrapRenderer(
   };
 
   let renderingFrame = 0;
+  // three's `compileAsync` runs a viewport texture's `updateBefore`, which copies the framebuffer from
+  // a render context the compile never bound to a target, so the backend reads the canvas
+  // (rgba8unorm) into the scene copy (rgba16float) and logs a format error per refracting material.
+  // A compile draws no pixels: the copy it triggers outside a real frame is skipped, and a frame the
+  // compile yields to still copies.
+  const copyingBackend = raw.backend as
+    | { copyFramebufferToTexture?: (...args: unknown[]) => unknown }
+    | undefined;
+  const stockFramebufferCopy = copyingBackend?.copyFramebufferToTexture;
+  if (copyingBackend !== undefined && typeof stockFramebufferCopy === "function")
+    copyingBackend.copyFramebufferToTexture = (...args: unknown[]) =>
+      activeCompiles > 0 && renderingFrame === 0
+        ? undefined
+        : stockFramebufferCopy.apply(copyingBackend, args);
   let temporalUpscaleActive = false;
   const renderFrame = (scene: Object3D, camera: Camera): void => {
     const temporal = wrapped.temporalUpscale?.() === true;
@@ -834,32 +849,13 @@ function wrapRenderer(
     }
   };
   // The main pass's own GPU series, fed a frame at a time by `game.ts` because only the pass
-  // recorder can attribute the render pool to its main call. Half/half smoothing, and a short
-  // freshness window: the adaptive LOD loop reads this every half second and must not act on a
-  // resolve that stopped landing.
-  const mainSmoothing = 0.5;
-  const mainStaleLimit = 8;
-  let gpuMainEma: number | undefined;
+  // recorder can attribute the render pool to its main call. Half/half smoothing, and the engine's
+  // stale limit: the adaptive LOD loop reads this every half second and must not act on a resolve
+  // that stopped landing.
+  const mainReadings = new GpuReadings({ smoothing: 0.5, staleLimit: GPU_STALE_FRAME_LIMIT });
   let targetFps: number | undefined;
-  let gpuMainStaleFrames = 0;
-  let gpuMainLastFrame: number | undefined;
   const noteGpuMainMs = (ms: number | undefined, frame?: number): void => {
-    const stale = (): void => {
-      gpuMainStaleFrames += 1;
-      if (gpuMainStaleFrames >= mainStaleLimit) gpuMainEma = undefined;
-    };
-    if (ms === undefined || !Number.isFinite(ms) || ms < 0) {
-      stale();
-      return;
-    }
-    // A repeated frame id is the previous resolve still in flight, not a new reading.
-    if (frame !== undefined && frame === gpuMainLastFrame) {
-      stale();
-      return;
-    }
-    if (frame !== undefined) gpuMainLastFrame = frame;
-    gpuMainStaleFrames = 0;
-    gpuMainEma = gpuMainEma === undefined ? ms : gpuMainEma + (ms - gpuMainEma) * mainSmoothing;
+    mainReadings.note(ms, frame);
   };
   const wrapped: IRendererLike = {
     get compileCount() {
@@ -1051,7 +1047,7 @@ function wrapRenderer(
       );
       return gpuObservation;
     },
-    gpuMainMs: () => gpuMainEma,
+    gpuMainMs: () => mainReadings.ema,
     noteGpuMainMs,
     targetFps: () => targetFps,
     noteTargetFps: (fps: number) => {

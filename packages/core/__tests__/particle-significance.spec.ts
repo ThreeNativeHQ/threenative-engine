@@ -32,6 +32,30 @@ describe("ParticleSignificance", () => {
     expect(budget.shed).toBeCloseTo(0.3);
   });
 
+  // PRD-828: each significance read is an engine crossing per emitter; an idle pass asks none.
+  it("asks no candidate its significance while nothing is shed or yielded", () => {
+    const budget = new ParticleSignificance();
+    const small = candidate(0.1);
+    const large = candidate(1);
+    budget.apply([small, large], camera, 0);
+    expect(budget.idle).toBe(true);
+    expect(small.significance).not.toHaveBeenCalled();
+    // Pressure: the pass ranks and yields the smallest.
+    budget.observe(window({ gpuMs: 5 }));
+    budget.apply([small, large], camera, 0);
+    expect(small.yield).toHaveBeenLastCalledWith(true);
+    // The pressure is gone, but a yielded candidate keeps the pass running until it is resumed.
+    budget.observe(window({ gpuMs: 0, simulatedSeconds: 100 }));
+    expect(budget.shed).toBe(0);
+    expect(budget.idle).toBe(false);
+    budget.apply([small, large], camera, 2);
+    expect(small.yield).toHaveBeenLastCalledWith(false);
+    expect(budget.idle).toBe(true);
+    small.significance.mockClear();
+    budget.apply([small, large], camera, 4);
+    expect(small.significance).not.toHaveBeenCalled();
+  });
+
   it("includes the separate compute bucket when render alone is below target", () => {
     const budget = new ParticleSignificance();
     budget.observe(window({ gpuMs: 6, gpuCompute: 15, targetFps: 60 }));

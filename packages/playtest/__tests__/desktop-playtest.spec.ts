@@ -22,7 +22,7 @@ import { DesktopPlaytestDriver, LocalDeviceMailbox, desktopConsoleType } from ".
 import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
-import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
+import type { IDevicePlaytestDriver } from "../src/runner/deviceRunner.js";
 import type { IPlaytestReport } from "../src/report.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
 

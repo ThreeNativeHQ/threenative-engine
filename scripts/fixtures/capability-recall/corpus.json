@@ -829,6 +829,22 @@
       "reject": []
     },
     {
+      "id": "request.lumen-radiance-cache",
+      "query": "lumen radiance cache",
+      "scope": "request",
+      "source": "template:starter#Conventions",
+      "expect": ["RadianceCache"],
+      "reject": []
+    },
+    {
+      "id": "request.dynamic-probe-gi",
+      "query": "dynamic probe gi irradiance field",
+      "scope": "request",
+      "source": "template:starter#Conventions",
+      "expect": ["RadianceCache"],
+      "reject": []
+    },
+    {
       "id": "request.mesh-cards",
       "query": "mesh cards",
       "scope": "request",

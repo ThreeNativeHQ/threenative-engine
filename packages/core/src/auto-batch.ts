@@ -1,8 +1,9 @@
-import { type BufferGeometry, type Material, type Mesh, Object3D } from "three";
+import { type BufferGeometry, type Layers, type Material, type Mesh, Object3D } from "three";
 
 import { isEngineRenderHook } from "./engine-render-hook.js";
 import type { Registry } from "./entities.js";
 import { mergeByMaterial } from "./merge-parts.js";
+import { isStreamedGeometry } from "./model-lod.js";
 import { displacesVertices, hasMorphAttributes } from "./projection-plan.js";
 import { unbilled } from "./startup-offscreen-bytes.js";
 
@@ -24,6 +25,13 @@ import { unbilled } from "./startup-offscreen-bytes.js";
  * Only appearance-neutral meshes qualify: opaque, single material, a plain `position`/`normal`/`uv`
  * geometry, no render hook, no skin, morph, instancing or vertex displacement. Everything else keeps
  * its draw. The merged mesh keeps the game's own material and shadow, layer and render-order flags.
+ *
+ * **The game never sees the merge.** A source is kept out of the draw without touching anything the game
+ * reads or copies: the engine's own `__tnBatchHidden` flag, or on plain three a `layers` view that answers
+ * the renderer's `test` with `false` and the game's `mask` with its own value. `visible` stays the game's,
+ * so a game that saves and restores visibility (a warm-up that shows everything to compile it) or clones a
+ * merged source gets back exactly what it authored. Hiding through `visible` let Midway's warm-up re-hide a
+ * given-back control stick for good, and a clone inherit the hide.
  *
  * **Named overrides, both reported.** `userData.batch = "off"` on a mesh or any ancestor keeps that
  * subtree out. `autoBatch: false` in the game config switches the pass off.
@@ -56,8 +64,10 @@ const ENGINE_GUARD_CHUNK = 2048;
  * compares it in place, so a lap of 8,000 sources fits the budget the JS slice spent on 200.
  */
 interface IEngineGuard {
-  __tnGuardWatch(sources: readonly Mesh[]): number;
+  __tnGuardWatch(sources: readonly Mesh[], ancestors?: readonly Object3D[]): number;
   __tnGuardCheck(limit: number): ArrayLike<number>;
+  /** PRD-828: the sources' ancestors, checked whole in the engine; absent on an older engine. */
+  __tnGuardCheckAncestors?(): ArrayLike<number>;
 }
 
 function engineGuardOf(scene: Object3D): IEngineGuard | undefined {
@@ -254,6 +264,57 @@ function stampMatches(object: Object3D, stamp: Float64Array): boolean {
   return true;
 }
 
+/** Each plain-three source's own `Layers`, kept while a view stands in for it. */
+const ownLayers = new WeakMap<Object3D, Layers>();
+
+/** Nonzero while core draws the world; only then does a plain-three source's view fail the layer test. */
+let drawingWorld = 0;
+
+/**
+ * Runs core's world draw. On plain three a merged source is out of the renderer's layer test only in
+ * here, so a game's own raycast or `layers.test` still finds it, as it did before the merge.
+ */
+export function drawWorld<T>(draw: () => T): T {
+  drawingWorld += 1;
+  try {
+    return draw();
+  } finally {
+    drawingWorld -= 1;
+  }
+}
+
+/**
+ * Takes a merged source out of the draw, or puts it back, leaving every property the game reads as it was.
+ * The engine hides it natively; on plain three, the renderer and shadow passes ask `layers.test(camera)`,
+ * and a view whose `test` fails inside {@link drawWorld} and whose `mask` reads and writes the source's own
+ * `Layers` hides it from that draw alone. A clone copies `mask`, so it copies the game's layers, not the hide.
+ */
+function setBatchHidden(mesh: Mesh, hidden: boolean): void {
+  const engine = mesh as Mesh & { __tnBatchHidden?: boolean };
+  if ("__tnBatchHidden" in engine) {
+    engine.__tnBatchHidden = hidden;
+    return;
+  }
+  if (!hidden) {
+    const own = ownLayers.get(mesh);
+    if (own !== undefined) mesh.layers = own;
+    ownLayers.delete(mesh);
+    return;
+  }
+  if (ownLayers.has(mesh)) return;
+  const own = mesh.layers;
+  ownLayers.set(mesh, own);
+  mesh.layers = Object.create(Object.getPrototypeOf(own) as object, {
+    mask: {
+      get: () => own.mask,
+      set: (mask: number) => {
+        own.mask = mask;
+      },
+    },
+    test: { value: (layers: Layers) => drawingWorld === 0 && own.test(layers) },
+  }) as Layers;
+}
+
 function isMesh(object: Object3D): object is Mesh {
   return (object as Mesh).isMesh === true;
 }
@@ -290,9 +351,17 @@ function bakeable(geometry: BufferGeometry): boolean {
   return true;
 }
 
-/** Whether merging this mesh leaves the frame looking the same. */
+/**
+ * Whether merging this mesh leaves the frame looking the same. A streamed coarse model stays out:
+ * its full file replaces the geometry in place, and a merged copy would keep the coarse vertices.
+ */
 function mergeable(mesh: Mesh): boolean {
-  return plainDraw(mesh) && bakeable(mesh.geometry) && mesh.matrixWorld.determinant() > 0;
+  return (
+    plainDraw(mesh) &&
+    bakeable(mesh.geometry) &&
+    !isStreamedGeometry(mesh.geometry) &&
+    mesh.matrixWorld.determinant() > 0
+  );
 }
 
 /** Meshes with equal keys can share a merged mesh without changing how any of them draws. */
@@ -340,6 +409,8 @@ export class AutoBatch {
   readonly #excluded = new WeakSet<Object3D>();
   #records: IRecord[] = [];
   readonly #ancestors = new Map<Object3D, IAncestor>();
+  /** The ancestors in the order the engine's guard watches them, so its indices name them. */
+  #watchedAncestors: Object3D[] = [];
   #watched = new Map<Mesh, Float64Array>();
   #state: State = "idle";
   #known = Number.NaN;
@@ -461,8 +532,8 @@ export class AutoBatch {
   reset(): void {
     for (const record of this.#records) if (!record.out) this.#giveBack(record);
     this.#records = [];
-    this.#watchEngine();
     this.#ancestors.clear();
+    this.#watchEngine();
     this.#watched.clear();
     this.#state = "idle";
     this.#known = Number.NaN;
@@ -529,7 +600,8 @@ export class AutoBatch {
         }
       }
       const skip = off || child.userData.batch === "off";
-      if (isMesh(child) && mergeable(child)) {
+      // A source already drawn by a merge is not walked into a second one: its `visible` stays true.
+      if (isMesh(child) && !sourceGroups.has(child) && mergeable(child)) {
         if (skip) this.#optedOut += 1;
         else visit(child);
       }
@@ -629,8 +701,8 @@ export class AutoBatch {
       };
       vertexStart += vertexCount;
       // The source stays where the game put it, so rays, `userData` and world matrices keep working.
-      // Only the renderer is told not to draw it.
-      mesh.visible = false;
+      // Only the renderer is told not to draw it; `visible` stays the game's.
+      setBatchHidden(mesh, true);
       writeStamp(mesh, record.stamp);
       group.sources.push(record);
       sourceGroups.set(mesh, group);
@@ -674,15 +746,33 @@ export class AutoBatch {
   /** Every frame, because there are few ancestors and one moved parent changes thousands of sources. */
   #checkAncestors(): number {
     let given = 0;
+    const engine = this.#engine;
+    if (engine?.__tnGuardCheckAncestors !== undefined) {
+      const changed = engine.__tnGuardCheckAncestors();
+      for (let at = 0; at < changed.length; at += 1) {
+        const node = this.#watchedAncestors[changed[at] as number];
+        if (node !== undefined) given += this.#giveBackUnder(node);
+      }
+      return given;
+    }
     for (const [node, entry] of this.#ancestors) {
       if (node.parent === entry.parent && stampMatches(node, entry.stamp)) continue;
-      this.#excluded.add(node);
-      this.#ancestors.delete(node);
-      for (const record of entry.records) {
-        if (record.out) continue;
-        this.#giveBack(record);
-        given += 1;
-      }
+      given += this.#giveBackUnder(node);
+    }
+    return given;
+  }
+
+  /** An ancestor moved: it never merges again, and every source under it goes back to the game. */
+  #giveBackUnder(node: Object3D): number {
+    const entry = this.#ancestors.get(node);
+    if (entry === undefined) return 0;
+    let given = 0;
+    this.#excluded.add(node);
+    this.#ancestors.delete(node);
+    for (const record of entry.records) {
+      if (record.out) continue;
+      this.#giveBack(record);
+      given += 1;
     }
     return given;
   }
@@ -692,7 +782,12 @@ export class AutoBatch {
    * and each give-back, so no game code runs between the state merged and the state watched.
    */
   #watchEngine(): void {
-    this.#engine?.__tnGuardWatch(this.#records.map((record) => record.mesh));
+    if (this.#engine === undefined) return;
+    this.#watchedAncestors = [...this.#ancestors.keys()];
+    this.#engine.__tnGuardWatch(
+      this.#records.map((record) => record.mesh),
+      this.#watchedAncestors,
+    );
   }
 
   /** A slice of the sources bounded by {@link GUARD_BUDGET_MS}, or all of them under `everyFrame`. */
@@ -764,7 +859,8 @@ export class AutoBatch {
     this.#excluded.add(record.mesh);
     this.#restored += 1;
     this.#meshes -= 1;
-    record.mesh.visible = true;
+    // Drawn on its own again, as the game now has it: a source the game hid stays hidden.
+    setBatchHidden(record.mesh, false);
     const { group } = record;
     group.live -= 1;
     if (group.live > 0) this.#collapse(record);

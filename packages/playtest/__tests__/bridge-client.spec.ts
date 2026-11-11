@@ -3,6 +3,7 @@ import {
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   PLAYTEST_STARTUP_COMPILE_BUDGET_MS,
+  PLAYTEST_STARTUP_READY_TIMEOUT_MS,
   type IPlaytestBridgeDescription,
 } from "../src/protocol.js";
 import {
@@ -86,4 +87,9 @@ test("the bridge handshake is budgeted by startup, not by one round trip", async
 
   expect(timeouts.get("describe")).toBeGreaterThan(PLAYTEST_STARTUP_COMPILE_BUDGET_MS);
   expect(timeouts.get("ready")).toBeGreaterThan(PLAYTEST_STARTUP_COMPILE_BUDGET_MS);
+  // Core answers `describe` only after the start scene's `load()` settles, and a load is sized by
+  // the scenario's own throttled link: Midway awaits 139.5 MB, 30 s at 40 Mbps, and failed
+  // `describe` 370 ms short of it. The handshake therefore gets the whole startup window.
+  expect(timeouts.get("describe")).toBeGreaterThanOrEqual(PLAYTEST_STARTUP_READY_TIMEOUT_MS);
+  expect(timeouts.get("ready")).toBeGreaterThanOrEqual(PLAYTEST_STARTUP_READY_TIMEOUT_MS);
 });

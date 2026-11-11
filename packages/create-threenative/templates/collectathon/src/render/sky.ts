@@ -92,7 +92,7 @@ const smooth = (from: number, to: number, value: number): number => {
  * flatten toward the horizon. Each is lit by where its density climbs: a texel whose deck is
  * denser toward the sun, or above it on screen, is on the cloud's shaded side or its flat base.
  */
-export function skyTexture(saturation = 1, width = 2048): DataTexture {
+export function skyPixels(saturation = 1, width = 2048): Uint8Array {
   // three's PMREM sizes its cube from width / 4 and needs at least 16: keep width >= 64.
   const height = width / 2;
   const data = new Uint8Array(width * height * 4);
@@ -109,6 +109,14 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
   let baseR = 0;
   let baseG = 0;
   let baseB = 0;
+  // Each column's azimuth terms, once: the same numbers every row reads.
+  const cosAzimuth = new Float64Array(width);
+  const sinAzimuth = new Float64Array(width);
+  for (let column = 0; column < width; column += 1) {
+    const azimuth = (column / width - 0.5) * Math.PI * 2;
+    cosAzimuth[column] = Math.cos(azimuth);
+    sinAzimuth[column] = Math.sin(azimuth);
+  }
   // Pass 1: the deck's density under every cloud-band texel, once (the shading reads neighbours).
   const deck = new Float32Array(width * height);
   const bands = new Float32Array(height);
@@ -120,8 +128,10 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
     // Flattened less than a true deck would be: cumulus heaps stand tall, they are not a sheet.
     const reach = (1 / (Math.tan(elevation) + 0.1)) ** 0.7 * 0.75;
     for (let column = 0; column < width; column += 1) {
-      const azimuth = (column / width - 0.5) * Math.PI * 2;
-      deck[row * width + column] = density(Math.cos(azimuth) * reach, Math.sin(azimuth) * reach);
+      deck[row * width + column] = density(
+        (cosAzimuth[column] as number) * reach,
+        (sinAzimuth[column] as number) * reach,
+      );
     }
   }
   // The cumulus banks over the far hills, per column: where a bank stands (`cluster`), its heaped
@@ -142,6 +152,12 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
   const step = Math.max(1, Math.round(width / 512));
   const sunAzimuth = Math.atan2(SUN_DIRECTION.z, SUN_DIRECTION.x);
   const sunElevation = Math.asin(SUN_DIRECTION.y);
+  // Which way the sun lies from each column, once.
+  const sunward = new Int8Array(width);
+  for (let column = 0; column < width; column += 1) {
+    const azimuth = (column / width - 0.5) * Math.PI * 2;
+    sunward[column] = Math.sin(sunAzimuth - azimuth) > 0 ? 1 : -1;
+  }
   for (let row = 0; row < height; row += 1) {
     const elevation = (row / (height - 1) - 0.5) * Math.PI;
     const up = Math.sin(elevation);
@@ -171,9 +187,10 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
     );
     for (let column = 0; column < width; column += 1) {
       // three's equirectangular u: azimuth from +X toward +Z, u = 0.5 on +X.
-      const azimuth = (column / width - 0.5) * Math.PI * 2;
-      const tx = Math.cos(azimuth) * cosE;
-      const tz = Math.sin(azimuth) * cosE;
+      const cosA = cosAzimuth[column] as number;
+      const sinA = sinAzimuth[column] as number;
+      const tx = cosA * cosE;
+      const tz = sinA * cosE;
       // The sun's halo: a warm glow round its direction, wider than the disc the lens never sees.
       const sun = Math.max(0, tx * SUN_DIRECTION.x + up * SUN_DIRECTION.y + tz * SUN_DIRECTION.z);
       const halo = 0.6 * sun ** 32 + 0.22 * sun ** 5;
@@ -183,7 +200,7 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
       const d = deck[row * width + column] ?? 0;
       const cover = band > 0 ? smooth(0.43, 0.54, d) * band : 0;
       if (cover > 0.002) {
-        const turn = Math.sin(sunAzimuth - azimuth) > 0 ? step : -step;
+        const turn = (sunward[column] as number) * step;
         const towardColumn = (column + turn + width) % width;
         // Denser a step toward the sun: the far side of a heap. Denser a step up the sky: its base.
         const toward = (deck[towardRow * width + towardColumn] ?? 0) - d;
@@ -202,8 +219,7 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
       if (elevation > foot && elevation < top + 0.05) {
         // Billowed outline: finer noise lifts and bites the heap's top edge.
         // Elevation moves radially and azimuth round the circle: round puffs, and azimuth wraps.
-        const puff = (e: number) =>
-          fbm(Math.cos(azimuth) * (14 + e * 15), Math.sin(azimuth) * (14 + e * 15), 3);
+        const puff = (e: number) => fbm(cosA * (14 + e * 15), sinA * (14 + e * 15), 3);
         const lump = puff(elevation);
         const below = top + (lump - 0.5) * 0.11 - elevation;
         const inside = smooth(0, 0.02, below) * smooth(foot, foot + 0.012, elevation);
@@ -225,12 +241,27 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
       }
       const grey = r * 0.2126 + g * 0.7152 + b * 0.0722;
       const i = (row * width + column) * 4;
-      data[i] = Math.round(255 * linearToSrgb(r + (grey - r) * (1 - saturation)));
-      data[i + 1] = Math.round(255 * linearToSrgb(g + (grey - g) * (1 - saturation)));
-      data[i + 2] = Math.round(255 * linearToSrgb(b + (grey - b) * (1 - saturation)));
+      data[i] = srgbByte(r + (grey - r) * (1 - saturation));
+      data[i + 1] = srgbByte(g + (grey - g) * (1 - saturation));
+      data[i + 2] = srgbByte(b + (grey - b) * (1 - saturation));
       data[i + 3] = 255;
     }
   }
+  return data;
+}
+
+/**
+ * The sky as a texture. `data` is `skyPixels(saturation, width)`; the scene passes the copy it kept
+ * from the last run (`ctx.assets.memo`), because painting four million texels costs a run ~0.3 s.
+ */
+export function skyTexture(
+  saturation = 1,
+  width = 2048,
+  data: Uint8Array = skyPixels(saturation, width),
+): DataTexture {
+  const height = width / 2;
+  if (data.length !== width * height * 4)
+    throw new Error(`sky pixels are ${data.length} bytes, expected ${width * height * 4}.`);
   const sky = new DataTexture(data, width, height, RGBAFormat, UnsignedByteType);
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
@@ -245,6 +276,39 @@ const mix = (from: number, to: number, t: number): number => from + (to - from) 
 function linearToSrgb(value: number): number {
   const v = Math.min(1, Math.max(0, value));
   return v < 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
+}
+
+/**
+ * `Math.round(255 * linearToSrgb(value))` for millions of texels: the byte only steps up as the
+ * value grows, so the smallest value of each step, found once, gives the same byte with no power.
+ */
+const SRGB_STEPS = (() => {
+  const byte = (value: number) => Math.round(255 * linearToSrgb(value));
+  const steps = new Float64Array(256);
+  for (let level = 1; level < 256; level += 1) {
+    let low = 0;
+    let high = 1;
+    // Halve until the two ends are adjacent doubles: `high` is then the step's first value.
+    for (;;) {
+      const middle = low + (high - low) / 2;
+      if (middle === low || middle === high) break;
+      if (byte(middle) >= level) high = middle;
+      else low = middle;
+    }
+    steps[level] = high;
+  }
+  return steps;
+})();
+
+function srgbByte(value: number): number {
+  let low = 0;
+  let high = 255;
+  while (low < high) {
+    const middle = (low + high + 1) >> 1;
+    if (value >= (SRGB_STEPS[middle] as number)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
 }
 
 /** `fill` is the environment light: by default the sky itself, in this game `skyTexture(0.3, 128)`. */

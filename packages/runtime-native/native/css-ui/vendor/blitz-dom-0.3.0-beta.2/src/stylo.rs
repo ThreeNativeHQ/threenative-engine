@@ -105,7 +105,14 @@ impl crate::document::BaseDocument {
                 if animation.state == AnimationState::Pending && animation.started_at <= now {
                     animation.state = AnimationState::Running;
                 }
-                animation.iterate_if_necessary(now);
+                // An animation that has reached exactly the end of an iteration is already in the
+                // next one: CSS Animations says `iterationProgress = (localTime / duration) mod 1`,
+                // so a one-second animation sampled at exactly 1000 ms paints its `from` keyframe,
+                // and Chromium does. `iterate_if_necessary` wraps on a strict `>`, which leaves the
+                // 1000 ms frame held at the previous iteration's `to` value — one sample wrong, and
+                // the parity meter's 100 % sample is exactly that instant. One ulp past the instant
+                // puts the boundary on the iteration after it and moves no other frame.
+                animation.iterate_if_necessary(now.next_up());
 
                 if animation.state == AnimationState::Running && animation.has_ended(now) {
                     animation.state = AnimationState::Finished;

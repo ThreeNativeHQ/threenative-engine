@@ -1367,12 +1367,19 @@ describe("WorldCells automatic impostors", () => {
     const loader = treeLoader();
     const world = await loadPine(loader);
     await flushed(world);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     runBake(world, rendererStub({ throwOnRender: true }));
     await flushed(world);
 
     expect(partsOf(world, "pine", 2, 0).length).toBe(0);
     expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
     expect(world.stats().failures).toBeGreaterThan(0);
+    // The line names the cause, so a failed bake is not a bare reason (PRD-858).
+    const line = info.mock.calls
+      .map(([text]) => String(text))
+      .find((text) => text.includes("reason=bake-failed"));
+    expect(line).toMatch(/ error=\S/);
+    info.mockRestore();
     world.dispose();
   });
 
@@ -2132,6 +2139,10 @@ describe("WorldCells far impostor residency", () => {
     expect(names).not.toContain("tn-far:ground_cover");
     // The species whose own distance reaches past the ring keep theirs: pine authors no maxDistance.
     expect(names).toContain("tn-far:pine");
+    // Every nearer draw occludes the far tier, so it draws after them: the owned engine orders a
+    // pass's rows by state, not depth, and drawn first the far quads shaded every pixel the trees
+    // then covered (+2.7 ms GPU on the forest kit, RTX 2080).
+    for (const mesh of farMeshes(world)) expect(mesh.renderOrder).toBeGreaterThan(0);
     expect(world.stats().impostor.far.aggregates).toBe(names.length);
     // The short-range asset still draws in the ring, through its own levels.
     expect(partsOf(world, "ground_cover", 0, 0).length).toBeGreaterThan(0);

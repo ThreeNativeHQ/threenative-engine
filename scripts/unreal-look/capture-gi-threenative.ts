@@ -12,16 +12,11 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { waitForServer } from "../lib/dev-server.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { assertConfigEcho, launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js";
-import {
-  HIDE_UI,
-  freePort,
-  referenceFoliageSource,
-  scaffold,
-  waitForServer,
-} from "./capture-threenative.js";
+import { HIDE_UI, freePort, referenceFoliageSource, scaffold } from "./capture-threenative.js";
 import {
   type CaptureEngine,
   checkDrawnEngine,
@@ -205,7 +200,7 @@ export async function captureGiThreeNative(options: {
   // helper when the perf lane's capture-threenative.ts change lands.
   try {
     const origin = `http://127.0.0.1:${port}/`;
-    await waitForServer(origin, server);
+    await waitForServer({ child: server, label: "GI capture server", url: origin });
     const browser = await launchWebgpuBrowser();
     try {
       const report: Record<string, unknown> = {};

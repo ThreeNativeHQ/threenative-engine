@@ -55,6 +55,10 @@ TN_EXPORT tn_status_t tn_tsl_effect_parameter(tn_context_t *context, const uint6
  * the value afresh, so no program changes. */
 TN_EXPORT tn_status_t tn_tsl_set_uniform(tn_context_t *context, const uint64_t *node, const double *values,
                                          uint32_t count, tn_diagnostic_t *diagnostic);
+/* Many `uniform.value = x` writes in one call (PRD-828): node i takes `lane_counts[i]` values from `lanes`,
+ * packed in order. Every id is checked before any write; a refused value stops the batch there. */
+TN_EXPORT tn_status_t tn_tsl_set_uniforms(tn_context_t *context, const uint64_t *nodes, const uint32_t *lane_counts,
+                                          const double *lanes, uint32_t count, tn_diagnostic_t *diagnostic);
 /* CPU compilation of the material's actual vertex/fragment graphs, optionally dumping WGSL. */
 TN_EXPORT tn_status_t tn_tsl_compile(tn_handle_t material, const char *wgsl_path, tn_diagnostic_t *diagnostic);
 

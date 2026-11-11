@@ -1,0 +1,20 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -2731,6 +2731,17 @@
+         uint64_t dst_level_off = have_dst_lv
+                                  ? dst_lv.offset - (uint64_t)dst_base_layer * dst_slice_size
+                                  : 0;
++        /* A volume is linear-aligned (vk_ps4_image.c), so its rows sit the surface's aligned pitch apart and
++         * its depth slices one padded slice apart, not the packed width: a 3D texture whose width is not
++         * already aligned read skewed rows, and the cornell GI volume drew blocky streaks (PRD-784 calibration).
++         * ponytail: level 0 only; a mipmapped volume's levels still take the table above. */
++        VkPs4ImageLevel vol_lv;
++        if (dst->create_info.imageType == VK_IMAGE_TYPE_3D && dst_mip == 0 && !compressed &&
++            vk_ps4_image_level(dst, 0, 0, &vol_lv) && dst->create_info.extent.depth &&
++            vol_lv.size % dst->create_info.extent.depth == 0) {
++            dst_pitch = vk_format_row_size(dst->create_info.format, vol_lv.pitch);
++            dst_slice_size = vol_lv.size / dst->create_info.extent.depth;
++        }
+         uint64_t src_slice_size = (uint64_t)src_pitch * copy_height;
+ 
+         for (uint32_t z = 0; z < r->imageExtent.depth; z++) {

@@ -27,11 +27,11 @@ import {
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
-  QuadMesh,
   RendererUtils,
   type TextureNode,
 } from "three/webgpu";
 import { exposureMeter, exposureSettings } from "./exposure-settings.js";
+import { drawQuadPass } from "./quad-pass.js";
 
 type ColourTexture = TextureNode;
 
@@ -139,7 +139,6 @@ export class LocalExposureNode extends Node<"float"> {
   readonly #blurSize = uniform(new Vector2(1, 1));
   readonly #blurRadius = uniform(BLUR_RADIUS);
   readonly #rangeStride = uniform(1);
-  readonly #quad: QuadMesh;
   readonly #logMaterial = new NodeMaterial();
   readonly #lumMaterial = new NodeMaterial();
   readonly #blurXMaterial = new NodeMaterial();
@@ -362,8 +361,6 @@ export class LocalExposureNode extends Node<"float"> {
       });
       return sum;
     })();
-    // Three 0.187's QuadMesh takes its material in the constructor; each pass replaces it before drawing.
-    this.#quad = new QuadMesh(this.#logMaterial);
   }
 
   override setup(builder: NodeBuilder): Node<"float"> {
@@ -474,9 +471,7 @@ export class LocalExposureNode extends Node<"float"> {
         [this.#rowMaterial, this.#rowTarget],
         [this.#gridMaterial, this.#gridTarget],
       ] as const) {
-        this.#quad.material = material;
-        renderer.setRenderTarget(target);
-        this.#quad.render(renderer);
+        drawQuadPass(renderer, material, target);
       }
     } finally {
       RendererUtils.restoreRendererState(renderer, this.#rendererState);

@@ -1,0 +1,34 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -419,6 +419,31 @@
+     sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
+     sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+ 
++    /* A clear is a DRAW, so it rasterizes through whatever viewport the LAST
++     * draw left in the context -- and through the device's init state for the
++     * first draw of a command buffer. Neither belongs to the target being
++     * cleared, so name the target's own viewport, the same mapping
++     * vk_ps4_CmdSetViewport derives from a Vulkan one. */
++    {
++        GnmSetViewportInfo vp;
++        memset(&vp, 0, sizeof(vp));
++        vp.dmin = 0.0f;
++        vp.dmax = 1.0f;
++        vp.scale[0] = img->create_info.extent.width * 0.5f;
++        vp.scale[1] = img->create_info.extent.height * 0.5f;
++        vp.scale[2] = 0.5f;
++        vp.offset[0] = vp.scale[0];
++        vp.offset[1] = vp.scale[1];
++        vp.offset[2] = 0.5f;
++        sceGnmDrawCmdSetViewport(&cmd->gnm_cmd, 0, &vp);
++    }
++
++    /* Bind the clear pixel shader and fullscreen VS */
++    sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
++    sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
++
++    /* Draw a fullscreen triangle to clear the entire RT.
++     * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky. */
+     /* Draw a fullscreen triangle to clear the entire RT.
+      * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky. */
+     sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);

@@ -515,11 +515,8 @@ export async function nativePackageEntries(
     if (bookkeeping.has(relative) || cookOutputs.has(relative) || isLeftover(relative)) continue;
     const data = await readFile(path.join(outputRoot, relative));
     const name = `/${relative}`;
-    if (data.length === 0) {
-      skipped += 1;
-      continue;
-    }
-    const texture = await nativeTextureEntry(name, data);
+    // An empty web-root file stays: the web serves it as 0 bytes and the game fetches it (a world with no placements).
+    const texture = data.length === 0 ? undefined : await nativeTextureEntry(name, data);
     const scene = data.length >= 4 && data.toString("latin1", 0, 4) === "glTF";
     specs.push(
       texture ?? {

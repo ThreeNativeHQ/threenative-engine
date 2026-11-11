@@ -302,7 +302,20 @@ void tsl_ivec_bool() {
     const auto code = fragment(g::vec4({g::select(flag, sum, g::float_(0)), g::float_(0), g::float_(0), g::float_(1)}));
     CHECK(code.find("vec3<i32>") != std::string::npos && code.find("vec4<i32>") != std::string::npos);
 }
+// three's mat3(mat4) is the upper-left 3x3 (Matrix3.setFromMatrix4); transformNormal and the impostor surface build
+// it from instanceMatrix. WGSL has no mat3x3(mat4x4), so the lowered columns are (m * e_c).xyz (PRD-858).
+void tsl_mat3_of_mat4() {
+    uint64_t serial = 0;
+    const auto m = TslArg::of(g::uniform("m", Type::mat(4, 4)));
+    const auto graph = tn::abi::tslCall("mat3", nullptr, {m}, serial);
+    CHECK(graph != nullptr);
+    if (!graph) return;
+    Program p(Stage::Compute); tsl::Build build(p);
+    const ExprId value = g::lower(graph, p);
+    CHECK(value != kInvalid && p.expr(value).type == Type::mat(3, 3));
+    emitted(p, value, "mat3x3<f32>(");
+}
 }  // namespace
 
-TN_TEST_MAIN({"math", math}, {"spell_port", spell_port}, {"compute_texture_load", compute_texture_load},
+TN_TEST_MAIN({"math", math}, {"tsl_mat3_of_mat4", tsl_mat3_of_mat4}, {"spell_port", spell_port}, {"compute_texture_load", compute_texture_load},
              {"compute_int_literals", compute_int_literals}, {"tsl_ivec_bool", tsl_ivec_bool})

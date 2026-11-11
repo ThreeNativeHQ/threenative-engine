@@ -114,12 +114,12 @@ try {
   log = readFileSync(logFile, "utf8");
 } catch (error) {
   deny(
-    `Discovery gate: cannot read ${path.relative(root, logFile)} (${error.code ?? error.message}), so the engine was not searched in this project. Before you create ${created.join(", ")}, run ${SEARCH} and engine_capability_detail on every hit. Outside this folder: ${BRIDGE}. Opt out with TN_DISCOVERY_GATE=off.`,
+    `Discovery gate: cannot read ${path.relative(root, logFile)} (${error.code ?? error.message}), so the engine was not searched in this project. Before you create ${created.join(", ")}, run ${SEARCH} and read every row; engine_capability_detail is only for a symbol the search did not return. Outside this folder: ${BRIDGE}. Opt out with TN_DISCOVERY_GATE=off.`,
   );
   process.exit(0);
 }
 const since = Date.parse(state.prompt ?? "") || 0;
 if (!searchedSince(log, since))
   deny(
-    `Discovery gate: no engine_search_capabilities call since the last user prompt. Before you create ${created.join(", ")}, run ${SEARCH}, then engine_capability_detail on every hit, and use what it returns. Outside this folder: ${BRIDGE}. Opt out with TN_DISCOVERY_GATE=off.`,
+    `Discovery gate: no engine_search_capabilities call since the last user prompt. Before you create ${created.join(", ")}, run ${SEARCH} and read every row — engine_capability_detail is only for a symbol the search did not return — and use what it returns. Outside this folder: ${BRIDGE}. Opt out with TN_DISCOVERY_GATE=off.`,
   );

@@ -54,6 +54,10 @@ import { clone as cloneByExamplesPath } from "three/examples/jsm/utils/SkeletonU
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { Material } from "three";
+// PRD-854: names core's world modules import (prd493 bundles them) and never call on the engine: each refuses by name.
+import { CompressedArrayTexture, InstancedInterleavedBuffer, TextureUtils } from "three";
+import { BundleGroup, EventNode, IndirectStorageBufferAttribute } from "three/webgpu";
+import { element, instancedBufferAttribute, instancedDynamicBufferAttribute, positionView, transformNormal, varyingProperty } from "three/tsl";
 import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal, Loop, int } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
@@ -122,6 +126,9 @@ const answers = (geometries) => JSON.stringify(geometries.slice(0, 3).map((g) =>
 const panels = panel(THREE);
 check(panels[0] instanceof THREE.BufferGeometry && answers(panels) === ${JSON.stringify(answers(panel(three)))}, "Shape, holes and ExtrudeGeometry as three");
 const refuses = (make, pattern) => { try { make(); return false; } catch (error) { return pattern.test(String(error.message)); } };
+for (const [name, value] of Object.entries({ CompressedArrayTexture, InstancedInterleavedBuffer, TextureUtils, BundleGroup, EventNode,
+  IndirectStorageBufferAttribute, element, instancedBufferAttribute, instancedDynamicBufferAttribute, positionView, transformNormal, varyingProperty }))
+  check(refuses(() => (typeof value === "function" ? new value() : value.x), new RegExp("TN_NATIVE_UNSUPPORTED_" + name.toUpperCase())), name + " refused at use");
 check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
   { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
 const paramTexture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
@@ -516,6 +523,9 @@ const loader = createAssetLoader({ cache: false, backgroundFill: false });
 check(loader.cache.enabled === false && loader.cache.reason === "native host reads installed files" &&
   loader.cache.bytesOnDisk === 0 && typeof loader.cache.clear === "function", "native asset cache report");
 check(typeof loader.prefetch === "function" && typeof loader.startBackgroundFill === "function", "native prefetch and fill");
+// ctx.assets.memo (PRD-860): no Cache API on native, so the build runs and its value comes back.
+const memoValue = { pixels: new Uint8Array([7]) };
+check(typeof loader.memo === "function" && (await loader.memo("sky", () => memoValue)) === memoValue, "native memo runs build");
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
 // "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the
@@ -1135,18 +1145,27 @@ export default defineGame({ scenes: { play: Play }, start: "play", frameBudget: 
   render: { projection: false, matrixWorld: "all" } });
 `);
 // A core game bundles (PRD-552): picking's MeshBVH, core's TSL context nodes and BatchedMesh are bound,
-// and the exports the engine does not provide (core's WebGL2 fallback, Points) are refused at use, by
-// name, as on Wasm (owner decision 2026-10-09).
+// and the exports the engine does not provide (core's WebGL2 fallback) are refused at use, by name,
+// as on Wasm (owner decision 2026-10-09). `Points` is bound on the player since PRD-871.
 await bundleNativeEngine({ entry, outfile });
 const accepted = await readFile(outfile, "utf8");
-// Refused at use: constructing Points fails at that call with the catalog's diagnostic.
+// PRD-871: `Points` and `PointsMaterial` are bound on the V8 player as on Wasm, so a star field builds
+// its cloud and its material there too, and `Points` is no longer a refused export.
 const pointsEntry = resolve(work, "points.ts");
 const pointsOut = resolve(work, "points.js");
-await writeFile(pointsEntry, 'import { Points, Scene } from "three"; try { new Points(); globalThis.tn.__startupError = "Points constructed"; } catch (error) { globalThis.tn.__startupError = String(error.message); } globalThis.tn.scene = new Scene();');
+await writeFile(pointsEntry, [
+  'import { BufferGeometry, Float32BufferAttribute, Points, PointsMaterial, Scene } from "three";',
+  'const geometry = new BufferGeometry();',
+  'geometry.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 1, 1], 3));',
+  'const cloud = new Points(geometry, new PointsMaterial({ size: 4, sizeAttenuation: true }));',
+  'globalThis.tn.__pointsProof = [cloud.isPoints, cloud.material.type, cloud.material.size, cloud.geometry.getAttribute("position").count].join(",");',
+  'globalThis.tn.scene = new Scene();',
+  'globalThis.tn.scene.add(cloud);',
+].join("\n"));
 await bundleNativeEngine({ entry: pointsEntry, outfile: pointsOut, boot: false });
 const points = spawnSync(resolve(executable), ["--check-game", pointsOut], { encoding: "utf8" });
-assert.equal(points.status, 1);
-assert.match(points.stderr, /TN_NATIVE_UNSUPPORTED_POINTS: Points is not available on the native engine/);
+assert.equal(points.status, 0, points.stderr);
+assert.doesNotMatch(points.stderr, /TN_NATIVE_UNSUPPORTED_POINTS/, "Points is bound, not refused");
 await writeFile(entry, 'import { NativeBindingThatDoesNotExist } from "three"; globalThis.tn.scene = new NativeBindingThatDoesNotExist();');
 await assert.rejects(bundleNativeEngine({ entry, outfile, boot: false }), /TN_NATIVE_ENGINE_UNBOUND: three:NativeBindingThatDoesNotExist/);
 assert.equal(await readFile(outfile, "utf8"), accepted, "failed build must preserve the prior artifact");

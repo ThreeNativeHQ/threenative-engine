@@ -122,7 +122,7 @@ target_include_directories(tn_engine_graph PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sr
 
 # Animation is a renderer/binding dependency, including in the browser-only build.
 add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
-    src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp
+    src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp src/engine/animation/tick_batch.cpp
     src/engine/animation/skinning/skeleton.cpp src/engine/animation/skinning/palette.cpp)
 tn_native_engine_target(tn_engine_animation)
 target_link_libraries(tn_engine_animation PUBLIC tn_engine_scene)
@@ -139,10 +139,58 @@ target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
 # stb_image is third-party C in a C++ unit: its own warnings are not this engine's.
 set_source_files_properties(src/engine/shader/graph/smaa_tables.cpp PROPERTIES COMPILE_OPTIONS "-w")
 
+# meshoptimizer's decoders for EXT/KHR_meshopt_compression (provisioned by download-deps): MIT, three
+# translation units and one header, no platform code, so every target the engine builds gets the same
+# library. The glTF loader decodes with it and the package reader reports it (below); a tree without
+# the sources refuses both extensions by name instead.
+set(TN_MESHOPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/meshopt)
+if(EXISTS ${TN_MESHOPT_DIR}/meshoptimizer.h AND EXISTS ${TN_MESHOPT_DIR}/vertexcodec.cpp)
+    add_library(tn_engine_meshopt STATIC ${TN_MESHOPT_DIR}/vertexcodec.cpp ${TN_MESHOPT_DIR}/indexcodec.cpp
+        ${TN_MESHOPT_DIR}/vertexfilter.cpp)
+    tn_native_engine_target(tn_engine_meshopt)
+    target_include_directories(tn_engine_meshopt PUBLIC ${TN_MESHOPT_DIR})
+    target_compile_definitions(tn_engine_meshopt INTERFACE TN_ENGINE_MESHOPT=1)
+    # Third-party C++: its own warnings are not this engine's.
+    set_source_files_properties(${TN_MESHOPT_DIR}/vertexcodec.cpp ${TN_MESHOPT_DIR}/indexcodec.cpp
+        ${TN_MESHOPT_DIR}/vertexfilter.cpp PROPERTIES COMPILE_OPTIONS "-w")
+else()
+    message(STATUS "meshopt not found: the native glTF loader refuses EXT/KHR_meshopt_compression. Run 'node scripts/download-deps.mjs --only meshopt'.")
+endif()
+# Basis Universal's transcoder for KHR_texture_basisu (provisioned by download-deps, PRD-861):
+# Apache-2.0, with its decode-only zstd (BSD) for supercompressed UASTC. The loader transcodes to the
+# device's block format (BC7 or ETC2, PRD-867) or RGBA8; the other GPU targets are compiled out, ASTC
+# with them until its tables fit the web engine.
+set(TN_BASISU_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/basisu)
+if(EXISTS ${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp AND EXISTS ${TN_BASISU_DIR}/zstd/zstddeclib.c)
+    add_library(tn_engine_basisu STATIC ${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp ${TN_BASISU_DIR}/zstd/zstddeclib.c)
+    tn_native_engine_target(tn_engine_basisu)
+    target_include_directories(tn_engine_basisu PUBLIC ${TN_BASISU_DIR}/transcoder)
+    target_compile_definitions(tn_engine_basisu PUBLIC BASISD_SUPPORT_KTX2=1 BASISD_SUPPORT_KTX2_ZSTD=1
+        BASISD_SUPPORT_UASTC=1 BASISD_SUPPORT_DXT1=0 BASISD_SUPPORT_DXT5A=0 BASISD_SUPPORT_BC7=0
+        BASISD_SUPPORT_BC7_MODE5=1 BASISD_SUPPORT_PVRTC1=0 BASISD_SUPPORT_ETC2_EAC_A8=1 BASISD_SUPPORT_ASTC=0
+        BASISD_SUPPORT_ATC=0 BASISD_SUPPORT_ETC2_EAC_RG11=0 BASISD_SUPPORT_FXT1=0 BASISD_SUPPORT_PVRTC2=0
+        BASISD_SUPPORT_UASTC_HDR=0 INTERFACE TN_ENGINE_BASISU=1)
+    # Third-party C and C++: its own warnings are not this engine's. On the web the transcoder is size-
+    # optimized: at -O3 its BC7 and ETC2 paths cost the Wasm engine 145,855 bytes, at -Oz 12,201 (PRD-867).
+    # ponytail: -Oz trades transcode speed at load for bytes; measure a big KTX2 model's load if it shows.
+    if(EMSCRIPTEN)
+        set(TN_BASISU_OPTIONS "-w;-Oz")
+    else()
+        set(TN_BASISU_OPTIONS "-w")
+    endif()
+    set_source_files_properties(${TN_BASISU_DIR}/transcoder/basisu_transcoder.cpp ${TN_BASISU_DIR}/zstd/zstddeclib.c
+        PROPERTIES COMPILE_OPTIONS "${TN_BASISU_OPTIONS}")
+else()
+    message(STATUS "basisu not found: the native glTF loader refuses KHR_texture_basisu. Run 'node scripts/download-deps.mjs --only basisu'.")
+endif()
 # Cooked asset packages (N10): the TNPK reader and its hash gate. Untrusted input, portable.
 add_library(tn_engine_assets STATIC src/engine/assets/sha256.cpp src/engine/assets/package.cpp)
 tn_native_engine_target(tn_engine_assets)
 target_include_directories(tn_engine_assets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# The package's targetDecoders() reports the meshopt decoder only where it is compiled in.
+if(TARGET tn_engine_meshopt)
+    target_link_libraries(tn_engine_assets PUBLIC tn_engine_meshopt)
+endif()
 
 # The N03 C ABI over the foundation: version handshake, contexts, generational object handles.
 add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp src/engine/abi/identity.cpp src/engine/abi/tsl_call.cpp)
@@ -162,20 +210,42 @@ target_include_directories(tn_engine_probes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
 set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
     src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
     src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
+    src/engine/renderer/renderer_frame.cpp src/engine/renderer/renderer_material.cpp src/engine/renderer/renderer_output.cpp
+    src/engine/renderer/renderer_program.cpp src/engine/renderer/renderer_shadow.cpp
     src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
     src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp
     src/engine/renderer/render_target_pass.cpp)
+# PRD-840 (H6): the renderer's one link line, for both exclusive builds. The browser build passes no backend library and the
+# native build passes its WebGPU backend and host services (NativeEngine.cmake). At the end of the configure,
+# tn_engine_renderer_link_check fails when the target links anything but this line and the backend the build named.
+set(TN_ENGINE_RENDERER_LINK_LIBRARIES tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
+    tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes)
+function(tn_engine_renderer_link_check expected)
+    get_target_property(actual tn_engine_renderer LINK_LIBRARIES)
+    if(NOT "${actual}" STREQUAL "${expected}")
+        message(FATAL_ERROR "TN_RENDERER_LINK_DRIFT: tn_engine_renderer links '${actual}', but "
+            "tn_engine_renderer_target declared '${expected}'. Add a renderer dependency to "
+            "TN_ENGINE_RENDERER_LINK_LIBRARIES (cmake/NativeEngineCore.cmake), so both builds link it.")
+    endif()
+endfunction()
+function(tn_engine_renderer_target)
+    add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
+    tn_native_engine_target(tn_engine_renderer)
+    set(expected ${TN_ENGINE_RENDERER_LINK_LIBRARIES} ${ARGN})
+    target_link_libraries(tn_engine_renderer PUBLIC ${expected})
+    target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    # A deferred call reads its variables when it runs, so the list is spelled out here.
+    cmake_language(EVAL CODE
+        "cmake_language(DEFER DIRECTORY \"${CMAKE_SOURCE_DIR}\" CALL tn_engine_renderer_link_check \"${expected}\")")
+endfunction()
 if(EMSCRIPTEN)
     # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
     # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.
-    add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
-    tn_native_engine_target(tn_engine_renderer)
-    target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-        tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes)
-    target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN)
+    tn_engine_renderer_target()
+    # PRD-840: the web engine pins RenderFeatures::web(), so each render choice folds at compile time (render_features.h).
+    target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN TN_RENDER_FEATURES_PIN_WEB)
     target_compile_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
     target_link_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
-    target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     # Taking the address of the renderer's entry points pulls every renderer object into the link, so
     # a wgpu* call the browser port lacks fails here rather than in a page.
     add_executable(tn-native-engine-wasm-renderer-link EXCLUDE_FROM_ALL tests/native-engine/wasm/renderer_link.cpp)
@@ -231,11 +301,17 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
         src/engine/assets/gltf/image_decode.cpp)
     tn_native_engine_target(tn_engine_gltf)
     target_link_libraries(tn_engine_gltf PUBLIC tn_engine_scene tn_engine_animation tn_engine_foundation)
+    if(TARGET tn_engine_meshopt)
+        target_link_libraries(tn_engine_gltf PRIVATE tn_engine_meshopt)
+    endif()
+    if(TARGET tn_engine_basisu)
+        target_link_libraries(tn_engine_gltf PRIVATE tn_engine_basisu)
+    endif()
     target_include_directories(tn_engine_gltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
         PRIVATE ${TN_CGLTF_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
     # cgltf is third-party C in a C++ unit: its own warnings are not this engine's.
     set_source_files_properties(src/engine/assets/gltf/cgltf_impl.cpp src/engine/assets/gltf/image_decode.cpp
-        PROPERTIES COMPILE_OPTIONS "-w")
+        PROPERTIES COMPILE_OPTIONS "-w;-Oz")
     # EXT_texture_webp: libwebp built from the pinned `webp-source` (download-deps.mjs), one build
     # for desktop, Android and iOS. Without the source the extension stays refused by name.
     file(GLOB TN_WEBP_SOURCE_CANDIDATES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/webp-source/libwebp-*)
@@ -263,6 +339,22 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
     tn_native_engine_test(tn-native-engine-gltf-hierarchy-test tests/native-engine/assets/gltf_hierarchy_test.cpp
         native_engine_gltf_hierarchy=hierarchy)
     target_link_libraries(tn-native-engine-gltf-hierarchy-test PRIVATE tn_engine_gltf)
+    # PRD-515 meshopt slice: a meshopt-compressed GLB decodes to the bytes that were compressed, and a
+    # malformed stream is refused naming its buffer view. The fixture has no fallback data.
+    tn_native_engine_test(tn-native-engine-gltf-meshopt-test tests/native-engine/assets/meshopt_decode_test.cpp
+        native_engine_gltf_meshopt_decoded=decoded_matches_source
+        native_engine_gltf_meshopt_khr=khr_decodes_alike
+        native_engine_gltf_meshopt_malformed=malformed_is_refused)
+    target_link_libraries(tn-native-engine-gltf-meshopt-test PRIVATE tn_engine_gltf)
+    target_compile_definitions(tn-native-engine-gltf-meshopt-test PRIVATE
+        TN_GLTF_MESHOPT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/meshopt-compressed.glb")
+    tn_native_engine_test(tn-native-engine-gltf-ktx2-test tests/native-engine/assets/ktx2_decode_test.cpp
+        native_engine_gltf_ktx2_transcoded=transcodes_to_rgba
+        native_engine_gltf_ktx2_damaged=damaged_is_refused
+        native_engine_gltf_ktx2_blocks=transcodes_to_blocks)
+    target_link_libraries(tn-native-engine-gltf-ktx2-test PRIVATE tn_engine_gltf)
+    target_compile_definitions(tn-native-engine-gltf-ktx2-test PRIVATE
+        TN_GLTF_KTX2_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/ktx2-textured.glb")
     find_program(TN_PNPM_EXECUTABLE pnpm)
     target_compile_definitions(tn-native-engine-gltf-hierarchy-test PRIVATE
         TN_GLTF_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/gltf_reference.json"
@@ -290,7 +382,8 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
     endforeach()
     if(EMSCRIPTEN)
         # These read repository files by path: node's own filesystem, not the sandboxed MEMFS.
-        foreach(file_target tn-native-engine-gltf-hierarchy-test tn-native-engine-fuzz-gltf tn-native-engine-fuzz-package)
+        foreach(file_target tn-native-engine-gltf-hierarchy-test tn-native-engine-gltf-meshopt-test tn-native-engine-gltf-ktx2-test
+                tn-native-engine-fuzz-gltf tn-native-engine-fuzz-package)
             target_link_options(${file_target} PRIVATE -sNODERAWFS=1)
         endforeach()
     endif()
@@ -331,7 +424,8 @@ tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame
     native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
     native_engine_tsl_math=math native_engine_tsl_spell_port=spell_port native_engine_tsl_compute_texture_load=compute_texture_load
-    native_engine_tsl_compute_int_literals=compute_int_literals native_engine_tsl_ivec_bool=tsl_ivec_bool)
+    native_engine_tsl_compute_int_literals=compute_int_literals native_engine_tsl_ivec_bool=tsl_ivec_bool
+    native_engine_tsl_mat3_of_mat4=tsl_mat3_of_mat4)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
 
 # The ROI crop every attachment read hands back (a PassNode MRT slot, a render target): no device needed.
@@ -344,10 +438,12 @@ tn_native_engine_test(tn-native-engine-aux-fragment-test tests/native-engine/aux
     native_engine_aux_fragment_small=fits_without_slots
     native_engine_aux_fragment_custom_slot=refused_with_a_slot)
 
-# Which colour attachments a draw writes: a draw that masks its named targets still writes its own MRT slot.
+# Which colour attachments a draw writes, and the depth test the aux pass runs for it: a draw that masks its named
+# targets still writes its own MRT slot, and one that wrote no depth is not tested for equality.
 tn_native_engine_test(tn-native-engine-attachment-mask-test tests/native-engine/attachment_mask_test.cpp
     native_engine_attachment_mask=custom_slot
-    native_engine_attachment_mask_material=material_mask)
+    native_engine_attachment_mask_material=material_mask
+    native_engine_attachment_mask_depth=depth_test)
 
 # The aux pass's bundle key: a bundle follows the pass's colour-target count, a custom MRT slot included.
 tn_native_engine_test(tn-native-engine-aux-bundle-key-test tests/native-engine/aux_bundle_key_test.cpp
@@ -371,7 +467,8 @@ tn_native_engine_test(tn-native-engine-reflection-pass-test tests/native-engine/
 if(NOT EMSCRIPTEN AND NOT TN_ENGINE_CORE_ONLY)
     tn_native_engine_test(tn-native-engine-texture-copy-test tests/native-engine/texture_copy_test.cpp
         native_engine_texture_copy_volume=volume_usage
-        native_engine_texture_copy_mips=mip_tail)
+        native_engine_texture_copy_mips=mip_tail
+        native_engine_texture_copy_cpu_mip_level=cpu_mip_level)
     target_link_libraries(tn-native-engine-texture-copy-test PRIVATE tn_engine_renderer)
 endif()
 
@@ -394,6 +491,7 @@ endif()
 
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
     native_engine_material_alpha_hash=alpha_hash
+    native_engine_material_normal_map_zero_det=normal_map_zero_det
     native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
@@ -456,6 +554,10 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_post_denoise_one_lane=denoise_over_a_red_field_keeps_one_lane
     native_engine_abi_tsl_ssr_parameters=tsl_ssr_parameters
     native_engine_abi_tsl_texture_store=tsl_texture_store
+    native_engine_abi_tsl_storage_texture_read=tsl_storage_texture_read
+    native_engine_abi_tsl_storage_texture_3d=tsl_storage_texture_3d
+    native_engine_abi_tsl_cube_texture=tsl_cube_texture
+    native_engine_abi_tsl_mixed_operands=tsl_mixed_operands
     native_engine_abi_tsl_mat4_element=tsl_mat4_element
     native_engine_abi_binding_fn=binding_fn
     native_engine_abi_tsl_call=tsl_call
@@ -465,6 +567,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_tsl_flat_varying=tsl_flat_varying
     native_engine_abi_vertex_position_world=vertex_position_world
     native_engine_abi_tsl_uniform_value=tsl_uniform_value
+    native_engine_abi_tsl_set_uniforms=tsl_set_uniforms
     native_engine_abi_tsl_statements=tsl_statements
     native_engine_abi_tsl_effect_parameter=tsl_effect_parameter
     native_engine_abi_mixer_time_field=mixer_time_field
@@ -479,6 +582,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_array_offset=array_offset
     native_engine_abi_tsl_matrix_columns=tsl_matrix_columns
     native_engine_abi_data_texture_bytes=data_texture_bytes
+    native_engine_abi_compressed_texture_levels=compressed_texture_levels
     native_engine_abi_material_events=material_events
     native_engine_abi_attribute_view_writes=attribute_view_writes
     native_engine_abi_attribute_defer=attribute_defer
@@ -488,6 +592,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_geometry_index_null=geometry_index_null
     native_engine_abi_world_space_conversions=world_space_conversions
     native_engine_abi_projected_cull_list=projected_cull_list
+    native_engine_abi_projected_cull_bands=projected_cull_bands
+    native_engine_abi_bounds_in_view=bounds_in_view
     native_engine_abi_projected_cull_held_restore=projected_cull_held_restore)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
@@ -771,6 +877,7 @@ tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hier
     native_engine_scene_teardown=teardown
     native_engine_scene_batched_mesh=batched_mesh
     native_engine_scene_transform_layout=transform_layout
+    native_engine_scene_concurrent_ids=concurrent_ids
     native_engine_scene_transform_lease=transform_lease
     native_engine_scene_raw_writes=raw_writes
     native_engine_scene_needs_update_setter=needs_update_setter
@@ -834,6 +941,11 @@ if(EMSCRIPTEN)
     target_compile_options(tn-native-engine-animation-mixer-test PRIVATE -fwasm-exceptions)
     target_link_options(tn-native-engine-animation-mixer-test PRIVATE -fwasm-exceptions)
 endif()
+# PRD-828: one call a frame advances every rig (weights, stride rate, one mixer step each).
+tn_native_engine_test(tn-native-engine-animation-tick-batch-test tests/native-engine/animation/tick_batch_test.cpp
+    native_engine_animation_tick_batch=tick_batch)
+target_link_libraries(tn-native-engine-animation-tick-batch-test PRIVATE tn_engine_animation)
+target_include_directories(tn-native-engine-animation-tick-batch-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 # PRD-517: property tracks on materials, lights, cameras and visibility.
 tn_native_engine_test(tn-native-engine-animation-property-tracks-test tests/native-engine/animation/property_tracks_test.cpp
     native_engine_animation_property_tracks=property_tracks)
@@ -1041,7 +1153,7 @@ if(EMSCRIPTEN)
     tn_native_engine_target(tn-native-engine-abi-module)
     target_link_options(tn-native-engine-abi-module PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_NAME=createTnAbi
         -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_malloc,_free"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_set_uniforms,_tn_tsl_effect_parameter,_tn_anim_tick,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     target_include_directories(tn-native-engine-abi-module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-abi-module)
@@ -1064,6 +1176,14 @@ if(EMSCRIPTEN)
     # its .wasm in build/web/. Outside the default set: build it with `--target tn-native-engine-web`.
     add_executable(tn-native-engine-web EXCLUDE_FROM_ALL src/engine/wasm/web_host.cpp)
     target_link_libraries(tn-native-engine-web PRIVATE tn_engine_abi tn_engine_renderer)
+    if(TARGET tn_engine_gltf AND NOT TARGET tn_engine_meshopt)
+        # The web bake emits meshopt geometry for this engine (create-threenative webRuntimeDecoders),
+        # so a web engine without the decoder would refuse every cooked model: same error as no cgltf.
+        add_custom_command(TARGET tn-native-engine-web PRE_LINK
+            COMMAND ${CMAKE_COMMAND} -E echo "TN_WEB_ENGINE_DEPS_MISSING: third_party/meshopt is not provisioned. Run node scripts/download-deps.mjs --only meshopt, then reconfigure."
+            COMMAND ${CMAKE_COMMAND} -E false
+            VERBATIM)
+    endif()
     if(TARGET tn_engine_gltf)
         target_link_libraries(tn-native-engine-web PRIVATE tn_engine_gltf)
         target_compile_definitions(tn-native-engine-web PRIVATE TN_WEB_GLTF=1)
@@ -1114,7 +1234,7 @@ if(EMSCRIPTEN)
         # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue
         # reads `document` while the module loads.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web,worker -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture,_tnw_web_read_mrt,_tnw_web_device_limit,_tnw_web_clear_target"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_set_uniforms,_tn_tsl_effect_parameter,_tn_anim_tick,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_gltf_begin,_tnw_web_load_gltf_done,_tnw_web_load_gltf_finish,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture,_tnw_web_read_mrt,_tnw_web_device_limit,_tnw_web_clear_target,_tnw_web_device_feature"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 

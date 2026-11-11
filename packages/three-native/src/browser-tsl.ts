@@ -42,6 +42,8 @@ export interface ITslRuntime {
   set(material: IEngineRef, path: string, node: number): void;
   /** three's `uniform.value = x`: the uniform's lanes, with no program change. */
   setUniform(node: number, lanes: readonly number[]): void;
+  /** Many `setUniform`s in one crossing: node i takes `counts[i]` of the packed `lanes` (PRD-828). */
+  setUniforms?(nodes: readonly number[], counts: readonly number[], lanes: readonly number[]): void;
   /** A live post effect's scalar uniform, written first when `value` is given; answers its value. */
   effectParameter(node: number, name: string, value?: number): number;
   /** three's RenderPipeline: the post graph the web host draws between scene and output, or none. */
@@ -70,6 +72,7 @@ const FUNCTIONS = [
   "uv",
   "texture",
   "texture3D",
+  "cubeTexture",
   "add",
   "sub",
   "mul",
@@ -121,6 +124,8 @@ const FUNCTIONS = [
   "ivec3",
   "ivec4",
   "uvec2",
+  "uvec3",
+  "uvec4",
   "bool",
   "storageTexture",
   "textureLoad",
@@ -250,6 +255,7 @@ const CONSTANTS = [
   "materialEmissive",
   "materialMetalness",
   "materialRoughness",
+  "diffuseColor",
   "time",
   "deltaTime",
   "normalView",
@@ -271,6 +277,10 @@ const CONSTANTS = [
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
   "element",
+  "toReadOnly",
+  "toWriteOnly",
+  "toReadWrite",
+  "setSampler",
   "compute",
   "add",
   "sub",
@@ -410,6 +420,7 @@ function takesEngineObject(name: string, index: number): boolean {
     (index === 0 &&
       (name === "pmremTexture" ||
         name === "texture3D" ||
+        name === "cubeTexture" ||
         name === "storageTexture" ||
         name === "textureStore" ||
         name === "lightShadowMatrix")) ||
@@ -458,6 +469,9 @@ export function defineTsl(
       return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
+    // setSampler(false) on a storage texture: its flag crosses as 0 or 1.
+    if (name === "setSampler" && typeof value === "boolean")
+      return { kind: "number", number: value ? 1 : 0 };
     // texture(engineTexture, uv) samples that texture itself; a plain object names a material map,
     // and textureLoad also takes a texture node.
     if (
@@ -599,20 +613,39 @@ export function defineTsl(
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
   // three's lights([...]) takes one array; each light crosses as its own engine object.
   exports.lights = (list: readonly unknown[] = []) => wrap(call("lights", null, [...list]));
+  // three's transformNormal (accessors/Normal.js): the normal matrix of `matrix`, mat3(m)^-T, times the normal.
+  exports.transformNormal = (normal: unknown, matrix: unknown = exports.modelWorldMatrix) => {
+    type Chain = {
+      inverse(): Chain;
+      transpose(): Chain;
+      mul(value: unknown): Chain;
+      normalize(): Chain;
+    };
+    return (exports.mat3 as (value: unknown) => Chain)(matrix)
+      .inverse()
+      .transpose()
+      .mul(normal)
+      .normalize();
+  };
+  // three's element(node, index) (ArrayElementNode) is the node method in function form.
+  exports.element = (node: unknown, index: unknown) =>
+    wrap(call("element", isTslNode(node) ? node[TSL_NODE] : null, [index]));
   exports.nodeObject = (value: unknown) =>
     isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
-  exports.texture = (initial: unknown, ...args: unknown[]) => {
-    let value = initial;
-    const node = wrap(call("texture", null, [value, ...args]));
-    return Object.defineProperty(node, "value", {
-      get: () => value,
-      set: (next: unknown) => {
-        if (next === value) return;
-        runtime.release(call("textureValue", node[TSL_NODE], [next]));
-        value = next;
-      },
-    });
-  };
+  // three's TextureNode.value: assigning another texture swaps the one the node samples (ProbeVolume swaps its volume).
+  for (const name of ["texture", "texture3D", "cubeTexture"])
+    exports[name] = (initial: unknown, ...args: unknown[]) => {
+      let value = initial;
+      const node = wrap(call(name, null, [value, ...args]));
+      return Object.defineProperty(node, "value", {
+        get: () => value,
+        set: (next: unknown) => {
+          if (next === value) return;
+          runtime.release(call("textureValue", node[TSL_NODE], [next]));
+          value = next;
+        },
+      });
+    };
   exports.rtt = defineRtt(
     exports.rtt as Parameters<typeof defineRtt>[0],
     classes && "Mesh" in classes
@@ -656,7 +689,17 @@ export function defineTsl(
     return Object.assign(inline, { setLayout: () => inline });
   };
   exports.Fn = withFnBuilder(exports.Fn as Parameters<typeof withFnBuilder>[0]);
-  for (const name of ["atomicAdd", "atomicStore", "textureStore"])
+  for (const name of [
+    "atomicAdd",
+    "atomicSub",
+    "atomicMax",
+    "atomicMin",
+    "atomicAnd",
+    "atomicOr",
+    "atomicXor",
+    "atomicStore",
+    "textureStore",
+  ])
     exports[name] = (...args: unknown[]) => {
       statement(name);
       return wrap(call(name, null, args));
@@ -828,8 +871,17 @@ export function defineTsl(
     );
     return valueUniform((exports[`mat${n}`] as (...columns: ITslNode[]) => ITslNode)(...columns));
   };
-  const live = liveUniforms(matrixUniform, (node, lanes) =>
-    runtime.setUniform(node[TSL_NODE], lanes),
+  const setUniforms = runtime.setUniforms?.bind(runtime);
+  const live = liveUniforms(
+    matrixUniform,
+    (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
+    setUniforms &&
+      ((nodes, counts, lanes) =>
+        setUniforms(
+          nodes.map((node) => node[TSL_NODE]),
+          counts,
+          lanes,
+        )),
   );
   exports.uniform = booleanUniforms(live.uniform, (scalar) =>
     wrap(call("notEqual", scalar[TSL_NODE], [0])),

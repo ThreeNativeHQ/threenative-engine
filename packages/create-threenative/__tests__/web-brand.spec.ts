@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { createWebBrandPlugin } from "../src/web-brand.js";
+import { createWebBrandPlugin, withBuildId, withEnginePreload } from "../src/web-brand.js";
 
 const roots: string[] = [];
 
@@ -186,7 +186,8 @@ describe("web branding adapter", () => {
       },
     });
     expect(emitted._headers).toBe(
-      "/*\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Opener-Policy: same-origin\n",
+      "/*\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Opener-Policy: same-origin\n" +
+        "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
     );
   });
   it("leaves upstream three alone in a native bundle, whose host is not a browser (PRD-637)", async () => {
@@ -259,5 +260,86 @@ describe("web branding adapter", () => {
     expect(html).toContain('<link rel="icon" href="data:," />');
     expect(html.match(/rel="icon"/gu)).toHaveLength(1);
     expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
+  });
+
+  it("writes the hashed entry script as the build id ctx.assets.memo keys on, and none in dev (PRD-860)", () => {
+    const built = withBuildId(
+      '<head>\n    <script type="module" crossorigin src="/assets/index-DsA_BRqT.js"></script>\n</head>',
+    );
+    expect(built).toContain(
+      '<script>globalThis.__TN_BUILD_ID__ = "/assets/index-DsA_BRqT.js";</script>',
+    );
+    expect(built.indexOf("__TN_BUILD_ID__")).toBeLessThan(built.indexOf('type="module"'));
+    const dev = '<script type="module" src="/src/main.ts"></script>';
+    expect(withBuildId(dev)).toBe(dev);
+  });
+
+  it("starts the engine's Wasm with the page, then Rapier, instead of after the entry script ran (PRD-860)", () => {
+    const html =
+      '<head>\n    <script type="module" crossorigin src="/game/assets/index-A1.js"></script>\n</head>';
+    const bundle = {
+      "assets/index-A1.js": { fileName: "assets/index-A1.js", type: "chunk", moduleIds: [] },
+      "assets/tn-native-engine-web-threads-T1.wasm": {
+        fileName: "assets/tn-native-engine-web-threads-T1.wasm",
+        type: "asset",
+      },
+      "assets/tn-native-engine-web-P1.wasm": {
+        fileName: "assets/tn-native-engine-web-P1.wasm",
+        type: "asset",
+      },
+      "assets/rapier-R1.js": {
+        fileName: "assets/rapier-R1.js",
+        type: "chunk",
+        moduleIds: ["/n/node_modules/@dimforge/rapier3d-compat/rapier.es.js"],
+      },
+    };
+    const threaded = withEnginePreload(html, bundle, true);
+    // Isolated, the threads build; not isolated, nothing (the isolation worker may reload the page).
+    expect(threaded).toContain('"/game/assets/tn-native-engine-web-threads-T1.wasm"');
+    expect(threaded).not.toContain("web-P1.wasm");
+    expect(threaded).toContain('"/game/assets/rapier-R1.js"');
+    expect(threaded.indexOf("tn-native-engine-web-threads-T1")).toBeLessThan(
+      threaded.indexOf('type="module"'),
+    );
+    // A repeat visit skips it: a preloaded response loses V8's compiled-code cache, and recompiling the
+    // module cost a laptop's repeat visit ~150 ms. The script runs as the page would run it.
+    const run = (isolated: boolean, stored: Record<string, string>) => {
+      const links: { rel: string; href: string; onload?: () => void }[] = [];
+      const source = /<script>([\s\S]*?)<\/script>/u.exec(threaded)?.[1] ?? "";
+      new Function("document", "localStorage", "globalThis", source)(
+        {
+          createElement: () => ({}),
+          head: {
+            appendChild: (tag: (typeof links)[number]) => {
+              links.push(tag);
+              return tag;
+            },
+          },
+        },
+        {
+          getItem: (key: string) => stored[key] ?? null,
+          setItem: (key: string, value: string) => {
+            stored[key] = value;
+          },
+        },
+        { crossOriginIsolated: isolated },
+      );
+      return links;
+    };
+    const stored: Record<string, string> = {};
+    const first = run(true, stored);
+    expect(first.map((tag) => tag.rel)).toEqual(["preload"]);
+    first[0]?.onload?.();
+    expect(first.map((tag) => tag.rel)).toEqual(["preload", "modulepreload"]);
+    expect(run(true, stored)).toEqual([]);
+    expect(run(false, {})).toEqual([]);
+    const plain = withEnginePreload(html, bundle, false);
+    expect(plain).toContain('"/game/assets/tn-native-engine-web-P1.wasm"');
+    expect(plain).not.toContain("threads-T1.wasm");
+    // The dev server has no bundle, and a build without the engine has no Wasm to start.
+    expect(withEnginePreload(html, undefined, true)).toBe(html);
+    expect(
+      withEnginePreload(html, { "assets/index-A1.js": bundle["assets/index-A1.js"] }, true),
+    ).toBe(html);
   });
 });

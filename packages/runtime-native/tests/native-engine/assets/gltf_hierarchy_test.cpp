@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "engine/animation/skinning/skeleton.h"
+#include "engine/assets/gltf/image_decode.h"
 #include "engine/assets/gltf/loader.h"
 #include "engine/foundation/job_pool.h"
 #include "engine/foundation/json.h"
@@ -351,7 +352,10 @@ int main() {
         return mesh ? mesh->material.get() : nullptr;
     };
     // An extension that needs a decoder this loader lacks is still refused by name, not dropped.
-    for (const char* decoder : {"KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu", "EXT_texture_avif"}) {
+    // (EXT/KHR_meshopt_compression left this list with the meshopt slice, and KHR_texture_basisu with the
+    // KTX2 slice when the transcoder is linked; meshopt_decode_test and ktx2_decode_test prove them.)
+    for (const char* decoder : {"KHR_draco_mesh_compression", "KHR_texture_basisu", "EXT_texture_avif"}) {
+        if (gltf::decodesKtx2() && std::string(decoder) == "KHR_texture_basisu") continue;
         auto refusedDecoder = tiny(std::string("\"") + decoder + "\"", {R"({})"});
         if (refusedDecoder.error != std::string("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED ") + decoder) {
             std::printf("%s: not refused by name (%s)\n", decoder, refusedDecoder.error.c_str()); ++differ;

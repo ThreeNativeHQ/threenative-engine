@@ -3,6 +3,7 @@
 // failure is a status code plus an owned diagnostic the caller releases.
 
 #include "threenative/abi/tn_tsl.h"
+#include "threenative/abi/tn_anim.h"
 
 #include <cstdio>
 #include <cmath>
@@ -25,6 +26,7 @@
 #include <vector>
 
 #include "engine/abi/abi_internal.h"
+#include "engine/animation/tick_batch.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/object3d.h"
@@ -85,6 +87,8 @@ struct tn_context : tn::binding::Store {
     explicit tn_context(uint16_t id) : objects(id) {}
     tn::engine::HandleTable objects;
     std::unordered_map<uint64_t, tn::engine::shader::graph::Node> tslNodes;
+    // PRD-828: the per-action ramps and last measured positions one `tn_anim_tick` batch keeps.
+    tn::engine::animation::TickBatch animBatch;
     uint64_t nextTslNode = 0;
     uint64_t tslSerial = 0;  // names the uniforms and render textures tn_tsl_call makes
     tn::abi::TslScopes tslScopes;  // the bodies open while the game's TSL callbacks run
@@ -373,6 +377,15 @@ tn_status_t tn_object_create(tn_context_t* context, uint16_t type, tn_handle_t* 
     return ok(diagnostic);
 }
 
+// A math value released through its own primary handle: it holds no object and keeps no owner alive.
+static bool releasesNoOwnership(tn_context& context, tn_handle_t handle) {
+    const tn::binding::Object* held = context.object(handle);
+    if (held == nullptr || holdsObjects(*held)) return false;
+    const auto primary = context.primary_.find(held->ptr.get());
+    return primary != context.primary_.end() && primary->second.index == handle.index &&
+           primary->second.generation == handle.generation && primary->second.type == handle.type;
+}
+
 void tn_object_engine_references(const tn_handle_t* objects, uint32_t count, uint32_t* out_counts) {
     if (!objects || !out_counts) return;
     for (uint32_t i = 0; i < count; ++i) out_counts[i] = tn::abi::engineReferences(objects[i]);
@@ -382,7 +395,11 @@ tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t* diagnostic) {
     tn_context* context = contextFor(object.context);
     if (!context) return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_HANDLE_CONTEXT: no live context owns this handle");
     const tn::engine::Handle handle{object.type, object.context, object.index, object.generation};
-    gOwnership.fetch_add(1, std::memory_order_relaxed);  // the object may die and take its holdings with it
+    // The object may die and take its holdings with it. A math value (Vector3, Matrix4, ...) of its own holds no
+    // object, so its release changes nobody's ownership: a frame's temporaries dying must not send the next safe
+    // point through every wrapper (Midway: about 25,000 wrappers decided on every frame). A member alias
+    // (`mesh.position`) is not its own primary handle: it keeps its owner alive, so its release still counts.
+    if (!releasesNoOwnership(*context, object)) gOwnership.fetch_add(1, std::memory_order_relaxed);
     switch (context->objects.release(handle)) {
         case tn::engine::HandleError::None:
             if (object.index < context->values.size()) {
@@ -576,7 +593,14 @@ void crossed(std::string_view name) {
     gCrossings.fetch_add(1, std::memory_order_relaxed);
     if (!gHistogramOn.load(std::memory_order_relaxed)) return;
     const std::lock_guard<std::mutex> hold(gHistogramLock);
+#if defined(TN_PS4)
+    // The one libc++ 11 gap this repo cannot shim: heterogeneous unordered_map::find landed in
+    // libc++ 12, so the transparent NameHash/equal_to<> pair buys nothing and the key is built.
+    // It is a coin flip whether a crossing may allocate here anyway (emplace does, just below).
+    const auto found = gHistogram.find(std::string(name));
+#else
     const auto found = gHistogram.find(name);
+#endif
     if (found != gHistogram.end()) ++found->second;
     else gHistogram.emplace(std::string(name), 1);
 }
@@ -595,12 +619,22 @@ tn_status_t selfObject(tn_handle_t self, tn_context*& context, tn::binding::Obje
 // nothing, so it moves nothing; `parent.add(child)` and `parent.remove(child)` do.
 class OwnershipProbe {
 public:
-    OwnershipProbe(tn_context* context, const tn_value_t* args, uint32_t count, bool classHoldsObjects)
+    OwnershipProbe(tn_context* context, const tn_value_t* args, uint32_t count, bool classHoldsObjects, bool arraysOpaque = false)
         : context_(context), args_(args), count_(count) {
         if (!classHoldsObjects) return;
+        // An array of handles is counted like handles (`scene.__bandRigs(camera, ..., rigs)` reads its rigs every
+        // frame and keeps none). A record, or an array inside an array, is not looked into, nor an array a
+        // property takes (`mesh.material = [a, b]` can let go of a material the list no longer names).
         for (uint32_t i = 0; i < count; ++i) {
             if (args[i].kind == TN_VALUE_HANDLE) active_ = true;
-            else if (args[i].kind == TN_VALUE_ARRAY || args[i].kind == TN_VALUE_RECORD) active_ = opaque_ = true;
+            else if (args[i].kind == TN_VALUE_RECORD || (args[i].kind == TN_VALUE_ARRAY && arraysOpaque)) active_ = opaque_ = true;
+            else if (args[i].kind == TN_VALUE_ARRAY && args[i].values != nullptr) {
+                for (uint64_t j = 0; j < args[i].count; ++j) {
+                    const uint32_t kind = args[i].values[j].kind;
+                    if (kind == TN_VALUE_HANDLE) active_ = true;
+                    else if (kind == TN_VALUE_ARRAY || kind == TN_VALUE_RECORD) active_ = opaque_ = true;
+                }
+            }
         }
         if (active_ && !opaque_) before_ = owners();
     }
@@ -613,9 +647,14 @@ public:
 private:
     uint64_t owners() const {
         uint64_t total = 0;
+        const auto add = [&](const tn_value_t& v) {
+            if (v.kind != TN_VALUE_HANDLE || v.handle.context != context_->objects.context()) return;
+            if (const auto* held = context_->object(v.handle)) total += uint64_t(held->ptr.use_count());
+        };
         for (uint32_t i = 0; i < count_; ++i) {
-            if (args_[i].kind != TN_VALUE_HANDLE || args_[i].handle.context != context_->objects.context()) continue;
-            if (const auto* held = context_->object(args_[i].handle)) total += uint64_t(held->ptr.use_count());
+            if (args_[i].kind == TN_VALUE_ARRAY && args_[i].values != nullptr)
+                for (uint64_t j = 0; j < args_[i].count; ++j) add(args_[i].values[j]);
+            else add(args_[i]);
         }
         return total;
     }
@@ -759,8 +798,6 @@ void setMrtOutput(tn_handle_t handle, const std::string& name, engine::shader::g
     auto* context = contextFor(handle.context);
     auto* object = context ? context->object(handle) : nullptr;
     if (!object || !binding::isMaterialClass(object->cls)) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");
-    if (engine::shader::engineTargetName(name))
-        throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: '" + name + "' is an engine pass target, not a custom slot");
     auto& material = *static_cast<engine::Material*>(object->ptr.get());
     auto& slots = material.nodes.mrt;
     const auto found = std::find_if(slots.begin(), slots.end(), [&](const engine::shader::MrtOutput& slot) { return slot.name == name; });
@@ -792,11 +829,7 @@ void setMrtOutputs(tn_handle_t handle, std::vector<std::pair<std::string, engine
     auto& material = *static_cast<engine::Material*>(object->ptr.get());
     std::vector<engine::shader::MrtOutput> next;
     next.reserve(slots.size());
-    for (auto& [name, node] : slots) {
-        if (engine::shader::engineTargetName(name))
-            throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: '" + name + "' is an engine pass target, not a custom slot");
-        next.push_back({name, std::move(node)});
-    }
+    for (auto& [name, node] : slots) next.push_back({name, std::move(node)});
     if (material.nodes.mrt == next) return;
     material.nodes.mrt = std::move(next);
     material.needsUpdate();
@@ -968,7 +1001,7 @@ tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, 
     const auto& binding = bindingOf(*object);
     // An object written to a property is a change only when it gains an owner (the same geometry assigned every
     // frame does not); a container is not looked into; a clear counts the first time (see clearsHeldSlot).
-    const OwnershipProbe probe(context, value, 1, true);
+    const OwnershipProbe probe(context, value, 1, true, true);
     if (value->kind == TN_VALUE_NULL || value->kind == TN_VALUE_UNDEFINED) {
         if (clearsHeldSlot(self, path, true)) gOwnership.fetch_add(1, std::memory_order_relaxed);
     } else if (value->kind == TN_VALUE_HANDLE || value->kind == TN_VALUE_ARRAY || value->kind == TN_VALUE_RECORD) {
@@ -1178,6 +1211,21 @@ extern "C" tn_status_t tn_tsl_set_uniform(tn_context_t* context, const uint64_t*
     });
 }
 
+// PRD-828: one sync's changed uniforms in one call. Every id is checked before any write, so a stale id writes
+// nothing; a refused value stops the batch there, with the writes before it applied.
+extern "C" tn_status_t tn_tsl_set_uniforms(tn_context_t* context, const uint64_t* nodes, const uint32_t* lane_counts,
+                                            const double* lanes, uint32_t count, tn_diagnostic_t* diagnostic) {
+    if (!context || (count && (!nodes || !lane_counts || !lanes)))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    for (uint32_t i = 0; i < count; ++i)
+        if (!context->tslNodes.contains(nodes[i])) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        for (uint32_t i = 0, at = 0; i < count; at += lane_counts[i++])
+            tn::abi::tslSetUniform(context->tslNodes.at(nodes[i]), lanes + at, lane_counts[i]);
+        return ok(diagnostic);
+    });
+}
+
 extern "C" tn_status_t tn_tsl_release(tn_context_t* context, uint64_t node, tn_diagnostic_t* diagnostic) {
     if (!context || context->tslNodes.erase(node) != 1)
         return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_TSL_NODE_INVALID");
@@ -1274,4 +1322,60 @@ extern "C" uintptr_t tnw_attribute_defer(const tn_handle_t* attribute, uintptr_t
     auto& store = static_cast<tn::engine::BufferAttribute*>(object->ptr.get())->store;
     store->defer();
     return reinterpret_cast<uintptr_t>(store.get());
+}
+
+// PRD-828: one call a frame advances a batch of animation rigs (include/threenative/abi/tn_anim.h).
+// The loop this replaces read and wrote engine state per rig and per action, which the stress lab
+// measured at 1,323 crossings a frame; the same work runs here over one span.
+extern "C" tn_status_t tn_anim_tick(tn_context_t* context, const tn_handle_t* handles, const double* rigs,
+                                    uint32_t count, double* status, tn_diagnostic_t* diagnostic) {
+    if (!context || (count && (!handles || !rigs || !status)))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ANIM_ARGUMENT");
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        namespace animation = tn::engine::animation;
+        std::vector<animation::TickRig> batch;
+        batch.reserve(count);
+        for (uint32_t i = 0; i < count; i++) {
+            const tn_handle_t* trio = handles + i * 3;
+            tn::binding::Object* mix = tn::abi::objectOf(trio[TN_ANIM_MIXER]);
+            if (mix == nullptr || mix->cls != "AnimationMixer")
+                return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_ANIM_MIXER_INVALID");
+            animation::TickRig rig;
+            rig.mixer = static_cast<animation::AnimationMixer*>(mix->ptr.get());
+            const double* values = rigs + i * TN_ANIM_RIG_VALUES;
+            // The flags word says which of the two optional handles are real: a rig without an action
+            // or a stride body leaves its mixer's handle in that slot (a null handle would alias).
+            const uint32_t flags = static_cast<uint32_t>(values[4]);
+            if ((flags & TN_ANIM_RIG_ACTION) != 0) {
+                tn::binding::Object* act = tn::abi::objectOf(trio[TN_ANIM_ACTION]);
+                if (act == nullptr || act->cls != "AnimationAction")
+                    return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_ANIM_ACTION_INVALID");
+                rig.action = static_cast<animation::AnimationAction*>(act->ptr.get());
+            }
+            if ((flags & TN_ANIM_RIG_BODY) != 0) {
+                tn::binding::Object* root = tn::abi::objectOf(trio[TN_ANIM_STRIDE_ROOT]);
+                if (root == nullptr)
+                    return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_ANIM_STRIDE_ROOT_INVALID");
+                rig.strideRoot = static_cast<tn::engine::Object3D*>(root->ptr.get());
+            }
+            rig.dt = values[0];
+            rig.elapsed = values[1];
+            rig.clipGroundSpeed = values[2];
+            rig.lastRate = values[3];
+            rig.strideSync = (flags & TN_ANIM_RIG_STRIDE_SYNC) != 0;
+            rig.stepMixer = (flags & TN_ANIM_RIG_STEP) != 0;
+            rig.reset = (flags & TN_ANIM_RIG_RESET) != 0;
+            batch.push_back(rig);
+        }
+        std::vector<animation::TickStatus> result;
+        context->animBatch.run(batch, result);
+        for (uint32_t i = 0; i < count; i++) {
+            double* out = status + i * 3;
+            out[0] = result[i].strideRate;
+            out[1] = result[i].groundSpeed;
+            out[2] = (result[i].finished ? double(TN_ANIM_STATUS_FINISHED) : 0.0) +
+                     (result[i].changed ? double(TN_ANIM_STATUS_CHANGED) : 0.0);
+        }
+        return ok(diagnostic);
+    });
 }

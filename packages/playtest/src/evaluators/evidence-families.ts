@@ -1,35 +1,11 @@
 import { isRecord, jsonEqual, runtimeDiagnosticsSnapshot } from '../assertion-report.js';
-import { assertionNotEvaluatedDiagnostic, overlayNodeObservationKey, projectedPixelsForEntity } from './helpers.js';
+import { assertionNotEvaluatedDiagnostic, projectedPixelsForEntity } from './helpers.js';
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
 
 export function emitEvidenceFamilies(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
   const { input, scenarioAssertions } = ctx;
-  for (const assertion of scenarioAssertions.overlayNodes ?? []) {
-    const id = overlayNodeObservationKey(assertion.overlayId, assertion.selector);
-    if (input.scenario.target !== "web") {
-      assertions.push({ details: { reason: "target-unsupported", target: input.scenario.target }, id: `overlayNode.${id}`, pass: false });
-      diagnostics.push(assertionNotEvaluatedDiagnostic(`overlayNode.${id}`, `target '${input.scenario.target}' cannot evaluate same-origin overlay DOM state`));
-      continue;
-    }
-    const snapshot = input.report.observations?.overlayNodes?.[id]?.after;
-    const observed = isRecord(snapshot) ? snapshot : {};
-    const value = assertion.attribute === undefined ? observed.text : observed.attribute;
-    const checks = [
-      ...(Object.hasOwn(assertion, "equals") ? [jsonEqual(value, assertion.equals)] : []),
-      ...(assertion.textIncludes === undefined ? [] : [String(value ?? "").includes(assertion.textIncludes)]),
-      ...(assertion.visible === undefined ? [] : [observed.visible === assertion.visible]),
-    ];
-    const pass = checks.length > 0 && checks.every(Boolean);
-    assertions.push({ details: { expected: assertion, observed }, id: `overlayNode.${id}`, pass });
-    if (!pass) diagnostics.push({
-      code: "TN_PLAYTEST_OVERLAY_NODE_ASSERTION_FAILED",
-      message: `Overlay '${assertion.overlayId}' node '${assertion.selector}' did not satisfy the DOM assertion.`,
-      severity: "error",
-      suggestion: "Inspect observations.json/overlayNodes and verify the overlay subscription, selector, attribute, and computed style.",
-    });
-  }
   const captureFailure = input.report.observations?.visual?.captureFailure;
   const hasVisualSamples = input.report.observations?.visual !== undefined && captureFailure === undefined;
   if ((scenarioAssertions.visual?.length ?? 0) > 0 && captureFailure !== undefined) {

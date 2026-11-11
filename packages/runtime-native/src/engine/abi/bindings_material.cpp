@@ -382,8 +382,6 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
         std::vector<shader::MrtOutput> slots;
         slots.reserve(v.fields.size());
         for (const auto& [slot, field] : v.fields) {
-            if (shader::engineTargetName(slot))
-                throw Unsupported{"TN_NATIVE_MRT_UNSUPPORTED: '" + slot + "' is an engine pass target, not a custom slot"};
             if (field.kind != Value::Kind::ShaderNode || !field.node)
                 throw Unsupported{"mrtNode." + slot + " must be a shader node"};
             slots.push_back({slot, field.node});
@@ -981,6 +979,24 @@ void registerMaterialBindings(Registry& classes) {
             return value;
         };
     }
+    {
+        auto& points = classes["PointsMaterial"];
+        registerMeshMaterial(points, MaterialType::Basic);
+        const auto ctor = points.ctor;
+        // PointsMaterial's defaults: opaque and fogged as three's are, and unlit like a SpriteMaterial's.
+        points.ctor = [ctor](const Args& a, Store& store) {
+            auto value = ctor(a, store);
+            static_cast<Material*>(value.get())->pointsMaterial = true;
+            return value;
+        };
+        // PointsMaterial.size is kept and read; WebGPU's point primitive is 1 px, so it moves no pixel here
+        // either (three's PointsNodeMaterial.js:56-60). That is also why PointsNodeMaterial — upstream's way
+        // to size a point cloud, through a Sprite — stays unbound and is refused by name.
+        points.getters["size"] = [](void* self) { return Value::of(as<Material>(self)->size); };
+        points.setters["size"] = [](void* self, const Value& v) { as<Material>(self)->size = number(v); };
+        points.getters["sizeAttenuation"] = [](void* self) { return Value::of(as<Material>(self)->sizeAttenuation); };
+        points.setters["sizeAttenuation"] = [](void* self, const Value& v) { as<Material>(self)->sizeAttenuation = flag(v); };
+    }
     registerMeshMaterial(classes["MeshBasicMaterial"], MaterialType::Basic);
     registerMeshMaterial(classes["NodeMaterial"], MaterialType::Basic, true, true);
     registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);
@@ -1006,47 +1022,104 @@ void registerTextureBindings(Registry& classes) {
     source.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) ++as<TextureSource>(self)->version;
     };
+    source.getters["dataReady"] = [](void* self) { return Value::of(as<TextureSource>(self)->dataReady); };
+    source.setters["dataReady"] = [](void* self, const Value& v) { as<TextureSource>(self)->dataReady = flag(v); };
     registerTextureClass(classes["Texture"], false, "Texture");
     registerTextureClass(classes["DataTexture"], true, "DataTexture");
     classes["DataTexture"].ctorTakesBytes = true;
     classes["DataTexture"].settersTakeBytes = {"image.data"};
-    auto& storage = classes["StorageTexture"];
-    registerTextureFields(storage, "StorageTexture");
-    storage.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
-        const double width = optional(a, 0, 1), height = optional(a, 1, 1);
-        if (a.size() > 2 || !(width >= 1 && width <= 16384 && height >= 1 && height <= 16384) ||
-            width != std::floor(width) || height != std::floor(height))
-            throw Unsupported{"StorageTexture needs integer extents in [1, 16384]"};
-        auto texture = std::make_shared<Texture>();
-        texture->storageTexture = true;
-        texture->width = uint32_t(width); texture->height = uint32_t(height);
-        texture->minFilter = texture->magFilter = uint16_t(TextureFilter::Linear);
-        return texture;
-    };
-    storage.getters["isStorageTexture"] = [](void*) { return Value::of(true); };
-    storage.getters["mipmapsAutoUpdate"] = [](void* self) { return Value::of(as<Texture>(self)->mipmapsAutoUpdate); };
-    storage.setters["mipmapsAutoUpdate"] = [](void* self, const Value& v) { as<Texture>(self)->mipmapsAutoUpdate = flag(v); };
-    for (const bool isType : {true, false}) {
-        storage.setters[isType ? "type" : "format"] = [isType](void* self, const Value& v) {
-            const double n = number(v);
-            if (!(n >= 0 && n <= UINT16_MAX) || n != std::floor(n))
-                throw Unsupported{"TN_NATIVE_STORAGE_TEXTURE_FORMAT: type/format must be an unsigned 16-bit integer"};
+    // three's CompressedTexture (PRD-867): block levels uploaded as they are, BC7 or ETC2 RGBA. The ABI takes
+    // (levelCount, width, height, format); three's facade turns its `mipmaps` into those and one
+    // `mipmaps.N.data = bytes` per level, which is also how a streamed finer level arrives (writeMipLevel).
+    {
+        ClassBinding& compressed = classes["CompressedTexture"];
+        registerTextureClass(compressed, false, "CompressedTexture");
+        compressed.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+            if (a.size() < 4 || a[0].kind != Value::Kind::Number)
+                throw Unsupported{"CompressedTexture takes (levelCount, width, height, format) on the engine ABI"};
+            auto texture = std::make_shared<Texture>();
+            texture->width = static_cast<uint32_t>(number(a[1]));
+            texture->height = static_cast<uint32_t>(number(a[2]));
+            texture->flipY = false;  // three's CompressedTexture: blocks cannot be flipped
+            texture->generateMipmaps = false;
+            try {
+                texture->allocateMipmaps(static_cast<uint16_t>(number(a[3])), static_cast<uint32_t>(number(a[0])));
+            } catch (const std::invalid_argument& refused) {
+                throw Unsupported{refused.what()};
+            }
+            return std::static_pointer_cast<void>(texture);
+        };
+        // three's `format` is the block format; the engine's own `format` stays the RGBA one its RGBA paths read.
+        compressed.getters["format"] = [](void* self) { return Value::of(double(as<Texture>(self)->imageSource->mipmapFormat)); };
+        compressed.setters["format"] = [](void* self, const Value& v) {
+            if (static_cast<uint16_t>(number(v)) != as<Texture>(self)->imageSource->mipmapFormat)
+                throw Unsupported{"CompressedTexture format is fixed by its constructor (BC7 or ETC2 RGBA)"};
+        };
+        for (uint32_t level = 0; level < 16; ++level) {  // 16 levels: a full chain of a 32768 px texture
+            const std::string path = "mipmaps." + std::to_string(level) + ".data";
+            compressed.setters[path] = [level](void* self, const Value& v) {
+                // The C ABI hands the typed array's bytes (settersTakeBytes); V8 hands numbers.
+                if (v.kind != Value::Kind::Numbers || (!v.bytes.empty() && typedArrayElementBytes(v.text) != 1))
+                    throw Unsupported{"CompressedTexture mipmaps[" + std::to_string(level) + "].data must be a Uint8Array"};
+                std::vector<uint8_t> blocks(v.bytes.begin(), v.bytes.end());
+                if (v.bytes.empty()) blocks.assign(v.numbers.begin(), v.numbers.end());
+                try {
+                    as<Texture>(self)->writeMipLevel(level, std::move(blocks));
+                } catch (const std::invalid_argument& refused) {
+                    throw Unsupported{refused.what()};
+                }
+            };
+            compressed.settersTakeBytes.insert(path);
+        }
+    }
+    // three's StorageTexture(width, height) and Storage3DTexture(width, height, depth): a texture a compute kernel
+    // writes and a material samples. The 3D one is a volume (prd476's density), sampled with texture3D.
+    for (const bool volume : {false, true}) {
+        const std::string name = volume ? "Storage3DTexture" : "StorageTexture";
+        const double limit = volume ? 2048 : 16384;  // WebGPU's default maxTextureDimension3D and maxTextureDimension2D
+        const std::string extents = name + " needs integer extents in [1, " + (volume ? "2048" : "16384") + "]";
+        const auto whole = [limit](double n) { return n >= 1 && n <= limit && n == std::floor(n); };
+        auto& storage = classes[name];
+        registerTextureFields(storage, name.c_str());
+        storage.ctor = [volume, extents, whole](const Args& a, Store&) -> std::shared_ptr<void> {
+            const double width = optional(a, 0, 1), height = optional(a, 1, 1), depth = volume ? optional(a, 2, 1) : 1;
+            if (a.size() > (volume ? 3u : 2u) || !whole(width) || !whole(height) || !whole(depth)) throw Unsupported{extents};
+            auto texture = std::make_shared<Texture>();
+            texture->storageTexture = true;
+            texture->volume = volume;
+            texture->width = uint32_t(width); texture->height = uint32_t(height); texture->depth = uint32_t(depth);
+            texture->minFilter = texture->magFilter = uint16_t(TextureFilter::Linear);
+            return texture;
+        };
+        storage.getters["isStorageTexture"] = [](void*) { return Value::of(true); };
+        if (volume) {
+            storage.getters["is3DTexture"] = [](void*) { return Value::of(true); };
+            textureNumber<Texture>(storage, "wrapR", &Texture::wrapR);
+        }
+        storage.getters["mipmapsAutoUpdate"] = [](void* self) { return Value::of(as<Texture>(self)->mipmapsAutoUpdate); };
+        storage.setters["mipmapsAutoUpdate"] = [](void* self, const Value& v) { as<Texture>(self)->mipmapsAutoUpdate = flag(v); };
+        for (const bool isType : {true, false}) {
+            storage.setters[isType ? "type" : "format"] = [isType](void* self, const Value& v) {
+                const double n = number(v);
+                if (!(n >= 0 && n <= UINT16_MAX) || n != std::floor(n))
+                    throw Unsupported{"TN_NATIVE_STORAGE_TEXTURE_FORMAT: type/format must be an unsigned 16-bit integer"};
+                auto* texture = as<Texture>(self);
+                (isType ? texture->type : texture->format) = uint16_t(n);
+                texture->needsUpdate();
+            };
+        }
+        storage.methods["setSize"] = [volume, name, extents, whole](void* self, const Args& a, Store&) {
+            if (a.size() != (volume ? 3u : 2u))
+                throw Unsupported{name + (volume ? ".setSize needs width, height and depth" : ".setSize needs width and height")};
+            const double w = number(a[0]), h = number(a[1]), d = volume ? number(a[2]) : 1;
+            if (!whole(w) || !whole(h) || !whole(d)) throw Unsupported{extents};
             auto* texture = as<Texture>(self);
-            (isType ? texture->type : texture->format) = uint16_t(n);
-            texture->needsUpdate();
+            if (texture->width != w || texture->height != h || texture->depth != d) {
+                texture->width = uint32_t(w); texture->height = uint32_t(h); texture->depth = uint32_t(d); texture->needsUpdate();
+            }
+            return Value{};
         };
     }
-    storage.methods["setSize"] = [](void* self, const Args& a, Store&) {
-        if (a.size() != 2) throw Unsupported{"StorageTexture.setSize needs width and height"};
-        const double w = number(a[0]), h = number(a[1]);
-        if (!(w >= 1 && w <= 16384 && h >= 1 && h <= 16384) || w != std::floor(w) || h != std::floor(h))
-            throw Unsupported{"StorageTexture needs integer extents in [1, 16384]"};
-        auto* texture = as<Texture>(self);
-        if (texture->width != w || texture->height != h) {
-            texture->width = uint32_t(w); texture->height = uint32_t(h); texture->needsUpdate();
-        }
-        return Value{};
-    };
     auto& depth = classes["DepthTexture"];
     registerTextureFields(depth, "DepthTexture");
     depth.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
@@ -1073,14 +1146,16 @@ void registerTextureBindings(Registry& classes) {
         uint16_t type = kTextureUnsignedByteType;
         std::optional<uint16_t> minFilter, magFilter, wrapS, wrapT;
         uint16_t format = kTextureRGBAFormat;
-        uint32_t count = 1;
+        uint32_t count = 1, layers = 1;
+        bool generateMipmaps = false;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
                 if (key == "minFilter" || key == "magFilter") {
-                    // A target has no mip chain: only the two single-level filters apply.
+                    // Only an array target keeps a mip chain, so the mip filters wait for `depth` below.
                     const auto filter = static_cast<uint16_t>(number(value));
-                    if (filter != uint16_t(TextureFilter::Nearest) && filter != uint16_t(TextureFilter::Linear))
-                        throw Unsupported{"RenderTarget " + key + " must be NearestFilter or LinearFilter"};
+                    if (filter < uint16_t(TextureFilter::Nearest) || filter > uint16_t(TextureFilter::LinearMipmapLinear) ||
+                        (key == "magFilter" && filter != uint16_t(TextureFilter::Nearest) && filter != uint16_t(TextureFilter::Linear)))
+                        throw Unsupported{"RenderTarget " + key + " must be a filter constant"};
                     (key == "minFilter" ? minFilter : magFilter) = filter;
                 } else if (key == "type") {
                     type = static_cast<uint16_t>(number(value));
@@ -1097,9 +1172,13 @@ void registerTextureBindings(Registry& classes) {
                         throw Unsupported{"RenderTarget " + key + " must be a wrapping constant"};
                     (key == "wrapS" ? wrapS : wrapT) = wrap;
                 } else if (key == "generateMipmaps") {
-                    // A target holds one level; a mip chain after each draw is not built natively.
-                    if (value.kind != Value::Kind::Bool || value.flag)
-                        throw Unsupported{"RenderTarget generateMipmaps must be false natively"};
+                    if (value.kind != Value::Kind::Bool) throw Unsupported{"RenderTarget generateMipmaps must be a boolean"};
+                    generateMipmaps = value.flag;
+                } else if (key == "depth") {
+                    // three's array target: `depth` layers, each drawn by setRenderTarget(target, layer).
+                    const double n = number(value);
+                    if (!(n >= 1 && n <= 256) || n != std::floor(n)) throw Unsupported{"RenderTarget depth must be 1 to 256"};
+                    layers = static_cast<uint32_t>(n);
                 } else if (key == "count") {
                     // three's MRT: one colour texture per output, 8 at most (WebGPU's maxColorAttachments).
                     const double n = number(value);
@@ -1109,8 +1188,18 @@ void registerTextureBindings(Registry& classes) {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
+        // A plain target holds one level: a mip chain after each draw is built for an array target only.
+        const bool mipFilter = minFilter && *minFilter != uint16_t(TextureFilter::Nearest) && *minFilter != uint16_t(TextureFilter::Linear);
+        if (layers == 1 && (generateMipmaps || mipFilter))
+            throw Unsupported{"RenderTarget mipmaps need an array target (depth > 1) natively"};
         auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type, count);
+        target->layers = layers;
+        for (const auto& attachment : target->more) attachment->layers = layers;
         for (const auto& texture : RenderTarget::texturesOf(*target)) {
+            texture->generateMipmaps = generateMipmaps;
+            // The texture a material samples is the layer array, read with depth(layer) like a DataArrayTexture.
+            texture->array = layers > 1;
+            texture->depth = layers;
             if (minFilter) texture->minFilter = *minFilter;
             if (magFilter) texture->magFilter = *magFilter;
             if (wrapS) texture->wrapS = *wrapS;
@@ -1194,8 +1283,17 @@ void registerTextureBindings(Registry& classes) {
     volume.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
         auto texture = std::make_shared<DataTexture>();
         texture->volume = true;
-        if (a.empty() || a[0].kind != Value::Kind::Numbers) return std::static_pointer_cast<void>(texture);
         const auto size = [&](std::size_t i) { return a.size() > i ? static_cast<uint32_t>(number(a[i])) : 1u; };
+        // three's RenderTarget3D makes `new Data3DTexture(null, width, height, depth)`: a sized volume with no texels,
+        // which the engine holds as texels written on the GPU (`dataReady` false) until `image.data` brings some.
+        if (a.size() > 1 && (a[0].kind == Value::Kind::Null || a[0].kind == Value::Kind::Undefined)) {
+            texture->width = size(1); texture->height = size(2); texture->depth = size(3);
+            if (texture->width == 0 || texture->height == 0 || texture->depth == 0)
+                throw Unsupported{"Data3DTexture width, height and depth must be at least 1"};
+            texture->dataReady = false;
+            return std::static_pointer_cast<void>(texture);
+        }
+        if (a.empty() || a[0].kind != Value::Kind::Numbers) return std::static_pointer_cast<void>(texture);
         const uint32_t width = size(1), height = size(2), depth = size(3);
         if (width == 0 || height == 0 || depth == 0 || a[0].numbers.size() != std::size_t(width) * height * depth * 4)
             throw Unsupported{"Data3DTexture data must be width * height * depth * 4 RGBA values"};
@@ -1222,6 +1320,57 @@ void registerTextureBindings(Registry& classes) {
         const uint32_t depth = texture->depth;
         texture->setImage(v.numbers, v.text, texture->width, texture->height, texture->format, texture->type, false);
         texture->depth = depth;
+        texture->dataReady = true;  // a volume made with null data uploads the texels it is given
+    };
+    // three's CubeTexture(images, mapping, wrapS, wrapT, magFilter, minFilter, format, type): six faces sampled along a
+    // direction. Natively only a render target's faces are bound (CubeRenderTarget's six `{ width, height }` records),
+    // whose texels the GPU writes; six images with pixels are refused at construction.
+    ClassBinding& cube = classes["CubeTexture"];
+    registerTextureClass(cube, false, "CubeTexture");
+    cube.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        auto texture = std::make_shared<Texture>();
+        texture->array = texture->cube = true;
+        texture->depth = 6;
+        texture->flipY = false;
+        texture->mapping = 301;  // CubeReflectionMapping
+        if (a.empty() || a[0].kind == Value::Kind::Null || a[0].kind == Value::Kind::Undefined ||
+            (a[0].kind == Value::Kind::Array && a[0].items.empty())) {
+            texture->width = texture->height = 0;  // an empty cube, as three's `new CubeTexture()`
+        } else {
+            const auto faceSize = [](const Value& face, const char* key) -> uint32_t {
+                if (face.kind != Value::Kind::Record) return 0;
+                for (const auto& [name, value] : face.fields) {
+                    if (name == "data" && value.kind != Value::Kind::Null && value.kind != Value::Kind::Undefined) return 0;
+                    if (name == key && value.kind == Value::Kind::Number && value.number >= 1 && value.number <= 16384)
+                        return static_cast<uint32_t>(value.number);
+                }
+                return 0;
+            };
+            if (a[0].kind != Value::Kind::Array || a[0].items.size() != 6)
+                throw Unsupported{"CubeTexture images must be six render-target faces"};
+            texture->width = faceSize(a[0].items[0], "width");
+            texture->height = faceSize(a[0].items[0], "height");
+            for (const auto& face : a[0].items)
+                if (texture->width == 0 || texture->height != texture->width || faceSize(face, "width") != texture->width ||
+                    faceSize(face, "height") != texture->height)
+                    throw Unsupported{"CubeTexture images must be six square render-target faces of one size, with no pixels"};
+        }
+        texture->dataReady = false;  // the GPU writes the faces (copyTextureToTexture, a CubeCamera render)
+        uint16_t* const optional[] = {&texture->mapping, &texture->wrapS, &texture->wrapT, &texture->magFilter,
+                                      &texture->minFilter};
+        for (std::size_t i = 1; i < a.size() && i - 1 < std::size(optional); ++i)
+            if (a[i].kind == Value::Kind::Number) *optional[i - 1] = static_cast<uint16_t>(a[i].number);
+        if (a.size() > 7 && a[7].kind == Value::Kind::Number) texture->type = static_cast<uint16_t>(a[7].number);
+        if (texture->type != kTextureUnsignedByteType && texture->type != kTextureFloatType && texture->type != kTextureHalfFloatType)
+            throw Unsupported{"CubeTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
+        return std::static_pointer_cast<void>(texture);
+    };
+    // A cube holds no CPU texels, so its type (the GPU format) is free until the GPU texture exists.
+    cube.setters["type"] = [](void* self, const Value& v) {
+        const auto type = static_cast<uint16_t>(number(v));
+        if (type != kTextureUnsignedByteType && type != kTextureFloatType && type != kTextureHalfFloatType)
+            throw Unsupported{"CubeTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
+        as<Texture>(self)->type = type;
     };
     // three's DataArrayTexture(data, width, height, depth): `depth` layers of width * height RGBA texels, with
     // DataTexture's defaults (nearest filters, no flip, no mipmaps). The typed array crosses as bytes, as a
@@ -1252,6 +1401,8 @@ void registerTextureBindings(Registry& classes) {
         auto* texture = as<DataTexture>(self);
         const std::size_t texels = std::size_t(texture->width) * texture->height * texture->depth;
         const std::size_t count = v.bytes.empty() ? v.numbers.size() : v.bytes.size() / typedArrayElementBytes(v.text);
+        // An empty array releases the CPU copy of texels the GPU holds (`source.dataReady = false`), as in three.
+        if (v.kind == Value::Kind::Numbers && count == 0 && !texture->dataReady) return std::vector<uint8_t>().swap(texture->data);
         if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * 4)
             throw Unsupported{"image.data must be a typed array of width * height * depth * 4 values"};
         const uint32_t depth = texture->depth;

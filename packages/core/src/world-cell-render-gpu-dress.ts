@@ -1,7 +1,6 @@
 import {
   type Box3,
   type Camera,
-  Frustum,
   type InstancedMesh,
   type Material,
   Matrix4,
@@ -48,6 +47,8 @@ import {
   type WorldGpuScene,
   liveKeyInstances,
 } from "./world-gpu-scene.js";
+import { frustumPlanes } from "./world-gpu-types.js";
+import { localClip, localPoint } from "./world-root-frame.js";
 
 /**
  * The mesh a key draws: its shape, its level's material, and the dress that points it at the GPU
@@ -74,6 +75,8 @@ export interface ICellGpuDressHost {
   carryPrewarm(old: ICasterScaleMesh, next: ICasterScaleMesh): void;
   isBundleHome(shared: SharedBatch): boolean;
   renderer(): IRendererLike | undefined;
+  /** The world root's own `matrixWorld`: the frame its placements are recorded in. */
+  root(): Matrix4;
 
   // The batches, the scene and the state the dress shares with the rest of the renderer.
   shared(): Map<string, SharedBatch>;
@@ -105,7 +108,6 @@ export interface ICellGpuDressHost {
 
 /** The scratch a draw's own planes are built in, reused per frame. */
 const _gpuEye = new Vector3();
-const _cullFrustum = new Frustum();
 const _cullProjScreen = new Matrix4();
 
 export class CellGpuDress {
@@ -630,19 +632,12 @@ export class CellGpuDress {
     const lives = this.liveGates();
     if (lives.size === 0) return [];
     // The dispatch's own camera, its own planes: this is asked for inside the dispatch that is
-    // running, so the eye and the six planes are the ones the kernel is reading now.
+    // running, so the eye and the six planes are the ones the kernel is reading now — and, like the
+    // dispatch's, in the root's frame, because that is the frame the placements are recorded in.
+    const root = this.#host.root();
     const planes = this.#gpuPlanes;
-    _cullFrustum.setFromProjectionMatrix(
-      _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
-    );
-    for (const [index, plane] of _cullFrustum.planes.entries()) {
-      const at = index * 4;
-      planes[at] = plane.normal.x;
-      planes[at + 1] = plane.normal.y;
-      planes[at + 2] = plane.normal.z;
-      planes[at + 3] = plane.constant;
-    }
-    _gpuEye.setFromMatrixPosition(camera.matrixWorld);
+    frustumPlanes(localClip(_cullProjScreen, camera, root), planes);
+    localPoint(_gpuEye.setFromMatrixPosition(camera.matrixWorld), root);
     const expected = liveKeyInstances(
       this.#host.gpuScene().placements,
       (slot) => {

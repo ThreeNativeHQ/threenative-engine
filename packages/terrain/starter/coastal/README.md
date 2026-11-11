@@ -7,7 +7,7 @@ water. It is game source: once copied, every file is yours to edit.
 | File | What it decides |
 | --- | --- |
 | `recipe.json` | The terrain: the survey heightmap, erosion, the rock and sand surfaces, the ocean and the stands. |
-| `assets.json` | The fir model, its LOD distance and draw distance, and its bounds. |
+| `assets.json` | The fir model, its LOD distance and draw distance, its bounds, and `"tree": true`: the art a landform cook plants the biome's own tree with. |
 | `surface.json` | The ground: the sand base, the rock layer, tiles, tints and blend thresholds. |
 | `bake.mjs` | Writes the world package and `world/water.json` from the three files above. |
 | `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the firs near the player, and the sky as the props' light. |
@@ -20,7 +20,10 @@ Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.
 
 The preview's coastal stands use its licensed spruce models, which cannot ship in a kit. This kit
 plants the CC0 fir from the forest kit in their place, with the same count and spacing. The
-ocean is written to `water.json` as the one entry in `lakes`, with no `at`: the game draws it.
+`"tree": true` mark on that row is what a `terrain_generate` landform cook reads, so the biome
+file's own tree row grows the pack's fir instead of a treeless world; a kit with no such mark draws
+its preset's ground alone. The ocean is written to `water.json` as the one entry in `lakes`, with no
+`at`: the game draws it.
 
 ## Status
 

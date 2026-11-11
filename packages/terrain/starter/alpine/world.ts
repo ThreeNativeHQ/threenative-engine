@@ -48,7 +48,7 @@ const spec: IStarterWorldSpec<{ dispose(): void }> = {
       url,
       table: surface as unknown as ILoadTerrainSplatOptions["table"],
     }),
-  lighting: { sky: "sky.hdr", lods: false, dress: dressProp },
+  lighting: { sky: "sky.hdr", lods: true, dress: dressProp },
   streaming: {
     ring: 5,
     impostors: false,

@@ -1,0 +1,718 @@
+diff --git a/BUILD.gn b/BUILD.gn
+index 38a9a9aa..8fd5b1de 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -6724,6 +6724,11 @@ v8_component("v8_libbase") {
+       "src/base/debug/stack_trace_zos.cc",
+       "src/base/platform/platform-zos.cc",
+     ]
++  } else if (current_os == "ps4") {
++    sources += [
++      "src/base/debug/stack_trace_ps4.cc",
++      "src/base/platform/platform-ps4.cc",
++    ]
+   }
+ 
+   if (v8_current_cpu == "mips64") {
+diff --git a/include/v8config.h b/include/v8config.h
+index 9d58e85d..cfb8d60e 100644
+--- a/include/v8config.h
++++ b/include/v8config.h
+@@ -137,6 +137,16 @@ path. Add it with -I<path> to the command line
+ # define V8_OS_AIX 1
+ # define V8_OS_STRING "aix"
+ 
++#elif defined(V8_OS_PS4)
++// PS4 (OpenOrbis): the target triple is x86_64-pc-freebsd12-elf but the
++// sysroot's libc++ __config undefines __FreeBSD__, so the build sets
++// -DV8_OS_PS4=1 and the freebsd flavour is selected here instead.
++# define V8_OS_BSD 1
++# define V8_OS_FREEBSD 1
++# define V8_OS_PS4 1
++# define V8_OS_POSIX 1
++# define V8_OS_STRING "freebsd"
++
+ #elif defined(__FreeBSD__)
+ # define V8_OS_BSD 1
+ # define V8_OS_FREEBSD 1
+diff --git a/src/base/debug/stack_trace_ps4.cc b/src/base/debug/stack_trace_ps4.cc
+new file mode 100644
+index 00000000..bb62b155
+--- /dev/null
++++ b/src/base/debug/stack_trace_ps4.cc
+@@ -0,0 +1,41 @@
++// Copyright 2024 the V8 project authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// PS4 (OpenOrbis) port: the sysroot has no <execinfo.h>, so this mirrors
++// stack_trace_fuchsia.cc instead of stack_trace_posix.cc.
++
++#include "src/base/debug/stack_trace.h"
++
++#include <iomanip>
++#include <ostream>
++
++#include "src/base/platform/platform.h"
++
++namespace v8 {
++namespace base {
++namespace debug {
++
++bool EnableInProcessStackDumping() {
++  // No backtrace(3), and nothing to symbolize on device.
++  return false;
++}
++
++void DisableSignalStackDump() {}
++
++StackTrace::StackTrace() { count_ = 0; }
++
++void StackTrace::Print() const {
++  std::string backtrace = ToString();
++  OS::Print("%s\n", backtrace.c_str());
++}
++
++void StackTrace::OutputToStream(std::ostream* os) const {
++  for (size_t i = 0; i < count_; ++i) {
++    *os << "#" << std::setw(2) << i << trace_[i] << "\n";
++  }
++}
++
++}  // namespace debug
++}  // namespace base
++}  // namespace v8
+diff --git a/src/base/platform/platform-posix.cc b/src/base/platform/platform-posix.cc
+index 1e9af2e4..7777dee6 100644
+--- a/src/base/platform/platform-posix.cc
++++ b/src/base/platform/platform-posix.cc
+@@ -859,6 +859,9 @@ int OS::GetCurrentThreadId() {
+   return static_cast<int>(pthread_self());
+ #elif V8_OS_ZOS
+   return gettid();
++#elif V8_OS_PS4
++  // OpenOrbis pthread_t is an integral type, not a pointer.
++  return static_cast<int>(pthread_self());
+ #else
+   return static_cast<int>(reinterpret_cast<intptr_t>(pthread_self()));
+ #endif
+diff --git a/src/base/platform/platform-ps4.cc b/src/base/platform/platform-ps4.cc
+new file mode 100644
+index 00000000..d2dbba9d
+--- /dev/null
++++ b/src/base/platform/platform-ps4.cc
+@@ -0,0 +1,81 @@
++// Copyright 2024 the V8 project authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Platform-specific code for the PS4 (OpenOrbis) target. Derived from
++// platform-freebsd.cc; everything the OpenOrbis sysroot cannot provide is
++// stubbed below with a one-line note.
++
++#include <pthread.h>
++#include <semaphore.h>
++#include <signal.h>
++#include <stdlib.h>
++#include <sys/resource.h>
++#include <sys/time.h>
++#include <sys/types.h>
++#include <sys/ucontext.h>
++#include <sys/user.h>
++
++#include <sys/fcntl.h>  // open
++#include <sys/mman.h>   // mmap & munmap
++#include <sys/stat.h>   // open
++#include <unistd.h>     // getpagesize
++#include <errno.h>
++#include <limits.h>
++#include <stdarg.h>
++#include <strings.h>    // index
++
++#include <cmath>
++
++#undef MAP_TYPE
++
++#include "src/base/macros.h"
++#include "src/base/platform/platform-posix-time.h"
++#include "src/base/platform/platform-posix.h"
++#include "src/base/platform/platform.h"
++
++namespace v8 {
++namespace base {
++
++TimezoneCache* OS::CreateTimezoneCache() {
++  return new PosixDefaultTimezoneCache();
++}
++
++std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
++  // No dl_iterate_phdr/kinfo_vmentry on OpenOrbis; callers only use this for
++  // profiler friendly names.
++  return std::vector<SharedLibraryAddress>();
++}
++
++void OS::SignalCodeMovingGC() {}
++
++void OS::AdjustSchedulingParams() {}
++
++std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
++    OS::Address boundary_start, OS::Address boundary_end, size_t minimum_size,
++    size_t alignment) {
++  return std::nullopt;
++}
++
++// static
++Stack::StackSlot Stack::ObtainCurrentThreadStackStart() {
++  pthread_attr_t attr;
++  int error;
++  pthread_attr_init(&attr);
++  error = pthread_attr_get_np(pthread_self(), &attr);
++  if (!error) {
++    void* base;
++    size_t size;
++    error = pthread_attr_getstack(&attr, &base, &size);
++    CHECK(!error);
++    pthread_attr_destroy(&attr);
++    return reinterpret_cast<uint8_t*>(base) + size;
++  }
++  pthread_attr_destroy(&attr);
++  // Single-threaded embedder: the main thread stack start is unknown without
++  // sysctl(KERN_PROC_VMMAP) on device.
++  return nullptr;
++}
++
++}  // namespace base
++}  // namespace v8
+diff --git a/src/base/sys-info.cc b/src/base/sys-info.cc
+index 4bab9166..25116c48 100644
+--- a/src/base/sys-info.cc
++++ b/src/base/sys-info.cc
+@@ -14,7 +14,7 @@
+ #endif
+ #endif
+ 
+-#if V8_OS_BSD
++#if V8_OS_BSD && !V8_OS_PS4
+ #include <sys/sysctl.h>
+ #endif
+ 
+@@ -72,7 +72,7 @@ int64_t SysInfo::AmountOfPhysicalMemory() {
+     return 0;
+   }
+   return memsize;
+-#elif V8_OS_FREEBSD
++#elif V8_OS_FREEBSD && !V8_OS_PS4
+   int pages, page_size;
+   size_t size = sizeof(pages);
+   sysctlbyname("vm.stats.vm.v_page_count", &pages, &size, nullptr, 0);
+diff --git a/src/base/utils/random-number-generator.cc b/src/base/utils/random-number-generator.cc
+index 91b7c6fc..7fd990e2 100644
+--- a/src/base/utils/random-number-generator.cc
++++ b/src/base/utils/random-number-generator.cc
+@@ -56,7 +56,8 @@ RandomNumberGenerator::RandomNumberGenerator() {
+   DCHECK_EQ(0, result);
+   USE(result);
+   SetSeed((static_cast<int64_t>(first_half) << 32) + second_half);
+-#elif V8_OS_DARWIN || V8_OS_FREEBSD || V8_OS_OPENBSD
++#elif (V8_OS_DARWIN || V8_OS_FREEBSD || V8_OS_OPENBSD) && !V8_OS_PS4
++  // PS4: OpenOrbis has no arc4random_buf(); fall through to /dev/urandom.
+   // Despite its prefix suggests it is not RC4 algorithm anymore.
+   // It always succeeds while having decent performance and
+   // no file descriptor involved.
+diff --git a/src/compiler/turboshaft/assembler.h b/src/compiler/turboshaft/assembler.h
+index 72fea913..93fb15e3 100644
+--- a/src/compiler/turboshaft/assembler.h
++++ b/src/compiler/turboshaft/assembler.h
+@@ -14,6 +14,12 @@
+ #include <type_traits>
+ #include <utility>
+ 
++#ifdef __cpp_concepts
++// OpenOrbis' libc++ does not pull <concepts> in transitively; the
++// ForeachIterable concept below needs std::same_as.
++#include <concepts>
++#endif
++
+ #include "include/v8-source-location.h"
+ #include "src/base/logging.h"
+ #include "src/base/macros.h"
+diff --git a/src/compiler/turboshaft/index.h b/src/compiler/turboshaft/index.h
+index 62326810..4ea8232c 100644
+--- a/src/compiler/turboshaft/index.h
++++ b/src/compiler/turboshaft/index.h
+@@ -9,6 +9,11 @@
+ #include <optional>
+ #include <type_traits>
+ 
++#ifdef __cpp_concepts
++// OpenOrbis' libc++ does not pull <concepts> in transitively.
++#include <concepts>
++#endif
++
+ #include "src/base/logging.h"
+ #include "src/codegen/tnode.h"
+ #include "src/compiler/turboshaft/fast-hash.h"
+diff --git a/src/compiler/turboshaft/typer.h b/src/compiler/turboshaft/typer.h
+index a287ec2e..1d3bc455 100644
+--- a/src/compiler/turboshaft/typer.h
++++ b/src/compiler/turboshaft/typer.h
+@@ -448,11 +448,13 @@ struct FloatOperationTyper {
+     int size = t.set_size();
+     DCHECK_LT(0, size);
+ 
+-    float_t unused_ipart;
+-    float_t min = t.set_element(0);
++    // PS4: the OpenOrbis sysroot defines float_t as float (FLT_EVAL_METHOD 0)
++    // where V8 assumes the x64 double; the set elements are doubles.
++    double unused_ipart;
++    double min = t.set_element(0);
+     if (std::modf(min, &unused_ipart) != 0.0) return false;
+     if (min == -inf) return false;
+-    float_t max = t.set_element(size - 1);
++    double max = t.set_element(size - 1);
+     if (std::modf(max, &unused_ipart) != 0.0) return false;
+     if (max == inf) return false;
+ 
+diff --git a/src/libsampler/sampler.cc b/src/libsampler/sampler.cc
+index 4efb4472..a8fe7912 100644
+--- a/src/libsampler/sampler.cc
++++ b/src/libsampler/sampler.cc
+@@ -344,7 +344,13 @@ class SignalHandler {
+  private:
+   static void Install() {
+     struct sigaction sa;
++#if V8_OS_PS4
++    // OpenOrbis' sa_sigaction macro expands to __sa_handler.sa_sigaction but
++    // the union member is __sa_sigaction.
++    sa.__sa_handler.__sa_sigaction = &HandleProfilerSignal;
++#else
+     sa.sa_sigaction = &HandleProfilerSignal;
++#endif
+     sigemptyset(&sa.sa_mask);
+ #if V8_OS_QNX
+     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+@@ -404,7 +410,12 @@ void SignalHandler::FillRegisterState(void* context, RegisterState* state) {
+ #elif V8_OS_ZOS
+   __mcontext_t_* mcontext = reinterpret_cast<__mcontext_t_*>(context);
+ #endif
+-#if V8_OS_LINUX
++#if V8_OS_PS4
++  // OpenOrbis mcontext_t is a Linux-style gregs[] array.
++  state->pc = reinterpret_cast<void*>(mcontext.gregs[REG_RIP]);
++  state->sp = reinterpret_cast<void*>(mcontext.gregs[REG_RSP]);
++  state->fp = reinterpret_cast<void*>(mcontext.gregs[REG_RBP]);
++#elif V8_OS_LINUX
+ #if V8_HOST_ARCH_IA32
+   state->pc = reinterpret_cast<void*>(mcontext.gregs[REG_EIP]);
+   state->sp = reinterpret_cast<void*>(mcontext.gregs[REG_ESP]);
+diff --git a/src/objects/descriptor-array-inl.h b/src/objects/descriptor-array-inl.h
+index 811c1a69..748d7f96 100644
+--- a/src/objects/descriptor-array-inl.h
++++ b/src/objects/descriptor-array-inl.h
+@@ -78,11 +78,22 @@ InternalIndex DescriptorArray::BinarySearch(Tagged<Name> name,
+ 
+   // Find the first descriptor whose key's hash is greater-than-or-equal-to the
+   // search hash.
+-  int number = *std::ranges::lower_bound(std::views::iota(0, end), hash,
+-                                         std::less<>(), [&](int i) {
+-                                           Tagged<Name> entry = GetSortedKey(i);
+-                                           return entry->hash();
+-                                         });
++  // PS4: OpenOrbis libc++ 11 has no <ranges>, so open-code
++  // lower_bound(iota(0, end), hash, less<>, GetSortedKey(i)->hash()).
++  int number;
++  {
++    int lo = 0;
++    int hi = end;
++    while (lo < hi) {
++      int mid = lo + (hi - lo) / 2;
++      if (GetSortedKey(mid)->hash() < hash) {
++        lo = mid + 1;
++      } else {
++        hi = mid;
++      }
++    }
++    number = lo;
++  }
+ 
+   // There may have been hash collisions, so search for the name from the first
+   // index until the first non-matching hash.
+diff --git a/src/objects/js-temporal-objects.cc b/src/objects/js-temporal-objects.cc
+index ea18b7fa..13900f9d 100644
+--- a/src/objects/js-temporal-objects.cc
++++ b/src/objects/js-temporal-objects.cc
+@@ -1355,9 +1355,9 @@ double RoundTowardsZero(double x) {
+   // 1. Return the mathematical value that is the same sign as x and whose
+   // magnitude is floor(abs(x)).
+   if (x < 0) {
+-    return -std::floor(std::abs(x));
++    return -std::floor(std::fabs(x));
+   } else {
+-    return std::floor(std::abs(x));
++    return std::floor(std::fabs(x));
+   }
+ }
+ 
+@@ -1408,7 +1408,7 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+   if (dur.years != 0) {
+     // a. Set datePart to the string concatenation of abs(years) formatted as a
+     // decimal number and the code unit 0x0059 (LATIN CAPITAL LETTER Y).
+-    SNPrintF(buf, "%.0f", std::abs(dur.years));
++    SNPrintF(buf, "%.0f", std::fabs(dur.years));
+     date_part.AppendCString(buf.data());
+     date_part.AppendCharacter('Y');
+   }
+@@ -1417,7 +1417,7 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+     // a. Set datePart to the string concatenation of datePart,
+     // abs(months) formatted as a decimal number, and the code unit
+     // 0x004D (LATIN CAPITAL LETTER M).
+-    SNPrintF(buf, "%.0f", std::abs(dur.months));
++    SNPrintF(buf, "%.0f", std::fabs(dur.months));
+     date_part.AppendCString(buf.data());
+     date_part.AppendCharacter('M');
+   }
+@@ -1426,7 +1426,7 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+     // a. Set datePart to the string concatenation of datePart,
+     // abs(weeks) formatted as a decimal number, and the code unit
+     // 0x0057 (LATIN CAPITAL LETTER W).
+-    SNPrintF(buf, "%.0f", std::abs(dur.weeks));
++    SNPrintF(buf, "%.0f", std::fabs(dur.weeks));
+     date_part.AppendCString(buf.data());
+     date_part.AppendCharacter('W');
+   }
+@@ -1435,7 +1435,7 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+     // a. Set datePart to the string concatenation of datePart,
+     // abs(days) formatted as a decimal number, and the code unit 0x0044
+     // (LATIN CAPITAL LETTER D).
+-    SNPrintF(buf, "%.0f", std::abs(dur.time_duration.days));
++    SNPrintF(buf, "%.0f", std::fabs(dur.time_duration.days));
+     date_part.AppendCString(buf.data());
+     date_part.AppendCharacter('D');
+   }
+@@ -1445,7 +1445,7 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+   if (dur.time_duration.hours != 0) {
+     // a. Set timePart to the string concatenation of abs(hours) formatted as a
+     // decimal number and the code unit 0x0048 (LATIN CAPITAL LETTER H).
+-    SNPrintF(buf, "%.0f", std::abs(dur.time_duration.hours));
++    SNPrintF(buf, "%.0f", std::fabs(dur.time_duration.hours));
+     time_part.AppendCString(buf.data());
+     time_part.AppendCharacter('H');
+   }
+@@ -1454,7 +1454,7 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+     // a. Set timePart to the string concatenation of timePart,
+     // abs(minutes) formatted as a decimal number, and the code unit
+     // 0x004D (LATIN CAPITAL LETTER M).
+-    SNPrintF(buf, "%.0f", std::abs(dur.time_duration.minutes));
++    SNPrintF(buf, "%.0f", std::fabs(dur.time_duration.minutes));
+     time_part.AppendCString(buf.data());
+     time_part.AppendCharacter('M');
+   }
+@@ -1473,9 +1473,9 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+       precision != Precision::kAuto) {
+     // a. Let fraction be abs(milliseconds) × 10^6 + abs(microseconds) × 10^3 +
+     // abs(nanoseconds).
+-    int64_t fraction = std::abs(dur.time_duration.milliseconds) * 1e6 +
+-                       std::abs(dur.time_duration.microseconds) * 1e3 +
+-                       std::abs(dur.time_duration.nanoseconds);
++    int64_t fraction = std::fabs(dur.time_duration.milliseconds) * 1e6 +
++                       std::fabs(dur.time_duration.microseconds) * 1e3 +
++                       std::fabs(dur.time_duration.nanoseconds);
+     // b. Let decimalPart be fraction formatted as a nine-digit decimal number,
+     // padded to the left with zeroes if necessary.
+     int64_t divisor = 100000000;
+@@ -1506,11 +1506,11 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+       }
+     }
+     // f. Let secondsPart be abs(seconds) formatted as a decimal number.
+-    if (std::abs(seconds_add + dur.time_duration.seconds) < kMaxSafeInteger) {
++    if (std::fabs(seconds_add + dur.time_duration.seconds) < kMaxSafeInteger) {
+       // Fast path: The seconds_add + dur.time_duration.seconds is in the range
+       // the double could keep the precision.
+       dur.time_duration.seconds += seconds_add;
+-      SNPrintF(buf, "%.0f", std::abs(dur.time_duration.seconds));
++      SNPrintF(buf, "%.0f", std::fabs(dur.time_duration.seconds));
+       seconds_part.AppendCString(buf.data());
+     } else {
+       // Slow path: The seconds_add + dur.time_duration.seconds is out of the
+@@ -1522,11 +1522,11 @@ Handle<String> TemporalDurationToString(Isolate* isolate,
+               BigInt::Add(
+                   isolate,
+                   BigInt::FromNumber(isolate, isolate->factory()->NewNumber(
+-                                                  std::abs(seconds_add)))
++                                                  std::fabs(seconds_add)))
+                       .ToHandleChecked(),
+                   BigInt::FromNumber(isolate,
+                                      isolate->factory()->NewNumber(
+-                                         std::abs(dur.time_duration.seconds)))
++                                         std::fabs(dur.time_duration.seconds)))
+                       .ToHandleChecked())
+                   .ToHandleChecked())
+               .ToHandleChecked());
+@@ -2552,7 +2552,7 @@ bool IsIntegralNumber(Isolate* isolate, DirectHandle<Object> argument) {
+   double number = Object::NumberValue(Cast<Number>(*argument));
+   if (!std::isfinite(number)) return false;
+   // 3. If floor(abs(ℝ(argument))) ≠ abs(ℝ(argument)), return false.
+-  if (std::floor(std::abs(number)) != std::abs(number)) return false;
++  if (std::floor(std::fabs(number)) != std::fabs(number)) return false;
+   // 4. Return true.
+   return true;
+ }
+@@ -3067,7 +3067,7 @@ Handle<String> FormatTimeZoneOffsetString(Isolate* isolate,
+   // 2. If offsetNanoseconds ≥ 0, let sign be "+"; otherwise, let sign be "-".
+   builder.AppendCharacter((offset_nanoseconds >= 0) ? '+' : '-');
+   // 3. Let offsetNanoseconds be abs(offsetNanoseconds).
+-  offset_nanoseconds = std::abs(offset_nanoseconds);
++  offset_nanoseconds = std::fabs(offset_nanoseconds);
+   // 4. Let nanoseconds be offsetNanoseconds modulo 10^9.
+   int64_t nanoseconds = offset_nanoseconds % 1000000000;
+   // 5. Let seconds be floor(offsetNanoseconds / 10^9) modulo 60.
+@@ -3127,7 +3127,7 @@ Handle<String> FormatISOTimeZoneOffsetString(Isolate* isolate,
+   // 3. If offsetNanoseconds ≥ 0, let sign be "+"; otherwise, let sign be "-".
+   builder.AppendCharacter((offset_nanoseconds >= 0) ? '+' : '-');
+   // 4. Set offsetNanoseconds to abs(offsetNanoseconds).
+-  offset_nanoseconds = std::abs(offset_nanoseconds);
++  offset_nanoseconds = std::fabs(offset_nanoseconds);
+   // 5. Let minutes be offsetNanoseconds / (60 × 10^9) modulo 60.
+   int32_t minutes = (offset_nanoseconds / 60000000000) % 60;
+   // 6. Let hours be floor(offsetNanoseconds / (3600 × 10^9)).
+@@ -3177,7 +3177,7 @@ void PadISOYear(IncrementalStringBuilder* builder, int32_t y) {
+     builder->AppendCharacter('-');
+   }
+   // 4. Let year be ToZeroPaddedDecimalString(abs(y), 6).
+-  ToZeroPaddedDecimalString(builder, std::abs(y), 6);
++  ToZeroPaddedDecimalString(builder, std::fabs(y), 6);
+   // 5. Return the string-concatenation of yearSign and year.
+ }
+ 
+@@ -4299,7 +4299,7 @@ Maybe<int64_t> GetOffsetNanosecondsFor(Isolate* isolate,
+   // 6. Set offsetNanoseconds to ℝ(offsetNanoseconds).
+   int64_t offset_nanoseconds_int = static_cast<int64_t>(offset_nanoseconds);
+   // 7. If abs(offsetNanoseconds) >= 86400 × 10^9, throw a RangeError exception.
+-  if (std::abs(offset_nanoseconds_int) >= 86400e9) {
++  if (std::fabs(offset_nanoseconds_int) >= 86400e9) {
+     THROW_NEW_ERROR_RETURN_VALUE(
+         isolate, NEW_TEMPORAL_INVALID_ARG_RANGE_ERROR(), Nothing<int64_t>());
+   }
+@@ -5663,6 +5663,7 @@ Maybe<NanosecondsToDaysResult> NanosecondsToDays(Isolate* isolate,
+   // [[DayLength]]: abs(dayLengthNs) }.
+   NanosecondsToDaysResult result(
+       {days, Object::NumberValue(*BigInt::ToNumber(isolate, nanoseconds)),
++       // std::abs: int64 argument; OO's <cstdlib> provides it.
+        std::abs(day_length_ns->AsInt64())});
+   return Just(result);
+ }
+@@ -5976,15 +5977,15 @@ bool IsValidDuration(Isolate* isolate, const DurationRecord& dur) {
+   static const double kPower32Of2 = static_cast<double>(int64_t(1) << 32);
+   static const int64_t kPower53Of2 = int64_t(1) << 53;
+   // 3. If abs(years) ≥ 2**32, return false.
+-  if (std::abs(dur.years) >= kPower32Of2) {
++  if (std::fabs(dur.years) >= kPower32Of2) {
+     return false;
+   }
+   // 4. If abs(months) ≥ 2**32, return false.
+-  if (std::abs(dur.months) >= kPower32Of2) {
++  if (std::fabs(dur.months) >= kPower32Of2) {
+     return false;
+   }
+   // 5. If abs(weeks) ≥ 2**32, return false.
+-  if (std::abs(dur.weeks) >= kPower32Of2) {
++  if (std::fabs(dur.weeks) >= kPower32Of2) {
+     return false;
+   }
+   // 6. Let normalizedSeconds be days × 86,400 + hours × 3600 + minutes × 60 +
+@@ -6000,7 +6001,7 @@ bool IsValidDuration(Isolate* isolate, const DurationRecord& dur) {
+   // 8. If abs(normalizedSeconds) ≥ 2**53, return false.
+ 
+   int64_t allowed = kPower53Of2;
+-  double in_seconds = std::abs(time.days * 86400.0 + time.hours * 3600.0 +
++  double in_seconds = std::fabs(time.days * 86400.0 + time.hours * 3600.0 +
+                                time.minutes * 60.0 + time.seconds);
+ 
+   if (in_seconds >= allowed) {
+@@ -6009,9 +6010,9 @@ bool IsValidDuration(Isolate* isolate, const DurationRecord& dur) {
+   allowed -= in_seconds;
+ 
+   // Check the part > 1 seconds.
+-  in_seconds = std::floor(std::abs(time.milliseconds / 1e3)) +
+-               std::floor(std::abs(time.microseconds / 1e6)) +
+-               std::floor(std::abs(time.nanoseconds / 1e9));
++  in_seconds = std::floor(std::fabs(time.milliseconds / 1e3)) +
++               std::floor(std::fabs(time.microseconds / 1e6)) +
++               std::floor(std::fabs(time.nanoseconds / 1e9));
+   if (in_seconds >= allowed) {
+     return false;
+   }
+@@ -6023,9 +6024,9 @@ bool IsValidDuration(Isolate* isolate, const DurationRecord& dur) {
+   }
+ 
+   allowed *= 1000000000;  // convert to ns
+-  int64_t remainders = std::abs(fmod(time.milliseconds, 1e3)) * 1000000 +
+-                       std::abs(fmod(time.microseconds, 1e6)) * 1000 +
+-                       std::abs(fmod(time.nanoseconds, 1e9));
++  int64_t remainders = std::fabs(fmod(time.milliseconds, 1e3)) * 1000000 +
++                       std::fabs(fmod(time.microseconds, 1e6)) * 1000 +
++                       std::fabs(fmod(time.nanoseconds, 1e9));
+   if (remainders >= allowed) {
+     return false;
+   }
+@@ -7037,7 +7038,7 @@ Maybe<DateDurationRecord> BalanceDurationRelative(
+     // c. Let oneYearDays be moveResult.[[Days]].
+     double one_year_days = move_result.days;
+     // d. Repeat, while abs(days) ≥ abs(oneYearDays),
+-    while (std::abs(result.days) >= std::abs(one_year_days)) {
++    while (std::fabs(result.days) >= std::fabs(one_year_days)) {
+       // i. Set days to days - oneYearDays.
+       result.days -= one_year_days;
+       // ii. Set years to years + sign.
+@@ -7068,7 +7069,7 @@ Maybe<DateDurationRecord> BalanceDurationRelative(
+     // g. Let oneMonthDays be moveResult.[[Days]].
+     double one_month_days = move_result.days;
+     // h. Repeat, while abs(days) ≥ abs(oneMonthDays),
+-    while (std::abs(result.days) >= std::abs(one_month_days)) {
++    while (std::fabs(result.days) >= std::fabs(one_month_days)) {
+       // i. Set days to days - oneMonthDays.
+       result.days -= one_month_days;
+       // ii. Set months to months + sign.
+@@ -7125,7 +7126,7 @@ Maybe<DateDurationRecord> BalanceDurationRelative(
+     // o. Let oneYearMonths be untilResult.[[Months]].
+     double one_year_months = Object::NumberValue(until_result->months());
+     // p. Repeat, while abs(months) ≥ abs(oneYearMonths),
+-    while (std::abs(result.months) >= std::abs(one_year_months)) {
++    while (std::fabs(result.months) >= std::fabs(one_year_months)) {
+       // i. Set months to months - oneYearMonths.
+       result.months -= one_year_months;
+       // ii. Set years to years + sign.
+@@ -7171,7 +7172,7 @@ Maybe<DateDurationRecord> BalanceDurationRelative(
+     // c. Let oneMonthDays be moveResult.[[Days]].
+     double one_month_days = move_result.days;
+     // d. Repeat, while abs(days) ≥ abs(oneMonthDays),
+-    while (std::abs(result.days) >= std::abs(one_month_days)) {
++    while (std::fabs(result.days) >= std::fabs(one_month_days)) {
+       // i. Set days to days - oneMonthDays.
+       result.days -= one_month_days;
+       // ii. Set months to months + sign.
+@@ -7205,7 +7206,7 @@ Maybe<DateDurationRecord> BalanceDurationRelative(
+     // d. Let oneWeekDays be moveResult.[[Days]].
+     double one_week_days = move_result.days;
+     // e. Repeat, while abs(days) ≥ abs(oneWeekDays),
+-    while (std::abs(result.days) >= std::abs(one_week_days)) {
++    while (std::fabs(result.days) >= std::fabs(one_week_days)) {
+       // i. Set days to days - oneWeekDays.
+       result.days -= one_week_days;
+       // ii. Set weeks to weeks + sign.
+@@ -8033,16 +8034,16 @@ MaybeHandle<JSTemporalDuration> JSTemporalDuration::Abs(
+   // abs(duration.[[Seconds]]), abs(duration.[[Milliseconds]]),
+   // abs(duration.[[Microseconds]]), abs(duration.[[Nanoseconds]])).
+   return CreateTemporalDuration(
+-      isolate, {std::abs(Object::NumberValue(duration->years())),
+-                std::abs(Object::NumberValue(duration->months())),
+-                std::abs(Object::NumberValue(duration->weeks())),
+-                {std::abs(Object::NumberValue(duration->days())),
+-                 std::abs(Object::NumberValue(duration->hours())),
+-                 std::abs(Object::NumberValue(duration->minutes())),
+-                 std::abs(Object::NumberValue(duration->seconds())),
+-                 std::abs(Object::NumberValue(duration->milliseconds())),
+-                 std::abs(Object::NumberValue(duration->microseconds())),
+-                 std::abs(Object::NumberValue(duration->nanoseconds()))}});
++      isolate, {std::fabs(Object::NumberValue(duration->years())),
++                std::fabs(Object::NumberValue(duration->months())),
++                std::fabs(Object::NumberValue(duration->weeks())),
++                {std::fabs(Object::NumberValue(duration->days())),
++                 std::fabs(Object::NumberValue(duration->hours())),
++                 std::fabs(Object::NumberValue(duration->minutes())),
++                 std::fabs(Object::NumberValue(duration->seconds())),
++                 std::fabs(Object::NumberValue(duration->milliseconds())),
++                 std::fabs(Object::NumberValue(duration->microseconds())),
++                 std::fabs(Object::NumberValue(duration->nanoseconds()))}});
+ }
+ 
+ namespace {
+@@ -9069,7 +9070,7 @@ Maybe<DurationRecordWithRemainder> RoundDuration(Isolate* isolate,
+       // y. Let fractionalYears be years + days / abs(oneYearDays).
+       double fractional_years =
+           result.record.years +
+-          result.record.time_duration.days / std::abs(one_year_days);
++          result.record.time_duration.days / std::fabs(one_year_days);
+       // z. Set years to RoundNumberToIncrement(fractionalYears, increment,
+       // roundingMode).
+       result.record.years = RoundNumberToIncrement(isolate, fractional_years,
+@@ -9162,8 +9163,8 @@ Maybe<DurationRecordWithRemainder> RoundDuration(Isolate* isolate,
+       double one_month_days = move_result.days;
+ 
+       // n. Repeat, while abs(days) ≥ abs(oneMonthDays),
+-      while (std::abs(result.record.time_duration.days) >=
+-             std::abs(one_month_days)) {
++      while (std::fabs(result.record.time_duration.days) >=
++             std::fabs(one_month_days)) {
+         // i. Set months to months + sign.
+         result.record.months += sign;
+         // ii. Set days to days - oneMonthDays.
+@@ -9185,7 +9186,7 @@ Maybe<DurationRecordWithRemainder> RoundDuration(Isolate* isolate,
+       // o. Let fractionalMonths be months + days / abs(oneMonthDays).
+       double fractional_months =
+           result.record.months +
+-          result.record.time_duration.days / std::abs(one_month_days);
++          result.record.time_duration.days / std::fabs(one_month_days);
+       // p. Set months to RoundNumberToIncrement(fractionalMonths, increment,
+       // roundingMode).
+       result.record.months = RoundNumberToIncrement(isolate, fractional_months,
+@@ -9222,8 +9223,8 @@ Maybe<DurationRecordWithRemainder> RoundDuration(Isolate* isolate,
+       double one_week_days = move_result.days;
+ 
+       // f. Repeat, while abs(days) ≥ abs(oneWeekDays),
+-      while (std::abs(result.record.time_duration.days) >=
+-             std::abs(one_week_days)) {
++      while (std::fabs(result.record.time_duration.days) >=
++             std::fabs(one_week_days)) {
+         // i. Set weeks to weeks + sign.
+         result.record.weeks += sign;
+         // ii. Set days to days - oneWeekDays.
+@@ -9246,7 +9247,7 @@ Maybe<DurationRecordWithRemainder> RoundDuration(Isolate* isolate,
+       // g. Let fractionalWeeks be weeks + days / abs(oneWeekDays).
+       double fractional_weeks =
+           result.record.weeks +
+-          result.record.time_duration.days / std::abs(one_week_days);
++          result.record.time_duration.days / std::fabs(one_week_days);
+       // h. Set weeks to RoundNumberToIncrement(fractionalWeeks, increment,
+       // roundingMode).
+       result.record.weeks = RoundNumberToIncrement(isolate, fractional_weeks,
+diff --git a/src/objects/transitions-inl.h b/src/objects/transitions-inl.h
+index 727e378f..403cef0a 100644
+--- a/src/objects/transitions-inl.h
++++ b/src/objects/transitions-inl.h
+@@ -5,7 +5,6 @@
+ #ifndef V8_OBJECTS_TRANSITIONS_INL_H_
+ #define V8_OBJECTS_TRANSITIONS_INL_H_
+ 
+-#include <ranges>
+ #include <type_traits>
+ 
+ #include "src/objects/fixed-array-inl.h"
+@@ -288,11 +287,22 @@ int TransitionArray::BinarySearchName(Tagged<Name> name,
+ 
+   // Find the first index whose key's hash is greater-than-or-equal-to the
+   // search hash.
+-  int i = *std::ranges::lower_bound(std::views::iota(0, end), hash,
+-                                    std::less<>(), [&](int i) {
+-                                      Tagged<Name> entry = GetKey(i);
+-                                      return entry->hash();
+-                                    });
++  // PS4: OpenOrbis libc++ 11 has no <ranges>, so open-code
++  // lower_bound(iota(0, end), hash, less<>, GetKey(i)->hash()).
++  int i;
++  {
++    int lo = 0;
++    int hi = end;
++    while (lo < hi) {
++      int mid = lo + (hi - lo) / 2;
++      if (GetKey(mid)->hash() < hash) {
++        lo = mid + 1;
++      } else {
++        hi = mid;
++      }
++    }
++    i = lo;
++  }
+ 
+   // There may have been hash collisions, so search for the name from the first
+   // index until the first non-matching hash.

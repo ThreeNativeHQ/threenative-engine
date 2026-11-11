@@ -276,12 +276,15 @@ describe("CharacterBody3D", () => {
       character.moveAndSlide(1 / 60);
       plugin.update?.(ctx, 1 / 60);
     }
-    ctx.physics.kinematicMotion = () => ({ x: 1.5, y: 0, z: 0 });
+    // 18 m/s of floor. The character rests on its contact offset by now, and Rapier 0.19.3 answers
+    // a far longer step from exactly that distance with a tilted contact normal (a 1.5 m step
+    // lifted the body 238 mm; a body 1 mm inside the offset takes the same step level).
+    ctx.physics.kinematicMotion = () => ({ x: 0.3, y: 0, z: 0 });
     character.moveAndSlide(1 / 60);
     plugin.update?.(ctx, 1 / 60);
 
     expect(character.grounded).toBe(true);
-    expect(mesh.position.x).toBeGreaterThan(1.4);
+    expect(mesh.position.x).toBeGreaterThan(0.29);
     character.dispose();
   });
 
@@ -627,6 +630,180 @@ describe("CharacterBody3D", () => {
     expect(object.position.y).toBeGreaterThan(halfHeight + radius);
     expect(object.position.y).toBeLessThan(halfHeight + radius + 0.05);
     character.dispose();
+  });
+
+  it.each([60, 144])(
+    "holds a standing character still at %i steps a second, at spawn and after a walk",
+    async (rate) => {
+      const { ctx, plugin } = await setup();
+      // The minimal kit's player and floor: a 1.8 m capsule with autostep on a box collider. Rapier
+      // ends each gravity step with a 0.1 mm nudge, so the standing body alternated between two
+      // heights and crept sideways (220 poses in 600 steps). A walk left it up to 9 mm inside its
+      // contact offset, and it climbed back 0.1 mm a step for 1.5 s. A follow camera aimed at the
+      // body shimmered every edge on screen through both.
+      const ground = new RigidBody3D({
+        physics: ctx.physics,
+        position: { x: 0, y: -0.5, z: 0 },
+        shape: CollisionShape3D.box(200, 1, 200),
+        type: "fixed",
+      });
+      const object = new Group();
+      object.position.set(-2, 0.95, 0);
+      const character = new CharacterBody3D({
+        autostep: { maxHeight: 0.4, minWidth: 0.2 },
+        object,
+        physics: ctx.physics,
+        shape: CollisionShape3D.capsule(0.6, 0.3),
+      });
+      const tick = (speed = 0): void => {
+        character.velocity.x = speed;
+        character.moveAndSlide(1 / rate);
+        plugin.update?.(ctx, 1 / rate);
+      };
+      const expectStill = (label: string): void => {
+        const rest = object.position.toArray();
+        for (let step = 0; step < 10 * rate; step += 1) {
+          tick();
+          expect(character.grounded, `${label} step ${step}`).toBe(true);
+          expect(object.position.toArray(), `${label} step ${step}`).toEqual(rest);
+        }
+        // The capsule is 0.9 m from centre to sole and the contact offset is 0.01 m: it rests where
+        // the ground stops it, which is on the offset or inside it, and the object is the body.
+        expect(rest[1]).toBeGreaterThan(0.9);
+        expect(rest[1]).toBeLessThan(0.9105);
+        const body = (character.body.raw as RAPIER.RigidBody).translation();
+        expect([body.x, body.y, body.z]).toEqual(rest);
+      };
+      // One second to land from the spawn height, and 0.7 s to seat after the walk.
+      for (let step = 0; step < rate; step += 1) tick();
+      expectStill("after spawn");
+      for (let step = 0; step < 3 * rate; step += 1) tick(3);
+      // The walk is real travel: 3 m/s for 3 s.
+      expect(object.position.x).toBeGreaterThan(6.9);
+      for (let step = 0; step < 0.7 * rate; step += 1) tick();
+      expectStill("after a walk");
+      // A game that moves the object itself is obeyed: the body follows it.
+      object.position.x += 1;
+      tick();
+      expect(object.position.x).toBeGreaterThan(7.9);
+      character.dispose();
+      ground.dispose();
+    },
+  );
+
+  it("jumps the same height whichever step of the seating cycle it starts on", async () => {
+    // A hot reload re-creates the player: the seating cycle restarts and a jump can start between
+    // its steps. A lift is not shown, so a jump from the lifted solver pose rose 1 mm higher
+    // than the pose the player saw (hot-reload.spec.ts: peakRise 1.23387 against 1.23287).
+    const peakRise = async (standSteps: number): Promise<number> => {
+      const { ctx, plugin } = await setup();
+      new RigidBody3D({
+        physics: ctx.physics,
+        position: { x: 0, y: -0.5, z: 0 },
+        shape: CollisionShape3D.box(200, 1, 200),
+        type: "fixed",
+      });
+      const object = new Group();
+      object.position.set(0, 0.95, 0);
+      const character = new CharacterBody3D({
+        object,
+        physics: ctx.physics,
+        shape: CollisionShape3D.capsule(0.6, 0.3),
+      });
+      const tick = (): void => {
+        character.moveAndSlide(1 / 60);
+        plugin.update?.(ctx, 1 / 60);
+      };
+      for (let step = 0; step < standSteps; step += 1) tick();
+      expect(character.grounded, `grounded at ${standSteps}`).toBe(true);
+      const start = object.position.y;
+      character.velocity.y = 6;
+      let peak = start;
+      for (let step = 0; step < 90; step += 1) {
+        tick();
+        peak = Math.max(peak, object.position.y);
+      }
+      character.dispose();
+      return peak - start;
+    };
+    const rested = await peakRise(180);
+    expect(rested).toBeGreaterThan(1);
+    for (let standSteps = 6; standSteps < 60; standSteps += 1) {
+      expect(await peakRise(standSteps), `jump after ${standSteps} steps`).toBeCloseTo(rested, 5);
+    }
+  });
+
+  it("holds a weightless character still where it stopped, without seating it", async () => {
+    const { ctx, plugin } = await setup();
+    // Seating lifts a body 1 mm and lets its gravity step land it again. With no gravity nothing
+    // lands it: the body climbed 1 mm a cycle until the lift cap, 16 mm in all.
+    new RigidBody3D({
+      physics: ctx.physics,
+      position: { x: 0, y: -0.1, z: 0 },
+      shape: CollisionShape3D.box(20, 0.2, 20),
+      type: "fixed",
+    });
+    const object = new Group();
+    object.position.y = 0.5;
+    const character = new CharacterBody3D({
+      gravity: 0,
+      object,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+    const tick = (speed: number): void => {
+      character.velocity.set(speed, 0, 0);
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    };
+    for (let step = 0; step < 30; step += 1) tick(1);
+    tick(0);
+    const stopped = object.position.toArray();
+    for (let step = 0; step < 60; step += 1) {
+      tick(0);
+      expect(object.position.toArray(), `step ${step}`).toEqual(stopped);
+    }
+    character.dispose();
+  });
+
+  it("keeps a standing character on a dynamic body that sinks under it", async () => {
+    const { ctx, plugin } = await setup();
+    // A resting character sends no travel, so it would hang in the air over ground that moves with
+    // no notice. On a dynamic body it keeps its gravity step.
+    const raft = new Mesh(new BoxGeometry(4, 0.2, 4));
+    raft.position.set(0, -0.1, 0);
+    const ground = new RigidBody3D({
+      object: raft,
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(4, 0.2, 4),
+      type: "dynamic",
+    });
+    const object = new Group();
+    object.position.set(0, 0.52, 0);
+    const character = new CharacterBody3D({
+      object,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+    const tick = (sink: number): void => {
+      ground.linearVelocity = { x: 0, y: sink, z: 0 };
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    };
+    for (let step = 0; step < 90; step += 1) tick(0);
+    expect(character.grounded).toBe(true);
+    const gap = object.position.y - raft.position.y;
+    // 6 cm/s down for two seconds: 1 mm a step, which the 2.7 mm gravity step follows.
+    for (let step = 0; step < 120; step += 1) {
+      tick(-0.06);
+      expect(character.grounded, `step ${step}`).toBe(true);
+      expect(Math.abs(object.position.y - raft.position.y - gap), `step ${step}`).toBeLessThan(
+        0.005,
+      );
+    }
+    expect(raft.position.y).toBeLessThan(-0.2);
+    character.dispose();
+    ground.dispose();
   });
 
   it("should throw when teleported after dispose", async () => {

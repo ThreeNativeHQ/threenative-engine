@@ -38,10 +38,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Browser, Page } from "@playwright/test";
+import { waitForServer } from "../lib/dev-server.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { patchGi } from "./capture-gi-threenative.js";
-import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
+import { HIDE_UI, freePort, scaffold } from "./capture-threenative.js";
 import { familyOf, readScene, registry, sceneNames } from "./gi.js";
 
 interface IWindow {
@@ -530,7 +531,7 @@ export async function main(args: readonly string[]): Promise<number> {
   let report: Record<string, Record<string, unknown>> = {};
   try {
     const origin = `http://127.0.0.1:${port}/`;
-    await waitForServer(origin, server);
+    await waitForServer({ child: server, label: "GI tier server", url: origin });
     const browser = await launchWebgpuBrowser();
     try {
       report = await measureAll(browser, origin, name, pose, args);

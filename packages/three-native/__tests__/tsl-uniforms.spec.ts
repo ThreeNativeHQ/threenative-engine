@@ -520,3 +520,126 @@ describe("uniform sync cost", () => {
     expect(pushed.at(-1)).toEqual([6, 1]);
   });
 });
+
+describe("one uniform crossing a sync (PRD-828)", () => {
+  /** A back end with the batched sink: every crossing is recorded, single or batched. */
+  function batched() {
+    const single: number[][] = [];
+    const batches: { counts: number[]; lanes: number[] }[] = [];
+    const live = liveUniforms<IFakeNode>(
+      () => ({}),
+      (_node, lanes) => {
+        single.push([...lanes]);
+      },
+      (_nodes, counts, lanes) => {
+        batches.push({ counts: [...counts], lanes: [...lanes] });
+      },
+    );
+    return { live, single, batches };
+  }
+
+  it("crosses once for every uniform a sync changed", () => {
+    // The debug census counts each engine crossing a write makes.
+    const host = globalThis as {
+      __THREENATIVE_DEBUG__?: boolean;
+      __tnEngineCost?: Record<string, number>;
+    };
+    host.__THREENATIVE_DEBUG__ = true;
+    host.__tnEngineCost = {};
+    const { live, single, batches } = batched();
+    host.__THREENATIVE_DEBUG__ = undefined;
+    let gain = 1;
+    for (let i = 0; i < 3; i++) live.uniform(0).onRenderUpdate?.(() => gain + i);
+    const tint = { r: 0, g: 0, b: 0 };
+    live.uniform(tint);
+    live.sync({ frameId: 1 });
+    gain = 10;
+    tint.g = 0.5;
+    batches.length = 0;
+    single.length = 0;
+    const before = host.__tnEngineCost.uniformWriteCrossings ?? 0;
+    live.sync({ frameId: 2 });
+    expect(single).toEqual([]);
+    expect(batches).toEqual([{ counts: [1, 1, 1, 3], lanes: [10, 11, 12, 0, 0.5, 0] }]);
+    expect((host.__tnEngineCost.uniformWriteCrossings ?? 0) - before).toBe(1);
+    host.__tnEngineCost = undefined;
+  });
+
+  it("delivers an edit made between two renders of one frame to the second", () => {
+    const { live, batches } = batched();
+    const tint = { r: 0, g: 0, b: 0 };
+    let renders = 0;
+    live.uniform(tint);
+    live.uniform(0).onRenderUpdate?.(() => ++renders);
+    live.sync({ frameId: 3 });
+    tint.r = 0.25; // FluidVolume edits uniforms between its passes
+    live.sync({ frameId: 3 });
+    expect(renders).toBe(2);
+    expect(batches.at(-1)).toEqual({ counts: [1, 3], lanes: [2, 0.25, 0, 0] });
+  });
+
+  it("crosses nothing on a nested render that changed nothing, and runs frame hooks once a frame", () => {
+    const { live, single, batches } = batched();
+    type Hooked = IFakeNode & { onFrameUpdate(callback: () => unknown): void };
+    let frames = 0;
+    (live.uniform(0) as Hooked).onFrameUpdate(() => ++frames);
+    live.uniform({ x: 1, y: 2 });
+    live.sync({ frameId: 4 });
+    const crossings = batches.length + single.length;
+    for (let pass = 0; pass < 10; pass++) live.sync({ frameId: 4 });
+    expect(batches.length + single.length).toBe(crossings);
+    // A frame hook registered between two renders of a frame still runs in the second.
+    let late = 0;
+    (live.uniform(0) as Hooked).onFrameUpdate(() => ++late);
+    live.sync({ frameId: 4 });
+    live.sync({ frameId: 4 });
+    expect([frames, late]).toEqual([1, 1]);
+  });
+
+  it("writes a failed batch again at the next sync", () => {
+    let fail = true;
+    const batches: number[][] = [];
+    const live = liveUniforms<IFakeNode>(
+      () => ({}),
+      () => {},
+      (_nodes, _counts, lanes) => {
+        batches.push([...lanes]);
+        if (fail) throw new Error("TN_TSL_SINK: transient");
+      },
+    );
+    live.uniform({ x: 1, y: 2 });
+    expect(() => live.sync()).toThrow("TN_TSL_SINK: transient");
+    fail = false;
+    live.sync();
+    expect(batches).toEqual([
+      [1, 2],
+      [1, 2],
+    ]);
+  });
+});
+
+// prd249's splat loop reads `uniformArray(values).element(i)` at the loop's node index (PRD-854).
+describe("uniformArray at a node index", () => {
+  it("selects among the constant elements with the index node", () => {
+    const made: string[] = [];
+    const node = (label: string) => ({
+      label,
+      onRenderUpdate: () => node(label),
+      equal: (k: number) => ({
+        select: (a: { label: string }, b: { label: string }) => {
+          made.push(`${label}==${k}?${a.label}:${b.label}`);
+          return node(`(${label}==${k}?${a.label}:${b.label})`);
+        },
+      }),
+    });
+    let serial = 0;
+    const live = liveUniforms<ReturnType<typeof node>>(
+      () => node(`u${serial++}`),
+      () => {},
+    );
+    const picked = live.uniformArray([1, 2, 3]).element(node("i")) as unknown as { label: string };
+    expect(picked.label).toBe("(i==0?u2:(i==1?u1:u0))");
+    expect(made).toHaveLength(2);
+    expect(() => live.uniformArray([1]).element(1.5)).toThrow(/TN_TSL_UNIFORM_ARRAY/u);
+  });
+});

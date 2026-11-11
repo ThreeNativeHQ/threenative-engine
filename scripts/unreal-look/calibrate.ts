@@ -35,6 +35,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { runAsync } from "../lib/exec.js";
 import {
   GI_LAYER,
   type IArmRef,
@@ -770,20 +771,12 @@ export async function main(
 const git = (...args: string[]) =>
   execFileSync("git", ["-C", REPO_ROOT, ...args], { encoding: "utf8", maxBuffer: 1 << 28 }).trim();
 
+/** The shared runner, with this harness's own code and working directory. */
 function run(command: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: REPO_ROOT, stdio: "inherit" });
-    child.once("error", reject);
-    child.once("exit", (code) =>
-      code === 0
-        ? resolve()
-        : reject(
-            new Error(
-              `TN_UNREAL_LOOK_CALIBRATE_COMMAND: ${command} ${args.slice(0, 3).join(" ")} exited ${code}`,
-            ),
-          ),
-    );
-  });
+  return runAsync(command, args, {
+    code: "TN_UNREAL_LOOK_CALIBRATE_COMMAND",
+    cwd: REPO_ROOT,
+  }).then(() => undefined);
 }
 
 function defaultDeps(): IDeps {

@@ -31,7 +31,6 @@ import {
 } from "@threenative/core";
 import { exposureSettings } from "./exposure.js";
 export type { QualityTier } from "@threenative/core";
-import type { QualityTier } from "@threenative/core";
 
 /**
  * The three names this game's look comes in.
@@ -98,34 +97,10 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
 }
 
 /** First admitted material lane: high desktop hardware WebGPU in the browser only. */
-export interface IMaterialLightingEnvironment {
-  readonly web: boolean;
-  readonly rendererKind: string;
-  readonly mobile?: boolean;
-  readonly software?: boolean;
-  readonly webglFallback?: boolean;
-}
-export function materialLightingEnabled(
-  tier: QualityTier,
-  environment: IMaterialLightingEnvironment,
-): boolean {
-  return (
-    tier === "high" &&
-    environment.web &&
-    environment.rendererKind === "webgpu" &&
-    environment.mobile !== true &&
-    environment.software !== true &&
-    environment.webglFallback !== true
-  );
-}
-
-/** A WebGPURenderer wrapper may run an ordinary WebGL fallback backend. */
-export function isWebGLFallbackRenderer(renderer: unknown): boolean {
-  if (renderer === null || typeof renderer !== "object") return false;
-  const backend = Reflect.get(renderer, "backend");
-  return (
-    backend !== null &&
-    typeof backend === "object" &&
-    Reflect.get(backend, "isWebGLBackend") === true
-  );
-}
+// The material lane's admission rule and the WebGL-fallback probe are the engine's: twelve kits
+// held a copy each, so a fix to one left eleven admitting what it refused.
+export {
+  type IMaterialLightingEnvironment,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "@threenative/core/render/environment";

@@ -22,6 +22,7 @@
  */
 
 import { debugRequested } from "./debug-telemetry.js";
+import { CONSOLE_MARKER } from "./generated/console-markers.js";
 
 export const BRIDGE_WARNING_MARKER = "TN_BRIDGE_WARNING";
 /**
@@ -34,7 +35,12 @@ export const BRIDGE_WARNING_MARKER = "TN_BRIDGE_WARNING";
  * crossed. The counters themselves ride TN_FRAME_BUDGET.counters.engine.
  */
 export const ENGINE_COST_KNOB = "__THREENATIVE_ENGINE_COST__";
-export const BRIDGE_CENSUS_MARKER = "TN_BRIDGE_CENSUS";
+export const BRIDGE_CENSUS_MARKER = CONSOLE_MARKER.bridgeCensus;
+/**
+ * How many crossing classes one census line names. Ten is what a measurement sweep reads: the top five
+ * of a scene usually share one caller, and a lever that moves the sixth is invisible at five (PRD-828).
+ */
+export const CENSUS_TOP = 10;
 
 export const PLAYTEST_OBSERVING_GLOBAL = "__tnPlaytestObserving";
 
@@ -112,6 +118,21 @@ export function callerOf(stack: string | undefined): string {
   );
 }
 
+/**
+ * The busiest crossing classes of one census frame, highest first. The first tie keeps the order the
+ * crossings were first seen in, so two runs of the same frame print the same list.
+ */
+export function topCrossings(
+  byName: ReadonlyMap<string, number>,
+  callers: ReadonlyMap<string, string>,
+  limit: number,
+): { name: string; perFrame: number; caller: string }[] {
+  return [...byName]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name, perFrame]) => ({ name, perFrame, caller: callers.get(name) ?? "unknown" }));
+}
+
 export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
   let frames = 0;
   let last: number | undefined;
@@ -139,14 +160,7 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
     if (done.printed) {
       let crossed = 0;
       for (const count of done.byName.values()) crossed += count;
-      const top = [...done.byName]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, perFrame]) => ({
-          name,
-          perFrame,
-          caller: done.callers.get(name) ?? "unknown",
-        }));
+      const top = topCrossings(done.byName, done.callers, CENSUS_TOP);
       // The debug path's own observation: what every crossing of the frame cost, at this host's
       // calibration. It is not a warning — a game with no repeated read has nothing to fix — so it
       // rides the census a debug run or a playtest bound already asks for.

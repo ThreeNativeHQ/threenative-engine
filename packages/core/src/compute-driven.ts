@@ -113,7 +113,7 @@ export class ComputeDrivenRegistry {
   ): void {
     const simulatedSeconds =
       simulation === undefined ? undefined : simulation.tick() * simulation.step;
-    if (camera !== undefined) {
+    if (camera !== undefined && !this.#significance.idle) {
       const candidates: IBudgetCandidate[] = [];
       for (const { object, driven } of this.#entries.values()) {
         if (

@@ -1,12 +1,15 @@
 /**
  * The version this library reports.
  *
- * It read `0.1.0` while the package published `0.2.0`, and `__tests__/build.spec.ts` asserted the
- * stale literal, so the test held the bug in place rather than catching it. A literal is
- * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
- * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
+ * `version.ts` is the one owner, generated from `package.json` at build time. Declared here rather
+ * than re-exported under another name: the native engine's bundler reads this barrel for the
+ * bindings a game may import, and `export { CORE_VERSION as version } from …` gave it a name the
+ * module does not export, refusing every game that stamps the version into its HUD
+ * (`TN_NATIVE_ENGINE_UNBOUND`).
  */
-export const version = "0.3.12";
+import { CORE_VERSION } from "./version.js";
+
+export const version = CORE_VERSION;
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -144,16 +147,48 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @situation free the disk cache from a settings menu
  * @situation prefetch assets into the Cache Storage disk cache of a large web game
  * @situation load assets from a nonstandard base path or a compiled asset manifest
+ * @situation stream a large game: boot on the spawn bytes and prefetch the rest
+ * @situation make the first scene play before the whole game finishes downloading
+ * @situation draw a heavy model's coarsest level first and its full detail when the file lands
+ * @situation draw a model's textures at their resident mips first and the whole files later
  * @alias different area props
+ * @situation coarse first model streaming
+ * @situation streamMeshes and streamTextures: stream the meshes and textures of a model
+ * @situation mip streaming textures
+ * @situation TN_STREAMING_POOL
+ * @situation TN_ASSET_LATE
  * @alias first playable screen external assets
+ * @situation an asset pops in after the reveal and the game needs to count it
+ * @situation a model texture looks blurry or low resolution right after load, then sharpens
+ * @situation build a collider or navmesh from a streamed model only once its full file landed
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
  * @constraint await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world
+ * @constraint a whole-file load requested after the reveal that the game had not `prefetch`ed logs one `TN_ASSET_LATE` line with its bytes, so a pop-in is countable from a playtest
  * @constraint web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once
+ * @constraint streaming is engine-owned and on by default: a cooked LOD-chained model loads its `.coarse.<digest>.glb` companion first, then the full file at "soon" priority, and the full geometry replaces the coarse in place (clones and the projection mirror included); a failed coarse load falls back to the whole file and logs `TN_ASSETS_STREAM_FAILED`
+ * @constraint texture streaming rides on the coarse parse: each shared `.ktx2` of that model is read by `Range` as its resident mips (the header and the tail), and the whole files replace them when the full model lands; a host without `Range` sends the whole file and keeps it whole. `TN_STREAMING_POOL` reports `files`, `residentBytes`, `fullBytes`, `deferredBytes` and `upgraded` once, two seconds after the last change
  * @override `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
+ * @constraint the whole texture keeps what the game set on the resident one (`anisotropy`, wrap, filters, offset, repeat, `userData`), so the swap changes the mips and nothing else
+ * @override `ctx.assets.model(path, { whole: true })` resolves only once the full file has replaced the coarse companion, for a collider or navmesh that copies vertices once
+ * @override `assets.streamMeshes: false` loads every model whole (reported once as `TN_ASSETS_STREAM_MESHES_OFF`); `assets.streamTextures: false` loads every model texture whole (`TN_ASSETS_STREAM_TEXTURES_OFF`)
+ * @situation compressed texture upload on the owned engine (KTX2 to BC7 or ETC2 on the GPU)
+ * @situation load a model with KHR_texture_basisu or EXT_meshopt_compression on the owned engine
+ * @situation stream a finer mip level into a CompressedTexture that already draws
+ * @situation KTX2Loader on the owned engine
+ * @situation CompressedTexture upload
+ * @situation TN_TEXTURE_TRANSCODE_TARGET
+ * @situation TN_NATIVE_TEXTURE_UNSUPPORTED
+ * @situation webRuntimeDecoders meshopt ktx2
+ * @constraint every web build cooks meshopt geometry and KTX2 textures for both engines (`webRuntimeDecoders` in create-threenative answers `{ ktx2: true, meshopt: true }`); the owned engine's glTF loader decodes both itself, with no JS decoder
+ * @constraint the owned engine transcodes a KTX2 image to BC7 on a device with `texture-compression-bc`, else ETC2, else RGBA8 with an engine mip chain, and prints `TN_TEXTURE_TRANSCODE_TARGET <target>` once; a block format needs a width and height that are multiples of 4, so any other size stays RGBA8 and the same line names it
+ * @constraint a three `CompressedTexture` (format plus `mipmaps`) uploads one GPU write per level; a block format the device lacks throws `TN_NATIVE_TEXTURE_UNSUPPORTED` by name instead of drawing garbage
+ * @constraint levels are coarse-first: a level whose `mipmaps[i].data` is null is not resident and the texture samples its finest resident level; set `mipmaps[i].data` and `needsUpdate = true` to write that one finer level in place, without re-creating the texture or rewriting the other levels
+ * @override `engine: "threejs"` runs three's own `KTX2Loader` and `MeshoptDecoder` in JS instead of the owned engine's decoders
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
  */
-export { createAssetLoader } from "./assets.js";
+export { ASSET_LATE_MARKER, createAssetLoader } from "./assets.js";
+export { fetchAsset } from "./assets.js";
 export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
@@ -414,7 +449,7 @@ export { mergeByMaterial } from "./merge-parts.js";
 export type { IMergeByMaterialOptions } from "./merge-parts.js";
 /**
  * Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.
- * @situation read a debug toggle from the URL or an environment variable
+ * @situation read a debug toggle from the URL, an environment variable or a harness global
  * @constraint a name in camelCase becomes UPPER_SNAKE: `debugFlag("freeCam")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`
  * @constraint `0` and `false` are off, so a saved URL cannot turn a switch back on
  * @example import { debugFlag } from "@threenative/core";
@@ -430,6 +465,20 @@ export { debugFlag } from "./debug.js";
  * // then from the console: __THREENATIVE__.debug.player
  */
 export { exposeDebug } from "./debug.js";
+/**
+ * The one name every dev surface publishes under, and the reader/writer for it.
+ * @situation read or extend the `__THREENATIVE__` object a dev launch publishes
+ * @constraint every dev surface publishes under this key; the worker's typed mirror tuple names it too
+ * @example import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
+ * const tools = devGlobal(globalThis);
+ */
+export {
+  DEV_GLOBAL_KEY,
+  type DevGlobal,
+  type IDevTools,
+  devGlobal,
+  publishDevGlobal,
+} from "./dev-global.js";
 /**
  * Draw a model too detailed for the screen to resolve, without submitting the part it cannot.
  *
@@ -536,6 +585,19 @@ export {
  * @example const geometry = baseGeometryOf(mesh);
  */
 export { baseGeometryOf } from "./model-lod.js";
+/**
+ * True while a geometry is the coarse companion a streamed model draws first (PRD-860), before its
+ * full file replaces it in place. A caller that copies vertices (a trimesh collider, a navmesh bake,
+ * a merge) waits with `ctx.assets.model(path, { whole: true })` instead of copying the coarse ones.
+ *
+ * @situation collider or navmesh built from a model is coarser than what is drawn
+ * @situation wait for the full model before copying its vertices
+ * @situation whole model before collision
+ * @situation TN_COLLIDER_COARSE
+ * @constraint `CollisionShape3D.fromMesh` with "trimesh" or "convexHull" on a streamed geometry warns `TN_COLLIDER_COARSE` naming the mesh and the `{ whole: true }` override, and still builds
+ * @example const coarse = isStreamedGeometry(mesh.geometry);
+ */
+export { isStreamedGeometry } from "./model-lod.js";
 /**
  * The cooked automatic LOD chain (`TN_discrete_lod`) a loaded geometry carries, or `undefined`.
  *
@@ -1041,6 +1103,26 @@ export {
   PROBE_VOLUME_MARKER,
   ProbeVolume,
 } from "./render/probe-volume.js";
+/**
+ * A probe field of diffuse irradiance that refreshes by tracing the packed scene, with no scene draw: the
+ * radiance cache of a dynamic global-illumination pass. Probes in view refresh first, oldest first, within
+ * `numProbesToTraceBudget` a frame; a lamp toggled in game code or a sun that steps more than one degree
+ * re-traces them while the old values keep lighting the frame.
+ * @situation light follows a lamp that switches on and off in a room
+ * @situation bounce light that updates when the sun moves, with no baked lightmap
+ * @situation global illumination that refreshes fast enough to read as dynamic
+ * @alias lumen radiance cache
+ * @alias radiance cache
+ * @alias irradiance field
+ * @alias dynamic probe gi
+ * @constraint build a GPUSceneBVH of the static meshes first and pass it as trace.bvh; the cache reads colour and emissive from each material, a texture or a node is counted as ignored
+ * @constraint add the cache with ctx.add() so its refresh is measured in the render phase, and read it with sampleNode(position, normal) from a game-owned material
+ * @constraint a one-sided material is not seen from behind, as a cube capture would not draw it
+ * @override numProbesToTraceBudget (100), probeResolution (8, so 64 rays a probe; 32 for a small emitter), bounds, density, bounces and the sun and sky values are game-owned
+ * @example const bvh = new GPUSceneBVH(ctx.scene); ctx.add(bvh); const cache = new RadianceCache({ bounds, density: 0.5, trace: { bvh, sun, sky, camera: ctx.camera } }); ctx.add(cache);
+ */
+export { RadianceCache } from "./render/radiance-cache.js";
+export type { IRadianceCacheOptions } from "./render/radiance-cache.js";
 /**
  * The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas
  * (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat
@@ -1657,9 +1739,19 @@ export type {
  * @constraint image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
  * @constraint a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
  * @constraint when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
+ * @situation show gamepad prompts and bind pad buttons on a games console such as the PS4
  * @example if (isMobile()) showTouchControls();
+ * @example if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
  */
-export { getPlatform, isMobile, isNative, isTouchscreenAvailable, isWeb } from "./platform.js";
+export {
+  getPlatform,
+  isConsole,
+  isMobile,
+  isNative,
+  isPs4,
+  isTouchscreenAvailable,
+  isWeb,
+} from "./platform.js";
 export type {
   IPlatformInfo,
   PlatformFormFactor,

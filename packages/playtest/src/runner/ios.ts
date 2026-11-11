@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
-import type { IDevicePlaytestDriver } from "./androidRunner.js";
+import type { IDevicePlaytestDriver } from "./deviceRunner.js";
 
 const execFileAsync = promisify(execFile);
 

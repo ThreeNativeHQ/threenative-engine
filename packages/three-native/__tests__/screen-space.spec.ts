@@ -196,18 +196,59 @@ describe("defineScreenSpaceGi", () => {
     }
   });
 
-  it("asks the fallback tier once per pixel, with a position and a normal", () => {
+  it("asks the fallback tier along each ray that hits, as Lumen samples its radiance cache per ray direction", () => {
+    // A hit replaces what the cache holds along that ray, not the cache's mean over the hemisphere: rays into a dark
+    // corner find dark walls while the bright directions leave the screen, and a mean turns every hit into a loss.
     const { tsl } = stubTsl();
-    const calls: unknown[][] = [];
+    let depth = 0;
+    const loop = tsl.Loop as unknown as (
+      options: unknown,
+      body: (indices: { i: unknown }) => void,
+    ) => void;
+    (tsl as unknown as Record<string, unknown>).Loop = (
+      options: unknown,
+      body: (indices: { i: unknown }) => void,
+    ) => {
+      depth += 1;
+      loop(options, body);
+      depth -= 1;
+    };
+    const calls: { inRayLoop: boolean; args: unknown[] }[] = [];
     defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
       camera,
-      fallback: (position, normal) => {
-        calls.push([position, normal]);
+      fallback: (position, direction) => {
+        calls.push({ inRayLoop: depth > 0, args: [position, direction] });
         return chain();
       },
     });
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.every((node) => node !== undefined)).toBe(true);
+    expect(calls[0]?.inRayLoop).toBe(true);
+    expect(calls[0]?.args.every((node) => node !== undefined)).toBe(true);
+  });
+
+  it("hands the fallback tier the receiver's normal as well as the ray, in both gathers", () => {
+    // A cache read along a ray must still be taken from the receiver's side of its surface. Offset along the ray
+    // instead, a corner's reads land half a cell inside the next wall, and `hit - cache` draws a black line there.
+    for (const probes of [
+      undefined,
+      { downsampleFactor: 16, viewport: { width: 1280, height: 720 } },
+    ]) {
+      const { tsl } = stubTsl();
+      const calls: unknown[][] = [];
+      defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+        camera,
+        fallback: (...args: unknown[]) => {
+          calls.push(args);
+          return chain();
+        },
+        ...(probes === undefined ? {} : { probes }),
+      });
+      expect(calls.length).toBeGreaterThan(0);
+      for (const args of calls) {
+        expect(args).toHaveLength(3);
+        expect(args.every((node) => node !== undefined)).toBe(true);
+      }
+    }
   });
 
   describe("with screen probes", () => {
@@ -246,18 +287,24 @@ describe("defineScreenSpaceGi", () => {
       expect(sizes[0]).toEqual([960, 544]);
     });
 
-    it("asks the fallback tier once per ray, and refuses a grid it cannot build", () => {
+    it("asks the fallback tier in the trace pass, along each ray, and refuses a grid it cannot build", () => {
       const { tsl } = stubTsl();
-      let calls = 0;
+      let passes = 0;
+      (tsl as unknown as Record<string, unknown>).rtt = () => {
+        passes += 1;
+        return chain();
+      };
+      const askedIn: number[] = [];
       defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
         camera,
         fallback: () => {
-          calls += 1;
+          askedIn.push(passes);
           return chain();
         },
         probes: { downsampleFactor: 16, viewport },
       });
-      expect(calls).toBe(1);
+      // Pass 0 is the trace: each ray texel subtracts the cache along its own direction before the filter mixes rays.
+      expect(askedIn).toEqual([0]);
       for (const probes of [
         { downsampleFactor: 0, viewport },
         { downsampleFactor: 16, viewport: { width: 0, height: 720 } },
@@ -382,5 +429,24 @@ describe("the gather's occlusion", () => {
     });
     expect(gathers).toHaveLength(3);
     expect(dependenciesOf(node.getAONode()).has(gathers[2])).toBe(true);
+  });
+
+  // With a cache tier below, a ray that hits already returns `hit - cache`: the frame keeps the cache along that ray
+  // and the gather swaps it for what the ray found. Multiplying the frame by the hit share too removed that light a
+  // second time, and the direct light with it (cornell corner floor 61 against Unreal's 98, 2026-11-06).
+  it("answers no occlusion over a fallback tier, for both gathers, since each hit already replaced the cache", () => {
+    for (const probes of [
+      undefined,
+      { downsampleFactor: 16, viewport: { width: 1280, height: 720 } },
+    ]) {
+      const { tsl, gathers } = upstreamTable();
+      const node = defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+        camera,
+        fallback: () => upstreamTsl.vec3(0.2),
+        ...(probes === undefined ? {} : { probes }),
+      });
+      for (const gather of gathers)
+        expect(dependenciesOf(node.getAONode()).has(gather)).toBe(false);
+    }
   });
 });

@@ -16,6 +16,7 @@ import {
   WASM_THREADS_ENTRY,
   WEB_ENGINE_ID,
   createWebEnginePlugin,
+  esmEntry,
   webRuntimeDecoders,
 } from "../src/web-engine.js";
 
@@ -99,6 +100,34 @@ async function bundle(
   );
 }
 
+describe("esmEntry", () => {
+  it("loads three's ESM build, not three.cjs, which prints THREE_CJS_DEPRECATED", async () => {
+    const root = await makeTempDir("tn-esm-entry-");
+    roots.push(root);
+    const pkg = path.join(root, "node_modules", "three");
+    await mkdir(path.join(pkg, "build"), { recursive: true });
+    await writeFile(
+      path.join(pkg, "package.json"),
+      JSON.stringify({
+        exports: {
+          ".": { import: "./build/three.module.js", require: "./build/three.cjs" },
+          "./webgpu": "./build/three.webgpu.js",
+        },
+        name: "three",
+      }),
+    );
+    for (const file of ["three.cjs", "three.module.js", "three.webgpu.js"])
+      await writeFile(path.join(pkg, "build", file), "");
+    await writeFile(path.join(root, "package.json"), "{}");
+    const require = createRequire(path.join(root, "package.json"));
+    expect(require.resolve("three")).toBe(path.join(pkg, "build", "three.cjs"));
+    expect(esmEntry(require.resolve("three"))).toBe(path.join(pkg, "build", "three.module.js"));
+    expect(esmEntry(require.resolve("three/webgpu"))).toBe(
+      path.join(pkg, "build", "three.webgpu.js"),
+    );
+  });
+});
+
 describe("createWebEnginePlugin", () => {
   it("uses config alone for Vite build and dev", async () => {
     const root = await project(true);
@@ -111,6 +140,18 @@ describe("createWebEnginePlugin", () => {
     const output = await bundle(root, false, true);
     expect(output).toContain("is not available on the Wasm engine");
     expect(output).not.toContain(UPSTREAM_OBJECT3D);
+    // A host that sends no COOP/COEP headers (itch.io, GitHub Pages, a plain static server) still
+    // starts the engine with threads: the build ships a worker that adds them, registered before
+    // the game module runs. The legacy build below ships neither.
+    const worker = await readFile(path.join(root, "dist/tn-isolation-sw.js"), "utf8");
+    expect(worker).toContain('headers.set("Cross-Origin-Embedder-Policy", "require-corp")');
+    expect(worker).toContain('headers.set("Cross-Origin-Opener-Policy", "same-origin")');
+    const html = await readFile(path.join(root, "dist/index.html"), "utf8");
+    expect(html.indexOf('register("tn-isolation-sw.js")')).toBeGreaterThan(-1);
+    expect(html.indexOf('register("tn-isolation-sw.js")')).toBeLessThan(
+      html.indexOf('type="module"'),
+    );
+    expect(output).toContain("await globalThis.__tnIsolation;");
     const server = await createServer({
       root,
       configFile: false,
@@ -168,6 +209,7 @@ describe("createWebEnginePlugin", () => {
       "web-engine-mesh-bvh-webgpu",
       "web-engine-buffer-geometry-utils",
       "web-engine-decal-geometry",
+      "web-engine-ccd-ik-solver",
       "web-engine-hdr-loader",
       "web-engine-lut-cube-loader",
       "web-engine-gltf-loader",
@@ -210,7 +252,7 @@ describe("createWebEnginePlugin", () => {
     await expect(transform(source ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
   });
 
-  it("loads only the threaded engine, and refuses a page or a pool without worker threads", async () => {
+  it("refuses a page or a pool without worker threads everywhere but a Vite build", async () => {
     const root = await project(false);
     const wasm = path.join(root, "engine/tn-native-engine-web.mjs");
     await mkdir(path.dirname(wasm), { recursive: true });
@@ -225,6 +267,21 @@ describe("createWebEnginePlugin", () => {
     expect(loaded).not.toContain(`import(${JSON.stringify(wasm)})`);
     expect(loaded).toContain("globalThis.crossOriginIsolated !== true");
     expect(loaded).toContain("TN_WEB_THREADS_OFF: the engine's job pool started no worker thread");
+    // A shipped game loads anyway (owner, 2026-11-08): no isolation means the single-thread engine and
+    // a warning that names the fix, never a refusal.
+    const vite = createWebEnginePlugin({ engine: "threenative", wasm });
+    vite.configResolved({ root, command: "build" });
+    const shipped = (await vite.load(WEB_ENGINE_ID)) ?? "";
+    expect(shipped).toContain(`? await import(${JSON.stringify(threads)})`);
+    expect(shipped).toContain(`: await import(${JSON.stringify(wasm)})`);
+    expect(shipped).toContain(
+      "console.warn(`TN_WEB_THREADS_OFF: the engine runs without worker threads",
+    );
+    expect(shipped).toContain('on itch.io enable "SharedArrayBuffer support"');
+    expect(shipped).not.toContain("throw new Error");
+    const dev = createWebEnginePlugin({ engine: "threenative", wasm });
+    dev.configResolved({ root, command: "serve" });
+    expect(await dev.load(WEB_ENGINE_ID)).toContain("throw new Error");
   });
 
   it("loads the Wasm engine from an explicit module path when one is given", async () => {
@@ -320,6 +377,15 @@ describe("createWebEnginePlugin", () => {
     );
     expect(resolved).toMatch(
       /(?:three-native\/src\/addons\/decal-geometry\.ts|web-engine-decal-geometry\.js)$/u,
+    );
+  });
+
+  it("resolves CCDIKSolver to the engine port, never the upstream addon", () => {
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
+      "three/addons/animation/CCDIKSolver.js",
+    );
+    expect(resolved).toMatch(
+      /(?:three-native\/src\/addons\/ccd-ik-solver\.ts|web-engine-ccd-ik-solver\.js)$/u,
     );
   });
 
@@ -430,10 +496,12 @@ describe("createWebEnginePlugin", () => {
 });
 
 describe("the web engine's asset decoders", () => {
-  it("cooks without KTX2 or Meshopt unless the game pins the legacy engine", () => {
-    expect(webRuntimeDecoders({})).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "threejs" })).toEqual({ ktx2: true, meshopt: true });
+  it("cooks meshopt and KTX2 on both engines", () => {
+    // PRD-867: the owned engine uploads BC7 or ETC2 blocks, and its KTX2 cook is the smaller one.
+    const both = { ktx2: true, meshopt: true };
+    expect(webRuntimeDecoders({})).toEqual(both);
+    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual(both);
+    expect(webRuntimeDecoders({ engine: "threejs" })).toEqual(both);
   });
 
   it("is what every template's dev-server asset watch cooks with, as its build does", async () => {

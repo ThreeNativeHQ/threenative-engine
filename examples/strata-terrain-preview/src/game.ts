@@ -2,11 +2,13 @@ import {
   type IGamePluginRuntime,
   Scene,
   VirtualShadowNode,
+  addInSlices,
+  debugFlag,
   defineGame,
   markStatic,
 } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { Heightfield } from "@threenative/core/world";
+import { Heightfield, warmUnculled } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D, rapier } from "@threenative/physics";
 import {
   type AnimationClip,
@@ -15,8 +17,11 @@ import {
   MeshStandardMaterial,
   OrthographicCamera,
   type PerspectiveCamera,
+  Vector2,
   Vector3,
 } from "three";
+import { uniform } from "three/tsl";
+import type { MeshStandardNodeMaterial } from "three/webgpu";
 import {
   beginScene,
   createMeasure,
@@ -29,18 +34,19 @@ import {
   publish,
 } from "./diagnostics.js";
 import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.js";
-import { BENCHMARK, type ViewName } from "./render/benchmark.js";
+import { BENCHMARK, type ViewName, posesFor } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
-import { HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
+import { HORIZON_REACH, HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
+import { openLookTweaks } from "./render/lookTweaks.js";
 import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/ocean.js";
-import { loadCanopy, loadPropPackage, propCounts } from "./render/propWorld.js";
+import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/propWorld.js";
 import { invalidatePropShadows } from "./render/propWorld.js";
 import { buildPropVariants } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
-import { type IBakedWorld, createTerrain } from "./render/terrain.js";
+import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/terrain.js";
 import { sampleActiveWaterProof, waterProofEnabled } from "./render/waterProof.js";
 import { type IMeadow, type Scatter, type Variants, createMeadow } from "./sceneProps.js";
 import { type TerrainCtx, type TerrainState, initialState } from "./sceneState.js";
@@ -51,6 +57,8 @@ import {
   forestStageArm,
   forestStageTerrainTargets,
 } from "./world/forestStage.js";
+import { addStreamedGround } from "./world/streamedGround.js";
+import { walkBandSlices } from "./world/walkBand.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
 import { START_WORLD, WORLD_ORDER, WORLD_SELECT, loadBakedWorld } from "./worlds.js";
 
@@ -76,6 +84,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #fallbackParts: Variants | undefined;
     #stage: ForestStageWorld | undefined;
     #stageLoad = 0;
+    /** Bumped when a scene is left, so a band build still slicing stops instead of joining the next scene. */
+    #bandLoad = 0;
+    /** PRD-790: the streamed ground past the square, on `?stream=1` until its judge passes. */
+    #stream: { split: ITerrainStream; material: Promise<MeshStandardNodeMaterial> } | undefined;
     #mannequin: IMannequin | undefined;
     #swimClips: readonly AnimationClip[] = [];
     #rig: IPlayerRig | undefined;
@@ -97,7 +109,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // baked forest kit copy, streamed by the kit's own `addForest`; the sky, camera and views stay.
       const arm = look.stageArm ? forestStageArm(globalThis.location?.search ?? "") : undefined;
       if (arm) {
+        this.#river = undefined;
         this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
+        this.#sky.atmosphere.attachRenderer(ctx.renderer);
         const load = ++this.#stageLoad;
         const stage = await addForestStage(ctx, ctx.camera, arm, () => this.#stageLoad === load);
         if (this.#stageLoad === load) {
@@ -106,20 +120,53 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         return;
       }
       const horizon = loadHorizonSurroundings(ctx.assets);
-      const [packageData, canopy] = await Promise.all([
+      const [packageData, canopy, sky] = await Promise.all([
         loadPropPackage(ctx.assets, world),
         loadCanopy(ctx.assets, world),
+        loadSky(ctx.assets, world),
       ]);
       this.#scatter = { package: packageData, canopy, counts: propCounts(packageData) };
       await horizon;
       // Prepare scenery while the scene loads; enter only attaches it.
-      this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
+      // `?skyAo=off` is the named before arm: the ground keeps the whole sky, as it did before.
+      const skyAo = new URLSearchParams(globalThis.location?.search ?? "").get("skyAo") !== "off";
+      const streaming =
+        new URLSearchParams(globalThis.location?.search ?? "").get("stream") === "1";
+      let tileSurface: (material: MeshStandardNodeMaterial) => void = () => undefined;
+      const material = new Promise<MeshStandardNodeMaterial>((resolve) => {
+        tileSurface = resolve;
+      });
+      const split: ITerrainStream | undefined = streaming
+        ? {
+            centre: uniform(new Vector2()),
+            half: uniform(0),
+            tiles: (surface) => tileSurface(surface),
+          }
+        : undefined;
+      this.#stream = split ? { split, material } : undefined;
+      this.#terrain = createTerrain(
+        this.#data,
+        ctx.assets,
+        this.#biome,
+        skyAo ? sky : undefined,
+        split,
+      );
       this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
-      if (spec.water.some((body) => body.kind === "ocean")) {
+      // The sky's LUT dispatch builds its compute nodes: 13-16 ms, paid here behind the curtain so
+      // `enter`'s own `ctx.add` finds the renderer already attached (PRD-585, `enterMs` <= 50).
+      this.#sky.atmosphere.attachRenderer(ctx.renderer);
+      // The bake measured the sea (`waterLevel`), so it decides: a cooked island in any slot gets one.
+      if (this.#data.waterLevel !== null) {
         this.#ocean = createOcean();
         this.#water = createWaterMesh(this.#ocean, this.#data);
       }
       this.#lake = createLakes(this.#data.lakes ?? [], this.#terrain.field);
+      // A braided river network is 15-18 ms of geometry: built with the lake, attached in `enter`.
+      this.#river = createRivers(
+        this.#data.rivers ?? [],
+        this.#terrain.field,
+        look.riverMirrorsPonds ? this.#lake?.reflectionAt : undefined,
+      );
       this.#erosionSamples = {
         flow: this.#data.erosion?.flow.filter((value) => value > 0).length ?? 0,
         deposition: this.#data.erosion?.deposition.filter((value) => value > 0).length ?? 0,
@@ -137,6 +184,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       leaveScene();
       ctx.state.set({ currentViewWindows: 0 });
       this.#stageLoad++;
+      this.#bandLoad++;
       const stage = this.#stage;
       this.#stage = undefined;
       if (!stage) return;
@@ -147,6 +195,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     }
 
     override enter(ctx: TerrainCtx): void {
+      (globalThis as { __tnProbe?: unknown }).__tnProbe = ctx; // TEMP-PROFILE: remove before commit
       const enterStart = performance.now();
       ctx.add(ctx.camera);
       const data = this.#data;
@@ -246,15 +295,42 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // the drawn triangles, so feet meet what the eye sees. Four fixed walls 2 m inside the band's
         // outer edge are the level's blocking volumes; past them is only scenery.
         const band = collar.walk;
-        const surroundings = new RigidBody3D({
-          physics: ctx.physics,
-          type: "fixed",
-          entity: "terrain",
-          collisionLayer: 4 | 8,
-          position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
-          shape: CollisionShape3D.fromMesh(new Mesh(band.geometry), "trimesh"),
+        const bandBodies: RigidBody3D[] = [];
+        // That band is 188 416 triangles, and the player spawns at least 256 m inside it, so no foot
+        // touches it in the frames it is missing: it is not built in `enter`. One fixed body per ring
+        // slice is built on this scene's own first frames instead, with the loading curtain held up
+        // until the last one exists. From a frame and not from `load()`: `deterministicRestart`
+        // replaces the simulation at the outgoing scene's exit, so a body built before that would be
+        // a body in a world that no longer exists.
+        const bandLoad = this.#bandLoad;
+        let bandStarted = false;
+        ctx.afterPhysics(() => {
+          if (bandStarted) return;
+          bandStarted = true;
+          const work = addInSlices(
+            walkBandSlices(band, collar.perimeter),
+            (slice) =>
+              bandBodies.push(
+                new RigidBody3D({
+                  physics: ctx.physics,
+                  type: "fixed",
+                  entity: "terrain",
+                  collisionLayer: 4 | 8,
+                  position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
+                  shape: CollisionShape3D.trimesh(slice.vertices, slice.indices),
+                }),
+              ),
+            // One slice a frame, and not one slice more once this scene is left: a body must never
+            // land in the simulation that replaced this one.
+            { sliceSize: 1, while: () => bandLoad === this.#bandLoad },
+          );
+          if (ctx.startup.phase !== "ready") ctx.startup.hold("strata-collar", work);
+          void work.catch((error) => {
+            if (!released) gate.fail(error);
+          });
         });
-        const edge = data.size / 2 + band.extent;
+        // Streamed ground reaches the collar's rim; without it the walk band is the level.
+        const edge = data.size / 2 + (this.#stream ? HORIZON_REACH - 40 : band.extent);
         const walls = [-1, 1].flatMap((side) =>
           [
             { x: side * edge, z: 0, width: 4, depth: edge * 2 },
@@ -274,7 +350,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           mesh,
           dispose: () => {
             for (const wall of walls) wall.dispose();
-            surroundings.dispose();
+            for (const body of bandBodies.splice(0)) body.dispose();
             ground.dispose();
             mesh.geometry.dispose();
             (mesh.material as MeshStandardMaterial).dispose();
@@ -289,6 +365,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.add(sky.atmosphere);
       ctx.add(sky.sun);
       this.#sky = sky;
+      // `?tweak`: range bars over the wood's look, on the running scene (`src/render/lookTweaks.ts`).
+      if (world === "forest" && debugFlag("tweak")) openLookTweaks(sky, ctx.renderer);
       ctx.entities.add("sun", {
         object: sky.sun,
         debug: () => ({ x: sky.sunX }),
@@ -320,6 +398,27 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       this.#rig = rig;
       const player = rig.body;
       const actor = rig.actor;
+      const stream = this.#stream;
+      // ponytail: a ground material that never loads leaves this pending, and the spawn deadline
+      // then fails the scene by name; `?stream=1` is opt-in, so no tile-less fallback yet.
+      let groundReady: Promise<void> | undefined;
+      if (stream && mesh) {
+        const streamLoad = this.#bandLoad;
+        groundReady = stream.material.then((surface) => {
+          if (streamLoad !== this.#bandLoad) return surface.dispose();
+          const ground = addStreamedGround(
+            ctx,
+            data,
+            world,
+            surface,
+            stream.split,
+            actor,
+            (facts) => ctx.state.set(facts),
+          );
+          ctx.entities.add("streamed-ground", { tiles: ground.tiles, dispose: ground.dispose });
+          return ground.ready;
+        });
+      }
 
       const fixture = new Heightfield({
         rows: 17,
@@ -378,6 +477,16 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.camera.layers.enable(WATER_LAYER);
       const lake = this.#lake;
       if (lake) {
+        // The lake's mirror renders only when the lake draws, and each surface it reflects builds
+        // its pipeline on that first mirror draw. So the lake draws unculled for two world draws
+        // behind the curtain and the spawn join waits for them (PRD-790). Re-culled before the
+        // holds release: the held startup compile copies the screen in the canvas format, which the
+        // lake's refraction refuses.
+        const warmed = warmUnculled(ctx, lake.mesh);
+        groundReady =
+          groundReady === undefined
+            ? warmed
+            : Promise.all([groundReady, warmed]).then(() => undefined);
         const centre = lake.mesh.geometry.getAttribute("position");
         const at = data.lakes?.[0]?.at;
         let lakeFootprintError = 0;
@@ -419,14 +528,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const erosionDepositSamples = this.#erosionSamples.deposition;
       // Every fixed camera stands in a clearing: a trunk a metre from the lens is a green wall, not a
       // framing, and the seed decides where trees land, so the eyes are kept open by rule.
-      const river = stage
-        ? undefined
-        : createRivers(
-            data.rivers ?? [],
-            field,
-            look.riverMirrorsPonds ? lake?.reflectionAt : undefined,
-          );
-      this.#river = river;
+      const river = stage ? undefined : this.#river;
       if (river) {
         ctx.state.set({
           riverSurfaceCount: river.mesh.geometry.groups.filter((group) => group.count > 0).length,
@@ -469,6 +571,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         reveal,
         scatter: this.#scatter,
         spawn: rig.spawn,
+        groundReady,
         stage,
         world,
       });
@@ -592,7 +695,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // Distance detail, once the camera is placed for this frame: a prepared tree draws from its
       // full geometry inside the near band and from the mid level beyond it, with a fifth of the
       // band of slack so a camera on the boundary does not alternate the tree between two levels.
-      const { poses, views } = BENCHMARK[world];
+      const { views } = BENCHMARK[world];
+      const poses = posesFor(world, data.size);
       const at = (x: number, z: number, up: number): Vector3 =>
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
@@ -618,7 +722,16 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         ctx.camera.position.copy(
           pose.eyeY === undefined
             ? at(pose.at[0], pose.at[1], pose.eye)
-            : new Vector3(pose.at[0], pose.eyeY, pose.at[1]),
+            : // Never under the drawn ground: a cooked world (`STRATA_WORLD`) has other hills there.
+              new Vector3(
+                pose.at[0],
+                Math.max(
+                  pose.eyeY,
+                  (collar?.heightAt(pose.at[0], pose.at[1]) ??
+                    field.heightAt(pose.at[0], pose.at[1])) + 1.7,
+                ),
+                pose.at[1],
+              ),
         );
         ctx.camera.lookAt(
           pose.lookY === undefined
@@ -717,7 +830,7 @@ const game = defineGame<TerrainState, IPhysicsContext>({
   },
   plugins: [rapier({ deterministicRestart: true }), playtest(), waterProof],
   // HiDPI displays ask for 2-3x the pixels; the engine scaler trims to what the GPU affords.
-  render: {
+  renderer: {
     preferWebGPU: true,
     resolutionScale:
       forestStageArm(typeof location === "undefined" ? "" : location.search) === undefined

@@ -10,6 +10,7 @@ import {
 } from "three";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { pass } from "three/tsl";
+import { ProbeCostProbe, probeCostMode } from "../probes/probeCost.js";
 import { ShadowPartialProbe } from "../probes/shadowPartial.js";
 import { terrainMaterial } from "../render/terrain.js";
 import { worldFog } from "../render/worldFog.js";
@@ -110,6 +111,8 @@ export class WorldProbe extends Scene<WorldState> {
   #shadow: VirtualShadowNode | undefined;
   #ball: Mesh | undefined;
   #partial: ShadowPartialProbe | undefined;
+  /** PRD-603: `?probeCost=capture|trace` measures one probe refresh on this fixture. */
+  #probeCost: ProbeCostProbe | undefined;
   /** Tiles holding a body right now, as the game's own `createCollider` sees them. */
   readonly #bodies = new Map<string, { tileX: number; tileZ: number }>();
 
@@ -168,6 +171,8 @@ export class WorldProbe extends Scene<WorldState> {
     if (raw?.shadowMap !== undefined) raw.shadowMap.enabled = true;
     ctx.add(sky);
     ctx.add(sun);
+    const probeCost = probeCostMode();
+    if (probeCost !== undefined) this.#probeCost = new ProbeCostProbe(ctx, probeCost, sun, sky);
     if (SHADOW_MOVERS) {
       const ball = new Mesh(
         new SphereGeometry(1.5, 24, 16),
@@ -209,6 +214,10 @@ export class WorldProbe extends Scene<WorldState> {
     // The shadow node's `updateBefore` runs inside the render pass, so this is the only hook where
     // its per-frame `deferred` counter is the frame that just happened rather than the one before.
     this.#sample(ctx);
+    const stats = this.#world?.stats();
+    this.#probeCost?.sample(
+      stats !== undefined && stats.loadsInFlight === 0 && stats.pendingPrewarm === 0,
+    );
   }
 
   #update(ctx: WorldCtx, dt: number): void {
@@ -353,6 +362,7 @@ export class WorldProbe extends Scene<WorldState> {
       shadowRendered: this.#shadowRenders,
       ...this.#moverDebug(),
       ...this.#partial?.results,
+      ...this.#probeCost?.debug(),
     };
   }
 }

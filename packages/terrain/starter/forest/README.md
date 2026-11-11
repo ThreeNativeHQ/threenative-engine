@@ -6,7 +6,7 @@ stands, young firs and boulder fields. It is game source: once copied, every fil
 | File | What it decides |
 | --- | --- |
 | `recipe.json` | The terrain and the scatter: seed, size, erosion, `count`, `minDistance`, slope limits, `scale`, masks. |
-| `assets.json` | Each prop's models, LOD distance, draw distance and bounds. |
+| `assets.json` | Each prop's models, LOD distance, draw distance and bounds; `"tree": true` marks the art a landform cook plants the biome's own tree with. |
 | `surface.json` | The ground: texture layers, tiles, tints, far tiles and blend thresholds. |
 | `bake.mjs` | Writes the world package and `world/water.json` (the lake and river) from the three files above. |
 | `world.ts` | `addForest(ctx, follow)`: terrain, props, shadows, collision; `COLLIDERS` per prop. |

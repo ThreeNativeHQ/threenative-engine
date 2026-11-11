@@ -9,6 +9,7 @@ import {
   type BufferGeometry,
   DataTexture,
   Float32BufferAttribute,
+  FrontSide,
   LinearMipmapLinearFilter,
   MeshStandardMaterial,
   RepeatWrapping,
@@ -151,8 +152,16 @@ export const floorMaterial = new MeshStandardMaterial({
   metalness: 0,
 });
 
+/**
+ * Closed solids cast from their sun-facing faces. Three's default casts a front-sided material from
+ * its back faces, and for a block those are the shaded faces standing on the floor: the shadow bias
+ * then lit a strip of floor along their base, a white line where a block meets the ground.
+ */
+const castFromSunSide = { shadowSide: FrontSide } as const;
+
 /** Dark grid: walls, pillars, anything structural. */
 export const structureMaterial = new MeshStandardMaterial({
+  ...castFromSunSide,
   map: gridTexture(palette.structure, palette.gridLine),
   normalMap: grain,
   normalScale: new Vector2(0.18, 0.18),
@@ -162,6 +171,7 @@ export const structureMaterial = new MeshStandardMaterial({
 
 /** The one saturated colour: things you can push, pick up or stand on. */
 export const propMaterial = new MeshStandardMaterial({
+  ...castFromSunSide,
   color: palette.prop,
   roughness: 0.45,
   metalness: 0,

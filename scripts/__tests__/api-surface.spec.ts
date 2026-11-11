@@ -281,7 +281,7 @@ describe("stable public API surface (PRD-446)", () => {
       symbols: { "@threenative/kept#kept": "export function kept(): void { … }" },
     };
     const recorded = `${JSON.stringify({ packages: { "@threenative/kept": symbol } }, null, 2)}\n`;
-    const manifestPath = path.join(root, "packages", "create-threenative", "capabilities.json");
+    const manifestPath = path.join(root, "packages", "core", "capabilities.json");
     const snapshotPath = path.join(root, API_SURFACE_RELATIVE_PATH);
     const changelogPath = path.join(root, "CHANGELOG.md");
     await mkdir(path.join(root, "packages", "kept"), { recursive: true });

@@ -154,6 +154,20 @@ export interface IGiOptions {
    * under a brick map). Unset, every hit returns the flat colour. `true` takes the cache's defaults.
    */
   readonly surfaceCache?: boolean | ISurfaceCacheOptions;
+  /**
+   * PRD-831: a GPU-traced field (`giTraced.ts`, a `RadianceCache`) that replaces the CPU bake's irradiance read: a material
+   * reads `irradiance` (E / pi at the pixel) and takes it as unoccluded. The CPU bake still runs for the sky shares, the
+   * emitters and the mean read. Unset, the bake answers.
+   */
+  readonly field?: {
+    readonly irradiance: (position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">;
+    /**
+     * The radiance arriving along a direction. The screen gather subtracts it per ray: a hit replaces the cache's
+     * radiance along its ray, as Lumen's per-ray radiance-cache read does (LumenScreenProbeTracing.usf:831), not the
+     * irradiance that a surface facing the ray would get. Unset, the gather subtracts `irradiance`.
+     */
+    readonly radiance?: (position: Node<"vec3">, direction: Node<"vec3">) => Node<"vec3">;
+  };
 }
 
 export interface IGiReport {
@@ -876,6 +890,7 @@ function irradianceAt(
     position: Node<"vec3">,
     normal: Node<"vec3">,
     reflection?: Node<"vec3">,
+    along?: Node<"vec3">,
   ): { irradiance: Node<"vec3">; visibility: Node<"float"> } => {
     // A node of its own per reader (a material, a post pass), over the one texture.
     const volumeNode = texture3D(cache);
@@ -896,15 +911,19 @@ function irradianceAt(
     ];
     const lower = [ax.floor(), ay.floor(), az.floor()];
     const fraction = [ax.sub(nth(lower, 0)), ay.sub(nth(lower, 1)), az.sub(nth(lower, 2))];
-    const squares = [n.x.mul(n.x), n.y.mul(n.y), n.z.mul(n.z)];
+    // The cube's faces are read along `along` when a caller asks for the light along a direction (a gather's ray),
+    // while the read itself stays half a cell off the receiver's surface. Offsetting along the ray instead put a
+    // corner's reads half a cell into the next wall, and the gather's `hit - cache` drew black lines at every corner.
+    const f = along ?? n;
+    const squares = [f.x.mul(f.x), f.y.mul(f.y), f.z.mul(f.z)];
     const faceIndex = [
-      n.x.lessThan(0).select(float(1), float(0)),
-      n.y.lessThan(0).select(float(3), float(2)),
-      n.z.lessThan(0).select(float(5), float(4)),
+      f.x.lessThan(0).select(float(1), float(0)),
+      f.y.lessThan(0).select(float(3), float(2)),
+      f.z.lessThan(0).select(float(5), float(4)),
     ];
     // The environment share is read along the reflection when there is one (a floor that looks at a doorway sees
     // the sky there, whatever its normal sees), through the same three faces of the ambient cube.
-    const r = reflection ?? n;
+    const r = reflection ?? f;
     const squaresR = [r.x.mul(r.x), r.y.mul(r.y), r.z.mul(r.z)];
     const faceIndexR = [
       r.x.lessThan(0).select(float(1), float(0)),
@@ -1085,7 +1104,10 @@ function irradianceAt(
  * nothing on screen would have returned (the tier below its own), with the pixel's world position and normal.
  */
 export const giCache: {
-  irradiance?: (position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">;
+  /** `along`, when set, reads the light arriving along that direction at a receiver whose surface faces `normal`. */
+  irradiance?: (position: Node<"vec3">, normal: Node<"vec3">, along?: Node<"vec3">) => Node<"vec3">;
+  /** The traced field's radiance along a direction, which the gather's per-ray fallback prefers (see IGiOptions.field). */
+  radiance?: (position: Node<"vec3">, direction: Node<"vec3">) => Node<"vec3">;
   /**
    * The baked field at its final resolution, for tools and tests: per texel, six faces of RGB (E / pi), six
    * environment shares, and whether the texel's centre lies inside a solid (a read gives it no weight).
@@ -1122,15 +1144,29 @@ export const giCache: {
  */
 export function cacheFallback(
   camera: PerspectiveCamera,
-): ((position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">) | undefined {
-  const read = giCache.irradiance;
-  if (read === undefined) return undefined;
+  /** "ray" reads the radiance along the direction when the field has it (a gather's per-ray tier); "normal" reads irradiance. */
+  along: "normal" | "ray" = "normal",
+):
+  | ((position: Node<"vec3">, direction: Node<"vec3">, normal?: Node<"vec3">) => Node<"vec3">)
+  | undefined {
+  const radiance = along === "ray" ? giCache.radiance : undefined;
+  const irradiance = giCache.irradiance;
+  if (radiance === undefined && irradiance === undefined) return undefined;
   const live = (index: number) =>
     uniform(0).onRenderUpdate(() => camera.matrixWorld.elements[index] ?? 0);
   const column = (a: number) => vec3(live(a), live(a + 1), live(a + 2));
   const [right, up, back, at] = [column(0), column(4), column(8), column(12)];
   const toWorld = (v: Node<"vec3">) => right.mul(v.x).add(up.mul(v.y)).add(back.mul(v.z));
-  return (position, normal) => read(toWorld(position).add(at), toWorld(normal).normalize());
+  return (position, direction, normal) => {
+    const world = toWorld(position).add(at);
+    const towards = toWorld(direction).normalize();
+    if (radiance !== undefined) return radiance(world, towards);
+    // The bake keeps an irradiance cube: read it along the ray, from the receiver's side of the surface.
+    const read = irradiance as NonNullable<typeof irradiance>;
+    return normal === undefined || along !== "ray"
+      ? read(world, towards)
+      : read(world, toWorld(normal).normalize(), towards);
+  };
 }
 
 /** What the bake's rays kept of each hit: enough to tell what a surface returns. */
@@ -1403,8 +1439,31 @@ function physicalTwin() {
   }
 }
 
+/** Unreal's `r.LumenScene.SurfaceCache.MeshCardsMinSize`, 10 cm, in metres. */
+const MESH_CARDS_MIN_SIZE = 0.1;
+
 /**
- * `bakeGi` with the translucent surfaces out of the bake. Unreal's Lumen scene holds none (a translucent material is not
+ * Whether Unreal's Lumen scene tracks a primitive: the largest face of its bounding box, at its world scale, must be larger
+ * than `MeshCardsMinSize` squared (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScene.cpp:875-884,
+ * LumenMeshCards.cpp:128-132; a 0.2 factor applies to a primitive flagged as an emissive light source, which no
+ * calibration scene sets). A smaller primitive has no surface cache card, so Lumen's rays pass it and only the screen
+ * traces see it: the neon corridor's 5 cm emitter cube lit the whole bake in ThreeNative and none of Unreal's (PRD-831).
+ */
+export function inLumenScene(mesh: Mesh): boolean {
+  mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox;
+  if (box === null) return true;
+  const size = box
+    .getSize(new Vector3())
+    .multiply(mesh.getWorldScale(new Vector3()))
+    .toArray()
+    .map(Math.abs);
+  const [x = 0, y = 0, z = 0] = size;
+  return Math.max(y * z, x * z, x * y) > MESH_CARDS_MIN_SIZE * MESH_CARDS_MIN_SIZE;
+}
+
+/**
+ * `bakeGi` with the translucent surfaces and the primitives too small for Lumen's scene (`inLumenScene`) out of the bake. Unreal's Lumen scene holds none (a translucent material is not
  * a card: UE 5.8.3, Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneRendering.cpp, `bOpaqueOrMasked`), so a ray
  * passes a pane of glass and the pane neither shades a probe nor bounces light. Layer 0 is what every ray query tests, and
  * the bake is synchronous, so the layer is off only while it runs.
@@ -1414,21 +1473,22 @@ export function installGi(
   root: Object3D,
   options: IGiOptions,
 ): IGiReport | undefined {
-  const glass: Mesh[] = [];
+  const outside: Mesh[] = [];
+  const small: string[] = [];
+  root.updateMatrixWorld(true);
   root.traverse((object) => {
     const mesh = object as Mesh;
-    if (
-      mesh.isMesh &&
-      [mesh.material].flat().some((m) => m.transparent) &&
-      mesh.layers.isEnabled(0)
-    )
-      glass.push(mesh);
+    if (!mesh.isMesh || !mesh.layers.isEnabled(0)) return;
+    const tracked = inLumenScene(mesh);
+    if (!tracked) small.push(mesh.name);
+    if (!tracked || [mesh.material].flat().some((m) => m.transparent)) outside.push(mesh);
   });
-  for (const mesh of glass) mesh.layers.disable(0);
+  if (small.length > 0) console.info(`TN_GI_SMALL_PRIMITIVES ${JSON.stringify(small)}`);
+  for (const mesh of outside) mesh.layers.disable(0);
   try {
     return bakeGi(gameCtx, root, options);
   } finally {
-    for (const mesh of glass) mesh.layers.enable(0);
+    for (const mesh of outside) mesh.layers.enable(0);
   }
 }
 
@@ -1578,6 +1638,8 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
       (v) => v * (m.emissiveIntensity ?? 1),
     );
     if ((radiance[0] ?? 0) + (radiance[1] ?? 0) + (radiance[2] ?? 0) <= 0) return;
+    // A primitive outside Lumen's scene lights nothing through the cache: only the screen traces see it (`inLumenScene`).
+    if (!inLumenScene(mesh)) return;
     // The tight sphere: a loader may have set one from the bounding box, which is sqrt(3) too large for a sphere.
     mesh.geometry.computeBoundingSphere();
     const bound = mesh.geometry.boundingSphere;
@@ -1932,14 +1994,31 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     solid: cut.solid,
     walls: cut.walls,
   };
-  const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid, cut.walls);
+  const bakedRead = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid, cut.walls);
+  const traceField = options.field;
+  const read: typeof bakedRead =
+    traceField === undefined
+      ? bakedRead
+      : (position, normal) => ({
+          irradiance: traceField.irradiance(position, normal),
+          visibility: float(1),
+        });
   // The screen-space gather's tier below reads the same as a material does, emitters included, so a ray that hits
   // the emitter on screen replaces its direct light instead of adding it twice.
-  giCache.irradiance = (position, normal) => {
-    const base = read(position, normal).irradiance;
-    const light = emitterLight(emitters, position, normal);
+  giCache.irradiance = (position, normal, along) => {
+    const base = read(position, normal, undefined, along).irradiance;
+    const light = emitterLight(emitters, position, along ?? normal);
     return light === undefined ? base : base.add(light);
   };
+  const traceRadiance = traceField?.radiance;
+  giCache.radiance =
+    traceRadiance === undefined
+      ? undefined
+      : (position, direction) => {
+          const base = traceRadiance(position, direction);
+          const light = emitterLight(emitters, position, direction);
+          return light === undefined ? base : base.add(light);
+        };
   const mean = meanRadianceAt(fine.values, fine.grid, cut.solid);
   giCache.meanRadiance = mean.read;
   giCache.meanTexture = mean.texture;

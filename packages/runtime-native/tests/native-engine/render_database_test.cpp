@@ -282,6 +282,31 @@ void multiMaterialGroups() {
 
 // Forty copies that each built their own box draw as one instanced item from one copy's buffers;
 // copies with different data at the same vertex count do not; a copy whose data moves leaves.
+// procedural-animals' DQS skin reads skinIndex/skinWeight with TSL attribute() on a plain Mesh: there they are
+// ordinary attributes (float copies), not the skin path, which only a SkinnedMesh has (PRD-784 sweep).
+void skinAttributesOnAPlainMesh() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    camera.position.set(0, 0, 5);
+    camera.lookAt(0, 0, 0);
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 1), 4));
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(std::vector<double>(vertices * 4, 0.25), 4));
+    Mesh mesh(geometry, std::make_shared<Material>(MaterialType::Basic));
+    scene.add(mesh);
+    const auto items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 1);
+    if (items.size() != 1) return;
+    const DrawItem::CustomAttribute* index = nullptr;
+    const DrawItem::CustomAttribute* weight = nullptr;
+    for (const auto& custom : *items[0].attributes) {
+        if (custom.name == "skinIndex") index = &custom;
+        if (custom.name == "skinWeight") weight = &custom;
+    }
+    CHECK(index && weight && items[0].skinIndices == nullptr);
+    if (index) CHECK(index->store && index->store->scalar() == Scalar::F32);
+}
+
 void contentIdenticalGeometryBatches() {
     Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
     camera.position.set(20, 30, 60);
@@ -1163,6 +1188,72 @@ void unchangedFrameStorage() {
     CHECK(palette == steadyGrown + paletteBytes);
 }
 
+// PRD-871: a Points object draws as a WebGPU point-list primitive through the unlit basic program, and a
+// `position` attribute the game rewrites every frame re-uploads into the buffer it already has. 60 frames of a
+// drifting cloud create no second GPU buffer, and every one of them draws.
+void pointsRewriteKeepsOneBuffer() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    Scene scene;
+    PerspectiveCamera camera(50, 96.0 / 72, 0.1, 100);
+    camera.position.set(0, 0, 4);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    constexpr uint32_t count = 256;
+    std::vector<double> positions;
+    for (uint32_t i = 0; i < count; ++i) {
+        const double turn = double(i) / count * 6.283185307179586;
+        positions.insert(positions.end(), {std::cos(turn) * 1.2, std::sin(turn) * 0.8, 0.0});
+    }
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->setAttribute("position", BufferAttribute::fromFloats(positions, 3));
+    auto material = std::make_shared<Material>(MaterialType::Basic);
+    material->pointsMaterial = true;
+    material->size = 4;
+    CHECK(material->typeName() == "PointsMaterial");
+    auto cloud = std::make_shared<Points>(geometry, material);
+    cloud->frustumCulled = false;
+    scene.add(*cloud);
+    RenderDatabase database;
+    const auto frame = [&] {
+        database.render(renderer, scene, camera, {0.05, 0.06, 0.08, 1});
+        renderer.poll();
+        events.drain();
+    };
+    frame();
+    frame();  // warm: the geometry's buffer and the point-list pipeline exist
+    CHECK(database.diagnostics().empty());
+    CHECK(database.drawn().size() == 1);
+    if (!database.drawn().empty()) {
+        const DrawItem& draw = database.drawn().front();
+        CHECK(draw.topology == WGPUPrimitiveTopology_PointList);
+        CHECK(draw.kind == MaterialKind::Basic);
+        CHECK(draw.castShadow == false);
+        CHECK(draw.instanceCount == 1);
+    }
+    const auto position = geometry->getAttribute("position");
+    CHECK(position != nullptr);
+    const uint64_t buffers = waste::counters().bufferAllocs.load();
+    const auto& cache = renderer.geometry();
+    const uint64_t uploadedBefore = cache.stats().bytesUploaded;
+    for (uint32_t step = 0; step < 60; ++step) {
+        // Every vertex moves: a cloud a game rewrites each frame (needsUpdate each time).
+        for (uint32_t i = 0; i < count; ++i) position->setX(i, double(i) / count * 2.0 - 1.0 + 0.01 * double(step));
+        position->setNeedsUpdate();
+        frame();
+        CHECK(database.drawn().size() == 1);
+    }
+    const uint64_t created = waste::counters().bufferAllocs.load() - buffers;
+    const uint64_t uploaded = cache.stats().bytesUploaded - uploadedBefore;
+    std::printf("points rewrite: %u points, 60 frames, %llu buffers created, %llu bytes uploaded\n", count,
+                static_cast<unsigned long long>(created), static_cast<unsigned long long>(uploaded));
+    CHECK(created == 0);
+    CHECK(uploaded > 0);  // the moved attribute does reach the GPU, into the buffer it already had
+}
+
 // TR1: the `instances` storage kept each draw's instances in depth order, so a camera turn that swapped two
 // draws moved both draws' bytes and the frame re-sent the whole array. A draw now keeps its place, and only the
 // bytes that changed cross to the GPU. Two instanced draws, one at each side of the origin: the camera stands on
@@ -2014,6 +2105,78 @@ void transparentSortUsesTheGeometryCenter() {
     CHECK(placed == baked);
 }
 
+// A material edited every frame (a wind time, a pulsing colour) refreshes its draw in full every frame. The
+// refresh re-keyed the draw's sort depth by walking every vertex of a geometry with no bounding sphere: the MCP
+// forest spent 7.8 % of its post-reveal CPU in BufferAttribute::getComponent under sortCenterOf, every frame.
+// The centre depends on the geometry alone, so it is taken once per geometry revision and position write.
+void sortCenterWalksTheVerticesOncePerGeometryEdit() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    Scene scene;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    auto material = std::make_shared<Material>(MaterialType::Basic);
+    const auto geometry = makePlaneGeometry(2, 2);
+    Mesh quad(geometry, material);
+    quad.frustumCulled = false;  // as grass and water draw: no cull, so nothing computes the sphere
+    scene.add(quad);
+    RenderDatabase database;
+    const auto passes = [] { return projection::detail::sortCenterPassCount().load(); };
+    const uint64_t before = passes();
+    for (int frame = 0; frame < 4; ++frame) {
+        material->color.setRGB(0.2 * frame, 0.5, 0.5);  // moves the material signature: a full refresh
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+    }
+    const uint64_t steady = passes() - before;
+    // A vertex write, then the next refresh: the cached centre must not outlive the vertices it was taken from.
+    geometry->getAttribute("position")->setNeedsUpdate();
+    material->color.setRGB(0.9, 0.5, 0.5);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    const uint64_t written = passes() - before - steady;
+    std::fprintf(stderr, "sort centre passes: %llu over 4 refreshed frames, %llu after a position write\n",
+                 (unsigned long long)steady, (unsigned long long)written);
+    CHECK(geometry->boundingSphere == nullptr);  // the walk ran on a sphere-less geometry, as the forest's did
+    CHECK(steady == 1);
+    CHECK(written == 1);
+}
+
+// three packs a geometry's morph targets into its morph texture once (src/nodes/accessors/Morph.js:93-199) and reuses
+// it; the renderer repacked every component of every target each frame, for each morphed draw. The pack follows
+// the geometry: a still frame reuses it, and a write to a target repacks it on the next frame.
+void morphTargetsPackOncePerTargetWrite() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    Scene scene;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    const auto geometry = makePlaneGeometry(2, 2);
+    const auto vertices = geometry->attributes.at("position")->count();
+    geometry->morphPositions.push_back(BufferAttribute::fromFloats(std::vector<double>(vertices * 3, 0.25), 3));
+    Mesh quad(geometry, std::make_shared<Material>(MaterialType::Basic));
+    quad.morphTargetInfluences = {0.5};
+    scene.add(quad);
+    RenderDatabase database;
+    const uint64_t before = renderer.morphPackCount();
+    for (int frame = 0; frame < 4; ++frame) database.render(renderer, scene, camera, {0, 0, 0, 1});
+    const uint64_t still = renderer.morphPackCount() - before;
+    geometry->morphPositions[0]->setXYZ(0, 1, 1, 1);
+    geometry->morphPositions[0]->setNeedsUpdate();
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    const uint64_t written = renderer.morphPackCount() - before - still;
+    std::fprintf(stderr, "morph packs: %llu over 4 still frames, %llu after a target write\n", (unsigned long long)still,
+                 (unsigned long long)written);
+    CHECK(still == 1);
+    CHECK(written == 1);
+    CHECK(geometry->morphPacked_.size() == vertices * 4);
+    CHECK(geometry->morphPacked_[0] == 1.0f && geometry->morphPacked_[4] == 0.25f);  // the write reached the pack
+}
+
 // An unported material property is refused by name and its mesh is not drawn, never silently drawn
 // with a simpler shader (PRD-514 decision 4); a supported material in the same scene still draws.
 void materialUnsupported() {
@@ -2197,6 +2360,108 @@ float halfToFloat(uint16_t h) {
                 : exponent == 31 ? std::numeric_limits<float>::infinity()
                                  : std::ldexp(float(mantissa | 1024), int(exponent) - 25);
     return sign ? -value : value;
+}
+
+// three's array target (RenderTarget depth > 1, PRD-858): each draw writes the layer it names, an MRT attachment's too,
+// and a draw with generateMipmaps on builds every layer's chain (three's finishRender), as the impostor bake needs.
+void arrayRenderTarget() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    const auto target = RenderTarget::make(32, 32, kTextureHalfFloatType, 2);
+    target->layers = 2;
+    for (const auto& attachment : target->more) attachment->layers = 2;
+    const auto mipmaps = [&](bool on) {
+        for (const auto& texture : RenderTarget::texturesOf(*target)) {
+            texture->minFilter = uint16_t(TextureFilter::LinearMipmapLinear);
+            texture->array = true;
+            texture->generateMipmaps = on;
+        }
+    };
+    Scene empty;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    mipmaps(false);
+    CHECK(renderToTarget(renderer, *target, empty, camera, {1, 0, 0, 1}, false, false, true, true, 0).empty());
+    mipmaps(true);
+    CHECK(renderToTarget(renderer, *target, empty, camera, {0, 1, 0, 1}, false, false, true, true, 1).empty());
+    CHECK(!renderToTarget(renderer, *target, empty, camera, {0, 0, 1, 1}, false, false, true, true, 2).empty());
+    const auto texel = [&](RenderTarget& from, uint32_t layer, uint32_t level) {
+        std::array<float, 4> rgb{-1, -1, -1, -1};
+        bool done = false;
+        CHECK(readRenderTarget(from, 0, 0, 1, 1, [&](GpuStatus status, std::vector<uint8_t> bytes) {
+            if (status == GpuStatus::Ok && bytes.size() == 8)
+                for (int c = 0; c < 4; ++c) {
+                    uint16_t bits = 0;
+                    std::memcpy(&bits, bytes.data() + c * 2, 2);
+                    rgb[c] = halfToFloat(bits);
+                }
+            done = true;
+        }, layer, level) == GpuStatus::Ok);
+        for (int i = 0; i < 5000 && !done; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return rgb;
+    };
+    {
+        const auto red = texel(*target, 0, 0), green = texel(*target, 1, 0);
+        const auto redTip = texel(*target, 0, 5), greenTip = texel(*target, 1, 5);  // the 1x1 level
+        std::fprintf(stderr, "array target: layer 0 %.3f %.3f (tip %.3f %.3f), layer 1 %.3f %.3f (tip %.3f %.3f)\n",
+                     red[0], red[1], redTip[0], redTip[1], green[0], green[1], greenTip[0], greenTip[1]);
+        CHECK(red[0] == 1.0f && red[1] == 0.0f);
+        CHECK(green[0] == 0.0f && green[1] == 1.0f);
+        CHECK(std::abs(redTip[0] - 1.0f) < 1e-3f && redTip[1] < 1e-3f);
+        CHECK(std::abs(greenTip[1] - 1.0f) < 1e-3f && greenTip[0] < 1e-3f);
+    }
+    // three's WebGPUBackend clears every attachment after the first to (0, 0, 0, 1), whatever the renderer's clear
+    // colour. The impostor bake clears to (0, 0, 0, 0) and keeps its depth numerator in the second attachment's
+    // alpha, so an empty texel must read alpha one there, or every mip that blends a crown edge with empty space
+    // decodes a wrong depth and the far impostor smears across its quad.
+    for (uint32_t layer : {0u, 1u})
+        for (uint32_t level : {0u, 5u}) {
+            const auto second = texel(*target->more[0], layer, level);
+            std::fprintf(stderr, "array target second attachment: layer %u level %u %.3f %.3f %.3f %.3f\n", layer, level,
+                         second[0], second[1], second[2], second[3]);
+            CHECK(second[0] == 0.0f && second[1] == 0.0f && second[2] == 0.0f && std::abs(second[3] - 1.0f) < 1e-3f);
+        }
+    CHECK(readRenderTarget(*target, 0, 0, 1, 1, [](GpuStatus, std::vector<uint8_t>) {}, 2, 0) == GpuStatus::OutOfRange);
+    const auto plain = RenderTarget::make(8, 8, kTextureHalfFloatType);  // one layer: only layer 0 draws
+    CHECK(!renderToTarget(renderer, *plain, empty, camera, {0, 0, 1, 1}, false, false, true, true, 1).empty());
+    // The bake's capture material: mrtNode `output` is three's diffuseColor, the colour and opacity after the map,
+    // written into the target texture named "output".
+    const auto baked = RenderTarget::make(8, 8, kTextureHalfFloatType);
+    baked->texture->name = "output";
+    auto standard = std::make_shared<Material>(MaterialType::Standard);
+    standard->color.setRGB(0.5, 0.25, 1);
+    standard->nodes.mrt.push_back({"output", shader::graph::materialInput("diffuseColor", shader::Type::vec(4))});
+    Mesh card(makePlaneGeometry(2, 2), standard);
+    Scene captured;
+    captured.add(card);
+    captured.updateMatrixWorld(true);
+    CHECK(renderToTarget(renderer, *baked, captured, camera, {0, 0, 0, 0}, false).empty());
+    const auto diffuse = texel(*baked, 0, 0);
+    std::fprintf(stderr, "diffuseColor into output: %.3f %.3f %.3f\n", diffuse[0], diffuse[1], diffuse[2]);
+    CHECK(std::abs(diffuse[0] - 0.5f) < 2e-3f && std::abs(diffuse[1] - 0.25f) < 2e-3f && std::abs(diffuse[2] - 1.0f) < 2e-3f);
+    // A colorNode replaces the material colour in three's diffuseColor, so the scene MRT's albedo target reads the
+    // node's colour. The engine refused the whole program (TN_NATIVE_DIFFUSE_COLOR), and grass with a colorNode drew black.
+    const auto noded = RenderTarget::make(8, 8, kTextureHalfFloatType);
+    noded->texture->name = "output";
+    auto tinted = std::make_shared<Material>(MaterialType::Standard);
+    tinted->nodes.colorNode = shader::graph::vec4({shader::graph::float_(0.2), shader::graph::float_(0.6), shader::graph::float_(0.4), shader::graph::float_(1)});
+    tinted->nodes.mrt.push_back({"output", shader::graph::materialInput("diffuseColor", shader::Type::vec(4))});
+    Mesh tintedCard(makePlaneGeometry(2, 2), tinted);
+    Scene tintedScene;
+    tintedScene.add(tintedCard);
+    tintedScene.updateMatrixWorld(true);
+    CHECK(renderToTarget(renderer, *noded, tintedScene, camera, {0, 0, 0, 0}, false).empty());
+    const auto fromNode = texel(*noded, 0, 0);
+    std::fprintf(stderr, "colorNode diffuseColor into output: %.3f %.3f %.3f\n", fromNode[0], fromNode[1], fromNode[2]);
+    CHECK(std::abs(fromNode[0] - 0.2f) < 2e-3f && std::abs(fromNode[1] - 0.6f) < 2e-3f && std::abs(fromNode[2] - 0.4f) < 2e-3f);
 }
 
 void renderTarget() {
@@ -4492,6 +4757,55 @@ void computeKernelWalksOnce() {
     CHECK(g::computeBindingWalks() == before + 1);
 }
 
+// PRD-828: a fluid step queues 25 kernels and each opened its own compute pass. A run of dispatches now records one
+// pass, a readback between them ends it, and a kernel dispatched again with other uniform values in the same pass
+// reads its own values (each value set takes its own uniform block, since every queue write lands before the pass).
+void computeRunSharesOnePass() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    namespace g = shader::graph;
+    auto values = BufferAttribute::fromFloats({0}, 1);
+    auto storage = g::storage("batchedCompute", shader::Type::f32());
+    storage.object = values;
+    const auto step = g::uniform("batchedStep", shader::Type::f32(), {1});
+    g::Block body;
+    body.assign(storage.element(g::instanceIndex()), g::add(storage.element(g::instanceIndex()), step));
+    const auto kernel = g::computeNode(body.node(), 1);
+    ComputeQueue queue;
+    std::vector<float> reads;
+    const auto read = [&](GpuStatus status, std::vector<uint8_t> bytes) {
+        CHECK(status == GpuStatus::Ok && bytes.size() == 4);
+        float v = 0;
+        if (bytes.size() == 4) std::memcpy(&v, bytes.data(), 4);
+        reads.push_back(v);
+    };
+    queue.dispatch(kernel);                // +1
+    g::setUniformValues(step, {10});
+    queue.dispatch(kernel);                // +10, same pass, its own block
+    queue.dispatch(kernel);                // +10 again, reusing that block
+    queue.readback(values, read);          // ends the pass: 21
+    g::setUniformValues(step, {100});
+    queue.dispatch(kernel);                // a second pass
+    queue.readback(values, read);          // 121
+    waste::setDebugEnabled(true);
+    const auto passes = waste::counters().computePasses.load(), dispatches = waste::counters().computeDispatches.load();
+    std::vector<std::string> failures;
+    queue.flush(renderer, [&](const std::string& why) { failures.push_back(why); });
+    CHECK(failures.empty());
+    CHECK(waste::counters().computePasses.load() == passes + 2);
+    CHECK(waste::counters().computeDispatches.load() == dispatches + 4);
+    waste::setDebugEnabled(false);
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (reads.size() < 2 && std::chrono::steady_clock::now() < until) {
+        renderer.poll();
+        events.drain();
+    }
+    CHECK(reads == (std::vector<float>{21, 121}));
+}
+
 // A post pass the author labels with a stage reports its GPU time under that stage's segment, not under "other
 // passes", and the segments still add up to the frame (web_host.cpp exports each as a `tnw_web_frame` field).
 void gpuTimerSplitsTheLabelledGather() {
@@ -5179,6 +5493,22 @@ void alphaTestNode() {
     leaf->alphaTest = 0.1;
     leaf->nodes.alphaTestNode = g::float_(0.9); leaf->needsUpdate();
     const double shadowRaises = dark();
+    // A cutoff that samples the node's own texture (texture(object), as the far-tree impostor reads its atlas) binds
+    // that texture in the shadow pass too (PRD-858): red 51 cuts at 0.2 and keeps the footprint, red 230 at 0.9 does not.
+    const auto cutoff = [&](uint8_t red) {
+        auto texture = std::make_shared<Texture>();
+        texture->width = 1; texture->height = 1;
+        texture->data = {red, 0, 0, 255};
+        texture->needsUpdate();
+        leaf->nodes.alphaTestNode =
+            g::swizzle(g::objectTexture(texture, "nodeMapT" + std::to_string(texture->ident.value()), g::uv()), "x");
+        leaf->needsUpdate();
+        return dark();
+    };
+    const double textureLowers = cutoff(51), textureRaises = cutoff(230);
+    std::printf("alphaTestNode shadow from a node texture: 0.2 %.3f, 0.9 %.3f\n", textureLowers, textureRaises);
+    CHECK(textureLowers > 0.95);
+    CHECK(textureRaises < 0.05);
     std::printf("alphaTestNode: colour flat %.3f, node 0.2 %.3f, node alone %.3f, node 0.9 %.3f; shadow flat %.3f, node 0.2 %.3f, node 0.9 %.3f\n",
                 flatDiscard, nodeLowers, nodeAlone, nodeRaises, shadowFlat, shadowLowers, shadowRaises);
     CHECK(flatDiscard < 0.05);
@@ -8104,6 +8434,27 @@ void virtualShadowPanRedrawsTheRectsThatEnter() {
     }
 }
 
+// The levels a virtual shadow still owes: unmapped or dirty. One level is granted per frame, so a two-level map owes
+// two, then one, then none; an invalidation owes them again. Core's VirtualShadowNode reads this as `deferred` (PRD-762).
+void virtualShadowPendingLevels() {
+    shadows::AtlasOptions options;
+    options.clipExtents = {16, 32};
+    options.mapSize = 256;
+    options.pageTexels = 64;
+    std::string error;
+    auto atlas = shadows::PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    const Vector3 direction(0.554, 0.741, 0.379), eye(0, 4, 0);
+    CHECK(atlas->pendingLevels() == 2);
+    atlas->update(eye, direction, true, {}, 1.0 / 60);
+    CHECK(atlas->pendingLevels() == 1);
+    atlas->update(eye, direction, false, {}, 1.0 / 60);
+    CHECK(atlas->pendingLevels() == 0);
+    atlas->invalidateAll();
+    CHECK(atlas->pendingLevels() == 2);
+}
+
 // A level's depth mapping holds while its casters fit and use most of it, so a pan draws only what enters the window. A caster
 // outside the range and a much smaller span each re-fit it, which redraws the level. Kept pages are valid only under one mapping.
 void virtualShadowDepthHoldsWhileCastersFit() {
@@ -8384,6 +8735,35 @@ void boneReachBoundsHoldPosedVertices() {
     CHECK(skeleton.bone(0) == nullptr);
 }
 
+// A morphed caster's shadow box holds its vertices at every influence, as three's computeBoundingBox does, so it
+// needs no per-vertex morph each frame and does not clip the shadow of a target the next frame raises.
+void morphedShadowBoundsHoldEveryInfluence() {
+    auto geometry = makeBoxGeometry(2, 2, 2);
+    const auto vertices = geometry->getAttribute("position")->count();
+    std::vector<double> reach(vertices * 3, 0.0);
+    for (uint64_t i = 0; i < vertices; ++i) reach[i * 3] = 10;  // the target moves the box 10 m along x
+    geometry->morphPositions.push_back(BufferAttribute::fromFloats(reach, 3));
+    geometry->morphTargetsRelative = true;
+    Mesh mesh(geometry, std::make_shared<Material>(MaterialType::Basic));
+    mesh.morphTargetInfluences = {0.0};
+    DrawItem item;
+    item.positions = geometry->getAttribute("position")->store.get();
+    item.morphGeometry = geometry.get();
+    item.shadowObject = &mesh;
+    Matrix4 model;
+    item.matrixWorld = model.elements;
+    DrawCache cache;
+    const double atRest = cache.virtualShadowBounds(item).first.max.x;
+    mesh.morphTargetInfluences = {1.0};
+    const double raised = cache.virtualShadowBounds(item).first.max.x;
+    std::fprintf(stderr, "morphed shadow box max.x: %.2f at influence 0, %.2f at influence 1\n", atRest, raised);
+    // The vertices reach x 11 at full influence. three's box reads 19 here (its second expand starts from the
+    // box the first one grew), which over-bounds and never clips; what must hold is 11 and no influence.
+    CHECK(atRest >= 11);
+    CHECK(raised == atRest);
+    CHECK(cache.virtualShadowBounds(item).first.min.x == -1);
+}
+
 void virtualShadowBoundsCache() {
     auto geometry = makeBoxGeometry(2, 2, 2);
     DrawItem item;
@@ -8433,6 +8813,13 @@ void virtualShadowBoundsCache() {
     item.positionNode = std::make_shared<const shader::PositionNode>();
     sample(); sample();
     CHECK(cache.shadowBoundsBuilds == settled);
+    // An impostor quad its positionNode relocates per instance states its own geometry boundingBox (three's authored
+    // bounds): that box places it, 4 m wider each side than the 2 m quad here (PRD-858).
+    const Box3 rest = sample().first;
+    item.geometryBox = Box3().setFromCenterAndSize(Vector3(0, 0, 0), Vector3(10, 2, 2));
+    CHECK(sample().first.max.x == rest.max.x + 4 && sample().first.min.x == rest.min.x - 4);
+    item.geometryBox.reset();
+    CHECK(sample().first.max.x == rest.max.x);
     // Its material's maxPositionOffset grows the union and every instance box by that many metres, so a page can
     // place the swaying instances one by one (Unreal's MaxWorldPositionOffsetDisplacement); a rigid draw ignores it.
     shader::StandardMaterial swaying;
@@ -9372,7 +9759,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram},{"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, 
+TN_TEST_MAIN({"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

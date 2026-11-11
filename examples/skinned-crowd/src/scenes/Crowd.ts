@@ -15,6 +15,7 @@ import {
   AnimationClip,
   AnimationMixer,
   Bone,
+  BufferAttribute,
   CylinderGeometry,
   DirectionalLight,
   Float32BufferAttribute,
@@ -22,13 +23,12 @@ import {
   Matrix3,
   Matrix4,
   Mesh,
-  NumberKeyframeTrack,
   Object3D,
   type PerspectiveCamera,
   PlaneGeometry,
+  QuaternionKeyframeTrack,
   Skeleton,
   SkinnedMesh,
-  Uint16BufferAttribute,
   Vector3,
 } from "three";
 import { crowdLook } from "../render/look.js";
@@ -241,21 +241,38 @@ function tube(): CylinderGeometry {
     indices.push(bone, bone + 1, 0, 0);
     weights.push(1 - blend, blend, 0, 0);
   }
-  geometry.setAttribute("skinIndex", new Uint16BufferAttribute(indices, 4));
+  // `BufferAttribute` over a `Uint16Array` is the same GPU data as `Uint16BufferAttribute`, which the
+  // owned Wasm engine does not bind: a skin index is four u32 lanes on WebGPU either way, and the
+  // example has to be expressible on both engines to be a scene the engine can be measured on.
+  geometry.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(indices), 4));
   geometry.setAttribute("skinWeight", new Float32BufferAttribute(weights, 4));
   return geometry;
 }
 
-/** One sway cycle: every bone bends the same way, so the whole chain curls and returns. */
+/**
+ * One sway cycle: every bone bends the same way, so the whole chain curls and returns.
+ *
+ * A quaternion track rather than a `.rotation[z]` number track: a bone's transform is a quaternion in the
+ * engine (`property_binding.cpp` binds `position`, `scale` and `quaternion`), and four `q = (0, 0, sin,
+ * cos)` keys give three exactly the rotation the number track gave — the same sway, on both engines, so
+ * this page can be the crowd the engine is measured on.
+ */
 function swayClip(): AnimationClip {
-  const tracks: NumberKeyframeTrack[] = [];
+  const tracks: QuaternionKeyframeTrack[] = [];
+  const aboutZ = (angle: number): [number, number, number, number] => [
+    0,
+    0,
+    Math.sin(angle / 2),
+    Math.cos(angle / 2),
+  ];
+  const times = [0, SWAY_SECONDS / 2, SWAY_SECONDS];
   for (let bone = 1; bone < BONES; bone += 1) {
     tracks.push(
-      new NumberKeyframeTrack(
-        `bone${bone}.rotation[z]`,
-        [0, SWAY_SECONDS / 2, SWAY_SECONDS],
-        [-0.09, 0.09, -0.09],
-      ),
+      new QuaternionKeyframeTrack(`bone${bone}.quaternion`, times, [
+        ...aboutZ(-0.09),
+        ...aboutZ(0.09),
+        ...aboutZ(-0.09),
+      ]),
     );
   }
   return new AnimationClip("sway", SWAY_SECONDS, tracks);

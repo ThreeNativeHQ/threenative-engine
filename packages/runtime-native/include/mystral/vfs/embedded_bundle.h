@@ -35,6 +35,18 @@ bool readEmbeddedFile(const std::string& path, std::vector<uint8_t>& out);
 bool hasEmbeddedBundle();
 std::string getEmbeddedEntryPath();
 std::string normalizeBundlePath(const std::string& path);
+
+/** Where a game's files live for a platform, for the paths `fetch` and file reads receive. */
+enum class FetchPathPlatform { Desktop, Android, Ios };
+
+/**
+ * Maps the path a game passes to `fetch` onto the packaged bundle path.
+ *
+ * Android serves the game directory from the APK, so a non-`file://` path becomes `game/<path>`
+ * (already-prefixed paths are kept). iOS runs from the game directory, so a leading-slash path
+ * becomes relative to it. Desktop and every `file://` URL keep the path as given, minus the scheme.
+ */
+std::string resolveFetchPath(std::string path, FetchPathPlatform platform);
 std::string getExecutablePath();
 
 constexpr uint32_t kBundleVersion = 1;

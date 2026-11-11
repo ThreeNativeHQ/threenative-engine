@@ -31,20 +31,21 @@ const DRAWN = new Set<string>(["forest", "coastal"]);
 /** The recipe's own output: the Phase 1 numbers, with the container digest re-measured at AC-2. */
 const GOLDEN = {
   forest: {
-    placements: "f49d695f37d09098ce1ad78af0eeda376aa97ccdbcb7cd6cc59e615817d603f4",
+    placements: "d108ef0946632404625e7cd82ec56f0cf22641140d0f627ce782b27476b47c0e",
     counts: {
-      boulder: 105,
-      bush: 1384,
-      fern: 7211,
-      grass: 144698,
-      litter: 2694,
+      boulder: 115,
+      bush: 4261,
+      deadfall: 846,
+      fern: 30055,
+      grass: 259588,
+      litter: 37602,
       mountain: 7,
-      pebble: 1616,
-      poppy: 3316,
-      riverrock: 357,
-      sapling: 5379,
-      scrub: 43242,
-      spruce: 3131,
+      pebble: 1638,
+      poppy: 4082,
+      riverrock: 318,
+      sapling: 9528,
+      scrub: 78269,
+      spruce: 5649,
     },
     heights: "c3b5a7ebe3784e844604799f599950ea52f98477ca3a3e8b0c63cf76c08b6770",
     manifest: "df9936f9e3a31532426972a19c47c168262efc6117040d5a577863500307dd2c",
@@ -85,7 +86,7 @@ const GOLDEN = {
     heights: "dc182307fa2789f7297d53e96c77720b7fac97119489f725d8ebbb44e1d60533",
     manifest: "72c72e6f86b2a800aeae246b4800390b6c57fe6b95dc87510193549f9106c943",
   },
-  horizon: "e41157c5dcf0477495291792f48a2469bad8bd4df3272deeffcd9de5c2773825",
+  horizon: "f9726916885d79f137891288240cfe8ed7ae12cf36d032b315c22b6c39f4f277",
 } as const;
 
 const read = (name: string): Uint8Array => readFileSync(new URL(name, worldDir));

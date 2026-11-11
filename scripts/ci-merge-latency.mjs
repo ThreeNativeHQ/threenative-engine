@@ -6,8 +6,8 @@
 // Per merged PR: last push -> merge, enqueue -> merge, merge-queue attempts, first failing job.
 // Summary: median/p90 of those, merge-group success, board wall time and runner queue wait.
 // A value the API cannot supply is null, never 0.
-import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { gh } from "./lib/gh.mjs";
 
 const MS_PER_MIN = 60_000;
 const minutes = (from, to) =>
@@ -125,10 +125,6 @@ export function summarize({ prs, runs: allRuns, jobsByRun = {} }) {
       .map(([job, count]) => ({ job, count }))
       .sort((a, b) => b.count - a.count || a.job.localeCompare(b.job)),
   };
-}
-
-function gh(args) {
-  return execFileSync("gh", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
 }
 
 const ndjson = (text) =>

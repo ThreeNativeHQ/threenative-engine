@@ -14,10 +14,12 @@ import {
 import { RENDER_CHAIN_MANIFEST_ENTRIES } from "./render-chain-capabilities.js";
 import { publicWorkspacePackagesWithExports } from "./workspace-packages.js";
 
-export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/create-threenative/capabilities.json";
+/** The one committed manifest. `create-threenative` reads this copy; it keeps none of its own. */
+export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/core/capabilities.json";
 // `@threenative/core` ships the same manifest so the capability MCP server still answers in a
 // project that was not scaffolded and therefore has no committed copy of its own.
-export const CAPABILITY_MANIFEST_MIRROR_PATH = "packages/core/capabilities.json";
+/** Where the copy sat before PRD-836; kept so a stale one is reported rather than silently used. */
+export const CAPABILITY_MANIFEST_LEGACY_PATH = "packages/create-threenative/capabilities.json";
 
 const MANIFEST_VERSION = 2 as const;
 
@@ -205,7 +207,9 @@ function sourceFileForTarget(packageDirectory: string, target: string): string {
 function parseSource(file: string): ts.SourceFile {
   const source = ts.sys.readFile(file);
   if (source === undefined) throw new Error(`Capability source file is unreadable: ${file}`);
-  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  // A `.ts` file parsed as TSX reads `<T>(…) =>` as JSX and drops every export after it.
+  const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind);
 }
 
 function resolveRelativeModule(from: string, specifier: string): string | undefined {
@@ -761,7 +765,7 @@ function manifestPath(root: string): string {
 }
 
 function manifestPaths(root: string): readonly string[] {
-  return [manifestPath(root), path.join(root, CAPABILITY_MANIFEST_MIRROR_PATH)];
+  return [manifestPath(root)];
 }
 
 export interface IScaffoldDependencyClosure {

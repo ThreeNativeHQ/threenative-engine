@@ -1,0 +1,83 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -640,7 +640,16 @@
+  * clear the depth buffer at EVERY later draw of the pass while the same bit
+  * turns depth writes off (`SetDepthWriteEnabled(... && !depth_clear_enable)`)
+  * -- no depth test at all, the symptom this path exists to fix. */
+-static void vk_ps4_clear_depth_draw(VkPs4CommandBuffer *cmd, VkPs4Image *img) {
++/* Bind one array layer of a depth image: DB_DEPTH_VIEW.SLICE_START, the slice shadPS4 and the DB render to.
++ * The image's own descriptor names layer 0, so every cube face of a point-lamp shadow map rendered into
++ * face 0 and the other five never held depth: PS4 drew no lamp shadow (PRD-784 gap sweep). */
++static void vk_ps4_bind_depth_layer(VkPs4CommandBuffer *cmd, const VkPs4Image *img, uint32_t layer) {
++    GnmDepthRenderTarget drt = img->gnm_drt;
++    drt.depthview.slicestart = layer;
++    sceGnmDrawCmdSetDepthRenderTarget(&cmd->gnm_cmd, &drt);
++}
++
++static void vk_ps4_clear_depth_draw(VkPs4CommandBuffer *cmd, VkPs4Image *img, uint32_t layer) {
+     vk_ps4_emit_primitive_setup(cmd, NULL);
+     /* Temporarily enable depth write so the draw accesses the depth buffer.
+      * This guarantees the lazy clear fires regardless of the bound pipeline's
+@@ -657,7 +666,7 @@
+     if (img) {
+         /* The clear covers the whole surface of THIS target: bind it, and give
+          * the draw the target's own scissor, viewport and sample count. */
+-        sceGnmDrawCmdSetDepthRenderTarget(&cmd->gnm_cmd, &img->gnm_drt);
++        vk_ps4_bind_depth_layer(cmd, img, layer);
+         sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd, 0, 0,
+             img->create_info.extent.width, img->create_info.extent.height);
+ 
+@@ -758,7 +767,7 @@
+         if (att_idx != VK_ATTACHMENT_UNUSED) {
+             VkPs4ImageView *view = vk_ps4_get_attachment_view(cmd, att_idx);
+             if (view && view->image && view->image->is_depth_target) {
+-                sceGnmDrawCmdSetDepthRenderTarget(&cmd->gnm_cmd, &view->image->gnm_drt);
++                vk_ps4_bind_depth_layer(cmd, view->image, view->create_info.subresourceRange.baseArrayLayer);
+             }
+         }
+     }
+@@ -2980,7 +2989,7 @@
+                 sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+ 
+                 /* Trigger the lazy clear with a fullscreen draw on this target. */
+-                vk_ps4_clear_depth_draw(cmd, view->image);
++                vk_ps4_clear_depth_draw(cmd, view->image, view->create_info.subresourceRange.baseArrayLayer);
+ 
+             } else if (view->image->is_render_target) {
+                 const VkClearColorValue *cc =
+@@ -3138,7 +3147,7 @@
+                         db_ctrl.depthclearenable = has_depth ? 1 : 0;
+                         db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+                         sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+-                        vk_ps4_clear_depth_draw(cmd, view->image);
++                        vk_ps4_clear_depth_draw(cmd, view->image, view->create_info.subresourceRange.baseArrayLayer);
+                     }
+                 }
+             }
+@@ -3170,7 +3179,7 @@
+                         db_ctrl.depthclearenable = has_depth ? 1 : 0;
+                         db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+                         sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+-                        vk_ps4_clear_depth_draw(cmd, view->image);
++                        vk_ps4_clear_depth_draw(cmd, view->image, view->create_info.subresourceRange.baseArrayLayer);
+                     }
+                 }
+             }
+@@ -3413,7 +3422,7 @@
+ 
+     /* Bind the depth target and draw to trigger the lazy clear (the clear
+      * binds its own target, scissor, viewport and sample count). */
+-    vk_ps4_clear_depth_draw(cmd, img);
++    vk_ps4_clear_depth_draw(cmd, img, 0); /* ponytail: layer 0 only, as the clear always did; loop the ranges' layers when a game clears a layered depth image */
+ 
+     /* Iterate ranges to validate bounds (API contract). The lazy clear
+      * covers the entire target regardless of ranges. */
+@@ -3483,7 +3492,7 @@
+                 uint32_t ds_idx = vk_ps4_subpass_depth_attachment(cmd);
+                 VkPs4ImageView *ds_view = ds_idx == VK_ATTACHMENT_UNUSED
+                     ? NULL : vk_ps4_get_attachment_view(cmd, ds_idx);
+-                vk_ps4_clear_depth_draw(cmd, ds_view ? ds_view->image : NULL);
++                vk_ps4_clear_depth_draw(cmd, ds_view ? ds_view->image : NULL, ds_view ? ds_view->create_info.subresourceRange.baseArrayLayer : 0);
+             }
+ 
+             /* Restore scissor to render area */

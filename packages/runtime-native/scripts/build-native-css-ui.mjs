@@ -12,6 +12,7 @@
  * `--target <triple>` cross-builds for Android (`x86_64-linux-android`, `aarch64-linux-android`)
  * with the NDK clang the Android Gradle build pins, exactly as `build-native-physics.mjs` does; the
  * library lands in cargo's per-triple directory, which is where CMake looks for it per ABI.
+ * `--ps4` cross-builds for `x86_64-unknown-linux-musl` (no linker named) without `system-fonts`: the guest has no fontconfig.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -23,6 +24,9 @@ const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = join(runtimeRoot, 'native', 'css-ui', 'Cargo.toml');
 
 export const CSS_UI_ANDROID_TARGETS = { 'arm64-v8a': 'aarch64-linux-android', x86_64: 'x86_64-linux-android' };
+
+/** PS4 (PRD-784): OpenOrbis links its own musl, so the Linux musl staticlib's libc references resolve there. */
+export const CSS_UI_PS4_TARGET = 'x86_64-unknown-linux-musl';
 
 /** The static library `cargo build --lib` writes, named the way the host toolchain names it. */
 export function cssUiLibraryName(platform = process.platform) {
@@ -54,9 +58,10 @@ function androidClang(target) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2);
   const checkOnly = args.includes('--check');
+  const ps4 = args.includes('--ps4');
   const targetIndex = args.indexOf('--target');
-  const target = targetIndex === -1 ? undefined : args[targetIndex + 1];
-  if (target !== undefined && !Object.values(CSS_UI_ANDROID_TARGETS).includes(target)) {
+  const target = ps4 ? CSS_UI_PS4_TARGET : targetIndex === -1 ? undefined : args[targetIndex + 1];
+  if (target !== undefined && !ps4 && !Object.values(CSS_UI_ANDROID_TARGETS).includes(target)) {
     throw new Error(`Unknown CSS UI target: ${target}. Supported: ${Object.values(CSS_UI_ANDROID_TARGETS).join(', ')}`);
   }
   const library = cssUiLibraryPath(runtimeRoot, process.platform, target);
@@ -69,14 +74,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     }
   } else {
     let env = process.env;
-    if (target !== undefined) {
+    if (ps4) {
+      const rustTarget = spawnSync('rustup', ['target', 'add', target], { encoding: 'utf8' });
+      if (rustTarget.status !== 0) {
+        throw new Error(rustTarget.stderr || rustTarget.stdout || `rustup could not install ${target}`);
+      }
+    } else if (target !== undefined) {
       const { cc, ar } = androidClang(target);
       const key = target.replaceAll('-', '_');
       env = { ...env, [`CC_${key}`]: cc, [`AR_${key}`]: ar, [`CARGO_TARGET_${key.toUpperCase()}_LINKER`]: cc };
     }
     const result = spawnSync(
       'cargo',
-      ['build', '--release', '--manifest-path', manifest, '--lib', ...(target === undefined ? [] : ['--target', target])],
+      ['build', '--release', '--manifest-path', manifest, '--lib', ...(ps4 ? ['--no-default-features'] : []), ...(target === undefined ? [] : ['--target', target])],
       { stdio: 'inherit', env },
     );
     if (result.error) throw result.error;
@@ -85,7 +95,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       // (or, cross-building, the rustup target or the NDK) is missing or too old.
       throw new Error(
         `Building the CSS UI failed with code ${result.status ?? 'unknown'}. It needs a current Rust toolchain` +
-          (target === undefined ? ' and nothing else.' : `, rustup target ${target} and the pinned Android NDK.`),
+          (target === undefined ? ' and nothing else.' : ps4 ? ` and rustup target ${target}.` : `, rustup target ${target} and the pinned Android NDK.`),
       );
     }
     console.log(`ThreeNative CSS UI: ${library}`);

@@ -620,6 +620,101 @@ describe("render camera cull", () => {
     expect([shown.rate, hidden.rate]).toEqual([4, 1]);
   });
 
+  // PRD-828: the engine answers every measured rig's band in one call, and the JS part walk does not run.
+  it("takes the rate bands from the engine in one call per frame", () => {
+    const onRay = new Group();
+    onRay.add(ball(1, -60));
+    const offRay = new Group();
+    const lateral = ball(1, -60);
+    lateral.position.x = 8;
+    offRay.add(lateral);
+    const unseen = new Group();
+    unseen.add(ball(1, -60));
+    const states = [rateState(), rateState(), rateState()];
+    trackAnimationRate(onRay, states[0] as IAnimationRateState);
+    trackAnimationRate(offRay, states[1] as IAnimationRateState);
+    trackAnimationRate(unseen, states[2] as IAnimationRateState);
+    const scene = sceneWith(onRay, offRay, unseen);
+    // Not the JS walk's answers (1, 4, 1): the states can only read these if the engine's were taken.
+    const bandRigs = vi.fn((..._args: unknown[]) => [2, 8, 0]);
+    Object.assign(scene, { __bandRigs: bandRigs });
+    const view = camera();
+    const cull = new RenderCameraCull();
+    cull.prepareAnimation(scene, view, 720);
+
+    expect(bandRigs).toHaveBeenCalledTimes(1);
+    const [cameraArg, resolved, scale, rigs] = bandRigs.mock.calls[0] as unknown[];
+    expect([cameraArg, resolved, rigs]).toEqual([view, true, [onRay, offRay, unseen]]);
+    expect(scale).toBeCloseTo(720 / (2 * Math.tan(Math.PI / 6)), 9);
+    expect(states.map((state) => state.rate)).toEqual([2, 8, 1]);
+    // 0 means no part was visited: that rig's state is left as the JS walk leaves it.
+    expect(states.map((state) => state.frame)).toEqual([
+      cull.animationFrame,
+      cull.animationFrame,
+      0,
+    ]);
+  });
+
+  // The scene of `projected_cull_bands` (runtime-native abi_test.cpp), through the JS walk: the engine's
+  // answers there are these, so the port and the rule it ports cannot drift apart silently.
+  it("answers the engine band case's rates through the JS walk", () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array([-1, 0, 0, 1, 0, 0]), 3),
+    );
+    const parts: Mesh[] = [];
+    const rigAt = (x: number, z: number) => {
+      const rig = new Group();
+      const part = new Mesh(geometry, new MeshBasicMaterial());
+      rig.position.set(x, 0, z);
+      rig.add(part);
+      parts.push(part);
+      return rig;
+    };
+    const rigs = [
+      rigAt(0, -500),
+      rigAt(5, -40),
+      rigAt(20, -400),
+      rigAt(-200, -10),
+      rigAt(5, -40),
+      rigAt(20, -400),
+      rigAt(5, -40),
+    ];
+    (parts[4] as Mesh).visible = false;
+    alwaysRender(parts[5] as Mesh);
+    const pairFar = new Mesh(geometry, new MeshBasicMaterial());
+    pairFar.position.z = -360;
+    (rigs[6] as Group).add(pairFar);
+    const states = rigs.map(() => ({ ...rateState(), rate: 0 }));
+    rigs.forEach((rig, index) => trackAnimationRate(rig, states[index] as IAnimationRateState));
+    const scene = sceneWith(...rigs);
+    new RenderCameraCull().prepareAnimation(scene, camera(50), 720);
+
+    // 0 stands for "left alone", as the engine reports it.
+    expect(states.map((state) => state.rate)).toEqual([1, 2, 8, 8, 0, 1, 1]);
+  });
+
+  it("keeps the JS walk for a rig inside a rig", () => {
+    const outer = new Group();
+    const inner = new Group();
+    const part = ball(1, -60);
+    part.position.x = 8;
+    inner.add(part);
+    outer.add(inner);
+    const outerState = rateState();
+    const innerState = rateState();
+    trackAnimationRate(outer, outerState);
+    trackAnimationRate(inner, innerState);
+    const scene = sceneWith(outer);
+    const bandRigs = vi.fn(() => [8]);
+    Object.assign(scene, { __bandRigs: bandRigs });
+    new RenderCameraCull().prepareAnimation(scene, camera(), 720);
+
+    expect(bandRigs).not.toHaveBeenCalled();
+    expect([outerState.rate, innerState.rate]).toEqual([4, 4]);
+  });
+
   it("rejects a threshold that is not false or a positive finite number", () => {
     expect(() => new RenderCameraCull({ minimumPixels: 0 })).toThrow(/minimumProjectedPixels/);
     expect(() => new RenderCameraCull({ minimumPixels: -1 })).toThrow(/minimumProjectedPixels/);

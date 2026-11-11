@@ -11,8 +11,9 @@ Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime r
 - The forest uses the owner's licensed Project Nature Spruce Forest, Grass Library, Ground Foliage,
   Meadow Flowers and Fern Collection, plus Epic Kite Demo photoscanned rocks. `src/render/pack.ts`
   loads this example's gitignored `local-assets/temperate/`; `scripts/prep-fab-temperate.mjs`
-  repairs atlas/opacity bindings and calls the installed asset cook. Set `FAB_TEMPERATE` to the
-  imported library. Licensed bytes are LOCAL-ONLY and never committed; provenance is in `CREDITS.md`.
+  repairs atlas/opacity bindings and calls the installed asset cook. `pnpm dev` runs it with `--auto`:
+  the library defaults to the asset MCP's import folder `~/.cache/threenative-fab/temperate`
+  (`FAB_TEMPERATE` overrides), a machine without it skips, and an unchanged library skips on a stamp. Licensed bytes are LOCAL-ONLY and never committed; provenance is in `CREDITS.md`.
   Missing models keep the procedural spruce, rock, fern, grass and flower fallback drawing.
   Cutout vegetation draws with its imported albedo, normal map and cutoff, lit by the CC0
   Kloofendal HDRI as each material's `envMap` (`local-assets/prepared/kloofendal_48d_2k.hdr`,
@@ -64,6 +65,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `playtests/export.playtest.json`: playtest scenario checking static GLB export loading and appearance.
   - `playtests/lod.playtest.json`: run with `?world=forest&meadow=off`: at the vista, 685 m from the player, the props draw at the level the camera sees (`propTriangles` at most 18 M); `?tnLodFromCamera=0` is its before arm.
   - `playtests/loop.playtest.json`: checks the owner's loop (reveal, 10 s walk, camera turn, idle) builds no pipeline after the reveal.
+  - `playtests/stream.playtest.json`: run with `?stream=1&tnTerrainValidate=1` (PRD-790): the player sprints 1.8 km past the square over ground `TerrainTiles` streams around it, then along a slope, 2 km in all, stays grounded, and the tile edges meet with no height gap.
   - `playtests/swim.playtest.json`: checks the player walks into the forest river, swims across it afloat (`CharacterBody3D.water`, immersion 0.62, off the bed) with the UAL1 swim clip, and climbs out on the far bank, and floats with no key held while the river carries it downstream (`CharacterBody3D.waterCurrent`, `swimDrift` at least 1.5 m); `?swim=off` and `?current=off` are its before arms.
   - `playtests/switch.playtest.json`: checks the world keys re-enter scenes: forest ready, `Digit2` to a ready coast, `Digit1` back to a ready forest, on one page with no console error. Before the fix it aborted the Wasm engine in the switch frame (`TN_VIRTUAL_SHADOW_UNINITIALISED`'s cause, a `t_vsm0` binding with no atlas view).
   - `playtests/terrain.playtest.json`: primary playtest scenario for shared web/desktop showcase views.
@@ -89,6 +91,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/verify-surfaces.mjs`: verifies PBR terrain surface materials, splat textures, and blend transitions.
   - `scripts/verify-tool-groups.mjs`: tests editor UI tool groupings, interactions, and parameter schemas.
   - `scripts/verify-transforms.mjs`: validates coordinate transforms, rotations, and placement matrices.
+  - `scripts/verify-variations.mjs`: PRD-866 Phase 3: cooks "a spruce forest under mountains" through the terrain MCP server with seeds 1, 2 and 3, bakes each with `STRATA_WORLD`, and asserts three ground hashes, three massif poses and the backdrop gates on each ring (network on a cold tile cache).
   - `scripts/verify-world-export.mjs`: verifies headless static world GLB export and vanilla Three.js loading.
   - `scripts/check-water.mjs`: regression tests for shared water rendering and shoreline depths.
 
@@ -96,8 +99,10 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/fixtures/editor-conflict.ts`: mounts two editor clients against the same document for the conflict scenario.
   - `scripts/bake.mjs`: bakes source elevation data and generates canonical world JSON packages.
   - `scripts/recipe.mjs`: the five worlds' landform recipes and surface manifests as a module; `bake.mjs` evaluates them, nothing else imports it.
+  - `scripts/recipe.d.mts`: the TypeScript declarations for `recipe.mjs` (`outputDir`); the recipe's worlds stay untyped script values.
   - `scripts/props.mjs`: the prop half of the bake: one container per streamed world through `compilePropBuckets`, with the game's own bucket and reach policy.
   - `scripts/stamp.mjs`: hashes every input a bake depends on and reports whether the written worlds are stale; `pnpm dev` checks it on every start.
+  - `scripts/stamp.d.mts`: the TypeScript declarations for `stamp.mjs` (`stamp`, `isFresh`).
   - `scripts/world-files.mjs`: lists the baked files the game fetches, read from the bake's own `<world>.props.json` manifests, and stops the build by name (`TN_STRATA_BUILD_MISSING`) on a file the bake did not write.
   - `scripts/consumer-world.mjs`: exports `openConsumerPage` to serve an installed consumer directory to headless Chromium and run vanilla full-world export against packed tarballs.
   - `scripts/stage-native-assets.mjs`: stages textures and models for native desktop/mobile bundles.
@@ -139,6 +144,13 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/dem/tundra.json`: grid metadata and coordinate bounding bounds for the tundra world.
   - `scripts/dem/tundra-horizon.bin`: distant horizon ring elevation binary for the tundra world.
   - `scripts/dem/tundra-horizon.json`: distant horizon ring grid metadata for the tundra world.
+  - `scripts/dem/massif.mjs`: cuts whole mountains, foot to foot, from the USGS 3DEP elevation service (public domain, 1 m lidar) into the int16 tiles `placeMassif` stands behind a world; needs the network and rewrites `massif-<name>.bin` and `.json`.
+  - `scripts/dem/massif-longs.bin`: int16 elevation tile for the Longs Peak massif backdrop.
+  - `scripts/dem/massif-longs.json`: grid metadata, site and coordinate bounds for the Longs Peak massif.
+  - `scripts/dem/massif-maroon.bin`: int16 elevation tile for the Maroon Bells massif backdrop.
+  - `scripts/dem/massif-maroon.json`: grid metadata, site and coordinate bounds for the Maroon Bells massif.
+  - `scripts/dem/massif-teton.bin`: int16 elevation tile for the Grand Teton massif backdrop.
+  - `scripts/dem/massif-teton.json`: grid metadata, site and coordinate bounds for the Grand Teton massif.
 
 - Fixtures and testing environments:
   - `scripts/fixtures/consumer-world.mjs`: driver running an authored world in an isolated browser harness.

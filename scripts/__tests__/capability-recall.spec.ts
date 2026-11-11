@@ -14,7 +14,7 @@ import {
   validateCorpus,
 } from "../capability-recall.js";
 
-const manifestFile = "packages/create-threenative/capabilities.json";
+const manifestFile = "packages/core/capabilities.json";
 
 function row(overrides: Partial<ICapabilityRecallRow> = {}): ICapabilityRecallRow {
   return {
@@ -35,6 +35,7 @@ function result(symbol: string): ICapabilitySearchResult {
     importPath: "@threenative/core",
     matchedSituation: "fixture",
     score: 0,
+    signature: "class GroundSnap",
     summary: "fixture",
     symbol,
   };
@@ -102,6 +103,16 @@ describe("capability recall gate", () => {
     await expect(
       resolveCorpusSources([row({ source: "template:starter#Heading removed by a later edit" })]),
     ).rejects.toThrow("template:starter#Heading removed by a later edit");
+  });
+
+  it("should resolve a source pointer into every shipped kit, not a hand-typed subset", async () => {
+    await expect(
+      resolveCorpusSources([
+        row({ source: "template:puzzle#Authoring flow" }),
+        row({ source: "template:rts#This kit" }),
+        row({ source: "template:runner#This kit" }),
+      ]),
+    ).resolves.toBeUndefined();
   });
 
   it("should accept a sandbox game pointer and reject an unknown source kind", async () => {

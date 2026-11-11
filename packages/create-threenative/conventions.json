@@ -10,6 +10,27 @@
       "kits": "all"
     },
     {
+      "id": "ao-indirect",
+      "name": "Ambient occlusion",
+      "default": "darkens indirect light only, not the sun",
+      "override": "`gtaoIndirectOnly: false`; `gtaoEnabled: false`",
+      "marker": "TN_WORLD_ENVIRONMENT",
+      "kits": [
+        "adventure",
+        "collectathon",
+        "kart",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "runner",
+        "sailing",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
       "id": "quality",
       "name": "Quality tier (`src/render/quality.ts`)",
       "default": "GPU class picks `high`, `medium` or `low`",
@@ -356,6 +377,14 @@
       "kits": "all"
     },
     {
+      "id": "cpu-priority",
+      "name": "CPU priority",
+      "default": "game threads first",
+      "override": "`display.priority: \"normal\"`",
+      "marker": "TN_PROCESS_PRIORITY",
+      "kits": "all"
+    },
+    {
       "id": "terrain",
       "name": "Terrain",
       "default": "authored in the game",
@@ -417,6 +446,14 @@
       "default": "owned C++ engine",
       "override": "`engine: \"threejs\"` only when the user asks",
       "marker": "TN_NATIVE_ENGINE_UNBOUND",
+      "kits": "all"
+    },
+    {
+      "id": "engine-catalog",
+      "name": "Refused imports",
+      "default": "refused `three` imports fail at their line",
+      "override": "`createEngineCatalogPlugin({ mode: \"warn\" })`",
+      "marker": "TN_ENGINE_CATALOG",
       "kits": "all"
     }
   ]

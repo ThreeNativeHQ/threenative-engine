@@ -242,6 +242,16 @@ class AnimationMixer {
     /** Owned for a language binding that listens to this mixer's events; dies with the mixer. */
     std::shared_ptr<void> languageListeners;
 
+    // PRD-828: the rig's own frame state for `tn_anim_tick` — the body's last measured ground position
+    // and the advance banked on held ticks. One mixer is one rig, so a clip change measures the same body
+    // continuously instead of starting from nothing; a tick with `reset` drops both, which is what a
+    // teleport, a respawn or a path switch reports.
+    bool strideHasLast = false;
+    double strideLastX = 0;
+    double strideLastZ = 0;
+    double stridePending = 0;
+    double strideElapsed = 0;
+
     // three's `stats`.
     [[nodiscard]] std::size_t actionsTotal() const { return actions_.size(); }
     [[nodiscard]] std::size_t actionsInUse() const { return nActiveActions_; }

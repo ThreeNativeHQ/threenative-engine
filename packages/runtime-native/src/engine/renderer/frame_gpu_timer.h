@@ -1,6 +1,7 @@
 #pragma once
 
 #include <webgpu/webgpu.h>
+#include "engine/foundation/flags.h"
 #include "mystral/webgpu_compat.h"
 #include <atomic>
 #include <cstdint>
@@ -35,7 +36,7 @@ struct FrameGpuTimer {
 
     FrameGpuTimer() = default;  // No device, no queries: the stream's bookkeeping alone (its test).
     explicit FrameGpuTimer(WGPUDevice device) {
-        const char* passes = std::getenv("TN_GPU_PASSES");
+        const char* passes = flags::read<flags::GpuPasses>();
         trace = passes && passes[0] == '1' && passes[1] == '\0';
         if (!wgpuDeviceHasFeature(device, WGPUFeatureName_TimestampQuery)) return;
         WGPUQuerySetDescriptor desc{};

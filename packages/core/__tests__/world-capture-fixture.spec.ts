@@ -41,6 +41,20 @@ async function probe() {
   const world = { dispose() {}, stats: () => stats };
   const source = readFileSync(resolve(root, fixture, "src/scenes/WorldProbe.ts"), "utf8");
   const module = { exports: {} };
+  const dependencies: Record<string, unknown> = {
+    "@threenative/core": { Scene, VirtualShadowNode: class {} },
+    "@threenative/core/world": { WorldCells: { load: async () => world } },
+    three: { Color, DirectionalLight, HemisphereLight },
+    "three/tsl": { pass },
+    "three/addons/tsl/display/BloomNode.js": { bloom },
+    "../render/terrain.js": { terrainMaterial: () => ({}) },
+    // Only the `?world&viewDistance` flight applies it, and this context has no location.
+    "../render/worldFog.js": { worldFog: () => undefined },
+    // Only `?world&shadowPartial` constructs the PRD-538 probe.
+    "../probes/shadowPartial.js": { ShadowPartialProbe: class {} },
+    // Only `?probeCost=capture|trace` constructs the PRD-603 probe.
+    "../probes/probeCost.js": { ProbeCostProbe: class {}, probeCostMode: () => undefined },
+  };
   runInNewContext(
     ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -48,17 +62,9 @@ async function probe() {
     {
       exports: module.exports,
       require: (name: string) => {
-        if (name === "@threenative/core") return { Scene, VirtualShadowNode: class {} };
-        if (name === "@threenative/core/world") return { WorldCells: { load: async () => world } };
-        if (name === "three") return { Color, DirectionalLight, HemisphereLight };
-        if (name === "three/tsl") return { pass };
-        if (name === "three/addons/tsl/display/BloomNode.js") return { bloom };
-        if (name === "../render/terrain.js") return { terrainMaterial: () => ({}) };
-        // Only the `?world&viewDistance` flight applies it, and this context has no location.
-        if (name === "../render/worldFog.js") return { worldFog: () => undefined };
-        // Only `?world&shadowPartial` constructs the PRD-538 probe.
-        if (name === "../probes/shadowPartial.js") return { ShadowPartialProbe: class {} };
-        throw new Error(`Unexpected fixture dependency ${name}`);
+        const stub = dependencies[name];
+        if (stub === undefined) throw new Error(`Unexpected fixture dependency ${name}`);
+        return stub;
       },
     },
   );

@@ -357,6 +357,30 @@ describe.each(kits)("$kit runtime", ({ kit, addWorld, Collider, asset, water }) 
     expect(ctx.scene.children).toHaveLength(3);
   });
 
+  it("dresses the mid level its own assets.json bakes", async () => {
+    // The kit's table decides the levels: a `mid` scan it bakes is drawn past `midDistance` with its
+    // own material, so a far boulder left undressed shows its raw scan with no sky (the failure the
+    // forest's `lods: true` avoids).
+    const table = JSON.parse(
+      readFileSync(new URL(`../starter/${kit}/assets.json`, import.meta.url), "utf8"),
+    ) as Record<string, { mid?: string; midDistance?: number }>;
+    const mid = table[asset]?.mid;
+    const midGlb = mid === undefined ? undefined : `models/${mid.split("/").at(-1)}`;
+    const lods =
+      midGlb === undefined ? [] : [{ distance: table[asset]?.midDistance ?? 40, glb: midGlb }];
+    const source = { ...manifest, assets: { [asset]: { ...manifest.assets[asset], lods } } };
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: string) =>
+      input.endsWith("world.json") ? new Response(JSON.stringify(source)) : originalFetch(input),
+    );
+    const { ctx } = await context();
+    const model = vi.spyOn(ctx.assets, "model");
+    await addWorld(ctx, new Object3D());
+    const drawn = model.mock.calls.map(([path]) => path);
+    expect(drawn).toContain(`terrain/${kit}/${asset}.glb`);
+    if (midGlb !== undefined) expect(drawn).toContain(`terrain/${kit}/${midGlb}`);
+  });
+
   it("creates terrain on the requested query layer before registering its collider", async () => {
     const { ctx, plugin } = await context();
     const result = await addStarterWorld(ctx, new Object3D(), {

@@ -43,6 +43,28 @@ describe("integration work applies to the changed source", () => {
     expect(select(workflow, [file, "scripts/unclassified.ts"])).toEqual(all);
     expect(select(workflow, [file, "packages/runtime-native/src/main.cpp"]).decals).toBe(true);
   });
+  it("selects the PlayStation lane only for PS4 code (PRD-784)", () => {
+    for (const file of [
+      "packages/runtime-native/scripts/ps4/e2-build.sh",
+      "packages/runtime-native/scripts/ps4/patches/0057-vk-ps4-volumes-linear.patch",
+      "packages/runtime-native/scripts/ps4/check-frame.mjs",
+      "packages/runtime-native/tests/ps4-frame-check.test.mjs",
+      "packages/runtime-native/tests/fixtures/ps4-frames/cube-spin-ps4.png",
+      "packages/runtime-native/cmake/ps4.toolchain.cmake",
+      "packages/runtime-native/src/platform/ps4_main.cpp",
+    ]) {
+      expect(select(workflow, [file]).playstation, file).toBe(true);
+    }
+    for (const file of [
+      "packages/runtime-native/src/engine/render.cpp",
+      "packages/runtime-native/src/main.cpp",
+      "packages/runtime-native/scripts/bundle.mjs",
+      "packages/runtime-native/package.json",
+      "packages/core/src/renderer.ts",
+    ]) {
+      expect(select(workflow, [file]).playstation, file).toBe(false);
+    }
+  });
   it("retains animation routing for weighted playback and authored locomotion", () => {
     for (const file of [
       "packages/core/src/animation.ts",
@@ -617,27 +639,17 @@ describe("additive registration safety boundaries", () => {
   });
 });
 
-describe("actual additive exposure registration regression", () => {
-  // Exact added output/filter/job bytes from candidate 49f76db85cdc125b4bf1c2336fb37a7f78bb1153.
-  // Graft onto the current workflow to retain this proof after the native/browser split.
-  const outputs =
-    "      exposure: ${{ steps.filter.outputs.exposure }}\n      cold-boot: ${{ steps.filter.outputs.cold-boot }}\n";
-  const filters =
-    "            cold-boot ^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\\.spec\\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^packages/core/src/.*$|^packages/core/patches/.*$|^packages/playtest/.*$|^packages/runtime-native/.*$|^pnpm-lock\\.yaml$|^scripts/xvfb\\.sh$|^\\.github/actions/(workspace-dist|pnpm|playwright-chromium)/.*$\n            exposure ^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\\.spec\\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^packages/core/src/.*$|^packages/core/patches/.*$|^packages/playtest/.*$|^packages/runtime-native/.*$|^pnpm-lock\\.yaml$|^scripts/xvfb\\.sh$|^\\.github/actions/(workspace-dist|pnpm|playwright-chromium)/.*$\n";
-  const jobs =
-    "\n  exposure:\n    name: auto-exposure\n    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.exposure == 'true' }}\n    needs: paths\n    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}\n    timeout-minutes: 30\n    steps:\n      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262\n        with:\n          persist-credentials: false\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n      - uses: ./.github/actions/pnpm\n      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020\n        with:\n          node-version: '22'\n          cache: pnpm\n      - run: pnpm install --frozen-lockfile\n      - uses: ./.github/actions/workspace-dist\n        with:\n          pack-archives: 'false'\n          save-bundles: 'false'\n      - uses: ./.github/actions/playwright-chromium\n      - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/auto-exposure-proof.spec.ts packages/create-threenative/__tests__/auto-exposure-mutations.spec.ts packages/create-threenative/__tests__/auto-exposure-clock.spec.ts packages/create-threenative/__tests__/auto-exposure-camera.spec.ts\n      - name: Capture the real exposure graph\n        run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verify.ts\n      - uses: actions/upload-artifact@v4\n        if: always()\n        with:\n          name: prd339-exposure-${{ github.sha }}\n          path: artifacts/prd339-exposure\n          if-no-files-found: error\n\n  cold-boot:\n    name: auto-exposure cold boot\n    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.cold-boot == 'true' }}\n    needs: paths\n    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}\n    timeout-minutes: 30\n    steps:\n      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262\n        with:\n          persist-credentials: false\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n      - uses: ./.github/actions/pnpm\n      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020\n        with:\n          node-version: '22'\n          cache: pnpm\n      - run: pnpm install --frozen-lockfile\n      - uses: ./.github/actions/workspace-dist\n        with:\n          pack-archives: 'false'\n          save-bundles: 'false'\n      - uses: ./.github/actions/playwright-chromium\n      - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/auto-exposure-proof.spec.ts packages/create-threenative/__tests__/auto-exposure-mutations.spec.ts packages/create-threenative/__tests__/auto-exposure-clock.spec.ts packages/create-threenative/__tests__/auto-exposure-cold-boot.spec.ts\n      - name: Capture twenty independent exposure cold boots\n        run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verifyColdBoot.ts\n      - name: Qualify first-update snap response and zero-gain expected failure\n        run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verifySnap.ts\n      - uses: actions/upload-artifact@v4\n        if: always()\n        with:\n          name: prd339-cold-boot-${{ github.sha }}\n          path: |\n            artifacts/prd339-cold-boot\n            artifacts/prd339-snap-response\n";
+describe("additive exposure registration on the live workflow", () => {
+  // The live workflow already registers both lanes. Stripping them gives the "before" side, so the
+  // registration case runs on today's bytes and needs no copy of a past candidate.
   const before = workflow
     .replace(/^ {6}(exposure|cold-boot):.*\n/gmu, "")
     .replace(/^ {12}(exposure|cold-boot) .*\n/gmu, "")
     .replace(/\n {2}exposure:\n[\s\S]*$/u, "");
-  const selectAdded = (after: string, files = [".github/workflows/integration.yml"]) =>
-    integrationSelection({ before, after, files }).lanes;
-  const after =
-    before
-      .replace("    outputs:\n", `    outputs:\n${outputs}`)
-      .replace("          TN_LANE_FILTERS: |\n", `          TN_LANE_FILTERS: |\n${filters}`) + jobs;
-  it("selects the actual new roots without unrelated lanes", () => {
-    expect(selectAdded(after)).toEqual({ ...none, exposure: true, "cold-boot": true });
+  const selectAdded = (files = [".github/workflows/integration.yml"]) =>
+    integrationSelection({ before, after: workflow, files }).lanes;
+  it("selects the registered roots without unrelated lanes", () => {
+    expect(selectAdded()).toEqual({ ...none, exposure: true, "cold-boot": true });
   });
   it("retains exposure module routing with the registered roots", () => {
     for (const name of [
@@ -648,9 +660,28 @@ describe("actual additive exposure registration regression", () => {
       "worldEnvironment",
     ]) {
       expect(
-        selectAdded(after, [`packages/create-threenative/template-assets/${name}.ts`]).tone,
+        select(workflow, [`packages/create-threenative/template-assets/${name}.ts`]).tone,
       ).toBe(true);
     }
+  });
+  // Browser routing: the cold-boot lane reads only exposure-named core modules, the exposure lane
+  // reads every core module.
+  it.each([
+    ["packages/core/src/exposure.ts", { exposure: true, "cold-boot": true }],
+    ["packages/core/src/render.ts", { exposure: true, "cold-boot": false }],
+    [
+      "packages/create-threenative/template-assets/autoExposure.ts",
+      { exposure: true, "cold-boot": true },
+    ],
+  ])("routes browser source %s to the exposure lanes", (file, expected) => {
+    expect(select(workflow, [file])).toMatchObject(expected);
+  });
+  // Native routing: a runtime-native source change owes the exposure proof and never the cold-boot one.
+  it("routes a native source change to exposure alone", () => {
+    expect(select(workflow, ["packages/runtime-native/src/main.cpp"])).toMatchObject({
+      exposure: true,
+      "cold-boot": false,
+    });
   });
 });
 

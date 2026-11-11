@@ -1,8 +1,9 @@
-import type {
-  Heightfield,
-  HeightfieldCollar,
-  IShadowRegion,
-  WorldCells,
+import {
+  type Heightfield,
+  type HeightfieldCollar,
+  type IShadowRegion,
+  type WorldCells,
+  surfaceSampler,
 } from "@threenative/core/world";
 import { ScatterColliders } from "@threenative/physics";
 import {
@@ -14,7 +15,7 @@ import {
   Vector3,
 } from "three";
 import type { IRevealProbe } from "./diagnostics.js";
-import { BENCHMARK } from "./render/benchmark.js";
+import { posesFor } from "./render/benchmark.js";
 import type { IBiome, IWorldBiome, WorldName } from "./render/biomes.js";
 import {
   FAR_FOREST,
@@ -22,7 +23,6 @@ import {
   collarSampler,
   farForestPlacements,
 } from "./render/farForest.js";
-import { createGroundSampler } from "./render/groundSampler.js";
 import { HORIZON_WALK_BAND } from "./render/horizon.js";
 import { loadPack, loadSkyLight } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
@@ -37,6 +37,7 @@ import {
   variantFor,
 } from "./render/props.js";
 import { meadowCover } from "./render/scatter.js";
+import { SHADOW_REACH } from "./render/sky.js";
 import { type IBakedWorld, OPEN_MEADOW } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import type { TerrainCtx } from "./sceneState.js";
@@ -70,6 +71,8 @@ export interface IMeadowOptions {
   readonly fallbackParts: Variants | undefined;
   /** Where the player starts in this world: the point every stream measures its spawn cells around. */
   readonly spawn: Vector3;
+  /** PRD-790: the streamed ground's first tiles, drawn behind the curtain; absent without `?stream=1`. */
+  readonly groundReady?: Promise<void> | undefined;
   readonly gate: ISpawnGate;
   readonly reveal: IRevealProbe;
   readonly loading: { readonly finish: () => void };
@@ -117,6 +120,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
     fallbackParts,
     field,
     gate,
+    groundReady,
     invalidateShadows,
     loading,
     look,
@@ -203,7 +207,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
     if (ridges instanceof Mesh) ridges.geometry.computeBoundingBox();
     const rayTop =
       Math.max(top, ridges instanceof Mesh ? (ridges.geometry.boundingBox?.max.y ?? top) : top) + 2;
-    const groundSample = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
+    const groundSample = surfaceSampler(field, mesh.matrixWorld);
     // Past the walk band's collider the drawn collar is the ground (`farForest.ts`).
     const collarGround = collarSampler(collar);
     const groundAt: PropGroundQuery = (placement, at) => {
@@ -285,7 +289,14 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
       propsStage = "assets";
       const [prepared, pack, skyLight] = await Promise.all([
         loadPreparedProps(ctx.assets),
-        loadPack(ctx.assets, world, data, ctx.state.getState().canopyComparison, biome),
+        loadPack(
+          ctx.assets,
+          world,
+          data,
+          ctx.state.getState().canopyComparison,
+          biome,
+          scatter.canopy,
+        ),
         ctx.assets ? loadSkyLight(ctx.assets) : Promise.resolve(undefined),
       ]);
       preparedDispose = () => {
@@ -334,9 +345,9 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
       if (released()) return;
       propsStage = "streaming";
       // A fixed view standing on the surroundings gets the meadow the bake cannot place there.
-      const vista = OPEN_MEADOW ? BENCHMARK[world].poses.vista : undefined;
+      const vista = OPEN_MEADOW ? posesFor(world, data.size).vista : undefined;
       // Spruce across the valley past the square; `?farForest=on` plants them.
-      const vistaEye = BENCHMARK[world].poses.vista?.at;
+      const vistaEye = posesFor(world, data.size).vista?.at;
       const far =
         FAR_FOREST_WORLDS.includes(world) && FAR_FOREST && ridges instanceof Mesh
           ? farForestPlacements({
@@ -348,6 +359,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
               rivers: data.rivers,
               lakes: data.lakes,
               clear: vistaEye ? [[vistaEye[0], vistaEye[1], 55]] : [],
+              seaLevel: data.waterLevel,
             })
           : [];
       farForestCount = far.length;
@@ -362,7 +374,12 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
                 { x: vista.look[0], z: vista.look[1] },
                 data.size / 2,
                 HORIZON_WALK_BAND - 12,
-              )
+              ).filter(({ position: [x, , z] }) => {
+                // A cooked coast's sea covers the ground past the square: no meadow under it.
+                if (data.waterLevel === null) return true;
+                const ground = groundSample(x, z) ?? collarGround.at(x, z);
+                return ground === null || ground > data.waterLevel + 0.35;
+              })
             : []),
           ...far,
         ],
@@ -382,6 +399,8 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
           },
         },
         size: data.size,
+        standShade: look.standShade,
+        shadowReach: SHADOW_REACH,
         horizonDistance:
           ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera
             ? ctx.camera.far
@@ -476,6 +495,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
         void Promise.all([
           Promise.all(joins.map((join) => join.ready)),
           ...joins.map((join) => join.stream.prewarmed),
+          groundReady,
         ]).then(
           ([regions]) => {
             land({

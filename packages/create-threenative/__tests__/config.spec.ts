@@ -295,7 +295,7 @@ describe("threenative.config.ts", () => {
       root,
       `export default {
         app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
-        display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
+        display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, priority: "normal", maxFps: 120 },
         window: {
           title: "Fox Desktop",
           width: 1024,
@@ -311,7 +311,13 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).resolves.toEqual({
       engine: "threenative",
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
-      display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
+      display: {
+        orientation: "portrait",
+        fullscreen: false,
+        keepScreenOn: true,
+        priority: "normal",
+        maxFps: 120,
+      },
       window: {
         title: "Fox Desktop",
         width: 1024,
@@ -352,7 +358,13 @@ describe("threenative.config.ts", () => {
 
     await expect(loadConfig(root)).resolves.toMatchObject({
       app: { id: "com.threenative.foxgame", name: "fox-game", version: "0.1.13", build: 1 },
-      display: { orientation: "landscape", fullscreen: true, keepScreenOn: false, maxFps: 60 },
+      display: {
+        orientation: "landscape",
+        fullscreen: true,
+        keepScreenOn: false,
+        priority: "game",
+        maxFps: 60,
+      },
       window: { title: "fox-game", width: 1280, height: 720, maximized: false, resizable: true },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
@@ -976,6 +988,15 @@ describe("threenative.config.ts", () => {
     await config(root, 'export default { display: { orientation: "sideways" } };');
     await expect(loadConfig(root)).rejects.toThrow(/TN_NATIVE_ORIENTATION_INVALID/u);
   });
+
+  it.each(["high", "", true])(
+    "rejects invalid display.priority %j with the named code",
+    async (priority) => {
+      const root = await project();
+      await config(root, `export default { display: { priority: ${JSON.stringify(priority)} } };`);
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_PRIORITY_INVALID/u);
+    },
+  );
 
   it.each([-1, 60.5, 1001, "120"])(
     "rejects invalid display.maxFps %j with the named code",

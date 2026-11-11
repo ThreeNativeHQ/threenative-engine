@@ -7,6 +7,7 @@
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import { debugTelemetry } from "./debug-telemetry.js";
+import { WEB_FRAME_FIELD } from "./generated/web-frame-fields.js";
 import {
   CPU_STAGE_ENTRIES,
   type CpuStageName,
@@ -18,9 +19,15 @@ import {
 } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
 import { frameAttachmentName } from "./pass-node.js";
-import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
+import {
+  type IPositionLike,
+  type IRegionLike,
+  defineRenderTargets,
+  targetTexelBytes,
+  textureCopyArguments,
+} from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
-import { syncVirtualShadowLods } from "./shadow-node.js";
+import { reportVirtualShadowFrame, syncVirtualShadowLods } from "./shadow-node.js";
 import { defineSphereReflectionCapture } from "./sphere-reflection-capture.js";
 import { readStorageBytes } from "./storage.js";
 import type { INodeFrame } from "./temp-node.js";
@@ -50,6 +57,7 @@ type HostCall =
   | "_tnw_web_copy_texture"
   | "_tnw_web_read_mrt"
   | "_tnw_web_device_limit"
+  | "_tnw_web_device_feature"
   | "_tnw_web_threads";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
@@ -66,7 +74,16 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 11;
+export const WEB_HOST_ABI = 13;
+
+/**
+ * The device features three reads by name, as `tnw_web_device_feature`'s argument (web_host.cpp): every
+ * other name answers false, as a WebGPU GPUSupportedFeatures without it does.
+ */
+const WEB_DEVICE_FEATURES: Readonly<Record<string, number>> = {
+  "core-features-and-limits": 0,
+  "indirect-first-instance": 1,
+};
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -82,27 +99,13 @@ const FAILED = 2;
  * `tnw_web_frame` field of the first named stage's segment (web_host.cpp): 19 + 4 shadow, scene, other and output
  * passes. `GPU_STAGES` counts on from there, one segment per stage.
  */
-const GPU_STAGE_FIELD = 23;
+const GPU_STAGE_FIELD: number = WEB_FRAME_FIELD.gpuSegmentGather;
 
 interface IAdapterInfo {
   readonly vendor: string;
   readonly architecture: string;
   readonly description: string;
   readonly device: string;
-}
-
-/** three's Box2 and Box3 as a texture copy reads them: a region by its corners. */
-interface IRegionLike {
-  readonly isBox3?: boolean;
-  readonly min: { readonly x: number; readonly y: number; readonly z?: number };
-  readonly max: { readonly x: number; readonly y: number; readonly z?: number };
-}
-
-/** A Vector2 or Vector3: the destination origin of a texture copy, z the array layer. */
-interface IPositionLike {
-  readonly x: number;
-  readonly y: number;
-  readonly z?: number;
 }
 
 interface IColorLike {
@@ -197,7 +200,7 @@ export function defineWebRenderer(
     readonly supportsRetainedTargetSubrect = false;
     renderScale = 1;
     get temporalUpscale(): boolean {
-      return module._tnw_web_frame(34) === 1;
+      return module._tnw_web_frame(WEB_FRAME_FIELD.temporalUpscale) === 1;
     }
     #stageMeters = true;
     /** Address of the host's stage-total array (`tnw_web_frame` 78), 0 until `init` asks. */
@@ -208,7 +211,7 @@ export function defineWebRenderer(
      */
     setStageMeters(enabled: boolean): void {
       this.#stageMeters = enabled;
-      module._tnw_web_frame(enabled ? -3 : -4);
+      module._tnw_web_frame(enabled ? WEB_FRAME_FIELD.cpuMetersOn : WEB_FRAME_FIELD.cpuMetersOff);
     }
     setRenderScale(scale: number): void {
       if (!Number.isFinite(scale) || scale < 0.25 || scale > 1)
@@ -352,6 +355,11 @@ export function defineWebRenderer(
       trackTimestamp: boolean;
       getTimestampFrames(type: string): number[];
       pipelineCompiles(): number;
+      /**
+       * three's GPUSupportedFeatures.has, which core reads to gate its GPU world scene
+       * (world-gpu-scene.ts `gpuSceneUnsupported`): the device's own answer, asked of the host.
+       */
+      hasFeature(name: string): boolean;
       /** Resolves as three's GPUDevice.lost does once the host loses its device; core reports it (TN_DEVICE_LOST). */
       readonly device: {
         readonly lost: Promise<{ reason: string; message: string }>;
@@ -418,7 +426,11 @@ export function defineWebRenderer(
         },
         trackTimestamp: Boolean(parameters.trackTimestamp ?? true),
         getTimestampFrames: timestampFrames,
-        pipelineCompiles: () => module._tnw_web_frame(2),
+        pipelineCompiles: () => module._tnw_web_frame(WEB_FRAME_FIELD.pipelineCompiles),
+        hasFeature(name: string): boolean {
+          const feature = WEB_DEVICE_FEATURES[name];
+          return feature !== undefined && module._tnw_web_device_feature(feature) === 1;
+        },
         device: {
           lost: new Promise((resolve) => {
             this.#deviceLost = resolve;
@@ -476,8 +488,9 @@ export function defineWebRenderer(
         };
         // Honest, like the engine: a device without timestamp-query times no frame, so no caller
         // may be told timestamps are enabled. An explicit opt-out stays off.
-        if (module._tnw_web_frame(10) === 0) this.backend.trackTimestamp = false;
-        this.#stageBase = module._tnw_web_frame(78);
+        if (module._tnw_web_frame(WEB_FRAME_FIELD.gpuTimerAvailable) === 0)
+          this.backend.trackTimestamp = false;
+        this.#stageBase = module._tnw_web_frame(WEB_FRAME_FIELD.stageTotalsAddress);
         if (this.#stageBase > 0) {
           this.info.engine.cpuMs = Object.fromEntries(
             CPU_STAGE_ENTRIES.map(([name]) => [name, 0]),
@@ -581,6 +594,20 @@ export function defineWebRenderer(
       }
     }
 
+    /**
+     * three's `hasFeature`, which KTX2Loader.detectSupport reads (PRD-867): the block formats the engine
+     * uploads on this device. BC7 answers from the device; ETC2 answers false until the engine uploads
+     * three's opaque `RGB_ETC2_Format`, which KTX2Loader picks there, so a KTX2 falls back to RGBA instead.
+     */
+    hasFeature(name: string): boolean {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: hasFeature() before init() finished.");
+      return (
+        name === "texture-compression-bc" &&
+        module._tnw_web_frame(WEB_FRAME_FIELD.textureCompressionBc) === 1
+      );
+    }
+
     render(scene: unknown, camera: unknown): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
@@ -593,7 +620,7 @@ export function defineWebRenderer(
       // texture already taken, so refusing it saves no frame and presents the world without it.
       // Measured on Lantern Vale: every cover over a drawn frame was refused, so the loading screen
       // flickered black for the whole environment bake and then showed the unfinished world.
-      if (!this.#frameOpen && module._tnw_web_frame(11) === 1) {
+      if (!this.#frameOpen && module._tnw_web_frame(WEB_FRAME_FIELD.gpuBusy) === 1) {
         // A lost device leaves its frames on the GPU for good, so the gate declines every later frame
         // and no draw ever returns a status: name the loss here, where the frame poll just ran.
         if (this.#noticeLost()) return;
@@ -623,7 +650,11 @@ export function defineWebRenderer(
       const renderFrame = this.info.frame;
       if (debug !== undefined) {
         // Observation only: native captures this request with each submitted sample.
-        module._tnw_web_frame(this.backend.trackTimestamp ? -1 : -2);
+        module._tnw_web_frame(
+          this.backend.trackTimestamp
+            ? WEB_FRAME_FIELD.debugTimestampOn
+            : WEB_FRAME_FIELD.debugTimestampOff,
+        );
         debug?.add(
           "gpuTimestampRequests",
           this.backend.trackTimestamp ? 1 : 0,
@@ -641,32 +672,36 @@ export function defineWebRenderer(
         ),
       );
       this.info.frame += 1;
-      if (this.#bakingEnvironment !== undefined && module._tnw_web_frame(12) === 0) {
+      if (!this.#overlay) reportVirtualShadowFrame(module);
+      if (
+        this.#bakingEnvironment !== undefined &&
+        module._tnw_web_frame(WEB_FRAME_FIELD.environmentPending) === 0
+      ) {
         // An overlay draw has no environment and says nothing; another sky ends the watch.
         const drawnEnvironment = (scene as { environment?: unknown }).environment;
         if (drawnEnvironment === this.#bakingEnvironment) markBaked(this.#bakingEnvironment);
         if (drawnEnvironment != null) this.#bakingEnvironment = undefined;
       }
-      this.info.render.frameCalls = module._tnw_web_frame(0);
+      this.info.render.frameCalls = module._tnw_web_frame(WEB_FRAME_FIELD.draws);
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls += this.info.render.frameCalls;
-      const lastTriangles = module._tnw_web_frame(1);
+      const lastTriangles = module._tnw_web_frame(WEB_FRAME_FIELD.triangles);
       this.info.render.triangles += lastTriangles;
       const shadows = this.info.engine.shadows;
-      shadows.lampRedraws = module._tnw_web_frame(25);
-      shadows.lampDraws = module._tnw_web_frame(26);
-      shadows.shadowDraws = module._tnw_web_frame(27);
-      shadows.lampMapMin = module._tnw_web_frame(28);
-      shadows.lampMapMax = module._tnw_web_frame(29);
-      shadows.keptMaps = module._tnw_web_frame(40);
-      this.info.engine.uniformBytes = module._tnw_web_frame(41);
+      shadows.lampRedraws = module._tnw_web_frame(WEB_FRAME_FIELD.lampRedraws);
+      shadows.lampDraws = module._tnw_web_frame(WEB_FRAME_FIELD.lampShadowDraws);
+      shadows.shadowDraws = module._tnw_web_frame(WEB_FRAME_FIELD.shadowDraws);
+      shadows.lampMapMin = module._tnw_web_frame(WEB_FRAME_FIELD.lampMapMin);
+      shadows.lampMapMax = module._tnw_web_frame(WEB_FRAME_FIELD.lampMapMax);
+      shadows.keptMaps = module._tnw_web_frame(WEB_FRAME_FIELD.keptShadowMaps);
+      this.info.engine.uniformBytes = module._tnw_web_frame(WEB_FRAME_FIELD.uniformBytes);
       const split = this.info.engine.frameSplit;
       // Field 0 answers for the renderer that drew last and field 27 for the world's: an overlay has no shadow pass of its own.
       split.shadowDraws = this.#overlay ? 0 : shadows.shadowDraws;
-      split.shadowTriangles = module._tnw_web_frame(85);
+      split.shadowTriangles = module._tnw_web_frame(WEB_FRAME_FIELD.shadowTriangles);
       split.mainDraws = this.info.render.frameCalls - split.shadowDraws;
       split.mainTriangles = lastTriangles - split.shadowTriangles;
-      const gpuSamples = module._tnw_web_frame(8);
+      const gpuSamples = module._tnw_web_frame(WEB_FRAME_FIELD.gpuSamples);
       if (gpuSamples > this.#gpuSamples) {
         debug?.add(
           "gpuTimestampSamples",
@@ -675,12 +710,12 @@ export function defineWebRenderer(
           "native timestamp readback",
         );
         this.#gpuSamples = gpuSamples;
-        const gpuMs = module._tnw_web_frame(7);
+        const gpuMs = module._tnw_web_frame(WEB_FRAME_FIELD.gpuMs);
         // The engine reports which submitted frame this sample belongs to; the readback can land
         // many frames later, so the arrival frame is never the sample's age.
         if (Number.isFinite(gpuMs) && gpuMs > 0) {
           this.info.render.timestamp = gpuMs;
-          this.#timestampFrames = [module._tnw_web_frame(9)];
+          this.#timestampFrames = [module._tnw_web_frame(WEB_FRAME_FIELD.gpuSourceFrame)];
           const stages: Record<string, number> = {};
           GPU_STAGES.forEach((name, index) => {
             const stageMs = module._tnw_web_frame(GPU_STAGE_FIELD + index);
@@ -689,37 +724,48 @@ export function defineWebRenderer(
           const shadowMs = module._tnw_web_frame(SHADOW_SEGMENT_FIELD);
           if (shadowMs > 0) stages[SHADOW_STAGE] = shadowMs;
           this.info.engine.gpuStages = stages;
-          this.info.engine.shadows.sunGpuMs = module._tnw_web_frame(19);
-          this.info.engine.shadows.lampGpuMs = module._tnw_web_frame(24);
+          this.info.engine.shadows.sunGpuMs = module._tnw_web_frame(
+            WEB_FRAME_FIELD.gpuSegmentShadow,
+          );
+          this.info.engine.shadows.lampGpuMs = module._tnw_web_frame(
+            WEB_FRAME_FIELD.gpuSegmentLampShadow,
+          );
           // Opt-in, as `__tnPassLog`: a probe that sets `__tnGpuSegments` to an array gets each resolved sample's
           // split (frame_gpu_timer.h segments: sun shadow, scene, other passes, output, gather, lamp shadow).
           (globalThis as { __tnGpuSegments?: number[][] }).__tnGpuSegments?.push([
             gpuMs,
-            ...[19, 20, 21, 22, 23, 24].map((field) => module._tnw_web_frame(field)),
+            ...[
+              WEB_FRAME_FIELD.gpuSegmentShadow,
+              WEB_FRAME_FIELD.gpuSegmentScene,
+              WEB_FRAME_FIELD.gpuSegmentOther,
+              WEB_FRAME_FIELD.gpuSegmentOutput,
+              WEB_FRAME_FIELD.gpuSegmentGather,
+              WEB_FRAME_FIELD.gpuSegmentLampShadow,
+            ].map((field) => module._tnw_web_frame(field)),
           ]);
         }
       }
       const engine = this.info.engine;
-      engine.compiles = module._tnw_web_frame(2);
-      engine.textLookups = module._tnw_web_frame(3);
-      engine.bindGroups = module._tnw_web_frame(4);
-      engine.graphKeys = module._tnw_web_frame(5);
-      engine.programs = module._tnw_web_frame(6);
+      engine.compiles = module._tnw_web_frame(WEB_FRAME_FIELD.pipelineCompiles);
+      engine.textLookups = module._tnw_web_frame(WEB_FRAME_FIELD.pipelineLookups);
+      engine.bindGroups = module._tnw_web_frame(WEB_FRAME_FIELD.bindGroupsCreated);
+      engine.graphKeys = module._tnw_web_frame(WEB_FRAME_FIELD.graphKeyBuilds);
+      engine.programs = module._tnw_web_frame(WEB_FRAME_FIELD.programs);
       const temporal = engine.temporal;
-      temporal.active = module._tnw_web_frame(13) === 1;
-      temporal.frame = module._tnw_web_frame(14);
-      temporal.historyValid = module._tnw_web_frame(15) === 1;
-      temporal.jitter[0] = module._tnw_web_frame(16);
-      temporal.jitter[1] = module._tnw_web_frame(17);
-      temporal.rejected = module._tnw_web_frame(30);
-      temporal.clamped = module._tnw_web_frame(31);
-      temporal.pixels = module._tnw_web_frame(32);
-      temporal.countedFrame = module._tnw_web_frame(33);
-      temporal.inputWidth = module._tnw_web_frame(35);
-      temporal.inputHeight = module._tnw_web_frame(36);
-      temporal.jitterLength = module._tnw_web_frame(37);
-      temporal.outputWidth = module._tnw_web_frame(38);
-      temporal.outputHeight = module._tnw_web_frame(39);
+      temporal.active = module._tnw_web_frame(WEB_FRAME_FIELD.temporalActive) === 1;
+      temporal.frame = module._tnw_web_frame(WEB_FRAME_FIELD.temporalFrame);
+      temporal.historyValid = module._tnw_web_frame(WEB_FRAME_FIELD.temporalHistoryValid) === 1;
+      temporal.jitter[0] = module._tnw_web_frame(WEB_FRAME_FIELD.temporalJitterX);
+      temporal.jitter[1] = module._tnw_web_frame(WEB_FRAME_FIELD.temporalJitterY);
+      temporal.rejected = module._tnw_web_frame(WEB_FRAME_FIELD.temporalRejected);
+      temporal.clamped = module._tnw_web_frame(WEB_FRAME_FIELD.temporalClamped);
+      temporal.pixels = module._tnw_web_frame(WEB_FRAME_FIELD.temporalPixels);
+      temporal.countedFrame = module._tnw_web_frame(WEB_FRAME_FIELD.temporalCountedFrame);
+      temporal.inputWidth = module._tnw_web_frame(WEB_FRAME_FIELD.inputWidth);
+      temporal.inputHeight = module._tnw_web_frame(WEB_FRAME_FIELD.inputHeight);
+      temporal.jitterLength = module._tnw_web_frame(WEB_FRAME_FIELD.temporalJitterLength);
+      temporal.outputWidth = module._tnw_web_frame(WEB_FRAME_FIELD.width);
+      temporal.outputHeight = module._tnw_web_frame(WEB_FRAME_FIELD.height);
       if (debug !== undefined && temporal.active) {
         // The native renderer counts the active/history/rejected/clamped pixel totals under these
         // exact names (foundation/waste_counters.h, renderer.cpp); a JS series beside them would be
@@ -728,7 +774,7 @@ export function defineWebRenderer(
         debug.add("temporalInputPixels", temporal.inputWidth * temporal.inputHeight, "temporal");
         debug.add("temporalOutputPixels", temporal.outputWidth * temporal.outputHeight, "temporal");
       }
-      engine.samples = module._tnw_web_frame(18);
+      engine.samples = module._tnw_web_frame(WEB_FRAME_FIELD.sampleCount);
       const cpu = engine.cpuMs;
       const work = engine.work;
       if (this.#stageMeters && cpu !== undefined && work !== undefined) {
@@ -743,19 +789,21 @@ export function defineWebRenderer(
             heap[first + CPU_STAGE_ENTRIES.length + index] ?? 0;
       }
       const passes = engine.passes;
-      passes.mainRecorded = module._tnw_web_frame(60);
-      passes.recordCause = module._tnw_web_frame(61);
-      passes.auxRecorded = module._tnw_web_frame(62);
-      passes.recordMs = module._tnw_web_frame(63);
-      passes.shadowEncodeMs = module._tnw_web_frame(64);
-      passes.shadowRecorded = module._tnw_web_frame(65);
+      passes.mainRecorded = module._tnw_web_frame(WEB_FRAME_FIELD.mainRecorded);
+      passes.recordCause = module._tnw_web_frame(WEB_FRAME_FIELD.recordCause);
+      passes.auxRecorded = module._tnw_web_frame(WEB_FRAME_FIELD.auxRecorded);
+      passes.recordMs = module._tnw_web_frame(WEB_FRAME_FIELD.recordMs);
+      passes.shadowEncodeMs = module._tnw_web_frame(WEB_FRAME_FIELD.shadowEncodeMs);
+      passes.shadowRecorded = module._tnw_web_frame(WEB_FRAME_FIELD.shadowRecorded);
       // The startup's own report, read only while the cover is up so a held frame sees the one it just made. After
       // the release nothing reads it, so a steady frame pays no host call for it and the last values stand.
       if (this.#presentationHeld) {
-        engine.startup.worldSubmissions = module._tnw_web_frame(71);
-        engine.startup.shadowInputsReady = module._tnw_web_frame(72) === 1;
+        engine.startup.worldSubmissions = module._tnw_web_frame(WEB_FRAME_FIELD.worldSubmissions);
+        engine.startup.shadowInputsReady =
+          module._tnw_web_frame(WEB_FRAME_FIELD.shadowInputsReady) === 1;
       } else if (!engine.startup.worldPresented) {
-        engine.startup.worldPresented = module._tnw_web_frame(86) === 1;
+        engine.startup.worldPresented =
+          module._tnw_web_frame(WEB_FRAME_FIELD.firstWorldFrameDrawn) === 1;
       }
       // Opt-in, as `__tnCallCounts`: a probe that sets `__tnPassLog` to an array gets every frame's counters.
       (globalThis as { __tnPassLog?: unknown[] }).__tnPassLog?.push({ ...passes });
@@ -798,7 +846,13 @@ export function defineWebRenderer(
      * render() while a render target is set (render-target.ts): draws into the target. `deferred` (an offscreen PassNode)
      * plans the draw and has the engine record it in the frame that samples the target.
      */
-    [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
+    [DRAW_TARGET](
+      target: unknown,
+      root: unknown,
+      camera: unknown,
+      deferred = false,
+      layer = 0,
+    ): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       if (this.#lost) return;
@@ -814,7 +868,8 @@ export function defineWebRenderer(
           handles,
           handles + 12,
           ...this.#clear,
-          (deferred ? 1 : 0) | (this.autoClear ? 0 : 2),
+          // Bits 8 and up: the layer of an array target (tnw_web_render_target).
+          (deferred ? 1 : 0) | (this.autoClear ? 0 : 2) | (layer << 8),
         ),
       );
     }
@@ -1075,25 +1130,11 @@ export function defineWebRenderer(
         throw new Error("TN_WASM_RENDERER: copyTextureToTexture() before init() finished.");
       writeHandle(0, source, "source texture");
       writeHandle(12, destination, "destination texture");
-      const { min, max } = srcRegion ?? {};
-      // A Box2 has no z: its depth is one layer, a Box3's its own.
-      const size =
-        min && max ? [max.x - min.x, max.y - min.y, (max.z ?? 1) - (min.z ?? 0)] : [-1, -1, 1];
       check(
         module._tnw_web_copy_texture(
           handles,
           handles + 12,
-          min?.x ?? 0,
-          min?.y ?? 0,
-          min?.z ?? 0,
-          size[0] as number,
-          size[1] as number,
-          srcRegion?.isBox3 ? (size[2] as number) : 1,
-          dstPosition?.x ?? 0,
-          dstPosition?.y ?? 0,
-          dstPosition?.z ?? 0,
-          srcLevel,
-          dstLevel,
+          ...textureCopyArguments(srcRegion, dstPosition, srcLevel, dstLevel),
         ),
       );
     }
@@ -1208,12 +1249,12 @@ export function defineWebRenderer(
       ),
     });
   defineRenderTargets(Renderer.prototype, (renderer) => ({
-    draw: (target, root, camera) =>
-      (renderer as { [DRAW_TARGET](t: unknown, r: unknown, c: unknown): void })[DRAW_TARGET](
-        target,
-        root,
-        camera,
-      ),
+    draw: (target, root, camera, layer) =>
+      (
+        renderer as {
+          [DRAW_TARGET](t: unknown, r: unknown, c: unknown, d: boolean, l: number): void;
+        }
+      )[DRAW_TARGET](target, root, camera, false, layer),
     clear: (target, color, depth) =>
       (renderer as { [CLEAR_TARGET](t: unknown, c: boolean, d: boolean): void })[CLEAR_TARGET](
         target,

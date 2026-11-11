@@ -9,16 +9,20 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  PerspectiveCamera,
   PlaneGeometry,
   Raycaster,
   SphereGeometry,
   Texture,
   Vector3,
 } from "three";
+import { vec3 } from "three/tsl";
 import { describe, expect, it } from "vitest";
 import {
+  cacheFallback,
   giCache,
   gridOver,
+  inLumenScene,
   installGi,
   markTwoSidedFoliage,
   meanField,
@@ -901,5 +905,58 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     const room = sunlitRoom();
     room.updateMatrixWorld(true);
     expect(gridOver(room).cell).toBe(0.5);
+  });
+
+  it("the gather's per-ray fallback reads the bake from the receiver's side: normal for the offset, ray for the face (PRD-831)", () => {
+    // The sunlit room's black corner lines: the ray stood in for the normal, so a corner read half a cell inside the other
+    // wall and the gather's hit - cache fell far below zero (near-black pixels 27,087 -> 0 on sun15-window).
+    const saved = { irradiance: giCache.irradiance, radiance: giCache.radiance };
+    const calls: unknown[][] = [];
+    try {
+      giCache.radiance = undefined;
+      giCache.irradiance = (...args) => {
+        calls.push(args);
+        return vec3(0, 0, 0);
+      };
+      const camera = new PerspectiveCamera();
+      const [position, direction, normal] = [vec3(0, 0, -1), vec3(1, 0, 0), vec3(0, 0, 1)];
+      cacheFallback(camera, "ray")?.(position, direction, normal);
+      expect(calls[0]).toHaveLength(3);
+      expect(calls[0]?.every((arg) => arg !== undefined)).toBe(true);
+      // The irradiance read of a surface (normal mode) still takes the direction as its normal.
+      cacheFallback(camera)?.(position, direction, normal);
+      expect(calls[1]?.[2]).toBeUndefined();
+    } finally {
+      giCache.irradiance = saved.irradiance;
+      giCache.radiance = saved.radiance;
+    }
+  });
+
+  it("a primitive too small for Lumen's scene stays out of the bake and lights nothing through it (MeshCardsMinSize, PRD-831)", () => {
+    const box = (x: number, y: number, z: number, emissive = 0) =>
+      new Mesh(
+        new BoxGeometry(x, y, z),
+        new MeshStandardMaterial({ emissive: new Color(1, 0.7, 0.3), emissiveIntensity: emissive }),
+      );
+    // Unreal tracks a primitive when the largest face of its bounds is over 10 cm squared, at its world scale.
+    expect(inLumenScene(box(0.05, 0.05, 0.05))).toBe(false); // the neon corridor's emitter cube
+    expect(inLumenScene(box(0.12, 0.06, 7))).toBe(true); // a neon strip
+    const scaled = box(0.05, 0.05, 0.05);
+    scaled.scale.setScalar(4);
+    scaled.updateMatrixWorld(true);
+    expect(inLumenScene(scaled)).toBe(true);
+    // The 5 cm cube at 30000 nits: no analytic emitter, so no light from it but what the screen traces see.
+    const wall = new Mesh(
+      new BoxGeometry(0.2, 4, 4).translate(3, 0, 0),
+      new MeshStandardMaterial({ color: new Color(0.5, 0.5, 0.5), side: DoubleSide }),
+    );
+    const scene = new Group().add(box(0.05, 0.05, 0.05, 30000), wall);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect(giCache.emitters).toBe(0);
+    // Control: a 0.5 m source is in Lumen's scene and stays an analytic emitter.
+    const lit = new Group().add(box(0.5, 0.5, 0.5, 10), wall.clone());
+    installGi(rayContext(lit), lit, { bounces: 1, sun: noSun });
+    expect(giCache.emitters).toBe(1);
   });
 });

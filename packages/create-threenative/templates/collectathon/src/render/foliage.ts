@@ -17,6 +17,7 @@ import {
   CylinderGeometry,
   DataTexture,
   DoubleSide,
+  Euler,
   Group,
   InstancedMesh,
   LatheGeometry,
@@ -24,7 +25,6 @@ import {
   type Material,
   Matrix4,
   Mesh,
-  Object3D,
   OctahedronGeometry,
   PlaneGeometry,
   Quaternion,
@@ -83,28 +83,49 @@ export interface IPlantingSite {
   readonly surfaces: ISurfaces;
 }
 
-const dummy = new Object3D();
+// Plain math, not a scratch Object3D: an engine object's position, scale, rotation and matrix each
+// cross into the engine, five crossings an instance (~90 ms of a load); these stay in JavaScript.
 // Yaw last: a placement leans or droops about X, then turns to face its way round Y.
-dummy.rotation.order = "YXZ";
+const turn = new Euler(0, 0, 0, "YXZ");
+const placed = {
+  at: new Vector3(),
+  matrix: new Matrix4(),
+  size: new Vector3(),
+  spin: new Quaternion(),
+  tint: new Color(),
+};
 
+/**
+ * A kind as one draw, from the flat placements the plan stores: nine floats each, and three a tint.
+ * Flat on purpose: a repeat run reads 35,000 placements out of the cache and floats straight into
+ * the instance array, where a tuple apiece would cost more than drawing the island again.
+ */
 function instanced(
   geometry: BufferGeometry,
   material: Material,
-  placements: readonly Placement[],
+  placements: Float64Array,
   castShadow: boolean,
-  tints?: readonly Color[],
+  tints?: Float64Array,
 ): InstancedMesh {
-  const mesh = new InstancedMesh(geometry, material, Math.max(1, placements.length));
-  mesh.count = placements.length;
-  placements.forEach(([x, y, z, sx, sy, sz, rx, ry, rz], i) => {
-    dummy.position.set(x, y, z);
-    dummy.scale.set(sx, sy, sz);
-    dummy.rotation.set(rx, ry, rz);
-    dummy.updateMatrix();
-    mesh.setMatrixAt(i, dummy.matrix);
-    const tint = tints?.[i];
-    if (tint !== undefined) mesh.setColorAt(i, tint);
-  });
+  const count = Math.floor(placements.length / PLACEMENT_STRIDE);
+  const mesh = new InstancedMesh(geometry, material, Math.max(1, count));
+  mesh.count = count;
+  for (let i = 0; i < count; i += 1) {
+    const at = i * PLACEMENT_STRIDE;
+    placed.spin.setFromEuler(
+      turn.set(placements[at + 6] ?? 0, placements[at + 7] ?? 0, placements[at + 8] ?? 0, "YXZ"),
+    );
+    placed.matrix.compose(
+      placed.at.set(placements[at] ?? 0, placements[at + 1] ?? 0, placements[at + 2] ?? 0),
+      placed.spin,
+      placed.size.set(placements[at + 3] ?? 0, placements[at + 4] ?? 0, placements[at + 5] ?? 0),
+    );
+    mesh.setMatrixAt(i, placed.matrix);
+    if (tints === undefined) continue;
+    const tint = i * TINT_STRIDE;
+    placed.tint.setRGB(tints[tint] ?? 0, tints[tint + 1] ?? 0, tints[tint + 2] ?? 0);
+    mesh.setColorAt(i, placed.tint);
+  }
   mesh.computeBoundingSphere();
   mesh.castShadow = castShadow;
   mesh.receiveShadow = true;
@@ -349,7 +370,7 @@ function branchMatrix(from: Vector3, to: Vector3, radius: number): Matrix4 {
 }
 
 /** Two wings hinged on the body's line, flapping on their own phase while the insect wanders. */
-function butterflies(placements: readonly Placement[], tints: readonly Color[]): InstancedMesh {
+function butterflies(placements: Float64Array, tints: Float64Array): InstancedMesh {
   const geometry = new BufferGeometry();
   geometry.setAttribute(
     "position",
@@ -414,10 +435,67 @@ export interface IMeadow {
   readonly total: number;
 }
 
-export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeadow } {
-  const { rng, bounds, clear, ground, surfaces } = site;
-  const group = new Group();
-  group.name = "planting";
+/** Floats a placement, a matrix and a tint occupy: the strides the record and the meshes share. */
+const PLACEMENT_STRIDE = 9;
+const MATRIX_STRIDE = 16;
+const TINT_STRIDE = 3;
+
+/** One 12 m meadow cell: its centre and the tufts it draws, in draw order after the shuffle. */
+export interface IPlantingCell {
+  /** Nine floats a tuft, and one tint a tuft, in the same order. */
+  readonly placements: Float64Array;
+  readonly tints: Float64Array;
+  readonly x: number;
+  readonly z: number;
+}
+
+/**
+ * Everything one run generates to plant the island, as the flat arrays `ctx.assets.memo` keeps:
+ * nine floats a placement, sixteen a matrix, three a tint, and the meadow's cells packed end to
+ * end. Flat because a repeat run reads some 35,000 placements back and hands them straight to the
+ * instance arrays, and a tuple apiece would cost more to rebuild than drawing the island again.
+ */
+export interface IPlantingRecord {
+  readonly birches: Float64Array;
+  readonly branches: Float64Array;
+  readonly cards: Float64Array;
+  /** The cell centres, two floats each, and the cells' placements and tints packed in cell order. */
+  readonly cellStarts: Float64Array;
+  readonly cellTints: Float64Array;
+  readonly cellValues: Float64Array;
+  readonly cellXZ: Float64Array;
+  readonly flyers: Float64Array;
+  /** The flower heads packed end to end, and where each colour's list starts, in placements. */
+  readonly headStarts: Float64Array;
+  readonly heads: Float64Array;
+  readonly pebbleTints: Float64Array;
+  readonly pebbles: Float64Array;
+  readonly stems: Float64Array;
+  readonly stoneTints: Float64Array;
+  readonly stones: Float64Array;
+  readonly tints: Float64Array;
+  readonly trunks: Float64Array;
+  /** The draws the meadow's blades made, in order, so a repeat run cuts the same blades. */
+  readonly tuftDraws: Float64Array;
+  readonly wingTints: Float64Array;
+}
+
+const PETALS = [C.petalRed, C.petalOrange, C.petalWhite, C.petalYellow, C.wingBlue] as const;
+
+/** A draw source handing back `draws` in order: the meadow's blades, cut again from stored draws. */
+function replayed(draws: Float64Array): () => number {
+  let at = 0;
+  return () => {
+    const value = draws[at];
+    if (value === undefined) throw new Error("the stored planting ran out of draws.");
+    at += 1;
+    return value;
+  };
+}
+
+/** The island's placements, drawn from `site.rng` in one fixed order. */
+export function planPlanting(site: IPlantingSite): IPlantingRecord {
+  const { rng, bounds, clear, ground } = site;
   const spin = () => rng() * Math.PI * 2;
   const onLawn = (x: number, z: number) =>
     site.lawns.some(([lx, lz, r]) => Math.hypot(x - lx, z - lz) < r + 0.4);
@@ -458,8 +536,6 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     for (const clump of clumps.slice(1))
       branches.push(branchMatrix(fork, fork.clone().lerp(clump, 0.85), 0.09 * size));
   }
-  const bark = texturedMaterial(surfaces, "bark", { normalScale: 1.6, roughness: 0.92 });
-  group.add(instanced(trunkGeometry(2, 0.12), bark, trunks, true));
 
   // Birches: tall white trunks with a light, narrow crown of smaller cards up their top half.
   const birches: Placement[] = [];
@@ -481,14 +557,6 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     for (const clump of clumps.slice(1))
       branches.push(branchMatrix(fork, fork.clone().lerp(clump, 0.8), 0.045));
   }
-  group.add(
-    instanced(
-      trunkGeometry(14, 0.05),
-      texturedMaterial(surfaces, "birch-bark", { roughness: 0.7 }),
-      birches,
-      true,
-    ),
-  );
 
   // Bushes: low clumps of the same leaves, and two hedge arcs of them near the rim.
   const bush = (x: number, z: number, size: number): void => {
@@ -515,53 +583,14 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     }
   }
 
-  // Every leaf card on the island is one draw: cut out of the cluster texture, both faces lit, the
-  // sun shining through the ones seen against it, and a slow flutter on each card's own phase.
-  const leafMaterial = new MeshStandardNodeMaterial({
-    alphaTest: 0.4,
-    map: leafTexture(),
-    roughness: 0.7,
-    side: DoubleSide,
-  });
-  const flutter = hash(instanceIndex).mul(6.28);
-  leafMaterial.positionNode = positionLocal.add(
-    vec3(
-      sin(time.mul(1.9).add(flutter)).mul(0.03),
-      sin(time.mul(2.6).add(flutter.mul(1.3))).mul(0.02),
-      0,
-    ),
-  );
-  leafMaterial.twoSidedFoliage = true;
-  leafMaterial.subsurfaceColor = new Color(0.3, 0.46, 0.1);
-  const cards = new InstancedMesh(cardGeometry(), leafMaterial, leaves.cards.length);
-  leaves.cards.forEach((matrix, i) => {
-    cards.setMatrixAt(i, matrix);
-    cards.setColorAt(i, leaves.tints[i] as Color);
-  });
-  cards.computeBoundingSphere();
-  cards.castShadow = true;
-  cards.receiveShadow = true;
-  cards.name = "leaves";
-  group.add(cards);
-  const boughs = new InstancedMesh(
-    new CylinderGeometry(0.55, 1, 1, 6, 1, true).translate(0, 0.5, 0),
-    bark,
-    branches.length,
-  );
-  branches.forEach((matrix, i) => boughs.setMatrixAt(i, matrix));
-  boughs.computeBoundingSphere();
-  boughs.castShadow = true;
-  group.add(boughs);
-
   // Flowers: clumps in the grass, thickest along the path's edges, one draw per colour, on stems
   // that sway with it.
-  const petals = [C.petalRed, C.petalOrange, C.petalWhite, C.petalYellow, C.wingBlue];
-  const heads: Placement[][] = petals.map(() => []);
+  const heads: Placement[][] = PETALS.map(() => []);
   const stems: Placement[] = [];
   for (let i = 0; i < 260; i += 1) {
     const at = i % 3 === 0 ? spot(0.6, 1.6) : spot(0.6, 1.4);
     if (at === undefined) continue;
-    const hue = heads[i % petals.length] ?? [];
+    const hue = heads[i % PETALS.length] ?? [];
     const count = 6 + Math.floor(rng() * 9);
     for (let f = 0; f < count; f += 1) {
       const a = spin();
@@ -575,14 +604,6 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
       hue.push([x, y + h, z, s, s, s, (rng() - 0.5) * 0.6, spin(), (rng() - 0.5) * 0.6]);
     }
   }
-  const stem = new CylinderGeometry(0.01, 0.012, 1, 3, 1, true).translate(0, 0.5, 0);
-  group.add(instanced(stem, lit(C.blade), stems, false));
-  const head = flowerGeometry();
-  petals.forEach((colour, i) => {
-    group.add(
-      instanced(head, lit(colour, { roughness: 0.6, vertexColors: true }), heads[i] ?? [], false),
-    );
-  });
 
   // Butterflies over the flowers: orange, white and blue.
   const flyers: Placement[] = [];
@@ -594,7 +615,6 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     flyers.push([at[0], ground(at[0], at[1]) + 0.7 + rng() * 0.6, at[1], 1, 1, 1, 0, spin(), 0]);
     wingTints.push(new Color(wings[i % wings.length]));
   }
-  group.add(butterflies(flyers, wingTints));
 
   // Pebbles thick along the path, and a few stones in the grass, half sunk into the ground.
   const pebbles: Placement[] = [];
@@ -624,22 +644,20 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     (onPath ? pebbles : stones).push(at);
     (onPath ? pebbleTints : stoneTints).push(pebbleBase.clone().multiplyScalar(0.45 + rng() * 0.7));
   }
-  const pebble = new OctahedronGeometry(1, 0);
-  const pebbleMaterial = lit(0xffffff, { flat: true });
-  // Too small to throw a shadow worth its draw.
-  const pathPebbles = instanced(pebble, pebbleMaterial, pebbles, false, pebbleTints);
-  pathPebbles.name = "path-pebbles";
-  const grassStones = instanced(pebble, pebbleMaterial, stones, true, stoneTints);
-  grassStones.name = "stones";
-  group.add(pathPebbles, grassStones);
 
   // The meadow: grass tufts on a jittered 0.5 m grid over all the land and every drum's lawn, shorter
   // on the mown routes and beside the path, one `InstancedMesh` per 12 m cell. Each cell is
   // shuffled, so drawing a prefix of it thins it evenly: `update` draws every tuft within 10 m of
   // the eye at every tier (the foreground is what hides the ground), then the tier's share, thinning
   // to an eighth of it by 46 m, where the ground's own grass texture carries the field.
-  const tuft = tuftGeometry(rng);
-  const grass = grassMaterial();
+  // The blades draw seven numbers each from this point in the stream; keep them, so a repeat run
+  // cuts the same blades without needing the stream at all.
+  const tuftDraws: number[] = [];
+  tuftGeometry(() => {
+    const draw = rng();
+    tuftDraws.push(draw);
+    return draw;
+  });
   const cells = new Map<
     string,
     { placements: Placement[]; tints: Color[]; x: number; z: number }
@@ -688,23 +706,261 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
       }
     }
   }
-  const meadowCells: { mesh: InstancedMesh; all: number; share: number; x: number; z: number }[] =
-    [];
+  const planted: { placements: Placement[]; tints: Color[]; x: number; z: number }[] = [];
   for (const { placements, tints, x, z } of cells.values()) {
     for (let i = placements.length - 1; i > 0; i -= 1) {
       const j = Math.floor(rng() * (i + 1));
       [placements[i], placements[j]] = [placements[j] as Placement, placements[i] as Placement];
       [tints[i], tints[j]] = [tints[j] as Color, tints[i] as Color];
     }
-    const mesh = instanced(tuft, grass, placements, false, tints);
+    planted.push({ placements, tints, x, z });
+  }
+  const headStarts = new Float64Array(heads.length + 1);
+  let headCount = 0;
+  heads.forEach((list, i) => {
+    headStarts[i] = headCount;
+    headCount += list.length;
+  });
+  headStarts[heads.length] = headCount;
+  const headValues = new Float64Array(headCount * PLACEMENT_STRIDE);
+  let headAt = 0;
+  for (const list of heads)
+    for (const item of list) {
+      headValues.set(item, headAt);
+      headAt += PLACEMENT_STRIDE;
+    }
+
+  const cellStarts = new Float64Array(planted.length + 1);
+  const cellXZ = new Float64Array(planted.length * 2);
+  let cellCount = 0;
+  planted.forEach((cell, i) => {
+    cellStarts[i] = cellCount;
+    cellXZ[i * 2] = cell.x;
+    cellXZ[i * 2 + 1] = cell.z;
+    cellCount += cell.placements.length;
+  });
+  cellStarts[planted.length] = cellCount;
+  // One tint a tuft, in the same order, so a cell's tints start where its placements do.
+  const cellValues = new Float64Array(cellCount * PLACEMENT_STRIDE);
+  const cellTints = new Float64Array(cellCount * TINT_STRIDE);
+  let cellAt = 0;
+  let tintAt = 0;
+  for (const cell of planted) {
+    for (const item of cell.placements) {
+      cellValues.set(item, cellAt);
+      cellAt += PLACEMENT_STRIDE;
+    }
+    for (const tint of cell.tints) {
+      cellTints[tintAt] = tint.r;
+      cellTints[tintAt + 1] = tint.g;
+      cellTints[tintAt + 2] = tint.b;
+      tintAt += TINT_STRIDE;
+    }
+  }
+
+  return {
+    birches: packedPlacements(birches),
+    branches: packedMatrices(branches),
+    cards: packedMatrices(leaves.cards),
+    cellStarts,
+    cellTints,
+    cellValues,
+    cellXZ,
+    flyers: packedPlacements(flyers),
+    headStarts,
+    heads: headValues,
+    pebbleTints: packedTints(pebbleTints),
+    pebbles: packedPlacements(pebbles),
+    stems: packedPlacements(stems),
+    stoneTints: packedTints(stoneTints),
+    stones: packedPlacements(stones),
+    tints: packedTints(leaves.tints),
+    trunks: packedPlacements(trunks),
+    tuftDraws: Float64Array.from(tuftDraws),
+    wingTints: packedTints(wingTints),
+  };
+}
+
+function packedPlacements(items: readonly Placement[]): Float64Array {
+  const flat = new Float64Array(items.length * PLACEMENT_STRIDE);
+  items.forEach((item, i) => flat.set(item, i * PLACEMENT_STRIDE));
+  return flat;
+}
+
+function packedMatrices(items: readonly Matrix4[]): Float64Array {
+  const flat = new Float64Array(items.length * MATRIX_STRIDE);
+  items.forEach((item, i) => flat.set(item.elements, i * MATRIX_STRIDE));
+  return flat;
+}
+
+function packedTints(items: readonly Color[]): Float64Array {
+  const flat = new Float64Array(items.length * TINT_STRIDE);
+  items.forEach((tint, i) => {
+    flat[i * TINT_STRIDE] = tint.r;
+    flat[i * TINT_STRIDE + 1] = tint.g;
+    flat[i * TINT_STRIDE + 2] = tint.b;
+  });
+  return flat;
+}
+
+/** `placed.matrix` filled from a stored 16-float matrix, so a card costs no Matrix4 of its own. */
+function matrixAt(flat: Float64Array, index: number): Matrix4 {
+  const elements = placed.matrix.elements;
+  for (let k = 0; k < MATRIX_STRIDE; k += 1) elements[k] = flat[index * MATRIX_STRIDE + k] ?? 0;
+  return placed.matrix;
+}
+
+/** `placed.tint` filled from a stored 3-float tint, for the same reason. */
+function tintAt(flat: Float64Array, index: number): Color {
+  const at = index * TINT_STRIDE;
+  return placed.tint.setRGB(flat[at] ?? 0, flat[at + 1] ?? 0, flat[at + 2] ?? 0);
+}
+
+/**
+ * A stored record before it becomes meshes: the memo is bytes off a disk, so a length that does not
+ * match throws instead of drawing half an island.
+ */
+export function checkedPlanting(record: IPlantingRecord): IPlantingRecord {
+  const placementAlike = [
+    record.birches,
+    record.flyers,
+    record.pebbles,
+    record.stems,
+    record.stones,
+    record.trunks,
+  ];
+  const tintAlike = [record.pebbleTints, record.stoneTints, record.tints, record.wingTints];
+  const broken =
+    placementAlike.some((flat) => flat.length % PLACEMENT_STRIDE !== 0) ||
+    tintAlike.some((flat) => flat.length % TINT_STRIDE !== 0) ||
+    record.cards.length % MATRIX_STRIDE !== 0 ||
+    record.branches.length % MATRIX_STRIDE !== 0 ||
+    record.tints.length !== (record.cards.length / MATRIX_STRIDE) * TINT_STRIDE ||
+    record.headStarts.length !== PETALS.length + 1 ||
+    (record.headStarts[PETALS.length] ?? 0) * PLACEMENT_STRIDE !== record.heads.length ||
+    record.cellStarts.length !== record.cellXZ.length / 2 + 1 ||
+    (record.cellStarts[record.cellStarts.length - 1] ?? 0) * PLACEMENT_STRIDE !==
+      record.cellValues.length ||
+    record.cellTints.length !== (record.cellValues.length / PLACEMENT_STRIDE) * TINT_STRIDE ||
+    record.tuftDraws.length === 0;
+  if (broken) throw new Error("stored planting is malformed.");
+  return record;
+}
+
+/** The island's meshes, from a record. `site` carries the textures and the tier's grass share. */
+export function buildPlanting(
+  record: IPlantingRecord,
+  site: IPlantingSite,
+): { group: Group; meadow: IMeadow } {
+  const { surfaces } = site;
+  const group = new Group();
+  group.name = "planting";
+
+  const bark = texturedMaterial(surfaces, "bark", { normalScale: 1.6, roughness: 0.92 });
+  group.add(instanced(trunkGeometry(2, 0.12), bark, record.trunks, true));
+  group.add(
+    instanced(
+      trunkGeometry(14, 0.05),
+      texturedMaterial(surfaces, "birch-bark", { roughness: 0.7 }),
+      record.birches,
+      true,
+    ),
+  );
+
+  // Every leaf card on the island is one draw: cut out of the cluster texture, both faces lit, the
+  // sun shining through the ones seen against it, and a slow flutter on each card's own phase.
+  const leafMaterial = new MeshStandardNodeMaterial({
+    alphaTest: 0.4,
+    map: leafTexture(),
+    roughness: 0.7,
+    side: DoubleSide,
+  });
+  const flutter = hash(instanceIndex).mul(6.28);
+  leafMaterial.positionNode = positionLocal.add(
+    vec3(
+      sin(time.mul(1.9).add(flutter)).mul(0.03),
+      sin(time.mul(2.6).add(flutter.mul(1.3))).mul(0.02),
+      0,
+    ),
+  );
+  leafMaterial.twoSidedFoliage = true;
+  leafMaterial.subsurfaceColor = new Color(0.3, 0.46, 0.1);
+  const cardCount = Math.floor(record.cards.length / MATRIX_STRIDE);
+  const cards = new InstancedMesh(cardGeometry(), leafMaterial, Math.max(1, cardCount));
+  cards.count = cardCount;
+  for (let i = 0; i < cardCount; i += 1) {
+    cards.setMatrixAt(i, matrixAt(record.cards, i));
+    cards.setColorAt(i, tintAt(record.tints, i));
+  }
+  cards.computeBoundingSphere();
+  cards.castShadow = true;
+  cards.receiveShadow = true;
+  cards.name = "leaves";
+  group.add(cards);
+  const boughCount = Math.floor(record.branches.length / MATRIX_STRIDE);
+  const boughs = new InstancedMesh(
+    new CylinderGeometry(0.55, 1, 1, 6, 1, true).translate(0, 0.5, 0),
+    bark,
+    Math.max(1, boughCount),
+  );
+  boughs.count = boughCount;
+  for (let i = 0; i < boughCount; i += 1) boughs.setMatrixAt(i, matrixAt(record.branches, i));
+  boughs.computeBoundingSphere();
+  boughs.castShadow = true;
+  group.add(boughs);
+
+  // Flowers: one draw per colour, on stems that sway with the grass.
+  const stem = new CylinderGeometry(0.01, 0.012, 1, 3, 1, true).translate(0, 0.5, 0);
+  group.add(instanced(stem, lit(C.blade), record.stems, false));
+  const head = flowerGeometry();
+  PETALS.forEach((colour, i) => {
+    const from = (record.headStarts[i] ?? 0) * PLACEMENT_STRIDE;
+    const to = (record.headStarts[i + 1] ?? 0) * PLACEMENT_STRIDE;
+    group.add(
+      instanced(
+        head,
+        lit(colour, { roughness: 0.6, vertexColors: true }),
+        record.heads.subarray(from, to),
+        false,
+      ),
+    );
+  });
+
+  group.add(butterflies(record.flyers, record.wingTints));
+
+  const pebble = new OctahedronGeometry(1, 0);
+  const pebbleMaterial = lit(0xffffff, { flat: true });
+  // Too small to throw a shadow worth its draw.
+  const pathPebbles = instanced(pebble, pebbleMaterial, record.pebbles, false, record.pebbleTints);
+  pathPebbles.name = "path-pebbles";
+  const grassStones = instanced(pebble, pebbleMaterial, record.stones, true, record.stoneTints);
+  grassStones.name = "stones";
+  group.add(pathPebbles, grassStones);
+
+  // The meadow: one `InstancedMesh` a cell, each cell's tufts already shuffled, so drawing a prefix
+  // of it thins it evenly.
+  const tuft = tuftGeometry(replayed(record.tuftDraws));
+  const grass = grassMaterial();
+  const meadowCells: { mesh: InstancedMesh; all: number; share: number; x: number; z: number }[] =
+    [];
+  for (let cell = 0; cell + 1 < record.cellStarts.length; cell += 1) {
+    const first = record.cellStarts[cell] ?? 0;
+    const last = record.cellStarts[cell + 1] ?? 0;
+    const mesh = instanced(
+      tuft,
+      grass,
+      record.cellValues.subarray(first * PLACEMENT_STRIDE, last * PLACEMENT_STRIDE),
+      false,
+      record.cellTints.subarray(first * TINT_STRIDE, last * TINT_STRIDE),
+    );
     mesh.name = "grass";
     group.add(mesh);
     meadowCells.push({
-      all: placements.length,
+      all: last - first,
       mesh,
-      share: Math.round(placements.length * site.grassShare),
-      x,
-      z,
+      share: Math.round((last - first) * site.grassShare),
+      x: record.cellXZ[cell * 2] ?? 0,
+      z: record.cellXZ[cell * 2 + 1] ?? 0,
     });
   }
   let drawn = 0;
@@ -741,4 +997,9 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     band(r + 1.1, r + 1.8, 0.1, lit(C.wetSand, { roughness: 0.35 }));
   }
   return { group, meadow: meadowLod };
+}
+
+/** One island, planned and built: the path a host with no memo takes. */
+export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeadow } {
+  return buildPlanting(planPlanting(site), site);
 }

@@ -11,9 +11,11 @@ import {
   type Sphere,
   Vector3,
 } from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { TN_DISCRETE_LOD, baseGeometryOf, lodChainOf, updateModelLods } from "../src/model-lod.js";
+import { wholeKtx2 } from "./support/ktx2.js";
 
 // PRD-377 §5/§6 — the real front door. A GLB carrying `TN_discrete_lod` is loaded through
 // `createAssetLoader` (which fetches the bytes, decides the decoder set from `extensionsUsed`,
@@ -493,5 +495,195 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     expect(rungsByZ(chained).get(FAR_Z)?.index?.count).toBe(COARSE_TRIANGLES * 3);
     expect(unchained.children).toHaveLength(0);
     expect(rungsByZ(unchained).get(FAR_Z)?.index?.count).toBe(LOD0_TRIANGLES * 3);
+  }, 120_000);
+});
+
+/** The cooked fixture as its coarse companion: the chain's coarsest indices, no chain. */
+function coarseGlb(): Buffer {
+  const full = cookedGlb();
+  const jsonLength = full.readUInt32LE(12);
+  const json = JSON.parse(full.subarray(20, 20 + jsonLength).toString("utf8")) as {
+    extensionsUsed?: string[];
+    meshes: {
+      primitives: { extensions?: Record<string, { indices: number[] }>; indices: number }[];
+    }[];
+  };
+  for (const mesh of json.meshes)
+    for (const primitive of mesh.primitives) {
+      const chain = primitive.extensions?.[TN_DISCRETE_LOD];
+      if (chain === undefined) continue;
+      primitive.indices = chain.indices.at(-1) as number;
+      delete primitive.extensions?.[TN_DISCRETE_LOD];
+    }
+  json.extensionsUsed = json.extensionsUsed?.filter((name) => name !== TN_DISCRETE_LOD);
+  const jsonPadded = padTo4(Buffer.from(JSON.stringify(json)), 0x20);
+  const bin = full.subarray(20 + jsonLength);
+  const header = Buffer.alloc(20);
+  header.writeUInt32LE(0x46546c67, 0);
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(20 + jsonPadded.length + bin.length, 8);
+  header.writeUInt32LE(jsonPadded.length, 12);
+  header.writeUInt32LE(0x4e4f534a, 16);
+  return Buffer.concat([header, jsonPadded, bin]);
+}
+
+describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
+  const full = cookedGlb();
+  const coarse = coarseGlb();
+  const manifest = {
+    entries: {
+      "ship.glb": {
+        bytes: full.length,
+        kind: "model",
+        lod: { generated: 1, preset: "quality", runtime: { hysteresis: 0.15, maxPixelError: 1 } },
+        output: "ship.full.glb",
+        streamedLods: [{ bytes: coarse.length, level: "coarsest", output: "ship.coarse.glb" }],
+      },
+    },
+    version: 1,
+  };
+
+  /** Serves the manifest, both files and `images` (200, no `Range`); the full file waits for `release`. */
+  function stubStreamed(images: Readonly<Record<string, Uint8Array>> = {}): {
+    fetched: string[];
+    release: () => void;
+  } {
+    const fetched: string[] = [];
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : String(input);
+      fetched.push(url);
+      if (url.includes("assets.manifest.json"))
+        return {
+          headers: { get: () => "application/json" },
+          json: async () => manifest,
+          ok: true,
+          status: 200,
+        };
+      const image = images[url];
+      if (image !== undefined) return new Response(image.slice(), { status: 200 });
+      const glb = url.includes("coarse") ? coarse : full;
+      if (glb === full) await gate;
+      return {
+        arrayBuffer: async () => glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength),
+        headers: { get: () => null },
+        ok: true,
+        status: 200,
+      };
+    });
+    return { fetched, release: () => release() };
+  }
+
+  it("draws the coarse companion first, then the full model and its chain on the game's clone too", async () => {
+    const { fetched, release } = stubStreamed();
+    const loader = createAssetLoader({ basePath: "" });
+    const value = await loader.model<{ scene: Object3D }>("ship.glb");
+    const mesh = firstMesh(value.scene);
+    // The game has its model before the full file arrived: the coarsest level, nothing more.
+    expect(mesh.geometry.index?.count).toBe(COARSE_TRIANGLES * 3);
+    const copy = value.scene.clone();
+    const scene = new Scene();
+    scene.add(value.scene, copy);
+
+    release();
+    await vi.waitFor(() => expect(mesh.geometry.index?.count).toBe(LOD0_TRIANGLES * 3));
+    expect(firstMesh(copy).geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+    expect(fetched.some((url) => url.endsWith("ship.coarse.glb"))).toBe(true);
+    expect(fetched.some((url) => url.endsWith("ship.full.glb"))).toBe(true);
+
+    // Far away, both copies walk the full model's chain.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 0, 100);
+    camera.updateMatrixWorld(true);
+    expect(updateModelLods(scene, camera, 1080)).toBe(COARSE_TRIANGLES * 2);
+    loader.clear();
+  }, 120_000);
+
+  // Review of #643: a collider, navmesh bake or merge copies vertices once; the coarse ones stay.
+  it("resolves a { whole: true } request only once the full file has replaced the coarse model", async () => {
+    const { release } = stubStreamed();
+    const loader = createAssetLoader({ basePath: "" });
+    const first = await loader.model<{ scene: Object3D }>("ship.glb");
+    let settled = false;
+    const whole = loader.model<{ scene: Object3D }>("ship.glb", { whole: true }).then((value) => {
+      settled = true;
+      return value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    release();
+    const value = await whole;
+    expect(value).toBe(first);
+    expect(firstMesh(value.scene).geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+    loader.clear();
+  }, 120_000);
+
+  it("does not put the full file onto a model released while it was on its way", async () => {
+    const { release } = stubStreamed();
+    const loader = createAssetLoader({ basePath: "" });
+    const value = await loader.model<{ scene: Object3D }>("ship.glb");
+    const mesh = firstMesh(value.scene);
+    const landed = loader.model("ship.glb", { whole: true });
+    expect(loader.release("model", "ship.glb")).toBe(true);
+    release();
+    await landed;
+    expect(mesh.geometry.index?.count).toBe(COARSE_TRIANGLES * 3);
+    loader.clear();
+  }, 120_000);
+
+  // Review of #643, finding 7: a host with no `Range` sends the whole KTX2 to the coarse parse.
+  // The full parse takes those bytes; it does not download the file a second time.
+  it("hands a no-Range host's whole KTX2 to the full model instead of fetching it again", async () => {
+    const texture = wholeKtx2(256, 9, 0);
+    const { fetched, release } = stubStreamed({ "hull.ktx2": texture });
+    // Stock three has no `imageSource`; the owned engine's loader does, and asks it per image.
+    const proto = GLTFLoader.prototype as unknown as {
+      imageSource?: (url: string) => Promise<Uint8Array | undefined>;
+      parse: (...args: unknown[]) => void;
+    };
+    Object.defineProperty(proto, "imageSource", {
+      configurable: true,
+      value: undefined,
+      writable: true,
+    });
+    const served: (Uint8Array | undefined)[] = [];
+    const parse = proto.parse;
+    vi.spyOn(proto, "parse").mockImplementation(function (this: typeof proto, ...args: unknown[]) {
+      void (this.imageSource?.("hull.ktx2") ?? Promise.resolve(undefined)).then((bytes) => {
+        served.push(bytes);
+        parse.apply(this, args);
+      });
+    });
+    try {
+      const loader = createAssetLoader({ basePath: "" });
+      const landed = loader.model<{ scene: Object3D }>("ship.glb", { whole: true });
+      await vi.waitFor(() => expect(served).toHaveLength(1));
+      release();
+      const value = await landed;
+      expect(firstMesh(value.scene).geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+      expect(fetched.filter((url) => url === "hull.ktx2")).toHaveLength(1);
+      expect(served.map((bytes) => bytes?.byteLength)).toEqual([
+        texture.byteLength,
+        texture.byteLength,
+      ]);
+      loader.clear();
+    } finally {
+      Reflect.deleteProperty(proto, "imageSource");
+    }
+  }, 120_000);
+
+  it("loads the whole file at once under assets.streamMeshes: false, and says so", async () => {
+    const { fetched, release } = stubStreamed();
+    release();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const loader = createAssetLoader({ basePath: "", streamMeshes: false });
+    const value = await loader.model<{ scene: Object3D }>("ship.glb");
+    expect(firstMesh(value.scene).geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+    expect(fetched.some((url) => url.includes("coarse"))).toBe(false);
+    expect(info.mock.calls.flat().join("\n")).toContain("TN_ASSETS_STREAM_MESHES_OFF");
+    loader.clear();
   }, 120_000);
 });

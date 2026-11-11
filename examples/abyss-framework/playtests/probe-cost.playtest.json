@@ -1,0 +1,33 @@
+{
+  "name": "prd603-probe-cost",
+  "schemaVersion": 1,
+  "subject": "world",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": false },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "probe-cost-refresh",
+      "release": true,
+      "waitFrames": 1800
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      { "component": "probeCostPhase", "entity": "world", "equals": "done", "changed": true },
+      { "component": "probeCostProbeCount", "entity": "world", "equals": 676, "changed": true },
+      { "component": "probeCostRefreshFrames", "entity": "world", "gte": 1, "changed": true },
+      { "component": "probeCostRefreshFrames", "entity": "world", "lte": 60, "changed": true },
+      { "component": "probeCostSliceMsMax", "entity": "world", "lte": 2.5, "changed": true },
+      { "component": "probeCostDrawCallsAdded", "entity": "world", "lte": 0, "changed": true }
+    ]
+  }
+}

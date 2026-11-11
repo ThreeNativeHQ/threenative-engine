@@ -9,6 +9,7 @@
 // points, lines, LODs, BatchedMeshes, custom depth materials, draw ranges,
 // indirect geometries or vertex-displacing materials, so those reasons never arise here.
 #include <algorithm>
+#include "engine/foundation/flags.h"
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -103,7 +104,7 @@ inline uint64_t walksWindow() {
     return 1000;
 #else
     static const uint64_t window = [] {
-        const char* flag = std::getenv("TN_PROJECTION_WALKS");
+        const char* flag = flags::once<flags::ProjectionWalks>();
         const long long n = flag ? std::atoll(flag) : 0;
         return n <= 0 ? uint64_t(0) : n == 1 ? uint64_t(1000) : uint64_t(n);
     }();
@@ -228,6 +229,13 @@ inline std::atomic<uint64_t>& uniformHashCount() {
 // them. A draw whose material's uniforms and geometry hold keeps both, so a steady frame adds nothing: the
 // unit-level work assertion, where a wall clock would only measure the machine.
 inline std::atomic<uint64_t>& materialRefreshCount() {
+    static std::atomic<uint64_t> count{0};
+    return count;
+}
+
+// Vertex passes RenderDatabase::sortCenterOf ran to key a sphere-less geometry: one per geometry revision and
+// position write, however often its draw's material refreshes.
+inline std::atomic<uint64_t>& sortCenterPassCount() {
     static std::atomic<uint64_t> count{0};
     return count;
 }

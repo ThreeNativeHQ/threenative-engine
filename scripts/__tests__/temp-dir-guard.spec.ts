@@ -11,6 +11,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The starter-asset archive extracts into a sibling scratch directory renamed into the cache and removed in finally.",
   ],
   [
+    "packages/create-threenative/src/index.ts",
+    "Rendering the authoring layer writes one scratch folder per run, for the scaffold that stamps it and for doctor --fix that copies from it, and both remove it in finally.",
+  ],
+  [
     "packages/assets/src/watch.ts",
     "The dev watcher stages each changed input through a scratch project removed in finally.",
   ],
@@ -33,6 +37,10 @@ const allowedProductionCreators = new Map<string, string>([
     "Each compile round writes its cases to one staging directory removed in finally.",
   ],
   [
+    "scripts/load-bench.ts",
+    "Each measured cycle needs a browser profile that never saw the site, and its three visits remove it in finally.",
+  ],
+  [
     "packages/playtest/src/runner/videoAnalysis.ts",
     "Video frames are removed by the analysis finally.",
   ],
@@ -45,6 +53,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The tarball gate packs into a scratch directory removed in finally.",
   ],
   ["scripts/profile-starter.ts", "The production profile removes its root in finally."],
+  [
+    "scripts/capability-search-ab.ts",
+    "The search A/B removes its base checkout and each live arm workdir in finally.",
+  ],
   ["scripts/sweep-proof.ts", "The production proof gate removes roots in finally."],
   [
     "scripts/performance-regression/cpu.ts",
@@ -80,6 +92,7 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/bake-delete-test.ts",
     "The delete-test gate removes the scaffold it created in finally.",
   ],
+  ["scripts/scaffold-pin.ts", "The pin tool removes the scaffolds it measured in finally."],
   [
     "scripts/realism-effects-visual.ts",
     "The production realism-effects visual gate removes its bundle root in finally.",
@@ -177,11 +190,19 @@ const allowedProductionCreators = new Map<string, string>([
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/player-thread-priority-desktop.mjs",
+    "The release-lane probe stages its bundle under the package's untracked build directory, not the OS temp directory, and removes it on exit.",
+  ],
+  [
     "packages/runtime-native/tests/native-engine/player-ui-overlay.mjs",
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
   [
     "packages/runtime-native/tests/native-engine/player-window-title.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-target-draw-present.mjs",
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
   [

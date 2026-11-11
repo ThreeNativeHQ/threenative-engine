@@ -100,6 +100,48 @@ export interface IBakedBiome {
 }
 
 /**
+ * The biome's far-impostor distance, carried into each species' asset record.
+ *
+ * `far.impostor` was validated and then read by nothing: a game stating it got no impostor distance
+ * in `world.json`, so the engine's whole-asset impostor never engaged. A caller that names its own
+ * `impostorDistance` keeps it — this fills the gap, it does not override a choice.
+ */
+export function withImpostorDistances(
+  assets: Readonly<Record<string, IWorldPackageAsset>> | undefined,
+  spec: IBiomeSpec,
+): Readonly<Record<string, IWorldPackageAsset>> | undefined {
+  if (assets === undefined) return undefined;
+  const distances = new Map<string, number>();
+  for (const foliage of spec.foliage) {
+    const distance = foliage.far?.impostor;
+    if (distance === undefined) continue;
+    // The contract refuses a value that is not positive, and one that is not beyond every LOD's own
+    // distance — checked here so a biome states its mistake at bake time, not at load.
+    if (!Number.isFinite(distance) || distance <= 0)
+      throw new Error(
+        `${spec.look}: ${foliage.species}.far.impostor must be a positive distance, got ${String(distance)}.`,
+      );
+    distances.set(foliage.species, distance);
+  }
+  if (distances.size === 0) return assets;
+  const filled: Record<string, IWorldPackageAsset> = {};
+  for (const [species, asset] of Object.entries(assets)) {
+    const distance = distances.get(species);
+    if (distance === undefined || asset.impostorDistance !== undefined) {
+      filled[species] = asset;
+      continue;
+    }
+    const gate = asset.lods?.reduce((furthest, lod) => Math.max(furthest, lod.distance), 0) ?? 0;
+    if (distance <= gate)
+      throw new Error(
+        `${species}: impostorDistance (${String(distance)}) must follow every authored LOD gate (furthest ${String(gate)}), or the impostor replaces a level that still draws.`,
+      );
+    filled[species] = { ...asset, impostorDistance: distance };
+  }
+  return filled;
+}
+
+/**
  * Bake one biome: the recipe's evaluated state and the world package it streams.
  *
  * This is the composition `terrain_generate` and a game's build script both call, so the file layout
@@ -107,7 +149,16 @@ export interface IBakedBiome {
  * request is checked here, not trusted — and the package's own placement runs are checked against
  * the state they came from, so a bake can never ship a cell list that lost instances.
  * @requires npm i -D @threenative/terrain
+ * An agent does not write this call to get a world: the `threenative-terrain` MCP tool
+ * `terrain_generate` takes the request in words ("a pine forest under snowy mountains with a river",
+ * "a volcanic island", or `ground: { location }` for a real place) and cooks the world.glb,
+ * recipe.json and world.json a game loads with `ctx.assets.model`.
  * @situation bake one biome's world package from an evaluated recipe and a biome file
+ * @situation generate terrain with mountains, hills, a river, a lake or an island from a request in words
+ * @situation generate a landscape or open world map for a game
+ * @situation procedural terrain for a level: a volcanic island, a mountain valley or a coast
+ * @situation make a canyon, a volcano, a fjord, a desert, a tundra or a forest world
+ * @situation cook the real terrain of a place on Earth from its latitude and longitude
  * @constraint every instance's asset must be in `assets`; every instance must land in exactly one cell run
  * @example const baked = bakeBiome({ state: terrain.evaluate(), spec: validateBiome(json, "savanna"), assets });
  */
@@ -125,11 +176,12 @@ export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome {
       : null;
   const state: ITerrainState =
     scatter === null ? options.state : { ...options.state, instances: scatter.placements };
+  const assets = withImpostorDistances(options.assets, spec);
   const baked =
-    options.assets === undefined
+    assets === undefined
       ? null
       : bakeWorldPackage(state, {
-          assets: options.assets,
+          assets,
           ...(options.cellSize === undefined ? {} : { cellSize: options.cellSize }),
           ...(options.layers === undefined ? {} : { layers: options.layers }),
           ...(options.names === undefined ? {} : { names: options.names }),

@@ -12,6 +12,7 @@ class BufferGeometry;
 class Camera;
 class Mesh;
 class Object3D;
+class Sphere;
 
 /**
  * core's projected-size cull (packages/core/src/render-camera-cull.ts) in the engine, one call per
@@ -59,6 +60,16 @@ public:
     /** Times apply() rebuilt its flat walk (a hierarchy change, another root or camera); for the ctest. */
     [[nodiscard]] uint64_t rebuilds() const { return rebuilds_; }
 
+    /**
+     * core's animation rate bands (render-camera-cull.ts `#visitAnimation` and `#observeAnimation`) for each rig,
+     * in one call: the rig's visible renderables in traverseVisible order, each banded off the camera's forward
+     * ray by the union of the rig's part spheres so far, and the rig's rate the least of its parts' (1, 2, 4 or
+     * 8). 0 means no part was visited, and core leaves that rig's state alone, as its walk does. Bounds follow
+     * apply()'s rule with their own versions, so a band walk before the cull counts each consult once.
+     */
+    std::vector<double> bandRates(const std::vector<Object3D*>& rigs, const Camera& camera, bool cameraResolved,
+                                  double scale);
+
 private:
     /**
      * The tree under the root in three's traverse order, built once per hierarchy version: a node, where its
@@ -91,7 +102,19 @@ private:
         bool stale = false;
     };
     std::unordered_map<const BufferGeometry*, Version> versions_;
+    std::unordered_map<const BufferGeometry*, Version> bandVersions_;
     std::vector<std::weak_ptr<Object3D>> hidden_;
+
+    enum class Bound { Sphere, Dynamic, None };
+    Bound boundsOf(Node& node, const Sphere*& sphere, std::unordered_map<const BufferGeometry*, Version>& versions);
+    /** A rig's flat walk, kept while the hierarchy holds still, like nodes_. */
+    struct RigWalk {
+        std::weak_ptr<const Object3D> rig;
+        std::vector<Node> nodes;
+        uint64_t version = 0;
+    };
+    std::unordered_map<const Object3D*, RigWalk> rigWalks_;
+    static void walk(std::vector<Node>& nodes, Object3D& root, const Camera& camera);
 };
 
 }  // namespace tn::engine

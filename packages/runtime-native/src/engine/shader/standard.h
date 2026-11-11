@@ -79,6 +79,9 @@ inline constexpr int kStandardPbrMapCount = kSpecularColorMap;
 
 struct VertexVariant {
     bool alphaHash = false;
+    /** material.alphaTest > 0: the flat cutoff is compiled in, as three builds it only then. Off, an opaque program
+     * carries no discard and keeps early depth testing. An alphaTestNode tests either way. */
+    bool alphaTest = false;
     bool background = false;
     uint8_t fog = 0; // 0 none, 1 Fog (range), 2 FogExp2 (density)
     bool sprite = false;
@@ -180,7 +183,7 @@ struct VertexVariant {
     bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + (premultipliedAlpha ? "premultiplied|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
+        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (alphaTest ? "alphaTest|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + (premultipliedAlpha ? "premultiplied|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
@@ -223,6 +226,10 @@ struct StandardPrograms {
     /** A lit fragment's diffuse colour (map, tint and colorNode included, unfogged) and emitted radiance, both vec3:
      *  what the albedo and emissive post targets hold (Renderer::auxFragment). kInvalid for an unlit program. */
     ExprId albedo = kInvalid, emissive = kInvalid;
+    /** A lit fragment's indirect diffuse light (vec3, unfogged, after the material's own aoMap): the hemisphere, ambient,
+     *  environment and irradianceNode share of its outgoing light, never a direct light's. What the indirectDiffuse post
+     *  target holds, so a screen-space occlusion darkens only that share (PRD-635). kInvalid for an unlit program. */
+    ExprId indirectDiffuse = kInvalid;
     /** The lit fragment's own normal: three's `normalView` accessor (`NodeMaterial.setupNormal`), namely the material
      *  normalNode's result when it authors one, else the normal-map or bump-map perturbation, else the view-space
      *  geometry normal. The normal post target holds it for a draw whose material authors a normalNode
@@ -306,7 +313,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
  * Uniform-driven (uniforms "alphaTest", "opaque" 0/1) rather than per-variant programs; the output is
  * the same. Returns the alpha to write.
  */
-ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false, ExprId cutoff = kInvalid);
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false, ExprId cutoff = kInvalid, bool alphaTest = true);
 /** Pinned nodes/fog/Fog.js rangeFogFactor / densityFogFactor, shared by all material tails. */
 /** CubeRenderTarget.fromEquirectangularTexture: camera rotation, level-0 equirectUV sample. */
 StandardPrograms buildEquirectangularCube();

@@ -1,0 +1,144 @@
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -451,7 +451,8 @@
+ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+                                      VkPs4Image *img,
+                                      const VkClearColorValue *cc,
+-                                     uint32_t level) {
++                                     uint32_t level,
++                                     uint32_t layer) {
+     VkPs4Device *dev = cmd->device;
+     if (!dev || !dev->clear_ps_ready) {
+         /* No clear PS — fall back to FillMemory */
+@@ -461,14 +462,17 @@
+ 
+     /* A colour target has no mip fields, so the image's own RT descriptor names
+      * level 0.  A clear of level N renders into a level-N target: the level's
+-     * own address, extent and pitch, built from the level table. */
++     * own address, extent and pitch, built from the level table.  A clear of
++     * layer L is the same target with CB_COLOR_VIEW.SLICE_START = L: without it
++     * every load-op clear of a cube face painted face 0 instead, so each face
++     * pass of the PMREM bake erased face 0 (PRD-784 P4-3). */
+     GnmRenderTarget level_rt;
+     const GnmRenderTarget *rt = &img->gnm_rt;
+     uint32_t rt_w = img->create_info.extent.width;
+     uint32_t rt_h = img->create_info.extent.height;
+     VkPs4ImageLevel lv;
+-    if (level > 0 && vk_ps4_image_level(img, level, 0, &lv) &&
+-        vk_ps4_image_level_rt(img, level, 0, &level_rt)) {
++    if ((level > 0 || layer > 0) && vk_ps4_image_level(img, level, 0, &lv) &&
++        vk_ps4_image_level_rt(img, level, layer, &level_rt)) {
+         rt = &level_rt;
+         rt_w = lv.width;
+         rt_h = lv.height;
+@@ -551,7 +555,8 @@
+ static void vk_ps4_clear_color(VkPs4CommandBuffer *cmd,
+                                 VkPs4Image *img,
+                                 const VkClearColorValue *cc,
+-                                uint32_t level) {
++                                uint32_t level,
++                                uint32_t layer) {
+     if (img->is_render_target) {
+         /* Check if the RT is tiled by looking at the tile mode in the
+          * GnmRenderTarget descriptor.  Linear RTs (DISPLAY_LINEAR_GENERAL
+@@ -577,7 +582,7 @@
+             tm == GNM_TM_DISPLAY_LINEAR_ALIGNED) {
+             vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc, level);
+         } else {
+-            vk_ps4_clear_color_draw(cmd, img, cc, level);
++            vk_ps4_clear_color_draw(cmd, img, cc, level, layer);
+         }
+     } else {
+         /* Non-RT image — use FillMemory */
+@@ -2928,7 +2933,8 @@
+                 const VkClearColorValue *cc =
+                     &cmd->current_render_pass.clear_values[i].color;
+                 vk_ps4_clear_color(cmd, view->image, cc,
+-                                         view->create_info.subresourceRange.baseMipLevel);
++                                         view->create_info.subresourceRange.baseMipLevel,
++                                         view->create_info.subresourceRange.baseArrayLayer);
+             }
+         }
+     }
+@@ -3017,7 +3023,8 @@
+                     const VkClearColorValue *cc =
+                         &cmd->current_render_pass.clear_values[att_idx].color;
+                     vk_ps4_clear_color(cmd, view->image, cc,
+-                                         view->create_info.subresourceRange.baseMipLevel);
++                                         view->create_info.subresourceRange.baseMipLevel,
++                                         view->create_info.subresourceRange.baseArrayLayer);
+                 }
+             }
+             /* Also check resolve attachments */
+@@ -3035,7 +3042,8 @@
+                     const VkClearColorValue *cc =
+                         &cmd->current_render_pass.clear_values[att_idx].color;
+                     vk_ps4_clear_color(cmd, view->image, cc,
+-                                         view->create_info.subresourceRange.baseMipLevel);
++                                         view->create_info.subresourceRange.baseMipLevel,
++                                         view->create_info.subresourceRange.baseArrayLayer);
+                 }
+             }
+         }
+@@ -3057,7 +3065,8 @@
+                         const VkClearColorValue *cc =
+                             &cmd->current_render_pass.clear_values[att_idx].color;
+                         vk_ps4_clear_color(cmd, view->image, cc,
+-                                         view->create_info.subresourceRange.baseMipLevel);
++                                         view->create_info.subresourceRange.baseMipLevel,
++                                         view->create_info.subresourceRange.baseArrayLayer);
+                     }
+                 } else if (view->image->is_depth_target) {
+                     if (att_idx < cmd->current_render_pass.clear_value_count) {
+@@ -3234,7 +3243,7 @@
+          * (which reads img->memory) cannot clear it.  It is one mip of one
+          * layer on a display-linear VideoOut RT, so the whole-image clear
+          * is exact. */
+-        if (img->is_swapchain_image) vk_ps4_clear_color(cmd, img, pColor, 0);
++        if (img->is_swapchain_image) vk_ps4_clear_color(cmd, img, pColor, 0, 0);
+         return;
+     }
+     if (!img->memory->gnm_mem.mapped) return;
+@@ -3268,8 +3277,11 @@
+         if (full_image) {
+             const uint32_t mips = img->create_info.mipLevels ?
+                                   img->create_info.mipLevels : 1;
++            const uint32_t layers = img->create_info.arrayLayers ?
++                                    img->create_info.arrayLayers : 1;
+             for (uint32_t lv = 0; lv < mips; lv++)
+-                vk_ps4_clear_color(cmd, img, pColor, lv);
++                for (uint32_t ly = 0; ly < layers; ly++)
++                    vk_ps4_clear_color(cmd, img, pColor, lv, ly);
+             (void)imageLayout;
+             return;
+         }
+diff --git a/src/vk_ps4_image.c b/src/vk_ps4_image.c
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -635,15 +635,20 @@
+         /* The view type picks the T# type. Every view used to keep the image's 2D type (a
+          * render target's T# from sceGnmTexCreate2d is one 2D slice), so a cube view -- the
+          * environment's PMREM cube, sampled by direction -- read one face or nothing, and every
+-         * face lit only by the environment went black (PRD-784 P4-3). DEPTH is the cube count
+-         * for a cube, the slice count for an array, as sceGnmCreateTexture sets them. */
++         * face lit only by the environment went black (PRD-784 P4-3). DEPTH describes the IMAGE,
++         * not the view: the cube count for a cube, the slice count for an array, as
++         * sceGnmCreateTexture sets them; base/last array pick the view's layers. A view of one
++         * layer of a layered image (a cube face) is therefore a 2D_ARRAY T# of the whole image
++         * with base = last = the layer: shadPS4 sizes the image from the T#, and a 2D T# of one
++         * slice read layer 0 for every face. */
+         const VkImageViewType vt = pCreateInfo->viewType;
+         if ((vt == VK_IMAGE_VIEW_TYPE_CUBE || vt == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) && layer_count >= 6) {
+             view->gnm_view.type = GNM_TEXTURE_CUBEMAP;
+-            sceGnmTexSetDepth(&view->gnm_view, layer_count / 6);
+-        } else if (vt == VK_IMAGE_VIEW_TYPE_2D_ARRAY && !multisampled) {
++            sceGnmTexSetDepth(&view->gnm_view, layers / 6);
++        } else if ((vt == VK_IMAGE_VIEW_TYPE_2D_ARRAY || vt == VK_IMAGE_VIEW_TYPE_2D) &&
++                   !multisampled && layers > 1) {
+             view->gnm_view.type = GNM_TEXTURE_2D_ARRAY;
+-            sceGnmTexSetDepth(&view->gnm_view, layer_count);
++            sceGnmTexSetDepth(&view->gnm_view, layers);
+         }
+     }
+ 

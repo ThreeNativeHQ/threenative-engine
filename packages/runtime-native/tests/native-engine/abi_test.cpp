@@ -369,6 +369,33 @@ void scene() {
 
 // PRD-508 phase 3: a catalogued class whose registry lacks a member refuses it by name, so an
 // uncatalogued method is a status a caller can read, never a crash.
+// PRD-762: core's world cull asks Frustum.intersectsObject (three r185), and the kit threw on it.
+void frustum_intersects_object() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t camera{}, frustum{}, geometry{}, material{}, mesh{};
+    CHECK(tn_construct(ctx, "PerspectiveCamera", nullptr, 0, &camera, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Frustum", nullptr, 0, &frustum, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    const tn_value_t parts[2] = {ref(geometry), ref(material)};
+    CHECK(tn_construct(ctx, "Mesh", parts, 2, &mesh, &d.value) == TN_OK);
+    tn_value_t result{}, projection{};
+    CHECK(tn_get(camera, "projectionMatrix", &projection, &d.value) == TN_OK);
+    CHECK(tn_invoke(frustum, "setFromProjectionMatrix", &projection, 1, &result, &d.value) == TN_OK);
+    const tn_value_t force = num(1), object = ref(mesh);
+    for (const double z : {-5.0, 5.0, -1.0e6}) {
+        const tn_value_t depth = num(z);
+        CHECK(tn_set(mesh, "position.z", &depth, &d.value) == TN_OK);
+        CHECK(tn_invoke(mesh, "updateMatrixWorld", &force, 1, &result, &d.value) == TN_OK);
+        CHECK(tn_invoke(frustum, "intersectsObject", &object, 1, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_BOOL && bool(result.boolean) == (z == -5.0));
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void unsupported_member() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -855,6 +882,29 @@ void source_guard() {
     CHECK(tn_set(meshes[2], "position.x", &far, &d.value) == TN_OK);
     CHECK(changed(2).empty());  // sources 0 and 1
     CHECK((changed(2) == std::vector<double>{2}));
+    // PRD-828: a second list watches the sources' ancestors, all checked by __tnGuardCheckAncestors.
+    tn_handle_t holder{}, still{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &holder, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &still, &d.value) == TN_OK);
+    const tn_value_t ancestorItems[2] = {ref(holder), ref(still)};
+    tn_value_t lists[2]{list, {}};
+    lists[1].kind = TN_VALUE_ARRAY;
+    lists[1].count = 2;
+    lists[1].values = ancestorItems;
+    CHECK(tn_invoke(scene, "__tnGuardWatch", lists, 2, &result, &d.value) == TN_OK && result.number == 3);
+    const auto ancestorsMoved = [&]() {
+        tn_value_t out{};
+        CHECK(tn_invoke(scene, "__tnGuardCheckAncestors", nullptr, 0, &out, &d.value) == TN_OK);
+        CHECK(out.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(out.numbers, out.numbers + out.count);
+    };
+    CHECK(ancestorsMoved().empty());
+    const tn_value_t lifted = num(2);
+    CHECK(tn_set(holder, "position.y", &lifted, &d.value) == TN_OK);
+    CHECK((ancestorsMoved() == std::vector<double>{0}));
+    CHECK(ancestorsMoved().empty());  // answered once, then no longer watched
+    CHECK(tn_invoke(scene, "__tnGuardWatch", &list, 1, &result, &d.value) == TN_OK);
+    CHECK(ancestorsMoved().empty());  // a watch without the second list watches no ancestor
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -1333,6 +1383,51 @@ void tsl_matrix_columns() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-828: one sync's changed uniforms cross as one span; a stale id writes nothing, a refused value stops there.
+void tsl_set_uniforms() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_tsl_arg_t scalar{};
+    scalar.kind = TN_TSL_ARG_NUMBER;
+    tn_tsl_arg_t four{};
+    four.kind = TN_TSL_ARG_VECTOR;
+    four.reserved = 4;
+    uint64_t ids[3]{};
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &scalar, 1, &ids[0], &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &four, 1, &ids[1], &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &scalar, 1, &ids[2], &d.value) == TN_OK);
+    const auto values = [&](int i) { return tn::abi::tslNode(ctx, ids[i])->values; };
+
+    const uint32_t counts[3] = {1, 4, 1};
+    const double lanes[6] = {0.5, 1, 2, 3, 4, 0.25};
+    CHECK(tn_tsl_set_uniforms(ctx, ids, counts, lanes, 3, &d.value) == TN_OK);
+    CHECK(values(0) == std::vector<double>{0.5});
+    CHECK((values(1) == std::vector<double>{1, 2, 3, 4}));
+    CHECK(values(2) == std::vector<double>{0.25});
+    CHECK(tn_tsl_set_uniforms(ctx, nullptr, nullptr, nullptr, 0, &d.value) == TN_OK);  // nothing changed
+
+    // A stale id anywhere in the span writes nothing.
+    const uint64_t stale[2] = {ids[0], 999999};
+    const double next[2] = {0.75, 0.75};
+    const uint32_t ones[2] = {1, 1};
+    CHECK(tn_tsl_set_uniforms(ctx, stale, ones, next, 2, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(values(0) == std::vector<double>{0.5});
+
+    // A refused value (a float given two lanes) stops the batch there; the writes before it stay.
+    const uint64_t order[3] = {ids[2], ids[0], ids[1]};
+    const uint32_t wrong[3] = {1, 2, 4};
+    const double packed[7] = {0.125, 1, 2, 9, 9, 9, 9};
+    CHECK(tn_tsl_set_uniforms(ctx, order, wrong, packed, 3, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(values(2) == std::vector<double>{0.125});
+    CHECK(values(0) == std::vector<double>{0.5});
+    CHECK((values(1) == std::vector<double>{1, 2, 3, 4}));
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void tsl_uniform_value() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -1469,6 +1564,115 @@ void tsl_statements() {
     CHECK(close(&one, &color) == TN_OK);
     CHECK(tn_tsl_set(ctx, material, "colorNode", color, &d.value) == TN_OK);
     CHECK(g::key(tn::abi::shaderNode(material, "colorNode")) == g::key(g::float_(1)));
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// `assign` whose target is an expression rather than a toVar() variable, as three's SkyMesh writes it in its
+// vertex Fn (SkyMesh.js): `varyingProperty('vec3', 'vSunDirection').assign(normalize(sunPosition))` carried to
+// the fragment stage, and `position.z.assign(position.w)` on modelViewProjection, the one constant the engine
+// makes a variable so the stage can assign a lane of it.
+void tsl_assign_expression_target() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto number = [](double n) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NUMBER; a.number = n; return a; };
+    const auto stringArg = [](const char* s) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_STRING; a.text = s; return a; };
+    const auto nodeArg = [](uint64_t id) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NODE; a.node = id; return a; };
+    const auto open = [&] { uint64_t none = 0; return tn_tsl_call(ctx, "scope:open", nullptr, nullptr, 0, &none, &d.value); };
+    const auto close = [&](const tn_tsl_arg_t* result, uint64_t* out) {
+        return tn_tsl_call(ctx, "scope:close", nullptr, result, result ? 1 : 0, out, &d.value);
+    };
+    namespace g = tn::engine::shader::graph;
+    namespace s = tn::engine::shader;
+    uint64_t varying = 0, uniform = 0, renamed = 0, sun = 0, clip = 0, lane = 0, value = 0, fn = 0, done = 0;
+
+    // const vSunDirection = varyingProperty('vec3', 'vSunDirection'): the vertex stage's write and the
+    // fragment stage's read are this one node; the value it is assigned is its own argument.
+    const tn_tsl_arg_t declaration[2] = {stringArg("vec3"), stringArg("vSunDirection")};
+    CHECK(tn_tsl_call(ctx, "varyingProperty", nullptr, declaration, 2, &varying, &d.value) == TN_OK && varying != 0);
+    CHECK(tn::abi::tslNode(ctx, varying)->name == "vSunDirection");
+    const tn_tsl_arg_t axis[3] = {number(0), number(1), number(0)};
+    CHECK(tn_tsl_call(ctx, "vec3", nullptr, axis, 3, &value, &d.value) == TN_OK);
+    const tn_tsl_arg_t axisArg = nodeArg(value), sunPosition = stringArg("sunPosition");
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &axisArg, 1, &uniform, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "setName", &uniform, &sunPosition, 1, &renamed, &d.value) == TN_OK);
+    const tn_tsl_arg_t sunArg = nodeArg(renamed);
+    CHECK(tn_tsl_call(ctx, "normalize", nullptr, &sunArg, 1, &sun, &d.value) == TN_OK);
+
+    CHECK(open() == TN_OK);
+    const tn_tsl_arg_t sunArg2 = nodeArg(sun);
+    CHECK(tn_tsl_call(ctx, "assign", &varying, &sunArg2, 1, &done, &d.value) == TN_OK);
+    CHECK(tn::abi::tslNode(ctx, done) == tn::abi::tslNode(ctx, varying));  // assign answers its target
+    // const position = modelViewProjection; position.z.assign(position.w); return position
+    CHECK(tn_tsl_call(ctx, "constant:modelViewProjection", nullptr, nullptr, 0, &clip, &d.value) == TN_OK);
+    const tn_tsl_arg_t clipArg = nodeArg(clip);
+    CHECK(tn_tsl_call(ctx, "swizzle:z", &clip, nullptr, 0, &lane, &d.value) == TN_OK);
+    const auto base = tn::abi::tslNode(ctx, clip), swizzle = tn::abi::tslNode(ctx, lane);
+    // The swizzle of the variable's read, kept as the variable so lowering reassigns every lane of it.
+    CHECK(base && base->kind == g::Kind::Var && swizzle && swizzle->kind == g::Kind::Swizzle && swizzle->lanes == "z" &&
+          swizzle->args.at(0)->kind == g::Kind::VarRead && swizzle->args.at(0)->args.at(0) == base);
+    CHECK(tn_tsl_call(ctx, "swizzle:w", &clip, nullptr, 0, &value, &d.value) == TN_OK);
+    const tn_tsl_arg_t source = nodeArg(value);
+    CHECK(tn_tsl_call(ctx, "assign", &lane, &source, 1, &done, &d.value) == TN_OK);
+    CHECK(close(&clipArg, &fn) == TN_OK);
+
+    // A value that reads a Fn variable would see the variable's initial value where the vertex stage recomputes
+    // it: refused by name, so the game writes the expression.
+    CHECK(open() == TN_OK);
+    uint64_t variable = 0;
+    const tn_tsl_arg_t zero = number(0);
+    CHECK(tn_tsl_call(ctx, "float", nullptr, &zero, 1, &value, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "toVar", &value, nullptr, 0, &variable, &d.value) == TN_OK);
+    const tn_tsl_arg_t variableArg = nodeArg(variable);
+    CHECK(tn_tsl_call(ctx, "assign", &varying, &variableArg, 1, &done, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    CHECK(d.message() == "TN_ABI_ARGUMENT TN_TSL_VARYING_PROPERTY_VARIABLE: vSunDirection is assigned a value that "
+                         "reads a Fn variable; assign an expression");
+    tn_diagnostic_release(&d.value);
+    CHECK(close(nullptr, &done) == TN_OK);
+
+    // The graph a material keeps: the Fn body is the varying statement, then the lane assignment, and both end
+    // in the vertex stage's program.
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "vertexNode", fn, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", varying, &d.value) == TN_OK);
+    s::VertexVariant variant;
+    variant.nodes.vertexNode = tn::abi::shaderNode(material, "vertexNode");
+    variant.nodes.colorNode = tn::abi::shaderNode(material, "colorNode");
+    CHECK(variant.nodes.vertexNode && variant.nodes.vertexNode->kind == g::Kind::Body);
+    if (!variant.nodes.vertexNode || variant.nodes.vertexNode->kind != g::Kind::Body) return;
+    const auto& statements = variant.nodes.vertexNode->body;
+    CHECK(statements.size() == 2);
+    if (statements.size() == 2) {
+        CHECK(statements[0]->kind == g::Kind::Varying && statements[0]->name == "vSunDirection" &&
+              statements[0]->args.size() == 1 && statements[0]->args[0] == tn::abi::tslNode(ctx, sun));
+        const g::Node assignment = statements[1];
+        CHECK(assignment->kind == g::Kind::Assign);
+        // The variable itself is the target's base, so lowering reassigns every lane of it: the swizzle the author
+        // assigned (`swizzle`, a read of the variable) keeps that read as its argument.
+        const g::Node target = assignment->args.at(0), assigned = assignment->args.at(1);
+        CHECK(target->kind == g::Kind::Swizzle && target->lanes == "z" && target->args.at(0)->kind == g::Kind::Var &&
+              target->args.at(0) == base);
+        CHECK(assigned->kind == g::Kind::Swizzle && assigned->lanes == "w" &&
+              assigned->args.at(0)->kind == g::Kind::VarRead && assigned->args.at(0)->args.at(0) == base);
+    }
+    const auto programs = s::buildBasic(variant);
+    for (const auto& error : programs.diagnostics) std::fprintf(stderr, "assign: %s\n", error.c_str());
+    CHECK(programs.diagnostics.empty());
+    const auto vertex = s::WgslEmitter::emit(programs.vertex, 0), fragment = s::WgslEmitter::emit(programs.fragment, 1);
+    CHECK(vertex.ok() && fragment.ok());
+    // The vertex stage computes the varying and the fragment stage reads it, at the location the link gave it.
+    CHECK(vertex.code.find("@location(0) o_vSunDirection: vec3<f32>") != std::string::npos);
+    CHECK(vertex.code.find("out.o_vSunDirection = normalize(u.f_sunPosition);") != std::string::npos);
+    CHECK(fragment.code.find("@location(0) i_vSunDirection: vec3<f32>") != std::string::npos);
+    CHECK(fragment.code.find("vec4<f32>(i_vSunDirection") != std::string::npos);
+    // z takes w and the other lanes keep their value: one whole-vector reassignment from the variable itself.
+    // The let names (`l15`) carry expression ids, so they are folded out before the lanes are compared.
+    std::string lowered = vertex.code;
+    for (size_t at = lowered.find("(l"); at != std::string::npos; at = lowered.find("(l", at + 3))
+        lowered.erase(at + 2, lowered.find(')', at) - at - 2);
+    CHECK(lowered.find(" = vec4<f32>((l).x, (l).y, (l).w, (l).w);") != std::string::npos);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -1836,6 +2040,37 @@ void array_offset() {
         CHECK(tn_invoke(object, "fromArray", &array, 1, &result_, &d.value) == TN_OK);
         CHECK(toArray(object) == window(1, count));
     }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-867: three's CompressedTexture over the C ABI, as the browser facade builds it: (levelCount, width,
+// height, format), then one `mipmaps.N.data` per level, coarse first. Out-of-order, short and ASTC are refused.
+void compressed_texture_levels() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const tn_value_t astc[4] = {num(1), num(4), num(4), num(37808)};  // RGBA_ASTC_4x4_Format
+    tn_handle_t refused{};
+    CHECK(tn_construct(ctx, "CompressedTexture", astc, 4, &refused, &d.value) != TN_OK);
+    const tn_value_t args[4] = {num(2), num(8), num(8), num(36492)};
+    tn_handle_t texture{};
+    CHECK(tn_construct(ctx, "CompressedTexture", args, 4, &texture, &d.value) == TN_OK);
+    auto* engine = engineObject<tn::engine::Texture>(texture);
+    CHECK(engine && engine->mipmaps.size() == 2 && !engine->compressed() && !engine->flipY);
+    tn_value_t format{};
+    CHECK(tn_get(texture, "format", &format, &d.value) == TN_OK && format.number == 36492);  // three's block format
+    uint8_t fine[64] = {1}, coarse[16] = {2};
+    const tn_value_t fineValue = bytes("Uint8Array", fine, 64), coarseValue = bytes("Uint8Array", coarse, 16);
+    CHECK(tn_set(texture, "mipmaps.0.data", &fineValue, &d.value) != TN_OK);  // level 1 is not resident yet
+    const tn_value_t shortValue = bytes("Uint8Array", coarse, 8);
+    CHECK(tn_set(texture, "mipmaps.1.data", &shortValue, &d.value) != TN_OK);
+    CHECK(tn_set(texture, "mipmaps.1.data", &coarseValue, &d.value) == TN_OK);
+    CHECK(engine->compressed() && engine->residentLevel() == 1);
+    const uint32_t version = engine->version();
+    CHECK(tn_set(texture, "mipmaps.0.data", &fineValue, &d.value) == TN_OK);
+    CHECK(engine->residentLevel() == 0 && engine->version() != version && engine->mipmaps[0].data[0] == 1);
+    CHECK(engine->imageSource->writtenLevels == 3u);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -2272,9 +2507,91 @@ void projected_cull_held_restore() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-828: GPUParticles3D's view test in one call. The emitter's local box, carried by its world matrix and padded,
+// is tested against the camera's frustum as core's JS fallback does (particles.ts process).
+void bounds_in_view() {
+    using namespace tn::engine;
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    const tn_version_info_t version = tn_engine_version();
+    CHECK(tn_context_create(&ctx, &version, &d.value) == TN_OK);
+    auto emitter = std::make_shared<Object3D>();
+    const auto object = tn::abi::shareObject(ctx, "Object3D", emitter);
+    const auto view = tn::abi::shareObject(ctx, "PerspectiveCamera", std::make_shared<PerspectiveCamera>(50, 1, 0.1, 5000));
+    tn_handle_t box{}, lo{}, hi{};
+    const tn_value_t low[3] = {num(-0.001), num(-0.001), num(-0.001)}, high[3] = {num(0.001), num(0.001), num(0.001)};
+    CHECK(tn_construct(ctx, "Vector3", low, 3, &lo, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Vector3", high, 3, &hi, &d.value) == TN_OK);
+    const tn_value_t ends[2] = {ref(lo), ref(hi)};
+    CHECK(tn_construct(ctx, "Box3", ends, 2, &box, &d.value) == TN_OK);
+    const auto inView = [&](double x, double padding) {
+        emitter->position.x = x;
+        emitter->position.z = -5;
+        const tn_value_t args[3] = {ref(view), ref(box), num(padding)};
+        tn_value_t out{};
+        CHECK(tn_invoke(object, "__boundsInView", args, 3, &out, &d.value) == TN_OK);
+        return out.kind == TN_VALUE_BOOL && out.boolean;
+    };
+    CHECK(inView(0, std::nan("")));     // ahead of the camera
+    CHECK(!inView(100, std::nan("")));  // far to the side; the default padding is half a unit
+    CHECK(inView(100, 200));  // a padding wide enough reaches the view
+    emitter->scale.set(400, 400, 400);
+    CHECK(inView(100, std::nan("")));   // the default padding follows the world scale, as three's getMaxScaleOnAxis
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-610 AC-4: the projected-size cull reads a flat list of the tree, built once per hierarchy version, instead
 // of comparing type strings and casting every node every frame (7.7% of a Midway tick). The answer is the same:
 // a hidden subtree is skipped whole, a sub-threshold mesh is hidden for the frame, and an added mesh is seen.
+// PRD-828: the rate bands core's #observeAnimation picks, from the engine in one call per frame.
+void projected_cull_bands() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto unit = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    unit->setXYZ(0, -1, 0, 0).setXYZ(1, 1, 0, 0);  // a sphere of radius 1 at the origin
+    geometry->setAttribute("position", unit);
+    const auto rigAt = [&](double x, double z) {
+        auto rig = std::make_shared<Object3D>();
+        auto part = std::make_shared<Mesh>(geometry, nullptr);
+        rig->position.x = x;
+        rig->position.z = z;
+        rig->add(*part);
+        scene->add(*rig);
+        return std::make_pair(rig, part);
+    };
+    auto [onRay, onRayPart] = rigAt(0, -500);    // the forward ray meets it: never banded
+    auto [mid, midPart] = rigAt(5, -40);         // 2 / 39.3 * 772 = 39 px: band 2
+    auto [far, farPart] = rigAt(20, -400);       // 3.9 px: band 8
+    auto [behind, behindPart] = rigAt(-200, -10);  // outside the frustum: 8
+    auto [hidden, hiddenPart] = rigAt(5, -40);
+    hiddenPart->setVisible(false);               // no part visited: 0, core leaves it alone
+    auto [marked, markedPart] = rigAt(20, -400);
+    markedPart->alwaysRender = true;             // alwaysRender keeps the gameplay rate
+    // A rig is banded by the union of its parts' spheres, as core's #rigSphere grows it: two small parts 360 m
+    // apart read as one large rig, band 1, though each alone reads 2 and 8.
+    auto [pair, pairNear] = rigAt(5, -40);
+    auto pairFar = std::make_shared<Mesh>(geometry, nullptr);
+    pairFar->position.z = -360;
+    pair->add(*pairFar);
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    scene->updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    ProjectedCull cull;
+    const std::vector<Object3D*> rigs = {onRay.get(), mid.get(), far.get(), behind.get(),
+                                         hidden.get(), marked.get(), pair.get()};
+    for (int frame = 0; frame < 3; ++frame) {
+        const auto rates = cull.bandRates(rigs, camera, true, scale);
+        CHECK(rates == (std::vector<double>{1, 2, 8, 8, 0, 1, 1}));
+    }
+    // An unresolved camera bands nothing: every visited rig keeps the gameplay rate.
+    CHECK(cull.bandRates(rigs, camera, false, scale) == (std::vector<double>{1, 1, 1, 1, 0, 1, 1}));
+    // The band walk keeps its own bound versions: the cull that follows it still culls the far rig.
+    CHECK(cull.apply(*scene, camera, true, scale, 8, true).culled == 4);  // on-ray, far, behind, the pair's far part
+    cull.restore();
+}
+
 void projected_cull_list() {
     using namespace tn::engine;
     auto scene = std::make_shared<Scene>();
@@ -2435,6 +2752,27 @@ void join_converts_integer_parts() {
     tn::engine::shader::tsl::Build scope(program);
     program.output("color", g::lower(root, program));
     CHECK(buildStage(program).wgsl.ok());
+}
+
+// PRD-762, the forest kit's sky: three r185's JoinNode cuts an input that runs past the vector's length
+// to the components left (it logs, and builds), and drops any input after it; the engine refused.
+void join_truncates_overflow() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    using namespace tn::engine::shader;
+    uint64_t serial = 0;
+    const auto pair = tn::abi::tslCall("vec2", nullptr, {TslArg::of(0.25), TslArg::of(0.5)}, serial);
+    const auto quad = tn::abi::tslCall("vec4", nullptr, {TslArg::of(0.1), TslArg::of(0.2), TslArg::of(0.3), TslArg::of(0.4)}, serial);
+    const auto cut = tn::abi::tslCall("vec3", nullptr, {TslArg::of(pair), TslArg::of(pair)}, serial);
+    const auto past = tn::abi::tslCall("vec3", nullptr, {TslArg::of(quad), TslArg::of(0.9)}, serial);
+    const auto root = g::vec4({g::swizzle(cut, "z"), g::swizzle(past, "z"), g::float_(0), g::float_(1)});
+    Program program(Stage::Fragment);
+    tn::engine::shader::tsl::Build scope(program);
+    program.output("color", g::lower(root, program));
+    const auto built = buildStage(program);
+    if (!built.wgsl.ok() && !program.diagnostics().empty())
+        std::printf("join_truncates_overflow: %s\n", program.diagnostics().front().reason.c_str());
+    CHECK(built.wgsl.ok());
 }
 
 void struct_function_return() {
@@ -2906,6 +3244,25 @@ void starter_post_bindings() {
         tn_handle_t none{};
         CHECK(tn_construct(context, "RenderTarget", rejected, 3, &none, &diagnostic) == TN_ERROR_UNSUPPORTED);
         tn_diagnostic_release(&diagnostic);
+        // The same filter on an array target (three's `depth`, the impostor bake's atlas, PRD-858) keeps a mip chain.
+        const tn_value_t layered[]{
+            {TN_VALUE_STRING, 0, 0, {}, 0, "minFilter", 9, {}}, num(1008.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "depth", 5, {}}, num(16.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "count", 5, {}}, num(2.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "generateMipmaps", 15, {}}, boolean(true)};
+        tn_value_t arrayOptions{};
+        arrayOptions.kind = TN_VALUE_RECORD;
+        arrayOptions.count = 4;
+        arrayOptions.values = layered;
+        const tn_value_t arrayArgs[]{num(8.0), num(8.0), arrayOptions};
+        tn_handle_t array{};
+        CHECK(tn_construct(context, "RenderTarget", arrayArgs, 3, &array, &diagnostic) == TN_OK);
+        if (array.type) {
+            const auto made = std::static_pointer_cast<tn::engine::RenderTarget>(tn::abi::objectOf(array)->ptr);
+            CHECK(made->layers == 16 && made->more.size() == 1 && made->more[0]->layers == 16);
+            for (const auto& texture : tn::engine::RenderTarget::texturesOf(*made))
+                CHECK(texture->array && texture->depth == 16 && texture->generateMipmaps && texture->minFilter == 1008);
+        }
     }
     CHECK(tn_context_destroy(context, &diagnostic) == TN_OK);
     std::string authoredSource = "fn authoredArea(sample: u32, lo: vec2<f32>, hi: vec2<f32>) -> f32 { return f32(sample) + dot(hi-lo, hi-lo); }";
@@ -2963,6 +3320,31 @@ void starter_post_bindings() {
         CHECK(stage.wgsl.code.find("array<atomic<u32>>") != std::string::npos);
         CHECK(stage.wgsl.code.find("atomicStore") < stage.wgsl.code.find("atomicAdd"));
         if (const char* output = std::getenv("TN_ATOMIC_WGSL_OUTPUT")) std::ofstream(output) << stage.wgsl.code;
+    }
+    // three's atomicSub/Max/Min/And/Or/Xor (prd476 bounds its particles with atomicMax and atomicMin): each lowers to
+    // its own WGSL builtin on the same atomic element, in statement order.
+    {
+        const auto buffer = g::storage("bounds", tn::engine::shader::Type::i32());
+        auto element = std::make_shared<g::NodeData>(*buffer.element(g::uint_(0)));
+        *element->atomic = true;
+        tn::abi::TslScopes scopes;
+        g::Node ignored, body;
+        CHECK(scopes.call("scope:open", nullptr, {}, ignored));
+        const std::vector<std::string> functions{"atomicSub", "atomicMax", "atomicMin", "atomicAnd", "atomicOr", "atomicXor"};
+        for (const auto& function : functions)
+            CHECK(scopes.call(function.c_str(), nullptr, {TslArg::of(element), TslArg::of(g::int_(3))}, ignored));
+        CHECK(scopes.call("scope:close", nullptr, {}, body));
+        tn::engine::shader::Program p(tn::engine::shader::Stage::Compute);
+        tn::engine::shader::tsl::Build build(p);
+        g::lower(body, p);
+        const auto stage = tn::engine::shader::buildStage(p);
+        CHECK(stage.wgsl.ok() && p.ok());
+        size_t at = 0;
+        for (const auto& function : functions) {
+            const size_t found = stage.wgsl.code.find(function + "(&s_", at);
+            CHECK(found != std::string::npos);
+            at = found == std::string::npos ? at : found;
+        }
     }
     const auto temporal = call("traa", {TslArg::of(scene), TslArg::of(g::texture("depth", g::uv())),
                                       TslArg::of(g::texture("velocity", g::uv())), TslArg::other()});
@@ -3235,6 +3617,163 @@ void tsl_texture_store() {
     CHECK(refused);
 }
 
+// three's read form of a storage texture (prd249): storageTexture(t).toReadOnly().setSampler(false), then
+// .sample(uvec2) loads one texel. The engine reads a storage texture with textureLoad already.
+void tsl_storage_texture_read() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto texture = std::make_shared<tn::engine::Texture>();
+    texture->storageTexture = true;
+    texture->width = 16; texture->height = 8;
+    const auto target = tn::abi::tslCall("storageTexture", nullptr, {TslArg::objectOf("StorageTexture", texture)}, serial);
+    const TslArg self = TslArg::of(target);
+    const auto readOnly = tn::abi::tslCall("toReadOnly", &self, {}, serial);
+    CHECK(readOnly == target);
+    CHECK(tn::abi::tslCall("toWriteOnly", &self, {}, serial) == target);
+    const TslArg readOnlyArg = TslArg::of(readOnly);
+    const auto unsampled = tn::abi::tslCall("setSampler", &readOnlyArg, {TslArg::of(0.0)}, serial);
+    CHECK(unsampled && unsampled->kind == g::Kind::StorageTexture);
+    const auto coord = tn::abi::tslCall("uvec2", nullptr, {TslArg::of(3.0), TslArg::of(5.0)}, serial);
+    const TslArg unsampledArg = TslArg::of(unsampled);
+    const auto texel = tn::abi::tslCall("sample", &unsampledArg, {TslArg::of(coord)}, serial);
+    CHECK(texel->kind == g::Kind::StorageTexture && texel->args.size() == 1 && texel->args[0] == coord);
+    CHECK(target->args.empty());  // sample copies; the receiver still names the whole texture
+    // The texel feeds a store into a second storage texture, so the lowered kernel reads the first.
+    const auto out = std::make_shared<tn::engine::Texture>();
+    out->storageTexture = true;
+    out->width = 16; out->height = 8;
+    tn::abi::TslScopes scopes;
+    g::Node made, body;
+    CHECK(scopes.call("scope:open", nullptr, {}, made));
+    CHECK(scopes.call("textureStore", nullptr, {TslArg::objectOf("StorageTexture", out), TslArg::of(coord), TslArg::of(texel)}, made));
+    // prd249's kernels return the store (`return textureStore(...).toWriteOnly()`): a statement, not a value to read.
+    const TslArg stored = TslArg::of(made);
+    CHECK(tn::abi::tslCall("toWriteOnly", &stored, {}, serial) == made);
+    CHECK(scopes.call("scope:close", nullptr, {stored}, body));
+    CHECK(body->kind == g::Kind::Body && body->args.empty());
+    Program p(Stage::Compute);
+    g::lower(body, p);
+    CHECK(p.ok());
+    const auto module = buildStage(p);
+    CHECK(module.wgsl.ok());
+    CHECK(module.wgsl.code.find("textureLoad(t_" + target->name) != std::string::npos);
+    bool refused = false;
+    try { tn::abi::tslCall("setSampler", &readOnlyArg, {TslArg::of(1.0)}, serial); }
+    catch (const std::runtime_error& e) { refused = std::string(e.what()).find("setSampler(true)") != std::string::npos; }
+    CHECK(refused);
+    refused = false;
+    const TslArg number = TslArg::of(g::float_(1));
+    try { tn::abi::tslCall("toReadOnly", &number, {}, serial); }
+    catch (const std::runtime_error& e) { refused = std::string(e.what()).find("requires a storage buffer or a storage texture") != std::string::npos; }
+    CHECK(refused);
+}
+
+// three's Storage3DTexture (prd476): a compute kernel stores into it at a uvec3 texel, and a material samples it
+// with texture3D. The store declares a 3D storage texture and the sample a 3D float texture of the same map.
+void tsl_storage_texture_3d() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto texture = std::make_shared<tn::engine::Texture>();
+    texture->storageTexture = true; texture->volume = true;
+    texture->width = 8; texture->height = 4; texture->depth = 2;
+    const auto object = TslArg::objectOf("Storage3DTexture", texture);
+    const auto coord = tn::abi::tslCall("uvec3", nullptr, {TslArg::of(1.0), TslArg::of(2.0), TslArg::of(1.0)}, serial);
+    CHECK(coord->type == Type::vec(3, Type::Scalar::U32));
+    const auto target = tn::abi::tslCall("storageTexture", nullptr, {object}, serial);
+    tn::abi::TslScopes scopes;
+    g::Node made, body;
+    CHECK(scopes.call("scope:open", nullptr, {}, made));
+    CHECK(scopes.call("textureStore", nullptr, {TslArg::of(target), TslArg::of(coord), TslArg::of(g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)}))}, made));
+    CHECK(scopes.call("scope:close", nullptr, {}, body));
+    Program p(Stage::Compute);
+    g::lower(body, p);
+    CHECK(p.ok());
+    const auto module = buildStage(p);
+    CHECK(module.wgsl.ok());
+    CHECK(module.wgsl.code.find("texture_storage_3d<rgba8unorm, write>") != std::string::npos);
+    CHECK(module.bindings.size() == 1 && module.bindings[0].kind == BindingKind::StorageTexture && module.bindings[0].volume);
+    const auto sampled = tn::abi::tslCall("texture3D", nullptr, {object, TslArg::of(g::vec3({g::float_(0.5), g::float_(0.5), g::float_(0.5)}))}, serial);
+    CHECK(sampled && sampled->textureObject() == texture);
+    bool refused = false;
+    const auto flat = std::make_shared<tn::engine::Texture>();
+    flat->storageTexture = true; flat->width = 8; flat->height = 4;
+    try { tn::abi::tslCall("texture3D", nullptr, {TslArg::objectOf("StorageTexture", flat)}, serial); }
+    catch (const std::runtime_error& e) { refused = std::string(e.what()).find("texture3D needs") != std::string::npos; }
+    CHECK(refused);
+}
+
+// r187's cubeTexture(cube).sample(direction) on a CubeRenderTarget's faces: a texture_cube binding read along the
+// direction with x negated (CubeTextureNode.setupUV, WebGPU coordinates); a 2D texture is refused.
+void tsl_cube_texture() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto cube = std::make_shared<tn::engine::Texture>();
+    cube->array = cube->cube = true;
+    cube->width = cube->height = 8; cube->depth = 6; cube->dataReady = false;
+    const auto node = TslArg::of(tn::abi::tslCall("cubeTexture", nullptr, {TslArg::objectOf("CubeTexture", cube)}, serial));
+    const auto sampled = tn::abi::tslCall("sample", &node, {TslArg::of(g::vec3({g::float_(1), g::float_(0), g::float_(0)}))}, serial);
+    CHECK(sampled && sampled->textureObject() == cube);
+    Program p(Stage::Fragment);
+    {
+        tsl::Build build(p);
+        p.output("color", g::lower(sampled, p));
+    }
+    CHECK(p.ok());
+    const auto module = buildStage(p);
+    CHECK(module.wgsl.ok());
+    CHECK(module.wgsl.code.find("texture_cube<f32>") != std::string::npos);
+    CHECK(module.wgsl.code.find("-(") != std::string::npos || module.wgsl.code.find("-1.0") != std::string::npos);
+    bool cubeBinding = false;
+    for (const auto& b : module.bindings) cubeBinding = cubeBinding || (b.kind == BindingKind::Texture && b.cube && !b.depth);
+    CHECK(cubeBinding);
+    if (!module.wgsl.ok() || module.wgsl.code.find("texture_cube<f32>") == std::string::npos)
+        std::fprintf(stderr, "cube wgsl:\n%s\n", module.wgsl.code.c_str());
+    // The reflect-vector default direction is not bound: the node lowers only once `.sample(direction)` gives one.
+    bool refused = false;
+    try {
+        Program q(Stage::Fragment);
+        tsl::Build build(q);
+        q.output("color", g::lower(node.node, q));
+    } catch (const std::runtime_error& e) { refused = std::string(e.what()).find("TN_TSL cubeTexture") != std::string::npos; }
+    CHECK(refused);
+    const auto flat = std::make_shared<tn::engine::Texture>();
+    flat->width = flat->height = 8; flat->dataReady = false;
+    refused = false;
+    try { tn::abi::tslCall("cubeTexture", nullptr, {TslArg::objectOf("Texture", flat)}, serial); }
+    catch (const std::runtime_error& e) { refused = std::string(e.what()).find("cubeTexture needs") != std::string::npos; }
+    CHECK(refused);
+}
+
+// r187 promotes mixed operands to the higher component type (bool < uint < int < float): prd268's probe sampling
+// adds an int index to a float coordinate.
+void tsl_mixed_operands() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto index = g::uniform("probeIndex", Type::i32(), {0});
+    const auto coordinate = g::uniform("probeCoordinate", Type::f32(), {0});
+    const auto sum = tn::abi::tslCall("add", nullptr, {TslArg::of(coordinate), TslArg::of(index)}, serial);
+    const auto reversed = tn::abi::tslCall("add", nullptr, {TslArg::of(index), TslArg::of(coordinate)}, serial);
+    Program p(Stage::Fragment);
+    {
+        tsl::Build build(p);
+        const auto a = g::lower(sum, p), b = g::lower(reversed, p);
+        CHECK(p.ok());
+        CHECK(a != kInvalid && p.expr(a).type == Type::f32());
+        CHECK(b != kInvalid && p.expr(b).type == Type::f32());
+        p.output("color", p.construct(Type::vec(4), {p.add(a, b)}));
+    }
+    for (const auto& d : p.diagnostics()) std::fprintf(stderr, "mixed operands: %s %s %s\n", d.code.c_str(), d.node.c_str(), d.reason.c_str());
+    CHECK(p.ok());
+}
+
 void tsl_mat4_element() {
     namespace g = tn::engine::shader::graph;
     using namespace tn::engine::shader;
@@ -3303,8 +3842,9 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
-             {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})
+             {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
+             {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})

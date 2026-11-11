@@ -34,10 +34,12 @@ import {
   attribute,
   bumpMap,
   cameraPosition,
+  cameraProjectionMatrix,
   color,
   dFdx,
   dFdy,
   dot,
+  element,
   float,
   length,
   log2,
@@ -49,6 +51,7 @@ import {
   normalWorldGeometry,
   normalize,
   positionLocal,
+  positionView,
   positionWorld,
   pow,
   renderGroup,
@@ -154,6 +157,38 @@ const sunDirection = uniform(new Vector3(-180, 240, 120).normalize()).setGroup(
  */
 export function setCanopySun(direction: Vector3): void {
   (sunDirection as unknown as { value: Vector3 }).value.copy(direction).normalize();
+}
+
+/**
+ * A copy of a tree material for crowns the sun's shadow does not reach: the far forest, which casts
+ * none, and the square's own trees past the shadow window (`shadowReach`, where `sky.ts` fades the
+ * shadow out). In a closed stand each tree stands in its neighbours' shade, more of it the lower the
+ * sun: with no shadow drawn, far trees measured 3 to 4 times brighter and yellower than near ones at
+ * a 20 degree sun. The copy takes the stand's mean shade as a tint that fades out as the sun climbs;
+ * with a `shadowReach` it takes the tint only past that window.
+ */
+export function standShaded(
+  source: Material,
+  shade: readonly [number, number, number],
+  shadowReach?: number,
+): Material {
+  const shaded = source.clone() as MeshStandardNodeMaterial;
+  const stand = mix(vec3(...shade), vec3(1), sunDirection.y.clamp(0, 1).pow(2));
+  const tint =
+    shadowReach === undefined
+      ? stand
+      : mix(
+          vec3(1),
+          stand,
+          // An orthographic view has no eye distance. The engine bakes a tree's impostor through
+          // one, and the impostor draws only past the window, so that view takes the far value.
+          smoothstep(shadowReach * 0.65, shadowReach * 0.8, positionView.length()).max(
+            (element(cameraProjectionMatrix as never, 3) as Node<"vec4">).w,
+          ),
+        );
+  if (shaded.colorNode) shaded.colorNode = (shaded.colorNode as Node<"vec3">).mul(tint);
+  if (shaded.emissiveNode) shaded.emissiveNode = (shaded.emissiveNode as Node<"vec3">).mul(tint);
+  return shaded;
 }
 
 /**
@@ -662,6 +697,8 @@ interface INeedleLook {
    * this way shades as one volume instead of as a stack of separately lit paddles.
    */
   readonly bent?: boolean;
+  /** How dark a bent crown's trunk end is against its tips, 0..1 (`inner` 0 against 1). */
+  readonly interior?: number;
 }
 
 /** The shared grade: new growth is lighter than the shaded interior, and both ends stay honest. */
@@ -736,6 +773,7 @@ function needleMaterial(
     tip,
     light = 0.1,
     bent = false,
+    interior = 0.3,
   } = look;
   const material = new MeshStandardNodeMaterial({
     metalness: 0,
@@ -781,7 +819,7 @@ function needleMaterial(
     .mul(mix(float(0.45), float(1), smoothstep(float(cutout * 0.6), float(0.92), card.a)))
     // Deep inside the crown a needle sees little sky: the trunk end of a branch is the dark of a
     // spruce, and its tips are where the light is.
-    .mul(bent ? mix(float(0.3), float(1), attribute<"float">("inner", "float")) : float(1))
+    .mul(bent ? mix(float(interior), float(1), attribute<"float">("inner", "float")) : float(1))
     .mul(tint ? vec3(...tint) : vec3(1));
   // The floor. Nothing in a canopy is black: a needle in the shade is lit by the needles around it
   // and by the ground under the tree, so the shaded half of a crown has to keep a floor or it goes
@@ -980,7 +1018,11 @@ export async function createPropSurfaces(
     // The lift is warm and well under 2, which keeps the plates legible without turning the trunk
     // into a highlight.
     // A set colorNode replaces `map`, so the lift multiplies the sampled bark instead of standing in for it.
-    barkMaterial.colorNode = texture(bark.diffuse).rgb.mul(vec3(1.85, 1.7, 1.55));
+    // Warmer than the texture: with the crown lifted off the trunk (`SPRUCE.standBareTrunk`) the
+    // trunk is most of what a stand shows below eye level, and the Fab spruce's trunks read
+    // orange-brown: a shaded Fab trunk at `meadow-close` is sRGB (92, 72, 58), where the old lift
+    // (1.85, 1.7, 1.55) left a near-black pole (34, 37, 35); this one reads (58, 53, 42).
+    barkMaterial.colorNode = texture(bark.diffuse).rgb.mul(vec3(5.2, 3.7, 2.6));
     // The root flare dies into the soil instead of meeting it at a clean bark line.
     intoGround(
       barkMaterial,
@@ -1003,12 +1045,19 @@ export async function createPropSurfaces(
     // Low, because the floor is a lift *to* this level: at the shared 0.14 every needle darker than it
     // comes out exactly 0.14, and a crown whose texels all share one brightness is a flat paddle with
     // the needle detail scaled away.
-    floor: 0.03,
+    floor: 0.004,
     // Half the shared glow: with the crown lit as a volume its sun side already faces the light, and
     // the full translucency on top of that washed the near trees out to pale grey-green.
     light: 0.05,
-    tint: [0.5, 0.7, 0.6],
-    tip: [1.08, 1.14, 1.04],
+    // Matched to the Fab spruce at `meadow-close` (PRD-870, 2026-11-10), tree band, sky dropped: the
+    // middle tenth went from sRGB (65, 88, 66) to (56, 69, 63) against Fab's (47, 55, 44), the
+    // darkest from (43, 61, 52) to (38, 49, 47) against (22, 30, 28). The floor 0.03 lifted every
+    // texel of this grade to one value, which is what made the crown a flat paddle; the rest of the
+    // gap is the mist and sky fill both arms share (a black crown still reads (63, 63, 68) at the
+    // overview), not the needle.
+    tint: [0.3, 0.36, 0.26],
+    tip: [1.4, 1.25, 0.8],
+    interior: 0.05,
   });
   const firMaps = await Promise.all([
     map(assets, FIR_MAPS.surface, false),

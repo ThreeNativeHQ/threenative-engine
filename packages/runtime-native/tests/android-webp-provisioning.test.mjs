@@ -130,7 +130,7 @@ test('the iOS exclusion stays honest: no libwebp is built for IOS', () => {
   // CMakeLists.txt:697 excludes IOS from the prebuilt branch and the source branch is ANDROID
   // only, so iOS genuinely cannot decode WebP. Correcting the Android claim must not quietly
   // make the iOS one wrong in the other direction.
-  if (!/elseif\(EXISTS \$\{WEBP_DIR\} AND NOT IOS\)/.test(cmakeLists)) {
+  if (!/elseif\(EXISTS \$\{WEBP_DIR\} AND NOT IOS AND NOT TN_PS4\)/.test(cmakeLists)) {
     throw new Error(
       'the libwebp prebuilt branch no longer excludes IOS; either iOS gained a decoder and the ' +
         "preflight must say so, or the exclusion regressed",

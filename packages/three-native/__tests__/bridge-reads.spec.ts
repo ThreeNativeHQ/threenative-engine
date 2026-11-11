@@ -15,9 +15,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BRIDGE_CENSUS_MARKER,
   BRIDGE_WARNING_MARKER,
+  CENSUS_TOP,
   ENGINE_COST_KNOB,
   WARMUP_FRAMES,
   WINDOW_FRAMES,
+  topCrossings,
 } from "../src/bridge-meter.js";
 import {
   type EngineValue,
@@ -496,6 +498,19 @@ describe("ray tests", () => {
     ]);
     expect(count("call Raycaster.intersectObject")).toBe(8);
     expect(hits).toEqual([]);
+  });
+});
+
+describe("the census's top crossing list", () => {
+  // PRD-828's Phase 1 reads ten classes: five rows of one caller hides a lever that moves the sixth.
+  it("names ten classes, busiest first, with each one's caller", () => {
+    const byName = new Map(Array.from({ length: 12 }, (_, i) => [`get Thing.p${i}`, i + 1]));
+    const callers = new Map([["get Thing.p11", "eleventh ()"]]);
+    const top = topCrossings(byName, callers, CENSUS_TOP);
+    expect(top).toHaveLength(10);
+    expect(top[0]).toEqual({ name: "get Thing.p11", perFrame: 12, caller: "eleventh ()" });
+    expect(top.at(-1)).toEqual({ name: "get Thing.p2", perFrame: 3, caller: "unknown" });
+    expect(CENSUS_TOP).toBeGreaterThan(5);
   });
 });
 

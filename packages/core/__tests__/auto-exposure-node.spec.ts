@@ -75,6 +75,21 @@ describe("GPU exposure lifecycle", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  // PRD-828: on the owned engine each material assignment is an engine crossing.
+  it("draws each pass with its own quad, so a frame reassigns no material", () => {
+    const seen = new Map<QuadMesh, unknown>();
+    vi.mocked(QuadMesh.prototype.render).mockImplementation(function (this: QuadMesh) {
+      const material = seen.get(this) ?? this.material;
+      expect(this.material).toBe(material);
+      seen.set(this, this.material);
+    });
+    const { node, frame } = harness();
+    node.updateBefore(frame);
+    node.updateBefore(frame);
+    expect(seen.size).toBe(5);
+    node.dispose();
+  });
+
   it("reduces to 16x16 blocks, tiles then bins a 64x1 histogram and retains its 1x1 ping-pong history across resize", () => {
     const { node, frame, targets, resize } = harness();
     node.updateBefore(frame);

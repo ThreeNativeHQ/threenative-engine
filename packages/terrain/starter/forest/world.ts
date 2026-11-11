@@ -159,10 +159,15 @@ export const FOLIAGE_SKY_LIGHT = 1;
 /** 0 keeps each card's own normal, 1 points every normal straight out from the crown's axis. */
 export const CROWN_NORMAL_BEND = 0.7;
 
-function bendCrownNormals(geometry: BufferGeometry, bend: number): void {
+export function bendCrownNormals(geometry: BufferGeometry, bend: number): void {
   const position = geometry.getAttribute("position");
   const normal = geometry.getAttribute("normal");
   if (position === undefined || normal === undefined) return;
+  // One cached model hands the same geometry to every visit; a second bend would lerp the bent
+  // normals again and the shading would drift. The original normals are gone after the first pass,
+  // so the geometry records the bend it already took.
+  if (geometry.userData.crownBend !== undefined) return;
+  geometry.userData.crownBend = bend;
   geometry.computeBoundingBox();
   const box = geometry.boundingBox as Box3;
   const midY = (box.min.y + box.max.y) / 2;

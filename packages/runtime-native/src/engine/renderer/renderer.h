@@ -26,6 +26,7 @@
 #include "engine/renderer/compute.h"
 #include "engine/renderer/frame_gpu_timer.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/renderer/render_features.h"
 #include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
 #include "engine/shader/output.h"
@@ -129,7 +130,8 @@ struct DrawCache {
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
     std::vector<Box3> shadowInstanceBoxes;
     using ShadowBoundsKey = std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t,
-                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix, double>;
+                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix, double,
+                                      std::array<double, 6>>;  // the geometry box that bounds a displaced draw, else zeros
     std::optional<ShadowBoundsKey> shadowBoundsKey;
     std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
     uint64_t shadowBoundsBuilds = 0;
@@ -180,6 +182,9 @@ struct DrawItem {
      *  world space, not by the object's origin (renderers/common/StandardDrawingPipeline.js:236-241), and
      *  a shape whose vertices sit off-centre ranks the other way round. `sortOrigin` wins when it is set. */
     std::optional<std::array<double, 3>> sortCenter;
+    /** The geometry's own boundingBox, local, when it has one: three's stated bounds for a mesh whose vertices a
+     *  positionNode moves (an impostor quad relocated per instance), which a virtual shadow places it by. */
+    std::optional<Box3> geometryBox;
     const shader::StandardMaterial* material = nullptr;
     /** The material's diffuse `map`, if any: the fragment samples it at `uvTransform * vec3(uv, 1)`. */
     const Texture* map = nullptr;
@@ -251,6 +256,10 @@ struct DrawItem {
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;
     uint32_t instanceCount = 1;
+    // three's geometry.setIndirect (PRD-857): the record a GPU kernel fills, read by the draw in place of
+    // instanceCount; the byte offset of this geometry's record in it. Null draws direct.
+    BufferStore* indirect = nullptr;
+    uint64_t indirectOffset = 0;
     bool sprite = false, spriteSizeAttenuation = true;
     std::array<double, 2> spriteCenter{0.5, 0.5};
     double spriteRotation = 0;
@@ -364,8 +373,12 @@ uint64_t outputPassesRecorded();
  */
 class Renderer {
 public:
-    Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events);
+    /** `features` is the host's (PRD-840): web_host passes RenderFeatures::web(), the native hosts native(). */
+    Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events,
+             RenderFeatures features = kBuildRenderFeatures);
     ~Renderer();
+    /** The render choices this renderer makes; a pinned build returns a constant (render_features.h). */
+    const RenderFeatures& features() const { return effectiveRenderFeatures(features_); }
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
@@ -384,6 +397,8 @@ public:
      */
     void prepareCompute(const shader::graph::Node& node);
     void dispatchCompute(const ComputeDispatch& dispatch);
+    /** Records `dispatches` into one compute pass and one submission; a dispatch that throws goes to `failed`, records nothing, and the rest still run. */
+    void dispatchCompute(std::span<const ComputeDispatch> dispatches, const std::function<void(const std::string&)>& failed);
     GpuStatus readStorage(const BufferAttribute& attribute, ReadbackCallback done);
     void releaseStorage(const BufferAttribute& attribute);
 
@@ -405,6 +420,8 @@ public:
     GpuStatus readAlbedoPixels(ReadbackCallback done);
     /** The emitted radiance (RGBA16Float); InvalidHandle until a post pass reads "emissive". */
     GpuStatus readEmissivePixels(ReadbackCallback done);
+    /** The indirect diffuse light (RGBA16Float); InvalidHandle until a post pass reads "indirectDiffuse". */
+    GpuStatus readIndirectPixels(ReadbackCallback done);
     /**
      * The region [x, y, width, height] of one custom MRT slot's attachment (three's PassNode.getTexture(slot)
      * read back), packed RGBA16Float rows, top row first. InvalidHandle until a frame draws that slot.
@@ -448,7 +465,7 @@ public:
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
     std::unique_ptr<Renderer> sibling(bool sceneOnly = false) {
-        auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+        auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_, features_);
         child->sceneOnly_ = sceneOnly;
         child->cpuMetered_ = false;
         child->textures_ = textures_;
@@ -479,6 +496,13 @@ public:
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
+    /** An array render target's storage: `layers` 2D images of the scene colour's size and format, `levels` mips each. */
+    WGPUTexture createLayerArray(uint32_t width, uint32_t height, uint32_t layers, uint32_t levels);
+    /** Copies the scene colour into mip 0 of `layer`, then builds every layer's mip chain when `mipmaps`. */
+    void copySceneColorToLayer(WGPUTexture array, uint32_t layer, uint32_t layers, uint32_t levels, bool mipmaps);
+    /** Mip `level` of `layer` of an array made by createLayerArray, as readProbePixels rows. */
+    GpuStatus readLayerPixels(WGPUTexture array, uint32_t layer, uint32_t level, ReadbackCallback done);
+    WGPUTexture sceneColorTexture() const { return sceneColor_; }
     /** The RGBA8 output frame a render() with no present target draws, and blitTo copies to the window. */
     WGPUTextureView outputColorView() const { return colorView_; }
     /** The format the scene colour is drawn and read in: RGBA16Float, RGBA32Float for a FloatType render target, RG16Float/RG32Float for an RGFormat one (a 32-bit target is never multisampled). */
@@ -498,6 +522,13 @@ public:
         for (const auto& [light, shadow] : virtualShadows_)
             if (!shadow.atlas.initialized()) return false;
         return true;
+    }
+    /** Levels every virtual shadow still owes a render (PageAtlas::pendingLevels), or -1 with none. */
+    int virtualShadowPendingLevels() const {
+        if (virtualShadows_.empty()) return -1;
+        int pending = 0;
+        for (const auto& [light, shadow] : virtualShadows_) pending += shadow.atlas.pendingLevels();
+        return pending;
     }
     /** The page plan of light `light`'s virtual shadow, or null. */
     const shadows::PageAtlas* virtualShadowAtlas(std::size_t light) const {
@@ -525,6 +556,8 @@ public:
         const std::vector<Box3>* instances = nullptr;  // FG1: the draw cache's per-instance boxes, one per instance
     };
     [[nodiscard]] const std::map<std::size_t, std::vector<CasterRecord>>& casterRecords() const { return casterRecords_; }
+    /** Morph-target packs this renderer ran: one per geometry revision and target write, not one per frame. */
+    [[nodiscard]] uint64_t morphPackCount() const { return morphPacks_; }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
@@ -786,7 +819,8 @@ public:
     enum RecordCause : uint8_t { RecordNone, RecordOrder, RecordOffset, RecordCount, RecordOther };
     /** Each key's rows start at the matching offsets: one row per draw, its length set by the program's attributes. */
     static RecordCause recordCause(const std::vector<uint64_t>& was, const std::vector<uint32_t>& wasRows,
-                                   const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows);
+                                   const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows,
+                                   bool hashes = true);  // RenderFeatures::recordCauseHashes
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
     /** One draw of the last planned frame's shadow passes, as the plan selected it: a test comparing two plans
@@ -848,26 +882,30 @@ public:
      */
     void setGpuTimer(bool on) { passTimer_->enabled = on; }
     /**
-     * PRD-754, native only and on by default: the shadow passes replay recorded bundles and each opaque draw keeps a uniform slot, so a
+     * PRD-754, on in RenderFeatures::native(): the shadow passes replay recorded bundles and each opaque draw keeps a uniform slot, so a
      * cull or a moved caster records no shadow pass. Off encodes them as before; a paired A/B runs from one build.
      */
-#ifndef __EMSCRIPTEN__
     void setStablePasses(bool on) {
-        if (on != stablePasses_) dropBundles();
-        stablePasses_ = on;
+        RenderFeatures next = features_;
+        next.stablePasses = on;
+        setFeatures(next);
     }
-#endif
     /**
-     * PRD-754, native only and off by default (owner, 2026-10-28): with stable passes on, the main, aux and velocity passes also replay
+     * PRD-754, off by default (owner, 2026-10-28): with stable passes on, the main, aux and velocity passes also replay
      * retained rows in state order, so a camera turn records nothing. State order swaps the winner of exactly coplanar
      * draws (the shooter's door trim), and three's depth order cost more than it saved, so it waits for a fix there.
      */
-#ifndef __EMSCRIPTEN__
     void setStableRows(bool on) {
-        if (on != stableRows_) dropBundles();
-        stableRows_ = on;
+        RenderFeatures next = features_;
+        next.stableRows = on;
+        setFeatures(next);
     }
-#endif
+    /** A paired A/B from one build: other features drop the cached bundles. A pinned build refuses a change. */
+    void setFeatures(RenderFeatures features) {
+        features = checkedRenderFeatures(features);
+        if (features.stablePasses != features_.stablePasses || features.stableRows != features_.stableRows) dropBundles();
+        features_ = features;
+    }
     /**
      * The caller's frame id for the next timed render, reported with its sample once the readback
      * lands. The caller owns the id: the engine's own render ids are not one per present.
@@ -911,6 +949,8 @@ public:
     }
     /** Device limit reads so far; a test bounds it. */
     uint32_t deviceLimitReads() const { return deviceLimitReads_; }
+    /** Whether the device has a feature enabled (a feature the device was not asked for answers false). */
+    bool deviceHasFeature(WGPUFeatureName feature) const { return wgpuDeviceHasFeature(device_, feature) != 0; }
     const GeometryCache& geometry() const { return geometry_->cache; }
     const PipelineCache& pipelines() const { return *pipelines_; }
     const PipelineLayoutCache& layouts() const { return *layouts_; }
@@ -994,8 +1034,8 @@ private:
          *  writes only their ambient and hemisphere terms. */
         bool selective = false;
         std::vector<uint64_t> lightSelection;
-        std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
-        uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
+        std::array<std::unique_ptr<shader::StageModule>, 32> aux;  // by AuxTarget mask, built on first request
+        uint32_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
         /** The aux fragment that also writes custom MRT slots, keyed by the frame's slot list (mask included). */
         std::map<std::string, std::unique_ptr<shader::StageModule>> auxMrt;
         /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
@@ -1004,7 +1044,7 @@ private:
     /** A program's per-draw probes, resolved once in buildLayouts; read by every draw of every pass. */
     DrawProbes probesOf(const Program& program);
     /** The post targets the scene can write besides its colour, in attachment order (PRD-740). */
-    enum AuxTarget : uint8_t { kAuxNormal = 1, kAuxMaterial = 2, kAuxAlbedo = 4, kAuxEmissive = 8 };
+    enum AuxTarget : uint8_t { kAuxNormal = 1, kAuxMaterial = 2, kAuxAlbedo = 4, kAuxEmissive = 8, kAuxIndirect = 16 };
     /**
      * The aux pass's fragment for the targets in `mask`: the program's own lit fragment built again, writing each
      * target at its own location in AuxTarget order, so one draw fills every target the post graph reads. Same builder
@@ -1071,11 +1111,15 @@ private:
             // A DataArrayTexture: `depth` layers of one 2D texture, sampled as a 2DArray view. Part of the key
             // because the same width/height/depth with and without it needs a different view dimension.
             bool array = false;
+            bool cube = false;  // a CubeTexture: six `array` layers with a cube view
+            // A 3D texture: a Data3DTexture (kVolume) or a Storage3DTexture (kStorage), with a 3D view.
+            bool volume = false;
             uint16_t wrapS = 0, wrapT = 0, wrapR = 0, magFilter = 0, minFilter = 0;
             double anisotropy = 0;
             [[nodiscard]] bool operator==(const Key& other) const {
                 return kind == other.kind && width == other.width && height == other.height && depth == other.depth &&
                        levels == other.levels && format == other.format && usage == other.usage && array == other.array &&
+                       cube == other.cube && volume == other.volume &&
                        wrapS == other.wrapS && wrapT == other.wrapT && wrapR == other.wrapR &&
                        magFilter == other.magFilter && minFilter == other.minFilter && anisotropy == other.anisotropy;
             }
@@ -1087,6 +1131,9 @@ private:
         WGPUTextureView view = nullptr;
         WGPUSampler sampler = nullptr;
         uint32_t version = 0;
+        // A compressed texture: the levels `writeMipLevel` had written at its last upload, and the finest
+        // resident level, which is the base of `view`.
+        uint32_t uploadedLevels = 0, viewBase = 0;
         Key key;
         void release();
     };
@@ -1094,6 +1141,8 @@ private:
     const MaterialTexture* materialTexture(const Texture& texture);
     /** The key `texture` would be created with, from the descriptor its kind needs. */
     static MaterialTexture::Key materialTextureKey(const Texture& texture);
+    /** Writes the resident levels of a compressed texture whose bit is set in `levels`, one write per level. */
+    void uploadCompressedLevels(WGPUTexture destination, const Texture& texture, uint32_t levels);
     /** Creates a material texture, counting the bytes it allocates as GpuResources counts its own. */
     WGPUTexture createMaterialTexture(const MaterialTexture::Key& key);
     /** Writes `texture`'s pixels into `destination` and regenerates the mip chain it was created with. */
@@ -1154,10 +1203,12 @@ private:
         std::vector<PmremPacket> packets;
         std::size_t next = 0;
         uint64_t awaitSerial = 0;        // the last submitted packet's serial, awaited before the next
+        uint32_t waits = 0;              // calls that found the last group still on the GPU
         WGPUBindGroup group = nullptr;   // the current packet's bind group, rebuilt per packet
         uint32_t groupUniform = UINT32_MAX;
         uint64_t stride = 0;
-        uint64_t budget = 0;             // the costliest packet's cost: the per-call submission cap
+        uint64_t heaviest = 0;           // the costliest packet's cost: the smallest per-call cap
+        uint64_t budget = 0;             // the per-call submission cap, heaviest..4x heaviest
     };
     std::optional<EnvironmentPreparation> envPrep_;
     bool environmentPending_ = false;
@@ -1173,7 +1224,8 @@ private:
     bool ensureVirtualShadowMap(std::size_t light);
     void releaseTargets();
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
-    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
+    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8, uint32_t layer = 0,
+                         uint32_t level = 0);
     void releaseOutputGroup();
     // The output pass's groups for its last two binding sets: a post graph texture that ping-pongs between two
     // render targets (an exposure history) finds its group again. outputGroup_ is borrowed from here.
@@ -1322,6 +1374,8 @@ private:
     WGPUTextureView albedoView_ = nullptr;
     WGPUTexture emissiveTexture_ = nullptr;
     WGPUTextureView emissiveView_ = nullptr;
+    WGPUTexture indirectTexture_ = nullptr;
+    WGPUTextureView indirectView_ = nullptr;
     /** A material's custom MRT targets (three's mrt() slots other than the named ones), one RGBA16F texture per slot
      *  name, drawn by the aux pass and read by the post graph by that name; created with the first frame that writes
      *  one, released with the targets. */
@@ -1454,15 +1508,7 @@ private:
         FrameStats::SkinnedPass skinned;
     };
     std::vector<ShadowBundle> shadowBundles_;
-#ifdef __EMSCRIPTEN__
-    // The web engine compiles the stable passes out: the shooter's web camera turn recorded no less with them (PRD-754),
-    // and 4 MiB is its budget.
-    static constexpr bool stablePasses_ = false;
-    static constexpr bool stableRows_ = false;
-#else
-    bool stablePasses_ = true;
-    bool stableRows_ = false;
-#endif
+    RenderFeatures features_ = kBuildRenderFeatures;  // the host's (PRD-840); read through features()
     /** Releases every cached bundle: the bind groups or targets they reference are about to change. */
     void dropBundles();
     FrameStats mainBundleStats_;
@@ -1516,6 +1562,7 @@ private:
     static constexpr uint64_t kInstanceSlotPlans = 4096;
     /** Counts the plans (FM2): a program's frame slab is rebuilt when this moves past the plan that wrote it. */
     uint64_t planSerial_ = 0;
+    uint64_t morphPacks_ = 0;
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
     Handle uniformBuffer_;

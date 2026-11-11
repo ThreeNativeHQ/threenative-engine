@@ -419,11 +419,15 @@ export interface IScreenSpaceGiOptions {
   readonly camera: IScreenSpaceCamera;
   /**
    * The light a ray that finds nothing on screen would have returned: the tier below the screen traces. It is
-   * called once per pixel with the pixel's view-space position and unit normal and answers the average incident
-   * radiance (E / pi) that tier already supplies there. The gather then returns `hit - fallback` for the rays that
-   * hit, so the two tiers never add the same light twice. Missing means 0, as three's SSGINode (hits add light).
+   * called for each ray that hits, with the receiver's view-space position and the ray's unit view-space direction,
+   * and answers the radiance that tier supplies along that direction (a cosine-convolved field answers E / pi for the
+   * direction as its normal). The gather then returns `hit - fallback` for the rays that hit, so the two tiers never add
+   * the same light twice. Lumen samples its radiance cache the same way, per ray direction (EpicGames/UnrealEngine:
+   * Engine/Shaders/Private/Lumen/LumenScreenProbeTracing.usf:831, SampleRadianceCacheAndApply with RayWorldDirection).
+   * One value per pixel (the cache's mean over the hemisphere) made every hit into a dark corner a loss: its rays find
+   * the shadowed walls nearby while its bright directions leave the screen. Missing means 0, as three's SSGINode.
    */
-  readonly fallback?: (position: TslNode, normal: TslNode) => TslNode;
+  readonly fallback?: (position: TslNode, direction: TslNode, normal: TslNode) => TslNode;
   /**
    * Gather with screen probes instead of per-pixel rays (Unreal's ScreenProbeGather): one probe per
    * `downsampleFactor` pixel tile traces an octahedron of rays, the probe radiance is turned into an irradiance
@@ -475,7 +479,7 @@ const GI_MAX_LUMINANCE = 40;
  * share of its rays and answers `pow(clamp(1 - occludedShare), aoIntensity)` for the caller to multiply the lit frame
  * by (SSGINode.js:637-638, 651). This answers the same quantity as `pow(clamp(1 - a), aoIntensity)` over rgb. A
  * constant 1 dropped the term: the frame kept the light the occluder blocked and SSGI only added its gather
- * (2026-11-02, PRD-617 AC-7).
+ * (2026-11-02, PRD-617 AC-7). With a `fallback` tier it answers 1: each hit already replaced the cache along its ray.
  */
 export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
   return function ssgi(
@@ -517,7 +521,11 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
     const screenEdgeFade = uniform(0.1);
     const probeJitter = uniform(1);
     const probeDebug = uniform(0);
+    // Over a fallback tier the frame holds no occluded light to remove: a ray that hits returns `hit - fallback`, so
+    // the cache along it is already swapped for what the ray found, and the hit share multiplied in again took that
+    // light out twice, with the direct light (Lumen's screen probe gather applies no such term over its radiance cache).
     const occlusion = (gather: TslNode): TslNode => {
+      if (options.fallback !== undefined) return vec4(1, 1, 1, 1);
       const ao = pow(clamp(float(1).sub(gather.a), float(0), float(1)), aoIntensity);
       return vec4(ao, ao, ao, 1);
     };
@@ -572,7 +580,6 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
       If(centreDepth.lessThan(1).and(centreNormal.dot(centreNormal).greaterThan(0.25)), () => {
         const position = viewPosition(coordinate, centreDepth);
         const normal = normalize(centreNormal);
-        const fallback = options.fallback?.(position, normal) ?? vec3(0, 0, 0);
         // A frame around the normal, and a per-pixel rotation of the ray set (interleaved gradient noise on a
         // fixed lattice of the uv: the noise is the denoiser's to remove, not a pattern to see).
         const helper = normal.y
@@ -615,6 +622,7 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
             const trace = march(origin, direction, position.z);
             If(trace.hitDistance.greaterThanEqual(0), () => {
               const hit = shade(trace.hitCoordinate, trace.hitDistance, direction);
+              const fallback = options.fallback?.(position, direction, normal) ?? vec3(0, 0, 0);
               gathered.assign(gathered.add(hit.radiance.sub(fallback).mul(hit.weight)));
               hits.assign(hits.add(hit.weight));
             });
@@ -684,7 +692,7 @@ function octahedronEncode(tsl: IScreenSpaceTsl, direction: TslNode): TslNode {
  *   1. trace   one texel per ray: a probe per tile traces an `n x n` octahedron of rays (view space) and keeps the lit
  *              colour each hit found and its weight.
  *   2. filter  each probe turns its rays into an irradiance octahedron: per direction, the cosine-weighted mean of
- *              `hit - fallback` over every ray, as the per-pixel gather returns it, so a ray that leaves the screen keeps
+ *              `hit - fallback` (the trace subtracts the cache along each ray), so a ray that leaves the screen keeps
  *              the cache. A pixel then reads one bilinear tap instead of 64 rays.
  *   3. gather  each pixel blends the four nearest probes by position, depth-plane distance and normal agreement, and
  *              reads each probe's irradiance along the pixel normal. A pixel no probe can see gets the cache alone.
@@ -764,9 +772,10 @@ function defineScreenProbes(
       const origin = position.add(normal.mul(max(0.01, position.z.negate().mul(0.004))));
       const trace = march(origin, direction, position.z);
       If(trace.hitDistance.greaterThanEqual(0), () => {
-        // The lit colour the ray found and its weight; the filter subtracts what the cache believes about the receiver.
+        // What the lit colour the ray found adds over the cache along the same ray, and its weight.
         const hit = shade(trace.hitCoordinate, trace.hitDistance, direction);
-        result.assign(vec4(hit.radiance.mul(hit.weight), hit.weight));
+        const believed = options.fallback?.(position, direction, normal) ?? vec3(0, 0, 0);
+        result.assign(vec4(hit.radiance.sub(believed).mul(hit.weight), hit.weight));
       });
     });
     return result;
@@ -795,17 +804,9 @@ function defineScreenProbes(
       sum.assign(sum.add(found.mul(weight)));
       weights.assign(weights.add(weight));
     });
-    // The per-pixel gather's convention, once per probe direction instead of once per pixel: the rays that hit return
-    // `hit - cache` over every ray, so the two tiers never add the same light twice.
-    const probeUv = tile.add(0.5).div(tiles).min(vec2(1, 1));
-    const depth = depthNode.sample(probeUv).r;
-    const rawNormal = normalNode.sample(probeUv).xyz;
-    const believed = valid(depth, rawNormal).select(
-      options.fallback?.(viewPosition(probeUv, depth), normal) ?? vec3(0, 0, 0),
-      vec3(0, 0, 0),
-    );
+    // The trace already holds `hit - cache` along each ray, so the two tiers never add the same light twice.
     const total = max(weights, float(1e-4));
-    return vec4(sum.rgb.sub(believed.mul(sum.a)).div(total), sum.a.div(total));
+    return vec4(sum.rgb.div(total), sum.a.div(total));
   })();
   const filtered = rtt(filterGraph, tilesX * IRRADIANCE_SIDE, tilesY * IRRADIANCE_SIDE, {
     type: HALF_FLOAT_TYPE,

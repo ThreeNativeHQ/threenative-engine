@@ -131,6 +131,16 @@ export function biasedLodDistance(distance: number): number {
 const nearest = new Vector3();
 
 /**
+ * The near plane a caller with no camera `near` uses for the degenerate test.
+ *
+ * `degenerate` is whether the sphere's nearest surface reaches the camera plane (`depth <= near`).
+ * Two callers used `0.1` and the rest `0`, so a camera with no `near` answered two different
+ * questions; this is the one value, and it is `0` because the test is about the surface reaching the
+ * camera, not the surface being close to it.
+ */
+export const LOD_NEAR_PLANE = 0;
+
+/**
  * The conservative nearest view-space depth of a world-space bounding sphere.
  *
  * The distance along the view axis to the sphere's centre minus its radius is the closest the
@@ -146,6 +156,29 @@ export function conservativeViewDepth(
   nearest.copy(center).applyMatrix4(camera.matrixWorldInverse);
   const depth = -nearest.z - Math.max(0, radius);
   return { depth, degenerate: depth <= nearPlane };
+}
+
+/**
+ * The LOD recipe every caller repeats: the sphere in the camera's view, how far its nearest surface
+ * is, and that distance biased for the level table.
+ *
+ * `depth` is the raw conservative view depth, which a reporter projects an error from; `biased` is
+ * the same distance with {@link biasedLodDistance} applied, which a level selection compares. The
+ * two are returned together because the six callers each want one of them and each used to spell the
+ * step itself — one of them with a near plane of its own.
+ */
+export function selectLodFor(
+  camera: Camera,
+  sphere: Sphere,
+  nearPlane: number,
+): { readonly depth: number; readonly degenerate: boolean; readonly biased: number } {
+  const { depth, degenerate } = conservativeViewDepth(
+    camera,
+    sphere.center,
+    sphere.radius,
+    nearPlane,
+  );
+  return { biased: biasedLodDistance(depth), degenerate, depth };
 }
 
 /** The world-space bounding sphere of a cached local sphere under a node's world matrix. */
@@ -315,10 +348,21 @@ export interface ILodChain {
   readonly sphere: Sphere;
 }
 
-/** Triangles one level of a chain submits. */
-function drawTriangles(geometry: BufferGeometry): number {
-  const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
-  return Math.floor(drawn / 3);
+const levelTriangles = new WeakMap<BufferGeometry, number>();
+
+/**
+ * Triangles one level of a chain submits, read once: a level is an index view nothing edits, and on
+ * the owned engine each `geometry.index` read is a bridge crossing (Midway's fleet read it 528 times
+ * a frame, `TN_BRIDGE_WARNING`).
+ */
+export function drawTriangles(geometry: BufferGeometry): number {
+  let triangles = levelTriangles.get(geometry);
+  if (triangles === undefined) {
+    const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
+    triangles = Math.floor(drawn / 3);
+    levelTriangles.set(geometry, triangles);
+  }
+  return triangles;
 }
 
 /**
@@ -375,16 +419,15 @@ class ModelLod {
       return;
     }
     const world = worldSphere(this.#chain.sphere, this.#mesh, undefined, this.#mesh.matrixWorld);
-    const { depth, degenerate } = conservativeViewDepth(
+    const { biased, degenerate } = selectLodFor(
       camera,
-      world.center,
-      world.radius,
+      world,
       (camera as ILodCameraLike).near ?? 0,
     );
     const view: ILodView = {
       camera,
       degenerate,
-      depth: biasedLodDistance(depth),
+      depth: biased,
       viewportHeight,
     };
     const index = selectLodLevel(
@@ -412,10 +455,9 @@ class ModelLod {
     const container = this.#container;
     if (container === null) return;
     const world = worldSphere(rung.sphere, container, undefined, container.matrixWorld);
-    const { depth, degenerate } = conservativeViewDepth(
+    const { biased, degenerate } = selectLodFor(
       camera,
-      world.center,
-      world.radius,
+      world,
       (camera as ILodCameraLike).near ?? 0,
     );
     const errors = [...this.#chain.errors, rung.error];
@@ -423,7 +465,7 @@ class ModelLod {
     const view: ILodView = {
       camera,
       degenerate,
-      depth: biasedLodDistance(depth),
+      depth: biased,
       viewportHeight,
     };
     const index = selectLodLevel(
@@ -876,7 +918,47 @@ export function registerModelLodController(mesh: Mesh, controller: IModelLodCont
 function isChained(object: object): boolean {
   const mesh = object as Partial<Mesh>;
   const geometry = mesh.geometry;
-  return mesh.isMesh === true && geometry !== undefined && chains.has(geometry);
+  return (
+    mesh.isMesh === true &&
+    geometry !== undefined &&
+    (chains.has(geometry) || streaming.has(geometry))
+  );
+}
+
+/**
+ * Coarse geometries of streamed models (PRD-860) whose full model is still downloading. They are
+ * tracked like a chained mesh, so on the frame the full model lands every mesh over them, a game's
+ * clones included, picks its chain up.
+ */
+const streaming = new WeakSet<BufferGeometry>();
+
+/** A coarse companion's geometry, drawn until {@link upgradeStreamedGeometry} gives it the full model. */
+export function markStreamedGeometry(coarse: BufferGeometry): void {
+  streaming.add(coarse);
+}
+
+/** True while a geometry is a streamed coarse companion the full model has not replaced yet. */
+export function isStreamedGeometry(geometry: BufferGeometry): boolean {
+  return streaming.has(geometry);
+}
+
+/**
+ * The full model landed: the coarse geometry takes the full base's index and attributes in place,
+ * so every mesh holding it (a game's clones, a projection mirror) draws the full model with no
+ * object swapped under the game, and it adopts the full chain.
+ */
+export function upgradeStreamedGeometry(coarse: BufferGeometry, full: BufferGeometry): void {
+  const attributes = full.attributes as Record<string, BufferAttribute>;
+  for (const name of Object.keys(coarse.attributes))
+    if (attributes[name] === undefined) coarse.deleteAttribute(name);
+  for (const [name, attribute] of Object.entries(attributes)) coarse.setAttribute(name, attribute);
+  coarse.setIndex(full.index);
+  coarse.computeBoundingBox();
+  coarse.computeBoundingSphere();
+  levelTriangles.delete(coarse);
+  const registered = chains.get(full);
+  if (registered !== undefined) chains.set(coarse, registered);
+  streaming.delete(coarse);
 }
 
 /**
@@ -1357,7 +1439,8 @@ export function updateModelLods(
   for (const mesh of tracking.items) {
     const entry = controllerFor(mesh);
     if (entry === undefined) {
-      tracking.items.delete(mesh);
+      // A streamed coarse mesh stays tracked until its full model lands and brings the chain.
+      if (!streaming.has(mesh.geometry)) tracking.items.delete(mesh);
       continue;
     }
     entry.update(camera, viewportHeight);

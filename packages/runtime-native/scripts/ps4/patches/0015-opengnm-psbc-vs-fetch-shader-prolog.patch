@@ -1,0 +1,54 @@
+diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
+--- a/libpsbc/psbc_compile.c
++++ b/libpsbc/psbc_compile.c
+@@ -1237,6 +1237,23 @@
+     gfx_state.ps.epilog.spi_shader_col_format = V_028714_SPI_SHADER_FP16_ABGR;
+     gfx_state.ps.epilog.color_is_int8 = 0xff;
+     gfx_state.ps.has_epilog = false;
++    /* A PS4 vertex shader fetches its attributes through a fetch shader: the VS
++     * opens with s_swappc_b64 s[0:1], s[0:1] and reads the loaded values from
++     * VGPRs. That is the shape Sony's compiler emits, the shape
++     * GnmFetchShaderCreateInfo describes, and the only shape the PS4 Vulkan ICD
++     * can hand to the hardware as one GnmVsShader.
++     *
++     * This standalone compiler has no VkPipelineVertexInputStateCreateInfo, so
++     * gfx_state.vi is empty. radv's non-prolog path reads vi to decide which
++     * attributes are assigned and returns (0,0,0,0) for every load of an
++     * unassigned one (radv_nir_lower_vs_inputs.c:501), which folded our whole
++     * triangle to a single point and left a 52-byte VS with no loads in it.
++     * Declaring the prolog keeps the inputs live as VGPR arguments and makes
++     * buildshaderbinary() prepend the s_swappc plus the SUBPTR_FETCHSHADER /
++     * PTR_VERTEXBUFFERTABLE usage slots, so the driver builds a fetch shader
++     * from the semantic table and the V#s it is given. */
++    if (mesa_stage == MESA_SHADER_VERTEX && nir->info.inputs_read)
++        gfx_state.vs.has_prolog = true;
+ 
+     radv_nir_shader_info_pass(
+         &compiler_info, nir, &stage.layout, &stage.key, &gfx_state,
+@@ -1269,6 +1286,26 @@
+         &compiler_info, &gfx_state, &stage, previous_stage, NULL
+     );
+ 
++    /* Sony's vertex shader calls its fetch shader through user SGPR pair 0 --
++     * s_swappc_b64 s[0:1], s[0:1], the instruction buildshaderbinary()
++     * prepends -- so the runtime writes that address to VS user data slot 0.
++     * radv's desktop ABI puts the scratch ring offsets in 0-1 (gfx7/gfx8) and
++     * the prolog pointer behind them, which would make the fetch call jump at
++     * the ring offsets: the emulator then dereferences a null fetch pointer.
++     * Swap the two 2-dword user-data arguments, in the table both the backend
++     * and the input-usage slots psbc emits are derived from, so the prolog
++     * pointer lands on the pair the instruction names. */
++    if (gfxlevel < GFX11 && stage.args.prolog_inputs.used &&
++        stage.args.ac.ring_offsets.used) {
++        const uint32_t prolog = stage.args.prolog_inputs.arg_index;
++        const uint32_t ring = stage.args.ac.ring_offsets.arg_index;
++        if (stage.args.ac.args[prolog].offset != stage.args.ac.args[ring].offset) {
++            const uint8_t offset = stage.args.ac.args[prolog].offset;
++            stage.args.ac.args[prolog].offset = stage.args.ac.args[ring].offset;
++            stage.args.ac.args[ring].offset = offset;
++        }
++    }
++
+     stage.nir = nir;
+     stage.info.user_sgprs_locs = stage.args.user_sgprs_locs;
+     stage.info.inline_push_constant_mask = stage.args.ac.inline_push_const_mask;

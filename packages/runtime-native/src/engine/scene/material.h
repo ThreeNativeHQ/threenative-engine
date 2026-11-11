@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include "engine/foundation/flags.h"
 #include <optional>
 #include <map>
 
@@ -46,7 +47,7 @@ public:
         uint64_t recordRebuilds = 0, graphRebuilds = 0, recordCpuNs = 0, graphCpuNs = 0;
     };
     static Diagnostic& diagnostics() {
-        static Diagnostic state = [] { Diagnostic d; const char* flag = std::getenv("TN_MATERIAL_DIAGNOSTICS");
+        static Diagnostic state = [] { Diagnostic d; const char* flag = flags::once<flags::MaterialDiagnostics>();
             d.enabled = flag && flag[0] == '1' && flag[1] == '\0'; return d; }();
         return state;
     }
@@ -79,8 +80,13 @@ public:
     // Material
     bool spriteMaterial = false;
     bool lineMaterial = false;  // three's LineBasicMaterial: unlit, drawn by a Line or LineSegments
+    /** three's PointsMaterial/PointsNodeMaterial: unlit, drawn by a Points object as point-list. */
+    bool pointsMaterial = false;
     double rotation = 0;
     bool sizeAttenuation = true;
+    /** three's PointsMaterial.size (default 1). Read and kept; WebGPU's point primitive is 1 px, so it
+     *  moves no pixel on the Points path — as upstream, whose sized path is a Sprite (PRD-871). */
+    double size = 1;
     bool transparent = false;
     bool forceSinglePass = false;  // three's: a transparent DoubleSide material draws in one pass
     double opacity = 1;

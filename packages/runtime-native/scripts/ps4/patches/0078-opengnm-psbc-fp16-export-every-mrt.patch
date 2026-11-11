@@ -1,0 +1,15 @@
+--- a/libpsbc/psbc_compile.c
++++ b/libpsbc/psbc_compile.c
+@@ -1362,7 +1362,11 @@
+         stage.layout.set[set].layout = setlayouts[set];
+ 
+     struct radv_graphics_state_key gfx_state = {0};
+-    gfx_state.ps.epilog.spi_shader_col_format = V_028714_SPI_SHADER_FP16_ABGR;
++    /* One 4-bit SPI_SHADER_COL_FORMAT field per colour target. FP16_ABGR alone
++     * names target 0 only, and ACO drops every export whose field reads ZERO, so a
++     * shader writing MRT1..7 kept only MRT0 (the TRAA resolve lost its history
++     * target and read zeros). radv masks this by colors_written, as here. */
++    gfx_state.ps.epilog.spi_shader_col_format = 0x44444444u; /* V_028714_SPI_SHADER_FP16_ABGR per target */
+     gfx_state.ps.epilog.color_is_int8 = 0xff;
+     gfx_state.ps.has_epilog = false;
+     /* A PS4 vertex shader fetches its attributes through a fetch shader: the VS

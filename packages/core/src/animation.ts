@@ -14,6 +14,13 @@ import {
   type VectorKeyframeTrack,
 } from "three";
 import {
+  type IAnimationTickResult,
+  type IAnimationTickRig,
+  animationTickExecutor,
+  flushAnimationTicks,
+  queueAnimationTick,
+} from "./animation-batch.js";
+import {
   type IAnimationPacketState,
   animationPacketField,
   animationPacketMethodsPristine,
@@ -22,6 +29,7 @@ import {
   animationPacketTimeReaders,
 } from "./animation-packet-state.js";
 import { clipTrackBindings } from "./clip-audit.js";
+import { copyMatrixWorld } from "./engine-hooks.js";
 import {
   type IAnimationRateState,
   animationRateStates,
@@ -260,13 +268,9 @@ function worldOf(object: Object3D | null, target: Float64Array): void {
     target.set(IDENTITY);
     return;
   }
-  const source = object as Object3D & { __tnCopyMatrixWorld?: (target: Matrix4) => void };
   // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
-  if (source.__tnCopyMatrixWorld === undefined) target.set(object.matrixWorld.elements);
-  else {
-    source.__tnCopyMatrixWorld(scratchMatrixWorld);
-    target.set(scratchMatrixWorld.elements);
-  }
+  if (copyMatrixWorld(object, scratchMatrixWorld)) target.set(scratchMatrixWorld.elements);
+  else target.set(object.matrixWorld.elements);
 }
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -641,7 +645,29 @@ export class AnimationPlayer {
    * and the next evaluation measures the whole interval, so a held rig pays no world-matrix walk.
    */
   #strideReportOnlyFor: string | undefined;
-  #strideDtDebt = 0;
+  /**
+   * PRD-828: the tick this player handed to the engine's batch, and what the JS loop was in the middle
+   * of when it did. The batch is a whole frame's rigs in one crossing, so each field is one rig's worth.
+   */
+  #batchQueued = false;
+  #batchName: string | undefined;
+  #batchStep = false;
+  #batchStrideSync = true;
+  #batchLocomotion = false;
+  /** The player ran ticks the engine did not since its last batched one: its banked advance is spent. */
+  #batchReset = true;
+  /** The queued tick measured the ground: a hand-back tick never does, and its status is not a reading. */
+  #batchMeasured = false;
+  /**
+   * The engine holds held-tick time for this rig that JS has not handed back or spent. It cannot be
+   * spent twice — `#evaluate` sets `#batchReset`, so the engine drops any bank a JS advance has already
+   * covered — but dropping it loses the interval, so it is handed back instead.
+   */
+  #engineBank = false;
+  /** Seconds the engine has not measured the body over: its last position is that much out of date. */
+  #batchGapDt = 0;
+  /** Seconds the JS loop has not measured the body over: its last position is that much out of date. */
+  #jsGapDt = 0;
   // The last update's numbers, kept as scalars so a frame that never reads `.stride` builds no
   // report. A read materializes a fresh snapshot, so a retained report never changes under it.
   #strideGroundSpeed = 0;
@@ -782,12 +808,22 @@ export class AnimationPlayer {
   }
 
   get advancedFrames(): number {
+    this.#settle();
     return this.#advancedFrames;
   }
 
   /** True when a `"once"` clip has reached its end and is holding. */
   get finished(): boolean {
+    this.#settle();
     return this.#finished;
+  }
+
+  /**
+   * Runs a tick this player queued and the frame loop has not reached yet, so a reader never sees the
+   * pose, the stride or the counters from before the last `update`.
+   */
+  #settle(): void {
+    if (this.#batchQueued) flushAnimationTicks();
   }
 
   /**
@@ -798,6 +834,7 @@ export class AnimationPlayer {
    * be honest about what it turned off.
    */
   get stride(): IStrideReport {
+    this.#settle();
     const name = this.#current;
     const measured = name === undefined ? undefined : this.#measureOf(name);
     // A fresh snapshot each read: what the last update stored, with the clip's own ground speed
@@ -882,15 +919,10 @@ export class AnimationPlayer {
 
   #uniformWorldScale(): number | undefined {
     const root = this.mixer.getRoot() as Object3D;
-    const owner = (root.parent ?? root) as Object3D & {
-      __tnCopyMatrixWorld?: (target: Matrix4) => void;
-    };
+    const owner = (root.parent ?? root) as Object3D;
     owner.updateWorldMatrix(true, false);
-    if (owner.__tnCopyMatrixWorld !== undefined) {
-      // Native copies into owned storage so this read cannot escape the live transform alias.
-      owner.__tnCopyMatrixWorld(scratchMatrixWorld);
-      return uniformYawScale(scratchMatrixWorld);
-    }
+    // Native copies into owned storage so this read cannot escape the live transform alias.
+    if (copyMatrixWorld(owner, scratchMatrixWorld)) return uniformYawScale(scratchMatrixWorld);
     return uniformYawScale(owner.matrixWorld);
   }
 
@@ -1093,6 +1125,7 @@ export class AnimationPlayer {
   }
 
   #start(name: string, options: IAnimationPlayOptions): void {
+    this.#settle();
     const speed = options.speed ?? 1;
     if (!(Number.isFinite(speed) && speed > 0))
       throw new Error(`Animation play speed must be a positive finite number, got ${speed}.`);
@@ -1145,6 +1178,7 @@ export class AnimationPlayer {
     entries: readonly { readonly clip: string; readonly weight: number }[],
     options: { readonly transition?: number; readonly phaseSync?: boolean } = {},
   ): void {
+    this.#settle();
     const transition = options.transition ?? 0;
     if (!Number.isFinite(transition) || transition < 0)
       throw new Error("AnimationPlayer.playWeighted requires a finite non-negative transition.");
@@ -1272,6 +1306,7 @@ export class AnimationPlayer {
   update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
+    if (this.#batchQueued) flushAnimationTicks();
     const mixerScale = this.mixer.timeScale;
     if (mixerScale !== 1) this.#flushPending();
     const elapsed = dt * mixerScale;
@@ -1285,22 +1320,28 @@ export class AnimationPlayer {
       force ||
       (this.#updateFrame + this.#staggerOffset) % boneRate === 0 ||
       this.#skippedFrames >= boneRate;
+    // The batch decides before the JS bank does: a tick it takes must not also be banked per action,
+    // or the two paths would each other's time.
+    const heldBefore = this.#pendingDt;
+    if (this.#queueTick(dt, elapsed, mixerScale)) {
+      // The engine banked this tick; JS holds none of it, and measured nothing, so its last position
+      // goes stale by one interval.
+      if (!this.#batchStep) this.#engineBank = true;
+      this.#jsGapDt += dt;
+      return;
+    }
+    this.#pendingDt += elapsed;
     // A full-rate tick with no held time advances through the mixer's own actions; only deferred
     // integration needs per-action elapsed time. Scanning the whole clip library to bank that time
     // costs every full-rate rig every frame.
-    if (
-      !this.#evaluated ||
-      this.#pendingDt !== 0 ||
-      this.#pendingActionTimes.size !== 0 ||
-      rate !== 1
-    ) {
+    if (!this.#evaluated || heldBefore !== 0 || this.#pendingActionTimes.size !== 0 || rate !== 1) {
       for (const action of this.#actions.values()) {
         if (!action.isScheduled()) continue;
         const time = action.paused ? 0 : action.timeScale * elapsed;
         this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
       }
     }
-    this.#pendingDt += elapsed;
+    this.#batchGapDt += dt;
     if (this.#evaluated) this.#evaluate(dt, mixerScale);
     // Measure the body's movement on every tick, including skipped pose evaluations. A held tick of
     // a clip whose measurement only reports banks its dt: the average speed over the interval is
@@ -1312,15 +1353,142 @@ export class AnimationPlayer {
       this.#blendTargets === undefined &&
       dt > 0
     ) {
-      this.#strideDtDebt += dt;
+      this.#jsGapDt += dt;
       return;
     }
     if (dt > 0) {
-      const interval = dt + this.#strideDtDebt;
-      this.#strideDtDebt = 0;
+      const interval = dt + this.#jsGapDt;
+      this.#jsGapDt = 0;
       this.#syncStride(interval);
     } else this.#syncStride(dt);
   }
+
+  /**
+   * Hand this tick to the engine's batch, or answer false and let the JS loop run it.
+   *
+   * The batch runs the same three rules over a span of rigs — the weight ramp, the stride rate and the
+   * mixer step — so it takes only a tick whose shape it can express exactly: one contributing clip, no
+   * fade, no blend, no warp, no held pause. Everything else keeps the JS loop, which is not a fallback
+   * mode but the general path; this is the one shape the stress lab's crowd is made of.
+   */
+  #queueTick(dt: number, elapsed: number, mixerScale: number): boolean {
+    if (mixerScale !== 1 || dt <= 0) return false;
+    const name = this.#current;
+    const action = name === undefined ? undefined : this.#actions.get(name);
+    if (name === undefined || action === undefined) return false;
+    if (this.#mode !== "loop" || this.#finished) return false;
+    if (this.#fadeOut.length !== 0 || this.#blendTargets !== undefined) return false;
+    if (this.#timeScaleInterpolations.size !== 0) return false;
+    if (this.#evaluationScales.size !== 0 || this.#evaluationPaused.size !== 0) return false;
+    if (action.paused) return false;
+    // Deferred per-action time is integrated below in JS; the batch takes the frame's own interval.
+    if (this.#pendingActionTimes.size !== 0) return false;
+    if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners)
+      return false;
+    if (animationTickExecutor() === undefined) return false;
+    this.#queueRig(name, action, dt, elapsed, this.#evaluated);
+    return true;
+  }
+
+  /**
+   * One rig's descriptor, in the shape `tn_anim_tick` takes. The held bank is the engine's, not ours.
+   *
+   * `strideRoot` is null for a tick that only has to spend the engine's bank: handing the body over would
+   * move the engine's last measured position without measuring the interval it belongs to.
+   */
+  #queueRig(
+    name: string,
+    action: AnimationAction,
+    dt: number,
+    elapsed: number,
+    step: boolean,
+    strideRoot: object | null = this.#strideRoot,
+  ): void {
+    const measured = this.#measureOf(name);
+    this.#cameraCarried = cameraCarried(this.#strideRoot);
+    this.#batchName = name;
+    this.#batchStep = step;
+    this.#batchMeasured = dt > 0;
+    this.#batchStrideSync = this.#strideSync ?? !this.#cameraCarried;
+    this.#batchLocomotion = measured.groundSpeed >= CLIP_GROUND_FLOOR;
+    const rig: IAnimationTickRig = {
+      mixer: this.mixer,
+      action,
+      strideRoot,
+      // The interval the ground is measured over: this tick, plus the time the engine stopped measuring
+      // while the JS loop had the rig, so a switch never divides a stale displacement by one frame's dt.
+      dt: dt + this.#batchGapDt,
+      elapsed,
+      step,
+      reset: this.#batchReset,
+      // The engine must not take back a scale the game chose: 0 says the action's scale is not ours.
+      lastRate: this.#strideSynced ? this.#strideRate : 0,
+      clipGroundSpeed: measured.groundSpeed,
+      strideSync: this.#batchStrideSync,
+    };
+    queueAnimationTick(rig, this.#applyTick);
+    this.#batchQueued = true;
+  }
+
+  /**
+   * The engine holds time this rig banked on held ticks it posed nothing for. Before the JS loop spends
+   * any time of its own, hand that bank back as one step: the engine integrates it at the exact rates it
+   * ran under, and JS then advances only the time it banked itself. Without this, a `warp()`, a slow-mo
+   * frame, a `syncBones` or a clip change would advance the held interval twice.
+   */
+  #handBackToEngine(): void {
+    if (!this.#engineBank) return;
+    this.#engineBank = false;
+    const name = this.#current;
+    const action = name === undefined ? undefined : this.#actions.get(name);
+    if (name === undefined || action === undefined) return;
+    if (animationTickExecutor() === undefined) return;
+    this.#queueRig(name, action, 0, 0, true, null);
+    flushAnimationTicks();
+  }
+
+  /** The stride scalars `#syncStride` would have written for this clip, from the tick's own answer. */
+  #batchStrideReport(name: string | undefined): void {
+    if (this.#batchLocomotion) {
+      this.#strideSynced = this.#batchStrideSync;
+      this.#strideOverridden = !this.#batchStrideSync;
+      this.#strideReportOnlyFor = this.#batchStrideSync ? undefined : name;
+      return;
+    }
+    // Not locomotion: authored at its own rate. The report says so, and reports the ground it covered.
+    this.#strideSynced = false;
+    this.#strideOverridden = false;
+    this.#strideReportOnlyFor = name;
+  }
+
+  /**
+   * A batched tick came back. Writes the same numbers the JS loop would have, from the same rules:
+   * the stride scalars the report and `#effectiveUpdateRate` read, the advance counters, and `finished`.
+   */
+  readonly #applyTick = (result: IAnimationTickResult): void => {
+    const name = this.#batchName;
+    this.#batchQueued = false;
+    this.#batchName = undefined;
+    this.#batchReset = false;
+    this.#batchGapDt = 0;
+    // A tick that only spent the engine's bank measured nothing: its status is not a stride reading.
+    if (this.#batchMeasured) {
+      this.#strideGroundSpeed = result.groundSpeed;
+      this.#strideRate = result.strideRate;
+      this.#strideInPlace = name === undefined ? false : this.#measureOf(name).inPlace;
+      this.#batchStrideReport(name);
+    }
+    if (this.#batchStep) {
+      this.#batchStep = false;
+      this.#engineBank = false;
+      if (result.changed) this.#advancedFrames += 1;
+      this.#pendingDt = 0;
+      this.#skippedFrames = 0;
+      this.#rateState.evaluation += 1;
+      this.#rateState.evaluated = true;
+    }
+    if (result.finished) this.#finished = true;
+  };
 
   /**
    * The playhead a trusted packet reads, as a bare number: the same checks as the trusted branch
@@ -1328,6 +1496,7 @@ export class AnimationPlayer {
    * read, which also renews the trust.
    */
   #trustedPacketTime(): number | undefined {
+    this.#settle();
     const trust = this.#packetTrust;
     if (
       trust === undefined ||
@@ -1353,6 +1522,7 @@ export class AnimationPlayer {
   }
 
   #readPacketState(): IAnimationPacketState | undefined {
+    this.#settle();
     if (
       this.#evaluating ||
       this.#actions.size !== 1 ||
@@ -1444,10 +1614,14 @@ export class AnimationPlayer {
   }
 
   #flushPending(): void {
+    // A tick may be queued with time this would spend a second time: settle it first, always.
+    this.#settle();
     if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
   }
 
   #evaluate(dt: number, mixerScale = this.mixer.timeScale): void {
+    this.#handBackToEngine();
+    this.#batchReset = true;
     // Read before mixer.update(): the "finished" listener fires inside it for a completing
     // once-clip, and that final frame still counts as advancement.
     const wasFinished = this.#finished;
@@ -1535,6 +1709,8 @@ export class AnimationPlayer {
   }
 
   stop(): void {
+    this.#settle();
+    this.#engineBank = false;
     this.#pendingDt = 0;
     this.#pendingActionTimes.clear();
     this.#skippedFrames = 0;
@@ -1557,7 +1733,10 @@ export class AnimationPlayer {
   #resetStride(): void {
     this.#hasLastRootPosition = false;
     this.#strideReportOnlyFor = undefined;
-    this.#strideDtDebt = 0;
+    this.#batchGapDt = 0;
+    this.#jsGapDt = 0;
+    this.#batchReset = true;
+    this.#engineBank = false;
     this.#strideGroundSpeed = 0;
     this.#strideRate = 1;
     this.#strideSynced = false;
@@ -1567,6 +1746,8 @@ export class AnimationPlayer {
 
   dispose(): void {
     this.stop();
+    this.#batchQueued = false;
+    this.#batchName = undefined;
     this.mixer.uncacheRoot(this.mixer.getRoot());
     this.mixer.removeEventListener("finished", this.#onFinished);
     this.#actions.clear();

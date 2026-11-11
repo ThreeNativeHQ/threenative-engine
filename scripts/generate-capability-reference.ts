@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +15,7 @@ import { fileURLToPath } from "node:url";
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
+const MANIFEST_RELATIVE_PATH = path.join("packages", "core", "capabilities.json");
 const TARGET_RELATIVE_PATH = path.join(
   "packages",
   "create-threenative",
@@ -119,6 +120,15 @@ async function main(): Promise<void> {
   const page = renderCapabilityReference(manifest.entries);
   const target = path.join(repoRoot, TARGET_RELATIVE_PATH);
   if (check) {
+    // The page is build output and this checkout may never have built it: a clean clone has no
+    // file, and the honest answer is "stale, generate it", not an ENOENT stack from `readFile`.
+    if (!existsSync(target)) {
+      console.error(
+        `RED observed: ${TARGET_RELATIVE_PATH} is not generated yet; run pnpm capabilities:sync`,
+      );
+      process.exitCode = 1;
+      return;
+    }
     const actual = await readFile(target, "utf8");
     if (actual !== page) {
       console.error(

@@ -27,7 +27,13 @@
 import { Frustum, Matrix4, Sphere, Vector3 } from "three";
 import type { Camera, Object3D } from "three";
 import { markEngineRenderHook } from "./engine-render-hook.js";
-import { baseGeometryOf, conservativeViewDepth, lodPixelScale, worldSphere } from "./model-lod.js";
+import {
+  LOD_NEAR_PLANE,
+  baseGeometryOf,
+  lodPixelScale,
+  selectLodFor,
+  worldSphere,
+} from "./model-lod.js";
 import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 
 /** Rows returned when a request does not name a limit. */
@@ -420,14 +426,14 @@ function projectedSize(
 ): { readonly pixels: number; readonly distance: number } | undefined {
   if (!(viewportHeight > 0)) return undefined;
   const like = camera as ICameraLike;
-  const near = like.near ?? 0.1;
+  const near = like.near ?? LOD_NEAR_PLANE;
   const distance = centreScratch
     .copy(sphere.center)
     .distanceTo(camera.getWorldPosition(new Vector3()));
   let depth: number;
   let degenerate: boolean;
   try {
-    const view = conservativeViewDepth(camera, sphere.center, sphere.radius, near);
+    const view = selectLodFor(camera, sphere, near);
     depth = view.depth;
     degenerate = view.degenerate;
   } catch {
@@ -462,6 +468,7 @@ export function rendererBackendIdentity(raw: unknown): string | undefined {
 export class GeometryCapture {
   #pending: IPendingRequest | undefined;
   #armed: IArmedFrame | undefined;
+  #deferredPasses: readonly IRenderPassSample[] | undefined;
 
   /**
    * Arms one capture and answers its report. A malformed request throws rather than quietly
@@ -560,7 +567,17 @@ export class GeometryCapture {
    * Ends the frame: removes every hook, reconciles the rows against the measured pass totals and
    * answers the waiting request.
    */
-  finishFrame(passes: readonly IRenderPassSample[]): void {
+  finishFrame(
+    passes: readonly IRenderPassSample[],
+    options?: { readonly drawsAfterFrame?: boolean },
+  ): void {
+    // A host whose render() only records the frame (the native V8 player) draws it after the frame
+    // callback, and its engine runs onBeforeRender then: the hooks stay until settleDeferred().
+    if (options?.drawsAfterFrame === true && this.#pending !== undefined) {
+      this.#deferredPasses = passes;
+      return;
+    }
+    this.#deferredPasses = undefined;
     const armed = this.#armed;
     const pending = this.#pending;
     this.#restore();
@@ -570,8 +587,15 @@ export class GeometryCapture {
     pending.settle(buildReport(armed, passes, pending));
   }
 
+  /** Answers a capture whose frame a host drew after the frame callback. A no-op otherwise. */
+  settleDeferred(): void {
+    const passes = this.#deferredPasses;
+    if (passes !== undefined) this.finishFrame(passes);
+  }
+
   /** Drops a pending capture and every hook. A scene exit is not a reason to report a stale frame. */
   cancel(reason: string): void {
+    this.#deferredPasses = undefined;
     const pending = this.#pending;
     this.#restore();
     this.#pending = undefined;

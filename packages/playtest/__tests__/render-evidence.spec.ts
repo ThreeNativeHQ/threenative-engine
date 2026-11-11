@@ -7,7 +7,6 @@ import {
   finalFacingAngleToPosition,
   finalTiltDegrees,
   isRuntimeDiagnosticsSample,
-  matchingOccludedRaycasts,
   maxResolvedAxisDelta,
   mergeEffectLogs,
   minimumResolvedDistance,
@@ -145,20 +144,6 @@ describe("render evidence", () => {
     expect(nearestRank([30, 10, 20], 0.5)).toBe(20);
     expect(mergeEffectLogs({ entries: ["base"] }, undefined)).toEqual({ entries: ["base"] });
     expect(mergeEffectLogs(undefined, [{ label: "a", snapshot: { entries: ["a"] }, tick: 1 }, { label: "b", snapshot: {}, tick: 2 }])).toEqual({ entries: ["a"] });
-  });
-
-  test("matches only successful occlusion raycasts with optional filters", () => {
-    const log = effectLog([
-      null,
-      { service: "other", payload: { result: { hit: true } } },
-      { service: "physics.raycast", payload: { result: { hit: false }, request: { entity: "listener", target: "wall" } } },
-      { service: "render.sceneRayQuery", payload: { result: { hit: true }, request: { entity: "listener", target: "wall" } } },
-      { service: "physics.raycast", payload: { result: { hit: true }, request: { entity: "listener", target: "pillar" } } },
-    ]);
-    expect(matchingOccludedRaycasts(undefined, undefined, undefined)).toBe(0);
-    expect(matchingOccludedRaycasts(log, undefined, undefined)).toBe(2);
-    expect(matchingOccludedRaycasts(log, "listener", "wall")).toBe(1);
-    expect(matchingOccludedRaycasts(log, "missing", undefined)).toBe(0);
   });
 
   test("summarizes matching entries with and without owning systems", () => {

@@ -4,6 +4,7 @@ import {
   PLAYTEST_ADVANCE_TICK_BUDGET_MS,
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_STARTUP_COMPILE_BUDGET_MS,
+  PLAYTEST_STARTUP_READY_TIMEOUT_MS,
   PLAYTEST_PROTOCOL_VERSION,
   assertJsonSafe,
   jsonByteLength,
@@ -23,6 +24,7 @@ import {
 } from "../index.js";
 import type { Page } from "playwright";
 
+import { laneOfScenarioTarget, PLAYTEST_LANES, type PlaytestLane } from "../lanes.js";
 import { HOST_PLAYTEST_OBSERVATION_FIELDS, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 import { setupApplication as resolveSetupApplication } from "./setup-confirmation.js";
 import { composeScenarioSetupRequest } from "./setup-request.js";
@@ -185,7 +187,11 @@ export async function connectPlaytestBridgeTransport(
   // same reason `waitForBridge` does. Left on the plain operation budget it equalled the
   // first-use compile bound exactly, and `tower-defense` timed out on `ready` at `frames: 0` —
   // a software-GPU shader compile that ran out of time inside a request and a reply.
-  const description = await transport.call<IPlaytestBridgeDescription>("describe", undefined, timeoutMs);
+  // It also waits on the start scene's `load()`, which the scenario's own throttled link sizes
+  // (Midway: 139.5 MB, 30 s at 40 Mbps), so it gets the whole startup window. `waitForBridge` keeps
+  // the short budget: a page with no bridge still fails fast.
+  const handshakeMs = Math.max(timeoutMs, PLAYTEST_STARTUP_READY_TIMEOUT_MS);
+  const description = await transport.call<IPlaytestBridgeDescription>("describe", undefined, handshakeMs);
   const unknown = unknownPlaytestCapabilities(description.capabilities);
   if (unknown.length > 0) {
     throw new PlaytestBridgeError(playtestDiagnostic(
@@ -202,7 +208,7 @@ export async function connectPlaytestBridgeTransport(
       "Install matching @threenative/playtest and adapter package versions.",
     ));
   }
-  const ready = await transport.call<IPlaytestBridgeReady>("ready", undefined, timeoutMs);
+  const ready = await transport.call<IPlaytestBridgeReady>("ready", undefined, handshakeMs);
   if (!ready.ready) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_BRIDGE_NOT_READY",
@@ -222,7 +228,7 @@ export async function connectPlaytestBridgeTransport(
       { capability: missing[0] },
     ));
   }
-  const unavailable = unavailableObservation(scenario);
+  const unavailable = unavailableObservation(scenario, laneOfRun(scenario, target));
   if (unavailable !== undefined) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
@@ -295,14 +301,15 @@ async function applySetupBeforeDescribe(
 
 function unavailableObservation(
   scenario: IPlaytestScenario,
+  lane: PlaytestLane,
 ): { assertion: string; path: string; reason: string } | undefined {
   for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
     if (scenario.assert?.[entry.kind] === undefined) continue;
-    if (!entry.supportedOn.includes(scenario.target)) {
+    if (!entry.supportedOn.includes(lane)) {
       return {
         assertion: entry.kind,
         path: entry.observationPath,
-        reason: `Assertion '${entry.kind}' is not supported on target '${scenario.target}'.`,
+        reason: `Assertion '${entry.kind}' is not supported on the ${lane} lane; it runs on: ${entry.supportedOn.join(", ")}.`,
       };
     }
     for (const path of requiredObservationPaths(scenario, entry.kind, entry.observationPath)) {
@@ -336,6 +343,12 @@ function unavailableObservation(
     }
   }
   return undefined;
+}
+
+/** The lane this run executes on: the runner's own name for it, else the scenario file's `target`. */
+function laneOfRun(scenario: IPlaytestScenario, target: string | undefined): PlaytestLane {
+  const named = PLAYTEST_LANES.find((lane) => lane === target);
+  return named ?? laneOfScenarioTarget(scenario.target);
 }
 
 function requiredObservationPaths(

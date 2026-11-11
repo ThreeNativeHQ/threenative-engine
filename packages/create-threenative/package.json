@@ -1,6 +1,6 @@
 {
   "name": "create-threenative",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "license": "MIT",
   "description": "Scaffold a readable ThreeNative game project.",
   "keywords": [
@@ -71,7 +71,8 @@
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict",
-    "prepack": "node -e \"const fs=require('node:fs');const L=[['../core/patches/three@0.187.0.patch','three@0.187.0.patch'],['../../patches/vite@8.2.0.patch','vite@8.2.0.patch'],['../../patches/@tailwindcss__node@4.3.3.patch','@tailwindcss__node@4.3.3.patch']];const D='template-assets/patches/';fs.mkdirSync(D,{recursive:true});for(const f of fs.readdirSync(D))if(!L.some(([,n])=>n===f))fs.rmSync(D+f,{force:true,recursive:true});for(const [s,n] of L){const d=D+n;if(fs.existsSync(s))fs.cpSync(s,d);else if(!fs.existsSync(d))throw new Error('TN_FRAMEWORK_PATCH_MISSING: '+s)}\""
+    "prepack": "node scripts/sync-patches.mjs && node -e \"const {existsSync}=require('node:fs');const {execFileSync}=require('node:child_process');if (existsSync('../../pnpm-workspace.yaml')) execFileSync('pnpm',['--workspace-root','capabilities:sync'],{cwd:'../..',stdio:['ignore',2,2],shell:process.platform==='win32'});else process.stderr.write('prepack: no workspace here, derived capability docs are taken as staged\\n')\"",
+    "sync:patches": "node scripts/sync-patches.mjs"
   },
   "dependencies": {
     "@gltf-transform/core": "catalog:",
@@ -107,6 +108,6 @@
     "@types/estree": "1.0.8"
   },
   "peerDependencies": {
-    "@threenative/assets": ">=0.3.13 <0.4.0"
+    "@threenative/assets": ">=0.3.14 <0.4.0"
   }
 }

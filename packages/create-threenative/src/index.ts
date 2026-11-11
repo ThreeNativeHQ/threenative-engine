@@ -1,12 +1,32 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
-import { MCP_SERVERS, ensureHostMcpConfigs, serverEntryPath } from "./mcp-servers.js";
+import {
+  CORE_PACKAGE_NAME,
+  CORE_PACKAGE_VERSION,
+  MCP_SERVERS,
+  ensureHostMcpConfigs,
+  serverEntryPath,
+} from "./mcp-servers.js";
 
+export { createEngineCatalogPlugin } from "./engine-catalog.js";
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
 export { webRuntimeDecoders } from "./web-engine.js";
@@ -126,8 +146,30 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * render-chain plumbing is not: it is the same 600 lines in every kit, and keeping seven copies by
  * hand let one fall a revision behind without anything failing. A file belongs here only when a
  * kit editing it would be a mistake rather than a choice.
+ *
+ * `__tests__/shared-render-drift.spec.ts` fails on any render source that ships byte-identical in
+ * two or more kits and is missing here, so a new copy cannot land unrestamped. The environment
+ * measure-and-sample mechanism and the backlight used to be seven of these copies; they live in
+ * `@threenative/core/render/environment` now (PRD-833).
  */
 export const SHARED_RENDER_SOURCES: readonly string[] = [
+  // The backlight shader: mechanism every kit repeats, but its constants decide how a surface
+  // looks, so it lives in `src/render/` (rule 3) and is stamped from one source rather than moved
+  // into the engine.
+  "src/render/backlightControls.ts",
+  "src/render/backlightMaterial.ts",
+  "src/render/atmosphere.ts",
+  "src/render/gpuSky.ts",
+  "src/render/kitExposure.ts",
+  "src/render/temporalDetailStage.ts",
+];
+
+/**
+ * The shared sources `createProject` also writes into a kit that does not ship them. A kit owns its
+ * look, so presence is per kit: `starter` ships the temporal detail stage and the collectathon kits
+ * do not, and all four still get the same plumbing.
+ */
+export const ADDED_RENDER_SOURCES: readonly string[] = [
   "src/render/kitExposure.ts",
   "src/render/temporalDetailStage.ts",
 ];
@@ -505,6 +547,20 @@ function packageName(target: string): string {
   return name;
 }
 
+/** The template tokens for a game at `target`; the scaffold and `doctor --fix` render with the same values. */
+function templateReplacements(target: string): Readonly<Record<string, string>> {
+  const projectName = packageName(target);
+  const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
+  const projectId = /^[a-z]/u.test(compactProjectId) ? compactProjectId : `game${compactProjectId}`;
+  // Entries rather than an object literal: these are template tokens, not identifiers. Written as
+  // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
+  // neither ours to rename nor expressible in camelCase.
+  return Object.fromEntries([
+    ["__PROJECT_NAME__", projectName],
+    ["__PROJECT_ID__", projectId],
+  ]) as Readonly<Record<string, string>>;
+}
+
 async function isEmpty(directory: string): Promise<boolean> {
   const entries = await readdir(directory).catch((error: unknown) =>
     (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT" ? [] : undefined,
@@ -591,6 +647,7 @@ async function linkClaudeSkills(target: string): Promise<void> {
     if (!entry.isDirectory()) continue;
     if (existsSync(path.join(subagents, `${entry.name}.md`))) continue;
     const link = path.join(hostSkills, entry.name);
+    if (await lstat(link).catch(() => undefined)) continue; // doctor --fix: the game already has it
     const relative = path.relative(hostSkills, path.join(stored, entry.name));
     try {
       await symlink(relative, link, "dir");
@@ -725,11 +782,35 @@ async function applyPackageSources(
 }
 
 const FRAMEWORK_PATCH_DIRECTORY = "patches";
-const FRAMEWORK_PATCH_SOURCES: Readonly<Record<string, string>> = {
-  "three@0.187.0.patch": "../core/patches/three@0.187.0.patch",
-  "vite@8.2.0.patch": "../../patches/vite@8.2.0.patch",
-  "@tailwindcss__node@4.3.3.patch": "../../patches/@tailwindcss__node@4.3.3.patch",
-};
+
+/** One dependency patch a scaffold may apply: the file in the game, and where its bytes live. */
+interface IFrameworkPatch {
+  /** The file inside the generated project's `patches/` directory. */
+  readonly name: string;
+  /** The patch in this repository, relative to its root. */
+  readonly source: string;
+}
+
+/**
+ * The dependency patches a scaffold applies, from `template-assets/patches/manifest.json`.
+ *
+ * One list, three readers: this function copies the ones a kit declares, the prepack step copies
+ * the whole set into the tarball, and `__tests__/framework-patches.spec.ts` holds every kit's
+ * `patchedDependencies` to it. It used to be spelled in all three places, so a three-version bump
+ * needed each edited by hand.
+ */
+async function frameworkPatches(packageRoot: string): Promise<readonly IFrameworkPatch[]> {
+  const manifest = JSON.parse(
+    await readFile(
+      path.join(packageRoot, "template-assets", FRAMEWORK_PATCH_DIRECTORY, "manifest.json"),
+      "utf8",
+    ),
+  ) as { version?: unknown; patches?: unknown };
+  if (manifest.version !== 1 || !Array.isArray(manifest.patches)) {
+    throw new Error("TN_FRAMEWORK_PATCH_MANIFEST: expected version 1 with a patches array.");
+  }
+  return manifest.patches as readonly IFrameworkPatch[];
+}
 
 async function copyFrameworkPatches(target: string, templateRootDirectory: string): Promise<void> {
   // Copy exactly the dependency patches declared by this template. In particular, minimal
@@ -738,16 +819,18 @@ async function copyFrameworkPatches(target: string, templateRootDirectory: strin
     pnpm?: { patchedDependencies?: Record<string, string> };
   };
   const packageRoot = path.dirname(templateRoot());
+  const supported = await frameworkPatches(packageRoot);
+  const repositoryRoot = path.resolve(packageRoot, "..", "..");
   for (const relative of Object.values(manifest.pnpm?.patchedDependencies ?? {})) {
     const name = path.basename(relative);
-    const fallback = FRAMEWORK_PATCH_SOURCES[name];
-    if (fallback === undefined || relative !== `${FRAMEWORK_PATCH_DIRECTORY}/${name}`) {
+    const patch = supported.find((candidate) => candidate.name === name);
+    if (patch === undefined || relative !== `${FRAMEWORK_PATCH_DIRECTORY}/${name}`) {
       throw new Error(`TN_FRAMEWORK_PATCH_MISSING: unsupported template patch '${relative}'.`);
     }
     const candidates = [...new Set([path.dirname(templateRootDirectory), packageRoot])].map(
       (root) => path.join(root, "template-assets", FRAMEWORK_PATCH_DIRECTORY, name),
     );
-    const canonical = path.resolve(packageRoot, fallback);
+    const canonical = path.resolve(repositoryRoot, patch.source);
     // A source checkout can have an ignored prepack copy from an earlier build. Packaged CLIs
     // omit src/, so they continue to use only the patch bytes delivered in their tarball.
     if (existsSync(path.join(packageRoot, "src", "index.ts"))) candidates.unshift(canonical);
@@ -797,9 +880,23 @@ function writeHostMcpConfigs(target: string): void {
   }
 }
 
+/** Fails closed on a host config that names a shim the installed core does not ship (PRD-829):
+ * the agent would start none of its servers and report nothing. Only a project that has installed
+ * its packages is judged; a scaffold writes the configs before `pnpm install` runs. */
+function assertMcpShims(target: string): void {
+  if (!existsSync(path.join(target, "node_modules"))) return;
+  for (const [name, entry] of Object.entries(REQUIRED_MCP_SERVERS)) {
+    if (existsSync(path.resolve(target, entry))) continue;
+    throw new Error(
+      `MCP server '${name}' launches '${entry}', which this project does not have. Run 'pnpm install', or install one release of both: ${ENGINE_PAIR_UPGRADE}`,
+    );
+  }
+}
+
 /** Fails closed: a project whose MCP config is missing, incomplete, or points at a package it
  * does not install would silently hand the user's agent none of its authoring tools. */
 async function assertMcpConfig(target: string): Promise<void> {
+  assertMcpShims(target);
   const configPath = path.join(target, ".mcp.json");
   const raw = await readFile(configPath, "utf8").catch(() => {
     throw new Error(`Scaffold produced no .mcp.json at '${configPath}'.`);
@@ -869,6 +966,238 @@ async function assertMcpConfig(target: string): Promise<void> {
   }
 }
 
+/** The game's record of the authoring layer the scaffold or `doctor --fix` wrote (PRD-829). */
+const AUTHORING_STAMP = path.join(".threenative", "agent-files.json");
+const KIT_TITLE = /\bthe ([a-z][a-z0-9-]*) kit\b/u;
+
+interface IAuthoringStamp {
+  readonly createThreenative?: string;
+  readonly kit?: string;
+  readonly files?: Readonly<Record<string, string>>;
+}
+
+export interface IAuthoringLayerStatus {
+  /** The create-threenative version running this check, which is the one the game installed. */
+  readonly installed: string;
+  readonly kit?: string;
+  /** Why the layer cannot be checked; set instead of `stale`'s meaning. */
+  readonly problem?: string;
+  /** Layer paths whose bytes differ from the installed package, and dropped files still present. */
+  readonly stale: readonly string[];
+  readonly stamped?: string;
+}
+
+export interface IAuthoringLayerFix {
+  readonly deleted: readonly string[];
+  readonly kept: readonly string[];
+  readonly written: readonly string[];
+}
+
+const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
+
+async function fileHash(file: string): Promise<string | undefined> {
+  return readFile(file).then(sha256, () => undefined);
+}
+
+/** Path → sha256 of every regular file under `directory`; linked skill folders are not files. */
+async function hashFiles(directory: string, relative = ""): Promise<Record<string, string>> {
+  const hashes: Record<string, string> = {};
+  for (const entry of await readdir(path.join(directory, relative), { withFileTypes: true })) {
+    const next = path.posix.join(relative, entry.name);
+    if (entry.isDirectory()) Object.assign(hashes, await hashFiles(directory, next));
+    else if (entry.isFile()) hashes[next] = sha256(await readFile(path.join(directory, next)));
+  }
+  return hashes;
+}
+
+/**
+ * Renders `kit`'s authoring layer for a game at `target` with the scaffold's own writers — the kit
+ * router pair, then `copyAgentFiles`, then `renderTemplate` — and returns each path's hash.
+ * `directory` receives the bytes when given; otherwise they go to a temporary folder.
+ */
+async function renderedAuthoringLayer(
+  target: string,
+  kit: string,
+  root: string,
+  directory?: string,
+): Promise<Record<string, string>> {
+  const into = directory ?? (await mkdtemp(path.join(tmpdir(), "threenative-authoring-")));
+  try {
+    for (const file of ["AGENTS.md", "CLAUDE.md"])
+      await cp(path.join(root, kit, file), path.join(into, file));
+    await copyAgentFiles(into, root);
+    await renderTemplate(into, templateReplacements(target));
+    return await hashFiles(into);
+  } finally {
+    if (directory === undefined) await rm(into, { force: true, recursive: true });
+  }
+}
+
+function packageVersion(root: string): string {
+  const manifest = JSON.parse(
+    readFileSync(path.join(path.dirname(root), "package.json"), "utf8"),
+  ) as { version?: unknown };
+  if (typeof manifest.version !== "string")
+    throw new Error("TN_AUTHORING_LAYER_VERSION: create-threenative has no version.");
+  return manifest.version;
+}
+
+async function writeAuthoringStamp(
+  target: string,
+  kit: string,
+  files: Readonly<Record<string, string>>,
+  root: string,
+): Promise<void> {
+  const stamp: IAuthoringStamp = { createThreenative: packageVersion(root), kit, files };
+  await mkdir(path.join(target, path.dirname(AUTHORING_STAMP)), { recursive: true });
+  await writeFile(path.join(target, AUTHORING_STAMP), `${JSON.stringify(stamp, null, 2)}\n`);
+}
+
+async function readJsonRecord(file: string): Promise<Record<string, unknown> | undefined> {
+  const text = await readFile(file, "utf8").catch(() => undefined);
+  if (text === undefined) return undefined;
+  const value: unknown = JSON.parse(text);
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error(`TN_AUTHORING_LAYER_STAMP: '${file}' is not a JSON object.`);
+  return value as Record<string, unknown>;
+}
+
+/** The game's kit: the stamp, else the `kit.json` older scaffolds copied, else the router title. */
+async function gameKit(
+  game: string,
+  stamp: IAuthoringStamp | undefined,
+  root: string,
+): Promise<string | undefined> {
+  const kits = discoverTemplateNames(root);
+  const kitJson = (await readJsonRecord(path.join(game, "kit.json")))?.name;
+  const title = (await readFile(path.join(game, "AGENTS.md"), "utf8").catch(() => ""))
+    .split("\n", 1)[0]
+    ?.trim();
+  const titleKit =
+    title === undefined ? undefined : (KIT_TITLE.exec(title)?.[1] ?? title.split(" ").at(-1));
+  return [stamp?.kit, kitJson, titleKit].find(
+    (name): name is string => typeof name === "string" && kits.includes(name),
+  );
+}
+
+async function authoringContext(game: string, root: string) {
+  const stamp = (await readJsonRecord(path.join(game, AUTHORING_STAMP))) as
+    | IAuthoringStamp
+    | undefined;
+  return { kit: await gameKit(game, stamp, root), stamp };
+}
+
+const NO_KIT =
+  'no stamp, kit.json or kit router title names a kit; write {"kit": "<kit>"} to .threenative/agent-files.json';
+
+/** The one command that moves create-threenative and the engine packages to one release. */
+const ENGINE_PAIR_UPGRADE = "pnpm up --latest create-threenative @threenative/*";
+
+async function installedCoreVersion(game: string): Promise<string | undefined> {
+  const manifest = await readFile(
+    path.join(game, "node_modules", CORE_PACKAGE_NAME, "package.json"),
+    "utf8",
+  ).catch(() => undefined);
+  if (manifest === undefined) return undefined;
+  try {
+    const version = (JSON.parse(manifest) as { version?: unknown }).version;
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Fails closed before `--fix` writes anything when the installed core is not the release this
+ * create-threenative is built against (PRD-829). The layer it writes names core's MCP shims, and
+ * the page boots the engine `@threenative/runtime-native` ships, so a mixed pair hands the game an
+ * authoring layer whose servers do not start and a page that throws `TN_ABI_6` at boot.
+ */
+async function assertEnginePair(game: string): Promise<void> {
+  const installed = await installedCoreVersion(game);
+  if (installed === CORE_PACKAGE_VERSION) return;
+  const got = installed === undefined ? "no installed core" : `${CORE_PACKAGE_NAME}@${installed}`;
+  throw new Error(
+    `TN_AUTHORING_LAYER_PAIR: this create-threenative pairs with ${CORE_PACKAGE_NAME}@${CORE_PACKAGE_VERSION}, and this game installs ${got}. Run '${ENGINE_PAIR_UPGRADE}' first, then 'pnpm exec threenative doctor --fix'.`,
+  );
+}
+
+/** How far the game's authoring layer is from what the installed create-threenative renders. */
+export async function authoringLayerStatus(
+  game: string,
+  root = templateRoot(),
+): Promise<IAuthoringLayerStatus> {
+  const installed = packageVersion(root);
+  const { kit, stamp } = await authoringContext(game, root);
+  const stamped = stamp?.createThreenative;
+  const versions = { installed, ...(stamped === undefined ? {} : { stamped }) };
+  if (kit === undefined) return { ...versions, problem: NO_KIT, stale: [] };
+  const expected = await renderedAuthoringLayer(game, kit, root);
+  const stale: string[] = [];
+  for (const [file, hash] of Object.entries(expected))
+    if ((await fileHash(path.join(game, file))) !== hash) stale.push(file);
+  for (const file of Object.keys(stamp?.files ?? {}))
+    if (!(file in expected) && existsSync(path.join(game, file))) stale.push(file);
+  return { ...versions, kit, stale: stale.sort() };
+}
+
+/**
+ * `threenative doctor --fix` (PRD-829): re-renders the authoring layer from the installed package with
+ * the scaffold's writers. A file whose bytes still match the stamp is overwritten, an edited one is
+ * kept unless `force`, and a file the package dropped is deleted only when unedited. Without a stamp,
+ * every differing file counts as edited.
+ */
+export async function fixAuthoringLayer(
+  game: string,
+  options: { readonly force: boolean },
+  root = templateRoot(),
+): Promise<IAuthoringLayerFix> {
+  // Before any write: a layer rendered for another release is a layer that does not run.
+  await assertEnginePair(game);
+  assertMcpShims(game);
+  const { kit, stamp } = await authoringContext(game, root);
+  if (kit === undefined) throw new Error(`TN_AUTHORING_LAYER_KIT: ${NO_KIT}.`);
+  const stamped = stamp?.files ?? {};
+  const rendered = await mkdtemp(path.join(tmpdir(), "threenative-authoring-"));
+  const result = { deleted: [] as string[], kept: [] as string[], written: [] as string[] };
+  try {
+    const expected = await renderedAuthoringLayer(game, kit, root, rendered);
+    for (const [file, hash] of Object.entries(expected).sort(([left], [right]) =>
+      left < right ? -1 : 1,
+    )) {
+      const current = await fileHash(path.join(game, file));
+      if (current === hash) continue;
+      if (current !== undefined && current !== stamped[file] && !options.force) {
+        result.kept.push(file);
+        continue;
+      }
+      await mkdir(path.dirname(path.join(game, file)), { recursive: true });
+      await cp(path.join(rendered, file), path.join(game, file));
+      result.written.push(file);
+    }
+    for (const file of Object.keys(stamped).sort()) {
+      if (file in expected) continue;
+      const current = await fileHash(path.join(game, file));
+      if (current === undefined) continue;
+      if (current !== stamped[file] && !options.force) result.kept.push(file);
+      else {
+        await rm(path.join(game, file));
+        result.deleted.push(file);
+      }
+    }
+    await linkClaudeSkills(game);
+    writeHostMcpConfigs(game);
+    await assertMcpConfig(game);
+    await installAuthoringGitignore(game);
+    await assertReferenceBundle(game, root);
+    // The stamp keeps the package's bytes, so a kept edit still reads as edited next time.
+    await writeAuthoringStamp(game, kit, expected, root);
+  } finally {
+    await rm(rendered, { force: true, recursive: true });
+  }
+  return result;
+}
+
 async function runInstall(target: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn("pnpm", ["install"], { cwd: target, stdio: "inherit" });
@@ -916,7 +1245,7 @@ export async function createProject(
     // packaged templates. Nothing in a generated game reads it (PRD-826).
     await rm(path.join(target, "kit.json"), { force: true });
     if (["starter", "collectathon", "adventure", "kart"].includes(template))
-      for (const relative of SHARED_RENDER_SOURCES)
+      for (const relative of ADDED_RENDER_SOURCES)
         await cp(canonicalRenderSourcePath(relative, root), path.join(target, relative));
     await copyTemplateIcon(target, root);
     await copySharedAssets(target, root);
@@ -927,18 +1256,7 @@ export async function createProject(
       await rename(path.join(target, "gitignore"), path.join(target, ".gitignore"));
     }
     await installAuthoringGitignore(target);
-    const projectName = packageName(target);
-    const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
-    const projectId = /^[a-z]/u.test(compactProjectId)
-      ? compactProjectId
-      : `game${compactProjectId}`;
-    // Entries rather than an object literal: these are template tokens, not identifiers. Written as
-    // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
-    // neither ours to rename nor expressible in camelCase.
-    const replacements = Object.fromEntries([
-      ["__PROJECT_NAME__", projectName],
-      ["__PROJECT_ID__", projectId],
-    ]) as Readonly<Record<string, string>>;
+    const replacements = templateReplacements(target);
     await stampTemplateLoading(target, source, root);
     await copyAgentFiles(target, root);
     await renderTemplate(target, replacements);
@@ -947,6 +1265,12 @@ export async function createProject(
     writeHostMcpConfigs(target);
     await assertMcpConfig(target);
     await assertReferenceBundle(target, root);
+    await writeAuthoringStamp(
+      target,
+      template,
+      await renderedAuthoringLayer(target, template, root),
+      root,
+    );
     if (installed) await runInstall(target);
   } catch (error) {
     await discardScaffold(target, existedBefore);

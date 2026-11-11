@@ -1,3 +1,4 @@
+import { readLaunchFlag } from "../debug.js";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or
 // rewrite it freely — every default in here is a starting point, not a framework look.
 //
@@ -14,13 +15,9 @@
 // tier. Those are arguments, supplied by `postprocessing.ts`, yours to change.
 
 import {
-  ACESFilmicToneMapping,
-  AgXToneMapping,
   type Camera,
-  CustomToneMapping,
   type DirectionalLight,
   MaterialBlending,
-  NeutralToneMapping,
   type PerspectiveCamera,
   type RenderTarget,
   type Scene,
@@ -39,7 +36,6 @@ import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
   Fn,
-  If,
   color,
   convertToTexture,
   cross,
@@ -76,17 +72,23 @@ import {
 } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import type { TracedReflections } from "../render/traced-reflections.js";
+import { rendererFacts } from "../renderer-facts.js";
 import { STARTUP_EXPOSURE } from "../renderer.js";
 import { aoRefusal } from "./ao-admission.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
 import { UNREAL_AO_REACH_PX } from "./ao-reach.js";
 import { AutoExposureNode, applyExposure } from "./auto-exposure.js";
+import {
+  RENDERER_TONE_MAPPINGS,
+  type RendererToneMapping,
+  applyRendererToneMapping,
+  isRendererToneMapping,
+} from "./default-tone-mapping.js";
 import { type IExposureSettings, exposureSettings } from "./exposure-settings.js";
 import {
   type ColorGradeOptions,
   FILMIC_CURVE,
   type IFilmicCurve,
-  installFilmicToneMapping,
   resolveColorGrade,
 } from "./filmic-tone-mapping.js";
 import { cacheFallback, giCache } from "./gi-registry.js";
@@ -111,9 +113,10 @@ export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
 
 /**
  * Godot's `Environment.tonemap_mode`: the modes Three.js ships, plus `filmic`, the Unreal 5
- * default curve written in `tonemap.ts`.
+ * default curve written in `tonemap.ts`. The list itself is `RendererToneMapping`'s, one owner
+ * beside `applyRendererToneMapping`, so a mode this accepts is a mode the renderer can install.
  */
-export type TonemapMode = "aces" | "agx" | "filmic" | "neutral";
+export type TonemapMode = RendererToneMapping;
 
 /**
  * SSGI sample budget. The three tiers are the presets SSGINode's own documentation
@@ -132,13 +135,6 @@ const SSGI_QUALITY: Record<SsgiQuality, { sliceCount: number; stepCount: number 
   epic: { sliceCount: 8, stepCount: 16 },
 };
 
-const TONEMAP: Record<TonemapMode, number> = {
-  aces: ACESFilmicToneMapping,
-  agx: AgXToneMapping,
-  filmic: CustomToneMapping,
-  neutral: NeutralToneMapping,
-};
-
 /**
  * Whether this launch draws the transparent draws' own target (see `seesThrough` below).
  *
@@ -149,17 +145,10 @@ const TONEMAP: Record<TonemapMode, number> = {
  * running the same pose both ways.
  */
 export function translucentTargetWanted(): boolean {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
-    string,
-    unknown
-  >;
-  const fromEnv = host.process?.env?.TN_TRANSLUCENT;
-  if (fromEnv === "0" || fromEnv === "false") return false;
-  const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnTranslucent=(?:0|false)(?:&|$)/u.test(query))
-    return false;
-  const set = host.__tnTranslucent;
-  return !(set === false || set === 0 || set === "0" || set === "false");
+  return !readLaunchFlag(
+    { environment: "TN_TRANSLUCENT", global: "__tnTranslucent", query: "tnTranslucent" },
+    "off",
+  );
 }
 
 /**
@@ -790,10 +779,10 @@ export class WorldEnvironment {
         `Unknown ssgiQuality '${String(quality)}'. Use one of: ${Object.keys(SSGI_QUALITY).join(", ")}.`,
       );
     }
-    const tonemapMode = options.tonemapMode ?? "aces";
-    if (TONEMAP[tonemapMode] === undefined) {
+    const tonemapMode = options.tonemapMode ?? "filmic";
+    if (!isRendererToneMapping(tonemapMode)) {
       throw new Error(
-        `Unknown tonemapMode '${String(tonemapMode)}'. Use one of: ${Object.keys(TONEMAP).join(", ")}.`,
+        `Unknown tonemapMode '${String(tonemapMode)}'. Use one of: ${RENDERER_TONE_MAPPINGS.join(", ")}.`,
       );
     }
     resolveColorGrade(options.colorGrade);
@@ -918,31 +907,21 @@ export class WorldEnvironment {
         ? this.#options
         : { ...this.#options, autoExposureEnabled: false };
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
-    raw.toneMapping = TONEMAP[options.tonemapMode];
-    if (options.tonemapMode === "filmic") {
-      // The curve is this game's source, registered as three's custom tone mapping. A renderer
-      // without a node library cannot run it; that frame keeps ACES and says so.
-      const installed = installFilmicToneMapping(
-        renderer.raw,
-        {
-          ...FILMIC_CURVE,
-          ...options.filmicCurve,
-          ...(lookDiagnostics.lutClipOff ? { lutClip: 0 } : {}),
-        },
-        resolveColorGrade(options.colorGrade),
-      );
-      if (installed === undefined) {
-        raw.toneMapping = ACESFilmicToneMapping;
-        console.warn(
-          `TN_TONEMAP ${JSON.stringify({ requested: "filmic", applied: "aces", reason: `renderer:${renderer.kind}` })}`,
-        );
-      }
-    }
+    // One writer of `toneMapping` for the whole engine: the curve this game supplies reaches the
+    // same library the renderer's own default uses, and a renderer without a node library keeps
+    // ACES and reports `TN_TONEMAP` once, here or in the renderer.
+    applyRendererToneMapping(raw, options.tonemapMode, (line) => console.warn(line), {
+      curve: {
+        ...FILMIC_CURVE,
+        ...options.filmicCurve,
+        ...(lookDiagnostics.lutClipOff ? { lutClip: 0 } : {}),
+      },
+      grade: resolveColorGrade(options.colorGrade),
+    });
 
     // Temporal AA is the owned engine's: it jitters the camera and blends the frames ahead of every stage. Any other
     // renderer keeps the spatial filter, and the report says why.
-    const engineInfo = (renderer.raw as { info?: object }).info;
-    const ownedEngine = engineInfo !== undefined && "engine" in engineInfo;
+    const { ownedEngine } = rendererFacts(renderer);
     const temporalRefusal = !options.temporalAA
       ? undefined
       : renderer.kind !== "webgpu"
@@ -1043,14 +1022,13 @@ export class WorldEnvironment {
     const temporalReport = temporal
       ? (): Record<string, unknown> => ({
           method: "traa",
-          ...(engineInfo as { engine?: { temporal?: object } }).engine?.temporal,
+          ...(renderer.raw as { info?: { engine?: { temporal?: object } } }).info?.engine?.temporal,
         })
       : undefined;
-    // Contact occlusion dims the light that comes from around. With the world cache baked the frame's indirect
-    // diffuse is known per pixel, so only that share takes the occlusion and the sun keeps its light, as
-    // Unreal's AO (indirect light only) leaves it. Without a cache (the three.js engine) the whole frame is dimmed.
-    const indirectOcclusion =
-      ownedEngine && giCache.irradiance !== undefined && options.gtaoIndirectOnly;
+    // Contact occlusion dims the light that comes from around. The owned engine writes each pixel's indirect diffuse
+    // light to its own target, so only that share takes the occlusion and the sun keeps its light, as Unreal's AO
+    // (indirect light only) leaves it. Upstream three has no such target, so there the whole frame is dimmed.
+    const indirectOcclusion = ownedEngine && options.gtaoIndirectOnly;
     // Both screen-space stages below darken the frame with an occlusion gathered at the opaque surface's depth, so both
     // must leave the draws composited over it alone (see the MRT's `translucent` output and `translucentFrame`).
     // `TN_TRANSLUCENT=0` or `?tnTranslucent=0` keeps the target off the frame — the occlusion then darkens the sheets
@@ -1209,7 +1187,7 @@ export class WorldEnvironment {
         build: (input) => {
           // The gather reads the lit frame at each ray's hit, so the frame is materialised once and reused.
           const base = convertToTexture(input);
-          const wasmEngine = "engine" in (renderer.raw as { info: object }).info;
+          const wasmEngine = rendererFacts(renderer).ownedEngine;
           // Harness: on the owned engine the gather also answers for the tier below it (the world-space cache), so
           // a ray that hits returns `hit - cache` and the two never add the same light twice (Lumen's tiering,
           // Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp).
@@ -1335,14 +1313,17 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
-          // The reach form occludes indirect light only, so a frame without a baked world cache cannot run it:
-          // the whole-frame multiply it would fall back to darkens the sun, and the threejs arm drops the stage.
+          // The reach form occludes indirect light only, so a frame that cannot tell its indirect share apart (upstream
+          // three with no baked world cache) cannot run it: the whole-frame multiply it would fall back to darkens the sun.
           const refusal = aoRefusal({
             reach: options.gtaoRadius === undefined,
             indirectOnly: options.gtaoIndirectOnly,
             // The preset's own declaration covers the frame whose bake has not finished when the chain is built:
             // the gather's fallback reads the cache at render time, and the registration is the other signal.
-            hasIndirect: options.finalGatherMethod !== "none" || giCache.irradiance !== undefined,
+            hasIndirect:
+              ownedEngine ||
+              options.finalGatherMethod !== "none" ||
+              giCache.irradiance !== undefined,
           });
           if (refusal !== undefined) throw new Error(refusal);
           // GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
@@ -1511,60 +1492,22 @@ export class WorldEnvironment {
           const composited = input
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
             .add(vec4(emitted.mul(float(1).sub(occlusion.r)), 0));
-          const cache = indirectOcclusion ? cacheFallback(view) : undefined;
-          if (cache === undefined) return composited;
-          // The pixel's view-space position from its depth and the camera's projection terms, read live each
-          // render: the engine has no getViewPosition, and a post quad's own camera nodes are the quad's.
-          const term = (index: number) =>
-            uniform(view.projectionMatrix.elements[index] ?? 0).onRenderUpdate(
-              () => view.projectionMatrix.elements[index] ?? 0,
-            );
-          const [p0, p5, p8, p9, p10, p14] = [
-            term(0),
-            term(5),
-            term(8),
-            term(9),
-            term(10),
-            term(14),
-          ];
-          const compose = Fn(() => {
-            const coordinate = uv();
-            const result = vec3(composited.rgb).toVar();
-            const sceneDepth = depth().sample(coordinate).r;
-            const sceneNormal = normal().sample(coordinate).xyz;
-            // The sky and a draw the normal pass skips (an unlit material) keep the whole-frame multiply.
-            If(sceneDepth.lessThan(1).and(sceneNormal.dot(sceneNormal).greaterThan(0.25)), () => {
-              const viewZ = p14.negate().div(sceneDepth.add(p10));
-              const ndc = vec2(
-                coordinate.x.mul(2).sub(1),
-                float(1).sub(coordinate.y).mul(2).sub(1),
-              );
-              const position = vec3(
-                viewZ.negate().mul(ndc.x.add(p8)).div(p0),
-                viewZ.negate().mul(ndc.y.add(p9)).div(p5),
-                viewZ,
-              );
-              // The indirect diffuse the material added: the cache's irradiance times the albedo, in the frame's
-              // units (the gather's own fallback reads it the same way). Only it takes the occlusion, and the
-              // result is never darker than the whole-frame multiply.
-              const indirect = albedo()
-                .rgb.mul(float(1).sub(metal().r))
-                .mul(cache(position, sceneNormal.normalize()))
-                .mul(frameGain);
-              // Only the opaque part of the frame carries that indirect light: a draw composited over it did not receive it.
-              const opaque = input.rgb.sub(translucentFrame);
-              result.assign(
-                max(
-                  opaque
-                    .sub(indirect.mul(float(1).sub(keeps ?? occlusion.r)))
-                    .add(translucentFrame),
-                  composited.rgb,
-                ),
-              );
-            });
-            return vec4(result, input.a);
-          });
-          return compose();
+          if (!indirectOcclusion) return composited;
+          // The indirect diffuse light the materials added, from the engine's own target (hemisphere, ambient,
+          // environment and baked irradiance, never a direct light), in the frame's units. Only it takes the
+          // occlusion, as Unreal's composite multiplies only the indirect term by the AO (UE 5.8.3:
+          // Engine/Shaders/Private/DiffuseIndirectComposite.usf:195). An unlit draw and the sky add none, so
+          // they keep their colour. The result is never darker than the whole-frame multiply.
+          const indirect = textureNode("indirectDiffuse").rgb.mul(frameGain);
+          // Only the opaque part of the frame carries that indirect light: a draw composited over it did not receive it.
+          const opaque = input.rgb.sub(translucentFrame);
+          return vec4(
+            max(
+              opaque.sub(indirect.mul(float(1).sub(keeps ?? occlusion.r))).add(translucentFrame),
+              composited.rgb,
+            ),
+            input.a,
+          );
         },
       }),
       stage({

@@ -196,15 +196,31 @@ export function defineObjectSurface(classes: ISurfaceClasses): void {
 }
 
 // three's scene classes and the `is<Class>` flag each one defines; every light is also `isLight`.
+// type-flags.spec.ts fails when a bound class lacks a flag three's own instance reads true.
 const FLAGGED_CLASSES = [
   "NodeMaterial",
   "MeshBasicNodeMaterial",
   "MeshStandardNodeMaterial",
   "MeshPhysicalNodeMaterial",
   "SpriteNodeMaterial",
+  // Its parent is MeshStandardMaterial, so the material base (Material's direct children) misses it.
+  "MeshPhysicalMaterial",
   "Texture",
   "DataTexture",
   "CanvasTexture",
+  "CubeTexture",
+  "Data3DTexture",
+  "DataArrayTexture",
+  "DepthTexture",
+  "Source",
+  "RenderTarget",
+  "Matrix4",
+  "CatmullRomCurve3",
+  // A particle batch re-sends only the attributes it finds by this flag, as three's idiom has it.
+  "InstancedBufferAttribute",
+  "InstancedBufferGeometry",
+  "InterleavedBufferAttribute",
+  "CompressedTexture",
   "Object3D",
   "Scene",
   "Group",
@@ -244,6 +260,19 @@ export function defineReleaseNoops(classes: Readonly<Record<string, unknown>>): 
   }
 }
 
+/** The flags three's own instance of a listed class reads true. */
+function flagsOf(name: string): string[] {
+  if (name.endsWith("Light")) return [`is${name}`, "isLight"];
+  // three renamed Source to TextureSource and keeps both flags.
+  if (name === "Source") return ["isSource", "isTextureSource"];
+  if (!name.endsWith("NodeMaterial")) return [`is${name}`];
+  // three's node material copies its classic material's defaults, flag included: a
+  // MeshStandardNodeMaterial reads isMeshStandardMaterial, as a physical one reads both.
+  const flags = [`is${name}`, "isNodeMaterial", `is${name.replace("Node", "")}`];
+  if (name === "MeshPhysicalNodeMaterial") flags.push("isMeshStandardMaterial");
+  return flags;
+}
+
 /**
  * Puts three's type flags (`isMesh`, `isCamera`, `isLight`, ...) on a back end's scene classes. A
  * subclass inherits its parent's through the prototype chain, as in three; a missing class is skipped.
@@ -252,12 +281,7 @@ export function defineTypeFlags(classes: Readonly<Record<string, unknown>>): voi
   for (const name of FLAGGED_CLASSES) {
     const cls = classes[name] as Constructor | undefined;
     if (typeof cls !== "function") continue;
-    const flags = name.endsWith("Light")
-      ? [`is${name}`, "isLight"]
-      : name.endsWith("NodeMaterial")
-        ? [`is${name}`, "isNodeMaterial"]
-        : [`is${name}`];
-    for (const flag of flags)
+    for (const flag of flagsOf(name))
       Object.defineProperty(cls.prototype, flag, {
         configurable: true,
         writable: true,

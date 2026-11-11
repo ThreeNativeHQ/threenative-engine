@@ -35,6 +35,21 @@ export type EngineValue =
   | IEngineRef
   | { readonly [key: string]: EngineValue };
 
+/** PRD-828: one rig of an animation tick batch, as the backend takes it. */
+export interface IAnimationTickBatch {
+  /** One entry per rig: the mixer, the rig's action (null when nothing plays), the body it strides from. */
+  readonly mixers: readonly IEngineRef[];
+  readonly actions: readonly (IEngineRef | null)[];
+  readonly roots: readonly (IEngineRef | null)[];
+  /**
+   * Five per rig: the stride interval, this tick's own time, the clip's ground speed, the rate this rule
+   * last applied (0 for none), and the flags word.
+   */
+  readonly values: Float64Array;
+  /** Three per rig, written by the call: stride rate, measured ground speed, flags. */
+  readonly status: Float64Array;
+}
+
 /** What the classes call; the Wasm ABI implements it, and a surface-only runtime refuses every call. */
 export interface IBrowserRuntime {
   readonly debugTelemetry?: DebugTelemetry;
@@ -46,6 +61,11 @@ export interface IBrowserRuntime {
   release(self: IEngineRef): void;
   /** For each ref, how many references other engine objects hold to its object; one call a batch. */
   engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
+  /**
+   * PRD-828: advances a batch of animation rigs in one crossing — the weight ramp, the stride rate and
+   * one mixer step each. A backend that cannot batch leaves it out and the JS loop keeps running.
+   */
+  animTick?(batch: IAnimationTickBatch): void;
   /** A numeric typed array argument crosses as is, no boxed copy; Wasm only. */
   readonly typedArrays?: boolean;
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
@@ -85,7 +105,22 @@ export interface IBrowserRuntime {
   loadGltf?(
     bytes: Uint8Array,
     files?: ReadonlyMap<string, Uint8Array>,
-  ): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
+  ): {
+    readonly scene: IEngineRef;
+    readonly animations: IEngineRef[];
+    /** Every scene in file order; the default scene is one of them. */
+    readonly scenes: IEngineRef[];
+  };
+  /** `loadGltf` on the engine's loader thread (PRD-860), when the module carries it. */
+  loadGltfAsync?(
+    bytes: Uint8Array,
+    files?: ReadonlyMap<string, Uint8Array>,
+  ): Promise<{
+    readonly scene: IEngineRef;
+    readonly animations: IEngineRef[];
+    /** Every scene in file order; the default scene is one of them. */
+    readonly scenes: IEngineRef[];
+  }>;
 }
 
 /**
@@ -105,7 +140,8 @@ type AbiCall =
   | "_tn_get"
   | "_tn_set"
   | "_tn_set_callback"
-  | "_tn_diagnostic_release";
+  | "_tn_diagnostic_release"
+  | "_tn_anim_tick";
 export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
   Partial<
     Record<"_tnw_attribute_view" | "_tnw_attribute_view_release", (...args: number[]) => number>
@@ -157,6 +193,7 @@ type TslCall =
   | "_tn_tsl_release"
   | "_tn_tsl_set"
   | "_tn_tsl_set_uniform"
+  | "_tn_tsl_set_uniforms"
   | "_tn_tsl_effect_parameter"
   | "_tnw_web_set_post"
   | "_tnw_web_compute"
@@ -179,16 +216,29 @@ export interface IAbiHelpers {
   view(): DataView;
 }
 
+/** `tnw_web_load_gltf`'s handles: the default scene, the clips, then every scene in file order. */
+function splitModel(refs: IEngineRef[], scenes: number) {
+  const clipsEnd = refs.length - scenes;
+  return {
+    scene: refs[0] as IEngineRef,
+    animations: refs.slice(1, clipsEnd),
+    scenes: refs.slice(clipsEnd),
+  };
+}
+
 /** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
 export function gltfOf(
   abi: TnAbiModule,
   context: number,
   h: Pick<IAbiHelpers, "scoped" | "alloc"> & { keyOf(pointer: number): IEngineRef },
-): Pick<IBrowserRuntime, "loadGltf"> {
+): Pick<IBrowserRuntime, "loadGltf" | "loadGltfAsync"> {
   // quality-allow: the Emscripten module is read through the exports this call site names, not its full surface.
   const host = abi as unknown as Partial<
     Record<
       | "_tnw_web_load_gltf"
+      | "_tnw_web_load_gltf_begin"
+      | "_tnw_web_load_gltf_done"
+      | "_tnw_web_load_gltf_finish"
       | "_tnw_web_load_error"
       | "_tnw_web_gltf_file"
       | "_tnw_web_gltf_files_clear",
@@ -197,55 +247,98 @@ export function gltfOf(
   >;
   const {
     _tnw_web_load_gltf: load,
+    _tnw_web_load_gltf_begin: begin,
+    _tnw_web_load_gltf_done: done,
+    _tnw_web_load_gltf_finish: finish,
     _tnw_web_load_error: error,
     _tnw_web_gltf_file: file,
     _tnw_web_gltf_files_clear: clearFiles,
   } = host;
   if (load === undefined || error === undefined) return {};
-  return {
-    loadGltf: (bytes, files) =>
+  /** Files the model names by relative uri (shared images), kept for the engine loader's next load. */
+  const stageFiles = (files: ReadonlyMap<string, Uint8Array> | undefined): void => {
+    if (files === undefined || files.size === 0) return;
+    if (file === undefined || clearFiles === undefined)
+      throw new Error(
+        "TN_WASM_GLTF_FILES_UNAVAILABLE: this web engine cannot read a model's image files",
+      );
+    for (const [uri, content] of files) {
+      // tnw_web_gltf_file keeps its own copy, so this scratch is dead once it returns. One scope
+      // per file frees it at once: the peak is one file, not the sum of all of them.
       h.scoped(() => {
-        // Files the model names by relative uri (shared images), read by the engine loader.
-        if (files !== undefined && files.size > 0) {
-          if (file === undefined || clearFiles === undefined)
-            throw new Error(
-              "TN_WASM_GLTF_FILES_UNAVAILABLE: this web engine cannot read a model's image files",
-            );
-          for (const [uri, content] of files) {
-            // tnw_web_gltf_file keeps its own copy, so this scratch is dead once it returns. One scope
-            // per file frees it at once: the peak is one file, not the sum of all of them.
-            h.scoped(() => {
-              const name = h.alloc(abi.lengthBytesUTF8(uri) + 1);
-              abi.stringToUTF8(uri, name, abi.lengthBytesUTF8(uri) + 1);
-              const copy = h.alloc(Math.max(1, content.byteLength));
-              abi.HEAPU8.set(content, copy);
-              file(name, copy, content.byteLength);
-            });
-          }
-        }
+        const name = h.alloc(abi.lengthBytesUTF8(uri) + 1);
+        abi.stringToUTF8(uri, name, abi.lengthBytesUTF8(uri) + 1);
+        const copy = h.alloc(Math.max(1, content.byteLength));
+        abi.HEAPU8.set(content, copy);
+        file(name, copy, content.byteLength);
+      });
+    }
+  };
+  /**
+   * The handles `share(out, capacity, count, scenes)` writes, retried once at the exact size for a
+   * model with many clips.
+   */
+  const handles = (
+    share: (out: number, capacity: number, count: number, scenes: number) => number,
+  ) =>
+    h.scoped(() => {
+      const count = h.alloc(4);
+      const sceneCount = h.alloc(4);
+      for (let capacity = 64; ; ) {
+        const out = h.alloc(HANDLE * capacity);
+        const status = share(out, capacity, count, sceneCount);
+        const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
+        if (status === 0)
+          return splitModel(
+            Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE)),
+            new DataView(abi.HEAPU8.buffer).getUint32(sceneCount, true),
+          );
+        const reason = abi.UTF8ToString(error());
+        if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
+        capacity = needed;
+      }
+    });
+  const loadGltf: NonNullable<IBrowserRuntime["loadGltf"]> = (bytes, files) =>
+    h.scoped(() => {
+      try {
+        stageFiles(files);
+        const data = h.alloc(Math.max(1, bytes.byteLength));
+        abi.HEAPU8.set(bytes, data);
+        return handles((out, capacity, count, scenes) =>
+          load(context, data, bytes.byteLength, out, capacity, count, scenes),
+        );
+      } finally {
+        clearFiles?.();
+      }
+    });
+  if (begin === undefined || done === undefined || finish === undefined) return { loadGltf };
+  return {
+    loadGltf,
+    // PRD-860: the engine parses on its loader thread, so a model that arrives during play costs the
+    // main thread a poll and the hand-over, not the 100-500 ms parse Midway's late fleet froze on.
+    loadGltfAsync: async (bytes, files) => {
+      const ticket = h.scoped(() => {
         try {
+          stageFiles(files);
           const data = h.alloc(Math.max(1, bytes.byteLength));
           abi.HEAPU8.set(bytes, data);
-          const count = h.alloc(4);
-          // Retried once with the exact size when the model has more clips than the first guess.
-          for (let capacity = 64; ; ) {
-            const out = h.alloc(HANDLE * capacity);
-            const status = load(context, data, bytes.byteLength, out, capacity, count);
-            const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
-            if (status === 0) {
-              const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
-              return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
-            }
-            const reason = abi.UTF8ToString(error());
-            if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
-            capacity = needed;
-          }
+          // begin copies the bytes and takes the staged files with it.
+          return begin(data, bytes.byteLength);
         } finally {
           clearFiles?.();
         }
-      }),
+      });
+      if (ticket === 0) throw new Error("TN_WASM_GLTF: the engine refused the load");
+      while (done(ticket) === 0) await new Promise((resolve) => setTimeout(resolve, GLTF_POLL_MS));
+      return handles((out, capacity, count, scenes) =>
+        finish(context, ticket, out, capacity, count, scenes),
+      );
+    },
   };
 }
+
+/** How often a pending engine glTF load is polled: a 4 ms timer costs nothing beside a 100 ms parse. */
+const GLTF_POLL_MS = 4;
 
 /** TSL by name over `tn_tsl_call`, when the module exports it (the product web host does). */
 export function tslOf(
@@ -263,6 +356,7 @@ export function tslOf(
     _tn_tsl_release: release,
     _tn_tsl_set: set,
     _tn_tsl_set_uniform: setUniform,
+    _tn_tsl_set_uniforms: setUniforms,
     _tn_tsl_effect_parameter: effectParameter,
     _tnw_web_set_post: setPost,
     _tnw_web_compute: computeNode,
@@ -422,6 +516,31 @@ export function tslOf(
           const diag = h.diagnostic();
           h.check(setUniform(context, pointer, values, lanes.length, diag), diag, "uniform.value");
         }),
+      // PRD-828: a sync's changed uniforms as one `tn_tsl_set_uniforms` span; absent on an older module.
+      ...(setUniforms === undefined
+        ? {}
+        : {
+            setUniforms: (
+              nodes: readonly number[],
+              counts: readonly number[],
+              lanes: readonly number[],
+            ) =>
+              h.scoped(() => {
+                const ids = h.alloc(Math.max(8, nodes.length * 8));
+                const widths = h.alloc(Math.max(4, counts.length * 4));
+                const values = h.alloc(Math.max(8, lanes.length * 8));
+                const v = h.view();
+                nodes.forEach((node, i) => v.setBigUint64(ids + i * 8, BigInt(node), true));
+                counts.forEach((count, i) => v.setUint32(widths + i * 4, count, true));
+                lanes.forEach((lane, i) => v.setFloat64(values + i * 8, lane, true));
+                const diag = h.diagnostic();
+                h.check(
+                  setUniforms(context, ids, widths, values, nodes.length, diag),
+                  diag,
+                  "uniform.value",
+                );
+              }),
+          }),
     },
   };
 }

@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — nothing depends on it: a fresh Unreal project traces Lumen in software, so the default look does not need hardware ray tracing. It is a cost and quality option for the native desktop host.
 **Complexity:** 7 (HIGH) — 1–5 files in `packages/runtime-native/src/raytracing/` and the trace seam (+1), crosses the native build boundary (+2), complex state: acceleration structures that follow moving meshes (+2), a buffer interop seam between the WebGPU device and the ray tracing device (+2); risk override: none
 **Owner:** João
-**Depends on:** nothing for Phase 1. The deleted Phase 2 would have needed [PRD-603](../Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (`probe-trace.ts` and `radiance-cache.ts`, not started on the epic on 2026-10-21) and [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md) (moving meshes in the trace).
+**Depends on:** nothing for Phase 1. The deleted Phase 2 would have needed [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (`probe-trace.ts` and `radiance-cache.ts`, not started on the epic on 2026-10-21) and [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md) (moving meshes in the trace).
 
 ## Context
 

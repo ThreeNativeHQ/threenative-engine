@@ -1,0 +1,27 @@
+--- a/src/gpuaddr/surface.c
++++ b/src/gpuaddr/surface.c
+@@ -249,14 +249,19 @@
+ 		    PowTwoAlign32(macroAspectRatio, macroAspectAlign);
+ 	}
+ 
+-	// Sony's library ignores any failure, so do the same
+-	GpaError err = HwlReduceBankWidthHeight(
++	// Sony's library ignores any failure, so do the same: HwlReduceBankWidthHeight
++	// has already rewritten pOut->tileinfo with the reduced bank width/height, so
++	// the structure left behind is a usable one and the create succeeds on it.
++	// Failing the call instead rejects surfaces the hardware does support, because
++	// the sanity rule it trips ("bank width * bank height * tile size <= DRAM row")
++	// cannot be met for a multisampled 64 bpp colour format: 4x MSAA RGBA16F at
++	// 1920x1080 lands on it (tile split 256 bytes, bank height align 512), and
++	// sceGnmCreateRenderTarget then returned GNM_ERROR_INTERNAL_FAILURE, which
++	// vulkan-ps4 could only report as VK_ERROR_OUT_OF_DEVICE_MEMORY.
++	(void)HwlReduceBankWidthHeight(
+ 	    tileSize, bpp, flags, numSamples, bankHeightAlign, pipes,
+ 	    &pOut->tileinfo
+ 	);
+-	if (err != GPA_ERR_OK) {
+-		return err;
+-	}
+ 
+ 	//
+ 	// The required granularity for pitch is the macro tile

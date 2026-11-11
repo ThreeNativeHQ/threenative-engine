@@ -166,3 +166,81 @@ export function measureStartupOffscreenBytes(
     warn: offscreenBytes > visibleBytes,
   };
 }
+
+export const ASSET_UNUSED_MARKER = "TN_ASSET_UNUSED";
+
+/**
+ * When to look: long enough for a game to build what its first minute needs, short enough that a
+ * playtest sees it. Not a game constant — the report states it, and a model the game builds later
+ * than this is still a launch wait to move, so the advice holds either way.
+ */
+export const ASSET_UNUSED_AFTER_MS = 60_000;
+
+export const ASSET_UNUSED_FIX =
+  "Nothing in the scene came from these models, which the reveal waited for. If nothing ever " +
+  "builds one, delete its load; if the game builds it later, ctx.assets.prefetch it after the " +
+  "reveal and load it then.";
+
+/** Models the reveal waited for that no scene object came from, `sinceRevealMs` after the reveal. */
+export interface IUnusedModels {
+  readonly bytes: number;
+  readonly files: readonly { readonly bytes: number; readonly path: string }[];
+  readonly fix: string;
+  readonly sinceRevealMs: number;
+}
+
+/**
+ * Which awaited models have no stamped object or geometry anywhere under `root`, hidden nodes
+ * included: a hidden hull is in use, a model nothing ever cloned is dead weight. `undefined` when
+ * every awaited model is in the scene. One stamp walk, no bounds and no frustum.
+ */
+export function measureUnusedModels(
+  resolved: ReadonlyMap<string, IResolvedAsset>,
+  root: Object3D,
+  sinceRevealMs: number,
+): IUnusedModels | undefined {
+  const present = unbilled(() => {
+    const paths = new Set<string>();
+    root.traverse((object) => {
+      const geometry = (object as Object3D & { geometry?: { userData?: unknown } }).geometry;
+      for (const path of [stampOf(object.userData), stampOf(geometry?.userData)])
+        if (path !== undefined) paths.add(path);
+    });
+    return paths;
+  });
+  const files = [...resolved]
+    .filter(([path, asset]) => asset.kind === "model" && !present.has(path))
+    .map(([path, asset]) => ({ bytes: asset.bytes ?? 0, path }))
+    .sort((a, b) => b.bytes - a.bytes);
+  if (files.length === 0) return undefined;
+  return {
+    bytes: files.reduce((sum, file) => sum + file.bytes, 0),
+    files,
+    fix: ASSET_UNUSED_FIX,
+    sinceRevealMs,
+  };
+}
+
+/**
+ * Report `TN_ASSET_UNUSED` once, `ASSET_UNUSED_AFTER_MS` after the reveal: the awaited models no
+ * scene object came from — a load the launch paid for that nothing drew (Midway paid 22.9 MB for
+ * three). Measurement only: a throw costs the report, never the game. Returns the cancel.
+ */
+export function reportUnusedModelsLater(
+  awaited: ReadonlyMap<string, IResolvedAsset>,
+  root: Object3D,
+  gone: () => boolean,
+): () => void {
+  const timer = setTimeout(() => {
+    if (gone()) return;
+    try {
+      const unused = measureUnusedModels(awaited, root, ASSET_UNUSED_AFTER_MS);
+      if (unused !== undefined) console.warn(`${ASSET_UNUSED_MARKER}:${JSON.stringify(unused)}`);
+    } catch (error) {
+      console.warn(
+        `${ASSET_UNUSED_MARKER}_FAILED: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }, ASSET_UNUSED_AFTER_MS);
+  return () => clearTimeout(timer);
+}

@@ -129,3 +129,42 @@ it("requires a real nonempty main draw after idle prewarm abandonment, without w
   expect(Object.hasOwn(mesh, "onBeforeRender")).toBe(false);
   expect(Object.hasOwn(mesh, "onAfterRender")).toBe(false);
 });
+
+// PRD-762: the owned engine binds onBeforeRender alone, after its cull and only for a main-pass draw it
+// submits, and fills `info.render` once render() returns. The forest kit waited on that draw forever.
+it("counts a main draw on an engine that calls onBeforeRender alone", () => {
+  const root = new Object3D();
+  const h = host(() => false);
+  let shared: SharedBatch | undefined;
+  h.setShared = (_key, batch) => {
+    shared = batch;
+  };
+  h.attach = (batch) => {
+    root.add(batch.mesh);
+  };
+  const prewarm = new CellPrewarm(h);
+  prewarm.queuePrewarm(asset);
+  for (let frame = 0; frame < 12; frame++) prewarm.drainPrewarm();
+  if (!shared) throw new Error("Prewarm batch was not minted.");
+  const mesh = shared.mesh;
+  mesh.count = 1;
+  mesh.visible = true;
+  mesh.boundingSphere = new Sphere(new Vector3(), 1);
+  const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 10;
+  camera.lookAt(0, 0, 0);
+  // `calls` is the running total; `drawCalls` is this frame's, and core resets it before the next query.
+  const renderer = { compiling: false, info: { render: { calls: 0, drawCalls: 0 } } };
+  const pending = () =>
+    prewarm.pendingCpuDrawsInView(root, camera, renderer as unknown as IRendererLike);
+  expect(pending()).toBe(1);
+  // A compile render calls the hook too, and draws nothing.
+  renderer.compiling = true;
+  Reflect.apply(mesh.onBeforeRender, mesh, [renderer, root, camera]);
+  renderer.compiling = false;
+  expect(pending()).toBe(1);
+  Reflect.apply(mesh.onBeforeRender, mesh, [renderer, root, camera]);
+  renderer.info.render.calls += 1;
+  renderer.info.render.drawCalls = 0;
+  expect(pending()).toBe(0);
+});

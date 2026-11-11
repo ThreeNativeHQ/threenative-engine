@@ -66,5 +66,35 @@ export function createAssetLoader(options = {}) {
     },
     prefetch: async () => ({ requested: 0, requestedBytes: 0, settled: 0, settledBytes: 0 }),
     startBackgroundFill: async () => {},
+    // core's memo (PRD-860) stores on the web Cache API; a native host has none, so `build` runs every time.
+    memo: async (key, build) => {
+      if (typeof key !== "string" || key === "") throw new Error("TN_ASSET_MEMO_INVALID: key must be a non-empty string.");
+      return build();
+    },
   };
+}
+
+// core's fetchAsset, verbatim in behaviour: the player's fetch (core-host.mjs) reads `tnpk:` urls.
+export async function fetchAsset(assets, path) {
+  const candidates = await assets.resolve(path);
+  const failures = [];
+  let answered = false;
+  let lastError;
+  for (const url of candidates) {
+    let response;
+    try {
+      response = await fetch(url);
+    } catch (error) {
+      lastError = error;
+      failures.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
+      continue;
+    }
+    answered = true;
+    if (response.ok) return response;
+    failures.push(`${url} (status ${String(response.status)})`);
+  }
+  throw new Error(
+    `TN_ASSET_NOT_SERVED: '${path}' is not served by any of ${String(candidates.length)} candidate url(s): ${failures.join("; ") || "none"}.`,
+    answered || candidates.length === 0 ? undefined : { cause: lastError },
+  );
 }

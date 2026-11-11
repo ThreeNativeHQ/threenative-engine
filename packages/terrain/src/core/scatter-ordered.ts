@@ -1,7 +1,7 @@
 import { createRandom } from "@threenative/core";
 import type { Heightfield } from "@threenative/core/world";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
-import type { IBiomeSpec, IFoliageType, IGrassType } from "./biome.js";
+import type { IBiomeSpec, IFoliageType, IGrassType, IUnderstoreySpec } from "./biome.js";
 import { type ICoverField, MATS_FIELD, STAND_FIELD, fieldWeight } from "./cover-field.js";
 import { slopeQuantile } from "./math.js";
 import type { IErosionMaps, IPlacement } from "./types.js";
@@ -103,6 +103,8 @@ export interface IOrderedScatterRules {
   readonly cobbledBed: boolean;
   /** Radius at the widest point of the game's biggest stone, which normalizes a cobble's scale. */
   readonly stoneRadius: number;
+  /** The layer under a closed wood's canopy: how many candidates, and a multiplier per placement. */
+  readonly understorey: IUnderstoreySpec;
 }
 
 /**
@@ -148,6 +150,7 @@ export function orderedScatterRules(spec: IBiomeSpec): IOrderedScatterRules {
     shoreGround: grass.shoreGround,
     cobbledBed: grass.cobbledBed,
     stoneRadius: cover.stoneRadius,
+    understorey: cover.understorey,
     treeAsset: tree.species,
     treeCount: tree.density,
     treeSpacing: tree.spacing,
@@ -223,7 +226,8 @@ export function grassWeight(data: IOrderedScatterField, x: number, z: number): n
   const meadow = clamp01((rules.grassSlopeLimit - slope) / rules.grassSlopeFalloff);
   // One rule, three numbers: the density the biome covers, the height band a meadow fades out at,
   // and the mat field it thins on. A dune field's density runs 0.32, a mat plain's field runs the
-  // cover out below 0.47, a wood's meadow fades out 66 m up. A sixth biome sets the numbers.
+  // cover out below 0.47, a wood's meadow runs to its treeline (PRD-866: a 66 m fade left a cooked
+  // floor's knolls bare, since a tree needs the meadow). A sixth biome sets the numbers.
   const fade =
     rules.grassHeight === null
       ? 1
@@ -298,6 +302,15 @@ export function coverDriftWeight(drift: ICoverFieldDrift, x: number, z: number):
   return drift.offset + drift.amplitude * clamp01((weight - threshold) / span);
 }
 
+/** The understorey the starter woods were graded on: the draws every later layer was placed after. */
+const GRADED_UNDERSTOREY = {
+  attempts: 14000,
+  litter: 1,
+  fern: 1,
+  bush: 1,
+  flower: 1,
+  deadfall: 0,
+} as const;
 const GRASS_FULL = 22;
 const GRASS_THIN = 62;
 
@@ -324,6 +337,7 @@ export function scatterProps(
     [
       "boulder",
       "bush",
+      "deadfall",
       "fern",
       "grass",
       "litter",
@@ -394,6 +408,10 @@ export function scatterProps(
     );
     return depositAtIndex(data, row * data.resolution + column);
   };
+  // A placement draws its own pose from `poseDraw`, and an unplaced one takes that draw and leaves
+  // nothing: a layer on a stream of its own, or a candidate a rule removes, moves no later layer.
+  let poseDraw: () => number = random;
+  let placing = true;
   const put = (asset: string, x: number, z: number, scale: number, suffix = "") => {
     if (!inside(x, z) || (asset !== "riverrock" && asset !== "pebble" && wet(x, z))) return;
     if (data.erosion && asset === "scree" && depositsAt(x, z) < 0.08) {
@@ -433,12 +451,18 @@ export function scatterProps(
     }
     const index = counts[asset] ?? 0;
     const crag = asset === "mountain" || asset === "volcanic" || asset === "reveal";
-    const bedded = temperate && ["boulder", "riverrock", "scree", "pebble"].includes(asset);
+    const bedded =
+      temperate && ["boulder", "riverrock", "scree", "pebble", "deadfall"].includes(asset);
     const normal = crag || bedded ? data.field.normalAt(x, z) : undefined;
     if (crag && normal) {
       normal.y += 0.65;
       normal.normalize();
     }
+    const rotation =
+      crag && normal
+        ? Math.atan2(normal.x, normal.z) + (poseDraw() - 0.5) * 0.6
+        : poseDraw() * Math.PI * 2;
+    if (!placing) return;
     placements.push({
       asset,
       id: `temperate-${asset}:${index}${suffix}`,
@@ -451,17 +475,15 @@ export function scatterProps(
             ? [Math.sin(x * 1.17 + z) * 0.045, 1, Math.cos(z * 1.31 - x) * 0.045]
             : [0, 1, 0],
       position: [x, clampedHeight(data, x, z), z],
-      rotation:
-        crag && normal
-          ? Math.atan2(normal.x, normal.z) + (random() - 0.5) * 0.6
-          : random() * Math.PI * 2,
+      rotation,
       scale,
     });
     counts[asset] = index + 1;
   };
   const nearEye = (x: number, z: number) =>
     clearings.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius * 1.6);
-  const cells = new Map<string, [number, number, number][]>();
+  // Each trunk: x, z, its spacing reach, and its crown scale (0 when the water takes the trunk).
+  const cells = new Map<string, [number, number, number, number][]>();
   const CELL = 7;
   // Poisson disc whose radius follows the stand mask: a closed core packs tight, an edge opens out.
   // There is no per-cell occupancy, because one tree per cell IS the lattice the old rule drew.
@@ -472,6 +494,19 @@ export function scatterProps(
       for (let dx = -1; dx <= 1; dx++)
         for (const [tx, tz, tr] of cells.get(`${cx + dx},${cz + dz}`) ?? [])
           if (Math.hypot(tx - x, tz - z) < Math.max(reach, tr)) return true;
+    return false;
+  };
+  // A crown's shade: a standing trunk within the radius times that tree's own scale, so a veteran
+  // shades wider than a pole and a trunk the water takes shades nothing. The cell ring covers the
+  // tallest tree's radius, so a shade wider than one cell still sees every trunk inside it.
+  const shaded = (x: number, z: number, radius: number) => {
+    const cx = Math.floor(x / CELL);
+    const cz = Math.floor(z / CELL);
+    const ring = Math.ceil((radius * 2) / CELL);
+    for (let dz = -ring; dz <= ring; dz++)
+      for (let dx = -ring; dx <= ring; dx++)
+        for (const [tx, tz, , crown] of cells.get(`${cx + dx},${cz + dz}`) ?? [])
+          if (Math.hypot(tx - x, tz - z) < radius * crown) return true;
     return false;
   };
   const treeAsset = rules.treeAsset;
@@ -506,19 +541,16 @@ export function scatterProps(
     if (crowded(x, z, reach)) continue;
     const key = `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
     const bucket = cells.get(key) ?? [];
-    bucket.push([x, z, reach]);
     cells.set(key, bucket);
     // Age structure from its own field, so a dense core is not one height: most of a stand is
     // mid-sized, a few are veterans, and the young crowd the light gaps.
     const age = sample01(x * 0.021, 7, z * 0.021);
-    put(
-      treeAsset,
-      x,
-      z,
-      temperate
-        ? 0.42 + 1.18 * age ** 1.6 + random() * 0.16
-        : (tundra ? 0.25 : 0.55) + random() * 0.35,
-    );
+    const scale = temperate
+      ? 0.42 + 1.18 * age ** 1.6 + random() * 0.16
+      : (tundra ? 0.25 : 0.55) + random() * 0.35;
+    const standing = !BANK.some(([dx, dz]) => wet(x + dx, z + dz) || nearRiver(x + dx, z + dz));
+    bucket.push([x, z, reach, standing ? scale : 0]);
+    put(treeAsset, x, z, scale);
     // Regeneration at stand edges; ferns stay under established crowns.
     const edge = stand < 0.57;
     for (let i = 0; i < (tundra ? 0 : edge ? 2 : 1); i++) {
@@ -537,28 +569,56 @@ export function scatterProps(
     // The understorey is the layer the wood was missing: bracken and needle litter under a closed
     // canopy, thickets in the light gaps and along the wet ground, all keyed to the same stand mask.
     // Needle litter is a half-metre twig: it is worth 9000 of them and no more, because past sixteen
-    // metres it is sub-pixel and the count is pure host cost.
-    for (let i = 0; i < 14000; i++) {
-      const x = (random() - 0.5) * data.size;
-      const z = (random() - 0.5) * data.size;
-      if (!inside(x, z) || wet(x, z) || nearEye(x, z)) continue;
-      if (slopeDegrees(data, x, z) > 30) continue;
-      const stand = forestWeight(x, z);
-      const damp = hollow(x, z);
-      const open = grassWeight(data, x, z);
-      if (open < 0.28) continue;
-      // Litter: the floor of a closed stand, thickest where the canopy is and under the drip line.
-      if (stand > 0.44 && random() < (stand - 0.4) * 1.9 + damp * 0.25)
-        put("litter", x, z, 0.65 + random() * 1.1);
-      // Bracken: shade and damp, not open meadow.
-      if (stand > 0.4 && damp > 0.25 && random() < damp * 0.55)
-        put("fern", x, z, 0.7 + random() * 0.8);
-      // Thickets: the light gaps, the stand edge and the wet hollow — where a wood lets a bush in.
-      if (stand < 0.66 && random() < 0.05 + damp * 0.16 + (stand < 0.5 ? 0.06 : 0))
-        put("bush", x, z, 0.5 + random() * 1.1);
-      // Meadow flowers want light and a little soil, so they take the gaps, not the canopy floor.
-      if (stand < 0.58 && damp > 0.18 && random() < 0.02 + damp * 0.05)
-        put("poppy", x, z, 0.75 + random() * 0.6);
+    // metres it is sub-pixel and the count is pure host cost. The count and the four chances below
+    // are the file's, so a wood thickens this layer by editing its own row; a multiplier of 1 leaves
+    // every draw of this stream exactly where the graded wood put it.
+    const understoreyPass = (draw: () => number, row: IUnderstoreySpec) => {
+      for (let i = 0; i < row.attempts; i++) {
+        const x = (draw() - 0.5) * data.size;
+        const z = (draw() - 0.5) * data.size;
+        if (!inside(x, z) || wet(x, z) || nearEye(x, z)) continue;
+        if (slopeDegrees(data, x, z) > 30) continue;
+        const stand = forestWeight(x, z);
+        const damp = hollow(x, z);
+        const open = grassWeight(data, x, z);
+        if (open < 0.28) continue;
+        // Litter: the floor of a closed stand, thickest where the canopy is and under the drip line.
+        if (stand > 0.44 && draw() < ((stand - 0.4) * 1.9 + damp * 0.25) * row.litter)
+          put("litter", x, z, 0.65 + draw() * 1.1);
+        // Bracken: shade and damp, not open meadow.
+        if (stand > 0.4 && damp > 0.25 && draw() < damp * 0.55 * row.fern)
+          put("fern", x, z, 0.7 + draw() * 0.8);
+        // Thickets: the light gaps, the stand edge and the wet hollow — where a wood lets a bush in.
+        if (stand < 0.66 && draw() < (0.05 + damp * 0.16 + (stand < 0.5 ? 0.06 : 0)) * row.bush)
+          put("bush", x, z, 0.5 + draw() * 1.1);
+        // Meadow flowers want light and a little soil, so they take the gaps, not the canopy floor.
+        if (stand < 0.58 && damp > 0.18 && draw() < (0.02 + damp * 0.05) * row.flower)
+          put("poppy", x, z, 0.75 + draw() * 0.6);
+        // Deadfall: boughs and logs lie where the stand is closed. Guarded on the row first, so a row
+        // that grows none takes no draw and every graded wood keeps its stream.
+        if (row.deadfall > 0 && stand > 0.5 && draw() < 0.012 * row.deadfall)
+          put("deadfall", x, z, 0.7 + draw() * 0.9);
+      }
+    };
+    // The shared stream leaves this layer where the graded loop left it, whatever the row grows:
+    // a row that thickens the ferns must not move a boulder two layers later. The graded row draws
+    // and places on the shared stream; any other row lets the graded draws pass unplaced and grows
+    // from a stream of its own.
+    const row = rules.understorey;
+    const graded =
+      row.attempts === GRADED_UNDERSTOREY.attempts &&
+      row.litter === 1 &&
+      row.fern === 1 &&
+      row.bush === 1 &&
+      row.flower === 1 &&
+      row.deadfall === 0;
+    placing = graded;
+    understoreyPass(random, { ...row, ...GRADED_UNDERSTOREY });
+    placing = true;
+    if (!graded) {
+      poseDraw = createRandom(rules.seed + 13);
+      understoreyPass(poseDraw, row);
+      poseDraw = random;
     }
   }
   // Tundra and desert are not carpets. Both grow in clumps with bare ground between them, and both
@@ -683,7 +743,8 @@ export function scatterProps(
       }
     }
   }
-  function cover(x: number, z: number, density: number): void {
+  const shadeDraw = createRandom(rules.seed + 14);
+  function coverAt(x: number, z: number, density: number): void {
     if (
       !inside(x, z) ||
       wet(x, z) ||
@@ -716,6 +777,18 @@ export function scatterProps(
       );
     if (rules.scrubBush && random() < 0.02)
       put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.6 + random() * 0.45);
+  }
+  // A crown thins the grass under it: the share of candidates a shaded spot loses, and how far out
+  // a trunk shades the ground. The share is drawn from a stream of its own and a removed candidate
+  // still takes its draws, so the shade moves no blade that it does not remove.
+  function cover(x: number, z: number, density: number): void {
+    placing = !(
+      rules.understorey.shade > 0 &&
+      shaded(x, z, rules.understorey.shadeRadius) &&
+      shadeDraw() < rules.understorey.shade
+    );
+    coverAt(x, z, density);
+    placing = true;
   }
   // A cheap carpet on every grass cell; dense detail at all walking/benchmark eyes, not one disc.
   for (let z = -half + 3; z < half - 3; z += rules.grassCell)
@@ -869,7 +942,17 @@ export function scatterProps(
 }
 
 /** What a river or lake must not grow, and what keeps a bank margin: trunks. */
-const GROWING = new Set(["spruce", "sapling", "bush", "fern", "grass", "scrub", "poppy", "litter"]);
+const GROWING = new Set([
+  "spruce",
+  "sapling",
+  "bush",
+  "fern",
+  "grass",
+  "scrub",
+  "poppy",
+  "litter",
+  "deadfall",
+]);
 const TRUNKS = new Set(["spruce", "sapling"]);
 const BANK = [
   [0, 0],

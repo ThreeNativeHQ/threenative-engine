@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { watchAssets } from "@threenative/assets";
 import react from "@vitejs/plugin-react";
 import {
+  createEngineCatalogPlugin,
   createEngineFreshnessPlugin,
   createWebBrandPlugin,
   webRuntimeDecoders,
@@ -36,10 +37,13 @@ export default defineConfig({
   plugins: [
     createEngineFreshnessPlugin(),
     createWebBrandPlugin(),
+    createEngineCatalogPlugin(),
     react(),
     tailwindcss(),
     assetsWatchPlugin(),
   ],
+  // `index.html` runs the game in a worker (the default); `main.html` runs it on the page thread.
+  build: { rollupOptions: { input: { index: "index.html", main: "main.html" } } },
   server: {
     watch: {
       ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],

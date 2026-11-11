@@ -1,6 +1,7 @@
 import {
   BoxGeometry,
   Group,
+  Layers,
   Mesh,
   MeshStandardMaterial,
   type Object3D,
@@ -10,19 +11,36 @@ import {
   Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
-import { AUTO_BATCH_MARKER, AutoBatch, isAutoBatchMerged } from "../src/auto-batch.js";
+import {
+  AUTO_BATCH_MARKER,
+  AutoBatch,
+  drawWorld,
+  isAutoBatchMerged,
+  isAutoBatchSource,
+} from "../src/auto-batch.js";
 import { Registry } from "../src/entities.js";
+import { markStreamedGeometry, upgradeStreamedGeometry } from "../src/model-lod.js";
 import { ScenePicker } from "../src/picking.js";
 import { type IViewportSize, Viewport } from "../src/viewport.js";
 import { warmUpScene } from "../src/warmup.js";
 import { TerrainTiles } from "../src/world-tiles.js";
 
-/** Meshes the renderer would walk: every visible mesh still in the graph. */
+/** The layers a default camera renders. */
+const cameraLayers = new Layers();
+
+/** Whether core's world draw draws this object: visible, and in a layer the camera renders. */
+function drawn(object: Object3D): boolean {
+  return drawWorld(() => object.visible && object.layers.test(cameraLayers));
+}
+
+/** Meshes the renderer would draw: every visible mesh still in the graph that passes the layer test. */
 function draws(scene: Scene): number {
   let count = 0;
-  scene.traverseVisible((object) => {
-    if ((object as Mesh).isMesh === true) count += 1;
-  });
+  drawWorld(() =>
+    scene.traverseVisible((object) => {
+      if ((object as Mesh).isMesh === true && object.layers.test(cameraLayers)) count += 1;
+    }),
+  );
   return count;
 }
 
@@ -153,6 +171,22 @@ describe("AutoBatch", () => {
     expect(batch.census.optedOut).toBe(6);
   });
 
+  // Review of #643: the full model replaces a streamed coarse geometry in place, and a merged copy
+  // of the coarse vertices would keep drawing coarse after it lands.
+  it("leaves a streamed coarse model out of the merge until its full file lands", () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    town(6, group);
+    const coarse = group.children[0] as Mesh;
+    markStreamedGeometry(coarse.geometry);
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    expect(draws(scene)).toBe(3);
+    expect(isAutoBatchSource(coarse)).toBe(false);
+    upgradeStreamedGeometry(coarse.geometry, new BoxGeometry());
+  });
+
   it("leaves a mesh that moves while the scene settles out of the merge", () => {
     const scene = new Scene();
     const group = new Group();
@@ -165,7 +199,7 @@ describe("AutoBatch", () => {
       spinner.updateMatrixWorld(true);
       batch.update();
     }
-    expect(spinner.visible).toBe(true);
+    expect(drawn(spinner as Mesh)).toBe(true);
     expect(draws(scene)).toBe(1 + 2);
     expect(batch.census.unsettled).toBe(1);
   });
@@ -180,13 +214,13 @@ describe("AutoBatch", () => {
     const plate = meshes[4] as Mesh;
     // Still the game's object in the game's place, so rays and `userData` keep answering from it.
     expect(plate.parent).toBe(group);
-    expect(plate.visible).toBe(false);
+    expect(drawn(plate as Mesh)).toBe(false);
     const merged = scene.children.find((child) => isAutoBatchMerged(child)) as Mesh;
     const position = merged.geometry.getAttribute("position");
     const before = Array.from(position.array as Float32Array).filter((value) => value !== 0).length;
     plate.position.y = -3;
     batch.update();
-    expect(plate.visible).toBe(true);
+    expect(drawn(plate as Mesh)).toBe(true);
     expect(batch.census.restored).toBe(1);
     expect(draws(scene)).toBe(3);
     // Its 24 vertices collapsed to the origin, so the merged mesh no longer draws it.
@@ -263,7 +297,7 @@ describe("AutoBatch", () => {
     expect(draws(scene)).toBe(2);
     group.position.x = 5;
     batch.update();
-    expect(meshes.every((mesh) => mesh.visible)).toBe(true);
+    expect(meshes.every((mesh) => drawn(mesh))).toBe(true);
     expect(draws(scene)).toBe(10);
   });
 
@@ -293,7 +327,7 @@ describe("AutoBatch", () => {
     const batch = new AutoBatch(scene, { settleFrames: 3, guard: "everyFrame" });
     run(batch, 20);
     const hidden = pieces[5] as Mesh;
-    expect(hidden.visible).toBe(false);
+    expect(drawn(hidden as Mesh)).toBe(false);
     const elements = hidden.matrix.elements;
     let reads = 0;
     Object.defineProperty(hidden.matrix, "elements", {
@@ -308,7 +342,7 @@ describe("AutoBatch", () => {
     expect(reads).toBe(1);
     elements[12] = (elements[12] as number) + 2;
     batch.update();
-    expect(hidden.visible).toBe(true);
+    expect(drawn(hidden as Mesh)).toBe(true);
     expect(batch.census.restored).toBe(1);
   });
 
@@ -321,7 +355,7 @@ describe("AutoBatch", () => {
     entities.add("plate", { parts: { plate: meshes[3] } });
     const batch = new AutoBatch(scene, { entities, settleFrames: 3 });
     run(batch, 8);
-    expect(meshes[3]?.visible).toBe(true);
+    expect(drawn(meshes[3] as Mesh)).toBe(true);
     expect(draws(scene)).toBe(1 + 2);
     expect(batch.census.heldByEntities).toBe(1);
   });
@@ -380,7 +414,7 @@ describe("AutoBatch", () => {
     const plate = meshes[4] as Mesh;
     plate.position.y = -3;
     run(batch, 3);
-    expect(plate.visible).toBe(true);
+    expect(drawn(plate as Mesh)).toBe(true);
     expect(batch.census.restored).toBe(1);
     expect(draws(scene)).toBe(3);
     // Rewatched in the frame it gave back, without that source.
@@ -388,6 +422,37 @@ describe("AutoBatch", () => {
     run(batch, 3);
     expect(batch.census.restored).toBe(1);
     expect(cost.autoBatchJsSourceChecks).toBeUndefined();
+  });
+
+  // PRD-828: the ancestors' stamps are the engine's to compare, not a JS read per ancestor per frame.
+  it("on the native engine has the engine watch the sources' ancestors", () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    town(10, group);
+    let ancestors: readonly Object3D[] = [];
+    let moved: number[] = [];
+    const engine = scene as Scene & Record<string, unknown>;
+    engine.__tnGuardWatch = (sources: readonly Mesh[], watchedAncestors: readonly Object3D[]) => {
+      ancestors = watchedAncestors;
+      return sources.length;
+    };
+    engine.__tnGuardCheck = () => [];
+    engine.__tnGuardCheckAncestors = () => {
+      const changed = moved;
+      moved = [];
+      return changed;
+    };
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    expect(ancestors).toEqual([group]);
+    expect(draws(scene)).toBe(2);
+    // The engine reports the group moved; the group's own fields did not change, so only the engine's
+    // answer can give its sources back.
+    moved = [0];
+    run(batch, 1);
+    expect(batch.census.restored).toBe(10);
+    expect(ancestors).toEqual([]);
   });
 
   it("checks every source each frame on request", () => {
@@ -465,5 +530,74 @@ describe("AutoBatch", () => {
     run(batch, 8);
     expect(draws(scene)).toBe(10);
     expect(lines.join("\n")).toContain('"enabled":false');
+  });
+});
+
+describe("AutoBatch leaves what the game reads as the game wrote it", () => {
+  function merged(): { scene: Scene; group: Group; meshes: Mesh[]; batch: AutoBatch } {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    const meshes = town(10, group);
+    const batch = new AutoBatch(scene, { settleFrames: 3, guard: "everyFrame" });
+    run(batch, 8);
+    return { scene, group, meshes, batch };
+  }
+
+  it("keeps a merged source out of the draw with its visible and layer mask untouched", () => {
+    const { meshes } = merged();
+    const stick = meshes[4] as Mesh;
+    expect(isAutoBatchSource(stick)).toBe(true);
+    expect(stick.visible).toBe(true);
+    expect(stick.layers.mask).toBe(1);
+    expect(drawn(stick)).toBe(false);
+    // Outside the world draw a ray or the game's own layer test still finds it.
+    expect(stick.layers.test(cameraLayers)).toBe(true);
+  });
+
+  it("a warm-up that shows hidden objects and hides them again leaves a merged source drawn", () => {
+    // Midway's shader warm-up: show every hidden object, compile, put the hidden ones back. It hid the
+    // cockpit's control stick and gauge needles for good while AutoBatch hid sources through `visible`.
+    const { group, meshes, batch } = merged();
+    const stick = meshes[4] as Mesh;
+    const hidden: Object3D[] = [];
+    group.traverse((object) => {
+      if (!object.visible) {
+        hidden.push(object);
+        object.visible = true;
+      }
+    });
+    batch.update();
+    for (const object of hidden) object.visible = false;
+    batch.update();
+    expect(stick.visible).toBe(true);
+    expect(drawn(stick) || isAutoBatchSource(stick)).toBe(true);
+  });
+
+  it("a clone of a merged source draws", () => {
+    const { meshes } = merged();
+    const copy = (meshes[4] as Mesh).clone();
+    expect(copy.visible).toBe(true);
+    expect(drawn(copy)).toBe(true);
+  });
+
+  it("a source the game hides stays hidden when it is given back", () => {
+    const { scene, meshes, batch } = merged();
+    const plate = meshes[4] as Mesh;
+    plate.visible = false;
+    batch.update();
+    expect(isAutoBatchSource(plate)).toBe(false);
+    expect(plate.visible).toBe(false);
+    expect(draws(scene)).toBe(2);
+  });
+
+  it("a layer the game enables on a merged source writes through and gives it back", () => {
+    const { meshes, batch } = merged();
+    const plate = meshes[4] as Mesh;
+    plate.layers.enable(3);
+    batch.update();
+    expect(isAutoBatchSource(plate)).toBe(false);
+    expect(plate.layers.isEnabled(3)).toBe(true);
+    expect(drawn(plate)).toBe(true);
   });
 });

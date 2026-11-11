@@ -55,9 +55,11 @@ export function setupLighting(
   key.shadow.camera.right = extent;
   key.shadow.camera.top = extent;
   key.shadow.camera.bottom = -extent;
-  // Small biases: a large normal bias is what lifted the mannequin's shadow off its own feet.
+  // Small biases: a large normal bias is what lifted the mannequin's shadow off its own feet. The
+  // arena's solids cast from their sun-facing faces (`materials.ts`), which speckles those faces at
+  // 5 mm of normal bias; 15 mm keeps them clean and the feet still meet their shadow.
   key.shadow.bias = -0.0002;
-  key.shadow.normalBias = 0.005;
+  key.shadow.normalBias = 0.015;
   scene.add(key);
   // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
   // shadow map, so `setupPost` needs the light itself.

@@ -53,7 +53,16 @@ export type {
  * Optimizes self-contained GLB models through the configured geometry and embedded-texture passes.
  * @situation reduce a model's download and GPU footprint
  * @situation optimize a GLB before shipping it with a game
+ * @situation texture bytes too big after the model cook
+ * @situation a KTX2 model texture came out larger than its WebP or JPEG source
+ * @situation choose ETC1S or UASTC for a model's embedded textures
+ * @situation model texture codec ladder
+ * @situation keep smaller source texture
+ * @situation TN_ASSETS_COMPRESSION_SKIPPED
  * @constraint the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output
+ * @constraint each colour texture climbs a codec ladder (ETC1S, then UASTC with RDO, then plain UASTC) and keeps the smallest rung that meets the quality floor (SSIM 0.95, ΔE00 3); a data slot such as a normal or metallic-roughness map takes UASTC only, as ETC1S is forbidden there (`TN_ASSETS_TEXTURE_SLOT_CODEC`); a result is kept only when it is smaller than the source, else the source stays and the report says `not-smaller`
+ * @constraint a PNG or JPEG source can always be kept; a WebP source can be kept only on a web target, whose runtimes all decode WebP, so on desktop and mobile it always becomes KTX2
+ * @override `textures: { overrides: [{ slot: "baseColorTexture", codec: "uastc" }] }` forces one glTF slot's codec (`etc1s`, `uastc` or `none`); `textures: { floor }` moves the quality floor; `textures: "none"` keeps every embedded texture as authored
  * @example const pass = modelPass({ simplify: { ratio: 0.5 } });
  */
 export { modelPass } from "./passes/model.js";

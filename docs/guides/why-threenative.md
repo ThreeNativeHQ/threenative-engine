@@ -89,4 +89,4 @@ See [Compare engines](comparison.md) for Godot, Unity and Unreal side by side, o
 ## Source
 
 - [Value proposition and its evidence](../strategy/VALUE-PROPOSITION.md)
-- [Capability manifest](../../packages/create-threenative/capabilities.json)
+- [Capability manifest](../../packages/core/capabilities.json)

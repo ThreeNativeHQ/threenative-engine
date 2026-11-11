@@ -1,3 +1,4 @@
+import { runsGameInWorker } from "./worker-probe.js";
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
 import { advanceFixedStep, completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, sampleSightLine, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
@@ -12,7 +13,7 @@ import {
   pairObservations,
   readCaptureProvenance,
 } from "./observationSampling.js";
-import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, PRESENTATION_BOUND_MS, safePart, SCREENSHOT_TIMEOUT_MS, withPageCause } from "./shared.js";
+import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart, SCREENSHOT_TIMEOUT_MS, withPageCause } from "./shared.js";
 import {
   failedDiagnosticsAssertion,
   ManagedServerError,
@@ -50,7 +51,7 @@ import {
 } from "../index.js";
 import type { IPlaytestObservationSnapshot } from "../protocol.js";
 import { assertCaptureNotBlank, CaptureGuardError, collectRegionalTone } from "../capture.js";
-import { retakeWhileBlank } from "./capture-retry.js";
+import { captureWithRetry } from "./capture-retry.js";
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
@@ -66,7 +67,7 @@ import { withScenarioClock, type IStandalonePlaytestConfig } from "./config.js";
 import { frameDisplay } from "../evaluators/frame-cost.js";
 import {
   provideDisplay,
-  runNeedsPixels,
+  requiresPixels,
   type IProvidedDisplay,
 } from "./captureEnvironment.js";
 import {
@@ -200,13 +201,6 @@ interface IStandalonePlaytestInternalOptions extends IStandalonePlaytestRunOptio
 /** The page runs its game in a worker, so the run relaunches with that thread's measurement flags. */
 class WorkerGameRelaunch extends Error {}
 
-/** A worker host installs its platform source in the worker before the game starts (PRD-752). */
-async function runsGameInWorker(page: Page): Promise<boolean> {
-  for (const worker of page.workers()) {
-    if ((await worker.evaluate("typeof globalThis.__tnGamePlatform").catch(() => undefined)) === "object") return true;
-  }
-  return false;
-}
 
 export async function runStandalonePlaytest(
   config: IStandalonePlaytestConfig,
@@ -361,7 +355,7 @@ async function runStandalonePlaytestOnce(
   // Pixel-producing runs have their display handled by the runner itself now (a private Xvfb
   // whenever Linux offers no usable X display), so the wrapper-only preflight advice is
   // muted exactly where provisioning answers it; every other run keeps it.
-  const needsPixels = options.remoteBrowser === undefined && (completionLabel !== undefined || runNeedsPixels(activeConfig, scenario));
+  const needsPixels = options.remoteBrowser === undefined && (completionLabel !== undefined || activeConfig.headless !== true || requiresPixels(scenario));
   const preflight = needsPixels ? undefined : preflightDisplay(activeConfig, scenario);
   if (preflight !== undefined) {
     process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
@@ -597,11 +591,8 @@ async function runStandalonePlaytestOnce(
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
     const visualAssertions = scenario.assert?.visual ?? [];
     const hasElementBoundVisualRegion = visualAssertions.some(({ region }) => region !== undefined && "element" in region);
-    const needsCapture = scenario.artifacts?.screenshots !== false
-      || scenario.steps.some((step) => step.screenshot !== undefined)
-      || wantsVisual || (scenario.assert?.tone?.length ?? 0) > 0;
     const requiresWebGpuProvenance = browserConfig.browserArgs?.includes("--enable-unsafe-webgpu") === true;
-    const captureProvenance = scenario.bootFailure === undefined && (needsCapture || requiresWebGpuProvenance)
+    const captureProvenance = scenario.bootFailure === undefined && (requiresPixels(scenario) || requiresWebGpuProvenance)
       ? await readCaptureProvenance(page, browserConfig, scenario)
       : undefined;
     if (captureProvenance !== undefined) {
@@ -649,49 +640,41 @@ async function runStandalonePlaytestOnce(
         ? await sampleVisualElementBounds(activePage, visualAssertions)
         : undefined;
       let png: Buffer;
-      try {
-        png = await activePage.screenshot(options);
-      } catch (error) {
-        try {
-          const fallback = await captureVisualSurface(
-            activePage,
-            typeof options?.path === "string" ? options.path : undefined,
-          );
-          if (fallback === undefined) throw error;
-          png = fallback;
-        } catch {
-          throw error;
+      const shoot = async (retake: boolean): Promise<IVisualPageCapture> => {
+        if (retake) {
+          if (captureElementBounds) elementRegions = await sampleVisualElementBounds(activePage, visualAssertions);
+          try {
+            png = await activePage.screenshot(options);
+          } catch {
+            // The first shot stands; its blank verdict is what gets reported below.
+          }
+        } else {
+          try {
+            png = await activePage.screenshot(options);
+          } catch (error) {
+            try {
+              const fallback = await captureVisualSurface(
+                activePage,
+                typeof options?.path === "string" ? options.path : undefined,
+              );
+              if (fallback === undefined) throw error;
+              png = fallback;
+            } catch {
+              throw error;
+            }
+          }
         }
-      }
-      try {
         const stats = assertCaptureNotBlank(png, label);
         if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
         tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
         return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
+      };
+      try {
+        return await captureWithRetry(shoot, presentationGrace);
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
-        try {
-          return await retakeWhileBlank(
-            async () => {
-              if (captureElementBounds) elementRegions = await sampleVisualElementBounds(activePage, visualAssertions);
-              try {
-                png = await activePage.screenshot(options);
-              } catch {
-                // The first shot stands; its blank verdict is what gets reported below.
-              }
-              const stats = assertCaptureNotBlank(png, label);
-              if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
-              tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
-              return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
-            },
-            presentationGrace,
-            PRESENTATION_BOUND_MS,
-          );
-        } catch (error2) {
-          if (!(error2 instanceof CaptureGuardError)) throw error2;
-          captureFailure ??= { code: error2.code, label: error2.label, reason: error2.reason };
-          return undefined;
-        }
+        captureFailure ??= { code: error.code, label: error.label, reason: error.reason };
+        return undefined;
       }
     };
     const captureVisualPage = async (
@@ -708,7 +691,14 @@ async function runStandalonePlaytestOnce(
         );
       }
       try {
-        const png = await captureVisualSurface(activePage, artifactPath);
+        const png = await captureWithRetry(async () => {
+          const shot = await captureVisualSurface(activePage, artifactPath);
+          if (shot === undefined) return undefined;
+          const stats = assertCaptureNotBlank(shot, label);
+          if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
+          tone.push(...collectRegionalTone(shot, scenario.assert?.tone ?? [], label, atStep));
+          return shot;
+        }, presentationGrace);
         if (png === undefined) {
           captureFailure ??= {
             code: "TN_CAPTURE_BLANK",
@@ -717,31 +707,9 @@ async function runStandalonePlaytestOnce(
           };
           return undefined;
         }
-        const stats = assertCaptureNotBlank(png, label);
-        if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
-        tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
         return { image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
-        try {
-          const retry = await retakeWhileBlank(
-            async () => {
-              const shot = await captureVisualSurface(activePage, artifactPath);
-              if (shot === undefined) return undefined;
-              const stats = assertCaptureNotBlank(shot, label);
-              if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
-              tone.push(...collectRegionalTone(shot, scenario.assert?.tone ?? [], label, atStep));
-              return shot;
-            },
-            presentationGrace,
-            PRESENTATION_BOUND_MS,
-          );
-          if (retry !== undefined) return { image: retry };
-        } catch (error2) {
-          if (!(error2 instanceof CaptureGuardError)) throw error2;
-          captureFailure ??= { code: error2.code, label: error2.label, reason: error2.reason };
-          return undefined;
-        }
         captureFailure ??= { code: error.code, label: error.label, reason: error.reason };
         return undefined;
       }

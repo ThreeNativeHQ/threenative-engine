@@ -812,8 +812,9 @@ describe("IGame", () => {
     }
     const game = defineGame({
       camera: { projection: "perspective", fov: 60, near: 0.1, far: 2_000 },
-      render: { projection: false, minimumProjectedPixels: 2 },
       renderer: {
+        projection: false,
+        minimumProjectedPixels: 2,
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({
@@ -880,8 +881,8 @@ describe("IGame", () => {
     }
     const game = defineGame({
       camera: { projection: "perspective", fov: 60, near: 0.1, far: 2_000 },
-      render: { minimumProjectedPixels: 2 },
       renderer: {
+        minimumProjectedPixels: 2,
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({
@@ -2472,6 +2473,18 @@ describe("IGame", () => {
     ).toThrow("camera.far");
   });
 
+  it("fails closed at defineGame time on the retired `render` key, naming `renderer`", () => {
+    expect(() =>
+      defineGame({
+        renderer: renderer(testCanvas()),
+        scenes: { test: EmptyScene },
+        start: "test",
+        // @ts-expect-error the retired key: the throw is the runtime half of this pin
+        render: { preferWebGPU: true },
+      }),
+    ).toThrow(/TN_GAME_RENDER_KEY_RENAMED.*renderer/u);
+  });
+
   it("uses scene initial state when config state is absent and lets config win", async () => {
     class StatefulScene extends Scene<{ value: number }> {
       static override readonly initialState = { value: 7 };
@@ -3064,8 +3077,8 @@ describe("IGame", () => {
       }
     }
     const game = defineGame({
-      render: { projection: false },
       renderer: {
+        projection: false,
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({

@@ -27,6 +27,8 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -1463,10 +1465,65 @@ void debug_scene_counts() {
     waste::setDebugEnabled(false);
 }
 
+// core's AutoBatch keeps a merged source out of the draw with `setBatchHidden`. The game's own `visible`
+// is untouched, so a game that saves and restores visibility, or copies the source, sees and copies only
+// what it authored; the draw (`visible()`) honours both.
+void batch_hidden() {
+    Object3D parent, source;
+    parent.add(source);
+    const uint64_t before = source.revision();
+    source.setBatchHidden(true);
+    CHECK(source.revision() != before);   // the renderer's input changed
+    CHECK(!source.visible());              // not drawn
+    CHECK(source.authoredVisible());       // the game still reads its own `visible`
+    std::vector<std::string> seen;
+    parent.traverseVisible(collect, &seen);
+    CHECK(seen.size() == 2);               // traverseVisible is the game's walk: it follows `visible`
+    Object3D copy;
+    copy.copy(source);
+    CHECK(copy.visible() && !copy.batchHidden());  // a copy takes the game's value, never the hide
+    source.setVisible(false);              // the game hides it while merged
+    source.setBatchHidden(false);          // given back: the game's hide stands
+    CHECK(!source.visible() && !source.authoredVisible());
+    source.setVisible(true);
+    CHECK(source.visible());
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"debug_scene_counts", debug_scene_counts}, {"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
+// PRD-860: the web host builds glTF models on a loader thread while the main thread builds its own
+// objects, so the id counters three's ids come from must hand out each id once across threads.
+void concurrent_ids() {
+    constexpr int kThreads = 4, kEach = 20000;
+    std::vector<std::vector<uint64_t>> objects(kThreads), geometries(kThreads), materials(kThreads);
+    const auto produce = [&](int t) {
+        for (int i = 0; i < kEach; ++i) {
+            auto geometry = std::make_shared<BufferGeometry>();
+            auto material = std::make_shared<Material>(MaterialType::Basic);
+            Mesh mesh(geometry, material);
+            objects[t].push_back(mesh.id());
+            geometries[t].push_back(geometry->id);
+            materials[t].push_back(material->id);
+        }
+    };
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+    // A web build without `-pthread` (CI runs this suite as Wasm under node too) cannot start a thread: the
+    // producers run one after another, and the ids must still be unique.
+    for (int t = 0; t < kThreads; ++t) produce(t);
+#else
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kThreads; ++t) threads.emplace_back(produce, t);
+    for (auto& thread : threads) thread.join();
+#endif
+    for (const auto* ids : {&objects, &geometries, &materials}) {
+        std::unordered_set<uint64_t> seen;
+        for (const auto& list : *ids) seen.insert(list.begin(), list.end());
+        CHECK(seen.size() == std::size_t(kThreads) * kEach);
+    }
+}
+
+TN_TEST_MAIN({"batch_hidden", batch_hidden}, {"debug_scene_counts", debug_scene_counts}, {"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
              {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh},
              {"transform_layout", transform_layout}, {"transform_lease", transform_lease},
              {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter},
-             {"unlinked_destruction", unlinked_destruction})
+             {"unlinked_destruction", unlinked_destruction}, {"concurrent_ids", concurrent_ids})

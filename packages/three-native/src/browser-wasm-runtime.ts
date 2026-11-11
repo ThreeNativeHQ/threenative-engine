@@ -398,6 +398,36 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         const v = view();
         return refs.map((_, i) => v.getUint32(out + i * 4, true));
       }),
+    // PRD-828: the rig batch, one crossing. Handles are three words each; a rig without an action or
+    // a stride body repeats its mixer's handle there, and the flags word says which of the two exist.
+    animTick: (batch) => {
+      const count = batch.mixers.length;
+      if (count === 0) return;
+      scoped(() => {
+        const triples = alloc(count * 3 * HANDLE);
+        for (let i = 0; i < count; i += 1) {
+          const at = triples + i * 3 * HANDLE;
+          const mixer = batch.mixers[i] as IEngineRef;
+          writeHandle(at, mixer);
+          writeHandle(at + HANDLE, batch.actions[i] ?? mixer);
+          writeHandle(at + 2 * HANDLE, batch.roots[i] ?? mixer);
+        }
+        const values = alloc(count * 5 * 8);
+        const status = alloc(count * 3 * 8);
+        const v = view();
+        for (let i = 0; i < count * 5; i += 1)
+          v.setFloat64(values + i * 8, batch.values[i] as number, true);
+        const diag = diagnostic();
+        check(
+          abi._tn_anim_tick(context, triples, values, count, status, diag),
+          diag,
+          "tn_anim_tick",
+        );
+        const after = view();
+        for (let i = 0; i < count * 3; i += 1)
+          batch.status[i] = after.getFloat64(status + i * 8, true);
+      });
+    },
     readByte: (address) => abi.HEAPU8[address] as number,
     readWord: (address) => view().getUint32(address, true),
     writeDouble: (address, value) => {

@@ -1,19 +1,27 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
- * The asset decoders the web engine ships: its glTF loader decodes neither KTX2 nor Meshopt (addons/gltf-loader-web.ts), so a
- * native-engine game's models are cooked without it, which is also the cooker's default. `engine: "threejs"` names both.
- * `threenative build` and each template's dev-server asset watch both read it, so the two cook the same bytes.
+ * The asset decoders the web build ships, per format.
+ *
+ * Meshopt geometry decodes on both engines: on `engine: "threenative"` the engine's own glTF loader
+ * decompresses EXT/KHR_meshopt_compression with meshoptimizer, which `pnpm wasm:build` provisions
+ * and without which the `tn-native-engine-web` target refuses to link (PRD-861).
+ *
+ * KTX2 decodes on both engines too: the owned engine transcodes KHR_texture_basisu to BC7 or ETC2
+ * and uploads the blocks, or RGBA8 on a device with neither (PRD-867), and three's KTX2Loader runs
+ * on it. The web cook keeps an authored WebP a KTX2 cannot undercut, so Midway's KTX2 cook is
+ * 98,236,952 B against 125,132,608 B with WebP model textures.
+ *
+ * `threenative build` and each template's dev-server asset watch both read it, so the two cook the
+ * same bytes.
  */
-export function webRuntimeDecoders(config: {
+export function webRuntimeDecoders(_config: {
   readonly engine?: "threejs" | "threenative";
 }): { readonly ktx2: boolean; readonly meshopt: boolean } {
-  return config.engine === "threejs"
-    ? { ktx2: true, meshopt: true }
-    : { ktx2: false, meshopt: false };
+  return { ktx2: true, meshopt: true };
 }
 
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */
@@ -73,14 +81,20 @@ const ENGINE_MATH_MODULES = new Set([
   "three/src/math/Vector2.js",
   "three/src/math/Vector3.js",
   "three/src/math/Vector4.js",
+  // three's loader base classes (browser-loaders.ts): fetch and request tracking, no drawing.
+  "three/src/loaders/Cache.js",
+  "three/src/loaders/FileLoader.js",
+  "three/src/loaders/Loader.js",
+  "three/src/loaders/LoadingManager.js",
 ]);
 /** Where the browser back end's value classes live: only these may import three's math modules. */
-const ENGINE_MATH_IMPORTER = /[\\/](?:browser-math\.ts|web-engine-runtime\.js)(?:\?.*)?$/u;
+const ENGINE_MATH_IMPORTER =
+  /[\\/](?:browser-math\.ts|browser-loaders\.ts|web-engine-runtime\.js)(?:\?.*)?$/u;
 
 export interface IWebEnginePlugin {
   readonly name: string;
   readonly enforce: "pre";
-  configResolved(config: { readonly root: string }): void;
+  configResolved(config: { readonly root: string; readonly command?: "build" | "serve" }): void;
   resolveId(source: string, importer?: string): string | null;
   load(id: string): Promise<string | null>;
 }
@@ -128,15 +142,103 @@ function wasmModule(root: string, explicit: string | undefined): string {
   return entry;
 }
 
+/** The ESM file for a resolved upstream entry. `require.resolve("three")` takes the `require`
+ * condition, `build/three.cjs`, and loading that printed three's THREE_CJS_DEPRECATED warning on
+ * every dev start. A `.cjs` entry is swapped for its package's `exports["."].import`. */
+export function esmEntry(resolved: string): string {
+  if (!resolved.endsWith(".cjs")) return resolved;
+  for (let dir = path.dirname(resolved); dir !== path.dirname(dir); dir = path.dirname(dir)) {
+    const manifest = path.join(dir, "package.json");
+    if (!existsSync(manifest)) continue;
+    const root = (
+      JSON.parse(readFileSync(manifest, "utf8")) as {
+        exports?: { "."?: { import?: unknown; require?: unknown } };
+      }
+    ).exports?.["."];
+    const sameEntry =
+      typeof root?.require === "string" && path.join(dir, root.require) === resolved;
+    return sameEntry && typeof root?.import === "string" ? path.join(dir, root.import) : resolved;
+  }
+  return resolved;
+}
+
 /** Every export name of the project's own upstream three, which the game was written against. */
 async function upstreamNames(root: string): Promise<string[]> {
   const require = createRequire(path.join(root, "package.json"));
   const modules = await Promise.all(
-    UPSTREAM.map((id) => import(pathToFileURL(require.resolve(id)).href) as Promise<object>),
+    UPSTREAM.map(
+      (id) => import(pathToFileURL(esmEntry(require.resolve(id))).href) as Promise<object>,
+    ),
   );
   return [...new Set(modules.flatMap((module) => Object.keys(module)))]
     .filter((name) => name !== "default" && name !== "module.exports")
     .sort();
+}
+
+/** A refused export's error, as `refused` in three-native's browser-entry.ts words it. */
+const REFUSAL = /^(TN_[A-Z0-9_]+): (\S+) is not available on the Wasm engine\.$/u;
+
+type CreateModule = (options: Record<string, unknown>) => Promise<object>;
+
+/**
+ * Every upstream export name the installed Wasm engine refuses, with the code a page throws on its
+ * first use (PRD-830). The runtime decides, not a copy of its rules: the catalog alone marks names
+ * `unsupported` that the runtime binds (WebGPURenderer, pass). This boots the single-thread engine
+ * in Node, binds the project's names as a page does, and reads back each refusal.
+ */
+export async function upstreamRefusals(
+  root: string,
+  wasm?: string,
+): Promise<ReadonlyMap<string, string>> {
+  const entry = wasmModule(root, wasm);
+  const binary = readFileSync(entry.replace(/\.mjs$/u, ".wasm"));
+  const create = ((await import(pathToFileURL(entry).href)) as { default: CreateModule }).default;
+  const { bindWebEngine } = (await import(pathToFileURL(runtimeModule()).href)) as {
+    bindWebEngine: (
+      create: CreateModule,
+      names: readonly string[],
+    ) => Promise<Record<string, unknown>>;
+  };
+  const names = await upstreamNames(root);
+  const bound = await bindWebEngine(
+    (options) =>
+      create({
+        ...options,
+        print: () => {},
+        printErr: () => {},
+        // The web build fetches its .wasm by URL; Node has no page to fetch from.
+        instantiateWasm(
+          imports: WebAssembly.Imports,
+          receive: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void,
+        ) {
+          void WebAssembly.instantiate(binary, imports).then((result) =>
+            receive(result.instance, result.module),
+          );
+          return {};
+        },
+      }),
+    names,
+  );
+  return refusalsOf(bound, names);
+}
+
+/** Each refused name in `bound` (bindUpstreamExports's output) with the code its first use throws. */
+export function refusalsOf(
+  bound: Readonly<Record<string, unknown>>,
+  names: readonly string[],
+): ReadonlyMap<string, string> {
+  const refusals = new Map<string, string>();
+  for (const name of names) {
+    const value = bound[name];
+    if (typeof value !== "function") continue;
+    try {
+      Reflect.ownKeys(value); // a refusal throws on any read, a bound class never does
+    } catch (error) {
+      const match = REFUSAL.exec(error instanceof Error ? error.message : "");
+      if (match?.[2] === name && match[1] !== undefined) refusals.set(name, match[1]);
+    }
+  }
+  return refusals;
 }
 
 export interface IWebEngineOptions {
@@ -146,6 +248,12 @@ export interface IWebEngineOptions {
   readonly engine?: "threejs" | "threenative";
   /** The Wasm engine's ES module, for a workspace build that does not install runtime-native. */
   readonly wasm?: string;
+  /**
+   * Refuse a page without worker threads (TN_WEB_THREADS_OFF). Default: everywhere but a Vite build,
+   * so the dev server, playtests and conformance fail closed while a shipped game still loads: it
+   * falls back to the single-thread engine and warns (owner, 2026-11-08: "so at least the game loads").
+   */
+  readonly strict?: boolean;
 }
 
 /**
@@ -155,6 +263,7 @@ export interface IWebEngineOptions {
  */
 export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEnginePlugin {
   let root = options.root;
+  let strict = options.strict ?? true;
   const native = options.engine === "threenative";
   const projectRoot = (): string => {
     if (root === undefined)
@@ -166,6 +275,7 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
     enforce: "pre",
     configResolved(config) {
       root ??= config.root;
+      strict = options.strict ?? config.command !== "build";
     },
     resolveId(specifier, importer = "") {
       if (!native) return null;
@@ -191,6 +301,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       // three's DecalGeometry clipping, ported over the engine's geometry classes.
       if (source === "three/addons/geometries/DecalGeometry.js")
         return browserModule("web-engine-decal-geometry.js", "addons/decal-geometry.ts");
+      // three's CCD IK solver, ported over the engine's bones and math classes.
+      if (source === "three/addons/animation/CCDIKSolver.js")
+        return browserModule("web-engine-ccd-ik-solver.js", "addons/ccd-ik-solver.ts");
       // Upstream's HDRLoader extends DataTextureLoader, which the engine does not bind; this one
       // decodes with the same RGBE parser into an engine DataTexture.
       if (source === "three/addons/loaders/HDRLoader.js")
@@ -233,19 +346,36 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         throw new Error(
           `TN_WASM_THREADS_MISSING: engine "threenative" needs the threaded Wasm engine at ${threads}; reinstall @threenative/runtime-native, or in a ThreeNative checkout run \`pnpm wasm:build\` (presets wasm and wasm-threads). ${OPT_OUT}`,
         );
-      // Shared memory exists only on a cross-origin-isolated page (COOP + COEP, createWebBrandPlugin
-      // sends them from the dev and preview servers; a static host must send them too).
-      return [
+      // Shared memory exists only on a cross-origin-isolated page (COOP + COEP: createWebBrandPlugin
+      // sends them from the dev and preview servers, and a build's service worker adds them on a host
+      // that sends none). `__tnIsolation` (web-brand's boot script) is pending while it reloads the page.
+      const off = (detail: string): string =>
+        `${THREADS_OFF}: ${detail} Serve the game over https or localhost (the build's service worker adds Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp), or send both headers; on itch.io enable "SharedArrayBuffer support".`;
+      const head = [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
-        "if (globalThis.crossOriginIsolated !== true)",
-        `  throw new Error("${THREADS_OFF}: this page is not cross-origin isolated, so the engine cannot start its worker threads; serve it with the headers Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.");`,
-        `const createModule = (await import(${JSON.stringify(threads)})).default;`,
-        `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
-        'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
-        `  throw new Error(\`${THREADS_OFF}: the engine's job pool started no worker thread (\${globalThis.__tnWebThreads}).\`);`,
-        `export const { ${names.join(", ")} } = engine;`,
-        "",
-      ].join("\n");
+        "if (globalThis.crossOriginIsolated !== true) await globalThis.__tnIsolation;",
+      ];
+      const threadsReport = "${globalThis.__tnWebThreads}";
+      const lines = strict
+        ? [
+            "if (globalThis.crossOriginIsolated !== true)",
+            `  throw new Error(${JSON.stringify(off("this page is not cross-origin isolated, so the engine cannot start its worker threads."))});`,
+            `const createModule = (await import(${JSON.stringify(threads)})).default;`,
+            `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
+            'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
+            `  throw new Error(\`${THREADS_OFF}: the engine's job pool started no worker thread (${threadsReport}).\`);`,
+          ]
+        : [
+            "const createModule = (",
+            "  globalThis.crossOriginIsolated === true",
+            `    ? await import(${JSON.stringify(threads)})`,
+            `    : await import(${JSON.stringify(single)})`,
+            ").default;",
+            `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
+            'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
+            `  console.warn(\`${off(`the engine runs without worker threads (${threadsReport}), so frames cost more.`).replaceAll("`", "\\`")}\`);`,
+          ];
+      return [...head, ...lines, `export const { ${names.join(", ")} } = engine;`, ""].join("\n");
     },
   };
 }

@@ -138,11 +138,14 @@ function referenceValue(property: string, type: string, object: unknown): unknow
  * Wraps a back end's `uniform` so each uniform node it returns answers `.value` (an accessor on the
  * node itself: a V8 node has no prototype of its own to carry it) and three's update hooks. `setValues`
  * writes a node's lanes into the engine. `sync()` runs once per render: the update callbacks first,
- * then the edited objects' lanes, each written only when its lanes changed.
+ * then the edited objects' lanes, each written only when its lanes changed. With `setMany`, every
+ * write of one sync crosses as one call (node i takes `counts[i]` of the packed `lanes`, PRD-828);
+ * a `.value` set outside a sync still goes through `setValues` at once.
  */
 export function liveUniforms<TNode extends object>(
   uniform: (value: unknown, type?: unknown) => TNode,
   setValues: (node: TNode, lanes: readonly number[]) => void,
+  setMany?: (nodes: readonly TNode[], counts: readonly number[], lanes: readonly number[]) => void,
 ): {
   uniform: (value: unknown, type?: unknown) => TNode;
   uniformArray: (
@@ -269,7 +272,36 @@ export function liveUniforms<TNode extends object>(
     }
   };
   const updating = new Set<TNode>();
+  // The render hooks alone: a nested render of a frame whose frame hooks all ran walks only these.
+  const renders = new Set<TNode>();
+  let hookedFrame: number | undefined;
   let frameId = 0;
+  // One sync's writes, sent as one crossing at its end (PRD-828); a write outside a sync goes at once.
+  let batching = false;
+  const pendingNodes: TNode[] = [];
+  const pendingCounts: number[] = [];
+  const pendingLanes: number[] = [];
+  const clear = () => {
+    pendingNodes.length = 0;
+    pendingCounts.length = 0;
+    pendingLanes.length = 0;
+  };
+  // A batch that was refused or never sent (a hook threw) counts as not uploaded: the next sync writes each
+  // node's current value again, so a `.value` set in between is not overwritten by a stale lane.
+  const requeue = () => {
+    for (const node of pendingNodes) {
+      const state = states.get(node);
+      if (state !== undefined) state.lanes = undefined;
+      dirty.add(new WeakRef(node));
+    }
+    clear();
+  };
+  const flush = () => {
+    if (pendingNodes.length === 0 || setMany === undefined) return;
+    setMany(pendingNodes, pendingCounts, pendingLanes);
+    if (debug) count("uniformWriteCrossings");
+    clear();
+  };
   // An unchanged value is not written again: an edited Color or vector is found by its lanes, and a
   // hook that returns the same number every render costs no engine write.
   const write = (node: TNode, state: IUniformState, lanes: readonly number[]) => {
@@ -287,7 +319,14 @@ export function liveUniforms<TNode extends object>(
     // A snapshot for the sink and the state: `lanes` is the state's scratch, refilled by the next
     // extraction, so a sink that keeps its argument must not see later values.
     const written = lanes.slice();
-    setValues(node, written);
+    if (batching) {
+      pendingNodes.push(node);
+      pendingCounts.push(written.length);
+      for (const lane of written) pendingLanes.push(lane);
+    } else {
+      setValues(node, written);
+      if (debug) count("uniformWriteCrossings");
+    }
     if (debug) {
       count("uniformWrites");
       count("uniformLaneWrites", lanes.length);
@@ -330,6 +369,9 @@ export function liveUniforms<TNode extends object>(
             `TN_TSL_UPDATE_UNSUPPORTED: a native uniform updates per frame or render, not per '${updateType}'`,
           );
         if (state.update === undefined) updating.add(node);
+        if (updateType === "render") renders.add(node);
+        else renders.delete(node);
+        hookedFrame = undefined; // a frame hook added mid-frame runs at the next render
         state.update = (frame) => callback.call(node, frame, node);
         state.updateType = updateType;
         if (debug) {
@@ -372,48 +414,63 @@ export function liveUniforms<TNode extends object>(
     },
     /**
      * three's uniformArray(values): `element(i)` at a constant index is a uniform that reads
-     * `values[i]` before each render, as UniformArrayNode copies its array per update. ponytail: a
-     * node index needs an engine uniform array; it is refused by name.
+     * `values[i]` before each render, as UniformArrayNode copies its array per update. A node index
+     * (a Loop's `i`) selects among those uniforms. ponytail: one select per element on each read; an
+     * engine uniform array when a game indexes long arrays.
      */
     uniformArray(values: unknown[]) {
       if (!Array.isArray(values))
         throw new TypeError("TN_TSL_UNIFORM_ARRAY: uniformArray takes an array");
       const elements = new Map<number, TNode>();
-      return {
-        array: values,
-        element(index: unknown): TNode {
-          if (
-            typeof index !== "number" ||
-            !Number.isInteger(index) ||
-            index < 0 ||
-            index >= values.length
-          )
-            throw new RangeError(
-              `TN_TSL_UNIFORM_ARRAY: element needs a constant index in [0, ${values.length})`,
-            );
-          let node = elements.get(index);
-          if (node === undefined) {
-            node = live.uniform(values[index]);
-            // quality-allow: TNode does not expose internal onRenderUpdate hook from WebGPU node system.
-            const updatable = node as unknown as {
-              onRenderUpdate: (callback: () => unknown) => void;
-            };
-            updatable.onRenderUpdate(() => values[index]);
-            elements.set(index, node);
-          }
-          return node;
-        },
+      type IIndexNode = { equal(k: number): { select(a: TNode, b: TNode): TNode } };
+      const element = (index: unknown): TNode => {
+        if (
+          typeof index === "object" &&
+          index !== null &&
+          typeof (index as Partial<IIndexNode>).equal === "function" &&
+          values.length > 0
+        ) {
+          let picked = element(values.length - 1);
+          for (let k = values.length - 2; k >= 0; k--)
+            picked = (index as IIndexNode).equal(k).select(element(k), picked);
+          return picked;
+        }
+        if (
+          typeof index !== "number" ||
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >= values.length
+        )
+          throw new RangeError(
+            `TN_TSL_UNIFORM_ARRAY: element needs a constant index in [0, ${values.length})`,
+          );
+        let node = elements.get(index);
+        if (node === undefined) {
+          node = live.uniform(values[index]);
+          // quality-allow: TNode does not expose internal onRenderUpdate hook from WebGPU node system.
+          const updatable = node as unknown as {
+            onRenderUpdate: (callback: () => unknown) => void;
+          };
+          updatable.onRenderUpdate(() => values[index]);
+          elements.set(index, node);
+        }
+        return node;
       };
+      return { array: values, element };
     },
     sync(extra?: { camera?: unknown; scene?: unknown; frameId?: number }) {
       // `extra.frameId` is the renderer's frame: every render, target draw and compute of one frame
       // shares it. The callbacks see this module's own counter, as three's NodeFrame counts renders.
       const started = debug ? performance.now() : 0;
       if (debug) count("uniformSyncCalls");
+      const outer = !batching;
+      batching = setMany !== undefined;
       try {
         const rendererFrame = extra?.frameId;
         const frame: IUpdateFrame = { ...extra, frameId: ++frameId };
-        for (const node of updating) {
+        // A nested render of a frame whose frame hooks already ran skips them without walking them.
+        const nested = rendererFrame !== undefined && rendererFrame === hookedFrame;
+        for (const node of nested ? renders : updating) {
           const state = states.get(node);
           if (state?.update === undefined) continue;
           if (state.updateType === "frame" && rendererFrame !== undefined) {
@@ -437,6 +494,8 @@ export function liveUniforms<TNode extends object>(
           } else next = state.update(frame);
           if (next !== undefined) (node as { value: unknown }).value = next;
         }
+        // Only once every hook returned: one that threw leaves later frame hooks to the next render.
+        hookedFrame = rendererFrame;
         // Deleted only once written: a sink that throws leaves the rest to retry at the next sync.
         for (const ref of dirty) {
           const node = ref.deref();
@@ -455,7 +514,12 @@ export function liveUniforms<TNode extends object>(
           const state = states.get(node);
           if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
         }
+        flush();
       } finally {
+        if (outer) {
+          batching = false;
+          requeue();
+        }
         if (debug) count("uniformSyncMs", performance.now() - started);
       }
     },

@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — nothing depends on it. A fresh Unreal project traces Nanite through the fallback mesh in software, and PRD-645 declined hardware at its gate. Phase 1 is a cheap re-measure that fires when the revisit condition becomes true.
 **Complexity:** 7 (HIGH) — 6+ files across `packages/runtime-native/src/raytracing/` and `packages/core` (+2), crosses the native build boundary (+2), acceleration structures that follow a view-dependent cut (+2), a cache with an error tolerance (+1); risk override: none
 **Owner:** unassigned
-**Depends on:** [PRD-645](../../done/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md) (done, supplies the hardware trace and the gate numbers). Phases 2 and 3 also need [PRD-694](PRD-694-traces-and-colliders-see-a-clustered-mesh-at-one-fixed-error-not-at-the-camera-cut.md) (the fixed fallback cut) and [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the per-frame GPU trace). Both read NOT STARTED.
+**Depends on:** [PRD-645](../../done/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md) (done, supplies the hardware trace and the gate numbers). Phases 2 and 3 also need [PRD-694](PRD-694-traces-and-colliders-see-a-clustered-mesh-at-one-fixed-error-not-at-the-camera-cut.md) (the fixed fallback cut) and [PRD-603](../../done/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the per-frame GPU trace). Both read NOT STARTED.
 
 ## Context
 

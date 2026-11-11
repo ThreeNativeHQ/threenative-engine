@@ -1,14 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { expect, test } from "vitest";
 import {
   createGuestContext,
   createRecordingConsole,
   createTimers,
-  extractEmbeddedJs,
-  readRuntimeCpp,
+  readRuntimeScript,
 } from "./embedded-js.mjs";
 
 /**
@@ -29,19 +26,7 @@ import {
  * engines with no shared module. The mirror test below fails when the two drift.
  */
 
-const workerCpp = readFileSync(
-  fileURLToPath(new URL("../src/workers/worker_thread.cpp", import.meta.url)),
-  "utf8",
-);
-const registryCpp = readFileSync(
-  fileURLToPath(new URL("../src/workers/worker_registry.cpp", import.meta.url)),
-  "utf8",
-);
-const v8Cpp = readFileSync(
-  fileURLToPath(new URL("../src/js/v8_engine.cpp", import.meta.url)),
-  "utf8",
-);
-const polyfillJs = extractEmbeddedJs(readRuntimeCpp(), "urlPolyfill");
+const polyfillJs = readRuntimeScript("url-worker-polyfill");
 
 function setupWorkerContext(natives = {}) {
   const timers = createTimers();
@@ -52,11 +37,10 @@ function setupWorkerContext(natives = {}) {
     console: consoleShim,
     ...natives,
   });
-  const source = readRuntimeCpp();
-  vm.runInContext(extractEmbeddedJs(source, "fetchPolyfill"), context);
-  vm.runInContext(extractEmbeddedJs(source, "streamsPolyfill"), context);
-  vm.runInContext(extractEmbeddedJs(source, "urlPolyfill"), context);
-  vm.runInContext(extractEmbeddedJs(source, "eventConstructorsSetup"), context);
+  vm.runInContext(readRuntimeScript("fetch-polyfill"), context);
+  vm.runInContext(readRuntimeScript("streams-polyfill"), context);
+  vm.runInContext(readRuntimeScript("url-worker-polyfill"), context);
+  vm.runInContext(readRuntimeScript("event-constructors-setup"), context);
   return { context, consoleShim, timers };
 }
 
@@ -343,31 +327,6 @@ test("should copy transferable binary values across the native worker wire", () 
   expect(observed.typed).toBe(true);
 });
 
-test("should keep the clone matrix identical in the game isolate and the worker isolate", () => {
-  // The two copies are separate engines and cannot share a module, so they are kept in step here.
-  const markers = [
-    "TN_NATIVE_WORKER_CLONE_UNSUPPORTED",
-    "__tnNativeWorkerBinary",
-    "__tnNativeWorkerUndefined",
-    "ArrayBuffer.isView",
-    "CLONE_MAX_DEPTH",
-    "a reference cycle",
-    "a second reference to one object",
-    "a symbol-keyed property",
-    "getOwnPropertySymbols",
-    "Number.isFinite",
-    "isPlainArray",
-    "isPlainObject",
-  ];
-  for (const marker of markers) {
-    expect(polyfillJs, `game isolate lost the clone-matrix marker ${marker}`).toContain(marker);
-    expect(workerCpp, `worker isolate lost the clone-matrix marker ${marker}`).toContain(marker);
-  }
-  // Both must encode and validate before handing anything to the wire.
-  expect(polyfillJs).toContain("const encoded = encodeClone(data)");
-  expect(workerCpp).toContain("const encoded = encodeClone(data)");
-});
-
 // ---------------------------------------------------------------------------
 // should surface worker failures and terminate before runtime teardown
 // ---------------------------------------------------------------------------
@@ -397,15 +356,6 @@ test("should stop delivering to a terminated worker and release its handlers", (
   expect(observed.seen).toEqual(["before"]);
   expect(harness.terminated).toEqual([observed.id]);
   expect(harness.posted).toEqual([]);
-});
-
-test("should keep the worker isolate's failure paths wired to the main isolate", () => {
-  // A handler throw used to be printed inside the worker and swallowed; the caller then waited
-  // on a result that never came and an error that was never sent.
-  expect(workerCpp).toContain("__workerPostError");
-  expect(workerCpp).toMatch(/catch \(e\) \{[\s\S]*__workerPostError\(message\);/u);
-  // A top-level evaluation failure is queued as an ERROR message, not only logged.
-  expect(workerCpp).toMatch(/Error executing code[\s\S]*Type::ERROR/u);
 });
 
 test("should resolve only worker URL forms the packed host proves", () => {
@@ -475,42 +425,6 @@ test("should reject acceptance when the internal worker rollback selector is act
     message: expect.stringContaining("TN_NATIVE_WORKER_ROLLBACK_ACTIVE"),
   });
   expect(harness.created).toEqual([]);
-  expect(readRuntimeCpp()).toContain('std::getenv("THREENATIVE_NATIVE_WORKER_ROLLBACK")');
-  expect(readRuntimeCpp()).toContain("TN_NATIVE_WORKER_ROLLBACK_ACTIVE");
-});
-
-test("should emit worker evidence as complete lines under concurrent logging", () => {
-  const runtimeCpp = readRuntimeCpp();
-  expect(runtimeCpp).toMatch(
-    /const std::string workerCreatedMarker[\s\S]*std::cout << workerCreatedMarker << std::endl;/u,
-  );
-  expect(runtimeCpp).toMatch(
-    /const std::string workerTerminatedMarker[\s\S]*std::cout << workerTerminatedMarker << std::endl;/u,
-  );
-});
-
-test("should drain a stopped worker before reaping it, and join every worker on shutdown", () => {
-  // A worker that called close() has already queued its final result. Reaping it before draining
-  // destroyed that result, so the game saw the worker vanish with no answer.
-  expect(registryCpp).toMatch(/if \(!worker->isRunning\(\) && !worker->hasMessages\(\)\)/u);
-  // Shutdown is idempotent and closes the registry to creation for the Runtime that owns it.
-  expect(registryCpp).toMatch(/if \(!accepting_\) return;\s*\n\s*accepting_ = false;/u);
-  expect(registryCpp).toMatch(/createWorker refused: registry is shut down/u);
-  // …and a later Runtime in the same process re-opens it. The registry is a process-wide
-  // singleton, so a shutdown that closed it permanently would break every Runtime after the
-  // first. Proven behaviourally by the packed registryReopensForASecondRuntime contract.
-  expect(registryCpp).toContain("void WorkerRegistry::open()");
-});
-
-test("should retire each V8 worker task runner before disposing its isolate", () => {
-  const destructorStart = v8Cpp.indexOf("~V8Engine() override {");
-  expect(destructorStart).toBeGreaterThanOrEqual(0);
-
-  const notifyAt = v8Cpp.indexOf("v8::platform::NotifyIsolateShutdown", destructorStart);
-  const disposeAt = v8Cpp.indexOf("isolate_->Dispose()", destructorStart);
-  expect(notifyAt).toBeGreaterThan(destructorStart);
-  expect(disposeAt).toBeGreaterThan(notifyAt);
-  expect(v8Cpp.slice(notifyAt, disposeAt)).toContain("g_platform.get(), isolate_");
 });
 
 // ---------------------------------------------------------------------------
@@ -525,7 +439,6 @@ test("should prove the registry contract against real worker threads", () => {
       "TN_NATIVE_WORKER_CONTRACT:UNVERIFIED — TN_NATIVE_WORKER_BIN unset; " +
         "build threenative-worker-production-test and re-run to execute the packed contract",
     );
-    expect(workerCpp.length).toBeGreaterThan(0);
     return;
   }
 
@@ -548,6 +461,18 @@ test("should prove the registry contract against real worker threads", () => {
     "shutdownJoinsEveryWorker",
     "registryReopensForASecondRuntime",
   ];
+  // Each marker is emitted whole and ends its line, even with worker threads logging at once. A
+  // worker thread may still have written its own "[Worker N" prefix before it on that line.
+  const created = stdout.split("\n").filter((line) => line.includes("TN_NATIVE_WORKER_CREATED"));
+  expect(created.length).toBeGreaterThan(0);
+  for (const line of created) {
+    expect(line).toMatch(/TN_NATIVE_WORKER_CREATED:\{"id":\d+,"engine":"[^"]+"\}$/u);
+  }
+  const terminated = stdout.split("\n").filter((line) => line.includes("TN_NATIVE_WORKER_TERMINATED"));
+  expect(terminated.length).toBeGreaterThan(0);
+  for (const line of terminated) {
+    expect(line).toMatch(/TN_NATIVE_WORKER_TERMINATED:\{"id":\d+\}$/u);
+  }
   const byName = new Map(results.map((row) => [row.name, row]));
   for (const name of required) {
     const row = byName.get(name);

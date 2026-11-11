@@ -17,12 +17,13 @@ import {
 } from "three";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
-import { BENCHMARK } from "../src/render/benchmark.js";
+import { BENCHMARK, posesFor } from "../src/render/benchmark.js";
 import { FAR_FOREST, FAR_FOREST_WORLDS, farForestPlacements } from "../src/render/farForest.js";
 import { HORIZON_WALK_BAND } from "../src/render/horizon.js";
 import { createLoadingScreen } from "../src/render/loading.js";
 import type { IPropPreparationProgress } from "../src/render/propProgress.js";
 import { meadowCover } from "../src/render/scatter.js";
+import { SHADOW_REACH } from "../src/render/sky.js";
 import { OPEN_MEADOW } from "../src/render/terrain.js";
 
 const GAME_URL = new URL("../src/game.ts", import.meta.url);
@@ -250,6 +251,8 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       world: "forest",
       // buildProps reads these module values; the sandbox must carry the production ones, not stubs.
       OPEN_MEADOW,
+      posesFor,
+      SHADOW_REACH,
       BENCHMARK,
       FAR_FOREST,
       FAR_FOREST_WORLDS,
@@ -290,9 +293,12 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       propParts: parts,
       data: { size: 512 },
       spawn: { x: 0, y: 0, z: 0 },
+      groundReady: undefined,
       fallbackSaplingHeight: undefined,
       scatter: { canopy: new Float32Array(0), counts: {}, package: { buckets: [], cellSize: 128 } },
       groundAt: () => ({ height: 0, offset: 0 }),
+      groundSample: () => null,
+      collarGround: { at: () => null },
       // The gate's two settlements, and the look and scenery the build reads.
       land: vi.fn(),
       settle: vi.fn(),

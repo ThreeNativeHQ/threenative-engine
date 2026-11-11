@@ -57,6 +57,16 @@ const SPECIES = [
   "SM_rock01_lod000",
   "SM_rock04_lod000",
   "SM_RockGroup01",
+  // The forest floor's deadfall and fern groups: fallen boughs, logs and the big ferns.
+  "SM_BoughGroup01",
+  "SM_BoughGroup02",
+  "SM_BoughGroup03",
+  "SM_tree_dead",
+  "SM_dead-tree01",
+  "SM_dead-tree02",
+  "SM_FarnGroup01",
+  "SM_FarnGroup02",
+  "SM_FarnGroup03",
 ];
 
 /** The images a model names, read out of its own glTF JSON chunk rather than a manifest. */

@@ -69,10 +69,8 @@ test('every host keeps hit regions to itself instead of forwarding them to the g
   assert.equal(message, 'tn:hit-regions');
   assert.match(android, new RegExp(`HIT_REGIONS_MESSAGE = "${message}"`, 'u'));
   assert.match(ios, new RegExp(`kHitRegions = @"${message}"`, 'u'));
-  // Desktop's runtime hands the frame to the shared overlay seam, which recognises it before it
-  // reaches the game's bridge (the parser moved out of runtime.cpp so the player shares it).
-  const runtime = readFileSync(new URL('../src/runtime.cpp', import.meta.url), 'utf8');
-  assert.match(runtime, /platform::applyUiHitRegionsFrame\(frame\)/u);
+  // The routing itself (hit regions stop at the host) is `threenative-platform-policy-test`; what stays
+  // here is the message name the desktop host recognises.
   const overlay = readFileSync(new URL('../src/platform/ui_overlay.cpp', import.meta.url), 'utf8');
   assert.match(overlay, new RegExp(`"\\\\"${message}\\\\""`, 'u'));
 });
@@ -92,23 +90,14 @@ test('no host serves the UI from file://', () => {
   assert.match(desktop, /threenative:\/\/localhost/u);
 });
 
-test('the iOS host states that it is unproven', () => {
-  // Acceptance criterion 6: iOS is either proven or stated unproven, and no result claims a
-  // platform it did not execute. If someone runs it, this assertion is what they update.
-  assert.match(ios, /UNPROVEN/u);
-});
-
-test('iOS connects selected WebUI before game evaluation and detaches before exit', () => {
+// Attach order, the renderer key, the missing-bundle refusal and the web view's registration are proven
+// by the simulator run (scripts/verify-ios-simulator.mjs, judged by scripts/ios-webui-log.mjs). A
+// launch cannot end the app through either exit path, so these two orderings stay as text.
+test('iOS detaches the UI before either exit from the game', () => {
   const main = readFileSync(new URL('../ios/main.mm', import.meta.url), 'utf8');
-  assert.match(main, /info\[@"TNUIRenderer"\]/u);
-  const created = main.indexOf('mystral::Runtime::create(config)');
-  const attached = main.indexOf('attachIosUiOverlay(');
   const evaluated = main.indexOf('runtime->evalScript(script,');
-  assert.ok(attached > created && attached < evaluated, 'Attach the UI after window creation and before the game starts');
-  assert.match(main.slice(created, evaluated), /TN_UI_BUNDLE_MISSING/u);
   assert.match(main.slice(evaluated), /detachIosUiOverlay\(\)[\s\S]*return 2/u);
   assert.match(main.slice(main.indexOf('runtime->run()')), /detachIosUiOverlay\(\)[\s\S]*return runtime->getExitCode/u);
-  assert.match(ios, /SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER/u);
 });
 
 test.skipIf(process.platform !== 'darwin')('iOS scheme paths remain inside the UI directory after URL decoding and symlink resolution', () => {
@@ -150,80 +139,6 @@ int main(int argc, char** argv) {
   assert.equal(compiled.status, 0, compiled.stderr || compiled.error?.message);
   const result = spawnSync(executable, [join(root, 'ui')], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-});
-
-test('the iOS bridge is registered before the web view copies its configuration', () => {
-  // The web view copies its configuration at init, so a handler added to the original object
-  // afterwards never reaches the page: `webkit.messageHandlers.tnHost` stays undefined, core
-  // falls back to the in-process broker, `__tnUiReceive` is never installed, and the page is a
-  // transparent view over a working game with no error anywhere. That order shipped and failed
-  // the packaged iOS pixel proof with only the game visible.
-  const attach = ios.slice(ios.indexOf('bool attachIosUiOverlay('));
-  const registered = attach.indexOf('addScriptMessageHandler:bridge');
-  const created = attach.indexOf('initWithFrame:');
-  assert.ok(registered >= 0 && created >= 0 && registered < created,
-    'addScriptMessageHandler must come before initWithFrame:configuration:');
-});
-
-test('the iOS host reports page load finish/failure with the webview frame', () => {
-  // iOS captures no WebView JS console into console.json, so a page that never loads is
-  // otherwise invisible. One CI run now discriminates via `loaded:true` (+ frame) or
-  // `loaded:false` (+ reason).
-  assert.match(ios, /WKNavigationDelegate/u);
-  assert.match(ios, /navigationDelegate = bridge/u);
-  assert.match(ios, /TN_UI_OVERLAY:\{\\"loaded\\":true/u);
-  assert.match(ios, /didFailProvisionalNavigation/u);
-  assert.match(ios, /TN_UI_OVERLAY:\{\\"loaded\\":false/u);
-});
-
-test('the iOS scheme handler answers HTTP 200 with CORS and a JavaScript MIME', () => {
-  // The packager emits Vite bundles whose `index.html` carries `crossorigin` module scripts.
-  // Served from the custom scheme with a bare NSURLResponse, WebKit refuses the module, the
-  // bundle never executes, yet `didFinishNavigation` still fires — a blank page with no error
-  // anywhere iOS captures, exactly what the packaged pixel proof showed. Android never hits
-  // this: `WebViewAssetLoader` answers real HTTP semantics already.
-  assert.match(ios, /NSHTTPURLResponse alloc/u);
-  assert.match(ios, /statusCode:200/u);
-  assert.match(ios, /Access-Control-Allow-Origin/u);
-  assert.match(ios, /Access-Control-Allow-Origin" : @"\*"/u);
-  assert.match(ios, /text\/javascript/u);
-  assert.match(ios, /text\/css/u);
-  assert.doesNotMatch(ios, /\[\[NSURLResponse alloc/u);
-  assert.doesNotMatch(ios, /autoresizingMask/u);
-});
-
-test('the iOS overlay is pinned to its parent with constraints', () => {
-  // `parent.bounds` at attach time predates first layout — CI logged a landscape frame on a
-  // portrait app — so the overlay follows the parent through every layout pass instead.
-  assert.match(ios, /translatesAutoresizingMaskIntoConstraints = NO/u);
-  for (const edge of ['topAnchor', 'leadingAnchor', 'trailingAnchor', 'bottomAnchor']) {
-    assert.match(ios, new RegExp(`overlay\\.${edge} constraintEqualToAnchor:parent`, 'u'));
-  }
-});
-
-test('the iOS host probes the page and logs its diagnostics', () => {
-  // iOS captures no WebView JS console, so a bundle that never executes is otherwise invisible.
-  // The document-start probe forwards page errors plus one-shot ready/first-state to the same
-  // `tnHost` handler; the host logs them as `TN_UI_PAGE` and never forwards them to the game.
-  // An error carries the `[error]` marker so the playtest console classification files it as an
-  // error and the run fails with the page's own message.
-  assert.match(ios, /WKUserScript/u);
-  assert.match(ios, /WKUserScriptInjectionTimeAtDocumentStart/u);
-  assert.match(ios, /addUserScript:probe/u);
-  assert.match(ios, /__tnUiReceive/u);
-  assert.match(ios, /first-state/u);
-  assert.match(ios, /unhandledrejection/u);
-  assert.match(ios, /tn:ui-diagnostic/u);
-  assert.match(ios, /TN_UI_PAGE:%@/u);
-  assert.match(ios, /TN_UI_PAGE \[error\]/u);
-});
-
-test('the iOS host logs the overlay frame again on first state delivery', () => {
-  // The frame at navigation finish plus the frame at first state delivery say together whether
-  // the overlay tracked the parent through rotation or froze at attach size.
-  const post = ios.slice(ios.indexOf('bool postIosUiMessage('));
-  assert.match(post, /TN_UI_OVERLAY:\{\\"firstState\\":true/u);
-  assert.match(post, /NSStringFromCGRect\(g_overlay\.frame\)/u);
 });
 
 test('the MRC iOS bridge keeps a non-owning overlay link only while its handler is registered', () => {

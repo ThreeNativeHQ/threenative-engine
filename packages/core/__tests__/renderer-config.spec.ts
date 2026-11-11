@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertNoLegacyRenderKey,
   resolvePlatformResolutionFloor,
   resolveRendererAlphaAntialiasing,
   resolveRendererAntialias,
@@ -128,5 +129,25 @@ describe("resolvePlatformResolutionFloor", () => {
       expect(resolvePlatformResolutionFloor(os), os).toBe(1);
     expect(resolvePlatformResolutionFloor("android")).toBeUndefined();
     expect(resolvePlatformResolutionFloor("ios")).toBeUndefined();
+  });
+});
+
+describe("assertNoLegacyRenderKey", () => {
+  it("names the key that replaced a retired `render`", () => {
+    expect(() => assertNoLegacyRenderKey({ render: { preferWebGPU: true } })).toThrow(
+      /TN_GAME_RENDER_KEY_RENAMED.*renderer/u,
+    );
+  });
+
+  it("states the field mapping, including the scale type and the engine-owned scaleSource", () => {
+    expect(() => assertNoLegacyRenderKey({ render: {} })).toThrow(
+      /resolutionScale \(a number in \(0, 1\] or "auto"\).*android block.*scaleSource.*not an input/su,
+    );
+  });
+
+  it("accepts a config with `renderer` and one with neither key", () => {
+    expect(() => assertNoLegacyRenderKey({ renderer: { preferWebGPU: true } })).not.toThrow();
+    expect(() => assertNoLegacyRenderKey({})).not.toThrow();
+    expect(() => assertNoLegacyRenderKey({ render: undefined })).not.toThrow();
   });
 });

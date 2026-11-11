@@ -176,6 +176,8 @@ interface IPassTsl {
   texture(source: unknown, uv: unknown): unknown;
   uv(): unknown;
   readonly normalView: unknown;
+  /** three's diffuseColor node, when the engine's TSL table has one. */
+  readonly diffuseColor?: unknown;
   /** The TSL constructors the surface decode composes; a table that lacks them refuses by name. */
   readonly floor?: (value: unknown) => unknown;
   readonly vec4?: (...values: unknown[]) => unknown;
@@ -214,14 +216,19 @@ const RESERVED_SLOTS: ReadonlySet<string> = new Set([
   "emissive",
 ]);
 
+/** The pass's own `normalView` spelling of its normal target, which the scene pass draws itself. */
+const passNormals = new WeakSet<object>();
+
 /**
- * Whether a material's `mrtNode` carries this output. The engine's scene pass draws its own colour,
- * depth, velocity, normal and surface targets every frame, so a material writes only the names the pass
- * does not own; a marker value (the pass's own slot) says the same for any other name it reached.
+ * Whether a material's `mrtNode` writes this output. The engine's scene pass draws its own colour, depth, velocity,
+ * normal and surface targets every frame, so the pass's own spellings of them (a slot marker, `normal: normalView`)
+ * stay with the pass. Any other node, under any name, is the material's: a render target's texture of that name
+ * takes it (an impostor bake writes `output` and `normal`, PRD-858).
  */
 export function isCustomMrtOutput(name: string, value: unknown): boolean {
-  if (RESERVED_SLOTS.has(name)) return false;
-  return (value as { isMRTSlot?: boolean } | null)?.isMRTSlot !== true;
+  if (value === null || typeof value !== "object") return false;
+  if ((value as { isMRTSlot?: boolean }).isMRTSlot === true) return false;
+  return !(name === "normal" && (passNormals.has(value) || "__tnNormalView" in value));
 }
 
 /** WebGPU's guaranteed colour-attachment count, and what a device's limit reports here when it answers. */
@@ -286,9 +293,19 @@ export function definePass(
   const slot = (name: string): IMRTSlot => Object.freeze({ isMRTSlot: true, name });
   const output = slot("output");
   const normalView = tsl.normalView;
+  if (normalView !== null && typeof normalView === "object") passNormals.add(normalView);
   const metalness = slot("metalness");
   const roughness = slot("roughness");
-  const diffuseColor = slot("diffuseColor");
+  // three's diffuseColor is a node a material reads (`diffuseColor.a`) and the pass's slot in mrt(); the engine's node
+  // carries the slot marker, so both spellings hold.
+  const engineDiffuse = tsl.diffuseColor;
+  const diffuseColor: IMRTSlot =
+    engineDiffuse !== null && typeof engineDiffuse === "object"
+      ? (Object.defineProperties(engineDiffuse, {
+          isMRTSlot: { value: true },
+          name: { value: "diffuseColor" },
+        }) as IMRTSlot)
+      : slot("diffuseColor");
   const emissive = slot("emissive");
 
   /** A scene pass output: one of the slots, or `normal` as normalView (or vec4(normalView, 0)). */
@@ -606,6 +623,9 @@ export function definePass(
       // reads this name (Renderer::planAux), so the read is the request and no MRT output names it: the occlusion and
       // the gather belong to the opaque surface, and the composite restores what a translucent sheet drew over it.
       if (name === "translucent") return tsl.texture({ name: "translucent" }, tsl.uv());
+      // Each lit draw's indirect diffuse light (hemisphere, ambient, environment, irradiance node; no direct light),
+      // drawn while the post graph reads the name (Renderer::planAux), so an occlusion can darken that share alone.
+      if (name === "indirectDiffuse") return tsl.texture({ name: "indirectDiffuse" }, tsl.uv());
       if (
         (name === "metalness" || name === "roughness") &&
         this.#mrt?.outputs.normal === normalView &&

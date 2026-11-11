@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { watchAssets } from "@threenative/assets";
 import react from "@vitejs/plugin-react";
 import {
+  createEngineCatalogPlugin,
   createEngineFreshnessPlugin,
   createWebBrandPlugin,
   webRuntimeDecoders,
@@ -10,6 +11,10 @@ import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import config from "./threenative.config.js";
 
+/**
+ * Recompiles assets/ into public/ while the dev server runs, so editing a texture does not
+ * need a rebuild. Serve-only by declaration: builds compile through `threenative build`.
+ */
 function assetsWatchPlugin(): Plugin {
   return {
     name: "threenative-assets-watch",
@@ -32,6 +37,7 @@ export default defineConfig({
   plugins: [
     createEngineFreshnessPlugin(),
     createWebBrandPlugin(),
+    createEngineCatalogPlugin(),
     react(),
     tailwindcss(),
     assetsWatchPlugin(),

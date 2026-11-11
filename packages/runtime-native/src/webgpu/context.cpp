@@ -47,6 +47,7 @@ extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, cons
 #endif
 #endif
 #include "mystral/webgpu_compat.h"
+#include "mystral/webgpu/buffer_map_state.h"
 #include "surface_format_selection.h"
 #endif
 
@@ -1095,7 +1096,24 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
 
     WGPUSurfaceDescriptor surfaceDesc = {};
 
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(TN_PS4)
+    // vulkan-ps4 exposes no VK_KHR_surface and its swapchain is the VideoOut scanout, fixed at the
+    // screen's own size: nothing a window would name ever reaches it. Dawn patch 0003
+    // (scripts/ps4/patches/dawn-0003) makes this chain source an opaque carrier, so both fields
+    // stay null (the same call scripts/ps4/e3-triangle.cc proves).
+    WGPUSurfaceDescriptorFromXlibWindow_Compat ps4Desc = {};
+    (void)display;
+    (void)window;
+    if (platformType != PLATFORM_PS4) {
+        std::cerr << "[WebGPU] createSurfaceWithDisplay only supports PLATFORM_PS4 on PS4" << std::endl;
+        return false;
+    }
+    ps4Desc.chain.sType = WGPUSType_SurfaceDescriptorFromXlibWindow_Compat;
+    ps4Desc.display = nullptr;
+    ps4Desc.window = 0;
+    surfaceDesc.nextInChain = (WGPUChainedStruct*)&ps4Desc;
+    std::cout << "[WebGPU] Creating the PS4 VideoOut surface" << std::endl;
+#elif defined(__linux__) && !defined(__ANDROID__)
     WGPUSurfaceDescriptorFromXlibWindow_Compat xlibDesc = {};
     WGPUSurfaceDescriptorFromWaylandSurface_Compat waylandDesc = {};
 
@@ -1135,6 +1153,13 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     WGPURequestAdapterOptions adapterOptions = {};
     adapterOptions.compatibleSurface = surface_;
     adapterOptions.powerPreference = WGPUPowerPreference_HighPerformance;
+#if defined(TN_PS4)
+    // Compatibility, not Core, and that is the honest level for this driver: vulkan-ps4 reports
+    // 4096 for maxFramebuffer{Width,Height} and maxViewportDimensions (vk_ps4_instance.c), below
+    // WebGPU Core's 8192 minimum, so Dawn filters the adapter out of a Core request and the callback
+    // lands on "No supported adapters" (the same finding E3 recorded for its triangle).
+    adapterOptions.featureLevel = WGPUFeatureLevel_Compatibility;
+#endif
 
     AdapterRequestData adapterData;
 
@@ -1468,50 +1493,16 @@ bool Context::present() {
     return presented;
 }
 
-// Screenshot callback data
-// Note: Extra padding added due to observed stack corruption during initialization
-struct BufferMapData {
-    bool completed = false;
-    uint8_t _pad1[7] = {};
-    WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
-    uint8_t _pad2[12] = {};
-    std::mutex waitMutex;
-    std::condition_variable waitCondition;
-};
-
-using BufferMapDataPtr = std::shared_ptr<BufferMapData>;
-
-static BufferMapDataPtr takeBufferMapData(void* userdata) {
-    auto* holder = static_cast<BufferMapDataPtr*>(userdata);
-    if (holder == nullptr) return {};
-    BufferMapDataPtr data = std::move(*holder);
-    delete holder;
-    return data;
-}
-
+// Screenshot callback data: see buffer_map_state.h for who owns it when the wait times out.
 #if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
 // Dawn buffer map callback
 static void onBufferMapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2) {
-    const BufferMapDataPtr data = takeBufferMapData(userdata1);
-    if (!data) return;
-    {
-        std::lock_guard<std::mutex> lock(data->waitMutex);
-        data->status = status;
-        data->completed = true;
-    }
-    data->waitCondition.notify_all();
+    completeBufferMap(userdata1, status);
 }
 #else
 // wgpu-native buffer map callback
 static void onBufferMapped(WGPUBufferMapAsyncStatus status, void* userdata) {
-    const BufferMapDataPtr data = takeBufferMapData(userdata);
-    if (!data) return;
-    {
-        std::lock_guard<std::mutex> lock(data->waitMutex);
-        data->status = status;
-        data->completed = true;
-    }
-    data->waitCondition.notify_all();
+    completeBufferMap(userdata, status);
 }
 #endif
 
@@ -1633,12 +1624,12 @@ bool Context::saveScreenshot(const char* filename) {
     WGPUBufferMapCallbackInfo mapCallbackInfo = {};
     mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
     mapCallbackInfo.callback = onBufferMapped;
-    mapCallbackInfo.userdata1 = new BufferMapDataPtr(mapData);
+    mapCallbackInfo.userdata1 = makeBufferMapUserdata(mapData);
     mapCallbackInfo.userdata2 = nullptr;
     wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, mapCallbackInfo);
 #else
     // wgpu-native uses separate callback and userdata
-    wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, onBufferMapped, new BufferMapDataPtr(mapData));
+    wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, onBufferMapped, makeBufferMapUserdata(mapData));
 #endif
 
     const bool mapCompleted = waitForBufferMap(*mapData, device_, instance_);
@@ -1737,11 +1728,11 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
     WGPUBufferMapCallbackInfo mapCallbackInfo = {};
     mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
     mapCallbackInfo.callback = onBufferMapped;
-    mapCallbackInfo.userdata1 = new BufferMapDataPtr(mapData);
+    mapCallbackInfo.userdata1 = makeBufferMapUserdata(mapData);
     mapCallbackInfo.userdata2 = nullptr;
     wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, mapCallbackInfo);
 #else
-    wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, onBufferMapped, new BufferMapDataPtr(mapData));
+    wgpuBufferMapAsync(screenshotBuffer, WGPUMapMode_Read, 0, bufferSize, onBufferMapped, makeBufferMapUserdata(mapData));
 #endif
 
     const bool mapCompleted = waitForBufferMap(*mapData, device_, instance_);

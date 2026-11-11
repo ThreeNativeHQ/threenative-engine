@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-stream",
+  "subject": "PRD-790: run with ?stream=1&tnTerrainValidate=1. The player sprints 2 km in a straight line from the spawn (south, -z: no slope over 45 degrees for 1.73 km), 1.8 km past the square over the streamed ground to the foot of a 47 degree slope, then along it, and stays grounded with no gap between tiles",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "grounded",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "sprint",
+      "press": "ShiftLeft",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-two-kilometres",
+      "press": "KeyW",
+      "holdTicks": 15000,
+      "release": true,
+      "screenshot": "forest-stream-far"
+    },
+    {
+      "kind": "input",
+      "label": "along-the-slope",
+      "press": "KeyD",
+      "holdTicks": 1500,
+      "release": true,
+      "screenshot": "forest-stream-along"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 2000,
+        "allowTrivial": "Sprint is 9 m/s; 1.9 km straight to the slope, then 25 s along it: 2 km only if no wall or gap stops the run."
+      },
+      {
+        "id": "GameState",
+        "path": "edgeOvershoot",
+        "gte": 1700,
+        "allowTrivial": "The spawn is 91 m inside the south edge and the slope foot is 1.8 km past it; without streamed ground the walls stop the run at 188 m."
+      },
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "equals": true,
+        "allowTrivial": "The run ends standing on a streamed tile's collider, not falling through a missing one."
+      },
+      {
+        "id": "GameState",
+        "path": "streamTiles",
+        "gte": 9,
+        "allowTrivial": "Far past the square every tile around the player is streamed."
+      },
+      {
+        "id": "GameState",
+        "path": "streamSeamGap",
+        "lte": 0.01,
+        "allowTrivial": "The largest height gap between neighbouring tile edges."
+      },
+      {
+        "id": "GameState",
+        "path": "streamSeamGap",
+        "gte": 0,
+        "allowTrivial": "Measured only under ?tnTerrainValidate=1; -1 otherwise, so an unmeasured run fails."
+      }
+    ],
+    "components": [
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelineCensusAvailable",
+        "equals": true,
+        "allowTrivial": "A pipeline counter must measure the run, or a zero below is silence, not a measurement."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelinesSinceReveal",
+        "lte": 0,
+        "allowTrivial": "Every pipeline the far run needs is built behind the curtain: the tiles and the lake draw unculled there, and core draws the shadow reset quad with the first whole shadow map. Before, a turn 1.8 km out built the reset quad and the lake mirror's first draws of the terrain and ridges; before that, the lake's two-pass draw rebuilt its pipeline 58 times there."
+      }
+    ]
+  }
+}

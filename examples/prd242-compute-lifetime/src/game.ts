@@ -132,7 +132,7 @@ const game = defineGame<IComputeLifetimeState>({
   camera: { projection: "perspective", fov: 55 },
   initialState,
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  renderer: { preferWebGPU: true },
   scenes: { first: FirstFieldScene, second: SecondFieldScene },
   start: "first",
 });

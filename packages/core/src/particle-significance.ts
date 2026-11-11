@@ -31,6 +31,8 @@ export interface IParticleSignificanceOptions {
  */
 export class ParticleSignificance {
   #shed = 0;
+  /** Candidates this pass has yielded and not yet resumed. */
+  #yielded = 0;
   readonly #decayPerSecond: number;
   readonly #graceSeconds: number;
   readonly #states = new WeakMap<IBudgetCandidate, { yielded: boolean; changedAt: number }>();
@@ -78,7 +80,16 @@ export class ParticleSignificance {
     return this.#shed;
   }
 
+  /**
+   * Nothing to shed and nothing yielded: {@link apply} would change nothing, so the caller can skip
+   * asking each candidate its significance (an engine crossing per emitter on the owned engine, PRD-828).
+   */
+  get idle(): boolean {
+    return this.#shed === 0 && this.#yielded === 0;
+  }
+
   apply(candidates: Iterable<IBudgetCandidate>, camera: Camera, nowSeconds: number): void {
+    if (this.idle) return;
     const ranked: { candidate: IBudgetCandidate; significance: number }[] = [];
     for (const candidate of candidates) {
       const significance = candidate.significance(camera);
@@ -95,6 +106,7 @@ export class ParticleSignificance {
       const yielded = index < count;
       if (state.yielded === yielded || nowSeconds - state.changedAt < this.#graceSeconds) continue;
       candidate.yield(yielded);
+      this.#yielded += yielded ? 1 : -1;
       state.yielded = yielded;
       state.changedAt = nowSeconds;
     }

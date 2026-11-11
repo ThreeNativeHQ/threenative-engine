@@ -3,6 +3,7 @@ import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PNG } from "pngjs";
 import type { IBakeReceipt, IBakeReceiptOutput } from "../packages/assets/src/index.js";
+import { templateNames } from "./lib/repo-inventory.mjs";
 
 /**
  * The delete-test: build a game, run its scenario, delete every file the bake produced, run the
@@ -412,17 +413,10 @@ if (
     const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
     // One template per invocation by default: the existing templates gate aborts at its first
     // failure, and a red hidden behind another template's red is a red nobody reads.
+    // `--all` is every shipped kit, derived from disk: a hand list of eight left the other eight
+    // unproven, and the day a ninth shipped nobody would notice either.
     const templates = argv.includes("--all")
-      ? [
-          "action-rpg",
-          "minimal",
-          "platformer",
-          "racing",
-          "sailing",
-          "shooter",
-          "starter",
-          "tower-defense",
-        ]
+      ? [...templateNames()]
       : [flag("--template") ?? "starter"];
     const scenario = flag("--scenario") ?? "playtests/play.playtest.json";
     // `--project` runs against a project that is already scaffolded and built — the shape CI is

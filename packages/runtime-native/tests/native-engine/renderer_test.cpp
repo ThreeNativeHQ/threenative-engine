@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -1643,6 +1644,114 @@ void traaResetSeed() {
     CHECK(history != bytes("frame-19-beauty.bin"));
 }
 
+// The resolve blends the current frame with its history clipped to the 3x3 neighbourhood, weighted by a luminance
+// compression. This pins that arithmetic on greyscale neighbourhoods against the numbers worked out for r187's resolve:
+// a still pixel keeps its value, a stale history is clipped to the neighbourhood, and a noisy neighbourhood lets the
+// history dominate. (A script used to evaluate the shader's source text for these; this reads the pixels it draws.)
+void traaResolveBlend() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto device = context.getDevice();
+    const auto queue = context.getQueue();
+    constexpr uint32_t size = 8, centre = 4;
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("traa-resolve-blend-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    int run = 0;
+    const auto resolveCentre = [&](float old, float current, const std::array<float, 8>& ring) {
+        const auto half = [](float value) {  // binary16 for the few exact values used here
+            if (value == 0) return uint16_t(0);
+            const uint32_t bits = std::bit_cast<uint32_t>(value);
+            return uint16_t(((bits >> 23) - 112) << 10 | ((bits >> 13) & 0x3ff));
+        };
+        TraaOptions options;
+        options.useSubpixelCorrection = false;  // the sub-pixel weight belongs to the jitter, not to the blend
+        TraaPass temporal(device, queue, options);
+        temporal.resize(size, size);
+        temporal.enableDebugDump(1, 1);
+        WGPUTextureDescriptor descriptor{};
+        descriptor.dimension = WGPUTextureDimension_2D;
+        descriptor.size = {size, size, 1};
+        descriptor.mipLevelCount = descriptor.sampleCount = 1;
+        descriptor.format = WGPUTextureFormat_RGBA16Float;
+        descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc;
+        const auto beauty = wgpuDeviceCreateTexture(device, &descriptor);
+        const auto beautyView = wgpuTextureCreateView(beauty, nullptr);
+        descriptor.format = WGPUTextureFormat_Depth32Float;
+        descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc | WGPUTextureUsage_RenderAttachment;
+        const auto depth = wgpuDeviceCreateTexture(device, &descriptor);
+        const auto depthView = wgpuTextureCreateView(depth, nullptr);
+        WGPUImageCopyTexture_Compat destination{};
+        destination.texture = beauty;
+        destination.aspect = WGPUTextureAspect_All;
+        WGPUTextureDataLayout_Compat layout{};
+        layout.bytesPerRow = size * 8; layout.rowsPerImage = size;
+        const WGPUExtent3D extent{size, size, 1};
+        const TraaPass::Matrix identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        for (int frame = 0; frame <= 1; ++frame) {
+            // Frame 0 is the history: the old value everywhere. Frame 1 is the current frame under test.
+            std::vector<uint16_t> pixels(size_t(size) * size * 4, 0);
+            for (uint32_t y = 0; y < size; ++y) for (uint32_t x = 0; x < size; ++x) {
+                float value = frame == 0 ? old : current;
+                const int dx = int(x) - int(centre), dy = int(y) - int(centre);
+                if (frame == 1 && (dx != 0 || dy != 0) && std::abs(dx) <= 1 && std::abs(dy) <= 1) {
+                    const int slot = (dy + 1) * 3 + (dx + 1);
+                    value = ring[size_t(slot > 4 ? slot - 1 : slot)];
+                }
+                for (int channel = 0; channel < 3; ++channel) pixels[(size_t(y) * size + x) * 4 + channel] = half(value);
+                pixels[(size_t(y) * size + x) * 4 + 3] = 0x3c00;
+            }
+            wgpuQueueWriteTexture(queue, &destination, pixels.data(), pixels.size() * 2, &layout, &extent);
+            const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
+            WGPURenderPassDepthStencilAttachment attachment{};
+            attachment.view = depthView; attachment.depthLoadOp = WGPULoadOp_Clear;
+            attachment.depthStoreOp = WGPUStoreOp_Store; attachment.depthClearValue = 0.5f;
+            WGPURenderPassDescriptor clear{}; clear.depthStencilAttachment = &attachment;
+            const auto clearing = wgpuCommandEncoderBeginRenderPass(encoder, &clear);
+            wgpuRenderPassEncoderEnd(clearing); wgpuRenderPassEncoderRelease(clearing);
+            temporal.begin(identity, identity, identity);
+            // A still camera: every pixel is known static (blue 1) with no motion.
+            WGPURenderPassColorAttachment velocity{};
+            velocity.view = temporal.velocityView();
+            velocity.loadOp = WGPULoadOp_Clear; velocity.storeOp = WGPUStoreOp_Store;
+            velocity.clearValue = {0, 0, 1, 1};
+#if defined(MYSTRAL_WEBGPU_DAWN)
+            velocity.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+            WGPURenderPassDescriptor mark{};
+            mark.colorAttachmentCount = 1; mark.colorAttachments = &velocity;
+            const auto marking = wgpuCommandEncoderBeginRenderPass(encoder, &mark);
+            wgpuRenderPassEncoderEnd(marking); wgpuRenderPassEncoderRelease(marking);
+            temporal.resolve(encoder, beauty, beautyView, depth, depthView);
+            const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
+            wgpuQueueSubmit(queue, 1, &commands);
+            wgpuCommandBufferRelease(commands); wgpuCommandEncoderRelease(encoder);
+        }
+        const auto folder = directory / std::to_string(run++);
+        tn::fixture::finishTraaDump(temporal, context.getInstance(), folder);
+        std::ifstream file(folder / "frame-1-resolved.bin", std::ios::binary);
+        std::vector<float> resolved(size_t(size) * size * 4);
+        CHECK(file.good());
+        file.read(reinterpret_cast<char*>(resolved.data()), std::streamsize(resolved.size() * sizeof(float)));
+        const float result = resolved[(size_t(centre) * size + centre) * 4];
+        wgpuTextureViewRelease(depthView); wgpuTextureRelease(depth);
+        wgpuTextureViewRelease(beautyView); wgpuTextureRelease(beauty);
+        return result;
+    };
+    const std::array<float, 8> flat{0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f};
+    const std::array<float, 8> checker{0, 1, 0, 1, 0, 1, 0, 1};
+    const float still = resolveCentre(0.5f, 0.5f, flat);
+    const float noisy = resolveCentre(0.2f, 0.8f, checker);
+    const float stale = resolveCentre(4.f, 0.5f, flat);
+    std::fprintf(stderr, "TN_TRAA_BLEND still=%.6f noisy=%.6f stale=%.6f\n", still, noisy, stale);
+    CHECK(std::abs(still - 0.5f) < 1e-3f);
+    // Worked by hand from the resolve's variance clamp and luminance-compressed weights: 578 / 2575.
+    CHECK(std::abs(noisy - 578.f / 2575.f) < 1e-3f);
+    // A history far outside the neighbourhood is clipped to it, so the stale 4.0 does not survive.
+    CHECK(std::abs(stale - 0.5f) < 1e-3f);
+}
+
 // Pixels that differ from the clear colour (black), and whether the centre pixel is lit.
 size_t covered(const std::vector<uint8_t>& px) {
     size_t n = 0;
@@ -3118,6 +3227,82 @@ void emissivePass(bool requirePixels) {
     }
 }
 
+// PRD-635: the indirectDiffuse target holds each lit draw's indirect diffuse light alone, so a screen-space occlusion can
+// darken that share and leave the sun. A plane lit by an ambient light writes the colour-shaped ambient share; adding a
+// directional light brightens the frame but leaves the target unchanged; an unlit draw writes nothing.
+void indirectTarget() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    WGPUAdapterInfo info{};
+    wgpuAdapterGetInfo(context.getAdapter(), &info);
+    const bool rendersPixels = info.backendType != WGPUBackendType_Null;
+    wgpuAdapterInfoFreeMembers(info);
+    CHECK(rendersPixels);
+    if (!rendersPixels) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    namespace g = shader::graph;
+    renderer.setPostGraph(g::bloom(g::texture("indirectDiffuse", g::uv()), 0, 0, 0));
+    CHECK(renderer.readIndirectPixels([](GpuStatus, std::vector<uint8_t>) {}) == GpuStatus::InvalidHandle);
+    const auto geometry = plane(4, 4);
+    const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};  // plane() carries no normals
+    geometry->normals.resize(12);
+    geometry->normals.write(0, facing, sizeof facing);
+    shader::StandardMaterial material;
+    material.color = {0.25f, 0.5f, 1};
+    material.metalness = 0; material.roughness = 1;
+    DrawItem item;
+    item.key = item.id = 1;
+    item.kind = MaterialKind::Standard;
+    item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
+    item.material = &material;
+    item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    const auto centre = [&](LightState lights) {
+        for (int frame = 0; frame < 2; ++frame)
+            renderer.render(std::span<const DrawItem>(&item, 1), camera(1), lights, {0,0,0,0});
+        std::vector<uint8_t> pixels;
+        bool done = false;
+        CHECK(renderer.readIndirectPixels([&](GpuStatus status, std::vector<uint8_t> bytes) {
+            CHECK(status == GpuStatus::Ok);
+            pixels = std::move(bytes); done = true;
+        }) == GpuStatus::Ok);
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer.poll(); events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        std::array<float, 3> value{-1, -1, -1};
+        CHECK(done && pixels.size() == 16 * 16 * 8);
+        if (pixels.size() != 16 * 16 * 8) return value;
+        for (int l = 0; l < 3; ++l) {
+            const size_t offset = (8 * 16 + 8) * 8 + l * 2;
+            const uint16_t half = uint16_t(pixels[offset]) | uint16_t(pixels[offset + 1] << 8);
+            const int exponent = (half >> 10) & 31, mantissa = half & 1023;
+            value[l] = exponent ? std::ldexp(1.f + mantissa / 1024.f, exponent - 15) : std::ldexp(mantissa / 1024.f, -14);
+        }
+        return value;
+    };
+    LightState ambient;
+    ambient.ambient = {2, 2, 2};
+    const auto alone = centre(ambient);
+    std::printf("indirect target, ambient only: %g %g %g\n", alone[0], alone[1], alone[2]);
+    CHECK(alone[0] > 0.01f);
+    // Lambert of the albedo: the channels keep the colour's 1 : 2 : 4 ratio.
+    CHECK(std::abs(alone[1] / alone[0] - 2) < 0.05f);
+    CHECK(std::abs(alone[2] / alone[0] - 4) < 0.05f);
+    LightState sunlit = ambient;
+    sunlit.direct.push_back(DirectLight::directional({0, 0, 1}, {3, 3, 3}));
+    const auto lit = centre(sunlit);
+    std::printf("indirect target, ambient and sun: %g %g %g\n", lit[0], lit[1], lit[2]);
+    for (int l = 0; l < 3; ++l) CHECK(std::abs(lit[l] - alone[l]) < 0.01f * alone[l] + 0.001f);
+    item.kind = MaterialKind::Basic;
+    const auto unlit = centre(sunlit);
+    for (int l = 0; l < 3; ++l) CHECK(unlit[l] == 0);
+}
+
 // PRD-754: in depth order (three's painterSortStable) the main pass's bundle key follows each origin's depth, so a
 // camera turn that swaps two boxes' depths re-records the bundle for its order and names that cause; the state-first
 // order holds the bundle across the turn, and a held pose records nothing either way. Renderer::recordCause tells order, offsets and count apart.
@@ -3192,6 +3377,80 @@ void cameraTurnRecords() {
 // PRD-754: two exactly coplanar quads, where three's order (equal depth, then id) and a state order (material first)
 // disagree. At equal depth the draw order picks the winner (the shooter's door trim), so the stable passes keep three's
 // order: the pixels match direct encode over a camera turn.
+// PRD-857: core's GPU world scene draws an InstancedMesh through geometry.setIndirect, with `count` at capacity and a
+// kernel writing the instance count into the record. The engine drew `instanceCount` (capacity) and never read the
+// record, so stale instances drew. Two instances, left and right; the record draws one, then two, then the record goes.
+void indirectRecord() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized || !rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    BufferStore matrices(Scalar::F32, 32);
+    const float placed[32] = {0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, -1.25f, 0, 0, 1,
+                              0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, 1.25f, 0, 0, 1};
+    matrices.write(0, placed, sizeof placed);
+    // Two records, the second at byte 20: drawIndexedIndirect's five words (index count, instances, first index,
+    // base vertex, first instance).
+    BufferStore records(Scalar::U32, 10);
+    const auto setInstances = [&](uint32_t instances) {
+        const uint32_t words[10] = {0, 0, 0, 0, 0, static_cast<uint32_t>(ball->indices.count()), instances, 0, 0, 0};
+        records.write(0, words, sizeof words);
+        records.needsUpdate();  // three's attribute.needsUpdate after a CPU write
+    };
+    DrawItem item;
+    item.key = item.id = 1; item.kind = MaterialKind::Basic; item.material = &material;
+    item.positions = &ball->positions; item.indices = &ball->indices;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.instanceMatrices = &matrices; item.instanceCount = 2;
+    constexpr uint32_t width = 32, height = 24;
+    const auto halves = [&](const std::vector<uint8_t>& px) {
+        std::array<int, 2> lit{};
+        for (uint32_t y = 0; y < height; ++y)
+            for (uint32_t x = 0; x < width; ++x)
+                if (px.size() >= size_t{width} * height * 4 && px[(size_t{y} * width + x) * 4] > 128) ++lit[x < width / 2 ? 0 : 1];
+        return lit;
+    };
+    for (const bool stable : {false, true}) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setStablePasses(stable);
+        const auto frame = [&]() {
+            std::vector<uint8_t> px;
+            for (int i = 0; i < 3; ++i) {  // a stable pass retains its rows from the second frame on
+                renderer.render({&item, 1}, camera(double(width) / height), LightState{}, {0, 0, 0, 1});
+                px = read(renderer, events);
+            }
+            return halves(px);
+        };
+        item.indirect = &records; item.indirectOffset = 20;
+        setInstances(1);
+        const auto one = frame();
+        setInstances(2);
+        const auto two = frame();
+        // The GPU copy is what an indirect draw reads (PRD-857): core's cull kernel writes the instance buffer on the
+        // GPU and the CPU bytes never change. A CPU write with no needsUpdate leaves the GPU copy as it was, so the
+        // GPU copy and the CPU bytes now disagree the same way: both instances on the right in the CPU bytes only.
+        const float right[32] = {0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, 1.25f, 0, 0, 1,
+                                 0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, 1.25f, 0, 0, 1};
+        matrices.write(0, right, sizeof right);
+        const auto gpuCopy = frame();
+        matrices.write(0, placed, sizeof placed);
+        matrices.needsUpdate();
+        item.indirect = nullptr; item.indirectOffset = 0;
+        const auto direct = frame();
+        std::printf("indirect record (stable %d): one %d|%d, two %d|%d, gpu copy %d|%d, direct %d|%d\n", stable, one[0], one[1],
+                    two[0], two[1], gpuCopy[0], gpuCopy[1], direct[0], direct[1]);
+        CHECK(one[0] > 20 && one[1] == 0);  // the record's one instance, not the capacity's two
+        CHECK(two[0] > 20 && two[1] > 20);  // a rewritten record draws what it now says
+        CHECK(gpuCopy[0] > 20 && gpuCopy[1] > 20);  // the GPU's instances, not the CPU bytes
+        CHECK(direct[0] > 20 && direct[1] > 20);
+    }
+}
+
 void coplanarKeepsWinner() {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
@@ -3605,9 +3864,10 @@ void auxTargetsAlphaTested() {
 }
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
+             {"traa_resolve_blend", traaResolveBlend},
              {"traa_camera_velocity", traaCameraVelocity},
              {"traa_skinned_velocity", traaSkinnedVelocity},
              {"traa_camera_held_skinned_velocity", traaCameraHeldSkinnedVelocity},
@@ -3647,4 +3907,5 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"alpha_test", alphaTest},
              {"alpha_hash_coverage", alphaHashCoverage},
              {"alpha_hash_shadow_coverage", alphaHashShadowCoverage},
-             {"mipmaps_share_one_submit", mipmapsShareOneSubmit})
+             {"mipmaps_share_one_submit", mipmapsShareOneSubmit},
+             {"indirect_record", indirectRecord})

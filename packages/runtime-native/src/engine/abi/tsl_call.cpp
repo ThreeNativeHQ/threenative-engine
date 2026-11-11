@@ -526,13 +526,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             : g::vec2({args.size() == 1 ? arg(0) : g::float_(0)})};
         return node;
     }
-    // ivec3 / ivec4 (ConvertType): each component an int, one argument splats.
-    if (name == "ivec3" || name == "ivec4") {
-        const uint8_t lanes = name == "ivec3" ? 3 : 4;
+    // ivec3 / ivec4 / uvec3 / uvec4 (ConvertType): each component an int or uint, one argument splats.
+    if (name == "ivec3" || name == "ivec4" || name == "uvec3" || name == "uvec4") {
+        const uint8_t lanes = name.back() == '3' ? 3 : 4;
+        const bool unsigned_ = name[0] == 'u';
         if (args.size() != 1 && args.size() != lanes) throw std::runtime_error("invalid " + name + " argument count");
         auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::Join; node->type = Type::vec(lanes, Type::Scalar::I32);
-        for (size_t i = 0; i < args.size(); ++i) node->args.push_back(tslCall("int", nullptr, {args[i]}, serial));
+        node->kind = g::Kind::Join; node->type = Type::vec(lanes, unsigned_ ? Type::Scalar::U32 : Type::Scalar::I32);
+        for (size_t i = 0; i < args.size(); ++i) node->args.push_back(tslCall(unsigned_ ? "uint" : "int", nullptr, {args[i]}, serial));
         return node;
     }
     // bool(x) (ConvertType): true where the number is not zero, as WGSL's bool() of it.
@@ -735,13 +736,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an engine Texture");
         const auto next = std::static_pointer_cast<const engine::Texture>(args[0].object);
         const auto previous = std::static_pointer_cast<const engine::Texture>(receiver->node->textureObject());
-        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume || next->array != previous->array)
+        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume || next->array != previous->array ||
+            next->cube != previous->cube)
             throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: replacement must preserve texture dimension and sample type");
         receiver->node->textureBinding->object = args[0].object;
         return receiver->node;
     }
     if (!method && name == "storageTexture") {
-        if (args.empty() || args.size() > 3 || args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls != "StorageTexture")
+        if (args.empty() || args.size() > 3 || args[0].kind != TslArg::Kind::Object || !args[0].object ||
+            (args[0].cls != "StorageTexture" && args[0].cls != "Storage3DTexture"))
             throw std::runtime_error("storageTexture needs an engine StorageTexture and optional coordinates and value");
         const auto* texture = static_cast<const engine::Texture*>(args[0].object.get());
         auto node = std::make_shared<g::NodeData>();
@@ -783,14 +786,34 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // vec3(0.5) by default; `level` is an explicit mip.
     if (name == "texture3D") {
         if (args.empty() || args.size() > 3) throw std::runtime_error("texture3D takes 1 to 3 arguments");
-        if (args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls != "Data3DTexture")
-            throw std::runtime_error("texture3D needs an engine Data3DTexture");
+        // A Storage3DTexture a kernel writes is sampled the same way (prd476's density volume).
+        if (args[0].kind != TslArg::Kind::Object || !args[0].object ||
+            (args[0].cls != "Data3DTexture" && args[0].cls != "Storage3DTexture"))
+            throw std::runtime_error("texture3D needs an engine Data3DTexture or Storage3DTexture");
         const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
         if (!source->sampleable()) throw std::runtime_error("texture3D needs a Data3DTexture with texels");
         const auto half = [] { return g::float_(0.5); };
         // One binding per volume, as for texture() above: a baked noise read 44 times a pixel took 212 bindings.
         auto node = g::objectTexture(args[0].object, "nodeMapT" + std::to_string(source->ident.value()),
                                      args.size() > 1 ? arg(1) : g::vec3({half(), half(), half()}));
+        if (args.size() == 3) {
+            auto level = std::make_shared<g::NodeData>(*node);
+            level->args.push_back(arg(2));
+            return level;
+        }
+        return node;
+    }
+    // r187's cubeTexture(value, uvNode, levelNode) (accessors/CubeTextureNode.js): a CubeTexture sampled along a vec3
+    // direction, which `.sample(direction)` replaces. The default direction (the reflect vector) is not bound, so
+    // a node with none refuses where it lowers.
+    if (name == "cubeTexture") {
+        if (args.empty() || args.size() > 3) throw std::runtime_error("cubeTexture takes 1 to 3 arguments");
+        if (args[0].kind != TslArg::Kind::Object || !args[0].object ||
+            !static_cast<const engine::Texture*>(args[0].object.get())->cube)
+            throw std::runtime_error("cubeTexture needs an engine CubeTexture");
+        const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
+        auto node = g::objectTexture(args[0].object, "nodeMapT" + std::to_string(source->ident.value()),
+                                     args.size() > 1 ? arg(1) : g::uv());
         if (args.size() == 3) {
             auto level = std::make_shared<g::NodeData>(*node);
             level->args.push_back(arg(2));
@@ -1000,9 +1023,25 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(1);
         return toTexture(arg(0));
     }
+    // r185's storageTexture(t).toReadOnly() / .toWriteOnly() / .toReadWrite() / .setSampler(false) pick how a kernel
+    // uses the texture (prd249); the engine reads one with textureLoad and writes with textureStore, so each leaves
+    // the node as it is.
+    if (method && (name == "toReadOnly" || name == "toWriteOnly" || name == "toReadWrite" || name == "setSampler")) {
+        arity(name == "setSampler" ? 1 : 0);
+        if (receiver->kind != TslArg::Kind::Node || !receiver->node || receiver->node->kind != g::Kind::StorageTexture)
+            throw std::runtime_error(name + " requires a storage buffer or a storage texture");
+        if (name == "setSampler" && (args[0].kind != TslArg::Kind::Number || args[0].number != 0))
+            throw std::runtime_error("setSampler(true) on a storage texture is not supported: the engine reads it with textureLoad");
+        return receiver->node;
+    }
     if (name == "sample") {
         arity(1);
         const auto source = lhs();
+        if (source->kind == g::Kind::StorageTexture) {  // .sample(uvec2) on a storage texture loads that texel
+            auto loaded = std::make_shared<g::NodeData>(*source);
+            loaded->args = {arg(0)};
+            return loaded;
+        }
         if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture && source->kind != g::Kind::Reflector)
             throw std::runtime_error("sample requires a texture node");
         auto sampled = std::make_shared<g::NodeData>(*source);
@@ -1420,6 +1459,8 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"materialEmissive", g::materialInput("emissive", Type::vec(3))},
             {"materialMetalness", g::materialInput("metalness", Type::f32())},
             {"materialRoughness", g::materialInput("roughness", Type::f32())},
+            // three's diffuseColor: the material's colour and opacity after its map (standard.cpp materialInputs).
+            {"diffuseColor", g::materialInput("diffuseColor", Type::vec(4))},
             // three's time (utils/Timer.js): the frame's elapsed seconds, a uniform the renderer fills.
             {"time", g::uniform("time", Type::f32())},
             // three's deltaTime: seconds since the frame before, filled the same way.
@@ -1490,8 +1531,10 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         node->kind = g::Kind::Body;
         node->body = std::move(closed.statements);
         // A callback that runs statements and returns a value (Fn(() => { a.addAssign(b); return a; }))
-        // keeps the value: the Body lowers its statements, then yields args[0].
-        if (!args.empty()) node->args = {input(args[0])};
+        // keeps the value: the Body lowers its statements, then yields args[0]. A returned store target (a whole
+        // storage texture, `return textureStore(...)`) is the statement itself, not a value.
+        if (!args.empty())
+            if (auto value = input(args[0]); !(value->kind == g::Kind::StorageTexture && value->args.empty())) node->args = {value};
         out = node;
         // A Fn called inside another body runs its statements at the call, before what follows it reads the variables
         // they assign (GLSL's `out` arguments); its value is read where it is used, without running them again.
@@ -1514,7 +1557,9 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         statements.push_back(node); out = target;
         return true;
     }
-    if (name == "atomicAdd" || name == "atomicStore") {
+    const bool readModifyWrite = std::find_if(engine::shader::kAtomicFunctions.begin(), engine::shader::kAtomicFunctions.end(),
+        [&](const char* function) { return name == function; }) != engine::shader::kAtomicFunctions.end();
+    if (readModifyWrite || name == "atomicStore") {
         arity(2);
         auto& statements = open().back().statements;
         const auto target = input(args[0]);
@@ -1523,8 +1568,9 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
             (target->type != Type::u32() && target->type != Type::i32()))
             throw std::runtime_error(name + " requires an integer element of a toAtomic storage buffer");
         auto node = std::make_shared<g::NodeData>();
-        node->kind = name == "atomicAdd" ? g::Kind::AtomicAdd : g::Kind::AtomicStore;
-        node->type = name == "atomicAdd" ? target->type : Type{};
+        node->kind = readModifyWrite ? g::Kind::AtomicAdd : g::Kind::AtomicStore;
+        node->type = readModifyWrite ? target->type : Type{};
+        if (readModifyWrite) node->name = name;  // the builtin it lowers to
         node->args = {target, input(args[1])}; statements.push_back(node); out = node;
         return true;
     }

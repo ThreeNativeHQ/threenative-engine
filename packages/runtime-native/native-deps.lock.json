@@ -711,6 +711,222 @@
       ]
     },
     {
+      "name": "meshopt",
+      "version": "1.3",
+      "source": {
+        "repository": "zeux/meshoptimizer",
+        "revision": "v1.3"
+      },
+      "license": {
+        "spdx": "MIT",
+        "evidence": {
+          "url": "https://raw.githubusercontent.com/zeux/meshoptimizer/v1.3/LICENSE.md",
+          "sha256": "f03037ca7bad1e3eb7f4a63fa6084a8baabd5ba30d3c239a9a7f35705d873e26",
+          "bytes": 1079
+        }
+      },
+      "payloads": [
+        {
+          "id": "meshopt-meshoptimizer.h",
+          "url": "https://raw.githubusercontent.com/zeux/meshoptimizer/v1.3/src/meshoptimizer.h",
+          "sha256": "e3688ef553f603391747895a5c221ef1528574cc7f8173782417a96cb531f61b",
+          "bytes": 109292,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-06-tag-v1.3"
+        },
+        {
+          "id": "meshopt-vertexcodec.cpp",
+          "url": "https://raw.githubusercontent.com/zeux/meshoptimizer/v1.3/src/vertexcodec.cpp",
+          "sha256": "6af26a85ed38daffb97d988e9704ffc257c690af05048304044bfc786699550f",
+          "bytes": 60507,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-06-tag-v1.3"
+        },
+        {
+          "id": "meshopt-indexcodec.cpp",
+          "url": "https://raw.githubusercontent.com/zeux/meshoptimizer/v1.3/src/indexcodec.cpp",
+          "sha256": "2b98ede67ab4731e8ab54da794c46b735d659ea360666fe66bc5725c027fff6e",
+          "bytes": 21390,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-06-tag-v1.3"
+        },
+        {
+          "id": "meshopt-vertexfilter.cpp",
+          "url": "https://raw.githubusercontent.com/zeux/meshoptimizer/v1.3/src/vertexfilter.cpp",
+          "sha256": "780e7f95024b577b8adcb8ee2a2e442294ebd62a1b6aaf37627fc1ff3cac4ff3",
+          "bytes": 55477,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-06-tag-v1.3"
+        }
+      ]
+    },
+    {
+      "name": "basisu",
+      "version": "1_60",
+      "source": {
+        "repository": "BinomialLLC/basis_universal",
+        "revision": "v1_60"
+      },
+      "license": {
+        "spdx": "Apache-2.0",
+        "evidence": {
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "bytes": 11357
+        }
+      },
+      "payloads": [
+        {
+          "id": "basisu-transcoder/basisu.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu.h",
+          "sha256": "f747782810775f3bc171c05d8399db86a3b232b3214d35bd7d9ad95b4a04a4db",
+          "bytes": 19010,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_astc_hdr_core.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_astc_hdr_core.h",
+          "sha256": "163f459ca0712b0e7da4a4af95e9f11028417ab2d7507c7f2545c02595b3a7e6",
+          "bytes": 6029,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_astc_helpers.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_astc_helpers.h",
+          "sha256": "203c3335bc8a3136a726d6b246ab68413765628a765af005a5d822d72d231211",
+          "bytes": 110656,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_containers.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_containers.h",
+          "sha256": "98b04ad2594ba0f80ed86b9c54df6d06790df7c062b14cfb788eb2dd46ef37b3",
+          "bytes": 90364,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_containers_impl.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_containers_impl.h",
+          "sha256": "d37042f3ac8b9d5f25c9f09d444e79415d5970b85cb136bc3ba15f4c1be61f7d",
+          "bytes": 15076,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_file_headers.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_file_headers.h",
+          "sha256": "6c5511c25fde9ebb1bd12e7f803d353b7d8e25481a542a88c4447719ef91cc1a",
+          "bytes": 7462,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_transcoder.cpp",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder.cpp",
+          "sha256": "edfcdf6733a4a80e03d78e13431be57ba9f465458c35b66e735deafdfe9e897b",
+          "bytes": 876520,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_transcoder.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder.h",
+          "sha256": "23eae10fd5c10d77f59b38530ac4dc473b63883fc73f0ac21c6ccec1d2e4b4cb",
+          "bytes": 57570,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_transcoder_internal.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder_internal.h",
+          "sha256": "4baaac7752526e74ee1875d512182762422edb77ee9572b9e44eadfe17a4183b",
+          "bytes": 26876,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_transcoder_tables_bc7_m5_alpha.inc",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder_tables_bc7_m5_alpha.inc",
+          "sha256": "4d713b839594f429d95f329d60f8ad495e932619111b5dfddffb688e3634b495",
+          "bytes": 17520,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_transcoder_tables_bc7_m5_color.inc",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder_tables_bc7_m5_color.inc",
+          "sha256": "e6f63d3ebce0ac84d801ec54614b6a4eeda3be3e994f3abbfc732377cfe5a531",
+          "bytes": 178391,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-transcoder/basisu_transcoder_uastc.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/transcoder/basisu_transcoder_uastc.h",
+          "sha256": "9f8fa061e1f6e9ae1169b091b6040271a1baf1f426557e3635d73cc408ead81d",
+          "bytes": 11284,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-zstd/zstd.h",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/zstd/zstd.h",
+          "sha256": "a36537f79fa242b3237ed63a57c2edc142c79380dc5bbccd22dab64cbc0b5d5e",
+          "bytes": 140868,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        },
+        {
+          "id": "basisu-zstd/zstddeclib.c",
+          "url": "https://raw.githubusercontent.com/BinomialLLC/basis_universal/v1_60/zstd/zstddeclib.c",
+          "sha256": "6cf99d3c45daa17f1741e48305f97d365e2b7b56683b05f0d978684b39944645",
+          "bytes": 642331,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "download-sha256-2026-11-09-tag-v1_60"
+        }
+      ]
+    },
+    {
       "name": "webp",
       "version": "1.5.0",
       "source": {

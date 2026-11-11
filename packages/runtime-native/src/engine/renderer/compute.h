@@ -30,6 +30,16 @@ struct FrameClock {
 };
 
 /**
+ * Consecutive dispatches recorded into one compute pass (PRD-828): `pass` opens at the first dispatch that
+ * records and the caller ends it. Dispatches in one pass run in order, each its own usage scope, so a storage
+ * buffer one writes is what the next reads.
+ */
+struct ComputeBatch {
+    uint64_t serial = 0;
+    WGPUComputePassEncoder pass = nullptr;
+};
+
+/**
  * A compute program from the shader IR dispatched over storage buffers (PRD-513 phase 1): one
  * pipeline per program; the storage buffers bind in the program's declaration order, and its scalar
  * uniforms are written by name before each dispatch. Workgroups are the emitter's 64 threads.
@@ -58,13 +68,15 @@ public:
      */
     void dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
                         const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock = {},
-                        std::span<const WGPUBindGroupEntry> textures = {});
+                        std::span<const WGPUBindGroupEntry> textures = {}, ComputeBatch* batch = nullptr);
     const shader::StageModule& module() const { return module_; }
-    WGPUBuffer uniformBuffer() const { return gpu_.buffer(uniforms_); }
+    /** The uniform block the last dispatch bound. */
+    WGPUBuffer uniformBuffer() const { return uniforms_.empty() ? nullptr : gpu_.buffer(uniforms_[slot_]); }
 
 private:
     bool encode(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                const std::vector<uint8_t>& uniformBlock, std::span<const WGPUBindGroupEntry> textures = {});
+                const std::vector<uint8_t>& uniformBlock, std::span<const WGPUBindGroupEntry> textures = {},
+                ComputeBatch* batch = nullptr);
     struct CachedGroup {
         std::vector<uint64_t> key;
         WGPUBindGroup group;
@@ -79,7 +91,12 @@ private:
     shader::StageModule module_;
     uint32_t workgroup_ = 64;
     WGPUComputePipeline pipeline_ = nullptr;
-    Handle uniforms_;
+    // One uniform block per distinct value set a batch dispatches this kernel with: every queue write lands
+    // before the batch's one command buffer runs, so a second value set in one buffer would overwrite the first.
+    std::vector<Handle> uniforms_;
+    size_t slot_ = 0;
+    uint64_t batchSerial_ = 0;
+    std::vector<uint8_t> slotBlock_;
     std::string error_;
 };
 
@@ -104,13 +121,16 @@ public:
     ComputePass& prepare(const shader::graph::Node& node);
     /** Records one dispatch into `encoder`; returns the buffers it binds, which queue writes must not change before it runs. */
     std::vector<WGPUBuffer> record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock,
-                                   Renderer& renderer);
+                                   Renderer& renderer, ComputeBatch* batch = nullptr);
+    /** A fresh batch: its kernels take uniform blocks from slot 0 again. */
+    ComputeBatch batch() { return {++batches_, nullptr}; }
 
 private:
     WGPUDevice device_;
     GpuResources& gpu_;
     GeometryCache& cache_;
     std::unordered_map<uint64_t, std::unique_ptr<ComputePass>> passes_;
+    uint64_t batches_ = 0;
 };
 
 /**
@@ -132,8 +152,9 @@ public:
     void release(std::shared_ptr<BufferAttribute> attribute);
     bool empty() const { return items_.empty(); }
     /**
-     * Submits everything queued, in call order. A dispatch that fails goes to `failed` by name and the
-     * rest still run; a readback that cannot start completes with an error status.
+     * Submits everything queued, in call order. Consecutive dispatches share one compute pass; a readback
+     * or a release ends it. A dispatch that fails goes to `failed` by name and the rest still run; a
+     * readback that cannot start completes with an error status.
      */
     void flush(Renderer& renderer, const std::function<void(const std::string&)>& failed);
 

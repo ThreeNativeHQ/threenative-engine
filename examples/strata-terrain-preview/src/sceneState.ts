@@ -15,6 +15,11 @@ export const initialState = {
   ...initialDiagnosticsState,
   canopyComparison: { normals: "authored", specular: "disabled" } as ICanopyComparison,
   showcase: false,
+  /** PRD-790 streamed ground (`?stream=1`): resident tiles, and the half-width of the square they draw. */
+  streamTiles: 0,
+  streamCoveredHalf: 0,
+  /** Largest tile-edge height gap; -1 until `?tnTerrainValidate=1` measures it. */
+  streamSeamGap: -1,
 };
 
 export type TerrainState = typeof initialState;

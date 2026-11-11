@@ -86,7 +86,8 @@ struct Object {
 
 /** Only registered classes backed by engine::Material may unwrap as that base type. */
 inline bool isMaterialClass(std::string_view cls) {
-    return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "LineBasicMaterial" || cls == "Material" ||
+    return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "PointsMaterial" || cls == "PointsNodeMaterial" ||
+           cls == "LineBasicMaterial" || cls == "Material" ||
            cls == "MeshBasicMaterial" || cls == "MeshLambertMaterial" ||
            cls == "MeshPhongMaterial" || cls == "MeshStandardMaterial" || cls == "MeshPhysicalMaterial" ||
            cls == "NodeMaterial" || cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial" ||
@@ -99,7 +100,7 @@ inline bool isObject3DClass(std::string_view cls) {
         "Object3D",   "Group",       "Mesh",          "Scene",      "Camera",       "PerspectiveCamera",
         "OrthographicCamera", "AmbientLight", "DirectionalLight", "HemisphereLight", "InstancedMesh",
         "PointLight", "Sprite",      "SpotLight",     "Bone",       "SkinnedMesh",  "LOD",
-        "Line",       "LineSegments", "BatchedMesh"};
+        "Line",       "LineSegments", "BatchedMesh",   "Points"};
     for (const std::string_view known : kClasses)
         if (cls == known) return true;
     return false;
@@ -107,7 +108,13 @@ inline bool isObject3DClass(std::string_view cls) {
 
 /** The engine texture classes a texture argument (a map, a background, a TSL texture) may be. */
 inline bool isTextureClass(std::string_view cls) {
-    return cls == "StorageTexture" || cls == "DepthTexture" || cls == "Texture" || cls == "DataTexture" || cls == "CanvasTexture";
+    return cls == "StorageTexture" || cls == "DepthTexture" || cls == "Texture" || cls == "DataTexture" || cls == "CanvasTexture" ||
+           cls == "CompressedTexture";
+}
+
+/** A texture a renderer creates on the GPU and copies into: a material map class, or an array, volume or cube. */
+inline bool isGpuTextureClass(std::string_view cls) {
+    return isTextureClass(cls) || cls == "DataArrayTexture" || cls == "Data3DTexture" || cls == "CubeTexture";
 }
 
 inline bool acceptsClass(std::string_view actual, std::string_view expected) {

@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { requiredPlaytestCapabilities } from "../src/assertion-schema.js";
+import { emitGeometry } from "../src/evaluators/geometry.js";
 import { emitScene } from "../src/evaluators/scene.js";
+import { connectPlaytestBridgeTransport } from "../src/runner/bridgeClient.js";
+import { PLAYTEST_PROTOCOL_LIMITS, PLAYTEST_PROTOCOL_VERSION } from "../src/protocol.js";
+import type { IBridgeTransport } from "../src/runner/bridgeClient.js";
 import { loadPlaytestScenario } from "../src/scenario.js";
 import type { IPlaytestSceneObservation } from "../src/protocol.js";
 
@@ -176,5 +181,47 @@ describe("the scene assertion schema fails closed", () => {
     await expect(loadPlaytestScenario(wrongNumber.project, wrongNumber.file)).rejects.toThrow(/minVisibleLights/u);
     const wrongFlag = scenarioFile({ litMaterialsAreLit: "yes" });
     await expect(loadPlaytestScenario(wrongFlag.project, wrongFlag.file)).rejects.toThrow(/litMaterialsAreLit/u);
+  });
+});
+
+describe("geometry is one registry kind, like every other assertion", () => {
+  function geometryResult(observed: unknown) {
+    const assertions: Array<{ id: string; pass: boolean }> = [];
+    const diagnostics: Array<{ code: string }> = [];
+    emitGeometry({
+      assertions,
+      diagnostics,
+      input: { report: { observations: observed === undefined ? {} : { geometry: observed } } },
+      scenarioAssertions: { geometry: { limit: 5 } },
+    } as never);
+    return { assertions, diagnostics };
+  }
+
+  test("a captured frame passes and a missing or unavailable report fails closed", () => {
+    expect(geometryResult({ status: "captured" }).assertions).toEqual([{ details: expect.anything(), id: "geometry.observed", pass: true }]);
+    for (const observed of [undefined, { status: "unavailable" }]) {
+      const result = geometryResult(observed);
+      expect(result.assertions[0]).toMatchObject({ id: "geometry.observed", pass: false });
+      expect(result.diagnostics[0]?.code).toBe("TN_PLAYTEST_GEOMETRY_UNOBSERVED");
+    }
+  });
+
+  test("the capability it needs comes from its registry entry, with no special case", () => {
+    const scenario = { assert: { geometry: { limit: 5 } }, artifacts: { screenshots: false }, name: "g", schemaVersion: 1, steps: [] };
+    expect(requiredPlaytestCapabilities(scenario as never)).toEqual(["runtime.geometry"]);
+  });
+
+  test("a bridge that does not advertise runtime.geometry is refused at the handshake", async () => {
+    const description = { capabilities: [] as string[], limits: PLAYTEST_PROTOCOL_LIMITS, name: "g", protocolVersion: PLAYTEST_PROTOCOL_VERSION };
+    const transport: IBridgeTransport = {
+      capabilities: [],
+      call: async <T>(method: string) => (method === "describe" ? description : { ready: true }) as T,
+      close: async () => undefined,
+      waitForBridge: async () => true,
+    };
+    const scenario = { assert: { geometry: { limit: 5 } }, artifacts: { screenshots: false }, name: "g", schemaVersion: 1, steps: [{ release: true, waitFrames: 1 }], target: "web", viewport: { height: 180, width: 320 } };
+    await expect(connectPlaytestBridgeTransport(transport, scenario as never)).rejects.toThrow("runtime.geometry");
+    description.capabilities = ["runtime.geometry"];
+    await expect(connectPlaytestBridgeTransport(transport, scenario as never)).resolves.toBeDefined();
   });
 });

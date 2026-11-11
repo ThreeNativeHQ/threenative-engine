@@ -82,6 +82,8 @@ flowchart LR
 - [x] Mirrored placements fail by name. proof: same spec — 2026-10-10: mirrored-Z case throws `Placement '<id>' of species 'fir' contact check failed`.
 
 - [ ] Preserve the authored layered PBR surface and resolve `texturesDir` headlessly. proof: layered cook spec plus headed before/after visual judge — pending; the current GLB uses only the first layer.
+  2026-11-08: the spec half holds at HEAD. `terrain-world.spec.ts` "preserves every relative layer texture byte-for-byte and marks terrain nodes" resolves `texturesDir` paths under Node, writes every layer's maps beside the GLB and marks each terrain node `tnTerrainSurface: "world.json"`, so the game's `loadTerrainSplat` draws all layers while a vanilla loader keeps the first-layer fallback; 38/38. Open: the headed judge, which rides with the PRD-762 Phase 3 frames.
+  2026-11-09, judge half blocked by design: a same-pose before/after has no first-layer arm in the game. The MCP-cooked forest consumer with `surface: terrainSurface` removed fails closed at start (`TN_STARTUP_FAILED: TerrainTiles surface is required and must be game-owned.`, 2 runs, nvidia/turing), and the layered arm renders with no error (2 runs). The first-layer fallback exists only in a vanilla `GLTFLoader` (`scripts/fixtures/vanilla-world.mjs`), which frames the world from its bounds, not from the game's poses. Needs an owner call: accept the layered-only frames plus the spec, or build a posed vanilla arm.
 
 #### Phase 2: LODs and the world package
 **Status:** done
@@ -96,7 +98,7 @@ flowchart LR
 **Implementation:** load the cooked `world.glb` with stock `GLTFLoader`; assert instance counts and that no mesh is a per-tree copy.
 - [x] Vanilla loader gets `InstancedMesh` with the bake's counts. proof: `CONSUMER_GAME=skip pnpm --filter strata-terrain-preview test:consumer` — 2026-10-10 exit 0; the generated consumer script reads the cooked `world.json`, derives each species' logical count from its runs, and checks each child `InstancedMesh` count (fir 4×3 100, fir-c 4×1 400, boulder 1×320) with 0 per-tree copies and no hardcoded values.
 
-- [ ] Render the cooked world in the headed WebGPU consumer and pass the visual judge. proof: two same-pose runs per arm with checked adapter and labelled images — pending; the first baseline capture was black and is rejected.
+- [x] Render the cooked world in the headed WebGPU consumer and pass the visual judge. proof: two same-pose runs per arm with checked adapter and labelled images — pending; the first baseline capture was black and is rejected. 2026-11-09: the MCP-cooked forest renders headed in its generated consumer game on both engines (default and `engine: "threejs"`), 2 runs per arm at spawn and walk, nvidia/turing checked, 0 console errors, no black frame; a fresh judge rates the default arm NEUTRAL against the threejs arm with every tree, rock and horizon present (PRD-762 Phase 3, sheets `prd-762/engine-vs-threejs-run{1,2}.jpg`).
 
 ## Current plan
 

@@ -14,6 +14,7 @@
 #include <mutex>
 #include <sstream>
 #include <string_view>
+#include <vector>
 
 #include <cstdio>
 
@@ -201,6 +202,10 @@ bool isUiReadyIntent(const std::string& frame) {
  * and a third would be speculative. Set once, by `attachDesktopCssUi`, before the frame loop runs.
  */
 bool g_cssBackend = false;
+
+/** Frames the game posted before the CSS UI attached, replayed in order by the attach. */
+bool g_cssHoldPosts = false;
+std::vector<std::string> g_cssEarlyPosts;
 
 #if TN_ENABLE_CSS_UI
 
@@ -462,6 +467,16 @@ bool applyUiHitRegionsFrame(const std::string& frame) {
     return true;
 }
 
+size_t drainUiFramesToGame(const std::function<void(const std::string&)>& forward) {
+    size_t forwarded = 0;
+    std::string frame;
+    while (takeUiMessage(frame)) {
+        if (applyUiHitRegionsFrame(frame)) continue;
+        forward(frame);
+        ++forwarded;
+    }
+    return forwarded;
+}
 
 #if defined(__ANDROID__)
 /**
@@ -1104,6 +1119,13 @@ bool attachDesktopCssUi(const std::string& uiRoot) {
         std::cout << "ui overlay: native-css backend=" << tn_css_ui_backend() << " (no WebView)"
                   << std::endl;
         std::cout << "TN_UI_OVERLAY:{\"attached\":true,\"renderer\":\"native-css\"}" << std::endl;
+    }
+    // The ops are incremental (create, then set), so the held frames go in exactly as posted.
+    g_cssHoldPosts = false;
+    std::vector<std::string> early;
+    early.swap(g_cssEarlyPosts);
+    if (attached) {
+        for (const std::string& frame : early) postUiMessage(frame);
     } else {
         std::cout << "ui overlay: native-css attach failed with code " << code << " ("
                   << cssFailure(code) << "): " << cssLastError() << std::endl;
@@ -1160,8 +1182,18 @@ bool uiOverlayAdvanceClock(int ticks) {
 #endif
 }
 
+void holdUiPostsUntilCssAttach() {
+#if TN_ENABLE_CSS_UI
+    g_cssHoldPosts = true;
+#endif
+}
+
 bool postUiMessage(const std::string& frame) {
 #if TN_ENABLE_CSS_UI
+    if (!g_cssBackend && g_cssHoldPosts) {
+        g_cssEarlyPosts.push_back(frame);
+        return true;
+    }
     if (g_cssBackend) {
         static unsigned long long posted = 0;
         traceUiLatency("post", ++posted, "");

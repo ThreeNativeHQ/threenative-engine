@@ -311,7 +311,7 @@ export function createQuarryGame(options: IQuarryOptions) {
       },
     },
     plugins: [playtest()],
-    render: { preferWebGPU: true },
+    renderer: { preferWebGPU: true },
     scenes: { quarry: createQuarryScene(options) },
     start: "quarry",
   });

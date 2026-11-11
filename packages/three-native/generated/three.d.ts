@@ -57,9 +57,12 @@ export type AnimationActionLoopStyles = (typeof AnimationActionLoopStyles)[keyof
 /** Catalog supported: three/AnimationClip. */
 export declare class AnimationClip {
 constructor();
+blendMode: number;
 readonly duration: number;
 readonly name: string;
 readonly tracks: Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>;
+
+  toJSON(): { name: string; duration: number; tracks: Array<{ name: string; times: number[]; values: number[]; interpolation?: number; type: string }>; blendMode: number };
 }
 
 /** Catalog supported: three/AnimationMixer. */
@@ -385,6 +388,7 @@ uuid: string;
 name: string;
 readonly type: string | "BufferGeometry";
 index: BufferAttribute | null;
+indirect: BufferAttribute | null;
 indirectOffset: number | number[];
 morphAttributes: { position?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; normal?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; color?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; };
 morphTargetsRelative: boolean;
@@ -431,6 +435,8 @@ readonly revision: number;
 
   getIndex(): BufferAttribute | null;
 
+  getIndirect(): BufferAttribute | null;
+
   hasAttribute(name: string): boolean;
   /** callback listener: EventListener */
   hasEventListener(type: string, listener: EventListener): boolean;
@@ -456,6 +462,8 @@ readonly revision: number;
   setFromPoints(points: Vector3[] | Vector2[]): this;
 
   setIndex(index: BufferAttribute | number[] | null): this;
+
+  setIndirect(indirect: BufferAttribute | null, indirectOffset?: number | number[]): this;
 
   toNonIndexed(): BufferGeometry;
 
@@ -684,6 +692,11 @@ y: number;
   setFromCartesianCoords(x: number, y: number, z: number): this;
 }
 
+/** Catalog supported: three/CubeTexture. */
+export declare class CubeTexture extends Texture {
+constructor();
+}
+
 /** Catalog supported: three/Data3DTexture. */
 export declare class Data3DTexture extends Texture {
 constructor();
@@ -883,7 +896,11 @@ constructor();
 
   intersectsBox(box: Box3): boolean;
 
+  intersectsObject(object: Object3D): boolean;
+
   intersectsSphere(sphere: Sphere): boolean;
+
+  intersectsSprite(sprite: Sprite): boolean;
 
   set(p0: Plane, p1: Plane, p2: Plane, p3: Plane, p4: Plane, p5: Plane): Frustum;
 
@@ -1908,11 +1925,17 @@ export declare const NotEqualStencilFunc: 517;
 export declare class NumberKeyframeTrack {
 constructor();
 readonly ValueTypeName: string;
-readonly name: string;
+name: string;
 readonly times: Float32Array;
-readonly values: Float32Array;
+values: Float32Array;
 
   clone(): this;
+
+  getInterpolation(): number;
+
+  getValueSize(): number;
+
+  setInterpolation(interpolation: number): this;
 }
 
 /** Catalog supported: three/Object3D. */
@@ -2224,6 +2247,59 @@ readonly shadow: PointLightShadow;
 sourceRadius: number;
 }
 
+/** Catalog supported: three/Points. */
+export declare class Points extends Object3D {
+constructor();
+readonly morphTargetInfluences: number[] | undefined;
+geometry: BufferGeometry;
+material: Material;
+
+  updateMorphTargets(): void;
+}
+
+/** Catalog supported: three/PointsMaterial. */
+export declare class PointsMaterial extends Material {
+constructor();
+alphaHash: boolean;
+alphaTest: number;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+blending: Blending;
+colorWrite: boolean;
+depthTest: boolean;
+depthWrite: boolean;
+fog: boolean;
+forceSinglePass: boolean;
+readonly id: number;
+maxPositionOffset: number;
+name: string;
+opacity: number;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
+premultipliedAlpha: boolean;
+side: Side;
+size: number;
+sizeAttenuation: boolean;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+vertexColors: boolean;
+visible: boolean;
+color: Color;
+map: Texture | null;
+
+  clone(): this;
+
+  copy(source: Material): this;
+
+  dispose(): void;
+}
+
 /** Catalog partial (members-not-catalogued, media-sources-unbound): three/PositionalAudio. */
 export declare class PositionalAudio extends Audio {
 constructor(listener: AudioListener);
@@ -2295,11 +2371,17 @@ readonly isQuaternion: true;
 export declare class QuaternionKeyframeTrack {
 constructor();
 readonly ValueTypeName: string;
-readonly name: string;
+name: string;
 readonly times: Float32Array;
-readonly values: Float32Array;
+values: Float32Array;
 
   clone(): this;
+
+  getInterpolation(): number;
+
+  getValueSize(): number;
+
+  setInterpolation(interpolation: number): this;
 }
 
 /** Catalog partial (native-not-implemented): three/QuaternionLike. */
@@ -3367,11 +3449,17 @@ export type Vector4Tuple = [ number, number, number, number ];
 export declare class VectorKeyframeTrack {
 constructor();
 readonly ValueTypeName: string;
-readonly name: string;
+name: string;
 readonly times: Float32Array;
-readonly values: Float32Array;
+values: Float32Array;
 
   clone(): this;
+
+  getInterpolation(): number;
+
+  getValueSize(): number;
+
+  setInterpolation(interpolation: number): this;
 }
 
 /** Catalog partial (native-not-implemented): three/WebGLCoordinateSystem. */
@@ -3696,6 +3784,7 @@ readonly mapSize: Vector2;
 /** Catalog supported: three/Source. */
 export declare class Source {
 constructor();
+dataReady: boolean;
 readonly version: number;
 }
 
@@ -3789,5 +3878,21 @@ specularIntensityMap: Texture | null;
 
 /** Catalog partial (graph-authoring-only, constructor-not-bound): three/webgpu/MRTNode. */
 export declare class MRTNode extends Node {
+constructor();
+}
+
+/** Catalog supported: three/webgpu/Storage3DTexture. */
+export declare class Storage3DTexture extends Texture {
+constructor(width?: number, height?: number, depth?: number);
+readonly is3DTexture: true;
+readonly isStorageTexture: true;
+mipmapsAutoUpdate: boolean;
+wrapR: Wrapping;
+
+  setSize(width: number, height: number, depth: number): void;
+}
+
+/** Catalog supported: three/CompressedTexture. */
+export declare class CompressedTexture extends Texture {
 constructor();
 }

@@ -24,6 +24,7 @@
 
 #include "engine/foundation/math/Euler.h"
 #include "engine/foundation/math/Matrix.h"
+#include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/camera.h"
@@ -185,11 +186,14 @@ struct SourceGuard {
     };
     std::vector<Entry> entries;
     std::size_t cursor = 0;
+    // The merged sources' ancestors (PRD-828): few, and one moved parent moves thousands of sources, so all of
+    // them are checked every frame, as core's #checkAncestors did in JS.
+    std::vector<Entry> ancestors;
 
     static void lanesOf(Object3D& object, std::array<double, 15>& into) {
         into = {object.position.x, object.position.y, object.position.z, object.quaternion.x,
                 object.quaternion.y, object.quaternion.z, object.quaternion.w, object.scale.x,
-                object.scale.y, object.scale.z, object.visible() ? 1.0 : 0.0, object.castShadow() ? 1.0 : 0.0,
+                object.scale.y, object.scale.z, object.authoredVisible() ? 1.0 : 0.0, object.castShadow() ? 1.0 : 0.0,
                 object.receiveShadow() ? 1.0 : 0.0, double(object.renderOrder()), object.layers().mask};
     }
     static void watch(Object3D& object, Entry& entry) {
@@ -419,9 +423,37 @@ void registerObject3D(ClassBinding& b) {
             counts.push_back(Value::of(double(count)));
         return Value::array(std::move(counts));
     };
+    // Engine-internal: core's animation rate bands in one call. `__bandRigs(camera, cameraResolved, scale, rigs)`
+    // answers each rig's rate (1, 2, 4 or 8; 0 when no part was visited), kept with this root's cull state.
+    b.methods["__bandRigs"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__bandRigs needs a camera"};
+        std::vector<Object3D*> rigs;
+        for (const Value& ref : refsOf(a.at(3))) rigs.push_back(&objectArg(store, ref));
+        return Value::list(projectedCullOf(*as<Object3D>(self)).bandRates(rigs, *camera, flag(a.at(1)), number(a.at(2))));
+    };
+    // Engine-internal (PRD-828): GPUParticles3D's view test in one call. `__boundsInView(camera, localBox, padding)`
+    // updates both world matrices as three's would, carries the local box to world space, pads it (a NaN
+    // padding is half the largest world scale) and answers whether the camera's frustum touches it.
+    b.methods["__boundsInView"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__boundsInView needs a camera"};
+        Object3D& object = *as<Object3D>(self);
+        if (camera->matrixWorldAutoUpdate) camera->updateMatrixWorld();
+        object.updateWorldMatrix(true, false);
+        Matrix4 viewProjection;
+        viewProjection.multiplyMatrices(camera->projectionMatrix, camera->matrixWorldInverse);
+        Frustum frustum;
+        frustum.setFromProjectionMatrix(viewProjection, camera->coordinateSystem, camera->reversedDepth());
+        const double padding = number(a.at(2));
+        Box3 world = store.ref<Box3>(a.at(1), "Box3");
+        world.applyMatrix4(object.matrixWorld).expandByScalar(std::isnan(padding) ? 0.5 * object.matrixWorld.getMaxScaleOnAxis() : padding);
+        return Value::of(frustum.intersectsBox(world));
+    };
     // Engine-internal: core's AutoBatch guard. `__tnGuardWatch(sources)` replaces the watched list with
     // each source's state now; `__tnGuardCheck(limit)` compares up to `limit` sources from where the last
-    // check stopped and answers the indices that changed, which it stops watching.
+    // check stopped and answers the indices that changed, which it stops watching. An optional second list
+    // watches the sources' ancestors, checked whole by `__tnGuardCheckAncestors()`.
     b.methods["__tnGuardWatch"] = [](void* self, const Args& a, Store& store) {
         SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
         guard.entries.clear();
@@ -431,7 +463,26 @@ void registerObject3D(ClassBinding& b) {
             SourceGuard::watch(objectArg(store, ref), entry);
             guard.entries.push_back(std::move(entry));
         }
+        guard.ancestors.clear();
+        if (a.size() > 1)
+            for (const Value& ref : refsOf(a.at(1))) {
+                SourceGuard::Entry entry;
+                SourceGuard::watch(objectArg(store, ref), entry);
+                guard.ancestors.push_back(std::move(entry));
+            }
         return Value::of(double(guard.entries.size()));
+    };
+    // `__tnGuardCheckAncestors()` answers the indices of the watched ancestors that moved, and stops watching them.
+    b.methods["__tnGuardCheckAncestors"] = [](void* self, const Args&, Store&) {
+        SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
+        std::vector<double> changed;
+        for (std::size_t index = 0; index < guard.ancestors.size(); ++index) {
+            SourceGuard::Entry& entry = guard.ancestors[index];
+            if (entry.out || SourceGuard::same(entry)) continue;
+            entry.out = true;
+            changed.push_back(double(index));
+        }
+        return Value::list(std::move(changed));
     };
     b.methods["__tnGuardCheck"] = [](void* self, const Args& a, Store&) {
         SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
@@ -473,7 +524,10 @@ void registerObject3D(ClassBinding& b) {
     b.ctor = [](const Args&, Store&) { return makeNode(); };
 
     // The renderer's flat inputs. Every setter that bumps `revision` is one of these.
-    b.getters["visible"] = [](void* self) { return Value::of(as<Object3D>(self)->visible()); };
+    b.getters["visible"] = [](void* self) { return Value::of(as<Object3D>(self)->authoredVisible()); };
+    // Engine-internal: core's AutoBatch hides a merged source from drawing without touching its `visible`.
+    b.getters["__tnBatchHidden"] = [](void* self) { return Value::of(as<Object3D>(self)->batchHidden()); };
+    b.setters["__tnBatchHidden"] = [](void* self, const Value& v) { as<Object3D>(self)->setBatchHidden(flag(v)); };
     b.setters["visible"] = [](void* self, const Value& v) { as<Object3D>(self)->setVisible(flag(v)); };
     // Games set `visible` every frame, and the shadow flags on every mesh while they load; the Wasm
     // back end reads each byte and skips an unchanged set.
@@ -1775,6 +1829,20 @@ std::vector<double> keyNumbers(const Value& v, const char* what) {
     return v.numbers;
 }
 
+/** three's InterpolateDiscrete 2300, InterpolateLinear 2301 and InterpolateSmooth 2302. */
+tn::engine::animation::Interpolation interpolationMode(const Value& v) {
+    using tn::engine::animation::Interpolation;
+    const double m = number(v);
+    if (m != 2300 && m != 2301 && m != 2302) throw Unsupported{"interpolation must be InterpolateDiscrete, InterpolateLinear or InterpolateSmooth"};
+    return m == 2300 ? Interpolation::Discrete : m == 2302 ? Interpolation::Smooth : Interpolation::Linear;
+}
+
+/** The three constant of a mode; a quaternion track's QuaternionLinear is three's InterpolateLinear. */
+double interpolationConstant(tn::engine::animation::Interpolation mode) {
+    using tn::engine::animation::Interpolation;
+    return mode == Interpolation::Discrete ? 2300 : mode == Interpolation::Smooth ? 2302 : 2301;
+}
+
 // three's Quaternion-, Vector- and NumberKeyframeTrack(name, times, values, interpolation). Values
 // that are not a whole number of keys of the type's size are refused; three would read past them.
 void registerKeyframeTrack(ClassBinding& b, tn::engine::animation::TrackType type) {
@@ -1786,20 +1854,37 @@ void registerKeyframeTrack(ClassBinding& b, tn::engine::animation::TrackType typ
         const size_t size = type == TrackType::Quaternion ? 4 : type == TrackType::Number ? 1 : 0;
         if (times.empty() || values.size() % times.size() != 0 || (size != 0 && values.size() != times.size() * size))
             throw Unsupported{"a keyframe track's values must be one value per time"};
-        Interpolation mode = Interpolation::Linear;
-        if (a.size() > 3 && a.at(3).kind != Value::Kind::Undefined) {
-            const double m = number(a.at(3));  // InterpolateDiscrete 2300, InterpolateLinear 2301, InterpolateSmooth 2302
-            if (m != 2300 && m != 2301 && m != 2302) throw Unsupported{"interpolation must be InterpolateDiscrete, InterpolateLinear or InterpolateSmooth"};
-            mode = m == 2300 ? Interpolation::Discrete : m == 2302 ? Interpolation::Smooth : Interpolation::Linear;
-        }
+        const Interpolation mode = a.size() > 3 && a.at(3).kind != Value::Kind::Undefined ? interpolationMode(a.at(3)) : Interpolation::Linear;
         return std::static_pointer_cast<void>(std::make_shared<KeyframeTrack>(a.at(0).text, type, times, values, mode));
+    };
+    // three's getValueSize, getInterpolation and setInterpolation; the constructor's rule picks each type's mode.
+    b.methods["getValueSize"] = [](void* self, const Args&, Store&) { return Value::of(double(as<KeyframeTrack>(self)->valueSize())); };
+    b.methods["getInterpolation"] = [](void* self, const Args&, Store&) { return Value::of(interpolationConstant(as<KeyframeTrack>(self)->interpolation)); };
+    b.methods["setInterpolation"] = [](void* self, const Args& a, Store&) {
+        if (a.empty()) throw Unsupported{"setInterpolation needs an interpolation"};
+        auto* track = as<KeyframeTrack>(self);
+        track->interpolation = KeyframeTrack(track->name, track->type, {0}, {}, interpolationMode(a.at(0))).interpolation;
+        return chain();
     };
     b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<KeyframeTrack>(self)->name}; };
     b.getters["ValueTypeName"] = [type](void*) {
         return Value{Value::Kind::String, 0, type == TrackType::Quaternion ? "quaternion" : type == TrackType::Vector ? "vector" : "number"};
     };
+    // three's track.name and track.values are plain fields (core renames a cloned track to its node's uuid path and
+    // writes the consumed root pose into its values). `values` reads as a copy, so an edit is written back whole.
+    b.setters["name"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::String) throw Unsupported{"a keyframe track's name must be a string"};
+        as<KeyframeTrack>(self)->name = v.text;
+    };
     b.getters["times"] = [](void* self) { return Value::list(as<KeyframeTrack>(self)->times); };
     b.getters["values"] = [](void* self) { return Value::list(as<KeyframeTrack>(self)->values); };
+    b.setters["values"] = [](void* self, const Value& v) {
+        auto* track = as<KeyframeTrack>(self);
+        std::vector<double> values = keyNumbers(v, "values");
+        if (values.size() != track->values.size()) throw Unsupported{"a keyframe track's new values must keep one value per time"};
+        for (double& value : values) value = double(float(value));  // stored as three stores them: float32
+        track->values = std::move(values);
+    };
     b.methods["clone"] = [](void* self, const Args&, Store& store) {
         const auto* track = as<KeyframeTrack>(self);
         return store.adopt(trackClass(track->type), std::make_shared<KeyframeTrack>(*track));
@@ -1834,10 +1919,37 @@ void registerAnimationClip(ClassBinding& b) {
     };
     b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<AnimationClip>(self)->name}; };
     b.getters["duration"] = [](void* self) { return Value::of(as<AnimationClip>(self)->duration); };
+    // three's NormalAnimationBlendMode 2500 and AdditiveAnimationBlendMode 2501.
+    b.getters["blendMode"] = [](void* self) { return Value::of(as<AnimationClip>(self)->blendMode == BlendMode::Additive ? 2501.0 : 2500.0); };
+    b.setters["blendMode"] = [](void* self, const Value& v) {
+        const double m = number(v);
+        if (m != 2500 && m != 2501) throw Unsupported{"blendMode must be a three AnimationBlendMode"};
+        as<AnimationClip>(self)->blendMode = m == 2501 ? BlendMode::Additive : BlendMode::Normal;
+    };
     b.members["tracks"] = [](void* self, const Args&, Store& store) {
         std::vector<Value> tracks;
         for (auto& track : as<AnimationClip>(self)->tracks) tracks.push_back(store.adoptAlias(trackClass(track.type), &track, self));
         return Value::array(std::move(tracks));
+    };
+    // three's clip.toJSON: KeyframeTrack.toJSON per track, the interpolation only where it is not the default.
+    // ponytail: no uuid or userData; the engine clip carries neither.
+    b.methods["toJSON"] = [](void* self, const Args&, Store&) {
+        const auto* clip = as<AnimationClip>(self);
+        std::vector<Value> tracks;
+        for (const auto& track : clip->tracks) {
+            std::vector<std::pair<std::string, Value>> fields{
+                {"name", Value{Value::Kind::String, 0, track.name}},
+                {"times", Value::array({})}, {"values", Value::array({})}};
+            for (double t : track.times) fields[1].second.items.push_back(Value::of(t));
+            for (double v : track.values) fields[2].second.items.push_back(Value::of(v));
+            if (const double mode = interpolationConstant(track.interpolation); mode != 2301) fields.emplace_back("interpolation", Value::of(mode));
+            fields.emplace_back("type", Value{Value::Kind::String, 0,
+                track.type == TrackType::Quaternion ? "quaternion" : track.type == TrackType::Vector ? "vector" : "number"});
+            tracks.push_back(Value::record(std::move(fields)));
+        }
+        return Value::record({{"name", Value{Value::Kind::String, 0, clip->name}}, {"duration", Value::of(clip->duration)},
+                              {"tracks", Value::array(std::move(tracks))},
+                              {"blendMode", Value::of(clip->blendMode == BlendMode::Additive ? 2501.0 : 2500.0)}});
     };
 }
 
@@ -2070,6 +2182,23 @@ void registerSceneBindings(Registry& classes) {
             }
             if (segments) return std::static_pointer_cast<void>(std::make_shared<LineSegments>(geometry, material));
             return std::static_pointer_cast<void>(std::make_shared<Line>(geometry, material));
+        };
+    }
+    {
+        // three's Points draws its geometry's vertices as one-pixel points; its default material is a
+        // new PointsMaterial, which stays opaque and fogged as three's does (Points.js:60-75).
+        auto& points = classes["Points"];
+        registerMesh(points);
+        points.methods.erase("getVertexPosition");  // three's Points is no Mesh: it has no vertex reader
+        points.ctor = [](const Args& a, Store& store) {
+            auto geometry = !a.empty() && a.at(0).kind == Value::Kind::Ref ? geometryArg(store, a.at(0))
+                                                                         : std::make_shared<BufferGeometry>();
+            auto material = a.size() >= 2 && a.at(1).kind == Value::Kind::Ref ? materialArg(store, a.at(1)) : nullptr;
+            if (!material) {
+                material = std::make_shared<Material>(MaterialType::Basic);
+                material->pointsMaterial = true;
+            }
+            return std::static_pointer_cast<void>(std::make_shared<Points>(geometry, material));
         };
     }
     auto& sprite = classes["Sprite"];

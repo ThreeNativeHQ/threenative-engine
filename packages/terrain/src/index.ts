@@ -14,6 +14,7 @@ export type {
   IGrassType,
   ILayerInfo,
   ISpawnSpec,
+  IUnderstoreySpec,
 } from "./core/biome.js";
 export { MATS_FIELD, STAND_FIELD, fieldWeight } from "./core/cover-field.js";
 export type { ICoverField } from "./core/cover-field.js";
@@ -31,6 +32,8 @@ export { Terrain, TerrainEvaluator } from "./core/terrain.js";
 export type { OperationOptions, LayerPatch, PatchCommand } from "./core/terrain.js";
 export { Mask, MATERIAL_IDS } from "./core/masks.js";
 export { landform, landformBackdrop, LANDFORMS } from "./core/presets.js";
+export { liftMassif, placeMassif } from "./core/massif.js";
+export type { IMassifPlacement, IMassifTile, IPlaceMassifOptions } from "./core/massif.js";
 export type {
   IBackdropOptions,
   ILandformBackdrop,
@@ -63,6 +66,7 @@ export { bakeWorldPackage } from "./core/world-package.js";
 export {
   PROP_CELL_SIZE,
   compilePropBuckets,
+  decodePropBucket,
   propAssetOf,
   propPackageFile,
   propPackageFiles,
@@ -72,6 +76,7 @@ export type {
   IPropBucketEntry,
   IPropBucketKind,
   IPropBucketPackage,
+  IPropBucketRecord,
   IPropPackage,
   IPropPackageFiles,
 } from "./core/prop-package.js";
