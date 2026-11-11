@@ -3,7 +3,7 @@
 
 namespace tn::engine {
 
-const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item) {
+const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item, uint64_t planStamp) {
     // A positionNode displaces on the GPU only: this box is the bind pose either way, so it caches like a rigid
     // draw. Rebuilding it each frame walked every instance of a swaying forest (218k) for 40 ms of plan time.
     const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints;
@@ -32,7 +32,7 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
         ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
     if (stated) {
         bounds = box;  // where the author says the positionNode puts the vertices
-    } else if (rig && rig->boneReachBounds(bounds)) {
+    } else if (rig && rig->boneReachBounds(bounds, planStamp)) {
     } else if (item.morphGeometry && !item.boneMatrices) {
         // three bounds a morphed mesh by computeBoundingBox, which takes every target's reach and no influence;
         // morphing each vertex on the CPU here, every frame, cost the MCP forest about 6 % of its CPU.

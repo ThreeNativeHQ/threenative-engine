@@ -140,7 +140,7 @@ struct DrawCache {
     // moved rebuilds its world box from this, without reading a vertex (PRD-871).
     std::optional<std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t>> vertexBoxKey;
     Box3 vertexBox;
-    const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item);
+    const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item, uint64_t planStamp = 0);
 };
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */

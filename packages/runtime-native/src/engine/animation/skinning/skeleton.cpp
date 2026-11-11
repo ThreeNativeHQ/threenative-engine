@@ -6,6 +6,7 @@
 #include "engine/scene/lights.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cmath>
 #include <functional>
@@ -214,7 +215,28 @@ static double linearStretch(const Matrix4& m) {
     return std::max({lengths[0], lengths[1], lengths[2]});
 }
 
-bool SkinnedMesh::boneReachBounds(Box3& target) const {
+uint64_t Skeleton::nextPlanStamp() {
+    static std::atomic<uint64_t> stamp{0};
+    return ++stamp;
+}
+
+const std::vector<Skeleton::PlanPose>& Skeleton::planPoses(uint64_t stamp) {
+    if (stamp != 0 && stamp == planStamp_ && planPoses_.size() == bones.size()) return planPoses_;
+    planStamp_ = stamp;
+    ++planPoseBuilds;
+    planPoses_.resize(bones.size());
+    for (std::size_t j = 0; j < bones.size(); ++j) {
+        PlanPose& pose = planPoses_[j];
+        Bone* bone = this->bone(j);
+        if (!bone) { pose.stretch = -1; continue; }
+        bone->materializeWorldTransformIfPending();
+        pose.position.setFromMatrixPosition(bone->matrixWorld);
+        pose.stretch = linearStretch(bone->matrixWorld);
+    }
+    return planPoses_;
+}
+
+bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
     if (!skeleton || !geometry || !geometry->attributes.count("position") || !geometry->attributes.count("skinIndex") ||
         !geometry->attributes.count("skinWeight") || skeleton->boneInverses.size() < skeleton->bones.size())
         return false;
@@ -265,13 +287,12 @@ bool SkinnedMesh::boneReachBounds(Box3& target) const {
     target.makeEmpty();
     const double meshScale = linearStretch(bindMatrixInverse);
     Vector3 center;
+    const auto& poses = skeleton->planPoses(planStamp);
     for (std::size_t j = 0; j < bones; ++j) {
         if (boneReach_[j] < 0) continue;
-        Bone* bone = skeleton->bone(j);
-        if (!bone) return false;
-        bone->materializeWorldTransformIfPending();
-        center.setFromMatrixPosition(bone->matrixWorld).applyMatrix4(bindMatrixInverse);
-        const double radius = boneReach_[j] * linearStretch(bone->matrixWorld) * meshScale;
+        if (poses[j].stretch < 0) return false;
+        center.copy(poses[j].position).applyMatrix4(bindMatrixInverse);
+        const double radius = boneReach_[j] * poses[j].stretch * meshScale;
         target.min.x = std::min(target.min.x, center.x - radius);
         target.min.y = std::min(target.min.y, center.y - radius);
         target.min.z = std::min(target.min.z, center.z - radius);

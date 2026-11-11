@@ -8675,6 +8675,24 @@ void boneReachBoundsHoldPosedVertices() {
         // Conservative, not unbounded: a sphere per bone, so a few times the exact box at most.
         CHECK(box.min.distanceTo(box.max) <= 4 * exact.min.distanceTo(exact.max));
     }
+    // PRD-871: two meshes bound to one skeleton read its bone poses once per planning pass, and get the same box.
+    auto twin = std::make_shared<SkinnedMesh>(geometry, std::make_shared<Material>(MaterialType::Standard));
+    rig->add(*twin);
+    root->updateMatrixWorld(true);
+    twin->bind(rig->skeleton, &rig->bindMatrix);
+    Box3 alone, first, second;
+    CHECK(twin->boneReachBounds(alone));
+    const uint64_t builds = rig->skeleton->planPoseBuilds;
+    const uint64_t stamp = Skeleton::nextPlanStamp();
+    CHECK(rig->boneReachBounds(first, stamp) && twin->boneReachBounds(second, stamp));
+    CHECK(rig->skeleton->planPoseBuilds == builds + 1);
+    CHECK(second.min.equals(alone.min) && second.max.equals(alone.max));
+    // A later pass reads the bones again: a pose that moved between passes is never stale.
+    hip->position.x += 3;
+    root->updateMatrixWorld(true);
+    Box3 moved;
+    CHECK(rig->boneReachBounds(moved, Skeleton::nextPlanStamp()));
+    CHECK(rig->skeleton->planPoseBuilds == builds + 2 && moved.max.x > first.max.x + 2);
     // Weights that do not sum to 1 leave the bones' hull: the caller falls back to the vertices.
     weights[0] = 0.5;
     geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));

@@ -112,8 +112,19 @@ class Skeleton {
     /** `bones.size() * 16` floats, column-major per slot, three's flat `boneMatrices`. */
     std::vector<float> boneMatrices;
 
+    /** A bone's posed world position and the largest stretch of its world matrix; stretch -1 is a null slot. */
+    struct PlanPose { Vector3 position; double stretch = -1; };
+    /** Every bone's PlanPose, read once per `stamp` and shared by each mesh bound to this skeleton: the stress
+     * lab's mannequin binds two meshes to one skeleton, and each read all 65 bones every frame (PRD-871). */
+    const std::vector<PlanPose>& planPoses(uint64_t stamp);
+    /** A fresh stamp for one planning pass. A pass that does not share one passes 0 and reads the bones itself. */
+    static uint64_t nextPlanStamp();
+    uint64_t planPoseBuilds = 0;
+
   private:
     std::vector<Bone*> boneAddresses_;  // `bones` is set once, by the constructor
+    std::vector<PlanPose> planPoses_;
+    uint64_t planStamp_ = 0;
 };
 
 /**
@@ -139,7 +150,7 @@ class SkinnedMesh : public Mesh {
      * bind-pose vertex it weights (UE 5.8.3 fits skinned bounds to bones, not to skinned vertices).
      * The reach is measured once per geometry revision, so a call costs O(bones). False when a
      * vertex's weights do not sum to 1: the vertex then leaves the bones' hull. */
-    bool boneReachBounds(Box3& target) const;
+    bool boneReachBounds(Box3& target, uint64_t planStamp = 0) const;
     std::shared_ptr<Box3> boundingBox;
     std::shared_ptr<Skeleton> skeleton;
     std::weak_ptr<bool> gpuSkinValidity;

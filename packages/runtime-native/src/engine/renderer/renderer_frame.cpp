@@ -121,6 +121,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
+    // One stamp per pass: rigs that share a skeleton read its bones once (PRD-871).
+    const uint64_t planStamp = virtualShadows_.empty() ? 0 : Skeleton::nextPlanStamp();
     for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
@@ -143,7 +145,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.castShadow && shadow.atlas.options().autoDepth && !displacedByGeometryBox(item) &&
                 (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
-            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
+            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item, planStamp);
             if (item.castShadow)  // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep
                 record[std::size_t(&item - items.data())] = CasterRecord{bounds, diameter, true,
                     item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr};
