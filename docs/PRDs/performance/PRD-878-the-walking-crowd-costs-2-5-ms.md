@@ -62,9 +62,9 @@ Facts the levers rest on (PRD-872 Decisions, 2026-11-11):
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local, measure lane]: on the RTX 2080, `?stress` minus `?stress&noCrowd` frame p50 is 2.5 ms or less, two runs per arm, in one fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: pending.
+- [ ] AC-1 [local, measure lane]: on the RTX 2080, `?stress` minus `?stress&noCrowd` frame p50 is 2.5 ms or less, two runs per arm, in one fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: NOT MET — fair window `fwfinal` (ledger rows 376-379, ABBA, mean of 2 runs per arm, 0 void, load peak 6.9, RTX 2080, 1280x720): `?stress` minus `&noCrowd` frame p50 is 9.22 − 5.06 = 4.16 ms on `81901d260` and 7.75 − 4.05 = 3.70 ms on head `ee22d38c7`, a 0.46 ms cut against the 2.5 ms bar. The whole frame fell 1.47 ms (−16%) because the engine-JS and world cuts also help `&noCrowd` (−1.0 ms).
 - [ ] AC-2 [local]: `planVirtualPages` reads 0.5 ms or less on `?stress`. proof: the stage split — Evidence: pending.
-- [ ] AC-3 [local]: head frame p50 is lower than PR #659's `81901d260` in both ABBA pairs, p95 no more than 5% worse, and a fresh visual judge reads NEUTRAL on the walkers (close-up and crowd, two runs per arm). proof: ledger rows and the verdict — Evidence: pending.
+- [ ] AC-3 [local]: head frame p50 is lower than PR #659's `81901d260` in both ABBA pairs, p95 no more than 5% worse, and a fresh visual judge reads NEUTRAL on the walkers (close-up and crowd, two runs per arm). proof: ledger rows and the verdict — Evidence: frame clauses MET, judge pending — ledger rows 376-381: head p50 below `81901d260` in both ABBA pairs (`?stress` 7.41 vs 8.66 and 8.09 vs 9.78; `&noCrowd` 3.78 vs 4.81 and 4.32 vs 5.31; `&still` 7.31 vs 8.91 and 7.54 vs 9.28), mean p50 9.22 → 7.75, p95 11.50 → 10.60 (−8%, not worse), GPU upload 1,191 → 638 KB a frame. The fresh visual judge on the walkers is not yet run.
 
 ## Blocked on
 
