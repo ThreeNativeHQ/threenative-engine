@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
 import tsParser from "@typescript-eslint/parser";
 import { Linter } from "eslint";
+import { MathUtils } from "three";
 import { describe, expect, it } from "vitest";
 import { threenativePlugin } from "../src/quality/plugin.js";
+import { REINVENTIONS, reinventionConfigs, reinventionRules } from "../src/quality/reinventions.js";
 
 const RULES = [
   "hot-callback-allocation",
@@ -167,11 +170,134 @@ describe("threenative/startup-override-reason", () => {
   });
 });
 
+describe("threenative/hot-callback-* in an entity update method", () => {
+  const entity = (body: string): string => `import * as THREE from "three";
+export class Enemies {\n${body}\n}\n`;
+
+  it("treats a non-static update, fixedUpdate, tick or step as per-frame", () => {
+    for (const name of ["update", "fixedUpdate", "tick", "step"]) {
+      expect(fired(entity(`${name}() { const v = new THREE.Vector2(); return v; }`))).toEqual([
+        "threenative/hot-callback-allocation",
+      ]);
+    }
+    expect(fired(entity("update() { this.world.traverse(() => undefined); }"))).toEqual([
+      "threenative/hot-callback-scene-work",
+    ]);
+  });
+
+  it("passes construction in load, a static update, and a method that is not a frame name", () => {
+    expect(fired(entity("load() { const v = new THREE.Vector2(); return v; }"))).toEqual([]);
+    expect(fired(entity("static update() { const v = new THREE.Vector2(); return v; }"))).toEqual(
+      [],
+    );
+    expect(fired(entity("refresh() { const v = new THREE.Vector2(); return v; }"))).toEqual([]);
+  });
+});
+
 describe("threenative/hot-callback-allocation after the shared tracker", () => {
   it("still flags a Vector3 in update and passes it in enter", () => {
     expect(fired(scene("update() { const v = new THREE.Vector3(); return v; }"))).toEqual([
       "threenative/hot-callback-allocation",
     ]);
     expect(fired(scene("enter() { this.v = new THREE.Vector3(); }"))).toEqual([]);
+  });
+});
+
+describe("the reinvention rows", () => {
+  /** One hand-written form and the call that replaces it, per row. */
+  const CASES: Record<string, { readonly bad: string; readonly good: string }> = {
+    createRandom: {
+      bad: "let s = 7;\ns = (Math.imul(s, 1664525) + 1013904223) | 0;\nconst r = Math.random();\n",
+      good: "const random = createRandom(7)();\n",
+    },
+    "MathUtils.damp": {
+      bad: "const k = 1 - Math.exp(-dt * 4);\n",
+      good: "const k = MathUtils.damp(a, b, 4, dt);\n",
+    },
+    debugFlag: {
+      bad: 'const asked = new URLSearchParams(location.search).get("quality");\n',
+      good: 'const asked = debugValue("quality");\n',
+    },
+    "renderer.matrixWorld": {
+      bad: "scene.matrixWorldAutoUpdate = false;\n",
+      good: "const config = { renderer: { matrixWorld: true } };\n",
+    },
+    "InputMap.axis": {
+      bad: 'const x = (keys.has("KeyA") ? 1 : 0) - (keys.has("KeyD") ? 1 : 0);\n',
+      good: 'const x = ctx.input.axis("moveX");\n',
+    },
+    "MathUtils.smoothstep": {
+      bad: "const t = u * u * (3 - 2 * u);\n",
+      good: "const t = MathUtils.smoothstep(u, 0, 1);\n",
+    },
+  };
+
+  /** Lint one file with only `rows` on, at error. */
+  function reinvented(
+    rows: Parameters<typeof reinventionRules>[0],
+    source: string,
+    filename = "src/game.ts",
+  ): string[] {
+    return new Linter()
+      .verify(
+        source,
+        [
+          {
+            files: ["src/**/*.ts"],
+            languageOptions: { parser: tsParser as Linter.Parser },
+            rules: reinventionRules(rows),
+          },
+        ],
+        filename,
+      )
+      .map((message) => message.ruleId ?? `parse:${message.message}`);
+  }
+
+  const row = (capability: string) => {
+    const found = REINVENTIONS.find((candidate) => candidate.capability === capability);
+    if (found === undefined) throw new Error(`no reinvention row names ${capability}`);
+    return found;
+  };
+
+  it("fails each hand-written form and passes the call it names", () => {
+    for (const [capability, test] of Object.entries(CASES)) {
+      expect(reinvented([row(capability)], test.bad), capability).not.toEqual([]);
+      expect(reinvented([row(capability)], test.good), capability).toEqual([]);
+    }
+  });
+
+  it("names only a symbol that still exists", () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../../core/capabilities.json", import.meta.url), "utf8"),
+    ) as { entries: readonly Record<string, unknown>[] };
+    const entries = new Map(
+      manifest.entries.map((entry) => [String(entry.symbol), JSON.stringify(entry)]),
+    );
+    for (const reinvention of REINVENTIONS) {
+      const [owner, member] = reinvention.capability.split(".");
+      if (reinvention.source === "three") {
+        expect(owner, reinvention.capability).toBe("MathUtils");
+        const members = MathUtils as unknown as Record<string, unknown>;
+        expect(typeof members[member ?? ""], reinvention.capability).toBe("function");
+        continue;
+      }
+      if (entries.has(reinvention.capability)) continue;
+      const ownerRow = owner === undefined ? undefined : entries.get(owner);
+      expect(ownerRow, reinvention.capability).toBeDefined();
+      expect(ownerRow?.includes(member ?? ""), reinvention.capability).toBe(true);
+    }
+  });
+
+  it("keeps a path's excluded rows out and leaves the others on", () => {
+    const configs = reinventionConfigs(["src/**/*.ts"]);
+    const lint = (source: string, filename: string): string[] =>
+      new Linter()
+        .verify(source, configs, filename)
+        .map((message) => message.ruleId ?? `parse:${message.message}`);
+    const ui = "const r = Math.random();\nconst t = u * u * (3 - 2 * u);\n";
+    // The UI keeps the platform RNG and still gets the smoothstep row.
+    expect(lint(ui, "src/ui/hud.ts").length).toBe(1);
+    // The same two lines in a scene are both reinventions.
+    expect(lint(ui, "src/scenes/Play.ts").length).toBe(2);
   });
 });
