@@ -1,6 +1,6 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { Group, Vector3 } from "three";
+import { Group, MathUtils, Vector3 } from "three";
 import { wardenFigure } from "../render/warden.js";
 import type { GameState } from "../state.js";
 import { WARDEN_MASK } from "./Crate.js";
@@ -90,12 +90,12 @@ export class Warden {
       // Shortest-arc turn, framerate independent, so the figure faces the shove rather than
       // snapping between the four arrow directions.
       const delta = Math.atan2(Math.sin(target - this.#facing), Math.cos(target - this.#facing));
-      this.#facing += delta * (1 - Math.exp(-dt / 0.06));
+      this.#facing = MathUtils.damp(this.#facing, this.#facing + delta, 1 / 0.06, dt);
       this.#figure.rotation.y = this.#facing;
     }
     // Lean into the push. Purely cosmetic, and it is most of what makes the shove read.
     const lean = Math.min(0.28, Math.hypot(move.x, move.z) * 0.28);
-    this.#figure.rotation.x += (lean - this.#figure.rotation.x) * (1 - Math.exp(-dt / 0.09));
+    this.#figure.rotation.x = MathUtils.damp(this.#figure.rotation.x, lean, 1 / 0.09, dt);
   }
 
   teleport(position: { readonly x: number; readonly y: number; readonly z: number }): void {

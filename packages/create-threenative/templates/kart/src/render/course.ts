@@ -15,6 +15,7 @@ import {
   Group,
   IcosahedronGeometry,
   InstancedMesh,
+  MathUtils,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
@@ -29,6 +30,7 @@ import { C } from "./palette.js";
 export function makeRng(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
+    // eslint-disable-next-line no-restricted-syntax -- The tree and grass placement is authored against this mulberry32 stream; the engine's seeded RNG is an LCG, so swapping it places a different course.
     s = (s + 0x6d2b79f5) >>> 0;
     let t = s;
     t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -521,7 +523,7 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
 
 function smooth(edge0: number, edge1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 }
 
 /** True when x/z is at least `clearance` metres from every sample of the line. */

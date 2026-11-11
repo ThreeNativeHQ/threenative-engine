@@ -1,3 +1,4 @@
+import { createRandom } from "@threenative/core";
 // Generated for you. Plain maths, edit or delete it freely: the cloud layer Unreal's default level draws.
 // Model references (UE 5.8.3): Engine/Content/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud
 // (the default cloud material; its node graph and parameter defaults are read through the editor),
@@ -6,6 +7,8 @@
 // Independent CPU implementation. The material samples four Unreal textures that this repository
 // must not carry, so each one is regenerated here from a seeded noise whose per-channel value
 // quantiles and correlation lengths match the Unreal texture (measured, see the spec).
+import { MathUtils } from "three";
+
 import {
   BOTTOM_KM,
   CAMERA_KM,
@@ -110,17 +113,9 @@ const PROFILE_COEFFICIENTS = [
 const clamp = (v: number): number => Math.max(0, Math.min(1, v));
 const smooth = (v: number): number => {
   const t = clamp(v);
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 };
 const mod = (a: number, n: number): number => ((a % n) + n) % n;
-
-function rng(seed: number): () => number {
-  let state = seed | 0;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) | 0;
-    return (state >>> 0) / 4294967296;
-  };
-}
 
 /**
  * One axis of a periodic lattice, per voxel: the two cells it blends (wrapped), and the blend weight of
@@ -298,7 +293,7 @@ export function primeCloudTextures(textures: ICloudTextures, seed = 631): void {
 export function cloudTextures(seed = 631): ICloudTextures {
   const cached = textureCache.get(seed);
   if (cached) return cached;
-  const next = rng(seed);
+  const next = createRandom(seed);
   const n = PATTERN_SIZE;
   const pattern = new Float32Array(n * n * 4);
   for (let c = 0; c < 3; c++) {

@@ -1,3 +1,4 @@
+import { createRandom } from "@threenative/core";
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
 // What the fox collects: a spinning coin, a faceted gem, and the big gold star that ends the run.
@@ -18,6 +19,9 @@ import {
 } from "three";
 import { flat, toon } from "./materials.js";
 import { C } from "./palette.js";
+
+/** The decoration is placed once at load; a fixed seed makes every run place it the same. */
+const random = createRandom(40465);
 
 const TAU = Math.PI * 2;
 
@@ -96,9 +100,9 @@ export function burst(
   const material = flat(color);
   const bits: Mesh[] = [];
   for (let i = 0; i < count; i += 1) {
-    const bit = new Mesh(new SphereGeometry(0.09 + Math.random() * 0.07, 5, 4), material);
-    const a = Math.random() * TAU;
-    bit.userData.v = new Vector3(Math.cos(a) * 3.2, (0.4 + Math.random()) * 4.5, Math.sin(a) * 3.2);
+    const bit = new Mesh(new SphereGeometry(0.09 + random() * 0.07, 5, 4), material);
+    const a = random() * TAU;
+    bit.userData.v = new Vector3(Math.cos(a) * 3.2, (0.4 + random()) * 4.5, Math.sin(a) * 3.2);
     group.add(bit);
     bits.push(bit);
   }

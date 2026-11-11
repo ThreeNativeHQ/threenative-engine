@@ -15,6 +15,7 @@ import {
   LinearFilter,
   LinearMipmapLinearFilter,
   type Material,
+  MathUtils,
   MeshBasicMaterial,
   MeshStandardMaterial,
   NoColorSpace,
@@ -56,8 +57,8 @@ export function detailTexture(): DataTexture {
       const tx = fx - x0;
       const ty = fy - y0;
       const at = (i: number, j: number): number => rng(((j % cells) * cells + (i % cells)) * 1.37);
-      const sx = tx * tx * (3 - 2 * tx);
-      const sy = ty * ty * (3 - 2 * ty);
+      const sx = MathUtils.smoothstep(tx, 0, 1);
+      const sy = MathUtils.smoothstep(ty, 0, 1);
       const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * sx;
       const bottom = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * sx;
       return top + (bottom - top) * sy;

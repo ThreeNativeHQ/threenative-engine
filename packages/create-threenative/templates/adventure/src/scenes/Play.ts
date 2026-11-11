@@ -609,7 +609,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         hero.mesh.position.z - f.x * 0.7 - f.z * 0.4 + Math.sin(orb.clock * 1.3) * 0.15,
       );
       if (companion.group.position.distanceTo(orbGoal) > 6) companion.group.position.copy(orbGoal);
-      else companion.group.position.lerp(orbGoal, 1 - Math.exp(-dt * 4));
+      else companion.group.position.lerp(orbGoal, MathUtils.damp(0, 1, 4, dt));
       const orbGap = companion.group.position.distanceTo(head);
       orb.nearest = Math.min(orb.nearest, orbGap);
       orb.farthest = Math.max(orb.farthest, orbGap);

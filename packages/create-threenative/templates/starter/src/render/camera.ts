@@ -9,7 +9,7 @@
 // Camera framing is one of the loudest things in a screenshot, so it lives
 // here in your repo rather than behind a framework option.
 import type { PerspectiveCamera, Vector3 } from "three";
-import { Vector3 as Vec3 } from "three";
+import { MathUtils, Vector3 as Vec3 } from "three";
 
 export interface ISpringArmOptions {
   /** Where the camera sits relative to its target, before smoothing. */
@@ -102,7 +102,7 @@ export function createSpringArm(
     desired.copy(target).add(targetOffset());
     // 1 - e^(-dt/damping): the frame-rate-independent form of a lerp. At 30fps
     // and 120fps the camera ends up in the same place after the same second.
-    camera.position.lerp(desired, 1 - Math.exp(-dt / damping));
+    camera.position.lerp(desired, MathUtils.damp(0, 1, 1 / damping, dt));
     clear(target);
     camera.lookAt(aim.copy(target).add(lookAhead));
   };

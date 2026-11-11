@@ -24,6 +24,7 @@ import {
   IcosahedronGeometry,
   InstancedMesh,
   type Material,
+  MathUtils,
   Mesh,
   Object3D,
   OctahedronGeometry,
@@ -1006,7 +1007,7 @@ export function valeGround(
     0.5 + 0.25 * (Math.sin(x * f + z * f * 0.55) + Math.sin(z * f * 1.4 - x * f * 0.37 + 1.3));
   const smooth = (a: number, b: number, t: number): number => {
     const u = Math.min(1, Math.max(0, (t - a) / (b - a)));
-    return u * u * (3 - 2 * u);
+    return MathUtils.smoothstep(u, 0, 1);
   };
   const paintGround = (geometry: BufferGeometry): void => {
     const position = geometry.attributes.position;

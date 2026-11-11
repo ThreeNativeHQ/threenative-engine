@@ -1,3 +1,4 @@
+import { createRandom } from "@threenative/core";
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
@@ -180,13 +181,8 @@ export function paintedTexture(
 
 /** A seeded 0..1 random source (an LCG), for texture painting that must be the same every build. */
 export function seeded(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 0x1_0000_0000;
-  };
+  return createRandom(seed);
 }
-
 /** The surfaces the island is made of, resolved once. */
 export function createMaterials() {
   return {

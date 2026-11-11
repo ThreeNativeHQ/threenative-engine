@@ -1,3 +1,4 @@
+import { createRandom } from "@threenative/core";
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
@@ -397,13 +398,8 @@ export function reactor(): Group {
 
 /** Seeded, so the same forest grows on every machine. Same generator Bastion used. */
 export function lcg(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
+  return createRandom(seed);
 }
-
 function scatter(
   geometry: BufferGeometry,
   material: Material,

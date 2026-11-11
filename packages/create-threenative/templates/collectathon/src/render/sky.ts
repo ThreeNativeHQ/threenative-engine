@@ -1,3 +1,4 @@
+import { createRandom } from "@threenative/core";
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
 // A blue gradient with the sun's warm halo and a deck of big cumulus, painted per texel from seeded
@@ -11,6 +12,7 @@ import {
   EquirectangularReflectionMapping,
   FogExp2,
   LinearFilter,
+  MathUtils,
   RGBAFormat,
   SRGBColorSpace,
   type Scene,
@@ -28,19 +30,16 @@ export const SUN_DIRECTION = new Vector3(0.9, 0.38, 0.16).normalize();
 
 /** A 256 x 256 lattice of seeded values: the noise reads a table, far cheaper than a hash per call. */
 const LATTICE = (() => {
-  let state = 9137;
-  return Float32Array.from({ length: 256 * 256 }, () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 0x1_0000_0000;
-  });
+  const random = createRandom(9137);
+  return Float32Array.from({ length: 256 * 256 }, () => random());
 })();
 
 /** Smooth 2D value noise on the lattice, for the cloud deck: deterministic, repeats every 256 units. */
 function noise(x: number, y: number): number {
   const i = Math.floor(x);
   const j = Math.floor(y);
-  const fx = (x - i) * (x - i) * (3 - 2 * (x - i));
-  const fy = (y - j) * (y - j) * (3 - 2 * (y - j));
+  const fx = MathUtils.smoothstep(x - i, 0, 1);
+  const fy = MathUtils.smoothstep(y - j, 0, 1);
   const i0 = i & 255;
   const i1 = (i + 1) & 255;
   const j0 = (j & 255) << 8;
@@ -79,7 +78,7 @@ function density(x: number, y: number): number {
 
 const smooth = (from: number, to: number, value: number): number => {
   const t = Math.min(1, Math.max(0, (value - from) / (to - from)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 };
 
 /**
