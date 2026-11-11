@@ -62,11 +62,11 @@ what needs a browser API (fetch of tile bytes, GPU readback callbacks) and game 
 #### Phase 1: Measure and bind terrain tiles
 **Status:** OPEN
 - [ ] Measured per-frame JS cost of the world systems on the forest walk (profile). proof: numbers under Decisions.
-- [ ] `TerrainTiles::process` and `seamPass` run through one ABI call; the JS process and seam pass are deleted. proof: red-green native-engine case for the binding and the core specs that cover tiles.
+- [ ] The admission drain (`#step` → swap → `SharedBatch.clear/write/#regroup`, 4.17 ms a frame on the walk) writes engine-owned instance buffers through one engine call; the JS drain is deleted. proof: red-green case, profile before/after.
 
 #### Phase 2: Bind world cells
 **Status:** OPEN
-- [ ] `WorldCells::update` runs through one ABI call; the JS `cullMainPass`, `stepCellProxies`, `publishCasterAdmission` and `stepImpostor` loops are deleted. proof: red-green case and the world-cells specs.
+- [ ] `cullMainPass`'s visibility-cell loop (1.2-2.0 ms) and the refilter `#staleIn` scan (0.9-1.05 ms) each run as one engine call; the JS loops are deleted. proof: red-green case and the world-cells specs.
 - [ ] Native parity: the V8 desktop player runs the same binding. proof: the native-engine label and a desktop run of the forest scene.
 - [ ] A regression guard fails if core's world streaming runs its per-frame pass in JS again: one frame of `WorldCells.update` makes one engine call per system and runs no JS cell or tile loop. proof: the guard case red on the pre-change code, green after.
 
@@ -77,3 +77,13 @@ what needs a browser API (fetch of tile bytes, GPU readback callbacks) and game 
 - 2026-11-11 (owner, João: "make sure this is fixed and proven fixed"): the PRD closes only with all four proofs run — the
   profile before/after, the forest playtest exit 0, a fresh visual judge, the native-engine label plus a desktop run — and
   the regression guard. Any proof that cannot run stays an open box with the reason, never a pass.
+- 2026-11-11 (lane prd879-world, measured; lead decision): the forest walk profile (owned engine, RTX 2080, 2 runs)
+  corrects the probe. `TerrainTiles.process`, `#seamPass` and `follow` take 0 samples on walk and turn (the frame checks
+  the epoch only; the "3 ms" came from a stale code comment), so binding terrain tiles is removed as moot (R4).
+  `WorldCells.update` costs 6.69/6.89 ms a frame on the walk and 1.81-2.49 on turn and idle: the admission drain
+  4.17/4.16, `cullMainPass` 1.20-2.08, the refilter `#staleIn` 0.86-1.05; proxies, caster admission, impostor step,
+  restore and shadow tells are each ≤0.013 ms. The C++ `WorldCells::update` covers residency, refilter and job levels
+  only (no main cull, proxies, admission or batch buffers), so the binding is a port, not a switch. The baseline
+  playtest already exits 1 (`TN_PROGRAM_LATE` console errors, the `GameState.travel` sample); both are fixed at their
+  layer as part of AC-2.
+
