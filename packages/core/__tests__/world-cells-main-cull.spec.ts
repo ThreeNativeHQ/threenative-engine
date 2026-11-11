@@ -12,7 +12,7 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
-  type Object3D,
+  Object3D,
   OrthographicCamera,
   PerspectiveCamera,
   Quaternion,
@@ -20,6 +20,7 @@ import {
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyRecords } from "../src/world-cell-records.js";
+import { staleRows } from "../src/world-cell-stale.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
 
 /**
@@ -384,6 +385,14 @@ describe("WorldCells main-pass cluster cull", () => {
         }
       },
     );
+    const stale = vi.fn((slab: Float64Array, gates: Float64Array, query: Float64Array) => {
+      inside += 1;
+      try {
+        return staleRows(slab, gates, query);
+      } finally {
+        inside -= 1;
+      }
+    });
     let jsBoxTests = 0;
     let jsUploads = 0;
     const intersectsBox = Frustum.prototype.intersectsBox;
@@ -395,6 +404,10 @@ describe("WorldCells main-pass cluster cull", () => {
     Object.defineProperty(InstancedBufferAttribute.prototype, "__tnRecords", {
       configurable: true,
       value: records,
+    });
+    Object.defineProperty(Object3D.prototype, "__tnStaleEntries", {
+      configurable: true,
+      value: stale,
     });
     Frustum.prototype.intersectsBox = function (this: Frustum, target: Box3): boolean {
       if (inside === 0) jsBoxTests += 1;
@@ -413,6 +426,7 @@ describe("WorldCells main-pass cluster cull", () => {
       const world = await loadWorld(follow);
       let frames = 0;
       let written = 0;
+      let scanned = 0;
       // Load at (0, 1), then walk one cell along x, and settle: admissions, evictions, refilters
       // and the cull's repacks all run inside these updates.
       for (const at of [
@@ -425,11 +439,14 @@ describe("WorldCells main-pass cluster cull", () => {
           await flush();
           cull.mockClear();
           records.mockClear();
+          stale.mockClear();
           frame(world, playerCamera(at));
           frames += 1;
           expect(cull).toHaveBeenCalledTimes(1);
           expect(records.mock.calls.length).toBeLessThanOrEqual(1);
+          expect(stale.mock.calls.length).toBeLessThanOrEqual(1);
           written += records.mock.calls.length;
+          scanned += stale.mock.calls.length;
           const stats = world.stats();
           if (stats.admission.backlog === 0 && stats.loadsInFlight === 0 && pass > 2) break;
         }
@@ -437,6 +454,8 @@ describe("WorldCells main-pass cluster cull", () => {
       expect(frames).toBeGreaterThan(3);
       // The walk wrote records, and every byte of them went through the one call a frame.
       expect(written).toBeGreaterThan(0);
+      // The walk refiltered, and each pass scanned the resident ring in the one call.
+      expect(scanned).toBeGreaterThan(0);
       expect(jsUploads).toBe(0);
       expect(jsBoxTests).toBe(0);
       expect(mainMesh(world).count).toBeGreaterThan(0);
@@ -444,6 +463,7 @@ describe("WorldCells main-pass cluster cull", () => {
     } finally {
       Reflect.deleteProperty(Frustum.prototype, "__tnIntersectsBoxes");
       Reflect.deleteProperty(InstancedBufferAttribute.prototype, "__tnRecords");
+      Reflect.deleteProperty(Object3D.prototype, "__tnStaleEntries");
       Frustum.prototype.intersectsBox = intersectsBox;
       if (needsUpdate !== undefined)
         Object.defineProperty(BufferAttribute.prototype, "needsUpdate", needsUpdate);

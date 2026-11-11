@@ -601,6 +601,7 @@ export class WorldCells extends Group implements IComputeDriven {
         residentCells: () => this.#residency.resident.values(),
         runMax: (asset) => this.#runMax.get(asset),
         widenFilterRange: (cell, x, z) => this.#placementBuild.widenFilterRange(cell, x, z),
+        cellBatchesChanged: (cell) => this.#placementBuild.cellBatchesChanged(cell),
         addUnchanged: () => {
           this.#unchanged += 1;
         },

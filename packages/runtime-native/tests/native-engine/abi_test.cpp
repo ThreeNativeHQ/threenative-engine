@@ -2051,6 +2051,53 @@ void world_records() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-879: core's refilter stale scan runs over packed rows in one call a pass,
+// `Object3D.__tnStaleEntries(slab, gates, query)`, the twin of world-cell-stale.ts `staleRows`. The same
+// vectors and answers are in packages/core/__tests__/world-cell-stale.spec.ts.
+void world_stale_entries() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t host{};
+    CHECK(tn_construct(ctx, "Object3D", nullptr, 0, &host, &d.value) == TN_OK);
+    const double nan = std::nan("");
+    // A gated cell whose follow point walked 100 m (two entries of asset 0, one ungated asset 1), a far
+    // cell no gate can reach, and a placementReach cell.
+    const double slab[] = {
+        0, 0, 64, 0, 90, 0, 3, 0,
+        0, 32, 0, 32, 32, 0, 32, 40, nan, nan, nan, nan,
+        1, 32, 0, 32, 32, 0, 32, nan, nan, nan, nan, nan,
+        0, 32, 0, 32, 32, 0, 32, 40, nan, nan, nan, nan,
+        1000, 0, 64, 900, 950, 0, 1, 0,
+        0, 1032, 0, 32, 1032, 0, 32, 40, nan, nan, nan, nan,
+        0, 128, 64, 0, 100, 1, 1, 0,
+        2, 32, 0, 160, 32, 0, 160, nan, 0, 20, -5, 5,
+    };
+    const double gates[] = {3, 7, 1, 8, 0, 8, 0, 40};
+    const auto scan = [&](double gpu) {
+        const double query[] = {132, 0, 32, 132, 0, 32, gpu, 1, 40};
+        const tn_value_t args[3] = {bytes("Float64Array", slab, sizeof(slab) / sizeof(double)),
+                                    bytes("Float64Array", gates, 8), bytes("Float64Array", query, 9)};
+        tn_value_t result{};
+        CHECK(tn_invoke(host, "__tnStaleEntries", args, 3, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(result.numbers, result.numbers + result.count);
+    };
+    const double reachNear = std::hypot(68.0, 96.0);
+    CHECK(scan(0) == (std::vector<double>{0, 0, 68, 2, 2, reachNear}));
+    // The GPU scene owns the gates: only the placementReach cell can be stale.
+    CHECK(scan(1) == (std::vector<double>{2, 2, reachNear}));
+    // A cell block that claims more entries than the slab holds is refused, not read past.
+    const double cut[] = {0, 0, 64, 0, 90, 0, 9, 0};
+    const double query[] = {132, 0, 32, 132, 0, 32, 0, 1, 40};
+    const tn_value_t refused[3] = {bytes("Float64Array", cut, 8), bytes("Float64Array", gates, 8),
+                                   bytes("Float64Array", query, 9)};
+    tn_value_t result{};
+    CHECK(tn_invoke(host, "__tnStaleEntries", refused, 3, &result, &d.value) != TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void typed_bytes() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -4052,7 +4099,7 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"frustum_intersects_boxes", frustum_intersects_boxes}, {"material_witness", material_witness}, {"world_records", world_records}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"frustum_intersects_boxes", frustum_intersects_boxes}, {"material_witness", material_witness}, {"world_records", world_records}, {"world_stale_entries", world_stale_entries}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},

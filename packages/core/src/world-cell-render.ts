@@ -128,6 +128,8 @@ export interface ICellRenderHost {
   residentCells(): IterableIterator<IResidentCell>;
   runMax(asset: string): number | undefined;
   widenFilterRange(cell: IResidentCell, x: number, z: number): void;
+  /** The cell's batch list changed, so the refilter's stale scan rebuilds its rows. */
+  cellBatchesChanged(cell: IResidentCell): void;
   addUnchanged(): void;
   disableFar(run: IWorldRun): void;
   deferWide(id: string): void;
@@ -388,6 +390,7 @@ export class CellRender {
       if (entry.wide !== undefined)
         entry.wide.write(entry.wideSegment, entry.wideRoot ?? entry.batch, entry.lodRanges);
     }
+    this.#host.cellBatchesChanged(cell);
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
     this.publishGpuGates(job.asset);

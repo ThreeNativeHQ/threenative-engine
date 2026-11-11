@@ -37,6 +37,7 @@
 #include "engine/scene/object3d.h"
 #include "engine/scene/pose_history.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -404,6 +405,103 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
                           {"exact", Value::record(std::move(exact))}});
 }
 
+// ---------------------------------------------------------------- world refilter stale scan (PRD-879)
+
+namespace {
+
+/** A typed-array or numbers argument as doubles. */
+std::vector<double> packedNumbers(const Value& value) {
+    return value.bytes.empty() ? value.numbers : typedArrayNumbers(value.text, value.bytes);
+}
+
+/** `[nearest, farthest]` from (x, z) to a cell rectangle, as core's `#span`. */
+std::array<double, 2> cellSpan(double left, double nearZ, double size, double x, double z) {
+    const double right = left + size, farZ = nearZ + size;
+    return {std::hypot(std::max({left - x, x - right, 0.0}), std::max({nearZ - z, z - farZ, 0.0})),
+            std::hypot(std::max(std::abs(x - left), std::abs(x - right)), std::max(std::abs(z - nearZ), std::abs(z - farZ)))};
+}
+
+std::array<double, 2> reachVertical(double y, double minY, double maxY) {
+    return {std::max({minY - y, y - maxY, 0.0}), std::max(std::abs(y - minY), std::abs(y - maxY))};
+}
+
+/**
+ * Core's refilter stale scan (world-cell-stale.ts `staleRows`, its twin): every cell-asset whose follow
+ * point or LOD eye crossed a gate or a placementReach boundary since its batch was built. The slab, gate
+ * table and query layouts are documented there. Answers `[cell ordinal, asset index, eye distance]` rows.
+ */
+std::vector<double> staleEntries(const std::vector<double>& slab, const std::vector<double>& gates,
+                                 const std::vector<double>& query) {
+    constexpr size_t header = 8, entry = 12, fixed = 8;
+    if (query.size() < fixed || query.size() < fixed + size_t(query[7])) throw Unsupported{"__tnStaleEntries: a short query"};
+    if (gates.empty() || gates.size() < 1 + size_t(gates[0]) * 2) throw Unsupported{"__tnStaleEntries: a short gate table"};
+    const double x = query[0], followY = query[1], z = query[2], eyeX = query[3], eyeY = query[4], eyeZ = query[5];
+    const bool gpuOn = query[6] == 1;
+    const auto worldGateBegin = query.begin() + fixed, worldGateEnd = worldGateBegin + ptrdiff_t(query[7]);
+    const size_t assets = size_t(gates[0]);
+    std::vector<double> out;
+    std::vector<uint32_t> seen;
+    double ordinal = 0;
+    for (size_t cell = 0; cell < slab.size(); ordinal += 1) {
+        if (cell + header > slab.size()) throw Unsupported{"__tnStaleEntries: a cut cell block"};
+        const size_t next = cell + header + size_t(slab[cell + 6]) * entry;
+        if (next > slab.size()) throw Unsupported{"__tnStaleEntries: a cut cell block"};
+        const double left = slab[cell], nearZ = slab[cell + 1], size = slab[cell + 2];
+        const bool hasReach = slab[cell + 5] == 1;
+        const auto [eyeNear, eyeFar] = cellSpan(left, nearZ, size, eyeX, eyeZ);
+        const double cellLow = std::min(eyeNear, slab[cell + 3]), cellHigh = std::max(eyeFar, slab[cell + 4]);
+        // crossesGate: the first world gate at or past `low` is at or before `high`.
+        const auto first = std::lower_bound(worldGateBegin, worldGateEnd, cellLow);
+        if ((gpuOn && !hasReach) || (!hasReach && !(first != worldGateEnd && *first <= cellHigh))) {
+            cell = next;
+            continue;
+        }
+        const auto [near, far] = cellSpan(left, nearZ, size, x, z);
+        seen.clear();
+        for (size_t at = cell + header; at < next; at += entry) {
+            const double* e = slab.data() + at;
+            const uint32_t asset = uint32_t(e[0]);
+            if (std::find(seen.begin(), seen.end(), asset) != seen.end()) continue;
+            const double threshold = e[7], reachMin = e[8];
+            const bool reach = !std::isnan(reachMin);
+            if (!reach && (gpuOn || std::isnan(threshold))) continue;
+            const double step = (std::isnan(threshold) ? 6.0 : threshold) / 8;
+            if (std::hypot(x - e[1], followY - e[2], z - e[3]) <= step && std::hypot(eyeX - e[4], eyeY - e[5], eyeZ - e[6]) <= step)
+                continue;
+            if (asset >= assets) throw Unsupported{"__tnStaleEntries: an entry names no asset"};
+            const double gateAt = gates[1 + asset * 2];
+            if (gateAt < 0) continue;
+            const size_t gateCount = gpuOn ? 0 : size_t(gates[2 + asset * 2]);
+            if (size_t(gateAt) + gateCount > gates.size()) throw Unsupported{"__tnStaleEntries: a gate list past the table"};
+            const auto [builtNear, builtFar] = cellSpan(left, nearZ, size, e[4], e[6]);
+            double low = std::min(eyeNear, builtNear), high = std::max(eyeFar, builtFar);
+            bool stale = false;
+            if (reach) {
+                const double minY = e[10], maxY = e[11];
+                const auto eyeNow = reachVertical(eyeY, minY, maxY), eyeBefore = reachVertical(e[5], minY, maxY);
+                low = std::min(std::hypot(eyeNear, eyeNow[0]), std::hypot(builtNear, eyeBefore[0]));
+                high = std::max(std::hypot(eyeFar, eyeNow[1]), std::hypot(builtFar, eyeBefore[1]));
+                const auto [reachBuiltNear, reachBuiltFar] = cellSpan(left, nearZ, size, e[1], e[3]);
+                const auto current = reachVertical(followY, minY, maxY), previous = reachVertical(e[2], minY, maxY);
+                const double reachLow = std::min(std::hypot(near, current[0]), std::hypot(reachBuiltNear, previous[0]));
+                const double reachHigh = std::max(std::hypot(far, current[1]), std::hypot(reachBuiltFar, previous[1]));
+                stale = reachMin <= reachHigh && e[9] >= reachLow;
+            }
+            for (size_t gate = 0; !stale && gate < gateCount; ++gate) {
+                const double value = gates[size_t(gateAt) + gate];
+                stale = value >= low && value <= high;
+            }
+            if (!stale) continue;
+            seen.push_back(asset);
+            out.insert(out.end(), {ordinal, double(asset), eyeNear});
+        }
+        cell = next;
+    }
+    return out;
+}
+
+}  // namespace
+
 void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
@@ -564,6 +662,11 @@ void registerObject3D(ClassBinding& b) {
                 changed.push_back(double(index));
         }
         return Value::list(std::move(changed));
+    };
+    // Engine-internal (PRD-879): core's refilter stale scan over its packed rows, one call a pass.
+    // `__tnStaleEntries(slab, gates, query)`; layouts in packages/core/src/world-cell-stale.ts.
+    b.methods["__tnStaleEntries"] = [](void*, const Args& a, Store&) {
+        return Value::list(staleEntries(packedNumbers(a.at(0)), packedNumbers(a.at(1)), packedNumbers(a.at(2))));
     };
     // Engine-internal (PRD-877): core's physics interpolation without leaving the engine.
     // `__tnPoseWatch(objects)` replaces the watched list and answers how many it holds; a body that

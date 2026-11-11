@@ -599,6 +599,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_frustum_intersects_boxes=frustum_intersects_boxes
     native_engine_abi_material_witness=material_witness
     native_engine_abi_world_records=world_records
+    native_engine_abi_world_stale_entries=world_stale_entries
     native_engine_abi_projected_cull_held_restore=projected_cull_held_restore)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
