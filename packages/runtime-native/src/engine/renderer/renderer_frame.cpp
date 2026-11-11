@@ -2112,38 +2112,34 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (!ranges.empty() && ranges.back().first + ranges.back().second == at) ranges.back().second = end - ranges.back().first;
             else ranges.emplace_back(at, end - at);
         };
-        if (name != "instances") {  // the palettes change whole each frame: one compare that stops at the first difference, one write
-            if (held == bytes && storage.uploaded.size() == bytes && std::memcmp(storage.uploaded.data(), source, bytes) == 0) continue;
-            if (gpu_.writeBuffer(target, prefix, source, bytes) == GpuStatus::Ok) {
-                storage.uploaded.assign(source, source + bytes);
-                storage.uploadedBuffer = target;
-                storage.uploadedPrefix = prefix;
-            }
-            continue;
-        }
         // `instances` scans only what this plan copied (a place whose stores did not move was left alone and already
-        // matches the GPU) and the shadow rows past the places.
+        // matches the GPU) and the shadow rows past the places. A palette scans all it holds, one 4x4 at a time: a
+        // crowd slot whose pose held kept its bytes, so only the moved slots cross (PRD-878).
+        const bool instances = name == "instances";
+        const uint64_t block = instances ? kStorageBlock : 16 * sizeof(float);
         auto& spans = instanceScan_;
         spans.clear();
-        std::sort(instanceDirty_.begin(), instanceDirty_.end());
-        for (const auto& [offset, count] : instanceDirty_) {
-            const uint64_t at = offset * 4, end = std::min((offset + count) * 4, held);
-            if (at >= end) continue;
-            if (!spans.empty() && at <= spans.back().second) spans.back().second = std::max(spans.back().second, end);
-            else spans.emplace_back(at, end);
+        if (instances) {
+            std::sort(instanceDirty_.begin(), instanceDirty_.end());
+            for (const auto& [offset, count] : instanceDirty_) {
+                const uint64_t at = offset * 4, end = std::min((offset + count) * 4, held);
+                if (at >= end) continue;
+                if (!spans.empty() && at <= spans.back().second) spans.back().second = std::max(spans.back().second, end);
+                else spans.emplace_back(at, end);
+            }
         }
-        const uint64_t tail = std::min(instanceTop_ * 4, held);
+        const uint64_t tail = instances ? std::min(instanceTop_ * 4, held) : 0;
         if (tail < held) spans.emplace_back(tail, held);
         for (const auto& [from, to] : spans) {
-            for (uint64_t at = from; at < to; at += kStorageBlock) {
-                const uint64_t end = std::min(at + kStorageBlock, to);
+            for (uint64_t at = from; at < to; at += block) {
+                const uint64_t end = std::min(at + block, to);
                 if (!sameBytes(source + at, storage.uploaded.data() + at, end - at)) dirty(at, end);
             }
         }
         if (bytes > held) dirty(held, bytes);
         if (ranges.empty()) {
             storage.uploaded.resize(bytes);  // it shrank: the bytes that remain are the ones the GPU holds
-            instancesUploaded = true;
+            instancesUploaded = instancesUploaded || instances;
             continue;
         }
         const uint64_t first = ranges.front().first, last = ranges.back().first + ranges.back().second;
@@ -2161,7 +2157,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (written) {
             storage.uploadedBuffer = target;
             storage.uploadedPrefix = prefix;
-            instancesUploaded = true;
+            instancesUploaded = instancesUploaded || instances;
         } else {  // the copy no longer says what the GPU holds: the next frame sends all of it
             storage.uploaded.clear();
             storage.uploadedBuffer = Handle{};

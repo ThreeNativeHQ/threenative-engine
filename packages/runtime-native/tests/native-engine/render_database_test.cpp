@@ -1151,6 +1151,24 @@ void unchangedFrameStorage() {
     scene.add(*root);
     root->updateMatrixWorld(true);
     rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}));
+    // A second rig of eight sibling bones shares the `boneMatrices` storage: one moved bone sends its one 4x4, not the
+    // whole palette (PRD-878: a crowd whose poses mostly held re-sent every slot).
+    auto crowdGeometry = makeBoxGeometry();
+    crowdGeometry->setAttribute("skinIndex", skinGeometry->attributes.at("skinIndex"));
+    crowdGeometry->setAttribute("skinWeight", skinGeometry->attributes.at("skinWeight"));
+    auto crowdRig = std::make_shared<SkinnedMesh>(crowdGeometry, std::make_shared<Material>(MaterialType::Standard));
+    auto crowdRoot = std::make_shared<Object3D>();
+    crowdRoot->position.set(-2, 0, 0);
+    crowdRoot->add(*crowdRig);
+    std::vector<std::shared_ptr<Bone>> crowdBones;
+    for (int i = 0; i < 8; ++i) {
+        crowdBones.push_back(std::make_shared<Bone>());
+        crowdBones.back()->position.set(0, 0.1 * i, 0);
+        crowdRoot->add(*crowdBones.back());
+    }
+    scene.add(*crowdRoot);
+    crowdRoot->updateMatrixWorld(true);
+    crowdRig->bind(std::make_shared<Skeleton>(crowdBones));
     RenderDatabase database;
     const auto frameUpload = [&] {
         const uint64_t before = renderer.gpu().queueWriteBytes();
@@ -1191,6 +1209,12 @@ void unchangedFrameStorage() {
     CHECK(grown == steadyMoved + grownPacked);
     CHECK(steadyGrown == unchanged);
     CHECK(palette == steadyGrown + paletteBytes);
+    const uint64_t steadyPalette = frameUpload();
+    crowdBones[5]->rotation.z = 0.4;  // one slot of eight in the second rig
+    const uint64_t oneBone = frameUpload();
+    std::printf("one moved crowd bone: %llu bytes over steady\n", static_cast<unsigned long long>(oneBone - steadyPalette));
+    CHECK(steadyPalette == unchanged);
+    CHECK(oneBone == steadyPalette + paletteBytes);
 }
 
 // PRD-871: a Points object draws as a WebGPU point-list primitive through the unlit basic program, and a
