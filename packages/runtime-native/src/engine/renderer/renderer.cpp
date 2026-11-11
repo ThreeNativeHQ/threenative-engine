@@ -38,14 +38,25 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
         // morphing each vertex on the CPU here, every frame, cost the MCP forest about 6 % of its CPU.
         bounds = item.morphGeometry->morphReachBox();
     } else if (item.positions->scalar() == Scalar::F32) {
-        for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
-            float p[3]; item.positions->read(idx * 4, p, sizeof(p));
-            Vector3 vertex(p[0], p[1], p[2]);
-            if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
-                const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
-                if (mesh) mesh->getVertexPosition(idx / 3, vertex);
+        const bool rigid = !item.boneMatrices && !item.morphGeometry;
+        const auto vertexKey = std::make_tuple(item.positions, item.positions->version(), item.positions->epoch(),
+                                               item.positions->writes());
+        // The owner check rules out a released store whose address came back with the same revisions.
+        if (rigid && vertexBoxKey == vertexKey && !shadowPositionsOwner.expired()) {
+            bounds = vertexBox;
+        } else {
+            ++shadowVertexScans;
+            for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
+                float p[3]; item.positions->read(idx * 4, p, sizeof(p));
+                Vector3 vertex(p[0], p[1], p[2]);
+                if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
+                    const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
+                    if (mesh) mesh->getVertexPosition(idx / 3, vertex);
+                }
+                bounds.expandByPoint(vertex);
             }
-            bounds.expandByPoint(vertex);
+            vertexBox = bounds;
+            vertexBoxKey = rigid ? std::optional(vertexKey) : std::nullopt;
         }
     }
     Matrix4 model; model.elements = item.matrixWorld;

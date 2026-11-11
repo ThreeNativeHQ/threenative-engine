@@ -135,6 +135,11 @@ struct DrawCache {
     std::optional<ShadowBoundsKey> shadowBoundsKey;
     std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
     uint64_t shadowBoundsBuilds = 0;
+    uint64_t shadowVertexScans = 0;  // rebuilds that read every vertex position
+    // A rigid draw's vertex box in geometry space, keyed by the position store's revisions alone: a caster that only
+    // moved rebuilds its world box from this, without reading a vertex (PRD-871).
+    std::optional<std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t>> vertexBoxKey;
+    Box3 vertexBox;
     const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item);
 };
 

@@ -8711,8 +8711,13 @@ void virtualShadowBoundsCache() {
     const auto built = cache.shadowBoundsBuilds;
     sample();
     CHECK(cache.shadowBoundsBuilds == built);
+    // A rigid caster that moves keeps its vertex box: the new transform rebuilds the world box from it, and no
+    // vertex is read again. Re-reading them cost the stress lab 234 moving casters a frame (PRD-871).
+    const auto scans = cache.shadowVertexScans;
     model.makeTranslation(3, 0, 0); item.matrixWorld = model.elements;
     CHECK(sample().first.max.x == 4);
+    CHECK(cache.shadowBoundsBuilds == built + 1);
+    CHECK(cache.shadowVertexScans == scans);
     const float changed[3] = {20, 2, 3};
     CHECK(item.positions->write(0, changed, sizeof(changed)) == BufferError::None);
     CHECK(sample().first.max.x == 23);
