@@ -2173,19 +2173,39 @@ void world_stale_entries() {
         CHECK(result.kind == TN_VALUE_NUMBERS);
         return std::vector<double>(result.numbers, result.numbers + result.count);
     };
-    const tn_value_t rows = bytes("Float64Array", slab, sizeof(slab) / sizeof(double));
+    const double whole = double(sizeof(slab) / sizeof(double));
+    const double all[] = {-1, whole};
+    const tn_value_t rows[2] = {bytes("Float64Array", slab, sizeof(slab) / sizeof(double)), bytes("Float64Array", all, 2)};
     tn_value_t kept{};
-    CHECK(tn_invoke(host, "__tnStaleRows", &rows, 1, &kept, &d.value) == TN_OK);
-    CHECK(kept.kind == TN_VALUE_NUMBER && kept.number == double(sizeof(slab) / sizeof(double)));
+    CHECK(tn_invoke(host, "__tnStaleRows", rows, 2, &kept, &d.value) == TN_OK);
+    CHECK(kept.kind == TN_VALUE_NUMBER && kept.number == whole);
     const double reachNear = std::sqrt(68.0 * 68.0 + 96.0 * 96.0);
     CHECK(scan(0) == (std::vector<double>{0, 0, 68, 2, 2, reachNear}));
     // The GPU scene owns the gates: only the placementReach cell can be stale.
     CHECK(scan(1) == (std::vector<double>{2, 2, reachNear}));
+    // One changed cell sends one block: the far cell's bracket widened to 0 (its 20 numbers), so the 40 m
+    // gate now falls inside it; the first cell's 44 and the reach cell's 20 are kept where the host holds
+    // them. The answer is world-cell-stale.ts `staleRows` on `patchRows` of the same vectors.
+    const double farMoved[] = {1000, 0, 64, 0, 950, 0, 1, 0, 0, 1032, 0, 32, 1032, 0, 32, 40, nan, nan, nan, nan};
+    const double plan[] = {0, 44, -1, 20, 64, 20};
+    const tn_value_t patch[2] = {bytes("Float64Array", farMoved, 20), bytes("Float64Array", plan, 6)};
+    CHECK(tn_invoke(host, "__tnStaleRows", patch, 2, &kept, &d.value) == TN_OK);
+    CHECK(kept.kind == TN_VALUE_NUMBER && kept.number == whole);
+    CHECK(scan(0) == (std::vector<double>{0, 0, 68, 1, 0, 868, 2, 2, reachNear}));
+    // A run past the held rows, or changed blocks the plan never reads, is refused and the rows stay.
+    const double past[] = {0, 44, -1, 20, 64, 21};
+    const tn_value_t pastPatch[2] = {bytes("Float64Array", farMoved, 20), bytes("Float64Array", past, 6)};
+    CHECK(tn_invoke(host, "__tnStaleRows", pastPatch, 2, &kept, &d.value) != TN_OK);
+    const double unread[] = {0, 84};
+    const tn_value_t unreadPatch[2] = {bytes("Float64Array", farMoved, 20), bytes("Float64Array", unread, 2)};
+    CHECK(tn_invoke(host, "__tnStaleRows", unreadPatch, 2, &kept, &d.value) != TN_OK);
+    CHECK(scan(1) == (std::vector<double>{2, 2, reachNear}));
     // A cell block that claims more entries than the slab holds is refused, not read past.
     const double cut[] = {0, 0, 64, 0, 90, 0, 9, 0};
     const double query[] = {132, 0, 32, 132, 0, 32, 0, 1, 40};
-    const tn_value_t cutRows = bytes("Float64Array", cut, 8);
-    CHECK(tn_invoke(host, "__tnStaleRows", &cutRows, 1, &kept, &d.value) == TN_OK);
+    const double cutAll[] = {-1, 8};
+    const tn_value_t cutRows[2] = {bytes("Float64Array", cut, 8), bytes("Float64Array", cutAll, 2)};
+    CHECK(tn_invoke(host, "__tnStaleRows", cutRows, 2, &kept, &d.value) == TN_OK);
     const tn_value_t refused[2] = {bytes("Float64Array", gates, 8), bytes("Float64Array", query, 9)};
     tn_value_t result{};
     CHECK(tn_invoke(host, "__tnStaleEntries", refused, 2, &result, &d.value) != TN_OK);

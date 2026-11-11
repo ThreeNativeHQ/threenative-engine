@@ -20,7 +20,7 @@ import {
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyRecords } from "../src/world-cell-records.js";
-import { staleRows } from "../src/world-cell-stale.js";
+import { STALE_ENTRY, STALE_HEADER, patchRows, staleRows } from "../src/world-cell-stale.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
 
 /**
@@ -385,10 +385,10 @@ describe("WorldCells main-pass cluster cull", () => {
         }
       },
     );
-    // The engine keeps the slab `__tnStaleRows` handed it; the scan reads it there.
+    // The engine keeps the slab `__tnStaleRows` patched; the scan reads it there.
     let keptRows = new Float64Array(0);
-    const rows = vi.fn((slab: Float64Array) => {
-      keptRows = slab.slice();
+    const rows = vi.fn((blocks: Float64Array, plan: Float64Array) => {
+      keptRows = patchRows(keptRows, blocks, plan);
       return keptRows.length;
     });
     const stale = vi.fn((gates: Float64Array, query: Float64Array) => {
@@ -475,6 +475,63 @@ describe("WorldCells main-pass cluster cull", () => {
       Frustum.prototype.intersectsBox = intersectsBox;
       if (needsUpdate !== undefined)
         Object.defineProperty(BufferAttribute.prototype, "needsUpdate", needsUpdate);
+    }
+  });
+
+  it("sends the engine's stale rows only the cell blocks that changed (PRD-879)", async () => {
+    // A refilter rebuilds one cell's block; the rest of the slab is already in the engine.
+    const blockCount = (slab: Float64Array): number => {
+      let blocks = 0;
+      let at = 0;
+      while (at < slab.length) {
+        at += STALE_HEADER + (slab[at + 6] as number) * STALE_ENTRY;
+        blocks += 1;
+      }
+      // A plan that copied from the wrong offset leaves a slab whose blocks do not end at its end.
+      expect(at).toBe(slab.length);
+      return blocks;
+    };
+    let kept = new Float64Array(0);
+    const sends: Array<{ blocks: number; held: number }> = [];
+    let sentFloats = 0;
+    let heldFloats = 0;
+    Object.defineProperty(Object3D.prototype, "__tnStaleRows", {
+      configurable: true,
+      value: (blocks: Float64Array, plan: Float64Array) => {
+        kept = patchRows(kept, blocks, plan);
+        sends.push({ blocks: blockCount(blocks), held: blockCount(kept) });
+        sentFloats += blocks.length;
+        heldFloats += kept.length;
+        return kept.length;
+      },
+    });
+    Object.defineProperty(Object3D.prototype, "__tnStaleEntries", {
+      configurable: true,
+      value: (gates: Float64Array, query: Float64Array) => staleRows(kept, gates, query),
+    });
+    try {
+      stubManifestFetch();
+      const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+      const world = await loadWorld(follow);
+      // Settle, then walk across the cell in short steps: each step refilters the cells whose gate
+      // it crossed, not the ring.
+      for (let step = 0; step <= 16; step += 1) {
+        const centre = cellCentre(0, 1);
+        Object.assign(follow.position, { x: centre.x + step * 4, z: centre.z });
+        for (let pass = 0; pass < (step === 0 ? 60 : 8); pass += 1) {
+          await flush();
+          frame(world, playerCamera([0, 1]));
+        }
+      }
+      expect(sends.length).toBeGreaterThan(1);
+      // One changed cell sends one block while the engine holds the whole ring.
+      expect(sends.some((send) => send.blocks === 1 && send.held > 1)).toBe(true);
+      // The full slab every time is what this replaced.
+      expect(sentFloats).toBeLessThan(heldFloats);
+      world.dispose();
+    } finally {
+      Reflect.deleteProperty(Object3D.prototype, "__tnStaleEntries");
+      Reflect.deleteProperty(Object3D.prototype, "__tnStaleRows");
     }
   });
 

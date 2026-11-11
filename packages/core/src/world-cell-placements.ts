@@ -15,7 +15,13 @@ import {
 } from "./world-cell-impostors.js";
 import type { IAssetState } from "./world-cell-models.js";
 import { LEVEL_REFILTER_STEP_METRES } from "./world-cell-options.js";
-import { STALE_ENTRY, STALE_HEADER, STALE_QUERY, staleRows } from "./world-cell-stale.js";
+import {
+  STALE_ENTRY,
+  STALE_HEADER,
+  STALE_QUERY,
+  patchRows,
+  staleRows,
+} from "./world-cell-stale.js";
 import { levelAtGates } from "./world-gpu-scene.js";
 import {
   type IWorldAsset,
@@ -61,9 +67,21 @@ export function newBoxes(batches: readonly InstancedBatch[][]): Box3[][] {
   return boxes;
 }
 
+/** One more block in a `patchRows` plan, merged into the run before it when the two are contiguous. */
+function extendPlan(plan: number[], source: number, count: number): void {
+  const last = plan.length - 2;
+  const runSource = plan[last];
+  const runCount = plan[last + 1] as number;
+  const joins =
+    runSource !== undefined &&
+    (source === -1 ? runSource === -1 : runSource >= 0 && runSource + runCount === source);
+  if (joins) plan[last + 1] = runCount + count;
+  else plan.push(source, count);
+}
+
 /** The owned engine's stale scan (`bindings_scene.cpp`); see `world-cell-stale.ts`. */
 interface IStaleEngine {
-  __tnStaleRows?: (slab: Float64Array) => number;
+  __tnStaleRows?: (blocks: Float64Array, plan: Float64Array) => number;
   __tnStaleEntries?: (gates: Float64Array, query: Float64Array) => ArrayLike<number>;
 }
 
@@ -129,6 +147,8 @@ export class CellPlacements {
   /** The resident cells' blocks laid end to end, and the cells in block order; see `#collectStale`. */
   #slab = new Float64Array(0);
   #slabCells: IResidentCell[] = [];
+  /** Where each cell's block sits in the slab the last pack sent; an unchanged block is not sent again. */
+  #slabAt = new Map<IResidentCell, { at: number; rows: Float64Array }>();
   #slabEpoch = -1;
   #slabStale = true;
   /** Asset ids by the index the slab names them with; the index only ever grows. */
@@ -662,29 +682,44 @@ export class CellPlacements {
     }
   }
 
-  /** The resident cells' blocks end to end; only a changed cell builds its block again. */
+  /**
+   * The resident cells' blocks end to end; only a changed cell builds its block again, and only the
+   * changed blocks are sent: an unchanged one is a `[source, count]` run of the slab already held
+   * (see `patchRows`).
+   */
   #packSlab(epoch: number): void {
-    const blocks: Float64Array[] = [];
+    const plan: number[] = [];
+    const changed: Float64Array[] = [];
     const cells: IResidentCell[] = [];
+    const placed = new Map<IResidentCell, { at: number; rows: Float64Array }>();
     let length = 0;
+    let sent = 0;
     for (const cell of this.#host.resident()) {
-      const block = this.#rowsOf(cell);
-      blocks.push(block);
+      const rows = this.#rowsOf(cell);
+      const held = this.#slabAt.get(cell);
+      const source = held !== undefined && held.rows === rows ? held.at : -1;
+      extendPlan(plan, source, rows.length);
+      if (source === -1) {
+        changed.push(rows);
+        sent += rows.length;
+      }
+      placed.set(cell, { at: length, rows });
       cells.push(cell);
-      length += block.length;
+      length += rows.length;
     }
-    if (this.#slab.length !== length) this.#slab = new Float64Array(length);
+    const blocks = new Float64Array(sent);
     let at = 0;
-    for (const block of blocks) {
-      this.#slab.set(block, at);
+    for (const block of changed) {
+      blocks.set(block, at);
       at += block.length;
     }
     if (typeof this.#engine.__tnStaleEntries === "function") {
       // A scan without its rows would read an empty slab and find nothing stale, silently.
       if (typeof this.#engine.__tnStaleRows !== "function")
         throw new Error("TN_WORLD_STALE: the engine has __tnStaleEntries but no __tnStaleRows");
-      this.#engine.__tnStaleRows(this.#slab);
-    }
+      this.#engine.__tnStaleRows(blocks, Float64Array.from(plan));
+    } else this.#slab = patchRows(this.#slab, blocks, plan);
+    this.#slabAt = placed;
     this.#slabCells = cells;
     this.#slabEpoch = epoch;
     this.#slabStale = false;

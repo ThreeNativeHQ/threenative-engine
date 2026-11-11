@@ -435,6 +435,30 @@ std::vector<double>& staleSlabOf(Object3D& host) {
     return entry.second;
 }
 
+/**
+ * The next slab from the one held and the blocks that changed (world-cell-stale.ts `patchRows`, its twin):
+ * `plan` is `[source, count]` runs in slab order, `source` >= 0 keeping held numbers and -1 taking the next
+ * `count` numbers of `blocks`. A run outside its rows, or blocks left unread, is refused.
+ */
+std::vector<double> patchStaleRows(const std::vector<double>& held, const std::vector<double>& blocks,
+                                   const std::vector<double>& plan) {
+    std::vector<double> next;
+    size_t taken = 0;
+    for (size_t at = 0; at + 1 < plan.size(); at += 2) {
+        const double source = plan[at], count = plan[at + 1];
+        const bool fresh = source == -1;
+        const std::vector<double>& from = fresh ? blocks : held;
+        const double start = fresh ? double(taken) : source;
+        if (!(start >= 0 && count >= 0 && start == std::floor(start) && count == std::floor(count) &&
+              start + count <= double(from.size())))
+            throw Unsupported{"__tnStaleRows: a plan run is outside its rows"};
+        next.insert(next.end(), from.begin() + ptrdiff_t(start), from.begin() + ptrdiff_t(start + count));
+        if (fresh) taken += size_t(count);
+    }
+    if (taken != blocks.size()) throw Unsupported{"__tnStaleRows: the plan leaves changed blocks unread"};
+    return next;
+}
+
 std::array<double, 2> reachVertical(double y, double minY, double maxY) {
     return {std::max({minY - y, y - maxY, 0.0}), std::max(std::abs(y - minY), std::abs(y - maxY))};
 }
@@ -678,11 +702,12 @@ void registerObject3D(ClassBinding& b) {
         return Value::list(std::move(changed));
     };
     // Engine-internal (PRD-879): core's refilter stale scan over its packed rows, one call a pass.
-    // `__tnStaleRows(slab)` keeps the rows on this host, sent only when a cell's batches change;
-    // `__tnStaleEntries(gates, query)` scans them. Layouts in packages/core/src/world-cell-stale.ts.
+    // `__tnStaleRows(blocks, plan)` patches the rows this host keeps with the cell blocks that changed,
+    // sent only when a cell's batches change; `__tnStaleEntries(gates, query)` scans them. Layouts in
+    // packages/core/src/world-cell-stale.ts (`patchRows` is this patch's twin).
     b.methods["__tnStaleRows"] = [](void* self, const Args& a, Store&) {
         std::vector<double>& slab = staleSlabOf(*as<Object3D>(self));
-        slab = packedNumbers(a.at(0));
+        slab = patchStaleRows(slab, packedNumbers(a.at(0)), packedNumbers(a.at(1)));
         return Value::of(double(slab.size()));
     };
     b.methods["__tnStaleEntries"] = [](void* self, const Args& a, Store&) {

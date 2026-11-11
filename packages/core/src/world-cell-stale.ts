@@ -5,9 +5,9 @@
  * across a gate of. That scan visited every batch entry of every resident cell in JS: 0.9 ms a frame
  * on the forest walk, where every cell carries a `placementReach`. The entries' state now lives in a
  * slab of rows, kept per cell and rebuilt only when a cell's batches change, and the scan runs on the
- * slab in the owned engine: `Object3D.__tnStaleRows(slab)` keeps it there, sent only when it changes,
- * and `__tnStaleEntries(gates, query)` scans it (`bindings_scene.cpp`). Upstream three runs
- * {@link staleRows}, its twin.
+ * slab in the owned engine: `Object3D.__tnStaleRows(blocks, plan)` keeps it there, sent only when it
+ * changes and then only the blocks that changed ({@link patchRows}), and `__tnStaleEntries(gates,
+ * query)` scans it (`bindings_scene.cpp`). Upstream three runs {@link staleRows}, its twin.
  *
  * Slab: one block per resident cell, a header of {@link STALE_HEADER} numbers, then
  * {@link STALE_ENTRY} numbers per batch entry.
@@ -191,4 +191,48 @@ export function staleRows(slab: Float64Array, gates: Float64Array, query: Float6
     cell = next;
   }
   return out;
+}
+
+/**
+ * The upstream-three twin of the engine's `__tnStaleRows(blocks, plan)`: the next slab, built from the
+ * one held and the blocks that changed. A refilter rebuilds one cell's block, so re-sending the whole
+ * slab cost 0.30 ms a swap frame on the forest walk for numbers the engine already held.
+ *
+ * `plan` is `[source, count]` pairs in slab order: `source` 0 or more keeps `count` numbers of the
+ * held slab from `source`, and -1 takes the next `count` numbers of `blocks`.
+ */
+export function patchRows(
+  held: Float64Array,
+  blocks: Float64Array,
+  plan: ArrayLike<number>,
+): Float64Array<ArrayBuffer> {
+  let length = 0;
+  for (let at = 1; at < plan.length; at += 2) length += plan[at] as number;
+  const next = new Float64Array(length);
+  let written = 0;
+  let taken = 0;
+  for (let at = 0; at + 1 < plan.length; at += 2) {
+    const source = plan[at] as number;
+    const count = plan[at + 1] as number;
+    const from = source === -1 ? blocks : held;
+    const start = source === -1 ? taken : source;
+    if (
+      !(
+        Number.isInteger(start) &&
+        Number.isInteger(count) &&
+        start >= 0 &&
+        count >= 0 &&
+        start + count <= from.length
+      )
+    )
+      throw new RangeError(
+        `TN_WORLD_STALE: a plan run [${String(source)}, ${String(count)}] is outside its rows`,
+      );
+    next.set(from.subarray(start, start + count), written);
+    written += count;
+    if (source === -1) taken += count;
+  }
+  if (taken !== blocks.length)
+    throw new RangeError("TN_WORLD_STALE: the plan leaves changed blocks unread");
+  return next;
 }
