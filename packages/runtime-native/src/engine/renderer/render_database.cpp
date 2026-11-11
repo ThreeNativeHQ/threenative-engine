@@ -1406,13 +1406,13 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     }
     if (merged_.empty())
         return;
-    batchedOut_.clear();
-    batchedOut_.reserve(items.size() - batchMembers_ + merged_.size());
-    for (std::size_t i = 0; i < items.size(); ++i)
-        if (!absorbed_[i])
-            batchedOut_.push_back(std::move(items[i]));
-    batchedOut_.insert(batchedOut_.end(), std::make_move_iterator(merged_.begin()), std::make_move_iterator(merged_.end()));
-    items.swap(batchedOut_);
+    // Compacted in place, in the same order: the draws before the first member stay where they are. A draw is 1.4 KB,
+    // and copying every draw of the frame into a second list cost the stress lab's crowd 0.1 ms (PRD-878).
+    std::size_t kept = std::size_t(std::find(absorbed_.begin(), absorbed_.end(), true) - absorbed_.begin());
+    for (std::size_t i = kept; i < items.size(); ++i)
+        if (!absorbed_[i]) items[kept++] = std::move(items[i]);
+    items.erase(items.begin() + std::ptrdiff_t(kept), items.end());
+    items.insert(items.end(), std::make_move_iterator(merged_.begin()), std::make_move_iterator(merged_.end()));
 }
 
 // Capture members while their scene/material cache lines are hot. DrawItems are made only for

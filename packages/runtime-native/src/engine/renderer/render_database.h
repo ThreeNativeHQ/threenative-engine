@@ -282,7 +282,6 @@ class RenderDatabase {
     std::unordered_map<std::size_t, std::vector<std::size_t>> candidatesByKey_;
     std::vector<bool> absorbed_;
     std::vector<DrawItem> merged_;
-    std::vector<DrawItem> batchedOut_;
     LightState lights_;
     CameraState cameraState_;
 
