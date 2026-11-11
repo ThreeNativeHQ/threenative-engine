@@ -418,7 +418,7 @@ describe("the engine path, when the host carries the five pose methods", () => {
   });
 
   it("reaches the same poses as the JavaScript path", () => {
-    const solved = [0, 2.5, -7];
+    const solved = [0, 2.5, -7] as const;
     const blended: number[] = [];
     for (const useEngine of [false, true]) {
       const body = new Object3D();
@@ -437,6 +437,6 @@ describe("the engine path, when the host carries the five pose methods", () => {
       expect(body.position.x).toBeCloseTo(solved[0]);
       blended.push(seen);
     }
-    expect(blended[0]).toBeCloseTo(blended[1]);
+    expect(blended[0]).toBeCloseTo(blended[1] ?? Number.NaN);
   });
 });
