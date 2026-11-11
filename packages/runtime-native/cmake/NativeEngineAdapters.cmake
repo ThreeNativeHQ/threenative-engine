@@ -317,16 +317,19 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-compile-reentry.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_compile_reentry PROPERTIES LABELS "native-engine")
-    # A game's 2D canvas draws into a CanvasTexture (Midway's gun steel was flat near-white without it).
-    add_test(NAME native_engine_player_canvas2d
-        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas2d.mjs
-            $<TARGET_FILE:tn-native-engine-player-v8>)
-    set_tests_properties(native_engine_player_canvas2d PROPERTIES LABELS "native-engine")
-    # A decal canvas copied into a texture canvas with drawImage keeps its text (Midway's NO STEP placards).
-    add_test(NAME native_engine_player_canvas_decal
-        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas-decal.mjs
-            $<TARGET_FILE:tn-native-engine-player-v8>)
-    set_tests_properties(native_engine_player_canvas_decal PROPERTIES LABELS "native-engine")
+    # Canvas2D exists only when Skia is staged (download-deps --only skia); without it the player answers null by design.
+    if(TARGET skia::skia)
+        # A game's 2D canvas draws into a CanvasTexture (Midway's gun steel was flat near-white without it).
+        add_test(NAME native_engine_player_canvas2d
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas2d.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_canvas2d PROPERTIES LABELS "native-engine")
+        # A decal canvas copied into a texture canvas with drawImage keeps its text (Midway's NO STEP placards).
+        add_test(NAME native_engine_player_canvas_decal
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas-decal.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_canvas_decal PROPERTIES LABELS "native-engine")
+    endif()
     add_test(NAME native_engine_player_window_title
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-window-title.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)

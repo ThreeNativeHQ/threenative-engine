@@ -34,7 +34,7 @@ async function run() {
   const words = async (buffer) => new Uint32Array(await renderer.getArrayBufferAsync(buffer.value));
   const floats = async (buffer) => new Float32Array(await renderer.getArrayBufferAsync(buffer.value));
 
-  // r185 mx_noise.js evaluated in Node: bjfinal/hash -> cell noise -> minimum squared
+  // r187 mx_noise.js evaluated in Node: bjfinal/hash -> cell noise -> minimum squared
   // Worley distance. MaterialXNodes.js passes metric 1; defaults and explicit jitter agree.
   const worley = instancedArray(6, "float");
   renderer.compute(Fn(() => {
@@ -45,7 +45,7 @@ async function run() {
     worley.element(4).assign(mx_worley_noise_float(vec2(0.25, -0.75), 0));
     worley.element(5).assign(mx_worley_noise_float(vec3(0.25, -0.75, 1.5), 0));
   })().compute(1));
-  const expectedWorley = [0.13346224772102191, 0.45484816345404055, 0.22986400830291198, 0.31808932990701355, 0.125, 0.125];
+  const expectedWorley = [0.13346224772102191, 0.3609834313392639, 0.22986400830291198, 0.37523606419563293, 0.125, 0.125];
   const actualWorley = await floats(worley);
   if (actualWorley.length !== expectedWorley.length || actualWorley.some((value, i) => !Number.isFinite(value) || Math.abs(value - expectedWorley[i]) > 1e-6))
     faults.push("worley got [" + actualWorley + "] want [" + expectedWorley + "]");
