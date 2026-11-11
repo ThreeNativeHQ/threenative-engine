@@ -44,9 +44,10 @@ runs:
           sh "$GITHUB_WORKSPACE/scripts/retry-download.sh" "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" install "$TN_EMSDK_VERSION"
         fi
         "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" activate "$TN_EMSDK_VERSION"
-        # The web engine reads four pinned sources: stb (images), cgltf (glTF), libwebp and
-        # meshoptimizer (EXT/KHR_meshopt_compression in the same glTF loader).
-        for dependency in stb cgltf webp-source meshopt; do
+        # The web engine reads five pinned sources: stb (images), cgltf (glTF), libwebp,
+        # meshoptimizer (EXT/KHR_meshopt_compression in the same glTF loader) and Basis Universal
+        # (KHR_texture_basisu, PRD-861).
+        for dependency in stb cgltf webp-source meshopt basisu; do
           node scripts/download-deps.mjs --only "$dependency"
         done
         source "$GITHUB_WORKSPACE/.cache/emsdk/emsdk_env.sh"
