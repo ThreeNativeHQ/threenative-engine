@@ -142,11 +142,33 @@ function wasmModule(root: string, explicit: string | undefined): string {
   return entry;
 }
 
+/** The ESM file for a resolved upstream entry. `require.resolve("three")` takes the `require`
+ * condition, `build/three.cjs`, and loading that printed three's THREE_CJS_DEPRECATED warning on
+ * every dev start. A `.cjs` entry is swapped for its package's `exports["."].import`. */
+export function esmEntry(resolved: string): string {
+  if (!resolved.endsWith(".cjs")) return resolved;
+  for (let dir = path.dirname(resolved); dir !== path.dirname(dir); dir = path.dirname(dir)) {
+    const manifest = path.join(dir, "package.json");
+    if (!existsSync(manifest)) continue;
+    const root = (
+      JSON.parse(readFileSync(manifest, "utf8")) as {
+        exports?: { "."?: { import?: unknown; require?: unknown } };
+      }
+    ).exports?.["."];
+    const sameEntry =
+      typeof root?.require === "string" && path.join(dir, root.require) === resolved;
+    return sameEntry && typeof root?.import === "string" ? path.join(dir, root.import) : resolved;
+  }
+  return resolved;
+}
+
 /** Every export name of the project's own upstream three, which the game was written against. */
 async function upstreamNames(root: string): Promise<string[]> {
   const require = createRequire(path.join(root, "package.json"));
   const modules = await Promise.all(
-    UPSTREAM.map((id) => import(pathToFileURL(require.resolve(id)).href) as Promise<object>),
+    UPSTREAM.map(
+      (id) => import(pathToFileURL(esmEntry(require.resolve(id))).href) as Promise<object>,
+    ),
   );
   return [...new Set(modules.flatMap((module) => Object.keys(module)))]
     .filter((name) => name !== "default" && name !== "module.exports")
