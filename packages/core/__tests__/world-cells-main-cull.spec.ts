@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 import {
   Box3,
   BoxGeometry,
+  BufferAttribute,
   Frustum,
   Group,
+  InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
   Mesh,
@@ -17,6 +19,7 @@ import {
   Vector3,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { applyRecords } from "../src/world-cell-records.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
 
 /**
@@ -348,6 +351,103 @@ describe("WorldCells main-pass cluster cull", () => {
       Reflect.deleteProperty(Frustum.prototype, "__tnIntersectsBoxes");
     }
     world.dispose();
+  });
+
+  it("streams a walk in one engine call per system a frame and no per-cell or per-record JS pass (PRD-879 guard)", async () => {
+    // The owned engine's two world calls, answered here as three would: the main cull's cell test
+    // (`Frustum.__tnIntersectsBoxes`) and the shared batches' instance records
+    // (`InstancedBufferAttribute.__tnRecords`). Work inside them is the engine's; the same work
+    // outside them is a JS pass the engine was meant to own.
+    let inside = 0;
+    const box = new Box3();
+    const cull = vi.fn(function (this: Frustum, boxes: Float64Array): number[] {
+      inside += 1;
+      try {
+        const hits: number[] = [];
+        for (let at = 0; at < boxes.length; at += 6) {
+          box.min.fromArray(boxes, at);
+          box.max.fromArray(boxes, at + 3);
+          if (this.intersectsBox(box)) hits.push(at / 6);
+        }
+        return hits;
+      } finally {
+        inside -= 1;
+      }
+    });
+    const records = vi.fn(
+      (attributes: InstancedBufferAttribute[], ops: Float64Array, payload: Float32Array) => {
+        inside += 1;
+        try {
+          return applyRecords(attributes, ops, payload);
+        } finally {
+          inside -= 1;
+        }
+      },
+    );
+    let jsBoxTests = 0;
+    let jsUploads = 0;
+    const intersectsBox = Frustum.prototype.intersectsBox;
+    const needsUpdate = Object.getOwnPropertyDescriptor(BufferAttribute.prototype, "needsUpdate");
+    Object.defineProperty(Frustum.prototype, "__tnIntersectsBoxes", {
+      configurable: true,
+      value: cull,
+    });
+    Object.defineProperty(InstancedBufferAttribute.prototype, "__tnRecords", {
+      configurable: true,
+      value: records,
+    });
+    Frustum.prototype.intersectsBox = function (this: Frustum, target: Box3): boolean {
+      if (inside === 0) jsBoxTests += 1;
+      return intersectsBox.call(this, target);
+    };
+    Object.defineProperty(BufferAttribute.prototype, "needsUpdate", {
+      configurable: true,
+      set(this: BufferAttribute, value: boolean) {
+        if (inside === 0 && this instanceof InstancedBufferAttribute) jsUploads += 1;
+        needsUpdate?.set?.call(this, value);
+      },
+    });
+    try {
+      stubManifestFetch();
+      const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+      const world = await loadWorld(follow);
+      let frames = 0;
+      let written = 0;
+      // Load at (0, 1), then walk one cell along x, and settle: admissions, evictions, refilters
+      // and the cull's repacks all run inside these updates.
+      for (const at of [
+        [0, 1],
+        [1, 1],
+        [1, 1],
+      ] as const) {
+        Object.assign(follow.position, cellCentre(at[0], at[1]));
+        for (let pass = 0; pass < 60; pass += 1) {
+          await flush();
+          cull.mockClear();
+          records.mockClear();
+          frame(world, playerCamera(at));
+          frames += 1;
+          expect(cull).toHaveBeenCalledTimes(1);
+          expect(records.mock.calls.length).toBeLessThanOrEqual(1);
+          written += records.mock.calls.length;
+          const stats = world.stats();
+          if (stats.admission.backlog === 0 && stats.loadsInFlight === 0 && pass > 2) break;
+        }
+      }
+      expect(frames).toBeGreaterThan(3);
+      // The walk wrote records, and every byte of them went through the one call a frame.
+      expect(written).toBeGreaterThan(0);
+      expect(jsUploads).toBe(0);
+      expect(jsBoxTests).toBe(0);
+      expect(mainMesh(world).count).toBeGreaterThan(0);
+      world.dispose();
+    } finally {
+      Reflect.deleteProperty(Frustum.prototype, "__tnIntersectsBoxes");
+      Reflect.deleteProperty(InstancedBufferAttribute.prototype, "__tnRecords");
+      Frustum.prototype.intersectsBox = intersectsBox;
+      if (needsUpdate !== undefined)
+        Object.defineProperty(BufferAttribute.prototype, "needsUpdate", needsUpdate);
+    }
   });
 
   it("regroups when the camera turns and writes nothing when it does not", async () => {
