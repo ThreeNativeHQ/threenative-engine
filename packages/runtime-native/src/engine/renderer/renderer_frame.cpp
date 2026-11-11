@@ -211,7 +211,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A caster that left the scene with its chain is invalidated by updateCasters' removal pass.
         for (const Box3& bounds : rungChanged) shadow.atlas.invalidate(bounds);
         control.lodChanged.clear();
-        shadow.atlas.updateCasters(states, emptied);
+        // A frame where no caster arrived, left or moved has nothing to hand the atlas: its state is last frame's.
+        if (plan.changed()) shadow.atlas.updateCasters(states, emptied);
         {
             std::lock_guard lock(shadow.costs->mutex);
             for (const auto& [level, reading] : shadow.costs->levels) {

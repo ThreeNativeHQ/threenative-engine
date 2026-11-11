@@ -225,6 +225,17 @@ static bool nearRoot(const std::array<double, 16>& a, const std::array<double, 1
 }
 static bool nearScale(double a, double b) { return std::abs(a - b) <= 1e-12 * (1 + std::abs(a) + std::abs(b)); }
 
+const std::vector<Vector3>& Skeleton::planCenters(uint64_t stamp, const Matrix4& inverse) {
+    if (stamp != 0 && stamp == centerStamp_ && centerInverse_ == inverse.elements && centers_.size() == bones.size())
+        return centers_;
+    const auto& poses = planPoses(stamp);
+    centers_.resize(poses.size());
+    for (std::size_t j = 0; j < poses.size(); ++j) centers_[j].copy(poses[j].position).applyMatrix4(inverse);
+    centerStamp_ = stamp;
+    centerInverse_ = inverse.elements;
+    return centers_;
+}
+
 uint64_t Skeleton::nextPlanStamp() {
     static std::atomic<uint64_t> stamp{0};
     return ++stamp;
@@ -251,14 +262,26 @@ const std::vector<Skeleton::PlanPose>& Skeleton::planPoses(uint64_t stamp) {
     planStamp_ = stamp;
     ++planPoseBuilds;
     planPoses_.resize(bones.size());
+    // A bone chain whose local scales are all unit stretches its world linear part exactly as its root does: one
+    // `linearStretch` for the skeleton, not one per bone (PRD-872: the stress lab's 120 rigs read 7,800 bones a frame).
+    bool unitScales = true;
+    for (std::size_t j = 0; j < bones.size() && unitScales; ++j) {
+        const Bone* bone = this->bone(j);
+        if (bone == nullptr) continue;
+        unitScales = bone->scale.x == 1 && bone->scale.y == 1 && bone->scale.z == 1;
+    }
+    double shared = 0;
     for (std::size_t j = 0; j < bones.size(); ++j) {
         PlanPose& pose = planPoses_[j];
         Bone* bone = this->bone(j);
         if (!bone) { pose.stretch = -1; continue; }
         bone->materializeWorldTransformIfPending();
         pose.position.setFromMatrixPosition(bone->matrixWorld);
-        pose.stretch = linearStretch(bone->matrixWorld);
+        if (!unitScales) { pose.stretch = linearStretch(bone->matrixWorld); continue; }
+        if (shared == 0) shared = linearStretch(bone->matrixWorld);
+        pose.stretch = shared;
     }
+    if (!unitScales) shared = 0;
     return planPoses_;
 }
 
@@ -326,12 +349,12 @@ bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
     }
     ++boneReachBoxBuilds;
     target.makeEmpty();
-    Vector3 center;
     const auto& poses = skeleton->planPoses(planStamp);
+    const auto& centers = skeleton->planCenters(planStamp, bindMatrixInverse);
     for (std::size_t j = 0; j < bones; ++j) {
         if (boneReach_[j] < 0) continue;
         if (poses[j].stretch < 0) return false;
-        center.copy(poses[j].position).applyMatrix4(bindMatrixInverse);
+        const Vector3& center = centers[j];
         const double radius = boneReach_[j] * poses[j].stretch * meshScale;
         target.min.x = std::min(target.min.x, center.x - radius);
         target.min.y = std::min(target.min.y, center.y - radius);

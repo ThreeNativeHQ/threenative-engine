@@ -56,6 +56,7 @@ class CasterPlan {
     /** Sizes the frame to `count` casters and clears the frame's rebuild count. */
     void begin(std::size_t count) {
         if (slots_.size() < count) slots_.resize(count);
+        fresh_ = count != used_;
         used_ = count;
         rebuilds_ = 0;
     }
@@ -83,6 +84,8 @@ class CasterPlan {
 
     /** Casters rebuilt this frame. */
     [[nodiscard]] uint64_t rebuilds() const { return rebuilds_; }
+    /** True when a caster was added, dropped or rebuilt: a frame where none was has nothing to hand the atlas. */
+    [[nodiscard]] bool changed() const { return rebuilds_ != 0 || fresh_; }
     [[nodiscard]] std::size_t size() const { return used_; }
     [[nodiscard]] const PlannedCaster& at(std::size_t index) const { return slots_[index]; }
 
@@ -90,6 +93,7 @@ class CasterPlan {
     std::vector<PlannedCaster> slots_;
     std::size_t used_ = 0;
     uint64_t rebuilds_ = 0;
+    bool fresh_ = true;
 };
 
 } // namespace tn::engine::shadows
