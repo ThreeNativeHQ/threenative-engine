@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -1095,5 +1096,26 @@ describe("the realistic-scene ladder on the monitor page", () => {
       "R5 Full scene at 1920x1080",
     ])
       expect(section).toContain(label);
+  });
+});
+
+describe("the scoreboard's ladder measures the owned-engine arm too", () => {
+  // `ladder` appends `-desktop`, so the CLI arm the script must name is `tn-engine-desktop`. A run
+  // that only measures `tn` reports one engine twice and hides what the owned engine costs.
+  const script = readFileSync(
+    new URL("../engine-load-test/scoreboard.sh", import.meta.url),
+    "utf8",
+  );
+  const ladderLines = script
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^ladder /u.test(line));
+
+  const runs = ladderLines.map((line) => line.split(";").map((step) => step.trim()));
+
+  it.each([1, 2, 3])("runs the ladder on tn-engine beside tn for repeat %i", (repeat) => {
+    const run = runs.find((steps) => steps.includes(`ladder tn ${repeat}`));
+    expect(run).toBeDefined();
+    expect(run).toContain(`ladder tn-engine ${repeat}`);
   });
 });

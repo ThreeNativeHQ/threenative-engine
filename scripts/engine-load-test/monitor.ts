@@ -532,7 +532,7 @@ function scoreboardTag(data: IMonitorData): string {
   return tags.sort().at(-1) ?? "none";
 }
 
-function scoreboardFiles(data: IMonitorData, engine: "godot" | "tn"): string[] {
+function scoreboardFiles(data: IMonitorData, engine: "godot" | "tn" | "tn-engine"): string[] {
   const tag = scoreboardTag(data);
   return SCOREBOARD_RUNS.map((run) => `scoreboard-${engine}-r${run}-${tag}`);
 }
@@ -563,7 +563,7 @@ function median(values: readonly number[]): number {
 
 function engineCell(
   data: IMonitorData,
-  engine: "godot" | "tn",
+  engine: "godot" | "tn" | "tn-engine",
   mode: TRenderMode,
   objectCount: number,
   /** Defaults to the cube scoreboard's run files; PRD-464's ladder names its own. */
@@ -710,7 +710,7 @@ function whereTnLoses(rows: IScoreboardRow[]): string {
 
 /** A row's own evidence: every run file that side names, linked, and the ones not retained yet
  *  named in their place rather than dropped. */
-function rawJson(data: IMonitorData, engine: "godot" | "tn"): string {
+function rawJson(data: IMonitorData, engine: "godot" | "tn" | "tn-engine"): string {
   return scoreboardFiles(data, engine)
     .map((base) => {
       const attempt = scoreboardRun(data, base);

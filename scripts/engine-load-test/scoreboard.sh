@@ -31,7 +31,7 @@ ladder() {
 run tn L2,L3,L4 1; run godot L1,L2,L4 1
 run godot L1,L2,L4 2; run tn L2,L3,L4 2
 run tn L2,L3,L4 3; run godot L1,L2,L4 3
-ladder tn 1; ladder godot 1
-ladder godot 2; ladder tn 2
-ladder tn 3; ladder godot 3
+ladder tn 1; ladder tn-engine 1; ladder godot 1
+ladder godot 2; ladder tn 2; ladder tn-engine 2
+ladder tn 3; ladder tn-engine 3; ladder godot 3
 pnpm -s bench:engines:monitor
