@@ -372,8 +372,8 @@ class RenderDatabase {
     std::size_t reflectionItems_ = 0;
     std::array<double, 4> prepareMs_{};
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
-    std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated
-    const std::unordered_set<const void*>* skeletonsFresh_ = nullptr;  // a reflection: the main pass's, still current
+    uint64_t prepareId_ = 0;     // unique across databases: stamps Skeleton::renderedBy
+    uint64_t freshPrepare_ = 0;  // a reflection: the main pass's prepare, whose skeletons are still current
     int hemisphere_ = 0;
 };
 

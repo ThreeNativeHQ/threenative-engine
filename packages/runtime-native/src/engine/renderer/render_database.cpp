@@ -1007,11 +1007,12 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             d.skinIndices = r.skinIndex ? r.skinIndex->store.get() : nullptr;
                             d.skinWeights = r.skinWeight ? floatStore(*r.skinWeight) : nullptr;
                             if (skinned.skeleton && d.skinIndices && d.skinWeights) {
-                                const void* skeleton = skinned.skeleton.get();
                                 const bool gpu = gpuJoints_ && *gpuJoints_->valid && gpuJoints_->byMesh.count(&skinned);
-                                if (!gpu && (skeletonsFresh_ == nullptr || skeletonsFresh_->count(skeleton) == 0) &&
-                                    skeletonsUpdated_.insert(skeleton).second)
-                                    skinned.skeleton->deferWorldPalette(worldsFreshSince_);
+                                Skeleton& rig = *skinned.skeleton;
+                                if (!gpu && (freshPrepare_ == 0 || rig.renderedBy != freshPrepare_) && rig.renderedBy != prepareId_) {
+                                    rig.renderedBy = prepareId_;
+                                    rig.deferWorldPalette(worldsFreshSince_);
+                                }
                                 d.boneMatrices = &skinned.skeleton->boneMatrices;
                                 d.bindMatrix = toArray(skinned.bindMatrix);
                                 d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
@@ -1742,7 +1743,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     if (shadowMapType == PCFSoftShadowMap) shadowMapType = 1;  // PCFShadowMap; three has no other map filter here
     callbacks_.clear();
     direct_.clear();
-    skeletonsUpdated_.clear();
+    static std::atomic<uint64_t> prepares{0};
+    prepareId_ = ++prepares;
     batchMeshes_.clear();
     batchTransforms_.clear();
     batchRgb_.clear();
@@ -2147,7 +2149,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
         if (poseReflection(*reflector, camera, virtualCamera)) {
             pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
             // Bones the main pass posed this frame are current too: no callback ran to move them.
-            pass.database->skeletonsFresh_ = pass.database->matricesFresh_ ? &skeletonsUpdated_ : nullptr;
+            pass.database->freshPrepare_ = pass.database->matricesFresh_ ? prepareId_ : 0;
             pass.database->gpuJoints_ = gpuJoints_;
             std::array<double, 2> split{0, 0};
             pass.database->profiling = profiling;
@@ -2158,7 +2160,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
                 reflectionMs_[1] += split[1];
                 reflectionItems_ += pass.database->drawn().size();
             }
-            pass.database->skeletonsFresh_ = nullptr;
+            pass.database->freshPrepare_ = 0;
         }
         else if (encodeJobs) {
             pass.renderer->renderDeferred({}, CameraState{}, LightState{}, {0, 0, 0, 0});

@@ -117,6 +117,8 @@ class Skeleton {
      *  Engine/Source/Runtime/Engine/Private/Components/SkinnedMeshComponent.cpp:1514 sends bones only when marked). */
     [[nodiscard]] uint64_t poseVersion() const { return poseVersion_->load(std::memory_order_relaxed); }
     void markPoseChanged() { poseVersion_->fetch_add(1, std::memory_order_relaxed); }
+    /** The RenderDatabase prepare that last ran updateAfterWorldWalk: a rig's second mesh skips it. */
+    uint64_t renderedBy = 0;
     /** The first bone whose name matches, or null. A null slot is skipped, never dereferenced. */
     [[nodiscard]] Bone* getBoneByName(std::string_view name) const;
 
