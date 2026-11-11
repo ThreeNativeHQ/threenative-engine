@@ -164,6 +164,8 @@ Method traps found, each one fixed in the tool unless it says open:
   re-meter); SSR off NEUTRAL on still, town and closeup (0.02-level difference, sea keeps its sky reflection).
 - Rule: a raise that the next change undid keeps its cost ratio, and the tier retries only when the predicted cost
   fits (`reason=predicted`). A doubling backoff alone still blinked the shadows every few cooldowns.
+- Holdout (laptop, #351-#352): the `tower-defense` kit holds, 108.6 to 111.4 fps; it settles at `medium`, which the
+  change does not touch.
 - Next lever on that frame (cool, 8.1 ms): the scene pass is 5.3 ms, about half of it the 120 walkers (1.65 M
   triangles, 13.7 k each, no LOD: `updateModelLods` skips skinned meshes).
 
