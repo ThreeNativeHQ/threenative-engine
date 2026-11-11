@@ -6,11 +6,13 @@ import type { IInputGamepad } from "./input.js";
  * (`mapping: ""`, which is the browser saying "I do not know this device") is turned into the
  * standard layout by one table row per measured device, never by a class per model.
  *
- * The rows are SDL_GameControllerDB's Linux entries, copied verbatim, because they name the
- * device's evdev order — the order Firefox on Linux reports for a pad it has no mapping for. The
- * numbers below are SDL 3.2.30's, from `third_party/sdl3/SDL3-3.2.30/src/joystick/SDL_gamepad_db.h`;
- * the name beside each one is that entry's title, which is the part of the browser `id` that says
- * which pad is on the other end.
+ * The rows are SDL_GameControllerDB entries, copied verbatim and stamped with the line they came
+ * from (`third_party/sdl3/SDL3-3.2.30/src/joystick/SDL_gamepad_db.h`). The database carries several
+ * GUID forms per device — a USB hidraw entry, a Bluetooth one, and one per host driver — and which
+ * of them a browser reports is the device read still open on this PRD. What the rows do here is name
+ * the slots, and for every form of these devices the sticks and the face/shoulder/start/back/stick
+ * buttons are the same; the triggers are axes in the forms below and buttons in the USB hidraw form
+ * (`:72`), which no browser reports.
  *
  * The d-pad is deliberately not mapped: every row expresses it as a hat (`h0.1`), which arrives in a
  * browser as two extra axes in a device-specific order. No kit here binds the d-pad, so a row ships

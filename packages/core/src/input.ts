@@ -252,6 +252,11 @@ export class InputMap {
   #activePadSlot = -1;
   #padSeen = new Set<string>();
   #padReports = new Map<string, GamepadNormalizer>();
+  /** Whether each slot reported input on the previous tick: a pad takes the slot on a rising edge. */
+  #padHadInput: boolean[] = [];
+  /** The `TN_GAMEPAD` key per slot, and the `id` it was built from, so a tick allocates no string. */
+  #padKeys: Array<string | undefined> = [];
+  #padKeyIds: Array<string | undefined> = [];
   #previousPressed = new Map<string, boolean>();
   #justPressed = new Set<string>();
   #justReleased = new Set<string>();
@@ -273,7 +278,8 @@ export class InputMap {
 
   /**
    * Radial dead zone for both sticks; `0` publishes the raw axes. Read on every tick, so a game may
-   * change it while running. `defineGame({ gamepadDeadZone })` sets the starting value.
+   * change it while running, and a value that is not a finite number from 0 through 1 reads as raw
+   * axes. `defineGame({ gamepadDeadZone })` sets the starting value and refuses one it cannot honour.
    */
   gamepadDeadZone: number;
 
@@ -563,36 +569,42 @@ export class InputMap {
   #sampleGamepad(): void {
     const sources = this.#source();
     this.#padSeen.clear();
-    let pending = -1;
+    let risingSlot = -1;
+    let inputSlot = -1;
     let firstMapped = -1;
     let activeStillMapped = false;
-    let activeHasInput = false;
     for (let index = 0; index < sources.length; index += 1) {
       const pad = sources[index];
-      if (pad === null || pad === undefined) continue;
-      if (this.#readPad(pad, index) === "unmapped") continue;
-      if (firstMapped < 0) firstMapped = index;
-      if (index === this.#activePadSlot) {
-        activeStillMapped = true;
-        activeHasInput = this.#padHasInput();
+      if (pad === null || pad === undefined) {
+        this.#padHadInput[index] = false;
         continue;
       }
-      if (pending < 0 && this.#padHasInput()) pending = index;
+      if (this.#readPad(pad, index) === "unmapped") {
+        this.#padHadInput[index] = false;
+        continue;
+      }
+      if (firstMapped < 0) firstMapped = index;
+      const hasInput = this.#padHasInput();
+      // A rising edge, not a level: a worn stick resting past the dead zone reports input on every
+      // tick, so a level test would let it hold the slot forever once it got it — the phantom pad
+      // this PRD exists to remove. It rises once, and the next pad the player touches takes over.
+      if (hasInput && risingSlot < 0 && this.#padHadInput[index] !== true) risingSlot = index;
+      if (hasInput && inputSlot < 0) inputSlot = index;
+      if (index === this.#activePadSlot) activeStillMapped = true;
+      this.#padHadInput[index] = hasInput;
     }
     for (const key of this.#padReports.keys())
       if (!this.#padSeen.has(key)) this.#padReports.delete(key);
-    // The pad the player is using keeps the slot. Another pad takes over only while that one is
-    // idle, so a worn stick drifting in a higher slot — or a second pad lying on the couch — cannot
-    // steal the input from a pad that is being played. With no pad active, the first one that
-    // reports input wins, and with no input at all the last active pad keeps the slot so its
-    // releases are still read.
+    // The last pad the player touched owns the input: a rising edge takes the slot, and with no edge
+    // the current pad keeps it — even while idle, so its releases are read. A pad that disappeared,
+    // or one the browser now reports unmapped, hands over to whichever pad is being held.
     const active =
-      activeHasInput && this.#activePadSlot >= 0
-        ? this.#activePadSlot
-        : pending >= 0
-          ? pending
-          : activeStillMapped && this.#activePadSlot >= 0
-            ? this.#activePadSlot
+      risingSlot >= 0
+        ? risingSlot
+        : activeStillMapped && this.#activePadSlot >= 0
+          ? this.#activePadSlot
+          : inputSlot >= 0
+            ? inputSlot
             : firstMapped;
     this.#activePadSlot = active;
     // Reused buffers: fresh arrays here were four allocations per update step, device or not.
@@ -614,8 +626,15 @@ export class InputMap {
   #readPad(pad: IInputGamepad, index: number): GamepadNormalizer {
     const normalizer = toStandardPad(pad, this.#padScratch);
     // `index:id`: two identical pads are two pads, and a hotplug that moves a pad to another slot
-    // is a new reading of where it is rather than a silent re-use of the old line.
-    const key = `${index}:${pad.id ?? (PAD_SLOT_KEYS[index] as string)}`;
+    // is a new reading of where it is rather than a silent re-use of the old line. Built once per
+    // slot:id, because a template literal allocates and this runs twice a tick for the active pad.
+    const id = pad.id;
+    let key = this.#padKeys[index];
+    if (key === undefined || this.#padKeyIds[index] !== id) {
+      key = `${index}:${id ?? (PAD_SLOT_KEYS[index] as string)}`;
+      this.#padKeys[index] = key;
+      this.#padKeyIds[index] = id;
+    }
     this.#padSeen.add(key);
     if (this.#padReports.get(key) !== normalizer) {
       this.#padReports.set(key, normalizer);

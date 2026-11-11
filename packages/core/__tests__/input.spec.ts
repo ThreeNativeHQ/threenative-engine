@@ -146,10 +146,48 @@ describe("InputMap", () => {
     input.tick();
     expect(input.vector("move").x).toBe(0);
 
+    // The player's pad is released. The drifter has rested past the dead zone the whole time, so it
+    // has no new edge to claim: an idle pad does not lose the input to a stick that never moved.
     played.axes[3] = 0;
     input.tick();
-    // With the player's pad idle, the drifting one takes over — that is the hand-over rule, not a steal.
+    expect(input.vector("move").x).toBe(0);
+
+    // A pad that genuinely moves does take over: the drifter re-centres and comes back past the zone.
+    drifting.axes[0] = 0;
+    input.tick();
+    drifting.axes[0] = 0.3;
+    input.tick();
     expect(input.vector("move").x).toBeCloseTo(0.125);
+    input.dispose();
+  });
+
+  it("takes the slot back when the player touches a pad the drifter took at boot", () => {
+    const target = new EventTarget();
+    // At boot the player's pad is idle and the worn stick in slot 1 already rests past the dead zone,
+    // so slot 1 owns the input. Its stick never leaves that band, so only a rising edge on the
+    // player's own pad can hand it back — a level check would leave slot 1 in charge for the session.
+    const playedButton = { pressed: false };
+    const played = { axes: [0, 0, 0, 0], buttons: [playedButton] };
+    const drifting = { axes: [0.3, 0, 0, 0], buttons: [{ pressed: false }] };
+    const input = new InputMap({ jump: { buttons: [0] } }, target, target, () => [
+      played,
+      drifting,
+    ]);
+
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.125);
+
+    played.axes[0] = -1;
+    input.tick();
+    expect(input.vector("move").x).toBe(-1);
+
+    // Held down, the player's pad keeps the slot; the drifter never rises again.
+    input.tick();
+    expect(input.vector("move").x).toBe(-1);
+
+    playedButton.pressed = true;
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
     input.dispose();
   });
 
