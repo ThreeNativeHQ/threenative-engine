@@ -96,3 +96,18 @@ describe("the Android dependency key a new ref restores", () => {
     );
   });
 });
+
+describe("the built web engine key", () => {
+  // The action's own dependency loop decides which sources the engine links. #658 added basisu to
+  // it, the key did not move, and the cache kept serving an engine that refused KHR_texture_basisu.
+  it("changes when the action's dependency list changes", () => {
+    const action = readFileSync(
+      join(repo, ".github/actions/native-engine-wasm/action.yml"),
+      "utf8",
+    );
+    const key = action.match(/key: native-engine-web-wasm-[^\n]*/)?.[0];
+    expect(key).toBeDefined();
+    expect(action).toMatch(/for dependency in [^\n]*basisu/);
+    expect(key).toContain("'.github/actions/native-engine-wasm/action.yml'");
+  });
+});
