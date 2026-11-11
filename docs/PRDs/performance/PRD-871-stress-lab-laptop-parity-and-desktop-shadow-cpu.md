@@ -134,18 +134,18 @@ Risks:
 
 #### Phase 1: the lamp range lever is closed
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/runtime-native/src/engine/shader/standard.cpp` (`buildLit`), `packages/runtime-native/tests/native-engine/material_test.cpp`, `docs/stress-loop/ledger.json`, `PERFORMANCE-LEARNINGS.md`.
 **Implementation:** reuse `ranged`, `held` and the branch from `buildStandardProgram` for the Lambert and Phong loop. Record the laptop paired probe and one valid desktop window as ledger rows with the candidate arm named `head`. Add the learnings entry (method traps of the session included: scoreboard arm names, the desktop needs a live display for a headed browser, the owned engine reports its GPU split through `globalThis.__tnGpuSegments`, the glue constant `ASM_CONSTS` moves with each Wasm build).
 **Verification:** `cmake --build build/wasm --target tn-native-engine-material-test && ctest --test-dir build/wasm -R native_engine_material` (run from `packages/runtime-native`, after `source ~/emsdk/emsdk_env.sh`).
 
 - [x] Standard and physical programs branch on lamp range. proof: `ctest --test-dir build/wasm -R native_engine_material` — 21 passed, 2026-11-10; `native_engine_material_lamp_range_branch` failed on the old shader and passes on `078aae53b`.
 - [x] Visual judge NEUTRAL on `?stress&still`, `?stress&freezeAt=12` and `?stress&play&freezeAt=8`, two runs per arm on the Iris Xe. proof: fresh Opus judge on `artifacts/stress-lab-audit/judge-range/` — NEUTRAL overall, 2026-11-10: torch glow on the house wall reads RGB 214.4/168.7/131.8 before and after (`freezeAt=12`), and 215.0-215.5 before against 215.2-215.9 after (`play`); no cutoff edge. The `still` pose shows no torch light, so it proves nothing about the lamps.
-- [ ] Lambert and Phong programs branch on lamp range too, and a kit with lamps (`adventure` or `shooter`) holds or gains FPS as the holdout. proof: `native_engine_material_lamp_range_branch` extended to `buildLambert` and `buildPhong`; holdout arm in one fair window; ledger rows.
+- [x] Lambert and Phong programs branch on lamp range too, and a kit with lamps (`adventure` or `shooter`) holds or gains FPS as the holdout. proof: `native_engine_material_lamp_range_branch` extended to `buildLambert` and `buildPhong`; holdout arm in one fair window; ledger rows. — `fa8f612a1`; `ctest -R native_engine_material` 21 passed, 2026-11-10 (`lit("dps") == lit("d") + 2`). Holdout: the `tower-defense` kit (point lamps, standard materials), laptop window `lit-holdout-laptop` rows #341-#344: kit 109.3 → 114.2 fps (holds); lab `?stress&adaptive` 7.1 → 36.0 fps. The desktop window `lit-holdout` (#338-#340) voided every lab head run (load 24-34 from the CI pool); its kit pair holds (320 → 333 fps). Native run: not done, the owned engine on desktop shares this shader source.
 
 #### Phase 2: the laptop adaptive lane reaches vanilla speed
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/look/adaptiveQuality.ts`, `packages/core/src/look/qualityPolicy.ts`, their specs under `packages/core/__tests__/`, `packages/create-threenative/conventions.json` when the rule becomes a convention.
 **Implementation:** run `engine_search_capabilities` for the shadow tier first. Decide the layer in writing (engine policy or kit source) and quote the repository rule that decides it. Apply the tier's `castShadows` where the tier changes, keep the named override, and report the overridden state. Feed the owned engine's GPU pass split into `TN_FRAME_BUDGET`, so a game reads it without the lab's hook.
 **Verification:** a laptop fair window with base and candidate lab builds, arms `?stress&adaptive&arm=base` and `?stress&adaptive&arm=head`, plus a visual judge at each tier the change touches.
@@ -155,7 +155,7 @@ Risks:
 
 #### Phase 3: the desktop frame loses its shadow planning cost
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/runtime-native/src/engine/renderer/renderer_frame.cpp`, `packages/runtime-native/src/engine/renderer/shadows/virtual/atlas.cpp`, `atlas.h`, `packages/runtime-native/tests/native-engine/vsm/vsm_atlas_test.cpp`.
 **Implementation:** one hypothesis per candidate, each with its expected gain written first. Start with the per-caster work of `planVirtualPages` for casters whose transform and geometry did not change. Then attribute the per-frame upload by counter. Then profile `play` and cut its largest removable term. Use Opus 5.5 high for the C++ changes and DeepSeek V4.1 Flash max for searches and row bookkeeping (owner routing, 2026-11-10).
 **Verification:** `ctest --test-dir build/wasm -L native-engine -R "vsm|render_database|renderer"`, then a paired desktop fair window (`--passes uncapped`, arms `base` and `head`, plus `plainShadow` as the ceiling), a holdout kit, and a visual judge on `?stress&closeup` and `?stress&freezeAt=12` for each change to shadow planning.

@@ -108,6 +108,43 @@ Method traps found, each one fixed in the tool unless it says open:
 - Open: the goals are proxies (main draws, JS render p50) and fps counts twice in the score. Unreal has no `play`
   arm. The vanilla arm has no physics engine and one sun map.
 
+### 2026-11-10 — A lamp shades only the fragments its range reaches — KEEP
+
+- Where: `packages/runtime-native/src/engine/shader/standard.cpp` (`ranged`, `held`, `shade` in
+  `buildStandardProgram` and `buildLit`); `078aae53b`, `fa8f612a1`. UE 5.8.3:
+  `Engine/Shaders/Private/DeferredLightingCommon.ush:334-344` (`BRANCH if( LightMask > 0 )`).
+- Cause: every lit fragment evaluated the GGX lobe of all 16 torches of the lab, whatever the distance. Past its
+  cutoff a lamp's attenuation is exactly 0, so the work changed no pixel.
+- Attribution (laptop Iris Xe, `seg-probe`, one run per variant): scene pass 203 ms of a 235 ms GPU frame;
+  `&noLights` 7.8 ms; `&noTrees` 192 ms; `&noFires` and `&noRocks` no change; 640x360 82 ms. Shadows were 11 ms.
+- Result (laptop paired probe, two runs per arm, uncapped): scene pass 206-224 to 8.6 ms; `real` 3.6 to 25.3 fps,
+  adaptive `low` 6.3 to 34.8 fps, `play` 3.35 to 19.9 fps. Desktop RTX 2080 (#334-#335): 95.0 to 96.7 fps, GPU p95
+  5.99 to 5.05 ms; that frame is CPU-bound.
+- Visual judge (fresh Opus, three poses, two runs per arm): NEUTRAL. The torch glow on a house wall reads
+  RGB 214.4/168.7/131.8 in both arms.
+- Rules: a value that every light reads (normal map, colour texel, derivatives) goes in a `var` before the first
+  branch, because WGSL refuses a texture sample or a derivative in non-uniform control flow. A lamp that reads a
+  shadow map keeps the straight path for the same reason.
+- Ceiling: 16 lamps now cost 0.6 ms of the Iris Xe scene pass. A light grid pays only past about 64 lamps.
+- Holdout (laptop, `docs/stress-loop/ledger.json` #341-#344): the `tower-defense` kit holds, 109.3 to 114.2 fps.
+
+### 2026-11-10 — Method: the owned engine's GPU frame by pass, and staging an engine into a built game
+
+- The owned engine times its passes (`frame_gpu_timer.h`: sun shadow, scene, other, output, gather, lamp shadow),
+  but core's `gpuMain`, `gpuShadow` and `gpuOther` stayed empty because the pass recorder cannot reach it. A probe
+  read them through `globalThis.__tnGpuSegments`; since `4bd398993` they ride on `TN_FRAME_BUDGET`.
+- Pinned `high` is not what an integrated GPU player gets. Measure `?stress&adaptive`: on the Iris Xe the policy
+  lands on `low`, and the lane is named `real-adaptive-<tier>`.
+- A candidate build of a game can reuse a built `dist`: replace the two engine `.wasm` files and patch the
+  `ASM_CONSTS` address of `TN_GPU_PASSES` in the glue chunks, which moves with each Wasm link (the untracked
+  `artifacts/stress-lab-audit/tools/stage-engine.sh` of the audit worktree does both). Without the patch the page throws
+  `ASM_CONSTS[code] is not a function`.
+- The scoreboard reads only arms named `head`, `develop` or `stack`. A fair window with other arm names records
+  rows that never reach it.
+- The desktop needs a connected monitor for a headed browser: with none, Brave never writes its DevTools port.
+- The `tn-local` CI pool on the desktop can raise the load to 27 in the middle of a window. The window voids those
+  runs; read the VOID lines before you trust a row count.
+
 ### 2026-11-10 — Auto batch scans what arrived, not the scene, after each add or remove — KEEP
 
 - Where: `packages/core/src/auto-batch.ts` (`#pending`, `#hangs`, `#visit`, `#finish`); `744a9321c`.
