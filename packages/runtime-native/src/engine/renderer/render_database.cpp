@@ -1298,9 +1298,10 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     for (const auto& [depth, item] : ordered) {
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
+        if (virtualShadows_ && d.castShadow) continue;  // a page caster keeps its own row: no verdict to read
         const auto verdict = decision->verdict.find(d.skinnedRig);
         const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision->verdict.end() && verdict->second == "skinned");
-        if ((virtualShadows_ && d.castShadow) || (!d.batchable && !skinned))
+        if (!d.batchable && !skinned)
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];
