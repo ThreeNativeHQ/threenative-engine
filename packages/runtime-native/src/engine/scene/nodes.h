@@ -132,6 +132,20 @@ public:
     [[nodiscard]] bool segments() const override { return true; }
 };
 
+/**
+ * three's Points: its geometry's `position` vertices drawn as one-pixel points (point-list)
+ * through the unlit basic program (PRD-871). WebGPU rasterizes a point primitive at 1 px, so
+ * `PointsMaterial.size` and `sizeAttenuation` move no pixel here, exactly as upstream's WebGPU
+ * backend (three's PointsNodeMaterial.js:21-33: "WebGPU only supports point primitives with a
+ * pixel size of 1"). A sized point cloud is a Sprite with a PointsNodeMaterial upstream; the
+ * engine draws that through the same sprite path it already had.
+ */
+class Points final : public Mesh {
+public:
+    using Mesh::Mesh;
+    [[nodiscard]] std::string_view type() const override { return "Points"; }
+};
+
 /** three's Sprite: a view-aligned quad; count supports GPUParticles3D's instanced sprites. */
 class Sprite : public Mesh {
 public:

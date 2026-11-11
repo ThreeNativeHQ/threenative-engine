@@ -2247,6 +2247,59 @@ readonly shadow: PointLightShadow;
 sourceRadius: number;
 }
 
+/** Catalog supported: three/Points. */
+export declare class Points extends Object3D {
+constructor();
+readonly morphTargetInfluences: number[] | undefined;
+geometry: BufferGeometry;
+material: Material;
+
+  updateMorphTargets(): void;
+}
+
+/** Catalog supported: three/PointsMaterial. */
+export declare class PointsMaterial extends Material {
+constructor();
+alphaHash: boolean;
+alphaTest: number;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+blending: Blending;
+colorWrite: boolean;
+depthTest: boolean;
+depthWrite: boolean;
+fog: boolean;
+forceSinglePass: boolean;
+readonly id: number;
+maxPositionOffset: number;
+name: string;
+opacity: number;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
+premultipliedAlpha: boolean;
+side: Side;
+size: number;
+sizeAttenuation: boolean;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+vertexColors: boolean;
+visible: boolean;
+color: Color;
+map: Texture | null;
+
+  clone(): this;
+
+  copy(source: Material): this;
+
+  dispose(): void;
+}
+
 /** Catalog partial (members-not-catalogued, media-sources-unbound): three/PositionalAudio. */
 export declare class PositionalAudio extends Audio {
 constructor(listener: AudioListener);

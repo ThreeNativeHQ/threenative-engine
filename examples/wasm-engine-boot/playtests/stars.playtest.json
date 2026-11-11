@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-points-stars",
+  "target": "web",
+  "subject": "A minimal game's 100 000-point star field on the default engine",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": true },
+  "steps": [
+    { "kind": "wait", "label": "spinning", "waitTicks": 400, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "stars",
+        "equals": 100000,
+        "allowTrivial": "The star count is what the scene builds in enter(), before any step: it is the population the pixel diff and the frame budget are measured over, and no input can change it."
+      },
+      { "id": "state", "path": "frames", "changed": true }
+    ],
+    "visual": [
+      { "frameDiff": { "minChangedPixelRatio": 0.02 } },
+      { "region": { "x": 0, "y": 0, "width": 640, "height": 360, "minNonblankPixelRatio": 0.05 } }
+    ],
+    "performance": { "maxFrameMsP95": 16.7, "minFps": 30 }
+  }
+}
