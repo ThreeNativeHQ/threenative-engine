@@ -1,5 +1,5 @@
 import { Object3D, Vector3 } from "three";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PhysicsInterpolation } from "../src/interpolation.js";
 import { FixedStepLoop } from "../src/loop.js";
 
@@ -190,5 +190,63 @@ describe("draw-only transform history", () => {
       expect(object.position.x).toBe(2),
     );
     loop.stop();
+  });
+});
+
+/** The names PRD-877 Phase 1 adds, and the three regions they stand for. */
+const INTERPOLATION_REGIONS = ["interpolationTick", "interpolationBlend", "interpolationRestore"];
+
+describe("interpolation cost, measured only under debug telemetry", () => {
+  type Bag = Record<string, number> | undefined;
+  const host = globalThis as unknown as Record<string, unknown>;
+  const cost = (): Record<string, number> => (host.__tnEngineCost as Bag) ?? {};
+  const sources = (): Record<string, unknown> => (host.__tnDebugSources as Bag) ?? {};
+
+  function forgetInterpolationNames(): void {
+    for (const bag of [host.__tnEngineCost, host.__tnDebugSources] as Record<string, unknown>[]) {
+      if (bag === undefined) continue;
+      for (const name of Object.keys(bag)) if (name.startsWith("interpolation")) delete bag[name];
+    }
+  }
+
+  function oneTickAndOneRender(bodies: Object3D[]): void {
+    const interpolation = new PhysicsInterpolation();
+    for (const body of bodies) interpolation.track(body);
+    interpolation.beginTick();
+    for (const [index, body] of bodies.entries()) body.position.x = index;
+    interpolation.endTick();
+    interpolation.render(0.5, () => undefined);
+  }
+
+  afterEach(() => {
+    forgetInterpolationNames();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("reports the three regions for one tick and one render of 100 objects, and none with telemetry off", () => {
+    forgetInterpolationNames();
+    vi.stubEnv("TN_DEBUG", "1");
+    oneTickAndOneRender(Array.from({ length: 100 }, () => new Object3D()));
+
+    // One tick is beginTick plus endTick, so the tick region is entered twice.
+    expect(cost().interpolationTickCalls).toBe(2);
+    expect(cost().interpolationBlendCalls).toBe(1);
+    expect(cost().interpolationRestoreCalls).toBe(1);
+    for (const region of INTERPOLATION_REGIONS) {
+      expect(cost()[`${region}Ms`]).toBeGreaterThanOrEqual(0);
+      expect(sources()[`${region}Calls`]).toEqual({
+        area: "update",
+        caller: expect.stringContaining("PhysicsInterpolation"),
+        unit: "count",
+      });
+    }
+
+    forgetInterpolationNames();
+    vi.unstubAllEnvs();
+    oneTickAndOneRender(Array.from({ length: 100 }, () => new Object3D()));
+
+    expect(Object.keys(cost()).filter((name) => name.startsWith("interpolation"))).toEqual([]);
+    expect(Object.keys(sources()).filter((name) => name.startsWith("interpolation"))).toEqual([]);
   });
 });

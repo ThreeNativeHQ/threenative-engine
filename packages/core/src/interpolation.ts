@@ -1,6 +1,7 @@
 import { type Object3D, Quaternion, Vector3 } from "three";
 
 import { hasCopyMatrixWorldHook } from "./engine-hooks.js";
+import { debugRequested, measureDebug } from "./profiling/debug-telemetry.js";
 
 interface ITransformHistory {
   readonly object: Object3D;
@@ -35,6 +36,7 @@ export class PhysicsInterpolation {
   readonly enabled: boolean;
   readonly overrideSource: "default" | "defineGame";
   readonly #objects = new Map<Object3D, ITransformHistory>();
+  readonly #debug = debugRequested();
   #lastReport = "";
 
   constructor(enabled?: boolean) {
@@ -42,6 +44,11 @@ export class PhysicsInterpolation {
       throw new Error("physicsInterpolation must be a boolean.");
     this.enabled = enabled ?? true;
     this.overrideSource = enabled === undefined ? "default" : "defineGame";
+  }
+
+  /** One region of a frame step, timed only when this launch asked for debug telemetry. */
+  #measured<T>(name: string, caller: string, run: () => T): T {
+    return this.#debug ? measureDebug(name, "update", caller, run) : run();
   }
 
   track(object: Object3D): () => void {
@@ -85,17 +92,21 @@ export class PhysicsInterpolation {
   }
 
   beginTick(): void {
-    for (const history of this.#objects.values()) {
-      history.previousPosition.copy(history.object.position);
-      history.previousRotation.copy(history.object.quaternion);
-    }
+    this.#measured("interpolationTick", "PhysicsInterpolation.beginTick", () => {
+      for (const history of this.#objects.values()) {
+        history.previousPosition.copy(history.object.position);
+        history.previousRotation.copy(history.object.quaternion);
+      }
+    });
   }
 
   endTick(): void {
-    for (const history of this.#objects.values()) {
-      history.currentPosition.copy(history.object.position);
-      history.currentRotation.copy(history.object.quaternion);
-    }
+    this.#measured("interpolationTick", "PhysicsInterpolation.endTick", () => {
+      for (const history of this.#objects.values()) {
+        history.currentPosition.copy(history.object.position);
+        history.currentRotation.copy(history.object.quaternion);
+      }
+    });
   }
 
   render<T>(alpha: number, draw: () => T): T {
@@ -114,35 +125,39 @@ export class PhysicsInterpolation {
     // Retain the exact participants even if Scene.render changes scenes or unregisters a body.
     const histories = [...this.#objects.values()];
     try {
-      for (const history of histories) {
-        const { object } = history;
-        // An edit outside the fixed update is a discontinuity, never a new tick to blend across.
-        if (
-          !object.position.equals(history.currentPosition) ||
-          !object.quaternion.equals(history.currentRotation)
-        )
-          this.reset(object);
-        history.savedPosition.copy(object.position);
-        history.savedRotation.copy(object.quaternion);
-        object.position.lerpVectors(history.previousPosition, history.currentPosition, alpha);
-        object.quaternion.slerpQuaternions(
-          history.previousRotation,
-          history.currentRotation,
-          alpha,
-        );
-      }
+      this.#measured("interpolationBlend", "PhysicsInterpolation.render", () => {
+        for (const history of histories) {
+          const { object } = history;
+          // An edit outside the fixed update is a discontinuity, never a new tick to blend across.
+          if (
+            !object.position.equals(history.currentPosition) ||
+            !object.quaternion.equals(history.currentRotation)
+          )
+            this.reset(object);
+          history.savedPosition.copy(object.position);
+          history.savedRotation.copy(object.quaternion);
+          object.position.lerpVectors(history.previousPosition, history.currentPosition, alpha);
+          object.quaternion.slerpQuaternions(
+            history.previousRotation,
+            history.currentRotation,
+            alpha,
+          );
+        }
+      });
       return draw();
     } finally {
-      for (const history of histories) {
-        if (
-          history.object.position.equals(history.savedPosition) &&
-          history.object.quaternion.equals(history.savedRotation)
-        )
-          continue;
-        history.object.position.copy(history.savedPosition);
-        history.object.quaternion.copy(history.savedRotation);
-        recompose(history.object);
-      }
+      this.#measured("interpolationRestore", "PhysicsInterpolation.render", () => {
+        for (const history of histories) {
+          if (
+            history.object.position.equals(history.savedPosition) &&
+            history.object.quaternion.equals(history.savedRotation)
+          )
+            continue;
+          history.object.position.copy(history.savedPosition);
+          history.object.quaternion.copy(history.savedRotation);
+          recompose(history.object);
+        }
+      });
     }
   }
 }

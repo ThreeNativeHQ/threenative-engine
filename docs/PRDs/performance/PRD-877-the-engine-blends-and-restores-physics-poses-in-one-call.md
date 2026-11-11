@@ -1,6 +1,6 @@
 # PRD-877 — The engine blends and restores physics poses in one call
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 landed (the meter only, no behaviour change). Phase 2 waits on the measure lane's sizing gate.
 **Priority:** P1 — pose history, blend and restore run in JavaScript for every tracked body on every tick and every render, which PRD-828 names as the largest JavaScript block left on the stress-lab frame (Phases 1-3 open).
 **Complexity:** 6 (MEDIUM) — 6-10 implementation files (2), state that must survive a throw and an untrack during a draw (+2), one build boundary: the engine bindings serve web Wasm and native V8 (+2). Risk override: none.
 **Owner:** João
@@ -99,12 +99,12 @@ Rules:
 ## Execution Phases
 
 #### Phase 1: Measure the cost and pin the contracts
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/interpolation.ts`, `packages/core/__tests__/loop-interpolation.spec.ts`.
 **Implementation:**
 1. In `interpolation.ts`, import `measureDebug` from `./profiling/debug-telemetry.js`. Use it exactly as `packages/core/src/game-frame-loop.ts:882` does. Wrap the body of `beginTick` and of `endTick` (names `interpolationTick`), the blend loop before `draw()` (name `interpolationBlend`) and the restore loop in `finally` (name `interpolationRestore`). Do not wrap `draw()` itself.
 2. Change no behaviour in this phase.
-- [ ] With debug telemetry on, one tick and one render of 100 tracked objects report the three `interpolation*` entries, and with it off they report none. The 7 existing cases still pass. proof: a new case in `packages/core/__tests__/loop-interpolation.spec.ts`, `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts packages/core/__tests__/debug-telemetry.spec.ts`.
+- [x] With debug telemetry on, one tick and one render of 100 tracked objects report the three `interpolation*` entries, and with it off they report none. The 7 existing cases still pass. proof: a new case in `packages/core/__tests__/loop-interpolation.spec.ts`, `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts packages/core/__tests__/debug-telemetry.spec.ts` — Result (2026-11-10): the new case `reports the three regions for one tick and one render of 100 objects, and none with telemetry off` failed first (`AssertionError: expected undefined to be 2`) and passes after; `pnpm exec vitest run` over both files: 2 files, 39 tests passed, exit 0. The 7 pre-existing cases are 14 tests (one `it.each` of 4) and all still pass. Regions are `interpolationTick` (entered twice: `beginTick` then `endTick`), `interpolationBlend` and `interpolationRestore`; `draw()` itself is not wrapped. `pnpm typecheck` exit 0, `pnpm lint` exit 0.
 
 **Sizing gate (measure lane, before Phase 2):** on `?stress&tnDebug=1`, read the p50 of the three entries summed, and `sharedTransformWrites`. Record them under `## Decisions`. Below 0.3 ms a frame, set this PRD to `DEFERRED` with the number and stop. The 0.3 ms floor is a proposal (2026-11-10), not a measurement.
 
