@@ -50,6 +50,9 @@ let pipeline;
 const step = () => {
   frame += 1;
   renderer.info.frame = frame;
+  // The ball moves, so the sun's shadow map redraws each frame: a static scene keeps its cached map and draws no
+  // shadow pass, and \`Shadow\` reads absent.
+  ball.position.x = Math.sin(frame * 0.05);
   if (frame === 3) {
     const gather = rtt(vec4(0.2, 0.4, 0.6, 1), 256, 144, { type: 1016, gpuStage: "SSGI" });
     pipeline = new RenderPipeline(renderer, gather.sample(screenUV));
@@ -60,6 +63,7 @@ const step = () => {
     seen.frames = renderer.backend.getTimestampFrames("render");
     seen.timestamp = renderer.info.render.timestamp;
     seen.stages = renderer.info.engine.gpuStages;
+    seen.split = renderer.info.engine.gpuSplit;
     seen.reading = stageGpuReading(renderer) ?? null;
     seen.enabled = globalThis.tn.renderInfo().gpuTiming.enabled;
     globalThis.tn.log("GPU_STAGES " + JSON.stringify(seen));
@@ -106,6 +110,11 @@ assert(seen.timestamp > 0, verdict);
 assert(seen.stages.SSGI > 0, verdict);
 assert(seen.stages.SSGI < seen.timestamp, verdict);
 assert(seen.stages.Shadow > 0 && seen.stages.Shadow < seen.timestamp, verdict);
+// PRD-871: the pass split names the same sample, so TN_FRAME_BUDGET's gpuMain, gpuShadow and gpuOther fill on the player.
+assert.equal(seen.split.frame, seen.frames[0], verdict);
+assert(seen.split.main > 0 && seen.split.main < seen.timestamp, verdict);
+assert.equal(seen.split.shadow, seen.stages.Shadow ?? 0, verdict);
+assert(seen.split.other >= seen.stages.SSGI, verdict);
 // The sample belongs to a frame the game has already presented, and core reads the same numbers.
 assert(seen.frames[0] > 0 && seen.frames[0] <= 120, verdict);
 assert.equal(seen.reading?.frame, seen.frames[0], verdict);
