@@ -93,10 +93,18 @@ export class PhysicsInterpolation {
     if (this.#ownerResolved === undefined) {
       if (this.#ownerInjected !== null) this.#ownerResolved = this.#ownerInjected;
       else {
-        // A detached Object3D: the engine's history lives on it, and nothing else holds it.
-        const carrier = new Object3D();
-        this.#ownerResolved = poseOwnerOf(carrier) ?? null;
-        if (this.#ownerResolved === null) carrier.clear();
+        // The tracked bodies are the objects the host demonstrably built: a game body carries the
+        // engine's methods when the host is the engine, and a detached `new Object3D()` created here
+        // may not be engine-backed at all. The first body that answers is the owner for all of them.
+        let found: IPoseOwner | null = null;
+        for (const object of this.#objects.keys()) {
+          const candidate = poseOwnerOf(object);
+          if (candidate !== undefined) {
+            found = candidate;
+            break;
+          }
+        }
+        this.#ownerResolved = found;
       }
     }
     return this.#ownerResolved;
@@ -135,6 +143,8 @@ export class PhysicsInterpolation {
       };
       this.#objects.set(object, history);
       this.#membership += 1;
+      // A body tracked after a plain one may be the first engine-backed object; ask again.
+      if (this.#ownerResolved === null) this.#ownerResolved = undefined;
     }
     history.references += 1;
     let active = true;

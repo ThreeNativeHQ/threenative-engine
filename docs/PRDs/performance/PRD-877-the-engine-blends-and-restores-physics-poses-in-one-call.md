@@ -117,14 +117,22 @@ Rules:
 3. `PoseHistory`: a `std::vector<std::weak_ptr<Object3D>>`, three `std::vector<double>` of 7 values per object (previous, current, saved), and the list of the last blend. Methods `watch`, `reset`, `tick(phase)`, `blend(alpha)`, `restore()` as in the Solution table. `blend` rejects an alpha that is not finite or is outside 0 to 1 by throwing, as the JavaScript does.
 4. In `bindings_scene.cpp`, add the five `b.methods["__tnPose…"]` entries beside `__tnGuardWatch` (`:453`). Keep one `PoseHistory` per owner object with the same side-table pattern that `sourceGuardOf` uses. Read object lists with `refsOf` and `objectArg`, as `__bandRigs` does (`:428-433`).
 5. Regenerate the registry: build `tn-native-engine-registry-dump` and run it with `--check native-registry.json` (`NativeEngineCore.cmake:911-919` shows the exact invocation). Commit the regenerated file.
-**Step 5 is blocked, and not by this change.** `tn-native-engine-registry-dump --out` rewrites
-`packages/three-native/api/native-registry.json` with 375 insertions and **9,471 deletions**, and it
-does that on the bindings **as they stand at HEAD too** — regenerating with my five `__tnPose*`
-methods stashed produced the identical 9,846-line diff. So the committed snapshot is stale
-repo-wide and `native_engine_registry_snapshot` is red before this PRD touches it. Committing a
-9,471-line deletion to "fix" it would delete entries nothing in this worktree can account for, so
-the file is left untouched and the drift is reported instead of papered over. The five methods are
-bound and build (`tn_engine_abi` exits 0); they are simply not in the snapshot yet.
+**Step 5 is done, and my first reading of it was wrong.** I first reported this as drift that
+predated the change, on the evidence that regenerating with the bindings stashed produced the same
+9,846-line diff. That evidence was worthless: the dump binary had not relinked, so both runs used a
+stale executable. Two separate things were hiding behind the same `git diff`:
+
+1. **A stale binary.** After a real relink, `tn-native-engine-registry-dump` emits the five
+   `__tnPose*` methods like every other engine-internal method.
+2. **A missing format step.** The dump writes compact JSON arrays; the committed file is
+   pretty-printed. Regenerating and then running `biome format --write` over the file turns a
+   9,846-line diff into **105 insertions and 0 deletions** — exactly the five methods across the 21
+   class entries that carry them. Regeneration must always be followed by the formatter, which
+   nothing in the runbook said.
+
+`native_engine_registry_snapshot` now passes, and it was red before this change only in the sense
+that the snapshot had never been regenerated with the formatter. The lesson is the same one the
+Phase 2 gate reading taught: verify the artifact you actually ran, never the one you rebuilt.
 
 - [x] For 3 objects over 2 ticks: after `blend(0.25)` each object holds the lerp and slerp of its two poses within 1e-12, its Euler matches its quaternion, and its local transform is marked dirty. After `restore()` each holds its solved pose bit-equal. A pose changed between the tick and the blend makes that one object reset and not blend. proof: `ctest -R native_engine_physics_pose_history` — **100% passed**. The case compares against poses snapshotted before the blend, not against the live objects `blend` overwrites; that mistake in the first draft made the test measure the result against itself. Writing it caught a real bug: the reset path kept a stale `latest`, so the next tick blended from a pose the body had already left (expected 109.5, got 61). `latest` now rebases on where the body actually is.
 - [x] `watch` with one object added keeps the history of the two that stay. An object destroyed between `blend` and `restore` is skipped with no crash. `blend(1.5)` and `blend(NaN)` throw. The case runs clean under `TN_ENGINE_SANITIZE`. proof: `ctest -R native_engine_physics_pose_history` in the normal and the sanitizer build — **100% passed in both**, no ASan or UBSan report. The full `native-engine` label is **293/293** in `build/native-engine`, up from 292 with this case added.
@@ -150,6 +158,20 @@ both-paths run of the seven cases and the two playtests are open.
   emulate the C++ writes rather than spy on them. Until that exists this box stays open.
 - [x] The native V8 host calls the same five methods and gets the same poses. proof: a new case `pose_history` in `v8_adapter_test.cpp`, written like the `__bandRigs` checks (`:1299`) and added to the `foreach(case …)` list in `packages/runtime-native/cmake/NativeEngineAdapters.cmake:73`, then `ctest -R native_engine_v8_pose_history` on the host build (target `tn-native-engine-v8-test`). — **100% passed**, 16 checks inside the case. The configure that defines the target is the documented `-DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF`; `MYSTRAL_USE_V8=ON` alone defines no target. The case compares the blended position and quaternion against three's own `lerpVectors` and `slerpQuaternions` computed in the host, checks the restore is exact, checks a `__tnPoseReset` teleport does not blend across the gap, and checks `blend(1.5)` and `blend(NaN)` throw into JavaScript. It first failed on `ok:33` against the engine's `ok:16` — my assertion count was wrong, not the engine.
 - [ ] `examples/native-smoke/playtests/physics.playtest.json` and `packages/create-threenative/templates/kart/playtests/smooth-drive.playtest.json` pass on a page built from the head, and the page logs `TN_PHYSICS_INTERPOLATION` with `"path":"engine"`. proof: the playtest command in EXECUTION-ORDER.md.
+  **Open, and the page still reports `"path":"javascript"`.** What was ruled out tonight, so the
+  next attempt starts further along: the Wasm rebuild carries `__tnPoseTick` (verified by grepping
+  the `.wasm`), the served registry module carries it (verified by fetching the transformed module
+  off the dev server), `native_engine_registry_snapshot` and `native_engine_v8_pose_history` both
+  pass, and `PhysicsInterpolation` now resolves its owner from a **tracked body** rather than a
+  detached `new Object3D()`, because a core-created object need not be engine-backed. The page
+  still finds no owner, so the browser host is not exposing these methods to JavaScript at all —
+  the next question is whether `examples/native-smoke` runs the native backend here
+  (`vite.config.ts` swaps `three` only under the `threenative-native` condition) or whether the
+  browser backend's registry-built prototypes are reaching this code path. That is one probe away,
+  not an unknown, but it is not done and the box stays open. The two playtest assertions also fail
+  independently of interpolation: every `GameState` resource assertion fails on both the SwiftShader
+  and the real turing adapter, which wants checking against a clean `develop` page before it is
+  blamed on this change.
 
 ## Decisions
 
