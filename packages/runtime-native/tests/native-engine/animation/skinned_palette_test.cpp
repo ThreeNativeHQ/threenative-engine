@@ -293,12 +293,20 @@ void relativeSlotKeepsAnUnchangedPose() {
     namespace g = shader::graph;
     material->nodes.emissiveNode = g::normalize(g::varying("normalView", shader::Type::vec(3)));
     frame(next);
+    // A game's own uniform and the camera's view matrix read the same through the slot: admitted.
+    material->nodes.emissiveNode = g::normalize(g::mul(
+        g::mul(g::uniform("viewMatrix", shader::Type::mat(4, 4)), g::uniform("nodeUniform7", shader::Type::vec(4), {0, 1, 0, 0})),
+        g::uniform("nodeUniform8", shader::Type::vec(4), {1, 1, 1, 1})));
+    frame(next);
     // The check fails closed: a local read, and any input or kind it does not know, refuses.
     auto unknown = std::make_shared<g::NodeData>();
     unknown->kind = g::Kind::StorageElement;
     unknown->type = shader::Type::vec(3);
     for (const g::Node& refused : {g::positionLocal(), g::varying("tnMystery", shader::Type::vec(3)),
-                                   g::attribute("tnMystery", shader::Type::vec(3)), g::Node(unknown)}) {
+                                   g::attribute("tnMystery", shader::Type::vec(3)), g::Node(unknown),
+                                   g::swizzle(g::uniform("normalMatrix", shader::Type::mat(3, 3)), "x"),
+                                   g::swizzle(g::uniform("bindMatrix", shader::Type::mat(4, 4)), "xyz"),
+                                   g::swizzle(g::uniform("tnLaterEngineMatrix", shader::Type::mat(4, 4)), "xyz")}) {
         material->nodes.emissiveNode = g::normalize(refused);
         scene.updateMatrixWorld();
         rig->skeleton->update();

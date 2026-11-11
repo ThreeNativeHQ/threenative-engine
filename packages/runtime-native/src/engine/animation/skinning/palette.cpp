@@ -181,7 +181,7 @@ void SkinnedPalette::write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkel
 namespace {
 // True unless every node of a material graph is known to read the same through a relative slot and its placement as
 // through a world palette: view, world, clip and screen values, the camera, time, constants, math, textures and control
-// flow. It fails closed: a local position, a model matrix, and any kind, input or varying not listed here refuse
+// flow. It fails closed: a local position, a per-object matrix, and any kind, input, uniform or varying not listed here refuse
 // (PRD-878: the stress walkers' emissive sheen reads normalView and the view direction).
 bool readsLocalSpace(const shader::graph::NodeData* node, std::vector<const void*>& seen) {
     using shader::graph::Kind;
@@ -192,7 +192,14 @@ bool readsLocalSpace(const shader::graph::NodeData* node, std::vector<const void
     };
     bool safe = false;
     switch (node->kind) {
-        case Kind::Uniform: safe = !node->name.starts_with("model") && !node->name.starts_with("instance"); break;
+        // A game's `uniform(value)` is "nodeUniform<n>" and carries its own data. Of the engine's uniforms (the
+        // renderer's slot table) only the camera, the screen and the clock are listed: a per-object one (model, normal,
+        // bind matrices) or one added later refuses, and so does a game uniform renamed onto any other name.
+        case Kind::Uniform:
+            safe = node->name.starts_with("nodeUniform") ||
+                named({"viewMatrix", "projectionMatrix", "cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix",
+                       "cameraNear", "cameraFar", "screenSize", "time", "deltaTime"});
+            break;
         case Kind::Attribute: safe = node->name.starts_with("uv") || node->name == "color"; break;
         case Kind::Builtin: safe = named({"frontFacing", "position", "vertexIndex"}); break;
         // A varying with a value is the game's own (its value is walked below); a named one is the engine's input.
