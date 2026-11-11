@@ -10,6 +10,7 @@
 #include <atomic>
 #include <bit>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -414,9 +415,44 @@ void itemFailureReachesTheCaller() {
     }
 }
 
+// PRD-875 H1: two rigs of one frame write their own rotation. `Euler::setFromQuaternion` held a
+// `static Matrix4`, so both threads wrote one buffer and a rig could take the other's Euler. TSan
+// reports the race; each rig must also end on the last rotation it wrote.
+void concurrentQuaternionWrites() {
+    constexpr int kWrites = 100000;
+    if (!kThreaded) {
+        std::printf("concurrent quaternion writes: skipped, this build starts no thread\n");
+        return;
+    }
+    Object3D one, two;
+    const auto spin = [](Object3D* object, double phase) {
+        double values[4] = {0, 0, 0, 1};
+        for (int i = 0; i < kWrites; ++i) {
+            // A fresh unit quaternion every time: nothing a thread writes is read by the other.
+            const double half = (phase + double(i) * 1e-4) * 0.5;
+            values[1] = std::sin(half);
+            values[3] = std::cos(half);
+            object->quaternion.fromArray(values);
+        }
+    };
+    std::thread first(spin, &one, 0.0), second(spin, &two, 1.0);
+    first.join();
+    second.join();
+    // `onQuaternionChange` keeps the Euler in step through the shared matrix; after the join each
+    // object's Euler must be the one its own quaternion names, not the other thread's.
+    for (const Object3D* object : {&one, &two}) {
+        Quaternion fromEuler;
+        fromEuler.setFromEuler(object->rotation, false);
+        CHECK(std::abs(fromEuler.w - object->quaternion.w) < 1e-9);
+        CHECK(std::abs(fromEuler.y - object->quaternion.y) < 1e-9);
+    }
+    CHECK(one.quaternion.toArray() != two.quaternion.toArray());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"for_each_once", forEachOnce}, {"item_failure_reaches_the_caller", itemFailureReachesTheCaller}, {"matrix_walk_jobs", matrixWalkJobs},
+             {"concurrent_quaternion_writes", concurrentQuaternionWrites},
              {"matrix_walk_threshold", matrixWalkThreshold}, {"pool_starts_on_need", poolStartsOnNeed}, {"pool_is_always_on", poolIsAlwaysOn},
              {"dispatch_floor", dispatchFloor}, {"workers_cover_the_machine", workersCoverTheMachine},
              {"pool_fails_closed_when_no_worker_starts", poolFailsClosedWhenNoWorkerStarts})

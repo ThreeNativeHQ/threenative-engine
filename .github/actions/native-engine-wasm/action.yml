@@ -23,13 +23,15 @@ runs:
         key: native-engine-emsdk-${{ runner.os }}-${{ runner.arch }}-${{ inputs.emsdk-version }}
     # The key names what the engine is built from and nothing else: the C++ sources, the headers,
     # the CMake files, the dependency lock and the toolchain version. A key that names too little
-    # serves a stale engine, so an input that could change the bytes belongs here.
+    # serves a stale engine, so an input that could change the bytes belongs here. This file is
+    # one: its dependency list decides what the engine links (basisu joined it in #658, and the
+    # old key kept serving an engine that refused KHR_texture_basisu).
     - name: Restore the built web engine
       id: wasm
       uses: actions/cache@v4
       with:
         path: ${{ github.workspace }}/packages/runtime-native/build/web
-        key: native-engine-web-wasm-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.emsdk-version }}-${{ hashFiles('packages/runtime-native/src/engine/**', 'packages/runtime-native/include/**', 'packages/runtime-native/cmake/**', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/native-deps.lock.json', 'packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/web-engine-stamp.mjs') }}
+        key: native-engine-web-wasm-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.emsdk-version }}-${{ hashFiles('packages/runtime-native/src/engine/**', 'packages/runtime-native/include/**', 'packages/runtime-native/cmake/**', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/native-deps.lock.json', 'packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/web-engine-stamp.mjs', '.github/actions/native-engine-wasm/action.yml') }}
     - name: Build the web engine
       if: steps.wasm.outputs.cache-hit != 'true'
       shell: bash
@@ -44,9 +46,10 @@ runs:
           sh "$GITHUB_WORKSPACE/scripts/retry-download.sh" "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" install "$TN_EMSDK_VERSION"
         fi
         "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" activate "$TN_EMSDK_VERSION"
-        # The web engine reads four pinned sources: stb (images), cgltf (glTF), libwebp and
-        # meshoptimizer (EXT/KHR_meshopt_compression in the same glTF loader).
-        for dependency in stb cgltf webp-source meshopt; do
+        # The web engine reads five pinned sources: stb (images), cgltf (glTF), libwebp,
+        # meshoptimizer (EXT/KHR_meshopt_compression in the same glTF loader) and Basis Universal
+        # (KHR_texture_basisu, PRD-861).
+        for dependency in stb cgltf webp-source meshopt basisu; do
           node scripts/download-deps.mjs --only "$dependency"
         done
         source "$GITHUB_WORKSPACE/.cache/emsdk/emsdk_env.sh"
@@ -60,7 +63,8 @@ runs:
       working-directory: packages/runtime-native
       run: |
         set -euo pipefail
-        allowed_bytes=4194304
+        # 4 MiB + 64 KiB, the number scripts/check-budgets.ts holds (PRD-867); a spec keeps them equal.
+        allowed_bytes=4259840
         # The single-thread engine and the threaded one (PRD-752 phase 4), each under the budget.
         for name in tn-native-engine-web tn-native-engine-web-threads; do
           for file in "build/web/$name.mjs" "build/web/$name.wasm"; do

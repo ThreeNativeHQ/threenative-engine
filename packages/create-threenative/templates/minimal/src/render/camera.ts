@@ -11,6 +11,13 @@ const _aim = new Vector3();
 const WALL_MARGIN = 0.3;
 /** The most a pulled-in camera climbs above its usual height. */
 const MAX_CLIMB = 1.6;
+/**
+ * The slowest the lens closes on its goal, in metres a second. An exponential ease never arrives:
+ * it creeps by micrometres for a second after the player stops, and each creep flips the
+ * antialiasing samples on every high-contrast edge in view, a burst of shimmer. Under this speed
+ * the lens moves on at it and then rests exactly on the goal.
+ */
+const SETTLE_SPEED = 0.3;
 
 /** Metres from `from` toward `to` to the first wall, or undefined when the way is clear. */
 export type WallProbe = (from: Vector3, to: Vector3) => number | undefined;
@@ -42,8 +49,12 @@ export function followCamera(
   _aim.copy(target).add(AIM);
   _desired.copy(target).add(OFFSET);
   const wall = probe(_aim, _desired);
-  if (wall === undefined) camera.position.lerp(_desired, 1 - Math.exp(-dt * 8));
-  else {
+  if (wall === undefined) {
+    const gap = camera.position.distanceTo(_desired);
+    const step = Math.max(gap * (1 - Math.exp(-dt * 8)), SETTLE_SPEED * dt);
+    if (gap <= 2 * step) camera.position.copy(_desired);
+    else camera.position.lerp(_desired, step / gap);
+  } else {
     const arm = _aim.distanceTo(_desired);
     const length = Math.max(0, wall - WALL_MARGIN);
     _desired.sub(_aim).setLength(length).add(_aim);

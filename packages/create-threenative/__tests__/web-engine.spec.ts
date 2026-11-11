@@ -16,6 +16,7 @@ import {
   WASM_THREADS_ENTRY,
   WEB_ENGINE_ID,
   createWebEnginePlugin,
+  esmEntry,
   webRuntimeDecoders,
 } from "../src/web-engine.js";
 
@@ -98,6 +99,34 @@ async function bundle(
     "\n",
   );
 }
+
+describe("esmEntry", () => {
+  it("loads three's ESM build, not three.cjs, which prints THREE_CJS_DEPRECATED", async () => {
+    const root = await makeTempDir("tn-esm-entry-");
+    roots.push(root);
+    const pkg = path.join(root, "node_modules", "three");
+    await mkdir(path.join(pkg, "build"), { recursive: true });
+    await writeFile(
+      path.join(pkg, "package.json"),
+      JSON.stringify({
+        exports: {
+          ".": { import: "./build/three.module.js", require: "./build/three.cjs" },
+          "./webgpu": "./build/three.webgpu.js",
+        },
+        name: "three",
+      }),
+    );
+    for (const file of ["three.cjs", "three.module.js", "three.webgpu.js"])
+      await writeFile(path.join(pkg, "build", file), "");
+    await writeFile(path.join(root, "package.json"), "{}");
+    const require = createRequire(path.join(root, "package.json"));
+    expect(require.resolve("three")).toBe(path.join(pkg, "build", "three.cjs"));
+    expect(esmEntry(require.resolve("three"))).toBe(path.join(pkg, "build", "three.module.js"));
+    expect(esmEntry(require.resolve("three/webgpu"))).toBe(
+      path.join(pkg, "build", "three.webgpu.js"),
+    );
+  });
+});
 
 describe("createWebEnginePlugin", () => {
   it("uses config alone for Vite build and dev", async () => {

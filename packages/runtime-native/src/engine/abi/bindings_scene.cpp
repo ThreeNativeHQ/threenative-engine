@@ -35,6 +35,7 @@
 #include "engine/scene/texture.h"
 #include "engine/foundation/job_pool.h"
 #include "engine/scene/object3d.h"
+#include "engine/scene/pose_history.h"
 
 #include <array>
 #include <atomic>
@@ -237,6 +238,17 @@ SourceGuard& sourceGuardOf(Object3D& root) {
         it = it->second.first.expired() ? guards.erase(it) : std::next(it);
     auto& entry = guards[&root];
     if (entry.first.expired()) entry = {root.weak_from_this(), SourceGuard{}};
+    return entry.second;
+}
+
+// The pose history for a physics root (PRD-877), kept while the root lives, as sourceGuardOf keeps
+// the AutoBatch guard's.
+PoseHistory& poseHistoryOf(Object3D& root) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, PoseHistory>> histories;
+    for (auto it = histories.begin(); it != histories.end();)
+        it = it->second.first.expired() ? histories.erase(it) : std::next(it);
+    auto& entry = histories[&root];
+    if (entry.first.expired()) entry = {root.weak_from_this(), PoseHistory{}};
     return entry.second;
 }
 
@@ -499,6 +511,38 @@ void registerObject3D(ClassBinding& b) {
             changed.push_back(double(index));
         }
         return Value::list(std::move(changed));
+    };
+    // Engine-internal (PRD-877): core's physics interpolation without leaving the engine.
+    // `__tnPoseWatch(objects)` replaces the watched list and answers how many it holds; a body that
+    // was already watched keeps its pair, so spawning one does not reset the bodies beside it.
+    b.methods["__tnPoseWatch"] = [](void* self, const Args& a, Store& store) {
+        std::vector<Object3D*> objects;
+        for (const Value& ref : refsOf(a.at(0))) objects.push_back(&objectArg(store, ref));
+        return Value::of(double(poseHistoryOf(*as<Object3D>(self)).watch(objects)));
+    };
+    // `__tnPoseTick(phase)` records this frame's solved pose for every watched body.
+    b.methods["__tnPoseTick"] = [](void* self, const Args& a, Store&) {
+        poseHistoryOf(*as<Object3D>(self)).tick(number(a.at(0)));
+        return Value{};
+    };
+    // `__tnPoseBlend(alpha)` writes the blended pose; it throws for an alpha the blend cannot use,
+    // which reaches the language as the throw its own bounds check would have raised.
+    b.methods["__tnPoseBlend"] = [](void* self, const Args& a, Store&) {
+        poseHistoryOf(*as<Object3D>(self)).blend(number(a.at(0)));
+        return Value{};
+    };
+    // `__tnPoseRestore()` puts every watched body back on its solved pose, bit for bit.
+    b.methods["__tnPoseRestore"] = [](void* self, const Args&, Store&) {
+        poseHistoryOf(*as<Object3D>(self)).restore();
+        return Value{};
+    };
+    // `__tnPoseReset(objects)` sets those bodies' previous and current pose to where they are now,
+    // which is what a teleport announces so the next blend does not cross the gap.
+    b.methods["__tnPoseReset"] = [](void* self, const Args& a, Store& store) {
+        std::vector<Object3D*> objects;
+        for (const Value& ref : refsOf(a.at(0))) objects.push_back(&objectArg(store, ref));
+        poseHistoryOf(*as<Object3D>(self)).reset(objects);
+        return Value{};
     };
     b.methods["__restoreCull"] = [](void* self, const Args&, Store&) {
         projectedCullOf(*as<Object3D>(self)).restoreAfterDraw();
@@ -2182,6 +2226,23 @@ void registerSceneBindings(Registry& classes) {
             }
             if (segments) return std::static_pointer_cast<void>(std::make_shared<LineSegments>(geometry, material));
             return std::static_pointer_cast<void>(std::make_shared<Line>(geometry, material));
+        };
+    }
+    {
+        // three's Points draws its geometry's vertices as one-pixel points; its default material is a
+        // new PointsMaterial, which stays opaque and fogged as three's does (Points.js:60-75).
+        auto& points = classes["Points"];
+        registerMesh(points);
+        points.methods.erase("getVertexPosition");  // three's Points is no Mesh: it has no vertex reader
+        points.ctor = [](const Args& a, Store& store) {
+            auto geometry = !a.empty() && a.at(0).kind == Value::Kind::Ref ? geometryArg(store, a.at(0))
+                                                                         : std::make_shared<BufferGeometry>();
+            auto material = a.size() >= 2 && a.at(1).kind == Value::Kind::Ref ? materialArg(store, a.at(1)) : nullptr;
+            if (!material) {
+                material = std::make_shared<Material>(MaterialType::Basic);
+                material->pointsMaterial = true;
+            }
+            return std::static_pointer_cast<void>(std::make_shared<Points>(geometry, material));
         };
     }
     auto& sprite = classes["Sprite"];

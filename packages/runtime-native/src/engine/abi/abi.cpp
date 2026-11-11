@@ -6,6 +6,7 @@
 #include "threenative/abi/tn_anim.h"
 
 #include <cstdio>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include "engine/shader/standard.h"
@@ -1368,7 +1369,14 @@ extern "C" tn_status_t tn_anim_tick(tn_context_t* context, const tn_handle_t* ha
             batch.push_back(rig);
         }
         std::vector<animation::TickStatus> result;
+        // PRD-875 Phase 1: the tick's own cost, so the sizing gate reads a number instead of a profile.
+        const bool tickTimed = waste::debugEnabled().load(std::memory_order_relaxed);
+        const auto tickBegan = tickTimed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         context->animBatch.run(batch, result);
+        if (tickTimed)
+            waste::debugAdd(waste::counters().animationTickMicros,
+                            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                std::chrono::steady_clock::now() - tickBegan).count()));
         for (uint32_t i = 0; i < count; i++) {
             double* out = status + i * 3;
             out[0] = result[i].strideRate;

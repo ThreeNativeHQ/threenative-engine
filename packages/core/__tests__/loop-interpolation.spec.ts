@@ -1,5 +1,5 @@
-import { Object3D, Vector3 } from "three";
-import { describe, expect, it, vi } from "vitest";
+import { Object3D, Quaternion, Vector3 } from "three";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PhysicsInterpolation } from "../src/interpolation.js";
 import { FixedStepLoop } from "../src/loop.js";
 
@@ -145,7 +145,7 @@ describe("draw-only transform history", () => {
       interpolation.endTick();
       interpolation.render(0.5, () => expect(object.position.x).toBe(enabled === false ? 2 : 1));
       expect(log).toHaveBeenLastCalledWith(
-        `TN_PHYSICS_INTERPOLATION:${JSON.stringify({ enabled: enabled ?? true, overrideSource: enabled === undefined ? "default" : "defineGame", trackedObjects: 1 })}`,
+        `TN_PHYSICS_INTERPOLATION:${JSON.stringify({ enabled: enabled ?? true, overrideSource: enabled === undefined ? "default" : "defineGame", path: "javascript", trackedObjects: 1 })}`,
       );
       remove();
       remove();
@@ -190,5 +190,205 @@ describe("draw-only transform history", () => {
       expect(object.position.x).toBe(2),
     );
     loop.stop();
+  });
+});
+
+/** The names PRD-877 Phase 1 adds, and the three regions they stand for. */
+const INTERPOLATION_REGIONS = ["interpolationTick", "interpolationBlend", "interpolationRestore"];
+
+describe("interpolation cost, measured only under debug telemetry", () => {
+  type Bag = Record<string, number> | undefined;
+  const host = globalThis as unknown as Record<string, unknown>;
+  const cost = (): Record<string, number> => (host.__tnEngineCost as Bag) ?? {};
+  const sources = (): Record<string, unknown> => (host.__tnDebugSources as Bag) ?? {};
+
+  function forgetInterpolationNames(): void {
+    for (const bag of [host.__tnEngineCost, host.__tnDebugSources] as Record<string, unknown>[]) {
+      if (bag === undefined) continue;
+      for (const name of Object.keys(bag)) if (name.startsWith("interpolation")) delete bag[name];
+    }
+  }
+
+  function oneTickAndOneRender(bodies: Object3D[]): void {
+    const interpolation = new PhysicsInterpolation();
+    for (const body of bodies) interpolation.track(body);
+    interpolation.beginTick();
+    for (const [index, body] of bodies.entries()) body.position.x = index;
+    interpolation.endTick();
+    interpolation.render(0.5, () => undefined);
+  }
+
+  afterEach(() => {
+    forgetInterpolationNames();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("reports the three regions for one tick and one render of 100 objects, and none with telemetry off", () => {
+    forgetInterpolationNames();
+    vi.stubEnv("TN_DEBUG", "1");
+    oneTickAndOneRender(Array.from({ length: 100 }, () => new Object3D()));
+
+    // One tick is beginTick plus endTick, so the tick region is entered twice.
+    expect(cost().interpolationTickCalls).toBe(2);
+    expect(cost().interpolationBlendCalls).toBe(1);
+    expect(cost().interpolationRestoreCalls).toBe(1);
+    for (const region of INTERPOLATION_REGIONS) {
+      expect(cost()[`${region}Ms`]).toBeGreaterThanOrEqual(0);
+      expect(sources()[`${region}Calls`]).toEqual({
+        area: "update",
+        caller: expect.stringContaining("PhysicsInterpolation"),
+        unit: "count",
+      });
+    }
+
+    forgetInterpolationNames();
+    vi.unstubAllEnvs();
+    oneTickAndOneRender(Array.from({ length: 100 }, () => new Object3D()));
+
+    expect(Object.keys(cost()).filter((name) => name.startsWith("interpolation"))).toEqual([]);
+    expect(Object.keys(sources()).filter((name) => name.startsWith("interpolation"))).toEqual([]);
+  });
+});
+
+/**
+ * A stand-in for the engine's five pose methods (PRD-877 phase 3) over plain arrays. `record` keeps
+ * the call order; `write` decides whether it behaves like C++ (blending the objects) or like a spy
+ * that touches nothing, so a case can prove which side moved the transforms.
+ */
+function fakePoseOwner(write: boolean): { owner: Object3D; calls: string[] } {
+  const calls: string[] = [];
+  const previous = new Map<Object3D, Vector3>();
+  const previousRotation = new Map<Object3D, Quaternion>();
+  const current = new Map<Object3D, Vector3>();
+  const currentRotation = new Map<Object3D, Quaternion>();
+  const saved = new Map<Object3D, { position: Vector3; quaternion: Quaternion }>();
+  const owner = new Object3D() as Object3D & Record<string, unknown>;
+
+  owner.__tnPoseWatch = (objects: Object3D[]) => {
+    calls.push("watch");
+    return objects.length;
+  };
+  owner.__tnPoseReset = (objects: Object3D[]) => {
+    calls.push("reset");
+    for (const object of objects) {
+      previous.set(object, object.position.clone());
+      previousRotation.set(object, object.quaternion.clone());
+      current.set(object, object.position.clone());
+      currentRotation.set(object, object.quaternion.clone());
+    }
+  };
+  owner.__tnPoseTick = (phase: number) => {
+    calls.push(`tick:${phase}`);
+    if (!write) return;
+    const from = phase >= 1 ? current : previous;
+    const fromRotation = phase >= 1 ? currentRotation : previousRotation;
+    for (const object of owner.trackedObjects as Object3D[]) {
+      from.set(object, object.position.clone());
+      fromRotation.set(object, object.quaternion.clone());
+    }
+  };
+  owner.__tnPoseBlend = (alpha: number) => {
+    calls.push("blend");
+    if (!write) return;
+    for (const object of owner.trackedObjects as Object3D[]) {
+      saved.set(object, { position: object.position.clone(), quaternion: object.quaternion.clone() });
+      const a = previous.get(object);
+      const b = current.get(object);
+      const ra = previousRotation.get(object);
+      const rb = currentRotation.get(object);
+      if (a === undefined || b === undefined || ra === undefined || rb === undefined) continue;
+      object.position.lerpVectors(a, b, alpha);
+      object.quaternion.slerpQuaternions(ra, rb, alpha);
+    }
+  };
+  owner.__tnPoseRestore = () => {
+    calls.push("restore");
+    if (!write) return;
+    for (const object of owner.trackedObjects as Object3D[]) {
+      const held = saved.get(object);
+      if (held === undefined) continue;
+      object.position.copy(held.position);
+      object.quaternion.copy(held.quaternion);
+    }
+  };
+  return { owner: owner as Object3D, calls };
+}
+
+describe("the engine path, when the host carries the five pose methods", () => {
+  it("makes exactly four calls on a frame whose tracked set did not change, and writes nothing", () => {
+    const body = new Object3D();
+    const { owner, calls } = fakePoseOwner(false);
+    const interpolation = new PhysicsInterpolation(undefined, owner);
+    interpolation.track(body);
+    expect(interpolation.path).toBe("engine");
+
+    interpolation.beginTick();
+    body.position.x = 2;
+    interpolation.endTick();
+    const solved = body.position.clone();
+    interpolation.render(0.5, () => undefined);
+
+    // The track above changed the set, so the frame after it watches once; every frame after that
+    // must not.
+    expect(calls).toEqual(["watch", "tick:0", "tick:1", "blend", "restore"]);
+
+    calls.length = 0;
+    interpolation.beginTick();
+    interpolation.endTick();
+    interpolation.render(0.5, () => undefined);
+    expect(calls).toEqual(["tick:0", "tick:1", "blend", "restore"]);
+
+    // The spy wrote nothing, so if JavaScript had blended the body itself it would have moved.
+    expect(body.position.equals(solved)).toBe(true);
+  });
+
+  it("leaves the pose to the owner and reports the engine path", () => {
+    const body = new Object3D();
+    const { owner } = fakePoseOwner(true);
+    owner.trackedObjects = [body];
+    const interpolation = new PhysicsInterpolation(undefined, owner);
+    interpolation.track(body);
+    body.position.set(0, 0, 0);
+    interpolation.beginTick();
+    body.position.set(4, 0, 0);
+    interpolation.endTick();
+
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      interpolation.render(0.25, () => undefined);
+      const logged = info.mock.calls.map((call) => String(call[0])).find((line) =>
+        line.startsWith("TN_PHYSICS_INTERPOLATION:"),
+      );
+      expect(logged).toContain('"path":"engine"');
+    } finally {
+      info.mockRestore();
+    }
+    // The owner blended and restored; the body is back on the pose the tick solved.
+    expect(body.position.x).toBeCloseTo(4);
+  });
+
+  it("reaches the same poses as the JavaScript path", () => {
+    const solved = [0, 2.5, -7];
+    const blended: number[] = [];
+    for (const useEngine of [false, true]) {
+      const body = new Object3D();
+      const { owner } = fakePoseOwner(true);
+      owner.trackedObjects = [body];
+      const interpolation = useEngine
+        ? new PhysicsInterpolation(undefined, owner)
+        : new PhysicsInterpolation();
+      interpolation.track(body);
+      interpolation.beginTick();
+      body.position.set(solved[0], solved[1], solved[2]);
+      interpolation.endTick();
+      let seen = 0;
+      interpolation.render(0.4, () => {
+        seen = body.position.x;
+      });
+      expect(body.position.x).toBeCloseTo(solved[0]);
+      blended.push(seen);
+    }
+    expect(blended[0]).toBeCloseTo(blended[1]);
   });
 });

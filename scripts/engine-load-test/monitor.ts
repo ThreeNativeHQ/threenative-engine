@@ -532,7 +532,7 @@ function scoreboardTag(data: IMonitorData): string {
   return tags.sort().at(-1) ?? "none";
 }
 
-function scoreboardFiles(data: IMonitorData, engine: "godot" | "tn"): string[] {
+function scoreboardFiles(data: IMonitorData, engine: "godot" | "tn" | "tn-engine"): string[] {
   const tag = scoreboardTag(data);
   return SCOREBOARD_RUNS.map((run) => `scoreboard-${engine}-r${run}-${tag}`);
 }
@@ -563,7 +563,7 @@ function median(values: readonly number[]): number {
 
 function engineCell(
   data: IMonitorData,
-  engine: "godot" | "tn",
+  engine: "godot" | "tn" | "tn-engine",
   mode: TRenderMode,
   objectCount: number,
   /** Defaults to the cube scoreboard's run files; PRD-464's ladder names its own. */
@@ -710,7 +710,7 @@ function whereTnLoses(rows: IScoreboardRow[]): string {
 
 /** A row's own evidence: every run file that side names, linked, and the ones not retained yet
  *  named in their place rather than dropped. */
-function rawJson(data: IMonitorData, engine: "godot" | "tn"): string {
+function rawJson(data: IMonitorData, engine: "godot" | "tn" | "tn-engine"): string {
   return scoreboardFiles(data, engine)
     .map((base) => {
       const attempt = scoreboardRun(data, base);
@@ -792,7 +792,7 @@ function renderEngineComparison(data: IMonitorData): string {
     const pair = rows.filter((item) => item.label === row.label);
     return `<tr><td colspan="6"><strong>${e(row.label)}</strong>${row.note ? `<p class="small">${e(row.note)}</p>` : ""}</td></tr>${pair.map(body).join("")}`;
   }).join("");
-  return `<section class="panel" aria-label="ThreeNative against Godot scoreboard"><div class="section-head"><h2>${title}</h2><span class="badge">Exploratory · ${SCOREBOARD_RUNS.length} runs per engine</span></div>${scoreboardBanner(rows)}<p class="note">${e(caveat)}</p><div class="table-wrap" tabindex="0" role="region" aria-label="ThreeNative against Godot scoreboard; scroll horizontally for all columns"><table class="compare-table"><caption class="small">Median of each engine's run medians in milliseconds with its run-to-run spread and run count, who won the row and by how much, plus draw calls from the first run.</caption><thead><tr><th scope="col">Scene</th><th scope="col">Godot</th><th scope="col">ThreeNative</th><th scope="col">Winner</th><th scope="col">Draw calls · Godot vs TN</th><th scope="col">Run files</th></tr></thead><tbody>${table}</tbody></table></div>${scoreboardBars(rows)}${whereTnLoses(rows)}<p class="chart-note">Median of the run medians per row, one axis. Godot teal, ThreeNative green.</p><details class="methodology"><summary>Methodology and caveats</summary><p class="note">3 alternating runs per engine, 40 warmup + 120 measured frames each, 1280x720 uncapped, physical display. Both engines ran on the same machine, so every cell reports its own run-to-run spread and a win is only called when the gap between the two medians beats the wider of the two spreads, with at least 2 runs on each side. Anything inside that is a tie.</p><p class="note">Unqualified observations, not engine rankings. L1 has a known output/draw mismatch; L2 uses different visible-count semantics. Full fixture conformance is unverified. Modes are distinct requested workloads, so each row is read as itself: TN L3 against Godot L1 on the headline row, L2 against L2 with instancing asked of both, and L4 against L4 where a unique material per cube stops either engine merging draws.</p><p class="note">Warmup frames are not recorded in these JSON files, so the retained samples per run file are all this page claims. The Godot suite's <code>time</code> field and its CPU/GPU split are its own definitions.</p><p class="note">Adapters as recorded: Godot ${e(rows.map((row) => row.godot).find((value) => value?.attempt?.pilot)?.attempt?.pilot?.driver.adapter ?? MISSING)} · TN ${e(rows.map((row) => row.tn).find((value) => value?.attempt?.pilot)?.attempt?.pilot?.driver.adapter ?? MISSING)}.</p>${renderGodotUpstream(data)}</details></section>${renderFixesPanel(data)}`;
+  return `<section class="panel" aria-label="ThreeNative against Godot scoreboard"><div class="section-head"><h2>${title}</h2><span class="badge">Exploratory · ${SCOREBOARD_RUNS.length} runs per engine</span></div>${scoreboardBanner(rows)}<p class="note">${e(caveat)}</p><div class="table-wrap" tabindex="0" role="region" aria-label="ThreeNative against Godot scoreboard; scroll horizontally for all columns"><table class="compare-table"><caption class="small">Median of each engine's run medians in milliseconds with its run-to-run spread and run count, who won the row and by how much, plus draw calls from the first run.</caption><thead><tr><th scope="col">Scene</th><th scope="col">Godot</th><th scope="col">ThreeNative</th><th scope="col">ThreeNative engine</th><th scope="col">Winner</th><th scope="col">Draw calls · Godot vs TN</th><th scope="col">Run files</th></tr></thead><tbody>${table}</tbody></table></div>${scoreboardBars(rows)}${whereTnLoses(rows)}<p class="chart-note">Median of the run medians per row, one axis. Godot teal, ThreeNative green.</p><details class="methodology"><summary>Methodology and caveats</summary><p class="note">3 alternating runs per engine, 40 warmup + 120 measured frames each, 1280x720 uncapped, physical display. Both engines ran on the same machine, so every cell reports its own run-to-run spread and a win is only called when the gap between the two medians beats the wider of the two spreads, with at least 2 runs on each side. Anything inside that is a tie.</p><p class="note">Unqualified observations, not engine rankings. L1 has a known output/draw mismatch; L2 uses different visible-count semantics. Full fixture conformance is unverified. Modes are distinct requested workloads, so each row is read as itself: TN L3 against Godot L1 on the headline row, L2 against L2 with instancing asked of both, and L4 against L4 where a unique material per cube stops either engine merging draws.</p><p class="note">Warmup frames are not recorded in these JSON files, so the retained samples per run file are all this page claims. The Godot suite's <code>time</code> field and its CPU/GPU split are its own definitions.</p><p class="note">Adapters as recorded: Godot ${e(rows.map((row) => row.godot).find((value) => value?.attempt?.pilot)?.attempt?.pilot?.driver.adapter ?? MISSING)} · TN ${e(rows.map((row) => row.tn).find((value) => value?.attempt?.pilot)?.attempt?.pilot?.driver.adapter ?? MISSING)}.</p>${renderGodotUpstream(data)}</details></section>${renderFixesPanel(data)}`;
 }
 
 /**
@@ -829,7 +829,7 @@ const LADDER_OBJECT_COUNT = 4096;
  */
 function ladderFiles(
   data: IMonitorData,
-  engine: "godot" | "tn",
+  engine: "godot" | "tn" | "tn-engine",
   rung: (typeof LADDER_ROWS)[number]["rung"],
 ): string[] {
   const family = rung === "R5" ? "ladder1080" : "ladder";
@@ -838,7 +838,7 @@ function ladderFiles(
 
 function ladderCell(
   data: IMonitorData,
-  engine: "godot" | "tn",
+  engine: "godot" | "tn" | "tn-engine",
   rung: (typeof LADDER_ROWS)[number]["rung"],
 ): IEngineCell | undefined {
   return engineCell(data, engine, rung, LADDER_OBJECT_COUNT, ladderFiles(data, engine, rung));
@@ -868,6 +868,20 @@ function ladderHeadline(data: IMonitorData): string {
   return `<p class="verdict-line">Full scene at 1080p: ThreeNative ${escapeHtml(fps(tn))} fps vs Godot ${escapeHtml(fps(godot))} fps</p><p>${pill(engine)} <span class="small">${escapeHtml(sentence)}</span></p>`;
 }
 
+/**
+ * Godot's p50 over an arm's p50 on the rungs the box names. The owned engine gets its own figure when
+ * its run files exist, so `ladder tn-engine` is shown rather than collected and dropped.
+ */
+function ladderRatio(
+  godot: IEngineCell | undefined,
+  arm: IEngineCell | undefined,
+  rung: (typeof LADDER_ROWS)[number]["rung"],
+): string | undefined {
+  if (!["R2", "R3", "R5"].includes(rung) || !godot || !arm || godot.medP50 <= 0 || arm.medP50 <= 0)
+    return undefined;
+  return (godot.medP50 / arm.medP50).toFixed(2);
+}
+
 /** The ladder beneath the headline: what each rung added, and who it cost. */
 function renderRealisticLadder(data: IMonitorData): string {
   const e = escapeHtml;
@@ -875,12 +889,16 @@ function renderRealisticLadder(data: IMonitorData): string {
     ...row,
     godot: ladderCell(data, "godot", row.rung),
     tn: ladderCell(data, "tn", row.rung),
+    engine: ladderCell(data, "tn-engine", row.rung),
   }));
   const head = rows.find((row) => row.tn?.attempt?.pilot)?.tn?.attempt?.pilot;
   const body = rows
     .map(
       (row) =>
-        `<tr><td><strong>${e(row.label)}</strong><p class="small">${e(row.note)}</p></td><td>${cell(row.godot)}</td><td>${cell(row.tn)}</td><td>${verdictCell(row.godot, row.tn)}</td><td>${["R2", "R3", "R5"].includes(row.rung) && row.godot && row.tn && row.godot.medP50 > 0 && row.tn.medP50 > 0 ? (row.godot.medP50 / row.tn.medP50).toFixed(2) : "—"}</td><td>${e(draws(row.godot, row.tn))}</td><td>${ladderFiles(
+        `<tr><td><strong>${e(row.label)}</strong><p class="small">${e(row.note)}</p></td><td>${cell(row.godot)}</td><td>${cell(row.tn)}</td><td>${cell(row.engine)}${(() => {
+          const ratio = ladderRatio(row.godot, row.engine, row.rung);
+          return ratio === undefined ? "" : `<p class="small">godotRatio ${e(ratio)}</p>`;
+        })()}</td><td>${verdictCell(row.godot, row.tn)}</td><td>${["R2", "R3", "R5"].includes(row.rung) && row.godot && row.tn && row.godot.medP50 > 0 && row.tn.medP50 > 0 ? (row.godot.medP50 / row.tn.medP50).toFixed(2) : "—"}</td><td>${e(draws(row.godot, row.tn))}</td><td>${ladderFiles(
           data,
           "godot",
           row.rung,
@@ -892,6 +910,13 @@ function renderRealisticLadder(data: IMonitorData): string {
               : e(`${base}.json`);
           })
           .join(" · ")}<p class="small">${ladderFiles(data, "tn", row.rung)
+          .map((base) => {
+            const attempt = scoreboardRun(data, base);
+            return attempt
+              ? attemptLink(data, attempt, path.basename(attempt.source))
+              : e(`${base}.json`);
+          })
+          .join(" · ")}</p><p class="small">${ladderFiles(data, "tn-engine", row.rung)
           .map((base) => {
             const attempt = scoreboardRun(data, base);
             return attempt

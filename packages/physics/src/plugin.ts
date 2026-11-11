@@ -54,6 +54,11 @@ export interface IPhysicsContext {
   kinematicMotion?(
     colliderHandle: number,
   ): { readonly x: number; readonly y: number; readonly z: number } | undefined;
+  /**
+   * False for ground that can move with no notice: a dynamic `RigidBody3D` or another character.
+   * A `CharacterBody3D` standing on such ground keeps taking its gravity step, so it follows it.
+   */
+  groundHolds?(bodyId: number): boolean;
   remove(body: PhysicsBody3D): void;
   addArea(area: Area3D): void;
   removeArea(area: Area3D): void;
@@ -177,6 +182,10 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       addBuoyancy: (buoyancy) => buoyancies.add(buoyancy),
       eventQueue: physicsHandle(selected.rawEventQueue),
       kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
+      groundHolds: (bodyId) => {
+        const ground = bodiesById.get(bodyId);
+        return ground === undefined || (ground instanceof RigidBody3D && ground.type !== "dynamic");
+      },
       numBodies: () => bodies.size,
       remove: (body) => {
         interpolationRemovals.get(body)?.();

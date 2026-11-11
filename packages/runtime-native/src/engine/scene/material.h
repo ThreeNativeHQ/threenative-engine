@@ -80,8 +80,13 @@ public:
     // Material
     bool spriteMaterial = false;
     bool lineMaterial = false;  // three's LineBasicMaterial: unlit, drawn by a Line or LineSegments
+    /** three's PointsMaterial/PointsNodeMaterial: unlit, drawn by a Points object as point-list. */
+    bool pointsMaterial = false;
     double rotation = 0;
     bool sizeAttenuation = true;
+    /** three's PointsMaterial.size (default 1). Read and kept; WebGPU's point primitive is 1 px, so it
+     *  moves no pixel on the Points path — as upstream, whose sized path is a Sprite (PRD-871). */
+    double size = 1;
     bool transparent = false;
     bool forceSinglePass = false;  // three's: a transparent DoubleSide material draws in one pass
     double opacity = 1;

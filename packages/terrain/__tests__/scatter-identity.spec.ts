@@ -41,3 +41,21 @@ describe("public scatter candidate identity", () => {
     expect(terrain.evaluate().instances.slice(0, 20)).toEqual(next);
   });
 });
+
+describe("scatter under a sea", () => {
+  it("plants nothing on ground below the ocean's level, flooded or not", () => {
+    // Border under the sea, a dry ring, and an enclosed hollow under sea level the flood never reaches.
+    const width = 17;
+    const values = Array.from({ length: width * width }, (_, i) => {
+      const r = Math.max(Math.abs((i % width) - 8), Math.abs(Math.floor(i / width) - 8));
+      return r >= 7 ? -5 : r >= 3 ? 5 : -3;
+    });
+    const terrain = new Terrain({ size: 64, resolution: width, seed: 73 })
+      .heightmap({ id: "ground", data: { width, height: width, values } })
+      .water({ id: "sea", kind: "ocean", level: 0 })
+      .scatter({ id: "trees", asset: "pine", count: 300, minDistance: 0 });
+    const instances = terrain.evaluate().instances;
+    expect(instances.length).toBeGreaterThan(20);
+    for (const item of instances) expect(item.position[1]).toBeGreaterThanOrEqual(0.35);
+  });
+});

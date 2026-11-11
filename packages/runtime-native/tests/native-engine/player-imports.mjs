@@ -1145,18 +1145,27 @@ export default defineGame({ scenes: { play: Play }, start: "play", frameBudget: 
   render: { projection: false, matrixWorld: "all" } });
 `);
 // A core game bundles (PRD-552): picking's MeshBVH, core's TSL context nodes and BatchedMesh are bound,
-// and the exports the engine does not provide (core's WebGL2 fallback, Points) are refused at use, by
-// name, as on Wasm (owner decision 2026-10-09).
+// and the exports the engine does not provide (core's WebGL2 fallback) are refused at use, by name,
+// as on Wasm (owner decision 2026-10-09). `Points` is bound on the player since PRD-871.
 await bundleNativeEngine({ entry, outfile });
 const accepted = await readFile(outfile, "utf8");
-// Refused at use: constructing Points fails at that call with the catalog's diagnostic.
+// PRD-871: `Points` and `PointsMaterial` are bound on the V8 player as on Wasm, so a star field builds
+// its cloud and its material there too, and `Points` is no longer a refused export.
 const pointsEntry = resolve(work, "points.ts");
 const pointsOut = resolve(work, "points.js");
-await writeFile(pointsEntry, 'import { Points, Scene } from "three"; try { new Points(); globalThis.tn.__startupError = "Points constructed"; } catch (error) { globalThis.tn.__startupError = String(error.message); } globalThis.tn.scene = new Scene();');
+await writeFile(pointsEntry, [
+  'import { BufferGeometry, Float32BufferAttribute, Points, PointsMaterial, Scene } from "three";',
+  'const geometry = new BufferGeometry();',
+  'geometry.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 1, 1], 3));',
+  'const cloud = new Points(geometry, new PointsMaterial({ size: 4, sizeAttenuation: true }));',
+  'globalThis.tn.__pointsProof = [cloud.isPoints, cloud.material.type, cloud.material.size, cloud.geometry.getAttribute("position").count].join(",");',
+  'globalThis.tn.scene = new Scene();',
+  'globalThis.tn.scene.add(cloud);',
+].join("\n"));
 await bundleNativeEngine({ entry: pointsEntry, outfile: pointsOut, boot: false });
 const points = spawnSync(resolve(executable), ["--check-game", pointsOut], { encoding: "utf8" });
-assert.equal(points.status, 1);
-assert.match(points.stderr, /TN_NATIVE_UNSUPPORTED_POINTS: Points is not available on the native engine/);
+assert.equal(points.status, 0, points.stderr);
+assert.doesNotMatch(points.stderr, /TN_NATIVE_UNSUPPORTED_POINTS/, "Points is bound, not refused");
 await writeFile(entry, 'import { NativeBindingThatDoesNotExist } from "three"; globalThis.tn.scene = new NativeBindingThatDoesNotExist();');
 await assert.rejects(bundleNativeEngine({ entry, outfile, boot: false }), /TN_NATIVE_ENGINE_UNBOUND: three:NativeBindingThatDoesNotExist/);
 assert.equal(await readFile(outfile, "utf8"), accepted, "failed build must preserve the prior artifact");

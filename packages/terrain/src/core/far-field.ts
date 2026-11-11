@@ -44,6 +44,8 @@ export interface IFarFieldOptions {
   }[];
   /** Circles kept open, [x, z, radius]: the vista's meadow. */
   readonly clear?: readonly (readonly [number, number, number])[];
+  /** The sea's surface height, metres, when the world has one: no tree stands under it. */
+  readonly seaLevel?: number | null;
 }
 
 /**
@@ -114,7 +116,10 @@ export function farForestPlacements(options: IFarFieldOptions): IPlacement[] {
       );
       return Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz) < reach;
     });
+  // A sea draws as one plane at its level, so any ground under it is under water, flooded or not.
+  const sea = options.seaLevel ?? Number.NEGATIVE_INFINITY;
   const wet = (x: number, z: number, height: number): boolean =>
+    height < sea + 0.35 ||
     inRiver(x, z) ||
     (options.lakes ?? []).some(
       (lake) =>

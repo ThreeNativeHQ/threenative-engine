@@ -768,6 +768,19 @@
       "required": true
     },
     {
+      "id": "points",
+      "title": "points",
+      "category": "geometry",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/points.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "30-screen-space-text",
       "title": "screen space text",
       "category": "ui",

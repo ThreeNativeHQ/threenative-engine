@@ -297,6 +297,8 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       fallbackSaplingHeight: undefined,
       scatter: { canopy: new Float32Array(0), counts: {}, package: { buckets: [], cellSize: 128 } },
       groundAt: () => ({ height: 0, offset: 0 }),
+      groundSample: () => null,
+      collarGround: { at: () => null },
       // The gate's two settlements, and the look and scenery the build reads.
       land: vi.fn(),
       settle: vi.fn(),

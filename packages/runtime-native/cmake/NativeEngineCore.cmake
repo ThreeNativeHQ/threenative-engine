@@ -85,7 +85,7 @@ target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scene/camera.cpp
     src/engine/scene/nodes.cpp src/engine/scene/raycaster.cpp src/engine/scene/geometry.cpp src/engine/scene/geometries.cpp src/engine/scene/curves.cpp src/engine/scene/shape_utils.cpp
     src/engine/scene/material.cpp src/engine/scene/lights.cpp src/engine/scene/static_transform.cpp
-    src/engine/scene/projected_cull.cpp)
+    src/engine/scene/projected_cull.cpp src/engine/scene/pose_history.cpp)
 tn_native_engine_target(tn_engine_scene)
 if(EMSCRIPTEN)
     # The web engine ships under a 4 MiB budget (native-engine-wasm action). The ray BVH (PRD-752) and
@@ -934,7 +934,8 @@ target_link_libraries(tn-native-engine-animation-binding-test PRIVATE tn_engine_
 target_include_directories(tn-native-engine-animation-binding-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 tn_native_engine_test(tn-native-engine-animation-mixer-test tests/native-engine/animation/mixer_test.cpp
     native_engine_animation_mixer=mixer native_engine_animation_events=events
-    native_engine_animation_track_hot_fields=track_hot_fields)
+    native_engine_animation_track_hot_fields=track_hot_fields
+    native_engine_animation_evaluate_then_flush_events=evaluate_then_flush_events)
 target_link_libraries(tn-native-engine-animation-mixer-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 if(EMSCRIPTEN)
@@ -945,9 +946,16 @@ if(EMSCRIPTEN)
 endif()
 # PRD-828: one call a frame advances every rig (weights, stride rate, one mixer step each).
 tn_native_engine_test(tn-native-engine-animation-tick-batch-test tests/native-engine/animation/tick_batch_test.cpp
-    native_engine_animation_tick_batch=tick_batch)
-target_link_libraries(tn-native-engine-animation-tick-batch-test PRIVATE tn_engine_animation)
+    native_engine_animation_tick_batch=tick_batch
+    native_engine_animation_tick_micros_counted=animation_tick_micros_counted)
+# PRD-875 Phase 1: the counter's case drives the real `tn_anim_tick`, which lives in tn_engine_abi.
+target_link_libraries(tn-native-engine-animation-tick-batch-test PRIVATE tn_engine_animation tn_engine_abi)
 target_include_directories(tn-native-engine-animation-tick-batch-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+# PRD-877 phase 2: the engine blends and restores a body's poses without leaving C++.
+tn_native_engine_test(tn-native-engine-scene-pose-history-test tests/native-engine/scene/pose_history_test.cpp
+    native_engine_physics_pose_history=pose_history)
+target_link_libraries(tn-native-engine-scene-pose-history-test PRIVATE tn_engine_scene)
+target_include_directories(tn-native-engine-scene-pose-history-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene)
 # PRD-517: property tracks on materials, lights, cameras and visibility.
 tn_native_engine_test(tn-native-engine-animation-property-tracks-test tests/native-engine/animation/property_tracks_test.cpp
     native_engine_animation_property_tracks=property_tracks)
@@ -1028,6 +1036,7 @@ tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/j
     native_engine_job_pool_workers_cover_the_machine=workers_cover_the_machine
     native_engine_job_pool_fails_closed=pool_fails_closed_when_no_worker_starts
     native_engine_matrix_walk_jobs=matrix_walk_jobs
+    native_engine_concurrent_quaternion_writes=concurrent_quaternion_writes
     native_engine_matrix_walk_threshold=matrix_walk_threshold
     native_engine_job_pool_starts_on_need=pool_starts_on_need
     native_engine_job_pool_is_always_on=pool_is_always_on)

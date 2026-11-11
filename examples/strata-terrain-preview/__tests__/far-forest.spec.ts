@@ -84,6 +84,30 @@ describe("far forest", () => {
     // limit rather than a claim about the rule; the count and the highest tree are the claim.
   }, 25_000);
 
+  it("plants no tree under a cooked coast's sea", () => {
+    const treeline = measureBiome(BIOMES.forest, data.heights).heightBands.treeline;
+    const options = {
+      size: data.size,
+      resolution: data.resolution,
+      collar,
+      treeline,
+      world: "forest" as const,
+    };
+    const dry = farForestPlacements(options);
+    // A sea at the band's median ground height: half the collar it planted is now under water.
+    const heights = dry
+      .map((tree) => sampler.at(tree.position[0], tree.position[2]) ?? 0)
+      .sort((a, b) => a - b);
+    const seaLevel = heights[Math.floor(heights.length / 2)] as number;
+    const coast = farForestPlacements({ ...options, seaLevel });
+    expect(coast.length).toBeGreaterThan(0);
+    expect(coast.length).toBeLessThan(dry.length * 0.6);
+    for (const tree of coast)
+      expect(sampler.at(tree.position[0], tree.position[2]) ?? 0).toBeGreaterThanOrEqual(
+        seaLevel + 0.35,
+      );
+  }, 25_000);
+
   it("streams the far bucket with the licensed spruce's three-level chain", async () => {
     // The pack spruce steps at 80 and 150 m; a terminal gate inside 150 m fails package validation.
     const material = new MeshBasicMaterial();

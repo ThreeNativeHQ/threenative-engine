@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,6 +27,16 @@ describe("shipped web Wasm engine size budget", () => {
     await expect(enforceBudgets(root)).rejects.toThrow(
       "TN_WEB_ENGINE_OVER_BUDGET: measured 4259841 bytes, allowed 4259840 bytes",
     );
+  });
+
+  // PRD-867 raised the table in check-budgets.ts and left the build action at 4 MiB. The cache hid it
+  // until the action's key moved, and the first fresh engine (4,213,808 bytes) failed build-artifacts.
+  it("is the same number the web engine build action enforces", () => {
+    const action = readFileSync(
+      path.join(import.meta.dirname, "../../.github/actions/native-engine-wasm/action.yml"),
+      "utf8",
+    );
+    expect(action).toMatch(/^\s*allowed_bytes=4259840$/m);
   });
 
   it("skips an unbuilt Wasm engine", async () => {

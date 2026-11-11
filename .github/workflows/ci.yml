@@ -1571,8 +1571,9 @@ jobs:
           set -euo pipefail
           ccache --zero-stats
           # The core reads the web engine's pinned sources too (stb decodes SMAANode's tables), and
-          # the glTF loader decodes meshopt-compressed models with the pinned meshoptimizer.
-          for dependency in stb cgltf webp-source meshopt; do
+          # the glTF loader decodes meshopt-compressed models with the pinned meshoptimizer and
+          # KTX2 textures with the pinned Basis Universal transcoder (PRD-861).
+          for dependency in stb cgltf webp-source meshopt basisu; do
             node scripts/download-deps.mjs --only "$dependency"
           done
           cmake -S . -B build/native-engine -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTN_ENGINE_CORE_ONLY=ON
