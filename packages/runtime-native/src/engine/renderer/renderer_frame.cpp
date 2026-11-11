@@ -2105,7 +2105,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // change (a still crowd, a draw that kept its place in `instances`) sends nothing, whatever its neighbours do.
         const uint64_t held = sameBuffer && storage.uploadedPrefix == prefix ? std::min<uint64_t>(storage.uploaded.size(), bytes) : 0;
         constexpr uint64_t kStorageBlock = 256;  // a multiple of 4: writeBuffer takes whole words
-        constexpr std::size_t kMaxWrites = 32;
+        constexpr std::size_t kMaxWrites = 32, kMaxPaletteWrites = 256;
         auto& ranges = uniformDirtyRanges_;  // the uniform upload above is done with it
         ranges.clear();
         const auto dirty = [&](uint64_t at, uint64_t end) {
@@ -2145,7 +2145,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const uint64_t first = ranges.front().first, last = ranges.back().first + ranges.back().second;
         uint64_t dirtyBytes = 0;
         for (const auto& range : ranges) dirtyBytes += range.second;
-        if (ranges.size() > kMaxWrites || dirtyBytes * 2 >= last - first) {  // mostly dirty, or many runs: one write over them all
+        // Mostly dirty, or many runs: one write over them all. A crowd palette has one run per moved rig, so it may take
+        // one write per rig (PRD-878: 240 walkers, about 76 moved slots a frame on ?stress).
+        if (ranges.size() > (instances ? kMaxWrites : kMaxPaletteWrites) || dirtyBytes * 2 >= last - first) {
             ranges.assign(1, {first, last - first});
         }
         storage.uploaded.resize(bytes);
