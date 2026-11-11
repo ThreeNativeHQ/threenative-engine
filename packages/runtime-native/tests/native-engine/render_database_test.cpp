@@ -10187,7 +10187,114 @@ void shadowRowFollowsMaterialChange() {
     CHECK(cache && cache->depthMasked && cache->depthProgram != unmasked);
 }
 
-TN_TEST_MAIN({"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
+// The same row, moved by an onBeforeRender callback instead of the game thread: the callback writes alphaTest after
+// refresh() signed the draw, and prepare() re-reads the material into the draw for it. The draw's stamp is the key
+// that row's cached depth program hangs on, so it must move with the rewrite: a frame whose material the callback
+// changed is a frame the row re-resolves, never one that serves the program signed for the old value.
+void shadowRowFollowsOnBeforeRender() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (tn_check_failures != 0) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    Scene scene;
+    PerspectiveCamera camera{70, 1, 0.1, 200};
+    camera.position.set(0, 10, 4);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    DirectionalLight sun{Color(1, 1, 1), 3};
+    sun.position.set(3, 8, 2);
+    sun.setCastShadow(true);
+    sun.shadow.camera->setLayerMask(double(uint32_t{1} | (uint32_t{1} << 28)));  // the shadow sees layer 28
+    scene.add(sun);
+    auto ground = std::make_shared<Mesh>(makeBoxGeometry(20, 0.2, 20), std::make_shared<Material>(MaterialType::Standard));
+    ground->setReceiveShadow(true);
+    scene.add(*ground);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto caster = std::make_shared<Mesh>(makeBoxGeometry(1.5, 1.5, 1.5), material);
+    caster->position.set(0, 1, 0);
+    caster->setCastShadow(true);  // on the camera's layer: onBeforeRender runs for a main-pass draw only
+    scene.add(*caster);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto rowOf = [&]() -> const DrawItem* {
+        for (const DrawItem& item : database.drawn())
+            if (item.key == caster->id() && item.castShadow) return &item;
+        return nullptr;
+    };
+    for (int frame = 0; frame < 2; ++frame) database.render(renderer, scene, camera);
+    const DrawItem* row = rowOf();
+    CHECK(row && row->cache->depthProgram && !row->cache->depthMasked);
+    if (!row) return;
+    const uint64_t signedStamp = row->variantStamp;
+    const void* unmasked = row->cache->depthProgram;
+    caster->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [material](const RenderCallbackArgs&, std::string&) {
+            material->alphaTest = 0.5;  // three's plain write: no version bump
+            return true;
+        });
+    database.render(renderer, scene, camera);  // the frame the callback cut the caster
+    row = rowOf();
+    // refresh() held the material half (the callback had not run yet when it signed) and prepare() then rewrote the
+    // draw from the material: the stamp has to move with that write, or the row keeps the program it signed.
+    CHECK(row && row->variantStamp != signedStamp);
+    CHECK(row && row->cache->depthMasked && row->cache->depthProgram != unmasked);
+}
+
+// PRD-526 follow-up: a deleted skin attribute is seen. The record holds its rig's skinIndex/skinWeight for the
+// geometry revision, so the frame after deleteAttribute reads no weights, and the rig draws undeformed.
+void skinAttributeDeleteIsSeen() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (tn_check_failures != 0) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 180);
+    player::SkinnedCrowd crowd;
+    RenderDatabase database;
+    database.batching = false;
+    crowd.update(0.6);  // a bent pose: the rigs' deformation is what the deleted attribute drove
+    database.render(renderer, crowd.scene(), crowd.camera());
+    const auto posed = read(renderer, events);
+    auto* walker = static_cast<SkinnedMesh*>(crowd.scene().getObjectByName("walker-0"));
+    const auto row = [&]() -> const DrawItem* {
+        for (const DrawItem& item : database.drawn())
+            if (item.key == walker->id() && item.mainPass) return &item;
+        return nullptr;
+    };
+    const DrawItem* drawn = row();
+    CHECK(drawn && drawn->skinWeights && drawn->skinIndices);
+    if (!drawn) return;
+    const BufferStore* weights = drawn->skinWeights;
+    walker->geometry->deleteAttribute("skinWeight");
+    database.render(renderer, crowd.scene(), crowd.camera());
+    const auto bare = read(renderer, events);
+    drawn = row();
+    CHECK(drawn && drawn->skinWeights == nullptr && drawn->skinWeights != weights);
+    CHECK(drawn && drawn->boneMatrices == nullptr);  // a rig with no weights to read draws its rest pose
+    std::size_t covered = 0, differ = 0;
+    if (posed.size() == bare.size())
+        for (std::size_t p = 0; p + 3 < posed.size(); p += 4) {
+            int delta = 0;
+            for (int channel = 0; channel < 3; ++channel)
+                delta = std::max(delta, std::abs(int(posed[p + channel]) - int(bare[p + channel])));
+            differ += delta > 8;
+            covered += bare[p] + bare[p + 1] + bare[p + 2] > 0;
+        }
+    std::printf("skin weight deleted: %zu covered pixels, %zu differ from the posed frame\n", covered, differ);
+    CHECK(posed.size() == 320 * 180 * 4 && posed.size() == bare.size());
+    CHECK(covered > 1000);  // still drawn: the frame the attribute went away is a frame, not a crash
+    const BufferStore* indices = nullptr;
+    if (drawn) indices = drawn->skinIndices;
+    walker->geometry->deleteAttribute("skinIndex");
+    database.render(renderer, crowd.scene(), crowd.camera());
+    CHECK(read(renderer, events).size() == posed.size());
+    drawn = row();
+    CHECK(drawn && drawn->skinIndices == nullptr && drawn->skinIndices != indices);
+}
+
+TN_TEST_MAIN({"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

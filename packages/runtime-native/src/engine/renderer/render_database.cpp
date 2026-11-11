@@ -1806,7 +1806,13 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         if (!(*callback)({&scene, &camera, p.mesh->geometry, p.mesh->material}, error))
             diagnostics_.push_back("TN_CALLBACK_FAILED onBeforeRender: " + error);
         p.record->draw->params = paramsOf(*p.record->material);
-        // The callback may have moved the material after refresh() signed it: the next frame refreshes in full.
+        // The callback may have moved the material after refresh() signed it: the draw's new stamp retires every
+        // program cached against the old signature (the shadow row's depth program keys on it), and the next frame
+        // refreshes in full. The draw list's copies of the record were made before the callbacks ran, so they move
+        // with it.
+        const uint64_t stamp = p.record->draw->item.variantStamp = ++variantStamps_;
+        for (DrawItem& item : items)
+            if (item.cache == &p.record->cache) item.variantStamp = stamp;
         p.record->materialResolved = false;
     }
     ranCallbacks_ = !callbacks_.empty();
