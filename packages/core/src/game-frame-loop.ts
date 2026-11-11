@@ -287,6 +287,10 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
           },
         });
   game.frameBudget = frameBudget;
+  // Built after the presentation hold goes up: until the reveal (`markRevealed` in game-startup),
+  // a window spans startup work, so it must not alert as a hot call in play. A startup that already
+  // settled has revealed, and its frames are play.
+  if (!startup.projectionSettled) frameBudget?.markCovered();
   // The loop that reports into it stops first: `startScenes` pushes the loop's stop after this.
   if (frameBudget !== undefined) game.cleanup.push(() => frameBudget.dispose());
   // Per-pass draws and triangles ride the frame budget's window by default. The same property
