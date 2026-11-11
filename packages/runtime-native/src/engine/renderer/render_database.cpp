@@ -1288,7 +1288,14 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         decision = &batchDecision_;
     }
     projection::countWalkCall(projection::WalkCaller::RenderDatabase);
-    skinnedPalettes_.clear();
+    // Rebuild on resource/structure versions, never on matrix or palette values. Dense slots are written in
+    // draw order below, so a camera turn or a hidden member needs no claim-map rebuild (and leaves no holes).
+    if (paletteHierarchy_ != Object3D::hierarchyVersion() || paletteRecords_ != rebuilds_ || paletteDecision_ != batchDecisions_) {
+        skinnedPalettes_.clear();
+        paletteHierarchy_ = Object3D::hierarchyVersion();
+        paletteRecords_ = rebuilds_;
+        paletteDecision_ = batchDecisions_;
+    }
     batchGroupsList_.clear();
     candidatesByKey_.clear();
     shadowCopies_.clear();
@@ -1346,15 +1353,20 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         const bool skinned = items[g.front()].skinnedRig != nullptr;
         if (!skinned && g.size() < kMinBatchMembers)
             continue;
-        SkinnedPalette* palette = nullptr;
-        if (skinned && !items[g.front()].gpuJoints) {
-            skinnedPalettes_.push_back(
-                std::make_unique<SkinnedPalette>(items[g.front()].skinnedRig->skeleton->bones.size(), g.size(), false));
-            palette = skinnedPalettes_.back().get();
-            palette->begin();
-        }
         ++batchGroups_;
         const auto slot = batchSlot(uint64_t{1} << 63 | uint64_t(&g - batchGroupsList_.data()));
+        SkinnedPalette* palette = nullptr;
+        if (skinned && !items[g.front()].gpuJoints) {
+            if (skinnedPalettes_.size() <= slot) skinnedPalettes_.resize(slot + 1);
+            auto& held = skinnedPalettes_[slot];
+            const auto bones = items[g.front()].skinnedRig->skeleton->bones.size();
+            if (!held || held->bones() != bones || held->capacity() < g.size()) {
+                held = std::make_unique<SkinnedPalette>(bones, g.size(), false);
+                ++paletteBuilds_;
+            }
+            palette = held.get();
+            palette->begin();
+        }
         while (batchStores_.size() <= slot) batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         BufferStore& store = *batchStores_[slot];
         if (store.count() != g.size() * 16)
@@ -1369,12 +1381,13 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         if (uniform && batchColors_[slot]->count() != g.size() * 3) batchColors_[slot]->resize(g.size() * 3);
         auto* colors = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
         std::size_t colorOffset = 0;
+        uint32_t paletteSlot = 0;
         for (std::size_t i : g) {
             const Object3D* placement = nullptr;
             if (palette) {
                 SkinnedMesh& rig = *items[i].skinnedRig;
-                const auto slot = palette->claim(&rig);
-                placement = palette->writeRelative(*slot, rig);
+                const auto slot = paletteSlot++;
+                placement = palette->writeRelative(slot, rig);
                 // The rig's shadow copy reads the same root-relative slot instead of the skeleton's world palette, so a
                 // rig has one palette a frame: the copy keeps its own model matrix (its shadow bounds read it) and its
                 // bind pair folds the placement back in, meshWorld * (meshWorld^-1 * R) * (R^-1 * boneWorld * ...).
@@ -1384,7 +1397,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
                     Matrix4 prefix;
                     prefix.multiplyMatrices(rig.bindMatrixInverse, placement->matrixWorld);
                     shadow.boneMatrices = &palette->matrices();
-                    shadow.boneOffset = *slot * palette->bones();
+                    shadow.boneOffset = slot * palette->bones();
                     shadow.bindMatrix = Matrix4{}.elements;
                     shadow.bindMatrixInverse = toArray(prefix);
                 }

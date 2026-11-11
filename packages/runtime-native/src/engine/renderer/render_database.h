@@ -134,6 +134,7 @@ class RenderDatabase {
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }
     /** How many projection decisions batching has made (PRD-613): a settled scene makes none per frame. */
     [[nodiscard]] uint64_t batchDecisions() const { return batchDecisions_; }
+    [[nodiscard]] uint64_t paletteBuilds() const { return paletteBuilds_; }
 
   private:
     // A material's pmremTexture source and reflectors, walked once per material version: the graph
@@ -266,12 +267,14 @@ class RenderDatabase {
     struct BoneChain { uint64_t id = 0, version = 0, seen = 0; bool bonesOnly = false; };
     std::unordered_map<const Object3D*, BoneChain> boneChains_;
     bool bonesOnly(const Object3D& bone);
-    std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
+    std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // dense slots, borrowed by this frame's draws
+    uint64_t paletteHierarchy_ = ~uint64_t(0), paletteRecords_ = ~uint64_t(0), paletteDecision_ = ~uint64_t(0);
     // core's DECLINE_RESCAN_FRAMES: a settled projection decline re-judges on this cadence, not per
     // frame. Starts at the interval so the first batch always scans.
     static constexpr std::size_t kDeclineRescanFrames = 60;
     std::size_t framesSinceDeclineScan_ = kDeclineRescanFrames;
     uint64_t batchDecisions_ = 0;
+    uint64_t paletteBuilds_ = 0;
     projection::Decision batchDecision_;  // the last one, held while its scene's structure holds
     const Object3D* batchScene_ = nullptr;
     uint64_t batchHierarchy_ = ~uint64_t(0);
