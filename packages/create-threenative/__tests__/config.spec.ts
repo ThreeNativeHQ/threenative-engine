@@ -14,6 +14,7 @@ import {
   MODEL_PASS_KEYS,
   MODEL_QUANTIZE_KEYS,
   MODEL_VIRTUAL_KEYS,
+  configTempName,
   loadConfig,
 } from "../src/config.js";
 import { createProject, discoverTemplateNames } from "../src/index.js";
@@ -92,6 +93,39 @@ const TRNS_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAAnRSTlMAAHaTzTgAAAAQSURBVHicY2AYBaNgFMAAAAMQAAE/LCvsAAAAAElFTkSuQmCC",
   "base64",
 );
+
+it("loads two configs in the same millisecond, because the temp name must not collide", async () => {
+  const root = await project();
+  await config(root, 'export default { engine: "threenative" };');
+  // `vite` resolves a project's config more than once in one process (its plugin and its command,
+  // through `resolveConfig`'s `Promise.all`). With the temp file named from the clock alone, both
+  // loads picked the same path and the first one's `unlink` deleted the second one's file, which
+  // surfaced as TN_CONFIG_LOAD_FAILED: cannot find module '.threenative.config.<pid>.<ms>.mjs'.
+  // Freezing the clock is what makes that deterministic: only a distinguishing suffix can save it.
+  const frozen = Date.now;
+  Date.now = () => 1_700_000_000_000;
+  try {
+    const loaded = await Promise.all([loadConfig(root), loadConfig(root), loadConfig(root)]);
+    expect(loaded.map((each) => each.engine)).toEqual([
+      "threenative",
+      "threenative",
+      "threenative",
+    ]);
+  } finally {
+    Date.now = frozen;
+  }
+});
+
+it("names every config temp file uniquely, even when two loads share a millisecond", () => {
+  // The suffix is the whole fix: the collision this locks was two loads picking the same path from
+  // the pid and the clock alone, so the first one's unlink deleted the second one's file. This is
+  // deterministic where the race is not — dropping the sequence again fails here every time.
+  const first = configTempName("/game", 42, 1_700_000_000_000, 1);
+  const second = configTempName("/game", 42, 1_700_000_000_000, 2);
+  expect(first).not.toBe(second);
+  expect(path.basename(first)).toBe(".threenative.config.42.1700000000000.1.mjs");
+  expect(path.basename(second)).toBe(".threenative.config.42.1700000000000.2.mjs");
+});
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));

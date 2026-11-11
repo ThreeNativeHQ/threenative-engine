@@ -139,7 +139,7 @@ describe("InputMap", () => {
     const target = new EventTarget();
     // The pad in the player's hands holds the right stick; the pad in slot 1 is a worn stick resting
     // just past the dead zone. A "last slot with input" rule hands the input to slot 1 every tick.
-    const played = { axes: [0, 0, 0, 0.6], buttons: [] };
+    const played = { axes: [0, 0, 0, 0.9], buttons: [] };
     const drifting = { axes: [0.3, 0, 0, 0], buttons: [] };
     const input = new InputMap(undefined, target, target, () => [played, drifting]);
 
@@ -224,6 +224,24 @@ describe("InputMap", () => {
     input.tick();
     expect(input.pressed("jump")).toBe(true);
     expect(input.vector("move").x).toBe(-1);
+    input.dispose();
+  });
+
+  it("reads a gently held stick on a later pad while the first slot has never claimed", () => {
+    const target = new EventTarget();
+    // Slot 0 is a dongle with no pad on it: it is only "first" because it is first. A player who
+    // tilts the stick to 0.4 walks without claiming, so the unowned first slot must not sit on the
+    // input — otherwise a dongle at boot would hide a slow walk until the player pressed something.
+    const empty = { axes: [0, 0, 0, 0], buttons: [] };
+    const played = { axes: [0, 0, 0, 0], buttons: [] };
+    const input = new InputMap(undefined, target, target, () => [empty, played]);
+
+    input.tick();
+    expect(input.vector("move").x).toBe(0);
+
+    played.axes[0] = 0.4;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.25);
     input.dispose();
   });
 

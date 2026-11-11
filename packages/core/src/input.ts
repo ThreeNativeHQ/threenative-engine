@@ -262,6 +262,8 @@ export class InputMap {
   /** Each slot's pressed-button mask and stick travel last tick: a pad takes the slot on a claim. */
   #padButtonMask: number[] = [];
   #padStick: number[] = [];
+  /** Whether the current pad took the slot by claiming it, rather than by being the only pad there. */
+  #activePadClaimed = false;
   /** The `TN_GAMEPAD` key per slot, and the `id` it was built from, so a tick allocates no string. */
   #padKeys: Array<string | undefined> = [];
   #padKeyIds: Array<string | undefined> = [];
@@ -609,21 +611,32 @@ export class InputMap {
       if (this.#padHasInput() && inputSlot < 0) inputSlot = index;
       if (index === this.#activePadSlot) activeStillMapped = true;
     }
+    // A source that shrinks never visits its old slots again, so they are forgotten here; otherwise a
+    // pad that later connects into one of them would inherit the previous pad's claim history.
+    for (let index = sources.length; index < this.#padButtonMask.length; index += 1)
+      this.#forgetPad(index);
     for (const key of this.#padReports.keys())
       if (!this.#padSeen.has(key)) this.#padReports.delete(key);
     // The pad the player last claimed owns the input, and keeps it while idle so its releases are
     // read. A pad that disappeared, or one the browser now reports unmapped, hands over to whichever
-    // pad is being held, then to the first pad there is. With nobody claiming, a gentle stick still
-    // works: the pad merely resting past the dead zone is read as long as no other pad owns the slot.
-    const active =
-      claimSlot >= 0
-        ? claimSlot
-        : activeStillMapped && this.#activePadSlot >= 0
-          ? this.#activePadSlot
-          : inputSlot >= 0
-            ? inputSlot
-            : firstMapped;
+    // pad is being held, then to the first pad there is. A slot nobody claimed — it merely held the
+    // input when nothing else did — is not owned, so a gentle tilt of the pad in the player's hands
+    // outranks it; that is what stops an idle dongle in slot 0 from needing a claim to get past.
+    let active: number;
+    let owned = false;
+    if (claimSlot >= 0) {
+      active = claimSlot;
+      owned = true;
+    } else if (activeStillMapped && this.#activePadClaimed && this.#activePadSlot >= 0) {
+      active = this.#activePadSlot;
+      owned = true;
+    } else if (inputSlot >= 0) {
+      active = inputSlot;
+    } else {
+      active = firstMapped;
+    }
     this.#activePadSlot = active;
+    this.#activePadClaimed = owned;
     // Reused buffers: fresh arrays here were four allocations per update step, device or not.
     this.#gamepadAxes.length = 0;
     this.#gamepadButtons.length = 0;
