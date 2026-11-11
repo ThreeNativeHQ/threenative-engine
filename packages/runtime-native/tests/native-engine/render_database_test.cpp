@@ -1466,6 +1466,8 @@ void frameSlabIsPerProgram() {
                 static_cast<unsigned long long>(moved.upload), static_cast<unsigned long long>(moved.uniforms));
     CHECK(still.upload <= moved.upload - moved.uniforms);
     CHECK(stillAgain.upload == still.upload);
+    // Nothing else crosses either: the output pass's exposure block (4 bytes) was rewritten every frame (PRD-871).
+    CHECK(still.upload == 0);
     CHECK(moved.upload <= moved.uniforms + still.upload);
     // (d) the same pose reaches the same pixels however the frame got there, and a light's channel flip moves
     // as many of them from a still arm as from a moved one: a stale slab would show here.

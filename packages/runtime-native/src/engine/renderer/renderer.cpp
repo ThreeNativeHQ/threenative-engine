@@ -148,6 +148,7 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     }
     gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
     outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    outputUploaded_.clear();
     WGPUSamplerDescriptor nearest = {};
     nearest.magFilter = WGPUFilterMode_Nearest;
     nearest.minFilter = WGPUFilterMode_Nearest;

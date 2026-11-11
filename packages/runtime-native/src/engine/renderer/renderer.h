@@ -1463,6 +1463,7 @@ private:
     shader::StageModule outputFragment_;
     Handle outputTriangle_;
     Handle outputUniforms_;
+    std::vector<uint8_t> outputUploaded_;  // the bytes outputUniforms_ holds: an unchanged block is not sent again
     WGPUSampler outputSampler_ = nullptr;
     WGPUBindGroup outputGroup_ = nullptr;
     WGPUBindGroupLayout outputLayout_ = nullptr;
