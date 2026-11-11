@@ -91,7 +91,7 @@ flowchart LR
 ## Acceptance Criteria
 
 - [ ] AC-1 [local, measure lane]: On the stress lab, uncapped pass of one fair window, `head` against `develop`, CPU frame p50 is lower by more than 3% in both ABBA pairs, frame p95 is no more than 5% worse, and a fresh visual judge reads NEUTRAL or IMPROVEMENT on `?stress&closeup` with two runs per arm. proof: `pnpm stress:loop fair` ledger rows plus the judge verdict — Evidence: pending.
-- [ ] AC-2 [local]: The whole `native-engine` label is green in a ThreadSanitizer build with the new cases in it. proof: the TSan commands in EXECUTION-ORDER.md, `ctest -L native-engine` — Evidence: pending.
+- [x] AC-2 [local]: The whole `native-engine` label is green in a ThreadSanitizer build with the new cases in it. proof: the TSan commands in EXECUTION-ORDER.md, `ctest -L native-engine` — Evidence (2026-11-10): `cmake -S . -B build/native-engine-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTN_ENGINE_CORE_ONLY=ON -DTN_ENGINE_TSAN=ON`, built with `--target all tn-native-engine-core-tests`, then `ctest --test-dir build/native-engine-tsan -L native-engine --no-tests=error --output-on-failure`: **292 of 292 passed, exit 0, zero `data race` reports in the log**. The label carries both of Phase 1's new cases, `native_engine_concurrent_quaternion_writes` and `native_engine_animation_evaluate_then_flush_events`, plus `native_engine_animation_tick_micros_counted`. The same 292 pass in the normal RelWithDebInfo build. This is the AC that made H1 and H2 worth splitting out: before H1 the label reports the `Euler::setFromQuaternion` race immediately.
 
 ## Blocked on
 

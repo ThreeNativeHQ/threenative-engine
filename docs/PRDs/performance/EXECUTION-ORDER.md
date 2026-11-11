@@ -109,10 +109,24 @@ ctest --test-dir build/native-engine -L native-engine --no-tests=error --output-
 cmake -S . -B build/native-engine-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTN_ENGINE_CORE_ONLY=ON -DTN_ENGINE_TSAN=ON
 cmake -S . -B build/native-engine-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTN_ENGINE_CORE_ONLY=ON -DTN_ENGINE_SANITIZE=ON
 
-# Renderer tests need the host build (from the repository root; it downloads Dawn and takes a long time the first time)
+# Renderer tests need the engine-only host build (from packages/runtime-native). `pnpm native:build` alone is NOT
+# enough: it configures build/tn-linux, and cmake/NativeEngine.cmake — which defines every native-engine test target —
+# is only included under TN_ENGINE_ONLY (CMakeLists.txt:787-790), so build/tn-linux has no tn-native-engine-*-test.
+# It still downloads Dawn, and that download is then reused.
 pnpm native:build
-cmake --build packages/runtime-native/build/tn-linux --target tn-native-engine-renderer-caches-test
-ctest --test-dir packages/runtime-native/build/tn-linux -R '^native_engine_renderer_pipeline_' --output-on-failure
+cmake -S . -B build/tn-engine-only -G Ninja -DCMAKE_BUILD_TYPE=Release -DTN_ENGINE_ONLY=ON -DMYSTRAL_USE_DAWN=ON
+cmake --build build/tn-engine-only --target tn-native-engine-renderer-caches-test --parallel "$(nproc)"
+ctest --test-dir build/tn-engine-only -R '^native_engine_renderer_pipeline_' --output-on-failure
+
+# The V8 host case row 2c names (`native_engine_v8_pose_history`, target `tn-native-engine-v8-test`) is NOT in this
+# directory. cmake/NativeEngineAdapters.cmake defines it, and CMakeLists.txt:1585-1588 includes that file only under
+# `TN_ENGINE_ONLY AND TN_ENGINE_PLAYER`, so it needs its own configure and a V8 dependency:
+#   node scripts/download-deps.mjs --only v8
+#   cmake -S . -B build/tn-engine-player -G Ninja -DCMAKE_BUILD_TYPE=Release -DTN_ENGINE_ONLY=ON \
+#         -DTN_ENGINE_PLAYER=ON -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF
+#   cmake --build build/tn-engine-player --target tn-native-engine-v8-test --parallel "$(nproc)"
+# No document gave that sequence; it is read from the two include guards. Nothing here ran it, so treat it as
+# unverified until a lane does. Rows 2c and 3c therefore do not share one build.
 ```
 
 From the repository root:
