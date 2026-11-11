@@ -72,6 +72,46 @@ Risks:
 
 ## Decisions
 
+- 2026-11-11 (Claude, PRD-872 palette lane, head `81901d260`, direction probes only, load 2.4-5.2): the three
+  Phase 2 palette levers were each measured before code, and each one stopped under the 0.3 ms ceiling rule. No
+  code landed.
+  - **Measurement.** A worker CPU profile of `?stress` against `?stress&noCrowd` (the Wasm function names come from a
+    symbol-map relink, mapped onto the plain binary by body hash) puts the crowd at 3.8 ms a frame. In Wasm:
+    `RenderDatabase::project` +0.94 (self +0.54), `Renderer::renderPrepared` +1.23, `RenderDatabase::batch` +0.29,
+    `SkinnedMesh::boneReachBounds` +0.22, `Skeleton::updateAfterWorldWalk` +0.21, the bone world walk +0.18 and
+    `writeBuffer` +0.08. In JS: animation and sync are about +0.9. A diagnostic build counted the crowd's
+    batch palette path. All 480,000 `writeRelative` calls refused, every one at `material->nodeMaterial`, because the
+    walkers draw a `MeshStandardNodeMaterial` with no node set. Of the skeleton updates, 84% had an unchanged pose,
+    because `updateRate: "auto"` holds them.
+  - **Lever 1 (skip an unchanged rig's relative slot): stopped.** The premise does not hold on the stress crowd: its
+    batch palette is world-space, so each walker's slot changes every frame. Step A (admit a node material with
+    no node set, and point each rig's shadow copy at its batch slot, so a rig has one palette a frame) built and ran
+    with the same frame. `batch` rose by 0.04 ms, and no other function moved. The skip itself does not pay. The palette
+    already costs one 4x4 product per bone per skeleton (0.21 ms for 120 skeletons). Detecting an unchanged pose on
+    the CPU folds 65x16 local doubles per skeleton (about 0.12 ms), because no version tells which bones the
+    animation wrote. Object3D `revision()` bumps on every world move, and the tracked-transform dirty byte is
+    never cleared. Net ceiling: about 0.05 ms, plus about 0.07 ms for a block-diff upload of `boneMatrices`. Step A
+    is kept outside the tree as `/tmp/claude-1000/p872-stepA-relative-shadow-slot.patch`. It becomes worth landing
+    only after the pose writer stamps what it wrote. Unreal's equivalent works this way: the component sends new bones
+    only when the anim tick marks render dynamic data dirty
+    (UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/SkeletalMeshComponent.cpp:1249-1250). A move alone
+    goes through `UpdatePrimitiveTransform` (UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/PrimitiveComponent.cpp:655-664).
+    Its bone matrices are component-space (UE 5.8.3: Engine/Source/Runtime/Engine/Private/SkeletalRender.cpp:524).
+    The vertex factory applies LocalToWorld after skinning
+    (UE 5.8.3: Engine/Shaders/Private/GpuSkinVertexFactory.ush:854-856). The skip in
+    `SendRenderDynamicData_Concurrent` keys on that dirty mark, not on a compare
+    (UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/SkinnedMeshComponent.cpp:1514).
+  - **Lever 2 (the GPU-joint path): not attempted.** `Renderer::prepareGpuJoints` refuses the crowd three ways:
+    the mannequin binds two meshes to one skeleton (`skeletons[skeleton] != 1`), its placement has three children
+    (it requires 2), and the material is a node material. Admitting it would remove the CPU palette work. It would
+    also remove the crowd from virtual shadow page groups, because `reproducible` refuses `gpuJoints` casters. Each
+    walker would then return to one shadow row per page, which is the cost FM8 removed. That is a design change
+    for its own PRD, not a cut.
+  - **Lever 3 (skip the bone world walk under an unchanged pose): stopped.** It is 0.18 ms for the whole crowd,
+    and the planner's `boneReachBounds` reads those world positions.
+  - **What is left.** The levers that the measurement names are `project`'s per-draw work for 480 skinned items
+    (self +0.54 ms), the plan's own +0.22 ms, and the JS animation and sync (+0.9 ms). None is a palette lever.
+
 - 2026-11-10 (Claude, PRD-872 session): the three acceptance numbers above are measured and none is met, and the
   measurement moves what the PRD should ask for. `planVirtualPages` is 0.44 ms with no crowd at all, so a 0.5 ms
   target with 240 animated rig meshes plans was never the planner's to reach; the frame's 9.0 ms is 5.2 ms of crowd
