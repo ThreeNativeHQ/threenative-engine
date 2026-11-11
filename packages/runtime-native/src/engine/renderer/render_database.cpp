@@ -766,6 +766,20 @@ bool RenderDatabase::inShadowFrustum(const Object3D& object, const Sphere* spher
     return false;
 }
 
+bool RenderDatabase::bonesOnly(const Object3D& bone) {
+    BoneChain& chain = boneChains_[&bone];
+    chain.seen = frame_;
+    if (chain.id == bone.id() && chain.version == bone.subtreeVersion()) return chain.bonesOnly;
+    const auto walk = [](const auto& self, const Object3D& node) -> bool {
+        if (typeid(node) != typeid(Bone)) return false;
+        for (const Object3D* child : node.children)
+            if (!self(self, *child)) return false;
+        return true;
+    };
+    chain = {bone.id(), bone.subtreeVersion(), frame_, walk(walk, bone)};
+    return chain.bonesOnly;
+}
+
 // A rig's shadow bound, cheapest first. A rig no shadow frustum's layers see never casts, and that
 // answer needs no bound. Its bind-pose sphere proves it inside one without reading a bone. Only when
 // that misses does the posed reach decide: O(bones) per frame, and it publishes a deferred pose and
@@ -893,7 +907,11 @@ void RenderDatabase::projectGroups(const Mesh& mesh, const Camera& camera, std::
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                              bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly, const Object3D* excluded) {
     if (&object == excluded) return;
+    ++projectVisits_;
     if (object.skipsGpuJointSubtree()) { ++Object3D::gpuProjectionVisits_; return; }
+    // A skeleton's bones are matrices for its rigs, not scene draws: Unreal keeps them in the mesh component
+    // (UE 5.8.3: Engine/Source/Runtime/Engine/Private/SkeletalRender.cpp:524) and the scene walks only primitives.
+    if (typeid(object) == typeid(Bone) && bonesOnly(object)) return;
     if (!object.visible()) {
         if (updateChildren)
             for (Object3D* child : object.children)
@@ -1767,6 +1785,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) +
                                " hemisphere lights; one is drawn");
     for (auto& r : flatRecords_) if (r.seen != frame_) r = Record{};
+    // A chain unseen for 256 renders leaves the cache: its bone may be gone, and the entry never reads its pointer.
+    if (frame_ % 256 == 0) std::erase_if(boneChains_, [&](const auto& entry) { return frame_ - entry.second.seen > 256; });
     // Objects that left the scene leave the database.
     // When every record in the map was seen this render, there is nothing to sweep.
     bool erased = false;

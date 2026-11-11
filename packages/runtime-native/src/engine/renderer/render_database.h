@@ -68,6 +68,8 @@ class RenderDatabase {
     [[nodiscard]] uint64_t sphereMeasures() const { return sphereMeasures_; }
     /** Scene matrix walks prepare() ran since construction; a reflection pass that reuses the frame runs none. */
     [[nodiscard]] uint64_t matrixWalks() const { return matrixWalks_; }
+    /** Nodes projection visited since construction; a chain of bones costs one visit (PRD-878). */
+    [[nodiscard]] uint64_t projectVisits() const { return projectVisits_; }
     /** What the last prepare drew, before sorting. */
     [[nodiscard]] const std::vector<DrawItem>& drawn() const { return items_; }
     /** The database behind a reflector's pass, null before its first frame. */
@@ -176,6 +178,7 @@ class RenderDatabase {
     uint64_t worldsFreshSince_ = 0;
     bool ranCallbacks_ = false;  // this prepare ran onBeforeRender hooks, which may have moved objects
     uint64_t matrixWalks_ = 0;
+    uint64_t projectVisits_ = 0;
     void renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
                            std::array<double, 4> clear);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
@@ -255,6 +258,11 @@ class RenderDatabase {
     bool boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere);
     bool inShadowFrustum(const Object3D& object, const Sphere* sphere);
     bool rigCastsShadow(Object3D& object);
+    // A bone whose subtree holds only bones draws nothing and lights nothing: projection stops there (PRD-878). Keyed by
+    // the bone's id and subtreeVersion(), which every add, remove, attach and destructor under it moves.
+    struct BoneChain { uint64_t id = 0, version = 0, seen = 0; bool bonesOnly = false; };
+    std::unordered_map<const Object3D*, BoneChain> boneChains_;
+    bool bonesOnly(const Object3D& bone);
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     // core's DECLINE_RESCAN_FRAMES: a settled projection decline re-judges on this cadence, not per
     // frame. Starts at the interval so the first batch always scans.
