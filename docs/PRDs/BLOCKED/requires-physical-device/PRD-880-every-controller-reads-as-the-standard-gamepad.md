@@ -1,6 +1,6 @@
 # PRD-880 — Every controller reads as the standard gamepad: Xbox, 8BitDo, Steam Deck
 
-**Status:** IN PROGRESS — Phases 1 to 3 land; the kit consumes them.
+**Status:** BLOCKED ON PHYSICAL DEVICE — every phase box and AC-1 are ticked and proven; what remains is the owner's read of one official Xbox pad, the 8BitDo Ultimate C 2.4G and a Steam Deck, which confirms the web table rows and the native reads.
 **Priority:** P2 — no box is done: an idle stick still drifts a character, a phantom pad still steals input, and a non-standard browser pad still fires the wrong action (AC-1 to AC-8).
 **Complexity:** 4 (MEDIUM)
 **Owner:** João (owner); an agent executes
