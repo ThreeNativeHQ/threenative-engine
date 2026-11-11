@@ -1487,6 +1487,26 @@
       "symbol": "debugFlag"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "the same name rule as `debugFlag`: `?quality=` on the web, `TN_DEBUG_QUALITY` on a native launch",
+        "a name in camelCase becomes UPPER_SNAKE: `debugValue(\"quality\")` reads `?quality=` or `TN_DEBUG_QUALITY`"
+      ],
+      "example": "import { debugValue } from \"@threenative/core\";\nconst tier = debugValue(\"quality\");",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function debugValue(name: string): string | undefined { … }",
+      "situations": [
+        "read a debug override whose value is not a boolean",
+        "override a quality tier or a mode for one run without changing the code"
+      ],
+      "summary": "Read the text a debug switch was given by the launch, on the same rule as `debugFlag`.",
+      "supersedes": [],
+      "symbol": "debugValue"
+    },
+    {
       "aliases": [
         "nearest target crosshair spawns",
         "third-person camera",
@@ -10326,6 +10346,31 @@
       "symbol": "useUiStateDuringStartup"
     },
     {
+      "symbol": "ctx.assets.memo",
+      "package": "@threenative/core",
+      "importPath": "src/assets.ts",
+      "kind": "function",
+      "signature": "ctx.assets.memo<T>(key: string, build: () => T | Promise<T>): Promise<T>",
+      "summary": "Returns what `build` returned the last time this build of the game ran, read back from disk, and calls `build` only when nothing is stored. Use it for seeded work that is the same every run: placement lists, painted sky pixels, terrain heights, a generated stage.",
+      "situations": [
+        "cache generated geometry between page loads",
+        "stop rebuilding the same generated stage on every page load",
+        "cache painted sky pixels or baked terrain heights between runs",
+        "keep seeded placement work the same every run without recomputing it",
+        "make a slow boot fast without shipping a baked asset"
+      ],
+      "aliases": [],
+      "example": "const { pixels } = await ctx.assets.memo(\"sky\", () => ({ pixels: paintSky() }));",
+      "constraints": [
+        "The value is named typed arrays; a map of names to typed arrays is what is stored.",
+        "On the dev server and on a native host `build` runs every time, and `TN_ASSET_MEMO` reports why: the cache is a build artifact, not a substitute for authoring.",
+        "A new build of the game regenerates: the key alone does not pin a value across a rebuild.",
+        "A game that drives a loader outside `defineGame` may call it whenever it likes; the reveal is not waited on."
+      ],
+      "overrides": ["TN_ASSET_MEMO reports why a run rebuilt instead of reading the store"],
+      "supersedes": []
+    },
+    {
       "symbol": "createStormAudio",
       "package": "template:rain",
       "importPath": "src/audio/storm.ts",
@@ -10549,6 +10594,76 @@
       "overrides": [],
       "supersedes": [],
       "aliases": []
+    },
+    {
+      "symbol": "ctx.after",
+      "package": "@threenative/core",
+      "importPath": "src/scene.ts",
+      "kind": "function",
+      "signature": "ctx.after(delay: number, callback: () => void): ScheduleHandle",
+      "summary": "Runs `callback` once, `delay` seconds of game time later, and returns a handle that cancels it. Game time stops while the game is paused, so a delayed beat does not fire behind a paused frame.",
+      "situations": [
+        "run a callback after a delay",
+        "schedule a one-shot timer that pauses with the game",
+        "do something a moment later without setTimeout",
+        "cancel a pending delayed action when a scene exits"
+      ],
+      "aliases": [],
+      "example": "const spawn = ctx.after(0.4, () => ctx.add(makeWave()));\nspawn(); // cancels",
+      "constraints": [
+        "The delay is game seconds: a paused game does not age it, and a slow frame does not skip it.",
+        "`setTimeout` keeps running while the game is paused and after the scene is gone; this does not.",
+        "Call the returned handle to cancel: a pending callback holds its scene's closure alive."
+      ],
+      "overrides": [],
+      "supersedes": []
+    },
+    {
+      "symbol": "ctx.beforeRender",
+      "package": "@threenative/core",
+      "importPath": "src/scene.ts",
+      "kind": "function",
+      "signature": "ctx.beforeRender(callback: () => void): () => void",
+      "summary": "Registers work that runs once per actual world render, after the frame's last fixed update and before the projection reconciles and the renderer draws. The last place to change a transform, a uniform or a camera before the frame is presented.",
+      "situations": [
+        "run a callback just before the frame renders",
+        "update a camera or a uniform after physics and before the draw",
+        "change a transform in the same frame it is seen",
+        "run per-render work that must not run on a loader-only frame"
+      ],
+      "aliases": [],
+      "example": "const stop = ctx.beforeRender(() => (material.uniforms.time.value = clock.elapsed));\n// later: stop();",
+      "constraints": [
+        "A held, loader-only frame has no world draw and dispatches nothing.",
+        "Runs after every fixed update in the frame, so a value it writes is the one drawn.",
+        "Returns an unregister function; call it when the object that needed it is gone."
+      ],
+      "overrides": [],
+      "supersedes": []
+    },
+    {
+      "symbol": "ctx.startup.progress",
+      "package": "@threenative/core",
+      "importPath": "src/scene.ts",
+      "kind": "function",
+      "signature": "ctx.startup.progress: number",
+      "summary": "How much of the start scene has loaded and presented, 0 to 1, for a loading cover's bar. It never falls: a loader whose pending work grows keeps the number it reached rather than jumping backwards.",
+      "situations": [
+        "boot progress bar",
+        "show how much of the start scene has loaded",
+        "loading screen percentage",
+        "a progress bar that never goes backwards",
+        "report startup progress while assets stream in"
+      ],
+      "aliases": [],
+      "example": "const width = `${Math.round(ctx.startup.progress * 100)}%`; // a cover the game draws on ctx.canvasLayer",
+      "constraints": [
+        "Never decreases, even when the loader is asked for more work mid-boot.",
+        "Reaches 1 only after the first world render has been presented, not when the last byte arrived.",
+        "A loading view the engine drew for you already reads it; this is for a cover the game draws itself."
+      ],
+      "overrides": [],
+      "supersedes": []
     },
     {
       "symbol": "bloom",

@@ -457,6 +457,15 @@ export type { IMergeByMaterialOptions } from "./merge-parts.js";
  */
 export { debugFlag } from "./debug.js";
 /**
+ * Read the text a debug switch was given by the launch, on the same rule as `debugFlag`.
+ * @situation read a debug override whose value is not a boolean
+ * @situation override a quality tier or a mode for one run without changing the code
+ * @constraint the same name rule as `debugFlag`: `?quality=` on the web, `TN_DEBUG_QUALITY` on a native launch
+ * @example import { debugValue } from "@threenative/core";
+ * const tier = debugValue("quality");
+ */
+export { debugValue } from "./debug.js";
+/**
  * Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
  * @situation expose a game object to a capture script or the console in dev builds
  * @constraint development builds only; a production build publishes nothing
