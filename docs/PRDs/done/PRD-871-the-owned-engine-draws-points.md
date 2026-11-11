@@ -1,6 +1,6 @@
 # PRD-871: The owned engine draws Points
 
-**Status:** COMPLETE — web and desktop rows pass against upstream three at 0 mismatched pixels; re-verified on this head (frame-diff 0.235, cost p95 0.7 ms)
+**Status:** COMPLETE — web and desktop rows pass against upstream three at 0 mismatched pixels; re-verified on this head (frame-diff 0.235, cost p95 0.7 ms). After merging `develop` the draw path is byte-identical (`src/engine/{renderer,scene,abi}`, the conformance scene, the catalog and the ABI header all unchanged; the merge only added the player's asset shim), and the affected gates were re-run on the merged tree: root typecheck 0, `points` ctest green, 111 conformance/parity contracts green, 54 surface/catalog specs green.
 **Priority:** P1 — a game that builds `THREE.Points` does not start on the default web engine (AC-1 open); the owner hit it on 2026-11-10.
 **Complexity:** 6 (MEDIUM) — the Wasm/C++ engine draw path (3), the TypeScript binding and catalog (1), conformance on web and native (2); risk override: none
 **Owner:** João
