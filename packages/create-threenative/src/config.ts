@@ -437,6 +437,9 @@ function resolveEsbuild(cwd: string): string | undefined {
   }
 }
 
+/** Distinguishes config loads that land in the same millisecond within one process. */
+let configLoadSequence = 0;
+
 async function importConfig(cwd: string): Promise<Record<string, unknown> | undefined> {
   const sourcePath = path.join(cwd, CONFIG_FILE);
   try {
@@ -503,7 +506,15 @@ async function importConfig(cwd: string): Promise<Record<string, unknown> | unde
     );
   }
 
-  const compiledPath = path.join(cwd, `.threenative.config.${process.pid}.${Date.now()}.mjs`);
+  // A counter as well as the timestamp: `vite` resolves its config more than once in one process
+  // (the plugin and the command, through `resolveConfig`'s `Promise.all`), and two loads in the same
+  // millisecond used to pick the same name, so the first one's `unlink` deleted the second one's file
+  // — a flaky `TN_CONFIG_LOAD_FAILED: Cannot find module ... .threenative.config.*.mjs`.
+  configLoadSequence += 1;
+  const compiledPath = path.join(
+    cwd,
+    `.threenative.config.${process.pid}.${Date.now()}.${configLoadSequence}.mjs`,
+  );
   try {
     await writeFile(compiledPath, code, "utf8");
   } catch (error) {

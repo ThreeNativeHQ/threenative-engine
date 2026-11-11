@@ -11,8 +11,8 @@ import type { IInputGamepad } from "./input.js";
  * GUID forms per device — a USB hidraw entry, a Bluetooth one, and one per host driver — and which
  * of them a browser reports is the device read still open on this PRD. What the rows do here is name
  * the slots, and for every form of these devices the sticks and the face/shoulder/start/back/stick
- * buttons are the same; the triggers are axes in the forms below and buttons in the USB hidraw form
- * (`:72`), which no browser reports.
+ * buttons are the same; the triggers are axes in the forms below and buttons in the
+ * `SDL_JOYSTICK_DINPUT` (Windows) form at `:72`, which no browser reports.
  *
  * The d-pad is deliberately not mapped: every row expresses it as a hat (`h0.1`), which arrives in a
  * browser as two extra axes in a device-specific order. No kit here binds the d-pad, so a row ships
@@ -55,8 +55,8 @@ interface IPadRow {
 const PAD_ROWS: readonly IPadRow[] = [
   {
     // 8BitDo Ultimate 2C Wireless, SDL_GameControllerDB:367 (`0300…1b30000001000000`), whose
-    // triggers are axes 5 and 4 — the form a browser reports, where the hidraw entry (:72) has them
-    // as buttons 8 and 9 and nothing on the web would ever see those.
+    // triggers are axes 5 and 4 — the form a browser reports, where the `SDL_JOYSTICK_DINPUT`
+    // entry (:72) has them as buttons 8 and 9 and nothing on the web would ever see those.
     product: 0x301b,
     vendor: 0x2dc8,
     map: "a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,paddle1:b2,paddle2:b5,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b3,y:b4,",

@@ -183,6 +183,13 @@ const browserGamepads: InputPlatformSource = () =>
 
 const DEFAULT_GAMEPAD_DEAD_ZONE = 0.2;
 
+/**
+ * How far past the dead zone a stick must travel to claim the input from another pad, on the
+ * rescaled axis: half travel. A worn stick jittering around the zone rescales to about `0.01` and
+ * never claims, while a deliberate move always does. A button press claims at any deflection.
+ */
+const GAMEPAD_CLAIM_STICK = 0.5;
+
 /** Stable names for pads a fixture reports with no `id`, so reporting allocates nothing per tick. */
 const PAD_SLOT_KEYS: readonly string[] = Array.from({ length: 16 }, (_, index) => `slot-${index}`);
 
@@ -252,8 +259,9 @@ export class InputMap {
   #activePadSlot = -1;
   #padSeen = new Set<string>();
   #padReports = new Map<string, GamepadNormalizer>();
-  /** Whether each slot reported input on the previous tick: a pad takes the slot on a rising edge. */
-  #padHadInput: boolean[] = [];
+  /** Each slot's pressed-button mask and stick travel last tick: a pad takes the slot on a claim. */
+  #padButtonMask: number[] = [];
+  #padStick: number[] = [];
   /** The `TN_GAMEPAD` key per slot, and the `id` it was built from, so a tick allocates no string. */
   #padKeys: Array<string | undefined> = [];
   #padKeyIds: Array<string | undefined> = [];
@@ -569,38 +577,47 @@ export class InputMap {
   #sampleGamepad(): void {
     const sources = this.#source();
     this.#padSeen.clear();
-    let risingSlot = -1;
+    let claimSlot = -1;
     let inputSlot = -1;
     let firstMapped = -1;
     let activeStillMapped = false;
     for (let index = 0; index < sources.length; index += 1) {
       const pad = sources[index];
       if (pad === null || pad === undefined) {
-        this.#padHadInput[index] = false;
+        this.#forgetPad(index);
         continue;
       }
       if (this.#readPad(pad, index) === "unmapped") {
-        this.#padHadInput[index] = false;
+        this.#forgetPad(index);
         continue;
       }
       if (firstMapped < 0) firstMapped = index;
-      const hasInput = this.#padHasInput();
-      // A rising edge, not a level: a worn stick resting past the dead zone reports input on every
-      // tick, so a level test would let it hold the slot forever once it got it — the phantom pad
-      // this PRD exists to remove. It rises once, and the next pad the player touches takes over.
-      if (hasInput && risingSlot < 0 && this.#padHadInput[index] !== true) risingSlot = index;
-      if (hasInput && inputSlot < 0) inputSlot = index;
+      // A claim, not a level and not a pad-wide edge: a worn stick resting past the dead zone reports
+      // input on every tick, and one jittering across the zone produces an edge every few ticks, so
+      // either test would let a phantom pad take the slot in the middle of a real move — the bug this
+      // PRD exists to remove. A wedge either presses a button that was up, or travels past half a
+      // stick; a resting stick does neither, and a button press reclaims even while the player is
+      // already holding their stick still.
+      const mask = this.#padButtonMaskNow();
+      const stick = this.#padStickNow();
+      const pressedNewButton = (mask & ~(this.#padButtonMask[index] ?? 0)) !== 0;
+      const travelled =
+        stick >= GAMEPAD_CLAIM_STICK && (this.#padStick[index] ?? 0) < GAMEPAD_CLAIM_STICK;
+      if ((pressedNewButton || travelled) && claimSlot < 0) claimSlot = index;
+      this.#padButtonMask[index] = mask;
+      this.#padStick[index] = stick;
+      if (this.#padHasInput() && inputSlot < 0) inputSlot = index;
       if (index === this.#activePadSlot) activeStillMapped = true;
-      this.#padHadInput[index] = hasInput;
     }
     for (const key of this.#padReports.keys())
       if (!this.#padSeen.has(key)) this.#padReports.delete(key);
-    // The last pad the player touched owns the input: a rising edge takes the slot, and with no edge
-    // the current pad keeps it — even while idle, so its releases are read. A pad that disappeared,
-    // or one the browser now reports unmapped, hands over to whichever pad is being held.
+    // The pad the player last claimed owns the input, and keeps it while idle so its releases are
+    // read. A pad that disappeared, or one the browser now reports unmapped, hands over to whichever
+    // pad is being held, then to the first pad there is. With nobody claiming, a gentle stick still
+    // works: the pad merely resting past the dead zone is read as long as no other pad owns the slot.
     const active =
-      risingSlot >= 0
-        ? risingSlot
+      claimSlot >= 0
+        ? claimSlot
         : activeStillMapped && this.#activePadSlot >= 0
           ? this.#activePadSlot
           : inputSlot >= 0
@@ -649,6 +666,29 @@ export class InputMap {
     applyStickDeadZone(this.#padScratch.axes, 0, 1, this.gamepadDeadZone);
     applyStickDeadZone(this.#padScratch.axes, 2, 3, this.gamepadDeadZone);
     return normalizer;
+  }
+
+  /** Clears one slot's claim history, so a pad that returns to it starts from rest. */
+  #forgetPad(index: number): void {
+    this.#padButtonMask[index] = 0;
+    this.#padStick[index] = 0;
+  }
+
+  /** The scratch pad's pressed buttons as a mask, so a new press is one integer compare. */
+  #padButtonMaskNow(): number {
+    let mask = 0;
+    const buttons = this.#padScratch.buttons;
+    for (let index = 0; index < buttons.length; index += 1)
+      if (buttons[index]?.pressed === true) mask |= 1 << index;
+    return mask;
+  }
+
+  /** The scratch pad's larger stick travel on the rescaled axes, which is what a claim compares. */
+  #padStickNow(): number {
+    const axes = this.#padScratch.axes;
+    const left = Math.sqrt((axes[0] ?? 0) ** 2 + (axes[1] ?? 0) ** 2);
+    const right = Math.sqrt((axes[2] ?? 0) ** 2 + (axes[3] ?? 0) ** 2);
+    return Math.max(left, right);
   }
 
   /** Whether the normalized pad in the scratch buffer has moved past its dead zone or pressed anything. */

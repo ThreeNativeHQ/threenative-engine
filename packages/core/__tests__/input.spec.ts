@@ -152,12 +152,18 @@ describe("InputMap", () => {
     input.tick();
     expect(input.vector("move").x).toBe(0);
 
-    // A pad that genuinely moves does take over: the drifter re-centres and comes back past the zone.
+    // A gentle re-cross of the zone does not steal a slot either: the drifter re-centres and comes
+    // back to 0.3, which rescales below the claim threshold.
     drifting.axes[0] = 0;
     input.tick();
     drifting.axes[0] = 0.3;
     input.tick();
-    expect(input.vector("move").x).toBeCloseTo(0.125);
+    expect(input.vector("move").x).toBe(0);
+
+    // A deliberate move does take over: the drifter pushes the stick past half travel.
+    drifting.axes[0] = 0.9;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.875);
     input.dispose();
   });
 
@@ -188,6 +194,36 @@ describe("InputMap", () => {
     playedButton.pressed = true;
     input.tick();
     expect(input.pressed("jump")).toBe(true);
+    input.dispose();
+  });
+
+  it("does not lose the slot to a stick jittering across the dead zone, and a button reclaims it", () => {
+    const target = new EventTarget();
+    const playedButton = { pressed: false };
+    const played = { axes: [-1, 0, 0, 0], buttons: [playedButton] };
+    const jittering = { axes: [0.19, 0, 0, 0], buttons: [{ pressed: false }] };
+    const input = new InputMap({ jump: { buttons: [0] } }, target, target, () => [
+      played,
+      jittering,
+    ]);
+
+    input.tick();
+    expect(input.vector("move").x).toBe(-1);
+
+    // A worn stick crossing 0.2 by hundredths is an edge every few ticks, and rescales to ~0.01:
+    // it must never take the slot from a pad that is being played.
+    for (const axis of [0.21, 0.19, 0.21, 0.22]) {
+      jittering.axes[0] = axis;
+      input.tick();
+      expect(input.vector("move").x).toBe(-1);
+    }
+
+    // The player is still holding the stick, so a pad-wide edge would never fire — a button press
+    // claims the slot on its own.
+    playedButton.pressed = true;
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    expect(input.vector("move").x).toBe(-1);
     input.dispose();
   });
 
