@@ -63,7 +63,8 @@ runs:
       working-directory: packages/runtime-native
       run: |
         set -euo pipefail
-        allowed_bytes=4194304
+        # 4 MiB + 64 KiB, the number scripts/check-budgets.ts holds (PRD-867); a spec keeps them equal.
+        allowed_bytes=4259840
         # The single-thread engine and the threaded one (PRD-752 phase 4), each under the budget.
         for name in tn-native-engine-web tn-native-engine-web-threads; do
           for file in "build/web/$name.mjs" "build/web/$name.wasm"; do
