@@ -77,7 +77,9 @@ export function syncVirtualShadowLods(): void {
   const chains = (globalThis as Record<symbol, unknown>)[
     Symbol.for("threenative.discreteLodChains")
   ] as WeakMap<object, { chain: { levels: object[]; errors: number[] } }> | undefined;
-  if (!chains) return;
+  // Core sets the version with its first registration and never unsets it: before that, every walk finds nothing.
+  // A scene that adds or removes objects each frame (the stress lab's `play`) walked every proxy for nothing (PRD-871).
+  if (!chains || (globalThis as Record<symbol, unknown>)[chainsVersionKey] === undefined) return;
   for (const node of installed) {
     if (node.disposed) {
       installed.delete(node);
