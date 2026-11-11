@@ -774,6 +774,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       Object.assign(seen, { blocks: hero.shieldBlocks, clanks, hits: hero.slashHits });
       warden.update(dt, hero);
       for (const dummy of dummies) dummy.update(dt);
+      // Everything that moves has moved, so the lock's bounds and reticle are this frame's pose.
+      lock.place(camera, dt);
       // A target falls inside Wren's slash, so count the fallen after everything has moved.
       for (const fallen of targets) {
         if (fallen.alive || counted.has(fallen)) continue;
