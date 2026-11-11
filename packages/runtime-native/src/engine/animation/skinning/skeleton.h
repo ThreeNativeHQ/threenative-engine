@@ -33,7 +33,7 @@ namespace tn::engine {
 class Bone : public Object3D {
   public:
     Bone() = default;
-    ~Bone() override { localTransformWritten(); prepareLocalTransformWrite(); if (publication_) --publicationCount_; }
+    ~Bone() override { localTransformWritten(); prepareLocalTransformWrite(); if (publication_) --publicationCount_; ++deathVersion_; }
     /** Bumps the pose version of every skeleton that holds this bone (PRD-878). */
     void localTransformWritten() override {
         for (const auto& version : poseVersions_) version->fetch_add(1, std::memory_order_relaxed);
@@ -66,6 +66,7 @@ class Bone : public Object3D {
     bool isBone = true;
   private:
     friend class Skeleton;
+    inline static uint64_t deathVersion_ = 0;
     std::vector<std::shared_ptr<std::atomic<uint64_t>>> poseVersions_;  // one per skeleton that holds this bone
     std::array<double, 10> deferredTRS_{}; // position, quaternion, scale; original mixer doubles
     inline static std::size_t publicationCount_ = 0;
@@ -127,7 +128,13 @@ class Skeleton {
     // GC collects it). A bone nothing else holds reads as three's `undefined` slot.
     std::vector<std::weak_ptr<Bone>> bones;
     // A lock is two atomic writes, on every bone of every rig every frame: the slot stays weak, its address is kept.
-    [[nodiscard]] Bone* bone(std::size_t i) const { return i < bones.size() && !bones[i].expired() ? boneAddresses_[i] : nullptr; }
+    [[nodiscard]] Bone* bone(std::size_t i) const {
+        if (i >= bones.size()) return nullptr;
+        if (boneDeathVersion_ != Bone::deathVersion_) refreshBoneLiveness();
+        return boneAddresses_[i];
+    }
+    /** Weak-control-block reads: steady bone access does none (PRD-878). */
+    mutable uint64_t boneLivenessChecks = 0;
     std::vector<Matrix4> boneInverses;
     /** `bones.size() * 16` floats, column-major per slot, three's flat `boneMatrices`. */
     std::vector<float> boneMatrices;
@@ -150,7 +157,9 @@ class Skeleton {
     bool paletteDue_ = false;
     uint64_t paletteFirstEvaluation_ = 0;
     std::shared_ptr<std::atomic<uint64_t>> poseVersion_ = std::make_shared<std::atomic<uint64_t>>(1);
-    std::vector<Bone*> boneAddresses_;  // `bones` is set once, by the constructor
+    mutable std::vector<Bone*> boneAddresses_;  // `bones` is set once, by the constructor
+    mutable uint64_t boneDeathVersion_ = Bone::deathVersion_;
+    void refreshBoneLiveness() const;
     std::vector<PlanPose> planPoses_;
     uint64_t planStamp_ = 0;
     std::vector<Vector3> centers_;

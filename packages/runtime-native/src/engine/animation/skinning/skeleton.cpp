@@ -108,6 +108,15 @@ Skeleton::Skeleton(std::vector<std::shared_ptr<Bone>> bones, std::vector<Matrix4
     init();
 }
 
+void Skeleton::refreshBoneLiveness() const {
+    // Bones die on the scene thread, as hierarchy edits do. Poll weak owners once after a death, not per bone read.
+    for (std::size_t i = 0; i < bones.size(); ++i) {
+        ++boneLivenessChecks;
+        if (bones[i].expired()) boneAddresses_[i] = nullptr;
+    }
+    boneDeathVersion_ = Bone::deathVersion_;
+}
+
 void Skeleton::init() {
     revokeGpuSkinning();
     markPoseChanged();

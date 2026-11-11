@@ -217,6 +217,35 @@ void raycastPosedSkin() {
 // with nothing else: a moved root, a world walk with no write and a reparented mesh leave it where it was
 // (UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/SkeletalMeshComponent.cpp:1249-1250 marks the
 // render data dirty from the anim tick, not from a compare).
+void boneLiveness() {
+    auto live = std::make_shared<Bone>();
+    auto dying = std::make_shared<Bone>();
+    Skeleton skeleton({live, dying, nullptr, dying});
+    Skeleton shared({dying});
+    const auto steady = skeleton.boneLivenessChecks;
+    for (int frame = 0; frame < 3; ++frame) {
+        CHECK(skeleton.bone(0) == live.get());
+        CHECK(skeleton.bone(1) == dying.get());
+        CHECK(skeleton.bone(2) == nullptr);
+        CHECK(skeleton.bone(3) == dying.get());
+        CHECK(skeleton.bone(4) == nullptr);
+    }
+    CHECK(skeleton.boneLivenessChecks == steady);
+    dying.reset();
+    CHECK(skeleton.bone(0) == live.get());
+    CHECK(skeleton.bone(1) == nullptr);
+    CHECK(skeleton.bone(3) == nullptr);
+    CHECK(shared.bone(0) == nullptr);
+    const auto checked = skeleton.boneLivenessChecks;
+    CHECK(checked > steady);
+    for (int frame = 0; frame < 3; ++frame) CHECK(skeleton.bone(1) == nullptr);
+    CHECK(skeleton.boneLivenessChecks == checked);
+    // A bone in a skeleton that goes first has no owner callback to a freed skeleton.
+    { Skeleton temporary({live}); }
+    live.reset();
+    CHECK(skeleton.bone(0) == nullptr);
+}
+
 void poseVersion() {
     auto root = std::make_shared<Object3D>();
     auto hips = std::make_shared<Bone>(), head = std::make_shared<Bone>();
@@ -258,5 +287,5 @@ void poseVersion() {
 
 } // namespace
 
-TN_TEST_MAIN({"skeleton_pose", skeletonPose}, {"clone_bounds", cloneBounds}, {"clone_lights", cloneLights},
+TN_TEST_MAIN({"bone_liveness", boneLiveness}, {"skeleton_pose", skeletonPose}, {"clone_bounds", cloneBounds}, {"clone_lights", cloneLights},
              {"raycast_posed_skin", raycastPosedSkin}, {"pose_version", poseVersion})
