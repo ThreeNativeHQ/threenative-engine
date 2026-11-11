@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
+#include "engine/renderer/shadows/virtual/caster_plan.h"
 #include "engine/shader/standard.h"
 #include "engine/shader/package.h"
 #include "engine/abi/bindings.h"
@@ -341,14 +342,14 @@ void policies() {
     // content change as any other count change: its owner names the region, the atlas redraws nothing.
     {
         auto told = PageAtlas::create(options, error);
-        CasterState batch; batch.key = 9; batch.automatic = false; batch.signature = "1:1:40";
+        CasterState batch; batch.key = 9; batch.automatic = false; batch.signature = {1, 1, 40};
         batch.bounds.set(Vector3(-20, 0, -20), Vector3(20, 4, 20));
         told->updateCasters({batch});
         for (int frame = 0; frame < 8; ++frame) told->update(eye, sun);
         CHECK(told->update(eye, sun).empty());
         told->updateCasters({}, {9});
         CHECK(told->update(eye, sun).empty());
-        batch.signature = "1:2:12";
+        batch.signature = {1, 2, 12};
         told->updateCasters({batch});
         CHECK(told->update(eye, sun).empty() && told->update(eye, sun).empty());
         // A caster that really leaves (not reported empty) still clears its pages.
@@ -921,4 +922,49 @@ void focusPoint() {
     CHECK(refused);
 }
 
-TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+// PRD-872: a caster whose inputs did not move costs a comparison, not a rebuild. The plan counts what it rebuilt, so a
+// frame of static casters reads 0 and a frame with one mover reads 1.
+void casterPlanRebuildsOnlyWhatMoved() {
+    CasterPlan plan;
+    const std::array<double, 16> world{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 4, 5, 6, 1};
+    std::array<double, 16> moved = world; moved[12] += 1;
+    CasterInputs inputs;
+    inputs.positions = &plan; inputs.positionsVersion = 4; inputs.instanceCount = 7; inputs.layers = 1;
+    inputs.cache = &plan; inputs.casts = true;
+    plan.begin(3);
+    for (std::size_t i = 0; i < 3; ++i) { bool stale = false; plan.slot(i, world, inputs, stale); CHECK(stale); }
+    CHECK(plan.rebuilds() == 3);
+    // Nothing moved: no rebuild, and the record still carries the world matrix it was built with.
+    plan.begin(3);
+    for (std::size_t i = 0; i < 3; ++i) {
+        bool stale = true; const PlannedCaster& caster = plan.slot(i, world, inputs, stale);
+        CHECK(!stale);
+        CHECK(caster.state.world.elements == world);
+    }
+    CHECK(plan.rebuilds() == 0);
+    // One mover rebuilds alone.
+    plan.begin(3);
+    { bool stale = false; plan.slot(1, moved, inputs, stale); CHECK(stale); }
+    { bool stale = true; plan.slot(0, world, inputs, stale); CHECK(!stale); }
+    CHECK(plan.rebuilds() == 1);
+    // Each input the record is derived from invalidates it, and only it.
+    for (int change = 0; change < 4; ++change) {
+        CasterInputs next = inputs;
+        if (change == 0) next.positionsVersion = 5;
+        else if (change == 1) next.instanceCount = 8;
+        else if (change == 2) next.casts = false;
+        else next.cache = nullptr;
+        bool stale = false; plan.slot(0, world, next, stale); CHECK(stale);
+        bool again = true; plan.slot(0, world, next, again); CHECK(!again);
+    }
+    // A re-registered control set rebuilds every caster that reads it; the same set again does not.
+    AtlasControl control; control.tracked.insert(11);
+    CasterInputs tracked = inputs; tracked.controlEpoch = controlStamp(control);
+    plan.begin(2);
+    for (std::size_t i = 0; i < 2; ++i) { bool stale = false; plan.slot(i, world, tracked, stale); CHECK(stale); }
+    CHECK(plan.rebuilds() == 2);
+    plan.begin(2);
+    { bool stale = true; plan.slot(0, world, tracked, stale); CHECK(!stale); }
+}
+
+TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung}, {"caster_plan", casterPlanRebuildsOnlyWhatMoved})

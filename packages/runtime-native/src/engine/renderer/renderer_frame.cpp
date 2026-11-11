@@ -122,8 +122,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
     // One stamp per pass: rigs that share a skeleton read its bones once (PRD-871).
-    const uint64_t planStamp = virtualShadows_.empty() ? 0 : Skeleton::nextPlanStamp();
-    for (auto& [i, shadow] : virtualShadows_) {
+    const uint64_t planStamp = virtualShadows_.empty() ? 0 : Skeleton::nextPlanStamp();    for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
@@ -133,8 +132,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // caster into each, and two descents per draw to rebuild the states.
         auto& record = casterRecords_[i];
         record.assign(items.size(), {});
+        // A caster whose inputs did not move keeps last frame's bounds and state (PRD-872). `play` re-derives 1,145
+        // casters every frame otherwise, and 902 of them are static: the plan is a comparison for those, not a rebuild.
+        auto& plan = casterPlan_[i];
+        plan.begin(items.size());
+        const auto& planControl = *shadow.atlas.options().control;
+        const uint64_t controlEpoch = controlStamp(planControl);
         std::vector<Box3> depthCasters, receivers;
         std::vector<uint64_t> emptied;
+        std::vector<shadows::CasterState> states;
+        std::vector<Box3> rungChanged;
         for (const DrawItem& item : items) {
             if ((!item.castShadow && !item.receiveShadow) || !item.positions || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
             if (item.instanceCount == 0) {
@@ -145,12 +152,49 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.castShadow && shadow.atlas.options().autoDepth && !displacedByGeometryBox(item) &&
                 (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
-            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item, planStamp);
-            if (item.castShadow)  // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep
-                record[std::size_t(&item - items.data())] = CasterRecord{bounds, diameter, true,
-                    item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr};
-            depthCasters.push_back(bounds);
-            if (item.receiveShadow) receivers.push_back(bounds);
+            const auto index = std::size_t(&item - items.data());
+            shadows::CasterInputs inputs;
+            inputs.positions = item.positions;
+            inputs.positionsVersion = item.positions->version();
+            inputs.instances = item.instanceMatrices;
+            inputs.instanceVersion = item.instanceMatrices ? item.instanceMatrices->version() : 0;
+            inputs.instanceCount = item.instanceCount;
+            inputs.layers = item.layers;
+            inputs.cache = item.cache;
+            inputs.casts = item.castShadow;
+            inputs.controlEpoch = controlEpoch;
+            bool stale = false;
+            shadows::PlannedCaster& caster = plan.slot(index, item.matrixWorld, inputs, stale);
+            if (stale) {
+                const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item, planStamp);
+                caster.bounds = bounds;
+                caster.diameter = diameter;
+                caster.casts = item.castShadow;
+                // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep.
+                caster.instanceBoxes = item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr;
+                shadows::CasterState& state = caster.state;
+                state.key = item.key; state.bounds = bounds;
+                state.signature = shadows::CasterSignature{item.positions->version(), inputs.instanceVersion, item.instanceCount};
+                state.deforming = item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry;
+                state.tracked = (item.layers & (1u << 29)) != 0;
+                state.automatic = (item.layers & 1u) != 0;
+                state.pinned = false;
+                // The parent chain is only walked when a control set says something about casters at all.
+                if (!planControl.tracked.empty() || !planControl.pinned.empty())
+                    for (auto* object = item.shadowObject; object; object = object->parent) {
+                        state.tracked |= planControl.tracked.count(object->id()) != 0;
+                        state.pinned |= planControl.pinned.count(object->id()) != 0;
+                    }
+            }
+            if (caster.casts) {
+                record[index] = CasterRecord{caster.bounds, caster.diameter, true, caster.instanceBoxes};
+                const auto& lodChanged = planControl.lodChanged;
+                if (!lodChanged.empty() && item.shadowObject && lodChanged.count(item.shadowObject->id()))
+                    rungChanged.push_back(caster.bounds);
+                states.push_back(caster.state);
+            }
+            depthCasters.push_back(caster.bounds);
+            if (item.receiveShadow) receivers.push_back(caster.bounds);
         }
         const auto& direction = lights.direct[i].direction;
         const Vector3 towards(direction[0], direction[1], direction[2]);
@@ -160,29 +204,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (!std::isfinite(radius) || radius < 0 ||
             (!lights.direct[i].shadow->sourceAngleFilter && radius + 0.5 > shadow.atlas.options().border))
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
-        std::vector<shadows::CasterState> states;
-        std::vector<Box3> rungChanged;
-        for (const DrawItem& item : items) {
-            const CasterRecord& caster = record[std::size_t(&item - items.data())];
-            if (!caster.casts) continue;
-            const auto& lodChanged = shadow.atlas.options().control->lodChanged;
-            if (!lodChanged.empty() && item.shadowObject && lodChanged.count(item.shadowObject->id()))
-                rungChanged.push_back(caster.bounds);
-            shadows::CasterState state;
-            state.key = item.key; state.bounds = caster.bounds;
-            state.world.elements = item.matrixWorld;
-            state.signature = std::to_string(item.positions->version());
-            if (item.instanceMatrices) state.signature += ":" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
-            state.deforming = item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry;
-            state.tracked = (item.layers & (1u << 29)) != 0;
-            state.automatic = (item.layers & 1u) != 0;
-            const auto& control = *shadow.atlas.options().control;
-            for (auto* object = item.shadowObject; object; object = object->parent) {
-                state.tracked |= control.tracked.count(object->id()) != 0;
-                state.pinned |= control.pinned.count(object->id()) != 0;
-            }
-            states.push_back(std::move(state));
-        }
         auto& control = *shadow.atlas.options().control;
         if (control.invalidateAll) { shadow.atlas.invalidateAll(); control.invalidateAll = false; }
         for (const auto& region : control.regions) shadow.atlas.invalidate(region);

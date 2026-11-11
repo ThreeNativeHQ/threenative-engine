@@ -29,6 +29,7 @@
 #include "engine/renderer/render_features.h"
 #include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
+#include "engine/renderer/shadows/virtual/caster_plan.h"
 #include "engine/shader/output.h"
 #include "engine/shader/package.h"
 #include "engine/shader/standard.h"
@@ -1307,6 +1308,8 @@ private:
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     /** FS11: `virtualShadows_`' caster bookkeeping, indexed by the draw's position in `items`. */
     std::map<std::size_t, std::vector<CasterRecord>> casterRecords_;
+    /** Each shadow light's caster records kept across frames: a caster whose inputs did not move is not rebuilt (PRD-872). */
+    std::map<std::size_t, shadows::CasterPlan> casterPlan_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
     std::map<std::size_t, uint64_t> mapSignatures_;
     /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */

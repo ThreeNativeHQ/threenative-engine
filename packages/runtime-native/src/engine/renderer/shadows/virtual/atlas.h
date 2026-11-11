@@ -75,11 +75,19 @@ struct AtlasPage {
     double lowU = 0, highU = 0, lowV = 0, highV = 0;
 };
 
+/** What a caster's geometry last was, as the virtual shadow planner compares it: a version triple rather than a
+ *  string, because every caster of a scene is compared every frame (PRD-872: the `play` frame built 1,145 of them). */
+struct CasterSignature {
+    uint64_t positions = 0, instances = 0;
+    uint32_t count = 0;
+    bool operator==(const CasterSignature&) const = default;
+};
+
 struct CasterState {
     uint64_t key = 0;
     Box3 bounds;
     Matrix4 world;
-    std::string signature;
+    CasterSignature signature;
     bool deforming = false, tracked = false, pinned = false, automatic = true;
 };
 
@@ -163,8 +171,11 @@ private:
         int quiet = 0;
         bool moving = false;
         uint32_t settling = 0;
+        /** The last frame this caster was listed: one pass erases the ones the frame before did not (PRD-872). */
+        uint64_t present = 0;
     };
-    std::map<uint64_t, Motion> motion_;
+    std::unordered_map<uint64_t, Motion> motion_;
+    uint64_t presentEpoch_ = 0;
     void writeTable();
     AtlasOptions options_;
     std::optional<DirectionalClipmap> clipmap_;
