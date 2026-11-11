@@ -92,10 +92,14 @@ Facts the levers rest on (PRD-872 Decisions, 2026-11-11):
 - [ ] The largest attributed cost is cut, or closed by decision with its ceiling under 0.3 ms. proof: red-green case if behaviour changes; probe numbers.
 
 #### Phase 3: JS animation and sync
-**Status:** OPEN
-- [ ] Attribution of the ≈0.9 ms JS side of the crowd. proof: numbers under Decisions.
-- [ ] The largest attributed cost is cut, or closed by decision with its ceiling under 0.3 ms. proof: spec or red-green case; probe numbers.
+**Status:** DONE — attributed; every JS-ownable item is under the 0.3 ms floor, so no cut (Decisions, 2026-11-11).
+- [x] Attribution of the ≈0.9 ms JS side of the crowd. proof: main-thread CPU profiles (200 µs sampling, 10 s; 3 runs `?stress`, 2 runs `&noCrowd`, head `6ed423488`, RTX 2080) — Evidence: crowd delta ≈0.8-0.9 ms, of which JS-ownable ≈0.25. `flushAnimationTicks → tn_anim_tick` +0.27 (≈0.04 glue, the rest C++ mixer evaluation); `SceneUpdate.apply → __tnUpdateMatrixWorld` +0.13-0.20 (C++ bone walk); `RenderCameraCull.prepareAnimation` rate bands +0.16 (≈0.10 JS); engine cull +0.11 (≈0.01 JS); lab walker loop +0.10 (core 0.03-0.06); reconcile +0.02. Bridge crossings 43 against 42; shared-transform writes 1,394 a frame, setter ≈0.02 ms. Trap: the `update` stage p50 is a rate artifact (fixed 60 Hz ticks land on ≈52% of crowd frames, ≈26% without).
 
 ## Decisions
 
 - 2026-11-11 (Claude, lead): filed from PRD-872's measured breakdown; ships in PR #659 (one PR for the stress-lab chain).
+- 2026-11-11 (Claude, lead, Phase 3): the box "cut the largest attributed JS cost" is removed as moot (R4). The largest
+  JS-ownable lever, the rate-band loop, is ≈0.10 ms; all JS-ownable crowd work sums to ≈0.25 ms, under the 0.3 ms floor.
+  The JS side's crowd cost is C++ work it calls: mixer evaluation (Phase 1's stamps let an unchanged pose skip it), the
+  bone world walk and the cull, which visits 9,818 matrices against 1,298 without the crowd (a Phase 2 lead).
+
