@@ -117,7 +117,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
     shared: "3dfee3757561db8b2824b23d6131e9b7308bf13998e7a4bf7b6b6e3adf6a7f53",
-    kit: "cbb3b3b48378826ebb54f260103befba67de3a9ad7008bd344a99008e7814e46",
+    kit: "e5be1db849ffcfa5cea0ff160aed7d7e2caa14692e9d9595dccfd3dafa22cadc",
   },
   adventure: {
     shared: "c05c558a93c9297b490fd7d40b9340fb2fa639cbf631026df3ef86c2d14fb81b",
@@ -157,7 +157,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   runner: {
     shared: "e522646cf7dc0567c1496c1abda755fb13d9bdba62d98e18cc3e1c68264db3af",
-    kit: "4130106e37912ee13d8a44d19400b501e785cde9c49bb609f2f8b92fc55f198d",
+    kit: "fdf636a0ad108d7dcdc23e258a0562f42e30b1b4ef6d036c8722796ba486d1d8",
   },
   sailing: {
     shared: "e230d0ea5ae2e458c32f0ed0aa31e5c7a0bce6771adf41293623489611acd41c",
@@ -173,11 +173,11 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   starter: {
     shared: "45287923ee472856d7fee5781bf527f953789cb893b951151eaa3d64c1ac539b",
-    kit: "ad561025f388f81e11f88cd3d3d19e3f5ecf769e330d627ed342f571ac928aff",
+    kit: "22aae8c373d34c19243b64e954a6fac2e16246ae0d0bae0b141af3093f3d535e",
   },
   "tower-defense": {
     shared: "9d9bbb42f8a7f0845bf827030f6978aa4feae5ac455e3739ee612e1d18c5bf9b",
-    kit: "27593ab909936d5f2054b34b06fe1d381cc668a59da5d15bf219dabf5bfdae3c",
+    kit: "97c10ae58e66be10a1a0a2d582a56ec72ce052c5bbf261a156e97f31b3b45c64",
   },
   // scaffold-pin:end
 };
