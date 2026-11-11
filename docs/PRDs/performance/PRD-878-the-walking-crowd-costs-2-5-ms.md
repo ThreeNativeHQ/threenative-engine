@@ -87,9 +87,10 @@ Facts the levers rest on (PRD-872 Decisions, 2026-11-11):
 - [ ] The VSM plan keeps an unchanged-pose rig as a rigid mover. proof: red-green `native_engine_vsm_caster_plan` case; `planVirtualPages` on `?stress`.
 
 #### Phase 2: Per-draw cost of skinned items
-**Status:** OPEN
-- [ ] Attribution of `renderPrepared` +1.23 and `project` self +0.54 for skinned items, by sub-timer then same-binary A/B. proof: numbers under Decisions.
-- [ ] The largest attributed cost is cut, or closed by decision with its ceiling under 0.3 ms. proof: red-green case if behaviour changes; probe numbers.
+**Status:** IN PROGRESS — attributed; the bone-chain cut landed (`09b844cd5`); the skinned item build and bone memory work is open.
+- [x] Attribution of `renderPrepared` +1.23 and `project` self +0.54 for skinned items, by sub-timer then same-binary A/B. proof: numbers under Decisions — Evidence (2026-11-11, lane prd878-draw, lean steady_clock marks on the main view, 100-frame block means, RTX 2080, load 5-9): `project` +1.11 ms with the crowd (7,800 bone visits a frame: 0.26 by A/B; skinned item build, skeleton update and bone cache misses ≈0.85 by subtraction); `renderPrepared` +1.06 (VSM plan +0.42, palette place copy/hash +0.22, shadow build +0.19, uploads +0.16, other +0.06). Trap: per-item clock scopes cost ≈0.5 µs a read in threads Wasm and inflate scoped items 2-3x.
+- [x] The largest attributed cost is cut, or closed by decision with its ceiling under 0.3 ms. proof: red-green case if behaviour changes; probe numbers — Evidence: `09b844cd5` — a bone whose subtree holds only bones ends `RenderDatabase::project` (cached by id and `subtreeVersion()`; UE 5.8.3: Engine/Source/Runtime/Engine/Private/SkeletalRender.cpp:524 keeps bones in the component's transform array). Red-green `native_engine_bone_chains_are_not_projected` (35 visits → 4; a mesh and a light held by a bone still appear and leave on time). Same-binary A/B, skip toggled every 100 frames, 3 runs: `project` 1.44/1.60/1.49 → 1.18/1.32/1.22 ms (−0.26). Full native-engine label 677/677. No pixel can change (a bone-only subtree draws and lights nothing).
+- [ ] The remaining skinned cost in `project` (≈0.85 ms: skinned item build, skeleton update, bone cache misses) and the shadow build (+0.19) are attributed per item and cut, largest first. proof: same-binary A/B per cut and a red-green case for each behaviour change.
 
 #### Phase 3: JS animation and sync
 **Status:** OPEN — attributed; reopened by the owner on 2026-11-11: per-frame engine JS that is not game scripting moves into C++ (Decisions).
@@ -109,4 +110,6 @@ Facts the levers rest on (PRD-872 Decisions, 2026-11-11):
   per-frame engine work runs in the C++ engine that serves native and web Wasm, so the JS around engine calls
   (`jsBefore` 0.66 ms and `engineJs` 0.78 ms a frame even with `&noCrowd`) shrinks to game code and single calls.
   Lead's note: the rate bands alone are ≈0.10 ms of JS; the payoff is the whole inventory.
+- 2026-11-11 (owner, João: "fix whatever is left dont leave anything behind"): the per-draw work below the 0.3 ms
+  floor stays in scope; Phase 2 gains a third box for the remaining ≈0.85 ms in `project` and the shadow build.
 
