@@ -50,9 +50,9 @@ flowchart LR
     M -- empty, known id --> TBL[vendor:product table] --> STD
     M -- empty, unknown --> WARN[TN_GAMEPAD unmapped<br/>pad ignored]
   end
-  STD[W3C standard pad] --> ACT[active pad: last with input]
-  ACT --> DZ[radial dead zone<br/>gamepadDeadZone]
-  DZ --> IM[InputMap: pressed / vector / axis]
+  STD[W3C standard pad] --> DZ[radial dead zone<br/>gamepadDeadZone]
+  DZ --> ACT[active pad: last claimed<br/>button or half tilt]
+  ACT --> IM[InputMap: pressed / vector / axis]
 ```
 
 Conventions (on by default, each with a named override on the same object, reported):

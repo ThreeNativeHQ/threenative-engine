@@ -229,9 +229,10 @@ describe("InputMap", () => {
 
   it("lets a pad that connects into a reused slot claim on the press it already holds", () => {
     const target = new EventTarget();
-    // Slot 1 claims with button 0, the source shrinks for a tick, then a different pad occupies slot 1
-    // already holding button 0. Unless the emptied slot forgets its claim history, the new pad looks
-    // like it was already down and never claims — and an owned, idle slot 0 keeps the input.
+    // Both pads press a new button, so the lowest slot claims and then releases into idle ownership;
+    // the source shrinks for a tick, and a different pad then occupies slot 1 already holding button 0.
+    // Unless the emptied slot forgets its claim history, the new pad looks like it was already down and
+    // never claims — and the owned, idle slot 0 keeps the input.
     const ownerButton = { pressed: true };
     const owner = { axes: [0, 0, 0, 0], buttons: [{ pressed: false }, ownerButton] };
     const firstButton = { pressed: true };
