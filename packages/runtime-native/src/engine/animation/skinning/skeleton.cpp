@@ -196,6 +196,24 @@ Vector3& SkinnedMesh::getVertexPosition(uint64_t index, Vector3& target) const {
     return applyBoneTransform(index, target);
 }
 
+// The largest stretch of a matrix's linear part: the longest axis when the axes are orthogonal,
+// else the Frobenius norm (a sheared bone chain can stretch past its longest axis).
+static double linearStretch(const Matrix4& m) {
+    const auto& e = m.elements;
+    const double axes[3][3] = {{e[0], e[1], e[2]}, {e[4], e[5], e[6]}, {e[8], e[9], e[10]}};
+    double lengths[3], frobenius = 0;
+    for (int a = 0; a < 3; ++a) {
+        lengths[a] = std::sqrt(axes[a][0] * axes[a][0] + axes[a][1] * axes[a][1] + axes[a][2] * axes[a][2]);
+        frobenius += lengths[a] * lengths[a];
+    }
+    for (int a = 0; a < 3; ++a)
+        for (int b = a + 1; b < 3; ++b) {
+            const double dot = axes[a][0] * axes[b][0] + axes[a][1] * axes[b][1] + axes[a][2] * axes[b][2];
+            if (std::abs(dot) > 1e-6 * lengths[a] * lengths[b]) return std::sqrt(frobenius);
+        }
+    return std::max({lengths[0], lengths[1], lengths[2]});
+}
+
 bool SkinnedMesh::boneReachBounds(Box3& target) const {
     if (!skeleton || !geometry || !geometry->attributes.count("position") || !geometry->attributes.count("skinIndex") ||
         !geometry->attributes.count("skinWeight") || skeleton->boneInverses.size() < skeleton->bones.size())
@@ -235,39 +253,25 @@ bool SkinnedMesh::boneReachBounds(Box3& target) const {
             }
             if (std::abs(sum - 1) > 1e-3) boneReachHolds_ = false;
         }
+        // Each reach carries its inverse bind matrix's stretch, so a frame reads only the bone's own: the
+        // product bounds the stretch of bone x inverse, exactly for a rotation with uniform scale, and spares
+        // a 4x4 multiply per bone per frame (PRD-871: 0.87 ms a frame for the stress lab's 120-rig crowd).
+        for (std::size_t j = 0; j < bones; ++j)
+            if (boneReach_[j] >= 0) boneReach_[j] *= linearStretch(skeleton->boneInverses[j]);
     }
     if (!boneReachHolds_) return false;
     // A skinned vertex is a weighted mean of its bones' rigid images, and each image lies within the
     // bone's reach (times the bone's scale) of the bone's posed position: the spheres' box holds it.
-    // The largest stretch of a matrix's linear part: the longest axis when the axes are orthogonal,
-    // else the Frobenius norm (a sheared bone chain can stretch past its longest axis).
-    const auto stretch = [](const Matrix4& m) {
-        const auto& e = m.elements;
-        const double axes[3][3] = {{e[0], e[1], e[2]}, {e[4], e[5], e[6]}, {e[8], e[9], e[10]}};
-        double lengths[3], frobenius = 0;
-        for (int a = 0; a < 3; ++a) {
-            lengths[a] = std::sqrt(axes[a][0] * axes[a][0] + axes[a][1] * axes[a][1] + axes[a][2] * axes[a][2]);
-            frobenius += lengths[a] * lengths[a];
-        }
-        for (int a = 0; a < 3; ++a)
-            for (int b = a + 1; b < 3; ++b) {
-                const double dot = axes[a][0] * axes[b][0] + axes[a][1] * axes[b][1] + axes[a][2] * axes[b][2];
-                if (std::abs(dot) > 1e-6 * lengths[a] * lengths[b]) return std::sqrt(frobenius);
-            }
-        return std::max({lengths[0], lengths[1], lengths[2]});
-    };
     target.makeEmpty();
-    const double meshScale = stretch(bindMatrixInverse);
-    Matrix4 matrix;
+    const double meshScale = linearStretch(bindMatrixInverse);
     Vector3 center;
     for (std::size_t j = 0; j < bones; ++j) {
         if (boneReach_[j] < 0) continue;
         Bone* bone = skeleton->bone(j);
         if (!bone) return false;
         bone->materializeWorldTransformIfPending();
-        matrix.multiplyMatrices(bone->matrixWorld, skeleton->boneInverses[j]);
         center.setFromMatrixPosition(bone->matrixWorld).applyMatrix4(bindMatrixInverse);
-        const double radius = boneReach_[j] * stretch(matrix) * meshScale;
+        const double radius = boneReach_[j] * linearStretch(bone->matrixWorld) * meshScale;
         target.min.x = std::min(target.min.x, center.x - radius);
         target.min.y = std::min(target.min.y, center.y - radius);
         target.min.z = std::min(target.min.z, center.z - radius);
