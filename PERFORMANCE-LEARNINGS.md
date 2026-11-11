@@ -181,6 +181,15 @@ Method traps found, each one fixed in the tool unless it says open:
 - Result (same build, the old walk forced by setting `discreteLodChainsVersion` to 0 in an init script, 3 pairs,
   load 7-20): 42.5/35.2/45.6 → 57.8/59.5/54.2 fps, frame p50 27.1/30.9/15.7 → 16.0/17.3/12.6 ms. `update` fell as well
   (less garbage from the converter). No pixel can change: with no chain registered, the walk dispatched nothing.
+- Fair window (desktop, `play-lod-walk-c`, rows #364-#365, uncapped ABBA, two runs per arm, load peak 7.0):
+  66.0 → 79.7 fps (base 63.9/68.0, head 78.1/81.3), frame p50 11.71 → 11.04 ms, frame p95 26.46 → 18.35 ms. The
+  window before it (`play-lod-walk-b`) recorded the base pair and voided half its runs: the `tn-local` pool took the
+  host to load 45 mid-window, which is the difference between 60.4 and 78-81 fps on the same head build.
+- Holdout (desktop, `td-lod-holdout`, rows #366-#367): the tower-defense kit 286.9 → 306.5 fps, frame p95 3.26 →
+  2.38 ms, no effect — as expected, the kit registers no chain either. Staged without a rebuild: the change is one
+  guard in a facade chunk, so the head arm is the same built `dist` with that guard patched into the shipped chunk. The
+  pair then differs by 25 bytes and no interface moves, which a cross-build chunk swap would not give (the facade
+  reads the Wasm's `ASM_CONSTS` indices, and those move with each link).
 - Rule: a per-frame scan that a registry gates must also gate on "nothing registered yet". A forced-old-path init
   script gives an exact same-build control when the switch is a global.
 - Open: a game that does register chains and churns its hierarchy still walks every frame. Fix it with an

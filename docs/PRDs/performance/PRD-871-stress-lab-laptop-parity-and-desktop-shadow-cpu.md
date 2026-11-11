@@ -1,7 +1,7 @@
 # PRD-871 — Stress lab: an integrated GPU plays at vanilla speed, and the desktop frame loses its shadow planning cost
 
-**Status:** IN PROGRESS
-**Priority:** P1 — on a laptop GPU the engine draws the stress scene at 25 fps where vanilla three.js draws 53 (Phase 2), and the gameplay preset runs at half the speed of the orbit preset on the desktop (Phase 3).
+**Status:** IN PROGRESS — Phase 1 and Phase 2 done; Phase 3's `play` cut landed. The plan floor and AC-2 are handed to [PRD-872](PRD-872-static-casters-and-rigid-rigs-in-the-desktop-frame.md) (see Decisions), so this PRD moves to `done/` when PRD-872 ticks AC-2.
+**Priority:** P1 — on a laptop GPU the engine draws the stress scene at 25 fps where vanilla three.js draws 53 (Phase 2), and the gameplay preset ran at half the speed of the orbit preset on the desktop (Phase 3, now 79.7 against 66.0 fps).
 **Complexity:** 6 (MEDIUM)
 **Owner:** João · 2026-11-10
 **Depends on:** None. PR #659 (`perf/stress-lab-audit`) carries this PRD and the work before it.
@@ -102,8 +102,8 @@ Risks:
 ## Acceptance criteria
 
 - [x] AC-1 [shared]: on the Iris Xe laptop, `main.html?stress&adaptive` draws at 60 fps or more in every run, uncapped, two runs per arm, with no stress lab source change that removes content. proof: ledger rows from a laptop fair window (`~/.agents/skills/laptop-offload/offload.sh start <job> --gpu`) — Evidence: laptop window `p8-laptop`, rows #349-#350, 2026-11-10: head runs 84.6 and 67.5 fps (base 78.2 and 47.0), GPU p95 12.3 → 9.0 ms, both arms at `low`; the second head run held 67.5 fps while the package reached 98 C. Before PRD-871: 7.1 fps (#338). Head = `cac3780a4` (no SSR at `low`) on top of Phase 2; no lab content removed. Visual judges: shadows NEUTRAL (`judge-p2c`), SSR NEUTRAL (`judge-ssr`, still, town and closeup).
-- [ ] AC-2 [local]: on the RTX 2080, `main.html?stress&arm=head` holds a frame p50 of 8.4 ms or less (about 120 fps, the scoreboard goal) in a valid fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: pending (9.84 ms today).
-- [ ] AC-3 [local]: on the RTX 2080, `main.html?stress&play&arm=head` draws at 60 fps or more in a valid fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: pending (49.4 fps today).
+- [ ] AC-2 [local]: on the RTX 2080, `main.html?stress&arm=head` holds a frame p50 of 8.4 ms or less (about 120 fps, the scoreboard goal) in a valid fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: 10.00 ms base (#362) and 10.65 ms head (#363) in window `play-lod-walk-b`, 2026-11-10; not met. Handed to PRD-872 AC-1 (see Decisions): zeroing `planVirtualPages` entirely still reads about 9.0-9.6 ms against 8.4, so the 120-rig crowd, not the planner, carries this number. This PRD moves to `done/` when PRD-872 ticks that criterion, the PRD-218 shape.
+- [x] AC-3 [local]: on the RTX 2080, `main.html?stress&play&arm=head` draws at 60 fps or more in a valid fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: window `play-lod-walk-c`, rows #364 (base) and #365 (head), 2026-11-10, uncapped ABBA in one clean browser, two runs per arm, load peak 7.0: head 78.1 and 81.3 fps (base 63.9 and 68.0), frame p50 11.39/10.68 vs 12.09/11.33 ms, frame p95 18.4-18.5 vs 25.5-27.4 ms. Before PRD-871: 49.4 fps (row #322 window).
 
 ## Blocked on
 
@@ -118,7 +118,7 @@ Risks:
 | --- | --- | --- | --- |
 | A lamp shades only fragments in range | Any `MeshStandardMaterial` or `MeshPhysicalMaterial` lit by an unshadowed `PointLight` or `SpotLight` → `buildStandardProgram`, `standard.cpp` | The unbranched loop, deleted | Phase 1 |
 | The `low` tier draws no shadow | Adaptive quality policy tier change → shadow pass | Per-kit `castShadows` wiring (kart `src/render/lighting.ts:22-31`) stays valid as the named override | AC-1 |
-| Virtual shadow planning skips unchanged casters | `Renderer` frame → `planVirtualPages` → `atlas.updateCasters` | The per-frame rebuild, deleted | AC-2 |
+| Virtual shadow planning skips unchanged casters | `Renderer` frame → `planVirtualPages` → `atlas.updateCasters` | The per-frame rebuild, deleted | PRD-872 Phase 1 (handed, see Decisions) |
 
 ## Decisions
 
@@ -137,6 +137,7 @@ Risks:
 - 2026-11-10 (João): "laptop needs 60fps min". AC-1 rises from 53 fps to 60 fps, and every run must hold it, not the mean.
   The laptop reaches 97 C and then draws the same build at half speed (head 63 fps cool, 35 fps hot), so a window starts
   with the package under 80 C and the GPU frame at the low tier needs about 2x headroom: 12 ms or less cool.
+- 2026-11-10 (Claude, PRD-871 session): the plan floor (Phase 3 box 1) and AC-2 move to PRD-872, filed by this PRD. Measured: `planVirtualPages` is 0.80-1.02 ms of a 10.00-10.65 ms `?stress` frame (#362-#363), so zeroing the whole stage still reads about 9.0-9.6 ms against the 8.4 ms goal; with `&noCrowd` the same frame is 5.6 ms, so the 120 walking rigs (4.5-6.5 ms) are what carries the number. A dirty list is a structural change across four loops with a named staleness risk, and it would land beside an acceptance criterion it cannot reach on its own: both phases ship under one PRD, each with its own window. PRD-871 keeps AC-2 as its own open criterion and moves to `done/` when PRD-872 ticks it.
 - 2026-11-10 (João): no Midway work in this lane. Midway still ships `autoBatch: false`; that is a game-side note, not a
   box here.
 
@@ -165,7 +166,7 @@ Risks:
 
 #### Phase 3: the desktop frame loses its shadow planning cost
 
-**Status:** IN PROGRESS
+**Status:** IN PROGRESS — boxes 2 and 3 met; box 1 (the plan floor) moved to PRD-872 Phase 1.
 **Files:** `packages/runtime-native/src/engine/renderer/renderer_frame.cpp`, `packages/runtime-native/src/engine/renderer/shadows/virtual/atlas.cpp`, `atlas.h`, `packages/runtime-native/tests/native-engine/vsm/vsm_atlas_test.cpp`.
 **Implementation:** one hypothesis per candidate, each with its expected gain written first. Start with the per-caster work of `planVirtualPages` for casters whose transform and geometry did not change. Then attribute the per-frame upload by counter. Then profile `play` and cut its largest removable term. Use Opus 5.5 high for the C++ changes and DeepSeek V4.1 Flash max for searches and row bookkeeping (owner routing, 2026-11-10).
 **Verification:** `ctest --test-dir build/wasm -L native-engine -R "vsm|render_database|renderer"`, then a paired desktop fair window (`--passes uncapped`, arms `base` and `head`, plus `plainShadow` as the ceiling), a holdout kit, and a visual judge on `?stress&closeup` and `?stress&freezeAt=12` for each change to shadow planning.
@@ -175,6 +176,8 @@ Risks:
   `7482c204c` (a rig box reads each bone stretch alone): bounds rebuild 1.38 → 1.06 ms a frame by sub-timer. The stage still
   reads 1.25-1.6 ms under host load 12-20; the desktop window `shadow-plan` (#347-#348) is inconclusive (one valid base
   run). Most of what remains is the walking crowd (see Handover notes).
+  Moved to PRD-872 Phase 1, 2026-11-10 (see Decisions): the 0.7 ms floor is every caster re-verified each frame, and the
+  whole stage is 0.80-1.02 ms of a 10.00-10.65 ms frame, so a dirty list alone cannot carry AC-2 either.
   Attribution, 2026-11-10 (temporary sub-timers, desktop `?stress`, 1174 items, 1145 casters): bounds 0.95 ms (242 rig
   meshes about 0.64, 902 rigid cached casters about 0.28), caster states 0.08, `updateCasters` 0.18, atlas update 0.15.
   The rigs' bone joins are only about 0.2 ms of it. `3883e79f0`: two meshes on one skeleton read its bone poses once per
@@ -182,7 +185,7 @@ Risks:
   rig cost the stage stays near 0.7 ms, because every caster is re-verified each frame. 0.5 ms needs a scene dirty list
   that skips unchanged casters in all four loops; that is a structural change, not started.
 - [x] No buffer with unchanged content uploads on `?stress&still`. proof: `tnDebug=1` upload counters before and after, in the ledger row notes. — The 39 KB a frame that `uniformUploadBytes` showed was the arena size, not an upload: the FM2 diff already sent only changed blocks. `a3ee875b2` makes the counter count written bytes; `bd1cd887d` stops the last unchanged write (the output pass block, 4 B a frame). `frame_slab_is_per_program` red-green both times: a still frame now uploads 0 bytes; 136 render database, 98 renderer and 14 post cases pass. Desktop `?stress&still&tnDebug=1`: 74.0 KB a frame, of it 6.7 KB uniforms (changed blocks only, by per-block compare) and the rest the walking crowd's bone palettes, which change each frame; with `noCrowd&noFires&noBodies` 516 → 512 B, all changed uniform blocks. No ledger row: the counters are not a window metric.
-- [ ] The `play` frame has a stage split that covers 95% of the frame, and its largest removable term is cut. proof: the split and the paired window in ledger rows; the DevTools trace named in the learnings entry.
+- [x] The `play` frame has a stage split that covers 95% of the frame, and its largest removable term is cut. proof: the split and the paired window in ledger rows; the DevTools trace named in the learnings entry. — Coverage: `stageSum` 13.07 ms against frame p50 12.55 ms (104%), row #360; the largest term is `wasmPlan` 2.53, of it `planVirtualPages` 1.02, then `update` 2.19. Cut: `e4fe59cb8`, the LOD-chain walk (`Pn → traverse → value → J`, 15% of main-thread time in the DevTools trace, learnings 2026-11-10) that found nothing on every `play` frame because the lab registers no chain. Window `play-lod-walk-c` (#364-#365, uncapped ABBA, two runs per arm, load peak 7.0): 66.0 → 79.7 fps (base 63.9/68.0, head 78.1/81.3), frame p50 11.71 → 11.04 ms, frame p95 26.46 → 18.35 ms. Holdout: the tower-defense kit (`holdout=td`, window `td-lod-holdout`, rows #366-#367, two runs per arm, load peak 13.1): 286.9 → 306.5 fps, frame p95 3.26 → 2.38 ms — no effect, and the kit registers no LOD chain either, so the arm pair differs only by the guard. No pixel can change (with no chain registered the walk dispatched nothing), so no visual judge was run; the reason is recorded here rather than left as a silent skip.
 
 ## Handover notes
 
