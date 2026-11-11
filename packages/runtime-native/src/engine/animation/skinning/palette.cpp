@@ -179,19 +179,39 @@ void SkinnedPalette::write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkel
 }
 
 namespace {
-// True when a material graph reads a space a relative slot changes: the skinned local position, a geometry attribute
-// in local space, a model matrix, or a named local varying. View, world and screen values, uniforms and textures read
-// the same through a slot and its placement as through a world palette (PRD-878: the stress walkers' emissive sheen
-// reads normalView and the view direction).
+// True unless every node of a material graph is known to read the same through a relative slot and its placement as
+// through a world palette: view, world, clip and screen values, the camera, time, constants, math, textures and control
+// flow. It fails closed: a local position, a model matrix, and any kind, input or varying not listed here refuse
+// (PRD-878: the stress walkers' emissive sheen reads normalView and the view direction).
 bool readsLocalSpace(const shader::graph::NodeData* node, std::vector<const void*>& seen) {
     using shader::graph::Kind;
     if (!node || std::find(seen.begin(), seen.end(), node) != seen.end()) return false;
     seen.push_back(node);
-    if (node->kind == Kind::PositionLocal) return true;
-    if (node->kind == Kind::Attribute && (node->name == "position" || node->name == "normal" || node->name == "tangent"))
-        return true;
-    if (node->kind == Kind::Uniform && node->name.starts_with("model")) return true;
-    if (node->kind == Kind::Varying && node->args.empty() && node->name.find("Local") != std::string::npos) return true;
+    const auto named = [&](std::initializer_list<std::string_view> names) {
+        return std::find(names.begin(), names.end(), node->name) != names.end();
+    };
+    bool safe = false;
+    switch (node->kind) {
+        case Kind::Uniform: safe = !node->name.starts_with("model") && !node->name.starts_with("instance"); break;
+        case Kind::Attribute: safe = node->name.starts_with("uv") || node->name == "color"; break;
+        case Kind::Builtin: safe = named({"frontFacing", "position", "vertexIndex"}); break;
+        // A varying with a value is the game's own (its value is walked below); a named one is the engine's input.
+        case Kind::Varying:
+            safe = !node->args.empty() ||
+                named({"positionView", "normalView", "positionWorld", "positionWorldDirection", "positionViewDirection",
+                       "normalViewGeometry", "normalWorldGeometry", "uv", "vertexColor", "ndc", "currentClip"});
+            break;
+        case Kind::Constant: case Kind::Unary: case Kind::Binary: case Kind::Math: case Kind::Swizzle: case Kind::Join:
+        case Kind::Convert: case Kind::Select: case Kind::Texture: case Kind::TextureSize: case Kind::TextureLoad:
+        case Kind::RenderTexture: case Kind::Pmrem: case Kind::ScreenUv: case Kind::ViewportDepth: case Kind::Body:
+        case Kind::Var: case Kind::VarRead: case Kind::Assign: case Kind::If: case Kind::Loop: case Kind::LoopIndex:
+        case Kind::Call: case Kind::Return: case Kind::Break: case Kind::Continue: case Kind::Discard:
+        case Kind::WgslFunction: case Kind::WgslCall: case Kind::StructType: case Kind::Struct: case Kind::StructMember:
+            safe = true;
+            break;
+        default: break;
+    }
+    if (!safe) return true;
     for (const auto* list : {&node->args, &node->body, &node->otherwise})
         for (const auto& next : *list)
             if (readsLocalSpace(next.get(), seen)) return true;

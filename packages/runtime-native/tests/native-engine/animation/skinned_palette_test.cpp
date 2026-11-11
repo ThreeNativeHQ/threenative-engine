@@ -293,11 +293,18 @@ void relativeSlotKeepsAnUnchangedPose() {
     namespace g = shader::graph;
     material->nodes.emissiveNode = g::normalize(g::varying("normalView", shader::Type::vec(3)));
     frame(next);
-    material->nodes.emissiveNode = g::normalize(g::positionLocal());
-    scene.updateMatrixWorld();
-    rig->skeleton->update();
-    SkinnedPalette local(2, 1, false);
-    CHECK(local.writeRelative(*local.claim(rig.get()), *rig) == nullptr);
+    // The check fails closed: a local read, and any input or kind it does not know, refuses.
+    auto unknown = std::make_shared<g::NodeData>();
+    unknown->kind = g::Kind::StorageElement;
+    unknown->type = shader::Type::vec(3);
+    for (const g::Node& refused : {g::positionLocal(), g::varying("tnMystery", shader::Type::vec(3)),
+                                   g::attribute("tnMystery", shader::Type::vec(3)), g::Node(unknown)}) {
+        material->nodes.emissiveNode = g::normalize(refused);
+        scene.updateMatrixWorld();
+        rig->skeleton->update();
+        SkinnedPalette local(2, 1, false);
+        CHECK(local.writeRelative(*local.claim(rig.get()), *rig) == nullptr);
+    }
 }
 
 }  // namespace
