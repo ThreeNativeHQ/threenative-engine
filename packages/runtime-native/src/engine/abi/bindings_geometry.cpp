@@ -642,6 +642,7 @@ void registerBufferGeometry(ClassBinding& b) {
                 for (const Value& ref : refsOf(v)) targets.push_back(sharedAttributeArg(store, ref));
                 BufferGeometry* geometry = as<BufferGeometry>(self);
                 (normals ? geometry->morphNormals : geometry->morphPositions) = std::move(targets);
+                geometry->bumpRevision();  // a render cache held for the revision reads the morph lists
             };
     }
     b.getters["morphTargetsRelative"] = [](void* self) { return Value::of(as<BufferGeometry>(self)->morphTargetsRelative); };
