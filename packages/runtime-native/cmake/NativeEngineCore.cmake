@@ -944,8 +944,10 @@ if(EMSCRIPTEN)
 endif()
 # PRD-828: one call a frame advances every rig (weights, stride rate, one mixer step each).
 tn_native_engine_test(tn-native-engine-animation-tick-batch-test tests/native-engine/animation/tick_batch_test.cpp
-    native_engine_animation_tick_batch=tick_batch)
-target_link_libraries(tn-native-engine-animation-tick-batch-test PRIVATE tn_engine_animation)
+    native_engine_animation_tick_batch=tick_batch
+    native_engine_animation_tick_micros_counted=animation_tick_micros_counted)
+# PRD-875 Phase 1: the counter's case drives the real `tn_anim_tick`, which lives in tn_engine_abi.
+target_link_libraries(tn-native-engine-animation-tick-batch-test PRIVATE tn_engine_animation tn_engine_abi)
 target_include_directories(tn-native-engine-animation-tick-batch-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 # PRD-517: property tracks on materials, lights, cameras and visibility.
 tn_native_engine_test(tn-native-engine-animation-property-tracks-test tests/native-engine/animation/property_tracks_test.cpp
