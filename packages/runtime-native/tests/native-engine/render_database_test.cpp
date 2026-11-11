@@ -8633,6 +8633,69 @@ void shadowPagesInstanceSkinnedCasters() {
         }
 }
 
+// PRD-872: a walker translates and turns with its pose unchanged, which leaves the mesh-space box exactly as it was
+// (`inv(mesh world) * bone`) — so the plan reads no bone for it, and hands back the box it built once.
+void rigidRigKeepsItsReachBounds() {
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    std::vector<double> indices(vertices * 4, 0), weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) {
+        indices[i * 4] = 0; indices[i * 4 + 1] = 1;
+        weights[i * 4] = i % 3 == 0 ? 1 : 0.4; weights[i * 4 + 1] = i % 3 == 0 ? 0 : 0.6;
+    }
+    geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, indices, 4));
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+    auto root = std::make_shared<Object3D>();
+    auto rig = std::make_shared<SkinnedMesh>(geometry, std::make_shared<Material>(MaterialType::Standard));
+    auto hip = std::make_shared<Bone>(), knee = std::make_shared<Bone>();
+    hip->add(*knee);
+    knee->position.y = -0.6;
+    rig->position.set(1, 0.5, -2);
+    root->add(*rig);
+    root->add(*hip);
+    root->updateMatrixWorld(true);
+    rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{hip, knee}));
+    Box3 first;
+    CHECK(rig->boneReachBounds(first, Skeleton::nextPlanStamp()));
+    CHECK(rig->boneReachBoxBuilds == 1);
+    const uint64_t poseReads = rig->skeleton->planPoseBuilds;
+    // A rigid move: the component translates and turns, every bone moves with it, the local pose holds.
+    root->position.set(4, -1, 7);
+    root->rotation.y = 0.7;
+    root->updateMatrixWorld(true);
+    Box3 again;
+    CHECK(rig->boneReachBounds(again, Skeleton::nextPlanStamp()));
+    CHECK(again.min.equals(first.min) && again.max.equals(first.max));
+    CHECK(rig->boneReachBoxBuilds == 1 && rig->skeleton->planPoseBuilds == poseReads);
+    // The world box then follows the component: mesh space is invariant, world space is not.
+    {
+        Matrix4 model; model.elements = rig->matrixWorld.elements;
+        Box3 world = again; world.applyMatrix4(model);
+        Box3 before = first; before.applyMatrix4(model);
+        CHECK(world.min.equals(before.min));
+    }
+    // A bone that moves rebuilds it.
+    knee->rotation.z = 0.5;
+    root->updateMatrixWorld(true);
+    Box3 posed;
+    CHECK(rig->boneReachBounds(posed, Skeleton::nextPlanStamp()));
+    CHECK(rig->boneReachBoxBuilds == 2);
+    CHECK(!posed.max.equals(first.max) || !posed.min.equals(first.min));
+    // So does a mesh scale the box is expressed in.
+    rig->scale.setScalar(1.5);
+    root->updateMatrixWorld(true);
+    Box3 scaled;
+    CHECK(rig->boneReachBounds(scaled, Skeleton::nextPlanStamp()));
+    CHECK(rig->boneReachBoxBuilds == 3);
+    // And a mesh that moves without its bones: the rig-relative root is what the box is keyed on.
+    rig->position.x += 2;
+    root->updateMatrixWorld(true);
+    Box3 shifted;
+    CHECK(rig->boneReachBounds(shifted, Skeleton::nextPlanStamp()));
+    CHECK(rig->boneReachBoxBuilds == 4);
+    CHECK(!shifted.min.equals(scaled.min));
+}
+
 // Virtual shadow bounds fit a rig from its bones (UE 5.8.3 fits skinned bounds to bones), not by
 // skinning every vertex on the CPU each frame: the box must still hold every posed vertex.
 void boneReachBoundsHoldPosedVertices() {
@@ -8680,6 +8743,10 @@ void boneReachBoundsHoldPosedVertices() {
     rig->add(*twin);
     root->updateMatrixWorld(true);
     twin->bind(rig->skeleton, &rig->bindMatrix);
+    // A pose neither mesh has read yet, so the pass below has bones to read at all: since PRD-872 an unchanged pose
+    // reads none.
+    hip->position.x += 0.35;
+    root->updateMatrixWorld(true);
     Box3 alone, first, second;
     CHECK(twin->boneReachBounds(alone));
     const uint64_t builds = rig->skeleton->planPoseBuilds;
@@ -8692,7 +8759,17 @@ void boneReachBoundsHoldPosedVertices() {
     root->updateMatrixWorld(true);
     Box3 moved;
     CHECK(rig->boneReachBounds(moved, Skeleton::nextPlanStamp()));
-    CHECK(rig->skeleton->planPoseBuilds == builds + 2 && moved.max.x > first.max.x + 2);
+    CHECK(rig->skeleton->planPoseBuilds == builds + 2);
+    // The box is conservative, so it can sit past the vertices; what it must do is hold them, and follow a bone that
+    // moved. (The old `first.max.x + 2` read the sphere box's slack, not the move: it failed on its own.)
+    for (uint64_t i = 0; i < vertices; ++i) {
+        Vector3 vertex;
+        rig->getVertexPosition(i, vertex);
+        CHECK(vertex.x >= moved.min.x - 1e-6 && vertex.x <= moved.max.x + 1e-6);
+        CHECK(vertex.y >= moved.min.y - 1e-6 && vertex.y <= moved.max.y + 1e-6);
+        CHECK(vertex.z >= moved.min.z - 1e-6 && vertex.z <= moved.max.z + 1e-6);
+    }
+    CHECK(moved.max.x > first.max.x + 1);
     // Weights that do not sum to 1 leave the bones' hull: the caller falls back to the vertices.
     weights[0] = 0.5;
     geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
@@ -9736,7 +9813,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
+TN_TEST_MAIN({"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

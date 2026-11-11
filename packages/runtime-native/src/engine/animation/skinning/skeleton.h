@@ -120,11 +120,15 @@ class Skeleton {
     /** A fresh stamp for one planning pass. A pass that does not share one passes 0 and reads the bones itself. */
     static uint64_t nextPlanStamp();
     uint64_t planPoseBuilds = 0;
+    /** A fold of every bone's local matrix, once per `stamp`: a rig whose pose did not change reads the same value,
+     *  and a mesh-space bounds that depends only on the pose and the rig-relative root can be kept (PRD-872). */
+    uint64_t poseFold(uint64_t stamp);
 
   private:
     std::vector<Bone*> boneAddresses_;  // `bones` is set once, by the constructor
     std::vector<PlanPose> planPoses_;
     uint64_t planStamp_ = 0;
+    uint64_t poseFold_ = 0, poseFoldStamp_ = 0;
 };
 
 /**
@@ -151,6 +155,8 @@ class SkinnedMesh : public Mesh {
      * The reach is measured once per geometry revision, so a call costs O(bones). False when a
      * vertex's weights do not sum to 1: the vertex then leaves the bones' hull. */
     bool boneReachBounds(Box3& target, uint64_t planStamp = 0) const;
+    /** Boxes this mesh built from its bones; a rigid move under an unchanged pose adds none (PRD-872). */
+    mutable uint64_t boneReachBoxBuilds = 0;
     std::shared_ptr<Box3> boundingBox;
     std::shared_ptr<Skeleton> skeleton;
     std::weak_ptr<bool> gpuSkinValidity;
@@ -170,6 +176,13 @@ class SkinnedMesh : public Mesh {
     mutable const void* boneReachSkeleton_ = nullptr;
     mutable uint64_t boneReachRevision_ = 0;
     mutable bool boneReachHolds_ = false;
+    // The box the last call built, and what it was built from: a rig that moved rigidly builds it once. The box is
+    // `inv(mesh world) * bone position` over the bones, so it is fixed by the local pose, the rig-relative root and
+    // the mesh scale — the three things this key holds (PRD-872).
+    mutable Box3 boneReachBox_;
+    mutable std::array<double, 16> boneReachBoxRoot_{};
+    mutable uint64_t boneReachBoxFold_ = 0, boneReachBoxStamp_ = 0;
+    mutable double boneReachBoxScale_ = 0;
 };
 
 /** SkeletonUtils.clone: copy the hierarchy, share mesh resources, remap each skin to cloned bones.

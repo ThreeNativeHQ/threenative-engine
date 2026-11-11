@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cmath>
 #include <functional>
@@ -215,9 +216,34 @@ static double linearStretch(const Matrix4& m) {
     return std::max({lengths[0], lengths[1], lengths[2]});
 }
 
+// A rigid move re-derives `inv(mesh world) * root world` through its own floating point, so the same pose lands a few
+// ulps away: compare in the noise floor, which is far below the float32 geometry the box holds.
+static bool nearRoot(const std::array<double, 16>& a, const std::array<double, 16>& b) {
+    for (std::size_t i = 0; i < 16; ++i)
+        if (std::abs(a[i] - b[i]) > 1e-12 * (1 + std::abs(a[i]) + std::abs(b[i]))) return false;
+    return true;
+}
+static bool nearScale(double a, double b) { return std::abs(a - b) <= 1e-12 * (1 + std::abs(a) + std::abs(b)); }
+
 uint64_t Skeleton::nextPlanStamp() {
     static std::atomic<uint64_t> stamp{0};
     return ++stamp;
+}
+
+uint64_t Skeleton::poseFold(uint64_t stamp) {
+    if (stamp != 0 && stamp == poseFoldStamp_) return poseFold_;
+    uint64_t fold = 0xcbf29ce484222325ull;
+    for (std::size_t i = 0; i < bones.size(); ++i) {
+        const Bone* bone = this->bone(i);
+        if (bone == nullptr) { fold = (fold ^ 0xffull) * 0x100000001b3ull; continue; }
+        // A bone's local write is deferred: materialize it, or the fold of an unchanged matrix would be a lie.
+        const_cast<Bone*>(bone)->materializeWorldTransformIfPending();
+        for (const double value : bone->matrix.elements) {
+            fold = (fold ^ std::bit_cast<uint64_t>(value)) * 0x100000001b3ull;
+        }
+    }
+    if (stamp != 0) { poseFold_ = fold; poseFoldStamp_ = stamp; }
+    return fold;
 }
 
 const std::vector<Skeleton::PlanPose>& Skeleton::planPoses(uint64_t stamp) {
@@ -284,8 +310,22 @@ bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
     if (!boneReachHolds_) return false;
     // A skinned vertex is a weighted mean of its bones' rigid images, and each image lies within the
     // bone's reach (times the bone's scale) of the bone's posed position: the spheres' box holds it.
-    target.makeEmpty();
+    // The box is `inv(mesh world) * bone position` over the bones, so it is fixed by three things: the local pose,
+    // the rig-relative root (`inv(mesh world) * root world`), and the mesh scale. A rig that translates and turns
+    // with the same pose reads the same three, and keeps the box it built (PRD-872: 0.64 ms a frame for 242 meshes).
     const double meshScale = linearStretch(bindMatrixInverse);
+    const uint64_t fold = skeleton->poseFold(planStamp);
+    const Bone* root = nullptr;
+    for (std::size_t j = 0; j < bones && root == nullptr; ++j) root = skeleton->bone(j);
+    Matrix4 relative;
+    if (root != nullptr) { relative.copy(bindMatrixInverse); relative.multiply(root->matrixWorld); }
+    if (boneReachBoxStamp_ != 0 && boneReachBoxFold_ == fold && nearScale(boneReachBoxScale_, meshScale) &&
+        nearRoot(boneReachBoxRoot_, relative.elements)) {
+        target = boneReachBox_;
+        return !target.isEmpty();
+    }
+    ++boneReachBoxBuilds;
+    target.makeEmpty();
     Vector3 center;
     const auto& poses = skeleton->planPoses(planStamp);
     for (std::size_t j = 0; j < bones; ++j) {
@@ -300,6 +340,11 @@ bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
         target.max.y = std::max(target.max.y, center.y + radius);
         target.max.z = std::max(target.max.z, center.z + radius);
     }
+    boneReachBox_ = target;
+    boneReachBoxFold_ = fold;
+    boneReachBoxScale_ = meshScale;
+    boneReachBoxRoot_ = relative.elements;
+    boneReachBoxStamp_ = 1;
     return !target.isEmpty();
 }
 
