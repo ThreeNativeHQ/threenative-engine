@@ -1,12 +1,12 @@
 # PRD-876 — A draw is ready before the frame that first shows it
 
-**Status:** PARTIAL — Phase 1 landed (the two counters and the unregistered case). Phase 2 waits on the measure lane's sizing gate and on PR #659.
+**Status:** DONE — Phase 1 landed (the two counters and the unregistered case). The sizing gate closed Phases 2 and 3 on 2026-11-11: on the real GPU the forest turn makes 0 synchronous creates and 0 program builds, because the startup warm-up already compiles every pipeline before the reveal (see Decisions).
 **Priority:** P1 — the last camera-turn hitch on the Strata forest is a plan spike of about 10 ms in one frame, from programs and pipelines made the frame a mesh is first seen, and no counter reports it (Phases 1-3 open).
 **Complexity:** 6 (MEDIUM) — 6-10 implementation files (2), renderer cache state across frames (+2), one build boundary: the C++ engine serves native and web Wasm (+2). Risk override: none.
 **Owner:** João
-**Depends on:** None to start Phase 1. Phase 2 edits `renderer/render_database.cpp` and `renderer/renderer_frame.cpp`, so it starts after PR #659 (`perf/stress-lab-audit`, PRD-871) merges. It takes over [PRD-573](./PRD-573-unreal-class-performance-in-release-cycles.md) Phase v2.4 box 3.
+**Depends on:** None to start Phase 1. Phase 2 edits `renderer/render_database.cpp` and `renderer/renderer_frame.cpp`, so it starts after PR #659 (`perf/stress-lab-audit`, PRD-871) merges. It takes over [PRD-573](../performance/PRD-573-unreal-class-performance-in-release-cycles.md) Phase v2.4 box 3.
 
-Executor: read [EXECUTION-ORDER.md](./EXECUTION-ORDER.md) first. Its rules and commands apply to every box here.
+Executor: read [EXECUTION-ORDER.md](../performance/EXECUTION-ORDER.md) first. Its rules and commands apply to every box here.
 All code paths below are under `packages/runtime-native/src/engine/` unless they start with `packages/`.
 
 ## Context
@@ -71,12 +71,11 @@ and the page clear (`renderer_frame.cpp:1489-1501,1955-1969`), which waits for P
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local, measure lane]: On the Strata forest turn, `head` against `develop`, two runs per arm: synchronous pipeline creates in the turn fall to 0, program builds in the turn fall to 0, frames over 20 ms in the turn do not increase, the time from navigation to reveal is within 5% of develop, and a fresh visual judge reads NEUTRAL or IMPROVEMENT on four turn poses. proof: `TN_FRAME_BUDGET.counters.engine` rows plus the judge verdict — Evidence: pending.
-- [ ] AC-2 [local]: `pnpm parity` reports the same rows as develop. proof: `pnpm parity` — Evidence: pending.
+- [x] AC-1 [local, measure lane]: On the Strata forest turn on the owned engine, synchronous pipeline creates and program builds in the turn are 0. proof: `TN_FRAME_BUDGET.counters.engine` per window — Evidence (2026-11-11, head `81901d260`, RTX 2080, 69 windows): every create (44) and build (98) is in the load window, before `TN_STARTUP_WARMUP_HELD`; 0 of each, and 0 deferred draws, in every window of the reveal, walk and turn (Decisions). The head-against-develop comparison, the reveal-time bound and the visual judge of the original AC-1 compared a prepare pass that the gate closed, so they are not run.
 
 ## Blocked on
 
-- Phase 2 start — unblocked when PR #659 merges, because both edit `renderer/render_database.cpp` and `renderer/renderer_frame.cpp`.
+- Nothing. AC-1, AC-2 and Phases 2-3 were closed by the sizing gate (Decisions, 2026-11-11).
 
 ## Integration Ledger
 
@@ -108,27 +107,29 @@ and the page clear (`renderer_frame.cpp:1489-1501,1955-1969`), which waits for P
 The gate therefore still needs a lane that publishes them, or the census path repaired first. `?stress&tnDebug=1` on the stress lab is the documented route and was not attempted here.
 
 #### Phase 2: A culled mesh is prepared inside a per-frame budget
-**Status:** NOT STARTED
-**Files:** `renderer/render_database.h`, `renderer/render_database.cpp`, `renderer/renderer.h`, `renderer/renderer_frame.cpp`, `packages/runtime-native/tests/native-engine/renderer_caches_test.cpp`, `packages/runtime-native/cmake/NativeEngine.cmake`.
-**Implementation:**
-1. Write the two tests of this phase first and see them fail.
-2. In `renderer/render_database.h` add `constexpr uint32_t kPrepareMeshesPerFrame = 4;` with a comment that the value is proposed, and a named override `void setPrepareBudget(uint32_t meshesPerFrame)` where 0 turns the pass off. The override is reported in `renderInfo` when it is not the default.
-3. In `RenderDatabase::project` (`render_database.cpp:893`), at the place where a culled mesh is skipped (`:935-939`): when the first frame has been presented, no `compileAsync` is running, `pipelinesCompiling()` is 0 and the frame's budget is not spent, let a culled mesh that has no record through, and mark its draw compile-only. Count it against the budget.
-4. In the plan, `compilation` is one argument for the whole call, and its branch is `if (compilation) { … getAsync … continue; }` (`renderer_frame.cpp:855-859`). Give `DrawItem` a `compileOnly` flag and make that branch run for `compilation || item.compileOnly`. For a compile-only item in a normal frame: the program builds, the pipeline goes to `PipelineCache::getAsync`, and the item is not pushed to `plan`, so no draw call is recorded. Reuse that branch. Do not write a second plan path. Every later pass that walks the items (shadow, velocity, aux) must skip a compile-only item: find them with `rg -n "mainPass" renderer/renderer_frame.cpp`.
-   Unverified (2026-11-10): what `getAsync` needs from its returned ticket when no `compileAsync` call holds it. Read `renderer/pipeline_cache.cpp:312-340` first. If a dropped ticket cancels the compile, stop and report.
-5. A mesh that enters the view before it was prepared builds on the spot, as today. Do not skip its draw.
-- [ ] A scene holds one mesh in view and one behind the camera, each with its own material. After 10 frames the camera turns 180 degrees. The turn frame counts 0 synchronous pipeline creates and 0 program builds. The same test with `setPrepareBudget(0)` counts 1 of each, which is the red state before the change. proof: a new case `turn_finds_prepared_draw` in `renderer_caches_test.cpp`, `ctest -R '^native_engine_renderer_pipeline_'`.
-- [ ] A scene with 64 culled meshes of 64 materials prepares at most `kPrepareMeshesPerFrame` records in any one frame, and prepares none before the first presented frame. A scene with every mesh in view prepares none at all. proof: a new case `prepare_budget_bounds_work` in the same file.
-- [ ] A frame drawn after the prepare pass has finished is pixel-equal to the same frame with `setPrepareBudget(0)`. proof: a new case that compares the two readbacks in `renderer_caches_test.cpp`, or the nearest existing pixel-golden test extended with the override.
+**Status:** NOT BUILT — closed by the sizing gate (Decisions, 2026-11-11). The Solution above stays as the plan if a
+scene ever shows synchronous creates after its reveal.
 
 #### Phase 3: Prove it on the forest
-**Status:** NOT STARTED
-**Files:** `renderer/render_database.h` (the budget value only), this PRD.
-**Implementation:** The executor runs the label and parity. The measure lane runs the turn and sets the budget.
-- [ ] The whole `native-engine` label is green on the host build. proof: `ctest --test-dir packages/runtime-native/build/tn-engine-only -L native-engine --output-on-failure` (the directory that actually defines the native-engine tests; `build/tn-linux` does not — see Phase 1's build note).
-- [ ] `kPrepareMeshesPerFrame` is set from the forest: the largest value whose prepare frames stay under 1 ms of added CPU at p95. The value and the readings are in the constant's comment. proof: the turn rows recorded under `## Decisions`.
+**Status:** NOT BUILT — closed with Phase 2.
 
 ## Decisions
 
 - 2026-11-10 (Claude, from a read of develop at `d6b1630b8`): the engine prepares on first knowledge, not at `add()`. The program key needs the frame's light layout, fog, sample count and pass list, and none of them exist when a mesh is added.
 - 2026-11-10 (Claude): the per-draw `selectiveLights` string (`renderer_frame.cpp:627-646`) is not a box. It returns an empty string at once for a draw with no `lightsNode`, so its cost is unproven. The sizing gate reads `programKeyBuilds` on a still camera, and a box is added only if that number grows each frame.
+- 2026-11-11 (Claude, measure lane, sizing gate): **the turn has nothing to prepare, so Phases 2-3, AC-1 and AC-2 are
+  closed, not built.** The 2026-11-10 attempt read zeros because it served the forest on upstream three: plain
+  `pnpm dev` does not select the owned engine, `TN_ENGINE=threenative` does (`examples/strata-terrain-preview/vite.config.ts:127`),
+  and its Xvfb gave SwiftShader, which then lost the device. This read: head `81901d260` (Wasm pair built from it),
+  `TN_ENGINE=threenative`, `loop.playtest.json` at `?tnDebug=1`, `TN_PLAYTEST_HOST_DISPLAY=1 --headed --browser-recipe
+  webgpu`, adapter `turing` (RTX 2080), 69 `TN_FRAME_BUDGET` windows. **All 44 synchronous pipeline creates and all 98
+  program builds fall in window 2, the load.** Every `TN_PROGRAM_LATE` line (44) is logged before
+  `TN_STARTUP_WARMUP_HELD` (319 of 319 pipelines compiled before the reveal). From window 3 on — the reveal, the
+  600-tick walk, `turn-half` and `turn` — `pipelineSyncCreates`, `programBuilds`, `pipelineDeferredDraws`,
+  `pipelineCompiles` and `pipelineCreateMs` are 0 in every window, at 63-64 draws a frame; the turn frame
+  (`turn.png`) draws the forest. `programKeyBuilds` is not published on this page, so the still-camera growth was
+  not read; the `selectiveLights` question above stays without a box. The 10 ms turn spike this PRD was filed for
+  is not a pipeline or program cost on this head: the startup warm-up already does what Phase 2 proposed, before the
+  reveal instead of in a per-frame budget after it. AC-2 (`pnpm parity`) guarded the prepare pass, which is not
+  built; Phase 1's counters are covered by the renderer cases (673 of 678 `native-engine` cases on the merged tree).
+
