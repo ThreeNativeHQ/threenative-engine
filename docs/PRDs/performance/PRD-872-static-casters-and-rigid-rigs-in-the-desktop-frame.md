@@ -1,6 +1,6 @@
 # PRD-872 — The desktop `?stress` frame reaches 8.4 ms: a static caster plans once, and a rig that moves rigidly does not re-do world-space bones
 
-**Status:** PARTIAL — both phases landed (`da185d67e`, `f95ea2eb6`) and measured. Neither target is met: the plan reads 0.97-1.02 ms, the frame 8.98-9.01 ms on a quiet host. The numbers say the criterion was written against work the frame does not pay (see Decisions).
+**Status:** PARTIAL — both phases landed (`da185d67e`, `f95ea2eb6`, `657bf4b80`) and measured. Neither target is met: the plan reads 0.94 ms, the frame 8.91 ms on a quiet host (window `plan-floor-c`, #372-#373). The numbers say the criterion was written against work the frame does not pay (see Decisions).
 **Priority:** P1 — carries the one acceptance criterion PRD-871 did not reach: a 120 fps desktop frame (frame p50 8.4 ms or less).
 **Complexity:** 7 (MEDIUM-HIGH)
 **Owner:** João · 2026-11-10
@@ -55,9 +55,9 @@ Risks:
 
 ## Acceptance criteria
 
-- [ ] AC-1 [local]: on the RTX 2080, `main.html?stress&arm=head` holds a frame p50 of 8.4 ms or less in a valid fair window, two runs per arm. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: **9.01 ms** head against 8.98 base (window `plan-floor-b`, rows #370-#371, load 2.2-3.6, 107.3 against 105.1 fps). Not met.
-- [ ] AC-2 [local]: a frame whose casters did not change spends 0.5 ms or less in `planVirtualPages` on `?stress`. proof: `native_engine_vsm_caster_plan`; the stage split — Evidence: **0.97-1.02 ms** (1.09-1.15 base), 0.44 with `&noCrowd`. Not met.
-- [ ] AC-3 [local]: the walking crowd costs at most 2.5 ms of the `?stress` frame (from 4.5-6.5 ms), and a visual judge calls the skinning NEUTRAL against base. proof: ledger rows and the judge's captures — Evidence: **4.33 ms** (5.18 before). Not met; no judge, because the skinning path was not touched.
+- [ ] AC-1 [local]: on the RTX 2080, `main.html?stress&arm=head` holds a frame p50 of 8.4 ms or less in a valid fair window, two runs per arm. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: **8.91 ms** head against 8.96 base (window `plan-floor-c`, rows #372-#373, load 2.0-2.6, 109.1 against 105.0 fps); 9.01 against 8.98 in `plan-floor-b`. Not met, 0.5 ms short.
+- [ ] AC-2 [local]: a frame whose casters did not change spends 0.5 ms or less in `planVirtualPages` on `?stress`. proof: `native_engine_vsm_caster_plan`; the stage split — Evidence: **0.94 ms** (1.17 base in the same minutes), 0.35-0.44 with `&noCrowd`. Not met: the crowd's own 240 rig meshes are most of what is left.
+- [ ] AC-3 [local]: the walking crowd costs at most 2.5 ms of the `?stress` frame (from 4.5-6.5 ms), and a visual judge calls the skinning NEUTRAL against base. proof: ledger rows and the judge's captures — Evidence: **≈3.9 ms** (frame 8.34 with the crowd against 4.43 without it, same minutes; 5.18 before this PRD). Not met; no judge, because the skinning path was not touched.
 
 ## Blocked on
 
@@ -80,6 +80,13 @@ Risks:
   (the crowd re-derives 120 skeletons every frame; Unreal fits skinned bounds from component space and a pose, not from
   bones each frame) and **the frame's own planning** (`wasmPlan` minus `planVirtualPages` is ~1.0 ms, untouched here).
   The owner decides which; they are not shadow-planning cuts and do not belong in this PRD.
+- 2026-11-10 (Claude, PRD-872 session, after `657bf4b80`): the next lever is named and it is not a plan cut. The
+  crowd's palettes are world-space (`Skeleton::update` writes `boneWorld * boneInverse`), so a walker that translates
+  and turns rewrites and re-uploads its 65 bones every frame even when core throttles its pose. Multiplying the palette
+  by `inv(mesh world)` and letting the draw's own model matrix re-apply the component transform is the same picture
+  (three multiplies `modelMatrix * bindMatrixInverse` after skinning) and leaves the palette unchanged while the rig
+  moves rigidly. That is where the 0.5 ms and most of the crowd's 3.9 ms are; it needs its own PRD, a visual judge and
+  the shadow and main passes changed together.
 - 2026-11-10 (Claude, PRD-871 session): this work is a separate PRD, not two more boxes in PRD-871. The target needs both phases at once — a perfect `planVirtualPages` still reads about 9.0-9.6 ms against an 8.4 ms goal — so a half-landed PRD-871 would have had to stay open on an AC it cannot reach. PRD-871 closes with AC-1 and AC-3 met and hands AC-2 here.
 
 ## Execution Phases
