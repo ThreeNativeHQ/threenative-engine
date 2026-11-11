@@ -719,6 +719,14 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
             // fresh or not.
             renderer.noteGpuMainMs?.(gpuFrame.main, gpuFrame.frame);
           } else {
+            // A renderer the pass recorder cannot instrument (the owned engine) may time its own
+            // passes; its split rides on the sample, so `TN_FRAME_BUDGET` names the pass that costs.
+            if (gpuSample?.main !== undefined)
+              frameBudget?.addGpuBucketMs({
+                main: gpuSample.main,
+                shadow: gpuSample.shadow,
+                other: gpuSample.other,
+              });
             renderer.noteGpuMainMs?.(undefined);
           }
           if (!depthCoupledOutput && game.sceneEntered) game.scene?.render(ctx);

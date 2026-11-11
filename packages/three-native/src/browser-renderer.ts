@@ -278,6 +278,10 @@ export function defineWebRenderer(
         // The GPU milliseconds of the sample `render.timestamp` reports, by named stage (gpu-stages.ts). A stage that
         // drew no pass is absent; core's `stageGpuReading` hands it to the GI and shadow budgets.
         gpuStages: {} as Record<string, number>,
+        // The same sample split by pass (frame_gpu_timer.h segments): the scene pass, every shadow map, and the rest
+        // (other passes, output, gather). `frame` is the sample's source frame, -1 until one resolves; core's
+        // `gpuFrameSample` hands the split to the frame budget's `gpuMain`, `gpuShadow` and `gpuOther`.
+        gpuSplit: { frame: -1, main: 0, shadow: 0, other: 0 },
         // The last frame's shadow passes, the spot and point light maps apart from the sun's (PRD-650):
         // lamp maps redrawn and their draws, every shadow draw (the sun's are the rest), and the GPU
         // milliseconds of each part in the sample `render.timestamp` reports, -1 until one resolves.
@@ -730,6 +734,17 @@ export function defineWebRenderer(
           this.info.engine.shadows.lampGpuMs = module._tnw_web_frame(
             WEB_FRAME_FIELD.gpuSegmentLampShadow,
           );
+          const segment = (field: number): number => Math.max(0, module._tnw_web_frame(field));
+          const split = this.info.engine.gpuSplit;
+          split.frame = this.#timestampFrames[0] ?? -1;
+          split.main = segment(WEB_FRAME_FIELD.gpuSegmentScene);
+          split.shadow =
+            segment(WEB_FRAME_FIELD.gpuSegmentShadow) +
+            segment(WEB_FRAME_FIELD.gpuSegmentLampShadow);
+          split.other =
+            segment(WEB_FRAME_FIELD.gpuSegmentOther) +
+            segment(WEB_FRAME_FIELD.gpuSegmentOutput) +
+            segment(WEB_FRAME_FIELD.gpuSegmentGather);
           // Opt-in, as `__tnPassLog`: a probe that sets `__tnGpuSegments` to an array gets each resolved sample's
           // split (frame_gpu_timer.h segments: sun shadow, scene, other passes, output, gather, lamp shadow).
           (globalThis as { __tnGpuSegments?: number[][] }).__tnGpuSegments?.push([

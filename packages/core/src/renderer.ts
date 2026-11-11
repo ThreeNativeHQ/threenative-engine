@@ -156,6 +156,22 @@ export function prewarm(object: Object3D | readonly Object3D[]): void {
   }
 }
 
+/** Where one resolved frame's GPU time went, when the renderer times its own passes (the owned engine). */
+export interface IGpuFrameSplit {
+  /** The scene (main colour) pass. */
+  readonly main: number;
+  /** Every shadow map the frame drew: the sun's and the lamps'. */
+  readonly shadow: number;
+  /** Everything else: post chain, output, global illumination gather. */
+  readonly other: number;
+}
+
+/** One resolved GPU frame: its duration, the Three.js frame id it belongs to, and its pass split when known. */
+export interface IGpuFrameSample extends Partial<IGpuFrameSplit> {
+  readonly frame: number;
+  readonly ms: number;
+}
+
 export interface IRendererLike {
   readonly domElement: HTMLCanvasElement;
   readonly kind: RendererKind;
@@ -376,7 +392,7 @@ export interface IRendererLike {
    * resolve twice. Optional like `gpuFrameAge`, for stubs that implement only the drawing
    * contract. `createRenderer` always provides it.
    */
-  gpuFrameSample?(): { readonly frame: number; readonly ms: number } | undefined;
+  gpuFrameSample?(): IGpuFrameSample | undefined;
   /**
    * Observes complete allocated render-query groups without changing ordinary sampling.
    * Frame IDs are Three query IDs, including any overlay draws; callers map world callbacks.
@@ -736,7 +752,7 @@ function wrapRenderer(
    */
   const currentFrame = (): number | undefined =>
     timestampFrame >= 0 ? timestampFrame : raw.info?.frame;
-  const gpuFrameSample = (): { frame: number; ms: number } | undefined => {
+  const gpuFrameSample = (): IGpuFrameSample | undefined => {
     const frame = currentFrame();
     const frames = raw.backend?.getTimestampFrames?.("render");
     const sampled = frames?.[frames.length - 1];
@@ -753,7 +769,19 @@ function wrapRenderer(
       timestamp <= 0
     )
       return undefined;
-    return { frame: sampled, ms: timestamp };
+    // The owned engine times its own passes (`info.engine.gpuSplit`); the split joins the sample
+    // only while it describes that same frame.
+    const split = (
+      raw.info as { engine?: { gpuSplit?: IGpuFrameSplit & { frame: number } } } | undefined
+    )?.engine?.gpuSplit;
+    if (split?.frame !== sampled) return { frame: sampled, ms: timestamp };
+    return {
+      frame: sampled,
+      ms: timestamp,
+      main: split.main,
+      shadow: split.shadow,
+      other: split.other,
+    };
   };
 
   /**
