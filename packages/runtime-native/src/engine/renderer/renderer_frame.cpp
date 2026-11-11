@@ -2012,6 +2012,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (uniformBytes != 0 && uploadedUniforms_.size() != uniformBytes) {
         gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);  // a grown arena: all of it once
         uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
+        waste::debugAdd(waste::counters().uniformUploadBytes, uniformBytes);
     } else if (uniformBytes != 0 && std::memcmp(uploadedUniforms_.data(), frameUniforms_.data(), uniformBytes) != 0) {
         constexpr uint64_t kUniformBlock = kUniformAlign;  // one block's granularity
         // Every block is kUniformAlign bytes, so a run's length is a multiple of 4, as writeBuffer requires.
@@ -2037,12 +2038,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (dirty * 2 >= uniformBytes) {  // mostly dirty: one write is cheaper than the calls
             gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);
             uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
+            dirty = uniformBytes;
         } else {
             for (const auto& [offset, length] : uniformDirtyRanges_) {
                 gpu_.writeBuffer(uniformBuffer_, offset, frameUniforms_.data() + offset, length);
                 std::memcpy(uploadedUniforms_.data() + offset, frameUniforms_.data() + offset, length);
             }
         }
+        waste::debugAdd(waste::counters().uniformUploadBytes, dirty);
     }
     job.uniformBytes = frameUniforms_.size();
     bool jointBufferMoved = false;

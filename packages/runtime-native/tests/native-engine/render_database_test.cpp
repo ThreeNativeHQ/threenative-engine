@@ -1442,7 +1442,25 @@ void frameSlabIsPerProgram() {
     // the GPU holds. A frame whose camera moved still rewrites every slot (the view is in each draw's block), so
     // its upload stays the arena's size; the still frame is the arena's worth fewer than it.
     const Frame still = frame();
+    // The debug counter names the arena bytes a frame wrote, not the arena's size: a still frame reads
+    // 0 there. It read the size (39 KB a frame on the stress lab's still pose, PRD-871) beside a 516-byte
+    // real upload, so a profile chased an upload that did not exist.
+    waste::setDebugEnabled(true);
+    const uint64_t counted = waste::counters().uniformUploadBytes.load();
     const Frame stillAgain = frame();
+    const uint64_t stillCounted = waste::counters().uniformUploadBytes.load() - counted;
+    pose(0.9);
+    const uint64_t movedCounted = waste::counters().uniformUploadBytes.load();
+    const Frame movedAgain = frame();
+    const uint64_t movedCountedBytes = waste::counters().uniformUploadBytes.load() - movedCounted;
+    pose(0.4);
+    frame();
+    waste::setDebugEnabled(false);
+    std::printf("frame slab: debug counter still %llu, moved %llu (queue writes %llu) of arena %llu\n",
+                static_cast<unsigned long long>(stillCounted), static_cast<unsigned long long>(movedCountedBytes),
+                static_cast<unsigned long long>(movedAgain.upload), static_cast<unsigned long long>(moved.uniforms));
+    CHECK(stillCounted == 0);
+    CHECK(movedCountedBytes > 0 && movedCountedBytes <= movedAgain.upload);
     std::printf("frame slab: still frames upload %llu and %llu bytes, a moved camera %llu of %llu\n",
                 static_cast<unsigned long long>(still.upload), static_cast<unsigned long long>(stillAgain.upload),
                 static_cast<unsigned long long>(moved.upload), static_cast<unsigned long long>(moved.uniforms));

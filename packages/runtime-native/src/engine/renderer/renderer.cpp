@@ -1343,7 +1343,6 @@ void Renderer::encodeFrame(FrameJob& job) {
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
         waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);
         waste::debugAdd(waste::counters().auxPasses, lastFrame_.auxPasses);
-        waste::debugAdd(waste::counters().uniformUploadBytes, job.uniformBytes);
         frameMail_ = lastFrame_;
     }
 }
