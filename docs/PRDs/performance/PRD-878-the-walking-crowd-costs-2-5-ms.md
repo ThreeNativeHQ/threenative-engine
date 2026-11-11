@@ -99,6 +99,8 @@ Facts the levers rest on (PRD-872 Decisions, 2026-11-11):
 
 ## Decisions
 
+- 2026-11-11 (lead, DeepSeek discovery arm, measured; for the owner's decision on AC-1): where the head build's crowd cost goes. `?stress&tnDebug=1` minus `?stress&noCrowd&tnDebug=1`, A B B A, idle RTX 2080 (nvidia turing), medians of per-window p50 over 16-17 windows per arm: frame +4.53 ms (9.74 vs 5.21; the debug flag adds a little to the fair window's 3.70). By stage: `update` +1.42 (JS main thread, the lab's own `Stress.update` calling `AnimationPlayer.update` per walker, `animation.ts:1306`; game scripting, so engine work reaches only the `AnimationPlayer` share), `wasmScene` +1.31 (`render_database.cpp:2009`, `prepare()` at `:1686`), `wasmPlan` +0.91 (`renderer_frame.cpp:6`; `planVirtualPages` +0.30, `planShadowLists` +0.16), `jsBefore` +0.75, residual +0.11, `engineJs` +0.09; GPU p50 +1.67 (crowd 4.80 vs 3.13), which runs beside the CPU rows. Engine-owned CPU rows sum to about 3.3 ms, so even with `update` excluded 2.5 ms needs about 0.8 ms more engine cut, and the largest single row is the game's. Report: `~/.cache/tmp-tn/prd878-handoff/out/crowd-attribution.md`. Options for AC-1: (a) keep 2.5 ms and fund the next lever (`wasmScene` walk, `jsBefore`, an `AnimationPlayer` batch in `tn_anim_tick`), (b) re-state AC-1 over engine stages only, with a follow-up PRD.
+
 - 2026-11-11 (Claude, lead): filed from PRD-872's measured breakdown; ships in PR #659 (one PR for the stress-lab chain).
 - 2026-11-11 (Claude, lead, Phase 3): the box "cut the largest attributed JS cost" is removed as moot (R4). The largest
   JS-ownable lever, the rate-band loop, is ≈0.10 ms; all JS-ownable crowd work sums to ≈0.25 ms, under the 0.3 ms floor.
