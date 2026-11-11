@@ -839,6 +839,53 @@ void initializeTexture() {
     CHECK(renderer.lastFrame().draws == 0);
 }
 
+// PRD-876 Phase 1: the frame that first draws a mesh is the frame that pays for it. The draw counts
+// one blocking pipeline create and one program build, and later frames count neither; a compile pass
+// first moves the create off the draw frame, which is what PRD-876 Phase 2 makes ordinary.
+void syncCreatesCounted() {
+    waste::setDebugEnabled(true);
+    CompileDevice d;
+    CHECK(d.device != nullptr);
+    if (!d.device) {
+        waste::setDebugEnabled(false);
+        return;
+    }
+    struct Counts {
+        uint64_t creates = 0, programs = 0;
+    };
+    const auto now = [] { return Counts{waste::counters().pipelineSyncCreates.load(), waste::counters().programBuilds.load()}; };
+    const auto between = [](Counts before, Counts after) { return Counts{after.creates - before.creates, after.programs - before.programs}; };
+    // One arm of the case: a fresh renderer and a fresh scene, one mesh with its own material.
+    const auto arm = [&](bool compileFirst) {
+        Renderer renderer(d.instance, d.device, d.queue, d.events);
+        renderer.setSize(32, 32);
+        RenderDatabase database;
+        Scene scene;
+        PerspectiveCamera camera;
+        camera.position.z = 8;
+        auto mesh = std::make_shared<Mesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+        scene.add(*mesh);
+        if (compileFirst) compileScene(database, renderer, scene, camera);
+        const Counts before = now();
+        database.render(renderer, scene, camera);
+        CHECK(renderer.lastFrame().draws > 0);
+        const Counts draw = between(before, now());
+        database.render(renderer, scene, camera);
+        const Counts settled = between(before, now());
+        return std::pair<Counts, Counts>{draw, settled};
+    };
+    const auto lazy = arm(false);
+    // A draw needs one pipeline per pass it is recorded in, so the draw frame's count is a property of
+    // the frame's pass list, not a constant. What must hold is that it is non-zero once and never after.
+    CHECK(lazy.first.creates >= 1);   // the draw frame created the pipeline itself
+    CHECK(lazy.first.programs >= 1);  // ...and built the program
+    CHECK(lazy.second.creates == lazy.first.creates);  // the next frame created nothing
+    CHECK(lazy.second.programs == lazy.first.programs);
+    const auto prepared = arm(true);
+    CHECK(prepared.first.creates == 0);   // the compile pass took the create, so the draw found it ready
+    CHECK(prepared.second.creates == 0);
+    waste::setDebugEnabled(false);
+}
 }  // namespace
 
 // A pass whose input alternates frame by frame (a ping-pong history) makes its two bind groups once.
@@ -884,7 +931,7 @@ void recentBindGroups() {
     groups.clear();
 }
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"compile_reaches_off_screen", compileReachesOffScreenDraws}, {"geometry", geometry}, {"geometry_usage_union", geometryUsageUnion}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"sync_creates_counted", syncCreatesCounted}, {"compile_reaches_off_screen", compileReachesOffScreenDraws}, {"geometry", geometry}, {"geometry_usage_union", geometryUsageUnion}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException},

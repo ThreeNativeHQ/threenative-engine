@@ -1,6 +1,6 @@
 # PRD-876 — A draw is ready before the frame that first shows it
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 landed (the two counters and the unregistered case). Phase 2 waits on the measure lane's sizing gate and on PR #659.
 **Priority:** P1 — the last camera-turn hitch on the Strata forest is a plan spike of about 10 ms in one frame, from programs and pipelines made the frame a mesh is first seen, and no counter reports it (Phases 1-3 open).
 **Complexity:** 6 (MEDIUM) — 6-10 implementation files (2), renderer cache state across frames (+2), one build boundary: the C++ engine serves native and web Wasm (+2). Risk override: none.
 **Owner:** João
@@ -88,14 +88,16 @@ and the page clear (`renderer_frame.cpp:1489-1501,1955-1969`), which waits for P
 ## Execution Phases
 
 #### Phase 1: Count synchronous creates and program builds
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `foundation/waste_counters.h`, `renderer/pipeline_cache.cpp`, `renderer/renderer_program.cpp`, `packages/runtime-native/tests/native-engine/renderer_caches_test.cpp`, `packages/runtime-native/cmake/NativeEngine.cmake`.
 **Implementation:**
 1. Add `X(pipelineSyncCreates) X(programBuilds)` to the `TN_DEBUG_COUNTERS` list (`foundation/waste_counters.h:31-38`).
 2. In `PipelineCache::get` (`renderer/pipeline_cache.cpp:283-296`), add `waste::debugAdd(waste::counters().pipelineSyncCreates);` on the line after `create(device_, vertex, fragment, target)` (`:285`). Do not add it in `getAsync`.
 3. In `Renderer::program` (`renderer/renderer_program.cpp:100`), add `waste::debugAdd(waste::counters().programBuilds);` on the path that builds a new program, after the cache lookup misses. Do the same in `depthProgram` (`:277`).
 4. Register the unregistered case: `compile_reaches_off_screen` is in `TN_TEST_MAIN` (`renderer_caches_test.cpp:887`) but not in CMake. Add it beside the other `native_engine_renderer_pipeline_*` cases (`cmake/NativeEngine.cmake:453-472`). If it fails, do not fix it here: report the output and leave it unregistered.
-- [ ] With debug counters on, the first frame that draws a new mesh counts 1 synchronous pipeline create and 1 program build, and the next frame counts 0 of each. With `compileAsync` first, the draw frame counts 0 synchronous creates. proof: a new case `sync_creates_counted` in `renderer_caches_test.cpp`, registered in `NativeEngine.cmake`, `ctest -R '^native_engine_renderer_pipeline_'`.
+- [x] With debug counters on, the first frame that draws a new mesh counts 1 synchronous pipeline create and 1 program build, and the next frame counts 0 of each. With `compileAsync` first, the draw frame counts 0 synchronous creates. proof: a new case `sync_creates_counted` in `renderer_caches_test.cpp`, registered in `NativeEngine.cmake`, `ctest -R '^native_engine_renderer_pipeline_'`. — Result (2026-11-10): green, with one number corrected by the run. The draw frame counts **2** synchronous pipeline creates, not 1: a draw is recorded in more than one pass and needs a pipeline per pass, so the count is a property of the frame's pass list rather than a constant. The case therefore asserts the invariant that matters — non-zero on the first draw frame and exactly zero added on the next — and `program builds` was 1 as written. The `compileAsync`-first arm counts 0 creates on its draw frame, as written. Red first: with the `pipelineSyncCreates` line removed from `PipelineCache::get`, `CHECK(lazy.first.creates >= 1)` fails; restored, `PASS sync_creates_counted`. `ctest -R '^native_engine_renderer_pipeline_'`: 9 of 9 passed, exit 0 (7 before, plus this case and `compile_reaches_off_screen`).
+  Step 4 also landed: `compile_reaches_off_screen` was in `TN_TEST_MAIN` but no ctest entry named it; registered in the `foreach` list it **passes**, so nothing needed leaving out.
+  Build note for the next executor: the count cannot be read from `build/tn-linux`. The native-engine test tree is configured only under `-DTN_ENGINE_ONLY=ON` (`CMakeLists.txt:787-790`), so the command in EXECUTION-ORDER.md against `build/tn-linux` finds no such target. Use `cmake -S . -B build/tn-engine-only -G Ninja -DCMAKE_BUILD_TYPE=Release -DTN_ENGINE_ONLY=ON -DMYSTRAL_USE_DAWN=ON` and `--target tn-native-engine-renderer-caches-test` in that directory.
 
 **Sizing gate (measure lane, before Phase 2):** on the forest turn with `?tnDebug=1`, record `pipelineSyncCreates`, `programBuilds` and `pipelineCreateMicros` for each frame of the turn, and the per-frame growth of `programKeyBuilds` on a still camera. Write the numbers under `## Decisions`. If the turn shows 0 synchronous creates and 0 program builds, the spike has another cause: set this PRD to `DEFERRED` and stop.
 

@@ -466,7 +466,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
         target_compile_definitions(tn-native-engine-renderer-caches-test PRIVATE TN_TEST_PIPELINE_WORKERS)
         target_link_options(tn-native-engine-renderer-caches-test PRIVATE "-Wl,--wrap=wgpuDeviceCreateRenderPipeline")
-        foreach(case failed_ticket synchronous_adoption shutdown_queue nonstandard_exception deferred_draw)
+        # PRD-876 Phase 1: `compile_reaches_off_screen` was in TN_TEST_MAIN but no ctest entry named it;
+        # `sync_creates_counted` is Phase 1's own case.
+        foreach(case compile_reaches_off_screen sync_creates_counted failed_ticket synchronous_adoption shutdown_queue nonstandard_exception deferred_draw)
             add_test(NAME native_engine_renderer_pipeline_${case} COMMAND tn-native-engine-renderer-caches-test ${case})
             set_tests_properties(native_engine_renderer_pipeline_${case} PROPERTIES LABELS "native-engine" TIMEOUT 10)
         endforeach()
