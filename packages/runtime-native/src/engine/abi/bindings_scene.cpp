@@ -241,6 +241,28 @@ SourceGuard& sourceGuardOf(Object3D& root) {
     return entry.second;
 }
 
+// Core's bundle proof witness (PRD-879): the surface flags a recorded main batch's material had when it
+// was proved, kept per host while the host lives, as sourceGuardOf keeps the AutoBatch guard's.
+struct MaterialWitness {
+    struct Entry {
+        std::weak_ptr<Material> owner;  // expired: the material was freed, which counts as a change
+        bool transparent = false, visible = true;
+        double transmission = 0;
+    };
+    std::vector<Entry> entries;
+};
+
+MaterialWitness& materialWitnessOf(Object3D& host) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, MaterialWitness>> witnesses;
+    for (auto it = witnesses.begin(); it != witnesses.end();)
+        it = it->second.first.expired() ? witnesses.erase(it) : std::next(it);
+    auto& entry = witnesses[&host];
+    if (entry.first.expired()) entry = {host.weak_from_this(), MaterialWitness{}};
+    return entry.second;
+}
+
+std::shared_ptr<Material> materialArg(Store& store, const Value& arg);
+
 // The pose history for a physics root (PRD-877), kept while the root lives, as sourceGuardOf keeps
 // the AutoBatch guard's.
 PoseHistory& poseHistoryOf(Object3D& root) {
@@ -509,6 +531,30 @@ void registerObject3D(ClassBinding& b) {
             if (entry.out || SourceGuard::same(entry)) continue;
             entry.out = true;
             changed.push_back(double(index));
+        }
+        return Value::list(std::move(changed));
+    };
+    // Engine-internal (PRD-879): core's bundle proof. `__tnMaterialWatch(materials)` stamps each material's
+    // transparent, visible and transmission; `__tnMaterialCheck()` answers the indices that moved since,
+    // until the list is watched again, so a settled frame re-reads no material property one by one.
+    b.methods["__tnMaterialWatch"] = [](void* self, const Args& a, Store& store) {
+        MaterialWitness& witness = materialWitnessOf(*as<Object3D>(self));
+        witness.entries.clear();
+        for (const Value& ref : refsOf(a.at(0))) {
+            const std::shared_ptr<Material> material = materialArg(store, ref);
+            witness.entries.push_back({material, material->transparent, material->visible, material->transmission});
+        }
+        return Value::of(double(witness.entries.size()));
+    };
+    b.methods["__tnMaterialCheck"] = [](void* self, const Args&, Store&) {
+        const MaterialWitness& witness = materialWitnessOf(*as<Object3D>(self));
+        std::vector<double> changed;
+        for (std::size_t index = 0; index < witness.entries.size(); ++index) {
+            const MaterialWitness::Entry& entry = witness.entries[index];
+            const std::shared_ptr<Material> material = entry.owner.lock();
+            if (material == nullptr || material->transparent != entry.transparent ||
+                material->visible != entry.visible || material->transmission != entry.transmission)
+                changed.push_back(double(index));
         }
         return Value::list(std::move(changed));
     };
