@@ -101,7 +101,7 @@ Risks:
 
 ## Acceptance criteria
 
-- [ ] AC-1 [shared]: on the Iris Xe laptop, `main.html?stress&adaptive` draws at 60 fps or more in every run, uncapped, two runs per arm, with no stress lab source change that removes content. proof: ledger rows from a laptop fair window (`~/.agents/skills/laptop-offload/offload.sh start <job> --gpu`) — Evidence: pending (34.8 fps today).
+- [x] AC-1 [shared]: on the Iris Xe laptop, `main.html?stress&adaptive` draws at 60 fps or more in every run, uncapped, two runs per arm, with no stress lab source change that removes content. proof: ledger rows from a laptop fair window (`~/.agents/skills/laptop-offload/offload.sh start <job> --gpu`) — Evidence: laptop window `p8-laptop`, rows #349-#350, 2026-11-10: head runs 84.6 and 67.5 fps (base 78.2 and 47.0), GPU p95 12.3 → 9.0 ms, both arms at `low`; the second head run held 67.5 fps while the package reached 98 C. Before PRD-871: 7.1 fps (#338). Head = `cac3780a4` (no SSR at `low`) on top of Phase 2; no lab content removed. Visual judges: shadows NEUTRAL (`judge-p2c`), SSR NEUTRAL (`judge-ssr`, still, town and closeup).
 - [ ] AC-2 [local]: on the RTX 2080, `main.html?stress&arm=head` holds a frame p50 of 8.4 ms or less (about 120 fps, the scoreboard goal) in a valid fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: pending (9.84 ms today).
 - [ ] AC-3 [local]: on the RTX 2080, `main.html?stress&play&arm=head` draws at 60 fps or more in a valid fair window. proof: ledger rows from `node scripts/stress-loop.mjs fair` — Evidence: pending (49.4 fps today).
 
@@ -155,8 +155,7 @@ Risks:
 
 #### Phase 2: the laptop adaptive lane reaches vanilla speed
 
-**Status:** IN PROGRESS
-**Blocker:** AC-1 (60 fps in every laptop run) needs the `low` frame at about 12 ms GPU cool. `cac3780a4` (no SSR at `low`) removes the `aux` G-buffer pass, 6.7 of 26.7 ms hot.
+**Status:** DONE
 **Files:** `packages/core/src/look/adaptiveQuality.ts`, `packages/core/src/look/qualityPolicy.ts`, their specs under `packages/core/__tests__/`, `packages/create-threenative/conventions.json` when the rule becomes a convention.
 **Implementation:** run `engine_search_capabilities` for the shadow tier first. Decide the layer in writing (engine policy or kit source) and quote the repository rule that decides it. Apply the tier's `castShadows` where the tier changes, keep the named override, and report the overridden state. Feed the owned engine's GPU pass split into `TN_FRAME_BUDGET`, so a game reads it without the lab's hook.
 **Verification:** a laptop fair window with base and candidate lab builds, arms `?stress&adaptive&arm=base` and `?stress&adaptive&arm=head`, plus a visual judge at each tier the change touches.

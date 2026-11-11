@@ -145,6 +145,58 @@ Method traps found, each one fixed in the tool unless it says open:
 - The `tn-local` CI pool on the desktop can raise the load to 27 in the middle of a window. The window voids those
   runs; read the VOID lines before you trust a row count.
 
+### 2026-11-10 — Laptop `low` tier: no shadow pass, no SSR, and a tier that does not flap — KEEP
+
+- Where: starter `src/render/postprocessing.ts` and `quality.ts` (`tierShadows`, `6dd609eca`, `99c719d30`);
+  starter `adaptiveQuality.ts` (`97c33a831`, `b3c90884b`); core `look/quality.ts` low preset `ssrEnabled: false`
+  (`cac3780a4`). UE 5.8.3: `Engine/Config/BaseScalability.ini:514-515` (`[ReflectionQuality@0] r.SSR.Quality=0`).
+- Cause 1: the tier table said `low` casts no shadow, but nothing applied it; the shadow pass was 11.3 ms of the Iris Xe
+  frame. Cause 2: the low preset left `ssrEnabled` unset and the default (look layer 8 and up) turned SSR on. SSR's
+  normal, metalness and roughness reads made the owned engine redraw the scene into a full-resolution `aux` G-buffer
+  pass: 6.7 of 26.7 ms hot. Cause 3: with shadows off, `low` measured 12-13 ms, inside the 20% headroom line, so the
+  policy raised to `medium` (27 ms), fell back two windows later and retried each cooldown: shadows blinked.
+- Attribution: `pass-probe.mjs` (sets `globalThis.TN_GPU_PASSES = true`, sums the per-pass timer lines per frame).
+  The `aux` pass appeared at pinned `low` too, so it was the low graph, not a stale medium graph; a one-time engine
+  print of `PostEffects::reads` named the RTT pass that read `normal`, and `TN_RENDER_CHAIN` listed `ssr`.
+- Result (laptop windows, uncapped, ABBA): 7.1 fps before PRD-871 (#338) → 36.0 (lamp range, #342) → 63.2 mean
+  (no shadow pass, #346) → head runs 84.6 and 67.5 fps (no SSR, #350; base 78.2 and 47.0). GPU p95 12.3 → 9.0 ms.
+- Visual judges (fresh Opus, two runs per arm): shadows off NEUTRAL (only cast shadows go, 2% auto-exposure
+  re-meter); SSR off NEUTRAL on still, town and closeup (0.02-level difference, sea keeps its sky reflection).
+- Rule: a raise that the next change undid keeps its cost ratio, and the tier retries only when the predicted cost
+  fits (`reason=predicted`). A doubling backoff alone still blinked the shadows every few cooldowns.
+- Next lever on that frame (cool, 8.1 ms): the scene pass is 5.3 ms, about half of it the 120 walkers (1.65 M
+  triangles, 13.7 k each, no LOD: `updateModelLods` skips skinned meshes).
+
+### 2026-11-10 — Uploads on a still frame: the counter was wrong, then one 4-byte write — KEEP
+
+- Where: `renderer_frame.cpp` (counter at each arena write, `a3ee875b2`), `renderer_output.cpp` (output block written
+  only when it differs, `bd1cd887d`).
+- `uniformUploadBytes` added the arena size each frame: 39 KB a frame on a static stress frame beside a 516-byte real
+  upload. The FM2 diff already sent only changed blocks. A counter that names a cost must count what crossed.
+- After: a still frame uploads 0 bytes (`frame_slab_is_per_program`). On `?stress&still` the 74 KB a frame is the
+  walking crowd's bone palettes and 6.7 KB of changed uniform blocks.
+
+### 2026-11-10 — Desktop shadow planning: rigid vertex boxes and rig bone stretch — KEEP (partial)
+
+- Where: `renderer.cpp` `virtualShadowBounds` (a moving rigid caster keeps its vertex box, keyed by store, version,
+  epoch and writes; `a38190bff`); `skeleton.cpp` (`linearStretch` of a bone alone, the bind inverse folded once;
+  `7482c204c`).
+- Result (temporary sub-timers): bounds rebuild 1.38 → 1.06 ms a frame. `planVirtualPages` still reads 1.25-1.6 ms;
+  the 0.5 ms target is not met. The desktop window `shadow-plan` (#347-#348) is inconclusive (one valid base run).
+- `?stress` frame 10-12 ms against 5.6 ms with `&noCrowd`: the 120 rigs are the desktop lever too (bones move in
+  world space each frame, so every rig re-plans).
+
+### 2026-11-10 — Method traps: laptop probes, prebuilt CLI facade, native engine-only tests
+
+- `offload.sh stop` leaves a probe's detached Chromium running. One rendered the lab for 30 min, held the package at
+  97-100 C and voided the next window (`p2c`, not recorded). Probes now kill their browser group on SIGTERM.
+- `threenative build` bundles the facade from `create-threenative/dist/web-engine-runtime.js`: a facade change needs
+  a rebuilt and repacked create-threenative, or the lab ships the old facade (no `gpuMain` in `TN_FRAME_BUDGET`).
+- Native C++ cases outside the Wasm build (render database, player) build in a Dawn engine-only tree:
+  `cmake -S . -B build/engine-only -G Ninja -DCMAKE_BUILD_TYPE=Release -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON
+  -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF`, with `third_party/{dawn,sdl3,v8}` linked from the main checkout.
+  The test binaries take one case name each; ctest names them `native_engine_*`.
+
 ### 2026-11-10 — Auto batch scans what arrived, not the scene, after each add or remove — KEEP
 
 - Where: `packages/core/src/auto-batch.ts` (`#pending`, `#hangs`, `#visit`, `#finish`); `744a9321c`.
