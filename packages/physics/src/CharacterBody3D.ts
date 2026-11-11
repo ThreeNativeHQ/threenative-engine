@@ -16,9 +16,9 @@ import type { IPhysicsContext } from "./plugin.js";
  * step. A follow camera aimed at such a body turns 0.02 px a frame, which flips antialiasing
  * samples along every high-contrast edge on screen.
  *
- * A grounded body that asks for no travel is seated instead. `Step` sends the gravity step until
- * the solver answers with less than `SEAT_BAND` of travel. `Lift` then raises the body `SEAT_LIFT`
- * and `Check` sends the gravity step again: a body that rises is still inside its offset and lifts
+ * A grounded body that asks for no travel but its gravity step is seated instead. `Step` sends the
+ * gravity step until the solver answers with less than `SEAT_BAND` of travel. `Lift` then raises
+ * the body `SEAT_LIFT`, or one gravity step when that is less, and `Check` sends the gravity step: a body that rises is still inside its offset and lifts
  * again, and a body the ground stops has landed on its offset. `Rest` sends no travel from then
  * on, so the body stays where it landed. Asking to move, a moving floor, ground that can move
  * with no notice and losing the ground all return to `Step`.
@@ -342,14 +342,20 @@ export class CharacterBody3D {
       this.grounded &&
       this.#desired.x === 0 &&
       this.#desired.z === 0 &&
-      this.#desired.y <= 0 &&
+      // Seating lets the gravity step land a lifted body: with no gravity step there is nothing to
+      // seat, and a lift would never come back down.
+      this.#desired.y < 0 &&
       carryX === 0 &&
       carryY === 0 &&
       carryZ === 0 &&
       (this.groundBody === undefined || this.#physics?.groundHolds?.(this.groundBody.id) !== false);
     if (!this.#still) this.#seat = Seat.Step;
     const travelY =
-      this.#seat === Seat.Rest ? 0 : this.#seat === Seat.Lift ? SEAT_LIFT : this.#desired.y;
+      this.#seat === Seat.Rest
+        ? 0
+        : this.#seat === Seat.Lift
+          ? Math.min(SEAT_LIFT, -this.#desired.y)
+          : this.#desired.y;
     // Scalar writes: an array literal here was one more thrown-away object per body per step.
     buffer[offset] = this.body.id;
     buffer[offset + 1] = from.x + this.#desired.x + carryX;

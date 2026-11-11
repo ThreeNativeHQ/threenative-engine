@@ -691,6 +691,39 @@ describe("CharacterBody3D", () => {
     },
   );
 
+  it("holds a weightless character still where it stopped, without seating it", async () => {
+    const { ctx, plugin } = await setup();
+    // Seating lifts a body 1 mm and lets its gravity step land it again. With no gravity nothing
+    // lands it: the body climbed 1 mm a cycle until the lift cap, 16 mm in all.
+    new RigidBody3D({
+      physics: ctx.physics,
+      position: { x: 0, y: -0.1, z: 0 },
+      shape: CollisionShape3D.box(20, 0.2, 20),
+      type: "fixed",
+    });
+    const object = new Group();
+    object.position.y = 0.5;
+    const character = new CharacterBody3D({
+      gravity: 0,
+      object,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+    const tick = (speed: number): void => {
+      character.velocity.set(speed, 0, 0);
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    };
+    for (let step = 0; step < 30; step += 1) tick(1);
+    tick(0);
+    const stopped = object.position.toArray();
+    for (let step = 0; step < 60; step += 1) {
+      tick(0);
+      expect(object.position.toArray(), `step ${step}`).toEqual(stopped);
+    }
+    character.dispose();
+  });
+
   it("keeps a standing character on a dynamic body that sinks under it", async () => {
     const { ctx, plugin } = await setup();
     // A resting character sends no travel, so it would hang in the air over ground that moves with
