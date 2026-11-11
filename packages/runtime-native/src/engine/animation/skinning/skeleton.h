@@ -106,6 +106,12 @@ class Skeleton {
     void update();
     // Internal renderer path, immediately after its world walk and before authored callbacks.
     void updateAfterWorldWalk(uint64_t firstEvaluation);
+    /** The render database's update, held until a reader needs the world palette: a rig whose root-relative slot kept
+     *  its pose reads none, so a crowd that walks on held poses skips it (PRD-878). Bone worlds come from the world
+     *  walk, so a prop in a hand, bone bounds and picking never wait on it. A pending deferred bone world updates now. */
+    void deferWorldPalette(uint64_t firstEvaluation);
+    /** Runs the held update, if any: every reader of `boneMatrices` after a deferral calls this first. */
+    void ensureWorldPalette() { if (paletteDue_) updateAfterWorldWalk(paletteFirstEvaluation_); }
     /** Moves whenever a bone's local transform is written or the inverses or a bind change, and never on a world move
      *  alone: a rig that keeps it keeps its root-relative palette and its mesh-space box (PRD-878; UE 5.8.3:
      *  Engine/Source/Runtime/Engine/Private/Components/SkinnedMeshComponent.cpp:1514 sends bones only when marked). */
@@ -132,11 +138,15 @@ class Skeleton {
     /** A fresh stamp for one planning pass. A pass that does not share one passes 0 and reads the bones itself. */
     static uint64_t nextPlanStamp();
     uint64_t planPoseBuilds = 0;
+    /** How many times `updateAfterWorldWalk` wrote the world palette (PRD-878: a held pose skips it). */
+    uint64_t worldPaletteUpdates = 0;
     /** Every bone's world position in the space `inverse` takes it to, once per `stamp` and `inverse`: the two meshes a
      *  mannequin binds share one skeleton and one bind space, so the plan transforms its bones once (PRD-872). */
     const std::vector<Vector3>& planCenters(uint64_t stamp, const Matrix4& inverse);
 
   private:
+    bool paletteDue_ = false;
+    uint64_t paletteFirstEvaluation_ = 0;
     std::shared_ptr<std::atomic<uint64_t>> poseVersion_ = std::make_shared<std::atomic<uint64_t>>(1);
     std::vector<Bone*> boneAddresses_;  // `bones` is set once, by the constructor
     std::vector<PlanPose> planPoses_;

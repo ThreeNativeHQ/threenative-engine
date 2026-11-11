@@ -147,6 +147,7 @@ void SkinnedPalette::write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkel
         updated_[skeleton] = frame_;
         skeletonUpdates_ += 1;
     }
+    skeleton->ensureWorldPalette();
     writes_ += 1;
 
     const std::vector<float>& bones = skeleton->boneMatrices;

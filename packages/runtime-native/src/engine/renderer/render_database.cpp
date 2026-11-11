@@ -1004,7 +1004,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                                 const bool gpu = gpuJoints_ && *gpuJoints_->valid && gpuJoints_->byMesh.count(&skinned);
                                 if (!gpu && (skeletonsFresh_ == nullptr || skeletonsFresh_->count(skeleton) == 0) &&
                                     skeletonsUpdated_.insert(skeleton).second)
-                                    skinned.skeleton->updateAfterWorldWalk(worldsFreshSince_);
+                                    skinned.skeleton->deferWorldPalette(worldsFreshSince_);
                                 d.boneMatrices = &skinned.skeleton->boneMatrices;
                                 d.bindMatrix = toArray(skinned.bindMatrix);
                                 d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
@@ -1833,6 +1833,11 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         batch(items, scene, Renderer::sortDraws(items, state));
         batchMeshes(items);
     }
+    // A draw that still reads a skeleton's world palette (a rig drawn alone, a shadow copy whose rig kept no slot)
+    // runs that skeleton's held update now; a batch's root-relative slots read none (PRD-878).
+    for (const DrawItem& item : items)
+        if (item.skinnedRig && item.skinnedRig->skeleton && item.boneMatrices == &item.skinnedRig->skeleton->boneMatrices)
+            item.skinnedRig->skeleton->ensureWorldPalette();
     const auto batched = profiling ? Clock::now() : Clock::time_point{};
     // Resolve the scene fallback every frame: environment can change without a material version bump.
     const Scene* world = dynamic_cast<const Scene*>(&scene);

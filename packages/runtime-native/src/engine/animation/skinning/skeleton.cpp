@@ -158,8 +158,17 @@ void Skeleton::update() {
     updateAfterWorldWalk(0);
 }
 
+void Skeleton::deferWorldPalette(uint64_t firstEvaluation) {
+    if (Bone::publicationCount_ != 0) return updateAfterWorldWalk(firstEvaluation);
+    revokeGpuSkinning();
+    paletteDue_ = true;
+    paletteFirstEvaluation_ = firstEvaluation;
+}
+
 void Skeleton::updateAfterWorldWalk(uint64_t firstEvaluation) {
     revokeGpuSkinning();
+    paletteDue_ = false;
+    ++worldPaletteUpdates;
     static const Matrix4 identity{};
     Matrix4 offset;
     for (std::size_t i = 0; i < bones.size(); ++i) {

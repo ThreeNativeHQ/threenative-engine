@@ -322,6 +322,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_static_instances_are_not_recopied=static_instances_are_not_recopied
         native_engine_frame_slab_is_per_program=frame_slab_is_per_program
         native_engine_uniform_batch_preparation=uniform_batch_preparation
+        native_engine_held_pose_skips_the_world_palette=held_pose_skips_the_world_palette
         native_engine_content_identical_geometry_batches=content_identical_geometry_batches
         native_engine_multi_material_groups=multi_material_groups
         native_engine_renderer_scene_lit=lit_scene
