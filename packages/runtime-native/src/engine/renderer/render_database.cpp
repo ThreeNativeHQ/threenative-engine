@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <unordered_set>
+#include <type_traits>
 #include <functional>
 #include <cmath>
 #include <chrono>
@@ -1417,7 +1418,9 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             absorbed_[i] = true;
         }
         store.needsUpdate();
-        DrawItem d = items[g.front()];
+        // Every member is absorbed; move the first directly into the output, with no temporary push copy.
+        static_assert(std::is_nothrow_move_constructible_v<DrawItem>);
+        DrawItem& d = merged_.emplace_back(std::move(items[g.front()]));
         if (d.gpuJoints) {
             d.gpuJointRigs.clear();
             for (std::size_t i : g) d.gpuJointRigs.push_back(items[i].gpuJointRig);
@@ -1443,7 +1446,6 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             d.boneStride = palette->bones();
             d.bindMatrix = d.bindMatrixInverse = d.matrixWorld;
         }
-        merged_.push_back(d);
         batchMembers_ += g.size();
     }
     if (merged_.empty())
