@@ -974,7 +974,8 @@ target_link_libraries(tn-native-engine-animation-schedule-test PRIVATE tn_engine
 tn_native_engine_test(tn-native-engine-animation-skeleton-test tests/native-engine/animation/skeleton_test.cpp
     native_engine_skeleton_pose=skeleton_pose
     native_engine_skeleton_clone_bounds=clone_bounds
-    native_engine_skeleton_clone_lights=clone_lights)
+    native_engine_skeleton_clone_lights=clone_lights
+    native_engine_skeleton_pose_version=pose_version)
 target_link_libraries(tn-native-engine-animation-skeleton-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-skeleton-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 # PRD-518 phases 2-3: the recorded SkinnedBatch CPU state reproduces over the native palette.

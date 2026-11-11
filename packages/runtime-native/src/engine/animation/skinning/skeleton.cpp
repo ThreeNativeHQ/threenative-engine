@@ -98,12 +98,19 @@ void Bone::materializeWorldTransformIfPending() {
 Skeleton::Skeleton(std::vector<std::shared_ptr<Bone>> bones, std::vector<Matrix4> boneInverses)
     : bones(bones.begin(), bones.end()), boneInverses(std::move(boneInverses)) {
     boneAddresses_.reserve(bones.size());
-    for (const auto& bone : bones) boneAddresses_.push_back(bone.get());
+    for (const auto& bone : bones) {
+        boneAddresses_.push_back(bone.get());
+        if (!bone) continue;
+        // A counter only its bone still holds belongs to a skeleton that is gone.
+        std::erase_if(bone->poseVersions_, [](const auto& version) { return version.use_count() == 1; });
+        bone->poseVersions_.push_back(poseVersion_);
+    }
     init();
 }
 
 void Skeleton::init() {
     revokeGpuSkinning();
+    markPoseChanged();
     boneMatrices.assign(bones.size() * 16, 0.0f);
 
     if (boneInverses.empty()) {
@@ -116,6 +123,7 @@ void Skeleton::init() {
 
 void Skeleton::calculateInverses() {
     revokeGpuSkinning();
+    markPoseChanged();
     boneInverses.clear();
     for (std::size_t i = 0; i < bones.size(); ++i) {
         Matrix4 inverse;
@@ -181,6 +189,7 @@ void SkinnedMesh::bind(std::shared_ptr<Skeleton> next, const Matrix4* matrix) {
     }
     bindMatrix.copy(*matrix);
     bindMatrixInverse.copy(*matrix).invert();
+    if (skeleton) skeleton->markPoseChanged();  // the bind is part of every palette slot
 }
 
 void SkinnedMesh::updateMatrixWorld(bool force) {

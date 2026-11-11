@@ -5,6 +5,8 @@
 // rebuilds each rig from the same table, applies the same writes in the same order, calls pose()
 // on the recorded pose and compares every float and double bit for bit.
 #include "check.h"
+#include "engine/animation/mixer.h"
+#include "engine/animation/property_binding.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/lights.h"
 #include "engine/scene/material.h"
@@ -211,7 +213,50 @@ void raycastPosedSkin() {
     }
 }
 
+// PRD-878: a skeleton's pose version moves when a bone's local transform is written, by any writer, and
+// with nothing else: a moved root, a world walk with no write and a reparented mesh leave it where it was
+// (UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/SkeletalMeshComponent.cpp:1249-1250 marks the
+// render data dirty from the anim tick, not from a compare).
+void poseVersion() {
+    auto root = std::make_shared<Object3D>();
+    auto hips = std::make_shared<Bone>(), head = std::make_shared<Bone>();
+    hips->name = "hips";
+    head->name = "head";
+    root->add(*hips);
+    hips->add(*head);
+    head->position.y = 1;
+    root->updateMatrixWorld(true);
+    Skeleton skeleton({hips, head});
+    const auto walk = [&] { root->updateMatrixWorld(); return skeleton.poseVersion(); };
+    uint64_t seen = walk();
+    const auto moved = [&] { const uint64_t now = walk(); const bool changed = now != seen; seen = now; return changed; };
+    CHECK(!moved());  // a walk with no write
+    root->position.x += 2;
+    root->rotation.y = 0.5;
+    CHECK(!moved());  // the rig's root moves, its pose does not
+    head->position.x = 0.25;  // a raw field write, as the web bridge's in-place views make
+    CHECK(moved());
+    head->rotateX(0.1);  // a native method
+    CHECK(moved());
+    animation::PropertyBinding binding(root, "head.quaternion");
+    const double quaternion[4] = {0, 0.2, 0, 0.9797958971132712};
+    binding.setValue(quaternion, 0);
+    CHECK(moved());
+    animation::AnimationMixer mixer(root);
+    auto clip = std::make_shared<animation::AnimationClip>("sway", 1, std::vector<animation::KeyframeTrack>{
+        animation::KeyframeTrack("hips.position", animation::TrackType::Vector, {0, 1}, {0, 0, 0, 1, 0, 0})});
+    mixer.clipAction(clip)->play();
+    mixer.update(0.25);  // the mixer evaluates and writes the bone
+    CHECK(moved());
+    CHECK(!moved());  // and nothing wrote it since
+    head->position.x = 0.25;  // the same value again: a write that changes nothing is no change
+    CHECK(!moved());
+    head->matrixAutoUpdate = false;  // the game owns the matrix and writes it with no call: every walk is a new pose
+    CHECK(moved());
+    CHECK(moved());
+}
+
 } // namespace
 
 TN_TEST_MAIN({"skeleton_pose", skeletonPose}, {"clone_bounds", cloneBounds}, {"clone_lights", cloneLights},
-             {"raycast_posed_skin", raycastPosedSkin})
+             {"raycast_posed_skin", raycastPosedSkin}, {"pose_version", poseVersion})

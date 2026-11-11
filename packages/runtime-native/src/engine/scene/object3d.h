@@ -221,6 +221,10 @@ public:
     virtual void materializeLocalTransform() {}
     virtual void prepareLocalTransformWrite() { materializeLocalTransform(); }
     virtual void exposeLocalTransform() {}
+    /** A writer changed this object's local transform: a native write marks it, and the world walk's compose reports
+     *  a local matrix that changed under it (the web bridge writes fields in place, with no call). A Bone stamps its
+     *  skeletons' pose version here (PRD-878); nothing else listens. */
+    virtual void localTransformWritten() {}
     // Owning-thread, default-OFF diagnostic hooks; bits: CPU read=1, skin draw=2, unknown=4.
     static thread_local bool poseObservationEnabled;
     inline static thread_local void (*poseObserver)(const Object3D&, uint8_t) = nullptr;

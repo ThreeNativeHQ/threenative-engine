@@ -17,6 +17,7 @@
 //     warn accompanies, without the console line.
 //   - `Skeleton` is neither copyable nor movable, matching its per-instance palette buffer.
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string_view>
@@ -32,7 +33,11 @@ namespace tn::engine {
 class Bone : public Object3D {
   public:
     Bone() = default;
-    ~Bone() override { prepareLocalTransformWrite(); if (publication_) --publicationCount_; }
+    ~Bone() override { localTransformWritten(); prepareLocalTransformWrite(); if (publication_) --publicationCount_; }
+    /** Bumps the pose version of every skeleton that holds this bone (PRD-878). */
+    void localTransformWritten() override {
+        for (const auto& version : poseVersions_) version->fetch_add(1, std::memory_order_relaxed);
+    }
     // Internal admission only: no production caller until a GPU consumer owns the scene plan.
     bool enableDeferredTransform();
     // The scene plan allocates once and uploads this whole stream; relocation revokes admission.
@@ -60,6 +65,8 @@ class Bone : public Object3D {
     /** three's `isBone`, the flag `Skeleton.pose` reads on a parent. */
     bool isBone = true;
   private:
+    friend class Skeleton;
+    std::vector<std::shared_ptr<std::atomic<uint64_t>>> poseVersions_;  // one per skeleton that holds this bone
     std::array<double, 10> deferredTRS_{}; // position, quaternion, scale; original mixer doubles
     inline static std::size_t publicationCount_ = 0;
     bool deferred_ = false, pending_ = false, publication_ = false;
@@ -99,6 +106,11 @@ class Skeleton {
     void update();
     // Internal renderer path, immediately after its world walk and before authored callbacks.
     void updateAfterWorldWalk(uint64_t firstEvaluation);
+    /** Moves whenever a bone's local transform is written or the inverses or a bind change, and never on a world move
+     *  alone: a rig that keeps it keeps its root-relative palette and its mesh-space box (PRD-878; UE 5.8.3:
+     *  Engine/Source/Runtime/Engine/Private/Components/SkinnedMeshComponent.cpp:1514 sends bones only when marked). */
+    [[nodiscard]] uint64_t poseVersion() const { return poseVersion_->load(std::memory_order_relaxed); }
+    void markPoseChanged() { poseVersion_->fetch_add(1, std::memory_order_relaxed); }
     /** The first bone whose name matches, or null. A null slot is skipped, never dereferenced. */
     [[nodiscard]] Bone* getBoneByName(std::string_view name) const;
 
@@ -128,6 +140,7 @@ class Skeleton {
     const std::vector<Vector3>& planCenters(uint64_t stamp, const Matrix4& inverse);
 
   private:
+    std::shared_ptr<std::atomic<uint64_t>> poseVersion_ = std::make_shared<std::atomic<uint64_t>>(1);
     std::vector<Bone*> boneAddresses_;  // `bones` is set once, by the constructor
     std::vector<PlanPose> planPoses_;
     uint64_t planStamp_ = 0;
