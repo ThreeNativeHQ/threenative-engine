@@ -53,7 +53,13 @@ export function openRunnerPage(
   // This copy is navigation-only. Reports and operator diagnostics retain the URL supplied on
   // the command line, while Android Chrome reaches the same server through its reverse tunnel.
   return installBootFailure(page, scenario)
-    .then(() => installScriptedGamepad(page))
+    // Only a scenario that scripts a pad pays for the override: every other page keeps the browser's
+    // own `navigator.getGamepads`, untouched.
+    .then(() =>
+      scenario.steps.some((step) => step.gamepad !== undefined)
+        ? installScriptedGamepad(page)
+        : undefined,
+    )
     .then(() => (scenario.reducedMotion === undefined ? undefined : page.emulateMedia({ reducedMotion: scenario.reducedMotion })))
     .then(() => openPageAndConnectBridge(page, { ...config, url: navigationUrl }, scenario));
 }

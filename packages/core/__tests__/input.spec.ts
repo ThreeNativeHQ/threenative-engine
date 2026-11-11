@@ -135,6 +135,47 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("keeps the pad being played when another pad drifts in a higher slot", () => {
+    const target = new EventTarget();
+    // The pad in the player's hands holds the right stick; the pad in slot 1 is a worn stick resting
+    // just past the dead zone. A "last slot with input" rule hands the input to slot 1 every tick.
+    const played = { axes: [0, 0, 0, 0.6], buttons: [] };
+    const drifting = { axes: [0.3, 0, 0, 0], buttons: [] };
+    const input = new InputMap(undefined, target, target, () => [played, drifting]);
+
+    input.tick();
+    expect(input.vector("move").x).toBe(0);
+
+    played.axes[3] = 0;
+    input.tick();
+    // With the player's pad idle, the drifting one takes over — that is the hand-over rule, not a steal.
+    expect(input.vector("move").x).toBeCloseTo(0.125);
+    input.dispose();
+  });
+
+  it("publishes raw axes at a zero dead zone, and refuses a dead zone it cannot honour", () => {
+    const target = new EventTarget();
+    // 0.6 on both axes is inside the unit circle only after clamping: a dead zone of 0 must not rescale.
+    const input = new InputMap(
+      undefined,
+      target,
+      target,
+      () => [{ axes: [0.6, 0.6, 0, 0], buttons: [] }],
+      "suppress",
+      { gamepadDeadZone: 0 },
+    );
+    input.tick();
+    expect(input.raw.gamepad.axes[0]).toBeCloseTo(0.6);
+    expect(input.raw.gamepad.axes[1]).toBeCloseTo(0.6);
+    input.dispose();
+
+    for (const gamepadDeadZone of [Number.NaN, -0.1, 1.5]) {
+      expect(
+        () => new InputMap(undefined, target, target, () => [], "suppress", { gamepadDeadZone }),
+      ).toThrow(/gamepadDeadZone must be a number from 0 through 1/);
+    }
+  });
+
   it("reads a standard, an 8BitDo and a Steam Deck through one mapping", () => {
     const target = new EventTarget();
     const reports: string[] = [];

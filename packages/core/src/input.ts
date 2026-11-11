@@ -192,9 +192,10 @@ const PAD_SLOT_KEYS: readonly string[] = Array.from({ length: 16 }, (_, index) =
  * still `1`, which is what makes a 0.6 stick read 0.5 rather than 0.4.
  */
 function applyStickDeadZone(axes: number[], x: number, y: number, deadZone: number): void {
-  const zone = Number.isFinite(deadZone)
-    ? Math.min(Math.max(deadZone, 0), 1)
-    : DEFAULT_GAMEPAD_DEAD_ZONE;
+  // `0` is the documented raw-axes override, so it must publish the stick untouched — the rescale
+  // below would still pull a corner in to the unit circle.
+  if (!(deadZone > 0)) return;
+  const zone = Math.min(deadZone, 1);
   const stickX = axes[x] ?? 0;
   const stickY = axes[y] ?? 0;
   const magnitude = Math.sqrt(stickX * stickX + stickY * stickY);
@@ -284,7 +285,13 @@ export class InputMap {
     contextMenu: ContextMenuPolicy = "suppress",
     options: IInputMapOptions = {},
   ) {
-    this.gamepadDeadZone = options.gamepadDeadZone ?? DEFAULT_GAMEPAD_DEAD_ZONE;
+    const deadZone = options.gamepadDeadZone ?? DEFAULT_GAMEPAD_DEAD_ZONE;
+    if (!Number.isFinite(deadZone) || deadZone < 0 || deadZone > 1) {
+      throw new RangeError(
+        `gamepadDeadZone must be a number from 0 through 1, received ${deadZone}.`,
+      );
+    }
+    this.gamepadDeadZone = deadZone;
     this.#bindings = { ...DEFAULT_BINDINGS, ...bindings };
     // Bindings are fixed at construction; freezing the key list keeps tick() from calling
     // Object.keys every step.
@@ -529,7 +536,6 @@ export class InputMap {
     this.#pinchDistance = 0;
     this.#pinchSample = 0;
     this.#activePadSlot = -1;
-    this.#padReports.clear();
     this.#previousPressed.clear();
     this.#justPressed.clear();
     this.#justReleased.clear();
@@ -560,24 +566,34 @@ export class InputMap {
     let pending = -1;
     let firstMapped = -1;
     let activeStillMapped = false;
+    let activeHasInput = false;
     for (let index = 0; index < sources.length; index += 1) {
       const pad = sources[index];
       if (pad === null || pad === undefined) continue;
       if (this.#readPad(pad, index) === "unmapped") continue;
       if (firstMapped < 0) firstMapped = index;
-      if (index === this.#activePadSlot) activeStillMapped = true;
-      if (this.#padHasInput()) pending = index;
+      if (index === this.#activePadSlot) {
+        activeStillMapped = true;
+        activeHasInput = this.#padHasInput();
+        continue;
+      }
+      if (pending < 0 && this.#padHasInput()) pending = index;
     }
     for (const key of this.#padReports.keys())
       if (!this.#padSeen.has(key)) this.#padReports.delete(key);
-    // A pad that reported input wins for the rest of the session; with none, the pad already in the
-    // player's hands keeps the slot so its releases are still read.
+    // The pad the player is using keeps the slot. Another pad takes over only while that one is
+    // idle, so a worn stick drifting in a higher slot — or a second pad lying on the couch — cannot
+    // steal the input from a pad that is being played. With no pad active, the first one that
+    // reports input wins, and with no input at all the last active pad keeps the slot so its
+    // releases are still read.
     const active =
-      pending >= 0
-        ? pending
-        : activeStillMapped && this.#activePadSlot >= 0
-          ? this.#activePadSlot
-          : firstMapped;
+      activeHasInput && this.#activePadSlot >= 0
+        ? this.#activePadSlot
+        : pending >= 0
+          ? pending
+          : activeStillMapped && this.#activePadSlot >= 0
+            ? this.#activePadSlot
+            : firstMapped;
     this.#activePadSlot = active;
     // Reused buffers: fresh arrays here were four allocations per update step, device or not.
     this.#gamepadAxes.length = 0;
@@ -597,14 +613,16 @@ export class InputMap {
   /** Normalizes one pad into the scratch buffer and reports it once per connect. */
   #readPad(pad: IInputGamepad, index: number): GamepadNormalizer {
     const normalizer = toStandardPad(pad, this.#padScratch);
-    const key = pad.id ?? (PAD_SLOT_KEYS[index] as string);
+    // `index:id`: two identical pads are two pads, and a hotplug that moves a pad to another slot
+    // is a new reading of where it is rather than a silent re-use of the old line.
+    const key = `${index}:${pad.id ?? (PAD_SLOT_KEYS[index] as string)}`;
     this.#padSeen.add(key);
     if (this.#padReports.get(key) !== normalizer) {
       this.#padReports.set(key, normalizer);
       console.info(
         `TN_GAMEPAD ${JSON.stringify({
           deadZone: this.gamepadDeadZone,
-          id: pad.id ?? key,
+          id: pad.id ?? (PAD_SLOT_KEYS[index] as string),
           mapping: normalizer,
         })}`,
       );

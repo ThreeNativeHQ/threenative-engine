@@ -52,20 +52,23 @@ interface IPadRow {
 
 const PAD_ROWS: readonly IPadRow[] = [
   {
-    // 8BitDo Ultimate 2C Wireless, SDL_GameControllerDB `8BitDo Ultimate 2C Wireless`.
+    // 8BitDo Ultimate 2C Wireless, SDL_GameControllerDB:367 (`0300…1b30000001000000`), whose
+    // triggers are axes 5 and 4 — the form a browser reports, where the hidraw entry (:72) has them
+    // as buttons 8 and 9 and nothing on the web would ever see those.
     product: 0x301b,
     vendor: 0x2dc8,
     map: "a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,paddle1:b2,paddle2:b5,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b3,y:b4,",
   },
   {
-    // 8BitDo Ultimate Wireless Controller, SDL_GameControllerDB `8BitDo Ultimate Wireless Controller`.
+    // 8BitDo Ultimate Wireless Controller, SDL_GameControllerDB:369 (`0300…1330000000020000`).
     product: 0x3013,
     vendor: 0x2dc8,
     map: "a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,misc1:b26,paddle1:b23,paddle2:b19,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b3,y:b4,",
   },
   {
-    // Steam Deck Controller, SDL_GameControllerDB `Steam Deck Controller`. Steam Input's virtual
-    // pad is a different SDL entry with the face buttons on b3..b6; it is not covered here.
+    // Steam Deck Controller, SDL_GameControllerDB:756 (`0300…0512000000016800`). Steam Input's virtual
+    // pad is a different SDL entry (:757) with the face buttons on b3..b6, and its d-pad as buttons;
+    // that one is not covered here.
     product: 0x1205,
     vendor: 0x28de,
     map: "a:b0,b:b1,back:b4,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b5,leftshoulder:b9,leftstick:b7,lefttrigger:a4,leftx:a0,lefty:a1,misc1:b11,paddle1:b12,paddle2:b13,paddle3:b14,paddle4:b15,rightshoulder:b10,rightstick:b8,righttrigger:a5,rightx:a2,righty:a3,start:b6,x:b2,y:b3,",
@@ -140,6 +143,12 @@ function parseRow(row: IPadRow): IParsedRow {
 /** Parsed once per row: parsing the same string every tick is work the frame loop must not do. */
 const PARSED_ROWS = new Map<IPadRow, IParsedRow>(PAD_ROWS.map((row) => [row, parseRow(row)]));
 
+/**
+ * Row per browser `id`. A pad keeps its id while it is connected, so this answer never changes for a
+ * connected device — and `RegExp.exec` allocates a match array, which the frame loop must not do.
+ */
+const ROW_BY_ID = new Map<string, IPadRow | null>();
+
 const CHROMIUM_VENDOR_PRODUCT = /vendor:\s*([0-9a-f]{1,4})\s+product:\s*([0-9a-f]{1,4})/i;
 const FIREFOX_VENDOR_PRODUCT = /^([0-9a-f]{4})-([0-9a-f]{4})-/i;
 
@@ -203,11 +212,16 @@ export function toStandardPad(pad: IInputGamepad, out: IStandardPad): GamepadNor
 }
 
 function rowFor(id: string | undefined): IPadRow | undefined {
+  if (id === undefined) return undefined;
+  const cached = ROW_BY_ID.get(id);
+  if (cached !== undefined) return cached ?? undefined;
   const key = padVendorProduct(id);
-  if (key === undefined) return undefined;
-  for (const row of PAD_ROWS)
-    if (row.vendor === key.vendor && row.product === key.product) return row;
-  return undefined;
+  let found: IPadRow | undefined;
+  if (key !== undefined)
+    for (const row of PAD_ROWS)
+      if (row.vendor === key.vendor && row.product === key.product) found = row;
+  ROW_BY_ID.set(id, found ?? null);
+  return found;
 }
 
 function clearPad(out: IStandardPad): void {
