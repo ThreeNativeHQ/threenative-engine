@@ -414,11 +414,25 @@ std::vector<double> packedNumbers(const Value& value) {
     return value.bytes.empty() ? value.numbers : typedArrayNumbers(value.text, value.bytes);
 }
 
+/** sqrt of the sum of squares; `std::hypot`'s overflow care costs more than the scan in Wasm. */
+double length(double x, double y) { return std::sqrt(x * x + y * y); }
+double length(double x, double y, double z) { return std::sqrt(x * x + y * y + z * z); }
+
 /** `[nearest, farthest]` from (x, z) to a cell rectangle, as core's `#span`. */
 std::array<double, 2> cellSpan(double left, double nearZ, double size, double x, double z) {
     const double right = left + size, farZ = nearZ + size;
-    return {std::hypot(std::max({left - x, x - right, 0.0}), std::max({nearZ - z, z - farZ, 0.0})),
-            std::hypot(std::max(std::abs(x - left), std::abs(x - right)), std::max(std::abs(z - nearZ), std::abs(z - farZ)))};
+    return {length(std::max({left - x, x - right, 0.0}), std::max({nearZ - z, z - farZ, 0.0})),
+            length(std::max(std::abs(x - left), std::abs(x - right)), std::max(std::abs(z - nearZ), std::abs(z - farZ)))};
+}
+
+/** The slab `__tnStaleRows` handed this host, kept while the host lives; the scan reads it in place. */
+std::vector<double>& staleSlabOf(Object3D& host) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, std::vector<double>>> slabs;
+    for (auto it = slabs.begin(); it != slabs.end();)
+        it = it->second.first.expired() ? slabs.erase(it) : std::next(it);
+    auto& entry = slabs[&host];
+    if (entry.first.expired()) entry = {host.weak_from_this(), {}};
+    return entry.second;
 }
 
 std::array<double, 2> reachVertical(double y, double minY, double maxY) {
@@ -466,7 +480,7 @@ std::vector<double> staleEntries(const std::vector<double>& slab, const std::vec
             const bool reach = !std::isnan(reachMin);
             if (!reach && (gpuOn || std::isnan(threshold))) continue;
             const double step = (std::isnan(threshold) ? 6.0 : threshold) / 8;
-            if (std::hypot(x - e[1], followY - e[2], z - e[3]) <= step && std::hypot(eyeX - e[4], eyeY - e[5], eyeZ - e[6]) <= step)
+            if (length(x - e[1], followY - e[2], z - e[3]) <= step && length(eyeX - e[4], eyeY - e[5], eyeZ - e[6]) <= step)
                 continue;
             if (asset >= assets) throw Unsupported{"__tnStaleEntries: an entry names no asset"};
             const double gateAt = gates[1 + asset * 2];
@@ -479,12 +493,12 @@ std::vector<double> staleEntries(const std::vector<double>& slab, const std::vec
             if (reach) {
                 const double minY = e[10], maxY = e[11];
                 const auto eyeNow = reachVertical(eyeY, minY, maxY), eyeBefore = reachVertical(e[5], minY, maxY);
-                low = std::min(std::hypot(eyeNear, eyeNow[0]), std::hypot(builtNear, eyeBefore[0]));
-                high = std::max(std::hypot(eyeFar, eyeNow[1]), std::hypot(builtFar, eyeBefore[1]));
+                low = std::min(length(eyeNear, eyeNow[0]), length(builtNear, eyeBefore[0]));
+                high = std::max(length(eyeFar, eyeNow[1]), length(builtFar, eyeBefore[1]));
                 const auto [reachBuiltNear, reachBuiltFar] = cellSpan(left, nearZ, size, e[1], e[3]);
                 const auto current = reachVertical(followY, minY, maxY), previous = reachVertical(e[2], minY, maxY);
-                const double reachLow = std::min(std::hypot(near, current[0]), std::hypot(reachBuiltNear, previous[0]));
-                const double reachHigh = std::max(std::hypot(far, current[1]), std::hypot(reachBuiltFar, previous[1]));
+                const double reachLow = std::min(length(near, current[0]), length(reachBuiltNear, previous[0]));
+                const double reachHigh = std::max(length(far, current[1]), length(reachBuiltFar, previous[1]));
                 stale = reachMin <= reachHigh && e[9] >= reachLow;
             }
             for (size_t gate = 0; !stale && gate < gateCount; ++gate) {
@@ -664,9 +678,15 @@ void registerObject3D(ClassBinding& b) {
         return Value::list(std::move(changed));
     };
     // Engine-internal (PRD-879): core's refilter stale scan over its packed rows, one call a pass.
-    // `__tnStaleEntries(slab, gates, query)`; layouts in packages/core/src/world-cell-stale.ts.
-    b.methods["__tnStaleEntries"] = [](void*, const Args& a, Store&) {
-        return Value::list(staleEntries(packedNumbers(a.at(0)), packedNumbers(a.at(1)), packedNumbers(a.at(2))));
+    // `__tnStaleRows(slab)` keeps the rows on this host, sent only when a cell's batches change;
+    // `__tnStaleEntries(gates, query)` scans them. Layouts in packages/core/src/world-cell-stale.ts.
+    b.methods["__tnStaleRows"] = [](void* self, const Args& a, Store&) {
+        std::vector<double>& slab = staleSlabOf(*as<Object3D>(self));
+        slab = packedNumbers(a.at(0));
+        return Value::of(double(slab.size()));
+    };
+    b.methods["__tnStaleEntries"] = [](void* self, const Args& a, Store&) {
+        return Value::list(staleEntries(staleSlabOf(*as<Object3D>(self)), packedNumbers(a.at(0)), packedNumbers(a.at(1))));
     };
     // Engine-internal (PRD-877): core's physics interpolation without leaving the engine.
     // `__tnPoseWatch(objects)` replaces the watched list and answers how many it holds; a body that

@@ -5,7 +5,8 @@
  * across a gate of. That scan visited every batch entry of every resident cell in JS: 0.9 ms a frame
  * on the forest walk, where every cell carries a `placementReach`. The entries' state now lives in a
  * slab of rows, kept per cell and rebuilt only when a cell's batches change, and the scan runs on the
- * slab in the owned engine (`Object3D.__tnStaleEntries`, `bindings_scene.cpp`). Upstream three runs
+ * slab in the owned engine: `Object3D.__tnStaleRows(slab)` keeps it there, sent only when it changes,
+ * and `__tnStaleEntries(gates, query)` scans it (`bindings_scene.cpp`). Upstream three runs
  * {@link staleRows}, its twin.
  *
  * Slab: one block per resident cell, a header of {@link STALE_HEADER} numbers, then
@@ -27,6 +28,11 @@ export const STALE_ENTRY = 12;
 /** The query's fixed numbers, before the world's gates. */
 export const STALE_QUERY = 8;
 
+/** sqrt of the sum of squares, as the engine's twin computes it; `Math.hypot` costs more. */
+function length(x: number, y: number, z = 0): number {
+  return Math.sqrt(x * x + y * y + z * z);
+}
+
 function span(
   left: number,
   near: number,
@@ -37,8 +43,8 @@ function span(
   const right = left + size;
   const far = near + size;
   return [
-    Math.hypot(Math.max(left - x, x - right, 0), Math.max(near - z, z - far, 0)),
-    Math.hypot(
+    length(Math.max(left - x, x - right, 0), Math.max(near - z, z - far, 0)),
+    length(
       Math.max(Math.abs(x - left), Math.abs(x - right)),
       Math.max(Math.abs(z - near), Math.abs(z - far)),
     ),
@@ -82,14 +88,8 @@ function reachCrossed(
   );
   const current = vertical(followY, minY, maxY);
   const previous = vertical(filterY, minY, maxY);
-  const reachLow = Math.min(
-    Math.hypot(brackets[2], current[0]),
-    Math.hypot(reachBuiltNear, previous[0]),
-  );
-  const reachHigh = Math.max(
-    Math.hypot(brackets[3], current[1]),
-    Math.hypot(reachBuiltFar, previous[1]),
-  );
+  const reachLow = Math.min(length(brackets[2], current[0]), length(reachBuiltNear, previous[0]));
+  const reachHigh = Math.max(length(brackets[3], current[1]), length(reachBuiltFar, previous[1]));
   return (slab[at + 8] as number) <= reachHigh && (slab[at + 9] as number) >= reachLow;
 }
 
@@ -125,8 +125,8 @@ function entryStale(
   const lodY = slab[at + 5] as number;
   const lodZ = slab[at + 6] as number;
   if (
-    Math.hypot(x - filterX, followY - filterY, z - filterZ) <= step &&
-    Math.hypot(eyeX - lodX, eyeY - lodY, eyeZ - lodZ) <= step
+    length(x - filterX, followY - filterY, z - filterZ) <= step &&
+    length(eyeX - lodX, eyeY - lodY, eyeZ - lodZ) <= step
   )
     return false;
   const asset = slab[at] as number;
@@ -141,8 +141,8 @@ function entryStale(
     const maxY = slab[at + 11] as number;
     const eyeNow = vertical(eyeY, minY, maxY);
     const eyeBefore = vertical(lodY, minY, maxY);
-    low = Math.min(Math.hypot(eyeNear, eyeNow[0]), Math.hypot(builtNear, eyeBefore[0]));
-    high = Math.max(Math.hypot(eyeFar, eyeNow[1]), Math.hypot(builtFar, eyeBefore[1]));
+    low = Math.min(length(eyeNear, eyeNow[0]), length(builtNear, eyeBefore[0]));
+    high = Math.max(length(eyeFar, eyeNow[1]), length(builtFar, eyeBefore[1]));
     if (reachCrossed(slab, at, cell, followY, brackets)) return true;
   }
   for (let gate = 0; gate < gateCount; gate += 1) {

@@ -2052,7 +2052,7 @@ void world_records() {
 }
 
 // PRD-879: core's refilter stale scan runs over packed rows in one call a pass,
-// `Object3D.__tnStaleEntries(slab, gates, query)`, the twin of world-cell-stale.ts `staleRows`. The same
+// `Object3D.__tnStaleRows(slab)` then `__tnStaleEntries(gates, query)`, the twin of world-cell-stale.ts `staleRows`. The same
 // vectors and answers are in packages/core/__tests__/world-cell-stale.spec.ts.
 void world_stale_entries() {
     const tn_version_info_t own = tn_engine_version();
@@ -2077,24 +2077,28 @@ void world_stale_entries() {
     const double gates[] = {3, 7, 1, 8, 0, 8, 0, 40};
     const auto scan = [&](double gpu) {
         const double query[] = {132, 0, 32, 132, 0, 32, gpu, 1, 40};
-        const tn_value_t args[3] = {bytes("Float64Array", slab, sizeof(slab) / sizeof(double)),
-                                    bytes("Float64Array", gates, 8), bytes("Float64Array", query, 9)};
+        const tn_value_t args[2] = {bytes("Float64Array", gates, 8), bytes("Float64Array", query, 9)};
         tn_value_t result{};
-        CHECK(tn_invoke(host, "__tnStaleEntries", args, 3, &result, &d.value) == TN_OK);
+        CHECK(tn_invoke(host, "__tnStaleEntries", args, 2, &result, &d.value) == TN_OK);
         CHECK(result.kind == TN_VALUE_NUMBERS);
         return std::vector<double>(result.numbers, result.numbers + result.count);
     };
-    const double reachNear = std::hypot(68.0, 96.0);
+    const tn_value_t rows = bytes("Float64Array", slab, sizeof(slab) / sizeof(double));
+    tn_value_t kept{};
+    CHECK(tn_invoke(host, "__tnStaleRows", &rows, 1, &kept, &d.value) == TN_OK);
+    CHECK(kept.kind == TN_VALUE_NUMBER && kept.number == double(sizeof(slab) / sizeof(double)));
+    const double reachNear = std::sqrt(68.0 * 68.0 + 96.0 * 96.0);
     CHECK(scan(0) == (std::vector<double>{0, 0, 68, 2, 2, reachNear}));
     // The GPU scene owns the gates: only the placementReach cell can be stale.
     CHECK(scan(1) == (std::vector<double>{2, 2, reachNear}));
     // A cell block that claims more entries than the slab holds is refused, not read past.
     const double cut[] = {0, 0, 64, 0, 90, 0, 9, 0};
     const double query[] = {132, 0, 32, 132, 0, 32, 0, 1, 40};
-    const tn_value_t refused[3] = {bytes("Float64Array", cut, 8), bytes("Float64Array", gates, 8),
-                                   bytes("Float64Array", query, 9)};
+    const tn_value_t cutRows = bytes("Float64Array", cut, 8);
+    CHECK(tn_invoke(host, "__tnStaleRows", &cutRows, 1, &kept, &d.value) == TN_OK);
+    const tn_value_t refused[2] = {bytes("Float64Array", gates, 8), bytes("Float64Array", query, 9)};
     tn_value_t result{};
-    CHECK(tn_invoke(host, "__tnStaleEntries", refused, 3, &result, &d.value) != TN_OK);
+    CHECK(tn_invoke(host, "__tnStaleEntries", refused, 2, &result, &d.value) != TN_OK);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

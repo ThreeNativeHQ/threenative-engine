@@ -63,11 +63,8 @@ export function newBoxes(batches: readonly InstancedBatch[][]): Box3[][] {
 
 /** The owned engine's stale scan (`bindings_scene.cpp`); see `world-cell-stale.ts`. */
 interface IStaleEngine {
-  __tnStaleEntries?: (
-    slab: Float64Array,
-    gates: Float64Array,
-    query: Float64Array,
-  ) => ArrayLike<number>;
+  __tnStaleRows?: (slab: Float64Array) => number;
+  __tnStaleEntries?: (gates: Float64Array, query: Float64Array) => ArrayLike<number>;
 }
 
 /** What the placement build asks its world for. Every read is the world's own state, not a copy. */
@@ -651,10 +648,9 @@ export class CellPlacements {
     ]);
     query.set(this.#gates, STALE_QUERY);
     const gates = this.#gateTable();
-    const engine = this.#engine.__tnStaleEntries;
     const found =
-      typeof engine === "function"
-        ? engine.call(this.#engine, this.#slab, gates, query)
+      typeof this.#engine.__tnStaleEntries === "function"
+        ? this.#engine.__tnStaleEntries(gates, query)
         : staleRows(this.#slab, gates, query);
     for (let at = 0; at < found.length; at += 3) {
       this.#stale.push({
@@ -682,6 +678,12 @@ export class CellPlacements {
     for (const block of blocks) {
       this.#slab.set(block, at);
       at += block.length;
+    }
+    if (typeof this.#engine.__tnStaleEntries === "function") {
+      // A scan without its rows would read an empty slab and find nothing stale, silently.
+      if (typeof this.#engine.__tnStaleRows !== "function")
+        throw new Error("TN_WORLD_STALE: the engine has __tnStaleEntries but no __tnStaleRows");
+      this.#engine.__tnStaleRows(this.#slab);
     }
     this.#slabCells = cells;
     this.#slabEpoch = epoch;

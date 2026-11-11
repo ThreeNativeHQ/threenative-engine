@@ -101,11 +101,18 @@ const query = (gpu: number): Float64Array =>
 
 describe("the refilter's stale scan", () => {
   it("names each crossed cell-asset once, nearest distance from the LOD eye", () => {
-    expect(staleRows(slab, gates, query(0))).toEqual([0, 0, 68, 2, 2, Math.hypot(68, 96)]);
+    expect(staleRows(slab, gates, query(0))).toEqual([
+      0,
+      0,
+      68,
+      2,
+      2,
+      Math.sqrt(68 * 68 + 96 * 96),
+    ]);
   });
 
   it("leaves the gates to the GPU scene and keeps the placementReach boundary", () => {
-    expect(staleRows(slab, gates, query(1))).toEqual([2, 2, Math.hypot(68, 96)]);
+    expect(staleRows(slab, gates, query(1))).toEqual([2, 2, Math.sqrt(68 * 68 + 96 * 96)]);
   });
 
   it("skips an entry whose follow point and eye stayed within an eighth of its threshold", () => {

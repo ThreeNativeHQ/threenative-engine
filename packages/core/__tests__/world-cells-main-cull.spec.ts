@@ -385,10 +385,16 @@ describe("WorldCells main-pass cluster cull", () => {
         }
       },
     );
-    const stale = vi.fn((slab: Float64Array, gates: Float64Array, query: Float64Array) => {
+    // The engine keeps the slab `__tnStaleRows` handed it; the scan reads it there.
+    let keptRows = new Float64Array(0);
+    const rows = vi.fn((slab: Float64Array) => {
+      keptRows = slab.slice();
+      return keptRows.length;
+    });
+    const stale = vi.fn((gates: Float64Array, query: Float64Array) => {
       inside += 1;
       try {
-        return staleRows(slab, gates, query);
+        return staleRows(keptRows, gates, query);
       } finally {
         inside -= 1;
       }
@@ -405,6 +411,7 @@ describe("WorldCells main-pass cluster cull", () => {
       configurable: true,
       value: records,
     });
+    Object.defineProperty(Object3D.prototype, "__tnStaleRows", { configurable: true, value: rows });
     Object.defineProperty(Object3D.prototype, "__tnStaleEntries", {
       configurable: true,
       value: stale,
@@ -464,9 +471,40 @@ describe("WorldCells main-pass cluster cull", () => {
       Reflect.deleteProperty(Frustum.prototype, "__tnIntersectsBoxes");
       Reflect.deleteProperty(InstancedBufferAttribute.prototype, "__tnRecords");
       Reflect.deleteProperty(Object3D.prototype, "__tnStaleEntries");
+      Reflect.deleteProperty(Object3D.prototype, "__tnStaleRows");
       Frustum.prototype.intersectsBox = intersectsBox;
       if (needsUpdate !== undefined)
         Object.defineProperty(BufferAttribute.prototype, "needsUpdate", needsUpdate);
+    }
+  });
+
+  it("refuses an engine scan that cannot be handed its rows (PRD-879)", async () => {
+    // An engine whose scan is bound but whose row store is not would scan an empty slab and find
+    // nothing stale, so the walk would never refilter. It throws instead.
+    Object.defineProperty(Object3D.prototype, "__tnStaleEntries", {
+      configurable: true,
+      value: () => [],
+    });
+    try {
+      stubManifestFetch();
+      const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+      const world = await loadWorld(follow);
+      const walk = async (): Promise<void> => {
+        for (const at of [
+          [0, 1],
+          [1, 1],
+        ] as const) {
+          Object.assign(follow.position, cellCentre(at[0], at[1]));
+          for (let pass = 0; pass < 60; pass += 1) {
+            await flush();
+            frame(world, playerCamera(at));
+          }
+        }
+      };
+      await expect(walk()).rejects.toThrow("TN_WORLD_STALE");
+      world.dispose();
+    } finally {
+      Reflect.deleteProperty(Object3D.prototype, "__tnStaleEntries");
     }
   });
 
