@@ -5,6 +5,7 @@ import {
   Box3,
   BoxGeometry,
   BufferAttribute,
+  Euler,
   Frustum,
   Group,
   InstancedBufferAttribute,
@@ -19,7 +20,7 @@ import {
   Vector3,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyRecords } from "../src/world-cell-records.js";
+import { applyRecords, placedBox } from "../src/world-cell-records.js";
 import { STALE_ENTRY, STALE_HEADER, patchRows, staleRows } from "../src/world-cell-stale.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
 
@@ -401,7 +402,14 @@ describe("WorldCells main-pass cluster cull", () => {
     });
     let jsBoxTests = 0;
     let jsUploads = 0;
+    let cornerTransforms = 0;
     const intersectsBox = Frustum.prototype.intersectsBox;
+    const applyMatrix4 = Box3.prototype.applyMatrix4;
+    // A placement's box is the closed form `placedBox` (the engine BOX op's math), not eight corners.
+    Box3.prototype.applyMatrix4 = function (this: Box3, matrix: Matrix4): Box3 {
+      cornerTransforms += 1;
+      return applyMatrix4.call(this, matrix);
+    };
     const needsUpdate = Object.getOwnPropertyDescriptor(BufferAttribute.prototype, "needsUpdate");
     Object.defineProperty(Frustum.prototype, "__tnIntersectsBoxes", {
       configurable: true,
@@ -465,6 +473,7 @@ describe("WorldCells main-pass cluster cull", () => {
       expect(scanned).toBeGreaterThan(0);
       expect(jsUploads).toBe(0);
       expect(jsBoxTests).toBe(0);
+      expect(cornerTransforms).toBe(0);
       expect(mainMesh(world).count).toBeGreaterThan(0);
       world.dispose();
     } finally {
@@ -473,9 +482,29 @@ describe("WorldCells main-pass cluster cull", () => {
       Reflect.deleteProperty(Object3D.prototype, "__tnStaleEntries");
       Reflect.deleteProperty(Object3D.prototype, "__tnStaleRows");
       Frustum.prototype.intersectsBox = intersectsBox;
+      Box3.prototype.applyMatrix4 = applyMatrix4;
       if (needsUpdate !== undefined)
         Object.defineProperty(BufferAttribute.prototype, "needsUpdate", needsUpdate);
     }
+  });
+
+  it("measures a placed box as Box3.applyMatrix4 does, in closed form (PRD-879)", () => {
+    const matrix = new Matrix4().compose(
+      new Vector3(3, -2, 7),
+      new Quaternion().setFromEuler(new Euler(0.4, -1.1, 2.3)),
+      new Vector3(-1.5, 1.5, 1.5),
+    );
+    const bounds = { min: [-1, -2, 0.5], max: [2, 4, 3] };
+    const corners = new Box3(new Vector3(-1, -2, 0.5), new Vector3(2, 4, 3)).applyMatrix4(matrix);
+    const closed = placedBox(new Box3(), bounds.min, bounds.max, matrix);
+    for (const axis of ["x", "y", "z"] as const) {
+      expect(closed.min[axis]).toBeCloseTo(corners.min[axis], 5);
+      expect(closed.max[axis]).toBeCloseTo(corners.max[axis], 5);
+    }
+    // An empty authored box stays as authored, exactly as three leaves it.
+    const empty = placedBox(new Box3(), [1, 1, 1], [0, 0, 0], matrix);
+    expect(empty.min.toArray()).toEqual([1, 1, 1]);
+    expect(empty.max.toArray()).toEqual([0, 0, 0]);
   });
 
   it("sends the engine's stale rows only the cell blocks that changed (PRD-879)", async () => {

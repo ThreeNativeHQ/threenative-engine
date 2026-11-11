@@ -1,4 +1,4 @@
-import type { InstancedBufferAttribute } from "three";
+import type { Box3, InstancedBufferAttribute, Matrix4 } from "three";
 
 /**
  * The instance records of the world's shared batches, written by one engine call a frame.
@@ -363,4 +363,39 @@ function boxOf(
     if (basis > scale) scale = basis;
   }
   return [minX, minY, minZ, maxX, maxY, maxZ, scale];
+}
+
+/**
+ * The AABB a local box covers under `matrix`, measured as the engine's `BOX` op measures a record: the
+ * centre moved by the matrix, half extents `|basis| * half`. Equal to `Box3.applyMatrix4`'s eight
+ * corners for an affine matrix, in twelve multiply-adds; a placement's box was the drain's largest
+ * per-record cost on the forest walk (0.12 ms a frame), measured twice per placement. An empty local
+ * box is left as authored, as three leaves it.
+ */
+export function placedBox(
+  target: Box3,
+  min: readonly number[],
+  max: readonly number[],
+  matrix: Matrix4,
+): Box3 {
+  target.min.fromArray(min);
+  target.max.fromArray(max);
+  if (target.isEmpty()) return target;
+  const e = matrix.elements;
+  const cx = ((min[0] as number) + (max[0] as number)) / 2;
+  const cy = ((min[1] as number) + (max[1] as number)) / 2;
+  const cz = ((min[2] as number) + (max[2] as number)) / 2;
+  const hx = ((max[0] as number) - (min[0] as number)) / 2;
+  const hy = ((max[1] as number) - (min[1] as number)) / 2;
+  const hz = ((max[2] as number) - (min[2] as number)) / 2;
+  for (let axis = 0; axis < 3; axis += 1) {
+    const a = e[axis] as number;
+    const b = e[axis + 4] as number;
+    const c = e[axis + 8] as number;
+    const centre = a * cx + b * cy + c * cz + (e[axis + 12] as number);
+    const half = Math.abs(a) * hx + Math.abs(b) * hy + Math.abs(c) * hz;
+    target.min.setComponent(axis, centre - half);
+    target.max.setComponent(axis, centre + half);
+  }
+  return target;
 }

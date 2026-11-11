@@ -15,6 +15,7 @@ import {
 } from "./world-cell-impostors.js";
 import type { IAssetState } from "./world-cell-models.js";
 import { LEVEL_REFILTER_STEP_METRES } from "./world-cell-options.js";
+import { placedBox } from "./world-cell-records.js";
 import {
   STALE_ENTRY,
   STALE_HEADER,
@@ -245,9 +246,7 @@ export class CellPlacements {
 
   /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
   #boundsAt(bounds: IWorldAsset["bounds"], matrix: Matrix4): Box3 {
-    this.#recordBounds.min.fromArray(bounds.min);
-    this.#recordBounds.max.fromArray(bounds.max);
-    return this.#recordBounds.applyMatrix4(matrix);
+    return placedBox(this.#recordBounds, bounds.min, bounds.max, matrix);
   }
 
   /**
@@ -471,9 +470,9 @@ export class CellPlacements {
             z: centre.z,
           });
         }
-        // Authored bounds include model-part offsets; apply the whole placement transform so
-        // rotated, mirrored and off-centre casters cannot fall outside visibility/shadow regions.
-        this.#boundsAt(bounds, this.#matrix);
+        // `#recordBounds` still holds `placedBox`: the authored bounds (model-part offsets included)
+        // under the whole placement transform, so rotated, mirrored and off-centre casters cannot fall
+        // outside visibility/shadow regions. Measured once per placement, not once per level.
         const parts = asset.levels[level] as readonly IAssetPart[];
         const levelBatches = job.batches?.[level] as InstancedBatch[];
         const levelBoxes = job.boxes?.[level] as Box3[] | undefined;

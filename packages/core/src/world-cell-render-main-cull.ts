@@ -14,6 +14,7 @@ import type {
 } from "./world-cell-data.js";
 import { clusterOf } from "./world-cell-data.js";
 import { PLACEMENT_RECORD_FLOATS } from "./world-cell-impostors.js";
+import { placedBox } from "./world-cell-records.js";
 import {
   GPU_KEY_SUFFIX,
   MAIN_CULL_MARKER_MS,
@@ -305,9 +306,7 @@ export class CellMainCull {
 
   /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
   #boundsAt(bounds: IWorldAsset["bounds"], matrix: Matrix4): Box3 {
-    this.#recordBounds.min.fromArray(bounds.min);
-    this.#recordBounds.max.fromArray(bounds.max);
-    return this.#recordBounds.applyMatrix4(matrix);
+    return placedBox(this.#recordBounds, bounds.min, bounds.max, matrix);
   }
 
   /**
