@@ -176,6 +176,7 @@
         "@threenative/core#createReplayDriver": "export function createReplayDriver( recording: Recording, target: EventTarget, pointerTarget = target, ) { … }",
         "@threenative/core#Daylight": "export class Daylight extends Group implements IComputeDriven { … }",
         "@threenative/core#debugFlag": "export function debugFlag(name: string): boolean { … }",
+        "@threenative/core#debugValue": "export function debugValue(name: string): string | undefined { … }",
         "@threenative/core#defineGame": "export function defineGame<TState extends Record<string, unknown>, TPhysics = undefined>( config: IGameConfig<TState, TPhysics>, ): IGame<TState, TPhysics> { … }",
         "@threenative/core#describeSceneShape": "export function describeSceneShape( window: IFrameBudgetWindow, cull: IRenderCameraCullReport | undefined, ): ISceneShape | undefined { … }",
         "@threenative/core#describeSceneWarning": "export function describeSceneWarning(warning: ISceneWarning): string { … }",
@@ -314,9 +315,13 @@
         "@threenative/core#withVelocityContext": "export function withVelocityContext<T>(node: T, source: Node): T { … }",
         "@threenative/core#WorldEnvironment": "export class WorldEnvironment { … }",
         "@threenative/core#zenithTransmittance": "export function zenithTransmittance( parameters: IAtmosphereParameters | IResolvedAtmosphereParameters, ): AtmosphereRgb { … }",
+        "src/assets.ts#ctx.assets.memo": "ctx.assets.memo<T>(key: string, build: () => T | Promise<T>): Promise<T>",
         "src/game.ts#renderer.matrixWorld": "renderer.matrixWorld?: \"visible\" | \"all\"",
         "src/game.ts#renderer.minimumProjectedPixels": "renderer.minimumProjectedPixels?: number | false",
-        "src/game.ts#renderer.projection": "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }"
+        "src/game.ts#renderer.projection": "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }",
+        "src/scene.ts#ctx.after": "ctx.after(delay: number, callback: () => void): ScheduleHandle",
+        "src/scene.ts#ctx.beforeRender": "ctx.beforeRender(callback: () => void): () => void",
+        "src/scene.ts#ctx.startup.progress": "ctx.startup.progress: number"
       }
     },
     "@threenative/metahuman": {
