@@ -126,6 +126,9 @@ void PoseHistory::blend(double alpha) {
         blended.quaternion[1] = out.y;
         blended.quaternion[2] = out.z;
         blended.quaternion[3] = out.w;
+        // A settled body blends onto the pose it already holds; writing it would only mark its
+        // transform dirty and make the walk recompose a matrix that did not move.
+        if (blended == now) continue;
         writePose(*object, blended);
     }
 }

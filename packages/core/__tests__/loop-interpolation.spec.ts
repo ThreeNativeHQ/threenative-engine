@@ -36,7 +36,13 @@ describe("fixed-step motion presentation", () => {
   });
 });
 
-describe("draw-only transform history", () => {
+describe.each(["javascript", "engine"] as const)("draw-only transform history, %s path", (path) => {
+  /** The same case on both paths: the engine path hands the poses to a model of the C++ history. */
+  const interpolationFor = (enabled?: boolean): PhysicsInterpolation =>
+    path === "engine"
+      ? new PhysicsInterpolation(enabled, fakePoseOwner().owner)
+      : new PhysicsInterpolation(enabled);
+
   it("exposes bounded alpha, including stalls, backward time, and a frozen clock", () => {
     const alphas: number[] = [];
     const loop = new FixedStepLoop({
@@ -54,7 +60,7 @@ describe("draw-only transform history", () => {
 
   it("slerps rotation and restores solved transforms even when a draw throws", () => {
     const object = new Object3D();
-    const interpolation = new PhysicsInterpolation();
+    const interpolation = interpolationFor();
     interpolation.track(object);
     interpolation.beginTick();
     object.position.x = 2;
@@ -79,7 +85,7 @@ describe("draw-only transform history", () => {
     settled.updateMatrixWorld(true);
     settled.matrixAutoUpdate = false;
     const moving = new Object3D();
-    const interpolation = new PhysicsInterpolation();
+    const interpolation = interpolationFor();
     interpolation.track(settled);
     interpolation.track(moving);
     interpolation.beginTick();
@@ -106,7 +112,7 @@ describe("draw-only transform history", () => {
     const plain = new Object3D();
     const plainUpdates = vi.spyOn(plain, "updateMatrix");
     for (const object of [engine, plain]) {
-      const interpolation = new PhysicsInterpolation();
+      const interpolation = interpolationFor();
       interpolation.track(object);
       interpolation.beginTick();
       object.position.x = 2;
@@ -118,12 +124,17 @@ describe("draw-only transform history", () => {
 
     expect(engineUpdates).not.toHaveBeenCalled();
     expect(engine.matrixWorldNeedsUpdate).toBe(true);
-    expect(plainUpdates).toHaveBeenCalledTimes(1);
+    // On the engine path the C++ restore marks the local transform dirty for every body it wrote,
+    // so JavaScript recomposes nothing; plain three on the JavaScript path still needs the call.
+    if (path === "engine") {
+      expect(plainUpdates).not.toHaveBeenCalled();
+      expect(plain.matrixWorldNeedsUpdate).toBe(true);
+    } else expect(plainUpdates).toHaveBeenCalledTimes(1);
   });
 
   it("resets a teleport during a tick and external position edits between ticks", () => {
     const object = new Object3D();
-    const interpolation = new PhysicsInterpolation();
+    const interpolation = interpolationFor();
     interpolation.track(object);
     interpolation.beginTick();
     object.position.x = 100;
@@ -138,14 +149,14 @@ describe("draw-only transform history", () => {
     const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
     try {
       const object = new Object3D();
-      const interpolation = new PhysicsInterpolation(enabled);
+      const interpolation = interpolationFor(enabled);
       const remove = interpolation.track(object);
       interpolation.beginTick();
       object.position.x = 2;
       interpolation.endTick();
       interpolation.render(0.5, () => expect(object.position.x).toBe(enabled === false ? 2 : 1));
       expect(log).toHaveBeenLastCalledWith(
-        `TN_PHYSICS_INTERPOLATION:${JSON.stringify({ enabled: enabled ?? true, overrideSource: enabled === undefined ? "default" : "defineGame", path: "javascript", trackedObjects: 1 })}`,
+        `TN_PHYSICS_INTERPOLATION:${JSON.stringify({ enabled: enabled ?? true, overrideSource: enabled === undefined ? "default" : "defineGame", path, trackedObjects: 1 })}`,
       );
       remove();
       remove();
@@ -158,7 +169,7 @@ describe("draw-only transform history", () => {
 
   it("clears scene history and protects a new registration from stale removals", () => {
     const object = new Object3D();
-    const interpolation = new PhysicsInterpolation();
+    const interpolation = interpolationFor();
     const removeOld = interpolation.track(object);
     interpolation.beginTick();
     object.position.x = 2;
@@ -175,7 +186,7 @@ describe("draw-only transform history", () => {
 
   it("does not delay frozen tick-counted playtests", () => {
     const object = new Object3D();
-    const interpolation = new PhysicsInterpolation();
+    const interpolation = interpolationFor();
     interpolation.track(object);
     const loop = new FixedStepLoop({
       interpolation,
@@ -251,66 +262,105 @@ describe("interpolation cost, measured only under debug telemetry", () => {
   });
 });
 
+interface IFakePose {
+  position: Vector3;
+  quaternion: Quaternion;
+}
+
+interface IFakeEntry {
+  object: Object3D;
+  previous: IFakePose;
+  current: IFakePose;
+  saved: IFakePose;
+}
+
+const poseOf = (object: Object3D): IFakePose => ({
+  position: object.position.clone(),
+  quaternion: object.quaternion.clone(),
+});
+const samePose = (a: IFakePose, b: IFakePose): boolean =>
+  a.position.equals(b.position) && a.quaternion.equals(b.quaternion);
+
 /**
- * A stand-in for the engine's five pose methods (PRD-877 phase 3) over plain arrays. `record` keeps
- * the call order; `write` decides whether it behaves like C++ (blending the objects) or like a spy
- * that touches nothing, so a case can prove which side moved the transforms.
+ * The engine's five pose methods (PRD-877 phase 3) over plain arrays, modelled line by line on
+ * `packages/runtime-native/src/engine/scene/pose_history.cpp`, so every case can run on the engine
+ * path. `calls` keeps the call order. With `write` false it is a spy that touches no transform, so a
+ * case can prove JavaScript moved nothing. A write marks the transform dirty, as C++
+ * `markLocalTransformDirty` does.
  */
-function fakePoseOwner(write: boolean): { owner: Object3D; calls: string[] } {
+function fakePoseOwner(write = true): { owner: Object3D; calls: string[] } {
   const calls: string[] = [];
-  const previous = new Map<Object3D, Vector3>();
-  const previousRotation = new Map<Object3D, Quaternion>();
-  const current = new Map<Object3D, Vector3>();
-  const currentRotation = new Map<Object3D, Quaternion>();
-  const saved = new Map<Object3D, { position: Vector3; quaternion: Quaternion }>();
+  let entries: IFakeEntry[] = [];
+  let blended: IFakeEntry[] = [];
+  const writePose = (object: Object3D, pose: IFakePose): void => {
+    object.position.copy(pose.position);
+    object.quaternion.copy(pose.quaternion);
+    object.matrixWorldNeedsUpdate = true;
+  };
   const owner = new Object3D() as Object3D & Record<string, unknown>;
 
   owner.__tnPoseWatch = (objects: Object3D[]) => {
     calls.push("watch");
-    return objects.length;
+    // A body that was already watched keeps its poses, so adding one resets none beside it.
+    entries = objects.map(
+      (object) =>
+        entries.find((entry) => entry.object === object) ?? {
+          object,
+          previous: poseOf(object),
+          current: poseOf(object),
+          saved: poseOf(object),
+        },
+    );
+    blended = [];
+    return entries.length;
   };
   owner.__tnPoseReset = (objects: Object3D[]) => {
     calls.push("reset");
-    for (const object of objects) {
-      previous.set(object, object.position.clone());
-      previousRotation.set(object, object.quaternion.clone());
-      current.set(object, object.position.clone());
-      currentRotation.set(object, object.quaternion.clone());
+    for (const entry of entries) {
+      if (!objects.includes(entry.object)) continue;
+      entry.previous = poseOf(entry.object);
+      entry.current = poseOf(entry.object);
     }
   };
   owner.__tnPoseTick = (phase: number) => {
     calls.push(`tick:${phase}`);
-    if (!write) return;
-    const from = phase >= 1 ? current : previous;
-    const fromRotation = phase >= 1 ? currentRotation : previousRotation;
-    for (const object of owner.trackedObjects as Object3D[]) {
-      from.set(object, object.position.clone());
-      fromRotation.set(object, object.quaternion.clone());
+    for (const entry of entries) {
+      if (phase >= 1) entry.current = poseOf(entry.object);
+      else entry.previous = poseOf(entry.object);
     }
   };
   owner.__tnPoseBlend = (alpha: number) => {
     calls.push("blend");
-    if (!write) return;
-    for (const object of owner.trackedObjects as Object3D[]) {
-      saved.set(object, { position: object.position.clone(), quaternion: object.quaternion.clone() });
-      const a = previous.get(object);
-      const b = current.get(object);
-      const ra = previousRotation.get(object);
-      const rb = currentRotation.get(object);
-      if (a === undefined || b === undefined || ra === undefined || rb === undefined) continue;
-      object.position.lerpVectors(a, b, alpha);
-      object.quaternion.slerpQuaternions(ra, rb, alpha);
+    if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1)
+      throw new Error("PoseHistory::blend needs a finite alpha in [0, 1]");
+    blended = [];
+    for (const entry of entries) {
+      const now = poseOf(entry.object);
+      // Written since the tick: a discontinuity, never a step to blend across.
+      if (!samePose(now, entry.current)) {
+        entry.previous = poseOf(entry.object);
+        entry.current = poseOf(entry.object);
+      }
+      entry.saved = now;
+      blended.push(entry);
+      const pose: IFakePose = {
+        position: new Vector3().lerpVectors(entry.previous.position, entry.current.position, alpha),
+        quaternion: new Quaternion().slerpQuaternions(
+          entry.previous.quaternion,
+          entry.current.quaternion,
+          alpha,
+        ),
+      };
+      // A body whose blend lands where it already is keeps its matrix caches.
+      if (write && !samePose(pose, now)) writePose(entry.object, pose);
     }
   };
   owner.__tnPoseRestore = () => {
     calls.push("restore");
-    if (!write) return;
-    for (const object of owner.trackedObjects as Object3D[]) {
-      const held = saved.get(object);
-      if (held === undefined) continue;
-      object.position.copy(held.position);
-      object.quaternion.copy(held.quaternion);
-    }
+    for (const entry of blended)
+      if (write && !samePose(poseOf(entry.object), entry.saved))
+        writePose(entry.object, entry.saved);
+    blended = [];
   };
   return { owner: owner as Object3D, calls };
 }
@@ -346,7 +396,6 @@ describe("the engine path, when the host carries the five pose methods", () => {
   it("leaves the pose to the owner and reports the engine path", () => {
     const body = new Object3D();
     const { owner } = fakePoseOwner(true);
-    owner.trackedObjects = [body];
     const interpolation = new PhysicsInterpolation(undefined, owner);
     interpolation.track(body);
     body.position.set(0, 0, 0);
@@ -357,9 +406,9 @@ describe("the engine path, when the host carries the five pose methods", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     try {
       interpolation.render(0.25, () => undefined);
-      const logged = info.mock.calls.map((call) => String(call[0])).find((line) =>
-        line.startsWith("TN_PHYSICS_INTERPOLATION:"),
-      );
+      const logged = info.mock.calls
+        .map((call) => String(call[0]))
+        .find((line) => line.startsWith("TN_PHYSICS_INTERPOLATION:"));
       expect(logged).toContain('"path":"engine"');
     } finally {
       info.mockRestore();
@@ -374,7 +423,6 @@ describe("the engine path, when the host carries the five pose methods", () => {
     for (const useEngine of [false, true]) {
       const body = new Object3D();
       const { owner } = fakePoseOwner(true);
-      owner.trackedObjects = [body];
       const interpolation = useEngine
         ? new PhysicsInterpolation(undefined, owner)
         : new PhysicsInterpolation();

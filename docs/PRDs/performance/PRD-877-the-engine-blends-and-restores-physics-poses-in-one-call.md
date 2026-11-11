@@ -145,17 +145,20 @@ both-paths run of the seven cases and the two playtests are open.
 1. `PhysicsInterpolation` creates one owner `Object3D` lazily. It picks the engine path as the Solution rules say, and reports `path` in `TN_PHYSICS_INTERPOLATION`.
 2. On the engine path, `beginTick`, `endTick`, `render` and `reset` each make one method call, plus `__tnPoseWatch` only when the dirty flag is set. The reference counts, the `enabled` and `alpha === 1` early return, and the `try`/`finally` shape stay in JavaScript.
 3. Keep the JavaScript loops as the other path. Do not delete them.
-- [ ] The 7 existing cases of `loop-interpolation.spec.ts` pass on both paths: once as today, and once with a fake owner that implements the five methods over plain arrays and records each call. On the fake-owner run, a frame with no membership change makes exactly 4 calls (tick 0, tick 1, blend, restore) and 0 writes to any tracked object's `position` or `quaternion` from JavaScript. Write this run first and see it fail. proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts packages/physics/__tests__/interpolation.spec.ts`.
-  **Partly done, not ticked.** The seven cases still pass (20/20 across this spec and
-  `packages/physics/__tests__/interpolation.spec.ts`), and a new `fakePoseOwner` run proves the two
-  numbers the box asks for: a frame with no membership change makes exactly
-  `[tick:0, tick:1, blend, restore]` — no watch — and a spy owner that writes nothing proves no
-  JavaScript touched a tracked transform, because the body would have moved if it had. The report
-  carries `"path":"engine"` and the engine and JavaScript paths reach the same pose. What is **not**
-  done is running all seven existing cases a *second* time through the fake owner: the run added is
-  three cases beside them, not a parameterized second pass. Several of the seven assert JavaScript-
-  only behaviour (the recompose hook, untouched matrix caches), so that pass needs the fake to
-  emulate the C++ writes rather than spy on them. Until that exists this box stays open.
+- [x] The 7 existing cases of `loop-interpolation.spec.ts` pass on both paths: once as today, and once with a fake owner that implements the five methods over plain arrays and records each call. On the fake-owner run, a frame with no membership change makes exactly 4 calls (tick 0, tick 1, blend, restore) and 0 writes to any tracked object's `position` or `quaternion` from JavaScript. Write this run first and see it fail. proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts packages/physics/__tests__/interpolation.spec.ts`.
+  — **Done 2026-11-11.** The seven cases are one `describe.each(["javascript", "engine"])`, and the
+  engine run injects a fake owner modelled line by line on `pose_history.cpp` (watch keeps the poses
+  of bodies that stay, reset, the two ticks, the discontinuity reset inside `blend`, the restore that
+  skips an unchanged body, and a dirty mark on every write). One case asserts per path: on the engine
+  path JavaScript calls `updateMatrix` on neither body and both are marked dirty, because the C++
+  write marks the local transform. The faithful fake turned the settled-caches case **red on the
+  engine path** (`expected true to be false`): C++ `blend` wrote, and so dirtied, a body whose two
+  ticks hold one pose. Fixed in C++ (`blend` skips the write when the blended pose equals the pose
+  the body holds) with a native case `aSettledBodyIsNotWritten` in `pose_history_test.cpp`, red
+  (`:262`, `:267` CHECK failed) then green. Proof: `pnpm exec vitest run
+  packages/core/__tests__/loop-interpolation.spec.ts packages/physics/__tests__/interpolation.spec.ts`
+  — 30 passed (28 in the core spec, both paths); `ctest -R "native_engine_(physics|v8)_pose_history"`
+  on `build/engine-only` — 2/2. The four-call frame and the no-write spy stay in the engine-path block.
 - [x] The native V8 host calls the same five methods and gets the same poses. proof: a new case `pose_history` in `v8_adapter_test.cpp`, written like the `__bandRigs` checks (`:1299`) and added to the `foreach(case …)` list in `packages/runtime-native/cmake/NativeEngineAdapters.cmake:73`, then `ctest -R native_engine_v8_pose_history` on the host build (target `tn-native-engine-v8-test`). — **100% passed**, 16 checks inside the case. The configure that defines the target is the documented `-DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF`; `MYSTRAL_USE_V8=ON` alone defines no target. The case compares the blended position and quaternion against three's own `lerpVectors` and `slerpQuaternions` computed in the host, checks the restore is exact, checks a `__tnPoseReset` teleport does not blend across the gap, and checks `blend(1.5)` and `blend(NaN)` throw into JavaScript. It first failed on `ok:33` against the engine's `ok:16` — my assertion count was wrong, not the engine.
 - [ ] `examples/native-smoke/playtests/physics.playtest.json` and `packages/create-threenative/templates/kart/playtests/smooth-drive.playtest.json` pass on a page built from the head, and the page logs `TN_PHYSICS_INTERPOLATION` with `"path":"engine"`. proof: the playtest command in EXECUTION-ORDER.md.
   **Open, and the page still reports `"path":"javascript"`.** What was ruled out tonight, so the

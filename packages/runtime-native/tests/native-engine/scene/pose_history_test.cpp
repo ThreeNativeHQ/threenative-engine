@@ -245,6 +245,30 @@ void resetForgetsTheDiscontinuity() {
     CHECK(near(a->position.x, 500, 0));
 }
 
+void aSettledBodyIsNotWritten() {
+    // A body whose two ticks hold one pose blends onto the pose it already has. Writing it anyway marks
+    // its local transform dirty every frame and the walk recomposes a matrix that did not move; the
+    // JavaScript path never did, because three's vector writes flag nothing.
+    auto settled = body(4, 2, 1);
+    auto moving = body(0, 0, 0);
+    PoseHistory history;
+    history.watch({settled.get(), moving.get()});
+    history.tick(0.0);
+    moving->position.set(2, 0, 0);
+    history.tick(1.0);
+    settled->ownTransformTracking()[1] = 0;
+    moving->ownTransformTracking()[1] = 0;
+    history.blend(0.5);
+    CHECK(settled->ownTransformTracking()[1] == 0);
+    CHECK(moving->ownTransformTracking()[1] == 1);
+    CHECK(near(settled->position.x, 4, 0));
+    moving->ownTransformTracking()[1] = 0;
+    history.restore();
+    CHECK(settled->ownTransformTracking()[1] == 0);
+    CHECK(moving->ownTransformTracking()[1] == 1);
+    CHECK(near(moving->position.x, 2, 0));
+}
+
 } // namespace
 
 TN_TEST_MAIN({"pose_history", [] {
@@ -254,5 +278,6 @@ TN_TEST_MAIN({"pose_history", [] {
                   aDestroyedBodyIsSkipped();
                   blendRejectsAnAlphaItCannotUse();
                   resetForgetsTheDiscontinuity();
-                  std::printf("pose history: 6 cases\n");
+                  aSettledBodyIsNotWritten();
+                  std::printf("pose history: 7 cases\n");
               }})
