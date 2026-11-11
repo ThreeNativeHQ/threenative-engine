@@ -127,6 +127,13 @@ Risks:
   this lamp count. Reopen it when a game ships more than about 64 lamps.
 - 2026-11-10 (Claude, audit session): a depth prepass is not in scope. The scene pass is 8.6 ms on the Iris Xe after the lamp
   change, and PRD-766 phase 2 already holds the masked prepass as deferred.
+- 2026-11-10 (Claude, PRD-871 session): the native proof of the GPU split is `player-gpu-stages.mjs` on the V8 player, not a
+  `perf --file` log. The test reads the same `info.engine` fields that core's `gpuFrameSample` reads and asserts them per
+  frame; a log read would add a game build and prove nothing more.
+- 2026-11-10 (Claude, PRD-871 session): the low-tier shadow switch ships in the starter's generated `src/render/postprocessing.ts`,
+  not in core. Repository rule: what decides how anything looks ships as generated source in `src/render/`; core supplies
+  only `qualityTiers.shadow(tier).castShadows`. The named override is `setupPost(..., { shadows })`, reported as
+  `shadows=on|off(tier|override)` on `TN_QUALITY_TIER`.
 - 2026-11-10 (João): no Midway work in this lane. Midway still ships `autoBatch: false`; that is a game-side note, not a
   box here.
 
@@ -151,7 +158,7 @@ Risks:
 **Verification:** a laptop fair window with base and candidate lab builds, arms `?stress&adaptive&arm=base` and `?stress&adaptive&arm=head`, plus a visual judge at each tier the change touches.
 
 - [ ] At the `low` tier a game with no shadow wiring of its own draws no shadow pass, and a game that sets its own shadow option keeps it. proof: a core spec red-green, and `gpuShadowMs` under 1 ms on `?stress&adaptive` in the laptop window.
-- [ ] `TN_FRAME_BUDGET` carries the GPU frame by pass (shadow, scene, other) on the owned engine. proof: a core spec, and one native desktop run read with `node packages/playtest/dist/runner/cli.js perf --file <log>`.
+- [x] `TN_FRAME_BUDGET` carries the GPU frame by pass (shadow, scene, other) on the owned engine. proof: a core spec, and one native desktop run read with `node packages/playtest/dist/runner/cli.js perf --file <log>`. — `4bd398993` (Wasm facade, core) and `52876410f` (V8 player). `renderer.spec.ts` "hands out the engine's own pass split" red before, green after (65 passed). Stress lab `TN_FRAME_BUDGET`: desktop `gpu 4.8 = gpuMain 1.0 + gpuShadow 1.2 + gpuOther 2.6`; laptop at `low` `gpuMain 5.2, gpuShadow 0, gpuOther 5.9`. Native: `player-gpu-stages.mjs` on the V8 player, RTX 2080, PASS (the split names the sampled frame). The `perf --file` reading is replaced by that test (see Decisions).
 
 #### Phase 3: the desktop frame loses its shadow planning cost
 
@@ -161,6 +168,10 @@ Risks:
 **Verification:** `ctest --test-dir build/wasm -L native-engine -R "vsm|render_database|renderer"`, then a paired desktop fair window (`--passes uncapped`, arms `base` and `head`, plus `plainShadow` as the ceiling), a holdout kit, and a visual judge on `?stress&closeup` and `?stress&freezeAt=12` for each change to shadow planning.
 
 - [ ] A frame whose static casters did not change spends 0.5 ms or less in `planVirtualPages` on `?stress` (1.64 ms today). proof: a `vsm_atlas_test` case that counts per-caster work on an unchanged frame, red-green; stage split in the ledger row.
+  Partial, 2026-11-10: `a38190bff` (a moving rigid caster keeps its vertex box; `virtual_shadow_bounds_cache` red-green) and
+  `7482c204c` (a rig box reads each bone stretch alone): bounds rebuild 1.38 → 1.06 ms a frame by sub-timer. The stage still
+  reads 1.25-1.6 ms under host load 12-20; the desktop window `shadow-plan` (#347-#348) is inconclusive (one valid base
+  run). Most of what remains is the walking crowd (see Handover notes).
 - [ ] No buffer with unchanged content uploads on `?stress&still`. proof: `tnDebug=1` upload counters before and after, in the ledger row notes.
 - [ ] The `play` frame has a stage split that covers 95% of the frame, and its largest removable term is cut. proof: the split and the paired window in ledger rows; the DevTools trace named in the learnings entry.
 
@@ -170,4 +181,13 @@ Risks:
 - Lab source: `~/projects/threenative/sandbox/stress-lab` (commits go to `main` with a push). Lab flags: `stress`, `play`, `adaptive`, `plainShadow`, `still`, `closeup`, `freezeAt=<s>`, `noLights`, `noTrees`, `noRocks`, `noCrowd`, `noBodies`, `noFires`, `arm=<name>`.
 - Probe tools from the audit, kept outside git: `artifacts/stress-lab-audit/tools/` in the worktree, and `~/offload/labs/stress-audit/` on the laptop (`dist-cand3` is the base lab build, `dist-cand4` the lamp range build). `seg-probe.mjs` prints the GPU pass split per URL variant. `cap-probe.mjs` takes the judge captures.
 - A candidate lab build is a copy of the base `dist` with the two engine `.wasm` files replaced and the `ASM_CONSTS` address patched in the glue chunks. Do not rebuild a folder that a live server serves.
+- Phase 3 attribution (2026-11-10, `?stress`, desktop, `TN_FRAME_BUDGET` stages, host load 12-20): frame p50 10.1-12.3 ms;
+  `wasmPlan` 2.4-3.0 (of it `planVirtualPages` 1.25-1.6), `wasmScene` 2.2-2.8, `jsBefore` 1.4-1.8, `update` 1.4,
+  `engineJs` 0.9-1.0, `wasmTargets` 0.8-0.9. With `&noCrowd` the frame is 5.6 ms: the 120 walking rigs cost about 4.5-6.5 ms.
+  Every walker moves each frame, so its bones change in world space even when `updateRate: "auto"` skips its pose. Inside
+  `planVirtualPages` (temporary sub-timers, not committed): 240 rig draws 0.72 ms, 1,174 bounds lookups 0.35 ms, 11
+  instanced draws 0.20 ms, 214 moving rigid draws 0.13 ms. The next lever is per-rig engine work for a rig that moves
+  rigidly (Unreal keeps bones in component space), not more shadow-plan micro cuts.
+- The laptop reaches 100 C between runs; `offload.sh start` refuses then. Retry in a loop with 60 s waits. Head runs with the
+  same GPU frame differ 50 to 76 fps from throttling: read `gpu` and `shadow` beside `fps`.
 - Before a headed GPU browser on the desktop: read `nvidia-smi --query-gpu=memory.used --format=csv,noheader` and keep 3 GB free. Check `uptime`: a fair window is void above load 18.

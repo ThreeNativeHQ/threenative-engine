@@ -630,32 +630,28 @@ describe("starter adaptive quality", () => {
     expect(deadband.tier).toBe("medium");
   });
 
-  it("should wait twice as long before retrying a raise the next window undid (PRD-871)", async () => {
+  it("should not retry a raise that failed until the cost it measured would fit (PRD-871)", async () => {
     const { createAdaptiveQuality } = await loadAdaptive("starter");
     const clock = clockAt(0);
     const policy = createAdaptiveQuality(
       { mobile: true },
       { cooldownMs: 5000, now: clock.now, startupWindows: 0 },
     );
-    // low fits with headroom (its shadow pass is off), medium does not: the raise fails.
+    // low fits with headroom (its shadow pass is off), medium costs 2.25 times as much: the raise fails.
     clock.advance(6000);
     expect(feed(policy, 1, 5, { gpuMs: 12 }).tier).toBe("medium");
     clock.advance(6000);
     expect(feed(policy, 6, 2, { gpuMs: 27 }).tier).toBe("low");
-    // One cooldown later low still has headroom, but the raise that just failed waits two.
-    clock.advance(6000);
+    // 12 ms at low predicts 27 ms at medium: no retry, however long low keeps its headroom.
+    clock.advance(600_000);
     const held = feed(policy, 8, 5, { gpuMs: 12 });
-    expect(held.tier, "a failed raise is not retried after one cooldown").toBe("low");
-    expect(held.reason).toBe("cooldown");
-    clock.advance(4001);
-    expect(feed(policy, 13, 5, { gpuMs: 12 }).tier).toBe("medium");
-    // A second failure doubles the wait again, and a stepped-down tier is never held back.
+    expect(held.tier, "a raise that cannot hold is not retried").toBe("low");
+    expect(held.reason).toBe("predicted");
+    // A lighter scene (5 ms at low predicts 11.25 ms at medium) raises again.
     clock.advance(6000);
-    expect(feed(policy, 18, 2, { gpuMs: 27 }).tier).toBe("low");
-    clock.advance(15000);
-    expect(feed(policy, 20, 5, { gpuMs: 12 }).tier).toBe("low");
-    clock.advance(5001);
-    expect(feed(policy, 25, 5, { gpuMs: 12 }).tier).toBe("medium");
+    const raised = feed(policy, 13, 5, { gpuMs: 5 });
+    expect(raised.tier).toBe("medium");
+    expect(raised.reason).toBe("headroom");
   });
 
   it("should keep an explicit tier pinned and still observe it", async () => {
