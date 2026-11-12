@@ -1,4 +1,4 @@
-import { Object3D, type Object3D as Object3DType, Quaternion, Vector3 } from "three";
+import { type Object3D, type Object3D as Object3DType, Quaternion, Vector3 } from "three";
 
 import { hasCopyMatrixWorldHook } from "./engine-hooks.js";
 import { debugRequested, measureDebug } from "./profiling/debug-telemetry.js";
@@ -178,7 +178,9 @@ export class PhysicsInterpolation {
     const owner = this.#owner;
     if (owner !== null) {
       this.#watchIfDirty(owner);
-      this.#measured("interpolationTick", "PhysicsInterpolation.beginTick", () => owner.__tnPoseTick(0));
+      this.#measured("interpolationTick", "PhysicsInterpolation.beginTick", () =>
+        owner.__tnPoseTick(0),
+      );
       return;
     }
     this.#measured("interpolationTick", "PhysicsInterpolation.beginTick", () => {
@@ -192,7 +194,9 @@ export class PhysicsInterpolation {
   endTick(): void {
     const owner = this.#owner;
     if (owner !== null) {
-      this.#measured("interpolationTick", "PhysicsInterpolation.endTick", () => owner.__tnPoseTick(1));
+      this.#measured("interpolationTick", "PhysicsInterpolation.endTick", () =>
+        owner.__tnPoseTick(1),
+      );
       return;
     }
     this.#measured("interpolationTick", "PhysicsInterpolation.endTick", () => {
@@ -222,11 +226,15 @@ export class PhysicsInterpolation {
       // The reference counts, the early returns and the try/finally stay here; the poses move in C++.
       // The watch crosses only when the tracked set changed since the engine last heard of it.
       this.#watchIfDirty(owner);
-      this.#measured("interpolationBlend", "PhysicsInterpolation.render", () => owner.__tnPoseBlend(alpha));
+      this.#measured("interpolationBlend", "PhysicsInterpolation.render", () =>
+        owner.__tnPoseBlend(alpha),
+      );
       try {
         return draw();
       } finally {
-        this.#measured("interpolationRestore", "PhysicsInterpolation.render", () => owner.__tnPoseRestore());
+        this.#measured("interpolationRestore", "PhysicsInterpolation.render", () =>
+          owner.__tnPoseRestore(),
+        );
       }
     }
     // Retain the exact participants even if Scene.render changes scenes or unregisters a body.
