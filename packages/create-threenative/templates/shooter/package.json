@@ -19,9 +19,9 @@
     "format:check": "biome format src"
   },
   "dependencies": {
-    "@threenative/core": "0.3.13",
-    "@threenative/physics": "0.3.13",
-    "@threenative/ui": "0.3.13",
+    "@threenative/core": ">=0.3.13",
+    "@threenative/physics": ">=0.3.13",
+    "@threenative/ui": ">=0.3.13",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "three": "0.187.0"
@@ -30,8 +30,8 @@
     "@tailwindcss/vite": "4.3.3",
     "@types/three": "0.187.0",
     "@vitejs/plugin-react": "6.0.5",
-    "@threenative/assets": "0.3.14",
-    "@threenative/playtest": "0.3.13",
+    "@threenative/assets": ">=0.3.14",
+    "@threenative/playtest": ">=0.3.13",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
     "playwright": "1.62.1",
@@ -45,7 +45,7 @@
     "eslint": "10.13.0"
   },
   "optionalDependencies": {
-    "@threenative/runtime-native": "0.3.13"
+    "@threenative/runtime-native": ">=0.3.13"
   },
   "overrides": {
     "sharp": ">=0.35.4",

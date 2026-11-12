@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { satisfiesSpecifier, templateSpecifier } from "./version-range.js";
 import { workspacePackages } from "./workspace-packages.js";
 
 type IManifest = {
@@ -104,9 +105,10 @@ export async function checkVersionPins(root = process.cwd()): Promise<readonly s
       }
       const expected = versions.get(dependency);
       if (expected !== undefined) {
-        if (value !== expected) {
+        const specifier = templateSpecifier(dependency, expected);
+        if (!satisfiesSpecifier(expected, value)) {
           findings.push(
-            `template ${template.name} pins ${dependency} at ${value}; expected workspace version ${expected}`,
+            `template ${template.name} pins ${dependency} at ${value}; expected workspace version ${expected} as ${specifier}`,
           );
         }
         continue;

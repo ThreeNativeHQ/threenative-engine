@@ -31,6 +31,7 @@ const { platformKey, releaseManifestUrl } = (await import(
   readonly platformKey: (platform?: string, arch?: string) => string;
   readonly releaseManifestUrl: (version?: string) => string;
 };
+import { rangeFloor, satisfiesSpecifier } from "./version-range.js";
 import { publicWorkspacePackages, workspacePackages } from "./workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
@@ -327,11 +328,15 @@ export function templatePinCensus(
       if (typeof block !== "object" || block === null || Array.isArray(block)) continue;
       for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>)) {
         if (typeof specifier !== "string" || UNRESOLVED.test(specifier)) continue;
-        const pin = `${dependency}@${specifier}`;
+        // A template names a floor, not a version: its ceiling is "whatever is newest". The floor is
+        // the release the kit was tested against, so that is what the registry has to be able to
+        // serve before a game can resolve anything at all.
+        const requested = rangeFloor(specifier) ?? specifier;
+        const pin = `${dependency}@${requested}`;
         let facts = seen.get(pin);
         if (facts === undefined) {
           try {
-            facts = lookup(dependency, specifier);
+            facts = lookup(dependency, requested);
           } catch {
             facts = { state: "unreachable" };
           }

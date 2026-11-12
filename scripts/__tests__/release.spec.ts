@@ -361,6 +361,30 @@ describe("pnpm release cohort guards", () => {
     expect(findings[0]).toMatch(/@threenative\/core.*0\.3\.0/u);
   });
 
+  it("reads a template floor, so a later candidate still satisfies the kit's pin", async () => {
+    const root = await makeTempDir("threenative-release-floors-");
+    roots.push(root);
+    const templates = path.join(root, "templates", "starter");
+    await fs.promises.mkdir(templates, { recursive: true });
+    const manifest = (specifier: string): Promise<void> =>
+      fs.promises.writeFile(
+        path.join(templates, "package.json"),
+        JSON.stringify({ dependencies: { "@threenative/core": specifier } }),
+      );
+    await manifest(">=0.3.0");
+    expect(
+      validateTemplatePins(path.join(root, "templates"), new Map([["@threenative/core", "0.3.4"]])),
+    ).toEqual([]);
+    // A floor above the candidate names an engine the registry cannot serve yet.
+    await manifest(">=0.4.0");
+    const findings = validateTemplatePins(
+      path.join(root, "templates"),
+      new Map([["@threenative/core", "0.3.4"]]),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatch(/@threenative\/core.*0\.3\.4/u);
+  });
+
   it("refuses preparation when a published package changed without a version bump", async () => {
     const repo = path.resolve(import.meta.dirname, "../..");
     const packages = publishSet(repo);
