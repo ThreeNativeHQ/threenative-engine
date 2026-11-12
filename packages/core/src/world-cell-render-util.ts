@@ -239,7 +239,9 @@ export function followCluster(
 
 /** What a released batch costs to keep: its instance buffer, which is all of it. */
 export function heldBytes(shared: SharedBatch): number {
-  return (shared.mesh.instanceMatrix.array as Float32Array).byteLength;
+  // The count, never `array`: the records live in the engine (`world-cell-records.ts`), and a read
+  // of a JS copy would upload that stale copy over them.
+  return shared.mesh.instanceMatrix.count * 16 * Float32Array.BYTES_PER_ELEMENT;
 }
 
 export function redressMaterial(mesh: InstancedMesh): void {

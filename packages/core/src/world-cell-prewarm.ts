@@ -1,4 +1,12 @@
-import { type Box3, type Camera, Frustum, InstancedMesh, Matrix4, type Object3D } from "three";
+import {
+  type Box3,
+  type Camera,
+  Frustum,
+  InstancedMesh,
+  type Material,
+  Matrix4,
+  type Object3D,
+} from "three";
 import { markEngineRenderHook } from "./engine-render-hook.js";
 import type { IRendererLike } from "./renderer.js";
 import { SharedBatch } from "./world-cell-batches.js";
@@ -38,6 +46,8 @@ export interface ICellPrewarmHost {
     part: number,
     fallback: IBatchShape,
   ): IBatchShape;
+  /** The material the swap draws this level and part with; see `CellGpuDress#lodSurface`. */
+  lodSurface(asset: string, level: number, part: number, source: Material): Material;
 }
 
 /**
@@ -326,9 +336,11 @@ export class CellPrewarm {
       this.#host.hasRetired(entry.key)
     )
       return;
+    // Minted with the material the swap draws (`shapeFor`): the raw part material builds a program no
+    // placement ever draws, and the LOD-masked one is then built by the first placement, after the reveal.
     const shared = new SharedBatch(
       entry.geometry,
-      entry.material,
+      this.#host.lodSurface(entry.asset, entry.level, entry.part, entry.material),
       this.#host.runMax(entry.asset) ?? 1,
       this.#host.residentCells() + 1,
       entry.key,

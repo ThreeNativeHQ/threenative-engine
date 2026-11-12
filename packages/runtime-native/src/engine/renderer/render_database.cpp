@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <unordered_set>
+#include <type_traits>
 #include <functional>
 #include <cmath>
 #include <chrono>
@@ -432,8 +433,10 @@ void RenderDatabase::depthBiasOf(const Material& material, DrawItem& d) {
 
 BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* name) {
     const auto it = g.attributes.find(name);
-    if (it == g.attributes.end() || !it->second) return nullptr;
-    const BufferAttribute& attribute = *it->second;
+    return it == g.attributes.end() || !it->second ? nullptr : floatStore(*it->second);
+}
+
+BufferStore* RenderDatabase::floatStore(const BufferAttribute& attribute) {
     if (attribute.store->scalar() == Scalar::F32) return attribute.store.get();
     // Entries whose source is gone are dropped once the table doubles, so a scene that loads and
     // unloads geometry does not keep their copies.
@@ -544,6 +547,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const BufferGeometry& geometry = *r.canonical;
         r.buffers = {floatStore(geometry, "position"), floatStore(geometry, "normal"), floatStore(geometry, "uv"),
                      geometry.index ? geometry.index->store.get() : nullptr};
+        for (const auto& [name, attribute] : {std::pair{"skinIndex", &r.skinIndex}, std::pair{"skinWeight", &r.skinWeight}})
+            if (const auto it = geometry.attributes.find(name); it != geometry.attributes.end()) *attribute = it->second.get();
         // Match three's (0, 1, 0) fallback: geometry roughness still reads it when normalNode overrides lighting.
         // Flat shading instead derives its normals from position derivatives.
         if (!r.buffers[1] && r.buffers[0] && !material->flatShading && !material->nodes.fragmentNode &&
@@ -631,6 +636,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     const std::size_t signature = materialSignature(*r.material);
     if (!r.materialResolved || r.materialSignature != signature || r.refreshRevision != revision) {
         r.materialResolved = true;
+        d.variantStamp = ++variantStamps_;
         r.materialSignature = signature;
         r.refreshRevision = revision;
         ++projection::detail::materialRefreshCount();
@@ -682,6 +688,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
                     name != "skinWeight" && attribute->store->scalar() != Scalar::F32)
                     r.convertedInputs = true;
     } else if (r.convertedInputs) {
+        d.variantStamp = ++variantStamps_;
         vertexColorsOf(*r.canonical, *r.material, d);
         geometryInputsOf(*r.canonical, d, mesh.type() == "SkinnedMesh");
     }
@@ -764,6 +771,20 @@ bool RenderDatabase::inShadowFrustum(const Object3D& object, const Sphere* spher
         if ((mask & sf.layersMask) != 0 && sf.frustum.intersectsSphere(*sphere)) return true;
     }
     return false;
+}
+
+bool RenderDatabase::bonesOnly(const Object3D& bone) {
+    BoneChain& chain = boneChains_[&bone];
+    chain.seen = frame_;
+    if (chain.id == bone.id() && chain.version == bone.subtreeVersion()) return chain.bonesOnly;
+    const auto walk = [](const auto& self, const Object3D& node) -> bool {
+        if (typeid(node) != typeid(Bone)) return false;
+        for (const Object3D* child : node.children)
+            if (!self(self, *child)) return false;
+        return true;
+    };
+    chain = {bone.id(), bone.subtreeVersion(), frame_, walk(walk, bone)};
+    return chain.bonesOnly;
 }
 
 // A rig's shadow bound, cheapest first. A rig no shadow frustum's layers see never casts, and that
@@ -893,16 +914,23 @@ void RenderDatabase::projectGroups(const Mesh& mesh, const Camera& camera, std::
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                              bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly, const Object3D* excluded) {
     if (&object == excluded) return;
+    ++projectVisits_;
     if (object.skipsGpuJointSubtree()) { ++Object3D::gpuProjectionVisits_; return; }
+    // A skeleton's bones are matrices for its rigs, not scene draws: Unreal keeps them in the mesh component
+    // (UE 5.8.3: Engine/Source/Runtime/Engine/Private/SkeletalRender.cpp:524) and the scene walks only primitives.
+    if (typeid(object) == typeid(Bone) && bonesOnly(object)) return;
     if (!object.visible()) {
         if (updateChildren)
             for (Object3D* child : object.children)
                 child->updateMatrixWorld(force);
         return;
     }
-    bool mainPass = object.layers().test(camera.layers());
-    bool shadowCaster = shadowMapEnabled && object.castShadow();
-    if (mainPass || shadowCaster) {
+    // A plain Group or Object3D draws and lights nothing and holds no record: only its children matter.
+    const bool plainNode = typeid(object) == typeid(Group) || typeid(object) == typeid(Object3D);
+    bool mainPass = !plainNode && object.layers().test(camera.layers());
+    bool shadowCaster = !plainNode && shadowMapEnabled && object.castShadow();
+    if (plainNode) {
+    } else if (mainPass || shadowCaster) {
         const std::string_view type = plainMesh ? "Mesh" : object.type();
         if (!lightsOnly && type == "LOD") {
             if (mainPass) {
@@ -979,14 +1007,15 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             const auto& skinned = static_cast<const SkinnedMesh&>(mesh);
                             DrawItem& d = items.back();
                             d.skinnedRig = static_cast<SkinnedMesh*>(&object);
-                            d.skinIndices = store(*mesh.geometry, "skinIndex");
-                            d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
+                            d.skinIndices = r.skinIndex ? r.skinIndex->store.get() : nullptr;
+                            d.skinWeights = r.skinWeight ? floatStore(*r.skinWeight) : nullptr;
                             if (skinned.skeleton && d.skinIndices && d.skinWeights) {
-                                const void* skeleton = skinned.skeleton.get();
                                 const bool gpu = gpuJoints_ && *gpuJoints_->valid && gpuJoints_->byMesh.count(&skinned);
-                                if (!gpu && (skeletonsFresh_ == nullptr || skeletonsFresh_->count(skeleton) == 0) &&
-                                    skeletonsUpdated_.insert(skeleton).second)
-                                    skinned.skeleton->updateAfterWorldWalk(worldsFreshSince_);
+                                Skeleton& rig = *skinned.skeleton;
+                                if (!gpu && (freshPrepare_ == 0 || rig.renderedBy != freshPrepare_) && rig.renderedBy != prepareId_) {
+                                    rig.renderedBy = prepareId_;
+                                    rig.deferWorldPalette(worldsFreshSince_);
+                                }
                                 d.boneMatrices = &skinned.skeleton->boneMatrices;
                                 d.bindMatrix = toArray(skinned.bindMatrix);
                                 d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
@@ -1260,15 +1289,27 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         decision = &batchDecision_;
     }
     projection::countWalkCall(projection::WalkCaller::RenderDatabase);
-    skinnedPalettes_.clear();
+    // Rebuild on resource/structure versions, never on matrix or palette values. Dense slots are written in
+    // draw order below, so a camera turn or a hidden member needs no claim-map rebuild (and leaves no holes).
+    if (paletteHierarchy_ != Object3D::hierarchyVersion() || paletteRecords_ != rebuilds_ || paletteDecision_ != batchDecisions_) {
+        skinnedPalettes_.clear();
+        paletteHierarchy_ = Object3D::hierarchyVersion();
+        paletteRecords_ = rebuilds_;
+        paletteDecision_ = batchDecisions_;
+    }
     batchGroupsList_.clear();
     candidatesByKey_.clear();
+    shadowCopies_.clear();
+    if (virtualShadows_)
+        for (std::size_t i = 0; i < items.size(); ++i)
+            if (items[i].skinnedRig && !items[i].mainPass && !items[i].gpuJoints) shadowCopies_.emplace(items[i].skinnedRig, i);
     for (const auto& [depth, item] : ordered) {
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
+        if (virtualShadows_ && d.castShadow) continue;  // a page caster keeps its own row: no verdict to read
         const auto verdict = decision->verdict.find(d.skinnedRig);
         const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision->verdict.end() && verdict->second == "skinned");
-        if ((virtualShadows_ && d.castShadow) || (!d.batchable && !skinned))
+        if (!d.batchable && !skinned)
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];
@@ -1313,15 +1354,20 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         const bool skinned = items[g.front()].skinnedRig != nullptr;
         if (!skinned && g.size() < kMinBatchMembers)
             continue;
-        SkinnedPalette* palette = nullptr;
-        if (skinned && !items[g.front()].gpuJoints) {
-            skinnedPalettes_.push_back(
-                std::make_unique<SkinnedPalette>(items[g.front()].skinnedRig->skeleton->bones.size(), g.size(), false));
-            palette = skinnedPalettes_.back().get();
-            palette->begin();
-        }
         ++batchGroups_;
         const auto slot = batchSlot(uint64_t{1} << 63 | uint64_t(&g - batchGroupsList_.data()));
+        SkinnedPalette* palette = nullptr;
+        if (skinned && !items[g.front()].gpuJoints) {
+            if (skinnedPalettes_.size() <= slot) skinnedPalettes_.resize(slot + 1);
+            auto& held = skinnedPalettes_[slot];
+            const auto bones = items[g.front()].skinnedRig->skeleton->bones.size();
+            if (!held || held->bones() != bones || held->capacity() < g.size()) {
+                held = std::make_unique<SkinnedPalette>(bones, g.size(), false);
+                ++paletteBuilds_;
+            }
+            palette = held.get();
+            palette->begin();
+        }
         while (batchStores_.size() <= slot) batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         BufferStore& store = *batchStores_[slot];
         if (store.count() != g.size() * 16)
@@ -1336,11 +1382,26 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         if (uniform && batchColors_[slot]->count() != g.size() * 3) batchColors_[slot]->resize(g.size() * 3);
         auto* colors = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
         std::size_t colorOffset = 0;
+        uint32_t paletteSlot = 0;
         for (std::size_t i : g) {
             const Object3D* placement = nullptr;
             if (palette) {
-                const auto slot = palette->claim(items[i].skinnedRig);
-                placement = palette->writeRelative(*slot, *items[i].skinnedRig);
+                SkinnedMesh& rig = *items[i].skinnedRig;
+                const auto slot = paletteSlot++;
+                placement = palette->writeRelative(slot, rig);
+                // The rig's shadow copy reads the same root-relative slot instead of the skeleton's world palette, so a
+                // rig has one palette a frame: the copy keeps its own model matrix (its shadow bounds read it) and its
+                // bind pair folds the placement back in, meshWorld * (meshWorld^-1 * R) * (R^-1 * boneWorld * ...).
+                const auto copy = placement ? shadowCopies_.find(&rig) : shadowCopies_.end();
+                if (copy != shadowCopies_.end() && items[copy->second].boneMatrices == &rig.skeleton->boneMatrices) {
+                    DrawItem& shadow = items[copy->second];
+                    Matrix4 prefix;
+                    prefix.multiplyMatrices(rig.bindMatrixInverse, placement->matrixWorld);
+                    shadow.boneMatrices = &palette->matrices();
+                    shadow.boneOffset = slot * palette->bones();
+                    shadow.bindMatrix = Matrix4{}.elements;
+                    shadow.bindMatrixInverse = toArray(prefix);
+                }
             }
             // Relative palettes carry placement here; eager world palettes retain identity.
             const Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -1357,7 +1418,9 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             absorbed_[i] = true;
         }
         store.needsUpdate();
-        DrawItem d = items[g.front()];
+        // Every member is absorbed; move the first directly into the output, with no temporary push copy.
+        static_assert(std::is_nothrow_move_constructible_v<DrawItem>);
+        DrawItem& d = merged_.emplace_back(std::move(items[g.front()]));
         if (d.gpuJoints) {
             d.gpuJointRigs.clear();
             for (std::size_t i : g) d.gpuJointRigs.push_back(items[i].gpuJointRig);
@@ -1383,18 +1446,17 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             d.boneStride = palette->bones();
             d.bindMatrix = d.bindMatrixInverse = d.matrixWorld;
         }
-        merged_.push_back(d);
         batchMembers_ += g.size();
     }
     if (merged_.empty())
         return;
-    batchedOut_.clear();
-    batchedOut_.reserve(items.size() - batchMembers_ + merged_.size());
-    for (std::size_t i = 0; i < items.size(); ++i)
-        if (!absorbed_[i])
-            batchedOut_.push_back(std::move(items[i]));
-    batchedOut_.insert(batchedOut_.end(), std::make_move_iterator(merged_.begin()), std::make_move_iterator(merged_.end()));
-    items.swap(batchedOut_);
+    // Compacted in place, in the same order: the draws before the first member stay where they are. A draw is 1.4 KB,
+    // and copying every draw of the frame into a second list cost the stress lab's crowd 0.1 ms (PRD-878).
+    std::size_t kept = std::size_t(std::find(absorbed_.begin(), absorbed_.end(), true) - absorbed_.begin());
+    for (std::size_t i = kept; i < items.size(); ++i)
+        if (!absorbed_[i]) items[kept++] = std::move(items[i]);
+    items.erase(items.begin() + std::ptrdiff_t(kept), items.end());
+    items.insert(items.end(), std::make_move_iterator(merged_.begin()), std::make_move_iterator(merged_.end()));
 }
 
 // Capture members while their scene/material cache lines are hot. DrawItems are made only for
@@ -1699,7 +1761,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     if (shadowMapType == PCFSoftShadowMap) shadowMapType = 1;  // PCFShadowMap; three has no other map filter here
     callbacks_.clear();
     direct_.clear();
-    skeletonsUpdated_.clear();
+    static std::atomic<uint64_t> prepares{0};
+    prepareId_ = ++prepares;
     batchMeshes_.clear();
     batchTransforms_.clear();
     batchRgb_.clear();
@@ -1758,7 +1821,13 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         if (!(*callback)({&scene, &camera, p.mesh->geometry, p.mesh->material}, error))
             diagnostics_.push_back("TN_CALLBACK_FAILED onBeforeRender: " + error);
         p.record->draw->params = paramsOf(*p.record->material);
-        // The callback may have moved the material after refresh() signed it: the next frame refreshes in full.
+        // The callback may have moved the material after refresh() signed it: the draw's new stamp retires every
+        // program cached against the old signature (the shadow row's depth program keys on it), and the next frame
+        // refreshes in full. The draw list's copies of the record were made before the callbacks ran, so they move
+        // with it.
+        const uint64_t stamp = p.record->draw->item.variantStamp = ++variantStamps_;
+        for (DrawItem& item : items)
+            if (item.cache == &p.record->cache) item.variantStamp = stamp;
         p.record->materialResolved = false;
     }
     ranCallbacks_ = !callbacks_.empty();
@@ -1767,6 +1836,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) +
                                " hemisphere lights; one is drawn");
     for (auto& r : flatRecords_) if (r.seen != frame_) r = Record{};
+    // A chain unseen for 256 renders leaves the cache: its bone may be gone, and the entry never reads its pointer.
+    if (frame_ % 256 == 0) std::erase_if(boneChains_, [&](const auto& entry) { return frame_ - entry.second.seen > 256; });
     // Objects that left the scene leave the database.
     // When every record in the map was seen this render, there is nothing to sweep.
     bool erased = false;
@@ -1795,6 +1866,11 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         batch(items, scene, Renderer::sortDraws(items, state));
         batchMeshes(items);
     }
+    // A draw that still reads a skeleton's world palette (a rig drawn alone, a shadow copy whose rig kept no slot)
+    // runs that skeleton's held update now; a batch's root-relative slots read none (PRD-878).
+    for (const DrawItem& item : items)
+        if (item.skinnedRig && item.skinnedRig->skeleton && item.boneMatrices == &item.skinnedRig->skeleton->boneMatrices)
+            item.skinnedRig->skeleton->ensureWorldPalette();
     const auto batched = profiling ? Clock::now() : Clock::time_point{};
     // Resolve the scene fallback every frame: environment can change without a material version bump.
     const Scene* world = dynamic_cast<const Scene*>(&scene);
@@ -2097,7 +2173,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
         if (poseReflection(*reflector, camera, virtualCamera)) {
             pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
             // Bones the main pass posed this frame are current too: no callback ran to move them.
-            pass.database->skeletonsFresh_ = pass.database->matricesFresh_ ? &skeletonsUpdated_ : nullptr;
+            pass.database->freshPrepare_ = pass.database->matricesFresh_ ? prepareId_ : 0;
             pass.database->gpuJoints_ = gpuJoints_;
             std::array<double, 2> split{0, 0};
             pass.database->profiling = profiling;
@@ -2108,7 +2184,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
                 reflectionMs_[1] += split[1];
                 reflectionItems_ += pass.database->drawn().size();
             }
-            pass.database->skeletonsFresh_ = nullptr;
+            pass.database->freshPrepare_ = 0;
         }
         else if (encodeJobs) {
             pass.renderer->renderDeferred({}, CameraState{}, LightState{}, {0, 0, 0, 0});

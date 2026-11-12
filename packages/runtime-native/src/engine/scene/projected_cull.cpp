@@ -18,6 +18,16 @@ constexpr double kMinDistance = 1e-4;  // render-camera-cull.ts MIN_DISTANCE
 bool gHold = false;
 std::vector<std::weak_ptr<Object3D>> gHeld;  // hides a held restoreAfterDraw() still owes
 
+// core's rate roots (render-camera-cull.ts trackAnimationRate), in registration order, with core's handle for each.
+struct RateRig {
+    std::weak_ptr<Object3D> rig;
+    const Object3D* address;
+    double id;
+};
+std::vector<RateRig> gRateRigs;
+constexpr std::size_t kRateHoldRigs = 32;     // render-camera-cull.ts RATE_HOLD_RIGS
+constexpr uint64_t kRateMeasureFrames = 4;   // render-camera-cull.ts RATE_MEASURE_FRAMES
+
 // projection-plan.ts isRenderable: three's isMesh, isSprite, isPoints and isLine classes.
 bool renderable(std::string_view type) {
     return type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "BatchedMesh" ||
@@ -189,8 +199,18 @@ void ProjectedCull::walk(std::vector<Node>& nodes, Object3D& root, const Camera&
     add(add, root, rootUnderCamera);
 }
 
+ProjectedCull::RateView& ProjectedCull::rateView(const Camera& camera) {
+    for (auto it = rateViews_.begin(); it != rateViews_.end();)
+        it = it->second.shared && it->second.camera.expired() ? rateViews_.erase(it) : std::next(it);
+    auto& view = rateViews_[camera.id()];
+    view.camera = camera.weak_from_this();
+    view.shared = !view.camera.expired();
+    return view;
+}
+
 std::vector<double> ProjectedCull::bandRates(const std::vector<Object3D*>& rigs, const Camera& camera,
                                              bool cameraResolved, double scale) {
+    auto& rigWalks_ = rateView(camera).rigs;
     std::vector<double> rates(rigs.size(), 0.0);
     const auto& e = camera.matrixWorld.elements;
     const double cameraX = e[12], cameraY = e[13], cameraZ = e[14];
@@ -220,6 +240,7 @@ std::vector<double> ProjectedCull::bandRates(const std::vector<Object3D*>& rigs,
         Object3D& rig = *rigs[r];
         RigWalk& rigWalk = rigWalks_[&rig];
         if (rigWalk.rig.expired() || rigWalk.version != version || rigWalk.rig.lock().get() != &rig) {
+            if (rigWalk.rig.expired() || rigWalk.rig.lock().get() != &rig) rigWalk.frame = 0, rigWalk.rate = 0;
             rigWalk.rig = rig.weak_from_this();
             rigWalk.version = version;
             walk(rigWalk.nodes, rig, camera);
@@ -281,6 +302,83 @@ std::vector<double> ProjectedCull::bandRates(const std::vector<Object3D*>& rigs,
         rates[r] = rate;
     }
     return rates;
+}
+
+void ProjectedCull::trackRate(Object3D& rig, double id) {
+    const auto found = std::find_if(gRateRigs.begin(), gRateRigs.end(), [&](const RateRig& entry) {
+        return entry.address == &rig && !entry.rig.expired();
+    });
+    if (found != gRateRigs.end()) {
+        if (id < 0) gRateRigs.erase(found);
+        else found->id = id;
+    } else if (id >= 0) {
+        gRateRigs.push_back({rig.weak_from_this(), &rig, id});
+    }
+}
+
+std::optional<std::vector<double>> ProjectedCull::bandAnimation(Object3D& root, const Camera& camera,
+                                                                bool cameraResolved, double scale, uint64_t frame) {
+    auto& rigWalks_ = rateView(camera).rigs;
+    std::vector<double> pairs;
+    // A freed rig is reported once, so core drops the state it kept under that id.
+    std::erase_if(gRateRigs, [&](const RateRig& entry) {
+        if (!entry.rig.expired()) return false;
+        pairs.push_back(entry.id);
+        pairs.push_back(-1);
+        return true;
+    });
+    const auto tracked = [](const Object3D* node) {
+        return std::any_of(gRateRigs.begin(), gRateRigs.end(), [&](const RateRig& entry) { return entry.address == node; });
+    };
+    // render-camera-cull.ts #nestedRigs: a rig under a rig is banded by the outer rig's walk, in core.
+    for (const RateRig& entry : gRateRigs)
+        for (const Object3D* node = entry.address->parent; node != nullptr; node = node->parent)
+            if (tracked(node)) return std::nullopt;
+    bool rootShown = true;
+    for (const Object3D* node = &root; node != nullptr; node = node->parent) rootShown = rootShown && node->visible();
+    const bool holds = rootShown && gRateRigs.size() >= kRateHoldRigs;
+    // render-camera-cull.ts #reaches: it and every parent up to the root are shown.
+    const auto reaches = [&](const Object3D& rig) {
+        if (!rig.visible()) return false;
+        for (const Object3D* node = rig.parent; node != nullptr; node = node->parent) {
+            if (!node->visible()) return false;
+            if (node == &root) return true;
+        }
+        return &rig == &root;
+    };
+    std::vector<Object3D*> measured;
+    std::vector<double> measuredIds;
+    uint64_t turn = frame;
+    for (const RateRig& entry : gRateRigs) {
+        Object3D& rig = *const_cast<Object3D*>(entry.address);
+        if (!reaches(rig)) continue;
+        turn += 1;
+        const auto known = rigWalks_.find(&rig);
+        if (known != rigWalks_.end() && known->second.root == root.id() &&
+            !known->second.rig.expired() && known->second.rig.lock().get() == &rig && known->second.rate > 0) {
+            // A repeated view in the same frame neither advances nor measures the hold turn twice.
+            if (known->second.frame == frame ||
+                (holds && turn % kRateMeasureFrames != 0 && known->second.frame + 1 == frame)) {
+                known->second.frame = frame;
+                pairs.push_back(entry.id);
+                pairs.push_back(known->second.rate);
+                continue;
+            }
+        }
+        measured.push_back(&rig);
+        measuredIds.push_back(entry.id);
+    }
+    const std::vector<double> rates = bandRates(measured, camera, cameraResolved, scale);
+    for (std::size_t i = 0; i < rates.size(); ++i) {
+        if (rates[i] == 0) continue;  // no part visited: core leaves that state alone
+        RigWalk& rigWalk = rigWalks_[measured[i]];
+        rigWalk.root = root.id();
+        rigWalk.frame = frame;
+        rigWalk.rate = rates[i];
+        pairs.push_back(measuredIds[i]);
+        pairs.push_back(rates[i]);
+    }
+    return pairs;
 }
 
 void ProjectedCull::restore() {

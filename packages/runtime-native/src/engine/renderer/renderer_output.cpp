@@ -51,6 +51,7 @@ void Renderer::setOutput(const OutputState& output) {
     outputPipelineLayout_ = wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc);
     gpu_.destroy(outputUniforms_);
     outputUniforms_ = gpu_.createBuffer(std::max<uint32_t>(16, outputFragment_.uniformBlockSize), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    outputUploaded_.clear();
 }
 
 void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
@@ -522,7 +523,11 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
         shader::writeUniform(block, field, value->second);
     }
     put(block, outputFragment_, "toneMappingExposure", std::array<double, 1>{output_.toneMappingExposure});
-    if (outputFragment_.uniformBlockSize) gpu_.writeBuffer(outputUniforms_, 0, block.data(), outputFragment_.uniformBlockSize);
+    block.resize(outputFragment_.uniformBlockSize);
+    if (!block.empty() && block != outputUploaded_) {  // a still frame with a fixed exposure sends nothing
+        gpu_.writeBuffer(outputUniforms_, 0, block.data(), block.size());
+        outputUploaded_ = block;
+    }
     // The explicit output layout is shared by the offscreen and the presenting pipeline, so one
     // group serves both and needs no rebuild when the present format changes.
     WGPUBindGroup& group = outputGroup_;

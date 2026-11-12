@@ -111,6 +111,7 @@ const FROZEN_FIELDS: Readonly<Record<string, number>> = {
   firstWorldFrameDrawn: 86,
   textureCompressionBc: 87,
   virtualShadowPendingLevels: 88,
+  frameSnapshot: 89,
 };
 
 describe("the web frame field table", () => {
@@ -135,6 +136,12 @@ describe("the web frame field table", () => {
       moved.map(([name, id]) => `${name} moved from ${String(id)}`),
       "ids are frozen and append-only: restore the old id, and give a new field the next free one",
     ).toEqual([]);
+  });
+
+  it("should fit every field in the frame snapshot block", () => {
+    // tnw_web_frame 89 copies every field into one block of 256 doubles (web_host.cpp frameBlock),
+    // and the renderer reads a field at the block's address plus its id.
+    expect(manifestFields().filter((field) => field.id >= 256)).toEqual([]);
   });
 
   it("should declare every published field in the manifest", () => {

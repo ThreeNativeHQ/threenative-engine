@@ -187,6 +187,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     canvas,
     platform?.input,
     game.config.contextMenu,
+    { gamepadDeadZone: game.config.gamepadDeadZone },
   );
   game.input = input;
   game.cleanup.push(() => {
@@ -490,6 +491,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
       // The first world frame the player sees is the next one this renderer draws, so the hold comes off
       // here and only here: every exit before it (abort, dispose, a failed launch) leaves the cover up.
       renderer.setPresentationHeld?.(false);
+      game.frameBudget?.markRevealed();
       for (const node of startupShadows) node.startupCovered = false;
       startupShadows.clear();
       // What a game does on `whenReady()` (lift its cover, show its HUD) reaches the page with the

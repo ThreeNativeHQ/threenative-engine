@@ -70,7 +70,7 @@ add_executable(tn-native-engine-v8-test EXCLUDE_FROM_ALL tests/native-engine/v8_
 target_link_libraries(tn-native-engine-v8-test PRIVATE tn_adapter_v8)
 target_include_directories(tn-native-engine-v8-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
 tn_adapter_v8_executable(tn-native-engine-v8-test)
-foreach(case gc_telemetry template_material template_bounds template_ranges handles fast_paths structure_stamp crossing_histogram collect_visits native_matrix_world native_projection_report unsupported gc_release runtime_churn crossing_bench scene raycaster_lod object_raycast catalog_coverage callback_cycle wrapper_lifetime tsl_api uniform_value mrt_node fog_node node_material_fragment node_materials skeletal attribute_arrays geometry_lifecycle material_slots js_math js_math_views js_math_members)
+foreach(case gc_telemetry template_material template_bounds template_ranges handles fast_paths structure_stamp crossing_histogram collect_visits native_matrix_world native_projection_report unsupported gc_release runtime_churn crossing_bench scene raycaster_lod object_raycast pose_history catalog_coverage callback_cycle wrapper_lifetime tsl_api uniform_value mrt_node fog_node node_material_fragment node_materials skeletal attribute_arrays geometry_lifecycle material_slots js_math js_math_views js_math_members)
     add_test(NAME native_engine_v8_${case} COMMAND tn-native-engine-v8-test ${case})
     set_tests_properties(native_engine_v8_${case} PROPERTIES LABELS "native-engine")
 endforeach()
@@ -115,11 +115,10 @@ if(TN_PS4)
     # reaches src/platform/ps4_main.cpp, which supplies the bundle path, the scanout size and V8's
     # flags a console cannot pass on a command line.
     add_library(tn-native-engine-player-v8 STATIC EXCLUDE_FROM_ALL
-        src/engine/player/v8_main.cpp src/engine/player/gamepads.cpp src/platform/ps4_main.cpp)
+        src/engine/player/v8_main.cpp src/platform/ps4_main.cpp)
     set_source_files_properties(src/engine/player/v8_main.cpp PROPERTIES COMPILE_DEFINITIONS "main=tn_player_v8_main")
 else()
-    add_executable(tn-native-engine-player-v8 EXCLUDE_FROM_ALL src/engine/player/v8_main.cpp
-        src/engine/player/gamepads.cpp)
+    add_executable(tn-native-engine-player-v8 EXCLUDE_FROM_ALL src/engine/player/v8_main.cpp)
 endif()
 target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_adapter_v8 tn_engine_player tn_engine_assets)
 if(TARGET tn_engine_gltf)
@@ -317,16 +316,19 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-compile-reentry.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_compile_reentry PROPERTIES LABELS "native-engine")
-    # A game's 2D canvas draws into a CanvasTexture (Midway's gun steel was flat near-white without it).
-    add_test(NAME native_engine_player_canvas2d
-        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas2d.mjs
-            $<TARGET_FILE:tn-native-engine-player-v8>)
-    set_tests_properties(native_engine_player_canvas2d PROPERTIES LABELS "native-engine")
-    # A decal canvas copied into a texture canvas with drawImage keeps its text (Midway's NO STEP placards).
-    add_test(NAME native_engine_player_canvas_decal
-        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas-decal.mjs
-            $<TARGET_FILE:tn-native-engine-player-v8>)
-    set_tests_properties(native_engine_player_canvas_decal PROPERTIES LABELS "native-engine")
+    # Canvas2D exists only when Skia is staged (download-deps --only skia); without it the player answers null by design.
+    if(TARGET skia::skia)
+        # A game's 2D canvas draws into a CanvasTexture (Midway's gun steel was flat near-white without it).
+        add_test(NAME native_engine_player_canvas2d
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas2d.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_canvas2d PROPERTIES LABELS "native-engine")
+        # A decal canvas copied into a texture canvas with drawImage keeps its text (Midway's NO STEP placards).
+        add_test(NAME native_engine_player_canvas_decal
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas-decal.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_canvas_decal PROPERTIES LABELS "native-engine")
+    endif()
     add_test(NAME native_engine_player_window_title
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-window-title.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)

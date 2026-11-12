@@ -286,7 +286,7 @@ const DEPS = {
     version: 'master',
     // stb doesn't use archives - we download individual headers
     getUrl: () => null,  // Special handling below
-    headerUrl: (header) => `https://raw.githubusercontent.com/nothings/stb/master/${header}`,
+    headerUrl: (header) => `https://raw.githubusercontent.com/nothings/stb/2c980bb59875b0d32144a71867fbdebb2f77cd20/${header}`,
     extractTo: 'stb',
     headers: [
       'stb_image.h',

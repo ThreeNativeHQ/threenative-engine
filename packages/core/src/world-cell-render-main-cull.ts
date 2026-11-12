@@ -14,6 +14,7 @@ import type {
 } from "./world-cell-data.js";
 import { clusterOf } from "./world-cell-data.js";
 import { PLACEMENT_RECORD_FLOATS } from "./world-cell-impostors.js";
+import { placedBox } from "./world-cell-records.js";
 import {
   GPU_KEY_SUFFIX,
   MAIN_CULL_MARKER_MS,
@@ -70,6 +71,27 @@ export interface ICellMainCullSettings {
 /** The two scratch objects a cull builds its frustum in. */
 const _cullFrustum = new Frustum();
 const _cullProjScreen = new Matrix4();
+const _cullBox = new Box3();
+
+/** The owned engine's whole-set test (PRD-879): the indices of the packed boxes the frustum holds. */
+type IBoxesInFrustum = (this: Frustum, boxes: Float64Array) => ArrayLike<number>;
+
+/**
+ * Every packed box (min xyz, max xyz) the frustum intersects, by index. The owned engine answers the
+ * set in one call; upstream three, the `engine: "threejs"` arm, has no such method and tests each box.
+ */
+function boxesInFrustum(frustum: Frustum, boxes: Float64Array): ArrayLike<number> {
+  const engine = (frustum as Frustum & { __tnIntersectsBoxes?: IBoxesInFrustum })
+    .__tnIntersectsBoxes;
+  if (typeof engine === "function") return engine.call(frustum, boxes);
+  const hits: number[] = [];
+  for (let at = 0; at < boxes.length; at += 6) {
+    _cullBox.min.fromArray(boxes, at);
+    _cullBox.max.fromArray(boxes, at + 3);
+    if (frustum.intersectsBox(_cullBox)) hits.push(at / 6);
+  }
+  return hits;
+}
 
 export class CellMainCull {
   readonly #host: ICellMainCullHost;
@@ -118,6 +140,16 @@ export class CellMainCull {
    * {@link #cullMainPass}.
    */
   readonly #cullCells = new Map<string, { cells: number; box: Box3 }>();
+
+  /**
+   * The non-empty volumes of `#cullCells` packed for the frame's one frustum test, and their names
+   * by index. Repacked only after a volume was admitted, widened or dropped, so a frame reads no box.
+   */
+  #cullBoxes = new Float64Array(0);
+
+  #cullNames: string[] = [];
+
+  #cullPacked = false;
 
   /** The visibility cells the last cull kept and the frame's set, trading places; see `#cullMainPass`. */
   #visibleSquares: Set<string> = new Set();
@@ -178,12 +210,10 @@ export class CellMainCull {
     // rather than allocated: two sets trading places, so a settled camera allocates nothing at all.
     const next = this.#cullScratch;
     next.clear();
-    for (const [cell, entry] of this.#cullCells) {
-      // An occupied cell whose placements have not been decoded yet holds nothing to draw, and its
-      // Y range is still empty — a volume that cannot be tested against ±Infinity is not one this
-      // frame's answer may rest on.
-      if (entry.box.isEmpty() === false && frustum.intersectsBox(entry.box)) next.add(cell);
-    }
+    if (!this.#cullPacked) this.#packCullBoxes();
+    const hits = boxesInFrustum(frustum, this.#cullBoxes);
+    for (let at = 0; at < hits.length; at += 1)
+      next.add(this.#cullNames[hits[at] as number] as string);
     if (!sameSquares(next, this.#visibleSquares)) {
       this.#visibleEpoch += 1;
       const was = this.#visibleSquares;
@@ -255,11 +285,28 @@ export class CellMainCull {
     if (gpu.on) gpu.dispatch(this.#host.render().renderer() as IRendererLike, camera, root);
   }
 
+  /**
+   * An occupied cell whose placements have not been decoded yet holds nothing to draw, and its Y
+   * range is still empty — a volume that cannot be tested against ±Infinity is not one a frame's
+   * answer may rest on, so it is not packed.
+   */
+  #packCullBoxes(): void {
+    this.#cullNames.length = 0;
+    this.#cullBoxes = new Float64Array(this.#cullCells.size * 6);
+    for (const [cell, { box }] of this.#cullCells) {
+      if (box.isEmpty()) continue;
+      const at = this.#cullNames.length * 6;
+      box.min.toArray(this.#cullBoxes, at);
+      box.max.toArray(this.#cullBoxes, at + 3);
+      this.#cullNames.push(cell);
+    }
+    this.#cullBoxes = this.#cullBoxes.subarray(0, this.#cullNames.length * 6);
+    this.#cullPacked = true;
+  }
+
   /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
   #boundsAt(bounds: IWorldAsset["bounds"], matrix: Matrix4): Box3 {
-    this.#recordBounds.min.fromArray(bounds.min);
-    this.#recordBounds.max.fromArray(bounds.max);
-    return this.#recordBounds.applyMatrix4(matrix);
+    return placedBox(this.#recordBounds, bounds.min, bounds.max, matrix);
   }
 
   /**
@@ -307,6 +354,7 @@ export class CellMainCull {
       this.#cullCells.set(name, entry);
     }
     entry.cells += 1;
+    this.#cullPacked = false;
     const box = entry.box;
     for (const run of cell.runs) {
       const bounds = this.#manifest.assets[this.#host.render().canonical(run.asset)]?.bounds;
@@ -343,7 +391,10 @@ export class CellMainCull {
     const entry = this.#cullCells.get(name);
     if (entry === undefined) return;
     entry.cells -= 1;
-    if (entry.cells <= 0) this.#cullCells.delete(name);
+    if (entry.cells <= 0) {
+      this.#cullCells.delete(name);
+      this.#cullPacked = false;
+    }
   }
 
   /**
@@ -474,9 +525,12 @@ export class CellMainCull {
     return _cullFrustum.intersectsObject(mesh);
   }
 
-  /** The volume each resident visibility cell covers, which the chunk bounds widen on admission. */
-  cells(): Map<string, { cells: number; box: Box3 }> {
-    return this.#cullCells;
+  /** Widen a resident visibility cell's volume by a chunk's bounds; an unknown cell is left alone. */
+  widenCell(name: string, box: Box3): void {
+    const entry = this.#cullCells.get(name);
+    if (entry === undefined) return;
+    entry.box.union(box);
+    this.#cullPacked = false;
   }
 
   /** The visibility cells the last cull kept, which the GPU dress's coarse gate reads. */

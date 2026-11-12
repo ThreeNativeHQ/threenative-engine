@@ -839,6 +839,81 @@ void initializeTexture() {
     CHECK(renderer.lastFrame().draws == 0);
 }
 
+// PRD-876 Phase 1: the frame that first draws a mesh is the frame that pays for it. The draw counts
+// one blocking pipeline create and one program build, and later frames count neither; a compile pass
+// first moves the create off the draw frame, which is what PRD-876 Phase 2 makes ordinary.
+void syncCreatesCounted() {
+    waste::setDebugEnabled(true);
+    CompileDevice d;
+    CHECK(d.device != nullptr);
+    if (!d.device) {
+        waste::setDebugEnabled(false);
+        return;
+    }
+    struct Counts {
+        uint64_t creates = 0, programs = 0;
+    };
+    const auto now = [] { return Counts{waste::counters().pipelineSyncCreates.load(), waste::counters().programBuilds.load()}; };
+    const auto between = [](Counts before, Counts after) { return Counts{after.creates - before.creates, after.programs - before.programs}; };
+    // One arm of the case: a fresh renderer and a fresh scene, one mesh with its own material.
+    const auto arm = [&](bool compileFirst) {
+        Renderer renderer(d.instance, d.device, d.queue, d.events);
+        renderer.setSize(32, 32);
+        RenderDatabase database;
+        Scene scene;
+        PerspectiveCamera camera;
+        camera.position.z = 8;
+        auto mesh = std::make_shared<Mesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+        scene.add(*mesh);
+        if (compileFirst) compileScene(database, renderer, scene, camera);
+        const Counts before = now();
+        database.render(renderer, scene, camera);
+        CHECK(renderer.lastFrame().draws > 0);
+        const Counts draw = between(before, now());
+        database.render(renderer, scene, camera);
+        const Counts settled = between(before, now());
+        return std::pair<Counts, Counts>{draw, settled};
+    };
+    const auto lazy = arm(false);
+    // A renderer's first draw pays 2: the material program's pipeline, plus one renderer-level pipeline
+    // (post/output) that the first draw of the renderer's life creates. Both are measured here, exactly,
+    // so a regression that creates an extra pipeline per frame fails rather than passing a `>= 1`.
+    CHECK(lazy.first.creates == 2);
+    CHECK(lazy.first.programs == 1);
+    CHECK(lazy.second.creates == lazy.first.creates);  // the next frame created nothing
+    CHECK(lazy.second.programs == lazy.first.programs);
+    const auto prepared = arm(true);
+    CHECK(prepared.first.creates == 0);   // the compile pass took the create, so the draw found it ready
+    CHECK(prepared.second.creates == 0);
+    // The exact price of one more draw on an already-settled renderer: this is the number a turn pays
+    // per newly visible material, and it must not drift with the frame's pass list.
+    const auto increment = [&] {
+        Renderer renderer(d.instance, d.device, d.queue, d.events);
+        renderer.setSize(32, 32);
+        RenderDatabase database;
+        Scene scene;
+        PerspectiveCamera camera;
+        camera.position.z = 8;
+        scene.add(*std::make_shared<Mesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard)));
+        database.render(renderer, scene, camera);
+        database.render(renderer, scene, camera);  // settled: both frames see one material
+        const Counts before = now();
+        // A different material KIND, not just a different material: programs are keyed by kind, vertex
+        // variant and light layout, so a second Standard material reuses the first one's program and
+        // costs nothing. Only a new key pays.
+        scene.add(*std::make_shared<Mesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Basic)));
+        database.render(renderer, scene, camera);
+        return between(before, now());
+    };
+    const Counts added = increment();
+    std::printf("sync_creates_counted: one new program key on a settled frame costs %llu creates, %llu programs\n",
+                static_cast<unsigned long long>(added.creates), static_cast<unsigned long long>(added.programs));
+    // The per-draw price on a warm renderer, which is what a turn actually pays: exactly one create and
+    // one program for a new key, and nothing at all for a material that reuses one.
+    CHECK(added.creates == 1);
+    CHECK(added.programs == 1);
+    waste::setDebugEnabled(false);
+}
 }  // namespace
 
 // A pass whose input alternates frame by frame (a ping-pong history) makes its two bind groups once.
@@ -884,7 +959,7 @@ void recentBindGroups() {
     groups.clear();
 }
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"compile_reaches_off_screen", compileReachesOffScreenDraws}, {"geometry", geometry}, {"geometry_usage_union", geometryUsageUnion}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"sync_creates_counted", syncCreatesCounted}, {"compile_reaches_off_screen", compileReachesOffScreenDraws}, {"geometry", geometry}, {"geometry_usage_union", geometryUsageUnion}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException},

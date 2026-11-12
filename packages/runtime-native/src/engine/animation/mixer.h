@@ -224,6 +224,13 @@ class AnimationMixer {
                                 std::optional<BlendMode> blendMode = std::nullopt);
     AnimationAction* existingAction(const AnimationClip& clip, const Object3D* optionalRoot = nullptr) const;
     AnimationMixer& stopAllAction();
+    /**
+     * PRD-875 H2: the pose half of `update` and the event half, so a pooled pass can run the pose
+     * work off the game thread and the events it queued can be dispatched back on it. `update` is the
+     * two in order, which is what every existing caller gets.
+     */
+    AnimationMixer& evaluate(double deltaTime);
+    void flushEvents();
     AnimationMixer& update(double deltaTime);
     AnimationMixer& setTime(double time);
     [[nodiscard]] Object3D& getRoot() const { return *root_; }

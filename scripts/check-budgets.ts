@@ -23,9 +23,12 @@ const execFileAsync = promisify(execFile);
 const LIMITS = {
   frameworkLoc: 15_000,
   nativeRuntimeLoc: 100_000,
-  // 4 MiB + 64 KiB (PRD-867): the KTX2 transcode to BC7/ETC2 and PRD-860's streaming took the threaded
-  // engine to 4,198,621 bytes; the KTX2 cook they enable saves Midway 26.9 MB of download.
-  webEngineBytes: 4_259_840,
+  // 4 MiB + 128 KiB. PRD-867 set 4 MiB + 64 KiB: the KTX2 transcode to BC7/ETC2 and PRD-860's streaming took the
+  // threaded engine to 4,198,621 bytes; the KTX2 cook they enable saves Midway 26.9 MB of download. PR #659 (PRD-871,
+  // 872, 875, 876, 877, 878, 879) took the engine to 4,288,337 bytes single-thread and about 4,298,000 threaded
+  // (+0.7%): pooled rig ticks, the root-relative palette, rate bands and the world-cell binding, for a 16% lower
+  // `?stress` frame p50. PRD-881 carries the reclaim back under the old number.
+  webEngineBytes: 4_325_376,
 } as const;
 
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
