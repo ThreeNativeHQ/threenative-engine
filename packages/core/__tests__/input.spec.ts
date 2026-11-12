@@ -423,7 +423,9 @@ describe("InputMap", () => {
     const id = "8BitDo Ultimate C 2.4G Wireless Controller  (Vendor: 2dc8 Product: 3016)";
     const pressed = Array.from({ length: 15 }, () => ({ pressed: false }));
     const pad = { id, mapping: "", axes: [0, 0, 0, 0, -1, -1, 0, 0], buttons: pressed };
-    const bindings: Record<string, { buttons: number[] }> = {
+    const bindings: Record<string, { buttons?: number[]; gamepadAxes?: number[] }> = {
+      lookX: { gamepadAxes: [2] },
+      lookY: { gamepadAxes: [3] },
       back: { buttons: [8] },
       east: { buttons: [1] },
       leftShoulder: { buttons: [4] },
@@ -481,9 +483,19 @@ describe("InputMap", () => {
     input.tick();
     expect(input.vector("move").y).toBeCloseTo(-1); // raw +y is down, so move.y is negative
     pad.axes[1] = 0;
+    // The right stick is a2 = horizontal, a3 = vertical — not movement, and not swapped. A row with
+    // rightx:a3, or with the right stick missing, fails one of these two pairs.
     pad.axes[2] = 1;
+    pad.axes[3] = 0;
     input.tick();
-    expect(input.vector("move").x).toBe(0); // the right stick is not movement
+    expect(input.axis("lookX")).toBeCloseTo(1);
+    expect(input.axis("lookY")).toBeCloseTo(0);
+    expect(input.vector("move").x).toBe(0);
+    pad.axes[2] = 0;
+    pad.axes[3] = 1;
+    input.tick();
+    expect(input.axis("lookY")).toBeCloseTo(1);
+    expect(input.axis("lookX")).toBeCloseTo(0);
     input.dispose();
   });
 
