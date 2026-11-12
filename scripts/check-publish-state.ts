@@ -31,7 +31,7 @@ const { platformKey, releaseManifestUrl } = (await import(
   readonly platformKey: (platform?: string, arch?: string) => string;
   readonly releaseManifestUrl: (version?: string) => string;
 };
-import { rangeFloor, satisfiesSpecifier } from "./version-range.js";
+import { rangeFloor } from "./version-range.js";
 import { publicWorkspacePackages, workspacePackages } from "./workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
