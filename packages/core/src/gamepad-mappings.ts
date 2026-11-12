@@ -54,6 +54,25 @@ interface IPadRow {
 
 const PAD_ROWS: readonly IPadRow[] = [
   {
+    // 8BitDo Ultimate C 2.4G Wireless Controller, **measured on the owner's device** (2026-11-11):
+    // the kernel reports `2dc8:3016` and Chromium reports `mapping: ""` for it, so this row is the
+    // only thing that makes the pad work on the web. SDL 3.2.30 has no row for `3016` under any name
+    // (its 8BitDo entries are `301b`, `3013`, `3011`, `3012`), so nothing could be copied.
+    // Linux sorts an unmapped pad's buttons and axes by evdev code, and the measured device exposes
+    // KEY 304..318 and ABS 0,1,2,5,9,10,16,17 — so the raw indices are that order: b0..b14 are
+    // A, B, C, X, Y, Z, LB, RB, LT, RT, Select, Start, Home, L3, R3, and a0..a7 are ABS_X, ABS_Y,
+    // ABS_Z, ABS_RZ, ABS_GAS, ABS_BRAKE, HAT0X, HAT0Y. Hence X and Y sit on b3/b4 (not b2/b3), the
+    // right stick is a2/a3, and the triggers are a5 (left) and a4 (right), travelling -1..1.
+    // Every one of those was confirmed on the device through Chromium, which is why the row ships with
+    // no guessed slot. Two caveats measured on the same unit: `leftstick`/`rightstick` are declared by
+    // the kernel but a press on either stick reaches it as `BTN_TL2` (the left trigger's digital
+    // button) — twice, once per stick, 1.26 s apart — so no browser can report them as separate
+    // buttons and b13/b14 are inert here; and the extra C/Z buttons at b2/b5 have no standard slot, so they are left unbound.
+    product: 0x3016,
+    vendor: 0x2dc8,
+    map: "a:b0,b:b1,x:b3,y:b4,back:b10,start:b11,leftshoulder:b6,rightshoulder:b7,leftstick:b13,rightstick:b14,lefttrigger:a5,righttrigger:a4,leftx:a0,lefty:a1,rightx:a2,righty:a3,",
+  },
+  {
     // 8BitDo Ultimate 2C Wireless, SDL_GameControllerDB:367 (`0300…1b30000001000000`), whose
     // triggers are axes 5 and 4 — the form a browser reports, where the `SDL_JOYSTICK_DINPUT`
     // entry (:72) has them as buttons 8 and 9 and nothing on the web would ever see those.

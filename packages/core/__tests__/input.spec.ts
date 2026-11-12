@@ -365,6 +365,128 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("reads the measured 8BitDo Ultimate C 2.4G, whose browser mapping is empty", () => {
+    const target = new EventTarget();
+    const reports: string[] = [];
+    const info = vi.spyOn(console, "info").mockImplementation((line: string) => {
+      reports.push(line);
+    });
+    // The exact id Chromium printed for 2dc8:3016 on the owner's machine, including its double space.
+    // Raw order measured there: buttons 304..318 became b0..b14 (so X and Y are b3/b4) and axes
+    // ABS_X, ABS_Y, ABS_Z, ABS_RZ, ABS_GAS, ABS_BRAKE became a0..a5, so the right stick is a2/a3 and
+    // the triggers are a5 (left) and a4 (right) at -1 resting.
+    const id = "8BitDo Ultimate C 2.4G Wireless Controller  (Vendor: 2dc8 Product: 3016)";
+    const pad = {
+      id,
+      mapping: "",
+      axes: [0, 0, 0, 0, -1, -1, 0, 0],
+      buttons: [
+        { pressed: true }, // 0  A
+        { pressed: false }, // 1 B
+        { pressed: false }, // 2 C
+        { pressed: true }, // 3  X
+        { pressed: false }, // 4 Y
+        { pressed: false }, // 5 Z
+        { pressed: false }, // 6 LB
+        { pressed: true }, // 7  RB
+      ],
+    };
+    const input = new InputMap(
+      { fire: { buttons: [2] }, jump: { buttons: [0] }, rightTrigger: { buttons: [7] } },
+      target,
+      target,
+      () => [pad],
+    );
+
+    input.tick();
+
+    expect(input.pressed("jump")).toBe(true); // south is raw 0 like every other pad
+    expect(input.pressed("fire")).toBe(true); // west is raw 3 on this device
+    expect(input.pressed("rightTrigger")).toBe(false); // raw 7 is the shoulder, not the trigger
+
+    // The triggers arrive as -1..1 axes; the standard reads them past halfway.
+    pad.axes[4] = 1;
+    input.tick();
+    expect(input.pressed("rightTrigger")).toBe(true);
+
+    expect(reports[0]).toContain('"mapping":"table"');
+    info.mockRestore();
+    input.dispose();
+  });
+
+  it("maps every control the 8BitDo Ultimate C 2.4G actually sends", () => {
+    const target = new EventTarget();
+    // Indices measured on the owner's device through Chromium: A, B, X, Y, LB, RB, LT, RT, Select and
+    // Start fired at 0, 1, 3, 4, 6, 7, 8, 9, 10, 11 in press order, the left stick moved axes 0/1, the
+    // right stick axes 2/3, and the triggers sat at -1 on axes 4 and 5. One binding per standard slot
+    // the row claims, so a wrong slot in the row fails a named expectation rather than a vague one.
+    const id = "8BitDo Ultimate C 2.4G Wireless Controller  (Vendor: 2dc8 Product: 3016)";
+    const pressed = Array.from({ length: 15 }, () => ({ pressed: false }));
+    const pad = { id, mapping: "", axes: [0, 0, 0, 0, -1, -1, 0, 0], buttons: pressed };
+    const bindings: Record<string, { buttons: number[] }> = {
+      back: { buttons: [8] },
+      east: { buttons: [1] },
+      leftShoulder: { buttons: [4] },
+      leftStickClick: { buttons: [10] },
+      leftTrigger: { buttons: [6] },
+      north: { buttons: [3] },
+      rightShoulder: { buttons: [5] },
+      rightStickClick: { buttons: [11] },
+      rightTrigger: { buttons: [7] },
+      south: { buttons: [0] },
+      start: { buttons: [9] },
+      west: { buttons: [2] },
+    };
+    const input = new InputMap(bindings, target, target, () => [pad]);
+
+    // The pair of expectations per standard slot: which raw button lights it, and which must not.
+    const expectOnly = (name: string, raw: number): void => {
+      for (let index = 0; index < pressed.length; index += 1)
+        (pressed[index] as { pressed: boolean }).pressed = index === raw;
+      input.tick();
+      expect([name, input.pressed(name)]).toEqual([name, true]);
+      for (const other of Object.keys(bindings))
+        if (other !== name) expect([other, input.pressed(other)]).toEqual([other, false]);
+    };
+
+    expectOnly("south", 0);
+    expectOnly("east", 1);
+    expectOnly("west", 3);
+    expectOnly("north", 4);
+    expectOnly("leftShoulder", 6);
+    expectOnly("rightShoulder", 7);
+    expectOnly("back", 10);
+    expectOnly("start", 11);
+
+    // The triggers are `-1` at rest and `+1` pressed, read as the standard's buttons 6 and 7.
+    for (const index of [0, 1, 3, 4, 6, 7, 8, 9, 10, 11])
+      (pressed[index] as { pressed: boolean }).pressed = false;
+    pad.axes[5] = 1;
+    input.tick();
+    expect(input.pressed("leftTrigger")).toBe(true);
+    expect(input.pressed("rightTrigger")).toBe(false);
+    pad.axes[5] = -1;
+    pad.axes[4] = 1;
+    input.tick();
+    expect(input.pressed("rightTrigger")).toBe(true);
+    expect(input.pressed("leftTrigger")).toBe(false);
+
+    // Left stick on 0/1, right stick on 2/3, both rescaled past the dead zone.
+    pad.axes[0] = 1;
+    pad.axes[1] = 0;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(1);
+    pad.axes[0] = 0;
+    pad.axes[1] = 1;
+    input.tick();
+    expect(input.vector("move").y).toBeCloseTo(-1); // raw +y is down, so move.y is negative
+    pad.axes[1] = 0;
+    pad.axes[2] = 1;
+    input.tick();
+    expect(input.vector("move").x).toBe(0); // the right stick is not movement
+    input.dispose();
+  });
+
   it("ignores an unmapped pad and reports it once", () => {
     const target = new EventTarget();
     const reports: string[] = [];
