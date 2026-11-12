@@ -341,6 +341,19 @@ export function shadowPreset(tier: string): IShadowTier {
   return preset;
 }
 
+/**
+ * Whether a tier casts shadows: the game's `setupPost(..., { shadows })`, else the tier's. `low` casts none, as
+ * Unreal's `sg.ShadowQuality` 0. Pass the raw renderer to apply it to `shadowMap.enabled`. The tuned scaffold keeps
+ * the template's `postprocessing.ts`, which imports this, so the overlay must export it too (PRD-871).
+ */
+export function tierShadows(tier: QualityTier, override?: boolean, raw?: unknown) {
+  const enabled = override ?? shadowPreset(tier).castShadows;
+  const source = override === undefined ? "tier" : "override";
+  const shadowMap = (raw as { shadowMap?: { enabled: boolean } } | undefined)?.shadowMap;
+  if (shadowMap) shadowMap.enabled = enabled;
+  return { enabled, source, label: `${enabled ? "on" : "off"}(${source})` } as const;
+}
+
 export {
   type IMaterialLightingEnvironment,
   isWebGLFallbackRenderer,
