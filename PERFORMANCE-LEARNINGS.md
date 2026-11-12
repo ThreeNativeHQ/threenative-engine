@@ -1356,3 +1356,21 @@ no COOP/COEP); that lane is open.
   CPU frame measures 7.7 ms mean, 9.8 ms p95. A plain 2D canvas on the same tab stalled once in 12 s, not three times.
 - Revisit when: a quiet lane (no other GPU client: the desktop shares the GPU with KWin, a second browser and a CUDA
   process) or a Chrome GPU-process trace can catch one; a 5 s DevTools trace started a fresh phase and caught none.
+
+### 2026-11-11 — Walking crowd and forest world (PRD-878, PRD-879): the frame fell 16%, the crowd cost 11% — KEEP
+
+- What held, `?stress` fair window `fwfinal` (ABBA, mean of 2 runs, 0 void, RTX 2080, ledger rows 376-381): frame p50 9.22 -> 7.75 ms,
+  p95 11.50 -> 10.60, GPU upload 1,191 -> 638 KB a frame, `planVirtualPages` 1.20-1.26 -> 0.79-0.89 ms. The forest walk
+  `WorldCells.update` fell from 6.7 to about 3.5 ms in the first lane, and the playtest exits 0 three times. Judges NEUTRAL.
+- The crowd cost fell only 4.16 -> 3.70 ms: the whole-frame win came mostly from rows the `&noCrowd` arm shares (engine JS,
+  world, startup program builds). Read the `&noCrowd` arm before crediting a crowd cut.
+- The largest crowd row after the cuts is the lab's own `update` (+1.42 ms, `AnimationPlayer.update` per walker, game
+  scripting). A bar measured as `?stress` minus `&noCrowd` charges the game's script to the engine; name the stage.
+- A cache keyed on a version must prove every writer bumps it. `Material::version()` misses plain native writes and aliased
+  colour writes, so a `materialSignature` cache on it would freeze draws (stopped, not built). An `onBeforeRender` callback
+  rewrote a material after `refresh()` stamped the draw, so the shadow row kept the old depth program for a frame (fixed,
+  red-green `native_engine_shadow_row_follows_on_before_render`).
+- Test traps that cost hours: the default native build leaves test executables stale ("unknown case" or a pass on old code), so
+  build every test target by name under bash (a zsh variable passes one word) and run the whole `ctest -L native-engine` label.
+  A fair window refuses to run while another job holds the GPU above 10%; wait for it, and discard figures taken under load.
+- Revisit when: PRD-881 (engine stages of the crowd) or PRD-882 (the drain and the desktop forest) lands.
