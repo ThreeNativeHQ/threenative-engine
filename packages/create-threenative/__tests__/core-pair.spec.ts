@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CORE_TEMPLATE_FLOOR, pairsWithCore } from "../src/core-pair.js";
+import { pairsWithCore } from "../src/core-pair.js";
 import { CORE_PACKAGE_VERSION } from "../src/mcp-servers.js";
 
 const [MAJOR, MINOR, PATCH] = CORE_PACKAGE_VERSION.split(".").map(Number) as [
@@ -15,10 +15,6 @@ function previousRelease(): string {
 }
 
 describe("the core a game may pair with", () => {
-  it("ships the same floor the templates declare", () => {
-    expect(CORE_TEMPLATE_FLOOR).toBe(`>=${CORE_PACKAGE_VERSION}`);
-  });
-
   it("accepts the release this create-threenative was built against", () => {
     expect(pairsWithCore(CORE_PACKAGE_VERSION)).toBe(true);
   });

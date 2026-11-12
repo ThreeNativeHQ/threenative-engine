@@ -4,7 +4,7 @@
  * surface and every draw; this class turns three's calls into host calls and reports what the
  * engine did. What it does not implement throws its diagnostic rather than doing nothing.
  */
-import { packedRef } from "./browser-abi-types.js";
+import { heapFor, packedRef } from "./browser-abi-types.js";
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import { debugTelemetry } from "./debug-telemetry.js";
@@ -189,7 +189,7 @@ export function defineWebRenderer(
     if (ref === undefined)
       throw new TypeError(`TN_WASM_RENDER: the ${what} is not an engine object.`);
     const { w0, w1, w2 } = packedRef(ref);
-    const view = new DataView(module.HEAPU8.buffer);
+    const view = new DataView(heapFor(module, handles + offset + 12).buffer);
     view.setUint32(handles + offset, w0, true);
     view.setUint32(handles + offset + 4, w1, true);
     view.setUint32(handles + offset + 8, w2, true);
@@ -1193,7 +1193,7 @@ export function defineWebRenderer(
       for (;;) {
         module._tnw_web_poll();
         const status = module._tnw_web_read_target_take(id, out, size);
-        if (status === 1) return module.HEAPU8.slice(out, out + size);
+        if (status === 1) return heapFor(module, out + size).slice(out, out + size);
         // A read the lost device dropped says so, so the caller's report is read as that one loss.
         if (status < 0)
           throw new Error(
@@ -1263,7 +1263,9 @@ export function defineWebRenderer(
               module._tnw_web_poll();
               const status = module._tnw_web_read_target_take(id, out, bytes);
               if (status === 1)
-                return new Float32Array(module.HEAPU8.slice(out, out + bytes).buffer);
+                return new Float32Array(
+                  heapFor(module, out + bytes).slice(out, out + bytes).buffer,
+                );
               if (status < 0) throw new Error("TN_REFLECTION_CAPTURE_READ");
               await new Promise((resolve) => setTimeout(resolve, 0));
             }

@@ -9,12 +9,6 @@ function parts(value: string): readonly [number, number, number] | undefined {
 }
 
 /**
- * `0.3.13` -> `>=0.3.13`, matching what the templates ship. The scaffolder writes the specifier and
- * the gates compare against it, so both spellings live in one place.
- */
-export const CORE_TEMPLATE_FLOOR = `>=${CORE_PACKAGE_VERSION}`;
-
-/**
  * Whether a game's installed core can carry the authoring layer this create-threenative writes.
  *
  * Any release at or after the one this package was built against, and never an older one. The

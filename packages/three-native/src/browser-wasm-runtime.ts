@@ -13,6 +13,7 @@ import {
   type TnAbiModule,
   VALUE,
   gltfOf,
+  heapFor,
   isRef,
   packedRef,
   tslOf,
@@ -37,24 +38,30 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   let encoding = "arguments";
   // The heap's views, made again only when the memory grows: Emscripten replaces HEAPU8 then, so one
   // identity test per use stands in for reading two `.buffer`s, which every crossing paid (PRD-748).
+  // Shared memory can grow from another thread with no replacement here, but it never detaches: an
+  // access past `heapBytes` (an engine pointer's `end`) refreshes through `heapFor`.
   let heap = abi.HEAPU8;
   let heapBytes = heap.byteLength;
   let dataView = new DataView(heap.buffer);
   let words = new Uint32Array(heap.buffer);
-  const grown = () => {
-    debug?.add("wasmGrowthEvents", 1, "bridge");
-    debug?.add("wasmGrowthBytes", Math.max(0, abi.HEAPU8.byteLength - heapBytes), "memory");
-    heap = abi.HEAPU8;
+  const grown = (end: number) => {
+    const before = heapBytes;
+    heap = heapFor(abi, end);
     heapBytes = heap.byteLength;
     dataView = new DataView(heap.buffer);
     words = new Uint32Array(heap.buffer);
+    debug?.add("wasmGrowthEvents", 1, "bridge");
+    debug?.add("wasmGrowthBytes", Math.max(0, heapBytes - before), "memory");
   };
-  const view = () => {
-    if (abi.HEAPU8 !== heap) grown();
+  const reach = (end: number) => {
+    if (end > heapBytes) grown(end);
+  };
+  const view = (end = 0) => {
+    if (end > heapBytes || abi.HEAPU8 !== heap) grown(end);
     return dataView;
   };
-  const wordView = () => {
-    if (abi.HEAPU8 !== heap) grown();
+  const wordView = (end = 0) => {
+    if (end > heapBytes || abi.HEAPU8 !== heap) grown(end);
     return words;
   };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
@@ -80,8 +87,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       debug?.add("bridgeOverflowBytes", aligned, "bridge");
     }
     // A call's scratch is a few words (a handle, a value, a diagnostic): word stores beat a fill call.
-    // `wordView` first: a `_malloc` above may have grown the memory.
-    const w = wordView();
+    // `wordView` first: a `_malloc` above may have grown the memory, on this thread or another.
+    const w = wordView(pointer + aligned);
     if (aligned > 64) heap.fill(0, pointer, pointer + aligned);
     else for (let at = pointer >>> 2, end = (pointer + aligned) >>> 2; at < end; at++) w[at] = 0;
     return pointer;
@@ -228,7 +235,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     return pointer;
   };
   const readValue = (pointer: number): EngineValue => {
-    const v = view();
+    const v = view(pointer + VALUE);
     switch (v.getUint32(pointer, true)) {
       case KIND.undefined:
         return undefined;
@@ -261,9 +268,9 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       }
       case KIND.numbers: {
         const at = v.getUint32(pointer + 48, true) / 8;
-        return Array.from(
-          abi.HEAPF64.subarray(at, at + Number(v.getBigUint64(pointer + 40, true))),
-        );
+        const count = Number(v.getBigUint64(pointer + 40, true));
+        reach((at + count) * 8);
+        return Array.from(abi.HEAPF64.subarray(at, at + count));
       }
       default:
         return null;
@@ -323,6 +330,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         const Typed = SCALARS[scalar ?? -1];
         if (Typed === undefined)
           throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${String(scalar)}`);
+        reach((address ?? 0) + (count ?? 0) * Typed.BYTES_PER_ELEMENT);
         return use(new Typed(abi.HEAPU8.buffer as ArrayBuffer, address ?? 0, count ?? 0));
       } finally {
         abi._tnw_attribute_view_release?.(lease);
@@ -423,16 +431,25 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
           batch.status[i] = after.getFloat64(status + i * 8, true);
       });
     },
-    readByte: (address) => abi.HEAPU8[address] as number,
-    readWord: (address) => view().getUint32(address, true),
+    readByte: (address) => {
+      reach(address + 1);
+      return abi.HEAPU8[address] as number;
+    },
+    readWord: (address) => view(address + 4).getUint32(address, true),
     writeDouble: (address, value) => {
+      reach(address + 8);
       abi.HEAPF64[address / 8] = value;
     },
     writeByte: (address, value) => {
+      reach(address + 1);
       abi.HEAPU8[address] = value;
     },
-    heapF64: () => abi.HEAPF64,
+    heapF64: (end) => {
+      reach(end);
+      return abi.HEAPF64;
+    },
     readDoubles: (address, count) => {
+      reach(address + count * 8);
       const at = address / 8;
       return count === 1
         ? (abi.HEAPF64[at] as number)

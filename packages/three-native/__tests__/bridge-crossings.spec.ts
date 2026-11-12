@@ -308,6 +308,67 @@ function growableModule() {
 }
 
 describe("Wasm memory growth under the bridge", () => {
+  // The threaded build's memory is shared, and a pool worker can grow it. Emscripten refreshes a
+  // thread's views only inside its own glue, so this thread's HEAPU8 stays at the old length while the
+  // engine hands back pointers past it (CI: "Offset is outside the bounds of the DataView"). A shared
+  // buffer never detaches, so a crossing inside the old length must not pay a `memory.buffer` read.
+  it("reads a result the engine placed past the views after another thread grew shared memory", () => {
+    const { module } = growableModule();
+    const real = new WebAssembly.Memory({ initial: 2, maximum: 4, shared: true });
+    let bufferReads = 0;
+    const memory = {
+      get buffer() {
+        bufferReads += 1;
+        return real.buffer;
+      },
+    };
+    Object.assign(module, {
+      wasmMemory: memory,
+      HEAPU8: new Uint8Array(real.buffer),
+      HEAPF64: new Float64Array(real.buffer),
+    });
+    const runtime = createWasmRuntime(module);
+    const self = { key: "5:0:1:1", type: 5 };
+    const past = real.buffer.byteLength + 64;
+    let grow = false;
+    (module as unknown as Record<string, unknown>)._tn_invoke = (
+      _handle: number,
+      _name: number,
+      _args: number,
+      _count: number,
+      out: number,
+    ) => {
+      const v = new DataView(real.buffer);
+      if (!grow) {
+        v.setUint32(out, 1, true); // KIND.number
+        v.setFloat64(out + 8, 3, true);
+        return 0;
+      }
+      real.grow(1); // another thread's malloc; this thread's glue never runs
+      const grown = new DataView(real.buffer);
+      grown.setUint32(out, 6, true); // KIND.array of one number, stored past the old end
+      grown.setUint32(out + 48, past, true);
+      grown.setBigUint64(out + 40, 1n, true);
+      grown.setUint32(past, 1, true);
+      grown.setFloat64(past + 8, 7.5, true);
+      return 0;
+    };
+    for (let crossing = 0; crossing < 20; crossing += 1)
+      expect(runtime.invoke(self, "count", [1.5, "x", [2, 3]])).toBe(3);
+    runtime.writeDouble?.(800, 1.5);
+    expect(runtime.readDoubles?.(800, 1)).toBe(1.5);
+    expect(runtime.heapF64?.(808)[100]).toBe(1.5);
+    expect(bufferReads).toBe(0);
+    grow = true;
+    expect(runtime.invoke(self, "children", [])).toEqual([7.5]);
+    runtime.writeDouble?.(past + 16, 2.5);
+    expect(runtime.readDoubles?.(past + 8, 2)).toEqual([7.5, 2.5]);
+    expect(runtime.heapF64?.(past + 24)[(past + 16) / 8]).toBe(2.5);
+    // The fresh views went onto the module, so the renderer's and loader's readers see them too.
+    expect(module.HEAPU8.byteLength).toBe(real.buffer.byteLength);
+    expect(module.HEAPF64.byteLength).toBe(real.buffer.byteLength);
+  });
+
   it("lands a transform write in the memory as it is after the engine grew it", () => {
     const { module, grow } = growableModule();
     const runtime = createWasmRuntime(module);
