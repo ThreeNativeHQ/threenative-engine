@@ -55,6 +55,7 @@ Cut the engine-owned rows in order of ratio of ms to risk: the `wasmScene` walk,
 #### Phase 2: The engine JS and the animation share
 **Status:** OPEN
 - [ ] `jsBefore` (+0.75): the post-pass sequence (auto-exposure, bloom, local exposure, the quad wrapper) runs as one engine call, with `onRenderUpdate`/`onBeforeRender` order kept. proof: a red-green case on callback order, a `TN_FRAME_BUDGET` A/B, and a cold-start plus light-change capture for the exposure and rim hook-picking risk.
+- [ ] The web engine returns under 4 MiB + 64 KiB (4,259,840 bytes; PR #659 raised the budget to 4 MiB + 128 KiB at 4,288,337 single-thread and about 4,298,000 threaded). proof: `node scripts/check-budgets.ts` with the old number restored, and `pnpm exec vitest run scripts/__tests__/wasm-size-budget.spec.ts`.
 - [ ] The `AnimationPlayer` share of `update` runs through one `tn_anim_tick` extension; the mixer loop and finished-listeners stay JS. proof: red-green case and A/B.
 
 ## Blocked on
