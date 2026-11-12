@@ -31,10 +31,14 @@ export interface IBudgetConfig {
 }
 
 export const INSTRUCTION_BUDGETS: IBudgetConfig = {
-  // PRD-825: a kit `AGENTS.md` is a router of at most 120 lines and 1,200 rendered words, the same
-  // for every kit. A new convention is a row in `conventions.json`, not a paragraph here, so no
-  // kit carries an override. History of the old per-kit caps: docs/verification/instruction-budgets-*.md.
-  defaultMaxWords: 1200,
+  // PRD-825: a kit `AGENTS.md` is a router of at most 120 lines, bounded by one word maximum for
+  // every kit. A new convention is a row in `conventions.json`, not a paragraph here, so no kit
+  // carries an override. History of the old per-kit caps: docs/verification/instruction-budgets-*.md.
+  //
+  // 1,250 measured 2026-11-12 after PRD-880's `#gamepad` row: the widest kit renders 1,234 words
+  // and four others sat within four words of the old 1,200, so one mandatory convention row broke
+  // six kits. The cap is that measured maximum plus one median row (15 words).
+  defaultMaxWords: 1250,
   overrides: {},
 };
 

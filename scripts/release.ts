@@ -47,6 +47,7 @@ import {
   type IVerifyRegistryInstallOptions,
   verifyRegistryInstall,
 } from "./verify-registry-install.js";
+import { satisfiesSpecifier } from "./version-range.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -88,7 +89,8 @@ export function validateTemplatePins(
       if (typeof block !== "object" || block === null || Array.isArray(block)) continue;
       for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>)) {
         const candidate = versions.get(dependency);
-        if (candidate === undefined || specifier === candidate) continue;
+        if (candidate === undefined || typeof specifier !== "string") continue;
+        if (satisfiesSpecifier(candidate, specifier)) continue;
         findings.push(
           `templates/${entry.name}/package.json ${field}.${dependency} pins '${String(specifier)}', but the candidate cohort carries '${candidate}'.`,
         );

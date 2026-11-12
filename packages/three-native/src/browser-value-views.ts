@@ -311,7 +311,7 @@ export function defineValueViews(host: IValueViewHost): IValueViews {
     if (read === undefined || write === undefined) return;
     const heap = runtime.heapF64;
     const lane = heap
-      ? (address: number): number => heap()[address / 8] as number
+      ? (address: number): number => heap(address + 8)[address / 8] as number
       : (address: number): number => read(address, 1) as number;
     if (name === "Quaternion" && binding.fields !== undefined) {
       const offsets = ["x", "y", "z", "w"].map((key) => binding.fields?.[key]?.[0] ?? 0);
@@ -458,7 +458,7 @@ export function defineValueViews(host: IValueViewHost): IValueViews {
       // a frame, and a copy call allocates two arrays a read.
       const refresh = heap
         ? (address: number, values: number[]): void => {
-            const memory = heap();
+            const memory = heap(address + count * 8);
             for (let i = 0, at = address / 8; i < count; i++) values[i] = memory[at + i] as number;
           }
         : (address: number, values: number[]): void => {
@@ -472,7 +472,7 @@ export function defineValueViews(host: IValueViewHost): IValueViews {
         configurable: true,
         get(this: object): number[] {
           const address = addressOf(this) + offset;
-          const memory = heap?.();
+          const memory = heap?.(address + count * 8);
           if (
             typeof SharedArrayBuffer !== "undefined" &&
             memory?.buffer instanceof SharedArrayBuffer

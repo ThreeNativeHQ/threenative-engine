@@ -1069,8 +1069,9 @@ export function defineBrowserClasses(
               Object.getPrototypeOf(other) !== prototype
             )
               return engineCopy.call(this, other);
-            const from = (addressOf(other) + offset) / 8;
-            heapF64().copyWithin((addressOf(this) + offset) / 8, from, from + count);
+            const to = addressOf(this) + offset;
+            const from = addressOf(other) + offset;
+            heapF64(Math.max(to, from) + count * 8).copyWithin(to / 8, from / 8, from / 8 + count);
             return this;
           },
         },
@@ -1084,9 +1085,9 @@ export function defineBrowserClasses(
               Object.getPrototypeOf(other) !== prototype
             )
               return engineEquals.call(this, other);
-            const heap = heapF64();
             const a = (addressOf(this) + offset) / 8;
             const b = (addressOf(other) + offset) / 8;
+            const heap = heapF64((Math.max(a, b) + count) * 8);
             for (let i = 0; i < count; i++) if (heap[a + i] !== heap[b + i]) return false;
             return true;
           },

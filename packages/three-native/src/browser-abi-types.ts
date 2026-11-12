@@ -83,10 +83,10 @@ export interface IBrowserRuntime {
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
   readDoubles?(address: number, count: number): number | number[];
   /**
-   * The engine's memory as doubles, current: Emscripten replaces the view when the memory grows, so a caller
-   * reads it per operation and never keeps it. Wasm only.
+   * The engine's memory as doubles, current and reaching at least byte `end`: the view is replaced
+   * when the memory grows, so a caller reads it per operation and never keeps it. Wasm only.
    */
-  heapF64?(): Float64Array;
+  heapF64?(end: number): Float64Array;
   /** The byte at `address` in the engine's memory; Wasm only. A registry field `[offset, 0]` is a byte flag. */
   readByte?(address: number): number;
   /** The 32-bit word at `address` in the engine's memory (the hierarchy counter's low word); Wasm only. */
@@ -169,6 +169,28 @@ export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
     lengthBytesUTF8(text: string): number;
   };
 
+/**
+ * The engine's memory as bytes, reaching at least `end`. Shared memory (the threaded build) grows from
+ * any thread, and Emscripten refreshes a thread's views only inside its own glue: after a pool worker
+ * grew it, HEAPU8 here stayed short and a pointer past it threw "Offset is outside the bounds of the
+ * DataView". A shared buffer never detaches, so a short view is right below its end: only an access
+ * past it reads `memory.buffer`, and the fresh views go onto the module for every other reader.
+ */
+export function heapFor(abi: TnAbiModule, end: number): Uint8Array {
+  if (end <= abi.HEAPU8.byteLength) return abi.HEAPU8;
+  const buffer = (abi as { wasmMemory?: WebAssembly.Memory }).wasmMemory?.buffer;
+  if (
+    buffer !== undefined &&
+    buffer.byteLength > abi.HEAPU8.byteLength &&
+    typeof SharedArrayBuffer !== "undefined" &&
+    buffer instanceof SharedArrayBuffer
+  ) {
+    abi.HEAPU8 = new Uint8Array(buffer);
+    abi.HEAPF64 = new Float64Array(buffer);
+  }
+  return abi.HEAPU8;
+}
+
 // wasm32 layouts of tn_abi.h, measured with offsetof under emcc: tn_handle_t 12 bytes; tn_value_t
 // 56 bytes (kind 0, boolean 4, number 8, handle 16, text 32, count 40, numbers 48); tn_diagnostic_t
 // 8 bytes (message 0, code 4); tn_version_info_t 32 bytes. A struct passed by value goes by pointer.
@@ -226,7 +248,8 @@ export interface IAbiHelpers {
   check(status: number, diag: number, what: string): void;
   handleOf(ref: IEngineRef): number;
   writeHandle(pointer: number, ref: IEngineRef): void;
-  view(): DataView;
+  /** The heap's DataView, reaching at least byte `end` (pass it for a pointer `alloc` did not make). */
+  view(end?: number): DataView;
 }
 
 /** `tnw_web_load_gltf`'s handles: the default scene, the clips, then every scene in file order. */
@@ -508,7 +531,7 @@ export function tslOf(
             const out = abi._malloc(size) >>> 0;
             try {
               if (readStorageTake(id, out, size) === 1)
-                return abi.HEAPU8.slice(out, out + size).buffer;
+                return heapFor(abi, out + size).slice(out, out + size).buffer;
             } finally {
               abi._free(out);
             }
@@ -550,7 +573,7 @@ export function tslOf(
                 candidateAt = abi._malloc(candidateRoom * 12) >>> 0;
                 candidatesWritten = 0;
               }
-              const ids = h.view();
+              const ids = h.view(candidateAt + candidateRoom * 12);
               for (; candidatesWritten < candidates.length; candidatesWritten += 1)
                 ids.setBigUint64(
                   candidateAt + candidatesWritten * 8,

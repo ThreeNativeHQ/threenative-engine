@@ -2473,16 +2473,19 @@ describe("IGame", () => {
     ).toThrow("camera.far");
   });
 
-  it("fails closed at defineGame time on the retired `render` key, naming `renderer`", () => {
+  it("adopts the retired `render` key instead of refusing to boot, and reports the rename", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect(() =>
       defineGame({
-        renderer: renderer(testCanvas()),
         scenes: { test: EmptyScene },
         start: "test",
-        // @ts-expect-error the retired key: the throw is the runtime half of this pin
         render: { preferWebGPU: true },
       }),
-    ).toThrow(/TN_GAME_RENDER_KEY_RENAMED.*renderer/u);
+    ).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/TN_GAME_RENDER_KEY_RENAMED.*renderer/u),
+    );
+    warn.mockRestore();
   });
 
   it("uses scene initial state when config state is absent and lets config win", async () => {
@@ -3739,7 +3742,11 @@ describe("IGame", () => {
 
       game.ctx?.input.tick();
       expect(game.ctx?.input.pressed("jump")).toBe(true);
-      expect(game.ctx?.input.vector("move").toArray()).toEqual([0.5, 0.25]);
+      // The injected pad reads through the standard-pad radial dead zone (0.2, rescaled so full
+      // tilt is still 1): [0.5, -0.25] has magnitude 0.559, so x reads 0.401 and move y +0.201.
+      expect(game.ctx?.input.vector("move").toArray()).toEqual([
+        0.401393202250021, 0.2006966011250105,
+      ]);
 
       size = { aspect: 2, height: 320, width: 640 };
       rendererResize?.();

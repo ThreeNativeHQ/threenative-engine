@@ -213,9 +213,17 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
     setup: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
       gameContext = ctx;
       const generation = ++generations;
-      const ready = backend.initialize().then(() => {
-        if (generation !== generations)
-          throw new Error("rapier() was disposed before it initialized.");
+      const ready = backend.initialize().then((): IPhysicsContext | undefined => {
+        // A reload or a stop raced Rapier's Wasm. The generation that asked is gone, so nothing is
+        // installed — and nothing rejects: with the start gate, nothing awaits `ready` any more, so
+        // a rejection here reached the page as a boot failure it never had (the 0.3.13 release proof
+        // stopped on exactly that, PRD-860).
+        if (generation !== generations) {
+          console.warn(
+            "TN_PHYSICS_SETUP_SUPERSEDED: rapier initialized after its game was disposed; nothing was installed.",
+          );
+          return undefined;
+        }
         const selected = backend.createSimulation(options);
         simulation = selected;
         if (runtime !== undefined) runtime.rapier = selected.version;

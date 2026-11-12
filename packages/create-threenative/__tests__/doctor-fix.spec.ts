@@ -196,6 +196,18 @@ describe("doctor --fix", () => {
     expect(await readFile(path.join(target, STAMP), "utf8")).toBe(stamp);
   });
 
+  it("accepts a core newer than the paired release, the normal case for a fresh scaffold", async () => {
+    const target = await scaffold();
+    const [major, minor] = CORE.split(".").map(Number) as [number, number];
+    // Templates ship `>=`, so a game may resolve any newer engine — including a later minor.
+    await installCore(target, `${major}.${minor + 1}.0`);
+    await expect(fixAuthoringLayer(target, { force: true })).resolves.toEqual({
+      deleted: [],
+      kept: [],
+      written: [],
+    });
+  });
+
   it("refuses a game with no installed core at all, and names the upgrade", async () => {
     const target = await olderGame();
     await rm(path.join(target, "node_modules"), { force: true, recursive: true });

@@ -901,6 +901,14 @@
       "reject": []
     },
     {
+      "id": "request.gamepad-vendors",
+      "query": "the Xbox pad, the 8bitdo or the Steam Deck controller reads as one standard gamepad, and an idle joypad must not steal input",
+      "scope": "request",
+      "source": "template:starter#Conventions",
+      "expect": ["InputMap"],
+      "reject": []
+    },
+    {
       "id": "request.swim-water-volume",
       "query": "Swim across a river or lake in a water volume, floating with buoyancy and wading slower in shallow water.",
       "scope": "request",

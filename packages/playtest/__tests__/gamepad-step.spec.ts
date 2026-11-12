@@ -82,11 +82,10 @@ test("the injected pad is what the page's getGamepads returns, and the browser's
     expect(pad?.buttons[0]?.pressed).toBe(true);
     expect(pad?.buttons[1]?.pressed).toBe(false);
   } finally {
-    if (saved === undefined) {
-      (globalThis as { navigator?: unknown }).navigator = undefined;
-    } else {
-      Object.defineProperty(globalThis, "navigator", saved);
-    }
+    // `navigator` is an accessor some Node versions own and others inherit, so never assign it:
+    // delete the own property this test defined, which reveals whatever the host had underneath.
+    if (saved === undefined) Reflect.deleteProperty(globalThis, "navigator");
+    else Object.defineProperty(globalThis, "navigator", saved);
     (globalThis as { __tnPlaytestGamepad?: unknown }).__tnPlaytestGamepad = undefined;
   }
 });

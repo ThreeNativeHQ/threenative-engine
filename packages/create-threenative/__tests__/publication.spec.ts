@@ -7,6 +7,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { templateSpecifier } from "../../../scripts/version-range.js";
 import { publicWorkspacePackages } from "../../../scripts/workspace-packages.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
@@ -185,9 +186,11 @@ describe("registry publication", () => {
           "utf8",
         ),
       ) as { dependencies: Record<string, string> };
-      // And a template must pin whatever that version is, exactly — a scaffold pinning a
-      // version the workspace no longer publishes cannot install.
-      expect(templateManifest.dependencies["@threenative/ui"], template).toBe(packageJson.version);
+      // And a template's floor must be that version — a floor the workspace does not publish
+      // cannot install.
+      expect(templateManifest.dependencies["@threenative/ui"], template).toBe(
+        templateSpecifier("@threenative/ui", packageJson.version),
+      );
     }
   });
 
@@ -208,7 +211,9 @@ describe("registry publication", () => {
         for (const [name, version] of Object.entries(template[field] ?? {})) {
           const workspaceVersion = versions.get(name);
           if (workspaceVersion === undefined) continue;
-          expect(version, `${entry.name} ${field}.${name}`).toBe(workspaceVersion);
+          expect(version, `${entry.name} ${field}.${name}`).toBe(
+            templateSpecifier(name, workspaceVersion),
+          );
         }
       }
     }

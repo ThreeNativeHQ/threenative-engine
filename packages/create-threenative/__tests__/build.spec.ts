@@ -1495,7 +1495,7 @@ cpSync("public", out, { recursive: true });
         await published("create-threenative"),
       );
       expect(manifest.optionalDependencies?.["@threenative/runtime-native"], template).toBe(
-        await published("runtime-native"),
+        `>=${await published("runtime-native")}`,
       );
       expect(manifest.pnpm?.onlyBuiltDependencies, template).toContain(
         "@threenative/runtime-native",

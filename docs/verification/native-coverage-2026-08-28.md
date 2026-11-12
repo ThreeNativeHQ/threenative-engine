@@ -11,23 +11,23 @@ targets could not be built and are named below.
 | `src/audio/` | 1467 | 1300 | 88.62% |
 | `src/canvas/` | 1335 | 1113 | 83.37% |
 | `src/cli/` | 1691 | 1243 | 73.51% |
-| `src/engine/` | 44800 | 37627 | 83.99% |
+| `src/engine/` | 44823 | 37650 | 84.00% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
 | `src/js/` | 2838 | 2230 | 78.58% |
-| `src/platform/` | 1523 | 1061 | 69.67% |
+| `src/platform/` | 1507 | 1061 | 70.40% |
 | `src/raytracing/` | 643 | 543 | 84.45% |
 | `src/runtime.cpp` | 2399 | 1865 | 77.74% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 370 | 329 | 88.92% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 254 | 210 | 82.68% |
-| `src/webgpu/` | 10052 | 7721 | 76.81% |
+| `src/webgpu/` | 10052 | 7730 | 76.90% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **70123** | **57497** | **81.99%** |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **70130** | **57526** | **82.03%** |
 
-Source digest: `sha256:02063968cfebc5f980a5ad290f943378dc18eee1a99e62805f4f751694013d05`
+Source digest: `sha256:aa2574320d292f7b9f15d417d98b5468381a07a1e331671e9eb90654b254c4ea`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -43,7 +43,7 @@ change requires this opt-in command to refresh the record.
 | `src/fs/` | 75.43% |
 | `src/http/` | 86.95% |
 | `src/js/` | 74.50% |
-| `src/platform/` | 64.76% |
+| `src/platform/` | 65.40% |
 | `src/raytracing/` | 81.55% |
 | `src/runtime.cpp` | 73.28% |
 | `src/screenshot_gate.cpp` | 88.89% |
@@ -61,7 +61,6 @@ change requires this opt-in command to refresh the record.
 - `src/adapters/v8/math_bridge.cpp`
 - `src/adapters/v8/tsl.cpp`
 - `src/debug/debug_server.cpp`
-- `src/engine/player/gamepads.cpp`
 - `src/engine/player/v8_main.cpp`
 - `src/engine/wasm/web_host.cpp`
 - `src/engine/world/physics_sync.cpp`
