@@ -85,7 +85,7 @@ target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scene/camera.cpp
     src/engine/scene/nodes.cpp src/engine/scene/raycaster.cpp src/engine/scene/geometry.cpp src/engine/scene/geometries.cpp src/engine/scene/curves.cpp src/engine/scene/shape_utils.cpp
     src/engine/scene/material.cpp src/engine/scene/lights.cpp src/engine/scene/static_transform.cpp
-    src/engine/scene/projected_cull.cpp src/engine/scene/pose_history.cpp)
+    src/engine/scene/projected_cull.cpp)
 tn_native_engine_target(tn_engine_scene)
 if(EMSCRIPTEN)
     # The web engine ships under a 4 MiB budget (native-engine-wasm action). The ray BVH (PRD-752) and
@@ -495,7 +495,6 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
-    native_engine_material_lamp_range_branch=lamp_range_branch
     native_engine_material_emissive_output=emissive_output
     native_engine_fog_math=fog
     native_engine_fog_node_mixes_color=fog_node_mixes_color
@@ -569,7 +568,6 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_vertex_position_world=vertex_position_world
     native_engine_abi_tsl_uniform_value=tsl_uniform_value
     native_engine_abi_tsl_set_uniforms=tsl_set_uniforms
-    native_engine_abi_tsl_reads=tsl_reads
     native_engine_abi_tsl_statements=tsl_statements
     native_engine_abi_tsl_effect_parameter=tsl_effect_parameter
     native_engine_abi_mixer_time_field=mixer_time_field
@@ -595,14 +593,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_world_space_conversions=world_space_conversions
     native_engine_abi_projected_cull_list=projected_cull_list
     native_engine_abi_projected_cull_bands=projected_cull_bands
-    native_engine_abi_projected_cull_band_animation=projected_cull_band_animation
-    native_engine_abi_projected_cull_multiple_views=projected_cull_multiple_views
     native_engine_abi_bounds_in_view=bounds_in_view
-    native_engine_abi_frustum_intersects_boxes=frustum_intersects_boxes
-    native_engine_abi_material_witness=material_witness
-    native_engine_abi_rig_lane_follows_morph_set=rig_lane_follows_morph_set
-    native_engine_abi_world_records=world_records
-    native_engine_abi_world_stale_entries=world_stale_entries
     native_engine_abi_projected_cull_held_restore=projected_cull_held_restore)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
@@ -726,8 +717,7 @@ tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vs
     native_engine_vsm_ground_window=ground_window
     native_engine_vsm_lod_rung=lod_rung
     native_engine_vsm_packing=packing
-    native_engine_vsm_map_sizes=map_sizes
-    native_engine_vsm_caster_plan=caster_plan)
+    native_engine_vsm_map_sizes=map_sizes)
 target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader tn_engine_bindings)
 
 # The header compiles as strict C11 and a C program links against the ABI.
@@ -942,8 +932,7 @@ target_link_libraries(tn-native-engine-animation-binding-test PRIVATE tn_engine_
 target_include_directories(tn-native-engine-animation-binding-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 tn_native_engine_test(tn-native-engine-animation-mixer-test tests/native-engine/animation/mixer_test.cpp
     native_engine_animation_mixer=mixer native_engine_animation_events=events
-    native_engine_animation_track_hot_fields=track_hot_fields
-    native_engine_animation_evaluate_then_flush_events=evaluate_then_flush_events)
+    native_engine_animation_track_hot_fields=track_hot_fields)
 target_link_libraries(tn-native-engine-animation-mixer-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 if(EMSCRIPTEN)
@@ -954,16 +943,9 @@ if(EMSCRIPTEN)
 endif()
 # PRD-828: one call a frame advances every rig (weights, stride rate, one mixer step each).
 tn_native_engine_test(tn-native-engine-animation-tick-batch-test tests/native-engine/animation/tick_batch_test.cpp
-    native_engine_animation_tick_batch=tick_batch
-    native_engine_animation_tick_micros_counted=animation_tick_micros_counted)
-# PRD-875 Phase 1: the counter's case drives the real `tn_anim_tick`, which lives in tn_engine_abi.
-target_link_libraries(tn-native-engine-animation-tick-batch-test PRIVATE tn_engine_animation tn_engine_abi)
+    native_engine_animation_tick_batch=tick_batch)
+target_link_libraries(tn-native-engine-animation-tick-batch-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-tick-batch-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
-# PRD-877 phase 2: the engine blends and restores a body's poses without leaving C++.
-tn_native_engine_test(tn-native-engine-scene-pose-history-test tests/native-engine/scene/pose_history_test.cpp
-    native_engine_physics_pose_history=pose_history)
-target_link_libraries(tn-native-engine-scene-pose-history-test PRIVATE tn_engine_scene)
-target_include_directories(tn-native-engine-scene-pose-history-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene)
 # PRD-517: property tracks on materials, lights, cameras and visibility.
 tn_native_engine_test(tn-native-engine-animation-property-tracks-test tests/native-engine/animation/property_tracks_test.cpp
     native_engine_animation_property_tracks=property_tracks)
@@ -977,18 +959,15 @@ target_link_libraries(tn-native-engine-animation-schedule-test PRIVATE tn_engine
 tn_native_engine_test(tn-native-engine-animation-skeleton-test tests/native-engine/animation/skeleton_test.cpp
     native_engine_skeleton_pose=skeleton_pose
     native_engine_skeleton_clone_bounds=clone_bounds
-    native_engine_skeleton_clone_lights=clone_lights
-    native_engine_skeleton_pose_version=pose_version
-    native_engine_skeleton_bone_liveness=bone_liveness)
+    native_engine_skeleton_clone_lights=clone_lights)
 target_link_libraries(tn-native-engine-animation-skeleton-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-skeleton-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 # PRD-518 phases 2-3: the recorded SkinnedBatch CPU state reproduces over the native palette.
 tn_native_engine_test(tn-native-engine-animation-skinned-palette-test tests/native-engine/animation/skinned_palette_test.cpp
     native_engine_skinned_slot_reuse=slot_reuse
     native_engine_skinned_pose_history=pose_history
-    native_engine_skinned_update_frequency=update_frequency
-    native_engine_skinned_relative_slot_keeps_an_unchanged_pose=relative_slot_keeps_an_unchanged_pose)
-target_link_libraries(tn-native-engine-animation-skinned-palette-test PRIVATE tn_engine_animation tn_engine_shader)
+    native_engine_skinned_update_frequency=update_frequency)
+target_link_libraries(tn-native-engine-animation-skinned-palette-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-skinned-palette-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 
 # PRD-531 raycasting and LOD: real three, binary64 oracle tables (CPU only).
@@ -1047,7 +1026,6 @@ tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/j
     native_engine_job_pool_workers_cover_the_machine=workers_cover_the_machine
     native_engine_job_pool_fails_closed=pool_fails_closed_when_no_worker_starts
     native_engine_matrix_walk_jobs=matrix_walk_jobs
-    native_engine_concurrent_quaternion_writes=concurrent_quaternion_writes
     native_engine_matrix_walk_threshold=matrix_walk_threshold
     native_engine_job_pool_starts_on_need=pool_starts_on_need
     native_engine_job_pool_is_always_on=pool_is_always_on)
@@ -1175,7 +1153,7 @@ if(EMSCRIPTEN)
     tn_native_engine_target(tn-native-engine-abi-module)
     target_link_options(tn-native-engine-abi-module PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_NAME=createTnAbi
         -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_set_uniforms,_tn_tsl_reads,_tn_tsl_effect_parameter,_tn_anim_tick,_malloc,_free"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_set_uniforms,_tn_tsl_effect_parameter,_tn_anim_tick,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     target_include_directories(tn-native-engine-abi-module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-abi-module)
@@ -1256,7 +1234,7 @@ if(EMSCRIPTEN)
         # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue
         # reads `document` while the module loads.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web,worker -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_set_uniforms,_tn_tsl_reads,_tn_tsl_effect_parameter,_tn_anim_tick,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_gltf_begin,_tnw_web_load_gltf_done,_tnw_web_load_gltf_finish,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture,_tnw_web_read_mrt,_tnw_web_device_limit,_tnw_web_clear_target,_tnw_web_device_feature"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_set_uniforms,_tn_tsl_effect_parameter,_tn_anim_tick,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_gltf_begin,_tnw_web_load_gltf_done,_tnw_web_load_gltf_finish,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture,_tnw_web_read_mrt,_tnw_web_device_limit,_tnw_web_clear_target,_tnw_web_device_feature"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 

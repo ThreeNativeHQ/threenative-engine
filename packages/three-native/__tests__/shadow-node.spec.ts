@@ -130,14 +130,14 @@ it("constructs core's automatic-depth node and installs through the facade sette
   ]);
   // The engine runs the clipmap, so core's updateBefore never counts a frame: each world render reports one, with the
   // levels still owed as `deferred` (web frame field 87). -1 is no virtual shadow, and moves nothing (PRD-762).
-  reportVirtualShadowFrame(2);
+  reportVirtualShadowFrame({ _tnw_web_frame: () => 2 });
   expect(node.stats).toMatchObject({ frame: 1, held: 0, deferred: 2 });
   // Core's startup gate waits on `settled` once a frame is counted: the engine answers it too.
   expect(node.settled).toBe(false);
-  reportVirtualShadowFrame(0);
+  reportVirtualShadowFrame({ _tnw_web_frame: () => 0 });
   expect(node.stats).toMatchObject({ frame: 2, held: 0, deferred: 0 });
   expect(node.settled).toBe(true);
-  reportVirtualShadowFrame(-1);
+  reportVirtualShadowFrame({ _tnw_web_frame: () => -1 });
   expect(node.stats.frame).toBe(2);
   node.invalidateAll();
   expect(writes.at(-1)).toEqual([expect.any(Object), "shadowNode", { command: "invalidateAll" }]);
@@ -263,8 +263,6 @@ it("walks the light root only when the hierarchy or a registered chain moved", (
   const finer = {};
   const nextChain = { levels: [geometry, finer], errors: [0, 0.5] };
   host[chainsKey] = new WeakMap([[geometry, { chain }]]);
-  // Core bumps the version with every registration (`bumpChains`), so a registered chain always has one.
-  host[versionKey] = ((previousVersion as number | undefined) ?? 0) + 1;
   let revision = 12;
   const casters = [{ id: 7, geometry }];
   const root = {
@@ -326,7 +324,6 @@ it("walks the light root only when the hierarchy or a registered chain moved", (
   // (e) a backend with no hierarchy counter (JSDOM, another engine) never skips the walk.
   const plainRoot = { id: 3, parent: undefined as object | undefined, traverse: vi.fn() };
   const fallbackNode = new VirtualShadowNode(plainRoot);
-  host[versionKey] = ((previousVersion as number | undefined) ?? 0) + 1;
   try {
     virtualShadowOptions(fallbackNode, vi.fn());
     syncVirtualShadowLods();
@@ -334,7 +331,6 @@ it("walks the light root only when the hierarchy or a registered chain moved", (
     expect(plainRoot.traverse).toHaveBeenCalledTimes(2);
   } finally {
     fallbackNode.dispose();
-    host[versionKey] = previousVersion;
   }
 });
 
@@ -358,10 +354,6 @@ it("transfers registered LOD chain data once and clears its dispatch on disposal
   (globalThis as Record<symbol, unknown>)[key] = new WeakMap([
     [mesh.geometry, { chain: { levels: [mesh.geometry, coarse], errors: [0, 0.25] } }],
   ]);
-  const versionKey = Symbol.for("threenative.discreteLodChainsVersion");
-  const previousVersion = (globalThis as Record<symbol, unknown>)[versionKey];
-  (globalThis as Record<symbol, unknown>)[versionKey] =
-    ((previousVersion as number | undefined) ?? 0) + 1;
   try {
     syncVirtualShadowLods();
     syncVirtualShadowLods();
@@ -380,47 +372,6 @@ it("transfers registered LOD chain data once and clears its dispatch on disposal
     expect(node.dispatch).toBeUndefined();
   } finally {
     (globalThis as Record<symbol, unknown>)[key] = previous;
-    (globalThis as Record<symbol, unknown>)[versionKey] = previousVersion;
     node.dispose();
-  }
-});
-
-it("never walks the scene while no LOD chain was ever registered (PRD-871)", () => {
-  class VirtualShadowNode extends ShadowBaseNode {
-    static override get type() {
-      return "VirtualShadowNode";
-    }
-    options = { selectionGuard: [0.775], refreshStep: [0.125] };
-  }
-  const host = globalThis as Record<symbol, unknown>;
-  const chainsKey = Symbol.for("threenative.discreteLodChains");
-  const versionKey = Symbol.for("threenative.discreteLodChainsVersion");
-  const previousChains = host[chainsKey];
-  const previousVersion = host[versionKey];
-  // Importing core installs the map; only a registration sets the version.
-  host[chainsKey] = new WeakMap();
-  delete host[versionKey];
-  let revision = 0;
-  const root = {
-    id: 1,
-    parent: undefined as object | undefined,
-    get __hierarchyRevision(): number {
-      return revision;
-    },
-    traverse: vi.fn(),
-  };
-  const node = new VirtualShadowNode(root);
-  virtualShadowOptions(node, vi.fn());
-  try {
-    // The stress lab's `play` preset adds and removes objects every frame: each frame walked ~10k proxies for nothing.
-    for (let frame = 0; frame < 3; frame += 1) {
-      revision += 1;
-      syncVirtualShadowLods();
-    }
-    expect(root.traverse).not.toHaveBeenCalled();
-  } finally {
-    node.dispose();
-    host[chainsKey] = previousChains;
-    host[versionKey] = previousVersion;
   }
 });

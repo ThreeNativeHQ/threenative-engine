@@ -2,7 +2,6 @@
 // The stress lab loop's measure step.
 //
 //   pnpm stress:loop record <report.json> --label "<text>" [--decision baseline|keep|reject|measure] [--engine <arm>] [--variant <url flags>] [--notes "<text>"]
-//     a keep also needs --holdout "<game or kit>: <metric> <before> -> <after>": the lab finds a lever, a real game decides it
 //   pnpm stress:loop fair <engine=url>... [--tag <name>] [--passes vsync,uncapped]   # PRD-770: one fair window, then record
 //   pnpm stress:loop show
 //   pnpm dashboard   # the Stress lab tab renders docs/stress-loop/ledger.json on each load
@@ -163,33 +162,9 @@ export function measureReport(report, { counted = true } = {}) {
         "rafStampP95Ms",
         true,
       ),
-      // The tail: p99 of the frame intervals (uncapped fair runs), and the worst window's CPU p95 (the report pools
-      // windows by median, which hides one bad window). Null on a row from before 2026-11-10 or an arm without them.
-      presentedP99Ms: metric(
-        { presentedP99Ms: metrics.presentedP99Ms ?? null },
-        "presentedP99Ms",
-        true,
-      ),
-      frameP99Ms: metric({ frameP99Ms: metrics.frameP99Ms ?? null }, "frameP99Ms", true),
-      frameWorstP95Ms: metric(
-        { frameWorstP95Ms: metrics.frameWorstP95Ms ?? null },
-        "frameWorstP95Ms",
-        true,
-      ),
-      // Loop frames the engine declined to draw, in percent. The lab's `fps` leaves them out since 2026-11-10; a
-      // GPU-bound host (Iris Xe) declined enough of them to hide every Wasm stage behind a zero median.
-      renderSkipPct: metric(
-        { renderSkipPct: metrics.renderSkipPct ?? null },
-        "renderSkipPct",
-        true,
-      ),
       fps: metric(metrics, "fps"),
       gpuP50Ms: metric(metrics, "gpuP50Ms", true),
       gpuP95Ms: metric(metrics, "gpuP95Ms", true),
-      // The GPU frame by pass (main scene, every shadow pass, the rest): which pass owns a GPU-bound frame.
-      gpuMainMs: metric({ gpuMainMs: metrics.gpuMainMs ?? null }, "gpuMainMs", true),
-      gpuShadowMs: metric({ gpuShadowMs: metrics.gpuShadowMs ?? null }, "gpuShadowMs", true),
-      gpuOtherMs: metric({ gpuOtherMs: metrics.gpuOtherMs ?? null }, "gpuOtherMs", true),
       renderP50Ms: metric(metrics, "renderP50Ms"),
       updateP50Ms: metric(metrics, "updateP50Ms"),
       frameP50Ms: metric(metrics, "frameP50Ms"),
@@ -227,18 +202,12 @@ export function appendRow(
     variant = "stress",
     at = new Date(),
     extra = {},
-    holdout,
   } = {},
 ) {
   if (typeof label !== "string" || label === "") throw new Error("record needs --label");
-  const chosen = decision ?? (ledger.iterations.length === 0 ? "baseline" : "measure");
+  const chosen = decision ?? (ledger.iterations.length === 0 ? "baseline" : "keep");
   if (!DECISIONS.includes(chosen))
     throw new Error(`decision must be one of ${DECISIONS.join(", ")}`);
-  // The lab finds a lever; a game decides it (owner, 2026-09-27: "we're not benchmaxxing; our fixes must reflect reality").
-  if (chosen === "keep" && (typeof holdout !== "string" || holdout.trim() === ""))
-    throw new Error(
-      'a keep needs --holdout "<game or kit>: <metric> <before> -> <after>" measured outside the stress lab; record --decision measure until a real game shows the gain, or states "no effect"',
-    );
   if (!ENGINES.some((item) => item.key === engine))
     throw new Error(`engine must be one of ${ENGINES.map((item) => item.key).join(", ")}`);
   if (typeof variant !== "string" || variant === "")
@@ -261,7 +230,6 @@ export function appendRow(
     windows: row.windows,
     metrics: row.metrics,
     counts: row.counts,
-    ...(chosen === "keep" ? { holdout: holdout.trim() } : {}),
     ...extra,
   };
   return { ...ledger, iterations: [...ledger.iterations, next] };
@@ -331,9 +299,6 @@ export function checkedRun(raw, engine) {
 
 /** Engine-boundary costs, tracked per row without a goal until a measured floor sets one. */
 export const TRACKED = [
-  { key: "presentedP99Ms", short: "Presented p99 (stutter)", unit: "ms" },
-  { key: "frameWorstP95Ms", short: "CPU p95, worst window", unit: "ms" },
-  { key: "renderSkipPct", short: "Frames not drawn", unit: "%" },
   { key: "bridgeCrossingsP50", short: "JS↔Wasm crossings", unit: "/frame" },
   { key: "hostCallsP50", short: "Host (ABI) calls", unit: "/frame" },
   { key: "gpuUploadKbP50", short: "GPU upload", unit: "KB/frame" },
@@ -343,9 +308,6 @@ export const TRACKED = [
 /** The report's other metrics: shown in the history and the engine comparison, no goal. */
 const MORE = [
   { key: "gpuP50Ms", short: "GPU p50", unit: "ms" },
-  { key: "gpuMainMs", short: "GPU main pass", unit: "ms" },
-  { key: "gpuShadowMs", short: "GPU shadow passes", unit: "ms" },
-  { key: "gpuOtherMs", short: "GPU post and other", unit: "ms" },
   { key: "presentedP50Ms", short: "Presented p50", unit: "ms" },
   { key: "frameP50Ms", short: "CPU frame p50", unit: "ms" },
   { key: "updateP50Ms", short: "Update p50", unit: "ms" },
@@ -617,7 +579,6 @@ async function main(argv) {
       label: get("--label"),
       notes: get("--notes") ?? "",
       decision: get("--decision"),
-      holdout: get("--holdout"),
       engine: get("--engine"),
       variant: get("--variant"),
     });
@@ -647,7 +608,7 @@ async function main(argv) {
     return;
   }
   console.error(
-    "usage: stress-loop.mjs record <fair-run.json> --label <text> [--decision baseline|keep|reject|measure] [--holdout '<game>: <metric> <before> -> <after>' (a keep needs it)] [--engine threenative-wasm|threenative-threejs|three-vanilla|unreal] [--variant <url flags>] [--notes <text>] | fair <engine=url>... | show",
+    "usage: stress-loop.mjs record <fair-run.json> --label <text> [--decision baseline|keep|reject|measure] [--engine threenative-wasm|threenative-threejs|three-vanilla|unreal] [--variant <url flags>] [--notes <text>] | fair <engine=url>... | show",
   );
   process.exit(2);
 }

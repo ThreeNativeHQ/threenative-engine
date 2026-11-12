@@ -94,21 +94,6 @@ struct MixerCpuScope {
     ~MixerCpuScope() { stop(); }
 };
 
-/**
- * PRD-875 H2: an exception that escapes the pose work marks the observed poses conservative. `update`
- * must hold one of these across both halves — a listener that throws in `flushEvents` used to unwind
- * through the guard, and splitting the two would have quietly stopped marking those poses.
- */
-struct ObservationUnwind {
-    const AnimationMixer* mixer;
-    int exceptions = mixer ? std::uncaught_exceptions() : 0;
-    ~ObservationUnwind() {
-        if (!mixer || std::uncaught_exceptions() <= exceptions) return;
-        if (auto interval = poseRegistry.intervals.find(mixer); interval != poseRegistry.intervals.end())
-            for (auto& [id, pose] : interval->second) pose.observed |= 4;
-    }
-};
-
 double float32(double x) { return static_cast<double>(static_cast<float>(x)); }
 
 std::vector<double> float32s(const std::vector<double>& in) {
@@ -863,17 +848,17 @@ AnimationMixer& AnimationMixer::stopAllAction() {
 }
 
 AnimationMixer& AnimationMixer::update(double deltaTime) {
-    const ObservationUnwind observationUnwind{poseObservation.enabled ? this : nullptr};
-    evaluate(deltaTime);
-    flushEvents();
-    return *this;
-}
-
-AnimationMixer& AnimationMixer::evaluate(double deltaTime) {
     MixerCpuScope cpu;
     if (poseObservation.enabled) closePoseInterval(this);
-    // Held for as long as this call does the pose work; `update` nests one across the flush as well.
-    const ObservationUnwind observationUnwind{poseObservation.enabled ? this : nullptr};
+    struct ObservationUnwind {
+        const AnimationMixer* mixer;
+        int exceptions = mixer ? std::uncaught_exceptions() : 0;
+        ~ObservationUnwind() {
+            if (!mixer || std::uncaught_exceptions() <= exceptions) return;
+            if (auto interval = poseRegistry.intervals.find(mixer); interval != poseRegistry.intervals.end())
+                for (auto& [id, pose] : interval->second) pose.observed |= 4;
+        }
+    } observationUnwind{poseObservation.enabled ? this : nullptr};
     ++updateCount_;
     deltaTime *= timeScale;
     const std::size_t nActions = nActiveActions_;
@@ -891,15 +876,12 @@ AnimationMixer& AnimationMixer::evaluate(double deltaTime) {
         bindings_[i]->apply(accuIndex);
     }
     updating_ = false;
-    cpu.stop(); // listener callbacks may run arbitrary game code or reenter update
-    return *this;
-}
-
-void AnimationMixer::flushEvents() {
     std::vector<MixerEvent> pending;
     pending.swap(pendingEvents_);
+    cpu.stop(); // listener callbacks may run arbitrary game code or reenter update
     for (const MixerEvent& event : pending)
         dispatchEvent(event);
+    return *this;
 }
 
 AnimationMixer& AnimationMixer::setTime(double t) {

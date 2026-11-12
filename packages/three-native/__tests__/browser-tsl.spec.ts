@@ -461,38 +461,3 @@ it("lights([...]) spreads its list into one engine object argument per light", (
   // A plain object is not an engine light: refused by its position in the list, not as an array.
   expect(() => lights([{}])).toThrow("TN_TSL lights: argument 0 is not");
 });
-
-// PRD-878: a post quad's draw and a dispatch ask the engine which hooked uniforms their graphs read; a scene's render
-// runs every hook, since its fog, background and lights read uniforms no mesh names.
-describe("the hooks one draw reads", () => {
-  it("asks the engine for a mesh root or kernels, and runs every hook for a scene", () => {
-    const { runtime } = setup();
-    const reads = vi.fn(
-      (_root: unknown, _kernels: readonly number[], candidates: readonly number[]) =>
-        candidates.length > 1 ? [1] : [],
-    );
-    runtime.reads = reads;
-    const tsl = defineTsl(runtime);
-    const uniform = tsl.exports.uniform as (value: number) => {
-      [TSL_NODE]: number;
-      onRenderUpdate(callback: () => number): unknown;
-    };
-    const ran: string[] = [];
-    const fog = uniform(0);
-    const glow = uniform(0);
-    fog.onRenderUpdate(() => ran.push("fog"));
-    glow.onRenderUpdate(() => ran.push("glow"));
-    tsl.sync({ scene: { isScene: true }, frameId: 1 });
-    expect(ran).toEqual(["fog", "glow"]);
-    expect(reads).not.toHaveBeenCalled();
-    ran.length = 0;
-    const quad = { [REF]: { key: "1:0:2:1", type: 1 } };
-    tsl.sync({ scene: quad, frameId: 1 });
-    tsl.sync({ frameId: 1, kernels: [42] });
-    expect(ran).toEqual(["glow", "glow"]);
-    expect(reads.mock.calls).toEqual([
-      [{ key: "1:0:2:1", type: 1 }, [], [fog[TSL_NODE], glow[TSL_NODE]]],
-      [undefined, [42], [fog[TSL_NODE], glow[TSL_NODE]]],
-    ]);
-  });
-});

@@ -401,14 +401,6 @@
       "kits": "all"
     },
     {
-      "id": "gamepad",
-      "name": "Controller",
-      "default": "W3C standard mapping on every pad, radial dead zone `0.2`, and a button press or a decisive stick move claims which pad is read",
-      "override": "`gamepadDeadZone: 0` for raw axes",
-      "marker": "TN_GAMEPAD",
-      "kits": "all"
-    },
-    {
       "id": "move-axis",
       "name": "Move input",
       "default": "`input.vector(\"move\").y` is +up",

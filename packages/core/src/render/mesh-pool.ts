@@ -1,5 +1,4 @@
 import { type BufferGeometry, InstancedMesh, type Material } from "three";
-import { batchRecords } from "../world-cell-records.js";
 
 /**
  * A pool of parked `InstancedMesh`es, keyed by the parts they draw.
@@ -17,6 +16,23 @@ export const MESH_POOL_MIN_CAPACITY = 64;
 export const MESH_POOL_MAX_PER_PAIR = 8;
 /** Parked meshes across every pair, so a walk's back-traffic cannot grow without bound. */
 export const MESH_POOL_MAX_HELD = 512;
+
+/**
+ * The `update` the pending upload spans belong to; moved once per `WorldCells.update`, which is the
+ * frame boundary a render's upload falls between. Module-level like the pool above, because there is
+ * one world drawing at a time.
+ */
+let writeEpoch = 0;
+
+/** The upload epoch a batch's pending span belongs to; see `advanceWriteEpoch`. */
+export function currentWriteEpoch(): number {
+  return writeEpoch;
+}
+
+/** Starts the next upload epoch, so no batch's pending span outlives the render that consumed it. */
+export function advanceWriteEpoch(): void {
+  writeEpoch += 1;
+}
 
 /** geometry -> material -> parked meshes, biggest last. */
 const meshPool = new Map<BufferGeometry, Map<Material, InstancedMesh[]>>();
@@ -81,8 +97,8 @@ export function parkMesh(mesh: InstancedMesh): boolean {
   mesh.frustumCulled = false;
   mesh.castShadow = false;
   mesh.receiveShadow = false;
-  batchRecords.fill(mesh.instanceMatrix, 0, mesh.instanceMatrix.count * 16);
-  batchRecords.upload(mesh.instanceMatrix, 0, 0);
+  mesh.instanceMatrix.array.fill(0);
+  mesh.instanceMatrix.needsUpdate = true;
   let forGeometry = meshPool.get(mesh.geometry);
   if (forGeometry === undefined) {
     forGeometry = new Map();

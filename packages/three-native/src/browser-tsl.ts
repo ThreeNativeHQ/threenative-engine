@@ -44,15 +44,6 @@ export interface ITslRuntime {
   setUniform(node: number, lanes: readonly number[]): void;
   /** Many `setUniform`s in one crossing: node i takes `counts[i]` of the packed `lanes` (PRD-828). */
   setUniforms?(nodes: readonly number[], counts: readonly number[], lanes: readonly number[]): void;
-  /**
-   * PRD-878, `tn_tsl_reads`: which of `candidates` (uniform node ids) a draw of `root` (a mesh and what is under it)
-   * or a dispatch of `kernels` reads, as indices into `candidates`.
-   */
-  reads?(
-    root: IEngineRef | undefined,
-    kernels: readonly number[],
-    candidates: readonly number[],
-  ): number[];
   /** A live post effect's scalar uniform, written first when `value` is given; answers its value. */
   effectParameter(node: number, name: string, value?: number): number;
   /** three's RenderPipeline: the post graph the web host draws between scene and output, or none. */
@@ -454,8 +445,7 @@ export function defineTsl(
   classes?: ConstClasses,
 ): {
   exports: Record<string, unknown>;
-  /** `kernels`: a dispatch's engine node ids, so its sync runs only the hooks they read (PRD-878). */
-  sync(frame?: INodeFrame & { kernels?: readonly number[] }): void;
+  sync(frame?: INodeFrame): void;
 } {
   const released = new FinalizationRegistry<number>((node) => runtime.release(node));
   // three marks every node with `isNode`; framework code (Atmosphere.radiance) branches on it.
@@ -882,8 +872,6 @@ export function defineTsl(
     return valueUniform((exports[`mat${n}`] as (...columns: ITslNode[]) => ITslNode)(...columns));
   };
   const setUniforms = runtime.setUniforms?.bind(runtime);
-  const engineReads = runtime.reads?.bind(runtime);
-  const hookIds: number[] = [];
   const live = liveUniforms(
     matrixUniform,
     (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
@@ -894,19 +882,6 @@ export function defineTsl(
           counts,
           lanes,
         )),
-    // A scene's render runs every hook (its fog, background and lights read uniforms no mesh names); a draw of
-    // a mesh (a post quad) or a dispatch runs the hooks its graphs read, which the engine answers (PRD-878).
-    engineReads &&
-      ((frame, hooked) => {
-        const root = frame.scene as { isScene?: unknown } | null | undefined;
-        if (frame.kernels === undefined && (root == null || root.isScene === true))
-          return undefined;
-        for (let i = hookIds.length; i < hooked.length; i += 1)
-          hookIds.push((hooked[i] as ITslNode)[TSL_NODE]);
-        const ref = frame.kernels === undefined ? engineRef(root as object) : undefined;
-        if (frame.kernels === undefined && ref === undefined) return undefined;
-        return engineReads(ref, frame.kernels ?? [], hookIds);
-      }),
   );
   exports.uniform = booleanUniforms(live.uniform, (scalar) =>
     wrap(call("notEqual", scalar[TSL_NODE], [0])),

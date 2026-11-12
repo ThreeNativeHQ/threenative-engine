@@ -352,32 +352,6 @@ describe("uniform sync cost", () => {
     expect(frames).toBe(2);
     expect(renders).toBe(11);
   });
-
-  // PRD-878: a post chain draws about thirty quads a frame and a particle system dispatches a dozen kernels; each ran
-  // every scene hook. The engine names the hooks a draw's graphs read, and only those run.
-  it("runs only the hooks the engine says a draw or dispatch reads", () => {
-    const ran: string[] = [];
-    const asked: unknown[] = [];
-    const live = liveUniforms<IFakeNode>(
-      () => ({}),
-      () => undefined,
-      undefined,
-      (frame, hooked) => {
-        asked.push(frame.kernels ?? frame.scene);
-        expect(hooked).toHaveLength(3);
-        return frame.scene === "scene" ? undefined : frame.kernels !== undefined ? [2] : [0];
-      },
-    );
-    for (const name of ["fog", "rim", "particle"])
-      live.uniform(0).onRenderUpdate?.(() => ran.push(name));
-    live.sync({ scene: "scene", frameId: 1 });
-    expect(ran).toEqual(["fog", "rim", "particle"]);
-    ran.length = 0;
-    live.sync({ scene: "quad", frameId: 1 });
-    live.sync({ kernels: [5], frameId: 1 });
-    expect(ran).toEqual(["fog", "particle"]);
-    expect(asked).toEqual(["scene", "quad", [5]]);
-  });
 });
 
 afterEach(() => {

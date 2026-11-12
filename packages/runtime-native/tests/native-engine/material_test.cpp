@@ -347,44 +347,6 @@ void roughDiffuse() {
     CHECK(without.code.find("0.189468") == std::string::npos);
 }
 
-// A lamp with a range shades only the fragments it reaches: each unshadowed point or spot light's BRDF sits in one
-// branch on its distance attenuation. A sun and a lamp that reads a shadow map keep the straight path.
-void lampRangeBranch() {
-    const auto branches = [](const char* kinds, bool physical, const VertexVariant& variant = {}) {
-        const auto programs = physical ? buildPhysical(StandardMaterial{}, variant, LightLayout{kinds})
-                                       : buildStandard(StandardMaterial{}, variant, LightLayout{kinds});
-        CHECK(programs.diagnostics.empty());
-        const auto fragment = WgslEmitter::emit(programs.fragment, 1);
-        CHECK(fragment.ok());
-        size_t count = 0;
-        for (size_t at = fragment.code.find("if ("); at != std::string::npos; at = fragment.code.find("if (", at + 1)) ++count;
-        return count;
-    };
-    for (bool phong : {false, true}) {
-        const auto lit = [&](const char* kinds) {
-            const auto programs = phong ? buildPhong(VertexVariant{}, LightLayout{kinds}) : buildLambert(VertexVariant{}, LightLayout{kinds});
-            CHECK(programs.diagnostics.empty());
-            const auto fragment = WgslEmitter::emit(programs.fragment, 1);
-            CHECK(fragment.ok());
-            size_t count = 0;
-            for (size_t at = fragment.code.find("if ("); at != std::string::npos; at = fragment.code.find("if (", at + 1)) ++count;
-            return count;
-        };
-        CHECK(lit("dps") == lit("d") + 2);
-        CHECK(lit("dP") == lit("d"));
-    }
-    VertexVariant rough; rough.roughDiffuse = true;
-    VertexVariant mapped; mapped.environment = true;
-    for (bool physical : {false, true}) {
-        const size_t sun = branches("d", physical);
-        CHECK(branches("dps", physical) == sun + 2);
-        CHECK(branches("dp-p", physical) == sun + 2);
-        CHECK(branches("dP", physical) == sun);  // its shadow taps need uniform control flow
-        CHECK(branches("dps", physical, rough) == branches("d", physical, rough) + 2);
-        CHECK(branches("dpp", physical, mapped) == branches("d", physical, mapped) + 2);
-    }
-}
-
 // NodeMaterial.irradianceNode replaces the environment's diffuse irradiance: its uniform enters the fragment of a
 // material that is lit by an environment, or is the whole indirect diffuse without one, and the slot is part of
 // the program key.
@@ -1069,4 +1031,4 @@ void viewMipBiasSamples() {
     CHECK(colored.code.find("u.f_viewMipBias") != std::string::npos);
 }
 
-TN_TEST_MAIN({"alpha_hash", [] { alphaHash(); alphaTestCompiled(); }}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"lamp_range_branch", lampRangeBranch}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode}, {"basic_normal_view", basicNormalView}, {"normal_map_zero_det", normalMapZeroDet});
+TN_TEST_MAIN({"alpha_hash", [] { alphaHash(); alphaTestCompiled(); }}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode}, {"basic_normal_view", basicNormalView}, {"normal_map_zero_det", normalMapZeroDet});

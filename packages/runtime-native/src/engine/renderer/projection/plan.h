@@ -158,23 +158,18 @@ inline const char* meshLaneReason(const Mesh& mesh) {
     return nullptr;
 }
 
-// skinnedLaneReason: a material-owned position node keeps the authored skinning draw. The geometry's half is
-// four keyed attribute lookups, held for the geometry revision: every attribute and morph write bumps it.
+// skinnedLaneReason: a material-owned position node keeps the authored skinning draw.
 inline const char* skinnedLaneReason(const SkinnedMesh& rig) {
     if (!rig.geometry) return "unsupportedGeometry";
-    const BufferGeometry& g = *rig.geometry;
-    if (g.rigLaneRevision_ != g.revision()) {
-        g.rigLaneReason_ = geometryLaneReason(g);
-        g.rigLaneSkin_ = itemSize(g, "normal") == 3 && itemSize(g, "skinIndex") == 4 && itemSize(g, "skinWeight") == 4;
-        g.rigLaneRevision_ = g.revision();
-    }
-    if (g.rigLaneReason_) return g.rigLaneReason_;
+    if (const char* reason = geometryLaneReason(*rig.geometry)) return reason;
     if (rig.renderOrder() != 0) return "renderOrder";
     if (!rig.material) return "unsupportedGeometry";
     if (rig.material->positionNode || rig.material->nodes.positionNode)
         return "skinnedMaterialBlocked";
     if (rig.material->transparent) return "transparent";
-    if (!rig.skeleton || rig.skeleton->bones.empty() || !g.rigLaneSkin_) return "skinned";
+    if (!rig.skeleton || rig.skeleton->bones.empty() || itemSize(*rig.geometry, "normal") != 3 ||
+        itemSize(*rig.geometry, "skinIndex") != 4 || itemSize(*rig.geometry, "skinWeight") != 4)
+        return "skinned";
     return nullptr;
 }
 

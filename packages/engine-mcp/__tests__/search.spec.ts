@@ -37,11 +37,6 @@ describe("threenative-engine-mcp", () => {
     // `tak` and `hav`, which the raw set never matched, so they survived the post-stem filter.
     expect(capabilitySituationTokens("makes gives takes having")).toEqual([]);
   });
-  it("leads an Xbox, Steam Deck or stick-drift request with the controller map (PRD-880)", () => {
-    for (const situation of ["xbox controller", "steam deck", "stick drift"]) {
-      expect(searchResults(situation).map((result) => result.symbol)[0]).toBe("InputMap");
-    }
-  });
   it("finds the traced probe field by its Unreal name (PRD-603)", () => {
     expect(searchResults("lumen radiance cache").map((r) => r.symbol)[0]).toBe("RadianceCache");
     expect(

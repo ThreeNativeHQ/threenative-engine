@@ -743,14 +743,14 @@ void mrtNode() {
     CHECK(evaluate("(() => { try { mrtMaterial.mrtNode = { isMRTNode: true, outputs: { a: 1 } }; return false; } catch (e) { return e instanceof TypeError && e.message.startsWith('TN_TSL_PROPERTY'); } })()")->IsTrue());
     CHECK(tn::abi::mrtOutputs(handle).size() == 1);
     // mrt() always carries the pass's own slots (output, a marker object for any name); the scene pass draws them,
-    // so the setter skips the pass's slot markers (`isMRTSlot`) and keeps every node under any name, as the browser facade does.
+    // so the setter skips them as the browser facade does and keeps only the custom slot.
     evaluate(R"JS(
         const slot = Object.freeze({ isMRTSlot: true, name: 'output' });
         mrtMaterial.mrtNode = { isMRTNode: true, outputs: { output: slot, normal: tsl.vec4(0, 0, 1, 0), extra: Object.freeze({ isMRTSlot: true, name: 'extra' }), diagnostic: tsl.vec4(0, 0, 1, 1) } };
         0
     )JS");
     const auto withSlots = tn::abi::mrtOutputs(handle);
-    CHECK(withSlots.size() == 2 && withSlots[0].first == "normal" && withSlots[1].first == "diagnostic");
+    CHECK(withSlots.size() == 1 && withSlots[0].first == "diagnostic");
     evaluate("mrtMaterial.mrtNode = null; 0");
     CHECK(tn::abi::mrtOutputs(handle).empty());
 }
@@ -1295,16 +1295,16 @@ void collectVisits() {
     const uint64_t temporaries = adapter.collectVisits() - beforeTemporaries;
     if (temporaries != 0) std::fprintf(stderr, "releasing math temporaries visited %llu wrappers\n", (unsigned long long)temporaries);
     CHECK(temporaries == 0);
-    // Core's animation bands, every frame, in one call over the rigs the engine tracks: it keeps none of them.
-    CHECK(js("globalThis.cam = new PerspectiveCamera(); globalThis.rigs = scene.children.slice(0, 64); rigs.forEach((rig, i) => rig.__trackAnimationRate(i)); scene.__bandAnimation(cam, true, 1, 1); 'ok'") == "ok");
+    // A call that only reads a list of objects (core's animation bands, every frame) keeps none of them.
+    CHECK(js("globalThis.cam = new PerspectiveCamera(); globalThis.rigs = scene.children.slice(0, 64); scene.__bandRigs(cam, true, 1, rigs); 'ok'") == "ok");
     adapter.collect();
     const uint64_t beforeBands = adapter.collectVisits();
-    CHECK(js("typeof scene.__bandAnimation(cam, true, 1, 2).length") == "number");
+    CHECK(js("scene.__bandRigs(cam, true, 1, rigs).length") == "64");
     adapter.collect();
     const uint64_t bands = adapter.collectVisits() - beforeBands;
-    if (bands != 0) std::fprintf(stderr, "a band call visited %llu wrappers\n", (unsigned long long)bands);
+    if (bands != 0) std::fprintf(stderr, "a read-only list argument visited %llu wrappers\n", (unsigned long long)bands);
     CHECK(bands == 0);
-    CHECK(js("rigs.forEach((rig) => rig.__trackAnimationRate(-1)); globalThis.rigs = null; globalThis.cam = null; 'ok'") == "ok");
+    CHECK(js("globalThis.rigs = null; globalThis.cam = null; 'ok'") == "ok");
 
     // A change of ownership is not missed. Removed with the object as the argument:
     CHECK(js("globalThis.child = scene.children[10]; child.hp = 5; scene.remove(child); globalThis.child = null; 'ok'") == "ok");
@@ -2351,74 +2351,12 @@ void gcTelemetry() {
     CHECK(counts.gcPauses.load() == after);
 }
 
-// PRD-877 phase 3: the native V8 host reaches the pose history through the same five methods core
-// calls, and gets the poses three's own lerp and slerp would have produced.
-void poseHistory() {
-    Runtime& rt = runtime();
-    v8::Isolate::Scope isolateScope(rt.isolate);
-    Adapter adapter(rt.isolate, rt.context);
-    const std::string result = run(rt, adapter, R"JS(
-      (() => {
-        let checks = 0; const assert = (v) => { checks++; if (!v) throw Error('pose differs at check ' + checks); };
-        const near = (a, b) => Math.abs(a - b) <= 1e-12;
-        const owner = new Object3D();
-        const bodies = [new Object3D(), new Object3D(), new Object3D()];
-        bodies[1].position.set(1, 0, 0);
-        bodies[2].position.set(0, 2, 0);
-        assert(owner.__tnPoseWatch(bodies) === 3);
-
-        owner.__tnPoseTick(0);
-        const from = bodies.map((b) => ({ p: b.position.clone(), q: b.quaternion.clone() }));
-        bodies[0].position.set(4, 0, 0);
-        bodies[1].position.set(1, 5, 0);
-        bodies[2].position.set(-4, 2, 2);
-        bodies[1].quaternion.set(0, 0.7071067811865476, 0, 0.7071067811865476);
-        owner.__tnPoseTick(1);
-        const solved = bodies.map((b) => ({ p: b.position.clone(), q: b.quaternion.clone() }));
-
-        owner.__tnPoseBlend(0.25);
-        for (let i = 0; i < 3; ++i) {
-          const wantP = new Vector3().lerpVectors(from[i].p, solved[i].p, 0.25);
-          const wantQ = new Quaternion().slerpQuaternions(from[i].q, solved[i].q, 0.25);
-          assert(near(bodies[i].position.x, wantP.x) && near(bodies[i].position.y, wantP.y) && near(bodies[i].position.z, wantP.z));
-          assert(near(bodies[i].quaternion.x, wantQ.x) && near(bodies[i].quaternion.y, wantQ.y) &&
-                 near(bodies[i].quaternion.z, wantQ.z) && near(bodies[i].quaternion.w, wantQ.w));
-        }
-
-        owner.__tnPoseRestore();
-        for (let i = 0; i < 3; ++i) {
-          assert(bodies[i].position.x === solved[i].p.x && bodies[i].position.y === solved[i].p.y && bodies[i].position.z === solved[i].p.z);
-          assert(bodies[i].quaternion.w === solved[i].q.w);
-        }
-
-        // A teleport announced through reset does not blend across the gap.
-        owner.__tnPoseTick(0);
-        bodies[0].position.set(500, 0, 0);
-        owner.__tnPoseReset([bodies[0]]);
-        owner.__tnPoseBlend(0.5);
-        assert(near(bodies[0].position.x, 500));
-
-        // An alpha the blend cannot use throws into JavaScript.
-        let threw = false;
-        try { owner.__tnPoseBlend(1.5); } catch { threw = true; }
-        assert(threw);
-        let threwNaN = false;
-        try { owner.__tnPoseBlend(NaN); } catch { threwNaN = true; }
-        assert(threwNaN);
-        return 'ok:' + checks;
-      })()
-    )JS");
-    if (result != "ok:16") std::fprintf(stderr, "pose history: %s\n", result.c_str());
-    CHECK(result == "ok:16");
-}
-
 }  // namespace
 
 TN_TEST_MAIN({"gc_telemetry", gcTelemetry}, {"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn}, {"fog_node", fogNode}, {"node_material_fragment", nodeMaterialFragment},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},
-             {"pose_history", poseHistory},
              {"catalog_coverage", catalogCoverage},
              {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"mrt_node", mrtNode}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
              {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle},

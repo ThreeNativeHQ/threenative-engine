@@ -32,8 +32,8 @@ import { clipTrackBindings } from "./clip-audit.js";
 import { copyMatrixWorld } from "./engine-hooks.js";
 import {
   type IAnimationRateState,
+  animationRateStates,
   trackAnimationRate,
-  untrackAnimationRate,
 } from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
 
@@ -1758,7 +1758,8 @@ export class AnimationPlayer {
       animationPacketReaders.delete(this.root);
     if (animationPacketTimeReaders.get(this.root) === this.#packetTimeReader)
       animationPacketTimeReaders.delete(this.root);
-    untrackAnimationRate(this.root, this.#rateState);
+    if (animationRateStates.get(this.root) === this.#rateState)
+      animationRateStates.delete(this.root);
     if (this.root.userData[ANIMATION_RATE_STATE_KEY] === this.#rateState)
       delete this.root.userData[ANIMATION_RATE_STATE_KEY];
   }

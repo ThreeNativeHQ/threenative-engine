@@ -41,7 +41,6 @@ function host(
     wideOwed: () => false,
     followCluster: () => "0_0",
     wideShape: (_asset, _level, _part, fallback) => fallback,
-    lodSurface: (_asset, _level, _part, source) => source,
   };
 }
 
@@ -168,25 +167,4 @@ it("counts a main draw on an engine that calls onBeforeRender alone", () => {
   renderer.info.render.calls += 1;
   renderer.info.render.drawCalls = 0;
   expect(pending()).toBe(0);
-});
-
-// PRD-879: a key prewarmed with the raw part material built a program no placement draws; the swap
-// draws `lodSurface`'s LOD-masked material, whose program the walk then built after the reveal.
-it("mints each key with the material the swap draws, not the raw part material", () => {
-  const h = host(() => false);
-  const masked = new MeshBasicMaterial();
-  const asked: Array<[string, number, number]> = [];
-  h.lodSurface = (id, level, part) => {
-    asked.push([id, level, part]);
-    return masked;
-  };
-  let shared: SharedBatch | undefined;
-  h.setShared = (_key, batch) => {
-    shared = batch;
-  };
-  const prewarm = new CellPrewarm(h);
-  prewarm.queuePrewarm(asset);
-  prewarm.drainPrewarm();
-  expect(asked).toEqual([["boulder", 0, 0]]);
-  expect(shared?.mesh.material).toBe(masked);
 });

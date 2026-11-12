@@ -21,7 +21,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
-#include <iterator>
 #include <deque>
 #include <utility>
 #include <thread>
@@ -160,12 +159,6 @@ double hostRenderMs = 0, hostComputeMs = 0, hostSubmitMs = 0, hostPollMs = 0, ho
  * the order of three-native's CPU_STAGE_FIELDS, then three work counts (dirty transforms, moving casters, queue bytes).
  */
 double stageTotals[18] = {};
-/**
- * PRD-878: every field of tnw_web_frame by its id, copied by field 89 in one call, so the page reads a frame's numbers
- * in place instead of by one host call each. A field that acts (the meter and timestamp switches, the frame gate and
- * the presented-frame answer, which poll the GPU) is NaN here: the page still asks it on its own.
- */
-double frameBlock[256] = {};
 void publishStageTotals() {
     if (!renderer) return;
     const Renderer::CpuStage stages[] = {Renderer::CpuVirtualPages, Renderer::CpuPlan, Renderer::CpuShadowBuild,
@@ -231,7 +224,6 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     renderer = std::make_unique<Renderer>(instance, device, queue, events, RenderFeatures::web());
     renderer->setGpuTimer(timestampTracking);
     if (presentationHeld) renderer->deferUncompiledDraws(true);
-    renderer->setPresentationRevealed(!presentationHeld);
     configureWebSurface();
     renderer->setOutput(output);
     outputChanged = false;
@@ -397,7 +389,6 @@ extern "C" void tnw_web_set_presentation_hold(int held) {
     // while the cover held, the forest's frame before the reveal compiled them in a row: 1368 ms of plan, then 2.5 s of
     // GPU wait. Async compiles run in parallel in Chrome's GPU process; field 72 keeps the cover up until they land.
     if ((held || presentationHeld) && renderer) renderer->deferUncompiledDraws(true);
-    if (renderer) renderer->setPresentationRevealed(held == 0);
     presentationHeld = held != 0;
 }
 
@@ -1228,14 +1219,6 @@ extern "C" double tnw_web_frame(int field) {
     if (field == TN_WEB_FRAME_CPU_METERS_ON || field == TN_WEB_FRAME_CPU_METERS_OFF) {
         Renderer::setCpuMeters(field == TN_WEB_FRAME_CPU_METERS_ON);
         return 0;
-    }
-    if (field == TN_WEB_FRAME_FRAME_SNAPSHOT) {
-        for (int id = 0; id < int(std::size(frameBlock)); ++id) {
-            const bool acts = id == TN_WEB_FRAME_GPU_BUSY || id == TN_WEB_FRAME_FIRST_WORLD_FRAME_DRAWN ||
-                              id == TN_WEB_FRAME_FRAME_SNAPSHOT || !tn_is_web_frame_field(id);
-            frameBlock[id] = acts ? std::numeric_limits<double>::quiet_NaN() : tnw_web_frame(id);
-        }
-        return double(reinterpret_cast<uintptr_t>(frameBlock));
     }
     if (!renderer) return 0;
     if (!lastDrawn) lastDrawn = renderer.get();

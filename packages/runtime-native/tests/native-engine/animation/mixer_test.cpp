@@ -256,60 +256,6 @@ void track_hot_fields() {
     CHECK(at(&track.binding.path) < 128);
 }
 
-// PRD-875 H2: a pooled pass may only run `evaluate` off the game thread, so a `finished` listener
-// must not run there. It runs on `flushEvents`, once, with the state `update()` used to leave it.
-void evaluateThenFlushEvents() {
-    struct Sink {
-        int finished = 0;
-        int direction = 0;
-        bool actionStopped = false;
-    };
-    const auto run = [](bool split) {
-        auto bone = std::make_shared<Object3D>();
-        AnimationMixer mixer(bone);
-        auto clip = std::make_shared<AnimationClip>(
-            "once", 1, std::vector<KeyframeTrack>{KeyframeTrack(".position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 0, 0})});
-        auto* action = mixer.clipAction(clip);
-        action->setLoop(Loop::Once, 1).play();
-        Sink sink;
-        mixer.addEventListener(
-            "finished",
-            [](const MixerEvent& event, void* context) {
-                auto& seen = *static_cast<Sink*>(context);
-                ++seen.finished;
-                seen.direction = event.direction;
-                seen.actionStopped = event.action != nullptr && !event.action->enabled;
-            },
-            &sink);
-        if (split) {
-            mixer.evaluate(2);  // past the clip's end
-            CHECK(sink.finished == 0);  // nothing reached the listener on the evaluate side
-            mixer.flushEvents();
-        } else {
-            mixer.update(2);
-        }
-        return sink;
-    };
-    const Sink whole = run(false), split = run(true);
-    CHECK(whole.finished == 1 && split.finished == 1);
-    CHECK(split.direction == whole.direction);
-    CHECK(split.actionStopped == whole.actionStopped && whole.actionStopped);
-    // A second flush re-dispatches nothing, and the tick was counted once.
-    auto bone = std::make_shared<Object3D>();
-    AnimationMixer mixer(bone);
-    auto clip = std::make_shared<AnimationClip>(
-        "once", 1, std::vector<KeyframeTrack>{KeyframeTrack(".position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 0, 0})});
-    mixer.clipAction(clip)->setLoop(Loop::Once, 1).play();
-    int calls = 0;
-    mixer.addEventListener("finished", [](const MixerEvent&, void* context) { ++*static_cast<int*>(context); }, &calls);
-    mixer.evaluate(2);
-    mixer.flushEvents();
-    mixer.flushEvents();
-    CHECK(calls == 1);
-    CHECK(mixer.updateCount() == 1);
-}
-
 } // namespace
 
-TN_TEST_MAIN({"mixer", mixer}, {"events", events}, {"track_hot_fields", track_hot_fields}, {"pose_observation", poseObservation},
-             {"evaluate_then_flush_events", evaluateThenFlushEvents})
+TN_TEST_MAIN({"mixer", mixer}, {"events", events}, {"track_hot_fields", track_hot_fields}, {"pose_observation", poseObservation})

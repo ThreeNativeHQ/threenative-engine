@@ -24,7 +24,6 @@ import {
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
 import { debugTelemetry } from "../src/debug-telemetry.js";
-import { WEB_FRAME_FIELD } from "../src/generated/web-frame-fields.js";
 import { defineQuadMesh } from "../src/quad-mesh.js";
 import { defineRendererUtils } from "../src/renderer-utils.js";
 
@@ -64,26 +63,10 @@ function host(
   };
   const { classes, counters } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
   const state = vi.fn((..._args: number[]) => 0);
-  // The host's frame snapshot (tnw_web_frame 89, web_host.cpp frameBlock): every field's answer, copied into a block
-  // the renderer reads in place. A recording mock answers through its implementation, so the copy is not a call.
-  const SNAPSHOT_AT = 2048;
-  const answer = (field: number): number => {
-    const value = frame(field);
-    if (field !== WEB_FRAME_FIELD.frameSnapshot) return value;
-    const read = vi.isMockFunction(frame) ? (frame.getMockImplementation() ?? (() => 0)) : frame;
-    const base = SNAPSHOT_AT / 8;
-    const held = module.HEAPF64;
-    const heap = held.length >= base + 256 ? held : new Float64Array(base + 256);
-    if (heap !== held) heap.set(held);
-    for (let id = 0; id < 256; id += 1) heap[base + id] = read(id);
-    module.HEAPF64 = heap;
-    return SNAPSHOT_AT;
-  };
   const initCalls = vi.fn((..._args: unknown[]) => 0);
   let next = 16;
   const module = {
     HEAPU8: new Uint8Array(256),
-    HEAPF64: new Float64Array(0),
     specialHTMLTargets: {},
     lengthBytesUTF8: (text: string) => text.length,
     stringToUTF8: () => undefined,
@@ -101,7 +84,7 @@ function host(
     _tnw_web_resize: () => 0,
     _tnw_web_render: render,
     _tnw_web_render_target: renderTarget,
-    _tnw_web_frame: answer,
+    _tnw_web_frame: frame,
     _tnw_web_renderer_state: state,
   } as unknown as WebEngineModule;
   const Renderer = defineWebRenderer(
@@ -131,12 +114,14 @@ async function drawn(parameters: Record<string, unknown>) {
 }
 
 describe("the owned engine's CPU stage totals (PRD-771)", () => {
-  const stageAddress = (field: number) => (field === 78 ? 64 : 0);
+  const fieldsOf = (calls: number[]) => (field: number) => {
+    calls.push(field);
+    return field === 78 ? 64 : 0;
+  };
 
   it("reads them in place from the host's array, so a steady frame pays no host call for them", async () => {
-    const frame = vi.fn(stageAddress);
-    const asked = () => frame.mock.calls.map(([field]) => field);
-    const { Renderer, canvas, scene, camera, module } = host(frame);
+    const asked: number[] = [];
+    const { Renderer, canvas, scene, camera, module } = host(fieldsOf(asked));
     const heap = new Float64Array(32);
     Reflect.set(module, "HEAPF64", heap);
     const renderer = new Renderer({ canvas }) as {
@@ -166,27 +151,10 @@ describe("the owned engine's CPU stage totals (PRD-771)", () => {
       hostDatabaseMs: 14,
       hostTargetMs: 15,
     });
-    // 89 is the frame snapshot (PRD-878); no stage total is asked on its own.
-    expect(asked().filter((field) => field >= 66 && field !== 89)).toEqual([78]);
-  });
-
-  // PRD-878: a render writes the scene's and camera's handles every call; their keys are parsed once, not per frame.
-  it("writes a render's handles without parsing their keys again", async () => {
-    const { Renderer, canvas, scene, camera } = host();
-    const renderer = new Renderer({ canvas }) as {
-      init(): Promise<unknown>;
-      render(scene: unknown, camera: unknown): void;
-    };
-    await renderer.init();
-    renderer.render(scene, camera);
-    const split = vi.spyOn(String.prototype, "split");
-    try {
-      renderer.render(scene, camera);
-      const parsed = split.mock.contexts.filter((text) => /^\d+:\d+:\d+:\d+$/u.test(String(text)));
-      expect(parsed).toEqual([]);
-    } finally {
-      split.mockRestore();
-    }
+    // 71-72 are startup reads and 85 the per-frame shadow split (PRD-770); none is a stage total.
+    expect(
+      asked.filter((field) => field >= 66 && field !== 71 && field !== 72 && field !== 85),
+    ).toEqual([78]);
   });
 
   it("publishes no totals on a module without the array, so core reads them as unmeasured", async () => {
@@ -203,9 +171,8 @@ describe("the owned engine's CPU stage totals (PRD-771)", () => {
   });
 
   it("stops reading them, and tells the engine, when the meters are turned off", async () => {
-    const frame = vi.fn(stageAddress);
-    const asked = () => frame.mock.calls.map(([field]) => field);
-    const { Renderer, canvas, scene, camera, module } = host(frame);
+    const asked: number[] = [];
+    const { Renderer, canvas, scene, camera, module } = host(fieldsOf(asked));
     const heap = new Float64Array(32).fill(5);
     Reflect.set(module, "HEAPF64", heap);
     const renderer = new Renderer({ canvas }) as {
@@ -217,11 +184,11 @@ describe("the owned engine's CPU stage totals (PRD-771)", () => {
     await renderer.init();
     renderer.setStageMeters(false);
     renderer.render(scene, camera);
-    expect(asked()).toContain(-4);
+    expect(asked).toContain(-4);
     expect(renderer.info.engine.cpuMs.cpuSceneMs).toBe(0);
     renderer.setStageMeters(true);
     renderer.render(scene, camera);
-    expect(asked()).toContain(-3);
+    expect(asked).toContain(-3);
     expect(renderer.info.engine.cpuMs.cpuSceneMs).toBe(5);
   });
 });
@@ -1886,9 +1853,12 @@ describe("debug renderer observations", () => {
     frame.mockClear();
     malloc.mockClear();
     renderer.render(scene, camera);
-    // PRD-878: a frame asks the host twice, the frame gate (field 11) and one snapshot of every other
-    // number (field 89), which the renderer reads in place, never one call per field.
-    expect((frame.mock.calls as unknown as number[][]).map(([field]) => field)).toEqual([11, 89]);
+    // Existing renderer ABI census; debug reads existing observations only. The startup's own submission
+    // count and shadow-input answer (fields 71, 72) are a held startup's, so a steady frame pays for neither.
+    // Field 85 (the shadow passes' triangles) is the one PRD-770 call that splits main from shadow.
+    expect(frame.mock.calls).toHaveLength(38);
+    // 73-84 are PRD-771's stage totals; the split read must not reuse one of them.
+    expect((frame.mock.calls as unknown as number[][]).map(([field]) => field)).toContain(85);
     expect(malloc).toHaveBeenCalledTimes(1); // existing state-string allocation
     expect(debugTelemetry(module)).toBeUndefined();
 
@@ -1897,14 +1867,13 @@ describe("debug renderer observations", () => {
     renderer.setPresentationHeld(true);
     frame.mockClear();
     renderer.render(scene, camera);
-    // The held startup's fields (71, 72) ride in the snapshot.
-    expect(frame.mock.calls).toHaveLength(2);
+    expect(frame.mock.calls).toHaveLength(40);
     await new Promise((resolve) => setTimeout(resolve, 0));
     renderer.setPresentationHeld(false);
     frame.mockClear();
     renderer.render(scene, camera);
-    // One more (field 86, which polls the GPU) while the first uncovered frame has not finished on it.
-    expect(frame.mock.calls).toHaveLength(3);
+    // One more (field 86) while the first uncovered frame has not finished on the GPU.
+    expect(frame.mock.calls).toHaveLength(39);
   });
 });
 

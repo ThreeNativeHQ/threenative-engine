@@ -10,7 +10,6 @@ import {
   playtestStepWaitTicks,
   type IPlaytestAssertionResult,
   type IPlaytestFootSlipObservation,
-  type IPlaytestGamepad,
   type IPlaytestSightLineObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestObservations,
@@ -356,9 +355,6 @@ export async function runStep(
     // transport event reach the game's listener before deterministic ticks sample input.
     await waitFrames(page, 1);
   }
-  if (step.gamepad !== undefined) {
-    await setPlaytestGamepad(page, step.gamepad);
-  }
   const press = step.press;
   if (typeof press === "string") {
     await page.keyboard.down(press);
@@ -450,19 +446,6 @@ export async function runStep(
   }
   if (step.pointers !== undefined && step.release) {
     await setBrowserPointers(page, inputState, [], viewport);
-    if (bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
-      await advanceFixedStep(page, bridge, 1, false, draw);
-    } else {
-      await waitFrames(page, 1);
-    }
-    if (bridge !== undefined && movementSampleRequest !== undefined) {
-      afterStep = await bridge.sample(movementSampleRequest);
-    }
-  }
-  if (step.gamepad !== undefined && step.release) {
-    // A released pad is still connected and centred: a game reading `navigator.getGamepads` sees the
-    // same device with nothing held, so a released button latches as `justReleased`, not as unplugged.
-    await setPlaytestGamepad(page, { buttons: [], axes: [] });
     if (bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
       await advanceFixedStep(page, bridge, 1, false, draw);
     } else {
@@ -694,29 +677,9 @@ export function playtestStepDrivesMovement(
   const hasNewInput = typeof step.press === "string"
     ? step.press.length > 0
     : (step.press?.length ?? 0) > 0
-      || step.gamepad !== undefined
       || step.pointerPosition !== undefined
       || (step.pointers?.length ?? 0) > 0;
-  return hasNewInput || (step.press === undefined && step.gamepad === undefined && step.pointers === undefined && step.pointerPosition === undefined && hasHeldInput);
-}
-
-/**
- * Points the page's scripted pad at `state`. The override that reads it is installed before
- * navigation (`browserSession.ts`), because a game samples `navigator.getGamepads` from its first
- * frame; a scenario without a `gamepad` step never calls this and keeps the browser's own pads.
- */
-export async function setPlaytestGamepad(
-  page: Pick<Page, "evaluate">,
-  state: IPlaytestGamepad,
-): Promise<void> {
-  await page.evaluate((next) => {
-    // A startup retry reloads the page, which wipes a global; session storage survives it.
-    globalThis.sessionStorage?.setItem("tn-playtest-gamepad", JSON.stringify(next));
-    (globalThis as { __tnPlaytestGamepad?: unknown }).__tnPlaytestGamepad = next;
-    // A game that forwards pads to a worker starts polling on `gamepadconnected`, exactly as the
-    // browser announces a real pad; without this the worker's map never samples one.
-    globalThis.dispatchEvent(new Event("gamepadconnected"));
-  }, state);
+  return hasNewInput || (step.press === undefined && step.pointers === undefined && step.pointerPosition === undefined && hasHeldInput);
 }
 
 export function inputActive(inputState: StepInputState): boolean {

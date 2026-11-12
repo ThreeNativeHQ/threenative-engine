@@ -1,5 +1,4 @@
 #include "check.h"
-#include "engine/animation/skinning/palette.h"
 #include "engine/player/skinned_crowd.h"
 #include "engine/renderer/render_database.h"
 
@@ -138,20 +137,9 @@ void crowdCpu() {
         for (uint32_t slot = 0; slot < item.instanceCount && slot < compatible.size(); ++slot) {
             const DrawItem& source = *compatible[slot];
             CHECK(source.boneMatrices && source.boneMatrices->size() == stride);
-            if (!source.boneMatrices || source.boneMatrices->size() != stride || !item.instanceMatrices)
-                continue;
-            // A walker's slot is relative to its root (PRD-878): its placement times the slot is its world palette.
-            const auto* placed = reinterpret_cast<const float*>(item.instanceMatrices->data()) + slot * 16;
-            const std::array<double, 16> placement{placed[0], placed[1], placed[2], placed[3], placed[4], placed[5],
-                placed[6], placed[7], placed[8], placed[9], placed[10], placed[11], placed[12], placed[13], placed[14], placed[15]};
-            for (uint32_t bone = 0; bone < item.boneStride; ++bone) {
-                float world[16];
-                multiplyAffine(placement.data(), 0, item.boneMatrices->data(), slot * stride + bone * 16, world, 0);
-                for (int k = 0; k < 16; ++k) {
-                    const float want = (*source.boneMatrices)[bone * 16 + k];
-                    CHECK(std::abs(world[k] - want) <= 1e-4f * (1 + std::abs(want)));
-                }
-            }
+            if (source.boneMatrices && source.boneMatrices->size() == stride)
+                CHECK(std::memcmp(item.boneMatrices->data() + slot * stride, source.boneMatrices->data(),
+                                  stride * sizeof(float)) == 0);
         }
     }
     std::printf("crowd submission: %zu batches, %zu instances, %zu exact rigs\n", batches, instances, exact);

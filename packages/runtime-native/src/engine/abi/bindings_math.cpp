@@ -1333,23 +1333,6 @@ void registerFrustum(ClassBinding& b) {
     b.methods["containsPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Frustum>(self)->containsPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
-    // Engine-internal (PRD-879): core's main-pass cull in one call. `__tnIntersectsBoxes(boxes)` takes
-    // packed boxes (min xyz, max xyz each) and answers the indices whose box intersectsBox would accept.
-    b.methods["__tnIntersectsBoxes"] = [](void* self, const Args& a, Store&) {
-        const Value& packed = a.at(0);
-        const std::vector<double> numbers =
-            packed.bytes.empty() ? packed.numbers : typedArrayNumbers(packed.text, packed.bytes);
-        if (numbers.size() % 6 != 0) throw Unsupported{"Frustum.__tnIntersectsBoxes: expected 6 numbers per box"};
-        const Frustum& frustum = *as<Frustum>(self);
-        std::vector<double> hits;
-        Box3 box;
-        for (size_t i = 0; i < numbers.size(); i += 6) {
-            box.min.set(numbers[i], numbers[i + 1], numbers[i + 2]);
-            box.max.set(numbers[i + 3], numbers[i + 4], numbers[i + 5]);
-            if (frustum.intersectsBox(box)) hits.push_back(static_cast<double>(i / 6));
-        }
-        return Value::list(std::move(hits));
-    };
     // three r185 Frustum.intersectsObject / intersectsSprite (MIT): the object's world bounding sphere
     // against the planes. An InstancedMesh answers for its own instances' sphere, like three's
     // `object.boundingSphere`; any other mesh for its geometry's. Core's world cull calls it (PRD-762).

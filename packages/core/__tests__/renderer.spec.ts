@@ -183,43 +183,6 @@ describe("createRenderer", () => {
     }
   });
 
-  it("hands out the engine's own pass split with the sample it belongs to (PRD-871)", async () => {
-    // The owned engine times its passes itself (shadow, scene, the rest), where the pass recorder
-    // cannot reach. The split rides on the sample only while it describes that same frame.
-    const canvas = testCanvas();
-    const info = {
-      frame: 0,
-      render: { timestamp: 6 },
-      engine: { gpuSplit: { frame: 16, main: 3, shadow: 2, other: 1 } },
-    };
-    const renderer = await createRenderer({
-      canvas,
-      preferWebGPU: false,
-      webgl2Factory: () => ({
-        domElement: canvas,
-        info,
-        backend: { getTimestampFrames: () => [16] },
-        render: () => undefined,
-        setSize: () => undefined,
-      }),
-    });
-    try {
-      for (let frame = 0; frame < 20; frame += 1)
-        renderer.render(new Scene(), new PerspectiveCamera());
-      expect(renderer.gpuFrameSample?.()).toEqual({
-        frame: 16,
-        ms: 6,
-        main: 3,
-        shadow: 2,
-        other: 1,
-      });
-      info.engine.gpuSplit.frame = 15;
-      expect(renderer.gpuFrameSample?.()).toEqual({ frame: 16, ms: 6 });
-    } finally {
-      renderer.dispose();
-    }
-  });
-
   it("smooths the main-pass GPU time and reports it absent once the samples go stale", async () => {
     const canvas = testCanvas();
     const renderer = await createRenderer({

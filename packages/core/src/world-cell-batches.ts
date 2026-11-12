@@ -9,8 +9,7 @@ import {
   Vector3,
 } from "three";
 import type { InstancedBatch } from "./instanced-batch.js";
-import { pooledCapacity, pooledMesh } from "./render/mesh-pool.js";
-import { type IRecordWriter, batchRecords } from "./world-cell-records.js";
+import { currentWriteEpoch, pooledCapacity, pooledMesh } from "./render/mesh-pool.js";
 
 /**
  * Records a retired batch's instance buffer is shrunk to; see `SharedBatch.park`.
@@ -74,12 +73,25 @@ type ISquareSizes = Map<string, number>;
  * main batch is the only bound on it. Module-level like the upload epoch, because there is one world
  * drawing at a time.
  */
+let regroupScratch = new Float32Array(0);
+let lodRangeScratch = new Float32Array(0);
+
 const LOD_RANGE_ATTRIBUTE = "tnPublishedLodRange";
-/** The local box of a part with no readable bounds: the record box is then its origins' extent. */
-const ZERO = new Vector3();
 /** Floats per record in it: the levels published (min, max), the level a fade starts from (-1: none) and when. */
 export const LOD_RANGE_STRIDE = 4;
 
+function lodScratchFor(floats: number): Float32Array {
+  if (lodRangeScratch.length < floats) lodRangeScratch = new Float32Array(floats * 2);
+  return lodRangeScratch;
+}
+
+/** A scratch with room for `floats`, kept between regroups so a walk allocates it once. */
+function scratchFor(floats: number): Float32Array {
+  if (regroupScratch.length < floats) regroupScratch = new Float32Array(floats * 2);
+  return regroupScratch;
+}
+
+/** Records a square's blocks hold, which is its share of the batch. */
 function sizeOf(square: { blocks: Array<[number, number, number, string]> }): number {
   let size = 0;
   for (const block of square.blocks) size += block[2];
@@ -92,7 +104,7 @@ export function sameSquares(next: Set<string>, was: Set<string> | undefined): bo
   return true;
 }
 
-export class SharedBatch implements IRecordWriter {
+export class SharedBatch {
   mesh: ICasterScaleMesh;
   #sourceGeometry: BufferGeometry;
   readonly #rangeLevel: number;
@@ -216,19 +228,17 @@ export class SharedBatch implements IRecordWriter {
   readonly #boxes = new Map<number, Box3>();
   /** Block handle -> the largest instance scale in it; the union is published on the mesh. */
   readonly #scales = new Map<number, number>();
+  /** Carried out of the last `#boxOf` pass, which already reads every record's basis. */
+  #maxScale = 0;
   #localGeometry: BufferGeometry | undefined;
   readonly #localCenter = new Vector3();
   readonly #localHalf = new Vector3();
   readonly #union = new Box3();
   readonly #point = new Vector3();
-  /** This batch's pending upload span, in floats of the instance buffer, until the next flush. See `#touched`. */
+  /** This batch's own pending upload span, and the `update` it was opened in. See `#touched`. */
   #pendingLow = 0;
   #pendingHigh = 0;
-  /** The buffers that span belongs to: the ones this batch wrote last, whatever a later dress swaps in. */
-  #pendingMatrix: InstancedBufferAttribute | undefined;
-  #pendingRanges: InstancedBufferAttribute | undefined;
-  /** Block handle -> where its box starts in the flush's answer; see {@link settleRecords}. */
-  readonly #pendingBoxes = new Map<number, number>();
+  #pendingEpoch = -1;
 
   constructor(
     geometry: BufferGeometry,
@@ -337,8 +347,8 @@ export class SharedBatch implements IRecordWriter {
     mesh.frustumCulled = true;
     mesh.castShadow = false;
     mesh.receiveShadow = false;
-    batchRecords.fill(mesh.instanceMatrix, 0, records * 16);
-    batchRecords.upload(mesh.instanceMatrix, 0, 0);
+    (mesh.instanceMatrix.array as Float32Array).fill(0);
+    mesh.instanceMatrix.needsUpdate = true;
     // A pooled mesh arrives carrying the last user's scale; nothing lives here yet.
     mesh.casterInstanceScale = 0;
     // Nor the last user's bundle membership: a mesh is only bundled while `WorldCells#bundleIn` says
@@ -378,8 +388,13 @@ export class SharedBatch implements IRecordWriter {
     this.#setGeometry(this.#geometryFor(this.mesh.instanceMatrix.count));
     const ranges = this.#lodRangeAttribute();
     if (ranges === undefined) return;
-    batchRecords.lanes(ranges, LOD_RANGE_STRIDE, [this.#rangeLevel, this.#rangeLevel, -1]);
-    batchRecords.upload(ranges, 0, 0);
+    const values = ranges.array as Float32Array;
+    for (let at = 0; at < values.length; at += LOD_RANGE_STRIDE) {
+      values[at] = this.#rangeLevel;
+      values[at + 1] = this.#rangeLevel;
+      values[at + 2] = -1;
+    }
+    ranges.needsUpdate = true;
   }
 
   /** The capacity this batch had when it was parked; see {@link park}. */
@@ -449,27 +464,75 @@ export class SharedBatch implements IRecordWriter {
   }
 
   /**
-   * The part's local box centre and half size, read once per geometry: the input of the record box
-   * the engine measures from the bytes as written (see {@link write}). False when the geometry has
-   * no readable box, and the package extent stands in for the block's records.
+   * The AABB of records `[from, from + count)` of the instance buffer, read from the bytes just
+   * written rather than from the batch that wrote them, so it is the same numbers the GPU gets. The
+   * half-extents are `|basis| * half`, which is the box a rotated or stretched instance of the part
+   * actually covers — a translate-only box would let a scaled trunk through the shadow cull.
    */
-  #localBox(): boolean {
+  #boxOf(from: number, count: number): Box3 {
+    const array = this.mesh.instanceMatrix.array as Float32Array;
     const geometry = this.mesh.geometry;
     if (this.#localGeometry !== geometry) {
       this.#localGeometry = geometry;
       if (geometry?.boundingBox === null || geometry?.boundingBox === undefined)
         geometry?.computeBoundingBox?.();
       const local = geometry?.boundingBox;
-      this.#localReadable = !(local === undefined || local === null || local.isEmpty());
-      if (local !== undefined && local !== null && this.#localReadable) {
-        this.#localCenter.copy(local.getCenter(this.#point));
-        this.#localHalf.copy(local.getSize(this.#point)).multiplyScalar(0.5);
-      }
+      // No readable local box means no readable instances either; the package extent is the answer
+      // that cannot be wrong, and it is what these meshes carried before the blocks were sized.
+      if (local === undefined || local === null || local.isEmpty()) return this.#bounds;
+      this.#localCenter.copy(local.getCenter(this.#point));
+      this.#localHalf.copy(local.getSize(this.#point)).multiplyScalar(0.5);
     }
-    return this.#localReadable;
+    const cx = this.#localCenter.x;
+    const cy = this.#localCenter.y;
+    const cz = this.#localCenter.z;
+    const hx = this.#localHalf.x;
+    const hy = this.#localHalf.y;
+    const hz = this.#localHalf.z;
+    const out = new Box3();
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    let scale = 0;
+    for (let index = from; index < from + count; index += 1) {
+      const at = index * 16;
+      const m0 = array[at] as number;
+      const m1 = array[at + 1] as number;
+      const m2 = array[at + 2] as number;
+      const m4 = array[at + 4] as number;
+      const m5 = array[at + 5] as number;
+      const m6 = array[at + 6] as number;
+      const m8 = array[at + 8] as number;
+      const m9 = array[at + 9] as number;
+      const m10 = array[at + 10] as number;
+      const px = m0 * cx + m4 * cy + m8 * cz + (array[at + 12] as number);
+      const py = m1 * cx + m5 * cy + m9 * cz + (array[at + 13] as number);
+      const pz = m2 * cx + m6 * cy + m10 * cz + (array[at + 14] as number);
+      const ex = Math.abs(m0) * hx + Math.abs(m4) * hy + Math.abs(m8) * hz;
+      const ey = Math.abs(m1) * hx + Math.abs(m5) * hy + Math.abs(m9) * hz;
+      const ez = Math.abs(m2) * hx + Math.abs(m6) * hy + Math.abs(m10) * hz;
+      if (px - ex < minX) minX = px - ex;
+      if (py - ey < minY) minY = py - ey;
+      if (pz - ez < minZ) minZ = pz - ez;
+      if (px + ex > maxX) maxX = px + ex;
+      if (py + ey > maxY) maxY = py + ey;
+      if (pz + ez > maxZ) maxZ = pz + ez;
+      // The largest column of the instance basis: the scale a fern or a trunk is drawn at.
+      const basis = Math.max(
+        Math.hypot(m0, m1, m2),
+        Math.hypot(m4, m5, m6),
+        Math.hypot(m8, m9, m10),
+      );
+      if (basis > scale) scale = basis;
+    }
+    this.#maxScale = scale;
+    out.min.set(minX, minY, minZ);
+    out.max.set(maxX, maxY, maxZ);
+    return out;
   }
-
-  #localReadable = false;
 
   /** A handle for `count` free records, or `undefined` when the buffer has none and must grow. */
   allocate(count: number, cluster?: string): number | undefined {
@@ -512,15 +575,16 @@ export class SharedBatch implements IRecordWriter {
       old.name,
       this.#bounds,
     );
-    const records = old.instanceMatrix.count;
-    batchRecords.copy(mesh.instanceMatrix, old.instanceMatrix, records * 16);
+    (mesh.instanceMatrix.array as Float32Array).set(old.instanceMatrix.array as Float32Array);
     const oldRanges = old.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
     const nextRanges = mesh.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
     if (
       oldRanges instanceof InstancedBufferAttribute &&
       nextRanges instanceof InstancedBufferAttribute
-    )
-      batchRecords.copy(nextRanges, oldRanges, records * LOD_RANGE_STRIDE);
+    ) {
+      (nextRanges.array as Float32Array).set(oldRanges.array as Float32Array);
+      nextRanges.needsUpdate = true;
+    }
     mesh.castShadow = old.castShadow;
     mesh.receiveShadow = old.receiveShadow;
     this.mesh = mesh;
@@ -533,6 +597,7 @@ export class SharedBatch implements IRecordWriter {
     // of the old array reached the GPU. A narrow range here would leave the new buffer's first
     // records as the zeros it was created with.
     this.#touched(0, this.#drawn);
+    this.#rebound();
     return old;
   }
 
@@ -572,59 +637,39 @@ export class SharedBatch implements IRecordWriter {
       this.#publish(this.#drawn);
       return;
     }
-    // The records go to the engine as ops (see `world-cell-records.ts`): the matrices are written
-    // straight into the frame's payload, and this batch never holds the buffer's bytes.
-    const matrix = this.mesh.instanceMatrix;
-    const payloadAt = batchRecords.reserve(batch.count * 16);
-    const written = batch.writeMatrices(batchRecords.payload, payloadAt / 16);
-    batchRecords.write(matrix, start * 16, written * 16, payloadAt);
-    this.#writeRanges(start, written, reserved, lodRanges);
-    batchRecords.fill(matrix, (start + written) * 16, (reserved - written) * 16);
+    const array = this.mesh.instanceMatrix.array as Float32Array;
+    const written = batch.writeMatrices(array, start);
+    const ranges = this.#lodRangeAttribute();
+    if (ranges !== undefined) {
+      const values = ranges.array as Float32Array;
+      if (lodRanges !== undefined)
+        values.set(lodRanges.subarray(0, written * LOD_RANGE_STRIDE), start * LOD_RANGE_STRIDE);
+      else
+        for (let index = 0; index < written; index += 1) {
+          const at = (start + index) * LOD_RANGE_STRIDE;
+          values[at] = this.#rangeLevel;
+          values[at + 1] = this.#rangeLevel;
+          values[at + 2] = -1;
+          values[at + 3] = 0;
+        }
+      values.fill(0, (start + written) * LOD_RANGE_STRIDE, (start + reserved) * LOD_RANGE_STRIDE);
+      ranges.needsUpdate = true;
+    }
+    array.fill(0, (start + written) * 16, (start + reserved) * 16);
     if (written < reserved) this.#hole(start + written, start + reserved);
     this.#size.set(segment, written);
-    // The block's extent, measured by the engine from the records where they are now, because
-    // `#compact` is about to move them. The box is keyed by handle, so the move cannot falsify it;
-    // it lands in `#boxes` when the flush answers (`settleRecords`).
+    // The block's extent, read from the records where they are now, because `#compact` is about to
+    // move them. The box is keyed by handle, so the move cannot falsify it.
     if (written > 0) {
-      const readable = this.#localBox();
-      const index = batchRecords.box(
-        matrix,
-        start,
-        written,
-        readable ? this.#localCenter : ZERO,
-        readable ? this.#localHalf : ZERO,
-      );
-      this.#pendingBoxes.set(segment, readable ? index : -1 - index);
+      this.#boxes.set(segment, this.#boxOf(start, written));
+      this.#scales.set(segment, this.#maxScale);
     } else {
       this.#boxes.delete(segment);
       this.#scales.delete(segment);
-      this.#pendingBoxes.delete(segment);
     }
     this.#settle();
     this.#touched(start, written);
-  }
-
-  /** The block's LOD-range column: the published ranges, or each record whole at this batch's level. */
-  #writeRanges(start: number, written: number, reserved: number, lodRanges?: Float32Array): void {
-    const ranges = this.#lodRangeAttribute();
-    if (ranges === undefined) return;
-    const at = batchRecords.reserve(written * LOD_RANGE_STRIDE);
-    const values = batchRecords.payload;
-    if (lodRanges !== undefined) values.set(lodRanges.subarray(0, written * LOD_RANGE_STRIDE), at);
-    else
-      for (let index = 0; index < written; index += 1) {
-        const record = at + index * LOD_RANGE_STRIDE;
-        values[record] = this.#rangeLevel;
-        values[record + 1] = this.#rangeLevel;
-        values[record + 2] = -1;
-        values[record + 3] = 0;
-      }
-    batchRecords.write(ranges, start * LOD_RANGE_STRIDE, written * LOD_RANGE_STRIDE, at);
-    batchRecords.fill(
-      ranges,
-      (start + written) * LOD_RANGE_STRIDE,
-      (reserved - written) * LOD_RANGE_STRIDE,
-    );
+    this.#rebound();
   }
 
   clear(segment: number): void {
@@ -650,10 +695,16 @@ export class SharedBatch implements IRecordWriter {
       this.#publish(this.#drawn);
       return;
     }
-    batchRecords.fill(this.mesh.instanceMatrix, start * 16, size * 16);
+    (this.mesh.instanceMatrix.array as Float32Array).fill(0, start * 16, (start + size) * 16);
     const ranges = this.#lodRangeAttribute();
-    if (ranges !== undefined)
-      batchRecords.fill(ranges, start * LOD_RANGE_STRIDE, size * LOD_RANGE_STRIDE);
+    if (ranges !== undefined) {
+      (ranges.array as Float32Array).fill(
+        0,
+        start * LOD_RANGE_STRIDE,
+        (start + size) * LOD_RANGE_STRIDE,
+      );
+      ranges.needsUpdate = true;
+    }
     this.#hole(start, start + size);
     this.#settle();
     // The drawn range, not nothing. `#compact` closed the hole by moving the topmost block down
@@ -662,7 +713,7 @@ export class SharedBatch implements IRecordWriter {
     this.#touched(0, this.#drawn);
     this.#boxes.delete(segment);
     this.#scales.delete(segment);
-    this.#pendingBoxes.delete(segment);
+    this.#rebound();
   }
 
   /** The first free range with room for `count` records, taken out of the list; -1 when there is none. */
@@ -703,8 +754,7 @@ export class SharedBatch implements IRecordWriter {
    * instead of a `grow`, and the free list is left as the single tail range `[drawn, capacity)`.
    */
   #compact(): void {
-    const matrix = this.mesh.instanceMatrix;
-    const ranges = this.#lodRangeAttribute();
+    const array = this.mesh.instanceMatrix.array as Float32Array;
     for (;;) {
       let drawn = 0;
       let top = -1;
@@ -722,14 +772,12 @@ export class SharedBatch implements IRecordWriter {
       const [holeStart, holeEnd] = lowest;
       const size = this.#size.get(top) ?? 0;
       if (size <= holeEnd - holeStart) {
-        batchRecords.move(matrix, topFrom * 16, holeStart * 16, (drawn - topFrom) * 16);
-        if (ranges !== undefined)
-          batchRecords.move(
-            ranges,
-            topFrom * LOD_RANGE_STRIDE,
-            holeStart * LOD_RANGE_STRIDE,
-            (drawn - topFrom) * LOD_RANGE_STRIDE,
-          );
+        array.copyWithin(holeStart * 16, topFrom * 16, drawn * 16);
+        this.#lodRangeAttribute()?.array.copyWithin(
+          holeStart * LOD_RANGE_STRIDE,
+          topFrom * LOD_RANGE_STRIDE,
+          drawn * LOD_RANGE_STRIDE,
+        );
         this.#start.set(top, holeStart);
         if (holeEnd - holeStart > size) this.#free[0] = [holeStart + size, holeEnd];
         else this.#free.shift();
@@ -738,14 +786,12 @@ export class SharedBatch implements IRecordWriter {
         this.#touched(holeStart, size);
       } else {
         const shift = holeEnd - holeStart;
-        batchRecords.move(matrix, holeEnd * 16, holeStart * 16, (drawn - holeEnd) * 16);
-        if (ranges !== undefined)
-          batchRecords.move(
-            ranges,
-            holeEnd * LOD_RANGE_STRIDE,
-            holeStart * LOD_RANGE_STRIDE,
-            (drawn - holeEnd) * LOD_RANGE_STRIDE,
-          );
+        array.copyWithin(holeStart * 16, holeEnd * 16, drawn * 16);
+        this.#lodRangeAttribute()?.array.copyWithin(
+          holeStart * LOD_RANGE_STRIDE,
+          holeEnd * LOD_RANGE_STRIDE,
+          drawn * LOD_RANGE_STRIDE,
+        );
         this.#free.shift();
         for (const [handle, start] of this.#start) {
           if (start >= holeEnd) this.#start.set(handle, start - shift);
@@ -794,8 +840,8 @@ export class SharedBatch implements IRecordWriter {
    *
    * A regroup is a permutation of `[0, drawn)` and there is no in-place order for one: writing the
    * visible squares to the front necessarily lands on squares whose records have not been read out
-   * yet, in either direction. So the engine's gather op reads every block out before it writes the
-   * new order back — two passes over the drawn range, and only when a square entered or left the
+   * yet, in either direction. So every block is copied into {@link regroupScratch} and the new order
+   * is copied back — two passes over the drawn range, and only when a square entered or left the
    * window, which on a settled camera is not once a frame.
    *
    * Squares keep their relative order within each half, so a residency change regroups in place and
@@ -814,7 +860,15 @@ export class SharedBatch implements IRecordWriter {
    * stay few and large rather than many and small.
    */
   #regroup(visible = this.#visible): void {
+    const array = this.mesh.instanceMatrix.array as Float32Array;
+    const rangeAttribute = this.#lodRangeAttribute();
+    const rangeArray = rangeAttribute?.array as Float32Array | undefined;
     const squares = this.#squares();
+    let total = 0;
+    for (const square of squares) total += sizeOf(square);
+    const scratch = scratchFor(total * 16);
+    const rangeScratch =
+      rangeArray === undefined ? undefined : lodScratchFor(total * LOD_RANGE_STRIDE);
     // The visible squares first. `filter` is stable, so both halves keep the order the buffer had
     // them in and a residency change lays out exactly what the last one did.
     const front = squares.filter((one) => visible?.has(one.cluster) ?? true);
@@ -825,27 +879,36 @@ export class SharedBatch implements IRecordWriter {
     // identity reorder touches nothing.
     let movedFrom = -1;
     let movedTo = 0;
-    const blocks: number[] = [];
     this.#squareSizes.clear();
     for (const square of [...front, ...back]) {
+      const union = new Box3();
       for (const [handle, start, count] of square.blocks) {
-        blocks.push(start, count);
-        // A block written back to its own offset is a record the GPU already holds, and is the
-        // whole difference between a repack that costs nothing and one that re-uploads the key.
+        scratch.set(array.subarray(start * 16, (start + count) * 16), written * 16);
+        if (rangeScratch !== undefined && rangeArray !== undefined)
+          rangeScratch.set(
+            rangeArray.subarray(start * LOD_RANGE_STRIDE, (start + count) * LOD_RANGE_STRIDE),
+            written * LOD_RANGE_STRIDE,
+          );
+        // Read before it is overwritten: a block written back to its own offset is a record the GPU
+        // already holds, and is the whole difference between a repack that costs nothing and one
+        // that re-uploads the key.
         if (this.#start.get(handle) !== written) {
           if (movedFrom < 0) movedFrom = written;
           movedTo = written + count;
         }
         this.#start.set(handle, written);
+        const box = this.#boxes.get(handle);
+        // A fresh `Box3` is already empty, so the first block's box is the square's and every block
+        // after it unions into it.
+        if (box !== undefined) union.union(box);
         written += count;
       }
       this.#squareSizes.set(square.cluster, sizeOf(square));
     }
-    // The permutation itself is the engine's: one gather per buffer, read whole before it is written.
-    if (movedFrom >= 0) {
-      batchRecords.gather(this.mesh.instanceMatrix, 16, blocks);
-      const ranges = this.#lodRangeAttribute();
-      if (ranges !== undefined) batchRecords.gather(ranges, LOD_RANGE_STRIDE, blocks);
+    array.set(scratch.subarray(0, written * 16));
+    if (rangeArray !== undefined && rangeScratch !== undefined && rangeAttribute !== undefined) {
+      rangeArray.set(rangeScratch.subarray(0, written * LOD_RANGE_STRIDE));
+      rangeAttribute.needsUpdate = true;
     }
     this.#drawn = written;
     const capacity = this.mesh.instanceMatrix.count;
@@ -997,15 +1060,22 @@ export class SharedBatch implements IRecordWriter {
     // A dressed batch's records were never in this attribute, so there is nothing to upload and
     // nothing to put back in charge of culling: the dispatch decided what it drew.
     if (this.gpu !== undefined) return;
+    const matrix = this.mesh.instanceMatrix;
     // A record is 16 array elements, and that is the unit `updateRanges` is in: three reads them
     // as element offsets into `array`, not as bytes.
     const drawn = this.#drawn * 16;
-    let low = from * 16;
-    let high = (from + count) * 16;
-    // The pending span is ours, and it lasts until the flush at the end of this `update`, which is
-    // what hands it to the engine: a frame that touches a mesh from several directions still
-    // uploads one range.
-    if (this.#pendingMatrix !== undefined) {
+    const low0 = from * 16;
+    const high0 = (from + count) * 16;
+    // The pending span is ours, and it lasts one update. Three's WebGPU path uploads through the
+    // interleaved buffer it derives from `instanceMatrix.array` and only that buffer's ranges are
+    // cleared after the write, so the ranges on `instanceMatrix` are never consumed: they were
+    // unioned in here forever, and after one wide write every later write re-uploaded the whole
+    // drawn range. The epoch moves once per `update()`, and the render at the end of an update is
+    // what consumes the span, so a fresh epoch is a fresh span.
+    let low = low0;
+    let high = high0;
+    const epoch = currentWriteEpoch();
+    if (this.#pendingEpoch === epoch) {
       if (this.#pendingLow < low) low = this.#pendingLow;
       if (this.#pendingHigh > high) high = this.#pendingHigh;
     }
@@ -1015,56 +1085,24 @@ export class SharedBatch implements IRecordWriter {
     }
     this.#pendingLow = low;
     this.#pendingHigh = high;
-    this.#pendingMatrix = this.mesh.instanceMatrix;
-    this.#pendingRanges = this.#lodRangeAttribute();
-    batchRecords.touch(this);
-    this.#publish(this.#drawn);
-    // Records are real, so the bounds `settleRecords` publishes are the ones to cull by.
-    this.mesh.frustumCulled = true;
-  }
-
-  /** The flush asks for this frame's upload span, one range per buffer; see {@link #touched}. */
-  uploadRecords(): void {
-    const matrix = this.#pendingMatrix;
-    if (matrix === undefined) return;
-    const low = this.#pendingLow;
-    const high = this.#pendingHigh;
-    batchRecords.upload(matrix, low, high - low);
-    if (this.#pendingRanges !== undefined)
-      batchRecords.upload(
-        this.#pendingRanges,
-        (low / 16) * LOD_RANGE_STRIDE,
-        ((high - low) / 16) * LOD_RANGE_STRIDE,
-      );
-    this.#pendingMatrix = undefined;
-    this.#pendingRanges = undefined;
-  }
-
-  /**
-   * The flush answered: each block written this frame gets the box the engine measured, and the
-   * mesh's bounds are published once from all of them.
-   */
-  settleRecords(boxes: ArrayLike<number>): void {
-    for (const [segment, encoded] of this.#pendingBoxes) {
-      // A block cleared after its write in the same frame has no box left to keep.
-      if (!this.#start.has(segment)) continue;
-      const at = encoded < 0 ? -1 - encoded : encoded;
-      const box =
-        encoded < 0
-          ? this.#bounds
-          : new Box3(
-              new Vector3(boxes[at] as number, boxes[at + 1] as number, boxes[at + 2] as number),
-              new Vector3(
-                boxes[at + 3] as number,
-                boxes[at + 4] as number,
-                boxes[at + 5] as number,
-              ),
-            );
-      this.#boxes.set(segment, box);
-      this.#scales.set(segment, boxes[at + 6] as number);
+    this.#pendingEpoch = epoch;
+    matrix.clearUpdateRanges();
+    if (high > low) matrix.addUpdateRange(low, high - low);
+    matrix.needsUpdate = true;
+    const ranges = this.#lodRangeAttribute();
+    if (ranges !== undefined) {
+      ranges.clearUpdateRanges();
+      if (high > low)
+        ranges.addUpdateRange(
+          (low / 16) * LOD_RANGE_STRIDE,
+          ((high - low) / 16) * LOD_RANGE_STRIDE,
+        );
+      ranges.needsUpdate = true;
     }
-    this.#pendingBoxes.clear();
-    this.#rebound();
+    this.#publish(this.#drawn);
+    // Records are real, so the bounds are the ones `#rebound` just wrote and the mesh goes back to
+    // being culled.
+    this.mesh.frustumCulled = true;
   }
 
   /**

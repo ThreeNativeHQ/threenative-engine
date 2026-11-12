@@ -241,10 +241,6 @@ public:
     mutable uint64_t contentKey_ = 0;
     mutable uint64_t contentEpoch_ = 0;
     mutable bool contentStreamed_ = false;
-    // projection::skinnedLaneReason (plan.h): this geometry's half of a rig's lane verdict, held for its revision.
-    mutable uint64_t rigLaneRevision_ = std::numeric_limits<uint64_t>::max();
-    mutable const char* rigLaneReason_ = nullptr;
-    mutable bool rigLaneSkin_ = false;
     // RenderDatabase::sortCenterOf: the box centre a geometry with no bounding sphere is keyed by, and the
     // revision and position version it was taken at, so a draw whose material moves every frame re-keys
     // without a pass over every vertex.

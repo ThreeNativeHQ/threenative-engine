@@ -2,7 +2,6 @@ import { Box3, BoxGeometry, InstancedBufferAttribute, MeshBasicMaterial, Vector3
 import { describe, expect, it } from "vitest";
 import type { InstancedBatch } from "../src/instanced-batch.js";
 import { LOD_RANGE_STRIDE, SharedBatch } from "../src/world-cell-batches.js";
-import { batchRecords } from "../src/world-cell-records.js";
 
 /**
  * The two buffers one shared batch writes must hold the same number of records.
@@ -45,7 +44,6 @@ function lodRangeOf(batch: SharedBatch): InstancedBufferAttribute {
 
 /** Every pending upload of both buffers has to land inside the array the GPU buffer was made from. */
 function expectAligned(batch: SharedBatch): void {
-  batchRecords.flush();
   const lod = lodRangeOf(batch);
   expect(lod.array.length).toBe(batch.mesh.instanceMatrix.count * LOD_RANGE_STRIDE);
   for (const range of lod.updateRanges)

@@ -101,9 +101,7 @@ Euler& Euler::setFromRotationMatrix(const Matrix4& m, EulerOrder order, bool upd
 }
 
 Euler& Euler::setFromQuaternion(const Quaternion& q, EulerOrder order, bool update) {
-    // PRD-875 H1: a local, not a `static`. Two rigs of one frame write their own rotation, and a
-    // shared buffer let one thread's matrix become the other's Euler.
-    Matrix4 matrix;
+    static Matrix4 matrix;
     matrix.makeRotationFromQuaternion(q);
     return setFromRotationMatrix(matrix, order, update);
 }

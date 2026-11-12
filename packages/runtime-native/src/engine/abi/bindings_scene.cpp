@@ -35,9 +35,7 @@
 #include "engine/scene/texture.h"
 #include "engine/foundation/job_pool.h"
 #include "engine/scene/object3d.h"
-#include "engine/scene/pose_history.h"
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -242,39 +240,6 @@ SourceGuard& sourceGuardOf(Object3D& root) {
     return entry.second;
 }
 
-// Core's bundle proof witness (PRD-879): the surface flags a recorded main batch's material had when it
-// was proved, kept per host while the host lives, as sourceGuardOf keeps the AutoBatch guard's.
-struct MaterialWitness {
-    struct Entry {
-        std::weak_ptr<Material> owner;  // expired: the material was freed, which counts as a change
-        bool transparent = false, visible = true;
-        double transmission = 0;
-    };
-    std::vector<Entry> entries;
-};
-
-MaterialWitness& materialWitnessOf(Object3D& host) {
-    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, MaterialWitness>> witnesses;
-    for (auto it = witnesses.begin(); it != witnesses.end();)
-        it = it->second.first.expired() ? witnesses.erase(it) : std::next(it);
-    auto& entry = witnesses[&host];
-    if (entry.first.expired()) entry = {host.weak_from_this(), MaterialWitness{}};
-    return entry.second;
-}
-
-std::shared_ptr<Material> materialArg(Store& store, const Value& arg);
-
-// The pose history for a physics root (PRD-877), kept while the root lives, as sourceGuardOf keeps
-// the AutoBatch guard's.
-PoseHistory& poseHistoryOf(Object3D& root) {
-    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, PoseHistory>> histories;
-    for (auto it = histories.begin(); it != histories.end();)
-        it = it->second.first.expired() ? histories.erase(it) : std::next(it);
-    auto& entry = histories[&root];
-    if (entry.first.expired()) entry = {root.weak_from_this(), PoseHistory{}};
-    return entry.second;
-}
-
 // three's graph events (`added`, `removed` on the child; `childadded`, `childremoved` with `child` on
 // the parent), which the engine's own dispatcher fires from add, remove and attach. A language
 // listens per object and type through tn_set_callback, as it does to AnimationMixer's events.
@@ -405,141 +370,6 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
                           {"exact", Value::record(std::move(exact))}});
 }
 
-// ---------------------------------------------------------------- world refilter stale scan (PRD-879)
-
-namespace {
-
-/** A typed-array or numbers argument as doubles. */
-std::vector<double> packedNumbers(const Value& value) {
-    return value.bytes.empty() ? value.numbers : typedArrayNumbers(value.text, value.bytes);
-}
-
-/** sqrt of the sum of squares; `std::hypot`'s overflow care costs more than the scan in Wasm. */
-double length(double x, double y) { return std::sqrt(x * x + y * y); }
-double length(double x, double y, double z) { return std::sqrt(x * x + y * y + z * z); }
-
-/** `[nearest, farthest]` from (x, z) to a cell rectangle, as core's `#span`. */
-std::array<double, 2> cellSpan(double left, double nearZ, double size, double x, double z) {
-    const double right = left + size, farZ = nearZ + size;
-    return {length(std::max({left - x, x - right, 0.0}), std::max({nearZ - z, z - farZ, 0.0})),
-            length(std::max(std::abs(x - left), std::abs(x - right)), std::max(std::abs(z - nearZ), std::abs(z - farZ)))};
-}
-
-/** The slab `__tnStaleRows` handed this host, kept while the host lives; the scan reads it in place. */
-std::vector<double>& staleSlabOf(Object3D& host) {
-    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, std::vector<double>>> slabs;
-    for (auto it = slabs.begin(); it != slabs.end();)
-        it = it->second.first.expired() ? slabs.erase(it) : std::next(it);
-    auto& entry = slabs[&host];
-    if (entry.first.expired()) entry = {host.weak_from_this(), {}};
-    return entry.second;
-}
-
-/**
- * The next slab from the one held and the blocks that changed (world-cell-stale.ts `patchRows`, its twin):
- * `plan` is `[source, count]` runs in slab order, `source` >= 0 keeping held numbers and -1 taking the next
- * `count` numbers of `blocks`. A run outside its rows, or blocks left unread, is refused.
- */
-std::vector<double> patchStaleRows(const std::vector<double>& held, const std::vector<double>& blocks,
-                                   const std::vector<double>& plan) {
-    std::vector<double> next;
-    size_t taken = 0;
-    for (size_t at = 0; at + 1 < plan.size(); at += 2) {
-        const double source = plan[at], count = plan[at + 1];
-        const bool fresh = source == -1;
-        const std::vector<double>& from = fresh ? blocks : held;
-        const double start = fresh ? double(taken) : source;
-        if (!(start >= 0 && count >= 0 && start == std::floor(start) && count == std::floor(count) &&
-              start + count <= double(from.size())))
-            throw Unsupported{"__tnStaleRows: a plan run is outside its rows"};
-        next.insert(next.end(), from.begin() + ptrdiff_t(start), from.begin() + ptrdiff_t(start + count));
-        if (fresh) taken += size_t(count);
-    }
-    if (taken != blocks.size()) throw Unsupported{"__tnStaleRows: the plan leaves changed blocks unread"};
-    return next;
-}
-
-std::array<double, 2> reachVertical(double y, double minY, double maxY) {
-    return {std::max({minY - y, y - maxY, 0.0}), std::max(std::abs(y - minY), std::abs(y - maxY))};
-}
-
-/**
- * Core's refilter stale scan (world-cell-stale.ts `staleRows`, its twin): every cell-asset whose follow
- * point or LOD eye crossed a gate or a placementReach boundary since its batch was built. The slab, gate
- * table and query layouts are documented there. Answers `[cell ordinal, asset index, eye distance]` rows.
- */
-std::vector<double> staleEntries(const std::vector<double>& slab, const std::vector<double>& gates,
-                                 const std::vector<double>& query) {
-    constexpr size_t header = 8, entry = 12, fixed = 8;
-    if (query.size() < fixed || query.size() < fixed + size_t(query[7])) throw Unsupported{"__tnStaleEntries: a short query"};
-    if (gates.empty() || gates.size() < 1 + size_t(gates[0]) * 2) throw Unsupported{"__tnStaleEntries: a short gate table"};
-    const double x = query[0], followY = query[1], z = query[2], eyeX = query[3], eyeY = query[4], eyeZ = query[5];
-    const bool gpuOn = query[6] == 1;
-    const auto worldGateBegin = query.begin() + fixed, worldGateEnd = worldGateBegin + ptrdiff_t(query[7]);
-    const size_t assets = size_t(gates[0]);
-    std::vector<double> out;
-    std::vector<uint32_t> seen;
-    double ordinal = 0;
-    for (size_t cell = 0; cell < slab.size(); ordinal += 1) {
-        if (cell + header > slab.size()) throw Unsupported{"__tnStaleEntries: a cut cell block"};
-        const size_t next = cell + header + size_t(slab[cell + 6]) * entry;
-        if (next > slab.size()) throw Unsupported{"__tnStaleEntries: a cut cell block"};
-        const double left = slab[cell], nearZ = slab[cell + 1], size = slab[cell + 2];
-        const bool hasReach = slab[cell + 5] == 1;
-        const auto [eyeNear, eyeFar] = cellSpan(left, nearZ, size, eyeX, eyeZ);
-        const double cellLow = std::min(eyeNear, slab[cell + 3]), cellHigh = std::max(eyeFar, slab[cell + 4]);
-        // crossesGate: the first world gate at or past `low` is at or before `high`.
-        const auto first = std::lower_bound(worldGateBegin, worldGateEnd, cellLow);
-        if ((gpuOn && !hasReach) || (!hasReach && !(first != worldGateEnd && *first <= cellHigh))) {
-            cell = next;
-            continue;
-        }
-        const auto [near, far] = cellSpan(left, nearZ, size, x, z);
-        seen.clear();
-        for (size_t at = cell + header; at < next; at += entry) {
-            const double* e = slab.data() + at;
-            const uint32_t asset = uint32_t(e[0]);
-            if (std::find(seen.begin(), seen.end(), asset) != seen.end()) continue;
-            const double threshold = e[7], reachMin = e[8];
-            const bool reach = !std::isnan(reachMin);
-            if (!reach && (gpuOn || std::isnan(threshold))) continue;
-            const double step = (std::isnan(threshold) ? 6.0 : threshold) / 8;
-            if (length(x - e[1], followY - e[2], z - e[3]) <= step && length(eyeX - e[4], eyeY - e[5], eyeZ - e[6]) <= step)
-                continue;
-            if (asset >= assets) throw Unsupported{"__tnStaleEntries: an entry names no asset"};
-            const double gateAt = gates[1 + asset * 2];
-            if (gateAt < 0) continue;
-            const size_t gateCount = gpuOn ? 0 : size_t(gates[2 + asset * 2]);
-            if (size_t(gateAt) + gateCount > gates.size()) throw Unsupported{"__tnStaleEntries: a gate list past the table"};
-            const auto [builtNear, builtFar] = cellSpan(left, nearZ, size, e[4], e[6]);
-            double low = std::min(eyeNear, builtNear), high = std::max(eyeFar, builtFar);
-            bool stale = false;
-            if (reach) {
-                const double minY = e[10], maxY = e[11];
-                const auto eyeNow = reachVertical(eyeY, minY, maxY), eyeBefore = reachVertical(e[5], minY, maxY);
-                low = std::min(length(eyeNear, eyeNow[0]), length(builtNear, eyeBefore[0]));
-                high = std::max(length(eyeFar, eyeNow[1]), length(builtFar, eyeBefore[1]));
-                const auto [reachBuiltNear, reachBuiltFar] = cellSpan(left, nearZ, size, e[1], e[3]);
-                const auto current = reachVertical(followY, minY, maxY), previous = reachVertical(e[2], minY, maxY);
-                const double reachLow = std::min(length(near, current[0]), length(reachBuiltNear, previous[0]));
-                const double reachHigh = std::max(length(far, current[1]), length(reachBuiltFar, previous[1]));
-                stale = reachMin <= reachHigh && e[9] >= reachLow;
-            }
-            for (size_t gate = 0; !stale && gate < gateCount; ++gate) {
-                const double value = gates[size_t(gateAt) + gate];
-                stale = value >= low && value <= high;
-            }
-            if (!stale) continue;
-            seen.push_back(asset);
-            out.insert(out.end(), {ordinal, double(asset), eyeNear});
-        }
-        cell = next;
-    }
-    return out;
-}
-
-}  // namespace
-
 void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
@@ -593,21 +423,14 @@ void registerObject3D(ClassBinding& b) {
             counts.push_back(Value::of(double(count)));
         return Value::array(std::move(counts));
     };
-    // Engine-internal (PRD-878): core's animation rate bands, the rig loop included, in one call a frame.
-    // `rig.__trackAnimationRate(id)` registers a player's rig root under core's handle (a negative id forgets it);
-    // `scene.__bandAnimation(camera, cameraResolved, scale, frame)` answers [id, rate] pairs, or undefined when a
-    // tracked rig sits inside another and core must walk them (ProjectedCull::bandAnimation).
-    b.methods["__trackAnimationRate"] = [](void* self, const Args& a, Store&) {
-        ProjectedCull::trackRate(*as<Object3D>(self), number(a.at(0)));
-        return Value::undefined();
-    };
-    b.methods["__bandAnimation"] = [](void* self, const Args& a, Store& store) {
+    // Engine-internal: core's animation rate bands in one call. `__bandRigs(camera, cameraResolved, scale, rigs)`
+    // answers each rig's rate (1, 2, 4 or 8; 0 when no part was visited), kept with this root's cull state.
+    b.methods["__bandRigs"] = [](void* self, const Args& a, Store& store) {
         auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
-        if (camera == nullptr) throw Unsupported{"__bandAnimation needs a camera"};
-        auto& root = *as<Object3D>(self);
-        const auto pairs = projectedCullOf(root).bandAnimation(root, *camera, flag(a.at(1)), number(a.at(2)),
-                                                               uint64_t(number(a.at(3))));
-        return pairs ? Value::list(*pairs) : Value::undefined();
+        if (camera == nullptr) throw Unsupported{"__bandRigs needs a camera"};
+        std::vector<Object3D*> rigs;
+        for (const Value& ref : refsOf(a.at(3))) rigs.push_back(&objectArg(store, ref));
+        return Value::list(projectedCullOf(*as<Object3D>(self)).bandRates(rigs, *camera, flag(a.at(1)), number(a.at(2))));
     };
     // Engine-internal (PRD-828): GPUParticles3D's view test in one call. `__boundsInView(camera, localBox, padding)`
     // updates both world matrices as three's would, carries the local box to world space, pads it (a NaN
@@ -676,74 +499,6 @@ void registerObject3D(ClassBinding& b) {
             changed.push_back(double(index));
         }
         return Value::list(std::move(changed));
-    };
-    // Engine-internal (PRD-879): core's bundle proof. `__tnMaterialWatch(materials)` stamps each material's
-    // transparent, visible and transmission; `__tnMaterialCheck()` answers the indices that moved since,
-    // until the list is watched again, so a settled frame re-reads no material property one by one.
-    b.methods["__tnMaterialWatch"] = [](void* self, const Args& a, Store& store) {
-        MaterialWitness& witness = materialWitnessOf(*as<Object3D>(self));
-        witness.entries.clear();
-        for (const Value& ref : refsOf(a.at(0))) {
-            const std::shared_ptr<Material> material = materialArg(store, ref);
-            witness.entries.push_back({material, material->transparent, material->visible, material->transmission});
-        }
-        return Value::of(double(witness.entries.size()));
-    };
-    b.methods["__tnMaterialCheck"] = [](void* self, const Args&, Store&) {
-        const MaterialWitness& witness = materialWitnessOf(*as<Object3D>(self));
-        std::vector<double> changed;
-        for (std::size_t index = 0; index < witness.entries.size(); ++index) {
-            const MaterialWitness::Entry& entry = witness.entries[index];
-            const std::shared_ptr<Material> material = entry.owner.lock();
-            if (material == nullptr || material->transparent != entry.transparent ||
-                material->visible != entry.visible || material->transmission != entry.transmission)
-                changed.push_back(double(index));
-        }
-        return Value::list(std::move(changed));
-    };
-    // Engine-internal (PRD-879): core's refilter stale scan over its packed rows, one call a pass.
-    // `__tnStaleRows(blocks, plan)` patches the rows this host keeps with the cell blocks that changed,
-    // sent only when a cell's batches change; `__tnStaleEntries(gates, query)` scans them. Layouts in
-    // packages/core/src/world-cell-stale.ts (`patchRows` is this patch's twin).
-    b.methods["__tnStaleRows"] = [](void* self, const Args& a, Store&) {
-        std::vector<double>& slab = staleSlabOf(*as<Object3D>(self));
-        slab = patchStaleRows(slab, packedNumbers(a.at(0)), packedNumbers(a.at(1)));
-        return Value::of(double(slab.size()));
-    };
-    b.methods["__tnStaleEntries"] = [](void* self, const Args& a, Store&) {
-        return Value::list(staleEntries(staleSlabOf(*as<Object3D>(self)), packedNumbers(a.at(0)), packedNumbers(a.at(1))));
-    };
-    // Engine-internal (PRD-877): core's physics interpolation without leaving the engine.
-    // `__tnPoseWatch(objects)` replaces the watched list and answers how many it holds; a body that
-    // was already watched keeps its pair, so spawning one does not reset the bodies beside it.
-    b.methods["__tnPoseWatch"] = [](void* self, const Args& a, Store& store) {
-        std::vector<Object3D*> objects;
-        for (const Value& ref : refsOf(a.at(0))) objects.push_back(&objectArg(store, ref));
-        return Value::of(double(poseHistoryOf(*as<Object3D>(self)).watch(objects)));
-    };
-    // `__tnPoseTick(phase)` records this frame's solved pose for every watched body.
-    b.methods["__tnPoseTick"] = [](void* self, const Args& a, Store&) {
-        poseHistoryOf(*as<Object3D>(self)).tick(number(a.at(0)));
-        return Value{};
-    };
-    // `__tnPoseBlend(alpha)` writes the blended pose; it throws for an alpha the blend cannot use,
-    // which reaches the language as the throw its own bounds check would have raised.
-    b.methods["__tnPoseBlend"] = [](void* self, const Args& a, Store&) {
-        poseHistoryOf(*as<Object3D>(self)).blend(number(a.at(0)));
-        return Value{};
-    };
-    // `__tnPoseRestore()` puts every watched body back on its solved pose, bit for bit.
-    b.methods["__tnPoseRestore"] = [](void* self, const Args&, Store&) {
-        poseHistoryOf(*as<Object3D>(self)).restore();
-        return Value{};
-    };
-    // `__tnPoseReset(objects)` sets those bodies' previous and current pose to where they are now,
-    // which is what a teleport announces so the next blend does not cross the gap.
-    b.methods["__tnPoseReset"] = [](void* self, const Args& a, Store& store) {
-        std::vector<Object3D*> objects;
-        for (const Value& ref : refsOf(a.at(0))) objects.push_back(&objectArg(store, ref));
-        poseHistoryOf(*as<Object3D>(self)).reset(objects);
-        return Value{};
     };
     b.methods["__restoreCull"] = [](void* self, const Args&, Store&) {
         projectedCullOf(*as<Object3D>(self)).restoreAfterDraw();

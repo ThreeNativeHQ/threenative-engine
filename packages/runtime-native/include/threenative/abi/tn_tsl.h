@@ -59,13 +59,6 @@ TN_EXPORT tn_status_t tn_tsl_set_uniform(tn_context_t *context, const uint64_t *
  * packed in order. Every id is checked before any write; a refused value stops the batch there. */
 TN_EXPORT tn_status_t tn_tsl_set_uniforms(tn_context_t *context, const uint64_t *nodes, const uint32_t *lane_counts,
                                           const double *lanes, uint32_t count, tn_diagnostic_t *diagnostic);
-/* Which of `candidates` (uniform node ids) one draw or dispatch reads (PRD-878): the graphs of every material under
- * `root` (a mesh and the objects below it; null for none) and the `kernels`. The index of each candidate read lands
- * in `out` (room for `candidate_count`), in candidate order, and `count` gets how many. A facade runs only those
- * uniforms' render callbacks before the draw. */
-TN_EXPORT tn_status_t tn_tsl_reads(tn_context_t *context, const tn_handle_t *root, const uint64_t *kernels,
-                                   uint32_t kernel_count, const uint64_t *candidates, uint32_t candidate_count,
-                                   uint32_t *out, uint32_t *count, tn_diagnostic_t *diagnostic);
 /* CPU compilation of the material's actual vertex/fragment graphs, optionally dumping WGSL. */
 TN_EXPORT tn_status_t tn_tsl_compile(tn_handle_t material, const char *wgsl_path, tn_diagnostic_t *diagnostic);
 

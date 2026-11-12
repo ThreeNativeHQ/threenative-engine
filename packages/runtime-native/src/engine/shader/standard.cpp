@@ -808,7 +808,6 @@ struct Incoming {
     ExprId direction;
     ExprId color;
     ExprId sourceRadius = kInvalid;  // a lamp's Source Radius, metres: read only when lampSize asks (a sun has none)
-    ExprId mask = kInvalid;          // a lamp's distance attenuation: exactly 0 past its cutoff (a sun has none)
 };
 
 // interleavedGradientNoise(screenCoordinate.xy) * 2pi, PCF's per-pixel rotation, with Unreal's frame term: the
@@ -1369,10 +1368,10 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
     const ExprId cut = f.mul(falloff, t.pow2(t.saturate(t.oneMinus(t.pow2(t.pow2(f.div(distance, cutoff)))))));
     const ExprId attenuation = f.select(f.less(t.f(0), cutoff), cut, falloff);
     const ExprId sourceRadius = lampSize ? f.uniform(at + "SourceRadius", Type::f32()) : kInvalid;
-    if (kind == 'p') return {direction, f.mul(color, attenuation), sourceRadius, attenuation};
+    if (kind == 'p') return {direction, f.mul(color, attenuation), sourceRadius};
     const ExprId angleCos = t.dot(direction, f.call("normalize", {f.uniform(at + "Axis", Type::vec(3))}));
     const ExprId spot = f.call("smoothstep", {f.uniform(at + "ConeCos", Type::f32()), f.uniform(at + "PenumbraCos", Type::f32()), angleCos});
-    return {direction, f.mul(f.mul(color, spot), attenuation), sourceRadius, attenuation};
+    return {direction, f.mul(f.mul(color, spot), attenuation), sourceRadius};
 }
 
 // NodeMaterial.depthNode: the fragment's own depth (frag_depth), on every material program that takes node slots.
@@ -1567,75 +1566,42 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // colour with its shadow, with no N.L and no 1/pi. UE 5.8.3: Engine/Shaders/Private/Substrate/
     // SubstrateEvaluation.ush:881-899 (the SSS_TYPE_TWO_SIDED_WRAP branch); Opacity 1 keeps the light's own shadow.
     const ExprId subsurface = variant.twoSidedFoliage ? f.uniform("subsurfaceColor", Type::vec(3)) : kInvalid;
-    // A lamp shades only the fragments its range reaches: past the cutoff its attenuation is exactly 0, so the branch
-    // changes no pixel. UE 5.8.3: Engine/Shaders/Private/DeferredLightingCommon.ush:334-344 (`BRANCH if( LightMask > 0 )`).
-    // Unbranched, 16 torches cost every fragment 16 GGX lobes: 195 of 203 ms of the scene pass on an Iris Xe (stress lab,
-    // ledger #332). A lamp with a shadow keeps the straight path: its shadow taps need uniform control flow.
-    const auto ranged = [&](std::size_t i) { return lights.kinds[i] == 'p' || lights.kinds[i] == 's'; };
-    bool branches = false;
-    for (std::size_t i = 0; i < lights.kinds.size(); ++i) branches = branches || ranged(i);
-    // What every light reads is evaluated once, before the first branch: a value first used inside a branch would be
-    // computed there, and a texture sample or a derivative must not run in a branch.
-    const auto held = [&](ExprId value) {
-        return branches && value != kInvalid ? f.load(f.var(f.expr(value).type, value)) : value;
-    };
-    const ExprId lightNormal = held(n), lightView = held(positionViewDirection), lightLambert = held(brdfLambert);
-    const ExprId lightAlbedo = held(diffuseContribution), lightRoughness = held(roughness);
-    const ExprId lightF0 = held(f0Dielectric), lightF90 = held(specularF90), lightWeight = held(multiScatteringCompensation);
-    const Surface lightSurface{lightNormal, lightView, lightRoughness, held(surface.f0), lightF90, dfg};
-    const ExprId lightCoatNormal = held(clearcoatNormalView);
-    const Surface lightCoat = coated ? Surface{lightCoatNormal, lightView, held(coat.roughness), coat.f0, coat.f90, coat.dfg} : coat;
-    const VarId diffuseSum = branches ? f.var(Type::vec(3), directDiffuse) : VarId{};
-    const VarId specularSum = branches ? f.var(Type::vec(3), directSpecular) : VarId{};
-    const VarId coatSum = branches && coated ? f.var(Type::vec(3), clearcoatSpecularDirect) : VarId{};
-    const auto accumulate = [&](ExprId& sum, VarId var, ExprId term) {
-        if (branches) f.assign(var, f.add(f.load(var), term));
-        else sum = f.add(sum, term);
-    };
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
         if (lights.kinds[i] == LightLayout::kExcluded) continue;  // not in the material's lightsNode
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver, variant.roughDiffuse);
-        const auto shade = [&] {
-        const ExprId irradiance = f.mul(t.saturate(t.dot(lightNormal, light.direction)), light.color);
+        const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         // PhysicalLightingModel.direct :675-678: F_Schlick on the specular interface at dotVH, which the
         // diffuse layer loses.
-        const ExprId halfDir = f.call("normalize", {f.add(light.direction, lightView)});
-        const ExprId dotVH = t.saturate(t.dot(lightView, halfDir));
+        const ExprId halfDir = f.call("normalize", {f.add(light.direction, positionViewDirection)});
+        const ExprId dotVH = t.saturate(t.dot(positionViewDirection, halfDir));
         // A fresh Unreal project's Substrate slab (GBuffer format 0) compiles with its energy conservation off: the
         // diffuse keeps all the light and the specular lobe takes no multi-scattering weight. UE 5.8.3:
         // Engine/Shaders/Private/ShadingEnergyConservation.ush:7-31, ShadingEnergyConservationTemplate.ush:73-78 and
         // :134-135, used at Substrate/SubstrateEvaluation.ush:585-589 and :836.
         const ExprId oneMinusF =
-            variant.roughDiffuse ? t.f(1) : t.oneMinus(fSchlick(t, lightF0, lightF90, dotVH));
-        const ExprId specularWeight = variant.roughDiffuse ? t.f(1) : lightWeight;
-        ExprId diffuseBrdf = lightLambert;
+            variant.roughDiffuse ? t.f(1) : t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
+        const ExprId specularWeight = variant.roughDiffuse ? t.f(1) : multiScatteringCompensation;
+        ExprId diffuseBrdf = brdfLambert;
         if (variant.roughDiffuse) {
             // EON's roughness is 0.4 x the material's, fading to Lambert as the lamp's Source Radius reaches 20 cm.
-            ExprId r = f.mul(t.f(kEonRoughnessScale), lightRoughness);
+            ExprId r = f.mul(t.f(kEonRoughnessScale), roughness);
             if (light.sourceRadius != kInvalid)
                 r = f.mul(r, t.saturate(t.oneMinus(f.mul(light.sourceRadius, t.f(1 / kEonSizeLimit)))));
-            diffuseBrdf = f.mul(lightLambert, roughDiffuseFactor(f, t, lightAlbedo, r, lightNormal, lightView, light.direction));
+            diffuseBrdf = f.mul(brdfLambert, roughDiffuseFactor(f, t, diffuseContribution, r, n, positionViewDirection, light.direction));
         }
-        accumulate(directDiffuse, diffuseSum, f.mul(f.mul(irradiance, diffuseBrdf), oneMinusF));
-        accumulate(directSpecular, specularSum, f.mul(f.mul(irradiance, brdfGgx(t, lightSurface, light.direction)), specularWeight));
+        directDiffuse = f.add(directDiffuse, f.mul(f.mul(irradiance, diffuseBrdf), oneMinusF));
+        directSpecular =
+            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), specularWeight));
         if (subsurface != kInvalid) {
-            const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(lightNormal, light.direction)), t.f(0.5f)), t.f(2.25f)));
-            const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(lightView, light.direction))));
-            accumulate(directDiffuse, diffuseSum, f.mul(f.mul(light.color, f.mul(wrap, scatter)), subsurface));
+            const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));
+            const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(positionViewDirection, light.direction))));
+            directDiffuse = f.add(directDiffuse, f.mul(f.mul(light.color, f.mul(wrap, scatter)), subsurface));
         }
         if (coated) {
             // PhysicalLightingModel.direct: BRDF_GGX on the clearcoat normal, with its own irradiance.
-            const ExprId ccIrradiance = f.mul(t.saturate(t.dot(lightCoatNormal, light.direction)), light.color);
-            accumulate(clearcoatSpecularDirect, coatSum, f.mul(ccIrradiance, brdfGgx(t, lightCoat, light.direction)));
+            const ExprId ccIrradiance = f.mul(t.saturate(t.dot(clearcoatNormalView, light.direction)), light.color);
+            clearcoatSpecularDirect = f.add(clearcoatSpecularDirect, f.mul(ccIrradiance, brdfGgx(t, coat, light.direction)));
         }
-        };
-        if (ranged(i)) f.If(f.less(t.f(0), light.mask), shade);
-        else shade();
-    }
-    if (branches) {
-        directDiffuse = f.load(diffuseSum);
-        directSpecular = f.load(specularSum);
-        if (coated) clearcoatSpecularDirect = f.load(coatSum);
     }
 
     // Hemisphere and ambient irradiance, then PhysicalLightingModel.indirectDiffuse (r187 :786-798): energy
@@ -1861,35 +1827,14 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
-    // As in buildStandardProgram: an unshadowed lamp shades only the fragments its range reaches, and what every light
-    // reads (a normal map, a colour texel) is evaluated once, before the first branch.
-    const auto ranged = [&](std::size_t i) { return lights.kinds[i] == 'p' || lights.kinds[i] == 's'; };
-    bool branches = false;
-    for (std::size_t i = 0; i < lights.kinds.size(); ++i) branches = branches || ranged(i);
-    const auto held = [&](ExprId value) { return branches ? f.load(f.var(f.expr(value).type, value)) : value; };
-    const ExprId lightNormal = held(n), lightView = held(positionViewDirection), lightLambert = held(brdfLambert);
-    const VarId diffuseSum = branches ? f.var(Type::vec(3), directDiffuse) : VarId{};
-    const VarId specularSum = branches && phong ? f.var(Type::vec(3), directSpecular) : VarId{};
-    const auto accumulate = [&](ExprId& sum, VarId var, ExprId term) {
-        if (branches) f.assign(var, f.add(f.load(var), term));
-        else sum = f.add(sum, term);
-    };
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
         if (lights.kinds[i] == LightLayout::kExcluded) continue;  // not in the material's lightsNode
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver);
-        const auto shade = [&] {
-            const ExprId irradiance = f.mul(t.saturate(t.dot(lightNormal, light.direction)), light.color);
-            accumulate(directDiffuse, diffuseSum, f.mul(irradiance, lightLambert));
-            if (phong)
-                accumulate(directSpecular, specularSum, f.mul(irradiance, brdfBlinnPhong(t, lightNormal, lightView, light.direction,
-                                                                                       f.uniform("specular", Type::vec(3)), shininess)));
-        };
-        if (ranged(i)) f.If(f.less(t.f(0), light.mask), shade);
-        else shade();
-    }
-    if (branches) {
-        directDiffuse = f.load(diffuseSum);
-        if (phong) directSpecular = f.load(specularSum);
+        const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
+        directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
+        if (phong)
+            directSpecular = f.add(directSpecular, f.mul(irradiance, brdfBlinnPhong(t, n, positionViewDirection, light.direction,
+                                                                                 f.uniform("specular", Type::vec(3)), shininess)));
     }
 
     // Hemisphere and ambient irradiance, then PhongLightingModel.indirect diffuse.

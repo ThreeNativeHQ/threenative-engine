@@ -10,22 +10,17 @@
 #include <orbis/Pad.h>
 #include <orbis/UserService.h>
 #else
-#include "mystral/platform/input.h"
-
 #include <SDL3/SDL.h>
 #endif
 
 // The platform half of `navigator.getGamepads()` (v8_main.cpp installs the JavaScript side). A game
 // reads controllers through the standard Web Gamepad API and nothing else (packages/core/src/input.ts
 // samples `axes` and `buttons[i].pressed` once per step), so both branches below produce the same
-// W3C "standard" mapping — the one a PS4 DualShock 4 and an SDL3 pad both already match. The SDL3
-// branch reads the one table in `platform/input.cpp`, which the legacy host polls too; keeping a
-// second copy here is how `gamepadAxes: [4]` came to read a trigger on Android and nothing on desktop.
+// W3C "standard" mapping — the one a PS4 DualShock 4 and an SDL3 pad both already match.
 namespace tn::engine::player {
 
 namespace {
 
-#if defined(TN_PS4)
 constexpr int kButtonCount = 16;  // the standard's 0..15; its 16 is the guide button, which neither API reports
 constexpr int kAxisCount = 4;     // left x/y, right x/y: the standard's triggers are buttons 6 and 7
 constexpr int kLeftTrigger = 6;
@@ -33,6 +28,8 @@ constexpr int kRightTrigger = 7;
 
 /** An axis as the standard reports it: -1..1, negative up and positive down, clamped (travel can overshoot). */
 double standardAxis(double raw) { return raw < -1.0 ? -1.0 : raw > 1.0 ? 1.0 : raw; }
+
+#if defined(TN_PS4)
 
 constexpr const char* kPadId = "DUALSHOCK 4 (PS4)";
 
@@ -146,6 +143,31 @@ int pollPads(mystral::platform::GamepadState* out, int max) {
 
 #else
 
+// The W3C "standard" button index -> the SDL3 button for it, in the standard's own order.
+constexpr SDL_GamepadButton kButtons[kButtonCount] = {
+    SDL_GAMEPAD_BUTTON_SOUTH,            // 0  A / Cross
+    SDL_GAMEPAD_BUTTON_EAST,             // 1  B / Circle
+    SDL_GAMEPAD_BUTTON_WEST,             // 2  X / Square
+    SDL_GAMEPAD_BUTTON_NORTH,            // 3  Y / Triangle
+    SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,    // 4
+    SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,   // 5
+    SDL_GAMEPAD_BUTTON_INVALID,          // 6  the left trigger: an axis, read as a button below
+    SDL_GAMEPAD_BUTTON_INVALID,          // 7  the right trigger: the same
+    SDL_GAMEPAD_BUTTON_BACK,             // 8  select / share
+    SDL_GAMEPAD_BUTTON_START,            // 9  start / options
+    SDL_GAMEPAD_BUTTON_LEFT_STICK,       // 10
+    SDL_GAMEPAD_BUTTON_RIGHT_STICK,      // 11
+    SDL_GAMEPAD_BUTTON_DPAD_UP,          // 12
+    SDL_GAMEPAD_BUTTON_DPAD_DOWN,        // 13
+    SDL_GAMEPAD_BUTTON_DPAD_LEFT,        // 14
+    SDL_GAMEPAD_BUTTON_DPAD_RIGHT,       // 15
+};
+
+/** SDL's int16 travel as the standard's -1..1; -32768 clamps to -1. No dead zone. */
+double padAxis(SDL_Gamepad* pad, SDL_GamepadAxis which) {
+    return standardAxis(SDL_GetGamepadAxis(pad, which) / 32767.0);
+}
+
 int pollPads(mystral::platform::GamepadState* out, int max) {
     if (out == nullptr || max < 1) return 0;
     // The player's window already initialises SDL (platform/window.cpp); a host that did not still gets pads.
@@ -160,13 +182,31 @@ int pollPads(mystral::platform::GamepadState* out, int max) {
         SDL_Gamepad* pad = SDL_GetGamepadFromID(ids[index]);
         if (pad == nullptr) pad = SDL_OpenGamepad(ids[index]);
         if (pad == nullptr) continue;
-        mystral::platform::GamepadState& state = out[count];
+        mystral::platform::GamepadState& state = out[count++];
         const char* name = SDL_GetGamepadName(pad);
         state.index = index;
         state.id = name != nullptr ? name : "Gamepad";
-        // One table for both hosts (platform/input.cpp): SDL's standard layout -> W3C indices.
-        if (!mystral::platform::fillStandardPad(pad, state)) continue;
-        ++count;
+        state.connected = true;
+        state.numAxes = kAxisCount;
+        state.axes[0] = padAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
+        state.axes[1] = padAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
+        state.axes[2] = padAxis(pad, SDL_GAMEPAD_AXIS_RIGHTX);
+        state.axes[3] = padAxis(pad, SDL_GAMEPAD_AXIS_RIGHTY);
+        state.numButtons = kButtonCount;
+        for (int button = 0; button < kButtonCount; ++button) {
+            double value = 0;
+            bool pressed = false;
+            if (button == kLeftTrigger || button == kRightTrigger) {
+                value = padAxis(pad, button == kLeftTrigger ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER
+                                                           : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+                pressed = value > 0.5;  // triggers travel 0..1, so the standard's reading is a threshold
+            } else {
+                pressed = SDL_GetGamepadButton(pad, kButtons[button]);
+                value = pressed ? 1.0 : 0.0;
+            }
+            state.buttons[button] = pressed;
+            state.buttonValues[button] = value;
+        }
     }
     SDL_free(ids);
     return count;

@@ -6,7 +6,6 @@
 #include "threenative/abi/tn_anim.h"
 
 #include <cstdio>
-#include <chrono>
 #include <cmath>
 #include <fstream>
 #include "engine/shader/standard.h"
@@ -16,7 +15,6 @@
 #include <algorithm>
 #include <atomic>
 #include <deque>
-#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -24,7 +22,6 @@
 #include <new>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -33,7 +30,6 @@
 #include "engine/foundation/waste_counters.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/object3d.h"
-#include "engine/scene/nodes.h"
 #include "engine/abi/tsl_call.h"
 #include "engine/scene/material.h"
 #include "engine/abi/bindings.h"
@@ -626,7 +622,7 @@ public:
     OwnershipProbe(tn_context* context, const tn_value_t* args, uint32_t count, bool classHoldsObjects, bool arraysOpaque = false)
         : context_(context), args_(args), count_(count) {
         if (!classHoldsObjects) return;
-        // An array of handles is counted like handles (a list a call reads every
+        // An array of handles is counted like handles (`scene.__bandRigs(camera, ..., rigs)` reads its rigs every
         // frame and keeps none). A record, or an array inside an array, is not looked into, nor an array a
         // property takes (`mesh.material = [a, b]` can let go of a material the list no longer names).
         for (uint32_t i = 0; i < count; ++i) {
@@ -1230,47 +1226,6 @@ extern "C" tn_status_t tn_tsl_set_uniforms(tn_context_t* context, const uint64_t
     });
 }
 
-extern "C" tn_status_t tn_tsl_reads(tn_context_t* context, const tn_handle_t* root, const uint64_t* kernels,
-                                     uint32_t kernel_count, const uint64_t* candidates, uint32_t candidate_count,
-                                     uint32_t* out, uint32_t* count, tn_diagnostic_t* diagnostic) {
-    if (!context || !count || (kernel_count && !kernels) || (candidate_count && (!candidates || !out)))
-        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
-    for (uint32_t i = 0; i < kernel_count; ++i)
-        if (!context->tslNodes.contains(kernels[i])) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
-    for (uint32_t i = 0; i < candidate_count; ++i)
-        if (!context->tslNodes.contains(candidates[i])) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
-    const tn::engine::Object3D* drawn = nullptr;
-    if (root) {
-        const tn::binding::Object* object = root->context == context->objects.context() ? context->object(*root) : nullptr;
-        if (!object || !tn::binding::isObject3DClass(object->cls))
-            return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_TSL_READS_ROOT");
-        drawn = static_cast<const tn::engine::Object3D*>(object->ptr.get());
-    }
-    return guarded(diagnostic, [&]() -> tn_status_t {
-        namespace g = tn::engine::shader::graph;
-        std::unordered_set<const g::NodeData*> read;
-        const auto take = [&](const g::Node& graph) {
-            if (graph) for (const g::Node& uniform : g::uniformList(graph)) read.insert(uniform.get());
-        };
-        for (uint32_t i = 0; i < kernel_count; ++i) take(context->tslNodes.at(kernels[i]));
-        const auto materials = [&](const tn::engine::Material* material) {
-            if (material) material->nodes.forEachGraph(take);
-        };
-        const std::function<void(const tn::engine::Object3D&)> walk = [&](const tn::engine::Object3D& object) {
-            if (const auto* mesh = dynamic_cast<const tn::engine::Mesh*>(&object)) {
-                materials(mesh->material.get());
-                for (const auto& each : mesh->materials) materials(each.get());
-            }
-            for (const tn::engine::Object3D* child : object.children) walk(*child);
-        };
-        if (drawn) walk(*drawn);
-        *count = 0;
-        for (uint32_t i = 0; i < candidate_count; ++i)
-            if (read.contains(context->tslNodes.at(candidates[i]).get())) out[(*count)++] = i;
-        return ok(diagnostic);
-    });
-}
-
 extern "C" tn_status_t tn_tsl_release(tn_context_t* context, uint64_t node, tn_diagnostic_t* diagnostic) {
     if (!context || context->tslNodes.erase(node) != 1)
         return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_TSL_NODE_INVALID");
@@ -1413,14 +1368,7 @@ extern "C" tn_status_t tn_anim_tick(tn_context_t* context, const tn_handle_t* ha
             batch.push_back(rig);
         }
         std::vector<animation::TickStatus> result;
-        // PRD-875 Phase 1: the tick's own cost, so the sizing gate reads a number instead of a profile.
-        const bool tickTimed = waste::debugEnabled().load(std::memory_order_relaxed);
-        const auto tickBegan = tickTimed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         context->animBatch.run(batch, result);
-        if (tickTimed)
-            waste::debugAdd(waste::counters().animationTickMicros,
-                            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                std::chrono::steady_clock::now() - tickBegan).count()));
         for (uint32_t i = 0; i < count; i++) {
             double* out = status + i * 3;
             out[0] = result[i].strideRate;

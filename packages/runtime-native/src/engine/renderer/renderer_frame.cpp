@@ -121,8 +121,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
-    // One stamp per pass: rigs that share a skeleton read its bones once (PRD-871).
-    const uint64_t planStamp = virtualShadows_.empty() ? 0 : Skeleton::nextPlanStamp();    for (auto& [i, shadow] : virtualShadows_) {
+    for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
@@ -132,16 +131,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // caster into each, and two descents per draw to rebuild the states.
         auto& record = casterRecords_[i];
         record.assign(items.size(), {});
-        // A caster whose inputs did not move keeps last frame's bounds and state (PRD-872). `play` re-derives 1,145
-        // casters every frame otherwise, and 902 of them are static: the plan is a comparison for those, not a rebuild.
-        auto& plan = casterPlan_[i];
-        plan.begin(items.size());
-        const auto& planControl = *shadow.atlas.options().control;
-        const uint64_t controlEpoch = controlStamp(planControl);
         std::vector<Box3> depthCasters, receivers;
         std::vector<uint64_t> emptied;
-        std::vector<shadows::CasterState> states;
-        std::vector<Box3> rungChanged;
         for (const DrawItem& item : items) {
             if ((!item.castShadow && !item.receiveShadow) || !item.positions || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
             if (item.instanceCount == 0) {
@@ -152,53 +143,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.castShadow && shadow.atlas.options().autoDepth && !displacedByGeometryBox(item) &&
                 (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
-            const auto index = std::size_t(&item - items.data());
-            shadows::CasterInputs inputs;
-            inputs.positions = item.positions;
-            inputs.positionsVersion = item.positions->version();
-            inputs.instances = item.instanceMatrices;
-            inputs.instanceVersion = item.instanceMatrices ? item.instanceMatrices->version() : 0;
-            inputs.instanceCount = item.instanceCount;
-            inputs.layers = item.layers;
-            inputs.cache = item.cache;
-            inputs.casts = item.castShadow;
-            inputs.controlEpoch = controlEpoch;
-            inputs.nodeDeformed = item.positionNode || item.nodes->shadowPositionNode() || item.morphGeometry;
-            inputs.skinned = item.boneMatrices != nullptr;
-            // One rig's own skeleton; a batch of rigs has no single version to read.
-            if (item.skinnedRig && item.skinnedRig->skeleton && !item.instanceMatrices)
-                inputs.pose = item.skinnedRig->skeleton->poseVersion();
-            bool stale = false;
-            shadows::PlannedCaster& caster = plan.slot(index, item.matrixWorld, inputs, stale);
-            if (stale) {
-                const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item, planStamp);
-                caster.bounds = bounds;
-                caster.diameter = diameter;
-                caster.casts = item.castShadow;
-                // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep.
-                caster.instanceBoxes = item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr;
-                shadows::CasterState& state = caster.state;
-                state.key = item.key; state.bounds = bounds;
-                state.signature = shadows::CasterSignature{item.positions->version(), inputs.instanceVersion, item.instanceCount};
-                state.tracked = (item.layers & (1u << 29)) != 0;
-                state.automatic = (item.layers & 1u) != 0;
-                state.pinned = false;
-                // The parent chain is only walked when a control set says something about casters at all.
-                if (!planControl.tracked.empty() || !planControl.pinned.empty())
-                    for (auto* object = item.shadowObject; object; object = object->parent) {
-                        state.tracked |= planControl.tracked.count(object->id()) != 0;
-                        state.pinned |= planControl.pinned.count(object->id()) != 0;
-                    }
-            }
-            if (caster.casts) {
-                record[index] = CasterRecord{caster.bounds, caster.diameter, true, caster.instanceBoxes};
-                const auto& lodChanged = planControl.lodChanged;
-                if (!lodChanged.empty() && item.shadowObject && lodChanged.count(item.shadowObject->id()))
-                    rungChanged.push_back(caster.bounds);
-                states.push_back(caster.state);
-            }
-            depthCasters.push_back(caster.bounds);
-            if (item.receiveShadow) receivers.push_back(caster.bounds);
+            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
+            if (item.castShadow)  // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep
+                record[std::size_t(&item - items.data())] = CasterRecord{bounds, diameter, true,
+                    item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr};
+            depthCasters.push_back(bounds);
+            if (item.receiveShadow) receivers.push_back(bounds);
         }
         const auto& direction = lights.direct[i].direction;
         const Vector3 towards(direction[0], direction[1], direction[2]);
@@ -208,6 +158,29 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (!std::isfinite(radius) || radius < 0 ||
             (!lights.direct[i].shadow->sourceAngleFilter && radius + 0.5 > shadow.atlas.options().border))
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
+        std::vector<shadows::CasterState> states;
+        std::vector<Box3> rungChanged;
+        for (const DrawItem& item : items) {
+            const CasterRecord& caster = record[std::size_t(&item - items.data())];
+            if (!caster.casts) continue;
+            const auto& lodChanged = shadow.atlas.options().control->lodChanged;
+            if (!lodChanged.empty() && item.shadowObject && lodChanged.count(item.shadowObject->id()))
+                rungChanged.push_back(caster.bounds);
+            shadows::CasterState state;
+            state.key = item.key; state.bounds = caster.bounds;
+            state.world.elements = item.matrixWorld;
+            state.signature = std::to_string(item.positions->version());
+            if (item.instanceMatrices) state.signature += ":" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
+            state.deforming = item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry;
+            state.tracked = (item.layers & (1u << 29)) != 0;
+            state.automatic = (item.layers & 1u) != 0;
+            const auto& control = *shadow.atlas.options().control;
+            for (auto* object = item.shadowObject; object; object = object->parent) {
+                state.tracked |= control.tracked.count(object->id()) != 0;
+                state.pinned |= control.pinned.count(object->id()) != 0;
+            }
+            states.push_back(std::move(state));
+        }
         auto& control = *shadow.atlas.options().control;
         if (control.invalidateAll) { shadow.atlas.invalidateAll(); control.invalidateAll = false; }
         for (const auto& region : control.regions) shadow.atlas.invalidate(region);
@@ -215,8 +188,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A caster that left the scene with its chain is invalidated by updateCasters' removal pass.
         for (const Box3& bounds : rungChanged) shadow.atlas.invalidate(bounds);
         control.lodChanged.clear();
-        // A frame where no caster arrived, left or moved has nothing to hand the atlas: its state is last frame's.
-        if (plan.changed()) shadow.atlas.updateCasters(states, emptied);
+        shadow.atlas.updateCasters(states, emptied);
         {
             std::lock_guard lock(shadow.costs->mutex);
             for (const auto& [level, reading] : shadow.costs->levels) {
@@ -484,17 +456,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         for (int i = 0; i < 16; ++i) key = (key ^ std::bit_cast<uint32_t>(matrix[i])) * 1099511628211ull;
         return key;
     };
-    std::unordered_map<const std::vector<float>*, double> placedPalettes;  // a palette two draws read is compared once
     const auto placePalette = [&](const std::vector<float>& matrices, uint32_t stride) {
         const auto baseOf = [&](std::size_t at) { return double(jointPrefix / 64 + at / 16); };
         if (matrices.size() < 16) return baseOf(bones.size());
-        if (const auto placed = placedPalettes.find(&matrices); placed != placedPalettes.end()) return placed->second;
-        const auto remember = [&](double base) { placedPalettes.emplace(&matrices, base); return base; };
         const auto [from, to] = paletteStarts.equal_range(firstMatrixKey(matrices.data()));
         for (auto start = from; start != to; ++start) {
             if (start->second + matrices.size() <= bones.size() &&
                 std::memcmp(bones.data() + start->second, matrices.data(), matrices.size() * sizeof(float)) == 0)
-                return remember(baseOf(start->second));
+                return baseOf(start->second);
         }
         const std::size_t at = bones.size();
         const std::size_t step = stride ? std::size_t{stride} * 16 : matrices.size();
@@ -502,7 +471,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             paletteStarts.emplace(firstMatrixKey(matrices.data() + o), uint32_t(at + o));
         bones.insert(bones.end(), matrices.begin(), matrices.end());
         ++paletteWrites;
-        return remember(baseOf(at));
+        return baseOf(at);
     };
     for (const auto& [depthKey, drawn] : opaque) {
         if (drawn->boneMatrices && drawn->boneStride && !drawn->gpuJoints)
@@ -527,7 +496,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
                 paletteWrites += drawn->gpuJointRigs.empty() ? 1u : uint32_t(drawn->gpuJointRigs.size());
             } else if (!drawn->boneStride) {
-                d.boneBase = placePalette(*drawn->boneMatrices, 0) + drawn->boneOffset;
+                d.boneBase = placePalette(*drawn->boneMatrices, 0);
             }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {
@@ -601,23 +570,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo") ||
         postEffects_->reads("emissive") || postEffects_->reads("indirectDiffuse") || postEffects_->reads("metalness") ||
         postEffects_->reads("roughness"))) || traa_;
-    // variantOf's inputs that refresh()'s material half does not own (see DepthRowKey).
-    const auto depthRowKey = [invariantPosition](const DrawItem& item) {
-        DepthRowKey k;
-        k.material = item.material; k.nodes = item.nodes; k.fogNode = item.nodes->fogNode.get(); k.morph = item.morphGeometry;
-        k.side = item.side; k.colorSize = item.colorSize; k.map = item.map != nullptr;
-        if (item.morphGeometry) {
-            k.morphTargets = uint32_t(item.morphGeometry->morphPositions.size());
-            k.morphNormals = !item.morphGeometry->morphNormals.empty();
-        }
-        k.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
-        k.invariantPosition = invariantPosition; k.background = item.background; k.sprite = item.sprite;
-        k.receiveShadow = item.receiveShadow; k.envMap = item.envMap != nullptr;
-        k.instanced = item.instanceMatrices != nullptr; k.instanceColor = item.instanceColors != nullptr;
-        k.indirect = item.indirect != nullptr; k.skinned = item.boneMatrices != nullptr; k.palette = item.boneStride != 0;
-        k.shadowGroup = item.shadowGroup;
-        return k;
-    };
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
@@ -1330,36 +1282,24 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             }
             const DrawItem& item = *selected;
+            shader::VertexVariant variant = variantOf(item);
+            // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
+            if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
+                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
+            const bool masked = alphaTested(*item.material, *item.nodes);
             DrawCache* cache = item.cache;
             Program* cachedDepth = nullptr;
-            bool masked = false, alphaHash = false;
-            const DepthRowKey rowKey = depthRowKey(item);
-            if (cache && cache->depthProgram && item.variantStamp != 0 && cache->depthStamp == item.variantStamp &&
-                cache->depthKey == rowKey) {
-                // Nothing the variant reads has moved since this draw last resolved it: no variant to build.
+            if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
                 cachedDepth = static_cast<Program*>(cache->depthProgram);
-                masked = cache->depthMasked;
-                alphaHash = cache->variant.alphaHash;
-            } else {
-                shader::VertexVariant variant = variantOf(item);
-                // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
-                if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
-                    throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
-                masked = alphaTested(*item.material, *item.nodes);
-                alphaHash = variant.alphaHash;
-                if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
-                    cachedDepth = static_cast<Program*>(cache->depthProgram);
-                else {
-                    cachedDepth = &depthProgram(variant, masked);
-                    if (cache) {
-                        cache->variant = variant;  // a shadow-only draw has no main program to set it
-                        cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
-                        cache->depthMasked = masked;
-                    }
+            else {
+                cachedDepth = &depthProgram(variant, masked);
+                if (cache) {
+                    cache->variant = variant;  // a shadow-only draw has no main program to set it
+                    cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
+                    cache->depthMasked = masked;
                 }
-                if (cache) { cache->depthStamp = item.variantStamp; cache->depthKey = rowKey; }
             }
-            const shader::StageModule* depthFragment = (masked || alphaHash) ? &cachedDepth->fragment : nullptr;
+            const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &cachedDepth->fragment : nullptr;
             Program& program = *cachedDepth;
             // material.shadowSide names the faces drawn; when null, three's _shadowSide: a front-sided
             // caster draws its back faces, a back-sided one its front faces, a double-sided one both.
@@ -2072,7 +2012,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (uniformBytes != 0 && uploadedUniforms_.size() != uniformBytes) {
         gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);  // a grown arena: all of it once
         uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
-        waste::debugAdd(waste::counters().uniformUploadBytes, uniformBytes);
     } else if (uniformBytes != 0 && std::memcmp(uploadedUniforms_.data(), frameUniforms_.data(), uniformBytes) != 0) {
         constexpr uint64_t kUniformBlock = kUniformAlign;  // one block's granularity
         // Every block is kUniformAlign bytes, so a run's length is a multiple of 4, as writeBuffer requires.
@@ -2098,14 +2037,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (dirty * 2 >= uniformBytes) {  // mostly dirty: one write is cheaper than the calls
             gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);
             uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
-            dirty = uniformBytes;
         } else {
             for (const auto& [offset, length] : uniformDirtyRanges_) {
                 gpu_.writeBuffer(uniformBuffer_, offset, frameUniforms_.data() + offset, length);
                 std::memcpy(uploadedUniforms_.data() + offset, frameUniforms_.data() + offset, length);
             }
         }
-        waste::debugAdd(waste::counters().uniformUploadBytes, dirty);
     }
     job.uniformBytes = frameUniforms_.size();
     bool jointBufferMoved = false;
@@ -2134,49 +2071,51 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // change (a still crowd, a draw that kept its place in `instances`) sends nothing, whatever its neighbours do.
         const uint64_t held = sameBuffer && storage.uploadedPrefix == prefix ? std::min<uint64_t>(storage.uploaded.size(), bytes) : 0;
         constexpr uint64_t kStorageBlock = 256;  // a multiple of 4: writeBuffer takes whole words
-        constexpr std::size_t kMaxWrites = 32, kMaxPaletteWrites = 256;
+        constexpr std::size_t kMaxWrites = 32;
         auto& ranges = uniformDirtyRanges_;  // the uniform upload above is done with it
         ranges.clear();
         const auto dirty = [&](uint64_t at, uint64_t end) {
             if (!ranges.empty() && ranges.back().first + ranges.back().second == at) ranges.back().second = end - ranges.back().first;
             else ranges.emplace_back(at, end - at);
         };
+        if (name != "instances") {  // the palettes change whole each frame: one compare that stops at the first difference, one write
+            if (held == bytes && storage.uploaded.size() == bytes && std::memcmp(storage.uploaded.data(), source, bytes) == 0) continue;
+            if (gpu_.writeBuffer(target, prefix, source, bytes) == GpuStatus::Ok) {
+                storage.uploaded.assign(source, source + bytes);
+                storage.uploadedBuffer = target;
+                storage.uploadedPrefix = prefix;
+            }
+            continue;
+        }
         // `instances` scans only what this plan copied (a place whose stores did not move was left alone and already
-        // matches the GPU) and the shadow rows past the places. A palette scans all it holds, one 4x4 at a time: a
-        // crowd slot whose pose held kept its bytes, so only the moved slots cross (PRD-878).
-        const bool instances = name == "instances";
-        const uint64_t block = instances ? kStorageBlock : 16 * sizeof(float);
+        // matches the GPU) and the shadow rows past the places.
         auto& spans = instanceScan_;
         spans.clear();
-        if (instances) {
-            std::sort(instanceDirty_.begin(), instanceDirty_.end());
-            for (const auto& [offset, count] : instanceDirty_) {
-                const uint64_t at = offset * 4, end = std::min((offset + count) * 4, held);
-                if (at >= end) continue;
-                if (!spans.empty() && at <= spans.back().second) spans.back().second = std::max(spans.back().second, end);
-                else spans.emplace_back(at, end);
-            }
+        std::sort(instanceDirty_.begin(), instanceDirty_.end());
+        for (const auto& [offset, count] : instanceDirty_) {
+            const uint64_t at = offset * 4, end = std::min((offset + count) * 4, held);
+            if (at >= end) continue;
+            if (!spans.empty() && at <= spans.back().second) spans.back().second = std::max(spans.back().second, end);
+            else spans.emplace_back(at, end);
         }
-        const uint64_t tail = instances ? std::min(instanceTop_ * 4, held) : 0;
+        const uint64_t tail = std::min(instanceTop_ * 4, held);
         if (tail < held) spans.emplace_back(tail, held);
         for (const auto& [from, to] : spans) {
-            for (uint64_t at = from; at < to; at += block) {
-                const uint64_t end = std::min(at + block, to);
+            for (uint64_t at = from; at < to; at += kStorageBlock) {
+                const uint64_t end = std::min(at + kStorageBlock, to);
                 if (!sameBytes(source + at, storage.uploaded.data() + at, end - at)) dirty(at, end);
             }
         }
         if (bytes > held) dirty(held, bytes);
         if (ranges.empty()) {
             storage.uploaded.resize(bytes);  // it shrank: the bytes that remain are the ones the GPU holds
-            instancesUploaded = instancesUploaded || instances;
+            instancesUploaded = true;
             continue;
         }
         const uint64_t first = ranges.front().first, last = ranges.back().first + ranges.back().second;
         uint64_t dirtyBytes = 0;
         for (const auto& range : ranges) dirtyBytes += range.second;
-        // Mostly dirty, or many runs: one write over them all. A crowd palette has one run per moved rig, so it may take
-        // one write per rig (PRD-878: 240 walkers, about 76 moved slots a frame on ?stress).
-        if (ranges.size() > (instances ? kMaxWrites : kMaxPaletteWrites) || dirtyBytes * 2 >= last - first) {
+        if (ranges.size() > kMaxWrites || dirtyBytes * 2 >= last - first) {  // mostly dirty, or many runs: one write over them all
             ranges.assign(1, {first, last - first});
         }
         storage.uploaded.resize(bytes);
@@ -2188,7 +2127,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (written) {
             storage.uploadedBuffer = target;
             storage.uploadedPrefix = prefix;
-            instancesUploaded = instancesUploaded || instances;
+            instancesUploaded = true;
         } else {  // the copy no longer says what the GPU holds: the next frame sends all of it
             storage.uploaded.clear();
             storage.uploadedBuffer = Handle{};

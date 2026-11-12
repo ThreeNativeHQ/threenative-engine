@@ -769,8 +769,6 @@ export class FrameBudget {
   /** The last drawn frame's timestamp; a declined frame leaves it, so the next drawn interval spans it. */
   #lastDrawnTimestamp: number | undefined;
   #lastFrameEnd: number | undefined;
-  #covered = false;
-  #windowCovered = false;
   #framesInWindow = 0;
   #hitchesInWindow = 0;
   /** The target frame this window counts against, and its two counts; see `overTarget`. */
@@ -883,22 +881,10 @@ export class FrameBudget {
     this.#taskObserver = undefined;
   }
 
-  /** Marks the following frames as behind the presentation cover: no hot-call line for them. */
-  markCovered(): void {
-    this.#covered = true;
-    this.#windowCovered = true;
-  }
-
-  /** Marks the cover lifted: the next window that begins reports hot calls again. */
-  markRevealed(): void {
-    this.#covered = false;
-  }
-
   beginFrame(timestampMs: number, nowMs: number): void {
     if (this.#open)
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
     this.#open = true;
-    if (this.#framesInWindow === 0) this.#windowCovered = this.#covered;
     this.#windowStartTick ??= this.#simulation?.tick();
     this.#frameStart = nowMs;
     if (this.#firstFrameStart === undefined) this.#firstFrameStart = nowMs;
@@ -1609,7 +1595,7 @@ export class FrameBudget {
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
     if (this.#debug) {
       this.#report(formatDebugReport(completed));
-      const hotCalls = this.#windowCovered ? undefined : debugHotCalls(completed);
+      const hotCalls = debugHotCalls(completed);
       if (hotCalls !== undefined) this.#report(hotCalls);
     }
     this.#windowIndex += 1;

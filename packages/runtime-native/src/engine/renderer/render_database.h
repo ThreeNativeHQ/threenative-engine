@@ -68,8 +68,6 @@ class RenderDatabase {
     [[nodiscard]] uint64_t sphereMeasures() const { return sphereMeasures_; }
     /** Scene matrix walks prepare() ran since construction; a reflection pass that reuses the frame runs none. */
     [[nodiscard]] uint64_t matrixWalks() const { return matrixWalks_; }
-    /** Nodes projection visited since construction; a chain of bones costs one visit (PRD-878). */
-    [[nodiscard]] uint64_t projectVisits() const { return projectVisits_; }
     /** What the last prepare drew, before sorting. */
     [[nodiscard]] const std::vector<DrawItem>& drawn() const { return items_; }
     /** The database behind a reflector's pass, null before its first frame. */
@@ -134,7 +132,6 @@ class RenderDatabase {
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }
     /** How many projection decisions batching has made (PRD-613): a settled scene makes none per frame. */
     [[nodiscard]] uint64_t batchDecisions() const { return batchDecisions_; }
-    [[nodiscard]] uint64_t paletteBuilds() const { return paletteBuilds_; }
 
   private:
     // A material's pmremTexture source and reflectors, walked once per material version: the graph
@@ -179,7 +176,6 @@ class RenderDatabase {
     uint64_t worldsFreshSince_ = 0;
     bool ranCallbacks_ = false;  // this prepare ran onBeforeRender hooks, which may have moved objects
     uint64_t matrixWalks_ = 0;
-    uint64_t projectVisits_ = 0;
     void renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
                            std::array<double, 4> clear);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
@@ -210,9 +206,6 @@ class RenderDatabase {
         DrawCache cache;
         GeometryKey buffers{};
         std::shared_ptr<BufferStore> zeroNormals;  // buffers[1] when the geometry has none (see record())
-        // A rig's skin attributes, held for the geometry revision as `buffers` are: a setAttribute bumps it.
-        const BufferAttribute* skinIndex = nullptr;
-        const BufferAttribute* skinWeight = nullptr;
         struct Draw {
             shader::StandardMaterial params;
             // Owned here, pointed at by the draw: a steady frame copies neither, and the record's own storage
@@ -262,19 +255,12 @@ class RenderDatabase {
     bool boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere);
     bool inShadowFrustum(const Object3D& object, const Sphere* sphere);
     bool rigCastsShadow(Object3D& object);
-    // A bone whose subtree holds only bones draws nothing and lights nothing: projection stops there (PRD-878). Keyed by
-    // the bone's id and subtreeVersion(), which every add, remove, attach and destructor under it moves.
-    struct BoneChain { uint64_t id = 0, version = 0, seen = 0; bool bonesOnly = false; };
-    std::unordered_map<const Object3D*, BoneChain> boneChains_;
-    bool bonesOnly(const Object3D& bone);
-    std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // dense slots, borrowed by this frame's draws
-    uint64_t paletteHierarchy_ = ~uint64_t(0), paletteRecords_ = ~uint64_t(0), paletteDecision_ = ~uint64_t(0);
+    std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     // core's DECLINE_RESCAN_FRAMES: a settled projection decline re-judges on this cadence, not per
     // frame. Starts at the interval so the first batch always scans.
     static constexpr std::size_t kDeclineRescanFrames = 60;
     std::size_t framesSinceDeclineScan_ = kDeclineRescanFrames;
     uint64_t batchDecisions_ = 0;
-    uint64_t paletteBuilds_ = 0;
     projection::Decision batchDecision_;  // the last one, held while its scene's structure holds
     const Object3D* batchScene_ = nullptr;
     uint64_t batchHierarchy_ = ~uint64_t(0);
@@ -285,10 +271,10 @@ class RenderDatabase {
     std::vector<DrawItem> items_;
     std::vector<DrawItem> twoPasses_;
     std::vector<std::vector<std::size_t>> batchGroupsList_;
-    std::unordered_map<const SkinnedMesh*, std::size_t> shadowCopies_;  // a batched rig's shadow copy, by rig
     std::unordered_map<std::size_t, std::vector<std::size_t>> candidatesByKey_;
     std::vector<bool> absorbed_;
     std::vector<DrawItem> merged_;
+    std::vector<DrawItem> batchedOut_;
     LightState lights_;
     CameraState cameraState_;
 
@@ -365,7 +351,6 @@ class RenderDatabase {
     std::unordered_map<const BufferAttribute*, Converted> converted_;
     std::size_t convertedSweepAt_ = 64;
     BufferStore* floatStore(const BufferGeometry& g, const char* name);
-    BufferStore* floatStore(const BufferAttribute& attribute);
     uint64_t frame_ = 0;
     std::size_t previousDrawCount_ = 0;
     std::array<double, 3> renderPhaseMs_{};
@@ -375,9 +360,8 @@ class RenderDatabase {
     std::size_t reflectionItems_ = 0;
     std::array<double, 4> prepareMs_{};
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
-    uint64_t variantStamps_ = 0;  // DrawItem::variantStamp
-    uint64_t prepareId_ = 0;     // unique across databases: stamps Skeleton::renderedBy
-    uint64_t freshPrepare_ = 0;  // a reflection: the main pass's prepare, whose skeletons are still current
+    std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated
+    const std::unordered_set<const void*>* skeletonsFresh_ = nullptr;  // a reflection: the main pass's, still current
     int hemisphere_ = 0;
 };
 

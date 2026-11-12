@@ -437,19 +437,6 @@ function resolveEsbuild(cwd: string): string | undefined {
   }
 }
 
-/** Distinguishes config loads that land in the same millisecond within one process. */
-let configLoadSequence = 0;
-
-/**
- * The temp file a transpiled config is imported from. `sequence` is what stops two loads in the same
- * millisecond, in one process, from picking the same path — `vite` resolves a project's config more
- * than once through `resolveConfig`'s `Promise.all`, and the first load's `unlink` used to delete the
- * file the second was about to import (`TN_CONFIG_LOAD_FAILED: Cannot find module …`).
- */
-export function configTempName(cwd: string, pid: number, now: number, sequence: number): string {
-  return path.join(cwd, `.threenative.config.${pid}.${now}.${sequence}.mjs`);
-}
-
 async function importConfig(cwd: string): Promise<Record<string, unknown> | undefined> {
   const sourcePath = path.join(cwd, CONFIG_FILE);
   try {
@@ -516,12 +503,7 @@ async function importConfig(cwd: string): Promise<Record<string, unknown> | unde
     );
   }
 
-  // A counter as well as the timestamp: `vite` resolves its config more than once in one process
-  // (the plugin and the command, through `resolveConfig`'s `Promise.all`), and two loads in the same
-  // millisecond used to pick the same name, so the first one's `unlink` deleted the second one's file
-  // — a flaky `TN_CONFIG_LOAD_FAILED: Cannot find module ... .threenative.config.*.mjs`.
-  configLoadSequence += 1;
-  const compiledPath = configTempName(cwd, process.pid, Date.now(), configLoadSequence);
+  const compiledPath = path.join(cwd, `.threenative.config.${process.pid}.${Date.now()}.mjs`);
   try {
     await writeFile(compiledPath, code, "utf8");
   } catch (error) {

@@ -682,8 +682,9 @@ void processGamepadConnected(SDL_JoystickID id) {
 
         data.gamepad.index = index;
         data.gamepad.id = SDL_GetGamepadName(gamepad);
-        // The same table `getGamepadState` reads, so the event and the poll cannot disagree.
-        fillStandardPad(gamepad, data.gamepad);
+        data.gamepad.connected = true;
+        data.gamepad.numAxes = 6;  // Standard gamepad has 6 axes
+        data.gamepad.numButtons = 17;  // Standard gamepad has 17 buttons
 
         g_gamepadCallback(data);
     }
@@ -761,62 +762,6 @@ void processResize(int width, int height) {
 }
 
 /**
- * The W3C "standard" button index -> the SDL3 button for it, in the standard's own order. Index 6
- * and 7 are the analog triggers, which SDL reports as axes and this reads past halfway.
- */
-static const SDL_GamepadButton kStandardButtons[16] = {
-    SDL_GAMEPAD_BUTTON_SOUTH,           // 0  A / Cross
-    SDL_GAMEPAD_BUTTON_EAST,            // 1  B / Circle
-    SDL_GAMEPAD_BUTTON_WEST,            // 2  X / Square
-    SDL_GAMEPAD_BUTTON_NORTH,           // 3  Y / Triangle
-    SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,   // 4
-    SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,  // 5
-    SDL_GAMEPAD_BUTTON_INVALID,         // 6  the left trigger: an axis, read below
-    SDL_GAMEPAD_BUTTON_INVALID,         // 7  the right trigger: the same
-    SDL_GAMEPAD_BUTTON_BACK,            // 8  select / share
-    SDL_GAMEPAD_BUTTON_START,           // 9  start / options
-    SDL_GAMEPAD_BUTTON_LEFT_STICK,      // 10
-    SDL_GAMEPAD_BUTTON_RIGHT_STICK,     // 11
-    SDL_GAMEPAD_BUTTON_DPAD_UP,         // 12
-    SDL_GAMEPAD_BUTTON_DPAD_DOWN,       // 13
-    SDL_GAMEPAD_BUTTON_DPAD_LEFT,       // 14
-    SDL_GAMEPAD_BUTTON_DPAD_RIGHT,      // 15
-};
-
-/** SDL's int16 travel as the standard's -1..1; -32768 clamps to -1. No dead zone. */
-static double standardPadAxis(SDL_Gamepad* gamepad, SDL_GamepadAxis which) {
-    const double raw = SDL_GetGamepadAxis(gamepad, which) / 32767.0;
-    return raw < -1.0 ? -1.0 : raw > 1.0 ? 1.0 : raw;
-}
-
-bool fillStandardPad(SDL_Gamepad* gamepad, GamepadState& state) {
-    if (gamepad == nullptr) return false;
-    state.connected = true;
-    state.numAxes = 4;     // left x/y, right x/y: the standard's triggers are buttons 6 and 7
-    state.numButtons = 16;  // the standard's 0..15; its 16 is guide, which SDL reports as its own button
-    state.axes[0] = standardPadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX);
-    state.axes[1] = standardPadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY);
-    state.axes[2] = standardPadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX);
-    state.axes[3] = standardPadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY);
-    for (int button = 0; button < state.numButtons; button++) {
-        double value = 0;
-        bool pressed = false;
-        if (button == 6 || button == 7) {
-            // Triggers travel 0..1, so the standard's reading is a threshold and its value is the travel.
-            value = standardPadAxis(gamepad, button == 6 ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER
-                                                         : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
-            pressed = value > 0.5;
-        } else {
-            pressed = SDL_GetGamepadButton(gamepad, kStandardButtons[button]);
-            value = pressed ? 1.0 : 0.0;
-        }
-        state.buttons[button] = pressed;
-        state.buttonValues[button] = value;
-    }
-    return true;
-}
-
-/**
  * Get gamepad state
  */
 bool getGamepadState(int index, GamepadState* state) {
@@ -834,7 +779,61 @@ bool getGamepadState(int index, GamepadState* state) {
 
     state->index = index;
     state->id = SDL_GetGamepadName(gamepad);
-    return fillStandardPad(gamepad, *state);
+    state->connected = true;
+    state->numAxes = 6;
+    state->numButtons = 17;
+
+    // Standard gamepad mapping (matches W3C Gamepad API)
+    // Axes: leftStickX, leftStickY, rightStickX, rightStickY, leftTrigger, rightTrigger
+    state->axes[0] = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0;
+    state->axes[1] = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY) / 32767.0;
+    state->axes[2] = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0;
+    state->axes[3] = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0;
+    state->axes[4] = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) / 32767.0;
+    state->axes[5] = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) / 32767.0;
+
+    // Buttons (W3C standard mapping)
+    // 0=A, 1=B, 2=X, 3=Y, 4=LB, 5=RB, 6=LT, 7=RT, 8=Back, 9=Start,
+    // 10=LS, 11=RS, 12=DUp, 13=DDown, 14=DLeft, 15=DRight, 16=Home
+    SDL_GamepadButton buttonMap[] = {
+        SDL_GAMEPAD_BUTTON_SOUTH,       // 0 - A/Cross
+        SDL_GAMEPAD_BUTTON_EAST,        // 1 - B/Circle
+        SDL_GAMEPAD_BUTTON_WEST,        // 2 - X/Square
+        SDL_GAMEPAD_BUTTON_NORTH,       // 3 - Y/Triangle
+        SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,  // 4 - LB
+        SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, // 5 - RB
+        SDL_GAMEPAD_BUTTON_INVALID,     // 6 - LT (handled via axis)
+        SDL_GAMEPAD_BUTTON_INVALID,     // 7 - RT (handled via axis)
+        SDL_GAMEPAD_BUTTON_BACK,        // 8 - Back/Select
+        SDL_GAMEPAD_BUTTON_START,       // 9 - Start
+        SDL_GAMEPAD_BUTTON_LEFT_STICK,  // 10 - LS Click
+        SDL_GAMEPAD_BUTTON_RIGHT_STICK, // 11 - RS Click
+        SDL_GAMEPAD_BUTTON_DPAD_UP,     // 12
+        SDL_GAMEPAD_BUTTON_DPAD_DOWN,   // 13
+        SDL_GAMEPAD_BUTTON_DPAD_LEFT,   // 14
+        SDL_GAMEPAD_BUTTON_DPAD_RIGHT,  // 15
+        SDL_GAMEPAD_BUTTON_GUIDE,       // 16 - Home/Guide
+    };
+
+    for (int i = 0; i < 17; i++) {
+        if (i == 6) {
+            // Left trigger as button
+            state->buttons[i] = state->axes[4] > 0.5;
+            state->buttonValues[i] = state->axes[4];
+        } else if (i == 7) {
+            // Right trigger as button
+            state->buttons[i] = state->axes[5] > 0.5;
+            state->buttonValues[i] = state->axes[5];
+        } else if (buttonMap[i] != SDL_GAMEPAD_BUTTON_INVALID) {
+            state->buttons[i] = SDL_GetGamepadButton(gamepad, buttonMap[i]);
+            state->buttonValues[i] = state->buttons[i] ? 1.0 : 0.0;
+        } else {
+            state->buttons[i] = false;
+            state->buttonValues[i] = 0.0;
+        }
+    }
+
+    return true;
 }
 
 /**

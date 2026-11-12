@@ -196,12 +196,11 @@ export class CellGpuDress {
         : { geometry: own.geometry, material: own.material };
     return {
       ...shape,
-      material: this.lodSurface(entry.asset, level, entry.part, shape.material),
+      material: this.#lodSurface(entry.asset, level, entry.part, shape.material),
     };
   }
 
-  /** The material a batch of this level and part draws: `source` with the LOD gate's mask, when the asset has one. */
-  lodSurface(assetId: string, level: number, partIndex: number, source: Material): Material {
+  #lodSurface(assetId: string, level: number, partIndex: number, source: Material): Material {
     assertSlotFree(source, assetId);
     const asset = this.#host.asset(assetId);
     const part = asset?.levels[level]?.[partIndex];
@@ -257,7 +256,7 @@ export class CellGpuDress {
       const partIndex = Number(partText?.split("@")[0]);
       const part = asset.levels[level]?.[partIndex];
       if (part !== undefined) {
-        const material = this.lodSurface(asset.id, level, partIndex, part.material);
+        const material = this.#lodSurface(asset.id, level, partIndex, part.material);
         if (
           material.userData.tnPublishedLodRange === true &&
           shared.mesh.geometry.getAttribute("tnPublishedLodRange") === undefined &&

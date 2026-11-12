@@ -51,17 +51,6 @@ const num = (value, digits = 2) =>
     : "—";
 const passOf = (row) => row.pass ?? (flagsOf(row.variant).includes("uncapped") ? "uncapped" : null);
 
-/**
- * `play` in a variant is the gameplay preset (`?stress&play`): textured materials, several meshes per layer, a street
- * camera and object churn. It is another workload, so it never shares a lane or a trend line with `real`.
- */
-export const sceneKindOf = (row) => {
-  const flags = flagsOf(row.variant);
-  // `holdout=<name>` is a real game measured in the same window: it is a keep's proof, never a lane.
-  const holdout = flags.find((flag) => flag.startsWith("holdout="));
-  return holdout ?? (flags.includes("play") ? "play" : "real");
-};
-
 /** A run is void above the host-load limit, or when its scene tag names a contaminated run. */
 export const isVoid = (row, loadVoid) =>
   (row.load?.peak ?? 0) > loadVoid ||
@@ -73,21 +62,6 @@ const isValid = (row, loadVoid) =>
   passOf(row) !== null &&
   Number.isFinite(row.metrics?.presentedP95Ms) &&
   !isVoid(row, loadVoid);
-
-/** The GPU vendor in a row's adapter. A browser row reads "nvidia / turing" and Unreal reads "NVIDIA GeForce RTX 2080": both carry the vendor. */
-export const gpuOf = (row) =>
-  /nvidia|intel|amd|apple|qualcomm|arm/iu.exec(row.adapter ?? "")?.[0].toLowerCase() ?? "";
-
-/**
- * The rows of the scoreboard GPU: where the latest Unreal row ran, else where the latest row ran. A laptop Iris row
- * against a desktop RTX row compares two machines, not two engines (rows #310-#312 against #288 read "losing 46 to
- * 56", 2026-11-10). Rows from another GPU stay in the Arms and Ledger tabs.
- */
-// ponytail: the key is the vendor, so two hosts with one vendor would mix; add a host field to the row when a second one records.
-export function scoreboardRows(rows) {
-  const reference = rows.findLast((row) => row.engine === "unreal") ?? rows.at(-1);
-  return reference === undefined ? rows : rows.filter((row) => gpuOf(row) === gpuOf(reference));
-}
 
 /** The latest kept row, else the latest row that was not rejected. */
 const pick = (rows) =>
@@ -308,13 +282,9 @@ function rampTab(rows, ctx) {
 }
 
 /** One Overview lane: where the develop baseline, the best kept arm and vanilla stand on the ladder. */
-export function laneOf(rows, ctx, shadow, pass, scene = "real") {
-  const mine = scoreboardRows(rows).filter(
-    (row) =>
-      isValid(row, ctx.loadVoid) &&
-      passOf(row) === pass &&
-      loadOf(row.variant) === 1 &&
-      sceneKindOf(row) === scene,
+export function laneOf(rows, ctx, shadow, pass) {
+  const mine = rows.filter(
+    (row) => isValid(row, ctx.loadVoid) && passOf(row) === pass && loadOf(row.variant) === 1,
   );
   const tn = mine.filter(
     (row) => row.engine === "threenative-wasm" && ctx.shadowOf(row) === shadow,
@@ -329,7 +299,6 @@ export function laneOf(rows, ctx, shadow, pass, scene = "real") {
       undefined,
     );
   return {
-    scene,
     shadow,
     pass,
     baseline: tn.findLast((row) => BASE_ARM.test(armOf(row) ?? "")),
@@ -339,10 +308,8 @@ export function laneOf(rows, ctx, shadow, pass, scene = "real") {
   };
 }
 
-const laneName = (lane) => `${lane.scene === "play" ? "play · " : ""}${SHADOW[lane.shadow]}`;
-
 function ladder(lanes) {
-  const [W, top, laneH, labelW, max] = [560, 24, 44, 176, 36];
+  const [W, top, laneH, labelW, max] = [560, 24, 44, 138, 36];
   const x = (ms) => labelW + ((W - labelW - 10) * Math.min(ms, max)) / max;
   const H = top + lanes.length * laneH + 6;
   const rungs = [...RUNGS, { ms: LINE_30, fps: 30 }]
@@ -365,7 +332,7 @@ function ladder(lanes) {
   const body = lanes
     .map((lane, i) => {
       const cy = top + i * laneH + laneH / 2;
-      return `<line class="grid" x1="${labelW}" x2="${W - 10}" y1="${cy}" y2="${cy}"/><text class="lane" x="${labelW - 8}" y="${cy}" text-anchor="end" dominant-baseline="middle">${laneName(lane)} · ${lane.pass}</text>${mark(lane.vanilla, "vanilla", cy)}${mark(lane.baseline, "baseline", cy - 7)}${mark(lane.kept, "best kept", cy + 7)}`;
+      return `<line class="grid" x1="${labelW}" x2="${W - 10}" y1="${cy}" y2="${cy}"/><text class="lane" x="${labelW - 8}" y="${cy}" text-anchor="end" dominant-baseline="middle">${SHADOW[lane.shadow]} · ${lane.pass}</text>${mark(lane.vanilla, "vanilla", cy)}${mark(lane.baseline, "baseline", cy - 7)}${mark(lane.kept, "best kept", cy + 7)}`;
     })
     .join("");
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Presented p95 against the 120, 90 and 60 fps rungs">${rungs}${body}</svg>`;
@@ -385,10 +352,10 @@ const TREND_COLOR = ["--s1", "--s2", "--s3", "--s4"];
  */
 export function trendSeries(rows, { loadVoid, shadowOf }) {
   const groups = new Map();
-  for (const row of scoreboardRows(rows)) {
+  for (const row of rows) {
     if (row.engine !== "threenative-wasm" || loadOf(row.variant) > 1 || isVoid(row, loadVoid))
       continue;
-    if (passOf(row) === null || sceneKindOf(row) !== "real") continue;
+    if (passOf(row) === null) continue;
     const key = `${shadowOf(row)}|${passOf(row)}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
@@ -523,7 +490,7 @@ const bar = (fraction, cls) =>
 
 /** The latest valid uncapped load 1 row of one Unreal setup. Each setup keeps its own bar: they are different pictures. */
 const unrealRow = (rows, ctx, setup) =>
-  scoreboardRows(rows).findLast(
+  rows.findLast(
     (row) =>
       row.engine === "unreal" &&
       flagsOf(row.variant).includes(setup) &&
@@ -670,7 +637,7 @@ function scorePanel(rows, ctx) {
     })
     .join("");
   const { stale, ageHours } = verdictOf(rows, ctx);
-  return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene, ${esc(gpuOf(scoreboardRows(rows).at(-1) ?? {}) || "one")} GPU only: 100 = the 120 fps goal)</span>${stale ? ` <b>⚠️ STALE: these rows are ${ageHours} h old, the current engine has no score yet</b>` : ""}</figcaption>
+  return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene and GPU: 100 = the 120 fps goal)</span>${stale ? ` <b>⚠️ STALE: these rows are ${ageHours} h old, the current engine has no score yet</b>` : ""}</figcaption>
 <div class="scroll"${stale ? ' style="opacity:.5"' : ""}><table class="t score"><thead><tr><th>Engine</th><th>Score</th><th class="n">/100</th>${SCORE_PARTS.map(({ short, weight }) => `<th class="n">${esc(short)} <span class="dim">${weight}%</span></th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
 <p class="mt-1 text-[11px] text-dim">Green wins its group, yellow ties at the top, red loses, grey has nothing to compare with yet. Each timing earns goal / value, so half the speed earns half its points, capped at the goal. The small bar under a value is its share of the goal. Compare only inside one group: the groups have different shadow work. Unreal stock also pays for Lumen, a richer picture.</p></figure>`;
 }
@@ -679,12 +646,6 @@ function overviewTab(rows, ctx, extra, goals) {
   const lanes = [];
   for (const shadow of ["virtual", "plain"])
     for (const pass of PASSES) lanes.push(laneOf(rows, ctx, shadow, pass));
-  // The gameplay preset gets a lane once it has a row; an unmeasured pass adds no empty line.
-  for (const shadow of ["virtual", "plain"])
-    for (const pass of PASSES) {
-      const lane = laneOf(rows, ctx, shadow, pass, "play");
-      if (lane.baseline !== undefined || lane.kept !== undefined) lanes.push(lane);
-    }
   const cell = (row) => {
     if (row === undefined) return `<td class="dim">no valid run</td>`;
     const v = row.metrics.presentedP95Ms;
@@ -703,12 +664,12 @@ function overviewTab(rows, ctx, extra, goals) {
   const table = `<div class="scroll"><table class="t"><thead><tr><th>Scene</th><th>Pass</th><th>Develop baseline p95</th><th>Best kept arm p95</th><th>Vanilla three.js p95</th><th>Rung met</th></tr></thead><tbody>${lanes
     .map(
       (lane) =>
-        `<tr><td>${laneName(lane)}</td><td>${lane.pass}</td>${cell(lane.baseline)}${cell(lane.kept)}${lane.shadow === "plain" ? cell(lane.vanilla) : `<td class="dim">no equivalent</td>`}${verdict(lane)}</tr>`,
+        `<tr><td>${SHADOW[lane.shadow]}</td><td>${lane.pass}</td>${cell(lane.baseline)}${cell(lane.kept)}${lane.shadow === "plain" ? cell(lane.vanilla) : `<td class="dim">no equivalent</td>`}${verdict(lane)}</tr>`,
     )
     .join("")}</tbody></table></div>`;
   return `${scorePanel(rows, ctx)}<div class="grid items-start gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
 <figure class="card"><figcaption>120 fps goal ladder · presented p95 <span class="dim">(ms, load 1)</span></figcaption>${ladder(lanes)}<p class="mt-1 text-[11px] text-dim"><span style="color:var(--s1)">●</span> latest develop baseline · <span style="color:var(--ok)">◆</span> best kept arm · <span style="color:var(--s3)">■</span> vanilla three.js (plain sun only) · rungs 8.33 / 11.1 / 16.67 ms</p></figure>
-<div><h2>Where it stands</h2>${table}<p class="mt-1 text-[11px] text-dim">VSM is <code>?stress</code>; plain sun is <code>?stress&amp;plainShadow</code>; play adds <code>&amp;play</code> (textured materials, mesh variety, a street camera, object churn). A vsync pass floors at 16.7 ms on a 60 Hz display, so only the uncapped pass can show 90 or 120 fps. Baseline is the latest <code>develop</code>, <code>head</code> or <code>stack*</code> arm.</p></div></div>
+<div><h2>Where it stands</h2>${table}<p class="mt-1 text-[11px] text-dim">VSM is <code>?stress</code>; plain sun is <code>?stress&amp;plainShadow</code>. A vsync pass floors at 16.7 ms on a 60 Hz display, so only the uncapped pass can show 90 or 120 fps. Baseline is the latest <code>develop</code>, <code>head</code> or <code>stack*</code> arm.</p></div></div>
 ${extra}
 ${trendSection(rows, ctx, goals)}`;
 }
@@ -729,14 +690,7 @@ export function pairsOf(rows, { loadVoid, shadowOf }) {
   for (const row of rows) {
     const tag = /^FAIR window (\S+) \(/u.exec(row.label ?? "")?.[1];
     if (tag === undefined || !isValid(row, loadVoid)) continue;
-    const key = [
-      tag,
-      passOf(row),
-      row.engine,
-      shadowOf(row),
-      loadOf(row.variant),
-      sceneKindOf(row),
-    ].join("|");
+    const key = [tag, passOf(row), row.engine, shadowOf(row), loadOf(row.variant)].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   return [...groups.values()]

@@ -1,4 +1,4 @@
-import { Color, Object3D } from "three";
+import { Color } from "three";
 import { Fn, float, overloadingFn, uniform, vec3 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
@@ -115,64 +115,5 @@ describe("BundleSurfaceSafety on a settled frame", () => {
     safety.beginFrame();
     safety.test(painted, false);
     expect(safety.stats.refreshes).toBe(2);
-  });
-
-  it("asks the owned engine once a frame which materials moved instead of reading each one", () => {
-    // The engine's state of each material's three witnessed flags, which the engine's own check reads.
-    const engine = new WeakMap<object, Record<string, unknown>>();
-    let reads = 0;
-    const painted = material(chain(4));
-    const own: Record<string, unknown> = { transparent: false, visible: true, transmission: 0 };
-    engine.set(painted, { ...own });
-    for (const key of Object.keys(own))
-      Object.defineProperty(painted, key, {
-        configurable: true,
-        get: () => {
-          reads++;
-          return own[key];
-        },
-        set: (value: unknown) => {
-          own[key] = value;
-          (engine.get(painted) as Record<string, unknown>)[key] = value;
-        },
-      });
-    let watched: { material: object; stamp: string }[] = [];
-    const stamp = (target: object) => JSON.stringify(engine.get(target));
-    const proto = Object3D.prototype as unknown as Record<string, unknown>;
-    let checks = 0;
-    proto.__tnMaterialWatch = (materials: object[]) => {
-      watched = materials.map((target) => ({ material: target, stamp: stamp(target) }));
-      return watched.length;
-    };
-    proto.__tnMaterialCheck = () => {
-      checks++;
-      return watched.flatMap((entry, index) =>
-        stamp(entry.material) === entry.stamp ? [] : [index],
-      );
-    };
-    try {
-      const safety = new BundleSurfaceSafety();
-      safety.beginFrame();
-      const first = safety.test(painted, false);
-      const proved = reads;
-      checks = 0;
-      for (let frame = 0; frame < 6; frame++) {
-        safety.beginFrame();
-        expect(safety.test(painted, false)).toBe(first);
-      }
-      // Six settled frames: one engine check each and no flag read in JS.
-      expect(checks).toBe(6);
-      expect(reads).toBe(proved);
-      painted.transparent = true;
-      safety.beginFrame();
-      const moved = safety.test(painted, false);
-      expect(moved).not.toBe(first);
-      expect(moved.transparent).toBe(true);
-      safety.beginFrame();
-      expect(safety.test(painted, false)).toBe(moved);
-    } finally {
-      Reflect.deleteProperty(proto, "__tnMaterialWatch");
-      Reflect.deleteProperty(proto, "__tnMaterialCheck");
-    }
   });
 });

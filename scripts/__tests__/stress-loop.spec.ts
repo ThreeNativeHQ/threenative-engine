@@ -14,7 +14,7 @@ const {
   readLedger,
   writeLedger,
 } = await import(new URL("../stress-loop.mjs", import.meta.url).href);
-const { laneOf, rankOf, scoreOf, trendSeries, verdictOf, verdictStrip } = await import(
+const { rankOf, scoreOf, verdictOf, verdictStrip } = await import(
   new URL("../stress-dashboard.mjs", import.meta.url).href
 );
 
@@ -84,7 +84,7 @@ const THREEJS = "threenative-threejs";
 const VANILLA = "three-vanilla";
 
 describe("stress-loop", () => {
-  it("records the first row as the baseline and the second as a measurement, never a keep by default", () => {
+  it("records the first row as the baseline and the second as keep", () => {
     const file = ledgerPath();
     const first = appendRow(readLedger(file), measureReport(report()), { label: "first run" });
     expect(first.iterations[0].decision).toBe("baseline");
@@ -96,21 +96,9 @@ describe("stress-loop", () => {
       second.iterations.map((row: { id: number; decision: string }) => [row.id, row.decision]),
     ).toEqual([
       [1, "baseline"],
-      [2, "measure"],
+      [2, "keep"],
     ]);
     expect(second.iterations[1].preset).toBe("max");
-  });
-
-  it("refuses a keep without a holdout from a real game: a stress-lab win alone is not a keep", () => {
-    const ledger = appendRow(readLedger(ledgerPath()), measureReport(report()), { label: "first" });
-    const keep = (holdout?: string) =>
-      appendRow(ledger, measureReport(report()), { label: "lever", decision: "keep", holdout });
-    expect(() => keep()).toThrow(/keep needs --holdout/u);
-    expect(() => keep("  ")).toThrow(/keep needs --holdout/u);
-    expect(keep("shooter kit: frame p50 10.2 -> 9.6 ms").iterations[1]).toMatchObject({
-      decision: "keep",
-      holdout: "shooter kit: frame p50 10.2 -> 9.6 ms",
-    });
   });
 
   it("fails closed on a missing metric, never a zero", () => {
@@ -326,7 +314,7 @@ describe("stress-loop", () => {
     const row = (variant: string, decision: string, gpuP95Ms: number) =>
       [
         measureReport(report({ metrics: { ...report().metrics, gpuP95Ms } })),
-        { label: variant, variant, decision, holdout: "shooter kit: frame p50 10.2 -> 9.6 ms" },
+        { label: variant, variant, decision },
       ] as const;
     const ledger = [
       row("stress", "measure", 34),
@@ -343,13 +331,7 @@ describe("stress-loop", () => {
 
   it("puts the apples-to-apples plain sun map table before the virtual shadow table", () => {
     const ledger = ["plainShadow&arm=stack", "arm=stack"].reduce(
-      (acc, variant) =>
-        recordRun(acc, run(), {
-          label: variant,
-          variant,
-          decision: "keep",
-          holdout: "shooter kit: frame p50 10.2 -> 9.6 ms",
-        }),
+      (acc, variant) => recordRun(acc, run(), { label: variant, variant, decision: "keep" }),
       readLedger(ledgerPath()),
     );
     const html = renderHtml(ledger, new Date(0));
@@ -437,52 +419,6 @@ describe("stress-loop", () => {
     expect(strip).toContain("WINNING");
     expect(strip).toContain("not measured");
     expect(strip).toContain('data-verdict="winning"');
-  });
-
-  it("compares engines on one GPU only: a later laptop row does not stand in for the desktop baseline", () => {
-    const ctx = { loadVoid: 6, shadowOf: (row: { shadow: string }) => row.shadow };
-    const row = (engine: string, adapter: string, fps: number, variant: string) => ({
-      engine,
-      adapter,
-      shadow: "virtual",
-      variant,
-      pass: "uncapped",
-      load: { peak: 1 },
-      decision: "measure",
-      metrics: { presentedP95Ms: 12, fps, frameP95Ms: 12, gpuP95Ms: 12, hitchesPerMin: 0 },
-    });
-    const desktop = row(WASM, "nvidia / turing", 110, "arm=develop&uncapped");
-    const unreal = row("unreal", "NVIDIA GeForce RTX 2080", 70, "tnmatched&uncapped");
-    const laptop = row(WASM, "intel / gen-12lp", 40, "arm=develop&uncapped");
-    // Rows #310-#312 (Iris Xe) against #288 (RTX 2080) read "losing 46 to 56" on 2026-11-10: two machines, not two engines.
-    const verdict = verdictOf([desktop, unreal, laptop], ctx);
-    expect(verdict.status).toBe("winning");
-    expect(verdict.rivals.find((rival: { result: string }) => rival.result === "win")?.mine).toBe(
-      Math.round(scoreOf(desktop.metrics) ?? 0),
-    );
-    // With no rival on its GPU, the laptop row has nothing to beat.
-    expect(verdictOf([unreal, laptop], ctx).status).toBe("none");
-  });
-
-  it("keeps the gameplay preset out of the real lanes: a play row is another workload", () => {
-    const ctx = { loadVoid: 6, shadowOf: (row: { shadow: string }) => row.shadow };
-    const row = (variant: string, presentedP95Ms: number) => ({
-      engine: WASM,
-      shadow: "virtual",
-      variant,
-      pass: "uncapped",
-      load: { peak: 1 },
-      decision: "measure",
-      metrics: { presentedP95Ms, fps: 60, frameP95Ms: 12, gpuP95Ms: 12, hitchesPerMin: 0 },
-    });
-    const real = row("arm=develop&uncapped", 12);
-    const play = row("play&arm=develop&uncapped", 30);
-    const rows = [real, play];
-    expect(laneOf(rows, ctx, "virtual", "uncapped").baseline).toBe(real);
-    expect(laneOf(rows, ctx, "virtual", "uncapped", "play").baseline).toBe(play);
-    expect(trendSeries(rows, ctx).flatMap((series: { rows: unknown[] }) => series.rows)).toEqual([
-      real,
-    ]);
   });
 
   it("says WAS WINNING in grey when the rows behind the verdict are old, so old data does not read as now", () => {

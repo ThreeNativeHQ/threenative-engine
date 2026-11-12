@@ -44,25 +44,8 @@ export type IPlaytestResourceWait =
   | { equals?: never; gte: number; id: string; lte?: never; path: string }
   | { equals?: never; gte?: never; id: string; lte: number; path: string };
 
-/**
- * The standard pad a `gamepad` step holds down: the sticks' four axes and the indices held.
- */
-export interface IPlaytestGamepad {
-  /** The standard's stick axes 0..3, each `-1`..`1`. Absent axes read centred. */
-  readonly axes?: readonly number[];
-  /** Standard button indices held down, `0` south through `15` d-pad right. */
-  readonly buttons?: readonly number[];
-}
-
 export interface IPlaytestStep {
   kind?: "aimAt" | "click" | "input" | "lifecycle" | "wait";
-  /**
-   * A scripted W3C "standard" pad, so a scenario proves a controller binding without hardware. The
-   * runner installs `navigator.getGamepads` on the page and this is the pad it returns: `axes` are
-   * the standard's stick axes 0..3, `buttons` the indices held down. A step that names it drives
-   * input exactly like `press` does, and `release` lifts every button and re-centres both sticks.
-   */
-  gamepad?: IPlaytestGamepad;
   /** @deprecated Use holdTicks. Fixed-step bridges treat this as a tick alias. */
   holdFrames?: number;
   holdTicks?: number;

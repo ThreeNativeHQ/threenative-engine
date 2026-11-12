@@ -191,30 +191,6 @@ describe("one engine debug switch", () => {
     budget.dispose();
   });
 
-  it("keeps hot calls from a window that began behind the presentation cover out of the report", () => {
-    vi.stubEnv("TN_DEBUG", "1");
-    vi.stubGlobal("__tnEngineCost", {});
-    vi.stubGlobal("__tnDebugSources", {
-      sceneCallbacksMs: { area: "update", caller: "Army.update (/game/army.ts:42)", unit: "ms" },
-    });
-    const lines: string[] = [];
-    const budget = new FrameBudget({ reportEvery: 2, report: (line) => lines.push(line) });
-    budget.markCovered();
-    drive(budget, { sceneCallbacksMs: 48 });
-    expect(lines.filter((line) => line.startsWith("TN_HOT_CALL:"))).toHaveLength(0);
-    expect(lines.filter((line) => line.startsWith("TN_FRAME_BUDGET:"))).toHaveLength(2);
-    budget.markRevealed();
-    for (let f = 0; f < 2; f++) {
-      budget.beginFrame(f * 16, f * 16);
-      budget.markSimulationEnd(f * 16 + 4, 1);
-      budget.addRender(2);
-      budget.addCounters({ engine: { sceneCallbacksMs: 48 } });
-      budget.endFrame(f * 16 + 7);
-    }
-    expect(lines.filter((line) => line.startsWith("TN_HOT_CALL:"))).toHaveLength(1);
-    budget.dispose();
-  });
-
   it("does not label a late sampled GPU result as oversampling across report windows", () => {
     vi.stubEnv("TN_DEBUG", "1");
     const lines: string[] = [];

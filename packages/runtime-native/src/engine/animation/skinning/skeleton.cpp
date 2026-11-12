@@ -6,8 +6,6 @@
 #include "engine/scene/lights.h"
 
 #include <algorithm>
-#include <atomic>
-#include <bit>
 #include <cstddef>
 #include <cmath>
 #include <functional>
@@ -98,28 +96,12 @@ void Bone::materializeWorldTransformIfPending() {
 Skeleton::Skeleton(std::vector<std::shared_ptr<Bone>> bones, std::vector<Matrix4> boneInverses)
     : bones(bones.begin(), bones.end()), boneInverses(std::move(boneInverses)) {
     boneAddresses_.reserve(bones.size());
-    for (const auto& bone : bones) {
-        boneAddresses_.push_back(bone.get());
-        if (!bone) continue;
-        // A counter only its bone still holds belongs to a skeleton that is gone.
-        std::erase_if(bone->poseVersions_, [](const auto& version) { return version.use_count() == 1; });
-        bone->poseVersions_.push_back(poseVersion_);
-    }
+    for (const auto& bone : bones) boneAddresses_.push_back(bone.get());
     init();
-}
-
-void Skeleton::refreshBoneLiveness() const {
-    // Bones die on the scene thread, as hierarchy edits do. Poll weak owners once after a death, not per bone read.
-    for (std::size_t i = 0; i < bones.size(); ++i) {
-        ++boneLivenessChecks;
-        if (bones[i].expired()) boneAddresses_[i] = nullptr;
-    }
-    boneDeathVersion_ = Bone::deathVersion_;
 }
 
 void Skeleton::init() {
     revokeGpuSkinning();
-    markPoseChanged();
     boneMatrices.assign(bones.size() * 16, 0.0f);
 
     if (boneInverses.empty()) {
@@ -132,7 +114,6 @@ void Skeleton::init() {
 
 void Skeleton::calculateInverses() {
     revokeGpuSkinning();
-    markPoseChanged();
     boneInverses.clear();
     for (std::size_t i = 0; i < bones.size(); ++i) {
         Matrix4 inverse;
@@ -167,17 +148,8 @@ void Skeleton::update() {
     updateAfterWorldWalk(0);
 }
 
-void Skeleton::deferWorldPalette(uint64_t firstEvaluation) {
-    if (Bone::publicationCount_ != 0) return updateAfterWorldWalk(firstEvaluation);
-    revokeGpuSkinning();
-    paletteDue_ = true;
-    paletteFirstEvaluation_ = firstEvaluation;
-}
-
 void Skeleton::updateAfterWorldWalk(uint64_t firstEvaluation) {
     revokeGpuSkinning();
-    paletteDue_ = false;
-    ++worldPaletteUpdates;
     static const Matrix4 identity{};
     Matrix4 offset;
     for (std::size_t i = 0; i < bones.size(); ++i) {
@@ -207,7 +179,6 @@ void SkinnedMesh::bind(std::shared_ptr<Skeleton> next, const Matrix4* matrix) {
     }
     bindMatrix.copy(*matrix);
     bindMatrixInverse.copy(*matrix).invert();
-    if (skeleton) skeleton->markPoseChanged();  // the bind is part of every palette slot
 }
 
 void SkinnedMesh::updateMatrixWorld(bool force) {
@@ -225,78 +196,7 @@ Vector3& SkinnedMesh::getVertexPosition(uint64_t index, Vector3& target) const {
     return applyBoneTransform(index, target);
 }
 
-// The largest stretch of a matrix's linear part: the longest axis when the axes are orthogonal,
-// else the Frobenius norm (a sheared bone chain can stretch past its longest axis).
-static double linearStretch(const Matrix4& m) {
-    const auto& e = m.elements;
-    const double axes[3][3] = {{e[0], e[1], e[2]}, {e[4], e[5], e[6]}, {e[8], e[9], e[10]}};
-    double lengths[3], frobenius = 0;
-    for (int a = 0; a < 3; ++a) {
-        lengths[a] = std::sqrt(axes[a][0] * axes[a][0] + axes[a][1] * axes[a][1] + axes[a][2] * axes[a][2]);
-        frobenius += lengths[a] * lengths[a];
-    }
-    for (int a = 0; a < 3; ++a)
-        for (int b = a + 1; b < 3; ++b) {
-            const double dot = axes[a][0] * axes[b][0] + axes[a][1] * axes[b][1] + axes[a][2] * axes[b][2];
-            if (std::abs(dot) > 1e-6 * lengths[a] * lengths[b]) return std::sqrt(frobenius);
-        }
-    return std::max({lengths[0], lengths[1], lengths[2]});
-}
-
-// A rigid move re-derives `inv(mesh world) * root world` through its own floating point, so the same pose lands a few
-// ulps away: compare in the noise floor, which is far below the float32 geometry the box holds.
-static bool nearRoot(const std::array<double, 16>& a, const std::array<double, 16>& b) {
-    for (std::size_t i = 0; i < 16; ++i)
-        if (std::abs(a[i] - b[i]) > 1e-12 * (1 + std::abs(a[i]) + std::abs(b[i]))) return false;
-    return true;
-}
-static bool nearScale(double a, double b) { return std::abs(a - b) <= 1e-12 * (1 + std::abs(a) + std::abs(b)); }
-
-const std::vector<Vector3>& Skeleton::planCenters(uint64_t stamp, const Matrix4& inverse) {
-    if (stamp != 0 && stamp == centerStamp_ && centerInverse_ == inverse.elements && centers_.size() == bones.size())
-        return centers_;
-    const auto& poses = planPoses(stamp);
-    centers_.resize(poses.size());
-    for (std::size_t j = 0; j < poses.size(); ++j) centers_[j].copy(poses[j].position).applyMatrix4(inverse);
-    centerStamp_ = stamp;
-    centerInverse_ = inverse.elements;
-    return centers_;
-}
-
-uint64_t Skeleton::nextPlanStamp() {
-    static std::atomic<uint64_t> stamp{0};
-    return ++stamp;
-}
-
-const std::vector<Skeleton::PlanPose>& Skeleton::planPoses(uint64_t stamp) {
-    if (stamp != 0 && stamp == planStamp_ && planPoses_.size() == bones.size()) return planPoses_;
-    planStamp_ = stamp;
-    ++planPoseBuilds;
-    planPoses_.resize(bones.size());
-    // A bone chain whose local scales are all unit stretches its world linear part exactly as its root does: one
-    // `linearStretch` for the skeleton, not one per bone (PRD-872: the stress lab's 120 rigs read 7,800 bones a frame).
-    bool unitScales = true;
-    for (std::size_t j = 0; j < bones.size() && unitScales; ++j) {
-        const Bone* bone = this->bone(j);
-        if (bone == nullptr) continue;
-        unitScales = bone->scale.x == 1 && bone->scale.y == 1 && bone->scale.z == 1;
-    }
-    double shared = 0;
-    for (std::size_t j = 0; j < bones.size(); ++j) {
-        PlanPose& pose = planPoses_[j];
-        Bone* bone = this->bone(j);
-        if (!bone) { pose.stretch = -1; continue; }
-        bone->materializeWorldTransformIfPending();
-        pose.position.setFromMatrixPosition(bone->matrixWorld);
-        if (!unitScales) { pose.stretch = linearStretch(bone->matrixWorld); continue; }
-        if (shared == 0) shared = linearStretch(bone->matrixWorld);
-        pose.stretch = shared;
-    }
-    if (!unitScales) shared = 0;
-    return planPoses_;
-}
-
-bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
+bool SkinnedMesh::boneReachBounds(Box3& target) const {
     if (!skeleton || !geometry || !geometry->attributes.count("position") || !geometry->attributes.count("skinIndex") ||
         !geometry->attributes.count("skinWeight") || skeleton->boneInverses.size() < skeleton->bones.size())
         return false;
@@ -335,38 +235,39 @@ bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
             }
             if (std::abs(sum - 1) > 1e-3) boneReachHolds_ = false;
         }
-        // Each reach carries its inverse bind matrix's stretch, so a frame reads only the bone's own: the
-        // product bounds the stretch of bone x inverse, exactly for a rotation with uniform scale, and spares
-        // a 4x4 multiply per bone per frame (PRD-871: 0.87 ms a frame for the stress lab's 120-rig crowd).
-        for (std::size_t j = 0; j < bones; ++j)
-            if (boneReach_[j] >= 0) boneReach_[j] *= linearStretch(skeleton->boneInverses[j]);
     }
     if (!boneReachHolds_) return false;
     // A skinned vertex is a weighted mean of its bones' rigid images, and each image lies within the
     // bone's reach (times the bone's scale) of the bone's posed position: the spheres' box holds it.
-    // The box is `inv(mesh world) * bone position` over the bones, so it is fixed by three things: the local pose,
-    // the rig-relative root (`inv(mesh world) * root world`), and the mesh scale. A rig that translates and turns
-    // with the same pose reads the same three, and keeps the box it built (PRD-872: 0.64 ms a frame for 242 meshes).
-    const double meshScale = linearStretch(bindMatrixInverse);
-    const uint64_t pose = skeleton->poseVersion();  // a stamp, not a fold of 65 bones (PRD-878)
-    const Bone* root = nullptr;
-    for (std::size_t j = 0; j < bones && root == nullptr; ++j) root = skeleton->bone(j);
-    Matrix4 relative;
-    if (root != nullptr) { relative.copy(bindMatrixInverse); relative.multiply(root->matrixWorld); }
-    if (boneReachBoxStamp_ != 0 && boneReachBoxPose_ == pose && nearScale(boneReachBoxScale_, meshScale) &&
-        nearRoot(boneReachBoxRoot_, relative.elements)) {
-        target = boneReachBox_;
-        return !target.isEmpty();
-    }
-    ++boneReachBoxBuilds;
+    // The largest stretch of a matrix's linear part: the longest axis when the axes are orthogonal,
+    // else the Frobenius norm (a sheared bone chain can stretch past its longest axis).
+    const auto stretch = [](const Matrix4& m) {
+        const auto& e = m.elements;
+        const double axes[3][3] = {{e[0], e[1], e[2]}, {e[4], e[5], e[6]}, {e[8], e[9], e[10]}};
+        double lengths[3], frobenius = 0;
+        for (int a = 0; a < 3; ++a) {
+            lengths[a] = std::sqrt(axes[a][0] * axes[a][0] + axes[a][1] * axes[a][1] + axes[a][2] * axes[a][2]);
+            frobenius += lengths[a] * lengths[a];
+        }
+        for (int a = 0; a < 3; ++a)
+            for (int b = a + 1; b < 3; ++b) {
+                const double dot = axes[a][0] * axes[b][0] + axes[a][1] * axes[b][1] + axes[a][2] * axes[b][2];
+                if (std::abs(dot) > 1e-6 * lengths[a] * lengths[b]) return std::sqrt(frobenius);
+            }
+        return std::max({lengths[0], lengths[1], lengths[2]});
+    };
     target.makeEmpty();
-    const auto& poses = skeleton->planPoses(planStamp);
-    const auto& centers = skeleton->planCenters(planStamp, bindMatrixInverse);
+    const double meshScale = stretch(bindMatrixInverse);
+    Matrix4 matrix;
+    Vector3 center;
     for (std::size_t j = 0; j < bones; ++j) {
         if (boneReach_[j] < 0) continue;
-        if (poses[j].stretch < 0) return false;
-        const Vector3& center = centers[j];
-        const double radius = boneReach_[j] * poses[j].stretch * meshScale;
+        Bone* bone = skeleton->bone(j);
+        if (!bone) return false;
+        bone->materializeWorldTransformIfPending();
+        matrix.multiplyMatrices(bone->matrixWorld, skeleton->boneInverses[j]);
+        center.setFromMatrixPosition(bone->matrixWorld).applyMatrix4(bindMatrixInverse);
+        const double radius = boneReach_[j] * stretch(matrix) * meshScale;
         target.min.x = std::min(target.min.x, center.x - radius);
         target.min.y = std::min(target.min.y, center.y - radius);
         target.min.z = std::min(target.min.z, center.z - radius);
@@ -374,11 +275,6 @@ bool SkinnedMesh::boneReachBounds(Box3& target, uint64_t planStamp) const {
         target.max.y = std::max(target.max.y, center.y + radius);
         target.max.z = std::max(target.max.z, center.z + radius);
     }
-    boneReachBox_ = target;
-    boneReachBoxPose_ = pose;
-    boneReachBoxScale_ = meshScale;
-    boneReachBoxRoot_ = relative.elements;
-    boneReachBoxStamp_ = 1;
     return !target.isEmpty();
 }
 
