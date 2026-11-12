@@ -835,14 +835,16 @@ export function startWorkerGame(
 
   listen(worker, "message", onWorkerMessage);
   const onWorkerError = (event: Event): void => {
-    const message = (event as ErrorEvent).message;
+    // A worker's ErrorEvent carries where it threw; without it the page sees only the message, and a
+    // stack-less "worker died" is unactionable (the 0.3.13 release proof lost a red this way).
+    const error = event as ErrorEvent;
+    const origin = [error.filename, error.lineno, error.colno].filter(Boolean).join(":");
+    const message = `${error.message || `worker ${event.type}`}${origin ? ` (${origin})` : ""}`;
     // Once started, nothing awaits `ready`: without this line a frame that threw removed the canvas
     // and printed nothing (PRD-857).
     if (started && !stopped)
-      console.error(
-        `TN_WORKER_FAILED: the running worker game stopped: ${message || `worker ${event.type}`}`,
-      );
-    stop(new Error(message || `TN_WORKER_FAILED: worker ${event.type}.`));
+      console.error(`TN_WORKER_FAILED: the running worker game stopped: ${message}`);
+    stop(new Error(message));
   };
   listen(worker, "error", onWorkerError);
   listen(worker, "messageerror", onWorkerError);

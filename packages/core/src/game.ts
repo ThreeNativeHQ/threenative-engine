@@ -20,7 +20,7 @@ import type { IRenderPerformanceSample } from "./loop.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { installQuietMarkers, uninstallQuietMarkers } from "./quiet-markers.js";
 import type { IRandom } from "./random.js";
-import { type GameRendererConfig, assertNoLegacyRenderKey } from "./renderer-config.js";
+import { type GameRendererConfig, adoptLegacyRenderKey } from "./renderer-config.js";
 import type { IRendererOptions } from "./renderer.js";
 import {
   SCENE_ENTRY_INSPECTORS,
@@ -282,9 +282,14 @@ export interface IGameConfig<
    *
    * `render` once carried the portable half, so a game wrote `render: config.renderer` beside a
    * second `renderer:` and the antialias and scale resolvers each fell back from one to the other.
-   * The retired key now throws `TN_GAME_RENDER_KEY_RENAMED` and names this one.
+   * The keys are one now; `render` is adopted onto this one and reported as renamed.
    */
   readonly renderer?: GameRendererConfig;
+  /**
+   * @deprecated The retired name for {@link renderer}, adopted onto it and reported. Move the object
+   * to `renderer` with no other change.
+   */
+  readonly render?: GameRendererConfig;
   readonly seed?: number;
   readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
   /**
@@ -421,22 +426,23 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   readonly #ui: IGameUiSeam;
 
   constructor(config: IGameConfig<TState, TPhysics>) {
-    assertNoLegacyRenderKey(config);
-    validateCameraConfig(config.camera);
-    const startScene = config.scenes[config.start];
-    if (startScene === undefined) throw new Error(`Unknown start scene '${config.start}'.`);
+    // One key for the renderer settings: a game still on `render` is adopted, reported, and boots.
+    const resolved = adoptLegacyRenderKey(config);
+    validateCameraConfig(resolved.camera);
+    const startScene = resolved.scenes[resolved.start];
+    if (startScene === undefined) throw new Error(`Unknown start scene '${resolved.start}'.`);
     const initialState =
-      config.initialState ??
+      resolved.initialState ??
       (startScene as SceneConstructor<TState, TPhysics> & { initialState?: TState }).initialState;
     if (initialState === undefined) {
       throw new Error(
-        `Scene '${config.start}' must declare static initialState or provide config.initialState.`,
+        `Scene '${resolved.start}' must declare static initialState or provide config.initialState.`,
       );
     }
     this.#initialState = { ...initialState };
     this.#boot = createBootGame({
-      config,
-      state: createGameStore(initialState, config.stateFlushMs),
+      config: resolved,
+      state: createGameStore(initialState, resolved.stateFlushMs),
       connectUi: () => this.#ui.connect(),
       enterScene: (scene, ctx) => this.#enterScene(scene, ctx),
       goto: (name, ctx) => this.#goto(name, ctx),

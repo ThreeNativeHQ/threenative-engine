@@ -2473,16 +2473,19 @@ describe("IGame", () => {
     ).toThrow("camera.far");
   });
 
-  it("fails closed at defineGame time on the retired `render` key, naming `renderer`", () => {
+  it("adopts the retired `render` key instead of refusing to boot, and reports the rename", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect(() =>
       defineGame({
-        renderer: renderer(testCanvas()),
         scenes: { test: EmptyScene },
         start: "test",
-        // @ts-expect-error the retired key: the throw is the runtime half of this pin
         render: { preferWebGPU: true },
       }),
-    ).toThrow(/TN_GAME_RENDER_KEY_RENAMED.*renderer/u);
+    ).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/TN_GAME_RENDER_KEY_RENAMED.*renderer/u),
+    );
+    warn.mockRestore();
   });
 
   it("uses scene initial state when config state is absent and lets config win", async () => {
