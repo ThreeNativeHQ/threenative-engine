@@ -1,4 +1,4 @@
-import { Box3, Matrix4, Quaternion, Vector3 } from "three";
+import { Box3, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { InstancedBatch } from "./instanced-batch.js";
 import { biasedLodDistance } from "./model-lod.js";
 import {
@@ -15,6 +15,14 @@ import {
 } from "./world-cell-impostors.js";
 import type { IAssetState } from "./world-cell-models.js";
 import { LEVEL_REFILTER_STEP_METRES } from "./world-cell-options.js";
+import { placedBox } from "./world-cell-records.js";
+import {
+  STALE_ENTRY,
+  STALE_HEADER,
+  STALE_QUERY,
+  patchRows,
+  staleRows,
+} from "./world-cell-stale.js";
 import { levelAtGates } from "./world-gpu-scene.js";
 import {
   type IWorldAsset,
@@ -58,6 +66,24 @@ export function newBoxes(batches: readonly InstancedBatch[][]): Box3[][] {
     boxes.push(level);
   }
   return boxes;
+}
+
+/** One more block in a `patchRows` plan, merged into the run before it when the two are contiguous. */
+function extendPlan(plan: number[], source: number, count: number): void {
+  const last = plan.length - 2;
+  const runSource = plan[last];
+  const runCount = plan[last + 1] as number;
+  const joins =
+    runSource !== undefined &&
+    (source === -1 ? runSource === -1 : runSource >= 0 && runSource + runCount === source);
+  if (joins) plan[last + 1] = runCount + count;
+  else plan.push(source, count);
+}
+
+/** The owned engine's stale scan (`bindings_scene.cpp`); see `world-cell-stale.ts`. */
+interface IStaleEngine {
+  __tnStaleRows?: (blocks: Float64Array, plan: Float64Array) => number;
+  __tnStaleEntries?: (gates: Float64Array, query: Float64Array) => ArrayLike<number>;
 }
 
 /** What the placement build asks its world for. Every read is the world's own state, not a copy. */
@@ -111,13 +137,26 @@ export class CellPlacements {
   readonly #placementRanges: Uint8Array | undefined;
   /** Every distinct gate distance the world's assets have, ascending; see `noteGate`. */
   readonly #gates: number[] = [];
-  /** The reused hit list and the reused per-cell seen set; see `#staleIn`. */
+  /** The reused hit list; see `#collectStale`. */
   readonly #stale: Array<{
     cell: IResidentCell;
     distance: number;
     id: string;
   }> = [];
-  readonly #staleSeen = new Set<string>();
+  /** Per cell, its block of the stale scan's slab, dropped when the cell's batches change. */
+  readonly #rows = new WeakMap<IResidentCell, { rows: Float64Array; batches: number }>();
+  /** The resident cells' blocks laid end to end, and the cells in block order; see `#collectStale`. */
+  #slab = new Float64Array(0);
+  #slabCells: IResidentCell[] = [];
+  /** Where each cell's block sits in the slab the last pack sent; an unchanged block is not sent again. */
+  #slabAt = new Map<IResidentCell, { at: number; rows: Float64Array }>();
+  #slabEpoch = -1;
+  #slabStale = true;
+  /** Asset ids by the index the slab names them with; the index only ever grows. */
+  readonly #assetIds: string[] = [];
+  readonly #assetIndex = new Map<string, number>();
+  /** The owned engine's `__tnStaleEntries` host; on upstream three it has no such method. */
+  readonly #engine = new Object3D() as Object3D & IStaleEngine;
   /** Stale cell-assets the passes found, cumulative; see `IWorldCellsStats.refilterEntries`. */
   #staleEntries = 0;
   /** Refilter passes run, whether or not they queued anything; see `IWorldCellsStats.refilters`. */
@@ -207,9 +246,7 @@ export class CellPlacements {
 
   /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
   #boundsAt(bounds: IWorldAsset["bounds"], matrix: Matrix4): Box3 {
-    this.#recordBounds.min.fromArray(bounds.min);
-    this.#recordBounds.max.fromArray(bounds.max);
-    return this.#recordBounds.applyMatrix4(matrix);
+    return placedBox(this.#recordBounds, bounds.min, bounds.max, matrix);
   }
 
   /**
@@ -433,9 +470,9 @@ export class CellPlacements {
             z: centre.z,
           });
         }
-        // Authored bounds include model-part offsets; apply the whole placement transform so
-        // rotated, mirrored and off-centre casters cannot fall outside visibility/shadow regions.
-        this.#boundsAt(bounds, this.#matrix);
+        // `#recordBounds` still holds `placedBox`: the authored bounds (model-part offsets included)
+        // under the whole placement transform, so rotated, mirrored and off-centre casters cannot fall
+        // outside visibility/shadow regions. Measured once per placement, not once per level.
         const parts = asset.levels[level] as readonly IAssetPart[];
         const levelBatches = job.batches?.[level] as InstancedBatch[];
         const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
@@ -470,6 +507,13 @@ export class CellPlacements {
     const [near, far] = this.#span(cell, filterX, filterZ);
     if (near < cell.filterNear) cell.filterNear = near;
     if (far > cell.filterFar) cell.filterFar = far;
+    this.cellBatchesChanged(cell);
+  }
+
+  /** The cell's batches or bracket changed, so its block of the stale scan is rebuilt. */
+  cellBatchesChanged(cell: IResidentCell): void {
+    this.#rows.delete(cell);
+    this.#slabStale = true;
   }
 
   buildOne(job: IBuildJob, batches: readonly InstancedBatch[][]): void {
@@ -542,80 +586,6 @@ export class CellPlacements {
   }
 
   /**
-   * One entry per asset of `cell` the follow point has moved a gate of, nearest placement first.
-   *
-   * The cell's own bracket is the caller's: it was derived once for the cell, and every batch of a
-   * cell is measured against the same rectangle, so deriving it per batch was the same four
-   * `Math.max` and two `Math.hypot` calls as many times as the cell had batches. What is left here is
-   * per batch: one moved-point test and, for a batch that moved, its own bracket.
-   *
-   * Nothing is allocated to find them: the entries go into one reused array, the per-cell "already
-   * seen" set into another, and a pass that crossed no gate anywhere pushes nothing at all.
-   */
-  #staleIn(cell: IResidentCell, x: number, z: number, near: number, far: number): void {
-    const seen = this.#staleSeen;
-    seen.clear();
-    const eye = this.#host.eye();
-    const [eyeNear, eyeFar] = this.#span(cell, eye.x, eye.z);
-    for (const entry of cell.batches) {
-      const reach = this.#reachRanges.get(cell.cell)?.get(entry.asset);
-      if ((entry.threshold === undefined && reach === undefined) || seen.has(entry.asset)) continue;
-      // Deferred runs of one asset can start at different camera snapshots. Only deduplicate
-      // after one entry proves the asset stale: an earlier matching run cannot settle the others.
-      const step = (entry.threshold ?? 6) / 8;
-      if (
-        Math.hypot(
-          x - entry.lastFilterX,
-          this.followY() - entry.lastFilterY,
-          z - entry.lastFilterZ,
-        ) <= step &&
-        Math.hypot(eye.x - entry.lastLodX, eye.y - entry.lastLodY, eye.z - entry.lastLodZ) <= step
-      )
-        continue;
-      const asset = this.#host.asset(entry.asset);
-      if (asset === undefined) continue;
-      // GPU dispatch handles maxDistance and LOD gates; placementReach remains a CPU boundary.
-      const gates = this.#host.gpuOn() ? [] : asset.gates;
-      // Gates bracket the LOD eye's distances, reach the follow point's: see `#addPlacements`.
-      const [builtNear, builtFar] = this.#span(cell, entry.lastLodX, entry.lastLodZ);
-      let low = Math.min(eyeNear, builtNear);
-      // Ends included, so a placement exactly on a gate is one of the reasons to rebuild.
-      let high = Math.max(eyeFar, builtFar);
-      let reachCrossed = false;
-      if (reach !== undefined) {
-        const vertical = (y: number): [number, number] => [
-          Math.max(reach.minY - y, y - reach.maxY, 0),
-          Math.max(Math.abs(y - reach.minY), Math.abs(y - reach.maxY)),
-        ];
-        const eyeNow = vertical(eye.y);
-        const eyeBefore = vertical(entry.lastLodY);
-        low = Math.min(Math.hypot(eyeNear, eyeNow[0]), Math.hypot(builtNear, eyeBefore[0]));
-        high = Math.max(Math.hypot(eyeFar, eyeNow[1]), Math.hypot(builtFar, eyeBefore[1]));
-        const [reachBuiltNear, reachBuiltFar] = this.#span(
-          cell,
-          entry.lastFilterX,
-          entry.lastFilterZ,
-        );
-        const current = vertical(this.followY());
-        const previous = vertical(entry.lastFilterY);
-        const reachLow = Math.min(
-          Math.hypot(near, current[0]),
-          Math.hypot(reachBuiltNear, previous[0]),
-        );
-        const reachHigh = Math.max(
-          Math.hypot(far, current[1]),
-          Math.hypot(reachBuiltFar, previous[1]),
-        );
-        reachCrossed = reach.min <= reachHigh && reach.max >= reachLow;
-      }
-      if (!reachCrossed && !gates.some((gate) => gate >= low && gate <= high)) continue;
-      seen.add(entry.asset);
-      this.#stale.push({ cell, distance: eyeNear, id: entry.asset });
-      this.#staleEntries += 1;
-    }
-  }
-
-  /**
    * Record that one more gate distance exists, keeping the world's list ascending so
    * {@link crossesGate} can binary search it. A gate is never withdrawn: an asset whose ring left
    * still leaves its distances behind, which costs a cell the gate test does not reject and never a
@@ -681,14 +651,148 @@ export class CellPlacements {
    * which the follow point has not yet reached anything that switches.
    */
   #collectStale(x: number, z: number): void {
-    for (const cell of this.#host.resident()) {
-      // Gates are measured from the LOD eye, and `filterNear`/`filterFar` hold the eyes built from.
-      const [eyeNear, eyeFar] = this.#span(cell, this.#host.eye().x, this.#host.eye().z);
-      const low = eyeNear < cell.filterNear ? eyeNear : cell.filterNear;
-      const high = eyeFar > cell.filterFar ? eyeFar : cell.filterFar;
-      if (!this.#reachRanges.has(cell.cell) && !crossesGate(this.#gates, low, high)) continue;
-      const [near, far] = this.#span(cell, x, z);
-      this.#staleIn(cell, x, z, near, far);
+    const epoch = this.#host.residencyEpoch();
+    if (this.#slabStale || this.#slabEpoch !== epoch) this.#packSlab(epoch);
+    const eye = this.#host.eye();
+    const query = new Float64Array(STALE_QUERY + this.#gates.length);
+    query.set([
+      x,
+      this.followY(),
+      z,
+      eye.x,
+      eye.y,
+      eye.z,
+      this.#host.gpuOn() ? 1 : 0,
+      this.#gates.length,
+    ]);
+    query.set(this.#gates, STALE_QUERY);
+    const gates = this.#gateTable();
+    const found =
+      typeof this.#engine.__tnStaleEntries === "function"
+        ? this.#engine.__tnStaleEntries(gates, query)
+        : staleRows(this.#slab, gates, query);
+    for (let at = 0; at < found.length; at += 3) {
+      this.#stale.push({
+        cell: this.#slabCells[found[at] as number] as IResidentCell,
+        distance: found[at + 2] as number,
+        id: this.#assetIds[found[at + 1] as number] as string,
+      });
+      this.#staleEntries += 1;
     }
+  }
+
+  /**
+   * The resident cells' blocks end to end; only a changed cell builds its block again, and only the
+   * changed blocks are sent: an unchanged one is a `[source, count]` run of the slab already held
+   * (see `patchRows`).
+   */
+  #packSlab(epoch: number): void {
+    const plan: number[] = [];
+    const changed: Float64Array[] = [];
+    const cells: IResidentCell[] = [];
+    const placed = new Map<IResidentCell, { at: number; rows: Float64Array }>();
+    let length = 0;
+    let sent = 0;
+    for (const cell of this.#host.resident()) {
+      const rows = this.#rowsOf(cell);
+      const held = this.#slabAt.get(cell);
+      const source = held !== undefined && held.rows === rows ? held.at : -1;
+      extendPlan(plan, source, rows.length);
+      if (source === -1) {
+        changed.push(rows);
+        sent += rows.length;
+      }
+      placed.set(cell, { at: length, rows });
+      cells.push(cell);
+      length += rows.length;
+    }
+    const blocks = new Float64Array(sent);
+    let at = 0;
+    for (const block of changed) {
+      blocks.set(block, at);
+      at += block.length;
+    }
+    if (typeof this.#engine.__tnStaleEntries === "function") {
+      // A scan without its rows would read an empty slab and find nothing stale, silently.
+      if (typeof this.#engine.__tnStaleRows !== "function")
+        throw new Error("TN_WORLD_STALE: the engine has __tnStaleEntries but no __tnStaleRows");
+      this.#engine.__tnStaleRows(blocks, Float64Array.from(plan));
+    } else this.#slab = patchRows(this.#slab, blocks, plan);
+    this.#slabAt = placed;
+    this.#slabCells = cells;
+    this.#slabEpoch = epoch;
+    this.#slabStale = false;
+  }
+
+  /** One cell's block: its rectangle and bracket, then each batch entry's filter state. */
+  #rowsOf(cell: IResidentCell): Float64Array {
+    const cached = this.#rows.get(cell);
+    if (cached !== undefined && cached.batches === cell.batches.length) return cached.rows;
+    this.#grid ??= this.#host.extent();
+    const { cellSize, minX, minZ } = this.#grid;
+    const reach = this.#reachRanges.get(cell.cell);
+    const rows = new Float64Array(STALE_HEADER + cell.batches.length * STALE_ENTRY);
+    rows.set([
+      minX + cell.x * cellSize,
+      minZ + cell.z * cellSize,
+      cellSize,
+      cell.filterNear,
+      cell.filterFar,
+      reach === undefined ? 0 : 1,
+      cell.batches.length,
+      0,
+    ]);
+    let at = STALE_HEADER;
+    for (const entry of cell.batches) {
+      const range = reach?.get(entry.asset);
+      rows.set(
+        [
+          this.#assetSlot(entry.asset),
+          entry.lastFilterX,
+          entry.lastFilterY,
+          entry.lastFilterZ,
+          entry.lastLodX,
+          entry.lastLodY,
+          entry.lastLodZ,
+          entry.threshold ?? Number.NaN,
+          range?.min ?? Number.NaN,
+          range?.max ?? Number.NaN,
+          range?.minY ?? Number.NaN,
+          range?.maxY ?? Number.NaN,
+        ],
+        at,
+      );
+      at += STALE_ENTRY;
+    }
+    this.#rows.set(cell, { rows, batches: cell.batches.length });
+    return rows;
+  }
+
+  #assetSlot(id: string): number {
+    let slot = this.#assetIndex.get(id);
+    if (slot === undefined) {
+      slot = this.#assetIds.length;
+      this.#assetIds.push(id);
+      this.#assetIndex.set(id, slot);
+    }
+    return slot;
+  }
+
+  /** Each slab asset's gates, read live: `[count, [at, count]..., values]`, `at` -1 for a gone asset. */
+  #gateTable(): Float64Array {
+    const ids = this.#assetIds;
+    let values = 0;
+    for (const id of ids) values += this.#host.asset(id)?.gates.length ?? 0;
+    const table = new Float64Array(1 + ids.length * 2 + values);
+    table[0] = ids.length;
+    let at = 1 + ids.length * 2;
+    for (const [slot, id] of ids.entries()) {
+      const gates = this.#host.asset(id)?.gates;
+      table[1 + slot * 2] = gates === undefined ? -1 : at;
+      table[2 + slot * 2] = gates?.length ?? 0;
+      if (gates !== undefined) table.set(gates, at);
+      at += gates?.length ?? 0;
+    }
+    return table;
   }
 }

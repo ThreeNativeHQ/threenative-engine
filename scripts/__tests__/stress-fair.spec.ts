@@ -9,6 +9,8 @@ const {
   fileName,
   parseArm,
   poolRuns,
+  holdoutOf,
+  holdoutReport,
   presentedFromStarts,
   saveRun,
   waitGpuIdle,
@@ -197,6 +199,48 @@ describe("stress-fair (PRD-770)", () => {
     expect(readdirSync(outDir)).toHaveLength(4);
   });
 
+  describe("holdoutReport", () => {
+    const window = (frameP50: number) => ({
+      fps: 60,
+      frames: 300,
+      hitches: 0,
+      presented: { mean: 16.7, p50: 16.7, p95: 17 },
+      frame: { p50: frameP50, p95: frameP50 + 2, p99: frameP50 + 4 },
+      phases: { render: { p50: 3 }, update: { p50: 1 } },
+      passes: { main: { draws: { p50: 40 }, triangles: { p50: 500_000 } } },
+    });
+
+    it("pools a real game's frame-budget windows after warm-up, so a kit can prove a keep", () => {
+      // Three warm-up windows (shader compiles) would read 90 ms; the steady ones read 5, 6 and 7.
+      const windows = [90, 90, 90, 5, 7, 6].map(window);
+      const report = holdoutReport(windows, { name: "shooter", viewport: "1280x720" });
+      expect(report).toMatchObject({ preset: "holdout:shooter", windows: 3 });
+      expect(report.metrics).toMatchObject({ fps: 60, renderSkipPct: 0 });
+      // A GPU-bound host: the engine declined half the loop frames, so the player saw 30 a second, not 60.
+      const declined = holdoutReport(
+        windows.map((entry) => ({ ...entry, renderSkips: 150 })),
+        { name: "shooter", viewport: "1280x720" },
+      );
+      expect(declined.metrics).toMatchObject({ fps: 30, renderSkipPct: 50 });
+      expect(report.metrics).toMatchObject({
+        frameP50Ms: 6,
+        frameP95Ms: 8,
+        frameWorstP95Ms: 9,
+        mainDraws: 40,
+        mainTrianglesM: 0.5,
+        gpuP95Ms: null,
+      });
+    });
+
+    it("refuses a game that measured nothing: a holdout with no windows is no holdout", () => {
+      expect(() =>
+        holdoutReport([90, 90, 90, 5].map(window), { name: "shooter", viewport: "1280x720" }),
+      ).toThrow(/need 3 or more/u);
+      expect(holdoutOf("holdout=shooter&arm=base")).toBe("shooter");
+      expect(holdoutOf("play&arm=base")).toBeUndefined();
+    });
+  });
+
   describe("presentedFromStarts", () => {
     const seriesOf = (gaps: number[]) => {
       const starts = [0];
@@ -209,6 +253,13 @@ describe("stress-fair (PRD-770)", () => {
       expect(presentedFromStarts(seriesOf(gaps), 60)).toEqual({
         presentedP50Ms: 15,
         presentedP95Ms: 20,
+        presentedP99Ms: 20,
+      });
+      // One 80 ms stutter in 200 frames is invisible to p95 and is the p99.
+      const stutter = Array.from({ length: 200 }, (_, index) => (index % 67 === 0 ? 80 : 10));
+      expect(presentedFromStarts(seriesOf(stutter), 60)).toMatchObject({
+        presentedP95Ms: 10,
+        presentedP99Ms: 80,
       });
     });
 

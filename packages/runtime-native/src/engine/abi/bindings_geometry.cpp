@@ -16,6 +16,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tn::binding {
@@ -172,6 +173,138 @@ Value attributeArray(const BufferGeometry& geometry, const char* name) {
     return numbers(attribute->toNumbers());
 }
 
+
+// ---------------------------------------------------------------- world instance records (PRD-879)
+
+namespace {
+
+/** A float range of `values` that must lie inside `length`, or the whole call is refused. */
+void recordSpan(double at, double count, uint64_t length, const char* what) {
+    if (!(at >= 0 && count >= 0 && at == std::floor(at) && count == std::floor(count) && at + count <= double(length)))
+        throw Unsupported{std::string("__tnRecords: ") + what + " [" + std::to_string(at) + ", " +
+                          std::to_string(at + count) + ") is outside " + std::to_string(length) + " floats"};
+}
+
+float* recordFloats(BufferAttribute& attribute) {
+    if (attribute.store->scalar() != Scalar::F32) throw Unsupported{"__tnRecords: the attribute is not Float32"};
+    return reinterpret_cast<float*>(attribute.store->data());
+}
+
+/**
+ * The ops core's `world-cell-records.ts` queues for one frame of world instance records, applied to the
+ * engine's own buffers in order (the twin of its `applyRecords`). Answers each BOX op's seven numbers.
+ */
+std::vector<double> applyRecords(const std::vector<BufferAttribute*>& attributes, const std::vector<double>& ops,
+                                 const std::vector<float>& payload) {
+    std::vector<double> boxes;
+    std::vector<float> scratch;
+    const auto attributeAt = [&](double slot) -> BufferAttribute& {
+        if (!(slot >= 0 && slot < double(attributes.size()))) throw Unsupported{"__tnRecords: an op names no attribute"};
+        return *attributes[static_cast<size_t>(slot)];
+    };
+    const auto arg = [&](size_t at) {
+        if (at >= ops.size()) throw Unsupported{"__tnRecords: an op is cut short"};
+        return ops[at];
+    };
+    size_t at = 0;
+    while (at < ops.size()) {
+        const double code = ops[at];
+        BufferAttribute& attribute = attributeAt(arg(at + 1));
+        const uint64_t length = attribute.store->count();
+        if (code == 1) {  // WRITE at count payloadAt
+            const double to = arg(at + 2), count = arg(at + 3), from = arg(at + 4);
+            recordSpan(to, count, length, "write");
+            recordSpan(from, count, payload.size(), "payload");
+            std::memcpy(recordFloats(attribute) + size_t(to), payload.data() + size_t(from), size_t(count) * sizeof(float));
+            at += 5;
+        } else if (code == 2) {  // FILL at count
+            const double from = arg(at + 2), count = arg(at + 3);
+            recordSpan(from, count, length, "fill");
+            std::fill_n(recordFloats(attribute) + size_t(from), size_t(count), 0.0f);
+            at += 4;
+        } else if (code == 3) {  // MOVE from to count
+            const double from = arg(at + 2), to = arg(at + 3), count = arg(at + 4);
+            recordSpan(from, count, length, "move source");
+            recordSpan(to, count, length, "move target");
+            float* values = recordFloats(attribute);
+            std::memmove(values + size_t(to), values + size_t(from), size_t(count) * sizeof(float));
+            at += 5;
+        } else if (code == 4) {  // COPY source count
+            BufferAttribute& source = attributeAt(arg(at + 2));
+            const double count = arg(at + 3);
+            recordSpan(0, count, length, "copy target");
+            recordSpan(0, count, source.store->count(), "copy source");
+            const float* from = recordFloats(source);
+            std::memmove(recordFloats(attribute), from, size_t(count) * sizeof(float));
+            at += 4;
+        } else if (code == 5) {  // GATHER stride blocks [from count]...
+            const double stride = arg(at + 2), blocks = arg(at + 3);
+            if (!(stride >= 1 && blocks >= 0 && blocks == std::floor(blocks))) throw Unsupported{"__tnRecords: a bad gather"};
+            const float* values = recordFloats(attribute);
+            scratch.clear();
+            for (size_t block = 0; block < size_t(blocks); ++block) {
+                const double from = arg(at + 4 + block * 2) * stride, count = arg(at + 5 + block * 2) * stride;
+                recordSpan(from, count, length, "gather");
+                scratch.insert(scratch.end(), values + size_t(from), values + size_t(from + count));
+            }
+            recordSpan(0, double(scratch.size()), length, "gather target");
+            std::copy(scratch.begin(), scratch.end(), recordFloats(attribute));
+            at += 4 + size_t(blocks) * 2;
+        } else if (code == 6) {  // UPLOAD from count (0: the whole array)
+            const double from = arg(at + 2), count = arg(at + 3);
+            recordSpan(from, count, length, "upload");
+            attribute.clearUpdateRanges();
+            if (count > 0) attribute.addUpdateRange(uint64_t(from), uint64_t(count));
+            attribute.setNeedsUpdate();
+            at += 4;
+        } else if (code == 7) {  // BOX fromRecord records payloadAt
+            const double first = arg(at + 2), records = arg(at + 3), local = arg(at + 4);
+            recordSpan(first * 16, records * 16, length, "box");
+            recordSpan(local, 6, payload.size(), "box payload");
+            const float* m = reinterpret_cast<const float*>(std::as_const(*attribute.store).data());
+            const float* l = payload.data() + size_t(local);
+            double lo[3] = {INFINITY, INFINITY, INFINITY}, hi[3] = {-INFINITY, -INFINITY, -INFINITY}, scale = 0;
+            for (size_t index = size_t(first); index < size_t(first + records); ++index) {
+                const float* e = m + index * 16;
+                for (int axis = 0; axis < 3; ++axis) {
+                    // Column-major: row `axis` of the basis is e[axis], e[4 + axis], e[8 + axis].
+                    const double p = double(e[axis]) * l[0] + double(e[4 + axis]) * l[1] + double(e[8 + axis]) * l[2] + e[12 + axis];
+                    const double x = std::abs(double(e[axis])) * l[3] + std::abs(double(e[4 + axis])) * l[4] +
+                                     std::abs(double(e[8 + axis])) * l[5];
+                    lo[axis] = std::min(lo[axis], p - x);
+                    hi[axis] = std::max(hi[axis], p + x);
+                }
+                for (int column = 0; column < 3; ++column)
+                    scale = std::max(scale, std::hypot(double(e[column * 4]), double(e[column * 4 + 1]), double(e[column * 4 + 2])));
+            }
+            boxes.insert(boxes.end(), {lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], scale});
+            at += 5;
+        } else if (code == 8) {  // LANES stride lanes values...
+            const double stride = arg(at + 2), lanes = arg(at + 3);
+            if (!(stride >= 1 && lanes >= 0 && lanes <= stride && stride == std::floor(stride) && lanes == std::floor(lanes)))
+                throw Unsupported{"__tnRecords: lanes wider than the record"};
+            float* values = recordFloats(attribute);
+            for (uint64_t record = 0; record + uint64_t(stride) <= length; record += uint64_t(stride))
+                for (size_t lane = 0; lane < size_t(lanes); ++lane) values[record + lane] = float(arg(at + 4 + lane));
+            at += 4 + size_t(lanes);
+        } else {
+            throw Unsupported{"__tnRecords: unknown op " + std::to_string(code)};
+        }
+    }
+    return boxes;
+}
+
+std::vector<float> recordPayload(const Value& value) {
+    if (value.text == "Float32Array" && !value.bytes.empty()) {
+        std::vector<float> out(value.bytes.size() / sizeof(float));
+        std::memcpy(out.data(), value.bytes.data(), out.size() * sizeof(float));
+        return out;
+    }
+    const std::vector<double> numbers = value.bytes.empty() ? value.numbers : typedArrayNumbers(value.text, value.bytes);
+    return std::vector<float>(numbers.begin(), numbers.end());
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------- BufferAttribute
 
@@ -509,6 +642,7 @@ void registerBufferGeometry(ClassBinding& b) {
                 for (const Value& ref : refsOf(v)) targets.push_back(sharedAttributeArg(store, ref));
                 BufferGeometry* geometry = as<BufferGeometry>(self);
                 (normals ? geometry->morphNormals : geometry->morphPositions) = std::move(targets);
+                geometry->bumpRevision();  // a render cache held for the revision reads the morph lists
             };
     }
     b.getters["morphTargetsRelative"] = [](void* self) { return Value::of(as<BufferGeometry>(self)->morphTargetsRelative); };
@@ -1033,6 +1167,15 @@ void registerGeometryBindings(Registry& classes) {
     ClassBinding& instanced = classes["InstancedBufferAttribute"];
     registerBufferAttribute(instanced, "InstancedBufferAttribute");
     instanced.getters["meshPerAttribute"] = [](void*) { return Value::of(1.0); };
+    // PRD-879: one frame of core's world instance records (world-cell-records.ts) in one call, written to
+    // the engine's own buffers: `__tnRecords(attributes, ops, payload)` answers each BOX op's seven numbers.
+    instanced.methods["__tnRecords"] = [](void*, const Args& a, Store& store) {
+        std::vector<BufferAttribute*> attributes;
+        for (const Value& ref : refsOf(a.at(0))) attributes.push_back(&attributeArg(store, ref));
+        const Value& packed = a.at(1);
+        const std::vector<double> ops = packed.bytes.empty() ? packed.numbers : typedArrayNumbers(packed.text, packed.bytes);
+        return Value::list(applyRecords(attributes, ops, recordPayload(a.at(2))));
+    };
     // three's Float32BufferAttribute: the same attribute, but its constructor wraps whatever it is
     // given in a Float32Array, so the storage is F32 and each value rounds once to binary32.
     ClassBinding& float32 = classes["Float32BufferAttribute"];

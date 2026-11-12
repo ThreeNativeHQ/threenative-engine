@@ -18,6 +18,7 @@
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
+#include "engine/renderer/projection/plan.h"
 #include "engine/scene/render_target.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/lights.h"
@@ -1383,6 +1384,68 @@ void tsl_matrix_columns() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-878: a draw of a mesh, or a compute dispatch, names which hooked uniforms it reads, so the facade runs
+// only those uniforms' render callbacks before it (the material graphs under the root, and the kernels).
+void tsl_reads() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_tsl_arg_t scalar{};
+    scalar.kind = TN_TSL_ARG_NUMBER;
+    uint64_t a = 0, b = 0, c = 0, unused = 0;
+    for (uint64_t* id : {&a, &b, &c, &unused}) CHECK(tn_tsl_call(ctx, "uniform", nullptr, &scalar, 1, id, &d.value) == TN_OK);
+    const auto colour = [&](uint64_t lane) {
+        tn_tsl_arg_t parts[4]{};
+        parts[0].kind = TN_TSL_ARG_NODE;
+        parts[0].node = lane;
+        for (int i = 1; i < 4; ++i) parts[i].kind = TN_TSL_ARG_NUMBER, parts[i].number = 1;
+        uint64_t out = 0;
+        CHECK(tn_tsl_call(ctx, "vec4", nullptr, parts, 4, &out, &d.value) == TN_OK);
+        return out;
+    };
+    tn_handle_t geometry{}, first{}, second{}, meshA{}, meshB{}, group{};
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &first, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &second, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, first, "colorNode", colour(a), &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, second, "colorNode", colour(b), &d.value) == TN_OK);
+    const tn_value_t partsA[2] = {ref(geometry), ref(first)}, partsB[2] = {ref(geometry), ref(second)};
+    CHECK(tn_construct(ctx, "Mesh", partsA, 2, &meshA, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", partsB, 2, &meshB, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    tn_value_t added{};
+    for (const tn_handle_t child : {meshA, meshB}) {
+        const tn_value_t arg = ref(child);
+        CHECK(tn_invoke(group, "add", &arg, 1, &added, &d.value) == TN_OK);
+    }
+    uint64_t kernel = 0;
+    tn_tsl_arg_t two{};
+    two.kind = TN_TSL_ARG_NUMBER;
+    two.number = 2;
+    CHECK(tn_tsl_call(ctx, "mul", &c, &two, 1, &kernel, &d.value) == TN_OK);
+
+    const uint64_t candidates[4] = {unused, c, b, a};
+    uint32_t out[4]{}, count = 9;
+    const auto reads = [&](const tn_handle_t* root, const uint64_t* kernels, uint32_t kernelCount) {
+        count = 9;
+        CHECK(tn_tsl_reads(ctx, root, kernels, kernelCount, candidates, 4, out, &count, &d.value) == TN_OK);
+        return std::vector<uint32_t>(out, out + count);
+    };
+    CHECK((reads(&meshA, nullptr, 0) == std::vector<uint32_t>{3}));      // one mesh: its material's uniform
+    CHECK((reads(&group, nullptr, 0) == std::vector<uint32_t>{2, 3}));   // a group: every mesh under it, candidate order
+    CHECK((reads(nullptr, &kernel, 1) == std::vector<uint32_t>{1}));     // a dispatch: the kernel's
+    CHECK((reads(&meshB, &kernel, 1) == std::vector<uint32_t>{1, 2}));
+    CHECK(reads(nullptr, nullptr, 0).empty());
+
+    const uint64_t stale = 999999;  // a released or unknown node id refuses, as tn_tsl_set_uniforms does
+    CHECK(tn_tsl_reads(ctx, nullptr, &stale, 1, candidates, 4, out, &count, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_tsl_reads(ctx, &geometry, nullptr, 0, candidates, 4, out, &count, &d.value) != TN_OK);  // not an Object3D
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-828: one sync's changed uniforms cross as one span; a stale id writes nothing, a refused value stops there.
 void tsl_set_uniforms() {
     const tn_version_info_t own = tn_engine_version();
@@ -1931,6 +1994,224 @@ std::vector<double> numbersOf(tn_handle_t object, const char* name, Diag& d) {
 
 // A typed array crosses as its own bytes: an attribute keeps them as its storage, every other
 // consumer reads the numbers they hold, and a name that is no typed array is refused.
+// PRD-879: core's main-pass cull tests every visibility cell's box against one frustum. One call takes
+// the packed boxes (min xyz, max xyz each) and answers the indices that intersect, as intersectsBox
+// would one by one, so a frame pays one crossing instead of one per cell.
+void frustum_intersects_boxes() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t camera{}, frustum{};
+    CHECK(tn_construct(ctx, "PerspectiveCamera", nullptr, 0, &camera, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Frustum", nullptr, 0, &frustum, &d.value) == TN_OK);
+    tn_value_t result{}, projection{};
+    CHECK(tn_get(camera, "projectionMatrix", &projection, &d.value) == TN_OK);
+    CHECK(tn_invoke(frustum, "setFromProjectionMatrix", &projection, 1, &result, &d.value) == TN_OK);
+    // Ahead of the camera, behind it, far to the side, and one straddling the near plane.
+    const double boxes[24] = {-1, -1, -6, 1, 1, -4,   -1, -1, 4, 1, 1, 6,
+                              1000, -1, -6, 1002, 1, -4,   -1, -1, -2, 1, 1, 2};
+    const tn_value_t packed = bytes("Float64Array", boxes, 24);
+    CHECK(tn_invoke(frustum, "__tnIntersectsBoxes", &packed, 1, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBERS);
+    CHECK(std::vector<double>(result.numbers, result.numbers + result.count) == (std::vector<double>{0, 3}));
+    const tn_value_t ragged = bytes("Float64Array", boxes, 5);
+    CHECK(tn_invoke(frustum, "__tnIntersectsBoxes", &ragged, 1, &result, &d.value) != TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-879: core's bundle proof re-reads three surface flags of every main batch's material each frame.
+// `__tnMaterialWatch(materials)` stamps them once; `__tnMaterialCheck()` answers, in one call, the indices
+// whose transparent, visible or transmission moved since, until the list is watched again.
+// The batch reads a rig's lane from its geometry once per revision: a morph list set through the ABI moves it.
+void rig_lane_follows_morph_set() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t geometry{}, target{};
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    auto shared = std::static_pointer_cast<tn::engine::BufferGeometry>(tn::abi::objectOf(geometry)->ptr);
+    const auto vertices = shared->attributes.at("position")->count();
+    shared->setAttribute("skinIndex", tn::engine::BufferAttribute::fromFloats(std::vector<double>(vertices * 4, 0), 4));
+    shared->setAttribute("skinWeight", tn::engine::BufferAttribute::fromFloats(std::vector<double>(vertices * 4, 0.25), 4));
+    auto held = std::make_shared<tn::engine::SkinnedMesh>(shared, std::make_shared<tn::engine::Material>(tn::engine::MaterialType::Standard));
+    tn::engine::SkinnedMesh& rig = *held;
+    rig.bind(std::make_shared<tn::engine::Skeleton>(std::vector<std::shared_ptr<tn::engine::Bone>>{std::make_shared<tn::engine::Bone>()}));
+    CHECK(tn::engine::projection::detail::skinnedLaneReason(rig) == nullptr);
+    const std::vector<float> zeros(vertices * 3, 0);
+    const tn_value_t targetArgs[] = {bytes("Float32Array", zeros.data(), zeros.size()), num(3)};
+    CHECK(tn_construct(ctx, "BufferAttribute", targetArgs, 2, &target, &d.value) == TN_OK);
+    const tn_value_t targets[1] = {ref(target)};
+    const tn_value_t list{TN_VALUE_ARRAY, 0, 0, {}, 0, nullptr, 1, {.values = targets}};
+    CHECK(tn_set(geometry, "morphAttributes.position", &list, &d.value) == TN_OK);
+    const char* reason = tn::engine::projection::detail::skinnedLaneReason(rig);
+    CHECK(reason && std::string(reason) == "morph");
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+void material_witness() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t host{}, first{}, second{};
+    CHECK(tn_construct(ctx, "Object3D", nullptr, 0, &host, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshPhysicalNodeMaterial", nullptr, 0, &first, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshPhysicalNodeMaterial", nullptr, 0, &second, &d.value) == TN_OK);
+    const tn_value_t pair[2] = {ref(first), ref(second)};
+    const tn_value_t list{TN_VALUE_ARRAY, 0, 0, {}, 0, nullptr, 2, {.values = pair}};
+    tn_value_t result{};
+    const auto changed = [&] {
+        CHECK(tn_invoke(host, "__tnMaterialCheck", nullptr, 0, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(result.numbers, result.numbers + result.count);
+    };
+    CHECK(tn_invoke(host, "__tnMaterialWatch", &list, 1, &result, &d.value) == TN_OK);
+    CHECK(changed().empty());
+    const tn_value_t on = boolean(true), off = boolean(false), half = num(0.5);
+    CHECK(tn_set(second, "transparent", &on, &d.value) == TN_OK);
+    CHECK(changed() == (std::vector<double>{1}));
+    CHECK(tn_set(first, "visible", &off, &d.value) == TN_OK);
+    CHECK(changed() == (std::vector<double>{0, 1}));
+    CHECK(tn_invoke(host, "__tnMaterialWatch", &list, 1, &result, &d.value) == TN_OK);
+    CHECK(changed().empty());
+    CHECK(tn_set(first, "transmission", &half, &d.value) == TN_OK);
+    CHECK(changed() == (std::vector<double>{0}));
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-879: core's shared world batches no longer hold their instance bytes. A frame's writes, zeros,
+// moves, grows, regroups, upload ranges and record boxes reach the engine as one op list in one call,
+// `InstancedBufferAttribute.__tnRecords(attributes, ops, payload)`, the twin of world-cell-records.ts.
+void world_records() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    std::vector<float> zeros(64, 0.0f);
+    tn_handle_t matrix{}, grown{}, ranges{};
+    const tn_value_t four[2] = {bytes("Float32Array", zeros.data(), 64), num(16)};
+    CHECK(tn_construct(ctx, "InstancedBufferAttribute", four, 2, &matrix, &d.value) == TN_OK);
+    std::vector<float> wide(128, 0.0f);
+    const tn_value_t eight[2] = {bytes("Float32Array", wide.data(), 128), num(16)};
+    CHECK(tn_construct(ctx, "InstancedBufferAttribute", eight, 2, &grown, &d.value) == TN_OK);
+    std::vector<float> column(16, 9.0f);
+    const tn_value_t lod[2] = {bytes("Float32Array", column.data(), 16), num(4)};
+    CHECK(tn_construct(ctx, "InstancedBufferAttribute", lod, 2, &ranges, &d.value) == TN_OK);
+    const tn_value_t three[3] = {ref(matrix), ref(grown), ref(ranges)};
+    const tn_value_t attributes{TN_VALUE_ARRAY, 0, 0, {}, 0, nullptr, 3, {.values = three}};
+    // Record 0: a scale-2 instance at (1, 2, 3); then the part's local box, centre 0 and half size 1.
+    const float payload[22] = {2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 1, 2, 3, 1, 0, 0, 0, 1, 1, 1};
+    tn_value_t before{};
+    CHECK(tn_get(matrix, "version", &before, &d.value) == TN_OK);
+    const double ops[] = {
+        1, 0, 16, 16, 0,     // WRITE record 1 of the matrix buffer
+        7, 0, 1, 1, 16,      // BOX record 1 with the local box at payload 16
+        3, 0, 16, 0, 16,     // MOVE it down to record 0
+        2, 0, 16, 16,        // FILL record 1
+        4, 1, 0, 64,         // COPY the four records into the grown buffer
+        5, 2, 4, 2, 2, 1, 0, 1,  // GATHER the column: record 2, then record 0
+        8, 2, 4, 2, 7, 8,    // LANES: the first two floats of every column record
+        6, 0, 0, 16,         // UPLOAD record 0
+    };
+    const tn_value_t args[3] = {attributes, bytes("Float64Array", ops, sizeof(ops) / sizeof(double)),
+                                bytes("Float32Array", payload, 22)};
+    tn_value_t result{};
+    CHECK(tn_invoke(matrix, "__tnRecords", args, 3, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBERS);
+    CHECK(std::vector<double>(result.numbers, result.numbers + result.count) ==
+          (std::vector<double>{-1, 0, 1, 3, 4, 5, 2}));
+    std::vector<double> record(payload, payload + 16);
+    std::vector<double> expected(64, 0.0);
+    std::copy(record.begin(), record.end(), expected.begin());
+    CHECK(numbersOf(matrix, "array", d) == expected);
+    expected.resize(128, 0.0);
+    CHECK(numbersOf(grown, "array", d) == expected);
+    CHECK(numbersOf(ranges, "array", d) == (std::vector<double>{7, 8, 9, 9, 7, 8, 9, 9, 7, 8, 9, 9, 7, 8, 9, 9}));
+    tn_value_t uploads{}, after{};
+    CHECK(tn_get(matrix, "updateRanges", &uploads, &d.value) == TN_OK);
+    CHECK(text(uploads) == "[{\"count\":16,\"start\":0}]");
+    CHECK(tn_get(matrix, "version", &after, &d.value) == TN_OK);
+    CHECK(after.number == before.number + 1);
+    // A range past the end refuses the whole call: a move of two records into a four-record buffer at 3.
+    const double outside[] = {3, 0, 0, 48, 32};
+    const tn_value_t refused[3] = {attributes, bytes("Float64Array", outside, 5), bytes("Float32Array", payload, 22)};
+    CHECK(tn_invoke(matrix, "__tnRecords", refused, 3, &result, &d.value) != TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-879: core's refilter stale scan runs over packed rows in one call a pass,
+// `Object3D.__tnStaleRows(slab)` then `__tnStaleEntries(gates, query)`, the twin of world-cell-stale.ts `staleRows`. The same
+// vectors and answers are in packages/core/__tests__/world-cell-stale.spec.ts.
+void world_stale_entries() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t host{};
+    CHECK(tn_construct(ctx, "Object3D", nullptr, 0, &host, &d.value) == TN_OK);
+    const double nan = std::nan("");
+    // A gated cell whose follow point walked 100 m (two entries of asset 0, one ungated asset 1), a far
+    // cell no gate can reach, and a placementReach cell.
+    const double slab[] = {
+        0, 0, 64, 0, 90, 0, 3, 0,
+        0, 32, 0, 32, 32, 0, 32, 40, nan, nan, nan, nan,
+        1, 32, 0, 32, 32, 0, 32, nan, nan, nan, nan, nan,
+        0, 32, 0, 32, 32, 0, 32, 40, nan, nan, nan, nan,
+        1000, 0, 64, 900, 950, 0, 1, 0,
+        0, 1032, 0, 32, 1032, 0, 32, 40, nan, nan, nan, nan,
+        0, 128, 64, 0, 100, 1, 1, 0,
+        2, 32, 0, 160, 32, 0, 160, nan, 0, 20, -5, 5,
+    };
+    const double gates[] = {3, 7, 1, 8, 0, 8, 0, 40};
+    const auto scan = [&](double gpu) {
+        const double query[] = {132, 0, 32, 132, 0, 32, gpu, 1, 40};
+        const tn_value_t args[2] = {bytes("Float64Array", gates, 8), bytes("Float64Array", query, 9)};
+        tn_value_t result{};
+        CHECK(tn_invoke(host, "__tnStaleEntries", args, 2, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(result.numbers, result.numbers + result.count);
+    };
+    const double whole = double(sizeof(slab) / sizeof(double));
+    const double all[] = {-1, whole};
+    const tn_value_t rows[2] = {bytes("Float64Array", slab, sizeof(slab) / sizeof(double)), bytes("Float64Array", all, 2)};
+    tn_value_t kept{};
+    CHECK(tn_invoke(host, "__tnStaleRows", rows, 2, &kept, &d.value) == TN_OK);
+    CHECK(kept.kind == TN_VALUE_NUMBER && kept.number == whole);
+    const double reachNear = std::sqrt(68.0 * 68.0 + 96.0 * 96.0);
+    CHECK(scan(0) == (std::vector<double>{0, 0, 68, 2, 2, reachNear}));
+    // The GPU scene owns the gates: only the placementReach cell can be stale.
+    CHECK(scan(1) == (std::vector<double>{2, 2, reachNear}));
+    // One changed cell sends one block: the far cell's bracket widened to 0 (its 20 numbers), so the 40 m
+    // gate now falls inside it; the first cell's 44 and the reach cell's 20 are kept where the host holds
+    // them. The answer is world-cell-stale.ts `staleRows` on `patchRows` of the same vectors.
+    const double farMoved[] = {1000, 0, 64, 0, 950, 0, 1, 0, 0, 1032, 0, 32, 1032, 0, 32, 40, nan, nan, nan, nan};
+    const double plan[] = {0, 44, -1, 20, 64, 20};
+    const tn_value_t patch[2] = {bytes("Float64Array", farMoved, 20), bytes("Float64Array", plan, 6)};
+    CHECK(tn_invoke(host, "__tnStaleRows", patch, 2, &kept, &d.value) == TN_OK);
+    CHECK(kept.kind == TN_VALUE_NUMBER && kept.number == whole);
+    CHECK(scan(0) == (std::vector<double>{0, 0, 68, 1, 0, 868, 2, 2, reachNear}));
+    // A run past the held rows, or changed blocks the plan never reads, is refused and the rows stay.
+    const double past[] = {0, 44, -1, 20, 64, 21};
+    const tn_value_t pastPatch[2] = {bytes("Float64Array", farMoved, 20), bytes("Float64Array", past, 6)};
+    CHECK(tn_invoke(host, "__tnStaleRows", pastPatch, 2, &kept, &d.value) != TN_OK);
+    const double unread[] = {0, 84};
+    const tn_value_t unreadPatch[2] = {bytes("Float64Array", farMoved, 20), bytes("Float64Array", unread, 2)};
+    CHECK(tn_invoke(host, "__tnStaleRows", unreadPatch, 2, &kept, &d.value) != TN_OK);
+    CHECK(scan(1) == (std::vector<double>{2, 2, reachNear}));
+    // A cell block that claims more entries than the slab holds is refused, not read past.
+    const double cut[] = {0, 0, 64, 0, 90, 0, 9, 0};
+    const double query[] = {132, 0, 32, 132, 0, 32, 0, 1, 40};
+    const double cutAll[] = {-1, 8};
+    const tn_value_t cutRows[2] = {bytes("Float64Array", cut, 8), bytes("Float64Array", cutAll, 2)};
+    CHECK(tn_invoke(host, "__tnStaleRows", cutRows, 2, &kept, &d.value) == TN_OK);
+    const tn_value_t refused[2] = {bytes("Float64Array", gates, 8), bytes("Float64Array", query, 9)};
+    tn_value_t result{};
+    CHECK(tn_invoke(host, "__tnStaleEntries", refused, 2, &result, &d.value) != TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void typed_bytes() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -2590,6 +2871,161 @@ void projected_cull_bands() {
     // The band walk keeps its own bound versions: the cull that follows it still culls the far rig.
     CHECK(cull.apply(*scene, camera, true, scale, 8, true).culled == 4);  // on-ray, far, behind, the pair's far part
     cull.restore();
+}
+
+// PRD-878: core's whole prepareAnimation in one call: the engine keeps the tracked rigs, checks which reach the
+// root, holds a crowd's rates between turns and answers [id, rate] pairs, so a frame runs no JS rig loop.
+void projected_cull_band_animation() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto unit = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    unit->setXYZ(0, -1, 0, 0).setXYZ(1, 1, 0, 0);
+    geometry->setAttribute("position", unit);
+    std::vector<std::shared_ptr<Object3D>> rigs;
+    const auto rigAt = [&](double x, double z, Object3D& under) {
+        auto rig = std::make_shared<Object3D>();
+        auto part = std::make_shared<Mesh>(geometry, nullptr);
+        rig->position.set(x, 0, z);
+        rig->add(*part);
+        under.add(*rig);
+        rigs.push_back(rig);
+        rigs.push_back(part);
+        return rig;
+    };
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    ProjectedCull cull;
+    using Pairs = std::optional<std::vector<double>>;
+
+    // Three rigs: band 2, band 8, and one whose only part is hidden (left alone, so not answered).
+    auto mid = rigAt(5, -40, *scene);
+    auto far = rigAt(20, -400, *scene);
+    auto hidden = rigAt(5, -40, *scene);
+    hidden->children.front()->setVisible(false);
+    auto untracked = rigAt(5, -40, *scene);
+    ProjectedCull::trackRate(*mid, 10);
+    ProjectedCull::trackRate(*far, 11);
+    ProjectedCull::trackRate(*hidden, 12);
+    scene->updateMatrixWorld();
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 1) == Pairs(std::vector<double>{10, 2, 11, 8}));
+    // A rig that does not reach the root is skipped: hidden itself, or in another scene.
+    far->setVisible(false);
+    auto elsewhere = std::make_shared<Scene>();
+    auto away = rigAt(5, -40, *elsewhere);
+    ProjectedCull::trackRate(*away, 13);
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 2) == Pairs(std::vector<double>{10, 2}));
+    far->setVisible(true);
+    // Untracked (a disposed player), it is no longer answered; a freed rig is reported once as -1.
+    ProjectedCull::trackRate(*far, -1);
+    elsewhere->remove(*away);
+    std::erase(rigs, away);
+    away.reset();
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 3) == Pairs(std::vector<double>{13, -1, 10, 2}));
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 4) == Pairs(std::vector<double>{10, 2}));
+    // A rig inside a rig: the inner rate comes from the outer walk, which this call does not make.
+    auto inner = rigAt(5, -40, *mid);
+    ProjectedCull::trackRate(*inner, 14);
+    CHECK(cull.bandAnimation(*scene, camera, true, scale, 5) == std::nullopt);
+    ProjectedCull::trackRate(*inner, -1);
+    ProjectedCull::trackRate(*mid, -1);
+    ProjectedCull::trackRate(*hidden, -1);
+    (void)untracked;
+
+    // From 32 rigs a rig is measured one frame in four, on its turn, and holds its rate between turns.
+    auto crowd = std::make_shared<Scene>();
+    std::vector<std::shared_ptr<Object3D>> walkers;
+    for (int i = 0; i < 32; ++i) {
+        walkers.push_back(rigAt(5, -40, *crowd));
+        ProjectedCull::trackRate(*walkers.back(), 100 + i);
+    }
+    crowd->updateMatrixWorld();
+    const auto first = cull.bandAnimation(*crowd, camera, true, scale, 1);
+    CHECK(first.has_value() && first->size() == 64 && (*first)[1] == 2 && (*first)[63] == 2);
+    // Both walkers move far: walker 0 (turn 1 + 2 = 3) holds band 2, walker 1 (turn 4) is measured: band 8.
+    walkers[0]->position.z = -400;
+    walkers[1]->position.z = -400;
+    crowd->updateMatrixWorld();
+    // Pairs come held first, then measured; core reads them by id.
+    const auto rateOf = [](const Pairs& pairs, double id) {
+        for (std::size_t i = 0; pairs && i + 1 < pairs->size(); i += 2)
+            if ((*pairs)[i] == id) return (*pairs)[i + 1];
+        return 0.0;
+    };
+    const auto second = cull.bandAnimation(*crowd, camera, true, scale, 2);
+    CHECK(second.has_value() && second->size() == 64);
+    CHECK(rateOf(second, 100) == 2);
+    CHECK(rateOf(second, 101) == 8);
+    // A frame skipped by the caller breaks the hold: every walker is measured again.
+    const auto skipped = cull.bandAnimation(*crowd, camera, true, scale, 4);
+    CHECK(rateOf(skipped, 100) == 8);
+    for (auto& walker : walkers) ProjectedCull::trackRate(*walker, -1);
+}
+
+// Independent culls and the root-owned bridge must keep each camera's held bands.
+void projected_cull_multiple_views() {
+    using namespace tn::engine;
+    auto firstScene = std::make_shared<Scene>(), secondScene = std::make_shared<Scene>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto unit = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    unit->setXYZ(0, -1, 0, 0).setXYZ(1, 1, 0, 0);
+    geometry->setAttribute("position", unit);
+    std::vector<std::shared_ptr<Mesh>> first, second;
+    const auto crowd = [&](Scene& scene, auto& rigs, int start) {
+        for (int i = 0; i < 32; ++i) {
+            auto rig = std::make_shared<Mesh>(geometry, nullptr);
+            rig->position.set(5, 0, -40);
+            scene.add(*rig);
+            ProjectedCull::trackRate(*rig, start + i);
+            rigs.push_back(rig);
+        }
+        scene.updateMatrixWorld();
+    };
+    crowd(*firstScene, first, 100);
+    crowd(*secondScene, second, 200);
+    PerspectiveCamera near(50, 1, 0.1, 5000), far(50, 1, 0.1, 5000);
+    far.position.z = 400;
+    near.updateMatrixWorld();
+    far.updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    using Pairs = std::optional<std::vector<double>>;
+    const auto rate = [](const Pairs& pairs, double id) {
+        for (std::size_t i = 0; pairs && i + 1 < pairs->size(); i += 2)
+            if ((*pairs)[i] == id) return (*pairs)[i + 1];
+        return 0.0;
+    };
+    ProjectedCull a, b, rootBridge;
+    CHECK(rate(a.bandAnimation(*firstScene, near, true, scale, 1), 100) == 2);
+    CHECK(rate(b.bandAnimation(*firstScene, far, true, scale, 1), 100) == 8);
+    CHECK(rate(rootBridge.bandAnimation(*firstScene, near, true, scale, 1), 100) == 2);
+    CHECK(rate(rootBridge.bandAnimation(*firstScene, far, true, scale, 1), 100) == 8);
+    first[0]->position.z = first[1]->position.z = -400;
+    firstScene->updateMatrixWorld();
+    const auto checkHeld = [&](ProjectedCull& cull, const Camera& camera, double held) {
+        const auto pairs = cull.bandAnimation(*firstScene, camera, true, scale, 2);
+        CHECK(pairs && pairs->size() == 64);
+        CHECK(rate(pairs, 100) == held);  // turn 3: held
+        CHECK(rate(pairs, 101) == 8);     // turn 4: measured
+    };
+    checkHeld(a, near, 2);
+    checkHeld(b, far, 8);
+    // The ABI keeps its cull on the scene, so the same instance also sees both cameras.
+    checkHeld(rootBridge, near, 2);
+    checkHeld(rootBridge, far, 8);
+    first[1]->position.z = -40;
+    firstScene->updateMatrixWorld();
+    checkHeld(a, near, 2);  // a repeated call in frame 2 neither advances nor remeasures the hold turn
+    const auto other = b.bandAnimation(*secondScene, far, true, scale, 2);
+    CHECK(other && other->size() == 64 && rate(other, 200) == 8 && rate(other, 100) == 0);
+    second[0]->position.z = second[1]->position.z = 360;
+    secondScene->updateMatrixWorld();
+    const auto thirdA = a.bandAnimation(*firstScene, near, true, scale, 3);
+    const auto thirdB = b.bandAnimation(*secondScene, far, true, scale, 3);
+    CHECK(rate(thirdA, 100) == 8 && rate(thirdA, 101) == 8 && rate(thirdA, 200) == 0);
+    CHECK(rate(thirdB, 200) == 2 && rate(thirdB, 201) == 8 && rate(thirdB, 100) == 0);
+    for (const auto& rigs : {first, second})
+        for (const auto& rig : rigs) ProjectedCull::trackRate(*rig, -1);
 }
 
 void projected_cull_list() {
@@ -3842,9 +4278,11 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"frustum_intersects_boxes", frustum_intersects_boxes}, {"material_witness", material_witness}, {"rig_lane_follows_morph_set", rig_lane_follows_morph_set}, {"world_records", world_records}, {"world_stale_entries", world_stale_entries}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_reads", tsl_reads}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
+             {"projected_cull_band_animation", projected_cull_band_animation},
+             {"projected_cull_multiple_views", projected_cull_multiple_views},
              {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})

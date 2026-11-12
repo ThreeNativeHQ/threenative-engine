@@ -345,7 +345,11 @@ export class InputMap {
     return Math.max(-1, Math.min(1, value));
   }
 
-  /** Request pointer capture explicitly from a named game gesture. Relative bindings request it on canvas click by default. */
+  /**
+   * Request pointer capture explicitly from a named game gesture. Relative bindings request it on
+   * canvas click by default. A refused lock — an unfocused window, an untrusted gesture — leaves
+   * `raw.pointer.captured` false and warns once as `TN_POINTER_LOCK_REFUSED:`, never a rejection.
+   */
   captureMouse(): void {
     if (this.raw.pointer.captured) return;
     const result = captureMouse(this.#pointerTarget);
@@ -357,7 +361,9 @@ export class InputMap {
       () => this.#syncCaptured(true),
       (error: unknown) => {
         this.raw.pointer.captured = false;
-        throw error;
+        console.warn(
+          `TN_POINTER_LOCK_REFUSED: ${error instanceof Error ? error.message : String(error)}`,
+        );
       },
     );
   }

@@ -287,6 +287,10 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
           },
         });
   game.frameBudget = frameBudget;
+  // Built after the presentation hold goes up: until the reveal (`markRevealed` in game-startup),
+  // a window spans startup work, so it must not alert as a hot call in play. A startup that already
+  // settled has revealed, and its frames are play.
+  if (!startup.projectionSettled) frameBudget?.markCovered();
   // The loop that reports into it stops first: `startScenes` pushes the loop's stop after this.
   if (frameBudget !== undefined) game.cleanup.push(() => frameBudget.dispose());
   // Per-pass draws and triangles ride the frame budget's window by default. The same property
@@ -719,6 +723,14 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
             // fresh or not.
             renderer.noteGpuMainMs?.(gpuFrame.main, gpuFrame.frame);
           } else {
+            // A renderer the pass recorder cannot instrument (the owned engine) may time its own
+            // passes; its split rides on the sample, so `TN_FRAME_BUDGET` names the pass that costs.
+            if (gpuSample?.main !== undefined)
+              frameBudget?.addGpuBucketMs({
+                main: gpuSample.main,
+                shadow: gpuSample.shadow,
+                other: gpuSample.other,
+              });
             renderer.noteGpuMainMs?.(undefined);
           }
           if (!depthCoupledOutput && game.sceneEntered) game.scene?.render(ctx);

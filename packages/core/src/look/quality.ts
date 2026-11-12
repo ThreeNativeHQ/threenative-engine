@@ -167,6 +167,10 @@ const low: IWorldEnvironmentOptions = {
   finalGatherMethod: "none",
   localExposureEnabled: false,
   renderChainTier: "low",
+  // No screen-space reflections: UE 5.8.3 BaseScalability.ini:514-515, [ReflectionQuality@0] r.SSR.Quality=0. Left unset,
+  // the default turned SSR on, and its normal and material reads redrew the scene into a second G-buffer pass (Iris Xe
+  // stress lab: 6.7 of 26.7 ms, PRD-871).
+  ssrEnabled: false,
   // Single-sample, as medium: an unset count inherits the renderer's 4x MSAA, and the cheapest tier
   // cost more than medium on a forest (Iris Xe 125 -> 158 ms at the switch, PRD-762).
   samples: 0,

@@ -77,6 +77,225 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   published state re-renders at the publish rate, not the rate of what it shows. `useUiState(selector)` compares
   the result by identity, so a selector that builds a new object or array renders as often as no selector.
 
+## 2026-11-11 Physics interpolation in the engine (PRD-877, PRD-875, PRD-876)
+
+- **Keep — blend and restore poses in one engine call (PRD-877).** `PhysicsInterpolation` on the owned engine makes one
+  Wasm call per phase instead of a JS write per body. Stress lab, RTX 2080: interpolation 1.05 → 0.10 ms a frame;
+  JS shared-transform writes 8,379 → 1,458 a frame; the branch's fair window (#374/#375) read frame p50 9.32 → 8.15 ms.
+  Trap found on the way: a settled body was written every frame (blend onto the same pose), which dirtied its
+  transform and made the walk recompose an unchanged matrix. Skip the write when the blended pose equals the pose.
+- **Inconclusive by sizing gate — pool the animation tick across cores (PRD-875).** The tick is 0.27 ms mean
+  (p95 0.44-0.50) on the stress lab; a pool can save about 0.20 ms, under 3% of the frame. Parked WIP: 9d288233b.
+- **Inconclusive by sizing gate — prepare pipelines inside a per-frame budget (PRD-876).** On the real GPU the Strata
+  forest makes every sync create and program build in the load window; startup warm-up holds 319/319 pipelines
+  before reveal. Measure the owned engine on the real adapter (`TN_ENGINE=threenative`, `TN_PLAYTEST_HOST_DISPLAY=1`):
+  Xvfb gives SwiftShader, which loses the device and reads every renderer counter as 0.
+
+## 2026-11-10 Stress lab audit (method, the `play` preset, auto batch)
+
+An audit of the stress loop for benchmark tuning. Rows #313-#322 in `docs/stress-loop/ledger.json`.
+
+Method traps found, each one fixed in the tool unless it says open:
+
+- **One GPU per comparison.** The scoreboard put laptop Iris Xe rows of one engine beside desktop RTX 2080 rows of
+  Unreal. It now compares engines on the adapter of the latest row only (`86927f76c`).
+- **A keep needs a real game.** `record` defaulted to `keep`. It now defaults to `measure`, and a keep needs
+  `--holdout "<game>: <metric> <before> -> <after>"`. "No effect" is a valid holdout result when the game does not
+  use the path (`3dc61adc8`).
+- **The lab scene was benchmark-shaped.** `real` has flat colours, one clip, a fixed orbit and no object that is
+  added or removed. `?stress&play` adds textures, a walk with camera cuts, clip changes and ten spawns a second, in
+  both labs. The first engine bug below shows only there.
+- **fps counted frames the engine did not draw.** The Wasm engine declines a loop frame while the GPU queue is
+  full. On Iris Xe the `play` lab read 41.5 fps while it drew 3.6 frames a second (92% declined, 260 ms of GPU per
+  drawn frame). `fps` now counts drawn frames and every row carries `renderSkipPct` (`c3f8083a5`).
+- **The tail was hidden.** A median of window p95 values hides one bad window. Rows carry frame p99 and the worst
+  window p95.
+- **A build hash of the Wasm alone cannot tell two arms apart** when the change is in core or the facade (rows
+  #319-#322 share one hash). The hash now covers the Wasm and every script the page loads.
+- **The bridge census does not bill the auto batch scan** (`unbilled()`), by design. A 4 ms per frame cost had no
+  meter. Read `__tnEngineCounters().childrenReads` per frame when the census and the frame time disagree.
+- **Lab on the published kit, production bundle.** The lab was pinned to 0.3.12 on the dev server. It now installs
+  the develop tarballs and serves `dist`.
+- **Desktop host.** A headed GPU browser launch with the RTX 2080 near full memory came just before a hard restart
+  of the desktop (cause not proven). Read `nvidia-smi` memory first, and send the run to the laptop when the other
+  browsers hold the GPU: the idle guard refuses the run after 10 minutes anyway.
+- Open: the goals are proxies (main draws, JS render p50) and fps counts twice in the score. Unreal has no `play`
+  arm. The vanilla arm has no physics engine and one sun map.
+
+### 2026-11-10 — A lamp shades only the fragments its range reaches — KEEP
+
+- Where: `packages/runtime-native/src/engine/shader/standard.cpp` (`ranged`, `held`, `shade` in
+  `buildStandardProgram` and `buildLit`); `078aae53b`, `fa8f612a1`. UE 5.8.3:
+  `Engine/Shaders/Private/DeferredLightingCommon.ush:334-344` (`BRANCH if( LightMask > 0 )`).
+- Cause: every lit fragment evaluated the GGX lobe of all 16 torches of the lab, whatever the distance. Past its
+  cutoff a lamp's attenuation is exactly 0, so the work changed no pixel.
+- Attribution (laptop Iris Xe, `seg-probe`, one run per variant): scene pass 203 ms of a 235 ms GPU frame;
+  `&noLights` 7.8 ms; `&noTrees` 192 ms; `&noFires` and `&noRocks` no change; 640x360 82 ms. Shadows were 11 ms.
+- Result (laptop paired probe, two runs per arm, uncapped): scene pass 206-224 to 8.6 ms; `real` 3.6 to 25.3 fps,
+  adaptive `low` 6.3 to 34.8 fps, `play` 3.35 to 19.9 fps. Desktop RTX 2080 (#334-#335): 95.0 to 96.7 fps, GPU p95
+  5.99 to 5.05 ms; that frame is CPU-bound.
+- Visual judge (fresh Opus, three poses, two runs per arm): NEUTRAL. The torch glow on a house wall reads
+  RGB 214.4/168.7/131.8 in both arms.
+- Rules: a value that every light reads (normal map, colour texel, derivatives) goes in a `var` before the first
+  branch, because WGSL refuses a texture sample or a derivative in non-uniform control flow. A lamp that reads a
+  shadow map keeps the straight path for the same reason.
+- Ceiling: 16 lamps now cost 0.6 ms of the Iris Xe scene pass. A light grid pays only past about 64 lamps.
+- Holdout (laptop, `docs/stress-loop/ledger.json` #341-#344): the `tower-defense` kit holds, 109.3 to 114.2 fps.
+
+### 2026-11-10 — Method: the owned engine's GPU frame by pass, and staging an engine into a built game
+
+- The owned engine times its passes (`frame_gpu_timer.h`: sun shadow, scene, other, output, gather, lamp shadow),
+  but core's `gpuMain`, `gpuShadow` and `gpuOther` stayed empty because the pass recorder cannot reach it. A probe
+  read them through `globalThis.__tnGpuSegments`; since `4bd398993` they ride on `TN_FRAME_BUDGET`.
+- Pinned `high` is not what an integrated GPU player gets. Measure `?stress&adaptive`: on the Iris Xe the policy
+  lands on `low`, and the lane is named `real-adaptive-<tier>`.
+- A candidate build of a game can reuse a built `dist`: replace the two engine `.wasm` files and patch the
+  `ASM_CONSTS` address of `TN_GPU_PASSES` in the glue chunks, which moves with each Wasm link (the untracked
+  `artifacts/stress-lab-audit/tools/stage-engine.sh` of the audit worktree does both). Without the patch the page throws
+  `ASM_CONSTS[code] is not a function`.
+- The scoreboard reads only arms named `head`, `develop` or `stack`. A fair window with other arm names records
+  rows that never reach it.
+- The desktop needs a connected monitor for a headed browser: with none, Brave never writes its DevTools port.
+- The `tn-local` CI pool on the desktop can raise the load to 27 in the middle of a window. The window voids those
+  runs; read the VOID lines before you trust a row count.
+
+### 2026-11-10 — Laptop `low` tier: no shadow pass, no SSR, and a tier that does not flap — KEEP
+
+- Where: starter `src/render/postprocessing.ts` and `quality.ts` (`tierShadows`, `6dd609eca`, `99c719d30`);
+  starter `adaptiveQuality.ts` (`97c33a831`, `b3c90884b`); core `look/quality.ts` low preset `ssrEnabled: false`
+  (`cac3780a4`). UE 5.8.3: `Engine/Config/BaseScalability.ini:514-515` (`[ReflectionQuality@0] r.SSR.Quality=0`).
+- Cause 1: the tier table said `low` casts no shadow, but nothing applied it; the shadow pass was 11.3 ms of the Iris Xe
+  frame. Cause 2: the low preset left `ssrEnabled` unset and the default (look layer 8 and up) turned SSR on. SSR's
+  normal, metalness and roughness reads made the owned engine redraw the scene into a full-resolution `aux` G-buffer
+  pass: 6.7 of 26.7 ms hot. Cause 3: with shadows off, `low` measured 12-13 ms, inside the 20% headroom line, so the
+  policy raised to `medium` (27 ms), fell back two windows later and retried each cooldown: shadows blinked.
+- Attribution: `pass-probe.mjs` (sets `globalThis.TN_GPU_PASSES = true`, sums the per-pass timer lines per frame).
+  The `aux` pass appeared at pinned `low` too, so it was the low graph, not a stale medium graph; a one-time engine
+  print of `PostEffects::reads` named the RTT pass that read `normal`, and `TN_RENDER_CHAIN` listed `ssr`.
+- Result (laptop windows, uncapped, ABBA): 7.1 fps before PRD-871 (#338) → 36.0 (lamp range, #342) → 63.2 mean
+  (no shadow pass, #346) → head runs 84.6 and 67.5 fps (no SSR, #350; base 78.2 and 47.0). GPU p95 12.3 → 9.0 ms.
+- Visual judges (fresh Opus, two runs per arm): shadows off NEUTRAL (only cast shadows go, 2% auto-exposure
+  re-meter); SSR off NEUTRAL on still, town and closeup (0.02-level difference, sea keeps its sky reflection).
+- Rule: a raise that the next change undid keeps its cost ratio, and the tier retries only when the predicted cost
+  fits (`reason=predicted`). A doubling backoff alone still blinked the shadows every few cooldowns.
+- Holdout (laptop, #351-#352): the `tower-defense` kit holds, 108.6 to 111.4 fps; it settles at `medium`, which the
+  change does not touch.
+- Next lever on that frame (cool, 8.1 ms): the scene pass is 5.3 ms, about half of it the 120 walkers (1.65 M
+  triangles, 13.7 k each, no LOD: `updateModelLods` skips skinned meshes).
+
+### 2026-11-10 — `play`: the shadow LOD sync walked the whole scene each frame for no chain — KEEP
+
+- Where: `packages/three-native/src/shadow-node.ts` `syncVirtualShadowLods` (`e4fe59cb8`).
+- Cause: the walk is skipped only while the light root's hierarchy revision holds. `play` adds and removes objects
+  every frame, so each frame walked about 10k objects through engine proxies (`child.geometry` is a bridge get, and
+  each argument goes through the recursive converter `J`). The lab registers no LOD chain, so every walk found nothing.
+- Attribution: the stage split covers the frame (`stageSum` p50 = frame p50). A CPU profile of `?stress&play`
+  (`prof-probe.mjs`, 200 µs sampling, 10 s) put 15% of main-thread time under `Pn → traverse → value → J`. Profile
+  self time with Wasm names is not readable; inclusive time by JS caller chain found it in one pass.
+- Result (same build, the old walk forced by setting `discreteLodChainsVersion` to 0 in an init script, 3 pairs,
+  load 7-20): 42.5/35.2/45.6 → 57.8/59.5/54.2 fps, frame p50 27.1/30.9/15.7 → 16.0/17.3/12.6 ms. `update` fell as well
+  (less garbage from the converter). No pixel can change: with no chain registered, the walk dispatched nothing.
+- Fair window (desktop, `play-lod-walk-c`, rows #364-#365, uncapped ABBA, two runs per arm, load peak 7.0):
+  66.0 → 79.7 fps (base 63.9/68.0, head 78.1/81.3), frame p50 11.71 → 11.04 ms, frame p95 26.46 → 18.35 ms. The
+  window before it (`play-lod-walk-b`) recorded the base pair and voided half its runs: the `tn-local` pool took the
+  host to load 45 mid-window, which is the difference between 60.4 and 78-81 fps on the same head build.
+- Holdout (desktop, `td-lod-holdout`, rows #366-#367): the tower-defense kit 286.9 → 306.5 fps, frame p95 3.26 →
+  2.38 ms, no effect — as expected, the kit registers no chain either. Staged without a rebuild: the change is one
+  guard in a facade chunk, so the head arm is the same built `dist` with that guard patched into the shipped chunk. The
+  pair then differs by 25 bytes and no interface moves, which a cross-build chunk swap would not give (the facade
+  reads the Wasm's `ASM_CONSTS` indices, and those move with each link).
+- Rule: a per-frame scan that a registry gates must also gate on "nothing registered yet". A forced-old-path init
+  script gives an exact same-build control when the switch is a global.
+- Open: a game that does register chains and churns its hierarchy still walks every frame. Fix it with an
+  added/removed subtree walk when such a game shows it.
+
+### 2026-11-10 — The shadow plan's per-caster rebuild and the rig box: 0.13 ms, not 0.6 — and how three runs measured one binary
+
+- Where: `renderer_frame.cpp` (the plan loop), `shadows/virtual/atlas.{h,cpp}` (`CasterSignature`, presence stamp),
+  new `shadows/virtual/caster_plan.h` (`da185d67e`); `animation/skinning/skeleton.{h,cpp}` `poseFold`,
+  `boneReachBounds` box cache (`f95ea2eb6`).
+- What the code did: every frame rebuilt, per caster, its bounds, a `std::to_string` signature, the parent-chain
+  tracked/pinned walk and a `CasterState`; and per rig mesh, 65 bone transforms. The plan now compares a caster's
+  inputs (world, store, versions, layers, cast bit, cache pointer, one fold of the atlas control sets) and keeps the
+  record when they hold; a rig's box is keyed on the fold of the bone locals, `inv(mesh world) * root world` (to
+  1e-12) and the mesh scale, so a rigid move keeps it.
+- **The trap that cost three runs: the lab is cross-origin isolated, so it loads `tn-native-engine-web-threads.wasm`.**
+  `stage-engine.sh` swaps both wasm files, but rebuilding only the non-threads module (`build/wasm`) stages the new
+  glue beside an *unchanged* threads engine. Two "identical" windows and several probes compared one binary with
+  itself (its `tn-native-engine-web-threads-*.wasm` hash never moved). Rebuild `build/wasm-threads --target
+  tn-native-engine-web` too, then check the staged threads hash.
+- Result (alternating probes, desktop `?stress`, uncapped, same host minutes, base `c5619ec` vs head `06418f6`):
+  `planVirtualPages` 1.09/1.15 → 1.02/0.96 ms; with `&noCrowd` 0.59 → 0.44; cpu p50 9.03 → 8.93 (inside the run-to-run
+  spread of 0.5). Fair window `plan-floor-b` (#370-#371, ABBA, load 2.2-3.6): base 105.1 fps / p50 8.98, head 107.3 /
+  9.01.
+- What that means: the plan's own per-caster work was never 0.6 ms of the frame. The stage is 1.0 ms with the crowd,
+  0.44 without it, and 0.44 again with the crowd's boxes free — so a plan change cannot reach the 0.5 ms the
+  acceptance criterion asked for while 240 rig meshes are posed every frame.
+- The frame on a quiet host: `wasmPlan` 2.0-2.2 (of it `planVirtualPages` 1.0, `planShadowLists` 0.3, the rest the
+  frame's own planning), `wasmScene` 1.9-2.1, `jsBefore` 1.29, `update` 1.0, `engineJs` 0.85, `wasmTargets` 0.73. The
+  crowd is 5.2 ms of it, and only 0.5 of that is shadow planning.
+- Rule: a sub-timer attribution is a hypothesis until a same-binary A/B agrees with it. And a staged engine proves
+  nothing until the hash you served is the hash you built.
+
+### 2026-11-10 — Uploads on a still frame: the counter was wrong, then one 4-byte write — KEEP
+
+- Where: `renderer_frame.cpp` (counter at each arena write, `a3ee875b2`), `renderer_output.cpp` (output block written
+  only when it differs, `bd1cd887d`).
+- `uniformUploadBytes` added the arena size each frame: 39 KB a frame on a static stress frame beside a 516-byte real
+  upload. The FM2 diff already sent only changed blocks. A counter that names a cost must count what crossed.
+- After: a still frame uploads 0 bytes (`frame_slab_is_per_program`). On `?stress&still` the 74 KB a frame is the
+  walking crowd's bone palettes and 6.7 KB of changed uniform blocks.
+
+### 2026-11-10 — Desktop shadow planning: rigid vertex boxes and rig bone stretch — KEEP (partial)
+
+- Where: `renderer.cpp` `virtualShadowBounds` (a moving rigid caster keeps its vertex box, keyed by store, version,
+  epoch and writes; `a38190bff`); `skeleton.cpp` (`linearStretch` of a bone alone, the bind inverse folded once;
+  `7482c204c`).
+- Result (temporary sub-timers): bounds rebuild 1.38 → 1.06 ms a frame. `planVirtualPages` still reads 1.25-1.6 ms;
+  the 0.5 ms target is not met. The desktop window `shadow-plan` (#347-#348) is inconclusive (one valid base run).
+- `?stress` frame 10-12 ms against 5.6 ms with `&noCrowd`: the 120 rigs are the desktop lever too (bones move in
+  world space each frame, so every rig re-plans).
+- Sub-timers (1174 items, 1145 casters): bounds 0.95 ms (242 rig meshes about 0.64, 902 rigid cached casters about
+  0.28), caster states 0.08, `updateCasters` 0.18, atlas 0.15. The bone joins are only about 0.2 ms. Each mannequin
+  binds 2 meshes to 1 skeleton: `3883e79f0` reads the poses once per plan (bounds median 1.21 → 1.08 ms, load 17-23).
+  Floor with zero rig cost: about 0.7 ms, because every caster is re-verified each frame; 0.5 ms needs a dirty list.
+- Trap: a probe timer that adds a new JS import (`emscripten_get_now`) breaks a staged build, because the staged glue
+  is the old one (`writeTexture ... GPUTexelCopyTextureInfo`). Use `std::chrono::steady_clock`, which the engine
+  already imports.
+
+### 2026-11-10 — Method traps: laptop probes, prebuilt CLI facade, native engine-only tests
+
+- `offload.sh stop` leaves a probe's detached Chromium running. One rendered the lab for 30 min, held the package at
+  97-100 C and voided the next window (`p2c`, not recorded). Probes now kill their browser group on SIGTERM.
+- `threenative build` bundles the facade from `create-threenative/dist/web-engine-runtime.js`: a facade change needs
+  a rebuilt and repacked create-threenative, or the lab ships the old facade (no `gpuMain` in `TN_FRAME_BUDGET`).
+- Native C++ cases outside the Wasm build (render database, player) build in a Dawn engine-only tree:
+  `cmake -S . -B build/engine-only -G Ninja -DCMAKE_BUILD_TYPE=Release -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON
+  -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF`, with `third_party/{dawn,sdl3,v8}` linked from the main checkout.
+  The test binaries take one case name each; ctest names them `native_engine_*`.
+
+### 2026-11-10 — Auto batch scans what arrived, not the scene, after each add or remove — KEEP
+
+- Where: `packages/core/src/auto-batch.ts` (`#pending`, `#hangs`, `#visit`, `#finish`); `744a9321c`.
+- Cause: every `childadded` or `childremoved` at the top two scene levels re-walked the whole scene twice (quiet,
+  then watching). The facade drops every `children` cache on any hierarchy move, so each walk crossed the bridge
+  once per node. Ten spawns a second kept the scan running in every frame.
+- Probe (desktop, one run each, diagnosis): crossings 2,085 to 389 per frame, `children` reads 3,030 to 12.
+- Laptop paired window, Iris Xe, uncapped, 2 ABBA pairs (#317, #318): CPU frame p50 11.14 to 7.71 ms, p95 55.24 to
+  36.34 ms, p99 78.21 to 62.22 ms. Drawn fps is flat at 3.5: that host is GPU-bound.
+- Desktop RTX 2080, uncapped, single runs because the GPU guard refused the rest (#319-#322): `play` 39.71 to 49.36
+  fps, CPU frame p50 25.52 to 17.01 ms; `real` 86.81 to 92.68 fps (second pair 89.13 to 93.98).
+- Holdout: no effect on the tower defense kit (its performance scenario) or on Midway with auto batch on. Neither
+  adds objects at the top two levels during play (`hierarchyMoves` 0.01 per frame). The merged meshes and draws
+  are equal in both arms on the lab, the kit and Midway.
+- Visual judge (fresh, read-only, Midway cockpit, 2 runs per arm): NEUTRAL on all 4 pairs. The control stick and
+  every gauge needle are present (the parts that `4a8abe0a3` fixed).
+- Tests: `auto-batch.spec.ts` "scans what arrived, not the scene" (the settled town's `children` are not read
+  again, 78 reads before), a mover merges after it rests, lone meshes wait for a partner, a hidden subtree merges
+  after it is shown.
+- Ceiling: a mesh with no partner is walked by every scan, and `heldObjects()` and `mergeByMaterial` are still
+  O(scene) per merge. Index by material when a scene holds thousands of lone meshes.
+
 ## 2026-10-29 Stress lab (web Wasm engine, Chrome DevTools MCP, RTX 2080)
 
 The sandbox scene `sandbox/stress-lab` (`?stress`, real preset) holds houses, a forest, a skinned crowd, physics
@@ -1137,3 +1356,21 @@ no COOP/COEP); that lane is open.
   CPU frame measures 7.7 ms mean, 9.8 ms p95. A plain 2D canvas on the same tab stalled once in 12 s, not three times.
 - Revisit when: a quiet lane (no other GPU client: the desktop shares the GPU with KWin, a second browser and a CUDA
   process) or a Chrome GPU-process trace can catch one; a 5 s DevTools trace started a fresh phase and caught none.
+
+### 2026-11-11 — Walking crowd and forest world (PRD-878, PRD-879): the frame fell 16%, the crowd cost 11% — KEEP
+
+- What held, `?stress` fair window `fwfinal` (ABBA, mean of 2 runs, 0 void, RTX 2080, ledger rows 376-381): frame p50 9.22 -> 7.75 ms,
+  p95 11.50 -> 10.60, GPU upload 1,191 -> 638 KB a frame, `planVirtualPages` 1.20-1.26 -> 0.79-0.89 ms. The forest walk
+  `WorldCells.update` fell from 6.7 to about 3.5 ms in the first lane, and the playtest exits 0 three times. Judges NEUTRAL.
+- The crowd cost fell only 4.16 -> 3.70 ms: the whole-frame win came mostly from rows the `&noCrowd` arm shares (engine JS,
+  world, startup program builds). Read the `&noCrowd` arm before crediting a crowd cut.
+- The largest crowd row after the cuts is the lab's own `update` (+1.42 ms, `AnimationPlayer.update` per walker, game
+  scripting). A bar measured as `?stress` minus `&noCrowd` charges the game's script to the engine; name the stage.
+- A cache keyed on a version must prove every writer bumps it. `Material::version()` misses plain native writes and aliased
+  colour writes, so a `materialSignature` cache on it would freeze draws (stopped, not built). An `onBeforeRender` callback
+  rewrote a material after `refresh()` stamped the draw, so the shadow row kept the old depth program for a frame (fixed,
+  red-green `native_engine_shadow_row_follows_on_before_render`).
+- Test traps that cost hours: the default native build leaves test executables stale ("unknown case" or a pass on old code), so
+  build every test target by name under bash (a zsh variable passes one word) and run the whole `ctest -L native-engine` label.
+  A fair window refuses to run while another job holds the GPU above 10%; wait for it, and discard figures taken under load.
+- Revisit when: PRD-881 (engine stages of the crowd) or PRD-882 (the drain and the desktop forest) lands.

@@ -127,7 +127,7 @@ const panels = panel(THREE);
 check(panels[0] instanceof THREE.BufferGeometry && answers(panels) === ${JSON.stringify(answers(panel(three)))}, "Shape, holes and ExtrudeGeometry as three");
 const refuses = (make, pattern) => { try { make(); return false; } catch (error) { return pattern.test(String(error.message)); } };
 for (const [name, value] of Object.entries({ CompressedArrayTexture, InstancedInterleavedBuffer, TextureUtils, BundleGroup, EventNode,
-  IndirectStorageBufferAttribute, element, instancedBufferAttribute, instancedDynamicBufferAttribute, positionView, transformNormal, varyingProperty }))
+  element, instancedBufferAttribute, instancedDynamicBufferAttribute, positionView, transformNormal, varyingProperty }))
   check(refuses(() => (typeof value === "function" ? new value() : value.x), new RegExp("TN_NATIVE_UNSUPPORTED_" + name.toUpperCase())), name + " refused at use");
 check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
   { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
@@ -525,7 +525,11 @@ check(loader.cache.enabled === false && loader.cache.reason === "native host rea
 check(typeof loader.prefetch === "function" && typeof loader.startBackgroundFill === "function", "native prefetch and fill");
 // ctx.assets.memo (PRD-860): no Cache API on native, so the build runs and its value comes back.
 const memoValue = { pixels: new Uint8Array([7]) };
-check(typeof loader.memo === "function" && (await loader.memo("sky", () => memoValue)) === memoValue, "native memo runs build");
+// The bundle is an IIFE, so the check rides the promise instead of a top-level await.
+check(typeof loader.memo === "function", "native memo exists");
+loader.memo("sky", () => memoValue).then(
+  (value) => { if (value !== memoValue) globalThis.tn.__startupError = "native memo did not return its build"; },
+  (error) => { globalThis.tn.__startupError = "native memo refused: " + error.message; });
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
 // "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the

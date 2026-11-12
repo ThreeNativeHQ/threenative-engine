@@ -41,3 +41,4 @@ f799f51aba375ce12df5eb43db2a7c69b65d96ae:scripts/kit-loop.mjs:generic-api-key:45
 # Verified 2026-11-06 at the recorded commit: the generic-api-key heuristic fires on PRD-595 prose
 # that names a queue/key set and `keysForShadow`, not a credential. Scope to this finding only.
 972d1e371728121b973a085e34ed045ed868b6df:docs/PRDs/strata-terrain-hardening/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md:generic-api-key:65
+3dc61adc8a80b779e36087b66752dfbe0d1c56ef:scripts/stress-loop.mjs:generic-api-key:324

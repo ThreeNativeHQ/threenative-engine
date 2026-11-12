@@ -35,7 +35,8 @@ namespace tn::engine::waste {
     X(sceneDirtyMarks) X(sceneVisits) X(sceneAdds) X(sceneRemoves) X(queueSubmits) \
     X(readbackMaps) X(readbackBytes) X(timestampResolves) X(timestampSamplesDelivered) X(gpuTimestampUnrequestedSamples) \
     X(velocityCandidates) X(velocitySkipped) X(temporalActiveFrames) X(temporalInvalidFrames) X(temporalRejectedPixels) \
-    X(temporalClampedPixels) X(temporalMeasuredPixels) X(pipelineCreateMicros) \
+    X(temporalClampedPixels) X(temporalMeasuredPixels) X(pipelineCreateMicros) X(animationTickMicros) \
+    X(pipelineSyncCreates) X(programBuilds) \
     X(queueCallbackMicros) X(queueDeliveryMicros) X(queueCallbacks) \
     X(handleCreates) X(handleReleases) X(attributeUploadBytes) X(uniformUploadBytes) \
     X(renderFrames) X(renderDraws) X(shadowDraws) X(auxPasses) X(auxFragments) X(cullCandidates) X(culledObjects) \
