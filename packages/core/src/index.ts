@@ -1997,6 +1997,7 @@ export type {
   ContextMenuPolicy,
   IInputAction,
   IInputGamepad,
+  IInputMapOptions,
   InputBindings,
   InputPlatformSource,
   IRawInputPointer,
@@ -2014,8 +2015,22 @@ export type {
  * @situation map WASD keys to a movement axis instead of reading the held key set in the update loop
  * @situation read a jump, a fire or a reload as one named action bound to key, gamepad button and mouse button together
  * @situation read mouse look, wheel zoom or a two-finger pinch as an axis the frame loop already ticks
+ * @situation support an Xbox pad, a generic XInput clone, an 8BitDo or a Steam Deck controller
+ * @situation the character drifts while the controller stick is idle
+ * @situation the controller does nothing in Firefox on Linux
+ * @situation a second controller or a wheel steals the input from the pad the player holds
+ * @alias gamepad
+ * @alias controller
+ * @alias joypad
+ * @alias xbox
+ * @alias 8bitdo
+ * @alias steam deck
  * @constraint `buttons` is the gamepad and `mouseButtons` the mouse; `up`/`down`/`left`/`right` are the directions of `vector(name)`, not the keys that press it
  * @constraint scroll, pinch and pointer-relative sources are declared on the binding and read through `axis(name)`; a game adds no window listener of its own
+ * @constraint gamepad buttons are W3C standard indices on every pad: 0 south (A/Cross), 1 east, 2 west, 3 north, 4/5 shoulders, 6/7 triggers, 8 select, 9 start, 10/11 stick clicks; axes 0..3 are the sticks
+ * @constraint both sticks carry a radial dead zone, `0.2` by default, reported per connected pad as `TN_GAMEPAD`; a pad the browser reports unmapped and the table does not know is ignored, never read with raw indices
+ * @constraint a pad claims the input when a button goes down or a stick travels past half tilt, and keeps it while idle so its releases read; a stick resting past the dead zone or jittering across it claims nothing, so an idle pad in the first slot cannot steal input
+ * @override defineGame({ gamepadDeadZone: 0 }) publishes raw axes
  * @example const game = defineGame({ input: { move: { up: ["KeyW"], down: ["KeyS"], left: ["KeyA"], right: ["KeyD"] } }, scenes: { Play } });
  * // inside the scene, per frame: ctx.input.axis("move") is 0 at rest and 1 at full tilt
  */

@@ -187,6 +187,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     canvas,
     platform?.input,
     game.config.contextMenu,
+    { gamepadDeadZone: game.config.gamepadDeadZone },
   );
   game.input = input;
   game.cleanup.push(() => {

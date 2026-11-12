@@ -45,7 +45,7 @@ import { waitForResource } from "./wait-for-resource.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import { DeviceMetricsRecorder } from "./deviceMetrics.js";
 import {
-  androidMailboxPaths,
+  type androidMailboxPaths,
   DeviceBridgeTransport,
   DeviceMailboxTransport,
   deviceTimeoutDiagnostic,
@@ -161,6 +161,16 @@ async function runDevicePlaytestInternal(
     return failureReport(config, scenario, unsupportedDiagnostic(
       "a drawEvery tick cadence",
       "Run this scenario on --target browser, which owns the fixed-step draw cadence, or remove drawEvery.",
+      target.name,
+    ), target.name);
+  }
+  // A scripted pad is installed by the browser runner's `navigator.getGamepads`. These lanes drive a
+  // real host process with no such seam, so running the scenario here would report green while the
+  // game never saw a controller.
+  if (scenario.steps.some((step) => step.gamepad !== undefined)) {
+    return failureReport(config, scenario, unsupportedDiagnostic(
+      "a scripted gamepad",
+      "Run this scenario on --target browser, which installs navigator.getGamepads, or drive the pad by hand.",
       target.name,
     ), target.name);
   }

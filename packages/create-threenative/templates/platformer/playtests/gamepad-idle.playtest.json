@@ -1,0 +1,21 @@
+{
+  "name": "platformer-gamepad-idle",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "stick resting at 0.1",
+      "gamepad": { "axes": [0.1, 0] },
+      "waitTicks": 180,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": { "entity": "player", "maxDistance": 0.5 }
+  }
+}
