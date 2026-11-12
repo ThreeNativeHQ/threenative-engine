@@ -70,9 +70,11 @@ const PAD_ROWS: readonly IPadRow[] = [
     // `ABS_GAS` (9) 0..255, and axes are reported in ascending ABS order — the rule the two sticks
     // confirm, ABS_X/ABS_Y on a0/a1 and ABS_Z/ABS_RZ on a2/a3 — which puts the left trigger on a5 and
     // the right on a4, as SDL's 8BitDo rows also have them.
-    // The stick clicks are `leftstick:b13` and `rightstick:b14`, confirmed in Chromium: clicking them
-    // reports raw buttons 13 and 14, which is the standard's 10 and 11. One caveat: the extra C/Z
-    // buttons at b2/b5 have no standard slot, so they are left unbound.
+    // The stick clicks reach Chromium as raw buttons 13 and 14, which is the standard's 10 and 11 —
+    // observed when both sticks were clicked together, so the indices are measured while which side is
+    // which follows the kernel's order (`BTN_THUMBL` 317 before `BTN_THUMBR` 318), the same derivation
+    // the triggers use. One caveat: the extra C/Z buttons at b2/b5 have no standard slot, so they are
+    // left unbound.
     product: 0x3016,
     vendor: 0x2dc8,
     map: "a:b0,b:b1,x:b3,y:b4,back:b10,start:b11,leftshoulder:b6,rightshoulder:b7,leftstick:b13,rightstick:b14,lefttrigger:a5,righttrigger:a4,leftx:a0,lefty:a1,rightx:a2,righty:a3,",

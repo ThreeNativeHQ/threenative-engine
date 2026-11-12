@@ -417,7 +417,8 @@ describe("InputMap", () => {
   it("maps every control the 8BitDo Ultimate C 2.4G actually sends", () => {
     const target = new EventTarget();
     // Indices measured on the owner's device through Chromium: A, B, X, Y, LB, RB, LT, RT, Select and
-    // Start fired at 0, 1, 3, 4, 6, 7, 8, 9, 10, 11 in press order, the stick clicks at 13 and 14, the
+    // Start fired at 0, 1, 3, 4, 6, 7, 8, 9, 10, 11 in press order, the stick clicks at 13 and 14 (both
+    // seen in one frame; the side follows the kernel's BTN_THUMBL < BTN_THUMBR order), the
     // left stick moved axes 0/1, the right stick axes 2/3, and the triggers sat at -1 on axes 4 and 5. One binding per standard slot
     // the row claims, so a wrong slot in the row fails a named expectation rather than a vague one.
     const id = "8BitDo Ultimate C 2.4G Wireless Controller  (Vendor: 2dc8 Product: 3016)";
