@@ -63,11 +63,17 @@ const PAD_ROWS: readonly IPadRow[] = [
     // A, B, C, X, Y, Z, LB, RB, LT, RT, Select, Start, Home, L3, R3, and a0..a7 are ABS_X, ABS_Y,
     // ABS_Z, ABS_RZ, ABS_GAS, ABS_BRAKE, HAT0X, HAT0Y. Hence X and Y sit on b3/b4 (not b2/b3), the
     // right stick is a2/a3, and the triggers are a5 (left) and a4 (right), travelling -1..1.
-    // Every one of those was confirmed on the device through Chromium, which is why the row ships with
-    // no guessed slot. Two caveats measured on the same unit: `leftstick`/`rightstick` are declared by
-    // the kernel but a press on either stick reaches it as `BTN_TL2` (the left trigger's digital
-    // button) — twice, once per stick, 1.26 s apart — so no browser can report them as separate
-    // buttons and b13/b14 are inert here; and the extra C/Z buttons at b2/b5 have no standard slot, so they are left unbound.
+    // What was measured in Chromium, by pressing the pad: A, B, X, Y, LB, RB, Select and Start at raw
+    // 0, 1, 3, 4, 6, 7, 10, 11, the left stick on a0/a1 and the right stick on a2/a3. The trigger sides
+    // are derived from the kernel instead, which is the closest measurement available without a
+    // per-frame logger in the page: pressing LT swept `ABS_BRAKE` (10) 0..255 and pressing RT swept
+    // `ABS_GAS` (9) 0..255, and axes are reported in ascending ABS order — the rule the two sticks
+    // confirm, ABS_X/ABS_Y on a0/a1 and ABS_Z/ABS_RZ on a2/a3 — which puts the left trigger on a5 and
+    // the right on a4, as SDL's 8BitDo rows also have them.
+    // Two caveats, measured on this unit on Linux: a press on either `leftstick`/`rightstick` reaches
+    // the kernel as `BTN_TL2`, the left trigger's digital button (twice, once per stick, 1.26 s
+    // apart), so no browser there reports them as separate buttons and b13/b14 are inert; and the
+    // extra C/Z buttons at b2/b5 have no standard slot, so they are left unbound.
     product: 0x3016,
     vendor: 0x2dc8,
     map: "a:b0,b:b1,x:b3,y:b4,back:b10,start:b11,leftshoulder:b6,rightshoulder:b7,leftstick:b13,rightstick:b14,lefttrigger:a5,righttrigger:a4,leftx:a0,lefty:a1,rightx:a2,righty:a3,",
