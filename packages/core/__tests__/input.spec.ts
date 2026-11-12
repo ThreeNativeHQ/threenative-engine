@@ -84,12 +84,448 @@ describe("InputMap", () => {
   it("should read a bound gamepad axis through the same scalar input", () => {
     const target = new EventTarget();
     const input = new InputMap({ zoom: { gamepadAxes: [3] } }, target, target, () => [
-      { axes: [0, 0, 0, 0.75], buttons: [] },
+      { axes: [0, 0, 0, 1], buttons: [] },
     ]);
 
     input.tick();
 
-    expect(input.axis("zoom")).toBeCloseTo(0.75);
+    expect(input.axis("zoom")).toBe(1);
+    input.dispose();
+  });
+
+  it("dead-zones an idle stick, rescales what is past it, and publishes raw axes at 0", () => {
+    const target = new EventTarget();
+    const axes = [0.1, 0, 0, 0];
+    const input = new InputMap(undefined, target, target, () => [{ axes, buttons: [] }]);
+
+    input.tick();
+    expect(input.vector("move").length()).toBe(0);
+
+    axes[0] = 0.6;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.5);
+
+    input.gamepadDeadZone = 0;
+    axes[0] = 0.1;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.1);
+    input.dispose();
+  });
+
+  it("keeps the pad the player last used, not the first slot the browser lists", () => {
+    const target = new EventTarget();
+    const idleButton = { pressed: false };
+    const heldButton = { pressed: false };
+    const idle = { axes: [0, 0, 0, 0], buttons: [idleButton] };
+    const held = { axes: [0, 0, 0, 0], buttons: [heldButton] };
+    const input = new InputMap({ jump: { buttons: [0] } }, target, target, () => [idle, held]);
+
+    input.tick();
+    expect(input.pressed("jump")).toBe(false);
+
+    heldButton.pressed = true;
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+
+    // The release is read from the pad that pressed, not from the idle slot 0 that a first-pad
+    // rule would have sampled — and `raw.gamepad` is that pad's, normalized, not slot 0's.
+    heldButton.pressed = false;
+    input.tick();
+    expect(input.pressed("jump")).toBe(false);
+    input.dispose();
+  });
+
+  it("keeps the pad being played when another pad drifts in a higher slot", () => {
+    const target = new EventTarget();
+    // The pad in the player's hands holds the right stick; the pad in slot 1 is a worn stick resting
+    // just past the dead zone. A "last slot with input" rule hands the input to slot 1 every tick.
+    const played = { axes: [0, 0, 0, 0.9], buttons: [] };
+    const drifting = { axes: [0.3, 0, 0, 0], buttons: [] };
+    const input = new InputMap(undefined, target, target, () => [played, drifting]);
+
+    input.tick();
+    expect(input.vector("move").x).toBe(0);
+
+    // The player's pad is released. The drifter has rested past the dead zone the whole time, so it
+    // has no new edge to claim: an idle pad does not lose the input to a stick that never moved.
+    played.axes[3] = 0;
+    input.tick();
+    expect(input.vector("move").x).toBe(0);
+
+    // A gentle re-cross of the zone does not steal a slot either: the drifter re-centres and comes
+    // back to 0.3, which rescales below the claim threshold.
+    drifting.axes[0] = 0;
+    input.tick();
+    drifting.axes[0] = 0.3;
+    input.tick();
+    expect(input.vector("move").x).toBe(0);
+
+    // A deliberate move does take over: the drifter pushes the stick past half travel.
+    drifting.axes[0] = 0.9;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.875);
+    input.dispose();
+  });
+
+  it("takes the slot back when the player touches a pad the drifter took at boot", () => {
+    const target = new EventTarget();
+    // At boot the player's pad is idle and the worn stick in slot 1 already rests past the dead zone,
+    // so slot 1 owns the input. Its stick never leaves that band, so only a rising edge on the
+    // player's own pad can hand it back — a level check would leave slot 1 in charge for the session.
+    const playedButton = { pressed: false };
+    const played = { axes: [0, 0, 0, 0], buttons: [playedButton] };
+    const drifting = { axes: [0.3, 0, 0, 0], buttons: [{ pressed: false }] };
+    const input = new InputMap({ jump: { buttons: [0] } }, target, target, () => [
+      played,
+      drifting,
+    ]);
+
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.125);
+
+    played.axes[0] = -1;
+    input.tick();
+    expect(input.vector("move").x).toBe(-1);
+
+    // Held down, the player's pad keeps the slot; the drifter never rises again.
+    input.tick();
+    expect(input.vector("move").x).toBe(-1);
+
+    playedButton.pressed = true;
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    input.dispose();
+  });
+
+  it("does not lose the slot to a stick jittering across the dead zone, and a button reclaims it", () => {
+    const target = new EventTarget();
+    const playedButton = { pressed: false };
+    const played = { axes: [-1, 0, 0, 0], buttons: [playedButton] };
+    const jittering = { axes: [0.19, 0, 0, 0], buttons: [{ pressed: false }] };
+    const input = new InputMap({ jump: { buttons: [0] } }, target, target, () => [
+      played,
+      jittering,
+    ]);
+
+    input.tick();
+    expect(input.vector("move").x).toBe(-1);
+
+    // A worn stick crossing 0.2 by hundredths is an edge every few ticks, and rescales to ~0.01:
+    // it must never take the slot from a pad that is being played.
+    for (const axis of [0.21, 0.19, 0.21, 0.22]) {
+      jittering.axes[0] = axis;
+      input.tick();
+      expect(input.vector("move").x).toBe(-1);
+    }
+
+    // The player is still holding the stick, so a pad-wide edge would never fire — a button press
+    // claims the slot on its own.
+    playedButton.pressed = true;
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    expect(input.vector("move").x).toBe(-1);
+    input.dispose();
+  });
+
+  it("lets a pad that connects into a reused slot claim on the press it already holds", () => {
+    const target = new EventTarget();
+    // Both pads press a new button, so the lowest slot claims and then releases into idle ownership;
+    // the source shrinks for a tick, and a different pad then occupies slot 1 already holding button 0.
+    // Unless the emptied slot forgets its claim history, the new pad looks like it was already down and
+    // never claims — and the owned, idle slot 0 keeps the input.
+    const ownerButton = { pressed: true };
+    const owner = { axes: [0, 0, 0, 0], buttons: [{ pressed: false }, ownerButton] };
+    const firstButton = { pressed: true };
+    const first = { axes: [0, 0, 0, 0], buttons: [firstButton] };
+    const replacementButton = { pressed: true };
+    const replacement = { axes: [0, 0, 0, 0], buttons: [replacementButton] };
+    let pads = [owner, first];
+    const input = new InputMap(
+      { fire: { buttons: [1] }, jump: { buttons: [0] } },
+      target,
+      target,
+      () => pads,
+    );
+
+    input.tick();
+    expect(input.pressed("jump")).toBe(false);
+    ownerButton.pressed = false;
+    input.tick();
+    // Slot 0 owns the input now, idle, so its releases stay readable.
+    expect(input.pressed("jump")).toBe(false);
+
+    pads = [owner];
+    input.tick();
+
+    pads = [owner, replacement];
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    input.dispose();
+  });
+
+  it("reads a gently held stick on a later pad while the first slot has never claimed", () => {
+    const target = new EventTarget();
+    // Slot 0 is a dongle with no pad on it: it is only "first" because it is first. A player who
+    // tilts the stick to 0.4 walks without claiming, so the unowned first slot must not sit on the
+    // input — otherwise a dongle at boot would hide a slow walk until the player pressed something.
+    const empty = { axes: [0, 0, 0, 0], buttons: [] };
+    const played = { axes: [0, 0, 0, 0], buttons: [] };
+    const input = new InputMap(undefined, target, target, () => [empty, played]);
+
+    input.tick();
+    expect(input.vector("move").x).toBe(0);
+
+    played.axes[0] = 0.4;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(0.25);
+    input.dispose();
+  });
+
+  it("publishes raw axes at a zero dead zone, and refuses a dead zone it cannot honour", () => {
+    const target = new EventTarget();
+    // 0.6 on both axes is inside the unit circle only after clamping: a dead zone of 0 must not rescale.
+    const input = new InputMap(
+      undefined,
+      target,
+      target,
+      () => [{ axes: [0.6, 0.6, 0, 0], buttons: [] }],
+      "suppress",
+      { gamepadDeadZone: 0 },
+    );
+    input.tick();
+    expect(input.raw.gamepad.axes[0]).toBeCloseTo(0.6);
+    expect(input.raw.gamepad.axes[1]).toBeCloseTo(0.6);
+    input.dispose();
+
+    for (const gamepadDeadZone of [Number.NaN, -0.1, 1.5]) {
+      expect(
+        () => new InputMap(undefined, target, target, () => [], "suppress", { gamepadDeadZone }),
+      ).toThrow(/gamepadDeadZone must be a number from 0 through 1/);
+    }
+  });
+
+  it("reads a standard, an 8BitDo and a Steam Deck through one mapping", () => {
+    const target = new EventTarget();
+    const reports: string[] = [];
+    const info = vi.spyOn(console, "info").mockImplementation((line: string) => {
+      reports.push(line);
+    });
+    const xboxButton = { pressed: true };
+    const eightBitDoButton = { pressed: true };
+    const deckButton = { pressed: true };
+    const xbox = {
+      id: "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)",
+      mapping: "standard",
+      axes: [0, 0, 0, 0],
+      buttons: [xboxButton],
+    };
+    const eightBitDoAxes = [0, 0, 0, 0, 0, 1];
+    const eightBitDo = {
+      id: "8BitDo Ultimate 2C Wireless Controller (Vendor: 2dc8 Product: 301b)",
+      mapping: "",
+      // The row's own order: the left trigger is raw axis 5, the sticks are 0..3.
+      axes: eightBitDoAxes,
+      buttons: [eightBitDoButton],
+    };
+    const deck = {
+      id: "28de-1205-Steam Deck Controller",
+      mapping: "",
+      axes: [0, 0, 0, 0],
+      buttons: [deckButton],
+    };
+    let pads = [xbox];
+    const input = new InputMap(
+      { crouch: { buttons: [6, 7] }, jump: { buttons: [0] } },
+      target,
+      target,
+      () => pads,
+    );
+
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    expect(input.pressed("crouch")).toBe(false);
+
+    xboxButton.pressed = false;
+    pads = [xbox, eightBitDo];
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    expect(input.pressed("crouch")).toBe(true);
+
+    eightBitDoButton.pressed = false;
+    eightBitDoAxes[5] = 0;
+    pads = [xbox, eightBitDo, deck];
+    input.tick();
+    expect(input.pressed("jump")).toBe(true);
+    expect(reports.map((line) => JSON.parse(line.slice("TN_GAMEPAD ".length)).mapping)).toEqual([
+      "standard",
+      "table",
+      "table",
+    ]);
+    info.mockRestore();
+    input.dispose();
+  });
+
+  it("reads the measured 8BitDo Ultimate C 2.4G, whose browser mapping is empty", () => {
+    const target = new EventTarget();
+    const reports: string[] = [];
+    const info = vi.spyOn(console, "info").mockImplementation((line: string) => {
+      reports.push(line);
+    });
+    // The exact id Chromium printed for 2dc8:3016 on the owner's machine, including its double space.
+    // Raw order measured there: buttons 304..318 became b0..b14 (so X and Y are b3/b4) and axes
+    // ABS_X, ABS_Y, ABS_Z, ABS_RZ, ABS_GAS, ABS_BRAKE became a0..a5, so the right stick is a2/a3 and
+    // the triggers are a5 (left) and a4 (right) at -1 resting.
+    const id = "8BitDo Ultimate C 2.4G Wireless Controller  (Vendor: 2dc8 Product: 3016)";
+    const pad = {
+      id,
+      mapping: "",
+      axes: [0, 0, 0, 0, -1, -1, 0, 0],
+      buttons: [
+        { pressed: true }, // 0  A
+        { pressed: false }, // 1 B
+        { pressed: false }, // 2 C
+        { pressed: true }, // 3  X
+        { pressed: false }, // 4 Y
+        { pressed: false }, // 5 Z
+        { pressed: false }, // 6 LB
+        { pressed: true }, // 7  RB
+      ],
+    };
+    const input = new InputMap(
+      { fire: { buttons: [2] }, jump: { buttons: [0] }, rightTrigger: { buttons: [7] } },
+      target,
+      target,
+      () => [pad],
+    );
+
+    input.tick();
+
+    expect(input.pressed("jump")).toBe(true); // south is raw 0 like every other pad
+    expect(input.pressed("fire")).toBe(true); // west is raw 3 on this device
+    expect(input.pressed("rightTrigger")).toBe(false); // raw 7 is the shoulder, not the trigger
+
+    // The triggers arrive as -1..1 axes; the standard reads them past halfway.
+    pad.axes[4] = 1;
+    input.tick();
+    expect(input.pressed("rightTrigger")).toBe(true);
+
+    expect(reports[0]).toContain('"mapping":"table"');
+    info.mockRestore();
+    input.dispose();
+  });
+
+  it("maps every control the 8BitDo Ultimate C 2.4G actually sends", () => {
+    const target = new EventTarget();
+    // Indices measured on the owner's device through Chromium: A, B, X, Y, LB, RB, LT, RT, Select and
+    // Start fired at 0, 1, 3, 4, 6, 7, 8, 9, 10, 11 in press order, the stick clicks at 13 and 14 (both
+    // seen in one frame; the side follows the kernel's BTN_THUMBL < BTN_THUMBR order), the
+    // left stick moved axes 0/1, the right stick axes 2/3, and the triggers sat at -1 on axes 4 and 5. One binding per standard slot
+    // the row claims, so a wrong slot in the row fails a named expectation rather than a vague one.
+    const id = "8BitDo Ultimate C 2.4G Wireless Controller  (Vendor: 2dc8 Product: 3016)";
+    const pressed = Array.from({ length: 15 }, () => ({ pressed: false }));
+    const pad = { id, mapping: "", axes: [0, 0, 0, 0, -1, -1, 0, 0], buttons: pressed };
+    const bindings: Record<string, { buttons?: number[]; gamepadAxes?: number[] }> = {
+      lookX: { gamepadAxes: [2] },
+      lookY: { gamepadAxes: [3] },
+      back: { buttons: [8] },
+      east: { buttons: [1] },
+      leftShoulder: { buttons: [4] },
+      leftStickClick: { buttons: [10] },
+      leftTrigger: { buttons: [6] },
+      north: { buttons: [3] },
+      rightShoulder: { buttons: [5] },
+      rightStickClick: { buttons: [11] },
+      rightTrigger: { buttons: [7] },
+      south: { buttons: [0] },
+      start: { buttons: [9] },
+      west: { buttons: [2] },
+    };
+    const input = new InputMap(bindings, target, target, () => [pad]);
+
+    // The pair of expectations per standard slot: which raw button lights it, and which must not.
+    const expectOnly = (name: string, raw: number): void => {
+      for (let index = 0; index < pressed.length; index += 1)
+        (pressed[index] as { pressed: boolean }).pressed = index === raw;
+      input.tick();
+      expect([name, input.pressed(name)]).toEqual([name, true]);
+      for (const other of Object.keys(bindings))
+        if (other !== name) expect([other, input.pressed(other)]).toEqual([other, false]);
+    };
+
+    expectOnly("south", 0);
+    expectOnly("east", 1);
+    expectOnly("west", 3);
+    expectOnly("north", 4);
+    expectOnly("leftShoulder", 6);
+    expectOnly("rightShoulder", 7);
+    expectOnly("back", 10);
+    expectOnly("start", 11);
+    expectOnly("leftStickClick", 13); // the clicks arrive as raw 13 and 14, not as the trigger
+    expectOnly("rightStickClick", 14);
+
+    // The triggers are `-1` at rest and `+1` pressed, read as the standard's buttons 6 and 7.
+    for (const index of [0, 1, 3, 4, 6, 7, 8, 9, 10, 11])
+      (pressed[index] as { pressed: boolean }).pressed = false;
+    pad.axes[5] = 1;
+    input.tick();
+    expect(input.pressed("leftTrigger")).toBe(true);
+    expect(input.pressed("rightTrigger")).toBe(false);
+    pad.axes[5] = -1;
+    pad.axes[4] = 1;
+    input.tick();
+    expect(input.pressed("rightTrigger")).toBe(true);
+    expect(input.pressed("leftTrigger")).toBe(false);
+
+    // Left stick on 0/1, right stick on 2/3, both rescaled past the dead zone.
+    pad.axes[0] = 1;
+    pad.axes[1] = 0;
+    input.tick();
+    expect(input.vector("move").x).toBeCloseTo(1);
+    pad.axes[0] = 0;
+    pad.axes[1] = 1;
+    input.tick();
+    expect(input.vector("move").y).toBeCloseTo(-1); // raw +y is down, so move.y is negative
+    pad.axes[1] = 0;
+    // The right stick is a2 = horizontal, a3 = vertical — not movement, and not swapped. A row with
+    // rightx:a3, or with the right stick missing, fails one of these two pairs.
+    pad.axes[2] = 1;
+    pad.axes[3] = 0;
+    input.tick();
+    expect(input.axis("lookX")).toBeCloseTo(1);
+    expect(input.axis("lookY")).toBeCloseTo(0);
+    expect(input.vector("move").x).toBe(0);
+    pad.axes[2] = 0;
+    pad.axes[3] = 1;
+    input.tick();
+    expect(input.axis("lookY")).toBeCloseTo(1);
+    expect(input.axis("lookX")).toBeCloseTo(0);
+    input.dispose();
+  });
+
+  it("ignores an unmapped pad and reports it once", () => {
+    const target = new EventTarget();
+    const reports: string[] = [];
+    const info = vi.spyOn(console, "info").mockImplementation((line: string) => {
+      reports.push(line);
+    });
+    const input = new InputMap({ jump: { buttons: [0] } }, target, target, () => [
+      {
+        id: "Generic Wheel (Vendor: 1234 Product: 5678)",
+        mapping: "",
+        axes: [0, 0, 0, 0],
+        buttons: [{ pressed: true }],
+      },
+    ]);
+
+    input.tick();
+    input.tick();
+
+    expect(input.pressed("jump")).toBe(false);
+    expect(input.raw.gamepad.buttons).toHaveLength(0);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toContain("TN_GAMEPAD");
+    expect(reports[0]).toContain('"mapping":"unmapped"');
+    info.mockRestore();
     input.dispose();
   });
 
@@ -264,10 +700,7 @@ describe("InputMap", () => {
 
   it("uses the first connected gamepad after empty browser slots", () => {
     const target = new EventTarget();
-    const gamepads = [
-      null,
-      { axes: [0, 0, 0, 0.75], buttons: [] },
-    ] as ReturnType<InputPlatformSource>;
+    const gamepads = [null, { axes: [0, 0, 0, 1], buttons: [] }] as ReturnType<InputPlatformSource>;
     Object.defineProperty(gamepads, "find", {
       configurable: true,
       value: () => {
@@ -278,7 +711,7 @@ describe("InputMap", () => {
 
     input.tick();
 
-    expect(input.axis("zoom")).toBeCloseTo(0.75);
+    expect(input.axis("zoom")).toBe(1);
     input.dispose();
   });
 

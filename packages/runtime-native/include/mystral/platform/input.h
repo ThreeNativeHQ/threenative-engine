@@ -12,6 +12,7 @@
 #include <cstdint>
 
 struct SDL_TouchFingerEvent;
+struct SDL_Gamepad;
 
 namespace mystral {
 namespace platform {
@@ -163,6 +164,18 @@ void processTouchEvent(const SDL_TouchFingerEvent& event);
  * Get current gamepad state
  */
 bool getGamepadState(int index, GamepadState* state);
+
+/**
+ * Fills `state` with one SDL gamepad in the W3C "standard" mapping — the single interface a game
+ * reads a controller through, so both hosts (`navigator.getGamepads` in the legacy runtime and
+ * `tnPollGamepads` in the owned engine player) report the same 4 axes and 16 buttons, the analog
+ * triggers as buttons 6 and 7. `SDL_OpenGamepad` has already applied SDL's controller database
+ * (Xbox, XInput clones, 8BitDo, Steam Deck, DualShock, DualSense); this is the last mile from its
+ * standard layout to the W3C indices. `index` and `id` are the caller's: they differ per host.
+ *
+ * No dead zone: `packages/core/src/input.ts` owns that, once, for every backend.
+ */
+bool fillStandardPad(SDL_Gamepad* gamepad, GamepadState& state);
 
 /**
  * Get number of connected gamepads

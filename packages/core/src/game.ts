@@ -210,6 +210,12 @@ export interface IGameConfig<
    */
   readonly contextMenu?: ContextMenuPolicy;
   /**
+   * Radial dead zone for both controller sticks, `0`..`1`. Default `0.2`, the stock Enhanced Input
+   * value, so a worn stick resting at `0.08` reads zero instead of walking the character. A stick
+   * past the zone is rescaled so full tilt is still `1`. Pass `0` to read raw axes.
+   */
+  readonly gamepadDeadZone?: number;
+  /**
    * Per-frame cost attribution, on by default. Every `reportEvery` presented frames the game
    * prints one `TN_FRAME_BUDGET` line naming where the frame went — present wait, simulation,
    * three.js render, overlay, the rest — which is what a device lane reads instead of guessing.
