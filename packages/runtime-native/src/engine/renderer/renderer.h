@@ -29,6 +29,7 @@
 #include "engine/renderer/render_features.h"
 #include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
+#include "engine/renderer/shadows/virtual/caster_plan.h"
 #include "engine/shader/output.h"
 #include "engine/shader/package.h"
 #include "engine/shader/standard.h"
@@ -112,6 +113,18 @@ bool& flatShadowSelection();
  * are the renderer's opaque types (Program*, WGPURenderPipeline, WGPUBindGroup).
  */
 struct DrawItem;
+/** What a shadow row's depth variant reads beyond the record's material half: the frame, the scene and the batch
+ *  set these per draw, so they are matched exactly; the material half is matched by DrawItem::variantStamp. */
+struct DepthRowKey {
+    const void* material = nullptr; const void* nodes = nullptr; const void* fogNode = nullptr; const void* morph = nullptr;
+    uint32_t morphTargets = 0;
+    uint8_t fog = 0, side = 0, colorSize = 0;
+    bool map = false;
+    bool invariantPosition = false, background = false, sprite = false, receiveShadow = false, envMap = false,
+         instanced = false, instanceColor = false, indirect = false, skinned = false, palette = false,
+         shadowGroup = false, morphNormals = false;
+    bool operator==(const DepthRowKey&) const = default;
+};
 struct DrawCache {
     MaterialKind kind = MaterialKind::Standard;
     shader::VertexVariant variant;
@@ -122,6 +135,8 @@ struct DrawCache {
     void* program = nullptr;
     void* depthProgram = nullptr;
     bool depthMasked = false;     // the depth program runs the material's alpha test (PRD-651)
+    uint64_t depthStamp = 0;      // the DrawItem::variantStamp and per-draw key depthProgram was resolved for
+    DepthRowKey depthKey;
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
@@ -135,11 +150,19 @@ struct DrawCache {
     std::optional<ShadowBoundsKey> shadowBoundsKey;
     std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
     uint64_t shadowBoundsBuilds = 0;
-    const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item);
+    uint64_t shadowVertexScans = 0;  // rebuilds that read every vertex position
+    // A rigid draw's vertex box in geometry space, keyed by the position store's revisions alone: a caster that only
+    // moved rebuilds its world box from this, without reading a vertex (PRD-871).
+    std::optional<std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t>> vertexBoxKey;
+    Box3 vertexBox;
+    const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item, uint64_t planStamp = 0);
 };
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
+    /** Moves whenever refresh() re-resolves the material half (material, maps, nodes, vertex colours); 0 for a
+     *  draw no record refreshes. A shadow row with an unmoved stamp and key keeps its depth program. */
+    uint64_t variantStamp = 0;
     const Object3D* shadowObject = nullptr;
     uint32_t layers = 1;
     bool mainPass = true;
@@ -232,6 +255,8 @@ struct DrawItem {
     uint32_t gpuJointRig = 0;
     std::vector<uint32_t> gpuJointRigs; // Batch instance order; singleton draws use gpuJointRig.
     uint32_t boneStride = 0;           // palette matrices per instance; zero on exact skinned draws
+    uint32_t boneOffset = 0;           // matrices into `boneMatrices` where this draw's rig starts: a rig's shadow
+                                       // copy reads its own slot of the batch's root-relative palette (PRD-872)
     /** A virtual shadow page's grouped caster (FM8): one instanced row draws every caster the page selected
      *  for this geometry and material, and the vertex stage reads each one's own placement from the frame's
      *  `instances` storage and its own bone base and bind pair from `shadowSkin`, so one palette per rig per
@@ -609,6 +634,8 @@ public:
      * turns it on at core's startup reveal, after compileAsync built what the first frames draw.
      */
     void deferUncompiledDraws(bool on) { deferUncompiled_ = on; }
+    /** Whether the startup cover is gone; a program built behind the cover is precache progress, not late. */
+    void setPresentationRevealed(bool on) { revealed_ = on; }
     /** Pipelines still compiling off the queue: a frame planned while one is pending skipped the draws that need it. */
     size_t pipelinesCompiling() { return pipelines_->pending(); }
     /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
@@ -956,6 +983,8 @@ public:
     const PipelineLayoutCache& layouts() const { return *layouts_; }
     /** Material programs built or refused so far; a steady frame adds none. */
     size_t programCount() const { return programs_.size(); }
+    /** Programs first built after the startup reveal while draws defer their pipelines; a covered build is not late. */
+    std::uint64_t lateProgramBuilds() const { return lateProgramBuilds_; }
     /** Program key strings built and Program* lookups done so far; a steady frame adds none. */
     uint64_t programKeyBuilds() const { return programKeyBuilds_; }
     uint64_t programLookups() const { return programLookups_; }
@@ -1259,6 +1288,8 @@ private:
     // compiled for one layout serves them all only if the layout handles are the same too.
     std::shared_ptr<PipelineCache> pipelines_;
     bool deferUncompiled_ = false;  // see deferUncompiledDraws(); a sibling() keeps three's draw-time compile
+    bool revealed_ = true;  // see setPresentationRevealed(); hosts that never hold start revealed
+    std::uint64_t lateProgramBuilds_ = 0;
     std::shared_ptr<PipelineLayoutCache> layouts_;
     // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.
@@ -1302,6 +1333,8 @@ private:
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     /** FS11: `virtualShadows_`' caster bookkeeping, indexed by the draw's position in `items`. */
     std::map<std::size_t, std::vector<CasterRecord>> casterRecords_;
+    /** Each shadow light's caster records kept across frames: a caster whose inputs did not move is not rebuilt (PRD-872). */
+    std::map<std::size_t, shadows::CasterPlan> casterPlan_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
     std::map<std::size_t, uint64_t> mapSignatures_;
     /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */
@@ -1458,6 +1491,7 @@ private:
     shader::StageModule outputFragment_;
     Handle outputTriangle_;
     Handle outputUniforms_;
+    std::vector<uint8_t> outputUploaded_;  // the bytes outputUniforms_ holds: an unchanged block is not sent again
     WGPUSampler outputSampler_ = nullptr;
     WGPUBindGroup outputGroup_ = nullptr;
     WGPUBindGroupLayout outputLayout_ = nullptr;

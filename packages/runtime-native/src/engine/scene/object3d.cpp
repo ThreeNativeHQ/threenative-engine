@@ -104,7 +104,7 @@ void Object3D::enableTrackedTransform() {
 
 uint8_t* Object3D::ownTransformTracking() const { return transform_.page->tracking[transform_.index].data(); }
 
-void Object3D::markLocalTransformDirty() { waste::debugAdd(waste::counters().sceneDirtyMarks); waste::meterAdd(waste::counters().dirtyTransforms); transform_.page->tracking[transform_.index][1] = 1; }
+void Object3D::markLocalTransformDirty() { waste::debugAdd(waste::counters().sceneDirtyMarks); waste::meterAdd(waste::counters().dirtyTransforms); transform_.page->tracking[transform_.index][1] = 1; localTransformWritten(); }
 
 uint8_t* Object3D::transformTrackingAddress(const void* address) {
     auto& pool = transforms();
@@ -693,7 +693,7 @@ void Object3D::updateMatrix() {
 
     matrixWorldNeedsUpdate = true;
     // three recomposes every frame for every auto-update object; only a changed matrix is a change.
-    if (std::memcmp(matrix.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0) bump();
+    if (std::memcmp(matrix.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0) { bump(); localTransformWritten(); }
     matrix.copy(composed);
 }
 
@@ -728,7 +728,7 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
         composed.compose(position, quaternion, scale);
         const bool changed = bitsDiffer(matrix.elements, composed.elements);
         matrix.copy(composed);
-        if (changed) bump();
+        if (changed) { bump(); localTransformWritten(); }
         const uint64_t parentId = parent ? parent->id() + 1 : 0;
         const uint64_t parentRevision = parent ? parent->revision() : 0;
         const bool updateWorld = changed || matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision;
@@ -750,6 +750,8 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
         else updateMatrix();
         // Auto composition must not dirty an unchanged root and force every descendant.
         matrixWorldNeedsUpdate = dirty || revision() != before;
+    } else {
+        localTransformWritten();  // the game owns `matrix` and writes it with no call: every walk may be a new pose
     }
 
     const uint64_t parentId = parent ? parent->id() + 1 : 0;

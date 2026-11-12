@@ -120,6 +120,8 @@ export const {
   RepeatWrapping,
   ReverseSubtractEquation,
   RingGeometry,
+  Points,
+  PointsMaterial,
   RoundedBoxGeometry,
   SRGBColorSpace,
   Scene,
@@ -192,7 +194,6 @@ defineCreateInterpolant(globalThis);
 Object.assign(DataArrayTexture.prototype, { isArrayTexture: true, isDataArrayTexture: true });
 // three exports the engine does not provide: refused at use, by name, as on Wasm (unsupportedExport).
 export const LineLoop = unsupportedExport("LineLoop");
-export const Points = unsupportedExport("Points");
 export const WebGLRenderer = unsupportedExport("WebGLRenderer");
 export const CompressedArrayTexture = unsupportedExport("CompressedArrayTexture");
 export const InstancedInterleavedBuffer = unsupportedExport("InstancedInterleavedBuffer");
@@ -234,6 +235,7 @@ for (const name of [
   "Sprite",
   "Line",
   "LineSegments",
+  "Points",
 ]) {
   const prototype = globalThis[name].prototype;
   const parent = Object.getOwnPropertyDescriptor(prototype, "parent").get;
@@ -347,6 +349,7 @@ defineObjectSurface({
     MeshPhysicalMaterial,
     MeshStandardMaterial,
     SpriteMaterial,
+    PointsMaterial,
   ],
 });
 export { Material };

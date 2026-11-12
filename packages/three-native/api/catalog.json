@@ -18186,21 +18186,409 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_POINTS"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Object3D",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "morphTargetInfluences",
+          "type": "number[] | undefined",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "geometry",
+          "type": "BufferGeometry",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "material",
+          "type": "Material",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "updateMorphTargets",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "PointsMaterial",
       "kind": "class",
       "source": "three",
       "status": {
+        "kind": "supported"
+      },
+      "extends": "Material",
+      "constructor": [],
+      "fields": [
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaTest",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendDst",
+          "type": "BlendingDstFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendDstAlpha",
+          "type": "BlendingDstFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquation",
+          "type": "BlendingEquation",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquationAlpha",
+          "type": "BlendingEquation | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrc",
+          "type": "BlendingSrcFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrcAlpha",
+          "type": "BlendingSrcFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "colorWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthTest",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "fog",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "forceSinglePass",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "id",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "opacity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "polygonOffset",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "polygonOffsetFactor",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "polygonOffsetUnits",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "premultipliedAlpha",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "side",
+          "type": "Side",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "sizeAttenuation",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "toneMapped",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "transparent",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "vertexColors",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "visible",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "color",
+          "type": "Color",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "map",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
+    },
+    {
+      "name": "PointsNodeMaterial",
+      "kind": "class",
+      "source": "three/webgpu",
+      "status": {
         "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_POINTSMATERIAL"
+        "diagnostic": "TN_NATIVE_UNSUPPORTED_POINTSNODEMATERIAL"
       },
       "extends": null,
       "constructor": [],

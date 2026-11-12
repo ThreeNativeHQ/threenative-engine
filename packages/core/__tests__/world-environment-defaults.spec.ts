@@ -162,6 +162,16 @@ it("never multisamples the world on a cheaper tier than the one above it", () =>
   expect(samples("medium")).toBeLessThanOrEqual(samples("high"));
 });
 
+it("draws no screen-space reflections on the low tier, as Unreal's ReflectionQuality 0 (PRD-871)", () => {
+  // UE 5.8.3 Engine/Config/BaseScalability.ini:514-515: [ReflectionQuality@0] r.SSR.Quality=0. The low tier left
+  // `ssrEnabled` unset, the default turned it on, and its normal/metalness/roughness reads cost an Iris Xe a full
+  // second geometry pass: 6.7 ms of a 26.7 ms stress frame.
+  const { requested, target } = renderer("webgpu", { library: { addToneMapping() {} } });
+  apply(qualityPreset("low"), target);
+  expect(requested[0]?.stages).not.toContain("ssr");
+  expect(requested[0]?.stages).toContain("bloom");
+});
+
 it("does not let an undefined option cancel the preset", () => {
   const { requested, target } = renderer("webgpu", { library: { addToneMapping() {} } });
   apply({ gtaoEnabled: undefined }, target);

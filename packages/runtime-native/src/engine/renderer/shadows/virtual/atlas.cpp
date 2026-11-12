@@ -342,16 +342,18 @@ bool PageAtlas::drawsStatic(uint64_t key) const {
 }
 
 void PageAtlas::updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied) {
-    std::set<uint64_t> present;
+    // Presence is a stamp, not a `std::set` of every caster: an insert per caster per frame was the second cost of
+    // this pass (PRD-872), and the sweep below needs only "did this frame list it".
+    const uint64_t present = ++presentEpoch_;
     for (const uint64_t key : emptied) {
         const auto it = motion_.find(key);
-        if (it != motion_.end() && !it->second.moving && !it->second.caster.automatic) present.insert(key);
+        if (it != motion_.end() && !it->second.moving && !it->second.caster.automatic) it->second.present = present;
     }
     for (const auto& caster : casters) {
-        present.insert(caster.key);
         auto [it, inserted] = motion_.try_emplace(caster.key);
         auto& m = it->second;
-        const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || caster.signature != m.caster.signature);
+        m.present = present;
+        const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || !(caster.signature == m.caster.signature));
         const bool moving = caster.tracked || (!caster.pinned && caster.automatic && (caster.deforming || changed));
         if (moving) {
             waste::meterAdd(waste::counters().castersMoving);
@@ -372,7 +374,7 @@ void PageAtlas::updateCasters(const std::vector<CasterState>& casters, const std
         m.caster = caster;
     }
     for (auto it = motion_.begin(); it != motion_.end();) {
-        if (present.count(it->first)) { ++it; continue; }
+        if (it->second.present == present) { ++it; continue; }
         if (!it->second.moving) {
             waste::debugAdd(waste::counters().shadowCasterChurn);
             invalidate(it->second.caster.bounds);

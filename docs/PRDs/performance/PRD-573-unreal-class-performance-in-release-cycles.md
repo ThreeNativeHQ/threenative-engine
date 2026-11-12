@@ -169,6 +169,13 @@ Today: `perf` has p95, p99 and hitches but no memory or host load; `bench:scoreb
 - [x] A soak command (`perf --soak`, `soakVerdict`; 7 specs red then green; perf+perf-surface specs 85 pass, `tsc --noEmit` clean; no real 1800-frame run yet) runs 1800+ frames and fails on a crash or RSS growth. proof: a red-green case with a growing stubbed RSS series, then one run on the legacy desktop host
   Result 2026-10-13 at 67510c5ab: `perf --executable build/tn-linux/mystral --host-arg run --host-arg dist/native-smoke.js --soak 1800` on the legacy desktop host (examples/native-smoke, NVIDIA, private Xvfb) exits 0. All 1800 of 1800 frames ran, and RSS went from 272.8 MB after frame 300 to 218.3 MB at the end (-20%, limit +10%).
 - [ ] The R-ladder runs on the `native-v8` arm, and the scorecard carries a `godotRatio` column from `bench:scoreboard` R2, R3 and R5 (no Godot row for a workload Godot cannot run). proof: a red-green case in the engine-load-test spec, then the baseline rows in `docs/verification/runtime-perf-state.md`
+  Exact gap (2026-11-10 read): the owned-engine arm exists as `tn-engine-desktop` (`scripts/engine-load-test/cli.ts:405,619`, `run-engine.ts`), and no arm is named `native-v8`. `scripts/engine-load-test/scoreboard.sh` calls only `run tn`, `run godot`, `ladder tn` and `ladder godot` (`:31-36`). Its `run` and `ladder` functions append `-desktop` to the first argument (`:18-30`), so `ladder tn-engine <n>` already selects the arm. The monitor types the engine as `"godot" | "tn"` (`scripts/engine-load-test/monitor.ts:535,566,713`), so it needs a third value before it can print a `godotRatio` for the owned engine. Steps are in [EXECUTION-ORDER.md](./EXECUTION-ORDER.md), row 4.
+  Executor progress 2026-11-10 (box left open: its proof also needs the scoreboard's baseline rows, which is the measure lane's):
+  `scoreboard.sh:34-36` now runs `ladder tn-engine <n>` beside each `ladder tn <n>`, so all three ladder repeats measure `tn-engine-desktop` (`:34-36` after the change: `ladder tn 1; ladder tn-engine 1; ladder godot 1`, and likewise for repeats 2 and 3).
+  `monitor.ts:535,566,713` now type the engine as `"godot" | "tn" | "tn-engine"`; `ladderFiles`/`ladderCell` (`:832,841`) keep the two-value union, so the R-ladder table still reports the `tn` arm as the box asks.
+  The `godotRatio` column was already present before this change and needed no edit: header `<th>godotRatio</th>` and its cell `row.godot.medP50 / row.tn.medP50` are gated to `["R2", "R3", "R5"]` in `renderRealisticLadder` (`monitor.ts:905`).
+  Red-green: a new case in `scripts/__tests__/engine-load-test-monitor.spec.ts` reads `scoreboard.sh` and asserts each ladder repeat runs the `tn-engine` arm beside `tn`. It failed 3 of 21 against the unedited script (`expected [ 'ladder tn 1', 'ladder godot 1' ] to include 'ladder tn-engine 1'`, same for repeats 2 and 3) and passes 21 of 21 after. `pnpm typecheck` exit 0, `pnpm lint` exit 0.
+  Still owed to the measure lane: the baseline rows in `docs/verification/runtime-perf-state.md`, from a real `pnpm bench:scoreboard` run on a quiet machine.
 - [ ] Parity guard and player-side telemetry salvaged from `ne/bench-parity`, `ne/bench-cputime`, `ne/bench-telemetry`, `ne/bench-counters`. Landed: generic `scripts/engine-load-test/parity.ts` (fail-closed facet table, symmetric span families, wall-clock check; 11 specs, no caller yet). Moves to slice 6 because the player files do not exist yet: first-frame hold until the runner attaches (`07c0b6761`), thread CPU time in player frame metrics (`e5d1c9456`), `performance.now` as the player clock (`f7b12972d`), `__tnFrameSpans` (`febc0f9a0`), `--counters` (`9f40997dc`), `runFacets`. Perry wiring dropped. proof: parity spec plus a same-run two-arm bench that passes the guard
 
 #### Phase v1.10: v1 KPI and gate
@@ -239,15 +246,17 @@ R5 CPU budget, 2026-10-12 (perf plus `/proc` stime, R5@4096 1920x1080, RTX 2080 
 **Status:** PARTIAL
 - [x] `PropertyBinding` applies without a lock; a binding to a released node is a safe no-op. proof: red-green `native_engine_animation_binding_released` (F `e9d4f1f4c`; `ctest -L native-engine` 290/292, reds only the known `render_vsm`, `update_scaling`); lock self share 3.9% to under 0.7%. Lands with slice 2b.
 - [ ] `Skeleton::bone` (`animation/skinning/skeleton.h:74`, a lock per bone, twice per bone in the palette build `skeleton.cpp:116-119`) uses a bind-time pointer with an expiry check. proof: red-green `native_engine_skinned_crowd_cpu`, then a `profile:wasm-page` A/B with the `__shared_weak_count::lock` share under 0.7%
+  Landed, proof not recorded (2026-11-10 review): L5 (`de7584e47`, 2026-11-02) makes `Skeleton::bone(i)` read a cached raw pointer, kept in the stress window with L6 (rows #267-280, frame p50 17.82 to 15.55 ms). It has no expiry check: a game that changes the bone list of a live skeleton needs a rebuild. The box stays open until the named lock-share A/B runs.
 
 #### Phase v2.2: One view block per frame
 **Status:** NOT STARTED
 Today `renderer.cpp:2095-2101` writes view, projection and a double `normalMatrix(view * model)` into every draw's block.
+2026-11-10 review, part landed: FM2 writes view, projection and camera position once into each program's frame slab (`renderer/renderer_frame.cpp:754-769`). Still per draw: a copy of that slab and `normalMatrix(view * model)` (`renderer_frame.cpp:887-890`). So a camera turn still changes the bytes of every draw, which is also what keeps [PRD-754](../Unreal/performance/PRD-754-a-camera-turn-re-records-no-pass.md) from a turn that records no pass. Unreal makes one view block per view per frame (`UE 5.8.3: Engine/Source/Runtime/Renderer/Private/SceneRendering.cpp:2430-2432`). The remaining step is a normal matrix that does not depend on the view, checked for pixel parity against three.
 - [ ] View, projection and camera constants go into one per-view block; a camera-only change writes no draw block. proof: a red-green bytes-per-frame counter in `native_engine_batched_vs_unbatched`
 - [ ] Frames match the per-draw path and pass the visual judge; R5 and Midway frame CPU fall with p99 no worse. proof: the same ctest within tolerance, a judge subagent, `bench:engines` and `profile:wasm-page` A/Bs
 
 #### Phase v2.3: Hidden rigs update less, with Unreal's safeguards
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-11-10 review). Landed: from 32 rigs, each rig measures its animation rate one frame in four (FA1, 2026-11-02, `packages/core/src/render-camera-cull.ts`), and one `tn_anim_tick` call advances the whole crowd in C++ ([PRD-828](../done/PRD-828-js-keeps-only-game-logic.md) Phase 2, 2026-11-07, `animation/tick_batch.cpp`). Open: the boxes below. Unreal's defaults, re-read on 2026-11-10: a rig that is not rendered evaluates one frame in 4, a visible rig drops to one frame in 2 and then 3 below screen-radius-squared 0.24 and 0.12, and skipped frames interpolate only below rate 4 (`UE 5.8.3: Engine/Source/Runtime/Engine/Classes/Engine/EngineTypes.h:2820-2826`). A skipped tick banks its time and the next tick spends it.
 `AnimationMixer::update` (`mixer.cpp:724`) evaluates every rig every frame; games call it directly, so the rule lives there. Reference: URO (`SkinnedMeshComponent.cpp:283-370`, 1.0 s window `:1864`, `ShiftBucket` stagger, forced update `:6066-6100`).
 - [ ] Main and shadow passes stamp the drawn frame on the rig root. proof: red-green `native_engine_animation_mixer`
 - [ ] Hidden rigs evaluate about 1 frame in 4, staggered (at most ceil(N/4) per frame), with clip time and `finished` equal to rate 1. proof: a red-green counter in `native_engine_skinned_crowd_cpu`
@@ -260,6 +269,8 @@ Today `getAsync` and a 2-worker pool exist (`pipeline_cache.cpp:191`, `.h:118`),
 - [x] On native desktop, `compileAsync` builds missing pipelines on the pool and the next `render` compiles none. proof: red-green `native_engine_renderer_pipeline_compile_async` on Dawn Null, 2026-10-09 (F). Lands with slice 5.
 - [ ] On the web, `compileAsync` uses the async entry and the next frame compiles none. proof: `native_engine_wasm_browser_backend` run in a browser (the stubbed case passes)
 - [ ] The engine enqueues keys for added content itself, skips a draw whose pipeline is pending, and reports synchronous creates and skipped draws per frame. proof: red-green `native_engine_renderer_pipeline_cache` (synchronous creates after first present = 0) and a `perf.spec.ts` case
+  **Owned by [PRD-876](../done/PRD-876-a-draw-is-ready-before-the-frame-that-first-shows-it.md)** (filed 2026-11-10): the counters and the budgeted prepare pass. Skipping a pending draw stays here.
+  Why it matters now (2026-11-10 review): the last camera-turn hitch on the Strata forest is a plan spike, `planDraws` about 10 ms in one frame, from programs and pipelines made the first frame a mesh is seen (`PERFORMANCE-LEARNINGS.md`, 2026-11-04 forest turn entry). Its p50 is 0.07 ms (PRD-774 Decisions), so this box cuts the tail, not the mean. Unreal builds each draw command when the primitive is added, in batches on tasks, and rebuilds it only on a material change (`UE 5.8.3: Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp:51-53`, `r.MeshDrawCommands.CacheMultithreaded` 1). Guard: the result must equal the lazy path, and only a material or light-layout change invalidates it.
 - [ ] Skipped draws pass the visual judge, and Midway `ready` beats its base. proof: a judge subagent; `profile:wasm-page --load --gpu-calls` ratio below 1.0
 
 #### Phase v2.5: Pipelines ship and persist
@@ -286,9 +297,11 @@ The shooter kit's web CPU profile (2026-10-26, NVIDIA, no DevTools, 10 s) still 
 Six hazards block a render thread: non-atomic `nextObjectId`/`hierarchyRevision` and file-scope scratch (`object3d.cpp:67-77`); a snapshot `shared_ptr` release running a destructor off-thread; renderer state set from JS (`v8_main.cpp:228,575`); `renderReflections` mutating live materials (`render_database.cpp:1405`); single-thread loop glue with no frame-in-flight limit (`run.cpp`); the Android surface-released handshake (`run.cpp:260,525`). A render thread alone caps at 0.68–0.79x of the frame, so jobs come first.
 
 #### Phase v3.1: Jobs on every core
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-11-10 review). Landed: the transform walk runs as jobs, bit-equal to one thread and clean under ThreadSanitizer (`Object3D::updateMatrixWorldVisibleJobs`, `native_engine_matrix_walk_jobs`, PRD-752 Phase 4), and the pool takes up to 8 workers (FT2, `2ec6ed19d`). Open: mixers as jobs (second box) and the render plan, which [PRD-774](./stress-lab-2026-10-30/PRD-774-render-plan-off-the-main-thread.md) Phase 3 owns.
 - [ ] The frame report splits `renderMs` into prepare and `Renderer::render`, and `perf` prints stages that sum to frame CPU within 5%. proof: a red-green `perf.spec.ts` case
 - [ ] Mixers and independent transform subtrees run as jobs, bit-equal to one thread, events dispatched after the join, hazard 1 fixed. proof: `native_engine_skinned_crowd_cpu` and `native_engine_static_transform` with 1 and N workers, under ThreadSanitizer
+  **The mixers half is owned by [PRD-875](../done/PRD-875-rigs-evaluate-their-poses-on-every-core.md)** (filed 2026-11-10). This box is ticked when PRD-875 is done.
+  Open half, mixers (2026-11-10 review): `TickBatch::run` advances every rig in one serial loop (`animation/tick_batch.cpp:25`). Unreal evaluates poses on worker tasks by default (`a.ParallelAnimEvaluation` 1, `UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/SkeletalMeshComponent.cpp:76`) and uses a result only when the mesh, the anim instance and the bone count did not change during the task (`SkeletalMeshComponent.cpp:4980-4993`). Design: the serial part keeps time, weights, stride and finish status, pose sampling and the palette build go to `JobPool::forEach`, and listeners fire after the join in rig order. Size it first: the C++ share of the tick has not been measured since PRD-828 landed.
 
 #### Phase v3.2: Recorded passes survive camera motion
 **Status:** PARTIAL (2026-10-28). The owner chose PRD-754 option 1: three's opaque order stays; native desktop replays the shadow passes from bundles with persistent uniform slots by default (Midway recording plus shadow CPU -17%); the rows wait behind `setStableRows` (native, off); the web engine compiles all of it out (no web gain, 4 MiB budget). The camera-turn goal and the 80% gate are Deferred in PRD-754.
@@ -303,7 +316,12 @@ Today the bundle key (`renderer.cpp:2702-2722`) moves with depth order (`sortDra
   result: PRD-754 Phase 2 box 2 (`cull_keeps_main_bundle` 0 differ; Chrome worker recording CPU ratio 0.45 over 3 pairs)
 
 #### Phase v3.3: An opt-in render thread
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-11-10 review). Landed: the native player encodes on a `tn-render` thread and presents on a `tn-gpu` thread ([PRD-613](../done/PRD-613-native-render-thread.md), `player/run.cpp:1104-1110`). That is Unreal's RHI thread. Not started: planning off the game thread, which is the boxes below.
+What Unreal's split requires (`UE 5.8.3`, re-read 2026-11-10):
+- The render thread reads copies, and only dirty components send one. Our scene has no dirty list: a direct field write cannot bump `revision()` (`scene/object3d.h:335`), and JS writes transforms through shared views. The snapshot must double-buffer the transform pages or copy every matrix. Decide that before the first box.
+- The lag is stated in frames: the render thread runs at most one frame behind (`r.OneFrameThreadLag` 1, `Engine/Source/Runtime/RenderCore/Private/RenderingThread.cpp:2435`).
+- A resource dropped in frame N is freed after the frame-end sync of frame N+1 (`Engine/Source/Runtime/Launch/Private/LaunchEngineLoop.cpp:6078-6095`). A JS `dispose()` or a garbage collection must go through the same queue.
+- Every render command is flushed before a viewport resize (`Engine/Source/Runtime/SlateRHIRenderer/Private/SlateRHIRenderer.cpp:564`). The same flush is needed before surface loss and device loss.
 - [ ] `Renderer::render` reads only a `FrameSnapshot` (owned bones, morphs, instance data; deferred release on the game thread), and JS renderer settings pass through a command queue. proof: `native_engine_batched_vs_unbatched` pixel-identical, a bytes-copied counter
 - [ ] `--render-thread` (frame-in-flight limit 1) matches one thread to the pixel and runs 600 frames with resize, device loss and surface loss free of races. proof: the ctest in both modes and under ThreadSanitizer
 
@@ -328,12 +346,12 @@ TN today: HZB declined ([PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md
 The game side reads the DOM directly (23 core files read `document.` or `window.`; audio, pointer lock, gamepads, `localStorage`). A worker keeps frame p50; only Wasm threads can cut it.
 
 #### Phase v5.1: Worker mode
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-11-10 review): PRD-752 Phases 1 and 2 are done, and the worker page is the default page. Its Phase 3 has one open box, the shooter `performance` scenario on the worker. The boxes below are ticked in PRD-752, not here.
 - [ ] Core reaches the DOM only through one host-capability layer, and the starter plays through a loopback proxy. proof: a red-green core spec that scans `packages/core/src`; `pnpm test:templates` on the starter
 - [ ] Behind a flag and without COOP/COEP, the game and engine run in a worker on an `OffscreenCanvas`, the harness captures it, and main-thread busy falls below 0.5x with p50 no worse. proof: `pnpm test:templates` with the flag; `profile:wasm-page` worker against main-thread; a judge subagent
 
 #### Phase v5.2: Wasm threads, v5 KPI and gate
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-11-10 review): the threaded build, the isolation report and the job pool landed (PRD-752 Phase 4). Open there: the one-thread cost A/B, the pool gain on the shooter, and gate S.
 - [ ] A `TN_WEB_THREADS` build costs at most 2% on one thread, reports `threads: off` without isolation, and the job pool cuts frame CPU with it. proof: `profile:wasm-page` A/Bs; `native_engine_wasm_browser_backend` for both isolation states
 - [ ] Stability gate S is green on web with and without isolation headers. proof: the S commands
 

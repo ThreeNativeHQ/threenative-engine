@@ -14,6 +14,16 @@ export interface IUpdateFrame {
   frameId: number;
   camera?: unknown;
   scene?: unknown;
+  renderer?: unknown;
+}
+
+/** What one sync is for: the draw's camera and root, the renderer's frame, and a dispatch's kernels (engine node ids). */
+export interface ISyncFrame {
+  camera?: unknown;
+  scene?: unknown;
+  renderer?: unknown;
+  frameId?: number;
+  kernels?: readonly number[];
 }
 
 interface IUniformState {
@@ -140,12 +150,15 @@ function referenceValue(property: string, type: string, object: unknown): unknow
  * writes a node's lanes into the engine. `sync()` runs once per render: the update callbacks first,
  * then the edited objects' lanes, each written only when its lanes changed. With `setMany`, every
  * write of one sync crosses as one call (node i takes `counts[i]` of the packed `lanes`, PRD-828);
- * a `.value` set outside a sync still goes through `setValues` at once.
+ * a `.value` set outside a sync still goes through `setValues` at once. `reads` (PRD-878) asks the engine which
+ * of the hooked nodes one draw or dispatch reads, as indices into `hooked`; undefined runs every hook, as a
+ * scene's render does.
  */
 export function liveUniforms<TNode extends object>(
   uniform: (value: unknown, type?: unknown) => TNode,
   setValues: (node: TNode, lanes: readonly number[]) => void,
   setMany?: (nodes: readonly TNode[], counts: readonly number[], lanes: readonly number[]) => void,
+  reads?: (frame: ISyncFrame, hooked: readonly TNode[]) => ArrayLike<number> | undefined,
 ): {
   uniform: (value: unknown, type?: unknown) => TNode;
   uniformArray: (
@@ -153,7 +166,7 @@ export function liveUniforms<TNode extends object>(
     type?: string,
   ) => { array: unknown[]; element(index: unknown): TNode };
   reference(property: string, type: string, object?: unknown): TNode;
-  sync(frame?: { camera?: unknown; scene?: unknown; frameId?: number }): void;
+  sync(frame?: ISyncFrame): void;
 } {
   const debug = debugRequested();
   const host = globalThis as {
@@ -271,7 +284,8 @@ export function liveUniforms<TNode extends object>(
       own(node, value);
     }
   };
-  const updating = new Set<TNode>();
+  // Every node with an update callback, in the order its first callback was set (the engine's `reads` indexes it).
+  const updating: TNode[] = [];
   // The render hooks alone: a nested render of a frame whose frame hooks all ran walks only these.
   const renders = new Set<TNode>();
   let hookedFrame: number | undefined;
@@ -333,6 +347,31 @@ export function liveUniforms<TNode extends object>(
     }
     state.lanes = written;
   };
+  // One sync's frame: one object, refilled each sync, as three's NodeFrame is one object.
+  const frame: IUpdateFrame = { frameId: 0 };
+  // Runs one node's update callback for this sync and writes what it returns.
+  const updateNode = (node: TNode, rendererFrame: number | undefined): void => {
+    const state = states.get(node);
+    if (state?.update === undefined) return;
+    if (state.updateType === "frame" && rendererFrame !== undefined) {
+      if (state.ranFrame === rendererFrame) return;
+      state.ranFrame = rendererFrame;
+    }
+    let next: unknown;
+    if (debug) {
+      const callbackStart = performance.now();
+      count(state.updateType === "frame" ? "uniformFrameCallbacks" : "uniformRenderCallbacks");
+      try {
+        next = state.update(frame);
+      } finally {
+        const elapsed = performance.now() - callbackStart;
+        count("uniformCallbackMs", elapsed);
+        if (state.debugSource !== undefined)
+          count(`uniformCallback:${state.debugSource}Ms`, elapsed, state.debugSource);
+      }
+    } else next = state.update(frame);
+    if (next !== undefined) (node as { value: unknown }).value = next;
+  };
   const live = {
     uniform(value: unknown, type?: unknown): TNode {
       // A matrix uniform is made by its type name at identity, then given the matrix's elements.
@@ -368,7 +407,7 @@ export function liveUniforms<TNode extends object>(
           throw new Error(
             `TN_TSL_UPDATE_UNSUPPORTED: a native uniform updates per frame or render, not per '${updateType}'`,
           );
-        if (state.update === undefined) updating.add(node);
+        if (state.update === undefined) updating.push(node);
         if (updateType === "render") renders.add(node);
         else renders.delete(node);
         hookedFrame = undefined; // a frame hook added mid-frame runs at the next render
@@ -458,7 +497,7 @@ export function liveUniforms<TNode extends object>(
       };
       return { array: values, element };
     },
-    sync(extra?: { camera?: unknown; scene?: unknown; frameId?: number }) {
+    sync(extra?: ISyncFrame) {
       // `extra.frameId` is the renderer's frame: every render, target draw and compute of one frame
       // shares it. The callbacks see this module's own counter, as three's NodeFrame counts renders.
       const started = debug ? performance.now() : 0;
@@ -467,35 +506,21 @@ export function liveUniforms<TNode extends object>(
       batching = setMany !== undefined;
       try {
         const rendererFrame = extra?.frameId;
-        const frame: IUpdateFrame = { ...extra, frameId: ++frameId };
+        frame.frameId = ++frameId;
+        frame.camera = extra?.camera;
+        frame.scene = extra?.scene;
+        frame.renderer = extra?.renderer;
         // A nested render of a frame whose frame hooks already ran skips them without walking them.
         const nested = rendererFrame !== undefined && rendererFrame === hookedFrame;
-        for (const node of nested ? renders : updating) {
-          const state = states.get(node);
-          if (state?.update === undefined) continue;
-          if (state.updateType === "frame" && rendererFrame !== undefined) {
-            if (state.ranFrame === rendererFrame) continue;
-            state.ranFrame = rendererFrame;
-          }
-          let next: unknown;
-          if (debug) {
-            const callbackStart = performance.now();
-            count(
-              state.updateType === "frame" ? "uniformFrameCallbacks" : "uniformRenderCallbacks",
-            );
-            try {
-              next = state.update(frame);
-            } finally {
-              const elapsed = performance.now() - callbackStart;
-              count("uniformCallbackMs", elapsed);
-              if (state.debugSource !== undefined)
-                count(`uniformCallback:${state.debugSource}Ms`, elapsed, state.debugSource);
-            }
-          } else next = state.update(frame);
-          if (next !== undefined) (node as { value: unknown }).value = next;
-        }
-        // Only once every hook returned: one that threw leaves later frame hooks to the next render.
-        hookedFrame = rendererFrame;
+        // A draw of one mesh or a dispatch runs only the hooks its graphs read (the engine answers which).
+        const picked = extra === undefined ? undefined : reads?.(extra, updating);
+        if (picked !== undefined)
+          for (let index = 0; index < picked.length; index += 1)
+            updateNode(updating[picked[index] as number] as TNode, rendererFrame);
+        else for (const node of nested ? renders : updating) updateNode(node, rendererFrame);
+        // Only once every hook returned: one that threw leaves later frame hooks to the next render. A picked
+        // sync ran some hooks only, so it does not stand for the frame's.
+        if (picked === undefined) hookedFrame = rendererFrame;
         // Deleted only once written: a sink that throws leaves the rest to retry at the next sync.
         for (const ref of dirty) {
           const node = ref.deref();

@@ -1,4 +1,4 @@
-import type { Material, Mesh } from "three";
+import { type Material, type Mesh, Object3D } from "three";
 import { isEngineRenderHook } from "./engine-render-hook.js";
 
 /**
@@ -69,9 +69,16 @@ const BUNDLE_PROOF_ROWS_PER_FRAME = 256;
  */
 const BUNDLE_PROOF_MAX_PERIOD = 600;
 
+/** The owned engine's witness of each proved material's surface flags (PRD-879). */
+interface IMaterialWitnessHost {
+  __tnMaterialWatch?(materials: readonly Material[]): number;
+  __tnMaterialCheck?(): ArrayLike<number>;
+}
+
 /** Own-link and installed-Node child snapshots avoid inherited TSL method scans. Deep unversioned
  * edits still invalidate: version/root identity alone cannot certify a mutable node graph. The
- * shallow witness (version, transparency, visibility, transmission) is read on every check. The deep
+ * shallow witness (version, transparency, visibility, transmission) holds on every check: read per
+ * check, or for a `deep: false` check the flags are the owned engine's one answer a frame. The deep
  * rows are proved once per `staleFrames` period: the rows the last frame tested over a per-frame
  * budget, so a small world proves every frame and a forest spreads its proofs evenly, each material
  * in its own slot of the period. Three itself rebuilds a draw only when `material.version` moves
@@ -79,6 +86,16 @@ const BUNDLE_PROOF_MAX_PERIOD = 600;
  * window. A graph past the witness caps uses the uncached safety walk. */
 export class BundleSurfaceSafety {
   #checks = new WeakMap<Material, IBundleMaterialCheck>();
+  /**
+   * The owned engine holds every cached verdict's `transparent`, `visible` and `transmission` and
+   * answers which moved in one call a frame, so a settled `deep: false` test reads none of them.
+   * Upstream three has no such host method and reads them per test, as before.
+   *
+   * ponytail: the list keeps every proved material until `clear`, which a world bounds by its assets.
+   */
+  readonly #witness = new Object3D() as Object3D & IMaterialWitnessHost;
+  #witnessed: Material[] = [];
+  readonly #moved = new Set<Material>();
   #revision = 0;
   #frame = 0;
   #frameRows = 0;
@@ -93,6 +110,9 @@ export class BundleSurfaceSafety {
 
   clear(): void {
     this.#checks = new WeakMap();
+    this.#witnessed = [];
+    this.#moved.clear();
+    this.#witness.__tnMaterialWatch?.(this.#witnessed);
   }
 
   /** Opens a frame: the period every deep proof is spread over follows the last frame's rows. */
@@ -103,6 +123,12 @@ export class BundleSurfaceSafety {
       Math.max(1, Math.ceil(this.#frameRows / BUNDLE_PROOF_ROWS_PER_FRAME)),
     );
     this.#frameRows = 0;
+    // A moved material stays moved until its next test re-proves it, because that re-proof
+    // re-stamps the whole list and the engine would not answer for it again.
+    const moved = this.#witness.__tnMaterialCheck?.();
+    if (moved !== undefined)
+      for (let at = 0; at < moved.length; at++)
+        this.#moved.add(this.#witnessed[moved[at] as number] as Material);
   }
 
   /**
@@ -114,13 +140,7 @@ export class BundleSurfaceSafety {
   test(material: Material, deep = true): IBundleMaterialCheck {
     this.stats.checks++;
     const previous = this.#checks.get(material);
-    if (
-      previous !== undefined &&
-      previous.version === material.version &&
-      previous.transparent === material.transparent &&
-      previous.visible === material.visible &&
-      previous.transmission === Reflect.get(material, "transmission")
-    ) {
+    if (previous !== undefined && this.#shallowHolds(material, previous, deep)) {
       if (!deep) return previous;
       if (previous.testedFrame !== this.#frame) {
         previous.testedFrame = this.#frame;
@@ -157,8 +177,33 @@ export class BundleSurfaceSafety {
     if (capture.overflow) {
       this.stats.uncached++;
       this.#checks.delete(material);
-    } else this.#checks.set(material, checked);
+    } else {
+      this.#checks.set(material, checked);
+      this.#rewatch(material);
+    }
     return checked;
+  }
+
+  /**
+   * Whether the material still holds the cached verdict's shallow witness. `version` is JS-side;
+   * the flags are the engine's answer when it witnesses them and a `deep: false` test asks.
+   */
+  #shallowHolds(material: Material, previous: IBundleMaterialCheck, deep: boolean): boolean {
+    if (previous.version !== material.version) return false;
+    if (!deep && this.#witness.__tnMaterialCheck !== undefined) return !this.#moved.has(material);
+    return (
+      previous.transparent === material.transparent &&
+      previous.visible === material.visible &&
+      previous.transmission === Reflect.get(material, "transmission")
+    );
+  }
+
+  /** Re-stamp the engine's witness after a verdict was (re)taken, so it answers from this state. */
+  #rewatch(material: Material): void {
+    if (this.#witness.__tnMaterialWatch === undefined) return;
+    if (!this.#witnessed.includes(material)) this.#witnessed.push(material);
+    this.#moved.delete(material);
+    this.#witness.__tnMaterialWatch(this.#witnessed);
   }
 }
 

@@ -110,6 +110,8 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
             throw std::runtime_error(refusedPrograms_.at(key));
         return found->second ? found->second.get() : refuse(refusedPrograms_.at(key));
     }
+    // PRD-876 Phase 1: past the cache, this call compiles the program however it resolves.
+    waste::debugAdd(waste::counters().programBuilds);
     const auto refuseBuild = [&](const std::string& why) -> Program* {
         programs_[key] = nullptr;
         const bool backgroundNode = vv.background && vv.nodes.colorNode;
@@ -297,6 +299,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.pbrMaps = 0;
     const std::string key = (masked ? "depth-masked|" : "depth|") + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+    waste::debugAdd(waste::counters().programBuilds);  // PRD-876 Phase 1: the depth pass's own build
     std::string canonical;
     std::vector<std::string> serials;
     if (auto stages = equalStages(key, kind.nodes, canonical, serials)) return add(key, std::move(stages->first), std::move(stages->second));
@@ -393,9 +396,13 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
         }
     }
     // A program first built after the startup reveal is a precache miss (Unreal's PSO precache validation): its
-    // shader build and GPU compile land mid-play as a hitch. Debug runs name it so prewarm can cover it.
-    if (deferUncompiled_ && waste::debugEnabled().load(std::memory_order_relaxed))
-        std::fprintf(stderr, "TN_PROGRAM_LATE %s\n", key.substr(0, 240).c_str());
+    // shader build and GPU compile land mid-play as a hitch. A build behind the cover is precache progress, not
+    // late. Debug runs name a late one so prewarm can cover it.
+    if (deferUncompiled_ && revealed_) {
+        ++lateProgramBuilds_;
+        if (waste::debugEnabled().load(std::memory_order_relaxed))
+            std::fprintf(stderr, "TN_PROGRAM_LATE %s\n", key.substr(0, 240).c_str());
+    }
     buildLayouts(*built);
     if (uniformCapacity_ != 0) {
         const DrawProbes probes = probesOf(*built);

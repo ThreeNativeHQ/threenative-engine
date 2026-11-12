@@ -14,6 +14,7 @@ import {
   VALUE,
   gltfOf,
   isRef,
+  packedRef,
   tslOf,
 } from "./browser-abi-types.js";
 import { SCALARS, TYPED, type TypedArray } from "./browser-marshal.js";
@@ -139,25 +140,19 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     return ref;
   };
   const writeHandle = (pointer: number, ref: IEngineRef) => {
-    let packed = ref as Partial<IPackedRef>;
-    if (packed.w0 === undefined) {
-      // A ref some other source made: parse its key once and keep the words on it.
-      const [type = 0, context = 0, index = 0, generation = 0] = ref.key.split(":").map(Number);
-      packed = Object.isExtensible(ref) ? (ref as IPackedRef) : { ...ref };
-      Object.assign(packed, { w0: (type | (context << 16)) >>> 0, w1: index, w2: generation });
-    }
+    const packed = packedRef(ref);
     if ((pointer & 3) === 0) {
       const at = pointer >>> 2;
       const w = wordView();
-      w[at] = packed.w0 as number;
-      w[at + 1] = packed.w1 as number;
-      w[at + 2] = packed.w2 as number;
+      w[at] = packed.w0;
+      w[at + 1] = packed.w1;
+      w[at + 2] = packed.w2;
       return;
     }
     const v = view();
-    v.setUint32(pointer, packed.w0 as number, true);
-    v.setUint32(pointer + 4, packed.w1 as number, true);
-    v.setUint32(pointer + 8, packed.w2 as number, true);
+    v.setUint32(pointer, packed.w0, true);
+    v.setUint32(pointer + 4, packed.w1, true);
+    v.setUint32(pointer + 8, packed.w2, true);
   };
   const handleOf = (ref: IEngineRef): number => {
     const pointer = alloc(HANDLE);

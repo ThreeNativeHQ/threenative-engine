@@ -78,6 +78,7 @@ export const WEB_FRAME_FIELD = {
   firstWorldFrameDrawn: 86,
   textureCompressionBc: 87,
   virtualShadowPendingLevels: 88,
+  frameSnapshot: 89,
 } as const;
 
 export type WebFrameField = (typeof WEB_FRAME_FIELD)[keyof typeof WEB_FRAME_FIELD];

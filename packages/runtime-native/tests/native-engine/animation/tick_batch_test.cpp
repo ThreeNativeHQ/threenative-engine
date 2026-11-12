@@ -7,7 +7,10 @@
 #include <vector>
 
 #include "engine/animation/tick_batch.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/object3d.h"
+#include "threenative/abi/tn_abi.h"
+#include "threenative/abi/tn_anim.h"
 
 using namespace tn::engine;
 using namespace tn::engine::animation;
@@ -227,8 +230,61 @@ void game_rate_kept() {
     CHECK(std::abs(walk.action->getEffectiveTimeScale() - 1) < 1e-9);
 }
 
+// PRD-875 Phase 1: `animationTickMicros` is published, and only under debug. This drives the real
+// `tn_anim_tick`, so the measured region is the one `abi/abi.cpp` wraps around `animBatch.run`.
+void animationTickMicrosCounted() {
+    const tn_version_info_t module = tn_engine_version();
+    tn_context_t* context = nullptr;
+    tn_diagnostic_t diagnostic{};
+    CHECK(tn_context_create(&context, &module, &diagnostic) == TN_OK);
+    if (context == nullptr) {
+        std::printf("animationTickMicros: no context, %s\n", diagnostic.message ? diagnostic.message : "no detail");
+        return;
+    }
+    tn_handle_t root{}, mixer{};
+    CHECK(tn_construct(context, "Object3D", nullptr, 0, &root, &diagnostic) == TN_OK);
+    tn_value_t rootArgument{};
+    rootArgument.kind = TN_VALUE_HANDLE;
+    rootArgument.handle = root;
+    CHECK(tn_construct(context, "AnimationMixer", &rootArgument, 1, &mixer, &diagnostic) == TN_OK);
+
+    // A rig with no action: the action slot repeats the mixer's handle and the tick still steps the
+    // mixer. Enough slots that one call costs more than the microsecond the counter truncates to.
+    constexpr uint32_t kRigs = 256;
+    std::vector<tn_handle_t> handles(kRigs * 3);
+    for (uint32_t i = 0; i < kRigs; ++i) {
+        handles[i * 3 + TN_ANIM_MIXER] = mixer;
+        handles[i * 3 + TN_ANIM_ACTION] = mixer;
+        handles[i * 3 + TN_ANIM_STRIDE_ROOT] = mixer;
+    }
+    std::vector<double> rigs(kRigs * TN_ANIM_RIG_VALUES);
+    for (uint32_t i = 0; i < kRigs; ++i) {
+        double* values = rigs.data() + i * TN_ANIM_RIG_VALUES;
+        values[0] = 0.016;                            // the stride interval this tick's movement divides by
+        values[1] = 0.016;                            // this tick's own time
+        values[2] = 10;                               // the clip's ground speed
+        values[3] = 0;                                // no rate owned by this rule
+        values[4] = double(TN_ANIM_RIG_STEP);         // this tick poses the rig
+    }
+    std::vector<double> status(kRigs * 3);
+    const auto tick = [&] { return tn_anim_tick(context, handles.data(), rigs.data(), kRigs, status.data(), &diagnostic); };
+
+    waste::setDebugEnabled(true);
+    const uint64_t countedBefore = waste::counters().animationTickMicros.load();
+    CHECK(tick() == TN_OK);
+    const uint64_t counted = waste::counters().animationTickMicros.load();
+    CHECK(counted > countedBefore);
+
+    waste::setDebugEnabled(false);
+    CHECK(tick() == TN_OK);
+    CHECK(waste::counters().animationTickMicros.load() == counted);
+    std::printf("animationTickMicros: %llu us over %u rigs, 0 when debug is off\n",
+                static_cast<unsigned long long>(counted - countedBefore), kRigs);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"tick_batch", tick_batch}, {"stride_rate", stride_rate}, {"clip_change_keeps_body", clip_change_keeps_body},
              {"held_tick_measures_only", held_tick_measures_only},
-             {"grouped_step_integrates", grouped_step_integrates}, {"game_rate_kept", game_rate_kept})
+             {"grouped_step_integrates", grouped_step_integrates}, {"game_rate_kept", game_rate_kept},
+             {"animation_tick_micros_counted", animationTickMicrosCounted})

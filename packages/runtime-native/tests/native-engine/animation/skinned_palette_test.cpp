@@ -7,6 +7,8 @@
 // compares every bit. It also compares isSimilarityTransform over the recorded matrix table.
 #include "check.h"
 #include "engine/animation/skinning/palette.h"
+#include "engine/scene/material.h"
+#include "engine/scene/nodes.h"
 
 #include <bit>
 #include <cstddef>
@@ -242,7 +244,79 @@ void updateFrequency() {
     CHECK(fresh.skeletonUpdates() == 1);
 }
 
+// PRD-878 Step A: a walker drawn with a node material that sets no node, on plain (untracked) transforms as the web
+// engine builds every object, takes the root-relative slot; a frame whose pose version held keeps the slot it wrote
+// last, whatever the walker's root did, and a bone write rewrites it. Placement times slot is the world palette.
+void relativeSlotKeepsAnUnchangedPose() {
+    Scene scene;
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto material = std::make_shared<Material>(MaterialType::Standard, true);  // MeshStandardNodeMaterial, no nodes
+    auto root = std::make_shared<Object3D>();
+    auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+    auto hips = std::make_shared<Bone>(), head = std::make_shared<Bone>();
+    root->add(*rig);
+    root->add(*hips);
+    hips->add(*head);
+    head->position.y = 0.6;
+    scene.add(*root);
+    scene.updateMatrixWorld(true);
+    rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{hips, head}));
+    hips->rotation.z = 0.3;
+    const auto frame = [&](std::vector<float>& slot) {
+        scene.updateMatrixWorld();
+        rig->skeleton->update();
+        SkinnedPalette palette(2, 1, false), eager(2, 1, false);
+        palette.begin();
+        const Object3D* placement = palette.writeRelative(*palette.claim(rig.get()), *rig);
+        CHECK(placement == root.get());
+        eager.write(*eager.claim(rig.get()), *rig, false);
+        for (std::size_t bone = 0; placement && bone < 2; ++bone) {
+            float world[16];
+            multiplyAffine(placement->matrixWorld.elements.data(), 0, palette.matrices().data(), bone * 16, world, 0);
+            for (int k = 0; k < 16; ++k) CHECK(std::abs(world[k] - eager.palette()[bone * 16 + k]) < 1e-5);
+        }
+        slot = palette.matrices();
+        return palette.writes();
+    };
+    std::vector<float> first, next;
+    CHECK(frame(first) == 1);
+    root->position.set(4, 0, -2);  // the walker walks and turns; its pose holds
+    root->rotation.y = 0.8;
+    CHECK(frame(next) == 0);
+    CHECK(next == first);
+    head->rotation.x = 0.4;  // a bone write
+    CHECK(frame(next) == 1);
+    CHECK(next != first);
+    // The walkers' backlit sheen is an emissive node over view space (normalView, the view direction): a relative slot
+    // leaves every view and world value as it was, so it is admitted. A node that reads the skinned local position
+    // would see the root's space instead of the world's: refused.
+    namespace g = shader::graph;
+    material->nodes.emissiveNode = g::normalize(g::varying("normalView", shader::Type::vec(3)));
+    frame(next);
+    // A game's own uniform and the camera's view matrix read the same through the slot: admitted.
+    material->nodes.emissiveNode = g::normalize(g::mul(
+        g::mul(g::uniform("viewMatrix", shader::Type::mat(4, 4)), g::uniform("nodeUniform7", shader::Type::vec(4), {0, 1, 0, 0})),
+        g::uniform("nodeUniform8", shader::Type::vec(4), {1, 1, 1, 1})));
+    frame(next);
+    // The check fails closed: a local read, and any input or kind it does not know, refuses.
+    auto unknown = std::make_shared<g::NodeData>();
+    unknown->kind = g::Kind::StorageElement;
+    unknown->type = shader::Type::vec(3);
+    for (const g::Node& refused : {g::positionLocal(), g::varying("tnMystery", shader::Type::vec(3)),
+                                   g::attribute("tnMystery", shader::Type::vec(3)), g::Node(unknown),
+                                   g::swizzle(g::uniform("normalMatrix", shader::Type::mat(3, 3)), "x"),
+                                   g::swizzle(g::uniform("bindMatrix", shader::Type::mat(4, 4)), "xyz"),
+                                   g::swizzle(g::uniform("tnLaterEngineMatrix", shader::Type::mat(4, 4)), "xyz")}) {
+        material->nodes.emissiveNode = g::normalize(refused);
+        scene.updateMatrixWorld();
+        rig->skeleton->update();
+        SkinnedPalette local(2, 1, false);
+        CHECK(local.writeRelative(*local.claim(rig.get()), *rig) == nullptr);
+    }
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"slot_reuse", slotReuse}, {"pose_history", poseHistory},
-             {"update_frequency", updateFrequency})
+             {"update_frequency", updateFrequency},
+             {"relative_slot_keeps_an_unchanged_pose", relativeSlotKeepsAnUnchangedPose})

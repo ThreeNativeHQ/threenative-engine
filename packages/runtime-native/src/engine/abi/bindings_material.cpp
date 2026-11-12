@@ -979,6 +979,24 @@ void registerMaterialBindings(Registry& classes) {
             return value;
         };
     }
+    {
+        auto& points = classes["PointsMaterial"];
+        registerMeshMaterial(points, MaterialType::Basic);
+        const auto ctor = points.ctor;
+        // PointsMaterial's defaults: opaque and fogged as three's are, and unlit like a SpriteMaterial's.
+        points.ctor = [ctor](const Args& a, Store& store) {
+            auto value = ctor(a, store);
+            static_cast<Material*>(value.get())->pointsMaterial = true;
+            return value;
+        };
+        // PointsMaterial.size is kept and read; WebGPU's point primitive is 1 px, so it moves no pixel here
+        // either (three's PointsNodeMaterial.js:56-60). That is also why PointsNodeMaterial — upstream's way
+        // to size a point cloud, through a Sprite — stays unbound and is refused by name.
+        points.getters["size"] = [](void* self) { return Value::of(as<Material>(self)->size); };
+        points.setters["size"] = [](void* self, const Value& v) { as<Material>(self)->size = number(v); };
+        points.getters["sizeAttenuation"] = [](void* self) { return Value::of(as<Material>(self)->sizeAttenuation); };
+        points.setters["sizeAttenuation"] = [](void* self, const Value& v) { as<Material>(self)->sizeAttenuation = flag(v); };
+    }
     registerMeshMaterial(classes["MeshBasicMaterial"], MaterialType::Basic);
     registerMeshMaterial(classes["NodeMaterial"], MaterialType::Basic, true, true);
     registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);

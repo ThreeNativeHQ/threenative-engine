@@ -119,6 +119,13 @@ export class WebGPURenderer {
         if (segments[0] > 0) stages[SHADOW_STAGE] = segments[0];
         return stages;
       },
+      // The same sample split by pass, as the Wasm engine publishes it (PRD-871): the scene pass, every shadow map (sun
+      // and lamps), and the rest (other passes, output, gather). Core's `gpuFrameSample` hands it to TN_FRAME_BUDGET.
+      get gpuSplit() {
+        const { samples, source, segments } = globalThis.tn.renderInfo().gpuTiming;
+        if (!(samples > 0)) return undefined;
+        return { frame: source, main: segments[1], shadow: segments[0] + segments[5], other: segments[2] + segments[3] + segments[4] };
+      },
     },
     frame: 0,
     reset() {},

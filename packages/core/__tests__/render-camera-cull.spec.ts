@@ -26,6 +26,7 @@ import {
   rayMeetsSphere,
   setFrustumPlanes,
   trackAnimationRate,
+  untrackAnimationRate,
 } from "../src/render-camera-cull.js";
 
 // The camera pass tests its frustum and forward ray in plain numbers: on the web engine three's Frustum,
@@ -620,39 +621,76 @@ describe("render camera cull", () => {
     expect([shown.rate, hidden.rate]).toEqual([4, 1]);
   });
 
-  // PRD-828: the engine answers every measured rig's band in one call, and the JS part walk does not run.
-  it("takes the rate bands from the engine in one call per frame", () => {
-    const onRay = new Group();
-    onRay.add(ball(1, -60));
-    const offRay = new Group();
-    const lateral = ball(1, -60);
-    lateral.position.x = 8;
-    offRay.add(lateral);
-    const unseen = new Group();
-    unseen.add(ball(1, -60));
+  // PRD-878: the engine keeps the tracked rigs and runs the whole band pass, the rig check, the hold and the
+  // band loop; JS makes one call a frame and writes the [id, rate] pairs it answers into the states.
+  it("takes the rate bands from the engine in one call per frame, with no JS rig loop", () => {
+    const rigs = [new Group(), new Group(), new Group()];
+    const ids: number[] = [];
+    const track = vi.fn((id: number) => ids.push(id));
+    for (const rig of rigs) Object.assign(rig, { __trackAnimationRate: track });
     const states = [rateState(), rateState(), rateState()];
-    trackAnimationRate(onRay, states[0] as IAnimationRateState);
-    trackAnimationRate(offRay, states[1] as IAnimationRateState);
-    trackAnimationRate(unseen, states[2] as IAnimationRateState);
-    const scene = sceneWith(onRay, offRay, unseen);
-    // Not the JS walk's answers (1, 4, 1): the states can only read these if the engine's were taken.
-    const bandRigs = vi.fn((..._args: unknown[]) => [2, 8, 0]);
-    Object.assign(scene, { __bandRigs: bandRigs });
+    rigs.forEach((rig, index) => trackAnimationRate(rig, states[index] as IAnimationRateState));
+    expect(track).toHaveBeenCalledTimes(3);
+    const [first, second, third] = ids as [number, number, number];
+    expect(new Set(ids).size).toBe(3);
+    const scene = sceneWith(...rigs);
+    const bandAnimation = vi.fn((..._args: unknown[]): number[] | undefined => [
+      first,
+      2,
+      second,
+      8,
+    ]);
+    Object.assign(scene, { __bandAnimation: bandAnimation, __bandRigs: vi.fn() });
+    const visits = rigs.map((rig) => vi.spyOn(rig, "traverseVisible"));
     const view = camera();
     const cull = new RenderCameraCull();
     cull.prepareAnimation(scene, view, 720);
 
-    expect(bandRigs).toHaveBeenCalledTimes(1);
-    const [cameraArg, resolved, scale, rigs] = bandRigs.mock.calls[0] as unknown[];
-    expect([cameraArg, resolved, rigs]).toEqual([view, true, [onRay, offRay, unseen]]);
+    expect(bandAnimation).toHaveBeenCalledTimes(1);
+    const [cameraArg, resolved, scale, frame] = bandAnimation.mock.calls[0] as unknown[];
+    expect([cameraArg, resolved, frame]).toEqual([view, true, cull.animationFrame]);
     expect(scale).toBeCloseTo(720 / (2 * Math.tan(Math.PI / 6)), 9);
+    for (const visit of visits) expect(visit).not.toHaveBeenCalled();
+    expect((scene as unknown as { __bandRigs: () => void }).__bandRigs).not.toHaveBeenCalled();
     expect(states.map((state) => state.rate)).toEqual([2, 8, 1]);
-    // 0 means no part was visited: that rig's state is left as the JS walk leaves it.
+    // A rig the engine did not answer keeps its state, as the JS walk leaves it.
     expect(states.map((state) => state.frame)).toEqual([
       cull.animationFrame,
       cull.animationFrame,
       0,
     ]);
+    expect(states[0]?.source).toBe(cull);
+
+    // A respawned player on the same rig keeps its handle; an untracked one tells the engine to forget it.
+    const respawned = rateState();
+    trackAnimationRate(rigs[0] as Group, respawned);
+    expect(ids.at(-1)).toBe(first);
+    untrackAnimationRate(rigs[2] as Group, states[2] as IAnimationRateState);
+    expect(ids.at(-1)).toBe(-1);
+    // [id, -1] is a rig the engine freed: its state is dropped and later pairs under the id are ignored.
+    bandAnimation.mockImplementation(() => [second, -1, first, 4, second, 2]);
+    cull.prepareAnimation(scene, view, 720);
+    expect([respawned.rate, states[1]?.rate]).toEqual([4, 8]);
+    expect(third).toBeGreaterThanOrEqual(0);
+  });
+
+  it("makes no band call while the engine tracks no rig", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/render-camera-cull.js");
+    const rig = Object.assign(new Group(), { __trackAnimationRate: vi.fn() });
+    const scene = sceneWith(rig);
+    const bandAnimation = vi.fn(() => []);
+    Object.assign(scene, { __bandAnimation: bandAnimation });
+    const cull = new fresh.RenderCameraCull();
+    cull.prepareAnimation(scene, camera(), 720);
+    expect(bandAnimation).not.toHaveBeenCalled();
+    const state = rateState();
+    fresh.trackAnimationRate(rig, state);
+    cull.prepareAnimation(scene, camera(), 720);
+    expect(bandAnimation).toHaveBeenCalledTimes(1);
+    fresh.untrackAnimationRate(rig, state);
+    cull.prepareAnimation(scene, camera(), 720);
+    expect(bandAnimation).toHaveBeenCalledTimes(1);
   });
 
   // The scene of `projected_cull_bands` (runtime-native abi_test.cpp), through the JS walk: the engine's
@@ -707,11 +745,12 @@ describe("render camera cull", () => {
     trackAnimationRate(outer, outerState);
     trackAnimationRate(inner, innerState);
     const scene = sceneWith(outer);
-    const bandRigs = vi.fn(() => [8]);
-    Object.assign(scene, { __bandRigs: bandRigs });
+    // The engine answers no pairs for nested rigs: the outer walk, here, sets both rates.
+    const bandAnimation = vi.fn(() => undefined);
+    Object.assign(scene, { __bandAnimation: bandAnimation });
     new RenderCameraCull().prepareAnimation(scene, camera(), 720);
 
-    expect(bandRigs).not.toHaveBeenCalled();
+    expect(bandAnimation).toHaveBeenCalledTimes(1);
     expect([outerState.rate, innerState.rate]).toEqual([4, 4]);
   });
 

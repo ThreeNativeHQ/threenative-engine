@@ -270,14 +270,16 @@ export async function bindWebEngine(
     bound.WebGPURenderer = defineWebRenderer(
       module,
       classes.Color as never,
-      (frame) => {
+      (frame, kernels) => {
         // Each renderer render runs the live frame passes' updateBefore, as three's node update does;
         // a render that advances no frame (a standing frame the runner asks for) still hears them.
         updatePasses(frame);
         // A compute dispatch passes no frame: it belongs to the frame already collected.
         const frameId = frame?.frameId ?? collectedFrame;
         if (updating || (frameId !== undefined && frameId === collectedFrame)) {
-          tsl?.sync(frame);
+          // A dispatch's sync carries that frame, so the frame hooks that already ran do not run again for it,
+          // and its kernels, so it runs only the hooks they read (PRD-878).
+          tsl?.sync(frame ?? (frameId === undefined ? undefined : { frameId, kernels }));
           return;
         }
         collectedFrame = frameId;

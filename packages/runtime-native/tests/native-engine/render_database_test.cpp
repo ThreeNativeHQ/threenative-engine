@@ -48,6 +48,60 @@ using namespace tn::engine;
 
 namespace {
 
+// Palette storage follows resource/hierarchy versions, not a frame or a pose.
+void paletteLifetime() {
+    Scene scene;
+    PerspectiveCamera camera;
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+    std::vector<double> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<SkinnedMesh>> rigs;
+    std::vector<std::shared_ptr<Bone>> bones;
+    for (int i = 0; i < 32; ++i) {
+        auto bone = std::make_shared<Bone>();
+        auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+        rig->frustumCulled = false;
+        scene.add(*bone);
+        scene.add(*rig);
+        rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}));
+        rigs.push_back(rig);
+        bones.push_back(bone);
+    }
+    RenderDatabase database;
+    LightState lights;
+    const auto prepare = [&] { database.prepare(scene, camera, lights); };
+    prepare();
+    CHECK(database.lastBatches().second == rigs.size());
+    const auto first = database.paletteBuilds();
+    CHECK(first > 0);
+    for (int i = 0; i < 3; ++i) prepare();
+    CHECK(database.paletteBuilds() == first);
+    const auto changed = [&] {
+        const auto before = database.paletteBuilds();
+        prepare();
+        CHECK(database.paletteBuilds() > before);
+    };
+    scene.remove(*rigs.back());
+    changed();
+    scene.add(*rigs.back());
+    changed();
+    rigs.back()->material = material->clone();
+    changed();
+    rigs.back()->geometry = geometry->clone();
+    changed();
+    // Culling/reordering may change dense slots without a hierarchy write.
+    rigs[0]->setVisible(false);
+    prepare();
+    rigs[0]->setVisible(true);
+    camera.position.z = -20;
+    prepare();
+    CHECK(database.diagnostics().empty());
+}
+
 // CPU-only proof of the exact palette/instance records used by all render passes.
 void rigRelativePreparation() {
     Scene scene;
@@ -107,8 +161,10 @@ void rigRelativePreparation() {
     LightState lights;
     for (int frame = 0; frame < 3; ++frame) {
         // A legacy slot can share the same draw with relative slots without applying placement twice.
-        if (frame == 2)
-            Object3D::transformTrackingAddress(&bones[0]->position)[2] = 1;
+        if (frame == 2) {  // a root that is no similarity, under a rig whose own scale makes it one: a world slot
+            roots[0]->scale.set(1.4, 2.8, 1.4);
+            rigs[0]->scale.set(1, 0.5, 1);
+        }
         bones[0]->rotation.z = double(bones[0]->rotation.z) + 0.17;
         roots[0]->position.x += 0.7;
         for (int pass = 0; pass < 2; ++pass) {
@@ -184,12 +240,10 @@ void rigRelativePreparation() {
         CHECK(actual.writeRelative(*actual.claim(&rig), rig) == nullptr);
         CHECK(actual.matrices() == expected.matrices());
     };
-    fallback(0); // escaped bone
+    fallback(0); // a non-uniform root
     rigs[1]->attached = false;
     fallback(1);
     rigs[1]->attached = true;
-    Object3D::transformTrackingAddress(&bones[2]->position)[0] = 0;
-    fallback(2); // raw C++ transform
     roots[3]->scale.set(1, 2, 1);
     rigs[3]->scale.set(1, 0.5, 1);
     fallback(3);
@@ -204,8 +258,13 @@ void rigRelativePreparation() {
         [](const RenderCallbackArgs&, std::string&) { return true; });
     fallback(7);
     roots[7]->onBeforeRender.reset();
-    material->nodeMaterial = true;
-    fallback(7);
+    material->nodeMaterial = true;  // a node material that sets no node draws its plain program (PRD-878)
+    {
+        scene.updateMatrixWorld(true);
+        rigs[7]->skeleton->update();
+        SkinnedPalette admitted(2, 1, false);
+        CHECK(admitted.writeRelative(*admitted.claim(rigs[7].get()), *rigs[7]) == roots[7].get());
+    }
     material->nodeMaterial = false;
     scene.updateMatrixWorld(true);
     rigs[7]->bindMatrixInverse.identity();
@@ -350,6 +409,102 @@ void contentIdenticalGeometryBatches() {
         varied.add(*keep.back());
     }
     CHECK(other.prepare(varied, camera, lights).size() == 40);
+}
+
+// PRD-878: a rig whose pose held keeps its root-relative slot, so nothing reads its world palette and the skeleton's
+// update is skipped while its root walks. A mesh a bone holds still follows the root (the world walk places it), the
+// palette still draws the world pose, and a bone write brings the update back.
+void heldPoseSkipsTheWorldPalette() {
+    Scene scene;
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    geometry->setAttribute("skinIndex",
+                           BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+    std::vector<double> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Object3D>> roots;
+    std::vector<std::shared_ptr<SkinnedMesh>> rigs;
+    std::vector<std::shared_ptr<Bone>> tips;
+    auto held = std::make_shared<Mesh>(makeBoxGeometry(), material);  // a prop in the first rig's hand
+    for (int i = 0; i < 8; ++i) {  // eight rigs clear the batching floor
+        auto root = std::make_shared<Object3D>();
+        auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+        auto bone = std::make_shared<Bone>(), tip = std::make_shared<Bone>();
+        bone->add(*tip);
+        tip->position.y = 0.4;
+        rig->frustumCulled = false;
+        root->add(*rig);
+        root->add(*bone);
+        scene.add(*root);
+        root->updateMatrixWorld(true);
+        rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone, tip}));
+        root->position.set(i * 3, 0, -i);
+        bone->rotation.set(0.1, 0.2, 0.4);
+        roots.push_back(root);
+        rigs.push_back(rig);
+        tips.push_back(tip);
+    }
+    tips[0]->add(*held);
+    held->position.set(0, 0.2, 0);
+    PerspectiveCamera camera;
+    camera.position.set(5, 8, 30);
+    camera.lookAt(5, 0, 0);
+    RenderDatabase database;
+    LightState lights;
+    const auto updates = [&] {
+        uint64_t total = 0;
+        for (const auto& rig : rigs) total += rig->skeleton->worldPaletteUpdates;
+        return total;
+    };
+    uint64_t prepared = 0;  // updates the database ran; the check below runs its own eager palette after it
+    const auto drawn = [&] {
+        const uint64_t before = updates();
+        const auto& draws = database.prepare(scene, camera, lights);
+        prepared = updates() - before;
+        CHECK(draws.size() == 2 && draws.front().boneStride == 2 && draws.front().instanceCount == rigs.size());
+        for (const DrawItem& draw : draws) {
+            if (!draw.boneMatrices || !draw.instanceMatrices) continue;
+            const auto* instances = reinterpret_cast<const float*>(draw.instanceMatrices->data());
+            for (std::size_t slot = 0; slot < rigs.size(); ++slot) {
+                std::size_t rigIndex = rigs.size();
+                for (std::size_t i = 0; i < roots.size(); ++i)
+                    if (std::abs(instances[slot * 16 + 12] - roots[i]->matrixWorld.elements[12]) < 1e-5) rigIndex = i;
+                CHECK(rigIndex < rigs.size());
+                if (rigIndex == rigs.size()) continue;
+                SkinnedPalette eager(2, 1, false);
+                eager.write(*eager.claim(rigs[rigIndex].get()), *rigs[rigIndex], false);
+                Matrix4 placement;
+                for (int k = 0; k < 16; ++k) placement.elements[k] = instances[slot * 16 + k];
+                for (std::size_t bone = 0; bone < 2; ++bone) {
+                    float world[16];
+                    multiplyAffine(placement.elements.data(), 0, draw.boneMatrices->data(), slot * 32 + bone * 16,
+                                   world, 0);
+                    for (int k = 0; k < 16; ++k) CHECK(std::abs(world[k] - eager.palette()[bone * 16 + k]) < 1e-4);
+                }
+            }
+        }
+    };
+    drawn();
+    drawn();  // every slot now holds its pose
+    Vector3 start;
+    start.setFromMatrixPosition(held->matrixWorld);
+    for (int frame = 1; frame <= 3; ++frame) {
+        for (const auto& root : roots) root->position.x += 0.5;
+        drawn();
+        Vector3 prop, expected(0, 0.2, 0);
+        prop.setFromMatrixPosition(held->matrixWorld);
+        expected.applyMatrix4(tips[0]->matrixWorld);  // the prop stays in the hand
+        CHECK(prop.distanceTo(expected) < 1e-9);
+        CHECK(std::abs(prop.x - start.x - 0.5 * frame) < 1e-9 && std::abs(prop.y - start.y) < 1e-9);
+        std::printf("held pose, walking frame %d: %llu skeleton palette updates\n", frame,
+                    static_cast<unsigned long long>(prepared));
+        CHECK(prepared == 0);
+    }
+    tips[1]->rotation.z = 0.3;  // a bone write: that skeleton updates again
+    drawn();
+    CHECK(prepared == 1);
 }
 
 void uniformBatchPreparation() {
@@ -1146,6 +1301,24 @@ void unchangedFrameStorage() {
     scene.add(*root);
     root->updateMatrixWorld(true);
     rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}));
+    // A second rig of eight sibling bones shares the `boneMatrices` storage: one moved bone sends its one 4x4, not the
+    // whole palette (PRD-878: a crowd whose poses mostly held re-sent every slot).
+    auto crowdGeometry = makeBoxGeometry();
+    crowdGeometry->setAttribute("skinIndex", skinGeometry->attributes.at("skinIndex"));
+    crowdGeometry->setAttribute("skinWeight", skinGeometry->attributes.at("skinWeight"));
+    auto crowdRig = std::make_shared<SkinnedMesh>(crowdGeometry, std::make_shared<Material>(MaterialType::Standard));
+    auto crowdRoot = std::make_shared<Object3D>();
+    crowdRoot->position.set(-2, 0, 0);
+    crowdRoot->add(*crowdRig);
+    std::vector<std::shared_ptr<Bone>> crowdBones;
+    for (int i = 0; i < 8; ++i) {
+        crowdBones.push_back(std::make_shared<Bone>());
+        crowdBones.back()->position.set(0, 0.1 * i, 0);
+        crowdRoot->add(*crowdBones.back());
+    }
+    scene.add(*crowdRoot);
+    crowdRoot->updateMatrixWorld(true);
+    crowdRig->bind(std::make_shared<Skeleton>(crowdBones));
     RenderDatabase database;
     const auto frameUpload = [&] {
         const uint64_t before = renderer.gpu().queueWriteBytes();
@@ -1186,6 +1359,78 @@ void unchangedFrameStorage() {
     CHECK(grown == steadyMoved + grownPacked);
     CHECK(steadyGrown == unchanged);
     CHECK(palette == steadyGrown + paletteBytes);
+    const uint64_t steadyPalette = frameUpload();
+    crowdBones[5]->rotation.z = 0.4;  // one slot of eight in the second rig
+    const uint64_t oneBone = frameUpload();
+    std::printf("one moved crowd bone: %llu bytes over steady\n", static_cast<unsigned long long>(oneBone - steadyPalette));
+    CHECK(steadyPalette == unchanged);
+    CHECK(oneBone == steadyPalette + paletteBytes);
+}
+
+// PRD-871: a Points object draws as a WebGPU point-list primitive through the unlit basic program, and a
+// `position` attribute the game rewrites every frame re-uploads into the buffer it already has. 60 frames of a
+// drifting cloud create no second GPU buffer, and every one of them draws.
+void pointsRewriteKeepsOneBuffer() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    Scene scene;
+    PerspectiveCamera camera(50, 96.0 / 72, 0.1, 100);
+    camera.position.set(0, 0, 4);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    constexpr uint32_t count = 256;
+    std::vector<double> positions;
+    for (uint32_t i = 0; i < count; ++i) {
+        const double turn = double(i) / count * 6.283185307179586;
+        positions.insert(positions.end(), {std::cos(turn) * 1.2, std::sin(turn) * 0.8, 0.0});
+    }
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->setAttribute("position", BufferAttribute::fromFloats(positions, 3));
+    auto material = std::make_shared<Material>(MaterialType::Basic);
+    material->pointsMaterial = true;
+    material->size = 4;
+    CHECK(material->typeName() == "PointsMaterial");
+    auto cloud = std::make_shared<Points>(geometry, material);
+    cloud->frustumCulled = false;
+    scene.add(*cloud);
+    RenderDatabase database;
+    const auto frame = [&] {
+        database.render(renderer, scene, camera, {0.05, 0.06, 0.08, 1});
+        renderer.poll();
+        events.drain();
+    };
+    frame();
+    frame();  // warm: the geometry's buffer and the point-list pipeline exist
+    CHECK(database.diagnostics().empty());
+    CHECK(database.drawn().size() == 1);
+    if (!database.drawn().empty()) {
+        const DrawItem& draw = database.drawn().front();
+        CHECK(draw.topology == WGPUPrimitiveTopology_PointList);
+        CHECK(draw.kind == MaterialKind::Basic);
+        CHECK(draw.castShadow == false);
+        CHECK(draw.instanceCount == 1);
+    }
+    const auto position = geometry->getAttribute("position");
+    CHECK(position != nullptr);
+    const uint64_t buffers = waste::counters().bufferAllocs.load();
+    const auto& cache = renderer.geometry();
+    const uint64_t uploadedBefore = cache.stats().bytesUploaded;
+    for (uint32_t step = 0; step < 60; ++step) {
+        // Every vertex moves: a cloud a game rewrites each frame (needsUpdate each time).
+        for (uint32_t i = 0; i < count; ++i) position->setX(i, double(i) / count * 2.0 - 1.0 + 0.01 * double(step));
+        position->setNeedsUpdate();
+        frame();
+        CHECK(database.drawn().size() == 1);
+    }
+    const uint64_t created = waste::counters().bufferAllocs.load() - buffers;
+    const uint64_t uploaded = cache.stats().bytesUploaded - uploadedBefore;
+    std::printf("points rewrite: %u points, 60 frames, %llu buffers created, %llu bytes uploaded\n", count,
+                static_cast<unsigned long long>(created), static_cast<unsigned long long>(uploaded));
+    CHECK(created == 0);
+    CHECK(uploaded > 0);  // the moved attribute does reach the GPU, into the buffer it already had
 }
 
 // TR1: the `instances` storage kept each draw's instances in depth order, so a camera turn that swapped two
@@ -1442,12 +1687,32 @@ void frameSlabIsPerProgram() {
     // the GPU holds. A frame whose camera moved still rewrites every slot (the view is in each draw's block), so
     // its upload stays the arena's size; the still frame is the arena's worth fewer than it.
     const Frame still = frame();
+    // The debug counter names the arena bytes a frame wrote, not the arena's size: a still frame reads
+    // 0 there. It read the size (39 KB a frame on the stress lab's still pose, PRD-871) beside a 516-byte
+    // real upload, so a profile chased an upload that did not exist.
+    waste::setDebugEnabled(true);
+    const uint64_t counted = waste::counters().uniformUploadBytes.load();
     const Frame stillAgain = frame();
+    const uint64_t stillCounted = waste::counters().uniformUploadBytes.load() - counted;
+    pose(0.9);
+    const uint64_t movedCounted = waste::counters().uniformUploadBytes.load();
+    const Frame movedAgain = frame();
+    const uint64_t movedCountedBytes = waste::counters().uniformUploadBytes.load() - movedCounted;
+    pose(0.4);
+    frame();
+    waste::setDebugEnabled(false);
+    std::printf("frame slab: debug counter still %llu, moved %llu (queue writes %llu) of arena %llu\n",
+                static_cast<unsigned long long>(stillCounted), static_cast<unsigned long long>(movedCountedBytes),
+                static_cast<unsigned long long>(movedAgain.upload), static_cast<unsigned long long>(moved.uniforms));
+    CHECK(stillCounted == 0);
+    CHECK(movedCountedBytes > 0 && movedCountedBytes <= movedAgain.upload);
     std::printf("frame slab: still frames upload %llu and %llu bytes, a moved camera %llu of %llu\n",
                 static_cast<unsigned long long>(still.upload), static_cast<unsigned long long>(stillAgain.upload),
                 static_cast<unsigned long long>(moved.upload), static_cast<unsigned long long>(moved.uniforms));
     CHECK(still.upload <= moved.upload - moved.uniforms);
     CHECK(stillAgain.upload == still.upload);
+    // Nothing else crosses either: the output pass's exposure block (4 bytes) was rewritten every frame (PRD-871).
+    CHECK(still.upload == 0);
     CHECK(moved.upload <= moved.uniforms + still.upload);
     // (d) the same pose reaches the same pixels however the frame got there, and a light's channel flip moves
     // as many of them from a still arm as from a moved one: a stale slab would show here.
@@ -8563,8 +8828,9 @@ void shadowPagesInstanceSkinnedCasters() {
     }
     // (d) set once: the palette is written once per rig per frame, not once per page, and a grouped row is a batch.
     CHECK(capture[0].stats.paletteWrites == capture[1].stats.paletteWrites);
-    // Old code: 18 writes. 16 shadow draws read 8 skeletons' bytes, so 8 copies, plus 2 main batches whose bind matrices differ.
-    CHECK(capture[0].stats.paletteWrites == 10);
+    // Old code: 18 writes, then 10 (16 shadow draws read 8 skeletons' bytes, plus 2 main batches). Now each shadow
+    // copy reads its rig's slot of the main batch's root-relative palette, so a rig has one palette a frame (PRD-878).
+    CHECK(capture[0].stats.paletteWrites == 2);
     CHECK(capture[0].stats.shadowSkinned.exactDraws == 48 && capture[0].stats.shadowSkinned.batches == 0);
     CHECK(capture[1].stats.shadowSkinned.exactDraws == 0 && capture[1].stats.shadowSkinned.batches == capture[1].rows.size());
     // Mover pages share their rows: three pages draw them, and one plans them.
@@ -8613,6 +8879,69 @@ void shadowPagesInstanceSkinnedCasters() {
         }
 }
 
+// PRD-872: a walker translates and turns with its pose unchanged, which leaves the mesh-space box exactly as it was
+// (`inv(mesh world) * bone`) — so the plan reads no bone for it, and hands back the box it built once.
+void rigidRigKeepsItsReachBounds() {
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    std::vector<double> indices(vertices * 4, 0), weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) {
+        indices[i * 4] = 0; indices[i * 4 + 1] = 1;
+        weights[i * 4] = i % 3 == 0 ? 1 : 0.4; weights[i * 4 + 1] = i % 3 == 0 ? 0 : 0.6;
+    }
+    geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, indices, 4));
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+    auto root = std::make_shared<Object3D>();
+    auto rig = std::make_shared<SkinnedMesh>(geometry, std::make_shared<Material>(MaterialType::Standard));
+    auto hip = std::make_shared<Bone>(), knee = std::make_shared<Bone>();
+    hip->add(*knee);
+    knee->position.y = -0.6;
+    rig->position.set(1, 0.5, -2);
+    root->add(*rig);
+    root->add(*hip);
+    root->updateMatrixWorld(true);
+    rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{hip, knee}));
+    Box3 first;
+    CHECK(rig->boneReachBounds(first, Skeleton::nextPlanStamp()));
+    CHECK(rig->boneReachBoxBuilds == 1);
+    const uint64_t poseReads = rig->skeleton->planPoseBuilds;
+    // A rigid move: the component translates and turns, every bone moves with it, the local pose holds.
+    root->position.set(4, -1, 7);
+    root->rotation.y = 0.7;
+    root->updateMatrixWorld(true);
+    Box3 again;
+    CHECK(rig->boneReachBounds(again, Skeleton::nextPlanStamp()));
+    CHECK(again.min.equals(first.min) && again.max.equals(first.max));
+    CHECK(rig->boneReachBoxBuilds == 1 && rig->skeleton->planPoseBuilds == poseReads);
+    // The world box then follows the component: mesh space is invariant, world space is not.
+    {
+        Matrix4 model; model.elements = rig->matrixWorld.elements;
+        Box3 world = again; world.applyMatrix4(model);
+        Box3 before = first; before.applyMatrix4(model);
+        CHECK(world.min.equals(before.min));
+    }
+    // A bone that moves rebuilds it.
+    knee->rotation.z = 0.5;
+    root->updateMatrixWorld(true);
+    Box3 posed;
+    CHECK(rig->boneReachBounds(posed, Skeleton::nextPlanStamp()));
+    CHECK(rig->boneReachBoxBuilds == 2);
+    CHECK(!posed.max.equals(first.max) || !posed.min.equals(first.min));
+    // So does a mesh scale the box is expressed in.
+    rig->scale.setScalar(1.5);
+    root->updateMatrixWorld(true);
+    Box3 scaled;
+    CHECK(rig->boneReachBounds(scaled, Skeleton::nextPlanStamp()));
+    CHECK(rig->boneReachBoxBuilds == 3);
+    // And a mesh that moves without its bones: the rig-relative root is what the box is keyed on.
+    rig->position.x += 2;
+    root->updateMatrixWorld(true);
+    Box3 shifted;
+    CHECK(rig->boneReachBounds(shifted, Skeleton::nextPlanStamp()));
+    CHECK(rig->boneReachBoxBuilds == 4);
+    CHECK(!shifted.min.equals(scaled.min));
+}
+
 // Virtual shadow bounds fit a rig from its bones (UE 5.8.3 fits skinned bounds to bones), not by
 // skinning every vertex on the CPU each frame: the box must still hold every posed vertex.
 void boneReachBoundsHoldPosedVertices() {
@@ -8655,6 +8984,38 @@ void boneReachBoundsHoldPosedVertices() {
         // Conservative, not unbounded: a sphere per bone, so a few times the exact box at most.
         CHECK(box.min.distanceTo(box.max) <= 4 * exact.min.distanceTo(exact.max));
     }
+    // PRD-871: two meshes bound to one skeleton read its bone poses once per planning pass, and get the same box.
+    auto twin = std::make_shared<SkinnedMesh>(geometry, std::make_shared<Material>(MaterialType::Standard));
+    rig->add(*twin);
+    root->updateMatrixWorld(true);
+    twin->bind(rig->skeleton, &rig->bindMatrix);
+    // A pose neither mesh has read yet, so the pass below has bones to read at all: since PRD-872 an unchanged pose
+    // reads none.
+    hip->position.x += 0.35;
+    root->updateMatrixWorld(true);
+    Box3 alone, first, second;
+    CHECK(twin->boneReachBounds(alone));
+    const uint64_t builds = rig->skeleton->planPoseBuilds;
+    const uint64_t stamp = Skeleton::nextPlanStamp();
+    CHECK(rig->boneReachBounds(first, stamp) && twin->boneReachBounds(second, stamp));
+    CHECK(rig->skeleton->planPoseBuilds == builds + 1);
+    CHECK(second.min.equals(alone.min) && second.max.equals(alone.max));
+    // A later pass reads the bones again: a pose that moved between passes is never stale.
+    hip->position.x += 3;
+    root->updateMatrixWorld(true);
+    Box3 moved;
+    CHECK(rig->boneReachBounds(moved, Skeleton::nextPlanStamp()));
+    CHECK(rig->skeleton->planPoseBuilds == builds + 2);
+    // The box is conservative, so it can sit past the vertices; what it must do is hold them, and follow a bone that
+    // moved. (The old `first.max.x + 2` read the sphere box's slack, not the move: it failed on its own.)
+    for (uint64_t i = 0; i < vertices; ++i) {
+        Vector3 vertex;
+        rig->getVertexPosition(i, vertex);
+        CHECK(vertex.x >= moved.min.x - 1e-6 && vertex.x <= moved.max.x + 1e-6);
+        CHECK(vertex.y >= moved.min.y - 1e-6 && vertex.y <= moved.max.y + 1e-6);
+        CHECK(vertex.z >= moved.min.z - 1e-6 && vertex.z <= moved.max.z + 1e-6);
+    }
+    CHECK(moved.max.x > first.max.x + 1);
     // Weights that do not sum to 1 leave the bones' hull: the caller falls back to the vertices.
     weights[0] = 0.5;
     geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
@@ -8711,8 +9072,13 @@ void virtualShadowBoundsCache() {
     const auto built = cache.shadowBoundsBuilds;
     sample();
     CHECK(cache.shadowBoundsBuilds == built);
+    // A rigid caster that moves keeps its vertex box: the new transform rebuilds the world box from it, and no
+    // vertex is read again. Re-reading them cost the stress lab 234 moving casters a frame (PRD-871).
+    const auto scans = cache.shadowVertexScans;
     model.makeTranslation(3, 0, 0); item.matrixWorld = model.elements;
     CHECK(sample().first.max.x == 4);
+    CHECK(cache.shadowBoundsBuilds == built + 1);
+    CHECK(cache.shadowVertexScans == scans);
     const float changed[3] = {20, 2, 3};
     CHECK(item.positions->write(0, changed, sizeof(changed)) == BufferError::None);
     CHECK(sample().first.max.x == 23);
@@ -9554,6 +9920,38 @@ void programProbesAreResolvedOnce() {
     waste::setDebugEnabled(false);
 }
 
+// A program first built behind the startup cover is precache progress, not a late build: the Wasm host turns
+// deferUncompiledDraws(true) on when the presentation hold starts, before the cover reveals, so the deferred flag
+// alone named every covered program late. Only a build after the reveal is counted.
+void lateProgramBuildsOnlyAfterReveal() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.deferUncompiledDraws(true);
+    renderer.setPresentationRevealed(false);
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    Scene scene;
+    auto covered = std::make_shared<Mesh>(makePlaneGeometry(1, 1), std::make_shared<Material>(MaterialType::Basic));
+    covered->position.x = -1;
+    scene.add(*covered);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(renderer.programCount() > 0);          // the covered draw built its program
+    CHECK(renderer.lateProgramBuilds() == 0);    // and was not reported late
+    renderer.setPresentationRevealed(true);
+    auto after = std::make_shared<Mesh>(makePlaneGeometry(1, 1), std::make_shared<Material>(MaterialType::Lambert));
+    after->position.x = 1;
+    scene.add(*after);
+    scene.updateMatrixWorld(true);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(renderer.lateProgramBuilds() == 1);    // the post-reveal build is the one late program
+}
+
 // FM1 review: the material half of a draw is held while its signature and geometry revision hold, so two
 // writes that move neither must still reach the pixels. (1) A normalized byte colour attribute reaches the
 // draw as a converted float copy, and `setNeedsUpdate` replaces that copy without a geometry revision.
@@ -9693,7 +10091,264 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
+// A bone draws nothing, and neither does a chain of bones below it: projection stops at the first bone of a chain
+// that holds only bones, as Unreal keeps a skeleton's bones in its mesh component instead of the scene (PRD-878). A
+// mesh or a light a bone holds is still found, the frame it is attached, and gone the frame it leaves.
+void boneChainsAreNotProjected() {
+    Scene scene;
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+    std::vector<double> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto armature = std::make_shared<Object3D>();
+    auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+    rig->frustumCulled = false;
+    armature->add(*rig);
+    std::vector<std::shared_ptr<Bone>> bones;
+    for (int i = 0; i < 32; ++i) {
+        auto bone = std::make_shared<Bone>();
+        bone->position.y = 0.1;
+        (bones.empty() ? *armature : static_cast<Object3D&>(*bones.back())).add(*bone);
+        bones.push_back(bone);
+    }
+    scene.add(*armature);
+    scene.updateMatrixWorld(true);
+    rig->bind(std::make_shared<Skeleton>(bones));
+    PerspectiveCamera camera;
+    camera.position.set(0, 1, 10);
+    camera.lookAt(0, 1, 0);
+    RenderDatabase database;
+    LightState lights;
+    const auto frame = [&](std::size_t draws) {
+        const uint64_t before = database.projectVisits();
+        CHECK(database.prepare(scene, camera, lights).size() == draws);
+        return database.projectVisits() - before;
+    };
+    frame(1);
+    const uint64_t visits = frame(1);
+    std::printf("bone chain: %llu projection visits\n", static_cast<unsigned long long>(visits));
+    CHECK(visits == 4);  // the scene, the armature, the rig and the chain's first bone; never the 31 bones below it
+    auto held = std::make_shared<Mesh>(makeBoxGeometry(), material);
+    held->frustumCulled = false;
+    bones.back()->add(*held);
+    frame(2);
+    frame(2);
+    bones.back()->remove(*held);
+    frame(1);
+    CHECK(frame(1) == 4);
+    PointLight lamp;
+    bones[5]->add(lamp);
+    frame(1);
+    CHECK(lights.direct.size() == 1);
+    bones[5]->remove(lamp);
+    frame(1);
+    CHECK(lights.direct.empty());
+}
+
+// A palette batch takes its members out of the frame's draws in place: the draws before the first member keep their
+// place and the list keeps its storage, where a second list once took a 1.4 KB copy of every draw (PRD-878).
+void batchCompactsInPlace() {
+    Scene scene;
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto glass = std::make_shared<Material>(MaterialType::Standard);
+    glass->transparent = true;
+    auto pane = std::make_shared<Mesh>(makeBoxGeometry(), glass);
+    pane->frustumCulled = false;
+    scene.add(*pane);
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+    std::vector<double> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+    std::vector<std::shared_ptr<Object3D>> held;
+    for (int i = 0; i < 8; ++i) {
+        auto root = std::make_shared<Object3D>();
+        auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+        auto bone = std::make_shared<Bone>();
+        rig->frustumCulled = false;
+        root->add(*rig);
+        root->add(*bone);
+        root->position.x = i * 2;
+        scene.add(*root);
+        root->updateMatrixWorld(true);
+        rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}));
+        held.insert(held.end(), {root, rig, bone});
+    }
+    PerspectiveCamera camera;
+    camera.position.set(8, 4, 30);
+    camera.lookAt(8, 0, 0);
+    RenderDatabase database;
+    LightState lights;
+    const DrawItem* storage = nullptr;
+    for (int frame = 0; frame < 3; ++frame) {
+        const auto& draws = database.prepare(scene, camera, lights);
+        CHECK(draws.size() == 2);
+        if (draws.size() != 2) return;
+        CHECK(draws[0].key == pane->id());
+        CHECK(draws[1].instanceCount == 8 && draws[1].boneStride == 1);
+        if (frame == 2) CHECK(draws.data() == storage);
+        storage = draws.data();
+    }
+}
+
+// A shadow row keeps its depth program while the draw's variant stamp holds: a material change after it moves the
+// stamp, so the row picks the masked program on the next frame.
+void shadowRowFollowsMaterialChange() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (tn_check_failures != 0) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    Scene scene;
+    PerspectiveCamera camera{70, 1, 0.1, 200};
+    camera.position.set(0, 10, 4);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    DirectionalLight sun{Color(1, 1, 1), 3};
+    sun.position.set(3, 8, 2);
+    sun.setCastShadow(true);
+    sun.shadow.camera->setLayerMask(double(uint32_t{1} | (uint32_t{1} << 28)));  // the shadow sees layer 28
+    scene.add(sun);
+    auto ground = std::make_shared<Mesh>(makeBoxGeometry(20, 0.2, 20), std::make_shared<Material>(MaterialType::Standard));
+    ground->setReceiveShadow(true);
+    scene.add(*ground);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto caster = std::make_shared<Mesh>(makeBoxGeometry(1.5, 1.5, 1.5), material);
+    caster->position.set(0, 1, 0);
+    caster->setCastShadow(true);
+    caster->setLayer(28);  // shadow only: the main pass never resolves its variant
+    scene.add(*caster);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto rowCache = [&]() -> const DrawCache* {
+        for (const DrawItem& item : database.drawn())
+            if (item.key == caster->id() && item.castShadow) return item.cache;
+        return nullptr;
+    };
+    for (int frame = 0; frame < 2; ++frame) database.render(renderer, scene, camera);
+    const DrawCache* cache = rowCache();
+    CHECK(cache && cache->depthProgram && !cache->depthMasked);
+    if (!cache) return;
+    const void* unmasked = cache->depthProgram;
+    material->alphaTest = 0.5;  // three's plain write: no version bump
+    database.render(renderer, scene, camera);
+    cache = rowCache();
+    CHECK(cache && cache->depthMasked && cache->depthProgram != unmasked);
+}
+
+// The same row, moved by an onBeforeRender callback instead of the game thread: the callback writes alphaTest after
+// refresh() signed the draw, and prepare() re-reads the material into the draw for it. The draw's stamp is the key
+// that row's cached depth program hangs on, so it must move with the rewrite: a frame whose material the callback
+// changed is a frame the row re-resolves, never one that serves the program signed for the old value.
+void shadowRowFollowsOnBeforeRender() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (tn_check_failures != 0) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    Scene scene;
+    PerspectiveCamera camera{70, 1, 0.1, 200};
+    camera.position.set(0, 10, 4);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    DirectionalLight sun{Color(1, 1, 1), 3};
+    sun.position.set(3, 8, 2);
+    sun.setCastShadow(true);
+    sun.shadow.camera->setLayerMask(double(uint32_t{1} | (uint32_t{1} << 28)));  // the shadow sees layer 28
+    scene.add(sun);
+    auto ground = std::make_shared<Mesh>(makeBoxGeometry(20, 0.2, 20), std::make_shared<Material>(MaterialType::Standard));
+    ground->setReceiveShadow(true);
+    scene.add(*ground);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto caster = std::make_shared<Mesh>(makeBoxGeometry(1.5, 1.5, 1.5), material);
+    caster->position.set(0, 1, 0);
+    caster->setCastShadow(true);  // on the camera's layer: onBeforeRender runs for a main-pass draw only
+    scene.add(*caster);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto rowOf = [&]() -> const DrawItem* {
+        for (const DrawItem& item : database.drawn())
+            if (item.key == caster->id() && item.castShadow) return &item;
+        return nullptr;
+    };
+    for (int frame = 0; frame < 2; ++frame) database.render(renderer, scene, camera);
+    const DrawItem* row = rowOf();
+    CHECK(row && row->cache->depthProgram && !row->cache->depthMasked);
+    if (!row) return;
+    const uint64_t signedStamp = row->variantStamp;
+    const void* unmasked = row->cache->depthProgram;
+    caster->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [material](const RenderCallbackArgs&, std::string&) {
+            material->alphaTest = 0.5;  // three's plain write: no version bump
+            return true;
+        });
+    database.render(renderer, scene, camera);  // the frame the callback cut the caster
+    row = rowOf();
+    // refresh() held the material half (the callback had not run yet when it signed) and prepare() then rewrote the
+    // draw from the material: the stamp has to move with that write, or the row keeps the program it signed.
+    CHECK(row && row->variantStamp != signedStamp);
+    CHECK(row && row->cache->depthMasked && row->cache->depthProgram != unmasked);
+}
+
+// PRD-526 follow-up: a deleted skin attribute is seen. The record holds its rig's skinIndex/skinWeight for the
+// geometry revision, so the frame after deleteAttribute reads no weights, and the rig draws undeformed.
+void skinAttributeDeleteIsSeen() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (tn_check_failures != 0) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 180);
+    player::SkinnedCrowd crowd;
+    RenderDatabase database;
+    database.batching = false;
+    crowd.update(0.6);  // a bent pose: the rigs' deformation is what the deleted attribute drove
+    database.render(renderer, crowd.scene(), crowd.camera());
+    const auto posed = read(renderer, events);
+    auto* walker = static_cast<SkinnedMesh*>(crowd.scene().getObjectByName("walker-0"));
+    const auto row = [&]() -> const DrawItem* {
+        for (const DrawItem& item : database.drawn())
+            if (item.key == walker->id() && item.mainPass) return &item;
+        return nullptr;
+    };
+    const DrawItem* drawn = row();
+    CHECK(drawn && drawn->skinWeights && drawn->skinIndices);
+    if (!drawn) return;
+    const BufferStore* weights = drawn->skinWeights;
+    walker->geometry->deleteAttribute("skinWeight");
+    database.render(renderer, crowd.scene(), crowd.camera());
+    const auto bare = read(renderer, events);
+    drawn = row();
+    CHECK(drawn && drawn->skinWeights == nullptr && drawn->skinWeights != weights);
+    CHECK(drawn && drawn->boneMatrices == nullptr);  // a rig with no weights to read draws its rest pose
+    std::size_t covered = 0, differ = 0;
+    if (posed.size() == bare.size())
+        for (std::size_t p = 0; p + 3 < posed.size(); p += 4) {
+            int delta = 0;
+            for (int channel = 0; channel < 3; ++channel)
+                delta = std::max(delta, std::abs(int(posed[p + channel]) - int(bare[p + channel])));
+            differ += delta > 8;
+            covered += bare[p] + bare[p + 1] + bare[p + 2] > 0;
+        }
+    std::printf("skin weight deleted: %zu covered pixels, %zu differ from the posed frame\n", covered, differ);
+    CHECK(posed.size() == 320 * 180 * 4 && posed.size() == bare.size());
+    CHECK(covered > 1000);  // still drawn: the frame the attribute went away is a frame, not a crash
+    const BufferStore* indices = nullptr;
+    if (drawn) indices = drawn->skinIndices;
+    walker->geometry->deleteAttribute("skinIndex");
+    database.render(renderer, crowd.scene(), crowd.camera());
+    CHECK(read(renderer, events).size() == posed.size());
+    drawn = row();
+    CHECK(drawn && drawn->skinIndices == nullptr && drawn->skinIndices != indices);
+}
+
+TN_TEST_MAIN({"palette_lifetime", paletteLifetime}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -9702,7 +10357,7 @@ TN_TEST_MAIN({"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"vi
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"alpha_test_node", alphaTestNode}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"alpha_test_node", alphaTestNode}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"late_program_builds_only_after_reveal", lateProgramBuildsOnlyAfterReveal}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled}, {"bone_chains_are_not_projected", boneChainsAreNotProjected}, {"batch_compacts_in_place", batchCompactsInPlace})
 
 
 

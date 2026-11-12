@@ -283,6 +283,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
         return found->second;
     }
     const auto pipeline = create(device_, vertex, fragment, target);
+    // PRD-876 Phase 1: `get` is the blocking path a turn pays on the frame it first meets a draw.
+    waste::debugAdd(waste::counters().pipelineSyncCreates);
     if (!compiling_.contains(key)) waste::debugAdd(waste::counters().pipelineCompiles);
     if (!compiling_.contains(key)) ++compiles_;  // an in-flight key and its draw fallback count once
     if (!pipeline) return nullptr;

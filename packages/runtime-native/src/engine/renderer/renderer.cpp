@@ -3,7 +3,7 @@
 
 namespace tn::engine {
 
-const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item) {
+const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item, uint64_t planStamp) {
     // A positionNode displaces on the GPU only: this box is the bind pose either way, so it caches like a rigid
     // draw. Rebuilding it each frame walked every instance of a swaying forest (218k) for 40 ms of plan time.
     const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints;
@@ -32,20 +32,31 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
         ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
     if (stated) {
         bounds = box;  // where the author says the positionNode puts the vertices
-    } else if (rig && rig->boneReachBounds(bounds)) {
+    } else if (rig && rig->boneReachBounds(bounds, planStamp)) {
     } else if (item.morphGeometry && !item.boneMatrices) {
         // three bounds a morphed mesh by computeBoundingBox, which takes every target's reach and no influence;
         // morphing each vertex on the CPU here, every frame, cost the MCP forest about 6 % of its CPU.
         bounds = item.morphGeometry->morphReachBox();
     } else if (item.positions->scalar() == Scalar::F32) {
-        for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
-            float p[3]; item.positions->read(idx * 4, p, sizeof(p));
-            Vector3 vertex(p[0], p[1], p[2]);
-            if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
-                const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
-                if (mesh) mesh->getVertexPosition(idx / 3, vertex);
+        const bool rigid = !item.boneMatrices && !item.morphGeometry;
+        const auto vertexKey = std::make_tuple(item.positions, item.positions->version(), item.positions->epoch(),
+                                               item.positions->writes());
+        // The owner check rules out a released store whose address came back with the same revisions.
+        if (rigid && vertexBoxKey == vertexKey && !shadowPositionsOwner.expired()) {
+            bounds = vertexBox;
+        } else {
+            ++shadowVertexScans;
+            for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
+                float p[3]; item.positions->read(idx * 4, p, sizeof(p));
+                Vector3 vertex(p[0], p[1], p[2]);
+                if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
+                    const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
+                    if (mesh) mesh->getVertexPosition(idx / 3, vertex);
+                }
+                bounds.expandByPoint(vertex);
             }
-            bounds.expandByPoint(vertex);
+            vertexBox = bounds;
+            vertexBoxKey = rigid ? std::optional(vertexKey) : std::nullopt;
         }
     }
     Matrix4 model; model.elements = item.matrixWorld;
@@ -137,6 +148,7 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     }
     gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
     outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    outputUploaded_.clear();
     WGPUSamplerDescriptor nearest = {};
     nearest.magFilter = WGPUFilterMode_Nearest;
     nearest.minFilter = WGPUFilterMode_Nearest;
@@ -1332,7 +1344,6 @@ void Renderer::encodeFrame(FrameJob& job) {
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
         waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);
         waste::debugAdd(waste::counters().auxPasses, lastFrame_.auxPasses);
-        waste::debugAdd(waste::counters().uniformUploadBytes, job.uniformBytes);
         frameMail_ = lastFrame_;
     }
 }

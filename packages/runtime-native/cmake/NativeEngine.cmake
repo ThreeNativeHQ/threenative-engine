@@ -310,13 +310,23 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_pages_instance_skinned_casters=virtual_shadow_pages_instance_skinned_casters
         native_engine_virtual_shadow_instance_pages=virtual_shadow_instance_pages
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
+        native_engine_bone_chains_are_not_projected=bone_chains_are_not_projected
+        native_engine_palette_lifetime=palette_lifetime
+        native_engine_batch_compacts_in_place=batch_compacts_in_place
+        native_engine_shadow_row_follows_material_change=shadow_row_follows_material_change
+        native_engine_shadow_row_follows_on_before_render=shadow_row_follows_on_before_render
+        native_engine_skin_attribute_delete_is_seen=skin_attribute_delete_is_seen
+        native_engine_bone_reach_bounds_hold_posed_vertices=bone_reach_bounds_hold_posed_vertices
+        native_engine_rigid_rig_keeps_its_reach_bounds=rigid_rig_keeps_its_reach_bounds
         native_engine_gpu_joint_production=gpu_joint_production
         native_engine_unchanged_frame_storage=unchanged_frame_storage
+        native_engine_points_rewrite_keeps_one_buffer=points_rewrite_keeps_one_buffer
         native_engine_instance_upload_is_stable_across_a_camera_turn=instance_upload_is_stable_across_a_camera_turn
         native_engine_instance_places_survive_a_draw_leaving_the_view=instance_places_survive_a_draw_leaving_the_view
         native_engine_static_instances_are_not_recopied=static_instances_are_not_recopied
         native_engine_frame_slab_is_per_program=frame_slab_is_per_program
         native_engine_uniform_batch_preparation=uniform_batch_preparation
+        native_engine_held_pose_skips_the_world_palette=held_pose_skips_the_world_palette
         native_engine_content_identical_geometry_batches=content_identical_geometry_batches
         native_engine_multi_material_groups=multi_material_groups
         native_engine_renderer_scene_lit=lit_scene
@@ -412,6 +422,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
         native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
         native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once
+        native_engine_late_program_builds_only_after_reveal=late_program_builds_only_after_reveal
         native_engine_maps_share_one_pipeline=maps_share_one_pipeline
         native_engine_serial_uniforms_share_one_pipeline=serial_uniforms_share_one_pipeline
         native_engine_mirror_programs_precompiled=mirror_programs_precompiled)
@@ -465,7 +476,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
         target_compile_definitions(tn-native-engine-renderer-caches-test PRIVATE TN_TEST_PIPELINE_WORKERS)
         target_link_options(tn-native-engine-renderer-caches-test PRIVATE "-Wl,--wrap=wgpuDeviceCreateRenderPipeline")
-        foreach(case failed_ticket synchronous_adoption shutdown_queue nonstandard_exception deferred_draw)
+        # PRD-876 Phase 1: `compile_reaches_off_screen` was in TN_TEST_MAIN but no ctest entry named it;
+        # `sync_creates_counted` is Phase 1's own case.
+        foreach(case compile_reaches_off_screen sync_creates_counted failed_ticket synchronous_adoption shutdown_queue nonstandard_exception deferred_draw)
             add_test(NAME native_engine_renderer_pipeline_${case} COMMAND tn-native-engine-renderer-caches-test ${case})
             set_tests_properties(native_engine_renderer_pipeline_${case} PROPERTIES LABELS "native-engine" TIMEOUT 10)
         endforeach()

@@ -52,6 +52,19 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
   return { ...coreQualityPreset(tier), exposurePolicy: exposureSettings };
 }
 
+/**
+ * Whether a tier casts shadows: the game's `setupPost(..., { shadows })`, else the tier's. `low` casts none, as
+ * Unreal's `sg.ShadowQuality` 0: its shadow pass was an Iris Xe frame's largest GPU cost (PRD-871). Pass the raw
+ * renderer to apply it to `shadowMap.enabled`.
+ */
+export function tierShadows(tier: QualityTier, override?: boolean, raw?: unknown) {
+  const enabled = override ?? qualityTiers.shadow(tier).castShadows;
+  const source = override === undefined ? "tier" : "override";
+  const shadowMap = (raw as { shadowMap?: { enabled: boolean } } | undefined)?.shadowMap;
+  if (shadowMap) shadowMap.enabled = enabled;
+  return { enabled, source, label: `${enabled ? "on" : "off"}(${source})` } as const;
+}
+
 /** The grade and grain a tier runs. Throws on a name that is not a tier, for the same reason. */
 export function gradePreset(tier: string): IGradeSettings {
   const preset = GRADE_PRESETS[tier as QualityTier];

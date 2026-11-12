@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InputMap, type InputPlatformSource } from "../src/input.js";
 
 function keyEvent(type: string, code: string): Event {
@@ -371,6 +371,30 @@ describe("InputMap", () => {
 
     expect(() => target.dispatchEvent(event)).not.toThrow();
     expect(input.raw.pointers.size).toBe(1);
+    input.dispose();
+  });
+
+  it("reports a refused pointer lock without an unhandled rejection", async () => {
+    const target = Object.assign(new EventTarget(), {
+      requestPointerLock: () =>
+        Promise.reject(
+          new Error("The root document of this element is not valid for pointer lock."),
+        ),
+    });
+    const input = new InputMap({ look: { pointerRelative: true } }, target, target);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+
+    input.captureMouse();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    process.off("unhandledRejection", unhandled);
+    expect(input.raw.pointer.captured).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/^TN_POINTER_LOCK_REFUSED:/);
+    expect(unhandled).not.toHaveBeenCalled();
+    warn.mockRestore();
     input.dispose();
   });
 

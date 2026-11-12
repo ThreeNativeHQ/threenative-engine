@@ -66,6 +66,11 @@ export function createAdaptiveQuality(
   let lastChange = Number.NEGATIVE_INFINITY;
   let overloaded = 0;
   let healthy = 0;
+  // What a raise that failed cost, as a ratio of the cost before it, by the tier it fell back to. A raise from that
+  // tier waits until the predicted cost fits: retrying on headroom alone switched medium's shadows on and off every
+  // few seconds where low fits only without them (PRD-871).
+  const raiseCost = new Map<QualityTier, number>();
+  let raisedFrom: { tier: QualityTier; costMs: number } | undefined;
   const finite = (value: number | undefined): value is number =>
     value !== undefined && Number.isFinite(value);
   return {
@@ -156,6 +161,15 @@ export function createAdaptiveQuality(
       if (direction === 0) return report("steady");
       const next = QUALITY_TIERS[QUALITY_TIERS.indexOf(tier) + direction];
       if (next === undefined) return report(direction < 0 ? "at-floor" : "at-ceiling");
+      const ratio = raiseCost.get(tier);
+      if (
+        direction > 0 &&
+        ratio !== undefined &&
+        costMs * ratio > budgetMs * (1 - policy.headroom)
+      ) {
+        healthy = 0;
+        return report("predicted");
+      }
       const time = now();
       if (!Number.isFinite(time)) throw new Error("quality clock must return finite milliseconds.");
       if (time - lastChange < policy.cooldownMs) {
@@ -163,6 +177,9 @@ export function createAdaptiveQuality(
         healthy = 0;
         return report("cooldown");
       }
+      if (direction < 0 && raisedFrom?.tier === next)
+        raiseCost.set(next, costMs / raisedFrom.costMs);
+      raisedFrom = direction > 0 ? { tier, costMs } : undefined;
       tier = next;
       lastChange = time;
       overloaded = 0;

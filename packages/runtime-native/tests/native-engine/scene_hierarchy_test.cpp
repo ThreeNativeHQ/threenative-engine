@@ -1496,19 +1496,25 @@ void batch_hidden() {
 void concurrent_ids() {
     constexpr int kThreads = 4, kEach = 20000;
     std::vector<std::vector<uint64_t>> objects(kThreads), geometries(kThreads), materials(kThreads);
+    const auto produce = [&](int t) {
+        for (int i = 0; i < kEach; ++i) {
+            auto geometry = std::make_shared<BufferGeometry>();
+            auto material = std::make_shared<Material>(MaterialType::Basic);
+            Mesh mesh(geometry, material);
+            objects[t].push_back(mesh.id());
+            geometries[t].push_back(geometry->id);
+            materials[t].push_back(material->id);
+        }
+    };
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+    // A web build without `-pthread` (CI runs this suite as Wasm under node too) cannot start a thread: the
+    // producers run one after another, and the ids must still be unique.
+    for (int t = 0; t < kThreads; ++t) produce(t);
+#else
     std::vector<std::thread> threads;
-    for (int t = 0; t < kThreads; ++t)
-        threads.emplace_back([&, t] {
-            for (int i = 0; i < kEach; ++i) {
-                auto geometry = std::make_shared<BufferGeometry>();
-                auto material = std::make_shared<Material>(MaterialType::Basic);
-                Mesh mesh(geometry, material);
-                objects[t].push_back(mesh.id());
-                geometries[t].push_back(geometry->id);
-                materials[t].push_back(material->id);
-            }
-        });
+    for (int t = 0; t < kThreads; ++t) threads.emplace_back(produce, t);
     for (auto& thread : threads) thread.join();
+#endif
     for (const auto* ids : {&objects, &geometries, &materials}) {
         std::unordered_set<uint64_t> seen;
         for (const auto& list : *ids) seen.insert(list.begin(), list.end());
