@@ -14,6 +14,7 @@ import {
 import { run } from "./lib/exec.js";
 import { progressOf } from "./prd-progress.js";
 import { provisionReleaseArtifacts, validateReleaseCohort } from "./release.js";
+import { templateSpecifier } from "./version-range.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const TEMPLATE_ROOT = path.join(REPO, "packages", "create-threenative", "templates");
@@ -145,7 +146,12 @@ function writeIfChanged(file: string, source: string): boolean {
   return true;
 }
 
-function syncTemplatePins(versions: ReadonlyMap<string, string>): number {
+/**
+ * Rewrite every template's workspace pin from the current versions. Exported because a template's
+ * floor is meaningless to a game — `>=` resolves the newest published engine — so this is the one
+ * writer that keeps the checked-in pins from drifting below what the kit was tested against.
+ */
+export function syncTemplatePins(versions: ReadonlyMap<string, string>): number {
   let changed = 0;
   for (const entry of readdirSync(TEMPLATE_ROOT, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -153,7 +159,7 @@ function syncTemplatePins(versions: ReadonlyMap<string, string>): number {
     let source = readFileSync(file, "utf8");
     for (const [name, version] of versions) {
       const pattern = new RegExp(`("${escapeRegExp(name)}"\\s*:\\s*")[^"]+("\\s*,?)`, "gu");
-      source = source.replace(pattern, `$1${version}$2`);
+      source = source.replace(pattern, `$1${templateSpecifier(name, version)}$2`);
     }
     if (writeIfChanged(file, source)) changed += 1;
   }

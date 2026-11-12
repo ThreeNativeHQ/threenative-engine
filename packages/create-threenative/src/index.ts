@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { pairsWithCore } from "./core-pair.js";
 import { inspectCommand, inspectHelp } from "./inspect.js";
 import {
   CORE_PACKAGE_NAME,
@@ -1108,17 +1109,18 @@ async function installedCoreVersion(game: string): Promise<string | undefined> {
 }
 
 /**
- * Fails closed before `--fix` writes anything when the installed core is not the release this
- * create-threenative is built against (PRD-829). The layer it writes names core's MCP shims, and
- * the page boots the engine `@threenative/runtime-native` ships, so a mixed pair hands the game an
- * authoring layer whose servers do not start and a page that throws `TN_ABI_6` at boot.
+ * Fails closed before `--fix` writes anything when the installed core is older than the release this
+ * create-threenative is built against (PRD-829). The layer it writes names core's MCP shims, and the
+ * page boots the engine `@threenative/runtime-native` ships, so a stale pair hands the game an
+ * authoring layer whose servers do not start and a page that throws `TN_ABI_6` at boot. A *newer*
+ * core is the normal case: templates ship `>=`, so a fresh game resolves the newest engine.
  */
 async function assertEnginePair(game: string): Promise<void> {
   const installed = await installedCoreVersion(game);
-  if (installed === CORE_PACKAGE_VERSION) return;
+  if (pairsWithCore(installed)) return;
   const got = installed === undefined ? "no installed core" : `${CORE_PACKAGE_NAME}@${installed}`;
   throw new Error(
-    `TN_AUTHORING_LAYER_PAIR: this create-threenative pairs with ${CORE_PACKAGE_NAME}@${CORE_PACKAGE_VERSION}, and this game installs ${got}. Run '${ENGINE_PAIR_UPGRADE}' first, then 'pnpm exec threenative doctor --fix'.`,
+    `TN_AUTHORING_LAYER_PAIR: this create-threenative pairs with ${CORE_PACKAGE_NAME}@${CORE_PACKAGE_VERSION} or newer, and this game installs ${got}. Run '${ENGINE_PAIR_UPGRADE}' first, then 'pnpm exec threenative doctor --fix'.`,
   );
 }
 

@@ -49,9 +49,9 @@ async function pinFixture(): Promise<string> {
   for (const template of ["alpha", "beta"]) {
     await writeJson(root, `packages/create-threenative/templates/${template}/package.json`, {
       dependencies: {
-        "@threenative/core": "1.0.0",
-        "@threenative/physics": "1.0.0",
-        "@threenative/runtime-native": "1.0.0",
+        "@threenative/core": ">=1.0.0",
+        "@threenative/physics": ">=1.0.0",
+        "@threenative/runtime-native": ">=1.0.0",
         react: "19.2.0",
       },
       devDependencies: {
@@ -81,8 +81,8 @@ describe("template version pin gate", () => {
     await writeJson(root, "packages/create-threenative/templates/alpha/package.json", {
       dependencies: {
         "@threenative/core": "9.9.9",
-        "@threenative/physics": "1.0.0",
-        "@threenative/runtime-native": "1.0.0",
+        "@threenative/physics": ">=1.0.0",
+        "@threenative/runtime-native": ">=1.0.0",
         react: "19.2.0",
       },
       devDependencies: { "create-threenative": "2.0.0", "threenative-engine-mcp": "3.0.0" },
@@ -98,10 +98,10 @@ describe("template version pin gate", () => {
     const root = await pinFixture();
     await writeJson(root, "packages/create-threenative/templates/alpha/package.json", {
       dependencies: {
-        "@threenative/core": "1.0.0",
+        "@threenative/core": ">=1.0.0",
         "@threenative/croe": "1.0.0",
-        "@threenative/physics": "1.0.0",
-        "@threenative/runtime-native": "1.0.0",
+        "@threenative/physics": ">=1.0.0",
+        "@threenative/runtime-native": ">=1.0.0",
         react: "19.2.0",
       },
       devDependencies: { "create-threenative": "2.0.0", "threenative-engine-mcp": "3.0.0" },
@@ -117,9 +117,9 @@ describe("template version pin gate", () => {
     const root = await pinFixture();
     await writeJson(root, "packages/create-threenative/templates/beta/package.json", {
       dependencies: {
-        "@threenative/core": "1.0.0",
-        "@threenative/physics": "1.0.0",
-        "@threenative/runtime-native": "1.0.0",
+        "@threenative/core": ">=1.0.0",
+        "@threenative/physics": ">=1.0.0",
+        "@threenative/runtime-native": ">=1.0.0",
         react: "20.0.0",
       },
       devDependencies: { "create-threenative": "2.0.0", "threenative-engine-mcp": "3.0.0" },
@@ -128,5 +128,54 @@ describe("template version pin gate", () => {
     await expect(checkVersionPins(root)).resolves.toEqual([
       "third-party dependency react is 19.2.0 in template alpha but 20.0.0 in template beta",
     ]);
+  });
+
+  it("accepts a floor below the workspace version, because a game resolves the newest engine", async () => {
+    const root = await pinFixture();
+    await writeJson(root, "packages/create-threenative/templates/alpha/package.json", {
+      dependencies: {
+        "@threenative/core": ">=0.4.0",
+        "@threenative/physics": ">=1.0.0",
+        "@threenative/runtime-native": ">=1.0.0",
+        react: "19.2.0",
+      },
+      devDependencies: { "create-threenative": "2.0.0", "threenative-engine-mcp": "3.0.0" },
+    });
+
+    await expect(checkVersionPins(root)).resolves.toEqual([]);
+  });
+
+  it("rejects a floor above the workspace version, which no install could satisfy", async () => {
+    const root = await pinFixture();
+    await writeJson(root, "packages/create-threenative/templates/alpha/package.json", {
+      dependencies: {
+        "@threenative/core": ">=2.0.0",
+        "@threenative/physics": ">=1.0.0",
+        "@threenative/runtime-native": ">=1.0.0",
+        react: "19.2.0",
+      },
+      devDependencies: { "create-threenative": "2.0.0", "threenative-engine-mcp": "3.0.0" },
+    });
+
+    const findings = await checkVersionPins(root);
+    expect(findings.join("\n")).toContain(
+      "template alpha pins @threenative/core at >=2.0.0; expected workspace version 1.0.0 as >=1.0.0",
+    );
+  });
+
+  it("rejects an exact internal pin that is not the workspace version", async () => {
+    const root = await pinFixture();
+    await writeJson(root, "packages/create-threenative/templates/alpha/package.json", {
+      dependencies: {
+        "@threenative/core": "0.9.0",
+        "@threenative/physics": ">=1.0.0",
+        "@threenative/runtime-native": ">=1.0.0",
+        react: "19.2.0",
+      },
+      devDependencies: { "create-threenative": "2.0.0", "threenative-engine-mcp": "3.0.0" },
+    });
+
+    const findings = await checkVersionPins(root);
+    expect(findings.join("\n")).toContain("template alpha pins @threenative/core at 0.9.0");
   });
 });

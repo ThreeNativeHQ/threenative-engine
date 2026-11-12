@@ -438,6 +438,23 @@ describe("pnpm publish:check", () => {
     expect(findings[0]?.detail).toMatch(/@threenative\/core@9\.9\.9/u);
   });
 
+  it("resolves the floor of a template range, not a name the registry has never served", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/create-threenative/templates/starter/package.json",
+      JSON.stringify({ dependencies: { "@threenative/core": ">=9.9.9", three: "0.185.1" } }),
+    );
+    const findings = templatePinCensus(root, (name, version) =>
+      name === "@threenative/core" && version === "9.9.9"
+        ? { state: "absent" }
+        : { state: "present", version: "0.0.0" },
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.package).toBe("template:starter");
+    expect(findings[0]?.detail).toMatch(/@threenative\/core@9\.9\.9/u);
+  });
+
   it("rejects an absent exact internal pin at the version in the current publish set by default", async () => {
     const root = await fixture();
     const lookup: RegistryLookup = (name, version) =>
