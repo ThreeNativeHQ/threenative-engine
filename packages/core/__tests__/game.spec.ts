@@ -3739,7 +3739,11 @@ describe("IGame", () => {
 
       game.ctx?.input.tick();
       expect(game.ctx?.input.pressed("jump")).toBe(true);
-      expect(game.ctx?.input.vector("move").toArray()).toEqual([0.5, 0.25]);
+      // The injected pad reads through the standard-pad radial dead zone (0.2, rescaled so full
+      // tilt is still 1): [0.5, -0.25] has magnitude 0.559, so x reads 0.401 and move y +0.201.
+      expect(game.ctx?.input.vector("move").toArray()).toEqual([
+        0.401393202250021, 0.2006966011250105,
+      ]);
 
       size = { aspect: 2, height: 320, width: 640 };
       rendererResize?.();

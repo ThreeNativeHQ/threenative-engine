@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9380530973451328,
+  "recallAtK": 0.9385964912280702,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -100,6 +100,7 @@
     "request.shadow-quality-scalability",
     "request.two-sided-foliage",
     "request.terrain-forest-world",
+    "request.gamepad-vendors",
     "request.swim-water-volume",
     "spell.fireball",
     "spell.thunderstrike",
@@ -109,7 +110,7 @@
     "spell.inferno"
   ],
   "rejectHits": 15,
-  "rowCount": 113,
+  "rowCount": 114,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -217,6 +218,7 @@
     "request.shadow-quality-scalability",
     "request.two-sided-foliage",
     "request.terrain-forest-world",
+    "request.gamepad-vendors",
     "request.swim-water-volume",
     "spell.fireball",
     "spell.thunderstrike",
@@ -226,7 +228,7 @@
     "spell.inferno"
   ],
   "version": 1,
-  "zeroResultRate": 0.04424778761061947,
+  "zeroResultRate": 0.043859649122807015,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",
