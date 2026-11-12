@@ -57,13 +57,16 @@ export function recast(): NavigationPlugin {
     // Like rapier(), Recast initializes while the scene loads and holds `enter()` until it is up.
     setup: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
       // rapier() leaves its readiness here (`plugin.ts` PHYSICS_READY); this bundle has no copy of it.
-      const physics: Promise<IPhysicsContext> | undefined = Reflect.get(
+      const physics: Promise<IPhysicsContext | undefined> | undefined = Reflect.get(
         ctx,
         Symbol.for("threenative.physics.ready"),
       );
       if (physics === undefined)
         throw new Error("recast() requires rapier() earlier in the plugins array.");
       const ready = Promise.all([physics, initialize()]).then(([context]) => {
+        // The page that asked for navigation is gone; installing into it would leak, and rejecting
+        // would report a boot failure the disposed game never had.
+        if (context === undefined) return;
         const empty = emptyNavigation();
         navigation = {
           agents: new Set(),
