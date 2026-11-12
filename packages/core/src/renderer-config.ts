@@ -18,17 +18,27 @@ type RendererConfig = NonNullable<IThreeNativeConfig["renderer"]>;
 export type GameRendererConfig = Omit<IRendererOptions, "resolutionScale" | "scaleSource"> &
   RendererConfig;
 
+const LEGACY_RENDER_KEY_MESSAGE =
+  'TN_GAME_RENDER_KEY_RENAMED: defineGame({ render }) is now defineGame({ renderer }). Move the object to `renderer` with no other change: preferWebGPU, antialias, alphaAntialiasing, resolutionScale (a number in (0, 1] or "auto"), the android block, matrixWorld, projection and minimumProjectedPixels keep their names and meaning, and `config.renderer` from threenative.config.ts passes through unchanged. `scaleSource` is reported by the engine and is not an input. Where a game set both keys, `render` won, so merge them with the `render` values on top.';
+
 /**
- * Fail closed on the retired `render` key, naming the one that replaced it.
+ * Adopt the retired `render` key for one release, reporting the rename it names.
  *
- * A game that still passes `render` would otherwise lose its settings without a word: the key is
- * not read any more, so its scale, sampling and Android overrides would all fall back to defaults.
+ * Dropping the key silently would lose a game's scale, sampling and Android overrides; throwing on
+ * it refuses to boot every game written against 0.3.12, `config.renderer` and all. So the values are
+ * forwarded onto `renderer` — where a game set both, `render` won, so they go on top — and the
+ * rename is reported once with the guidance that names every field and its meaning.
  */
-export function assertNoLegacyRenderKey(config: object): void {
-  if ("render" in config && (config as { render?: unknown }).render !== undefined)
+export function adoptLegacyRenderKey<T extends object>(config: T): T {
+  const { render, ...rest } = config as T & { render?: unknown };
+  if (render === undefined) return config;
+  if (typeof render !== "object" || render === null)
     throw new Error(
-      'TN_GAME_RENDER_KEY_RENAMED: defineGame({ render }) is now defineGame({ renderer }). Move the object to `renderer` with no other change: preferWebGPU, antialias, alphaAntialiasing, resolutionScale (a number in (0, 1] or "auto"), the android block, matrixWorld, projection and minimumProjectedPixels keep their names and meaning, and `config.renderer` from threenative.config.ts passes through unchanged. `scaleSource` is reported by the engine and is not an input. Where a game set both keys, `render` won, so merge them with the `render` values on top.',
+      `TN_GAME_RENDER_KEY_INVALID: defineGame({ render }) must be an object, received ${typeof render}.`,
     );
+  console.warn(LEGACY_RENDER_KEY_MESSAGE);
+  const renderer = (config as { renderer?: object }).renderer;
+  return { ...rest, renderer: { ...renderer, ...render } } as T;
 }
 
 /** How the active drawing-buffer scale was arrived at, reported beside every fps number. */

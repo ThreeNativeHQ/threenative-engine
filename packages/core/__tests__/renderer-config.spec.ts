@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  assertNoLegacyRenderKey,
+  adoptLegacyRenderKey,
   resolvePlatformResolutionFloor,
   resolveRendererAlphaAntialiasing,
   resolveRendererAntialias,
@@ -132,22 +132,52 @@ describe("resolvePlatformResolutionFloor", () => {
   });
 });
 
-describe("assertNoLegacyRenderKey", () => {
-  it("names the key that replaced a retired `render`", () => {
-    expect(() => assertNoLegacyRenderKey({ render: { preferWebGPU: true } })).toThrow(
-      /TN_GAME_RENDER_KEY_RENAMED.*renderer/u,
+describe("adoptLegacyRenderKey", () => {
+  it("forwards a retired `render` onto `renderer` and reports the rename", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const adopted = adoptLegacyRenderKey({ render: { preferWebGPU: true } });
+    expect(adopted).toEqual({ renderer: { preferWebGPU: true } });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/TN_GAME_RENDER_KEY_RENAMED.*renderer/u),
     );
+    warn.mockRestore();
   });
 
-  it("states the field mapping, including the scale type and the engine-owned scaleSource", () => {
-    expect(() => assertNoLegacyRenderKey({ render: {} })).toThrow(
-      /resolutionScale \(a number in \(0, 1\] or "auto"\).*android block.*scaleSource.*not an input/su,
+  it("names every field, including the scale type and the engine-owned scaleSource", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    adoptLegacyRenderKey({ render: {} });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /resolutionScale \(a number in \(0, 1\] or "auto"\).*android block.*scaleSource.*not an input/su,
+      ),
     );
+    warn.mockRestore();
   });
 
-  it("accepts a config with `renderer` and one with neither key", () => {
-    expect(() => assertNoLegacyRenderKey({ renderer: { preferWebGPU: true } })).not.toThrow();
-    expect(() => assertNoLegacyRenderKey({})).not.toThrow();
-    expect(() => assertNoLegacyRenderKey({ render: undefined })).not.toThrow();
+  it("fails closed on a `render` that is not an object", () => {
+    expect(() => adoptLegacyRenderKey({ render: "auto" })).toThrow(/TN_GAME_RENDER_KEY_INVALID/u);
+  });
+
+  it("lets `render` win over `renderer`, the merge the rename explained", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(
+      adoptLegacyRenderKey({
+        render: { antialias: false },
+        renderer: { antialias: true, alpha: true },
+      }),
+    ).toEqual({ renderer: { alpha: true, antialias: false } });
+    warn.mockRestore();
+  });
+
+  it("leaves a config with `renderer`, one with neither key, and one whose `render` is absent", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const withRenderer = { renderer: { preferWebGPU: true } };
+    const empty = {};
+    const absent = { render: undefined };
+    expect(adoptLegacyRenderKey(withRenderer)).toBe(withRenderer);
+    expect(adoptLegacyRenderKey(empty)).toBe(empty);
+    expect(adoptLegacyRenderKey(absent)).toBe(absent);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
