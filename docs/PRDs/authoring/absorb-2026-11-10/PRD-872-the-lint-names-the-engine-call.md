@@ -7,6 +7,8 @@
 **Depends on:** None
 **Batch:** [Absorb report, 2026-11-10](README.md)
 
+Merged `origin/develop` (`b01de92c7`) on 2026-11-12: the only conflict was `starter`'s scaffold pin, recomputed from the merged tree; `pnpm typecheck`, `ci:fast`, `capabilities:check`, `api:surface:check` and the focused suites (quality-rules 18, scaffold 79, rain-quality 10, rts-runtime-cost 8, state 9, engine-mcp search 108) pass on the merge.
+
 ## Context
 
 An agent that does not search the manifest writes the capability again. PRD-355 plans a detector for
