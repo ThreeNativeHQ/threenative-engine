@@ -93,6 +93,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/verify-surfaces.mjs`: verifies PBR terrain surface materials, splat textures, and blend transitions.
   - `scripts/verify-tool-groups.mjs`: tests editor UI tool groupings, interactions, and parameter schemas.
   - `scripts/verify-transforms.mjs`: validates coordinate transforms, rotations, and placement matrices.
+  - `scripts/verify-variations.mjs`: PRD-866 Phase 3: cooks "a spruce forest under mountains" through the terrain MCP server with seeds 1, 2 and 3, bakes each with `STRATA_WORLD`, and asserts three ground hashes, three massif poses and the backdrop gates on each ring (network on a cold tile cache).
   - `scripts/verify-world-export.mjs`: verifies headless static world GLB export and vanilla Three.js loading.
   - `scripts/check-water.mjs`: regression tests for shared water rendering and shoreline depths.
 
@@ -100,8 +101,10 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/fixtures/editor-conflict.ts`: mounts two editor clients against the same document for the conflict scenario.
   - `scripts/bake.mjs`: bakes source elevation data and generates canonical world JSON packages.
   - `scripts/recipe.mjs`: the five worlds' landform recipes and surface manifests as a module; `bake.mjs` evaluates them, nothing else imports it.
+  - `scripts/recipe.d.mts`: the TypeScript declarations for `recipe.mjs` (`outputDir`); the recipe's worlds stay untyped script values.
   - `scripts/props.mjs`: the prop half of the bake: one container per streamed world through `compilePropBuckets`, with the game's own bucket and reach policy.
   - `scripts/stamp.mjs`: hashes every input a bake depends on and reports whether the written worlds are stale; `pnpm dev` checks it on every start.
+  - `scripts/stamp.d.mts`: the TypeScript declarations for `stamp.mjs` (`stamp`, `isFresh`).
   - `scripts/world-files.mjs`: lists the baked files the game fetches, read from the bake's own `<world>.props.json` manifests, and stops the build by name (`TN_STRATA_BUILD_MISSING`) on a file the bake did not write.
   - `scripts/consumer-world.mjs`: exports `openConsumerPage` to serve an installed consumer directory to headless Chromium and run vanilla full-world export against packed tarballs.
   - `scripts/stage-native-assets.mjs`: stages textures and models for native desktop/mobile bundles.
@@ -143,6 +146,13 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/dem/tundra.json`: grid metadata and coordinate bounding bounds for the tundra world.
   - `scripts/dem/tundra-horizon.bin`: distant horizon ring elevation binary for the tundra world.
   - `scripts/dem/tundra-horizon.json`: distant horizon ring grid metadata for the tundra world.
+  - `scripts/dem/massif.mjs`: cuts whole mountains, foot to foot, from the USGS 3DEP elevation service (public domain, 1 m lidar) into the int16 tiles `placeMassif` stands behind a world; needs the network and rewrites `massif-<name>.bin` and `.json`.
+  - `scripts/dem/massif-longs.bin`: int16 elevation tile for the Longs Peak massif backdrop.
+  - `scripts/dem/massif-longs.json`: grid metadata, site and coordinate bounds for the Longs Peak massif.
+  - `scripts/dem/massif-maroon.bin`: int16 elevation tile for the Maroon Bells massif backdrop.
+  - `scripts/dem/massif-maroon.json`: grid metadata, site and coordinate bounds for the Maroon Bells massif.
+  - `scripts/dem/massif-teton.bin`: int16 elevation tile for the Grand Teton massif backdrop.
+  - `scripts/dem/massif-teton.json`: grid metadata, site and coordinate bounds for the Grand Teton massif.
 
 - Fixtures and testing environments:
   - `scripts/fixtures/consumer-world.mjs`: driver running an authored world in an isolated browser harness.

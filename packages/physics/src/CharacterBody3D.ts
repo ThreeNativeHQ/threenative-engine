@@ -320,15 +320,6 @@ export class CharacterBody3D {
   /** Called by the shared plugin before a bulk step. */
   writeKinematic(buffer: Float32Array, offset: number): void {
     if (this.#disposed) return;
-    // A lift is not shown, so the object can trail the body by one step: the step then starts from
-    // the solver's pose. An object the game moved itself starts from where the game put it.
-    const at = this.object.position;
-    const shown = this.#shown;
-    const from = at.x === shown.x && at.y === shown.y && at.z === shown.z ? this.#solved : at;
-    this.#from.x = from.x;
-    this.#from.y = from.y;
-    this.#from.z = from.z;
-    this.#beforeY = from.y;
     this.#desiredY = this.#desired.y;
     const carry =
       this.#sliding && this.grounded && this.velocity.y <= 0 && this.#groundCollider !== undefined
@@ -349,6 +340,11 @@ export class CharacterBody3D {
       carryY === 0 &&
       carryZ === 0 &&
       (this.groundBody === undefined || this.#physics?.groundHolds?.(this.groundBody.id) !== false);
+    const from = this.#startPose();
+    this.#from.x = from.x;
+    this.#from.y = from.y;
+    this.#from.z = from.z;
+    this.#beforeY = from.y;
     if (!this.#still) this.#seat = Seat.Step;
     const travelY =
       this.#seat === Seat.Rest
@@ -365,6 +361,20 @@ export class CharacterBody3D {
     buffer[offset + 5] = this.object.quaternion.y;
     buffer[offset + 6] = this.object.quaternion.z;
     buffer[offset + 7] = this.object.quaternion.w;
+  }
+
+  /**
+   * Where this step starts. A lift is not shown, so the object can trail the body by one step and
+   * the step then starts from the solver's pose. A body that moves from the middle of a seating
+   * cycle leaves the unshown lift behind and starts from the pose the player sees, so a jump rises
+   * the same height on every step of the cycle. An object the game moved itself starts from where
+   * the game put it.
+   */
+  #startPose(): Readonly<{ x: number; y: number; z: number }> {
+    const at = this.object.position;
+    const shown = this.#shown;
+    const trailing = at.x === shown.x && at.y === shown.y && at.z === shown.z;
+    return trailing && (this.#still || this.#seat !== Seat.Check) ? this.#solved : at;
   }
 
   syncToPhysics(): void {

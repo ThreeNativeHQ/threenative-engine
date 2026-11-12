@@ -691,6 +691,48 @@ describe("CharacterBody3D", () => {
     },
   );
 
+  it("jumps the same height whichever step of the seating cycle it starts on", async () => {
+    // A hot reload re-creates the player: the seating cycle restarts and a jump can start between
+    // its steps. A lift is not shown, so a jump from the lifted solver pose rose 1 mm higher
+    // than the pose the player saw (hot-reload.spec.ts: peakRise 1.23387 against 1.23287).
+    const peakRise = async (standSteps: number): Promise<number> => {
+      const { ctx, plugin } = await setup();
+      new RigidBody3D({
+        physics: ctx.physics,
+        position: { x: 0, y: -0.5, z: 0 },
+        shape: CollisionShape3D.box(200, 1, 200),
+        type: "fixed",
+      });
+      const object = new Group();
+      object.position.set(0, 0.95, 0);
+      const character = new CharacterBody3D({
+        object,
+        physics: ctx.physics,
+        shape: CollisionShape3D.capsule(0.6, 0.3),
+      });
+      const tick = (): void => {
+        character.moveAndSlide(1 / 60);
+        plugin.update?.(ctx, 1 / 60);
+      };
+      for (let step = 0; step < standSteps; step += 1) tick();
+      expect(character.grounded, `grounded at ${standSteps}`).toBe(true);
+      const start = object.position.y;
+      character.velocity.y = 6;
+      let peak = start;
+      for (let step = 0; step < 90; step += 1) {
+        tick();
+        peak = Math.max(peak, object.position.y);
+      }
+      character.dispose();
+      return peak - start;
+    };
+    const rested = await peakRise(180);
+    expect(rested).toBeGreaterThan(1);
+    for (let standSteps = 6; standSteps < 60; standSteps += 1) {
+      expect(await peakRise(standSteps), `jump after ${standSteps} steps`).toBeCloseTo(rested, 5);
+    }
+  });
+
   it("holds a weightless character still where it stopped, without seating it", async () => {
     const { ctx, plugin } = await setup();
     // Seating lifts a body 1 mm and lets its gravity step land it again. With no gravity nothing
