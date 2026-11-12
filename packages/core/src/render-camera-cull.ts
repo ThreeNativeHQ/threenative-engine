@@ -119,7 +119,8 @@ export function untrackAnimationRate(root: Object3D, state: IAnimationRateState)
   const id = engineRateIds.get(root);
   if (id === undefined) return;
   setEngineRateState(id, undefined);
-  (root as unknown as IEngineRateRig).__trackAnimationRate(-1);
+  const engineRig = root as Partial<IEngineRateRig>;
+  if (typeof engineRig.__trackAnimationRate === "function") engineRig.__trackAnimationRate(-1);
 }
 
 /** A projection stand-in or skinned batch names the rigs it draws (see {@link animationRateSources}). */
