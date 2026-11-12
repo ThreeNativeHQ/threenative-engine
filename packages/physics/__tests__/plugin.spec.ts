@@ -70,6 +70,36 @@ describe("rapier plugin", () => {
     plugin.dispose?.(ctx);
   });
 
+  it("resolves a setup whose game was disposed first, installing nothing and reporting it", async () => {
+    await RAPIER.init();
+    const plugin = rapier();
+    const ctx = { physics: undefined } as unknown as ICtx<Record<string, unknown>, IPhysicsContext>;
+    const gates: Promise<void>[] = [];
+    const runtime = {
+      fixedStep: () => 0,
+      holdStart: (gate: Promise<void>) => {
+        gates.push(gate);
+        return gate;
+      },
+      observations: { contribute: () => () => undefined, contributions: () => [] },
+      rapier: null,
+      seed: 1,
+      step: 1 / 60,
+      tick: () => 0,
+    } satisfies IGamePluginRuntime;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    plugin.setup?.(ctx, runtime);
+    plugin.dispose?.(ctx);
+
+    // A reload during the Wasm load must not become a boot failure on the page.
+    await expect(Promise.all(gates)).resolves.toBeDefined();
+    expect(ctx.physics).toBeUndefined();
+    expect(runtime.rapier).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/TN_PHYSICS_SETUP_SUPERSEDED/u));
+    warn.mockRestore();
+  });
+
   it("should register the actual Rapier runtime version", async () => {
     await RAPIER.init();
     const plugin = rapier();
