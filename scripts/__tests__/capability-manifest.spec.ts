@@ -880,6 +880,38 @@ describe("capability manifest generator", () => {
         ids: ["request.gi-visualize"],
         owners: ["GIVisualize"],
       },
+      // PRD-880: the six vendor words a player names a pad with. The situations already spell
+      // "Xbox", "8BitDo" and "Steam Deck", so the query recalls InputMap without them too.
+      "8bitdo": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gamepad-vendors"],
+        owners: ["InputMap"],
+      },
+      controller: {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gamepad-vendors"],
+        owners: ["InputMap"],
+      },
+      gamepad: {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gamepad-vendors"],
+        owners: ["InputMap"],
+      },
+      joypad: {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gamepad-vendors"],
+        owners: ["InputMap"],
+      },
+      "steam deck": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gamepad-vendors"],
+        owners: ["InputMap"],
+      },
+      xbox: {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gamepad-vendors"],
+        owners: ["InputMap"],
+      },
       "swimming buoyancy water volume wade": {
         baselineAlreadyRecalled: true,
         ids: ["request.swim-water-volume"],
