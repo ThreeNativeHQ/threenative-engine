@@ -149,6 +149,20 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 
 ## Decisions
 
+- **2026-11-13, GI session: two follow-ups this PRD deliberately leaves out, recorded so they are not lost.** (a) The
+  sweep offsets the search from the view-space tangent's `.xy`; Unreal rotates a screen-space direction, so the reach
+  shortens where a sweep turns toward the camera. A refinement exists (a 2D slice direction) but it was not shipped: the
+  only harness that ran the conformance row is this workstation's main checkout, and the isolated verification tree
+  rendered a uniform capture for the refined *and* the unrefined kernel alike, so the refinement has no receipt of its
+  own. (b) `@threenative/core`'s `look/world-environment.ts` still builds the probe block inline and leaves
+  `ssgiScreenProbes` false even when `finalGatherMethod` is `screenProbeGather`, so a template's Epic tier gathers per
+  pixel; moving it onto `ScreenProbeGather` changes what every template draws and belongs to PRD-267, not here.
+- **2026-11-13, GI session: the third-party desktop lane needs two host steps, not a code change.** The prebuilt V8
+  player comes from the published release (`install-prebuilt.mjs --engine-player`, placed under
+  `build/tn-engine-ui/`), and the lane needs a Vulkan driver: on this host `VK_ICD_FILENAMES` pointed at SwiftShader's
+  ICD, which is why the row's numbers are a parity check between the two engines rather than a hardware performance
+  claim.
+
 - **2026-11-13, GI session: the last three boxes are one host step away, and it is not a code change.** This workstation
   does have the reference card (`/dev/nvidia0`, an RTX 2080), but the running NVIDIA kernel module is `615.78.08` while the
   userspace driver and Vulkan ICD are `620.70.06`: `nvidia-smi` reports `Driver/library version mismatch`, Vulkan
