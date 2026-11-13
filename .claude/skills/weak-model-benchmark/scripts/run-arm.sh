@@ -53,8 +53,30 @@ XDG_CONFIG_HOME="$XDG" "$NODE" --input-type=module -e '
 # for WM_IDLE_SECONDS.
 UNIT="wm-arm-$$"
 IDLE="${WM_IDLE_SECONDS:-300}"
+# The arm builds as a developer would, on a machine that holds only its own project: round 2 read the
+# sealed proof out of a repo checkout on this disk. Home and /tmp are empty inside the jail; only the
+# sandbox, the toolchain a developer installs (leanpi patches its own vendor code at start, so it is
+# writable), the arm's config and its session folder come back.
+command -v bwrap >/dev/null || { echo "bwrap is required: an arm never runs unisolated" >&2; exit 2; }
+SANDBOX="$(dirname "$GAME")"
+mkdir -p "$OUT/session"
+JAIL=(bwrap --die-with-parent --ro-bind / / --dev-bind /dev /dev --proc /proc --tmpfs /tmp --tmpfs "$HOME"
+  --bind "$LEANPI_ROOT" "$LEANPI_ROOT"
+  --ro-bind "$(dirname "$(command -v leanpi)")" "$(dirname "$(command -v leanpi)")"
+  --ro-bind-try "$HOME/.nvm" "$HOME/.nvm"
+  --ro-bind-try "$HOME/.config/leanpi" "$HOME/.config/leanpi"
+  --ro-bind-try "$HOME/.cache/ms-playwright" "$HOME/.cache/ms-playwright"
+  --bind-try "$HOME/.local/share/pnpm" "$HOME/.local/share/pnpm"
+  --bind "$XDG" "$XDG" --bind "$SANDBOX" "$SANDBOX" --bind "$OUT/session" "$OUT/session"
+  --chdir "$GAME")
+# The agent's own config, never its history: ~/.pi/agent also holds every past session of every project.
+# Without models-store.json and model.json the model loses its `max` thinking level (VOID run).
+for f in .pi/agent/settings.json .pi/agent/models-store.json .pi/agent/auth.json .pi/agent/trust.json \
+  .pi/agent/extensions .leanpi/model.json .leanpi/model-ids.json; do
+  JAIL+=(--ro-bind-try "$HOME/$f" "$HOME/$f")
+done
 XDG_CONFIG_HOME="$XDG" systemd-run --user --scope -q --unit "$UNIT" -p MemoryMax=6G -p MemorySwapMax=1G \
-  timeout "${MINUTES}m" setsid --wait leanpi -p --approve \
+  timeout "${MINUTES}m" setsid --wait "${JAIL[@]}" leanpi -p --approve \
   --model opencode-go/deepseek-v4.1-flash:max --session-dir "$OUT/session" \
   "$PROMPT" </dev/null >"$OUT/arm.log" 2>&1 &
 ARM=$!

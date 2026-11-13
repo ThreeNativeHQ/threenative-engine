@@ -35,12 +35,25 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 
 - [ ] Two consecutive VALID platformer runs pass the full sealed proof. proof: `pnpm sweep:proof`
   on each `wm-platformer-<n>` archive.
-  1 of 2: `wm-platformer-2` VALID, 2/2 sealed scenarios on the laptop GPU. `wm-platformer-3` is next.
+  0 of 2: `wm-platformer-2` passed 2/2 but is VOID — it read the sealed proof from a repo checkout on
+  this disk. Arms from `wm-platformer-4` on run jailed.
 - [x] The proof reads a game that took the `engine: "threejs"` override. proof: `pnpm exec vitest run
   packages/playtest/__tests__/sampling.spec.ts packages/playtest/__tests__/provenance.spec.ts` —
   RED `TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING` → GREEN 39/39; `wm-platformer-2` 0/2 → 2/2 on the same
   game. three's `WebGLRenderer` tags only `three.js r<n>`, and the page cannot probe a canvas its
   worker owns.
+- [x] The arm sees only its sandbox, as on a developer's machine. proof: `pnpm exec vitest run
+  scripts/__tests__/weak-model-run-arm.spec.ts` RED (secret visible) → GREEN 2/2; real jailed probe:
+  `bash` in mount ns `4026533388` (host `4026531832`), repo path absent, VALID at `max`. `bwrap` empties
+  home and /tmp and binds back the sandbox, toolchain and agent config files, never its session history.
+  Open: one parallel-tool probe still listed host paths; the leanpi side is under investigation.
+- [x] The arm's own WebGPU playtests keep their device on SwiftShader. proof: `pnpm exec vitest run
+  packages/playtest/__tests__/preflight-display.spec.ts` RED 1 failed → GREEN 5/5; desktop private
+  Xvfb on SwiftShader renders `platformer-jump`. Headless Chromium cannot present a WebGPU canvas on
+  SwiftShader, so every engine lost its device and the arm fled to `engine: "threejs"`.
+- [x] The installed playtest package carries its reference docs. proof: `pnpm exec vitest run
+  packages/playtest/__tests__/published-docs.spec.ts` RED → GREEN (`npm pack` lists `docs/*.md`). The
+  arm grepped `node_modules/@threenative/playtest/docs` for `holdTicks` and read minified dist instead.
 - [x] `run-arm.sh` ends with its whole scope. proof: `pnpm exec vitest run
   scripts/__tests__/weak-model-run-arm.spec.ts` RED (child alive) → GREEN. The cap killed only the
   wrapper; the agent, vite and Xvfb ran on beside the proof.
@@ -60,7 +73,7 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 | Run | Verdict | Proof | First src write | Searches before write | Tool errors | Internal reads | Typecheck / playtest | Cost | Fix |
 |---|---|---|---|---|---|---|---|---|---|
 | wm-platformer-1 | VALID, discarded: shared sandbox root, the arm ran a sibling game's scripts (calls 11-19) | 0/2 (GPU headed: attach timeout) | call 50 | 0 | 9 | 21 | 2 / 33 | $0.156 | own sandbox root per run; kit coin moved off the spawn |
-| wm-platformer-2 | VALID | 2/2 (laptop Iris Xe, headed) after the provenance fix; 0/2 before | call 94 | 0 | 7 | 12 | 9 / 30 | $0.146 | proof reads `engine: "threejs"`; run-arm stops its scope |
+| wm-platformer-2 | VOID: read the sealed proof in `.claude/worktrees/strata-chain/docs/benchmark/genres/platformer/proof` | 2/2 (laptop Iris Xe, headed) after the provenance fix; 0/2 before | call 94 | 0 | 7 | 12 | 9 / 30 | $0.146 | proof reads `engine: "threejs"`; run-arm stops its scope |
 | control (pristine kit) | n/a | 1/2: run fails `coins` trivial, `goalReached` false | - | - | - | - | - | - | - |
 
 ## Decisions

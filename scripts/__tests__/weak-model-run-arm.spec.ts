@@ -53,4 +53,46 @@ describe("run-arm.sh", () => {
     if (left) execFileSync("kill", [String(child)]);
     expect(left).toBe(false);
   });
+
+  // The arm builds as a developer would, on a machine holding only its own project: round 2 read the
+  // sealed proof out of a repo checkout on this disk (wm-platformer-2, 2026-11-13).
+  it.skipIf(!hasUserSystemd)("hides every file outside the sandbox from the arm", () => {
+    root = mkdtempSync(path.join(tmpdir(), "run-arm-"));
+    const secret = mkdtempSync(path.join(tmpdir(), "run-arm-secret-"));
+    writeFileSync(path.join(secret, "proof.json"), "{}");
+    const seen = path.join(root, "game", "seen.txt");
+    mkdirSync(path.join(root, "leanpi", "bin"), { recursive: true });
+    mkdirSync(path.join(root, "leanpi", "dist", "permissions"), { recursive: true });
+    writeFileSync(path.join(root, "leanpi", "package.json"), "{}");
+    writeFileSync(
+      path.join(root, "leanpi", "dist", "permissions", "trust.js"),
+      "export const grantTrust = () => ({ trusted: true });\n",
+    );
+    const stub = path.join(root, "leanpi", "bin", "leanpi");
+    const probe = path.join(secret, "proof.json");
+    writeFileSync(
+      stub,
+      `#!/bin/sh\n{ test -e ${probe} && echo secret; test -e ${root}/brief.md && echo brief; } > ${seen}\n`,
+    );
+    chmodSync(stub, 0o755);
+    writeFileSync(path.join(root, "brief.md"), "brief");
+    mkdirSync(path.join(root, "xdg", "leanpi"), { recursive: true });
+    writeFileSync(path.join(root, "xdg", "leanpi", "leanpi.config.yaml"), "{}\n");
+    mkdirSync(path.join(root, "game"));
+    writeFileSync(path.join(root, "game", "package.json"), "{}");
+
+    try {
+      spawnSync("bash", [SCRIPT, path.join(root, "game"), path.join(root, "out")], {
+        env: {
+          ...process.env,
+          PATH: `${path.join(root, "leanpi", "bin")}:${process.env.PATH}`,
+          ...Object.fromEntries([["WM_XDG", path.join(root, "xdg")]]),
+        },
+        encoding: "utf8",
+      });
+      expect(readFileSync(seen, "utf8")).toBe("brief\n");
+    } finally {
+      rmSync(secret, { recursive: true, force: true });
+    }
+  });
 });
