@@ -1416,6 +1416,13 @@ describe("cookTerrainWorld", () => {
     // PRD-584 AC-4: a 9.8k terminal level from 107 m to the 600 m cull was 9.5M of the forest
     // walk's 13.8M triangles. The ladder keeps descending until the next step would pass the cull.
     expect(counts.at(-1)).toBeLessThan(3_000);
+    // Each far level switches in where its on-screen density is half the authored level's at 45 m,
+    // so a band runs from half to twice that density (PRD-584 AC-4: 12M to 6.9M walk triangles).
+    for (let level = 1; level < lods.length; level += 1)
+      expect(lods[level]?.distance).toBeCloseTo(
+        (45 * Math.sqrt((counts[0] as number) / (counts[level] as number))) / Math.SQRT2,
+        0,
+      );
   });
 
   it("discovers an authored -mid sibling before falling back to simplification", async () => {

@@ -340,9 +340,11 @@ async function farLevelDocument(bytes: Uint8Array, keep: number): Promise<Docume
 }
 
 /**
- * Far levels past a species' coarsest level, each switched in where it holds the same on-screen
- * triangle density the coarsest level had at its own switch: a level with `1/k` of the triangles
- * takes over at `sqrt(k)` times the distance, since projected area falls with distance squared.
+ * Far levels past a species' coarsest level. On-screen triangle density follows triangles over
+ * projected area, and area falls with distance squared, so a level with `1/k` of the triangles holds
+ * the coarsest level's switch density at `sqrt(k)` times its distance. Each level switches in
+ * `SQRT2` sooner than that, so over its band the density stays within half to twice the authored
+ * density, not one to four times (PRD-584 AC-4: the far fir band cost 5 ms of a 18.3 ms GPU frame).
  * A level that saves less than `LOD_MIN_SAVING` of the one before it, or would switch at or past
  * `maxDistance`, is not shipped. A species whose alpha cards cannot be thinned keeps its chain.
  */
@@ -361,7 +363,7 @@ async function deriveFarLevels(
     if (doc === undefined) return levels;
     const triangles = documentTriangles(doc);
     if (triangles <= 0 || triangles > (1 - LOD_MIN_SAVING) * previous) continue;
-    const distance = coarsest.distance * Math.sqrt(anchor / triangles);
+    const distance = (coarsest.distance * Math.sqrt(anchor / triangles)) / Math.SQRT2;
     if (maxDistance !== undefined && distance >= maxDistance) break;
     const writer = await createGltfWriter();
     levels.push({
