@@ -15,6 +15,7 @@ import {
   REQUEST_KNOWN_WORDS,
   REQUEST_STOP_WORDS,
   SIZE_WORD_ROWS,
+  TREE_WORD_ROWS,
   WATER_WORD_ROWS,
 } from "../core/request-words.js";
 import type { TerrainFeature } from "../core/request-words.js";
@@ -23,8 +24,11 @@ import type { IGroundChoice, IGroundRequest } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
 import type { LayerPatch, PatchCommand } from "../core/terrain.js";
 import type { ITerrainDocument, Layer } from "../core/types.js";
+import { ARBOR_TREE_IDS } from "./arbor-species.js";
 
 export { TERRAIN_KITS, type TerrainKit } from "../core/kits.js";
+
+const ARBOR_SPECIES_NOTE = `A species named \`arbor:<preset>[@seed]\` (for example arbor:oak@7) is a procedural Arbor tree the cook bakes and scatters; needs npm i -D @threenative/procedural-vegetation; set the row's far.impostor beyond 190 m, past the tree's last LOD. Presets: ${ARBOR_TREE_IDS.join(", ")}.`;
 
 export interface IGenerateInput {
   kit: TerrainKit;
@@ -44,6 +48,8 @@ export interface IGenerateInput {
   backdrop?: "none";
   /** The range the far ring's massif comes from, when a request word names it apart from the ground. */
   backdropRange?: LandformKind;
+  /** `arbor:<preset>[@seed]`, drawn in place of the kit's tree; a request's tree word sets it. */
+  treeSpecies?: string;
   out?: string;
 }
 
@@ -67,6 +73,8 @@ export interface IGenerateDecided {
   readonly ground: IChoice<IGroundChoice>;
   /** The far ring: `"massif"` for a mountain landform cooked on a survey, else `"none"`. */
   readonly backdrop: IChoice<"massif" | "none">;
+  /** The Arbor species that replaces the kit's tree (`arbor:<preset>`), or null for the kit's own. */
+  readonly tree: IChoice<string | null>;
 }
 
 /** A parsed request: the cook's own input, and the record of what its words and arguments decided. */
@@ -127,8 +135,7 @@ export const TERRAIN_TOOLS = [
       properties: {
         kit: { type: "string", enum: [...TERRAIN_KITS] },
         biome: {
-          description:
-            "A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with `kit`'s surface and assets, forest's when kit is absent.",
+          description: `A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with \`kit\`'s surface and assets, forest's when kit is absent. ${ARBOR_SPECIES_NOTE}`,
           anyOf: [{ type: "string", minLength: 1 }, { type: "object" }],
         },
         landform: { type: "string", enum: Object.keys(LANDFORMS) },
@@ -136,7 +143,7 @@ export const TERRAIN_TOOLS = [
           type: "string",
           minLength: 1,
           description:
-            "What the world should be, in any words: a biome, a landform (mountains, hills, canyon, volcano, fjord, ...), water (river, lake, sea, ...) and a size (huge, small); an explicit argument wins over a word. A request with no biome word takes the biome its sea or shape suits, else the forest; `decided` names the word behind each choice and `unused` the words that named nothing. A real place's name is not geocoded: pass its latitude and longitude as `ground: { location }` to cook that place's survey.",
+            "What the world should be, in any words: a biome, a landform (mountains, hills, canyon, volcano, fjord, ...), water (river, lake, sea, ...) and a size (huge, small); an explicit argument wins over a word. A request with no biome word takes the biome its sea or shape suits, else the forest; `decided` names the word behind each choice and `unused` the words that named nothing. A tree word (oak, birch, aspen, cedar, maple, cypress, olive, acacia, baobab, palm, bamboo, cactus, ...) cooks that Arbor species in place of the kit's tree and is reported as `decided.tree`; a spec's own species rows win. A real place's name is not geocoded: pass its latitude and longitude as `ground: { location }` to cook that place's survey.",
         },
         sizeMeters: { type: "number", exclusiveMinimum: 0 },
         seed: { type: "integer" },
@@ -178,8 +185,7 @@ export const TERRAIN_TOOLS = [
         },
         overrides: {
           type: "object",
-          description:
-            "IBiomeSpec fields to change on the base file (landform, foliage, grass, layers, water, spawn, species, aliases, bake). An unknown field fails.",
+          description: `IBiomeSpec fields to change on the base file (landform, foliage, grass, layers, water, spawn, species, aliases, bake). An unknown field fails. ${ARBOR_SPECIES_NOTE}`,
         },
         ground: GROUND_SCHEMA,
         out: {
@@ -544,6 +550,13 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
     const mountain = range !== undefined && MASSIFS[range] !== undefined;
     backdrop = { value: surveyed && mountain ? "massif" : "none", source: "default" };
   }
+  // A spec declares its own species rows, so only a request with no spec takes a tree word.
+  const treeWord = spec === undefined ? rowHit(TREE_WORD_ROWS, words) : undefined;
+  let tree: IChoice<string | null> = { value: null, source: "default" };
+  if (treeWord !== undefined) {
+    parsed.treeSpecies = `arbor:${treeWord.row}`;
+    tree = { value: parsed.treeSpecies, source: { word: treeWord.word } };
+  }
   if (seed !== undefined) {
     if (typeof seed !== "number" || !Number.isSafeInteger(seed)) {
       throw new TypeError("terrain_generate: seed must be a safe integer.");
@@ -565,6 +578,7 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
       features,
       ground,
       backdrop,
+      tree,
     },
     // What is left is what the tool could not act on: a retry names a word, not a guess.
     unused: [...new Set(words)].filter(

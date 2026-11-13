@@ -53,6 +53,34 @@ export const LANDFORM_BIOME: Readonly<Record<LandformKind, TerrainKit>> = {
   volcanic: "alpine",
 };
 
+/**
+ * The tree a request word asks for: an Arbor preset id (`@threenative/procedural-vegetation`) and
+ * the words that name it. A request that names one cooks that species in place of the kit's own
+ * tree, as `arbor:<id>`. A word a biome already answers to ("spruce", "pine", "fir") keeps its
+ * meaning, the kit's own conifer, so a starter's request still cooks that starter as shipped.
+ * Each id is checked against `vegetationPresets()` in `arbor-species.spec.ts`.
+ */
+export const TREE_WORD_ROWS: readonly (readonly [string, readonly string[]])[] = [
+  ["oak", ["oak", "oaks"]],
+  ["beech", ["beech"]],
+  ["birch", ["birch", "birches"]],
+  ["aspen", ["aspen", "aspens"]],
+  ["redcedar", ["cedar", "cedars"]],
+  ["bigleafmaple", ["maple", "maples"]],
+  ["cypress", ["cypress", "cypresses"]],
+  ["olive", ["olive", "olives"]],
+  ["acacia", ["acacia", "acacias"]],
+  ["baobab", ["baobab", "baobabs"]],
+  ["coconut", ["coconut", "palm", "palms"]],
+  ["banana", ["banana", "bananas"]],
+  ["sakura", ["sakura", "cherry", "blossom"]],
+  ["ginkgo", ["ginkgo"]],
+  ["bamboo", ["bamboo"]],
+  ["saguaro", ["saguaro", "cactus", "cacti"]],
+  ["joshua", ["joshua"]],
+  ["jacaranda", ["jacaranda"]],
+];
+
 /** The starter a request with no biome, landform or sea word cooks: the forest, reported as such. */
 export const DEFAULT_BIOME: TerrainKit = "forest";
 
@@ -158,6 +186,7 @@ export const REQUEST_KNOWN_WORDS: ReadonlySet<string> = new Set([
     ...WATER_WORD_ROWS,
     ...SIZE_WORD_ROWS,
     ...FEATURE_WORD_ROWS,
+    ...TREE_WORD_ROWS,
   ].flatMap(([, names]) => names),
   ...BACKDROP_WORDS,
 ]);

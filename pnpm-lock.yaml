@@ -1600,6 +1600,9 @@ importers:
       '@threenative/physics':
         specifier: workspace:*
         version: link:../physics
+      '@threenative/procedural-vegetation':
+        specifier: workspace:*
+        version: link:../procedural-vegetation
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43

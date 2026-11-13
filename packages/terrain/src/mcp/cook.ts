@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { copyFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type IBakeBiomeOptions, bakeBiome, foliageScatterRules } from "../core/bake-biome.js";
@@ -25,6 +26,7 @@ import type {
   SplinePoint,
 } from "../core/types.js";
 import { starterAssetsDir } from "../kit-assets.js";
+import { growArborSpecies, parseArborSpecies } from "./arbor-species.js";
 import { measureGlb } from "./glb-stats.js";
 import { surveyHeights } from "./survey.js";
 import { TERRAIN_KITS, resolveAssetSource } from "./tools.js";
@@ -54,6 +56,8 @@ export interface ICookRequest {
   backdrop?: "none";
   /** The range the far ring's massif comes from, when the request names it apart from the ground. */
   backdropRange?: LandformKind;
+  /** `arbor:<preset>[@seed]`: a request that names a tree, drawn by Arbor in place of the kit's tree. */
+  treeSpecies?: string;
 }
 
 export interface IBounds {
@@ -189,12 +193,16 @@ export async function cookKit(request: ICookRequest): Promise<string> {
     }
     throw error;
   }
+  // The Arbor bake is a cook input: the cooked world streams its own copy, so the source GLBs go.
+  const scratch = await mkdtemp(join(tmpdir(), "tn-arbor-"));
   // This cook owns `out` from here on, so a failure leaves nothing partial behind.
   try {
-    return await cookInto({ ...request, assetSource }, cooker, kitDir, assetsDir);
+    return await cookInto({ ...request, assetSource }, cooker, kitDir, assetsDir, scratch);
   } catch (error) {
     await rm(request.out, { recursive: true, force: true });
     throw error;
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
   }
 }
 
@@ -1135,6 +1143,7 @@ async function cookInto(
   cooker: ICooker,
   kitDir: string,
   assetsDir: string,
+  scratch: string,
 ): Promise<string> {
   const started = performance.now();
   // The starter's biome file is the world's own record of the biome; the bake validates it here, so
@@ -1146,19 +1155,21 @@ async function cookInto(
       ? file
       : { ...(file as Record<string, unknown>), water: request.water }
   ) as unknown;
-  const biome = validateBiome(declared, request.biome ?? request.kit);
+  const declaredBiome = validateBiome(declared, request.biome ?? request.kit);
+  if (request.treeSpecies !== undefined) parseArborSpecies(request.treeSpecies);
   // A spec names its own shape, size and seed, so its ground comes from the preset it carries. A
   // starter keeps its authored crop unless the request overrides the shape; the kit still supplies
   // the surface, the assets and the art.
-  const kind = request.landform ?? (request.spec === undefined ? undefined : biome.landform);
+  const kind =
+    request.landform ?? (request.spec === undefined ? undefined : declaredBiome.landform);
   const recipe =
     kind === undefined
       ? JSON.parse(await readFile(join(kitDir, "recipe.json"), "utf8"))
       : {
           recipe: landform(kind, {
             resolution: 257,
-            seed: request.seed ?? biome.seed,
-            size: request.sizeMeters ?? biome.sizeMeters,
+            seed: request.seed ?? declaredBiome.seed,
+            size: request.sizeMeters ?? declaredBiome.sizeMeters,
           }).toJSON(),
         };
   const unrouted =
@@ -1174,7 +1185,7 @@ async function cookInto(
     kind,
     ground,
     recipe.recipe.config,
-    biome.spawn.cameraOffset,
+    declaredBiome.spawn.cameraOffset,
   );
   // shortcut: starter heights use a 0.1 m lattice; revise decoding if their precision changes.
   for (const layer of recipe.recipe.layers) {
@@ -1191,6 +1202,14 @@ async function cookInto(
     IAssetSpec
   >;
   const surface = JSON.parse(await readFile(join(kitDir, "surface.json"), "utf8")) as ISurface;
+  // `arbor:<preset>[@seed]` species, and a request's tree word, join the table before any scatter.
+  const biome = await growArborSpecies({
+    assetTable,
+    biome: declaredBiome,
+    projectRoot: request.projectRoot,
+    scratch,
+    ...(request.treeSpecies === undefined ? {} : { treeSpecies: request.treeSpecies }),
+  });
 
   // A landform preset authors the ground and no scatter rules, so the biome file's foliage is placed
   // on it through the stages every starter scatter runs.
@@ -1211,10 +1230,10 @@ async function cookInto(
     Object.entries(assetTable).map(([id, spec]) => [
       id,
       {
-        glb: join(assetsDir, spec.near),
+        glb: resolve(assetsDir, spec.near),
         bounds: parseBounds(spec.bounds, id),
         lods: spec.mid
-          ? [{ distance: spec.midDistance ?? 40, glb: join(assetsDir, spec.mid) }]
+          ? [{ distance: spec.midDistance ?? 40, glb: resolve(assetsDir, spec.mid) }]
           : [],
         maxDistance: spec.maxDistance,
       },

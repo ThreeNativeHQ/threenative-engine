@@ -89,6 +89,7 @@ Risks:
 - 2026-11-13 (agent): do not ship `Arbor.three()`. It patches WebGL shaders and owns the look, and the GLB plus the game's TSL `render/wind.ts` covers it on every engine.
 - 2026-11-13 (agent): Arbor's `_WIND` is a vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase), not the scalar `_wind` weight that `examples/integrations/vegetation/src/render/wind.ts` reads, so that wind cannot sway an Arbor tree unchanged. The recipe now documents the vec4 layout and tells the game to write its own `render/wind.ts`.
 - 2026-11-13 (agent): the bake needs a Canvas 2D for the leaf atlas (Arbor paints it with Canvas 2D), so the package depends on `@napi-rs/canvas` (MIT, prebuilt binaries). It encodes the bark and leaf PNGs too. This is the dependency the other packages must not inherit.
+- 2026-11-13 (agent): Strata reaches Arbor in two ways, both small. (1) The explicit `arbor:<preset>[@seed]` species name in a biome spec's `foliage` or `species` rows (`terrain_generate` with an inline `biome`, `terrain_biome_new` overrides). (2) A tree word in `terrain_generate`'s `request` (`TREE_WORD_ROWS` in `request-words.ts`: oak, birch, aspen, cedar, maple, olive, acacia, baobab, palm, bamboo, cactus and more) cooks that species as `treeSpecies: "arbor:<id>"` in place of the kit's tree art: every variant of the kit's tree family takes consecutive seeds, and a kit with no tree (alpine, desert, tundra) gets the Arbor tree as the one its tree row draws. The reply reports it as `decided.tree` with the word behind it. Words a biome already answers to (spruce, pine, fir) keep their meaning, the kit's own conifer, so a starter request still cooks that starter as shipped; an inline spec wins over a word. A bare preset id with no prefix is not resolved: the forest biome's own `spruce` row would otherwise stop meaning the kit's conifer. The source GLBs bake into a temporary folder, not the world's asset folder: the cook streams its own copy of each species into `models/`, so the world holds no loose LOD files. A row's `far.impostor` must exceed 190 m for an Arbor species (its derived last LOD gate is about 185 m); the bake fails closed naming the gate otherwise, and the tool schema says so.
 - 2026-11-13 (agent): Arbor replaces EZ Tree as the recipe answer. The owner can veto this before Phase 3 deletes `examples/integrations/vegetation/`.
 
 ## Execution Phases
@@ -114,7 +115,7 @@ Risks:
 
 #### Phase 2: A terrain cook grows Arbor species
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-11-13): resolver, request words and spec done; the visual judge box is open.
 **Files:**
 - `packages/terrain/src/mcp/cook.ts`: the `arbor:` resolver feeds `assetTable`.
 - `packages/terrain/src/mcp/tools.ts`: the schema text that lists the presets.
@@ -131,7 +132,7 @@ Risks:
    - the trunks stand on the ground;
    - the canopy sways under `render/wind.ts`.
 
-- [ ] A spec cooks a biome with `species: ["arbor:oak@7", "arbor:spruce"]`. It asserts that both rows place instances and that each instance references a baked GLB. proof: `pnpm exec vitest run packages/terrain/__tests__/arbor-species.spec.ts`
+- [x] A spec cooks a biome with `species: ["arbor:oak@7", "arbor:spruce"]`. It asserts that both rows place instances and that each instance references a baked GLB. proof: `pnpm exec vitest run packages/terrain/__tests__/arbor-species.spec.ts`
 - [ ] The visual judge returns IMPROVEMENT. The frames show the cooked world against the same world with an empty species row, headed WebGPU, with `adapter.info` checked and two runs per arm. proof: the judge verdict on BEFORE and AFTER sheets posted to the PR (`prd-884-screenshots`)
 
 **Verification:** the two boxes above.
