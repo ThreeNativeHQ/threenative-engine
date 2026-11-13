@@ -1055,7 +1055,13 @@ export class WorldEnvironment {
           // Screen probes go through the package's gather: it owns the grid, the tier below and (with `ssgiProbeMiss`)
           // the tier past the screen, where a ray that leaves the frame continues through the registered scene to the
           // radiance cache. The composite below stays here, because its strength is a look.
-          const worldRadiance = giCache.radiance;
+          // A ray reads the cache along its direction: the traced field's radiance when the bake has one, else the same
+          // irradiance cube the tier below reads, taken along the ray (cacheFallback's "ray" read). Read at render time,
+          // because the bake registers its reads when it finishes, after this graph is built.
+          const cacheRadiance = (position: Node<"vec3">, direction: Node<"vec3">): Node<"vec3"> => {
+            const read = giCache.radiance ?? giCache.irradiance;
+            return read === undefined ? vec3(0, 0, 0) : read(position, direction).mul(gain);
+          };
           const probes =
             wasmEngine && options.ssgiScreenProbes === true
               ? new ScreenProbeGather({
@@ -1074,14 +1080,8 @@ export class WorldEnvironment {
                   ...(fallback === undefined ? {} : { fallback }),
                   // The arms a judge compares: the miss tier changes what reaches the screen, so it is opt-in until a
                   // PRD-647 round says it wins (PRD-640 Phase 2).
-                  ...(options.ssgiProbeMiss === true &&
-                  worldRadiance !== undefined &&
-                  reflectionTrace.current !== undefined
-                    ? {
-                        radiance: (position: Node<"vec3">, direction: Node<"vec3">) =>
-                          worldRadiance(position, direction).mul(gain),
-                        trace: reflectionTrace.current,
-                      }
+                  ...(options.ssgiProbeMiss === true && reflectionTrace.current !== undefined
+                    ? { radiance: cacheRadiance, trace: reflectionTrace.current }
                     : {}),
                 })
               : undefined;

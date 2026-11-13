@@ -480,7 +480,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
                   ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
                 }
               : {}),
-            ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
+            // Diagnosis: ?probeMiss=1 continues a probe ray that leaves the frame through the scene's packed triangles
+          // to the radiance cache (PRD-640 Phase 2), so a miss is a direction's radiance, not the pixel's mean.
+          ...(params.get("probeMiss") === "1" ? { ssgiProbeMiss: true } : {}),
+          ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
             ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
             autoExposureEnabled: false,
             bloomEnabled: false,
