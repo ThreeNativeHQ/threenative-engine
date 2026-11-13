@@ -27,7 +27,10 @@ describe("run-arm.sh", () => {
     mkdirSync(path.join(root, "leanpi", "bin"), { recursive: true });
     writeFileSync(path.join(root, "leanpi", "package.json"), "{}");
     const stub = path.join(root, "leanpi", "bin", "leanpi");
-    writeFileSync(stub, `#!/bin/sh\n[ "$1" = trust ] && exit 0\nsleep 300 &\necho $! > ${pidFile}\n`);
+    writeFileSync(
+      stub,
+      `#!/bin/sh\n[ "$1" = trust ] && exit 0\nsleep 300 &\necho $! > ${pidFile}\n`,
+    );
     chmodSync(stub, 0o755);
     mkdirSync(path.join(root, "xdg", "leanpi"), { recursive: true });
     writeFileSync(path.join(root, "xdg", "leanpi", "leanpi.config.yaml"), "{}\n");
