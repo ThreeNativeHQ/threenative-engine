@@ -13,6 +13,7 @@ import { ClusteredBatch } from "../src/clustered-batch.js";
 import {
   ClusteredMesh,
   type IClusterTable,
+  clusterTableRadius,
   selectClusterCut,
   updateClusteredMeshes,
 } from "../src/clustered-mesh.js";
@@ -251,6 +252,38 @@ describe("a copy the view does not hold", () => {
 
     expect(batch.viewCullReport).toBe("off (castShadow)");
     expect(settle(batch, camera)).toBe(settle(whole.batch, camera));
+  }, 180_000);
+
+  it("bounds a body whose clusters sit off its origin, not just its largest cluster", () => {
+    // A rock pivoted at its base: one cluster of radius 1 centred 5 above the origin. A sphere on
+    // the origin must reach 6 to hold it; the largest cluster radius alone (1) drops the copy while
+    // its body is still on screen.
+    const offCentre = { bounds: new Float32Array([0, 5, 0, 1, 0, 0, 0, 0.5]) } as IClusterTable;
+    expect(clusterTableRadius(offCentre)).toBeCloseTo(6, 5);
+  });
+
+  it("takes its bands again when the frustum widens with the camera standing still", () => {
+    // A window resize changes the aspect, not the pixel scale (fov and viewport height), so a cut
+    // pruned for the narrow view must not survive into the wide one.
+    const camera = ahead();
+    camera.aspect = 1;
+    camera.updateProjectionMatrix();
+    const { batch } = batchOf([{ position: [17, 0, -20] }]);
+    expect(settle(batch, camera)).toBe(0);
+
+    camera.aspect = 16 / 9;
+    camera.updateProjectionMatrix();
+    expect(settle(batch, camera)).toBeGreaterThan(0);
+  }, 180_000);
+
+  it("tests a copy where it is drawn, under a parent that moves the batch", () => {
+    // The copy sits 5 behind the camera in the batch's own space, but the parent carries the batch
+    // 10 forward, so the copy is drawn 5 in front of the camera and must be kept.
+    const camera = ahead();
+    const { batch, scene } = batchOf([{ position: [0, 0, 5] }]);
+    scene.position.set(0, 0, -10);
+    scene.updateMatrixWorld(true);
+    expect(settle(batch, camera)).toBeGreaterThan(0);
   }, 180_000);
 
   it("takes its bands again when the camera turns, and not when it barely does", () => {

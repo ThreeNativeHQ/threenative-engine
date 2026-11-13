@@ -122,8 +122,6 @@ const DEFAULT_ERROR_PIXELS = 1;
 const MIN_DISTANCE = 1e-3;
 /** A copy the view does not hold: it joins no band, anchors no cut, and submits nothing. */
 const CULLED = -2147483648;
-/** Copies are placed in the batch's own space, which this class has always treated as world. */
-const IDENTITY = new Matrix4();
 
 interface IPlaced {
   readonly matrix: Matrix4;
@@ -193,6 +191,8 @@ export class ClusteredBatch {
   readonly #view = new ClusterView();
   #hasCut = false;
   #lastScale = 0;
+  /** The projection the bands were chosen by: an aspect or zoom change keeps the pixel scale. */
+  readonly #lastProjection = new Matrix4();
   #culled = false;
   readonly #distanceRatio: number;
   /** Radians the camera may turn before the bands are taken again. */
@@ -321,8 +321,9 @@ export class ClusteredBatch {
     const culled = this.viewCull && this.#built?.castShadow !== true;
     if (culled) {
       this.#view.setFromCamera(camera, this.viewMargin);
-      // Copies are placed in the batch's own space, which the batch has always treated as world.
-      this.#view.setTransform(IDENTITY);
+      // Copies are placed in the batch root's space; a parent that moves the batch moves them too.
+      root.updateWorldMatrix(true, false);
+      this.#view.setTransform(root.matrixWorld);
     }
 
     // Everything below walks every cluster of every occupied band. Skip it outright when the camera
@@ -335,6 +336,7 @@ export class ClusteredBatch {
       this.#hasCut &&
       culled === this.#culled &&
       scale === this.#lastScale &&
+      camera.projectionMatrix.equals(this.#lastProjection) &&
       this.#pending === 0 &&
       this.#rotation.angleTo(this.#lastRotation) <= this.viewMargin &&
       this.#cameraWorld.distanceTo(this.#lastCut) <=
@@ -344,6 +346,7 @@ export class ClusteredBatch {
     this.#lastCut.copy(this.#cameraWorld);
     this.#lastRotation.copy(this.#rotation);
     this.#lastScale = scale;
+    this.#lastProjection.copy(camera.projectionMatrix);
     this.#culled = culled;
     this.#hasCut = true;
 

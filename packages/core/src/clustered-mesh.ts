@@ -225,11 +225,19 @@ export function outsideFrustum(frustum: Frustum, center: Vector3, radius: number
   return false;
 }
 
-/** Radius of the sphere that holds every cluster's bounds, in the mesh's own units. */
+/**
+ * Radius of the sphere on the mesh's origin that holds every cluster's bounds, in the mesh's own
+ * units. A body pivoted off its centre (a rock on its base) reaches past its largest cluster.
+ */
 export function clusterTableRadius(table: IClusterTable): number {
   let radius = 0;
-  for (let cluster = 0; cluster * 4 < table.bounds.length; cluster += 1)
-    radius = Math.max(radius, table.bounds[cluster * 4 + 3] as number);
+  const { bounds } = table;
+  for (let at = 0; at + 3 < bounds.length; at += 4)
+    radius = Math.max(
+      radius,
+      Math.hypot(bounds[at] as number, bounds[at + 1] as number, bounds[at + 2] as number) +
+        (bounds[at + 3] as number),
+    );
   return radius;
 }
 
@@ -259,7 +267,19 @@ export interface IClusterHierarchy {
  * hole in the mesh the moment the walk used it, and a hole that only appears when a camera turns is
  * the worst kind to find. The bake guarantees the reachability this checks for.
  */
+/** One hierarchy per table: it is a pure function of the bake, and every clone walks the same one. */
+const hierarchies = new WeakMap<IClusterTable, IClusterHierarchy>();
+
 export function clusterHierarchy(table: IClusterTable): IClusterHierarchy {
+  let hierarchy = hierarchies.get(table);
+  if (hierarchy === undefined) {
+    hierarchy = buildClusterHierarchy(table);
+    hierarchies.set(table, hierarchy);
+  }
+  return hierarchy;
+}
+
+function buildClusterHierarchy(table: IClusterTable): IClusterHierarchy {
   const groups = table.groups;
   if (groups === undefined)
     throw new Error(
@@ -529,6 +549,8 @@ export class ClusteredMesh extends Mesh {
   #pruned = false;
   #lastScale = 0;
   #lastErrorPixels = 0;
+  /** The projection the cut was pruned by: an aspect or zoom change keeps the pixel scale. */
+  readonly #lastProjection = new Matrix4();
 
   constructor(
     geometry: BufferGeometry,
@@ -720,13 +742,15 @@ export class ClusteredMesh extends Mesh {
       moved <= this.recutDistance &&
       this.#rotation.angleTo(this.#lastRotation) <= this.viewMargin &&
       scale === this.#lastScale &&
-      this.errorPixels === this.#lastErrorPixels;
+      this.errorPixels === this.#lastErrorPixels &&
+      camera.projectionMatrix.equals(this.#lastProjection);
     if (settled) return this.drawnTriangles;
 
     this.#lastCut.copy(this.#cameraLocal);
     this.#lastRotation.copy(this.#rotation);
     this.#lastScale = scale;
     this.#lastErrorPixels = this.errorPixels;
+    this.#lastProjection.copy(camera.projectionMatrix);
     this.#pruned = pruned;
     this.#hasCut = true;
     const started = performance.now();
