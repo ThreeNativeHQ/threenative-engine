@@ -9165,6 +9165,27 @@
     {
       "aliases": [],
       "constraints": [
+        "the look stays the game's: pass the result with the kit's `render/grass.ts` blade and material"
+      ],
+      "example": "const placement = grassFieldFromBiome(biome, { heightAt: (x, z) => field.heightAt(x, z), waterLevel: 0 });\nif (placement) ctx.add(new GrassField3D({ ...placement, blade: grassBlade(), material: grassMaterial }));",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function grassFieldFromBiome( biome: Pick<IBiomeSpec, \"grass\" | \"seed\">, ground: IGrassGround, ): IGrassFieldPlacement | null { … }",
+      "situations": [
+        "grow streamed grass on a terrain world's biome grass rows",
+        "a Strata or terrain_generate world with a meadow that sways round the player",
+        "feed a cooked biome to GrassField3D"
+      ],
+      "summary": "Turns a terrain biome's grass rows and its ground into `GrassField3D` placement options, so a generated or cooked world grows streamed grass with one call. Returns null when the biome has no grass rows: the game draws no field. Each row covers its own slope band (full to `slope[1]`, gone `slopeFalloff` degrees past it), its own height band above `ground.floor` (fading over `heightFalloff` below the ceiling) and stays `waterMargin` above `ground.waterLevel`; the field takes the strongest row at each spot.",
+      "supersedes": [],
+      "symbol": "grassFieldFromBiome"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns an ordinary `Terrain`: add roads, rivers, scatter or more layers, then `evaluate()` in a build script",
         "shape only; materials, colours and textures belong to the game",
         "calibrated at size 5000, resolution 513; other sizes keep the same slopes and scale the relief with `size`"

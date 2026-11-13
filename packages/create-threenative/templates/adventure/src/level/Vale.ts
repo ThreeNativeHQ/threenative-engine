@@ -128,6 +128,24 @@ export function streamDistance(x: number, z: number): number {
   return best;
 }
 
+/** Where the streamed grass grows, 0..1: bare on the path, in the stream, under the hut and in the cave mouth. */
+export function grassCover(x: number, z: number): number {
+  if (z < CLEARING.north + 1 && Math.abs(x) < 3.5) return 0;
+  return (
+    smooth(1.5, 2.3, Math.abs(x - pathX(z))) *
+    smooth(1.3, 2.4, streamDistance(x, z)) *
+    smooth(2.4, 3.4, Math.hypot(x - HUT.x, z - HUT.z))
+  );
+}
+
+/** The square the grass grows in: the clearing and the first hills round it. */
+export const GRASS_BOUNDS = {
+  maxX: CLEARING.half + 10,
+  maxZ: CLEARING.south + 10,
+  minX: -CLEARING.half - 10,
+  minZ: CLEARING.north - 6,
+};
+
 /** 1 on a play space, the path or the cave approach, easing to 0 over a few metres round them. */
 function flatness(x: number, z: number): number {
   let f = 1 - smooth(2.2, 4.4, Math.abs(x - pathX(z)));

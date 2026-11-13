@@ -589,6 +589,7 @@
         "@threenative/terrain#farForestPlacements": "export function farForestPlacements(options: IFarFieldOptions): IPlacement[] { … }",
         "@threenative/terrain#fieldWeight": "export function fieldWeight(field: ICoverField, x: number, z: number): number { … }",
         "@threenative/terrain#gradientAt": "export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, number] { … }",
+        "@threenative/terrain#grassFieldFromBiome": "export function grassFieldFromBiome( biome: Pick<IBiomeSpec, \"grass\" | \"seed\">, ground: IGrassGround, ): IGrassFieldPlacement | null { … }",
         "@threenative/terrain#landform": "export function landform(kind: LandformKind, options: ILandformOptions = { … }",
         "@threenative/terrain#landformBackdrop": "export function landformBackdrop( kind: LandformKind, options: IBackdropOptions = { … }",
         "@threenative/terrain#liftMassif": "export function liftMassif(tile: IMassifTile): Float32Array { … }",

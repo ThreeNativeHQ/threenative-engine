@@ -1,11 +1,13 @@
 import {
   GPUParticles3D,
+  GrassField3D,
   Scene,
   type SceneFrame,
   afterPhysics,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
+import { warmUnculled } from "@threenative/core/world";
 import { type IPhysicsContext, buildStaticColliders } from "@threenative/physics";
 import {
   Box3,
@@ -38,8 +40,11 @@ import { Warden } from "../entities/Warden.js";
 import { Interactions } from "../interact.js";
 import { type IHollow, buildHollow } from "../level/Hollow.js";
 import {
+  GRASS_BOUNDS,
   type IVale,
+  STREAM,
   buildVale,
+  grassCover,
   isSolid,
   makeRng,
   measureRelief,
@@ -47,6 +52,7 @@ import {
 } from "../level/Vale.js";
 import { setupCamera } from "../render/camera.js";
 import { BURSTS, EFFECTS } from "../render/effects.js";
+import { grassBlade, grassMaterial, grassStandAt } from "../render/grass.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -126,6 +132,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
   #sky: ISky | undefined;
   #vale: IVale | undefined;
+  #grass: GrassField3D | undefined;
   #hollow: IHollow | undefined;
   #hero: Hero | undefined;
   #dummies: Dummy[] = [];
@@ -157,6 +164,41 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     hero.mesh.position.set(vale.spawn.x, vale.spawn.y + FOOT_OFFSET, vale.spawn.z);
     hero.mesh.rotation.y = vale.spawnYaw;
     this.#hero = ctx.entities.add("player", hero);
+    // The vale's grass: streamed chunks round the camera, its look in `render/grass.ts`. It lives in
+    // the vale's group, so it hides with the vale when Wren is in the Hollow.
+    const grass = new GrassField3D({
+      blade: grassBlade(),
+      bounds: GRASS_BOUNDS,
+      // Bigger chunks are fewer draws: the engine's per-draw cost outweighed finer culling here.
+      buildBudgetMs: 2,
+      chunkSize: 16,
+      density: 18,
+      drawDistance: 40,
+      getDensity: grassCover,
+      getHeight: valeHeight,
+      lodDistances: [7, 16],
+      material: grassMaterial,
+      minAltitude: STREAM.water + 0.05,
+      thinEnd: 30,
+      thinStart: 6,
+    });
+    vale.group.add(grass);
+    this.#grass = grass;
+    // What a scenario reads: how many chunks draw, and how high a blade stands beside Wren.
+    const standAt = (dx: number): number => {
+      const x = hero.mesh.position.x + dx;
+      const z = hero.mesh.position.z;
+      return grassStandAt(grass.pressAt(x, valeHeight(x, z), z));
+    };
+    ctx.entities.add("grass", {
+      debug: () => ({
+        blades: grass.stats.blades,
+        pending: grass.stats.pending,
+        standFar: standAt(3),
+        standNear: standAt(0.5),
+        visibleChunks: grass.stats.visibleChunks,
+      }),
+    });
     vale.dummies.forEach((at, i) => {
       this.#dummies.push(ctx.entities.add(`dummy.${i}`, new Dummy(`dummy.${i}`, at)));
     });
@@ -209,6 +251,19 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       this.#sky === undefined
     )
       throw new Error("Play.enter ran before load() built the world.");
+    const grass = this.#grass;
+    if (grass !== undefined) {
+      // Once per drawn frame: Wren's feet flatten the grass, then the field streams round the camera.
+      grass.prewarm();
+      ctx.beforeRender(() => {
+        if (!vale.group.visible) return;
+        const at = hero.mesh.position;
+        grass.pushers[0]?.set(at.x, at.y - FOOT_OFFSET, at.z, 1.2);
+        grass.update(ctx.camera);
+      });
+      // The first chunks draw unculled so their pipeline compiles behind the loading curtain.
+      ctx.startup.hold("grass", warmUnculled(ctx, grass));
+    }
     ctx.beforeRender(() => {
       updateSurfaceSampling(
         ctx.renderer.temporalUpscale?.() === true ? ctx.renderer.surface().resolutionScale : 1,

@@ -1405,5 +1405,33 @@ async function cookInto(
       'const loadCells = (follow: TerrainAnchor, invalidate?: NonNullable<TerrainWorldOptions["shadows"]>["invalidate"]) => { terrainFollow = follow; terrainInvalidate = invalidate; };',
       "// Call loadCells(player.mesh) after creating the player; optionally forward streamed shadow invalidation.",
     ].join("\n"),
+    grass: grassSnippet(biome, state, cooked.manifest.extent),
   });
+}
+
+/**
+ * The lines that grow the biome's grass rows as a streamed `GrassField3D` on the cooked ground, run
+ * after `load`; null when the biome has no grass row. The blade and material are the game's look.
+ */
+function grassSnippet(
+  biome: Pick<IBiomeSpec, "grass" | "seed">,
+  state: ITerrainState,
+  extent: { minX: number; minZ: number; sizeX: number; sizeZ: number },
+): string | null {
+  if (biome.grass.length === 0) return null;
+  const ocean = state.waters.find((water) => water.kind === "ocean");
+  return [
+    'import { GrassField3D } from "@threenative/core";',
+    'import { grassFieldFromBiome } from "@threenative/terrain";',
+    "// The look: copy src/render/grass.ts from the adventure kit (npm create threenative -- --template adventure).",
+    'import { grassBlade, grassMaterial } from "./render/grass";',
+    `const grassBiome = ${JSON.stringify({ grass: biome.grass, seed: biome.seed })};`,
+    `const grassPlacement = grassFieldFromBiome(grassBiome, { heightAt: (x, z) => terrainField.heightAt(x, z) + terrainSeat, floor: terrainSeat, waterLevel: ${ocean === undefined ? "null" : `${ocean.level} + terrainSeat`} });`,
+    'if (grassPlacement === null) throw new Error("terrain: the biome has no grass row.");',
+    `const grass = new GrassField3D({ ...grassPlacement, blade: grassBlade(), material: grassMaterial, bounds: { minX: ${extent.minX}, minZ: ${extent.minZ}, maxX: ${extent.minX + extent.sizeX}, maxZ: ${extent.minZ + extent.sizeZ} } });`,
+    "ctx.add(grass);",
+    "grass.prewarm();",
+    "// Once per drawn frame: the player parts the grass, and the camera streams the chunks.",
+    "ctx.beforeRender(() => { grass.pushers[0]?.set(player.position.x, player.position.y, player.position.z, 1.2); grass.update(ctx.camera); });",
+  ].join("\n");
 }

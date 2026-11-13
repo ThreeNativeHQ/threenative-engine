@@ -1,6 +1,6 @@
 # PRD-883 — Grass grows, sways and parts around the player on every engine
 
-**Status:** PARTIAL — Phase 1 done
+**Status:** PARTIAL — Phases 1 and 3 done; Phase 2 waits on the owner's call on the grass frame cost
 **Priority:** P2 — the adventure kit's grass is still static tufts (AC-2), and terrain biomes cannot reach the field yet (Phase 3).
 **Complexity:** 6 (MEDIUM) — 6 to 10 implementation files (2), a new core system (2), chunk streaming under a per-frame build budget (2); risk override: none. The visual judge and the native run follow the owner rules, not the score.
 **Owner:** João
@@ -94,7 +94,7 @@ Risks:
 - 2026-11-13 (João): "make sure strata knows how to use it, when generating the worlds". Phase 3 therefore also makes terrain world generation reach the field: `grassFieldFromBiome` reads a generated biome's grass rows, so a Strata world grows streamed grass with one call.
 - 2026-11-13 (João): "use our performance capabilities where applicable". The kit drives `update(camera)` from `ctx.beforeRender` (once per real world draw, not per fixed step), holds startup on `warmUnculled` so the grass pipeline compiles before the first frame, and the frame cost is read from `TN_FRAME_BUDGET`. `InstancedBatch` does not fit: each blade carries its own attributes.
 - 2026-11-13 (agent): `GrassField3D` is admitted as mechanism in `docs/architecture/CHARTER.md`, beside `GPUParticles3D`, as core's closed list requires.
-- 2026-11-13 (agent): the adventure kit is the first consumer, because it already has a height function and grass tufts. Strata adopts the field under PRD-855, not here, so that this PRD stays within 3 phases.
+- 2026-11-13 (agent): the adventure kit is the first consumer, because it already has a height function and grass tufts. World generation reaches the field here: `terrain_generate` returns a `grass` snippet (`grassFieldFromBiome` plus `GrassField3D`) for every biome with a grass row. The Strata preview's own near-field mats move to the field under PRD-855, because that swap changes the judged Strata look.
 
 ## Execution Phases
 
@@ -122,12 +122,14 @@ Risks:
 
 #### Phase 2: The adventure kit grows swaying grass that parts around Wren
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-11-13): the kit grows the field and the judge passed; the frame-cost box waits on the owner.
 **Files:**
 - `templates/adventure/src/render/grass.ts` (new): blade geometry plus the TSL material.
 - `templates/adventure/src/render/foliage.ts`: swap the tufts for the field.
 - `templates/adventure/src/render/palette.ts`: the grass colours.
-- `templates/adventure/playtests/explore.playtest.json`: grass assertions.
+- `templates/adventure/playtests/grass.playtest.json` (new): grass assertions. `explore` is a 7 200-tick random walk that can end in the dungeon, where the vale is hidden, so a fixed walk into the grass carries them.
+- `templates/adventure/scenes/Play.ts`, `level/Vale.ts`: the field, its bounds and its cover mask.
+- `templates/adventure/playtests/performance.playtest.json`: `maxTriangles` 190 000 -> 480 000 (measured 439 000 with grass).
 
 **Implementation:**
 1. Port the GLSL bend, the lighting and the colour to TSL.
@@ -140,15 +142,16 @@ Risks:
    - nothing pops when the camera moves;
    - the grass value stays within the kit's exposure, with no white or black blades.
 
-- [ ] The `explore` scenario asserts three things: visible grass chunks are greater than 0 at spawn, blade height inside 1 m of Wren is lower than at 3 m, and `TN_SCENE_WARNING` is empty. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/templates/adventure/playtests/explore.playtest.json --browser-recipe webgpu` (via `pnpm test:templates` for the kit)
-- [ ] The visual judge returns IMPROVEMENT. The frames come from the spawn pose and a walk pose, headed WebGPU, with `adapter.info` checked and two runs per arm. proof: the judge verdict on BEFORE and AFTER sheets posted to the PR (`prd-883-screenshots`)
+- [x] The `explore` scenario asserts three things: visible grass chunks are greater than 0 at spawn, blade height inside 1 m of Wren is lower than at 3 m, and `TN_SCENE_WARNING` is empty. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/templates/adventure/playtests/explore.playtest.json --browser-recipe webgpu` (via `pnpm test:templates` for the kit) — 2026-11-13: the assertions live in `grass.playtest.json` (see Files). A scaffolded kit on the RTX 2080 (headed WebGPU, `adapter` nvidia/turing): `grass` pass with 35 visible chunks, `standNear` 0.23, `standFar` 0.94 and a 1.9 m walk; its movement assertion fails on any `TN_SCENE_WARNING`, and none was printed. All 16 kit scenarios pass in the same run, `explore` included.
+- [x] The visual judge returns IMPROVEMENT. The frames come from the spawn pose and a walk pose, headed WebGPU, with `adapter.info` checked and two runs per arm. proof: the judge verdict on BEFORE and AFTER sheets posted to the PR (`prd-883-screenshots`) — 2026-11-13: three fresh judges, each IMPROVEMENT overall. Judge 1 named crushed shadowed blades and a weak push; the AO, translucency and push were tuned. Judge 3 (final frames, plus an in-run sway pair whose difference lights the whole field and not the path stones): spawn IMPROVEMENT, walk IMPROVEMENT; criteria 1-3 PASS, 4 and 5 minor FAIL. Open follow-ups: a visible edge where the path's cover fade meets full grass, and a few near-black blade specks in deep shadow. Every run used the RTX 2080 (nvidia/turing, no software adapter).
 - [ ] `TN_FRAME_BUDGET` at the spawn pose is not slower than the current kit by more than run noise, in paired runs. proof: the `measure-steady-state-fps` skill on the adventure kit, BEFORE and AFTER
+  Left open: the cost is real, not noise. The kit's `performance` scenario, two interleaved pairs on the RTX 2080 (1920x1080, 1 024 frames after a 60-frame warm-up, private Xvfb, so the interval is not gated): frame p50 / p95 BEFORE 2.31 / 6.03 and 2.20 / 5.64 ms, AFTER 2.54 / 6.70 and 2.32 / 6.28 ms; GPU p95 BEFORE 10.29 / 10.63 ms, AFTER 11.60 / 11.91 ms. That is about 0.6 ms CPU p95 and 1.3 ms GPU p95 more, inside the 16.7 ms budget with no hitch frames, for 250 000 more triangles. The first cut (density 26, 12 m chunks) cost 594 000 triangles; density 18, LOD [7, 16] and 16 m chunks brought it to 250 000. The owner decides whether this cost is accepted or the box is re-scoped.
 
 **Verification:** the three boxes above.
 
 #### Phase 3: Native runs it, and terrain worlds reach it
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-11-13)
 **Files:**
 - `packages/terrain/src/core/grass-field.ts` (new): `grassFieldFromBiome`.
 - `packages/terrain/src/index.ts`: the export.
@@ -159,7 +162,7 @@ Risks:
 1. Map `IGrassType` density, slope, height band and falloffs to `GrassField3D` options.
 2. A biome with no grass rows returns null, and the game draws no field.
 
-- [ ] The adventure native scenario runs with grass chunks visible on desktop native. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/templates/adventure/native-playtests/survives.playtest.json --target desktop`
-- [ ] A spec cooks a biome with `grass` rows through `grassFieldFromBiome`. It asserts that no blade stands past the row's `slope[1] + slopeFalloff` or above its `height` ceiling. proof: `pnpm exec vitest run packages/terrain/__tests__/grass-field.spec.ts`
+- [x] The adventure native scenario runs with grass chunks visible on desktop native. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/templates/adventure/native-playtests/survives.playtest.json --target desktop` — 2026-11-13: the scaffolded kit, `pnpm build:desktop` with today's `tn-linux/mystral` host, `--live-clock --target desktop` on the RTX 2080 (driver 615.78.08): pass, `grass.visibleChunks` 16, `standNear` 0.23, tone p50 116, a 3.0 m walk, 0 console errors.
+- [x] A spec cooks a biome with `grass` rows through `grassFieldFromBiome`. It asserts that no blade stands past the row's `slope[1] + slopeFalloff` or above its `height` ceiling. proof: `pnpm exec vitest run packages/terrain/__tests__/grass-field.spec.ts` — 2026-11-13: 2/2 pass. Red check: with the row's slope cover ignored and the field limit raised 40°, a blade at 38.2° fails the 35° bound. `terrain_generate` also returns a `grass` snippet that grows the biome's rows through `grassFieldFromBiome` (`terrain-mcp.spec.ts` asserts it); all 157 terrain MCP, grass and arbor specs pass.
 
 **Verification:** the two boxes above. Then run `pnpm ci:local --affected --base origin/develop --target develop` once before the PR leaves draft.
