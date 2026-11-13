@@ -24,7 +24,10 @@
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
-    "resources": [{ "changed": true, "gte": 3, "id": "state", "path": "coins" }],
+    "resources": [
+      { "changed": true, "gte": 3, "id": "state", "path": "coins" },
+      { "changed": true, "gte": 1, "id": "state", "path": "coins" }
+    ],
     "signals": [{ "entity": "player", "minCount": 3, "name": "collected" }]
   }
 }

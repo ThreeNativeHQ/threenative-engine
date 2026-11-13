@@ -60,12 +60,13 @@ thinking `max`. It is not evidence. Discard it and run again.
 4. **Gate.** Run the sealed proof on the arm's output, then keep the evidence:
 
    ```sh
-   pnpm sweep:archive ../sandbox/wm-<genre>-<n>
-   pnpm sweep:proof docs/benchmark/sweeps/<archive>
+   pnpm sweep:capture <game-dir>        # the sealed proof headed on the GPU; writes proof.json
+   pnpm sweep:archive <game-dir>        # refuses a game without proof.json
    cp artifacts/weak-model/wm-<genre>-<n>/friction.json docs/benchmark/sweeps/<archive>/
    ```
 
-   Long proof runs may go to the laptop (`laptop-offload` skill).
+   `pnpm sweep:proof` runs headless, lands on SwiftShader and fails `TN_PLAYTEST_SOFTWARE_ADAPTER`.
+   When `nvidia-smi` reports a driver/library mismatch, source the per-process driver shim first.
 5. **Read the failures.** Read the session log with `jq`, not whole:
    errors (`toolResult.isError`), reads into `node_modules/@threenative/*/src|dist`, rewrites of
    a shipped system, and the point where the agent gave up or stopped verifying. Write one row
