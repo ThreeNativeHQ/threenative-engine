@@ -6,6 +6,8 @@
  * they live here rather than in a package.
  */
 
+import { MathUtils } from "three";
+
 export const WEATHER_KEYS = ["rain", "cloud", "wind", "fog", "exposure", "wet"] as const;
 
 export type WeatherKey = (typeof WEATHER_KEYS)[number];
@@ -74,7 +76,7 @@ export function sanitizeWeather(
 
 /** Exponential ease towards the target, independent of frame rate because `dt` is real seconds. */
 export function easeWeather(current: Weather, target: Weather, dt: number): Weather {
-  const k = 1 - Math.exp(-dt / EASE_TAU);
+  const k = MathUtils.damp(0, 1, 1 / EASE_TAU, dt);
   const next = { ...current };
   for (const key of WEATHER_KEYS) next[key] = current[key] + (target[key] - current[key]) * k;
   return next;

@@ -42,6 +42,18 @@
         "gte": -0.3,
         "lte": 0.3,
         "allowTrivial": "The capsule's origin is Wren's waist, so feet near zero after 300 ticks prove she stands on the clearing floor on the native host too."
+      },
+      {
+        "entity": "grass",
+        "component": "visibleChunks",
+        "gte": 1,
+        "allowTrivial": "Streamed grass chunks draw round Wren on the native host, from the same GrassField3D as the web."
+      },
+      {
+        "entity": "grass",
+        "component": "standNear",
+        "lte": 0.6,
+        "allowTrivial": "The grass next to Wren is pushed over on the native host too."
       }
     ],
     "movement": {

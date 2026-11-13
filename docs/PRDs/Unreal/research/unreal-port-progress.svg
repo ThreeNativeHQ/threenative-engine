@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" width="1200" height="380" font-family="system-ui, -apple-system, Segoe UI, sans-serif">
 <style>.h{fill:#e7ebe8;font-size:17px;font-weight:700}.t{fill:#9aa49f;font-size:12px}.e{font-size:12.5px;font-weight:600}</style>
 <rect width="1200" height="380" rx="10" fill="#121513"/>
-<text x="16" y="28" class="h">Unreal port burn-up: 435 of 1141 PRD boxes ticked · 22 a week over the last 2 weeks · 84 PRDs open</text>
+<text x="16" y="28" class="h">Unreal port burn-up: 444 of 1150 PRD boxes ticked · 26 a week over the last 2 weeks · 84 PRDs open</text>
 <rect x="56" y="46" width="14" height="4" fill="#3aa56c"/><text x="76" y="52" class="t">Every filed PRD: share of boxes ticked</text><rect x="396" y="46" width="14" height="4" fill="#4a86d6"/><text x="416" y="52" class="t">Default look (waves 1-4): share of boxes ticked</text><rect x="736" y="46" width="14" height="4" fill="#9aa49f"/><text x="756" y="52" class="t">Dashed: finish at the last 2 weeks' pace</text>
 <line x1="56" x2="1176" y1="340" y2="340" stroke="#2c322f"/><text x="48" y="344" class="t" text-anchor="end">0%</text>
 <line x1="56" x2="1176" y1="273.5" y2="273.5" stroke="#2c322f"/><text x="48" y="277.5" class="t" text-anchor="end">25%</text>
@@ -9,31 +9,28 @@
 <line x1="56" x2="1176" y1="140.5" y2="140.5" stroke="#2c322f"/><text x="48" y="144.5" class="t" text-anchor="end">75%</text>
 <line x1="56" x2="1176" y1="74" y2="74" stroke="#2c322f"/><text x="48" y="78" class="t" text-anchor="end">100%</text>
 <text x="56" y="358" class="t" text-anchor="middle">Sep 6</text>
-<text x="108.79461279461279" y="358" class="t" text-anchor="middle">Sep 20</text>
-<text x="161.58922558922558" y="358" class="t" text-anchor="middle">Oct 4</text>
-<text x="214.38383838383837" y="358" class="t" text-anchor="middle">Oct 18</text>
-<text x="267.17845117845116" y="358" class="t" text-anchor="middle">Nov 1</text>
-<text x="319.973063973064" y="358" class="t" text-anchor="middle">Nov 15</text>
-<text x="372.76767676767673" y="358" class="t" text-anchor="middle">Nov 29</text>
-<text x="425.56228956228955" y="358" class="t" text-anchor="middle">Dec 13</text>
-<text x="478.35690235690237" y="358" class="t" text-anchor="middle">Dec 27</text>
-<text x="531.1515151515152" y="358" class="t" text-anchor="middle">Jan 10</text>
-<text x="583.946127946128" y="358" class="t" text-anchor="middle">Jan 24</text>
-<text x="636.7407407407408" y="358" class="t" text-anchor="middle">Feb 7</text>
-<text x="689.5353535353535" y="358" class="t" text-anchor="middle">Feb 21</text>
-<text x="742.3299663299663" y="358" class="t" text-anchor="middle">Mar 7</text>
-<text x="795.1245791245791" y="358" class="t" text-anchor="middle">Mar 21</text>
-<text x="847.9191919191919" y="358" class="t" text-anchor="middle">Apr 4</text>
-<text x="900.7138047138047" y="358" class="t" text-anchor="middle">Apr 18</text>
-<text x="953.5084175084176" y="358" class="t" text-anchor="middle">May 2</text>
-<text x="1006.3030303030304" y="358" class="t" text-anchor="middle">May 16</text>
-<text x="1059.0976430976432" y="358" class="t" text-anchor="middle">May 30</text>
-<text x="1111.892255892256" y="358" class="t" text-anchor="middle">Jun 13</text>
-<text x="1164.6868686868688" y="358" class="t" text-anchor="middle">Jun 27</text>
-<path d="M56.0,309.8L82.4,309.8L108.8,278.6L135.2,308.1L161.6,322.8L188.0,254.7L214.4,242.1L229.5,250.8L233.2,249.0L237.0,247.3L240.8,246.1L244.6,245.9L248.3,245.1L240.8,250.3L244.6,251.2L252.1,245.1L259.6,245.4L263.4,243.5L267.2,245.2L274.7,246.1L278.5,244.3L289.8,242.1L293.6,240.5L312.4,238.6" stroke="#3aa56c" stroke-width="2.5" fill="none"/>
-<path d="M56.0,340.0L82.4,340.0L108.8,340.0L135.2,340.0L161.6,340.0L188.0,340.0L214.4,340.0L229.5,267.0L233.2,264.9L237.0,264.9L240.8,264.9L244.6,264.9L248.3,264.9L240.8,272.8L244.6,272.8L252.1,264.9L259.6,264.9L263.4,264.5L267.2,264.5L274.7,259.1L278.5,254.9L289.8,249.9L293.6,246.1L312.4,241.7" stroke="#4a86d6" stroke-width="2.5" fill="none"/>
-<path d="M312.43097643097644,238.5889570552147L1176,74" stroke="#3aa56c" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
-<circle cx="1176" cy="74" r="4" fill="#3aa56c"/><text x="1172" y="64" class="e" fill="#3aa56c" text-anchor="end">Everything filed ≈ Jun 30, 2027</text>
-<path d="M312.43097643097644,241.74285714285713L689.5353535353535,74" stroke="#4a86d6" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
-<circle cx="689.5353535353535" cy="74" r="4" fill="#4a86d6"/><text x="689.5353535353535" y="92" class="e" fill="#4a86d6" text-anchor="end">Default look ≈ Feb 21, 2027</text>
+<text x="116.7751937984496" y="358" class="t" text-anchor="middle">Sep 20</text>
+<text x="177.5503875968992" y="358" class="t" text-anchor="middle">Oct 4</text>
+<text x="238.32558139534885" y="358" class="t" text-anchor="middle">Oct 18</text>
+<text x="299.1007751937984" y="358" class="t" text-anchor="middle">Nov 1</text>
+<text x="359.87596899224803" y="358" class="t" text-anchor="middle">Nov 15</text>
+<text x="420.6511627906977" y="358" class="t" text-anchor="middle">Nov 29</text>
+<text x="481.4263565891473" y="358" class="t" text-anchor="middle">Dec 13</text>
+<text x="542.2015503875969" y="358" class="t" text-anchor="middle">Dec 27</text>
+<text x="602.9767441860465" y="358" class="t" text-anchor="middle">Jan 10</text>
+<text x="663.7519379844961" y="358" class="t" text-anchor="middle">Jan 24</text>
+<text x="724.5271317829457" y="358" class="t" text-anchor="middle">Feb 7</text>
+<text x="785.3023255813954" y="358" class="t" text-anchor="middle">Feb 21</text>
+<text x="846.077519379845" y="358" class="t" text-anchor="middle">Mar 7</text>
+<text x="906.8527131782946" y="358" class="t" text-anchor="middle">Mar 21</text>
+<text x="967.6279069767442" y="358" class="t" text-anchor="middle">Apr 4</text>
+<text x="1028.4031007751937" y="358" class="t" text-anchor="middle">Apr 18</text>
+<text x="1089.1782945736434" y="358" class="t" text-anchor="middle">May 2</text>
+<text x="1149.953488372093" y="358" class="t" text-anchor="middle">May 16</text>
+<path d="M56.0,309.8L86.4,309.8L116.8,278.6L147.2,308.1L177.6,322.8L207.9,254.7L238.3,242.1L255.7,250.8L260.0,249.0L264.4,247.3L268.7,246.1L273.1,245.9L277.4,245.1L268.7,250.3L273.1,251.2L281.7,245.1L290.4,245.4L294.8,243.5L299.1,245.2L307.8,246.1L312.1,244.3L325.1,242.1L329.5,240.5L351.2,237.3" stroke="#3aa56c" stroke-width="2.5" fill="none"/>
+<path d="M56.0,340.0L86.4,340.0L116.8,340.0L147.2,340.0L177.6,340.0L207.9,340.0L238.3,340.0L255.7,267.0L260.0,264.9L264.4,264.9L268.7,264.9L273.1,264.9L277.4,264.9L268.7,272.8L273.1,272.8L281.7,264.9L290.4,264.9L294.8,264.5L299.1,264.5L307.8,259.1L312.1,254.9L325.1,249.9L329.5,246.1L351.2,238.7" stroke="#4a86d6" stroke-width="2.5" fill="none"/>
+<path d="M351.1937984496124,237.3008695652174L1176,74" stroke="#3aa56c" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
+<circle cx="1176" cy="74" r="4" fill="#3aa56c"/><text x="1172" y="64" class="e" fill="#3aa56c" text-anchor="end">Everything filed ≈ May 22, 2027</text>
+<path d="M351.1937984496124,238.71743486973946L711.5038759689922,74" stroke="#4a86d6" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
+<circle cx="711.5038759689922" cy="74" r="4" fill="#4a86d6"/><text x="711.5038759689922" y="92" class="e" fill="#4a86d6" text-anchor="end">Default look ≈ Feb 4, 2027</text>
 </svg>

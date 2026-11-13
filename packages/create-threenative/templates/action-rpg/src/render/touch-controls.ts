@@ -15,6 +15,9 @@ const MOVE_RADIUS = 72;
 const BUTTON_RADIUS = 58;
 const EDGE = 36;
 
+/** The knob's next point: `update` runs every frame, so it uses one instance. */
+const knobPosition = new Vector2();
+
 export interface ITouchPointer {
   readonly position: Vector2;
 }
@@ -122,13 +125,11 @@ export class TouchControls {
     }
 
     const center = this.#hasMoveAnchor ? this.#moveAnchor : this.#resting;
-    place(
-      this.#moveKnob,
-      new Vector2(
-        center.x + this.#input.move.x * MOVE_RADIUS,
-        center.y - this.#input.move.y * MOVE_RADIUS,
-      ),
+    knobPosition.set(
+      center.x + this.#input.move.x * MOVE_RADIUS,
+      center.y - this.#input.move.y * MOVE_RADIUS,
     );
+    place(this.#moveKnob, knobPosition);
     this.#ability.material = ability ? this.#activeMaterial : this.#idleMaterial;
     this.#attack.material = attack ? this.#activeMaterial : this.#idleMaterial;
     this.#input.abilityPressed = ability && !this.#wasAbility;

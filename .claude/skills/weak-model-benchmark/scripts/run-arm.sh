@@ -34,11 +34,57 @@ if [ ! -f "$XDG/leanpi/leanpi.config.yaml" ]; then
 fi
 
 cd "$GAME" || exit 2
-XDG_CONFIG_HOME="$XDG" systemd-run --user --scope -q -p MemoryMax=6G -p MemorySwapMax=1G \
-  timeout "${MINUTES}m" setsid --wait leanpi -p --approve \
+# A user trusts their own project once (`leanpi trust`, as Claude Code asks once). Untrusted, leanpi
+# drops the project's `.mcp.json`, so the arm would see no engine tool for a reason no user hits twice.
+LEANPI_ROOT="$(dirname "$(dirname "$(readlink -f "$(command -v leanpi)")")")"
+XDG_CONFIG_HOME="$XDG" leanpi trust "$GAME" >/dev/null || { echo "leanpi trust failed (needs leanpi >= 0.1.23)" >&2; exit 2; }
+
+# leanpi -p does not close its MCP children at the end, so it idles to the cap after its last
+# answer. Stop the arm when the session's last message is a final `stop` and nothing was written
+# for WM_IDLE_SECONDS.
+UNIT="wm-arm-$$"
+IDLE="${WM_IDLE_SECONDS:-300}"
+# The arm builds as a developer would, on a machine that holds only its own project: round 2 read the
+# sealed proof out of a repo checkout on this disk. Home and /tmp are empty inside the jail; only the
+# sandbox, the toolchain a developer installs (leanpi patches its own vendor code at start, so it is
+# writable), the arm's config and its session folder come back.
+command -v bwrap >/dev/null || { echo "bwrap is required: an arm never runs unisolated" >&2; exit 2; }
+SANDBOX="$(dirname "$GAME")"
+mkdir -p "$OUT/session"
+JAIL=(bwrap --die-with-parent --ro-bind / / --dev-bind /dev /dev --proc /proc --tmpfs /tmp --tmpfs "$HOME"
+  --bind "$LEANPI_ROOT" "$LEANPI_ROOT"
+  --ro-bind "$(dirname "$(command -v leanpi)")" "$(dirname "$(command -v leanpi)")"
+  --ro-bind-try "$HOME/.nvm" "$HOME/.nvm"
+  --ro-bind-try "$HOME/.config/leanpi" "$HOME/.config/leanpi"
+  --ro-bind-try "$HOME/.cache/ms-playwright" "$HOME/.cache/ms-playwright"
+  --bind-try "$HOME/.local/share/pnpm" "$HOME/.local/share/pnpm"
+  --bind "$XDG" "$XDG" --bind "$SANDBOX" "$SANDBOX" --bind "$OUT/session" "$OUT/session"
+  --chdir "$GAME")
+# The agent's own config, never its history: ~/.pi/agent also holds every past session of every project.
+# Without models-store.json and model.json the model loses its `max` thinking level (VOID run).
+for f in .pi/agent/settings.json .pi/agent/models-store.json .pi/agent/auth.json .pi/agent/trust.json \
+  .pi/agent/extensions .leanpi/model.json .leanpi/model-ids.json; do
+  JAIL+=(--ro-bind-try "$HOME/$f" "$HOME/$f")
+done
+XDG_CONFIG_HOME="$XDG" systemd-run --user --scope -q --unit "$UNIT" -p MemoryMax=6G -p MemorySwapMax=1G \
+  timeout "${MINUTES}m" setsid --wait "${JAIL[@]}" leanpi -p --approve \
   --model opencode-go/deepseek-v4.1-flash:max --session-dir "$OUT/session" \
-  "$PROMPT" </dev/null >"$OUT/arm.log" 2>&1
-echo "arm exit=$? (124 = hit the ${MINUTES} min cap)" | tee -a "$OUT/arm.log"
+  "$PROMPT" </dev/null >"$OUT/arm.log" 2>&1 &
+ARM=$!
+while kill -0 "$ARM" 2>/dev/null; do
+  sleep 15
+  S="$(ls -t "$OUT"/session/*.jsonl 2>/dev/null | head -1)"
+  [ -n "$S" ] || continue
+  if [ $(( $(date +%s) - $(stat -c %Y "$S") )) -ge "$IDLE" ] && grep '"type":"message"' "$S" | tail -n 1 | grep -q '"stopReason":"stop"'; then
+    echo "arm idle ${IDLE}s after a final stop; stopping $UNIT" >>"$OUT/arm.log"
+    systemctl --user stop "$UNIT.scope" 2>/dev/null
+  fi
+done
+wait "$ARM"; ARC=$?
+# The cap kills only the wrapper: the agent and the servers it started (vite, Xvfb) live on in the
+# scope, and a proof run beside them is void. The arm ends with its scope.
+systemctl --user stop "$UNIT.scope" 2>/dev/null
+echo "arm exit=$ARC (124 = hit the ${MINUTES} min cap, 143 = stopped idle after the final answer)" | tee -a "$OUT/arm.log"
 
 SESSION="$(ls -t "$OUT"/session/*.jsonl 2>/dev/null | head -1)"
 [ -n "$SESSION" ] || { echo "no session log in $OUT/session" >&2; exit 1; }

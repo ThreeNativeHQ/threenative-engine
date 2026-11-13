@@ -104,6 +104,13 @@ export async function runTemplatePlaytests(
             "--browser-recipe",
             "webgpu",
             "--headed",
+            // A fresh scaffold's first `pnpm dev` holds its port while it cooks the kit's assets
+            // (the templates await `handle.ready`), and that cook outlives the runner's 15 s
+            // default twice over. `template-nonvisual` already raises this for the same cook, so
+            // the sweep raises it too: an ordinary CLI run keeps 15 s, and every assertion below
+            // in the scenario is unchanged.
+            "--server-timeout",
+            "120000",
             "--server-command",
             "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
           ],
@@ -128,6 +135,8 @@ export async function runTemplatePlaytests(
               "--browser-recipe",
               "webgpu",
               "--headed",
+              "--server-timeout",
+              "120000",
               "--server-command",
               "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
             ],

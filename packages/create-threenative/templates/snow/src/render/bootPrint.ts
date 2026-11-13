@@ -2,6 +2,8 @@
 // Change the sole, the tread or the rim here; `SnowField` only presses whatever shape it is given.
 
 /** One sample of a contact profile, in the shape `SnowField.stamp` reads. */
+import { MathUtils } from "three";
+
 interface IPrintSample {
   readonly bank: number;
   readonly coverage: number;
@@ -14,7 +16,7 @@ const NOTHING: IPrintSample = { bank: 0, coverage: 0, disturbance: 0, relief: 0,
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 }
 
 /** The sole's area, m². Load over this is the pressure a planted boot puts on the snow. */

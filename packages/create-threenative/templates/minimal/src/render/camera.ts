@@ -1,5 +1,5 @@
 // Generated for you. Camera framing is yours to edit.
-import { type PerspectiveCamera, Vector3 } from "three";
+import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
 
 /** Where the camera sits relative to the player's body centre: up and behind, over the shoulder. */
 const OFFSET = new Vector3(0.6, 1.4, 4.6);
@@ -51,7 +51,7 @@ export function followCamera(
   const wall = probe(_aim, _desired);
   if (wall === undefined) {
     const gap = camera.position.distanceTo(_desired);
-    const step = Math.max(gap * (1 - Math.exp(-dt * 8)), SETTLE_SPEED * dt);
+    const step = Math.max(gap * MathUtils.damp(0, 1, 8, dt), SETTLE_SPEED * dt);
     if (gap <= 2 * step) camera.position.copy(_desired);
     else camera.position.lerp(_desired, step / gap);
   } else {

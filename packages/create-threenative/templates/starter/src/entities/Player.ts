@@ -1,6 +1,14 @@
 import { BlendSpace1D, type ICtx, SkeletalMesh3D } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { type AnimationClip, Group, type Mesh, type Object3D, Quaternion, Vector3 } from "three";
+import {
+  type AnimationClip,
+  Group,
+  MathUtils,
+  type Mesh,
+  type Object3D,
+  Quaternion,
+  Vector3,
+} from "three";
 import { type IStarterConventions, preparePlayerConventions } from "../conventions.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -143,7 +151,7 @@ export class Player {
     // Touch walks until the stick is fully deflected; no separate run button.
     const running = ctx.input.pressed("run") || (touch?.move.length() ?? 0) >= 1;
     const speed = running ? RUN_SPEED : WALK_SPEED;
-    const ease = 1 - Math.exp(-dt / 0.15);
+    const ease = MathUtils.damp(0, 1, 1 / 0.15, dt);
     const moveZ = -move.y;
     this.body.velocity.x += (move.x * speed - this.body.velocity.x) * ease;
     this.body.velocity.z += (moveZ * speed - this.body.velocity.z) * ease;

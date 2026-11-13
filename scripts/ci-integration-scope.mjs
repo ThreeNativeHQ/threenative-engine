@@ -8,7 +8,7 @@ import { workspacePackageNamesFromTree } from "./lib/repo-inventory.mjs";
 const WORKFLOW = ".github/workflows/integration.yml";
 const SELECTOR = "scripts/ci-integration-scope.mjs";
 
-// The package lanes share workspace producers, unlike the standalone csg/ik/vegetation/playstation
+// The package lanes share workspace producers, unlike the standalone csg/ik/playstation
 // projects. Producer configuration reaches every package lane; library source reaches its
 // runtime consumers. This inventory adds coverage before the unknown-executable fallback.
 const PACKAGE_LANES = [
@@ -285,7 +285,7 @@ export function integrationSelection({ files, before, after }) {
         [...current.filters.keys()].some(
           (lane) =>
             !PACKAGE_LANES.includes(lane) &&
-            !["csg", "ik", "vegetation", "playstation", "cold-boot"].includes(lane),
+            !["csg", "ik", "playstation", "cold-boot"].includes(lane),
         )
       )
         return all("unclassified additive producer consumer");

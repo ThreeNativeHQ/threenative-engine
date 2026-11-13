@@ -377,29 +377,45 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     } timing;
     // One vertex buffer per attribute, in location order: the renderer binds them the same way. The
     // instance attributes step per instance; the four instance-matrix columns are one mat4 per
-    // instance, the same buffer bound four times at offsets 0, 16, 32 and 48.
+    // instance, so they share one buffer slot (stride 64) at offsets 0, 16, 32 and 48.
     std::vector<WGPUVertexAttribute> attributes(vertex.attributes.size());
-    std::vector<WGPUVertexBufferLayout> buffers(vertex.attributes.size());
+    std::vector<WGPUVertexBufferLayout> buffers;
+    buffers.reserve(vertex.attributes.size());
+    // The matrix's attributes are contiguous in `attributes` order only by chance, so each slot's
+    // attributes are gathered first and pointed at once every slot is known.
+    std::vector<std::vector<WGPUVertexAttribute>> slotAttributes;
+    slotAttributes.reserve(vertex.attributes.size());
+    size_t matrixSlot = SIZE_MAX;
     for (size_t i = 0; i < vertex.attributes.size(); ++i) {
         const shader::Type& t = vertex.attributes[i].type;
         const std::string& name = vertex.attributes[i].name;
-        const bool matrixColumn = name.rfind("instanceMatrix", 0) == 0;
+        const bool matrixColumn = shader::isMatrixColumn(vertex.attributes[i]);
         attributes[i] = {};
         // three's skinning() reads skinIndex as integers (the skin path's own format); a TSL attribute("skinIndex",
         // "vec4") reads it as float, an ordinary attribute (procedural-animals' DQS skin).
         const bool skinIndex = name == "skinIndex" && t.scalar == shader::Type::Scalar::U32;
         attributes[i].format = skinIndex ? target.skinIndex : vertexFormat(t);
         attributes[i].shaderLocation = vertex.attributes[i].location;
-        buffers[i] = {};
-        buffers[i].arrayStride = matrixColumn ? 64
+        attributes[i].offset = shader::matrixColumnOffset(vertex.attributes[i]);
+        if (shader::sharesMatrixSlot(vertex.attributes, i)) {
+            slotAttributes[matrixSlot].push_back(attributes[i]);
+            continue;
+        }
+        if (matrixColumn) matrixSlot = buffers.size();
+        slotAttributes.push_back({attributes[i]});
+        WGPUVertexBufferLayout& layout = buffers.emplace_back();
+        layout = {};
+        layout.arrayStride = matrixColumn ? 64
                                  : skinIndex  ? (target.skinIndex == WGPUVertexFormat_Uint8x4    ? 4
                                                  : target.skinIndex == WGPUVertexFormat_Uint16x4 ? 8
                                                                                                  : 16)
                                               : uint64_t{t.rows} * 4;
         const bool perInstance = matrixColumn || name == "instanceColor" || (i < 64 && (target.instanceStepMask >> i) & 1u);
-        buffers[i].stepMode = perInstance ? WGPUVertexStepMode_Instance : WGPUVertexStepMode_Vertex;
-        buffers[i].attributeCount = 1;
-        buffers[i].attributes = &attributes[i];
+        layout.stepMode = perInstance ? WGPUVertexStepMode_Instance : WGPUVertexStepMode_Vertex;
+    }
+    for (size_t slot = 0; slot < buffers.size(); ++slot) {
+        buffers[slot].attributeCount = slotAttributes[slot].size();
+        buffers[slot].attributes = slotAttributes[slot].data();
     }
 #ifdef __EMSCRIPTEN__
     if (pending) wgpuDevicePushErrorScope(device, WGPUErrorFilter_Validation);

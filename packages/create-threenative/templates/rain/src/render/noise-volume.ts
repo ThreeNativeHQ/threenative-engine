@@ -4,6 +4,7 @@
 import {
   Data3DTexture,
   LinearFilter,
+  MathUtils,
   NoColorSpace,
   RGBAFormat,
   RepeatWrapping,
@@ -76,7 +77,7 @@ function sampleLattice(lattice: ILattice, x: number, y: number, z: number): numb
     values[((c % n) * n + (b % n)) * n + (a % n)] as number;
   const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
   const blend = (fx: number, fy: number, fz: number): number => {
-    const smooth = (f: number): number => f * f * (3 - 2 * f);
+    const smooth = (f: number): number => MathUtils.smoothstep(f, 0, 1);
     const tx = smooth(fx);
     const ty = smooth(fy);
     const tz = smooth(fz);

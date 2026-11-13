@@ -140,6 +140,22 @@ export function debugFlag(name: string): boolean {
 }
 
 /**
+ * The text this launch gave a debug switch, or `undefined` when no seam named it.
+ *
+ * `debugFlag`'s non-boolean sibling: the same naming rule — `?name` on the web, `TN_DEBUG_NAME` on
+ * a native launch — for a switch whose value is a word rather than a yes or no, such as a quality
+ * tier or a mode. An empty string means a seam named the switch and gave no value.
+ *
+ * @situation read a debug override whose value is not a boolean
+ * @situation override a quality tier or a mode for one run without changing the code
+ * @constraint a name in camelCase becomes UPPER_SNAKE: `debugValue("quality")` reads `?quality=` or `TN_DEBUG_QUALITY`
+ * @example const tier = debugValue("quality");
+ */
+export function debugValue(name: string): string | undefined {
+  return readLaunchValue({ environment: envName(name), query: name });
+}
+
+/**
  * Publish one game object for a capture script or the console, in development builds only.
  *
  * @situation expose a game object to a capture script or the console in dev builds

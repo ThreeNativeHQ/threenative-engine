@@ -13,7 +13,8 @@ function importedName(
 }
 
 /** Warns on a Three.js math constructor that runs directly inside a per-frame callback: a
- * `Scene` `update`/`render` method or a function registered with `ctx.beforeRender` or `ctx.afterPhysics`. It is
+ * `Scene` `update`/`render` method, a non-static `update`/`fixedUpdate`/`tick`/`step` method on an
+ * entity class, or a function registered with `ctx.beforeRender` or `ctx.afterPhysics`. It is
  * syntactic on purpose. A callback hidden behind a helper is outside its coverage. */
 export const hotCallbackAllocation: Rule.RuleModule = {
   meta: {

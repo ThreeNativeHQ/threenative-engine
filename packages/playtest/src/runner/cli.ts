@@ -1,4 +1,5 @@
 import { toneCommand } from "./tone.js";
+import { runProjectCheck } from "./projectCheck.js";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -315,6 +316,17 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     // bytes that are no longer on disk has not measured this run, so it is exit 2 and not a verdict.
     config = await resolveBuildReport(parseStandalonePlaytestArgs(argv));
     assertCpuProfileTargetSupported(config.target ?? "browser", config.cpuProfilePath);
+    // The project's typecheck and lint are its guardrails; a run of a game that fails them is a defect.
+    if (argv.includes("--skip-check")) {
+      process.stderr.write(`${JSON.stringify({ diagnostics: [{ code: "TN_PLAYTEST_CHECK_SKIPPED", message: "--skip-check: the project's typecheck and lint did not run before these scenarios.", severity: "warning" }] })}\n`);
+    } else {
+      const failed = runProjectCheck(config.projectPath);
+      if (failed !== undefined) {
+        process.stderr.write(`${JSON.stringify({ diagnostics: [failed], pass: false }, null, 2)}\n`);
+        process.exitCode = 1;
+        return 1;
+      }
+    }
     const scenarioPaths = config.scenarioPaths ?? [config.scenarioPath];
     const reports = config.target === "browser"
       ? config.device === undefined
