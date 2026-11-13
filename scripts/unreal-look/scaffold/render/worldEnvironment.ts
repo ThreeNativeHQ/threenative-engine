@@ -724,6 +724,7 @@ export class WorldEnvironment {
       giVisualize,
       ssgiProbeJitter: options.ssgiProbeJitter ?? 1,
       ssgiProbeRays: options.ssgiProbeRays,
+      ssgiProbeMiss: options.ssgiProbeMiss ?? false,
       ssgiProbeDebug: options.ssgiProbeDebug ?? 0,
       ssgiTimedPass: options.ssgiTimedPass,
       giDenoisePasses:
@@ -1080,8 +1081,9 @@ export class WorldEnvironment {
                   ...(fallback === undefined ? {} : { fallback }),
                   // The arms a judge compares: the miss tier changes what reaches the screen, so it is opt-in until a
                   // PRD-647 round says it wins (PRD-640 Phase 2).
-                  ...(options.ssgiProbeMiss === true && reflectionTrace.current !== undefined
-                    ? { radiance: cacheRadiance, trace: reflectionTrace.current }
+                  ...(options.ssgiProbeMiss === true &&
+                  (reflectionTrace.gi ?? reflectionTrace.current) !== undefined
+                    ? { radiance: cacheRadiance, trace: reflectionTrace.gi ?? reflectionTrace.current }
                     : {}),
                 })
               : undefined;

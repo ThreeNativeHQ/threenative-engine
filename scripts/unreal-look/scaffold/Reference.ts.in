@@ -358,6 +358,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       // floor, which stood in for what the screen cannot see, is not needed. The cube capture stays: a ray that
       // misses sees the sky, and the capture draws the sky at a finer grain than the 64 x 32 environment.
       const tracing = TUNED && level >= 8 && !OFF.has("traced");
+      // The tier past the screen walks the packed scene, which only a smooth surface needs for reflections.
+      if (GI_METHOD !== "none" && params.get("probeMiss") === "1" && reflectionTrace.current === undefined)
+        reflectionTrace.gi ??= new TracedReflections(model);
       if (tracing) reflectionTrace.current = new TracedReflections(model);
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
@@ -598,6 +601,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     this.#reflectionsDispose?.();
     this.#reflectionsDispose = undefined;
     reflectionTrace.current?.dispose();
+    reflectionTrace.gi?.dispose();
+    reflectionTrace.gi = undefined;
     reflectionTrace.current = undefined;
     this.#dispose?.();
     this.#dispose = undefined;

@@ -42,6 +42,11 @@ export const reflectionTrace: {
   current?: TracedReflections;
   /** The scene's point and spot lamps: each lights a hit like the sun (the scene registers them with the trace). */
   lamps?: readonly (PointLight | SpotLight)[];
+  /**
+   * The packed scene the screen-probe gather walks for a ray that leaves the frame (`?probeMiss=1`, PRD-640 Phase 2).
+   * Reflections are not the reason for it, so a rough scene registers none in `current` and still needs this one.
+   */
+  gi?: TracedReflections;
 } = {};
 
 export interface ITracedReflectionStage {
