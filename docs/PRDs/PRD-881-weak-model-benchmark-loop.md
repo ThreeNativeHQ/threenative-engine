@@ -46,8 +46,15 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 
 | Run | Verdict | Proof | First src write | Searches before write | Tool errors | Internal reads | Typecheck / playtest | Cost | Fix |
 |---|---|---|---|---|---|---|---|---|---|
+| wm-platformer-1 | VALID, discarded: shared sandbox root, the arm ran a sibling game's scripts (calls 11-19) | 0/2 (GPU headed: attach timeout) | call 50 | 0 | 9 | 21 | 2 / 33 | $0.156 | own sandbox root per run; kit coin moved off the spawn |
+| control (pristine kit) | n/a | 1/2: run fails `coins` trivial, `goalReached` false | - | - | - | - | - | - | - |
 
 ## Decisions
+
+- 2026-11-13 (lead): the proof step is `pnpm sweep:capture` (headed). `pnpm sweep:proof` runs
+  headless and fails every run on SwiftShader (`TN_PLAYTEST_SOFTWARE_ADAPTER`).
+- 2026-11-13 (lead): the kit level is not reshaped to the sealed run's input (hold ArrowRight 6 s).
+  That fits the benchmark, not a real game. Only the spawn-coin defect is fixed in the kit.
 
 - 2026-11-13 (lead): the cache seed, not `tools` hints in `.mcp.json`, is the fix. Hints fill only
   the catalog row; leanpi refuses a tool without a cached schema. Claude Code's `.mcp.json` stays
