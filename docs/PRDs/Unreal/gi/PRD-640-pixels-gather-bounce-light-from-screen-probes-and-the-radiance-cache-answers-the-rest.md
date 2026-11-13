@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-640 — Pixels gather bounce light from screen probes, and the radiance cache answers the rest
 
-**Status:** PARTIAL (Phase 1 done, gate FAIL; Phase 2 and Phase 3 mechanisms done and run on the owned engine in a browser, reported by the chain; AC-1 to AC-3 and the native conformance row unrun — no GPU host and no GPU-backed desktop runtime in the executing environment)
+**Status:** PARTIAL (all three phases done: the gather, the tier past the screen, short-range AO and the native proof, each with a receipt; AC-1 to AC-3 unrun — they need an Unreal capture on the reference GPU)
 **Priority:** P1 — no box is ticked: the Epic tier of Unreal, which a fresh project runs, gathers GI with screen probes, and ThreeNative has only a per-pixel SSGI whose misses read a 1 m field.
 **Complexity:** 8 (HIGH) — 6–10 files: the gather, the short range AO, the composite, specs, conformance (+2), new module `screen-probe-gather.ts` (+2), state across frames: probe radiance history (+2), native proof (+1), changes the frame cost of the high tier (+1); risk override: none
 **Owner:** João
@@ -141,10 +141,10 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 **Verification:** AC-1 and AC-2. A PRD-647 round on `cornell` and `sunlit-room` at `high` (BEFORE `ssgi`, AFTER the gather, Unreal Epic as the target) must return IMPROVEMENT against BEFORE. The four PRD-631 poses are judged the same way.
 
 #### Phase 3: Short Range AO and native proof
-**Status:** PARTIAL (the pass and its chain receipt are done; the conformance row is blocked: the only desktop runtime here reports a null WebGPU backend)
+**Status:** DONE (the pass, its chain receipt and the native conformance row)
 **Files:** `packages/core/src/render/short-range-ao.ts` (new), `packages/core/__tests__/short-range-ao.spec.ts` (new), `packages/core/src/index.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `scripts/unreal-look/scaffold/render/quality.ts`, `scripts/unreal-look/scaffold/CalibrationScene.ts.in`, `scripts/unreal-look/scaffold/Reference.ts.in`, `packages/runtime-native/conformance/scenes/shared/screen-probe-gather.js` (new), `packages/runtime-native/conformance/registry.json`
 - [x] With the gather on, the chain reports `shortRangeAO` and no `gtao` stage. proof: `TN_RENDER_CHAIN` in the harness capture at L7. — Evidence: on the owned engine in a headed browser at `main.html?tnGi=cornell&layer=L7&tier=high&probes=1&probeRays=4&probeMiss=1` (adapter `google/swiftshader`, the only one this host has) the line reads `"requested":["shortRangeAO","ssgi","traa","motionBlur"]`, `"stages":["shortRangeAO","ssgi","traa","motionBlur"]` and `"dropped":[]`: short-range AO in the chain and no `ambientOcclusion`/`gtao`. `?shortRangeAO=0` puts GTAO back for the A/B. `pnpm exec vitest run packages/core/__tests__/short-range-ao.spec.ts` passes 6 tests.
-- [ ] The conformance row `screen-probe-gather` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests screen-probe-gather`. — Blocked, not declined: the prebuilt desktop runtime on this host reports `"adapter":{"identity":"native:null/Null backend"}`, and an existing row (`30-screen-space-text`) fails on it before any comparison, so a new row cannot pass here. Needs a host whose native runtime has a GPU adapter.
+- [x] The conformance row `screen-probe-gather` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests screen-probe-gather`. — Evidence: the new row (`conformance/scenes/shared/screen-probe-gather.js`, a room whose red and green walls bleed onto a box and the floor through `ScreenProbeGather`, with `ShortRangeAO` over the contact) passes both lanes of the owned engine: `--target web --engine threenative` (Wasm in Chromium) writes the reference, and `--target desktop --engine threenative` (the V8 player, after `install-prebuilt.mjs` placed `tn-engine-player-v8` and `VK_ICD_FILENAMES` pointed at the only Vulkan driver this host has, SwiftShader) reports **pass, `pixelMismatchRatio` 0, `perceptualDeltaE` 0** at 1280x720. The same program through two engines is what the row compares; a three.js lane draws the room without the gather.
 **Verification:** AC-3.
 
 ## Decisions

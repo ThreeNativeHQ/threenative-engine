@@ -2392,6 +2392,19 @@
       },
       "desktopGate": false,
       "required": false
+    },
+    {
+      "id": "screen-probe-gather",
+      "title": "screen probes gather bounce light, a missed ray walks the scene to the cache, short-range AO keeps the contact",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/screen-probe-gather.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 4.0
+      },
+      "desktopGate": true,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [
