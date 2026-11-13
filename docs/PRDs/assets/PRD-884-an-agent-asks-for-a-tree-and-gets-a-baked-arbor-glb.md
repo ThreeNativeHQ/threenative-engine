@@ -1,6 +1,6 @@
 # PRD-884 — An agent asks for a tree and gets a baked Arbor GLB
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phases 1 and 2 done; Phase 3's asset MCP box waits on the npm release
 **Priority:** P2 — no box is ticked: no engine surface bakes a procedural tree (AC-1), and neither MCP offers one (AC-2).
 **Complexity:** 6 (MEDIUM) — 6 to 10 implementation files (2), a new optional package (2), crosses into the separate `threenative-asset-mcp` repository and its release (2); risk override: none.
 **Owner:** João
@@ -67,8 +67,9 @@ Risks:
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `engine_search_capabilities "procedural oak tree"` returns `bakeVegetation` as its first row, and the `procedural-vegetation` recipe names the package, not EZ Tree. proof: a new row in `scripts/fixtures/capability-recall/corpus.json`, then `pnpm build && pnpm caps:recall`
+- [x] AC-1 [local]: `engine_search_capabilities "procedural oak tree"` returns `bakeVegetation` as its first row, and the `procedural-vegetation` recipe names the package, not EZ Tree. proof: a new row in `scripts/fixtures/capability-recall/corpus.json`, then `pnpm build && pnpm caps:recall` — 2026-11-13: row `vegetation.procedural-oak`, `pnpm caps:recall` exit 0, `bakeVegetation` row 1 (Phase 1).
 - [ ] AC-2 [local]: A cooked world with `species: ["arbor:oak@7"]` draws Arbor oaks that sway. The visual judge returns IMPROVEMENT against the criteria in Phase 2. proof: Phase 2 boxes
+  Left open: the oaks draw and the judge passed (Phase 2), but the sway is not shown. The cooked world draws through `WorldCells`, which applies no wind to the baked `_WIND` attribute, and no kit ships `render/wind.ts`. That needs its own change.
 
 ## Blocked on
 
@@ -115,7 +116,7 @@ Risks:
 
 #### Phase 2: A terrain cook grows Arbor species
 
-**Status:** PARTIAL (2026-11-13): resolver, request words and spec done; the visual judge box is open.
+**Status:** DONE (2026-11-13)
 **Files:**
 - `packages/terrain/src/mcp/cook.ts`: the `arbor:` resolver feeds `assetTable`.
 - `packages/terrain/src/mcp/tools.ts`: the schema text that lists the presets.
@@ -133,7 +134,7 @@ Risks:
    - the canopy sways under `render/wind.ts`.
 
 - [x] A spec cooks a biome with `species: ["arbor:oak@7", "arbor:spruce"]`. It asserts that both rows place instances and that each instance references a baked GLB. proof: `pnpm exec vitest run packages/terrain/__tests__/arbor-species.spec.ts`
-- [ ] The visual judge returns IMPROVEMENT. The frames show the cooked world against the same world with an empty species row, headed WebGPU, with `adapter.info` checked and two runs per arm. proof: the judge verdict on BEFORE and AFTER sheets posted to the PR (`prd-884-screenshots`)
+- [x] The visual judge returns IMPROVEMENT. The frames show the cooked world against the same world with an empty species row, headed WebGPU, with `adapter.info` checked and two runs per arm. proof: the judge verdict on BEFORE and AFTER sheets posted to the PR (`prd-884-screenshots`) — 2026-11-13: a scaffolded starter game, worlds cooked live through the project's `threenative-terrain` MCP server: AFTER `terrain_generate {request: "an oak forest with a meadow"}` (`decided.tree` arbor:oak; the kit tree slots `fir`/`fir-c` now hold baked English oaks with `_WIND`; plus the reply's `grass` snippet pasted unchanged), BEFORE `{request: "a forest with a meadow", seed: 73}` (same ground, byte-identical heightmap). Two fixed cameras (eye-level meadow, raised stand), two runs per arm, RTX 2080 (nvidia/turing). Fresh judge: meadow IMPROVEMENT, stand IMPROVEMENT, overall IMPROVEMENT; silhouette, leaf value, trunks on ground and nothing-broken PASS. Open follow-up: the grass meets a terrain ledge about 30 m out, and the far-thinned grass past it reads as a hard edge against the pale ground texture. The run also found and fixed two snippet defects (its biome literal did not typecheck without `as const`, and blades grew through the starter arena floor) and one engine bug (the owned engine batched position-node materials, see PRD-883 Decisions).
 
 **Verification:** the two boxes above.
 

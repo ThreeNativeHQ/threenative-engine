@@ -1424,14 +1424,19 @@ function grassSnippet(
     'import { GrassField3D } from "@threenative/core";',
     'import { grassFieldFromBiome } from "@threenative/terrain";',
     "// The look: copy src/render/grass.ts from the adventure kit (npm create threenative -- --template adventure).",
-    'import { grassBlade, grassMaterial } from "./render/grass";',
-    `const grassBiome = ${JSON.stringify({ grass: biome.grass, seed: biome.seed })};`,
+    'import { grassBlade, grassMaterial } from "./render/grass.js";',
+    // `as const` keeps the rows' [min, max] pairs as the tuples grassFieldFromBiome reads.
+    `const grassBiome = ${JSON.stringify({ grass: biome.grass, seed: biome.seed })} as const;`,
     `const grassPlacement = grassFieldFromBiome(grassBiome, { heightAt: (x, z) => terrainField.heightAt(x, z) + terrainSeat, floor: terrainSeat, waterLevel: ${ocean === undefined ? "null" : `${ocean.level} + terrainSeat`} });`,
     'if (grassPlacement === null) throw new Error("terrain: the biome has no grass row.");',
-    `const grass = new GrassField3D({ ...grassPlacement, blade: grassBlade(), material: grassMaterial, bounds: { minX: ${extent.minX}, minZ: ${extent.minZ}, maxX: ${extent.minX + extent.sizeX}, maxZ: ${extent.minZ + extent.sizeZ} } });`,
+    // The starter arena stands on the cooked centre (PLAY_AREA_CLEAR_RADIUS above), so no blade grows through its floor.
+    "// Named override: grassKeepOut = null grows grass there too; set it to the game's own floor half-size otherwise.",
+    "const grassKeepOut: { x: number; z: number } | null = { x: 14, z: 12 };",
+    "const grassCover = grassPlacement.getDensity;",
+    `const grass = new GrassField3D({ ...grassPlacement, getDensity: (x, z, y, normalY) => (grassKeepOut !== null && Math.abs(x) < grassKeepOut.x && Math.abs(z) < grassKeepOut.z ? 0 : grassCover(x, z, y, normalY)), blade: grassBlade(), material: grassMaterial, bounds: { minX: ${extent.minX}, minZ: ${extent.minZ}, maxX: ${extent.minX + extent.sizeX}, maxZ: ${extent.minZ + extent.sizeZ} } });`,
     "ctx.add(grass);",
     "grass.prewarm();",
-    "// Once per drawn frame: the player parts the grass, and the camera streams the chunks.",
+    "// In enter(), after creating the player: once per drawn frame the player parts the grass and the camera streams the chunks.",
     "ctx.beforeRender(() => { grass.pushers[0]?.set(player.position.x, player.position.y, player.position.z, 1.2); grass.update(ctx.camera); });",
   ].join("\n");
 }

@@ -803,6 +803,7 @@ describe("terrain_generate result", () => {
         expect(result.load).not.toContain("ctx.assets.model");
         expect(result.load).not.toContain("applyTerrainSurface");
         expect(result.grass).toContain("grassFieldFromBiome(grassBiome");
+        expect(result.grass).toContain("} as const;");
         expect(result.grass).toContain("new GrassField3D(");
         expect(result.grass).toContain("grass.update(ctx.camera)");
         // No authoring import leaks into the game: only core/world, physics and three are allowed.
