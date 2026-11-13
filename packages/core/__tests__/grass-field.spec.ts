@@ -125,6 +125,40 @@ describe("GrassField3D", () => {
     expect(grass.pressAt(3, 0, 0)).toBe(0);
   });
 
+  it("writes nothing to its meshes or uniforms while the camera stands still", () => {
+    // On the owned engine every write crosses into the engine and can re-plan the frame.
+    const grass = field();
+    const camera = cameraAt(20, 20);
+    for (let i = 0; i < 4; i++) grass.update(camera);
+    const writes: string[] = [];
+    const watch = (target: object, key: string, label: string) => {
+      let value = (target as Record<string, unknown>)[key];
+      Object.defineProperty(target, key, {
+        configurable: true,
+        get: () => value,
+        set: (next: unknown) => {
+          writes.push(label);
+          value = next;
+        },
+      });
+    };
+    for (const mesh of grass.children as Mesh[]) {
+      const geo = mesh.geometry as InstancedBufferGeometry;
+      watch(mesh, "visible", `${mesh.name}.visible`);
+      watch(mesh, "receiveShadow", `${mesh.name}.receiveShadow`);
+      watch(geo, "instanceCount", `${mesh.name}.instanceCount`);
+      vi.spyOn(geo, "setDrawRange").mockImplementation(() =>
+        writes.push(`${mesh.name}.setDrawRange`),
+      );
+    }
+    for (const [name, node] of Object.entries(grass.nodes))
+      if (typeof node === "object" && node !== null && "value" in node)
+        watch(node, "value", `nodes.${name}`);
+    grass.update(camera);
+    grass.update(camera);
+    expect(writes).toEqual([]);
+  });
+
   it("fails closed on a malformed field, naming it", () => {
     expect(() => field({ chunkSize: 0 })).toThrow(/chunkSize/);
     expect(() => field({ bounds: { minX: 5, minZ: 0, maxX: 1, maxZ: 9 } })).toThrow(/bounds\.minX/);

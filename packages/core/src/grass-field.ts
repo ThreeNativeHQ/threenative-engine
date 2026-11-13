@@ -367,7 +367,7 @@ export class GrassField3D extends Group {
       if (chunkDistance(chunk.ix, chunk.iz, cx, cz, this.chunkSize) > R * DISCARD_BAND) {
         this.#dispose(chunk);
         this.#chunks.delete(k);
-      } else if (chunk.mesh) chunk.mesh.visible = false;
+      } else if (chunk.mesh?.visible) chunk.mesh.visible = false;
     }
   }
 
@@ -399,11 +399,15 @@ export class GrassField3D extends Group {
   #syncNodes(): void {
     const k = this.cullDistanceScale;
     const n = this.nodes;
-    n.thinStart.value = this.thinStart * k;
-    n.thinEnd.value = Math.max(this.thinEnd, this.thinStart + 0.01) * k;
-    n.farDensity.value = this.farDensity;
-    n.drawDistance.value = this.drawDistance * k;
-    n.fadeStart.value = this.drawDistance * k * (1 - Math.min(Math.max(this.fadeRange, 0.01), 1));
+    // Only on change: on the owned engine each uniform write crosses into the engine.
+    setIfChanged(n.thinStart, this.thinStart * k);
+    setIfChanged(n.thinEnd, Math.max(this.thinEnd, this.thinStart + 0.01) * k);
+    setIfChanged(n.farDensity, this.farDensity);
+    setIfChanged(n.drawDistance, this.drawDistance * k);
+    setIfChanged(
+      n.fadeStart,
+      this.drawDistance * k * (1 - Math.min(Math.max(this.fadeRange, 0.01), 1)),
+    );
   }
 
   #layoutKey(): string {
@@ -441,16 +445,19 @@ export class GrassField3D extends Group {
       }
       n = lo;
     }
-    geo.instanceCount = n;
-    mesh.visible = n > 0 && d < R;
-    if (!mesh.visible) return;
+    // Every write below is guarded: a standing camera re-plans nothing on the owned engine.
+    if (geo.instanceCount !== n) geo.instanceCount = n;
+    const visible = n > 0 && d < R;
+    if (mesh.visible !== visible) mesh.visible = visible;
+    if (!visible) return;
     const lods = this.blade.lods;
     let lod = 0;
     while (lod < lods.length - 1 && d >= (this.lodDistances[lod] ?? Number.POSITIVE_INFINITY) * k)
       lod++;
     const range = lods[lod] as { start: number; count: number };
-    geo.setDrawRange(range.start, range.count);
-    mesh.receiveShadow = this.receiveShadow;
+    if (geo.drawRange.start !== range.start || geo.drawRange.count !== range.count)
+      geo.setDrawRange(range.start, range.count);
+    if (mesh.receiveShadow !== this.receiveShadow) mesh.receiveShadow = this.receiveShadow;
     this.stats.visibleChunks++;
     this.stats.blades += n;
     this.stats.triangles += n * (range.count / 3);
@@ -578,6 +585,10 @@ export class GrassField3D extends Group {
 }
 
 const scratch = new Vector3();
+
+function setIfChanged(node: { value: number }, value: number): void {
+  if (node.value !== value) node.value = value;
+}
 /** Height, d/dx and d/dz of the last `groundGrid` sample. */
 const sample = new Float64Array(3);
 /** x, z and random of the last `nearestTuft` centre. */
