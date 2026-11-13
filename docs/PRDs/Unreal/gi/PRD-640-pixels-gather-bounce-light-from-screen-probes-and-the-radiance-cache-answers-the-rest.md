@@ -149,6 +149,33 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 
 ## Decisions
 
+- **2026-11-13, GI session: cornell L7 measured on the reference RTX 2080, and it fails the thresholds — the gap it
+  shows is older than this PRD.** With the driver healthy for a window, `pnpm unreal-look:capture --engine threenative
+  --scene gi:cornell --layers L7` ran on the reference card (adapter not software, so the gate passed) and
+  `pnpm unreal-look:compare --scene gi:cornell --layer L7` printed, per-region p50 against Unreal's committed stats
+  (L7 thresholds `dP50` 0.01, `deltaE` 1; only `Shade` passes):
+
+  | cell/region | Unreal | per-pixel gather | probes + `?probeMiss=1` | verdict |
+  |---|---|---|---|---|
+  | cornell Floor | 139 | 161 | 162 | FAIL (dP50 0.165) |
+  | cornell Ceiling | 202 | 199 | 199 | FAIL (0.015) |
+  | cornell Back | 228 | 219 | 219 | FAIL (0.039) |
+  | cornell Wall_Red | 100 | 105 | 105 | FAIL (0.050) |
+  | cornell Wall_Green | 174 | 178 | 178 | FAIL (0.023) |
+  | cornell Box_Tall | 173 | 162 | 160 | FAIL (0.075) |
+  | cornell Box_Short | 58 | 95 | 92 | FAIL (0.586) |
+  | corner Floor | 93 | 116 | 118 | FAIL (0.269) |
+  | corner Back | 111 | 102 | 104 | FAIL (0.063) |
+  | corner Wall_Red | 90 | 87 | 87 | FAIL (0.033) |
+  | corner Box_Tall | 164 | 148 | 147 | FAIL (0.104) |
+
+  Two things follow. The probe gather with the tier past the screen moves `Box_Short` 95 -> 92 and `corner Back`
+  102 -> 104 against the per-pixel arm, i.e. this PRD's own lever works and is small; and the dominant gaps
+  (`Floor` +23, `corner Floor` +25, `Box_Short` +34) are the same size in the Phase 1 table above with the cache alone
+  (`Floor` 164, `corner Floor` 96, `Box_Short` 101), so they are the calibration PRD-647 already tracks, not a
+  regression from this change. AC-2 therefore stays open with these numbers: reaching `dP50` 0.01 on cornell needs the
+  tuning round, which is a capture-and-tune campaign and not a code change in this PRD.
+
 - **2026-11-13, GI session: two follow-ups this PRD deliberately leaves out, recorded so they are not lost.** (a) The
   sweep offsets the search from the view-space tangent's `.xy`; Unreal rotates a screen-space direction, so the reach
   shortens where a sweep turns toward the camera. A refinement exists (a 2D slice direction) but it was not shipped: the
