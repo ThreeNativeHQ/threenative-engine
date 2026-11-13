@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-640 — Pixels gather bounce light from screen probes, and the radiance cache answers the rest
 
-**Status:** PARTIAL (Phase 1 done, gate FAIL; Phase 2 mechanism done and proven in node, its ACs unrun; Phase 3 not started — no GPU host in the executing environment)
+**Status:** PARTIAL (Phase 1 done, gate FAIL; Phase 2 mechanism done, proven in node and run on the owned engine in a browser on a software adapter, its ACs unrun; Phase 3 not started — no GPU host in the executing environment)
 **Priority:** P1 — no box is ticked: the Epic tier of Unreal, which a fresh project runs, gathers GI with screen probes, and ThreeNative has only a per-pixel SSGI whose misses read a 1 m field.
 **Complexity:** 8 (HIGH) — 6–10 files: the gather, the short range AO, the composite, specs, conformance (+2), new module `screen-probe-gather.ts` (+2), state across frames: probe radiance history (+2), native proof (+1), changes the frame cost of the high tier (+1); risk override: none
 **Owner:** João
@@ -136,7 +136,7 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 #### Phase 2: Screen probes
 **Status:** DONE in node (the gather, the tier past the screen and both specs); AC-1 and AC-2 unrun
 **Files:** `packages/core/src/render/screen-probe-gather.ts` (new), `packages/core/src/index.ts`, `packages/core/__tests__/screen-probe-gather.spec.ts` (new), `packages/three-native/src/addons/screen-space.ts`, `packages/three-native/__tests__/screen-space.spec.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/engine-mcp/__tests__/search.spec.ts`
-- [x] A ray that leaves the screen continues through the BVH and then reads the radiance cache, and a ray that hits on screen never reads the cache. proof: `pnpm exec vitest run packages/core/__tests__/screen-probe-gather.spec.ts` — Evidence: 11 tests pass. `packages/three-native/src/addons/screen-space.ts` gained the `miss` tier: it is asked only where the screen march found nothing, with the receiver's view position, the ray and its normal (`screen-space.spec.ts`, 2 new tests: on a hit the `miss` tier is never asked and only the tier below is; on a miss the tier below is never asked). `ScreenProbeGather` walks the registered packed scene up to `cacheCellSize` (1 m) along each such ray and reads the radiance cache where the walk ended: the hit's position when it found one, else the cell the ray reached (spec: `far` is the cell, the read is the `select` of the hit's position over the reached point, and the pixel's own camera read is subtracted).
+- [x] A ray that leaves the screen continues through the BVH and then reads the radiance cache, and a ray that hits on screen never reads the cache. proof: `pnpm exec vitest run packages/core/__tests__/screen-probe-gather.spec.ts` — Evidence: 11 tests pass. Run on the owned engine in a browser: `main.html?tnGi=cornell&layer=L7&tier=high&probes=1&probeRays=8[&probeMiss=1]` (headed, `adapter.info` = `google/swiftshader`, the only adapter this host has) prints `TN_RENDER_CHAIN` applying `ambientOcclusion, ssgi, traa, motionBlur` with nothing dropped and `TN_SCREEN_PROBE_GATHER` reporting `worldTrace: false` then `true`, with no page or console error in either arm; each arm renders twice to a byte-identical frame. The two frames differ (the room's back wall and the unlit outside of the box lose the cache's mean), and that difference is **not judged**: the capture gate refuses a software adapter, so no PRD-647 round was run. `packages/three-native/src/addons/screen-space.ts` gained the `miss` tier: it is asked only where the screen march found nothing, with the receiver's view position, the ray and its normal (`screen-space.spec.ts`, 2 new tests: on a hit the `miss` tier is never asked and only the tier below is; on a miss the tier below is never asked). `ScreenProbeGather` walks the registered packed scene up to `cacheCellSize` (1 m) along each such ray and reads the radiance cache where the walk ended: the hit's position when it found one, else the cell the ray reached (spec: `far` is the cell, the read is the `select` of the hit's position over the reached point, and the pixel's own camera read is subtracted).
 - [x] A capability search for "lumen screen probe gather" returns `ScreenProbeGather`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — Evidence: 109 tests pass, including the three new searches (`lumen screen probe gather` returns it first, `lumen final gather` and the plain-language row contain it). Manifest regenerated: 567 entries.
 **Verification:** AC-1 and AC-2. A PRD-647 round on `cornell` and `sunlit-room` at `high` (BEFORE `ssgi`, AFTER the gather, Unreal Epic as the target) must return IMPROVEMENT against BEFORE. The four PRD-631 poses are judged the same way.
 
@@ -149,6 +149,12 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 
 ## Decisions
 
+- **2026-11-12, GI session: two silent gates kept the tier past the screen off, and a browser run found them.**
+  Neither is visible in a unit spec. (a) The chain is built from a *resolved options* whitelist, and `ssgiProbeMiss` was
+  not in it, so the stage never saw the scene's flag. (b) The packed scene was registered only where a reflection needed
+  one, which a rough scene (cornell has no surface under roughness 0.4) never does; the gather now reads
+  `reflectionTrace.gi ?? reflectionTrace.current`, a pack a scene registers for `?probeMiss=1` alone, so no reflection
+  appears that was not there. Both are why the Phase 2 box carries a runtime receipt and not only a spec.
 - **2026-11-12, GI session: Phase 2 landed in node; every GPU proof is unrun, because the executing host has no usable adapter.**
   `vulkaninfo --summary` fails with `vkEnumeratePhysicalDevices failed` (its `.icd` is present) and `nvidia-smi` reports a
   driver/library version mismatch, so no capture, no `unreal-look:compare` and no `pnpm parity` lane can run here. What that
