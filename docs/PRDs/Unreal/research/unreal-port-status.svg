@@ -215,10 +215,10 @@
 <rect x="454.7337312109026" y="213.61079082248088" width="38.57334397638641" height="46.075393407282974" rx="2" fill="#3aa56c"><title>Nanite · [builder] DAG build and error propagation · Done</title></rect>
 <text x="457.7337312109026" y="224.61079082248088" class="l">[buil…</text>
 <rect x="494.307075187289" y="213.61079082248088" width="37.641475593896985" height="46.075393407282974" rx="2" fill="#d9961f"><title>Nanite · Node and cluster hierarchy traversal · In progress</title></rect>
-<rect x="494.307075187289" y="256.68618422976385" width="18.820737796948492" height="3" fill="#fff" opacity=".85"/>
+<rect x="494.307075187289" y="256.68618422976385" width="32.93629114465986" height="3" fill="#fff" opacity=".85"/>
 <text x="497.307075187289" y="224.61079082248088" class="l">Node…</text>
 <rect x="532.948550781186" y="213.61079082248088" width="34.162500299269595" height="46.075393407282974" rx="2" fill="#d9961f"><title>Nanite · Instance culling and instance hierarchy · In progress</title></rect>
-<rect x="532.948550781186" y="256.68618422976385" width="8.038235364534023" height="3" fill="#fff" opacity=".85"/>
+<rect x="532.948550781186" y="256.68618422976385" width="14.06691188793454" height="3" fill="#fff" opacity=".85"/>
 <text x="535.948550781186" y="224.61079082248088" class="l">Inst…</text>
 <rect x="362.60301046210975" y="260.68618422976385" width="37.48818162795243" height="38.86698160097984" rx="2" fill="#4a86d6"><title>Nanite · Shared and glue · Not started</title></rect>
 <text x="365.60301046210975" y="271.68618422976385" class="l">Shar…</text>
@@ -256,7 +256,7 @@
 <rect x="472.7534452071623" y="301.3155031429247" width="31.559418524583123" height="26.724924200301018" rx="2" fill="#3b403d"><title>Nanite · Editor hit proxies and selection · Out of scope by rule</title></rect>
 <text x="475.7534452071623" y="312.3155031429247" class="l">Edi…</text>
 <rect x="505.31286373174544" y="301.3155031429247" width="31.313289010898416" height="26.724924200301018" rx="2" fill="#d9961f"><title>Nanite · [builder] Hierarchy encode · In progress</title></rect>
-<rect x="505.31286373174544" y="325.0404273432257" width="15.656644505449208" height="3" fill="#fff" opacity=".85"/>
+<rect x="505.31286373174544" y="325.0404273432257" width="27.399127884536114" height="3" fill="#fff" opacity=".85"/>
 <text x="508.31286373174544" y="312.3155031429247" class="l">[bu…</text>
 <rect x="537.6261527426439" y="301.3155031429247" width="29.484898337811615" height="26.724924200301018" rx="2" fill="#4a86d6"><title>Nanite · Tessellation pattern table · Not started</title></rect>
 <text x="540.6261527426439" y="312.3155031429247" class="l">Tes…</text>
@@ -265,7 +265,7 @@
 <rect x="437.9436997003186" y="354.91499432378674" width="28.839264365941006" height="24.384518363504924" rx="2" fill="#6c7176"><title>Nanite · Ray-triangle decode for ray tracing · Deferred</title></rect>
 <text x="440.9436997003186" y="365.91499432378674" class="l">Ray…</text>
 <rect x="437.9436997003186" y="380.29951268729167" width="28.839264365941006" height="23.3390813137853" rx="2" fill="#d9961f"><title>Nanite · Frustum, clip-plane, draw-distance and WPO-distance tests · In progress</title></rect>
-<rect x="437.9436997003186" y="400.63859400107697" width="10.574396934178369" height="3" fill="#fff" opacity=".85"/>
+<rect x="437.9436997003186" y="400.63859400107697" width="13.458323370772469" height="3" fill="#fff" opacity=".85"/>
 <text x="440.9436997003186" y="391.29951268729167" class="l">Fru…</text>
 <rect x="437.9436997003186" y="404.63859400107697" width="28.839264365941006" height="22.718353065514293" rx="2" fill="#4a86d6"><title>Nanite · Stats print · Not started</title></rect>
 <text x="440.9436997003186" y="415.63859400107697" class="l">Sta…</text>
