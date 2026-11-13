@@ -35,21 +35,21 @@
     "test": "pnpm run build && publint --strict"
   },
   "devDependencies": {
+    "@threenative/blender-bridge": "workspace:*",
+    "@threenative/procedural-vegetation": "workspace:*",
     "@types/node": "20.19.43",
     "@types/pngjs": "6.0.5",
     "@types/three": "0.187.0",
+    "@typescript/native": "catalog:",
     "ooz-wasm": "2.0.0",
     "publint": "0.3.22",
-    "@threenative/blender-bridge": "workspace:*",
     "tsup": "8.5.1",
-    "typescript": "catalog:",
-    "@typescript/native": "catalog:"
+    "typescript": "catalog:"
   },
   "dependencies": {
     "@gltf-transform/core": "catalog:",
     "@gltf-transform/extensions": "catalog:",
     "@gltf-transform/functions": "catalog:",
-    "@threenative/procedural-vegetation": "workspace:*",
     "@threenative/terrain": "workspace:*",
     "@wasm-audio-decoders/ogg-vorbis": "0.1.20",
     "draco3dgltf": "^1.5.7",

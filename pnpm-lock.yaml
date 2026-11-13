@@ -1141,9 +1141,6 @@ importers:
       '@gltf-transform/functions':
         specifier: 'catalog:'
         version: 4.4.2(@types/node@20.19.43)
-      '@threenative/procedural-vegetation':
-        specifier: workspace:*
-        version: link:../procedural-vegetation
       '@threenative/terrain':
         specifier: workspace:*
         version: link:../terrain
@@ -1187,6 +1184,9 @@ importers:
       '@threenative/blender-bridge':
         specifier: workspace:*
         version: link:../blender-bridge
+      '@threenative/procedural-vegetation':
+        specifier: workspace:*
+        version: link:../procedural-vegetation
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43

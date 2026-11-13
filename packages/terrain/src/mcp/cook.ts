@@ -1156,7 +1156,10 @@ async function cookInto(
       : { ...(file as Record<string, unknown>), water: request.water }
   ) as unknown;
   const declaredBiome = validateBiome(declared, request.biome ?? request.kit);
-  if (request.treeSpecies !== undefined) parseArborSpecies(request.treeSpecies);
+  if (request.treeSpecies !== undefined && parseArborSpecies(request.treeSpecies) === undefined)
+    throw new Error(
+      `cook: treeSpecies '${request.treeSpecies}' must read arbor:<preset> or arbor:<preset>@<seed>.`,
+    );
   // A spec names its own shape, size and seed, so its ground comes from the preset it carries. A
   // starter keeps its authored crop unless the request overrides the shape; the kit still supplies
   // the surface, the assets and the art.
@@ -1407,7 +1410,7 @@ async function cookInto(
       "  ctx.add(world);",
       "  // The curtain stays up until the ground the camera sees has streamed, so no tree stands over a hole.",
       "  const terrainStreamed = world;",
-      '  ctx.startup.hold("terrain", () => { const ground = terrainStreamed.terrainReadinessInView(ctx.camera); return ground.loaded >= ground.required; });',
+      '  if (!ctx.startup.ready) ctx.startup.hold("terrain", () => { const ground = terrainStreamed.terrainReadinessInView(ctx.camera); return ground.loaded >= ground.required; });',
       "} catch (error) { terrainAnchor.removeFromParent(); throw error; }",
       'const loadCells = (follow: TerrainAnchor, invalidate?: NonNullable<TerrainWorldOptions["shadows"]>["invalidate"]) => { terrainFollow = follow; terrainInvalidate = invalidate; };',
       "// Call loadCells(player.mesh) after creating the player; optionally forward streamed shadow invalidation.",

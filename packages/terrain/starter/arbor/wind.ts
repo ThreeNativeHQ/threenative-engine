@@ -19,8 +19,12 @@ const swaying = new WeakMap<Material, Material>();
 
 export function arborWind(material: Material, geometry: BufferGeometry): Material {
   if (geometry.getAttribute("_wind") === undefined) return material;
+  const reach = windReach(geometry);
   const known = swaying.get(material);
-  if (known !== undefined) return known;
+  if (known !== undefined) {
+    grow(known, reach);
+    return known;
+  }
   const source = material as MeshStandardMaterial;
   const own = new MeshStandardNodeMaterial();
   for (const key of [
@@ -55,10 +59,26 @@ export function arborWind(material: Material, geometry: BufferGeometry): Materia
   own.positionNode = positionLocal.add(push.add(normalLocal.mul(flutter)).mul(strength));
   // Cached shadow pages would freeze a moving cast mid-sway; the shadow keeps the rest pose.
   own.castShadowPositionNode = positionLocal;
-  // engine-override: the farthest the wind moves a vertex, so the owned engine grows each tree's
-  // shadow and cull box by it: a cooked oak's largest trunk + branch + flutter is 0.76 m.
-  (own as MeshStandardNodeMaterial & { maxPositionOffset?: number }).maxPositionOffset =
-    0.8 * strength;
+  grow(own, reach);
   swaying.set(material, own);
   return own;
+}
+
+/** The farthest the wind moves any vertex of `geometry`: its largest trunk + branch + flutter. */
+function windReach(geometry: BufferGeometry): number {
+  const wind = geometry.getAttribute("_wind");
+  let reach = 0;
+  for (let vertex = 0; vertex < wind.count; vertex += 1)
+    reach = Math.max(
+      reach,
+      Math.abs(wind.getX(vertex)) + Math.abs(wind.getY(vertex)) + Math.abs(wind.getZ(vertex)),
+    );
+  return reach * ARBOR_WIND.strength;
+}
+
+// engine-override: the farthest the wind moves a vertex, so the owned engine grows each tree's
+// shadow and cull box by it, measured per geometry: a palm sways farther than an oak.
+function grow(material: Material, reach: number): void {
+  const swayed = material as Material & { maxPositionOffset?: number };
+  swayed.maxPositionOffset = Math.max(swayed.maxPositionOffset ?? 0, reach);
 }
