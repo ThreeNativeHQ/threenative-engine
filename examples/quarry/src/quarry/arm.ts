@@ -44,6 +44,9 @@ export function armFromLocation(): QuarryArm {
  * the cull. Anything else is on, and a misspelling fails closed rather than measuring the wrong arm.
  */
 export function viewCullFromLocation(): boolean {
+  // A native entry has no URL, so the before arm is baked in instead: `VITE_QUARRY_VIEW_CULL=off`
+  // at bundle time builds the every-cluster arm of the same source.
+  if (import.meta.env?.VITE_QUARRY_VIEW_CULL === "off") return false;
   const search = globalThis.location?.search;
   if (typeof search !== "string") return true;
   const value = new URLSearchParams(search).get("viewCull");
