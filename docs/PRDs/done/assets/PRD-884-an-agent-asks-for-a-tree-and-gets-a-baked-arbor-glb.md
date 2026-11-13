@@ -4,7 +4,7 @@
 **Priority:** P2 — no box is ticked: no engine surface bakes a procedural tree (AC-1), and neither MCP offers one (AC-2).
 **Complexity:** 6 (MEDIUM) — 6 to 10 implementation files (2), a new optional package (2), crosses into the separate `threenative-asset-mcp` repository and its release (2); risk override: none.
 **Owner:** João
-**Depends on:** None. Related: [PRD-883](../../rendering/PRD-883-grass-grows-sways-and-parts-on-every-engine.md) (grass, its sibling), [PRD-870](../../strata-terrain-hardening/PRD-870-the-procedural-forest-set-reads-like-the-fab-set.md) (the procedural Strata spruce could come from here once this lands).
+**Depends on:** None. Related: [PRD-883](../rendering/PRD-883-grass-grows-sways-and-parts-on-every-engine.md) (grass, its sibling), [PRD-870](../../strata-terrain-hardening/PRD-870-the-procedural-forest-set-reads-like-the-fab-set.md) (the procedural Strata spruce could come from here once this lands).
 
 ## Context
 
