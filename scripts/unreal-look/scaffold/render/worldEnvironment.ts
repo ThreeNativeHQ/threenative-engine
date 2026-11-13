@@ -13,7 +13,12 @@
 // you turned off. What it does not own: any colour, and any strength that is not a quality
 // tier. Those are arguments, supplied by `postprocessing.ts`, yours to change.
 
-import { GIVisualize, type GIVisualizeMode, RENDER_CHAIN_TIERS } from "@threenative/core";
+import {
+  GIVisualize,
+  type GIVisualizeMode,
+  RENDER_CHAIN_TIERS,
+  ScreenProbeGather,
+} from "@threenative/core";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -193,6 +198,13 @@ export interface IWorldEnvironmentOptions {
   readonly ssgiProbeRays?: number;
   /** Screen probes only, diagnosis: 1 draws the probes' weight and trust, 2 the sign of the gathered delta. */
   readonly ssgiProbeDebug?: number;
+  /**
+   * Screen probes only, owned engine only: a ray that leaves the frame continues through the scene's packed triangles
+   * (up to the radiance cache's cell) and reads the cache where it ended, so a miss carries a direction's light instead
+   * of the pixel's mean (PRD-640 Phase 2). Off by default: it changes what reaches the screen, and the two arms are
+   * captured for the judge.
+   */
+  readonly ssgiProbeMiss?: boolean;
   /**
    * Diagnosis, owned engine only: label one pass group as the `SSGI` GPU stage and leave the others in the frame, so
    * `info.engine.gpuStages.SSGI` times that group alone (`trace`, `filter`, `gather` of the screen probes, or the chain's
@@ -1040,36 +1052,49 @@ export class WorldEnvironment {
               ? undefined
               : (position: Node<"vec3">, direction: Node<"vec3">, normal: Node<"vec3">) =>
                   cache(position, direction, normal).mul(gain);
-          const gi = (ssgi as unknown as (...args: unknown[]) => ReturnType<typeof ssgi>)(
-            base,
-            depth(),
-            normal(),
-            wasmEngine
-              ? {
+          // Screen probes go through the package's gather: it owns the grid, the tier below and (with `ssgiProbeMiss`)
+          // the tier past the screen, where a ray that leaves the frame continues through the registered scene to the
+          // radiance cache. The composite below stays here, because its strength is a look.
+          const worldRadiance = giCache.radiance;
+          const probes =
+            wasmEngine && options.ssgiScreenProbes === true
+              ? new ScreenProbeGather({
                   camera: view,
-                  fallback,
-                  ...(options.ssgiScreenProbes
+                  viewport: drawingBufferSize(renderer),
+                  downsampleFactor: 16,
+                  ...(options.ssgiProbeRays === undefined
+                    ? {}
+                    : { tracingOctahedronResolution: options.ssgiProbeRays }),
+                  ...(options.ssgiTimedPass === undefined
+                    ? {}
+                    : {
+                        timedPass:
+                          options.ssgiTimedPass === "denoise" ? null : options.ssgiTimedPass,
+                      }),
+                  ...(fallback === undefined ? {} : { fallback }),
+                  // The arms a judge compares: the miss tier changes what reaches the screen, so it is opt-in until a
+                  // PRD-647 round says it wins (PRD-640 Phase 2).
+                  ...(options.ssgiProbeMiss === true &&
+                  worldRadiance !== undefined &&
+                  reflectionTrace.current !== undefined
                     ? {
-                        probes: {
-                          downsampleFactor: 16,
-                          viewport: drawingBufferSize(renderer),
-                          ...(options.ssgiProbeRays === undefined
-                            ? {}
-                            : { tracingOctahedronResolution: options.ssgiProbeRays }),
-                          ...(options.ssgiTimedPass === undefined
-                            ? {}
-                            : {
-                                timedPass:
-                                  options.ssgiTimedPass === "denoise"
-                                    ? null
-                                    : options.ssgiTimedPass,
-                              }),
-                        },
+                        radiance: (position: Node<"vec3">, direction: Node<"vec3">) =>
+                          worldRadiance(position, direction).mul(gain),
+                        trace: reflectionTrace.current,
                       }
                     : {}),
-                }
-              : view,
-          );
+                })
+              : undefined;
+          const gi = (
+            probes === undefined
+              ? (ssgi as unknown as (...args: unknown[]) => ReturnType<typeof ssgi>)(
+                  base,
+                  depth(),
+                  normal(),
+                  wasmEngine ? { camera: view, fallback } : view,
+                )
+              : probes.gather(base, depth(), normal())
+          ) as ReturnType<typeof ssgi>;
           const tier = SSGI_QUALITY[options.ssgiQuality];
           const probeUniforms = gi as unknown as {
             probeJitter?: { value: number };

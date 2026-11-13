@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-640 — Pixels gather bounce light from screen probes, and the radiance cache answers the rest
 
-**Status:** PARTIAL (Phase 1 done, gate FAIL; Phases 2 and 3 not started)
+**Status:** PARTIAL (Phase 1 done, gate FAIL; Phase 2 mechanism done and proven in node, its ACs unrun; Phase 3 not started — no GPU host in the executing environment)
 **Priority:** P1 — no box is ticked: the Epic tier of Unreal, which a fresh project runs, gathers GI with screen probes, and ThreeNative has only a per-pixel SSGI whose misses read a 1 m field.
 **Complexity:** 8 (HIGH) — 6–10 files: the gather, the short range AO, the composite, specs, conformance (+2), new module `screen-probe-gather.ts` (+2), state across frames: probe radiance history (+2), native proof (+1), changes the frame cost of the high tier (+1); risk override: none
 **Owner:** João
@@ -120,7 +120,8 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Screen Probe Gather | `worldEnvironment.ts` builds `ScreenProbeGather` on `high` | Replaces per-pixel `ssgi` on `high`; `ssgi` stays a named override | AC-1, AC-2 |
+| Screen Probe Gather | `worldEnvironment.ts` builds `ScreenProbeGather` on `high` (`finalGatherMethod: "screenProbeGather"`), the class composes the engine's three passes | Replaces per-pixel `ssgi` on `high`; `ssgi` stays a named override | `packages/core/__tests__/screen-probe-gather.spec.ts`, AC-1, AC-2 |
+| The tier past the screen | The same file, with `ssgiProbeMiss: true` and the scene's registered `TracedReflections` | Adds a direction's radiance where the gather used to add none; off by default until a judge round | Phase 2 box 1 |
 | Composite after the scene pass | The same file, with the `diffuseColor` MRT | Replaces `irradianceNode` as the indirect diffuse source while the gather runs | AC-1 |
 | Short Range AO | The same file when the gather runs | Replaces GTAO when dynamic GI runs | Phase 3 |
 
@@ -133,20 +134,37 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 - [x] Unreal's screen probe gather GPU time and ours at 1920 × 1080 on the RTX 2080 are recorded, and the gate verdict with them. proof: `TN_UE_RESOLUTION=1920x1080 TN_UE_PROFILE_FRAME=40 pnpm unreal-look:capture --engine unreal --scene gi:cornell --variants L7-Epic` (`ProfileGPU` in `Saved/Logs`), and the frame budget's `gpuMs` with `?ssgi=0` and `?ssgi=1` — FAIL, recorded under `## Decisions` 2026-10-20.
 
 #### Phase 2: Screen probes
-**Status:** NOT STARTED
-**Files:** `packages/core/src/render/screen-probe-gather.ts` (new), `packages/core/src/index.ts`, `packages/core/__tests__/screen-probe-gather.spec.ts` (new), `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/engine-mcp/__tests__/search.spec.ts`
-- [ ] A ray that leaves the screen continues through the BVH and then reads the radiance cache, and a ray that hits on screen never reads the cache. proof: `pnpm exec vitest run packages/core/__tests__/screen-probe-gather.spec.ts`.
-- [ ] A capability search for "lumen screen probe gather" returns `ScreenProbeGather`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
+**Status:** DONE in node (the gather, the tier past the screen and both specs); AC-1 and AC-2 unrun
+**Files:** `packages/core/src/render/screen-probe-gather.ts` (new), `packages/core/src/index.ts`, `packages/core/__tests__/screen-probe-gather.spec.ts` (new), `packages/three-native/src/addons/screen-space.ts`, `packages/three-native/__tests__/screen-space.spec.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/engine-mcp/__tests__/search.spec.ts`
+- [x] A ray that leaves the screen continues through the BVH and then reads the radiance cache, and a ray that hits on screen never reads the cache. proof: `pnpm exec vitest run packages/core/__tests__/screen-probe-gather.spec.ts` — Evidence: 11 tests pass. `packages/three-native/src/addons/screen-space.ts` gained the `miss` tier: it is asked only where the screen march found nothing, with the receiver's view position, the ray and its normal (`screen-space.spec.ts`, 2 new tests: on a hit the `miss` tier is never asked and only the tier below is; on a miss the tier below is never asked). `ScreenProbeGather` walks the registered packed scene up to `cacheCellSize` (1 m) along each such ray and reads the radiance cache where the walk ended: the hit's position when it found one, else the cell the ray reached (spec: `far` is the cell, the read is the `select` of the hit's position over the reached point, and the pixel's own camera read is subtracted).
+- [x] A capability search for "lumen screen probe gather" returns `ScreenProbeGather`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — Evidence: 109 tests pass, including the three new searches (`lumen screen probe gather` returns it first, `lumen final gather` and the plain-language row contain it). Manifest regenerated: 567 entries.
 **Verification:** AC-1 and AC-2. A PRD-647 round on `cornell` and `sunlit-room` at `high` (BEFORE `ssgi`, AFTER the gather, Unreal Epic as the target) must return IMPROVEMENT against BEFORE. The four PRD-631 poses are judged the same way.
 
 #### Phase 3: Short Range AO and native proof
-**Status:** NOT STARTED
+**Status:** NOT STARTED (blocked: no GPU host — the appearances it replaces are tuned by eye, and AC-3 is a GPU-time claim)
 **Files:** `packages/core/src/render/short-range-ao.ts` (new), `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/runtime-native/conformance/scenes/shared/screen-probe-gather.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] With the gather on, the chain reports `shortRangeAO` and no `gtao` stage. proof: `TN_RENDER_CHAIN` in the harness capture at L7.
 - [ ] The conformance row `screen-probe-gather` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests screen-probe-gather`.
 **Verification:** AC-3.
 
 ## Decisions
+
+- **2026-11-12, GI session: Phase 2 landed in node; every GPU proof is unrun, because the executing host has no usable adapter.**
+  `vulkaninfo --summary` fails with `vkEnumeratePhysicalDevices failed` (its `.icd` is present) and `nvidia-smi` reports a
+  driver/library version mismatch, so no capture, no `unreal-look:compare` and no `pnpm parity` lane can run here. What that
+  leaves open, precisely: AC-1 and AC-2 (the judge round), AC-3 (GPU time), and both Phase 3 boxes — Short Range AO replaces
+  a GTAO that was tuned by eye on the reference poses, so shipping it unjudged would be an unmeasured appearance change.
+  Phase 3 therefore waits for a host with an adapter.
+- **2026-11-12, GI session: the tier past the screen is opt-in (`ssgiProbeMiss`), not the default look.**
+  The mechanism is what Phase 2 exists for (a missed ray carries a direction's radiance instead of the pixel's mean), but on
+  a GPU-less host nothing can say whether it wins on `cornell`, and the PRD's own gate rejected three nearby levers on
+  measurement. With the flag off the graph is the one the reference poses were tuned on: the same `fallback`, and a miss
+  that adds nothing. With it on, the capture's AFTER arm is the judge's to accept.
+- **2026-11-12, GI session: the world-space walk reuses the scene's existing pack, and the phase owner moved to core.**
+  `three-native/src/addons/screen-space.ts` keeps the three passes (trace, filter, gather); `@threenative/core`'s
+  `ScreenProbeGather` owns the grid, the validation, the report and both tiers below the screen, because both the harness and
+  the framework's `look/world-environment.ts` were hand-building the same probe block. The walk itself is
+  `TracedReflections.trace` (PRD-642's pack), in world space, bounded by `cacheCellSize` (1 m, the radiance cache's cell).
 
 - **2026-10-22, team-lead (stable-epic triage): `lane/bounceconv` stays out of the stable epic.** The last commit records measurement only for converged GI bake passes. The lane tested a rejected lever. Next step: retain the measurements as reference. Do not queue this branch.
 
