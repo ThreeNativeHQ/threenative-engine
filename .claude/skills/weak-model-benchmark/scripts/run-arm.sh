@@ -34,19 +34,10 @@ if [ ! -f "$XDG/leanpi/leanpi.config.yaml" ]; then
 fi
 
 cd "$GAME" || exit 2
-# A user trusts their own project once (`/permissions trust project`). Untrusted, leanpi drops the
-# project's MCP configs, so the arm would see no engine tool for a reason no user hits twice.
+# A user trusts their own project once (`leanpi trust`, as Claude Code asks once). Untrusted, leanpi
+# drops the project's `.mcp.json`, so the arm would see no engine tool for a reason no user hits twice.
 LEANPI_ROOT="$(dirname "$(dirname "$(readlink -f "$(command -v leanpi)")")")"
-NODE=""
-for c in "$(command -v node)" "$HOME"/.nvm/versions/node/v*/bin/node; do
-  "$c" -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=19)?0:1)' 2>/dev/null && { NODE="$c"; break; }
-done
-[ -n "$NODE" ] || { echo "no Node >= 22.19 for the leanpi trust grant" >&2; exit 2; }
-XDG_CONFIG_HOME="$XDG" "$NODE" --input-type=module -e '
-  const { grantTrust } = await import(process.argv[1] + "/dist/permissions/trust.js");
-  const r = grantTrust(process.cwd(), process.env);
-  if (!r.trusted) throw new Error(`trust grant failed: ${r.reason}`);
-' "$LEANPI_ROOT" || exit 2
+XDG_CONFIG_HOME="$XDG" leanpi trust "$GAME" >/dev/null || { echo "leanpi trust failed (needs leanpi >= 0.1.23)" >&2; exit 2; }
 
 # leanpi -p does not close its MCP children at the end, so it idles to the cap after its last
 # answer. Stop the arm when the session's last message is a final `stop` and nothing was written

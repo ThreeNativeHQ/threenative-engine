@@ -25,14 +25,9 @@ describe("run-arm.sh", () => {
     root = mkdtempSync(path.join(tmpdir(), "run-arm-"));
     const pidFile = path.join(root, "child.pid");
     mkdirSync(path.join(root, "leanpi", "bin"), { recursive: true });
-    mkdirSync(path.join(root, "leanpi", "dist", "permissions"), { recursive: true });
     writeFileSync(path.join(root, "leanpi", "package.json"), "{}");
-    writeFileSync(
-      path.join(root, "leanpi", "dist", "permissions", "trust.js"),
-      "export const grantTrust = () => ({ trusted: true });\n",
-    );
     const stub = path.join(root, "leanpi", "bin", "leanpi");
-    writeFileSync(stub, `#!/bin/sh\nsleep 300 &\necho $! > ${pidFile}\n`);
+    writeFileSync(stub, `#!/bin/sh\n[ "$1" = trust ] && exit 0\nsleep 300 &\necho $! > ${pidFile}\n`);
     chmodSync(stub, 0o755);
     mkdirSync(path.join(root, "xdg", "leanpi"), { recursive: true });
     writeFileSync(path.join(root, "xdg", "leanpi", "leanpi.config.yaml"), "{}\n");
@@ -62,17 +57,12 @@ describe("run-arm.sh", () => {
     writeFileSync(path.join(secret, "proof.json"), "{}");
     const seen = path.join(root, "game", "seen.txt");
     mkdirSync(path.join(root, "leanpi", "bin"), { recursive: true });
-    mkdirSync(path.join(root, "leanpi", "dist", "permissions"), { recursive: true });
     writeFileSync(path.join(root, "leanpi", "package.json"), "{}");
-    writeFileSync(
-      path.join(root, "leanpi", "dist", "permissions", "trust.js"),
-      "export const grantTrust = () => ({ trusted: true });\n",
-    );
     const stub = path.join(root, "leanpi", "bin", "leanpi");
     const probe = path.join(secret, "proof.json");
     writeFileSync(
       stub,
-      `#!/bin/sh\n{ test -e ${probe} && echo secret; test -e ${root}/brief.md && echo brief; } > ${seen}\n`,
+      `#!/bin/sh\n[ "$1" = trust ] && exit 0\n{ test -e ${probe} && echo secret; test -e ${root}/brief.md && echo brief; } > ${seen}\n`,
     );
     chmodSync(stub, 0o755);
     writeFileSync(path.join(root, "brief.md"), "brief");

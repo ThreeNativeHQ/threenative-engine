@@ -55,6 +55,14 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 - [x] The installed playtest package carries its reference docs. proof: `pnpm exec vitest run
   packages/playtest/__tests__/published-docs.spec.ts` RED → GREEN (`npm pack` lists `docs/*.md`). The
   arm grepped `node_modules/@threenative/playtest/docs` for `holdTicks` and read minified dist instead.
+- [x] leanpi finds a trusted project's `.mcp.json` servers itself, like Claude Code (owner: "it needs to
+  discover them like the other harness"). proof: lean-pi `401c27d` red→green (`tests/mcp/execution.spec.ts
+  -t "cold project"`), real cold `-p` run printed `CharacterBody3D`; `leanpi trust [dir]` (`c443909`) and an
+  `.mcp.json` edit revokes trust (`a1cf47d`); published `leanpi@0.1.23`. Core's leanpi-only host, `default`
+  flag, schema-cache seed and scaffolder reseed removed (`8fbd213ef`, 193 lines); run-arm uses `leanpi trust`.
+- [x] An explicit CLI thinking level holds for the whole session. proof: lean-pi `f7d29ce`
+  `tests/cli/thinking-pick.spec.ts` RED 3/3 (`expected 'low' to be 'max'`) → GREEN; real `:max` and
+  `--thinking max` runs stay `max` through `model_change`; `leanpi@0.1.24`. Round 4 was VOID on this.
 - [x] A playtest of an installed game fails while its typecheck or lint fails. proof: `pnpm exec
   vitest run packages/playtest/__tests__/project-check.spec.ts` RED (exit 2, no check) → GREEN 2/2;
   pristine platformer and minimal kits pass both scripts. `wm-platformer-2` finished with 2 lint
@@ -81,6 +89,7 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 | wm-platformer-1 | VALID, discarded: shared sandbox root, the arm ran a sibling game's scripts (calls 11-19) | 0/2 (GPU headed: attach timeout) | call 50 | 0 | 9 | 21 | 2 / 33 | $0.156 | own sandbox root per run; kit coin moved off the spawn |
 | wm-platformer-2 | VOID: read the sealed proof in `.claude/worktrees/strata-chain/docs/benchmark/genres/platformer/proof` | 2/2 (laptop Iris Xe, headed) after the provenance fix; 0/2 before | call 94 | 0 | 7 | 12 | 9 / 30 | $0.146 | proof reads `engine: "threejs"`; run-arm stops its scope |
 | wm-platformer-3 | VALID, unjailed but no read outside its sandbox | 1/2 (laptop Iris Xe): run fails `goalReached` | call 25 | 0 | 5 | 7 | 0 / 29 | $0.070 | playtest gates on check; docs ship |
+| wm-platformer-4 | VOID: thinking `high` (leanpi replaced the CLI `:max` with its compiled effort 7 ms after start); jailed | 1/2 (laptop Iris Xe): run fails `goalReached` | call 37 | 0 | 4 | 4 | 0 / 31 | $0.052 | leanpi 0.1.24 holds an explicit CLI level |
 | control (pristine kit) | n/a | 1/2: run fails `coins` trivial, `goalReached` false | - | - | - | - | - | - | - |
 
 ## Decisions
