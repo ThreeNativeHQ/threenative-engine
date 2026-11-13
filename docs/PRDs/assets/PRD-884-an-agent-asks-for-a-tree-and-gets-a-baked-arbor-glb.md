@@ -153,6 +153,6 @@ Risks:
 4. The change lands as its own PR in the asset MCP repository, after the release named under `## Blocked on`.
 
 - [ ] `asset_search { query: "oak tree" }` returns an `arbor` row for `oak`, and `vegetation_generate { preset: "oak", seed: 7 }` writes a GLB that the Phase 1 parser accepts. proof: `npm test -- tests/arbor.test.ts` in `threenative-asset-mcp`
-- [ ] The EZ Tree integration is deleted, and no doc links to it. proof: `pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts`
+- [x] The EZ Tree integration is deleted, and no doc links to it. proof: `pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts` — `pnpm check:docs` exit 0 (3953 links), the two specs plus `vegetation-not-owned`, `ci-structure`, `ci-integration-scope`, `package-list-drift` green, 328 tests (2026-11-13). The `vegetation` integration CI lane left with it; `foliage-conifer.mjs` now bakes an Arbor spruce; PRD-786's wind-helper reference moved to the quarry sway material.
 
 **Verification:** the two boxes above. Then run `pnpm ci:local --affected --base origin/develop --target develop` once before the PR leaves draft.

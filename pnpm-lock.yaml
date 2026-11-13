@@ -1141,6 +1141,9 @@ importers:
       '@gltf-transform/functions':
         specifier: 'catalog:'
         version: 4.4.2(@types/node@20.19.43)
+      '@threenative/procedural-vegetation':
+        specifier: workspace:*
+        version: link:../procedural-vegetation
       '@threenative/terrain':
         specifier: workspace:*
         version: link:../terrain
