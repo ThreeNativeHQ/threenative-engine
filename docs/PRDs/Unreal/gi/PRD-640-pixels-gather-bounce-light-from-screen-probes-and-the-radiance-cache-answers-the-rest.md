@@ -149,6 +149,19 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 
 ## Decisions
 
+- **2026-11-13, GI session: the last three boxes are one host step away, and it is not a code change.** This workstation
+  does have the reference card (`/dev/nvidia0`, an RTX 2080), but the running NVIDIA kernel module is `615.78.08` while the
+  userspace driver and Vulkan ICD are `620.70.06`: `nvidia-smi` reports `Driver/library version mismatch`, Vulkan
+  enumerates no device, and Chromium falls back to SwiftShader, which `unreal-look:capture` refuses by design. A reboot
+  loads modules that match the installed driver; reloading them live (`sudo modprobe -r nvidia_drm nvidia_modeset
+  nvidia_uvm nvidia && sudo modprobe nvidia`) does the same without a reboot but drops the desktop session that holds
+  `nvidia_drm` open (a live KDE Wayland session as this was written), so it was not done from here. After either:
+  `TN_UE_RESOLUTION=1920x1080 TN_UE_PROFILE_FRAME=40 pnpm unreal-look:capture --engine unreal --scene gi:cornell --variants
+  L7-Epic` (if Unreal's own frames are not already on disk), then `pnpm unreal-look:capture --engine threenative --scene
+  gi:cornell --layers L7` and `pnpm unreal-look:compare --scene gi:cornell,gi:sunlit-room --layer L7` for AC-1 and AC-2,
+  and `node packages/playtest/dist/runner/cli.js perf` at 1920x1080 on the harness for AC-3 against Phase 1's 3.09-5.79 ms
+  `LumenScreenProbeGather`. Each number belongs in the box it closes; none of the three was ticked without it.
+
 - **2026-11-13, GI session: Short Range AO replaces GTAO in the harness's `high` preset and carries its own stage name.**
   The chain's built-in order names no `shortRangeAO` (`chain.ts` and the engine's `plan.cpp` both), and the native engine is
   a prebuilt artifact with no Emscripten toolchain on this host, so a new *built-in* name would have needed an engine
