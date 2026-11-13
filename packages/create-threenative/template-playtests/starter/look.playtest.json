@@ -89,34 +89,34 @@
         },
         "mobile-low": {
           "contributions": {
-            "graphOutputChanged": ["ssr", "bloom", "vignette", "antialias"]
+            "graphOutputChanged": ["bloom", "vignette", "antialias"]
           },
           "stages": {
             "excludes": ["ambientOcclusion", "ssgi", "traa", "motionBlur", "grade", "grain"],
-            "includes": ["ssr", "bloom", "vignette", "antialias"],
-            "order": ["ssr", "bloom", "vignette", "antialias"]
+            "includes": ["bloom", "vignette", "antialias"],
+            "order": ["bloom", "vignette", "antialias"]
           },
           "tier": "low"
         },
         "mobile-mid": {
           "contributions": {
-            "graphOutputChanged": ["ssr", "bloom", "vignette", "antialias"]
+            "graphOutputChanged": ["bloom", "vignette", "antialias"]
           },
           "stages": {
             "excludes": ["ambientOcclusion", "ssgi", "traa", "motionBlur", "grade", "grain"],
-            "includes": ["ssr", "bloom", "vignette", "antialias"],
-            "order": ["ssr", "bloom", "vignette", "antialias"]
+            "includes": ["bloom", "vignette", "antialias"],
+            "order": ["bloom", "vignette", "antialias"]
           },
           "tier": "low"
         },
         "software": {
           "contributions": {
-            "graphOutputChanged": ["ssr", "bloom", "vignette", "antialias"]
+            "graphOutputChanged": ["bloom", "vignette", "antialias"]
           },
           "stages": {
             "excludes": ["ambientOcclusion", "ssgi", "traa", "motionBlur", "grade", "grain"],
-            "includes": ["ssr", "bloom", "vignette", "antialias"],
-            "order": ["ssr", "bloom", "vignette", "antialias"]
+            "includes": ["bloom", "vignette", "antialias"],
+            "order": ["bloom", "vignette", "antialias"]
           },
           "tier": "low"
         }
