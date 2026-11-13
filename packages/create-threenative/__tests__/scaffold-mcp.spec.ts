@@ -878,3 +878,29 @@ describe("template MCP host configs", () => {
     expect(tracked).toEqual([]);
   });
 });
+
+// pnpm restores a cached build of a package it has built before and then skips its postinstall,
+// so the second project on one core version never got leanpi's schema cache (wm-fps-control,
+// PRD-881). The scaffolder reruns core's MCP setup after its own install.
+describe("seedProjectMcp", () => {
+  it("seeds leanpi's engine schema cache from the installed core", async () => {
+    const { seedProjectMcp } = await import("../src/index.js");
+    const target = await makeTempDir("tn-seed-");
+    temporaryRoots.push(target);
+    await writeFile(
+      path.join(target, "package.json"),
+      JSON.stringify({ name: "game", dependencies: { "@threenative/core": "0.0.0" } }),
+    );
+    await mkdir(path.join(target, "node_modules", "@threenative"), { recursive: true });
+    await symlink(corePackageRoot, path.join(target, "node_modules", "@threenative", "core"));
+
+    seedProjectMcp(target);
+
+    const cache = JSON.parse(
+      await readFile(path.join(target, ".leanpi", "cache", "mcp-catalog.json"), "utf8"),
+    ) as { servers: Record<string, { tools: { name: string }[] }> };
+    expect(cache.servers["threenative-engine"]?.tools.map((tool) => tool.name)).toContain(
+      "engine_search_capabilities",
+    );
+  });
+});

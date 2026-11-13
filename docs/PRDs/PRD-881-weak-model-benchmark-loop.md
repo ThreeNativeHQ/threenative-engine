@@ -20,6 +20,10 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
   — RED 4 failed, GREEN 38/38; scaffolder specs (`scaffold-mcp`, `scaffold-file-allowlist`,
   `doctor`) 168/168. `.leanpi/mcp.json` marks the engine server as the one `default` server, and the
   postinstall seeds `.leanpi/cache/mcp-catalog.json` from the bundled server's `toolDefinitions()`.
+- [x] The scaffolder reseeds after its own install. proof: `scaffold-mcp.spec.ts` `seedProjectMcp`
+  RED (no cache) → GREEN; related specs 246/246. pnpm's side-effects cache skipped core's postinstall
+  on the second project of one core version (wm-fps-control had no cache), and `ensure-mcp.mjs`
+  never ran when started through pnpm's symlink (entry guard now compares real paths).
 - [x] `run-arm.sh` acts like a user's leanpi. proof: two probe arms in the scratchpad — VALID,
   capability searches 1 and 3, 0 tool errors. It grants project trust (`/permissions trust
   project`), stops leanpi once the session ends on `stop` and goes idle, and friction counts the
