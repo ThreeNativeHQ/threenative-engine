@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
-import Arbor, { type IArborPreset } from "./arbor.js";
+import Arbor, { type IArborPreset } from "../vendor/arbor.js";
 
 export interface IVegetationPreset {
   readonly id: string;

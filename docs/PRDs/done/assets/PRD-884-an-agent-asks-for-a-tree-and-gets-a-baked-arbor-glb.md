@@ -95,7 +95,7 @@ Risks:
 
 **Status:** DONE (2026-11-13)
 **Files:**
-- `packages/procedural-vegetation/` (new): `package.json`, `tsup.config.ts`, `src/arbor.js` (vendored), `src/index.ts`, `LICENSES/Arbor-MIT.txt` and `README.md`.
+- `packages/procedural-vegetation/` (new): `package.json`, `tsup.config.ts`, `vendor/arbor.js` (vendored), `src/index.ts`, `LICENSES/Arbor-MIT.txt` and `README.md`.
 - `scripts/not-owned-capabilities.ts`: the recipe text.
 - `scripts/fixtures/capability-recall/corpus.json`: the recall row.
 

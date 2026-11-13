@@ -143,7 +143,7 @@ interface IChunk {
  * @constraint Rotating or scaling the field is not supported; translating it is.
  * @example
  * import { GrassField3D } from "@threenative/core";
- * import { grassBlade, grassMaterial } from "./render/grass.js";
+ * // grassBlade and grassMaterial come from the game's own src/render/grass.ts.
  * const grass = new GrassField3D({ blade: grassBlade(), material: grassMaterial, getHeight: height });
  * ctx.add(grass);
  * ctx.beforeRender(() => { grass.pushers[0]?.set(hero.x, hero.y, hero.z, 1.2); grass.update(camera); });
