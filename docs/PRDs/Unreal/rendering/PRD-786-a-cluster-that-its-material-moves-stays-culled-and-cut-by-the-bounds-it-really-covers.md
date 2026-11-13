@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 to AC-3 are open: a clustered mesh whose material has a `positionNode` is still culled and cut by the bounds of the undeformed mesh. Phase 1 has not yet measured how often a real scene shows the error.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files (+1), a new declared-extent contract on materials (+2), the cut distance rule changes (+1), native proof on the owned host (+1); risk override: none
 **Owner:** unassigned
-**Depends on:** None. Coordinates with [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md) (its last Phase 3 box proposed this gap; this PRD takes it, see `## Decisions`), [PRD-490](../../open-world/PRD-490-cluster-lod-wins-on-native.md) (one draw per material on native, a separate outcome), [PRD-668](PRD-668-a-displaced-surface-changes-its-silhouette-near-the-camera.md) (displacement adds vertices and owns its own bound) and [PRD-678](PRD-678-a-dense-skinned-body-takes-the-cluster-cut-in-every-view-that-sees-it.md) (posed bounds of skinned clusters).
+**Depends on:** None. Coordinates with [PRD-600](../../done/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md) (its last Phase 3 box proposed this gap; this PRD takes it, see `## Decisions`), [PRD-490](../../open-world/PRD-490-cluster-lod-wins-on-native.md) (one draw per material on native, a separate outcome), [PRD-668](PRD-668-a-displaced-surface-changes-its-silhouette-near-the-camera.md) (displacement adds vertices and owns its own bound) and [PRD-678](PRD-678-a-dense-skinned-body-takes-the-cluster-cut-in-every-view-that-sees-it.md) (posed bounds of skinned clusters).
 
 ## Context
 
