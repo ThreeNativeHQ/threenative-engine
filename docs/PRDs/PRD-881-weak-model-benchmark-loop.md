@@ -63,6 +63,11 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 - [x] An explicit CLI thinking level holds for the whole session. proof: lean-pi `f7d29ce`
   `tests/cli/thinking-pick.spec.ts` RED 3/3 (`expected 'low' to be 'max'`) → GREEN; real `:max` and
   `--thinking max` runs stay `max` through `model_change`; `leanpi@0.1.24`. Round 4 was VOID on this.
+- [x] Every discovered project tool is reachable with JEV off. proof: lean-pi `35c618b` red→green
+  (`tests/mcp/execution.spec.ts -t many-server`, 6 stub servers); `leanpi@0.1.25`. Cold-scaffold jailed probe
+  (`.mcp.json` only, no `.leanpi`): VALID at `max`, first two calls `engine_search_references` and
+  `engine_search_capabilities` natively, `mcp_request` loaded detail and watch — capability searches 1, the
+  first non-zero of the loop. Open: leanpi still offers 6 tools up front; others load by exact name.
 - [x] A playtest of an installed game fails while its typecheck or lint fails. proof: `pnpm exec
   vitest run packages/playtest/__tests__/project-check.spec.ts` RED (exit 2, no check) → GREEN 2/2;
   pristine platformer and minimal kits pass both scripts. `wm-platformer-2` finished with 2 lint
