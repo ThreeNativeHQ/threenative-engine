@@ -96,6 +96,7 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 | wm-platformer-3 | VALID, unjailed but no read outside its sandbox | 1/2 (laptop Iris Xe): run fails `goalReached` | call 25 | 0 | 5 | 7 | 0 / 29 | $0.070 | playtest gates on check; docs ship |
 | wm-platformer-4 | VOID: thinking `high` (leanpi replaced the CLI `:max` with its compiled effort 7 ms after start); jailed | 1/2 (laptop Iris Xe): run fails `goalReached` | call 37 | 0 | 4 | 4 | 0 / 31 | $0.052 | leanpi 0.1.24 holds an explicit CLI level |
 | wm-platformer-5 | VALID, jailed, leanpi 0.1.26, `max` held | 1/2 (laptop Iris Xe): run fails `goalReached` | call 50 | 1 | 4 | 11 | 6 / 48 | $0.114 | first VALID round with a capability search and typecheck runs |
+| wm-platformer-6 | VALID, jailed, leanpi 0.1.26, `max` held | 1/2 (laptop Iris Xe): run fails `goalReached` (x 38.7, 10 coins, 1 respawn) | call 40 | 0 | 5 | 12 | 6 / 23 | $0.090 | same failure as round 5; round budget spent, loop stops |
 | control (pristine kit) | n/a | 1/2: run fails `coins` trivial, `goalReached` false | - | - | - | - | - | - | - |
 
 ## Decisions
