@@ -28,7 +28,10 @@ abstract Xwayland sockets) using the session's `DISPLAY` and credentials. Missin
 an unavailable connection, or a missing probe command fails with
 `TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE`; it never silently substitutes a private Xvfb.
 Do **not** reach for `--headless` to keep windows off a screen: headless Chromium
-cannot capture WebGPU here, so it changes what you measure. The runner takes a capture lock only
+cannot capture WebGPU here, so it changes what you measure. `--browser-recipe webgpu` therefore
+launches headed without `--headed`: on a GPU-less Linux host headless Chromium serves WebGPU from
+SwiftShader and cannot create the canvas swap-chain image, so the first present destroys the device
+("Device was destroyed.") on the owned engine and upstream three alike. The runner takes a capture lock only
 when it detects competing runners — or always with `CAPTURE_LOCK=1`; lock state is printed to stderr
 either way. `sh scripts/xvfb.sh` remains as an optional compatibility wrapper — never `xvfb-run`,
 whose exit status is its own failing cleanup kill rather than the command's.

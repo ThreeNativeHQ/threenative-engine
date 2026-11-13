@@ -102,7 +102,7 @@ export const PLAYTEST_FLAGS = {
   "--build-report": { default: "none", summary: "the <artifact>.build-report.json threenative build published; its performanceBudget bounds every scenario, and a stale or foreign report refuses the run", takesValue: true },
   "--no-screenshots": { default: "false", summary: "skip the before/after artifact frames; scenarios that assert on a frame still capture one", takesValue: false },
   "--browser-arg": { allowDashValue: true, default: "none (repeatable)", repeatable: true, summary: "one additional Chromium argument", takesValue: true },
-  "--browser-recipe": { default: "none", summary: "named browser recipe (webgpu)", takesValue: true },
+  "--browser-recipe": { default: "none", summary: "named browser recipe (webgpu, which also launches headed)", takesValue: true },
   "--cpu-prof": { default: "none", summary: "write a Chrome DevTools .cpuprofile for this run (browser and desktop targets)", takesValue: true },
   "--bundle-id": { default: "dev.threenative.runtime", summary: "iOS application bundle identifier", takesValue: true },
   "--device": { default: "platform default", summary: "Android serial or iOS device identifier", takesValue: true },
@@ -377,7 +377,10 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
           },
         }),
     endpoint: flags.get("--endpoint")?.[0] ?? "http://127.0.0.1:41777/playtest",
-    headless: !argv.includes("--headed"),
+    // A WebGPU run is headed: headless Chromium on a GPU-less Linux host serves WebGPU from SwiftShader
+    // and cannot create the canvas swap-chain image, so the first present destroys the device on any
+    // engine. Headed, the runner's private Xvfb holds the window and SwiftShader presents.
+    headless: !argv.includes("--headed") && browserRecipe !== "webgpu",
     ios: {
       ...(appPath === undefined ? {} : { appPath: resolve(projectPath, appPath) }),
       bundleId: flags.get("--bundle-id")?.[0] ?? "dev.threenative.runtime",
