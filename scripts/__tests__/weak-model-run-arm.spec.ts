@@ -5,7 +5,12 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const SCRIPT = path.resolve(".claude/skills/weak-model-benchmark/scripts/run-arm.sh");
-const hasUserSystemd = spawnSync("systemctl", ["--user", "is-system-running"]).status !== null;
+// The arm needs a user-systemd scope and a bwrap jail. A CI container has neither working (no user
+// manager, no unprivileged user namespaces), so the script refuses before the stub runs: probe both.
+const canJailArm =
+  spawnSync("systemd-run", ["--user", "--scope", "-q", "true"]).status === 0 &&
+  spawnSync("bwrap", ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "true"]).status ===
+    0;
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
@@ -21,7 +26,7 @@ describe("run-arm.sh", () => {
 
   // A capped or finished arm left its agent, vite and Xvfb running, and the sealed proof then ran
   // beside them (wm-platformer-2, 2026-11-13). The arm is over only when its whole scope is gone.
-  it.skipIf(!hasUserSystemd)("stops every process the arm started before it returns", () => {
+  it.skipIf(!canJailArm)("stops every process the arm started before it returns", () => {
     root = mkdtempSync(path.join(tmpdir(), "run-arm-"));
     const pidFile = path.join(root, "child.pid");
     mkdirSync(path.join(root, "leanpi", "bin"), { recursive: true });
@@ -54,7 +59,7 @@ describe("run-arm.sh", () => {
 
   // The arm builds as a developer would, on a machine holding only its own project: round 2 read the
   // sealed proof out of a repo checkout on this disk (wm-platformer-2, 2026-11-13).
-  it.skipIf(!hasUserSystemd)("hides every file outside the sandbox from the arm", () => {
+  it.skipIf(!canJailArm)("hides every file outside the sandbox from the arm", () => {
     root = mkdtempSync(path.join(tmpdir(), "run-arm-"));
     const secret = mkdtempSync(path.join(tmpdir(), "run-arm-secret-"));
     writeFileSync(path.join(secret, "proof.json"), "{}");
