@@ -141,10 +141,10 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 **Verification:** AC-1 and AC-2. A PRD-647 round on `cornell` and `sunlit-room` at `high` (BEFORE `ssgi`, AFTER the gather, Unreal Epic as the target) must return IMPROVEMENT against BEFORE. The four PRD-631 poses are judged the same way.
 
 #### Phase 3: Short Range AO and native proof
-**Status:** NOT STARTED (blocked: no GPU host — the appearances it replaces are tuned by eye, and AC-3 is a GPU-time claim)
-**Files:** `packages/core/src/render/short-range-ao.ts` (new), `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/runtime-native/conformance/scenes/shared/screen-probe-gather.js` (new), `packages/runtime-native/conformance/registry.json`
-- [ ] With the gather on, the chain reports `shortRangeAO` and no `gtao` stage. proof: `TN_RENDER_CHAIN` in the harness capture at L7.
-- [ ] The conformance row `screen-probe-gather` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests screen-probe-gather`.
+**Status:** PARTIAL (the pass and its chain receipt are done; the conformance row is blocked: the only desktop runtime here reports a null WebGPU backend)
+**Files:** `packages/core/src/render/short-range-ao.ts` (new), `packages/core/__tests__/short-range-ao.spec.ts` (new), `packages/core/src/index.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `scripts/unreal-look/scaffold/render/quality.ts`, `scripts/unreal-look/scaffold/CalibrationScene.ts.in`, `scripts/unreal-look/scaffold/Reference.ts.in`, `packages/runtime-native/conformance/scenes/shared/screen-probe-gather.js` (new), `packages/runtime-native/conformance/registry.json`
+- [x] With the gather on, the chain reports `shortRangeAO` and no `gtao` stage. proof: `TN_RENDER_CHAIN` in the harness capture at L7. — Evidence: on the owned engine in a headed browser at `main.html?tnGi=cornell&layer=L7&tier=high&probes=1&probeRays=4&probeMiss=1` (adapter `google/swiftshader`, the only one this host has) the line reads `"requested":["shortRangeAO","ssgi","traa","motionBlur"]`, `"stages":["shortRangeAO","ssgi","traa","motionBlur"]` and `"dropped":[]`: short-range AO in the chain and no `ambientOcclusion`/`gtao`. `?shortRangeAO=0` puts GTAO back for the A/B. `pnpm exec vitest run packages/core/__tests__/short-range-ao.spec.ts` passes 6 tests.
+- [ ] The conformance row `screen-probe-gather` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests screen-probe-gather`. — Blocked, not declined: the prebuilt desktop runtime on this host reports `"adapter":{"identity":"native:null/Null backend"}`, and an existing row (`30-screen-space-text`) fails on it before any comparison, so a new row cannot pass here. Needs a host whose native runtime has a GPU adapter.
 **Verification:** AC-3.
 
 ## Decisions
