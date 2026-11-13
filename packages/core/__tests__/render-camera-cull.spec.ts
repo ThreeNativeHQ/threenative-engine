@@ -674,6 +674,23 @@ describe("render camera cull", () => {
     expect(third).toBeGreaterThanOrEqual(0);
   });
 
+  // The kit contract bounds cullRigRebuilds in every TN_FRAME_BUDGET window and fails a window that
+  // lacks it. With the engine banding, the JS rig cache rebuilds nothing: that is a measured 0, and
+  // six kits' nightly engine-cost rows failed while it was missing (main, 2026-11-12 and 11-13).
+  it("measures zero cull rig rebuilds while the engine runs the band pass", () => {
+    const host = globalThis as { __tnEngineCost?: Record<string, number> };
+    const saved = host.__tnEngineCost;
+    host.__tnEngineCost = {};
+    try {
+      const scene = sceneWith(new Group());
+      Object.assign(scene, { __bandAnimation: vi.fn(() => []) });
+      new RenderCameraCull().prepareAnimation(scene, camera(), 720);
+      expect(host.__tnEngineCost).toEqual({ cullRigRebuilds: 0 });
+    } finally {
+      host.__tnEngineCost = saved;
+    }
+  });
+
   it("makes no band call while the engine tracks no rig", async () => {
     vi.resetModules();
     const fresh = await import("../src/render-camera-cull.js");

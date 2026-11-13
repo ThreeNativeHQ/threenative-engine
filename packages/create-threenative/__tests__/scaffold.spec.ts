@@ -137,7 +137,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   platformer: {
     shared: "dc214fb679ee15d67275f6a1e81c286e707c72f69d4edba642fef15bda651c7c",
-    kit: "1f811808d0de82bffb584f79f56fbf886db106b574787c51aed02dc9d60a74bd",
+    kit: "cef0bc97403415779684b46f62e4727d3b5112364cf00217472eb029c8a0e226",
   },
   puzzle: {
     shared: "7145f06e3428cda0165af08063ea815c642608884a481a85c7649d3c16b02cfe",
@@ -173,7 +173,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   starter: {
     shared: "20636d0769fdab2f5054781a879f7d2eb24873db6bd9f324828fe342d32e12a4",
-    kit: "69917d168d33d181f18173a908be0f82a4eee915b7ae359c56d17adf819d361a",
+    kit: "6a181a98b6b9da97596b1493acc3e20cf9b1564bc4aabdf1b2c899b4f02aadf4",
   },
   "tower-defense": {
     shared: "d804c83f9bce5a20a42bc4e4b4c01646437b34556336d884425e7a890ded5856",

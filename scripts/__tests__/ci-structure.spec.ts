@@ -4502,6 +4502,14 @@ describe("PRD-373 selective feature verification", () => {
       // The scope step's GPU answer and the strata job's runs-on GPU branch read the same variables.
       expect(ci).toContain("TN_CI_STRATA_GPU: ${{ !github.event.pull_request.head.repo.fork");
       expect(ci).toMatch(/strata:[\s\S]*?vars\.TN_RUNNER_GPU_HEAD[\s\S]*?vars\.TN_RUNNER_GPU /u);
+      // ci-required re-decides a queue reuse with the same classifier, so it reads the same GPU
+      // answer: without it strata defaulted to owed and refused a reuse scope had accepted (PR #673).
+      const gpu = ci.match(/^ +TN_CI_STRATA_GPU: .*$/gmu) ?? [];
+      expect(gpu).toHaveLength(2);
+      expect(gpu[1]?.trim()).toBe(gpu[0]?.trim());
+      expect(ci.slice(ci.indexOf("Reject every unsuccessful or missing selected job"))).toContain(
+        gpu[0]?.trim(),
+      );
     });
 
     it("skips strata job for an unrelated template change on develop PR", async () => {

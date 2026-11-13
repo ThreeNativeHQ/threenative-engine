@@ -779,6 +779,40 @@ describe("playtest sampling", () => {
     }
   });
 
+  // `engine: "threejs"` renders through three's WebGLRenderer in a worker: the page canvas carries
+  // only three's bare `three.js r<n>` tag and throws on every getContext, because the worker owns
+  // it (wm-platformer-2, 2026-11-13). The WebGL implementation is the page's, so a fresh canvas
+  // describes the same adapter.
+  test("reads a worker-owned three.js WebGL canvas as webgl with the page's WebGL adapter", async () => {
+    const owned = () => {
+      throw new Error("InvalidStateError: the canvas has been transferred to an OffscreenCanvas");
+    };
+    const restoreDocument = installGlobal("document", {
+      querySelector: () => ({ getAttribute: () => "three.js r187", getContext: owned }),
+      createElement: () => ({
+        getContext: (kind: string) => kind !== "webgl2" ? null : {
+          // biome-ignore lint/style/useNamingConvention: mirrors the browser WebGL constant
+          "RENDERER": 1,
+          // biome-ignore lint/style/useNamingConvention: mirrors the browser WebGL constant
+          "VENDOR": 2,
+          getExtension: () => null,
+          getParameter: (key: number) => key === 1 ? "ANGLE (Intel)" : "Google Inc.",
+        },
+      }),
+    });
+    const restoreNavigator = installGlobal("navigator", {});
+    try {
+      const page = { evaluate: async (callback: () => unknown) => callback() } as unknown as Page;
+      await expect(readCaptureProvenance(page, {} as never, { target: "web", viewport: { height: 100, width: 200 } } as never)).resolves.toMatchObject({
+        adapter: { renderer: "ANGLE (Intel)", vendor: "Google Inc." },
+        rendererKind: "webgl",
+      });
+    } finally {
+      restoreNavigator();
+      restoreDocument();
+    }
+  });
+
   test("uses an unmarked WebGPU context and fails when adapter discovery rejects", async () => {
     const unmarkedCanvas = {
       getAttribute: () => null,
