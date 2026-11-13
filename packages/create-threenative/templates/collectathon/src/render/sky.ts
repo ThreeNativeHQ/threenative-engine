@@ -11,6 +11,7 @@ import {
   EquirectangularReflectionMapping,
   FogExp2,
   LinearFilter,
+  MathUtils,
   RGBAFormat,
   SRGBColorSpace,
   type Scene,
@@ -39,8 +40,8 @@ const LATTICE = (() => {
 function noise(x: number, y: number): number {
   const i = Math.floor(x);
   const j = Math.floor(y);
-  const fx = (x - i) * (x - i) * (3 - 2 * (x - i));
-  const fy = (y - j) * (y - j) * (3 - 2 * (y - j));
+  const fx = MathUtils.smoothstep(x - i, 0, 1);
+  const fy = MathUtils.smoothstep(y - j, 0, 1);
   const i0 = i & 255;
   const i1 = (i + 1) & 255;
   const j0 = (j & 255) << 8;
@@ -79,7 +80,7 @@ function density(x: number, y: number): number {
 
 const smooth = (from: number, to: number, value: number): number => {
   const t = Math.min(1, Math.max(0, (value - from) / (to - from)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 };
 
 /**

@@ -1,4 +1,5 @@
 import { Heightfield, SnowField } from "@threenative/core/world";
+import { MathUtils } from "three";
 
 /** The playable snowfield is a square this many metres across, centred on the origin. */
 export const FIELD_SIZE = 24;
@@ -22,7 +23,7 @@ export const EXPLORER_LAYER = 0b1000;
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 }
 
 /** Rolling ground under the snow: gentle swells in the glade, hills beyond it. */

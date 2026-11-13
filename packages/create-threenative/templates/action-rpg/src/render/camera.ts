@@ -3,7 +3,7 @@
 // The action-RPG three-quarter view: high and behind, far enough back that the room reads as a
 // room. It has to clear the **south wall**, which stands at z = +6 and is low so the camera can
 // see over it — the oldest trick in an isometric dungeon, and it costs one row of wall table.
-import { type PerspectiveCamera, Vector3 } from "three";
+import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
 
 /** Where the camera sits relative to the player's body centre. */
 const OFFSET = new Vector3(0, 10.2, 9.2);
@@ -25,7 +25,7 @@ export function createDungeonCamera(camera: PerspectiveCamera): ICameraRig {
   return {
     follow: (target, dt) => {
       _desired.copy(target).add(OFFSET);
-      camera.position.lerp(_desired, 1 - Math.exp(-dt / 0.2));
+      camera.position.lerp(_desired, MathUtils.damp(0, 1, 5, dt));
       camera.lookAt(_aim.copy(target).add(AIM));
     },
     snap: pose,

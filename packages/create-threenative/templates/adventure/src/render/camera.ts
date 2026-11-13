@@ -335,8 +335,8 @@ export function setupCamera(
       return yaw;
     },
     update(focus: Vector3, lock: ILockFrame | undefined, dt: number, watch?: Box3): void {
-      const rate = 1 - Math.exp(-YAW_RATE * dt);
-      const quick = 1 - Math.exp(-FRAME_RATE * dt);
+      const rate = MathUtils.damp(0, 1, YAW_RATE, dt);
+      const quick = MathUtils.damp(0, 1, FRAME_RATE, dt);
       if (lock !== undefined) {
         lock.bounds.getCenter(middle);
         const line = Math.atan2(focus.x - middle.x, focus.z - middle.z);

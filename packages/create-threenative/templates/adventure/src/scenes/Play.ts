@@ -609,7 +609,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         hero.mesh.position.z - f.x * 0.7 - f.z * 0.4 + Math.sin(orb.clock * 1.3) * 0.15,
       );
       if (companion.group.position.distanceTo(orbGoal) > 6) companion.group.position.copy(orbGoal);
-      else companion.group.position.lerp(orbGoal, 1 - Math.exp(-dt * 4));
+      else companion.group.position.lerp(orbGoal, MathUtils.damp(0, 1, 4, dt));
       const orbGap = companion.group.position.distanceTo(head);
       orb.nearest = Math.min(orb.nearest, orbGap);
       orb.farthest = Math.max(orb.farthest, orbGap);
@@ -774,6 +774,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       Object.assign(seen, { blocks: hero.shieldBlocks, clanks, hits: hero.slashHits });
       warden.update(dt, hero);
       for (const dummy of dummies) dummy.update(dt);
+      // Everything that moves has moved, so the lock's bounds and reticle are this frame's pose.
+      lock.place(camera, dt);
       // A target falls inside Wren's slash, so count the fallen after everything has moved.
       for (const fallen of targets) {
         if (fallen.alive || counted.has(fallen)) continue;

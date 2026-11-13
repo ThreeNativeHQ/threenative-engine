@@ -13,7 +13,7 @@
  * browser APIs. `src/game.ts` stays portable: this sends the same validated intents the buttons do.
  */
 
-import type { IGame } from "@threenative/core";
+import { type IGame, debugFlag } from "@threenative/core";
 import { connectUiBridge, sendUiIntent, subscribeUiState } from "@threenative/core/ui-layer";
 import type { GameState, PresetName, WeatherKey } from "../state.js";
 import type { ICaptureResult, ISceneSizes } from "./Hud.js";
@@ -78,15 +78,14 @@ export function installTempest(game: IGame<GameState>): ITempestApi {
   const send = (intent: IntentName, payload?: unknown): void => {
     sendUiIntent(bridge, intent, payload);
   };
-  const query = new URLSearchParams(window.location.search);
-  const request = automationRequest(window.location.search);
+  const request = automationRequest();
   if (request.rejectedQuality !== undefined) {
     say(
       `?quality=${request.rejectedQuality} is not a tier: expected low, balanced, high or cinematic`,
     );
   }
   if (request.quality !== undefined) send("setQuality", request.quality);
-  if (query.has("offline")) {
+  if (debugFlag("offline")) {
     // The source's offline WebGL2 adapter stood in for a Three.js build it could not load from a
     // CDN. This build installs Three locally and never reaches for one, so there is no fallback
     // to select and nothing here pretends otherwise.

@@ -451,20 +451,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ),
       );
       frameState.respawns = previous.respawns + (respawned ? 1 : 0);
-      const current = frameCtx.state.getState();
-      const changed =
-        frameState.coyoteJumps !== current.coyoteJumps ||
-        frameState.flagDisplacement !== current.flagDisplacement ||
-        frameState.flagReadbacks !== current.flagReadbacks ||
-        frameState.flagSteps !== current.flagSteps ||
-        frameState.jumps !== current.jumps ||
-        frameState.lives !== current.lives ||
-        frameState.odometer !== current.odometer ||
-        frameState.peakRise !== current.peakRise ||
-        frameState.playerX !== current.playerX ||
-        frameState.progress !== current.progress ||
-        frameState.respawns !== current.respawns;
-      if (changed) frameCtx.state.set(frameState);
+      frameCtx.state.set(frameState);
       if (respawned) frameCtx.state.flush();
     };
   }

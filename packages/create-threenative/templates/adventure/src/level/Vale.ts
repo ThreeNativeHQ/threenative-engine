@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   CylinderGeometry,
   Group,
+  MathUtils,
   Mesh,
   type Object3D,
   PlaneGeometry,
@@ -17,6 +18,7 @@ import { surfaced } from "../render/surface.js";
 export function makeRng(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
+    // eslint-disable-next-line no-restricted-syntax -- The clearing is authored against this mulberry32 stream; the engine's seeded RNG is an LCG, so swapping it builds a different level.
     state = (state + 0x6d2b79f5) >>> 0;
     let t = state;
     t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -52,7 +54,7 @@ export interface IVale {
 
 const smooth = (a: number, b: number, t: number): number => {
   const u = Math.min(1, Math.max(0, (t - a) / (b - a)));
-  return u * u * (3 - 2 * u);
+  return MathUtils.smoothstep(u, 0, 1);
 };
 /** 0..1 rolling noise from two crossed sine sheets. */
 const wave = (x: number, z: number, f: number): number =>

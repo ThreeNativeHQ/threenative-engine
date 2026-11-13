@@ -1,4 +1,4 @@
-import { type IAssetLoader, WaveField } from "@threenative/core";
+import { type IAssetLoader, WaveField, createRandom } from "@threenative/core";
 import {
   Box3,
   BoxGeometry,
@@ -228,13 +228,8 @@ function boulderGeometry(size: number, rng: () => number): BufferGeometry {
 }
 
 export function makeRng(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 0x1_0000_0000;
-  };
+  return createRandom(seed);
 }
-
 /**
  * The island planted: drawn from `site` on a run that has nothing stored, and read back from
  * `memo` on the next run of this build, so `buildPlanting` has the same placements either way.

@@ -7,6 +7,9 @@ import type { ITarget } from "./LockOn.js";
 const CAPSULE = { halfHeight: 0.55, radius: 0.75 } as const;
 const FOOT_OFFSET = CAPSULE.halfHeight + CAPSULE.radius;
 
+/** The vector from the Warden to the hero: `update` runs every frame, so it uses one instance. */
+const toHero = new Vector3();
+
 /** The Warden's numbers, in metres and seconds. Kit design values. */
 export const WARDEN_FEEL = {
   health: 3,
@@ -101,7 +104,7 @@ export class Warden implements ITarget {
     const feel = WARDEN_FEEL;
     this.#timer += dt;
     this.#flash = Math.max(0, this.#flash - dt);
-    const to = new Vector3().subVectors(hero.mesh.position, this.mesh.position).setY(0);
+    const to = toHero.subVectors(hero.mesh.position, this.mesh.position).setY(0);
     let speed = 0;
     switch (this.state) {
       case "dormant":

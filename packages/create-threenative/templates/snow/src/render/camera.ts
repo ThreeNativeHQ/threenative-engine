@@ -1,5 +1,6 @@
 // Generated for you. Framing is a game-owned decision.
 import type { PerspectiveCamera } from "three";
+import { MathUtils } from "three";
 import type { CameraView } from "../state.js";
 
 export function setupCamera(camera: PerspectiveCamera): void {
@@ -62,8 +63,8 @@ export class OrbitFollow {
     ground: (x: number, z: number) => number,
     dt: number,
   ): void {
-    const ease = 1 - Math.exp(-dt * 4.5);
-    const settle = 1 - Math.exp(-dt * 5);
+    const ease = MathUtils.damp(0, 1, 4.5, dt);
+    const settle = MathUtils.damp(0, 1, 5, dt);
     this.#target.x += (goal.x - this.#target.x) * ease;
     this.#target.y += (goal.y - this.#target.y) * ease;
     this.#target.z += (goal.z - this.#target.z) * ease;

@@ -313,6 +313,26 @@ describe("actual native receipt writer, collector and protected verdict", () => 
       f.cleanup();
     }
   });
+  // A cancelled `scope` job hands its dependents the variable with nothing in it. `?? "null"`
+  // missed that, so the collector died on `JSON.parse("")` with a bare "Unexpected end of JSON
+  // input" and the merge queue lost the cause (run 43342207855). The real defect must be named.
+  it("names the missing selection when the scope job handed down an empty plan", () => {
+    const f = fixture();
+    try {
+      for (const plan of ["", "   "]) {
+        const collected = f.run(
+          "ci-native-receipts.mjs",
+          ["--collect", path.join(f.root, "artifacts/ci-native-receipts")],
+          { TN_CI_PLAN: plan },
+        );
+        expect(collected.status).toBe(1);
+        expect(collected.stderr).toContain("CI_SCOPE_INVALID_PLAN");
+        expect(collected.stderr).not.toContain("Unexpected end of JSON input");
+      }
+    } finally {
+      f.cleanup();
+    }
+  });
   it.each(["library", "target", "cache", "merged"])(
     "rejects Android %s substitution in the actual writer",
     (kind) => {

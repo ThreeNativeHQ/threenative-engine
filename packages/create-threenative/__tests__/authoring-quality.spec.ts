@@ -141,7 +141,7 @@ describe("threenative/hot-callback-allocation", () => {
     expect(rules(r)).toEqual(["threenative/hot-callback-allocation"]);
   });
 
-  it("stays quiet for startup allocation, deferred functions, non-scene classes and unrelated classes", async () => {
+  it("stays quiet for startup allocation, deferred functions and methods that are not frame names", async () => {
     const quiet = await lint(
       "s.ts",
       SCENE(
@@ -151,9 +151,14 @@ describe("threenative/hot-callback-allocation", () => {
     expect(quiet.messages).toEqual([]);
     const other = await lint(
       "o.ts",
-      'import { Vector3 } from "three";\nclass Other { update(): void { void new Vector3(); } }\nclass Vector2 {}\nexport class P { render(): void { void new Vector2(); } }\nexport { Other };\n',
+      'import { Vector3 } from "three";\nclass Other { refresh(): void { void new Vector3(); } }\nclass Vector2 {}\nexport class P { render(): void { void new Vector2(); } }\nexport { Other };\n',
     );
     expect(other.messages).toEqual([]);
+    const entity = await lint(
+      "e.ts",
+      'import { Vector3 } from "three";\nexport class Enemies { update(): void { void new Vector3(); } }\n',
+    );
+    expect(rules(entity)).toEqual(["threenative/hot-callback-allocation"]);
   });
 
   it("leaves authored bytes unchanged", async () => {

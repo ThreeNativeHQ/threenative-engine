@@ -366,7 +366,7 @@ export function createHero(): IHero {
     update(pose: IHeroPose): void {
       time += pose.dt;
       const run = Math.min(1, pose.speed / 9.6);
-      const k = 1 - Math.exp(-pose.dt * 18);
+      const k = MathUtils.damp(0, 1, 18, pose.dt);
       let pitch = 0;
       let roll = 0;
       let squash = 1;

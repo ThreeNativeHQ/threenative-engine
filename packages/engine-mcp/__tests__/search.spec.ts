@@ -197,6 +197,23 @@ describe("threenative-engine-mcp", () => {
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("CharacterBody3D");
   });
 
+  it("finds the ctx members an author searches for by name (PRD-872)", () => {
+    const cases = [
+      ["cache generated geometry between page loads", "ctx.assets.memo"],
+      ["boot progress bar", "ctx.startup.progress"],
+      ["run a callback after a delay", "ctx.after"],
+      ["run a callback before the frame renders", "ctx.beforeRender"],
+    ] as const;
+    for (const [situation, symbol] of cases) {
+      expect(
+        searchResults(situation)
+          .slice(0, 3)
+          .map((result) => result.symbol),
+        situation,
+      ).toContain(symbol);
+    }
+  });
+
   it("finds measured miss-list vocabulary across the owning packages", () => {
     const cases = [
       ["different props in each area", "createAssetLoader"],
