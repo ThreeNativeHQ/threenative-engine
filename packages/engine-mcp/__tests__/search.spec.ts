@@ -48,6 +48,12 @@ describe("threenative-engine-mcp", () => {
       searchResults("lamp that switches off and the bounce light follows").map((r) => r.symbol),
     ).toContain("RadianceCache");
   });
+  it("finds the screen probe gather by Unreal's name (PRD-640)", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("lumen screen probe gather")[0]).toBe("ScreenProbeGather");
+    expect(symbols("lumen final gather")).toContain("ScreenProbeGather");
+    expect(symbols("bounce light that reads the room off screen")).toContain("ScreenProbeGather");
+  });
   it("finds the global illumination and shadow quality tier watchers by Unreal's names", () => {
     const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
     expect(symbols("global illumination quality")).toContain("GIBudget");

@@ -13,7 +13,12 @@
 // you turned off. What it does not own: any colour, and any strength that is not a quality
 // tier. Those are arguments, supplied by `postprocessing.ts`, yours to change.
 
-import { GIVisualize, type GIVisualizeMode, RENDER_CHAIN_TIERS } from "@threenative/core";
+import {
+  GIVisualize,
+  type GIVisualizeMode,
+  RENDER_CHAIN_TIERS,
+  ShortRangeAO,
+} from "@threenative/core";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -709,6 +714,8 @@ export class WorldEnvironment {
       denoiseEnabled: options.denoiseEnabled ?? true,
       ssgiDenoiseRadius: options.ssgiDenoiseRadius,
       ssgiScreenProbes: options.ssgiScreenProbes ?? false,
+      ssgiProbeMiss: options.ssgiProbeMiss ?? false,
+      shortRangeAO: options.shortRangeAO ?? false,
       giVisualize,
       ssgiProbeJitter: options.ssgiProbeJitter ?? 1,
       ssgiProbeRays: options.ssgiProbeRays,
@@ -826,21 +833,15 @@ export class WorldEnvironment {
       ],
     });
 
+    // The AO stage answers to the name its source gives it, so the request names that one: `shortRangeAO` when the
+    // gather runs (PRD-640 Phase 3), `ambientOcclusion` (GTAO) on the tiers without it.
+    const aoStageName = options.shortRangeAO === true ? "shortRangeAO" : "ambientOcclusion";
     const requested: string[] = (
-      [
-        "ssgi",
-        "ambientOcclusion",
-        "godRays",
-        "ssr",
-        "motionBlur",
-        "sharpen",
-        "bloom",
-        "vignette",
-      ] as const
+      ["ssgi", aoStageName, "godRays", "ssr", "motionBlur", "sharpen", "bloom", "vignette"] as const
     ).filter(
       (name) =>
         (name === "ssgi" && options.ssgiEnabled) ||
-        (name === "ambientOcclusion" && options.gtaoEnabled) ||
+        (name === aoStageName && (options.gtaoEnabled || options.shortRangeAO)) ||
         (name === "godRays" && options.godraysEnabled) ||
         (name === "ssr" && options.ssrEnabled) ||
         (name === "motionBlur" && options.motionBlurEnabled) ||
@@ -1144,59 +1145,78 @@ export class WorldEnvironment {
         },
       }),
       stage({
-        name: "ambientOcclusion",
-        supportsResolutionSubrect: true,
+        // Short Range AO replaces GTAO whenever dynamic GI runs (PRD-640 Phase 3): Lumen's own short-range pass is the
+        // horizon search, and GTAO is the AO of the tiers without GI. The chain's built-in order names no
+        // `shortRangeAO`, so this stage carries its own name and anchors itself ahead of the gather.
+        name: options.shortRangeAO ? "shortRangeAO" : "ambientOcclusion",
+        ...(options.shortRangeAO ? { before: "ssgi" as const } : {}),
+        supportsResolutionSubrect: options.shortRangeAO !== true,
         dispose: () => {
           releaseAo();
           releaseAo = () => {};
         },
         build: (input) => {
+          const shortRange =
+            options.shortRangeAO === true
+              ? new ShortRangeAO({ camera: view, viewport: drawingBufferSize(renderer) })
+              : undefined;
           // No normal input: GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
-          const contact = ao(subrectTexture(depth()), null as never, view);
-          if (options.gtaoRadius !== undefined) {
-            contact.radius.value = options.gtaoRadius;
-          } else {
-            // Unreal's reach is on the screen (see aoReach.ts). The owned engine's GTAO takes it as `reachPx`, in
-            // pixels of the occlusion target; upstream three's GTAONode has no such uniform, so that engine needs
-            // a world radius and refuses the default.
-            const owned = contact as unknown as { reachPx?: { value: number } };
-            if (owned.reachPx === undefined)
-              throw new Error(
-                "TN_AO_REACH_UNSUPPORTED: this engine's GTAO has no screen reach; set gtaoRadius (metres)",
-              );
-            owned.reachPx.value = options.gtaoReachPx * options.gtaoResolutionScale;
+          const contact =
+            shortRange === undefined ? ao(subrectTexture(depth()), null as never, view) : undefined;
+          if (contact !== undefined) {
+            if (options.gtaoRadius !== undefined) {
+              contact.radius.value = options.gtaoRadius;
+            } else {
+              // Unreal's reach is on the screen (see aoReach.ts). The owned engine's GTAO takes it as `reachPx`, in
+              // pixels of the occlusion target; upstream three's GTAONode has no such uniform, so that engine needs
+              // a world radius and refuses the default.
+              const owned = contact as unknown as { reachPx?: { value: number } };
+              if (owned.reachPx === undefined)
+                throw new Error(
+                  "TN_AO_REACH_UNSUPPORTED: this engine's GTAO has no screen reach; set gtaoRadius (metres)",
+                );
+              owned.reachPx.value = options.gtaoReachPx * options.gtaoResolutionScale;
+            }
+            contact.scale.value = options.gtaoScale;
+            contact.samples.value = options.gtaoSamples;
+            contact.distanceExponent.value = options.gtaoDistanceExponent;
+            contact.distanceFallOff.value = options.gtaoDistanceFalloff;
+            contact.thickness.value = options.gtaoThickness;
+            contact.resolutionScale = options.gtaoResolutionScale;
+            const retained = contact as unknown as {
+              setSize(w: number, h: number): void;
+              _aoRenderTarget: RenderTarget;
+            };
+            resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
+            sample(contact.getTextureNode());
+            releaseAo = () => {
+              contactOcclusion = undefined;
+              resolutionSubrect?.release(retained);
+              contact.dispose();
+            };
           }
-          contact.scale.value = options.gtaoScale;
-          contact.samples.value = options.gtaoSamples;
-          contact.distanceExponent.value = options.gtaoDistanceExponent;
-          contact.distanceFallOff.value = options.gtaoDistanceFalloff;
-          contact.thickness.value = options.gtaoThickness;
-          contact.resolutionScale = options.gtaoResolutionScale;
-          const retained = contact as unknown as {
-            setSize(w: number, h: number): void;
-            _aoRenderTarget: RenderTarget;
-          };
-          resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
-          sample(contact.getTextureNode());
-          releaseAo = () => {
-            contactOcclusion = undefined;
-            resolutionSubrect?.release(retained);
-            contact.dispose();
-          };
           // `RedFormat`, like SSGI's AO target: `.r` is the whole occlusion term, and
           // multiplying by the vec4 would zero green and blue and render the scene red.
           // Applied before SSGI by the chain's canonical order; composing it after the GI
           // combine instead darkens crevices the gather re-lit — that is a look choice, and
           // this file is where you make it.
           //
-          // Denoised with the same depth-aware filter as the GI gather: GTAO's interleaved
-          // sampling otherwise reads as a speckled halo around every contact — around feet on a
-          // plain floor most of all — which is exactly the "not smooth" a player notices first.
+          // Both sources answer `.r` as the share of indirect light the AO keeps: GTAO's texture directly, and the
+          // horizon search in `.a` (its `.rgb` is the bent normal), broadcast over rgb so one filter and one
+          // composite serve either source.
+          const short = shortRange?.occlusion(depth(), normal());
+          const source: ChainNode =
+            contact === undefined || short !== undefined
+              ? (vec4(short?.a ?? 1, short?.a ?? 1, short?.a ?? 1, 1) as unknown as ChainNode)
+              : (contact.getTextureNode() as unknown as ChainNode);
+          // Denoised with the same depth-aware filter as the GI gather: the search's few taps and GTAO's interleaved
+          // sampling both read as a speckled halo around every contact — around feet on a plain floor most of all —
+          // which is exactly the "not smooth" a player notices first.
           const filter =
             options.denoiseEnabled && options.gtaoDenoiseRadius !== 0
-              ? denoise(contact.getTextureNode(), depth(), normal(), view)
+              ? denoise(source as unknown as TextureNode, depth(), normal(), view)
               : undefined;
           if (filter && options.gtaoDenoiseRadius !== undefined)
             (filter as unknown as { radius: { value: number } }).radius.value =
@@ -1216,7 +1236,7 @@ export class WorldEnvironment {
               if (fraction) this._resolution.value.multiply(fraction);
             };
           }
-          const occlusion = filter ? denoised(filter) : contact;
+          const occlusion = filter === undefined ? source : denoised(filter);
           // The factor the indirect diffuse light keeps: the occlusion through multi-bounce for the pixel's own albedo
           // (the diffuse colour target already has the metal's share removed), per channel. The fit is a cubic of the
           // occlusion with linear coefficients of the capped albedo (Jimenez et al. 2016, as Unreal's composite).

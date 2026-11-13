@@ -429,6 +429,16 @@ export interface IScreenSpaceGiOptions {
    */
   readonly fallback?: (position: TslNode, direction: TslNode, normal: TslNode) => TslNode;
   /**
+   * What a ray that leaves the screen finds in the tier past the screen: Unreal continues the ray in the distance field
+   * up to the radiance cache's coverage and reads the cache there, so a miss is a direction's radiance and not the
+   * pixel's mean (`ScreenProbeGather` composes that walk). Called for each ray that found nothing on screen, with the
+   * receiver's view-space position, the ray's unit view-space direction and its normal, and answers the light that
+   * arrives from off screen minus what the frame already holds at the pixel: the composite adds the pixel's own
+   * indirect diffuse, so a value that did not take it out would count it twice. Missing means 0, as three's SSGINode
+   * and this gather before PRD-640 Phase 2: a miss then leaves the pixel's cache average in place.
+   */
+  readonly miss?: (position: TslNode, direction: TslNode, normal: TslNode) => TslNode;
+  /**
    * Gather with screen probes instead of per-pixel rays (Unreal's ScreenProbeGather): one probe per
    * `downsampleFactor` pixel tile traces an octahedron of rays, the probe radiance is turned into an irradiance
    * octahedron, and each pixel blends the four nearest probes it can see. The call shape and the result are the
@@ -625,6 +635,11 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
               const fallback = options.fallback?.(position, direction, normal) ?? vec3(0, 0, 0);
               gathered.assign(gathered.add(hit.radiance.sub(fallback).mul(hit.weight)));
               hits.assign(hits.add(hit.weight));
+            }).Else(() => {
+              // A ray the screen cannot answer reaches the tier past it (the world-space trace and the radiance cache):
+              // the delta over what the pixel's own indirect diffuse already holds, at the ray's weight.
+              const past = options.miss?.(position, direction, normal);
+              if (past !== undefined) gathered.assign(gathered.add(past));
             });
           },
         );
@@ -690,10 +705,11 @@ function octahedronEncode(tsl: IScreenSpaceTsl, direction: TslNode): TslNode {
 /**
  * The screen-probe gather (PRD-640). Three passes, none per pixel until the last:
  *   1. trace   one texel per ray: a probe per tile traces an `n x n` octahedron of rays (view space) and keeps the lit
- *              colour each hit found and its weight.
+ *              colour each hit found and its weight, or, where the screen has nothing, what the tier past it answers
+ *              (`miss`: the world-space trace and the radiance cache).
  *   2. filter  each probe turns its rays into an irradiance octahedron: per direction, the cosine-weighted mean of
- *              `hit - fallback` (the trace subtracts the cache along each ray), so a ray that leaves the screen keeps
- *              the cache. A pixel then reads one bilinear tap instead of 64 rays.
+ *              `hit - fallback` (the trace subtracts the cache along each ray), so a ray that hits keeps the screen's
+ *              light and a ray that misses keeps the tier beyond it. A pixel then reads one bilinear tap, not 64 rays.
  *   3. gather  each pixel blends the four nearest probes by position, depth-plane distance and normal agreement, and
  *              reads each probe's irradiance along the pixel normal. A pixel no probe can see gets the cache alone.
  */
@@ -776,6 +792,11 @@ function defineScreenProbes(
         const hit = shade(trace.hitCoordinate, trace.hitDistance, direction);
         const believed = options.fallback?.(position, direction, normal) ?? vec3(0, 0, 0);
         result.assign(vec4(hit.radiance.sub(believed).mul(hit.weight), hit.weight));
+      }).Else(() => {
+        // A ray the screen cannot answer carries the tier past it: the filter mixes it with the probe's other rays, so a
+        // probe keeps a direction's radiance where the frame ends (the `a` channel stays the hit share).
+        const past = options.miss?.(position, direction, normal);
+        if (past !== undefined) result.assign(vec4(past, 0));
       });
     });
     return result;
