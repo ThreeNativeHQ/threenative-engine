@@ -100,6 +100,7 @@ export const PLAYTEST_FLAGS = {
   "--artifact": { default: "none (browser and android: with --build-report)", summary: "the built artifact this run exercises, hashed to prove the build report describes it", takesValue: true },
   "--artifacts": { default: "artifacts/playtest", summary: "artifact output directory", takesValue: true },
   "--build-report": { default: "none", summary: "the <artifact>.build-report.json threenative build published; its performanceBudget bounds every scenario, and a stale or foreign report refuses the run", takesValue: true },
+  "--skip-check": { default: "false", summary: "skip an installed project's typecheck and lint scripts, which otherwise run first and fail the run (reported as TN_PLAYTEST_CHECK_SKIPPED)", takesValue: false },
   "--no-screenshots": { default: "false", summary: "skip the before/after artifact frames; scenarios that assert on a frame still capture one", takesValue: false },
   "--browser-arg": { allowDashValue: true, default: "none (repeatable)", repeatable: true, summary: "one additional Chromium argument", takesValue: true },
   "--browser-recipe": { default: "none", summary: "named browser recipe (webgpu, which also launches headed)", takesValue: true },

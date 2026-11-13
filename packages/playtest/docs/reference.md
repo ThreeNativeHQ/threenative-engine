@@ -36,6 +36,11 @@ when it detects competing runners — or always with `CAPTURE_LOCK=1`; lock stat
 either way. `sh scripts/xvfb.sh` remains as an optional compatibility wrapper — never `xvfb-run`,
 whose exit status is its own failing cleanup kill rather than the command's.
 
+An installed project (no `pnpm-workspace.yaml` above it) runs its own `typecheck` and `lint`
+scripts before any scenario. A failure is exit `1`, `TN_PLAYTEST_CHECK_FAILED`, with the scripts'
+output: those rules are the framework's guardrails, and a game that breaks them is not passing.
+`--skip-check` skips them and prints `TN_PLAYTEST_CHECK_SKIPPED`.
+
 ## A frame rate from a private Xvfb is wrong, not missing
 
 **A frame rate from that private Xvfb is wrong, not missing**, so no command may print one as
