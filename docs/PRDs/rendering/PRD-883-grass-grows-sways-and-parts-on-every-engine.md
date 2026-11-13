@@ -1,7 +1,7 @@
 # PRD-883 — Grass grows, sways and parts around the player on every engine
 
-**Status:** NOT STARTED
-**Priority:** P2 — no box is ticked: the engine has no streamed grass system (AC-1), and the adventure kit's grass is static tufts (AC-2).
+**Status:** PARTIAL — Phase 1 done
+**Priority:** P2 — the adventure kit's grass is still static tufts (AC-2), and terrain biomes cannot reach the field yet (Phase 3).
 **Complexity:** 6 (MEDIUM) — 6 to 10 implementation files (2), a new core system (2), chunk streaming under a per-frame build budget (2); risk override: none. The visual judge and the native run follow the owner rules, not the score.
 **Owner:** João
 **Depends on:** None. Related: [PRD-855](../strata-terrain-hardening/PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) (Strata ground cover, can adopt this after it lands), [PRD-884](../assets/PRD-884-an-agent-asks-for-a-tree-and-gets-a-baked-arbor-glb.md) (Arbor trees, its sibling).
@@ -76,7 +76,7 @@ Risks:
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `engine_search_capabilities "grass that sways and parts around the player"` returns `GrassField3D` in its first three rows, with an example that names `render/grass.ts`. proof: a new row in `scripts/fixtures/capability-recall/corpus.json`, then `pnpm caps:recall`
+- [x] AC-1 [local]: `engine_search_capabilities "grass that sways and parts around the player"` returns `GrassField3D` in its first three rows, with an example that names `render/grass.ts`. proof: a new row in `scripts/fixtures/capability-recall/corpus.json`, then `pnpm caps:recall` — 2026-11-13: row `prd883.grass-field`, `pnpm caps:recall` exit 0; `GrassField3D` is row 1 for this query, for "meadow grass field over terrain" and for "grass"; its example names `src/render/grass.ts`.
 - [ ] AC-2 [local]: The adventure kit walks through streamed, swaying grass that flattens around Wren. The judge returns IMPROVEMENT against the criteria in Phase 2, and the `explore` scenario passes on web WebGPU and on desktop native. proof: Phase 2 and Phase 3 boxes
 
 ## Integration Ledger
@@ -91,13 +91,16 @@ Risks:
 ## Decisions
 
 - 2026-11-13 (João): port GrassSystem to TSL with the mechanism in core and the shading in template `src/render/`. Option 1 of the integration review.
+- 2026-11-13 (João): "make sure strata knows how to use it, when generating the worlds". Phase 3 therefore also makes terrain world generation reach the field: `grassFieldFromBiome` reads a generated biome's grass rows, so a Strata world grows streamed grass with one call.
+- 2026-11-13 (João): "use our performance capabilities where applicable". The kit drives `update(camera)` from `ctx.beforeRender` (once per real world draw, not per fixed step), holds startup on `warmUnculled` so the grass pipeline compiles before the first frame, and the frame cost is read from `TN_FRAME_BUDGET`. `InstancedBatch` does not fit: each blade carries its own attributes.
+- 2026-11-13 (agent): `GrassField3D` is admitted as mechanism in `docs/architecture/CHARTER.md`, beside `GPUParticles3D`, as core's closed list requires.
 - 2026-11-13 (agent): the adventure kit is the first consumer, because it already has a height function and grass tufts. Strata adopts the field under PRD-855, not here, so that this PRD stays within 3 phases.
 
 ## Execution Phases
 
 #### Phase 1: `GrassField3D` streams seeded chunks under a budget
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-11-13)
 **Files:**
 - `packages/core/src/grass-field.ts` (new): the node and its chunk streaming.
 - `packages/core/src/index.ts`: the export.
@@ -112,8 +115,8 @@ Risks:
 5. Throw on a malformed `bounds` or on a `chunkSize` of zero or less, naming the field.
 6. Add the JSDoc situations that the manifest reads.
 
-- [ ] A spec moves a stub camera across a 4 × 4 chunk field and asserts three things: the same seed gives the same instance buffers, no chunk is built past the budget in one frame, and a camera that oscillates on the edge rebuilds no chunk. proof: `pnpm exec vitest run packages/core/__tests__/grass-field.spec.ts`
-- [ ] AC-1 is green: the manifest carries `GrassField3D` and the recall query finds it. proof: `pnpm build && pnpm caps:recall`
+- [x] A spec moves a stub camera across a 4 × 4 chunk field and asserts three things: the same seed gives the same instance buffers, no chunk is built past the budget in one frame, and a camera that oscillates on the edge rebuilds no chunk. proof: `pnpm exec vitest run packages/core/__tests__/grass-field.spec.ts` — 2026-11-13: 5/5 pass. Red check: with the discard band set equal to the create band (1.3), the oscillation test fails.
+- [x] AC-1 is green: the manifest carries `GrassField3D` and the recall query finds it. proof: `pnpm build && pnpm caps:recall` — 2026-11-13: `tsx scripts/build-capability-manifest.ts` (574 entries) then `pnpm caps:recall` exit 0.
 
 **Verification:** the two boxes above. Also run `pnpm typecheck && pnpm lint` on the core package.
 
