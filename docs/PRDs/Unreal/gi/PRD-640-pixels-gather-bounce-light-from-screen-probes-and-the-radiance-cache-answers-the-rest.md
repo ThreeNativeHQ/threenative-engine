@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-640 — Pixels gather bounce light from screen probes, and the radiance cache answers the rest
 
-**Status:** PARTIAL (Phase 1 done, gate FAIL; Phase 2 mechanism done, proven in node and run on the owned engine in a browser on a software adapter, its ACs unrun; Phase 3 not started — no GPU host in the executing environment)
+**Status:** PARTIAL (Phase 1 done, gate FAIL; Phase 2 and Phase 3 mechanisms done and run on the owned engine in a browser, reported by the chain; AC-1 to AC-3 and the native conformance row unrun — no GPU host and no GPU-backed desktop runtime in the executing environment)
 **Priority:** P1 — no box is ticked: the Epic tier of Unreal, which a fresh project runs, gathers GI with screen probes, and ThreeNative has only a per-pixel SSGI whose misses read a 1 m field.
 **Complexity:** 8 (HIGH) — 6–10 files: the gather, the short range AO, the composite, specs, conformance (+2), new module `screen-probe-gather.ts` (+2), state across frames: probe radiance history (+2), native proof (+1), changes the frame cost of the high tier (+1); risk override: none
 **Owner:** João
@@ -148,6 +148,14 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 **Verification:** AC-3.
 
 ## Decisions
+
+- **2026-11-13, GI session: Short Range AO replaces GTAO in the harness's `high` preset and carries its own stage name.**
+  The chain's built-in order names no `shortRangeAO` (`chain.ts` and the engine's `plan.cpp` both), and the native engine is
+  a prebuilt artifact with no Emscripten toolchain on this host, so a new *built-in* name would have needed an engine
+  rebuild to be honest. Instead the stage is an **authored** stage with `before: "ssgi"`, which both planners accept, and
+  the harness asks for it by that name; `?shortRangeAO=0` keeps GTAO for the A/B. The pass writes the visibility in `.a`
+  and the bent normal in `.rgb`, is denoised through the same depth-aware filter as the gather, and its composite keeps the
+  harness's multi-bounce with the albedo cap at 0.5, as Unreal's composite does.
 
 - **2026-11-12, GI session: two silent gates kept the tier past the screen off, and a browser run found them.**
   Neither is visible in a unit spec. (a) The chain is built from a *resolved options* whitelist, and `ssgiProbeMiss` was

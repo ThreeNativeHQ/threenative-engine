@@ -331,10 +331,6 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // surfaces draws as before. Diagnosis: ?traced=0 leaves the reflections to the environment.
       const smooth = meshes.some((m) => ((m.material as { roughness?: number }).roughness ?? 1) < 0.4);
       const tracing = smooth && GI_METHOD !== "none" && params.get("traced") !== "0";
-      // The tier past the screen walks the packed scene, which a rough scene does not otherwise need: only a smooth
-      // surface traces a reflection. ?probeMiss=1 packs it for the gather alone.
-      if (GI_METHOD !== "none" && params.get("probeMiss") === "1" && reflectionTrace.current === undefined)
-        reflectionTrace.gi ??= new TracedReflections(model);
       if (tracing) {
         reflectionTrace.current = new TracedReflections(model);
         // The lamps light a reflection's hit as they light the screen. Diagnosis: ?lampHit=0 leaves a hit to the cache alone.
@@ -569,9 +565,6 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
                 ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
               }
             : {}),
-          // Diagnosis: ?probeMiss=1 continues a probe ray that leaves the frame through the scene's packed triangles
-          // to the radiance cache (PRD-640 Phase 2), so a miss is a direction's radiance, not the pixel's mean.
-          ...(params.get("probeMiss") === "1" ? { ssgiProbeMiss: true } : {}),
           ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
           ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
           // Diagnosis: the contact occlusion's URL knobs (aoReach.ts), as on the reference scene.
@@ -698,8 +691,6 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
 
   override exit(ctx: GameCtx): void {
     reflectionTrace.current?.dispose();
-    reflectionTrace.gi?.dispose();
-    reflectionTrace.gi = undefined;
     reflectionTrace.current = undefined;
     reflectionTrace.lamps = undefined;
     this.#dispose?.();

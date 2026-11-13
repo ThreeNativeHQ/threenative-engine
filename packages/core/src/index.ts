@@ -393,6 +393,34 @@ export type {
   ScreenProbePass,
 } from "./render/screen-probe-gather.js";
 /**
+ * Unreal's Short Range AO: a horizon search of 2 sweeps around the view normal, 3 samples each at the squared fraction
+ * of a 32 px screen reach, at full resolution, with a bent normal at Epic. It is the occlusion that runs *with* dynamic
+ * global illumination — the contact detail Lumen keeps after the screen probe gather has already answered the wide
+ * occlusion — so a gathered frame is not darkened twice by two wide treatments. The result is one texture: `rgb` the
+ * bent normal in view space, `a` the share of the hemisphere left open, which multiplies indirect light only.
+ * @situation contact shadow at the foot of an object while dynamic GI runs
+ * @situation dark line where a wall meets the floor, without a second wide AO over the gathered light
+ * @situation lumen short range ao
+ * @alias short range ao
+ * @alias bent normal
+ * @alias horizon search occlusion
+ * @constraint it replaces GTAO when dynamic GI runs; a tier without GI keeps ambientOcclusion
+ * @constraint the occlusion multiplies indirect light only: direct light and emission keep their own occlusion
+ * @constraint multi-bounce and its albedo cap belong to the game's composite; Unreal caps the albedo at 0.5
+ * @constraint an authored stage that carries its name must anchor itself (`before: "ssgi"`), because the chain's built-in order names no shortRangeAO
+ * @override horizonSearchSliceCount, horizonSearchStepCount, reachPx, bentNormal and intensity are game-owned choices
+ * @example
+ * const shortRange = new ShortRangeAO({ camera, viewport: renderer.drawingBufferSize });
+ * const contact = shortRange.occlusion(depth(), normalView());
+ * const indirect = input.rgb.mul(contact.a);
+ */
+export { ShortRangeAO } from "./render/short-range-ao.js";
+export type {
+  IShortRangeAOCamera,
+  IShortRangeAOOptions,
+  IShortRangeAOReport,
+} from "./render/short-range-ao.js";
+/**
  * Collapse many copies of one game-authored shape into a single draw, without counting them first.
  *
  * `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a
