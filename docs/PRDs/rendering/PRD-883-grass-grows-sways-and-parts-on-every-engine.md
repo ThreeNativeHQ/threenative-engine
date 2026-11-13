@@ -4,7 +4,7 @@
 **Priority:** P2 — the adventure kit's grass is still static tufts (AC-2), and terrain biomes cannot reach the field yet (Phase 3).
 **Complexity:** 6 (MEDIUM) — 6 to 10 implementation files (2), a new core system (2), chunk streaming under a per-frame build budget (2); risk override: none. The visual judge and the native run follow the owner rules, not the score.
 **Owner:** João
-**Depends on:** None. Related: [PRD-855](../strata-terrain-hardening/PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) (Strata ground cover, can adopt this after it lands), [PRD-884](../assets/PRD-884-an-agent-asks-for-a-tree-and-gets-a-baked-arbor-glb.md) (Arbor trees, its sibling).
+**Depends on:** None. Related: [PRD-855](../strata-terrain-hardening/PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) (Strata ground cover, can adopt this after it lands), [PRD-884](../done/assets/PRD-884-an-agent-asks-for-a-tree-and-gets-a-baked-arbor-glb.md) (Arbor trees, its sibling).
 
 ## Context
 

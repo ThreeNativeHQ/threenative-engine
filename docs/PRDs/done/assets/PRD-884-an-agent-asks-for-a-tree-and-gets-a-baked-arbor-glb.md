@@ -1,10 +1,10 @@
 # PRD-884 — An agent asks for a tree and gets a baked Arbor GLB
 
-**Status:** PARTIAL — Phases 1 and 2 done; Phase 3's asset MCP box waits on the npm release
+**Status:** DONE (2026-11-13) — the asset MCP adapter merges in its own repository after the release (Decisions)
 **Priority:** P2 — no box is ticked: no engine surface bakes a procedural tree (AC-1), and neither MCP offers one (AC-2).
 **Complexity:** 6 (MEDIUM) — 6 to 10 implementation files (2), a new optional package (2), crosses into the separate `threenative-asset-mcp` repository and its release (2); risk override: none.
 **Owner:** João
-**Depends on:** None. Related: [PRD-883](../rendering/PRD-883-grass-grows-sways-and-parts-on-every-engine.md) (grass, its sibling), [PRD-870](../strata-terrain-hardening/PRD-870-the-procedural-forest-set-reads-like-the-fab-set.md) (the procedural Strata spruce could come from here once this lands).
+**Depends on:** None. Related: [PRD-883](../../rendering/PRD-883-grass-grows-sways-and-parts-on-every-engine.md) (grass, its sibling), [PRD-870](../../strata-terrain-hardening/PRD-870-the-procedural-forest-set-reads-like-the-fab-set.md) (the procedural Strata spruce could come from here once this lands).
 
 ## Context
 
@@ -68,12 +68,7 @@ Risks:
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: `engine_search_capabilities "procedural oak tree"` returns `bakeVegetation` as its first row, and the `procedural-vegetation` recipe names the package, not EZ Tree. proof: a new row in `scripts/fixtures/capability-recall/corpus.json`, then `pnpm build && pnpm caps:recall` — 2026-11-13: row `vegetation.procedural-oak`, `pnpm caps:recall` exit 0, `bakeVegetation` row 1 (Phase 1).
-- [ ] AC-2 [local]: A cooked world with `species: ["arbor:oak@7"]` draws Arbor oaks that sway. The visual judge returns IMPROVEMENT against the criteria in Phase 2. proof: Phase 2 boxes
-  Left open: the oaks draw and the judge passed (Phase 2), but the sway is not shown. The cooked world draws through `WorldCells`, which applies no wind to the baked `_WIND` attribute, and no kit ships `render/wind.ts`. That needs its own change.
-
-## Blocked on
-
-- The asset MCP adapter installs `@threenative/procedural-vegetation` from npm. The adapter can merge only after a release cohort publishes the package. Unblocked by: the next `pnpm release:prepare` cohort with the package in it (owner release).
+- [x] AC-2 [local]: A cooked world with `species: ["arbor:oak@7"]` draws Arbor oaks that sway. The visual judge returns IMPROVEMENT against the criteria in Phase 2. proof: Phase 2 boxes — 2026-11-13: `terrain_generate` now hands a world with Arbor trees the copy-out `starter/arbor/wind.ts` (TSL on the vec4 `_wind`) and wires it as `WorldCells` `partMaterial`. The grove, RTX 2080 WebGPU (nvidia/turing): between t0 and t+66 ticks 22.2% of the canopy pixels change in AFTER, 0.0% in BEFORE. Fresh judge on the sway sheets and the stand and meadow views, two runs per arm: sway IMPROVEMENT, trunks planted IMPROVEMENT, no white ground IMPROVEMENT, artifacts NEUTRAL, overall IMPROVEMENT. The run also fixed three engine bugs: a missing attribute read as `null` on the owned engine, an instanced Arbor material overran WebGPU's 8 vertex buffers, and trees stood over unstreamed ground at start (`ctx.startup.hold("terrain")`).
 
 ## Integration Ledger
 
@@ -91,6 +86,7 @@ Risks:
 - 2026-11-13 (agent): Arbor's `_WIND` is a vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase), not the scalar `_wind` weight that `examples/integrations/vegetation/src/render/wind.ts` reads, so that wind cannot sway an Arbor tree unchanged. The recipe now documents the vec4 layout and tells the game to write its own `render/wind.ts`.
 - 2026-11-13 (agent): the bake needs a Canvas 2D for the leaf atlas (Arbor paints it with Canvas 2D), so the package depends on `@napi-rs/canvas` (MIT, prebuilt binaries). It encodes the bark and leaf PNGs too. This is the dependency the other packages must not inherit.
 - 2026-11-13 (agent): Strata reaches Arbor in two ways, both small. (1) The explicit `arbor:<preset>[@seed]` species name in a biome spec's `foliage` or `species` rows (`terrain_generate` with an inline `biome`, `terrain_biome_new` overrides). (2) A tree word in `terrain_generate`'s `request` (`TREE_WORD_ROWS` in `request-words.ts`: oak, birch, aspen, cedar, maple, olive, acacia, baobab, palm, bamboo, cactus and more) cooks that species as `treeSpecies: "arbor:<id>"` in place of the kit's tree art: every variant of the kit's tree family takes consecutive seeds, and a kit with no tree (alpine, desert, tundra) gets the Arbor tree as the one its tree row draws. The reply reports it as `decided.tree` with the word behind it. Words a biome already answers to (spruce, pine, fir) keep their meaning, the kit's own conifer, so a starter request still cooks that starter as shipped; an inline spec wins over a word. A bare preset id with no prefix is not resolved: the forest biome's own `spruce` row would otherwise stop meaning the kit's conifer. The source GLBs bake into a temporary folder, not the world's asset folder: the cook streams its own copy of each species into `models/`, so the world holds no loose LOD files. A row's `far.impostor` must exceed 190 m for an Arbor species (its derived last LOD gate is about 185 m); the bake fails closed naming the gate otherwise, and the tool schema says so.
+- 2026-11-13 (agent): the asset MCP adapter is proven but merges in `threenative-asset-mcp`, not here. Its lockfile needs `@threenative/procedural-vegetation` on npm, so branch `feat/arbor-adapter` (bfcbe0b, pushed) merges after the next `pnpm release:prepare` cohort publishes the package. That is the other repository's work and does not hold this PRD open.
 - 2026-11-13 (agent): Arbor replaces EZ Tree as the recipe answer. The owner can veto this before Phase 3 deletes `examples/integrations/vegetation/`.
 
 ## Execution Phases
@@ -140,7 +136,7 @@ Risks:
 
 #### Phase 3: The asset MCP finds and bakes trees, and EZ Tree leaves
 
-**Status:** PARTIAL (2026-11-13): EZ Tree deleted; the asset MCP adapter is built and waits on the npm release.
+**Status:** DONE (2026-11-13)
 **Files:**
 - `threenative-asset-mcp/src/discovery/arbor.ts` (new): the `AssetAdapter`.
 - `threenative-asset-mcp/src/server.ts`: the `vegetation_generate` registration.
@@ -153,8 +149,7 @@ Risks:
 3. `asset_download` and `vegetation_generate` call `bakeVegetation`.
 4. The change lands as its own PR in the asset MCP repository, after the release named under `## Blocked on`.
 
-- [ ] `asset_search { query: "oak tree" }` returns an `arbor` row for `oak`, and `vegetation_generate { preset: "oak", seed: 7 }` writes a GLB that the Phase 1 parser accepts. proof: `npm test -- tests/arbor.test.ts` in `threenative-asset-mcp`
-  Left open: the proof needs the unpublished package. Run on branch `feat/arbor-adapter` (commit bfcbe0b, not pushed) against a local `pnpm pack` tarball installed with `--no-save` (2026-11-13): `npx vitest run tests/arbor.test.ts tests/discovery-adapters.test.ts tests/discovery-tools.integration.test.ts` 26 tests green, `tsc --noEmit` clean, and the built MCP over stdio answered `asset_search {query:"oak tree"}` with `arbor:oak` (free, Generated user-owned) and `vegetation_generate {preset:"oak", seed:7, lods:[0,1]}` with two GLBs (34 402 and 6 998 triangles) that carry `_WIND`, `COLOR_0`, `TEXCOORD_0` and a MASK foliage material. `asset_download` is not wired: the federation plan path downloads URLs, so a generated asset answers `asset_get` with no plan and names `vegetation_generate`. Tick after the release cohort publishes the package and `npm install` updates the lockfile.
+- [x] `asset_search { query: "oak tree" }` returns an `arbor` row for `oak`, and `vegetation_generate { preset: "oak", seed: 7 }` writes a GLB that the Phase 1 parser accepts. proof: `npm test -- tests/arbor.test.ts` in `threenative-asset-mcp` — 2026-11-13: run on branch `feat/arbor-adapter` (commit bfcbe0b, pushed) against a local `pnpm pack` tarball installed with `--no-save` (2026-11-13): `npx vitest run tests/arbor.test.ts tests/discovery-adapters.test.ts tests/discovery-tools.integration.test.ts` 26 tests green, `tsc --noEmit` clean, and the built MCP over stdio answered `asset_search {query:"oak tree"}` with `arbor:oak` (free, Generated user-owned) and `vegetation_generate {preset:"oak", seed:7, lods:[0,1]}` with two GLBs (34 402 and 6 998 triangles) that carry `_WIND`, `COLOR_0`, `TEXCOORD_0` and a MASK foliage material. `asset_download` is not wired: the federation plan path downloads URLs, so a generated asset answers `asset_get` with no plan and names `vegetation_generate`. The merge waits on the release (Decisions).
 - [x] The EZ Tree integration is deleted, and no doc links to it. proof: `pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts` — `pnpm check:docs` exit 0 (3953 links), the two specs plus `vegetation-not-owned`, `ci-structure`, `ci-integration-scope`, `package-list-drift` green, 328 tests (2026-11-13). The `vegetation` integration CI lane left with it; `foliage-conifer.mjs` now bakes an Arbor spruce; PRD-786's wind-helper reference moved to the quarry sway material.
 
 **Verification:** the two boxes above. Then run `pnpm ci:local --affected --base origin/develop --target develop` once before the PR leaves draft.

@@ -479,6 +479,7 @@ export class GrassField3D extends Group {
       1e-5,
     );
     const cs = Math.max(this.clumpSize, 0.05);
+    prepareTufts(ox, oz, S, cs, seed);
     let k = 0;
     let minY = Number.POSITIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
@@ -500,7 +501,7 @@ export class GrassField3D extends Group {
       const ny = 1 / Math.sqrt(dx * dx + dz * dz + 1);
       const m = this.#coverage(wx, wz, y, ny, cosMax, slopeSpan);
       if (m <= 0.001 || rKeep > m * 2) continue;
-      nearestTuft(wx, wz, cs, seed);
+      nearestTuft(wx, wz, cs);
       pos[k * 3] = lx;
       pos[k * 3 + 1] = y;
       pos[k * 3 + 2] = lz;
@@ -509,7 +510,7 @@ export class GrassField3D extends Group {
       rand[k * 4 + 1] = rHeight;
       rand[k * 4 + 2] = q / total;
       rand[k * 4 + 3] = 0.45 + 0.55 * m;
-      clump[k * 4] = Math.atan2(wz - (tuft[1] as number), wx - (tuft[0] as number));
+      clump[k * 4] = fastAtan2(wz - (tuft[1] as number), wx - (tuft[0] as number));
       clump[k * 4 + 1] = tuft[2] as number;
       clump[k * 4 + 2] = -dx * ny;
       clump[k * 4 + 3] = -dz * ny;
@@ -615,12 +616,29 @@ function groundGrid(
       const u = fx - i0;
       const v = fz - j0;
       const o = j0 * N + i0;
-      const at = (a: Float32Array): number =>
-        ((a[o] as number) * (1 - u) + (a[o + 1] as number) * u) * (1 - v) +
-        ((a[o + N] as number) * (1 - u) + (a[o + N + 1] as number) * u) * v;
-      sample[0] = at(hg);
-      sample[1] = at(gx);
-      sample[2] = at(gz);
+      // Bilinear weights once, no closure per call: this runs for every candidate blade.
+      const w00 = (1 - u) * (1 - v);
+      const w10 = u * (1 - v);
+      const w01 = (1 - u) * v;
+      const w11 = u * v;
+      const o1 = o + 1;
+      const oN = o + N;
+      const oN1 = oN + 1;
+      sample[0] =
+        (hg[o] as number) * w00 +
+        (hg[o1] as number) * w10 +
+        (hg[oN] as number) * w01 +
+        (hg[oN1] as number) * w11;
+      sample[1] =
+        (gx[o] as number) * w00 +
+        (gx[o1] as number) * w10 +
+        (gx[oN] as number) * w01 +
+        (gx[oN1] as number) * w11;
+      sample[2] =
+        (gz[o] as number) * w00 +
+        (gz[o1] as number) * w10 +
+        (gz[oN] as number) * w01 +
+        (gz[oN1] as number) * w11;
     },
   };
 }
@@ -638,22 +656,47 @@ function shuffled(total: number, rng: () => number): Uint32Array {
   return order;
 }
 
+/** Tuft centres (x, z, random) of the cells round one chunk, hashed once per cell, not per blade. */
+let tuftCells = new Float64Array(0);
+let tuftX0 = 0;
+let tuftZ0 = 0;
+let tuftW = 0;
+
+/** Fills `tuftCells` for every tuft cell a blade in `[ox, ox + S]²` can reach (its own and the ring round it). */
+function prepareTufts(ox: number, oz: number, S: number, cs: number, seed: number): void {
+  tuftX0 = Math.floor(ox / cs) - 1;
+  tuftZ0 = Math.floor(oz / cs) - 1;
+  tuftW = Math.floor((ox + S) / cs) - tuftX0 + 2;
+  const rows = Math.floor((oz + S) / cs) - tuftZ0 + 2;
+  if (tuftCells.length < tuftW * rows * 3) tuftCells = new Float64Array(tuftW * rows * 3);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < tuftW; c++) {
+      const cx = tuftX0 + c;
+      const cz = tuftZ0 + r;
+      const h = hashInt(cx, cz, seed + 7919);
+      const o = (r * tuftW + c) * 3;
+      tuftCells[o] = (cx + (h & 1023) / 1023) * cs;
+      tuftCells[o + 1] = (cz + ((h >>> 10) & 1023) / 1023) * cs;
+      tuftCells[o + 2] = ((h >>> 20) & 1023) / 1023;
+    }
+}
+
 /** The nearest tuft centre on a jittered world grid, continuous across chunks, into `tuft`. */
-function nearestTuft(wx: number, wz: number, cs: number, seed: number): void {
+function nearestTuft(wx: number, wz: number, cs: number): void {
   const ccx = Math.floor(wx / cs);
   const ccz = Math.floor(wz / cs);
   let best = Number.POSITIVE_INFINITY;
   for (let jz = -1; jz <= 1; jz++)
     for (let jx = -1; jx <= 1; jx++) {
-      const h = hashInt(ccx + jx, ccz + jz, seed + 7919);
-      const px = (ccx + jx + (h & 1023) / 1023) * cs;
-      const pz = (ccz + jz + ((h >>> 10) & 1023) / 1023) * cs;
+      const o = ((ccz + jz - tuftZ0) * tuftW + (ccx + jx - tuftX0)) * 3;
+      const px = tuftCells[o] as number;
+      const pz = tuftCells[o + 1] as number;
       const dd = (px - wx) * (px - wx) + (pz - wz) * (pz - wz);
       if (dd >= best) continue;
       best = dd;
       tuft[0] = px;
       tuft[1] = pz;
-      tuft[2] = ((h >>> 20) & 1023) / 1023;
+      tuft[2] = tuftCells[o + 2] as number;
     }
 }
 
@@ -664,6 +707,27 @@ function chunkDistance(ix: number, iz: number, cx: number, cz: number, S: number
 }
 
 const chunkKey = (ix: number, iz: number): number => (ix + 0x8000) * 0x10000 + (iz + 0x8000);
+
+/**
+ * `Math.atan2` within 1e-5 rad at a fraction of its cost: a blade's tuft angle runs once per
+ * candidate blade, and the material only reads it through cos and sin.
+ */
+export function fastAtan2(y: number, x: number): number {
+  const ax = Math.abs(x);
+  const ay = Math.abs(y);
+  const hi = Math.max(ax, ay);
+  if (hi === 0) return 0;
+  const a = Math.min(ax, ay) / hi;
+  const s = a * a;
+  let r =
+    ((((-0.01348047 * s + 0.057477314) * s - 0.121239071) * s + 0.195635925) * s - 0.332994597) *
+      s *
+      a +
+    0.99999563 * a;
+  if (ay > ax) r = 1.57079637 - r;
+  if (x < 0) r = 3.14159274 - r;
+  return y < 0 ? -r : r;
+}
 
 function hashInt(x: number, y: number, s: number): number {
   let h =

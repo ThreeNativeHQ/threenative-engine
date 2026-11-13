@@ -11,6 +11,7 @@ import {
   GRASS_FIELD_ATTRIBUTES,
   GrassField3D,
   type IGrassField3DOptions,
+  fastAtan2,
 } from "../src/grass-field.js";
 
 function blade() {
@@ -130,5 +131,30 @@ describe("GrassField3D", () => {
     expect(() => field({ bounds: { minX: 0, minZ: 0, maxX: Number.NaN, maxZ: 9 } })).toThrow(
       /bounds\.maxX/,
     );
+  });
+});
+
+describe("fastAtan2", () => {
+  it("stays within 1e-5 rad of Math.atan2 on every quadrant, both axes and the origin", () => {
+    let worst = 0;
+    const at = (y: number, x: number) => {
+      worst = Math.max(worst, Math.abs(fastAtan2(y, x) - Math.atan2(y, x)));
+    };
+    for (let i = 0; i < 4096; i++) {
+      const a = (i / 4096) * Math.PI * 2 - Math.PI;
+      const r = 10 ** ((i % 7) - 3);
+      at(Math.sin(a) * r, Math.cos(a) * r);
+    }
+    for (const [y, x] of [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+      [1, 1],
+      [-1, -1],
+      [0, 0],
+    ] as const)
+      at(y, x);
+    expect(worst).toBeLessThan(1e-5);
   });
 });
