@@ -6,16 +6,11 @@ import { pathToFileURL } from "node:url";
 // should not have to be told the asset, sculpt and capability tools exist, or run a setup command
 // to get them. Every host that reads a project-scoped MCP config gets one — `MCP_HOSTS` is the
 // list. Set THREENATIVE_SKIP_MCP_SETUP=1 to opt out.
-import {
-  MCP_HOSTS,
-  ensureHostMcpConfigs,
-  ensureLeanpiSchemaCache,
-  installTarget,
-} from "../mcp/install.mjs";
+import { MCP_HOSTS, ensureHostMcpConfigs, installTarget } from "../mcp/install.mjs";
 
 const LABELS = new Map(MCP_HOSTS.map((host) => [host.id, host.label]));
 
-export async function runMcpSetup(environment = process.env, cwd = process.cwd()) {
+export function runMcpSetup(environment = process.env, cwd = process.cwd()) {
   const skip = environment.THREENATIVE_SKIP_MCP_SETUP;
   if (skip === "1" || skip === "true") return;
   // Never fail an install over this. A game that cannot write its MCP configs still runs.
@@ -23,10 +18,6 @@ export async function runMcpSetup(environment = process.env, cwd = process.cwd()
     const target = installTarget(environment, cwd);
     if (target === undefined) return;
     const outcomes = ensureHostMcpConfigs(target);
-    // Loaded here, not in install.mjs: the scaffolder bundles install.mjs, and a bundled copy of
-    // the server would start itself under the scaffolder's own entry path.
-    const { toolDefinitions } = await import("../mcp/engine-server.mjs");
-    ensureLeanpiSchemaCache(target, toolDefinitions());
     const wired = [...outcomes]
       .filter(([, outcome]) => outcome === "created" || outcome === "updated")
       .map(([id]) => LABELS.get(id) ?? id);
@@ -54,4 +45,4 @@ if (
   entry !== undefined &&
   pathToFileURL(realpathSync(path.resolve(entry))).href === import.meta.url
 )
-  await runMcpSetup();
+  runMcpSetup();

@@ -1200,26 +1200,6 @@ export async function fixAuthoringLayer(
   return result;
 }
 
-/** Reruns the installed core's MCP setup in the project. pnpm restores a cached build of a package
- * it built before and then skips its postinstall, so a second project on one core version never got
- * leanpi's engine schema cache (PRD-881). The script is the postinstall's own and never throws. */
-export function seedProjectMcp(target: string): void {
-  const script = path.join(
-    target,
-    "node_modules",
-    "@threenative",
-    "core",
-    "scripts",
-    "ensure-mcp.mjs",
-  );
-  if (!existsSync(script)) return;
-  execFileSync(process.execPath, [script], {
-    cwd: target,
-    env: { ...process.env, ...Object.fromEntries([["INIT_CWD", target]]) },
-    stdio: "inherit",
-  });
-}
-
 async function runInstall(target: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn("pnpm", ["install"], { cwd: target, stdio: "inherit" });
@@ -1293,10 +1273,7 @@ export async function createProject(
       await renderedAuthoringLayer(target, template, root),
       root,
     );
-    if (installed) {
-      await runInstall(target);
-      seedProjectMcp(target);
-    }
+    if (installed) await runInstall(target);
   } catch (error) {
     await discardScaffold(target, existedBefore);
     throw error;

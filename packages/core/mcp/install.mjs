@@ -46,7 +46,6 @@ export const MCP_HOSTS = Object.freeze([
     file: ".mcp.json",
     format: "mcpServers",
   }),
-  Object.freeze({ id: "leanpi", label: "leanpi", file: ".leanpi/mcp.json", format: "leanpi" }),
   Object.freeze({ id: "codex", label: "Codex", file: ".codex/config.toml", format: "codex" }),
   Object.freeze({ id: "cursor", label: "Cursor", file: ".cursor/mcp.json", format: "mcpServers" }),
   Object.freeze({ id: "vscode", label: "VS Code", file: ".vscode/mcp.json", format: "vscode" }),
@@ -123,38 +122,6 @@ export function ensureCodexMcpConfig(target) {
     `${existing}${separator}${missing.map(({ body }) => body).join("\n\n")}\n`,
   );
   return existing.length === 0 ? "created" : "updated";
-}
-
-/** Writes the engine server's tool schemas into leanpi's schema cache, the file its `/mcp refresh`
- * writes. leanpi admits no MCP tool whose schema is not cached, so a cold project offered no engine
- * tool until the user ran that command. Other cached servers are kept. */
-export function ensureLeanpiSchemaCache(target, tools) {
-  const cachePath = path.join(target, ".leanpi", "cache", "mcp-catalog.json");
-  let cache = {};
-  const existed = existsSync(cachePath);
-  if (existed) {
-    try {
-      cache = JSON.parse(readFileSync(cachePath, "utf8"));
-    } catch {
-      return "unreadable";
-    }
-  }
-  const servers = cache?.servers ?? {};
-  const wanted = tools.map(({ name, description, inputSchema }) => ({
-    name,
-    description,
-    inputSchema,
-  }));
-  if (JSON.stringify(servers["threenative-engine"]?.tools) === JSON.stringify(wanted))
-    return "unchanged";
-  const updatedAt = new Date().toISOString();
-  const written = {
-    ...cache,
-    servers: { ...servers, "threenative-engine": { updatedAt, tools: wanted } },
-  };
-  mkdirSync(path.dirname(cachePath), { recursive: true });
-  writeFileSync(cachePath, `${JSON.stringify(written, null, 2)}\n`);
-  return existed ? "updated" : "created";
 }
 
 /** Wires every host in `MCP_HOSTS`, mapping host id to what the write did. One host's unreadable
