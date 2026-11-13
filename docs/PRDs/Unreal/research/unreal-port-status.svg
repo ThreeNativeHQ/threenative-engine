@@ -22,7 +22,7 @@
 <rect x="68.7414033420881" y="98" width="51.86653350604253" height="50.16034557723481" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing common, materials and far field · Deferred</title></rect>
 <text x="71.7414033420881" y="109" class="l">Hardwar…</text>
 <rect x="68.7414033420881" y="149.1603455772348" width="51.86653350604253" height="44.8072174556487" rx="2" fill="#d9961f"><title>Lumen · Probe tracing and radiance cache handoff · In progress</title></rect>
-<rect x="68.7414033420881" y="190.9675630328835" width="5.459635105899213" height="3" fill="#fff" opacity=".85"/>
+<rect x="68.7414033420881" y="190.9675630328835" width="10.919270211798427" height="3" fill="#fff" opacity=".85"/>
 <text x="71.7414033420881" y="160.1603455772348" class="l">Probe t…</text>
 <rect x="68.7414033420881" y="194.9675630328835" width="51.86653350604253" height="44.64051104355778" rx="2" fill="#3aa56c"><title>Lumen · Shared and glue · Done</title></rect>
 <text x="71.7414033420881" y="205.9675630328835" class="l">Shared …</text>
@@ -37,13 +37,13 @@
 <rect x="170.0469307379189" y="139.87013427162117" width="26.694961119975886" height="3" fill="#fff" opacity=".85"/>
 <text x="173.0469307379189" y="109" class="l">Lumen …</text>
 <rect x="216.22301878710886" y="98" width="44.898561861192036" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
-<rect x="216.22301878710886" y="139.87013427162117" width="23.518294308243448" height="3" fill="#fff" opacity=".85"/>
+<rect x="216.22301878710886" y="139.87013427162117" width="27.794347818833167" height="3" fill="#fff" opacity=".85"/>
 <text x="219.22301878710886" y="109" class="l">Shared…</text>
 <rect x="262.1215806483009" y="98" width="43.126663891666965" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
 <rect x="262.1215806483009" y="139.87013427162117" width="22.831763236764864" height="3" fill="#fff" opacity=".85"/>
 <text x="265.1215806483009" y="109" class="l">Share…</text>
 <rect x="306.2482445399679" y="98" width="41.354765922141894" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Integrate, tile classification and upsample · In progress</title></rect>
-<rect x="306.2482445399679" y="139.87013427162117" width="16.541906368856758" height="3" fill="#fff" opacity=".85"/>
+<rect x="306.2482445399679" y="139.87013427162117" width="20.677382961070947" height="3" fill="#fff" opacity=".85"/>
 <text x="309.2482445399679" y="109" class="l">Integ…</text>
 <rect x="121.60793684813063" y="143.87013427162117" width="45.14806965591683" height="40.20845343063411" rx="2" fill="url(#gap)"><title>Lumen · Surface cache residency, resolution and feedback · No PRD</title></rect>
 <text x="124.60793684813063" y="154.87013427162117" class="l">Surfac…</text>
@@ -63,7 +63,7 @@
 <rect x="204.85223072567936" y="143.87013427162117" width="35.72363188795572" height="41.0510357605267" rx="2" fill="#3aa56c"><title>Lumen · Mesh SDF and heightfield culling · Done</title></rect>
 <text x="207.85223072567936" y="154.87013427162117" class="l">Mesh…</text>
 <rect x="241.57586261363508" y="143.87013427162117" width="35.49076167940814" height="41.0510357605267" rx="2" fill="#d9961f"><title>Lumen · Probe spatial filter and irradiance conversion · In progress</title></rect>
-<rect x="241.57586261363508" y="181.92117003214787" width="7.886835928757364" height="3" fill="#fff" opacity=".85"/>
+<rect x="241.57586261363508" y="181.92117003214787" width="15.773671857514728" height="3" fill="#fff" opacity=".85"/>
 <text x="244.57586261363508" y="154.87013427162117" class="l">Prob…</text>
 <rect x="278.0666242930432" y="143.87013427162117" width="35.07159530402248" height="41.0510357605267" rx="2" fill="url(#gap)"><title>Lumen · Surface cache compression and copy · No PRD</title></rect>
 <text x="281.0666242930432" y="154.87013427162117" class="l">Surf…</text>
@@ -77,7 +77,7 @@
 <rect x="167.75600650404746" y="260.0019081426534" width="36.15747328978759" height="34.472313588310385" rx="2" fill="#6c7176"><title>Lumen · Ray traced translucency · Deferred</title></rect>
 <text x="170.75600650404746" y="271.0019081426534" class="l">Ray …</text>
 <rect x="167.75600650404746" y="295.4742217309638" width="36.15747328978759" height="34.34054422134045" rx="2" fill="#d9961f"><title>Lumen · Short Range AO and bent normal · In progress</title></rect>
-<rect x="167.75600650404746" y="326.81476595230424" width="8.034994064397242" height="3" fill="#fff" opacity=".85"/>
+<rect x="167.75600650404746" y="326.81476595230424" width="16.069988128794485" height="3" fill="#fff" opacity=".85"/>
 <text x="170.75600650404746" y="306.4742217309638" class="l">Shor…</text>
 <rect x="204.91347979383505" y="185.92117003214787" width="36.27901080870464" height="33.64743152523752" rx="2" fill="#d9961f"><title>Lumen · Tile classification and ray generation · In progress</title></rect>
 <rect x="204.91347979383505" y="216.5686015573854" width="19.78855135020253" height="3" fill="#fff" opacity=".85"/>
@@ -125,7 +125,7 @@
 <rect x="272.12610751015046" y="275.7300970525434" width="24.332307463166444" height="22.58010387989765" rx="2" fill="#4a86d6"><title>Lumen · Interpolation with parallax correction · Not started</title></rect>
 <text x="275.12610751015046" y="286.7300970525434" class="l">In…</text>
 <rect x="272.12610751015046" y="299.31020093244103" width="24.332307463166444" height="15.544728623928165" rx="2" fill="#d9961f"><title>Lumen · Uniform and adaptive probe placement · In progress</title></rect>
-<rect x="272.12610751015046" y="311.8549295563692" width="2.5612955224385727" height="3" fill="#fff" opacity=".85"/>
+<rect x="272.12610751015046" y="311.8549295563692" width="5.1225910448771454" height="3" fill="#fff" opacity=".85"/>
 <rect x="272.12610751015046" y="315.8549295563692" width="24.332307463166444" height="13.959836395935042" rx="2" fill="#d9961f"><title>Lumen · Per-view history state · In progress</title></rect>
 <rect x="272.12610751015046" y="326.81476595230424" width="10.706215283793236" height="3" fill="#fff" opacity=".85"/>
 <rect x="297.4584149733169" y="275.7300970525434" width="17.045264755393816" height="18.969867800643215" rx="2" fill="#4a86d6"><title>Lumen · Visibility-weighted interpolation · Not started</title></rect>
@@ -189,7 +189,7 @@
 <rect x="305.27427280985495" y="662.520884075263" width="22.574899733933137" height="41.479115924737016" rx="2" fill="#2c322f"><title>Ambient occlusion · Rest of Ambient occlusion · Not split</title></rect>
 <text x="308.27427280985495" y="673.520884075263" class="l">Re…</text>
 <rect x="328.8491725437881" y="662.520884075263" width="18.753837918321665" height="41.479115924737016" rx="2" fill="#d9961f"><title>Ambient occlusion · Distance-field AO · In progress</title></rect>
-<rect x="328.8491725437881" y="701" width="2.206333872743725" height="3" fill="#fff" opacity=".85"/>
+<rect x="328.8491725437881" y="701" width="4.41266774548745" height="3" fill="#fff" opacity=".85"/>
 <rect x="357.60301046210975" y="66" width="444.15464467706715" height="391.0426302243018" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
 <text x="364.60301046210975" y="79" class="a">GEOMETRY &amp; SCENE · 156K</text>
 <rect x="361.60301046210975" y="85" width="207.50804061834572" height="368.0426302243018" rx="4" fill="#232826"/>

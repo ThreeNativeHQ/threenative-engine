@@ -98,7 +98,7 @@ quadrantChart
 | 3 | PRD-634 | Sun shadows: reach and source-angle penumbra | L5 | 6 | 4 | 11/18 | PRD-649 | The biggest shadow difference from Unreal |
 | 3 | PRD-604 | `IrradianceFieldGather`: no light leaks through walls | L7 | 5 | 4 | 0/10 | PRD-603 | Unreal Medium GI tier |
 | 3 | PRD-639 | `SurfaceCache`: rays see texture, glow and lights | L7 | 7 | 4 | 6/9 | PRD-603 | Two thirds done |
-| 3 | PRD-640 | `ScreenProbeGather` and `ShortRangeAO` | L7 | 8 | 5 | 2/9 | PRD-603, 647 | Unreal Epic GI tier; the default |
+| 3 | PRD-640 | `ScreenProbeGather` and `ShortRangeAO` | L7 | 8 | 5 | 4/9 | PRD-603, 647 | Unreal Epic GI tier; the default |
 | 4 | PRD-641 | GI temporal filter | L7 | 6 | 3 | 5/14 | PRD-640 | Stability after the gather exists |
 | 4 | PRD-642 | `TracedReflections` | L8 | 7 | 4 | 6/11 | PRD-603, 639 | Needs the surface cache |
 | 4 | PRD-644 | GI tiers follow Unreal quality levels | Perf | 6 | 4 | 9/12 | PRD-647 | Sets the cost of each GI tier |
