@@ -40,7 +40,7 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `entities/`, `game.ts`, `interact.ts`, `level/`, `main.ts`, `render/`, `scenes/`, `state.ts`, `ui/`.
-15 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+16 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-adventure.md`.
 <!-- /shared -->
 

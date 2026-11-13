@@ -105,16 +105,24 @@ export const STREAM = {
   water: -0.3,
 };
 
-const distanceToSegment = (
+/** Plain length: `Math.hypot` costs several times more, and the grass asks once per blade. */
+const hyp = (dx: number, dz: number): number => Math.sqrt(dx * dx + dz * dz);
+
+/** Squared distance to a segment; the caller takes one square root for the nearest. */
+const distanceSqToSegment = (
   x: number,
   z: number,
-  [ax, az]: readonly [number, number],
-  [bx, bz]: readonly [number, number],
+  a: readonly [number, number],
+  b: readonly [number, number],
 ): number => {
-  const dx = bx - ax;
-  const dz = bz - az;
+  const ax = a[0];
+  const az = a[1];
+  const dx = b[0] - ax;
+  const dz = b[1] - az;
   const t = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
-  return Math.hypot(x - ax - t * dx, z - az - t * dz);
+  const ex = x - ax - t * dx;
+  const ez = z - az - t * dz;
+  return ex * ex + ez * ez;
 };
 
 /** Metres from the stream's centre line. */
@@ -123,18 +131,35 @@ export function streamDistance(x: number, z: number): number {
   for (let i = 1; i < STREAM.points.length; i += 1) {
     const a = STREAM.points[i - 1];
     const b = STREAM.points[i];
-    if (a !== undefined && b !== undefined) best = Math.min(best, distanceToSegment(x, z, a, b));
+    if (a !== undefined && b !== undefined) best = Math.min(best, distanceSqToSegment(x, z, a, b));
   }
-  return best;
+  return Math.sqrt(best);
 }
+
+/** Where the streamed grass grows, 0..1: bare on the path, in the stream, under the hut and in the cave mouth. */
+export function grassCover(x: number, z: number): number {
+  if (z < CLEARING.north + 1 && Math.abs(x) < 3.5) return 0;
+  return (
+    smooth(1.5, 2.3, Math.abs(x - pathX(z))) *
+    smooth(1.3, 2.4, streamDistance(x, z)) *
+    smooth(2.4, 3.4, hyp(x - HUT.x, z - HUT.z))
+  );
+}
+
+/** The square the grass grows in: the clearing and the first hills round it. */
+export const GRASS_BOUNDS = {
+  maxX: CLEARING.half + 10,
+  maxZ: CLEARING.south + 10,
+  minX: -CLEARING.half - 10,
+  minZ: CLEARING.north - 6,
+};
 
 /** 1 on a play space, the path or the cave approach, easing to 0 over a few metres round them. */
 function flatness(x: number, z: number): number {
   let f = 1 - smooth(2.2, 4.4, Math.abs(x - pathX(z)));
   if (z < -15) f = Math.max(f, 1 - smooth(3.5, 5.5, Math.abs(x)));
-  f = Math.max(f, 1 - smooth(HUT.radius, HUT.radius + 1.6, Math.hypot(x - HUT.x, z - HUT.z)));
-  for (const [px, pz, r] of PADS)
-    f = Math.max(f, 1 - smooth(r, r + 3.2, Math.hypot(x - px, z - pz)));
+  f = Math.max(f, 1 - smooth(HUT.radius, HUT.radius + 1.6, hyp(x - HUT.x, z - HUT.z)));
+  for (const [px, pz, r] of PADS) f = Math.max(f, 1 - smooth(r, r + 3.2, hyp(x - px, z - pz)));
   return f;
 }
 
@@ -142,15 +167,14 @@ function flatness(x: number, z: number): number {
 export function valeHeight(x: number, z: number): number {
   // The rise to the cave mouth: the clearing's north end climbs 1.2 m to the cliff.
   const rise = 1.2 * smooth(-11, -17, z);
-  const ledge =
-    HUT.lift * (1 - smooth(HUT.radius, HUT.radius + 1.6, Math.hypot(x - HUT.x, z - HUT.z)));
+  const ledge = HUT.lift * (1 - smooth(HUT.radius, HUT.radius + 1.6, hyp(x - HUT.x, z - HUT.z)));
   // Inside the walls: rolling banks, higher toward the walls, and the outcrops.
   const edge = Math.min(CLEARING.half - Math.abs(x), z - CLEARING.north, CLEARING.south - z);
   const tunnel = Math.abs(x) < 3.5 && z < CLEARING.north + 1;
   let relief = 0.35 + 1.3 * wave(x, z, 0.23) + 0.45 * wave(x + 7, z - 3, 0.61);
   if (edge > 0) relief += 1.4 * (1 - smooth(0, 4.5, edge));
   for (const [ox, oz, r, h] of OUTCROPS)
-    relief += h * (1 - smooth(r * 0.5, r, Math.hypot(x - ox, z - oz)));
+    relief += h * (1 - smooth(r * 0.5, r, hyp(x - ox, z - oz)));
   // Outside them: a steep rocky bank, then wooded hills.
   if (edge < 0 && !tunnel)
     relief += 2.2 * smooth(0, 3, -edge) + (0.8 + 3.4 * wave(x, z, 0.09)) * smooth(2, 14, -edge);

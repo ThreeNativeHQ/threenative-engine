@@ -208,6 +208,7 @@
         "@threenative/core#GPUParticles3D": "export class GPUParticles3D extends Sprite implements IComputeDriven { … }",
         "@threenative/core#GPUReadback": "export class GPUReadback { … }",
         "@threenative/core#GPUSceneBVH": "export class GPUSceneBVH extends Group implements IComputeDriven { … }",
+        "@threenative/core#GrassField3D": "export class GrassField3D extends Group { … }",
         "@threenative/core#GroundSnap": "export class GroundSnap { … }",
         "@threenative/core#InputMap": "export class InputMap { … }",
         "@threenative/core#installFilmicToneMapping": "export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }",
@@ -484,6 +485,13 @@
         "@threenative/procedural-animals#parseAnimalBake": "export function parseAnimalBake(buffer: ArrayBuffer): IAnimalBake { … }"
       }
     },
+    "@threenative/procedural-vegetation": {
+      "exports": [".", "./package.json"],
+      "symbols": {
+        "@threenative/procedural-vegetation#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> { … }",
+        "@threenative/procedural-vegetation#vegetationPresets": "export function vegetationPresets(): IVegetationPreset[] { … }"
+      }
+    },
     "@threenative/raw-unreal": {
       "exports": [".", "./package.json"],
       "symbols": {
@@ -581,6 +589,7 @@
         "@threenative/terrain#farForestPlacements": "export function farForestPlacements(options: IFarFieldOptions): IPlacement[] { … }",
         "@threenative/terrain#fieldWeight": "export function fieldWeight(field: ICoverField, x: number, z: number): number { … }",
         "@threenative/terrain#gradientAt": "export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, number] { … }",
+        "@threenative/terrain#grassFieldFromBiome": "export function grassFieldFromBiome( biome: Pick<IBiomeSpec, \"grass\" | \"seed\">, ground: IGrassGround, ): IGrassFieldPlacement | null { … }",
         "@threenative/terrain#landform": "export function landform(kind: LandformKind, options: ILandformOptions = { … }",
         "@threenative/terrain#landformBackdrop": "export function landformBackdrop( kind: LandformKind, options: IBackdropOptions = { … }",
         "@threenative/terrain#liftMassif": "export function liftMassif(tile: IMassifTile): Float32Array { … }",

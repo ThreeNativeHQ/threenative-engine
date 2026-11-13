@@ -211,6 +211,13 @@ export interface IWorldCellsLoadOptions {
    */
   readonly loadModel?: (url: string) => Promise<Object3D>;
   /**
+   * The game's surface for one loaded part, given the authored material and the part's geometry: a
+   * swaying tree returns its own node material reading the baked wind attribute. Return the material
+   * passed in to keep it. The game memoises per source material, so every level and placement of an
+   * asset shares one surface; this world releases it with the asset's own.
+   */
+  readonly partMaterial?: (material: Material, geometry: BufferGeometry) => Material;
+  /**
    * Model loads in flight at once, assets and chunks together. Defaults to `loadAll`'s
    * `concurrency`, six.
    */

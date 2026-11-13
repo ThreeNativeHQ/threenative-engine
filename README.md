@@ -141,6 +141,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
 | `@threenative/procedural-animals` | Baked animal payloads, runtime poses, accepted-state following, and conservative bounds |
+| `@threenative/procedural-vegetation` | Optional bake-first procedural tree GLBs (Arbor): `bakeVegetation`, `vegetationPresets` |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |
 | `@threenative/raw-unreal` | Raw Unreal editor `.uasset` static-mesh loader — UE5 FMeshDescription and UE4.18 FRawMesh, no interchange conversion |
 | `@threenative/terrain` | Optional headless Strata authoring: validated recipes, baked heightfields and indexed Three.js geometry |
@@ -189,9 +190,9 @@ measured in lines of the Unreal source. Each one maps to the ThreeNative PRD tha
 
 [![Unreal port progress map](docs/PRDs/Unreal/research/unreal-port-status.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 
-**Pace:** 32 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
-so at that pace the default look is done about **Jan 16, 2027**, and everything filed today about
-**Apr 13, 2027**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
+**Pace:** 22 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
+so at that pace the default look is done about **Feb 21, 2027**, and everything filed today about
+**Jun 28, 2027**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
 
 [![Unreal port burn-up](docs/PRDs/Unreal/research/unreal-port-progress.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 

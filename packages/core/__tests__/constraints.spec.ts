@@ -99,6 +99,11 @@ describe("core constraints", () => {
           // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
           // "light" the generic filter trips on is inside `loadsInFlight`.
           file !== "world-cells.ts" &&
+          // GrassField3D streams instanced chunks of the blade geometry and the material the game
+          // hands it, by reference, and writes only numeric uniforms on `nodes` (time, wind, LOD
+          // distances, pushers). It constructs no material, light, colour or shader; the look is the
+          // kit's `src/render/grass.ts`. The appearance checks below cover it.
+          file !== "grass-field.ts" &&
           // These exact seams carry the formerly allowed WorldCells code: package surface identity,
           // load flight counts and numeric contracts. The same appearance checks below cover each.
           file !== "world-cell-data.ts" &&

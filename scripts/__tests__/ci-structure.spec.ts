@@ -1614,7 +1614,6 @@ describe("CI pipeline structure", () => {
     ["integration.yml:playstation", heavy("integration:playstation", "paths")],
     ["integration.yml:temporal", heavy("integration:temporal", "paths")],
     ["integration.yml:tone", heavy("integration:tone", "paths")],
-    ["integration.yml:vegetation", heavy("integration:vegetation", "paths")],
     ["integration.yml:velocity", heavy("integration:velocity", "paths")],
     ["native-platforms.yml:web-reference", heavy("native:web-reference")],
     ["native-platforms.yml:android-v8-source", heavy("native:android-v8-source")],
@@ -1897,7 +1896,6 @@ describe("CI pipeline structure", () => {
       "playstation",
       "temporal",
       "tone",
-      "vegetation",
       "velocity",
     ] as const) {
       expect(runsOn(job), `integration ${job} routes to idle tn-local first`).toBe(
