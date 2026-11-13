@@ -963,6 +963,14 @@
       "source": "template:action-rpg#Authoring flow",
       "expect": ["createInferno"],
       "reject": []
+    },
+    {
+      "id": "vegetation.procedural-oak",
+      "query": "procedural oak tree",
+      "scope": "mechanic",
+      "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ (Lantern Vale, the adventure kit)",
+      "expect": ["bakeVegetation"],
+      "reject": []
     }
   ]
 }

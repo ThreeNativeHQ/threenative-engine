@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9385964912280702,
+  "recallAtK": 0.9391304347826087,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -107,10 +107,11 @@
     "spell.glacial-spike",
     "spell.arcane-barrage",
     "spell.aegis",
-    "spell.inferno"
+    "spell.inferno",
+    "vegetation.procedural-oak"
   ],
   "rejectHits": 15,
-  "rowCount": 114,
+  "rowCount": 115,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -225,10 +226,11 @@
     "spell.glacial-spike",
     "spell.arcane-barrage",
     "spell.aegis",
-    "spell.inferno"
+    "spell.inferno",
+    "vegetation.procedural-oak"
   ],
   "version": 1,
-  "zeroResultRate": 0.043859649122807015,
+  "zeroResultRate": 0.043478260869565216,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

@@ -40,14 +40,9 @@ export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
   },
   {
     guidance:
-      "The framework owns no vegetation system. Copy the MIT source in examples/integrations/vegetation/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/vegetation) into your src/ and follow its README: generate seeded, vertex-budgeted EZ Tree variants offline (tree.ts, from the pinned ez-tree source, not the npm 1.1.0 bundle), write them with treeToGlb into assets/, cook them with assets.models.passes.prune: false (prune strips the uv and _WIND weight your materials read), load with ctx.assets.model and re-material by glTF material name. render/wind.ts is editable TSL wind in world metres; call expandBounds(geometry, minWorldScale) per variant geometry. assets.lod bakes bark levels and keeps alpha-masked leaves at LOD0. Worked sample: the grove game in github.com/ThreeNativeHQ/examples.",
+      "The framework owns no vegetation render system: wind and materials are your look, in your project's src/render/. Trees come from the optional bake package: npm i -D @threenative/procedural-vegetation, then await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" }) writes one GLB per LOD (vegetationPresets() lists the 28 species). Each GLB carries COLOR_0, TEXCOORD_0, embedded bark and leaf textures, alpha-masked leaves and a per-vertex _WIND vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase). Cook them with assets.models.passes.prune: false (prune strips the uv and _WIND your materials read), load with ctx.assets.model and re-material by glTF material name (bark, foliage). Write the sway as TSL in render/wind.ts: attribute(\"_wind\", \"vec4\") scaled by a time uniform and a world wind direction, pushed through modelWorldMatrixInverse so it stays in world metres. A terrain world takes the same trees through the species prefix arbor:<preset>[@seed].",
     id: "procedural-vegetation",
-    situations: [
-      "procedural trees",
-      "swaying trees",
-      "tree foliage wind sway",
-      "grow procedural tree meshes",
-    ],
+    situations: ["swaying trees", "tree foliage wind sway"],
   },
   {
     guidance:

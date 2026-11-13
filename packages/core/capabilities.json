@@ -8313,6 +8313,49 @@
     {
       "aliases": [],
       "constraints": [
+        "fails closed: an unknown preset throws naming the nearest ids, the seed must be an integer and each lod 0 to 2",
+        "the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)",
+        "bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped"
+      ],
+      "example": "await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" });",
+      "importPath": "@threenative/procedural-vegetation",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-vegetation",
+      "requires": ["npm i -D @threenative/procedural-vegetation"],
+      "signature": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> { … }",
+      "situations": [
+        "generate a procedural tree, an oak, pine, spruce, palm or any forest species as a GLB",
+        "procedural oak tree GLB with level of detail for a game forest",
+        "tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute"
+      ],
+      "summary": "Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model. Each GLB carries the _WIND vertex attribute, COLOR_0, TEXCOORD_0, embedded bark and leaf textures and alpha-masked leaves.",
+      "supersedes": [],
+      "symbol": "bakeVegetation"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "ids come from the vendored Arbor presets; trees are kind \"tree\", grass, ferns and flowers are kind \"cover\""
+      ],
+      "example": "vegetationPresets().filter((p) => p.kind === \"tree\").map((p) => p.id);",
+      "importPath": "@threenative/procedural-vegetation",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-vegetation",
+      "requires": ["npm i -D @threenative/procedural-vegetation"],
+      "signature": "export function vegetationPresets(): IVegetationPreset[] { … }",
+      "situations": [
+        "list the oak, pine, spruce, palm and other tree species a bake can grow",
+        "choose a tree species id for bakeVegetation or a terrain arbor: species"
+      ],
+      "summary": "List every Arbor preset: id, name, latin name and kind.",
+      "supersedes": [],
+      "symbol": "vegetationPresets"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "materials are never chosen here; the geometry carries groups, the game carries materials"
       ],
       "example": "const geometry = createThreeGeometry(parseUAssetStaticMesh(buffer));",
@@ -10984,14 +11027,9 @@
       "situations": ["authoritative replication", "client prediction"]
     },
     {
-      "guidance": "The framework owns no vegetation system. Copy the MIT source in examples/integrations/vegetation/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/vegetation) into your src/ and follow its README: generate seeded, vertex-budgeted EZ Tree variants offline (tree.ts, from the pinned ez-tree source, not the npm 1.1.0 bundle), write them with treeToGlb into assets/, cook them with assets.models.passes.prune: false (prune strips the uv and _WIND weight your materials read), load with ctx.assets.model and re-material by glTF material name. render/wind.ts is editable TSL wind in world metres; call expandBounds(geometry, minWorldScale) per variant geometry. assets.lod bakes bark levels and keeps alpha-masked leaves at LOD0. Worked sample: the grove game in github.com/ThreeNativeHQ/examples.",
+      "guidance": "The framework owns no vegetation render system: wind and materials are your look, in your project's src/render/. Trees come from the optional bake package: npm i -D @threenative/procedural-vegetation, then await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" }) writes one GLB per LOD (vegetationPresets() lists the 28 species). Each GLB carries COLOR_0, TEXCOORD_0, embedded bark and leaf textures, alpha-masked leaves and a per-vertex _WIND vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase). Cook them with assets.models.passes.prune: false (prune strips the uv and _WIND your materials read), load with ctx.assets.model and re-material by glTF material name (bark, foliage). Write the sway as TSL in render/wind.ts: attribute(\"_wind\", \"vec4\") scaled by a time uniform and a world wind direction, pushed through modelWorldMatrixInverse so it stays in world metres. A terrain world takes the same trees through the species prefix arbor:<preset>[@seed].",
       "id": "procedural-vegetation",
-      "situations": [
-        "procedural trees",
-        "swaying trees",
-        "tree foliage wind sway",
-        "grow procedural tree meshes"
-      ]
+      "situations": ["swaying trees", "tree foliage wind sway"]
     },
     {
       "guidance": "The framework owns no IK system. Copy the MIT source in examples/integrations/ik/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/ik) into your src/ and follow its README: it needs the closed-chain-ik/core dependency its own package.json pins, three keeps the only rendered pose, and new ConstrainedIK({root, joints: [{bone, axes, min, max}], effectors: [{bone, orientation?}], iterations, positionTolerance, rotationTolerance}) admits direct Bone hierarchies under rigid or positive-uniform-scale parents (shear, reflection, non-uniform or singular scale throws before the pose is touched). Call ik.update(targets) once per frame after AnimationPlayer/mixer and before render, with one world-space metre position per effector in order plus an optional quaternion only where the effector declared orientation: true; it never starts a loop, never moves the root and installs no bone translation or root-motion controller. Joint limits are X/Y/Z offsets relative to the animation pose supplied that call, so reapply the animation pose before solving to avoid accumulation, and the solver only rotates: bone lengths hold to under 1e-15 m. Iterations are 1-128; an unreachable goal returns converged false with finite residuals and never throws, a solver failure restores the original pose, and dispose() at scene teardown. Worked demo: the rifle grip game in examples/constrained-ik/, which plays on web, desktop native and Android.",

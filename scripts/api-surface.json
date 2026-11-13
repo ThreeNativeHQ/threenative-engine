@@ -484,6 +484,13 @@
         "@threenative/procedural-animals#parseAnimalBake": "export function parseAnimalBake(buffer: ArrayBuffer): IAnimalBake { … }"
       }
     },
+    "@threenative/procedural-vegetation": {
+      "exports": [".", "./package.json"],
+      "symbols": {
+        "@threenative/procedural-vegetation#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> { … }",
+        "@threenative/procedural-vegetation#vegetationPresets": "export function vegetationPresets(): IVegetationPreset[] { … }"
+      }
+    },
     "@threenative/raw-unreal": {
       "exports": [".", "./package.json"],
       "symbols": {

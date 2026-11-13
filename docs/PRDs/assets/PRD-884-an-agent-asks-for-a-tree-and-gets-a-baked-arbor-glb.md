@@ -87,13 +87,15 @@ Risks:
 
 - 2026-11-13 (João): ship Arbor as a bake-first package that the asset MCP and the terrain MCP both call. Option 1 of the integration review.
 - 2026-11-13 (agent): do not ship `Arbor.three()`. It patches WebGL shaders and owns the look, and the GLB plus the game's TSL `render/wind.ts` covers it on every engine.
+- 2026-11-13 (agent): Arbor's `_WIND` is a vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase), not the scalar `_wind` weight that `examples/integrations/vegetation/src/render/wind.ts` reads, so that wind cannot sway an Arbor tree unchanged. The recipe now documents the vec4 layout and tells the game to write its own `render/wind.ts`.
+- 2026-11-13 (agent): the bake needs a Canvas 2D for the leaf atlas (Arbor paints it with Canvas 2D), so the package depends on `@napi-rs/canvas` (MIT, prebuilt binaries). It encodes the bark and leaf PNGs too. This is the dependency the other packages must not inherit.
 - 2026-11-13 (agent): Arbor replaces EZ Tree as the recipe answer. The owner can veto this before Phase 3 deletes `examples/integrations/vegetation/`.
 
 ## Execution Phases
 
 #### Phase 1: `bakeVegetation` writes a deterministic Arbor GLB
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-11-13)
 **Files:**
 - `packages/procedural-vegetation/` (new): `package.json`, `tsup.config.ts`, `src/arbor.js` (vendored), `src/index.ts`, `LICENSES/Arbor-MIT.txt` and `README.md`.
 - `scripts/not-owned-capabilities.ts`: the recipe text.
@@ -105,8 +107,8 @@ Risks:
 3. Validate the preset, the seed (an integer) and the LODs (0 to 2).
 4. Add JSDoc situations: "procedural tree", "oak / pine / palm tree", "forest species", "tree GLB for Unity, Unreal or Godot".
 
-- [ ] A spec bakes `oak` seed 7 twice. It asserts three things: the bytes are identical, the GLB parses with `_WIND`, `COLOR_0` and `TEXCOORD_0` on both primitives, and the leaf material is `MASK`. It also asserts that an unknown preset throws and names the nearest ids. proof: `pnpm --filter @threenative/procedural-vegetation test`
-- [ ] AC-1 is green. proof: `pnpm build && pnpm caps:recall`
+- [x] A spec bakes `oak` seed 7 twice. It asserts three things: the bytes are identical, the GLB parses with `_WIND`, `COLOR_0` and `TEXCOORD_0` on both primitives, and the leaf material is `MASK`. It also asserts that an unknown preset throws and names the nearest ids. proof: `pnpm --filter @threenative/procedural-vegetation test` — 4 tests green, exit 0, publint --strict clean (2026-11-13).
+- [x] AC-1 is green. proof: `pnpm build && pnpm caps:recall` — `pnpm capabilities:sync && pnpm caps:recall` exit 0 with row `vegetation.procedural-oak`; `searchCapabilities("procedural oak tree")` returns `bakeVegetation` first, `vegetationPresets` second (2026-11-13).
 
 **Verification:** the two boxes above. Also run `pnpm typecheck && pnpm lint && pnpm budgets`.
 
