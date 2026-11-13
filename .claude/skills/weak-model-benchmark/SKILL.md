@@ -36,8 +36,13 @@ thinking `max`. It is not evidence. Discard it and run again.
    the kit that `create-threenative --genre <alias>` resolves for it:
 
    ```sh
-   pnpm sandbox --genre <genre> --template <kit> --name wm-<genre>-<n>
+   pnpm sandbox --genre <genre> --template <kit> --name wm-<genre>-<n> --out ~/projects/threenative/wm-sandboxes/wm-<genre>-<n>
    ```
+
+   Give each run its own `--out` root. In the shared `../sandbox` the arm walked into a sibling
+   game and ran its scripts (wm-platformer-1, calls 11-19); from a worktree the default lands inside
+   the repo, where the arm inherits the repo's `AGENTS.md` chain. A fresh worktree also needs `packages/runtime-native/build/web`
+   (copy it from a checkout whose build is newer than the last native source change).
 
    The game must have `brief.md`, `reference.png`, `AGENTS.md` and `.mcp.json`.
 3. **Run the arm.** One arm at a time (two arms trip systemd-oomd):
