@@ -1210,6 +1210,8 @@ async function cookInto(
     scratch,
     ...(request.treeSpecies === undefined ? {} : { treeSpecies: request.treeSpecies }),
   });
+  // Baked Arbor trees carry `_WIND`; the game sways them with the copy-out `starter/arbor/wind.ts`.
+  const arborTrees = biome !== declaredBiome;
 
   // A landform preset authors the ground and no scatter rules, so the biome file's foliage is placed
   // on it through the stages every starter scatter runs.
@@ -1359,6 +1361,7 @@ async function cookInto(
       'import { WorldCells as TerrainWorldCells, Heightfield as TerrainHeightfield, heightSamplerFromHeightmap as sampleTerrainHeight, loadWorldHeightmap as loadTerrainHeightmap, loadTerrainSplat, type IWorldCellsLoadOptions as TerrainWorldOptions } from "@threenative/core/world";',
       'import { CollisionShape3D as TerrainCollisionShape, RigidBody3D as TerrainRigidBody } from "@threenative/physics";',
       'import { Object3D as TerrainAnchor } from "three";',
+      ...(arborTrees ? ['import { arborWind } from "./render/arborWind.js";'] : []),
       `const terrainWorld = ${physical};`,
       `const [terrainHeightmapUrl] = await ctx.assets.resolve(${JSON.stringify(heightmapUrl)});`,
       'if (terrainHeightmapUrl === undefined) throw new Error("terrain: the world heightmap is not served.");',
@@ -1398,14 +1401,25 @@ async function cookInto(
       "  follow: { get position() { return terrainFollow.position; } },",
       `  ring: ${ring}, budgets: ${JSON.stringify(budgets)}, terrain: { streamRadius: ${ring + 1} },`,
       "  shadows: { cast: true, receive: true, invalidate: (region) => terrainInvalidate?.(region) },",
+      ...(arborTrees ? ["  partMaterial: arborWind,"] : []),
       "});",
       "  world.position.y = terrainSeat;",
       "  ctx.add(world);",
+      "  // The curtain stays up until the ground the camera sees has streamed, so no tree stands over a hole.",
+      "  const terrainStreamed = world;",
+      '  ctx.startup.hold("terrain", () => { const ground = terrainStreamed.terrainReadinessInView(ctx.camera); return ground.loaded >= ground.required; });',
       "} catch (error) { terrainAnchor.removeFromParent(); throw error; }",
       'const loadCells = (follow: TerrainAnchor, invalidate?: NonNullable<TerrainWorldOptions["shadows"]>["invalidate"]) => { terrainFollow = follow; terrainInvalidate = invalidate; };',
       "// Call loadCells(player.mesh) after creating the player; optionally forward streamed shadow invalidation.",
     ].join("\n"),
     grass: grassSnippet(biome, state, cooked.manifest.extent),
+    // The sway the load's `partMaterial: arborWind` names: write it to `trees.file` before the load runs.
+    trees: arborTrees
+      ? {
+          file: "src/render/arborWind.ts",
+          source: await readFile(new URL("../../starter/arbor/wind.ts", import.meta.url), "utf8"),
+        }
+      : null,
   });
 }
 

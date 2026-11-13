@@ -2445,6 +2445,59 @@ describe("WorldCells", () => {
     ).rejects.toThrow(/transparentScatter/u);
   });
 
+  it("draws a part with the game's partMaterial, one surface per source, kept off a part it declines", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-32, -32);
+    const loader = treeLoader({ transparent: false });
+    // The game sways only geometry that carries its wind attribute, memoised per source material.
+    const swaying = new WeakMap<Material, Material>();
+    const asked: BufferGeometry[] = [];
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      partMaterial: (material, geometry) => {
+        asked.push(geometry);
+        if (geometry.getAttribute("position").count === 0) return material;
+        let own = swaying.get(material);
+        if (own === undefined) {
+          own = new MeshBasicMaterial({ name: "sway" });
+          swaying.set(material, own);
+        }
+        return own;
+      },
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flushed(world);
+    expect(asked.length).toBeGreaterThan(0);
+    const drawn = new Set<Material>();
+    world.traverse((object) => {
+      if ((object as InstancedMesh).isInstancedMesh)
+        drawn.add((object as InstancedMesh).material as Material);
+    });
+    expect(drawn.size).toBeGreaterThan(0);
+    for (const material of drawn) expect(material.name).toBe("sway");
+    world.dispose();
+
+    // A partMaterial that answers with something other than a material fails at the load.
+    const broken = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: treeLoader().load,
+      partMaterial: () => ({}) as Material,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    broken.update();
+    await flushed(broken);
+    expect(broken.stats().failures).toBeGreaterThan(0);
+    broken.dispose();
+  });
+
   it("compensates the mip chain on a cutout that has one, leaving an unmapped one plain", async () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);

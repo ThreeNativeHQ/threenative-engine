@@ -146,6 +146,12 @@ describe("Arbor species in a terrain cook", () => {
       expect(result.placementCounts.fir).toBeGreaterThan(0);
       expect((await speciesGltf(out, "fir")).wind.type).toBe("VEC4");
       expect(Object.keys(result.placementCounts)).not.toContain("arbor-birch-1");
+      // The load sways them: the reply hands the game its wind file and wires it as partMaterial.
+      expect(result.load).toContain('import { arborWind } from "./render/arborWind.js";');
+      expect(result.load).toContain("  partMaterial: arborWind,");
+      expect(result.trees.file).toBe("src/render/arborWind.ts");
+      expect(result.trees.source).toContain('attribute<"vec4">("_wind", "vec4")');
+      expect(result.trees.source).toContain("export function arborWind(");
     } finally {
       await remove();
     }

@@ -695,6 +695,8 @@ async function runEmittedLoad(
     },
     three: { Object3D },
   };
+  // The curtain the load holds until the streamed ground is in.
+  const holds: string[] = [];
   const ctx = {
     add: (object: Object3D) => scene.add(object),
     assets: {
@@ -707,6 +709,7 @@ async function runEmittedLoad(
     physics: {},
     renderer: {},
     scene,
+    startup: { hold: (label: string) => holds.push(label) },
   };
   // Compile the real imports so missing modules, exports and aliases cannot pass by being stripped.
   const { outputText } = ts.transpileModule(load, {
@@ -718,6 +721,7 @@ async function runEmittedLoad(
     `const exports = {}; const require = (name) => { if (!(name in modules)) throw new Error("Unexpected runtime import: " + name); return modules[name]; }; return (async () => { ${outputText}; return { loadCells }; })();`,
   );
   const { loadCells } = await execute(modules, ctx);
+  expect(holds).toEqual(["terrain"]);
   const player = new Object3D();
   player.position.set(-2, 19, 7);
   const invalidate = vi.fn();
@@ -800,12 +804,17 @@ describe("terrain_generate result", () => {
         expect(result.load).toContain('url: "worlds/forest/world.json"');
         expect(result.load).toContain("loadTerrainSplat({ assets: ctx.assets");
         expect(result.load).toContain("ctx.add(world);");
+        expect(result.load).toContain('ctx.startup.hold("terrain"');
+        expect(result.load).toContain("terrainReadinessInView(ctx.camera)");
         expect(result.load).not.toContain("ctx.assets.model");
         expect(result.load).not.toContain("applyTerrainSurface");
         expect(result.grass).toContain("grassFieldFromBiome(grassBiome");
         expect(result.grass).toContain("} as const;");
         expect(result.grass).toContain("new GrassField3D(");
         expect(result.grass).toContain("grass.update(ctx.camera)");
+        // The kit's own trees carry no wind: no sway file, no partMaterial.
+        expect(result.trees).toBeNull();
+        expect(result.load).not.toContain("partMaterial");
         // No authoring import leaks into the game: only core/world, physics and three are allowed.
         expect(
           result.load.split("\n").filter((line: string) => line.includes("@threenative/terrain")),
