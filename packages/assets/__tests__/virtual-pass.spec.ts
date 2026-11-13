@@ -459,9 +459,41 @@ describe("the virtual-geometry pass", () => {
     // source index buffer — every level's triangles sum to about twice level 0's, which is the
     // technique, not an encoding choice — and the compiled file grows 3.41x once meshopt has
     // compressed both. A regression past these is a payload the batch has to justify.
+    //
+    // The file budget moved from 4x to 4.5x when a clustered mesh stopped being quantized: its
+    // cluster bounds and spheres are recorded in the positions the bake was given, and the shift
+    // quantization folds into the node left them in a space nothing maps from any more, which
+    // pruned a whole cliff face out of a view-pruned cut. Float positions are that invariant's
+    // price. It comes back down the day the bake records its bounds after the stage instead.
     expect(summary.payloadBytes / sourceIndexBytes).toBeLessThan(2.5);
-    expect(withVirtual.buffer.byteLength / without.buffer.byteLength).toBeLessThan(4);
+    expect(withVirtual.buffer.byteLength / without.buffer.byteLength).toBeLessThan(4.5);
   }, 600_000);
+
+  it("keeps a clustered primitive's positions in the space its bounds were baked in", async () => {
+    // Quantization snaps POSITION into 16-bit integers and folds the shift into the node. A cluster
+    // DAG baked before that stage records every bounds box and sphere in the positions it was given,
+    // and the run time tests those spheres against the mesh's own transform — so a quantized
+    // clustered primitive's table describes a space the node no longer maps from, and a view-pruned
+    // cut prunes the wrong clusters. The quarry's cliff face went missing from its own frame this
+    // way, with every visible cluster provably "outside" a frustum built around geometry 31x smaller.
+    const { buffer } = await compile(true);
+
+    // The JSON chunk of a GLB: header 12 bytes, then the chunk length and type.
+    const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const json = JSON.parse(
+      new TextDecoder().decode(
+        bytes.subarray(20, 20 + new DataView(buffer.buffer, buffer.byteOffset).getUint32(12, true)),
+      ),
+    ) as {
+      accessors: { type: string; componentType: number; normalized?: boolean }[];
+      meshes: { primitives: { attributes: Record<string, number> }[] }[];
+    };
+    const position = json.meshes[0]?.primitives[0]?.attributes.POSITION;
+    const accessor = json.accessors[position as number];
+    // FLOAT, and not normalized: the authored space, which is where the bake's bounds live.
+    expect(accessor?.componentType).toBe(5126);
+    expect(accessor?.normalized ?? false).toBe(false);
+  }, 300_000);
 
   it("AC4 — two compiles of the same bytes produce the same file", async () => {
     const first = await compile(true);

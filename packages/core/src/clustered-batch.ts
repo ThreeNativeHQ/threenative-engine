@@ -3,6 +3,7 @@ import {
   BufferGeometry,
   type Camera,
   Euler,
+  Frustum,
   InstancedMesh,
   type Material,
   Matrix4,
@@ -10,7 +11,17 @@ import {
   Quaternion,
   Vector3,
 } from "three";
-import { type IClusterTable, pixelsPerUnit, selectClusterCut } from "./clustered-mesh.js";
+import {
+  ClusterView,
+  DEFAULT_VIEW_MARGIN,
+  type IClusterTable,
+  assertViewMargin,
+  clusterTableRadius,
+  outsideFrustum,
+  pixelsPerUnit,
+  selectClusterCut,
+  worldFrustum,
+} from "./clustered-mesh.js";
 
 /**
  * Many copies of one clustered body, each drawn at the detail its own distance earns.
@@ -57,6 +68,16 @@ export interface IClusteredBatchOptions {
   readonly distanceRatio?: number;
   /** Screen-space error budget in pixels, as {@link ClusteredMesh}. Default 1. */
   readonly errorPixels?: number;
+  /**
+   * Whether copies the camera cannot see are skipped.
+   *
+   * On by default. A batch that casts shadows keeps every copy regardless — a copy out of the main
+   * view can still cast into it — until shadows have a cut of their own. The batch reports what it
+   * did through {@link ClusteredBatch.viewCullReport}.
+   */
+  readonly viewCull?: boolean;
+  /** How far the camera may turn, in radians, before the bands are taken again. Default two degrees. */
+  readonly viewMargin?: number;
   /** The shape every copy draws, carrying the baked cluster table. */
   readonly geometry: BufferGeometry;
   /** The surface every copy draws with, supplied by the game and used by reference. */
@@ -99,6 +120,10 @@ const DEFAULT_RECUT_FRACTION = 0.01;
 const DEFAULT_ERROR_PIXELS = 1;
 /** A copy nearer than this is treated as this far away, rather than taking log of zero. */
 const MIN_DISTANCE = 1e-3;
+/** A copy the view does not hold: it joins no band, anchors no cut, and submits nothing. */
+const CULLED = -2147483648;
+/** Copies are placed in the batch's own space, which this class has always treated as world. */
+const IDENTITY = new Matrix4();
 
 interface IPlaced {
   readonly matrix: Matrix4;
@@ -163,14 +188,32 @@ export class ClusteredBatch {
   readonly #cameraWorld = new Vector3();
   readonly #cameraLocal = new Vector3();
   readonly #lastCut = new Vector3();
+  readonly #rotation = new Quaternion();
+  readonly #lastRotation = new Quaternion();
+  readonly #view = new ClusterView();
   #hasCut = false;
   #lastScale = 0;
+  #culled = false;
   readonly #distanceRatio: number;
+  /** Radians the camera may turn before the bands are taken again. */
+  readonly viewMargin: number;
+  /**
+   * Whether copies the camera cannot see are skipped. Writable; the batch reports what it did
+   * through {@link ClusteredBatch.viewCullReport}.
+   */
+  viewCull: boolean;
   /** Bands this camera wants that are not built yet; while any remain the cut cannot settle. */
   #pending = 0;
   #root: Object3D | null = null;
   #built: IClusteredBatchBuildOptions | null = null;
   #drawnTriangles = 0;
+  readonly #meshRadius: number;
+  readonly #frustum = new Frustum();
+  readonly #viewMatrix = new Matrix4();
+  /** The band each copy was drawn in this update, or `CULLED` when it was not drawn at all. */
+  #bandKey: Int32Array;
+  #drawnCopiesOutsideView = 0;
+  #drawnTrianglesOutsideView = 0;
 
   constructor(options: IClusteredBatchOptions) {
     this.#options = options;
@@ -179,8 +222,13 @@ export class ClusteredBatch {
       throw new Error(
         `ClusteredBatch distanceRatio must be above one, got ${this.#distanceRatio}.`,
       );
+    this.viewCull = options.viewCull ?? true;
+    this.viewMargin = options.viewMargin ?? DEFAULT_VIEW_MARGIN;
+    assertViewMargin(this.viewMargin);
     this.#selection = new Uint32Array(options.table.ranges.length / 2);
     this.#wantedKey = new Int32Array(0);
+    this.#bandKey = new Int32Array(0);
+    this.#meshRadius = clusterTableRadius(options.table);
   }
 
   /** How many copies are placed. */
@@ -198,6 +246,33 @@ export class ClusteredBatch {
   /** Triangles the current cut submits, over every copy. */
   get drawnTriangles(): number {
     return this.#drawnTriangles;
+  }
+
+  /**
+   * Copies the current cut submits whose own bounding sphere lies wholly outside the view volume.
+   *
+   * A measurement, not a cull: see {@link ClusteredMesh.drawnTrianglesOutsideView}.
+   */
+  get drawnCopiesOutsideView(): number {
+    return this.#drawnCopiesOutsideView;
+  }
+
+  /** Triangles those copies submit: their own band's cut, times how many copies are outside. */
+  get drawnTrianglesOutsideView(): number {
+    return this.#drawnTrianglesOutsideView;
+  }
+
+  /**
+   * What this batch does about copies outside the view, and why.
+   *
+   * `"on"` when copies the camera cannot see are skipped, and a reason when they are not — a batch
+   * that silently kept drawing a whole copy behind the camera would be a cost with no symptom, and
+   * one that silently dropped what a shadow camera can see would be a missing shadow with no cause.
+   */
+  get viewCullReport(): string {
+    if (!this.viewCull) return "off (viewCull = false)";
+    if (this.#built?.castShadow === true) return "off (castShadow)";
+    return "on";
   }
 
   /** Adds one copy. Returns its index, so the game can move it later. */
@@ -238,32 +313,64 @@ export class ClusteredBatch {
     const scale = pixelsPerUnit(camera, viewportHeight);
     camera.updateWorldMatrix(true, false);
     this.#cameraWorld.setFromMatrixPosition(camera.matrixWorld);
+    camera.getWorldQuaternion(this.#rotation);
+
+    // A culled batch is a batch whose bands were chosen for a view, so the turn it was widened by is
+    // part of what makes the previous cut still right. `castShadow` keeps every copy: one outside
+    // the main view can still be cast into it.
+    const culled = this.viewCull && this.#built?.castShadow !== true;
+    if (culled) {
+      this.#view.setFromCamera(camera, this.viewMargin);
+      // Copies are placed in the batch's own space, which the batch has always treated as world.
+      this.#view.setTransform(IDENTITY);
+    }
 
     // Everything below walks every cluster of every occupied band. Skip it outright when the camera
-    // has not moved enough to change a cut, and when every band this camera needs is already built.
+    // has not moved or turned enough to change a cut, and when every band this camera needs is
+    // already built.
     let nearestCopy = Number.POSITIVE_INFINITY;
     for (const placed of this.#placed)
       nearestCopy = Math.min(nearestCopy, this.#cameraWorld.distanceTo(placed.position));
     const settled =
       this.#hasCut &&
+      culled === this.#culled &&
       scale === this.#lastScale &&
       this.#pending === 0 &&
+      this.#rotation.angleTo(this.#lastRotation) <= this.viewMargin &&
       this.#cameraWorld.distanceTo(this.#lastCut) <=
         Math.max(nearestCopy, MIN_DISTANCE) *
           (this.#options.recutFraction ?? DEFAULT_RECUT_FRACTION);
     if (settled) return this.#drawnTriangles;
     this.#lastCut.copy(this.#cameraWorld);
+    this.#lastRotation.copy(this.#rotation);
     this.#lastScale = scale;
+    this.#culled = culled;
     this.#hasCut = true;
 
-    if (this.#wantedKey.length !== this.#placed.length)
+    if (this.#wantedKey.length !== this.#placed.length) {
       this.#wantedKey = new Int32Array(this.#placed.length);
+      this.#bandKey = new Int32Array(this.#placed.length);
+    }
     for (const group of this.#groups.values()) group.copies.length = 0;
 
     // Which band each copy belongs to, before any borrowing.
     const wantedKeys = new Set<number>();
     for (let copy = 0; copy < this.#placed.length; copy += 1) {
       const placed = this.#placed[copy] as IPlaced;
+      // A copy no camera can see joins no band, anchors no cut and submits nothing. Its own bounding
+      // sphere is the test, the same sphere three would cull it by.
+      if (
+        culled &&
+        !this.#view.touches(
+          placed.position.x,
+          placed.position.y,
+          placed.position.z,
+          this.#meshRadius * placed.scale,
+        )
+      ) {
+        this.#wantedKey[copy] = CULLED;
+        continue;
+      }
       const distance = Math.max(this.#cameraWorld.distanceTo(placed.position), MIN_DISTANCE);
       // Grouped on distance measured in the body's own units, so two copies at different scales
       // that cover the same screen area land in the same group.
@@ -291,7 +398,12 @@ export class ClusteredBatch {
 
     for (let copy = 0; copy < this.#placed.length; copy += 1) {
       const wanted = this.#wantedKey[copy] as number;
+      if (wanted === CULLED) {
+        this.#bandKey[copy] = CULLED;
+        continue;
+      }
       const key = open.has(wanted) ? wanted : this.#nearestOpenKey(wanted, open);
+      this.#bandKey[copy] = key;
       let group = this.#groups.get(key);
       if (group === undefined) {
         group = { copies: [], cut: new Uint32Array(0), empty: 0, mesh: null };
@@ -308,7 +420,31 @@ export class ClusteredBatch {
         this.#groups.delete(key);
       }
     }
+    this.#countOutsideView(camera);
     return this.#drawnTriangles;
+  }
+
+  /**
+   * Records how many copies of this batch, and how many of their triangles, lie wholly out of view.
+   *
+   * A copy is tested on its own bounding sphere — the body's radius at the copy's scale — which is
+   * the sphere three itself would cull it by. Read-only, and taken only on a frame that re-cut.
+   */
+  #countOutsideView(camera: Camera): void {
+    const frustum = worldFrustum(camera, this.#frustum, this.#viewMatrix);
+    let copies = 0;
+    let triangles = 0;
+    for (let copy = 0; copy < this.#placed.length; copy += 1) {
+      if ((this.#bandKey[copy] as number) === CULLED) continue;
+      const placed = this.#placed[copy] as IPlaced;
+      if (!outsideFrustum(frustum, placed.position, this.#meshRadius * placed.scale)) continue;
+      copies += 1;
+      const group = this.#groups.get(this.#bandKey[copy] as number);
+      const mesh = group?.mesh;
+      if (mesh?.visible === true) triangles += mesh.geometry.drawRange.count / 3;
+    }
+    this.#drawnCopiesOutsideView = copies;
+    this.#drawnTrianglesOutsideView = triangles;
   }
 
   /**
@@ -388,6 +524,10 @@ export class ClusteredBatch {
       this.#options.errorPixels ?? DEFAULT_ERROR_PIXELS,
       this.#selection,
     );
+    // Every band's cut is taken unpruned, on purpose. One cut serves every copy in the band, and
+    // those copies face the camera from different directions: pruning it by the view would drop the
+    // clusters the copies either side of the band are looking at. What a band does not hold is
+    // culled per copy, above.
     let indices = 0;
     for (let slot = 0; slot < selected; slot += 1)
       indices += this.#options.table.ranges[(this.#selection[slot] as number) * 2 + 1] as number;

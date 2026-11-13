@@ -77,7 +77,30 @@ describe("the virtual-geometry loader seam", () => {
     expect(mesh).toBeInstanceOf(ClusteredMesh);
     expect(mesh.name).toBe("face");
     expect(mesh.table.ranges.length / 2).toBeGreaterThan(100);
+    expect(mesh.table.groups?.length).toBe(mesh.table.ranges.length);
     expect(mesh.material).not.toBeNull();
+  }, 300_000);
+
+  it("prunes the loaded mesh's cut by the view, with the edges the bake wrote", async () => {
+    // `clusterGroups` was baked and read by nothing until a cut could descend by it. A file that has
+    // it, and a walk that found its children from it, is the whole seam this PRD adds.
+    const meshes = await load(await compiled(true), true);
+    const mesh = meshes[0] as ClusteredMesh;
+
+    expect(mesh.viewCullReport).toBe("on");
+
+    // Close enough that the body spills out of the frame: a cut pruned by the view only differs
+    // from the oracle when the view does not hold the whole mesh.
+    const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 1000);
+    camera.position.set(0, 0, 1.2);
+    camera.updateMatrixWorld(true);
+    const pruned = updateClusteredMeshes(mesh.parent as never, camera, 1080);
+
+    mesh.viewCull = false;
+    const whole = updateClusteredMeshes(mesh.parent as never, camera, 1080);
+    expect(mesh.viewCullReport).toBe("off (viewCull = false)");
+    expect(pruned).toBeLessThan(whole);
+    expect(pruned).toBeGreaterThan(0);
   }, 300_000);
 
   it("returns an ordinary Mesh when the file carries no bake", async () => {

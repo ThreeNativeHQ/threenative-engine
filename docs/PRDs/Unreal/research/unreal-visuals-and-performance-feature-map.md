@@ -107,7 +107,7 @@ quadrantChart
 | 5 | PRD-643 | Glass, fog and leaves take the bounce light | L7 | 5 | 2 | 6/11 | PRD-603, 604 | Small share of the frame |
 | 5 | PRD-605 | Radiance cache clipmaps follow the camera | L7 | 6 | 3 | 0/8 | PRD-603, 604 | Open worlds |
 | 5 | PRD-457 | Virtual shadow pages only where cheaper | Perf | 5 est. | 2 | 0/5 | — | Only where measured |
-| 5 | PRD-600 | Nanite: submit only visible clusters | Perf | 6 | 3 | 0/8 | — | Dense scenes |
+| 5 | PRD-600 | Nanite: submit only visible clusters | Perf | 6 | 3 | 4/8 | — | Dense scenes |
 | 5 | PRD-601 | Far clusters keep source shading | Perf | 4 | 2 | 0/7 | PRD-600 | Follows PRD-600 |
 | 5 | PRD-602 | Cluster shadow casters at shadow-texel detail | Perf | 5 | 2 | 0/8 | PRD-600 | Follows PRD-600 |
 | 5 | PRD-570 | Characters cost what the camera sees | Perf | 5 | 3 | 9/9 | — | Crowds; a lane is measuring it |

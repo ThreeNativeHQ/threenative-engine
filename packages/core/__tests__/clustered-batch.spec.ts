@@ -4,12 +4,14 @@ import {
   MeshBasicMaterial,
   Object3D,
   PerspectiveCamera,
+  Quaternion,
   Vector3,
 } from "three";
 import { beforeAll, describe, expect, it } from "vitest";
 import { type IClusterDag, buildClusterDag } from "../../assets/src/virtual/dag.js";
 import { ClusteredBatch } from "../src/clustered-batch.js";
 import {
+  ClusteredMesh,
   type IClusterTable,
   selectClusterCut,
   updateClusteredMeshes,
@@ -102,7 +104,9 @@ function geometry(): BufferGeometry {
 }
 
 /** The batch the quarry builds: copies spread from near the camera out to two hundred units. */
-function spread(options: { distanceRatio?: number; errorPixels?: number } = {}): ClusteredBatch {
+function spread(
+  options: { distanceRatio?: number; errorPixels?: number; viewCull?: boolean } = {},
+): ClusteredBatch {
   const batch = new ClusteredBatch({
     geometry: geometry(),
     material: new MeshBasicMaterial(),
@@ -150,6 +154,128 @@ function seamsOf(
     }
   return uses;
 }
+
+describe("a copy the view does not hold", () => {
+  /** A camera at the origin, looking down -z, at the batch's own scale. */
+  function ahead(): PerspectiveCamera {
+    const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 1000);
+    camera.position.set(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    return camera;
+  }
+
+  function batchOf(
+    placements: { position: [number, number, number]; scale?: number }[],
+    options: { viewCull?: boolean } = {},
+  ): { batch: ClusteredBatch; scene: Object3D } {
+    const batch = new ClusteredBatch({
+      geometry: geometry(),
+      material: new MeshBasicMaterial(),
+      table,
+      ...options,
+    });
+    for (const placement of placements) batch.place(placement);
+    const scene = new Object3D();
+    batch.build({ name: "boulders", parent: scene });
+    return { batch, scene };
+  }
+
+  const settle = (batch: ClusteredBatch, camera: PerspectiveCamera): number => {
+    let triangles = 0;
+    for (let update = 0; update < 16; update += 1) triangles = batch.update(camera, 1080);
+    return triangles;
+  };
+
+  it("is not drawn, and does not anchor its own band's cut", () => {
+    // One boulder in front and one behind, the same distance away. A copy behind the camera cannot
+    // be seen, so it must not join a band: joining one would add triangles to the draw and, because
+    // a band is cut at its nearest member, could make the band it joined finer than it needs to be.
+    const camera = ahead();
+    const both = batchOf([{ position: [0, 0, -5] }, { position: [0, 0, 5] }]);
+    const front = batchOf([{ position: [0, 0, -5] }]);
+    const whole = batchOf([{ position: [0, 0, -5] }, { position: [0, 0, 5] }], {
+      viewCull: false,
+    });
+
+    const culled = settle(both.batch, camera);
+    expect(culled).toBe(settle(front.batch, camera));
+    expect(both.batch.drawCalls).toBe(front.batch.drawCalls);
+    // And the red half: the same batch with the cull off draws both, so the test is measuring the
+    // cull rather than a scene where the second copy happened to be invisible anyway.
+    expect(settle(whole.batch, camera)).toBeGreaterThan(culled);
+    expect(whole.batch.viewCullReport).toBe("off (viewCull = false)");
+    expect(both.batch.viewCullReport).toBe("on");
+  }, 180_000);
+
+  it("is kept when its own sphere grazes the view, however far its centre is", () => {
+    // A copy is culled by the sphere three would cull it by, not by its origin: a boulder whose
+    // centre is past the right plane but whose body reaches into the frame is in the frame.
+    const camera = ahead();
+    const small = batchOf([{ position: [25, 0, -20], scale: 1 }]);
+    const large = batchOf([{ position: [25, 0, -20], scale: 6 }]);
+
+    expect(settle(small.batch, camera)).toBe(0);
+    expect(settle(large.batch, camera)).toBeGreaterThan(0);
+  }, 180_000);
+
+  it("follows the camera round: a batch behind it draws nothing at all", () => {
+    const camera = ahead();
+    const { batch } = batchOf([
+      { position: [0, 0, -5] },
+      { position: [0, 0, -40] },
+      { position: [0, 0, -120] },
+    ]);
+    expect(settle(batch, camera)).toBeGreaterThan(0);
+
+    camera.quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI));
+    camera.updateMatrixWorld(true);
+    expect(batch.update(camera, 1080)).toBe(0);
+    expect(batch.drawCalls).toBe(0);
+  }, 180_000);
+
+  it("keeps every copy, and says so, for a batch that casts shadows", () => {
+    // A copy out of the main view can still cast into it, so a shadow caster keeps them all until
+    // shadows have a cut of their own.
+    const camera = ahead();
+    const batch = new ClusteredBatch({
+      geometry: geometry(),
+      material: new MeshBasicMaterial(),
+      table,
+    });
+    batch.place({ position: [0, 0, -5] });
+    batch.place({ position: [0, 0, 5] });
+    batch.build({ castShadow: true, name: "boulders", parent: new Object3D() });
+    const whole = batchOf([{ position: [0, 0, -5] }, { position: [0, 0, 5] }], {
+      viewCull: false,
+    });
+
+    expect(batch.viewCullReport).toBe("off (castShadow)");
+    expect(settle(batch, camera)).toBe(settle(whole.batch, camera));
+  }, 180_000);
+
+  it("takes its bands again when the camera turns, and not when it barely does", () => {
+    // A band was chosen for a view, so a turn is what makes it stale — the same reason a distance
+    // is. The margin is the turn the kept bands stay valid for.
+    const mesh = new ClusteredMesh(geometry(), new MeshBasicMaterial(), table, {
+      viewMargin: 0.2,
+    });
+    const camera = ahead();
+    camera.position.set(0, 0, 6);
+    camera.updateMatrixWorld(true);
+    mesh.update(camera, 1080);
+    const cuts = mesh.recutCount;
+
+    camera.quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.1));
+    camera.updateMatrixWorld(true);
+    mesh.update(camera, 1080);
+    expect(mesh.recutCount).toBe(cuts);
+
+    camera.quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.3));
+    camera.updateMatrixWorld(true);
+    mesh.update(camera, 1080);
+    expect(mesh.recutCount).toBe(cuts + 1);
+  }, 180_000);
+});
 
 describe("ClusteredBatch", () => {
   const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 1000);
@@ -265,8 +391,10 @@ describe("ClusteredBatch", () => {
   it("never frees a buffer another group is still drawing from", () => {
     // Disposing the moment a group outgrows its cut destroys a buffer that is already inside a
     // submitted command buffer. WebGPU said so on the quarry's first virtual run:
-    // `[Buffer (unlabeled)] used in submit while destroyed`.
-    const batch = spread();
+    // `[Buffer (unlabeled)] used in submit while destroyed`. The cut is kept whole here: this is about
+    // what happens to a band's memory as a walk passes through it, and a culled band is never built
+    // in the first place.
+    const batch = spread({ viewCull: false });
     const scene = new Object3D();
     batch.build({ name: "boulders", parent: scene });
     /** Attribute names each geometry still held at the moment it was disposed. */
@@ -313,8 +441,10 @@ describe("ClusteredBatch", () => {
 
   it("grows a cut by what it needs, never by what it had", () => {
     // Doubling the previous size means one extra index doubles the buffer, and a camera walking in
-    // doubles it every frame. That is what exhausted 8 GB of VRAM on the quarry's route.
-    const batch = spread();
+    // doubles it every frame. That is what exhausted 8 GB of VRAM on the quarry's route. Copies the
+    // view does not hold are kept here: a band waiting to be reclaimed still holds its buffer, and
+    // this is about how much buffer a drawn cut asks for.
+    const batch = spread({ viewCull: false });
     const scene = new Object3D();
     batch.build({ name: "boulders", parent: scene });
 
