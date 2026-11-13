@@ -35,6 +35,15 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 
 - [ ] Two consecutive VALID platformer runs pass the full sealed proof. proof: `pnpm sweep:proof`
   on each `wm-platformer-<n>` archive.
+  1 of 2: `wm-platformer-2` VALID, 2/2 sealed scenarios on the laptop GPU. `wm-platformer-3` is next.
+- [x] The proof reads a game that took the `engine: "threejs"` override. proof: `pnpm exec vitest run
+  packages/playtest/__tests__/sampling.spec.ts packages/playtest/__tests__/provenance.spec.ts` —
+  RED `TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING` → GREEN 39/39; `wm-platformer-2` 0/2 → 2/2 on the same
+  game. three's `WebGLRenderer` tags only `three.js r<n>`, and the page cannot probe a canvas its
+  worker owns.
+- [x] `run-arm.sh` ends with its whole scope. proof: `pnpm exec vitest run
+  scripts/__tests__/weak-model-run-arm.spec.ts` RED (child alive) → GREEN. The cap killed only the
+  wrapper; the agent, vite and Xvfb ran on beside the proof.
 
 ### Phase 3 — fps floor
 
@@ -51,6 +60,7 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 | Run | Verdict | Proof | First src write | Searches before write | Tool errors | Internal reads | Typecheck / playtest | Cost | Fix |
 |---|---|---|---|---|---|---|---|---|---|
 | wm-platformer-1 | VALID, discarded: shared sandbox root, the arm ran a sibling game's scripts (calls 11-19) | 0/2 (GPU headed: attach timeout) | call 50 | 0 | 9 | 21 | 2 / 33 | $0.156 | own sandbox root per run; kit coin moved off the spawn |
+| wm-platformer-2 | VALID | 2/2 (laptop Iris Xe, headed) after the provenance fix; 0/2 before | call 94 | 0 | 7 | 12 | 9 / 30 | $0.146 | proof reads `engine: "threejs"`; run-arm stops its scope |
 | control (pristine kit) | n/a | 1/2: run fails `coins` trivial, `goalReached` false | - | - | - | - | - | - | - |
 
 ## Decisions
@@ -63,6 +73,17 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 - 2026-11-13 (lead): the cache seed, not `tools` hints in `.mcp.json`, is the fix. Hints fill only
   the catalog row; leanpi refuses a tool without a cached schema. Claude Code's `.mcp.json` stays
   free of leanpi-only keys.
+
+- 2026-11-13 (lead): sealed proofs run on the laptop GPU lane (`offload.sh run --gpu`, sandbox
+  copied to the same path, `tsx scripts/sweep-capture.ts` without the Xvfb wrapper). The desktop's
+  private-Xvfb lane broke after 00:57: the untouched control failed three runs three ways (device
+  lost, attach timeout, screenshot timeout); the laptop gives the control its 1/2 again.
+- 2026-11-13 (lead): open friction, not fixed this round. The arm's own playtests run on SwiftShader,
+  the default Wasm engine loses its device there (`TN_WASM_DEVICE_LOST`), and the arm switches to
+  `engine: "threejs"` and `preferWebGPU: false`. It still made 0 capability searches; leanpi does
+  put `AGENTS.md` in its context.
+- 2026-11-13 (lead): the control fails `goalReached` because the kit names that state `finished`.
+  The arm renamed it from the brief. The kit is not renamed to the sealed key.
 
 ## Blocked on
 

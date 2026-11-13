@@ -67,8 +67,11 @@ while kill -0 "$ARM" 2>/dev/null; do
     systemctl --user stop "$UNIT.scope" 2>/dev/null
   fi
 done
-wait "$ARM"
-echo "arm exit=$? (124 = hit the ${MINUTES} min cap, 143 = stopped idle after the final answer)" | tee -a "$OUT/arm.log"
+wait "$ARM"; ARC=$?
+# The cap kills only the wrapper: the agent and the servers it started (vite, Xvfb) live on in the
+# scope, and a proof run beside them is void. The arm ends with its scope.
+systemctl --user stop "$UNIT.scope" 2>/dev/null
+echo "arm exit=$ARC (124 = hit the ${MINUTES} min cap, 143 = stopped idle after the final answer)" | tee -a "$OUT/arm.log"
 
 SESSION="$(ls -t "$OUT"/session/*.jsonl 2>/dev/null | head -1)"
 [ -n "$SESSION" ] || { echo "no session log in $OUT/session" >&2; exit 1; }
