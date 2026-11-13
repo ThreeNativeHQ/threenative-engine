@@ -78,9 +78,9 @@ Risks:
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Tree bake | `bakeVegetation` (fill `file:line`) | EZ Tree copy-in recipe; integration deleted in Phase 3 | Phase 1 spec |
-| Terrain species | `packages/terrain/src/mcp/cook.ts` `scatterFoliage` → `arbor:` resolver (fill `file:line`) | A row with no kit art used to draw nothing | Phase 2 |
-| Asset search and bake | `threenative-asset-mcp` `asset_search` / `vegetation_generate` → `arbor` adapter | New provider | Phase 3 |
+| Tree bake | `bakeVegetation` (`packages/procedural-vegetation/src/index.ts:108`) | EZ Tree copy-in recipe; integration deleted in Phase 3 | Phase 1 spec |
+| Terrain species | `packages/terrain/src/mcp/cook.ts:1206` `cookInto` → `growArborSpecies` (`arbor-species.ts:113`), and a request's tree word through `parseGenerateRequest` | A row with no kit art used to draw nothing | Phase 2 |
+| Asset search and bake | `threenative-asset-mcp` `asset_search` / `vegetation_generate` → `arbor` adapter (`src/discovery/arbor.ts`, branch `feat/arbor-adapter`) | New provider | Phase 3 |
 | Discovery | manifest rows from `pnpm build` | New package rows | AC-1 |
 
 ## Decisions
@@ -139,7 +139,7 @@ Risks:
 
 #### Phase 3: The asset MCP finds and bakes trees, and EZ Tree leaves
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-11-13): EZ Tree deleted; the asset MCP adapter is built and waits on the npm release.
 **Files:**
 - `threenative-asset-mcp/src/discovery/arbor.ts` (new): the `AssetAdapter`.
 - `threenative-asset-mcp/src/server.ts`: the `vegetation_generate` registration.
@@ -153,6 +153,7 @@ Risks:
 4. The change lands as its own PR in the asset MCP repository, after the release named under `## Blocked on`.
 
 - [ ] `asset_search { query: "oak tree" }` returns an `arbor` row for `oak`, and `vegetation_generate { preset: "oak", seed: 7 }` writes a GLB that the Phase 1 parser accepts. proof: `npm test -- tests/arbor.test.ts` in `threenative-asset-mcp`
+  Left open: the proof needs the unpublished package. Run on branch `feat/arbor-adapter` (commit bfcbe0b, not pushed) against a local `pnpm pack` tarball installed with `--no-save` (2026-11-13): `npx vitest run tests/arbor.test.ts tests/discovery-adapters.test.ts tests/discovery-tools.integration.test.ts` 26 tests green, `tsc --noEmit` clean, and the built MCP over stdio answered `asset_search {query:"oak tree"}` with `arbor:oak` (free, Generated user-owned) and `vegetation_generate {preset:"oak", seed:7, lods:[0,1]}` with two GLBs (34 402 and 6 998 triangles) that carry `_WIND`, `COLOR_0`, `TEXCOORD_0` and a MASK foliage material. `asset_download` is not wired: the federation plan path downloads URLs, so a generated asset answers `asset_get` with no plan and names `vegetation_generate`. Tick after the release cohort publishes the package and `npm install` updates the lockfile.
 - [x] The EZ Tree integration is deleted, and no doc links to it. proof: `pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts` — `pnpm check:docs` exit 0 (3953 links), the two specs plus `vegetation-not-owned`, `ci-structure`, `ci-integration-scope`, `package-list-drift` green, 328 tests (2026-11-13). The `vegetation` integration CI lane left with it; `foliage-conifer.mjs` now bakes an Arbor spruce; PRD-786's wind-helper reference moved to the quarry sway material.
 
 **Verification:** the two boxes above. Then run `pnpm ci:local --affected --base origin/develop --target develop` once before the PR leaves draft.
