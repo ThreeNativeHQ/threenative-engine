@@ -89,6 +89,17 @@ const SERVER_FORMATS = Object.freeze({
       ...(server.env === undefined ? {} : { env: { ...server.env } }),
     }),
   }),
+  // leanpi reads `.mcp.json` too, but connects lazily: with JEV off it offers only the servers
+  // marked `default`. The engine server is the one every game's AGENTS.md makes the first call.
+  leanpi: Object.freeze({
+    key: "mcpServers",
+    entry: (server, name) => ({
+      command: server.command,
+      args: [...server.args],
+      ...(server.env === undefined ? {} : { env: { ...server.env } }),
+      ...(name === "threenative-engine" ? { default: true } : {}),
+    }),
+  }),
   // VS Code names the table `servers` and requires an explicit transport per server.
   vscode: Object.freeze({
     key: "servers",
@@ -155,7 +166,7 @@ export function mergeMcpServers(existing, format = "mcpServers") {
   let changed = false;
   const conflicts = [];
   for (const [name, server] of Object.entries(MCP_SERVERS)) {
-    const wanted = shape.entry(server);
+    const wanted = shape.entry(server, name);
     if (Object.hasOwn(servers, name)) {
       if (JSON.stringify(servers[name]) !== JSON.stringify(wanted)) conflicts.push(name);
       continue;

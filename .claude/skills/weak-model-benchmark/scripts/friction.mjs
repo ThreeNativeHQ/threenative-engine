@@ -27,7 +27,8 @@ const index = (pred) => {
 };
 
 const writesSrc = (c) => /^(write|edit)$/.test(c.name) && /(^|\/)src\//.test(c.arguments?.path ?? c.arguments?.file_path ?? "");
-const searches = (c) => /engine_search_capabilities|engine_capability_detail/.test(c.name);
+// The MCP tool or its shell route (`node .../mcp/call.mjs threenative-engine engine_search_capabilities ...`).
+const searches = (c) => /engine_search_capabilities|engine_capability_detail/.test(`${c.name} ${text(c)}`);
 const firstSrcWrite = index(writesSrc);
 const usage = messages.filter((m) => m.role === "assistant" && m.usage).map((m) => m.usage);
 

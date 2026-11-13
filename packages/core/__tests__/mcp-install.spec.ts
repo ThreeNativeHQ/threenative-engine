@@ -9,6 +9,7 @@ import {
   MCP_HOSTS,
   ensureCodexMcpConfig,
   ensureHostMcpConfigs,
+  ensureLeanpiSchemaCache,
   ensureMcpConfig,
   installTarget,
 } from "../mcp/install.mjs";
@@ -389,7 +390,16 @@ describe("ensureHostMcpConfigs", () => {
     const outcomes = ensureHostMcpConfigs(directory);
 
     expect([...outcomes.keys()].sort()).toEqual(
-      ["claude-code", "codex", "cursor", "gemini-cli", "opencode", "vscode", "zed"].sort(),
+      [
+        "claude-code",
+        "codex",
+        "cursor",
+        "gemini-cli",
+        "leanpi",
+        "opencode",
+        "vscode",
+        "zed",
+      ].sort(),
     );
     for (const [host, outcome] of outcomes) expect(outcome, host).toBe("created");
     for (const host of MCP_HOSTS) {
@@ -481,6 +491,56 @@ describe("ensureHostMcpConfigs", () => {
       expect(codex).toContain(`[mcp_servers.${name}]`);
       expect(codex).toContain(`args = ["${server.args[0]}"]`);
     }
+  });
+});
+
+// leanpi connects MCP servers lazily: with JEV off it offers only `default` servers, and only the
+// tools whose schemas sit in `.leanpi/cache/mcp-catalog.json`. A cold scaffold had neither, so a
+// DeepSeek arm reported no engine tool at all (weak-model probe, 2026-11-12, PRD-881).
+describe("leanpi", () => {
+  it("makes only the engine server a project default", () => {
+    const directory = project();
+    ensureHostMcpConfigs(directory);
+    const leanpi = JSON.parse(
+      readFileSync(path.join(directory, ".leanpi", "mcp.json"), "utf8"),
+    ) as {
+      mcpServers: Record<string, { args: string[]; default?: boolean }>;
+    };
+    expect(Object.keys(leanpi.mcpServers)).toHaveLength(Object.keys(MCP_SERVERS).length);
+    expect(leanpi.mcpServers["threenative-engine"]?.default).toBe(true);
+    expect(leanpi.mcpServers["threenative-engine"]?.args[0]).toBe(
+      "./node_modules/@threenative/core/mcp/engine.mjs",
+    );
+    expect(leanpi.mcpServers["threenative-assets"]?.default).toBeUndefined();
+  });
+
+  it("seeds the bundled engine tool schemas and keeps other cached servers", async () => {
+    const { toolDefinitions } = (await import("../mcp/engine-server.mjs")) as {
+      toolDefinitions: () => { name: string; inputSchema: unknown }[];
+    };
+    const directory = project();
+    const cachePath = path.join(directory, ".leanpi", "cache", "mcp-catalog.json");
+    mkdirSync(path.dirname(cachePath), { recursive: true });
+    writeFileSync(cachePath, JSON.stringify({ servers: { mine: { tools: [{ name: "x" }] } } }));
+
+    expect(ensureLeanpiSchemaCache(directory, toolDefinitions())).toBe("updated");
+    const cache = JSON.parse(readFileSync(cachePath, "utf8")) as {
+      servers: Record<string, { tools: { name: string; inputSchema: unknown }[] }>;
+    };
+    expect(cache.servers.mine?.tools).toEqual([{ name: "x" }]);
+    const tools = cache.servers["threenative-engine"]?.tools ?? [];
+    expect(tools.map((tool) => tool.name)).toContain("engine_search_capabilities");
+    expect(tools.every((tool) => typeof tool.inputSchema === "object")).toBe(true);
+    expect(ensureLeanpiSchemaCache(directory, toolDefinitions())).toBe("unchanged");
+  });
+
+  it("seeds the cache from the postinstall hook", async () => {
+    const { runMcpSetup } = (await import("../scripts/ensure-mcp.mjs")) as {
+      runMcpSetup: (environment: NodeJS.ProcessEnv) => Promise<void>;
+    };
+    const directory = project();
+    await runMcpSetup({ INIT_CWD: directory });
+    expect(existsSync(path.join(directory, ".leanpi", "cache", "mcp-catalog.json"))).toBe(true);
   });
 });
 

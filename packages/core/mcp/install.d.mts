@@ -35,3 +35,11 @@ export declare function ensureJsonMcpConfig(
 export declare function ensureMcpConfig(target: string): McpConfigOutcome;
 export declare function ensureCodexMcpConfig(target: string): McpConfigOutcome;
 export declare function ensureHostMcpConfigs(target: string): Map<string, McpConfigOutcome>;
+export declare function ensureLeanpiSchemaCache(
+  target: string,
+  tools: readonly {
+    readonly name: string;
+    readonly description: string;
+    readonly inputSchema: unknown;
+  }[],
+): McpConfigOutcome;
