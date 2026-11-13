@@ -183,6 +183,11 @@ jobs:
           path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
           if-no-files-found: error
 
+  # PRD-784: the PS4 visual parity lock, only when PS4 code changes. It checks the driver patches, the
+  # CPU mip chain and the region claims on the kept Cube Spin frames. PS4 code inside the engine tree
+  # (texture_copy.h, gamepads.cpp) selects the native-engine job instead, and the `test` job runs these
+  # same files. The emulator capture needs the OpenOrbis toolchain, a PS4 V8 build and shadPS4, which
+  # no runner has: it stays local (`run-experiment.mjs e5`, then `check-frame.mjs` on its screenshots).
   playstation:
     name: playstation
     if: ${{ needs.paths.outputs.playstation == 'true' && !github.event.pull_request.draft }}
