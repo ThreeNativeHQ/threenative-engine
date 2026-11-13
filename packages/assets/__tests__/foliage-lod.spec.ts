@@ -694,6 +694,57 @@ describe("whole-card thinning beside an unspendable component (PRD-618)", () => 
     expect(exhausted?.counts).toEqual(ladder?.counts);
   });
 
+  it("thins small folded cards of more than eight triangles as whole cards (PRD-584 AC-4)", async () => {
+    // The kit fir's twig sprigs are 9-13 triangle folded strips a few centimetres across a 14 m
+    // tree. Read as shells, all 6,784 of their triangles rode every far level, so its ladder
+    // floored at 7.3k triangles from 107 m to the 600 m cull.
+    const { thinFoliageCards } = await import("../src/lod/generate.js");
+    const document = new Document();
+    const buffer = document.createBuffer();
+    const positions: number[] = [];
+    const indices: number[] = [];
+    for (let card = 0; card < 64; card += 1) {
+      const base = positions.length / 3;
+      const x = (card % 8) * 1.5;
+      const z = Math.floor(card / 8) * 1.5;
+      // A six-quad strip, 0.3 m long: twelve triangles, one connected component.
+      for (let step = 0; step <= 6; step += 1)
+        positions.push(x + step * 0.05, step % 2 === 0 ? 0 : 0.02, z, x + step * 0.05, 0, z + 0.04);
+      for (let step = 0; step < 6; step += 1) {
+        const at = base + step * 2;
+        indices.push(at, at + 2, at + 1, at + 1, at + 2, at + 3);
+      }
+    }
+    const primitive = document
+      .createPrimitive()
+      .setAttribute(
+        "POSITION",
+        document
+          .createAccessor()
+          .setType("VEC3")
+          .setArray(Float32Array.from(positions))
+          .setBuffer(buffer),
+      )
+      .setIndices(
+        document
+          .createAccessor()
+          .setType("SCALAR")
+          .setArray(Uint32Array.from(indices))
+          .setBuffer(buffer),
+      )
+      .setMaterial(document.createMaterial("twig").setAlphaMode("MASK").setAlphaCutoff(0.5));
+    document
+      .createScene()
+      .addChild(
+        document.createNode("twigs").setMesh(document.createMesh("twigs").addPrimitive(primitive)),
+      );
+    expect(thinFoliageCards(document, 0.25)).toBe(1);
+    const kept = ((primitive.getIndices() as Accessor).getCount() as number) / 3;
+    expect(kept).toBeLessThan((indices.length / 3) * 0.5);
+    // Whole cards only: every kept card brings all twelve of its triangles.
+    expect(kept % 12).toBe(0);
+  });
+
   it("rejects when every component is too large to be a card", async () => {
     const { thinFoliageCards } = await import("../src/lod/generate.js");
     // The same fan with no eligible card beside it: nothing can be spent, so the primitive fails

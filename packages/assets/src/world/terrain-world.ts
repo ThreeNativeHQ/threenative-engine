@@ -267,8 +267,13 @@ async function parseSpecies(bytes: Uint8Array): Promise<Document> {
  * holds out to 600 m, so a 512 m forest drew 62.5M triangles a frame for ~1,100 trees in view:
  * 113-120 ms GPU on an Iris Xe laptop and 18-31 ms on an RTX 2080. With these two levels the same
  * pose drew 10-22M (the adaptive LOD bias moves it) at 47-61 ms and 9 ms (PRD-762).
+ *
+ * Two steps still stopped the fir at 9.8k triangles from 107 m to the 600 m cull: 9.5M of the
+ * forest walk's 13.8M triangles (PRD-584 AC-4). Each step now keeps about a quarter of the one
+ * before, and the ladder ends where the next level would switch at or past `maxDistance`. Every
+ * level keeps the on-screen triangle density the authored coarsest level had at its own switch.
  */
-const FAR_LEVEL_KEEP_RATIOS: readonly number[] = [0.25, 0.06];
+const FAR_LEVEL_KEEP_RATIOS: readonly number[] = [0.25, 0.06, 0.015, 0.004];
 
 function documentTriangles(doc: Document): number {
   let total = 0;
