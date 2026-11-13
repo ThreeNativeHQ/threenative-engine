@@ -95,9 +95,17 @@ without a cached schema (`select.ts` `hydrate`). A `tools` hint alone fills only
 | wm-platformer-2 | VOID: read the sealed proof in `.claude/worktrees/strata-chain/docs/benchmark/genres/platformer/proof` | 2/2 (laptop Iris Xe, headed) after the provenance fix; 0/2 before | call 94 | 0 | 7 | 12 | 9 / 30 | $0.146 | proof reads `engine: "threejs"`; run-arm stops its scope |
 | wm-platformer-3 | VALID, unjailed but no read outside its sandbox | 1/2 (laptop Iris Xe): run fails `goalReached` | call 25 | 0 | 5 | 7 | 0 / 29 | $0.070 | playtest gates on check; docs ship |
 | wm-platformer-4 | VOID: thinking `high` (leanpi replaced the CLI `:max` with its compiled effort 7 ms after start); jailed | 1/2 (laptop Iris Xe): run fails `goalReached` | call 37 | 0 | 4 | 4 | 0 / 31 | $0.052 | leanpi 0.1.24 holds an explicit CLI level |
+| wm-platformer-5 | VALID, jailed, leanpi 0.1.26, `max` held | 1/2 (laptop Iris Xe): run fails `goalReached` | call 50 | 1 | 4 | 11 | 6 / 48 | $0.114 | first VALID round with a capability search and typecheck runs |
 | control (pristine kit) | n/a | 1/2: run fails `coins` trivial, `goalReached` false | - | - | - | - | - | - | - |
 
 ## Decisions
+
+- 2026-11-13: the sealed run proof holds `ArrowRight` for 360 ticks and never presses `Space`, and the brief
+  does not say so. Round 5's fox ran to x 38.7, took 10 coins, fell into the gap on the run line (1 respawn) and
+  never reached the flag. The pristine kit fails the same way (control row), and VALID rounds 3, 4 and 5 failed
+  only this assertion. Telling the builder "keep the run line jump-free" leaks the sealed proof, and changing the
+  kit layout to pass it is benchmaxxing, so the sealed brief and proof stay as they are. Open: owner decision.
+
 
 - 2026-11-13 (lead): the proof step is `pnpm sweep:capture` (headed). `pnpm sweep:proof` runs
   headless and fails every run on SwiftShader (`TN_PLAYTEST_SOFTWARE_ADAPTER`).
