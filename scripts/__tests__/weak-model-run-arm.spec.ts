@@ -1,8 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const SCRIPT = path.resolve(".claude/skills/weak-model-benchmark/scripts/run-arm.sh");
 // The arm needs a user-systemd scope and a bwrap jail. A CI container has neither working (no user
@@ -27,7 +27,7 @@ describe("run-arm.sh", () => {
   // A capped or finished arm left its agent, vite and Xvfb running, and the sealed proof then ran
   // beside them (wm-platformer-2, 2026-11-13). The arm is over only when its whole scope is gone.
   it.skipIf(!canJailArm)("stops every process the arm started before it returns", () => {
-    root = mkdtempSync(path.join(tmpdir(), "run-arm-"));
+    root = makeTempDirSync("run-arm-");
     const pidFile = path.join(root, "child.pid");
     mkdirSync(path.join(root, "leanpi", "bin"), { recursive: true });
     writeFileSync(path.join(root, "leanpi", "package.json"), "{}");
@@ -60,8 +60,8 @@ describe("run-arm.sh", () => {
   // The arm builds as a developer would, on a machine holding only its own project: round 2 read the
   // sealed proof out of a repo checkout on this disk (wm-platformer-2, 2026-11-13).
   it.skipIf(!canJailArm)("hides every file outside the sandbox from the arm", () => {
-    root = mkdtempSync(path.join(tmpdir(), "run-arm-"));
-    const secret = mkdtempSync(path.join(tmpdir(), "run-arm-secret-"));
+    root = makeTempDirSync("run-arm-");
+    const secret = makeTempDirSync("run-arm-secret-");
     writeFileSync(path.join(secret, "proof.json"), "{}");
     const seen = path.join(root, "game", "seen.txt");
     mkdirSync(path.join(root, "leanpi", "bin"), { recursive: true });
