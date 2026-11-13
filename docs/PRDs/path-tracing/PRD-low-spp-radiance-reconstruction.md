@@ -22,6 +22,8 @@ Use a classical variance-guided temporal/spatial baseline before a neural model.
 provides the algorithmic reference, not a promise about our performance. This PRD adds
 radiance-specific reconstruction, while reusing the existing motion owner and resource lifecycle.
 
+**Secondary reference: ThreeRT.** ThreeRT (MIT, `meshy-dev/ThreeRT@8964dc4`, checked 2026-11-13) is a Rust + wgpu path tracer with a three.js-style API. Its classical baseline ([`renderer/src/denoise.rs`](https://github.com/meshy-dev/ThreeRT/blob/8964dc407c4412a6f717c3ac7805ed791becdd9d/renderer/src/denoise.rs), 5 KB) is an edge-avoiding à-trous wavelet filter (Dammertz 2010). It runs on demodulated irradiance, guided by first-hit albedo and normal, with Intel OIDN as an optional path. It takes one SVGF detail that matters: the luminance edge width reads the variance filtered over 3 × 3 pixels. With each pixel's own variance, a pixel among fireflies that drew none rejected all its neighbours and stayed a dark hole. Its quality protocol ([`docs/COMPARE.md`](https://github.com/meshy-dev/ThreeRT/blob/8964dc407c4412a6f717c3ac7805ed791becdd9d/docs/COMPARE.md)) reports ΔE76 and SSIM against an unbiased reference with no clamps and no denoiser, plus a row for the reference's own noise (1024 spp against 4096 spp). Use that noise row in the frozen protocol below.
+
 ## Goal and non-goals
 
 The installed path-tracing example renders stable moving diffuse/glossy lighting from one
