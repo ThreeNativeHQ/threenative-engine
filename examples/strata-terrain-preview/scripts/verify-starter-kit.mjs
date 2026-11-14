@@ -513,7 +513,15 @@ async function main() {
     const workspacePackages = JSON.parse(
       run("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"]),
     );
-    const gamePackages = workspacePackages.filter(({ name }) => dependencies.has(name));
+    // The workspace closure, not only the template's direct dependencies: a dependency's own
+    // workspace dependency (runtime-native's three-native) at an unpublished version 404s on npm.
+    const byName = new Map(workspacePackages.map((entry) => [entry.name, entry]));
+    for (const name of dependencies)
+      for (const next of byName.get(name)?.dependencies ?? [])
+        if (byName.has(next)) dependencies.add(next);
+    const gamePackages = workspacePackages.filter(
+      ({ name }) => dependencies.has(name) && name !== TERRAIN,
+    );
     const terrainPackage = workspacePackages.find(({ name }) => name === TERRAIN);
     assert(gamePackages.length > 0, "minimal template has no workspace packages to pack");
     assert(terrainPackage, `workspace package is missing: ${TERRAIN}`);
