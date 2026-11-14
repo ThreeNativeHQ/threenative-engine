@@ -86,6 +86,7 @@ import {
 } from "../water/river.js";
 import {
   COLLAR_UNDER_TILE,
+  TILE_INSIDE_SQUARE,
   type IPackedMassif,
   STREAM_TILE,
   collarColors,
@@ -1487,7 +1488,12 @@ export function createTerrain(
           tile.positionNode = collarMorph(collar, stream, STREAM_TILE);
           tile.maskNode = fromCentre
             .lessThan(stream.half)
-            .and(max(abs(positionWorld.x), abs(positionWorld.z)).greaterThan(data.size / 2));
+            // The skirt each tile hangs on the square's edge draws too, under the square's cracks.
+            .and(
+              max(abs(positionWorld.x), abs(positionWorld.z)).greaterThan(
+                data.size / 2 - TILE_INSIDE_SQUARE,
+              ),
+            );
           surfaces.push(far, tile);
           geometry.addEventListener("dispose", () => far.dispose());
           stream.tiles(tile);

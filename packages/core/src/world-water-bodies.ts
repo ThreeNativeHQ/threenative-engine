@@ -83,6 +83,8 @@ interface IPool {
   readonly z: number;
   readonly radius2: number;
   readonly level: number;
+  readonly disc: ILakeDisc | undefined;
+  readonly field: Heightfield;
 }
 
 /** What stands at one (x, z): the water body covering it, its surface, and the river piece carrying it. */
@@ -153,6 +155,95 @@ export function waterlineRadius(
     furthest = Math.max(furthest, (wet + dry) / 2);
   }
   return furthest;
+}
+
+/**
+ * A lake's disc: `rings` rings of `spokes` vertices around its seed, out to `lakeReach`, packed towards
+ * the middle. Vertex 0 is the seed; ring `r` (1 to `rings - 1`) spoke `s` is `1 + (r - 1) * spokes + s`.
+ *
+ * `depths` is the water over the ground at each vertex, and it is zero where dry ground cuts the vertex
+ * off from the seed: a hollow beyond the basin's rim sits under the level too, but the lake does not
+ * reach it (a river valley past the dam would otherwise stand under a sheet of lake water that stops
+ * where the reach does, in a straight edge). Neighbours are the next spoke on a ring and the next ring
+ * on a spoke, so water crosses a ridge only where the ridge falls below the level.
+ */
+export interface ILakeDisc {
+  readonly x: number;
+  readonly z: number;
+  readonly reach: number;
+  readonly rings: number;
+  readonly spokes: number;
+  readonly packing: number;
+  /** `[x, z]` per vertex, clamped to the field. */
+  readonly positions: Float32Array;
+  readonly depths: Float32Array;
+}
+
+export function lakeDisc(
+  field: Heightfield,
+  lake: IWaterLake,
+  rings = 44,
+  spokes = 88,
+  packing = 1.7,
+): ILakeDisc | undefined {
+  const reach = lakeReach(field, lake);
+  if (!(reach > 0)) return undefined;
+  const [cx = 0, cz = 0] = lake.at;
+  const minX = field.origin.x - field.width / 2;
+  const minZ = field.origin.z - field.depth / 2;
+  const count = (rings - 1) * spokes + 1;
+  const positions = new Float32Array(count * 2);
+  const raw = new Float32Array(count);
+  for (let index = 0; index < count; index += 1) {
+    const ring = index === 0 ? 0 : Math.floor((index - 1) / spokes) + 1;
+    const angle = (((index - 1) % spokes) / spokes) * Math.PI * 2;
+    const radius = index === 0 ? 0 : reach * (ring / (rings - 1)) ** packing;
+    const x = Math.max(minX, Math.min(minX + field.width, cx + Math.cos(angle) * radius));
+    const z = Math.max(minZ, Math.min(minZ + field.depth, cz + Math.sin(angle) * radius));
+    positions[index * 2] = x;
+    positions[index * 2 + 1] = z;
+    raw[index] = Math.max(0, lake.level - field.heightAt(x, z));
+  }
+  // Flood from the seed through wet vertices only.
+  const depths = new Float32Array(count);
+  const stack = [0];
+  depths[0] = raw[0] as number;
+  const visit = (index: number): void => {
+    if ((raw[index] as number) > 0 && depths[index] === 0) {
+      depths[index] = raw[index] as number;
+      stack.push(index);
+    }
+  };
+  while (stack.length > 0) {
+    const index = stack.pop() as number;
+    if (index === 0) {
+      for (let spoke = 0; spoke < spokes; spoke += 1) visit(1 + spoke);
+      continue;
+    }
+    const ring = Math.floor((index - 1) / spokes) + 1;
+    const spoke = (index - 1) % spokes;
+    const at = (r: number, s: number): number => (r === 0 ? 0 : 1 + (r - 1) * spokes + s);
+    visit(at(ring, (spoke + 1) % spokes));
+    visit(at(ring, (spoke + spokes - 1) % spokes));
+    visit(at(ring - 1, spoke));
+    if (ring + 1 < rings) visit(at(ring + 1, spoke));
+  }
+  return { x: cx, z: cz, reach, rings, spokes, packing, positions, depths };
+}
+
+/** Whether the disc cell holding (x, z) has a corner the seed's water reaches. */
+function discReaches(disc: ILakeDisc, x: number, z: number): boolean {
+  const dx = x - disc.x;
+  const dz = z - disc.z;
+  const t = (Math.hypot(dx, dz) / disc.reach) ** (1 / disc.packing) * (disc.rings - 1);
+  const ring = Math.min(disc.rings - 2, Math.floor(t));
+  const turn = (Math.atan2(dz, dx) / (Math.PI * 2) + 1) % 1;
+  const spoke = Math.floor(turn * disc.spokes) % disc.spokes;
+  const at = (r: number, s: number): number => (r === 0 ? 0 : 1 + (r - 1) * disc.spokes + s);
+  const next = (spoke + 1) % disc.spokes;
+  return [at(ring, spoke), at(ring, next), at(ring + 1, spoke), at(ring + 1, next)].some(
+    (index) => (disc.depths[index] as number) > 0,
+  );
 }
 
 /**
@@ -272,7 +363,11 @@ export class WaterBodies {
       river === undefined ? Number.NEGATIVE_INFINITY : river.ha + (river.hb - river.ha) * along;
     let kind: WaterBodyKind | undefined = river === undefined ? undefined : "river";
     for (const pool of this.#pools)
-      if ((x - pool.x) ** 2 + (z - pool.z) ** 2 <= pool.radius2 && pool.level > level) {
+      if (
+        (x - pool.x) ** 2 + (z - pool.z) ** 2 <= pool.radius2 &&
+        pool.level > level &&
+        !isolated(pool, x, z)
+      ) {
         level = pool.level;
         river = undefined;
         kind = "lake";
@@ -290,6 +385,20 @@ export class WaterBodies {
     }
     return kind === undefined ? undefined : { kind, level, river };
   }
+}
+
+/** Ground under a lake's level that its water does not reach: a hollow past the basin's rim. */
+function isolated(pool: IPool, x: number, z: number): boolean {
+  const disc = pool.disc;
+  if (disc === undefined || discReaches(disc, x, z)) return false;
+  const field = pool.field;
+  const minX = field.origin.x - field.width / 2;
+  const minZ = field.origin.z - field.depth / 2;
+  const ground = field.heightAt(
+    Math.max(minX, Math.min(minX + field.width, x)),
+    Math.max(minZ, Math.min(minZ + field.depth, z)),
+  );
+  return ground < pool.level;
 }
 
 /** One row of river stations as straight pieces, each as wide as the channel stands over. */
@@ -329,8 +438,9 @@ function poolOf(field: Heightfield | undefined, lake: IWaterLake): IPool {
   const [x = 0, z = 0] = lake.at;
   finite(x, "lake x");
   finite(z, "lake z");
-  const radius = lakeReach(field, lake);
-  return { level: lake.level, radius2: radius * radius, x, z };
+  const disc = lakeDisc(field, lake);
+  const radius = disc?.reach ?? 0;
+  return { level: lake.level, radius2: radius * radius, x, z, disc, field };
 }
 
 /**

@@ -137,6 +137,12 @@ export const STREAM_TILE = 64;
  * measures; cut at one line, a view across that step saw the sky through it as a dotted white seam.
  */
 export const COLLAR_UNDER_TILE = STREAM_TILE / 4;
+/**
+ * Metres inside the square's edge where the streamed tiles still draw. Each tile hangs a skirt on
+ * that edge; a mask cut on the edge itself dropped it, and the rounding cracks where the square
+ * and the tiles meet showed the sky as a dotted white line along low-view crests.
+ */
+export const TILE_INSIDE_SQUARE = 0;
 /** How the rings spread: ring `k` stands `(k / rings) ** 1.65` of the reach past the edge. */
 const HORIZON_POWER = 1.65;
 

@@ -62,14 +62,28 @@ const KIT_WORLD_TREES = (process.env.KIT_WORLD_TREES ?? KIT_WORLD_TREE).split(",
  * says so here rather than defaulting it.
  */
 const KITS = {
+  // The forest is a source kit: its own `ForestScene` is the game (README step 3, `forest-game.ts`),
+  // so the proof writes no scene, stand or `kit.ts` around it.
   forest: {
-    playtest: "kit.playtest.json",
-    generatedStand: true,
+    playtest: "forest.playtest.json",
+    source: "forest-game.ts",
+    generatedStand: false,
     water: true,
     cooked: "cookedForestBytes",
-    numbers: ["closestToTrunk", "firInstancesDrawn", "waterLakes", "waterRivers"],
-    captures: ["edge", "ground", "lake", "overview"],
-    views: ["edge", "ground", "lake", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "propTriangles",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["forest-start", "meadow-close", "overview", "river", "vista", "forest-walk"],
+    views: [],
   },
   alpine: {
     playtest: "alpine.playtest.json",
@@ -511,189 +525,8 @@ export function prepareArtifacts(artifacts, game) {
   mkdirSync(artifacts, { recursive: true });
 }
 
-async function main() {
-  const keptGame = process.env.KIT_GAME ? realpathSync(process.env.KIT_GAME) : undefined;
-  if (keptGame) {
-    try {
-      const marker = JSON.parse(
-        readFileSync(join(keptGame, ".threenative-kit-verifier.json"), "utf8"),
-      );
-      assert(marker?.game === keptGame && marker?.kit === KIT);
-    } catch {
-      throw new Error(
-        `KIT_GAME ownership refused: ${keptGame} needs a valid .threenative-kit-verifier.json matching its canonical path and kit '${KIT}'; only fresh verifier scaffolds are marked automatically`,
-      );
-    }
-  }
-  assert(
-    ARM === "default" || keptGame,
-    "edited/tint arms require KIT_GAME pointing to a kept AFTER scaffold",
-  );
-  assert(KIT === "alpine" || ARM === "default", "edited and tint arms require KIT=alpine");
-  const temporary = keptGame
-    ? join(keptGame, "..")
-    : mkdtempSync(join(tmpdir(), "threenative-kit-"));
-  let game = keptGame;
-  if (!game) {
-    const minimal = JSON.parse(
-      readFileSync(
-        join(REPO, "packages/create-threenative/templates/minimal/package.json"),
-        "utf8",
-      ),
-    );
-    const dependencies = new Set(
-      Object.keys({
-        ...minimal.dependencies,
-        ...minimal.devDependencies,
-        ...minimal.optionalDependencies,
-      }),
-    );
-    const workspacePackages = JSON.parse(
-      run("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"]),
-    );
-    // The kit bake grows its Arbor species with this package (the README's install step).
-    dependencies.add(VEGETATION);
-    // The workspace closure, not only the template's direct dependencies: a dependency's own
-    // workspace dependency (runtime-native's three-native) at an unpublished version 404s on npm.
-    const byName = new Map(workspacePackages.map((entry) => [entry.name, entry]));
-    for (const name of dependencies)
-      for (const next of byName.get(name)?.dependencies ?? [])
-        if (byName.has(next)) dependencies.add(next);
-    const gamePackages = workspacePackages.filter(
-      ({ name }) => dependencies.has(name) && name !== TERRAIN,
-    );
-    const terrainPackage = workspacePackages.find(({ name }) => name === TERRAIN);
-    assert(gamePackages.length > 0, "minimal template has no workspace packages to pack");
-    assert(terrainPackage, `workspace package is missing: ${TERRAIN}`);
-
-    say(`kit proof (${KIT}) in ${temporary}`);
-
-    // --- pack every package the game needs from this checkout's built output ------------------------
-    const packs = join(temporary, "packs");
-    mkdirSync(packs);
-    const archives = {};
-    const stale = [...gamePackages, terrainPackage]
-      .map(({ directory }) => staleBuild(join(REPO, directory)))
-      .filter((reason) => reason !== undefined);
-    assert(stale.length === 0, `TN_KIT_STALE_BUILD: ${stale.join("; ")}`);
-    for (const { name, directory } of [...gamePackages, terrainPackage]) {
-      const before = new Set(readdirSync(packs));
-      run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(REPO, directory) });
-      archives[name] = join(
-        packs,
-        [...readdirSync(packs)].find((file) => !before.has(file)),
-      );
-    }
-    const { createProject } = await import(
-      pathToFileURL(join(REPO, "packages/create-threenative/dist/index.js")).href
-    );
-    game = (
-      await createProject(
-        {
-          install: true,
-          // The terrain tarball is a source here too, not only the later `pnpm add -D`: the minimal
-          // template's `@threenative/assets` dev dependency now depends on `@threenative/terrain`,
-          // and the override this writes is what resolves that transitive edge to the local tarball
-          // instead of the registry (which 404s). The kit's own `pnpm add -D` then moves it to the
-          // devDependency the README names.
-          packageSources: Object.fromEntries(
-            [...gamePackages, terrainPackage].map(({ name }) => [name, archives[name]]),
-          ),
-          target: "kit-game",
-          template: "minimal",
-        },
-        temporary,
-      )
-    ).target;
-    writeFileSync(
-      join(game, ".threenative-kit-verifier.json"),
-      `${JSON.stringify({ game: realpathSync(game), kit: KIT })}\n`,
-      { flag: "wx" },
-    );
-    say(`scaffolded ${game}`);
-
-    // --- the agent's own three steps, from the kit's README --------------------------------------------
-    run("pnpm", ["add", "-D", archives[TERRAIN], archives[VEGETATION]], { cwd: game });
-    cpSync(
-      join(game, "node_modules", ...TERRAIN.split("/"), "starter", KIT),
-      join(game, "src/terrain", KIT),
-      {
-        recursive: true,
-      },
-    );
-    // A baseline run (KIT_BEFORE=1) bakes the kit as it stood before the lake and river were restored.
-    if (process.env.KIT_BEFORE === "1") {
-      assert(CONFIG.water, "KIT_BEFORE strips the water layers, and only the forest kit has water");
-      stripWaterLayers(join(game, "src/terrain", KIT, "recipe.json"));
-    }
-    const world = join(game, "assets/terrain", KIT);
-    if (KIT_WORLD) {
-      assert(
-        process.env.KIT_BEFORE !== "1",
-        "KIT_WORLD renders a cooked world, so there is no kit recipe for KIT_BEFORE to strip",
-      );
-      // The cooked package is the kit bake's own shape, so the game loads it as its own world.
-      rmSync(world, { recursive: true, force: true });
-      cpSync(KIT_WORLD, world, { recursive: true });
-      say(`cooked: ${KIT_WORLD} -> assets/terrain/${KIT}`);
-    } else
-      say(
-        `bake: ${run("node", [`src/terrain/${KIT}/bake.mjs`, "--out", `assets/terrain/${KIT}`], { cwd: game }).trim()}`,
-      );
-  }
-  const world = join(game, "assets/terrain", KIT);
-  if (KIT_WORLD) addCookedColliders(game, KIT);
-  const sourceHashes = packageHashes(world);
-  const publicWorld = join(game, "public/terrain", KIT);
-  const publicHashes = existsSync(publicWorld) ? packageHashes(publicWorld) : undefined;
-  // A kept game builds with `vite build`, which ships the cooked `public/` as it stands: a re-bake
-  // that was never cooked would capture the previous trees and look like a no-op.
-  const newest = (dir) =>
-    Math.max(
-      ...readdirSync(dir, { recursive: true }).map((file) => statSync(join(dir, file)).mtimeMs),
-    );
-  if (process.env.KIT_GAME && publicHashes && newest(world) > newest(publicWorld))
-    throw new Error(
-      `TN_KIT_STALE_COOK: ${world} is newer than ${publicWorld}; run \`pnpm build:web\` in ${game} first`,
-    );
-  // The forest scene is written around a stand the proof reads from its bake. The alpine scene picks
-  // its own spawn and views from the loaded heightfield, so the alpine kit has no generated stand.
-  if (CONFIG.generatedStand) {
-    const { fir, spawn, clearance, edge, edgeClear, lake } = chooseStand(game, world);
-    writeFileSync(
-      join(game, "src/terrain/forest/stand.ts"),
-      `// Written by the kit's proof from the placements this bake wrote: the fir the scene stands
-// next to, four metres of clear ground from its trunk, and the ground it sits on. The scene imports
-// this, so no coordinate in the game is one the recipe no longer produces.
-export const stand = {
-  fir: { x: ${round(fir.x)}, z: ${round(fir.z)} },
-  groundY: ${round(fir.y)},
-  spawn: { x: ${round(spawn.x)}, z: ${round(spawn.z)} },
-  edge: { x: ${round(edge.x)}, z: ${round(edge.z)} },${lake ? `\n  lake: { x: ${round(lake.at[0])}, y: ${round(lake.level)}, z: ${round(lake.at[1])} },` : ""}
-} as const;
-`,
-    );
-    say(
-      `stand: ${KIT_WORLD_TREE} ${round(fir.x)},${round(fir.z)} spawn ${round(spawn.x)},${round(spawn.z)} (${round(clearance)} m clear) edge ${round(edge.x)},${round(edge.z)} (${round(edgeClear)} m clear)`,
-    );
-  }
-
-  // --- the game, written around the copied kit -------------------------------------------------------
-  // The scaffold's own arena and its player are the template's files, not this game's; they are the
-  // one overwrite, so they are removed rather than left to disagree with the scene's state shape.
-  rmSync(join(game, "src/scenes/Play.ts"), { force: true });
-  rmSync(join(game, "src/entities"), { force: true, recursive: true });
-  for (const name of readdirSync(join(game, "playtests"))) rmSync(join(game, "playtests", name));
-  for (const name of ["game.ts", "state.ts"]) cpSync(join(FIXTURES, name), join(game, "src", name));
-  cpSync(join(FIXTURES, "playtests", CONFIG.playtest), join(game, "playtests/kit.playtest.json"));
-  if (process.env.KIT_BEFORE === "1") stripWaterRows(join(game, "playtests/kit.playtest.json"));
-  if (KIT_WORLD) stripFirRows(join(game, "playtests/kit.playtest.json"));
-  // A cooked world on ground with no basin ships no lake (its water.json says so), so none is asserted.
-  if (
-    KIT_WORLD &&
-    JSON.parse(readFileSync(join(KIT_WORLD, "water.json"), "utf8")).lakes.length === 0
-  )
-    stripWaterRows(join(game, "playtests/kit.playtest.json"), ["waterLakes"]);
+/** The scene, composition and `kit.ts` a data kit (`world.ts`, `sky.ts`) is played through. */
+function writeKitScene(game, world) {
   mkdirSync(join(game, "src/scenes"), { recursive: true });
   cpSync(join(FIXTURES, "KitScene.ts"), join(game, "src/scenes/KitScene.ts"));
   const alpine =
@@ -787,6 +620,211 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
     join(import.meta.dirname, "../../src/render/props/propProgress.ts"),
     join(game, "src/render/propProgress.ts"),
   );
+  return composition;
+}
+
+async function main() {
+  const keptGame = process.env.KIT_GAME ? realpathSync(process.env.KIT_GAME) : undefined;
+  if (keptGame) {
+    try {
+      const marker = JSON.parse(
+        readFileSync(join(keptGame, ".threenative-kit-verifier.json"), "utf8"),
+      );
+      assert(marker?.game === keptGame && marker?.kit === KIT);
+    } catch {
+      throw new Error(
+        `KIT_GAME ownership refused: ${keptGame} needs a valid .threenative-kit-verifier.json matching its canonical path and kit '${KIT}'; only fresh verifier scaffolds are marked automatically`,
+      );
+    }
+  }
+  assert(
+    ARM === "default" || keptGame,
+    "edited/tint arms require KIT_GAME pointing to a kept AFTER scaffold",
+  );
+  assert(KIT === "alpine" || ARM === "default", "edited and tint arms require KIT=alpine");
+  assert(
+    !CONFIG.source || (!KIT_WORLD && process.env.KIT_BEFORE !== "1"),
+    `the ${KIT} source kit bakes its own world; KIT_WORLD and KIT_BEFORE do not apply`,
+  );
+  const temporary = keptGame
+    ? join(keptGame, "..")
+    : mkdtempSync(join(tmpdir(), "threenative-kit-"));
+  let game = keptGame;
+  if (!game) {
+    const minimal = JSON.parse(
+      readFileSync(
+        join(REPO, "packages/create-threenative/templates/minimal/package.json"),
+        "utf8",
+      ),
+    );
+    const dependencies = new Set(
+      Object.keys({
+        ...minimal.dependencies,
+        ...minimal.devDependencies,
+        ...minimal.optionalDependencies,
+      }),
+    );
+    const workspacePackages = JSON.parse(
+      run("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"]),
+    );
+    // The kit bake grows its Arbor species with this package (the README's install step).
+    dependencies.add(VEGETATION);
+    // The workspace closure, not only the template's direct dependencies: a dependency's own
+    // workspace dependency (runtime-native's three-native) at an unpublished version 404s on npm.
+    const byName = new Map(workspacePackages.map((entry) => [entry.name, entry]));
+    for (const name of dependencies)
+      for (const next of byName.get(name)?.dependencies ?? [])
+        if (byName.has(next)) dependencies.add(next);
+    const gamePackages = workspacePackages.filter(
+      ({ name }) => dependencies.has(name) && name !== TERRAIN,
+    );
+    const terrainPackage = workspacePackages.find(({ name }) => name === TERRAIN);
+    assert(gamePackages.length > 0, "minimal template has no workspace packages to pack");
+    assert(terrainPackage, `workspace package is missing: ${TERRAIN}`);
+
+    say(`kit proof (${KIT}) in ${temporary}`);
+
+    // --- pack every package the game needs from this checkout's built output ------------------------
+    const packs = join(temporary, "packs");
+    mkdirSync(packs);
+    const archives = {};
+    const stale = [...gamePackages, terrainPackage]
+      .map(({ directory }) => staleBuild(join(REPO, directory)))
+      .filter((reason) => reason !== undefined);
+    assert(stale.length === 0, `TN_KIT_STALE_BUILD: ${stale.join("; ")}`);
+    for (const { name, directory } of [...gamePackages, terrainPackage]) {
+      const before = new Set(readdirSync(packs));
+      run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(REPO, directory) });
+      archives[name] = join(
+        packs,
+        [...readdirSync(packs)].find((file) => !before.has(file)),
+      );
+    }
+    const { createProject } = await import(
+      pathToFileURL(join(REPO, "packages/create-threenative/dist/index.js")).href
+    );
+    game = (
+      await createProject(
+        {
+          install: true,
+          // The terrain tarball is a source here too, not only the later `pnpm add -D`: the minimal
+          // template's `@threenative/assets` dev dependency now depends on `@threenative/terrain`,
+          // and the override this writes is what resolves that transitive edge to the local tarball
+          // instead of the registry (which 404s). The kit's own `pnpm add -D` then moves it to the
+          // devDependency the README names.
+          packageSources: Object.fromEntries(
+            [...gamePackages, terrainPackage].map(({ name }) => [name, archives[name]]),
+          ),
+          target: "kit-game",
+          template: "minimal",
+        },
+        temporary,
+      )
+    ).target;
+    writeFileSync(
+      join(game, ".threenative-kit-verifier.json"),
+      `${JSON.stringify({ game: realpathSync(game), kit: KIT })}\n`,
+      { flag: "wx" },
+    );
+    say(`scaffolded ${game}`);
+
+    // --- the agent's own three steps, from the kit's README --------------------------------------------
+    // A source kit's bake imports its own TypeScript, so its README installs `tsx` beside terrain.
+    run(
+      "pnpm",
+      [
+        "add",
+        "-D",
+        archives[TERRAIN],
+        archives[VEGETATION],
+        ...(CONFIG.source ? ["tsx@4.23.5"] : []),
+      ],
+      { cwd: game },
+    );
+    cpSync(
+      join(game, "node_modules", ...TERRAIN.split("/"), "starter", KIT),
+      join(game, "src/terrain", KIT),
+      {
+        recursive: true,
+      },
+    );
+    // A baseline run (KIT_BEFORE=1) bakes the kit as it stood before the lake and river were restored.
+    if (process.env.KIT_BEFORE === "1") {
+      assert(CONFIG.water, "KIT_BEFORE strips the water layers, and only the forest kit has water");
+      stripWaterLayers(join(game, "src/terrain", KIT, "recipe.json"));
+    }
+    const world = join(game, "assets/terrain", KIT);
+    if (KIT_WORLD) {
+      assert(
+        process.env.KIT_BEFORE !== "1",
+        "KIT_WORLD renders a cooked world, so there is no kit recipe for KIT_BEFORE to strip",
+      );
+      // The cooked package is the kit bake's own shape, so the game loads it as its own world.
+      rmSync(world, { recursive: true, force: true });
+      cpSync(KIT_WORLD, world, { recursive: true });
+      say(`cooked: ${KIT_WORLD} -> assets/terrain/${KIT}`);
+    } else
+      say(
+        `bake: ${run("node", [`src/terrain/${KIT}/bake.mjs`, "--out", `assets/terrain/${KIT}`], { cwd: game }).trim()}`,
+      );
+  }
+  const world = join(game, "assets/terrain", KIT);
+  if (KIT_WORLD) addCookedColliders(game, KIT);
+  const sourceHashes = packageHashes(world);
+  const publicWorld = join(game, "public/terrain", KIT);
+  const publicHashes = existsSync(publicWorld) ? packageHashes(publicWorld) : undefined;
+  // A kept game builds with `vite build`, which ships the cooked `public/` as it stands: a re-bake
+  // that was never cooked would capture the previous trees and look like a no-op.
+  const newest = (dir) =>
+    Math.max(
+      ...readdirSync(dir, { recursive: true }).map((file) => statSync(join(dir, file)).mtimeMs),
+    );
+  if (process.env.KIT_GAME && publicHashes && newest(world) > newest(publicWorld))
+    throw new Error(
+      `TN_KIT_STALE_COOK: ${world} is newer than ${publicWorld}; run \`pnpm build:web\` in ${game} first`,
+    );
+  // The forest scene is written around a stand the proof reads from its bake. The alpine scene picks
+  // its own spawn and views from the loaded heightfield, so the alpine kit has no generated stand.
+  if (CONFIG.generatedStand) {
+    const { fir, spawn, clearance, edge, edgeClear, lake } = chooseStand(game, world);
+    writeFileSync(
+      join(game, "src/terrain/forest/stand.ts"),
+      `// Written by the kit's proof from the placements this bake wrote: the fir the scene stands
+// next to, four metres of clear ground from its trunk, and the ground it sits on. The scene imports
+// this, so no coordinate in the game is one the recipe no longer produces.
+export const stand = {
+  fir: { x: ${round(fir.x)}, z: ${round(fir.z)} },
+  groundY: ${round(fir.y)},
+  spawn: { x: ${round(spawn.x)}, z: ${round(spawn.z)} },
+  edge: { x: ${round(edge.x)}, z: ${round(edge.z)} },${lake ? `\n  lake: { x: ${round(lake.at[0])}, y: ${round(lake.level)}, z: ${round(lake.at[1])} },` : ""}
+} as const;
+`,
+    );
+    say(
+      `stand: ${KIT_WORLD_TREE} ${round(fir.x)},${round(fir.z)} spawn ${round(spawn.x)},${round(spawn.z)} (${round(clearance)} m clear) edge ${round(edge.x)},${round(edge.z)} (${round(edgeClear)} m clear)`,
+    );
+  }
+
+  // --- the game, written around the copied kit -------------------------------------------------------
+  // The scaffold's own arena and its player are the template's files, not this game's; they are the
+  // one overwrite, so they are removed rather than left to disagree with the scene's state shape.
+  rmSync(join(game, "src/scenes/Play.ts"), { force: true });
+  rmSync(join(game, "src/entities"), { force: true, recursive: true });
+  for (const name of readdirSync(join(game, "playtests"))) rmSync(join(game, "playtests", name));
+  cpSync(join(FIXTURES, "playtests", CONFIG.playtest), join(game, "playtests/kit.playtest.json"));
+  if (CONFIG.source) cpSync(join(FIXTURES, CONFIG.source), join(game, "src/game.ts"));
+  else
+    for (const name of ["game.ts", "state.ts"])
+      cpSync(join(FIXTURES, name), join(game, "src", name));
+  const composition = CONFIG.source ? undefined : writeKitScene(game, world);
+  if (process.env.KIT_BEFORE === "1") stripWaterRows(join(game, "playtests/kit.playtest.json"));
+  if (KIT_WORLD) stripFirRows(join(game, "playtests/kit.playtest.json"));
+  // A cooked world on ground with no basin ships no lake (its water.json says so), so none is asserted.
+  if (
+    KIT_WORLD &&
+    JSON.parse(readFileSync(join(KIT_WORLD, "water.json"), "utf8")).lakes.length === 0
+  )
+    stripWaterRows(join(game, "playtests/kit.playtest.json"), ["waterLakes"]);
 
   // --- it has to typecheck and build, and ship no authoring package ----------------------------------
   run("pnpm", ["typecheck"], { cwd: game });
@@ -902,9 +940,10 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
       : {}),
     captures: CONFIG.captures.map((file) => join(ARTIFACTS, `${file}.png`)),
     [CONFIG.cooked]: cooked,
-    driveMetres: value("driveMetres"),
+    ...(CONFIG.source
+      ? {}
+      : { driveMetres: value("driveMetres"), groundError: value("groundError") }),
     frames: value("frames"),
-    groundError: value("groundError"),
     ...kitNumbers,
     ...(KIT_WORLD ? { world: KIT_WORLD, worldTrees: worldTreeCounts } : {}),
     adapter: `${capture.adapter.vendor}/${capture.adapter.architecture}`,

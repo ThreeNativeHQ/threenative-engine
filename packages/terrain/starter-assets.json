@@ -1,6 +1,6 @@
 {
-  "version": "0.1.2",
-  "url": "https://github.com/ThreeNativeHQ/threenative-engine/releases/download/terrain-starter-assets-sha256-802522e53d24b6617634ed9a4ba7b0a399a0ba27298bc490aa88bb35db377abb/terrain-starter-assets-0.1.2.tar.gz",
-  "sha256": "802522e53d24b6617634ed9a4ba7b0a399a0ba27298bc490aa88bb35db377abb",
-  "bytes": 32212011
+  "version": "0.1.3",
+  "url": "https://github.com/ThreeNativeHQ/threenative-engine/releases/download/terrain-starter-assets-sha256-f7a6fddd78de097d759c593da0c37f279a254fa1d979fdff5cf150a48212d582/terrain-starter-assets-0.1.3.tar.gz",
+  "sha256": "f7a6fddd78de097d759c593da0c37f279a254fa1d979fdff5cf150a48212d582",
+  "bytes": 61193011
 }

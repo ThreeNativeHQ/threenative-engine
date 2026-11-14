@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import {
   COLLAR_UNDER_TILE,
   type HorizonSurroundings,
+  TILE_INSIDE_SQUARE,
   collarArithmeticHeight,
   collarDrawnHeight,
   collarSeamGap,
@@ -109,3 +110,12 @@ it("meets the streamed tiles with no step where the collar takes over", () => {
   // across the largest fold, meets a surface, not the sky: the dotted white seam from high views.
   expect(COLLAR_UNDER_TILE).toBeGreaterThanOrEqual(fold / Math.tan((2 * Math.PI) / 180));
 }, 60_000);
+
+it("keeps the streamed tile skirt that hangs on the square's edge", () => {
+  // The skirt stands on the edge plane; the GPU interpolates its world x a little either side.
+  const half = 256;
+  for (const x of [half - 1e-3, half, half + 1e-3])
+    expect(Math.abs(x)).toBeGreaterThan(half - TILE_INSIDE_SQUARE);
+  // Less than one 2 m cell of the square, so no tile surface the square already draws shows.
+  expect(TILE_INSIDE_SQUARE).toBeLessThan(2);
+});

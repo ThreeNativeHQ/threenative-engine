@@ -1,11 +1,12 @@
-// Stages the five authored inputs of each starter terrain kit, with credits for what the kit cites.
+// Stages the five authored inputs of each data terrain kit, with credits for what the kit cites.
+// The forest is a source kit (its README copies the whole folder), so it is not staged here.
 // It reads packages/terrain/starter and starter-assets. It writes template-assets/terrain.
 // It plans every kit before it writes. A missing credit stops the run before any file changes.
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const KITS = ["alpine", "coastal", "desert", "forest", "tundra"];
+const KITS = ["alpine", "coastal", "desert", "tundra"];
 const INPUTS = ["assets.json", "bake.mjs", "heightmap.r16", "recipe.json", "surface.json"];
 // Each bakeKit call supplies the sky HDRI copied to sky.hdr. Any layout of the call matches.
 const SKY_SOURCE = /\bsky:\s*"(hdri\/[^"]+\.hdr)"/gu;

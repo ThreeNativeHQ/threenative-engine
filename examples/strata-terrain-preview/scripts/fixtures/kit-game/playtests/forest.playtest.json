@@ -1,0 +1,409 @@
+{
+  "schemaVersion": 1,
+  "name": "forest-kit",
+  "subject": "The copied forest kit loads, stands the player on its baked ground, walks 50 m and measures every view",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "forest-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "label": "grounded",
+      "release": true,
+      "screenshot": "forest-start",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
+      "label": "meadow-close-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "meadow-close",
+      "release": true,
+      "screenshot": "meadow-close",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
+      "label": "overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "overview",
+      "release": true,
+      "screenshot": "overview",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
+      "label": "river-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "river",
+      "release": true,
+      "screenshot": "river",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
+      "label": "vista-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "vista",
+      "release": true,
+      "screenshot": "vista",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
+      "label": "player-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "back-to-player",
+      "release": true,
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyD",
+      "holdTicks": 560,
+      "release": true,
+      "screenshot": "forest-walk"
+    },
+    {
+      "label": "walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 50
+      },
+      "timeoutMs": 5000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "enterMs",
+        "gte": 0,
+        "lte": 50,
+        "allowTrivial": "Measured synchronous scene enter; baked scatter must not run in enter."
+      },
+      {
+        "id": "GameState",
+        "path": "lakePlacementError",
+        "lte": 0.02,
+        "allowTrivial": "The drawn lake centre must match the baked [x,z] basin. The value stays at 1 when no lake is drawn, so an absent lake fails too."
+      },
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "equals": true,
+        "allowTrivial": "The character settles during warmup; grounded must still hold after the walk and scene transition."
+      },
+      {
+        "id": "GameState",
+        "path": "maxContactError",
+        "lte": 0.02,
+        "allowTrivial": "Maximum measured error is a held upper bound; contactSamples separately requires fresh observations during the scenario."
+      },
+      {
+        "id": "GameState",
+        "path": "contactSamples",
+        "gte": 300
+      },
+      {
+        "id": "GameState",
+        "path": "bilinearDifference",
+        "gte": 0.1,
+        "allowTrivial": "The asymmetric triangle fixture runs once after physics startup; its observed difference qualifies the sampling method."
+      },
+      {
+        "id": "GameState",
+        "path": "propInstances",
+        "gte": 1000,
+        "allowTrivial": "A steady-state bound on what is drawn, not a transition: the props are placed on the first physics step, which the warmup frames already cover, so the count holds before and after by construction."
+      },
+      {
+        "id": "GameState",
+        "path": "propDraws",
+        "allowTrivial": "A ceiling on the prop draws, which holds for every frame rather than changing at one: its value is the price of the instancing, and a run that only ever saw it once would prove nothing. 64 since the layered understorey (bush, fern, litter species at one draw each); every view CPU p50 stayed within 4 ms at 63 draws (v11 licensed). Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02).",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "propTriangles",
+        "gte": 100000,
+        "allowTrivial": "A floor on the geometry actually submitted, which holds for every frame for the same reason as the instance count."
+      },
+      {
+        "id": "GameState",
+        "path": "windowDrawCalls",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "preparedLodBaseSpread",
+        "lte": 0.05,
+        "allowTrivial": "The widest gap between two detail levels' own base Y in one prepared variant, measured on the geometry that is actually drawn. A level authored off the ground draws a crown floating above a neighbour that stands correctly, and grounding cannot fix it because grounding measures the trunk the levels share. Zero on a machine with no prepared art, which is why this is a ceiling and not a floor."
+      },
+      {
+        "id": "GameState",
+        "path": "preparedLevelsWithoutSolid",
+        "lte": 0,
+        "allowTrivial": "Detail levels carrying no bark or stone part at all. A cutout-only level is a crown with nothing holding it up, which is the same defect seen from the other side; the far cross-card is exempt because its trunk is baked into its own pixels. Fails closed on a prep that drops a trunk, which no diff shows and every capture does."
+      },
+      {
+        "id": "GameState",
+        "path": "meadowFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "overviewFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "meadowTriangles",
+        "gte": 1000,
+        "allowTrivial": "Triangles submitted at the meadow framing. A floor on real geometry, so a run that reported zero could not be the picture the trees are judged in."
+      },
+      {
+        "id": "GameState",
+        "path": "overviewTriangles",
+        "gte": 1000,
+        "allowTrivial": "Triangles submitted at the overview framing, where the LOD bands are supposed to have replaced most of the near geometry."
+      },
+      {
+        "id": "GameState",
+        "path": "riverFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "playerFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Maximum measured CPU p50 across every visited camera; measuredViewCount separately requires all 17 poses to close budget windows. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewPresentedP95",
+        "gte": 0.01,
+        "allowTrivial": "Presented-interval p95 of the slowest view, measured and reported but not capped: the runner's private Xvfb is not a real display, so a frame rate from it is wrong, not missing (packages/playtest/AGENTS.md). The 60 fps verdict comes from `playtest perf` on a real display."
+      },
+      {
+        "id": "GameState",
+        "path": "windowFrameMs",
+        "gte": 0.01,
+        "allowTrivial": "A closed CPU budget window at every captured view must be observed and remain within 4 ms; missing or zero observations fail. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02).",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "erosionFlowSamples",
+        "gte": 1000,
+        "allowTrivial": "Counts the actual baked nonzero transport observations; absent or empty maps fail."
+      },
+      {
+        "id": "GameState",
+        "path": "erosionDepositSamples",
+        "gte": 100,
+        "allowTrivial": "Counts actual hydraulic deposition samples from each played heightfield."
+      },
+      {
+        "id": "GameState",
+        "path": "tasksAvailable",
+        "equals": true,
+        "allowTrivial": "Long Tasks must actually be observed; unavailable is not zero."
+      },
+      {
+        "id": "GameState",
+        "path": "afterFirstFrameTaskMs",
+        "gte": 0,
+        "lte": 250,
+        "allowTrivial": "Longest actual main-thread task after the first frame, across loading and play; presentation waits are excluded."
+      },
+      {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1,
+        "lte": 15000,
+        "allowTrivial": "Warm launch to the complete prop tier, not framework readiness before assets land."
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewGpuMs",
+        "gte": 0.01,
+        "lte": 12,
+        "allowTrivial": "Worst per-view median timestamp-query GPU cost, valid under Xvfb; this is not a displayed-fps claim."
+      },
+      {
+        "id": "GameState",
+        "path": "measuredViewCount",
+        "gte": 5,
+        "allowTrivial": "Every forest view closed a measured window."
+      },
+      {
+        "id": "GameState",
+        "path": "measuredGpuViewCount",
+        "gte": 5,
+        "allowTrivial": "Every forest view closed a GPU-timed window."
+      },
+      {
+        "id": "GameState",
+        "path": "terrainTransportBound",
+        "equals": true,
+        "atSteps": [
+          {
+            "label": "meadow-close",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "world",
+        "equals": "forest"
+      },
+      {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 50,
+        "allowTrivial": "The walk step drives the player 50 m across the forest."
+      },
+      {
+        "id": "GameState",
+        "path": "propColliders",
+        "gte": 1,
+        "allowTrivial": "Rock and trunk bodies resident around the player."
+      }
+    ],
+    "renderChain": {
+      "stages": {
+        "includes": ["ambientOcclusion", "grade"]
+      },
+      "contributions": {
+        "graphOutputChanged": ["ambientOcclusion", "grade"]
+      }
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "horizon",
+        "lte": 0.0001,
+        "allowTrivial": "Measured gap between all 1024 continuation seam vertices and their playable baked samples.",
+        "path": "seamGap"
+      },
+      {
+        "entity": "player",
+        "component": "horizon",
+        "gte": 1024,
+        "allowTrivial": "Every perimeter vertex must be observed, including all four corners.",
+        "path": "samples"
+      },
+      {
+        "entity": "player",
+        "component": "visible",
+        "atSteps": [
+          {
+            "label": "grounded",
+            "equals": false
+          },
+          {
+            "label": "walk",
+            "equals": false
+          },
+          {
+            "label": "meadow-close",
+            "equals": false
+          },
+          {
+            "label": "overview",
+            "equals": false
+          },
+          {
+            "label": "river",
+            "equals": false
+          }
+        ],
+        "allowTrivial": "Scripted cameras hide only the rendering mesh; ground contacts and travel still exercise its physics body."
+      }
+    ]
+  }
+}

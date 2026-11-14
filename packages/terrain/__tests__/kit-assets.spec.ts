@@ -103,13 +103,13 @@ describe("pinned starter assets", () => {
     expect((await readdir(join(cache, ".."))).filter((name) => name.includes(".tmp-"))).toEqual([]);
   }, 30_000);
 
-  it("bakes a scaffolded forest kit using the file archive with no bundled assets", async () => {
+  it("bakes a scaffolded data kit using the file archive with no bundled assets", async () => {
     const fixture = await installed();
     const game = join(fixture.dir, "game");
-    const kit = join(fixture.dir, "template-assets/terrain/forest");
-    await cp(join(root, "starter/forest"), kit, { recursive: true });
+    const kit = join(fixture.dir, "template-assets/terrain/alpine");
+    await cp(join(root, "starter/alpine"), kit, { recursive: true });
     await copyFile(join(root, "starter-assets/credits.json"), join(kit, "credits.json"));
-    await copyTerrainKit("forest", game, join(fixture.dir, "templates"));
+    await copyTerrainKit("alpine", game, join(fixture.dir, "templates"));
     // The README's third devDependency: the bake grows the kit's Arbor trees and understory.
     await mkdir(join(game, "node_modules", "@threenative"), { recursive: true });
     await symlink(

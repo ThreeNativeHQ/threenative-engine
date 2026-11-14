@@ -103,6 +103,14 @@
       "groundLayer": null,
       "metresPerTile": null,
       "note": "Alpha-cut card atlas only (diffuse, alpha, OpenGL normal at 512 px). The upstream plant meshes are not shipped: cut to the starter budget they kept one blade or frond of each plant, so the game builds its own cards on this atlas."
+    },
+    "rock_face": {
+      "asset": "Rock Face",
+      "author": "Rob Tuytel",
+      "license": "CC0",
+      "groundLayer": null,
+      "metresPerTile": null,
+      "note": "The forest kit's cliff rock face (ROCKFACE_MAPS)."
     }
   },
   "files": [
@@ -730,6 +738,183 @@
       "dimensions": "1024x512",
       "colourSpace": "linear",
       "sha256": "5477b7dbb2aea4a6947cb36b96339c119f90bf36a03b039af3254b5e6a22896d"
+    },
+    {
+      "set": "rock_face",
+      "asset": "Rock Face",
+      "author": "Rob Tuytel",
+      "license": "CC0",
+      "map": "diff",
+      "file": "rock_face/rock_face_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face/rock_face_diff_1k.jpg",
+      "bytes": 732721,
+      "dimensions": "1024x1024",
+      "colourSpace": "srgb",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "cce4b50517161264bdef196f5e247e328ca3739083cd6044ad3cc54d88cb82e2"
+    },
+    {
+      "set": "rock_face",
+      "asset": "Rock Face",
+      "author": "Rob Tuytel",
+      "license": "CC0",
+      "map": "nor_gl",
+      "file": "rock_face/rock_face_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face/rock_face_nor_gl_1k.jpg",
+      "bytes": 1139857,
+      "dimensions": "1024x1024",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "e2682e1286c8b6aca7e01ba7b8fe1726cb6606042b9ee70d097aa67470d410ef"
+    },
+    {
+      "set": "kloofendal_48d_partly_cloudy",
+      "asset": "Kloofendal 48d Partly Cloudy",
+      "author": "Greg Zaal",
+      "license": "CC0",
+      "map": "hdri",
+      "file": "hdri/kloofendal_48d_partly_cloudy_2k.hdr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_48d_partly_cloudy_2k.hdr",
+      "bytes": 6480797,
+      "dimensions": "2048x1024",
+      "colourSpace": "linear",
+      "sha256": "3fbd33f279f29bd64925c1dd3214fd46c627493d21f1100248b6b1098da4d06e"
+    },
+    {
+      "set": "survey",
+      "asset": "Sprague Lake / Glacier Creek conifer valley, Rocky Mountain National Park, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "heights",
+      "file": "survey/forest.bin",
+      "url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/CO_DRCOG_2020_B20/TIFF/USGS_1M_13_x44y447_CO_DRCOG_2020_B20.tif",
+      "bytes": 132098,
+      "sha256": "cf04efc24a7c5a762c38677996ea78ca552878a0cfcaa7cfda5bc89841f8b5a4",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Sprague Lake / Glacier Creek conifer valley, Rocky Mountain National Park, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "metadata",
+      "file": "survey/forest.json",
+      "url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/CO_DRCOG_2020_B20/TIFF/USGS_1M_13_x44y447_CO_DRCOG_2020_B20.tif",
+      "bytes": 1846,
+      "sha256": "b2dd2b92661224aef61fd17e20e3d01532e1ddb38069a12625287a3aab7f2330",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Sprague Lake / Glacier Creek conifer valley, Rocky Mountain National Park, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "heights",
+      "file": "survey/forest-horizon.bin",
+      "url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/historical/n41w106/USGS_13_n41w106_20221118.tif",
+      "bytes": 526338,
+      "sha256": "4e4a25af092de30ea7c28cdb4a1d7ff6fda8e89635a2713292c91eaf7852b744",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Sprague Lake / Glacier Creek conifer valley, Rocky Mountain National Park, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "metadata",
+      "file": "survey/forest-horizon.json",
+      "url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/historical/n41w106/USGS_13_n41w106_20221118.tif",
+      "bytes": 1572,
+      "sha256": "f4a3bcb5222077b3cc60910baacb356213b68f936e92c6c5fc3ec59ca7a55b40",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Longs Peak and Mount Meeker from Chasm Lake to Glacier Gorge, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "heights",
+      "file": "survey/massif-longs.bin",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+      "bytes": 2424402,
+      "sha256": "6e01541bbc831d10b1f045fe7ee231921b4baa45b1cd80aa43acc226bc252e5f",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Longs Peak and Mount Meeker from Chasm Lake to Glacier Gorge, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "metadata",
+      "file": "survey/massif-longs.json",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+      "bytes": 1620,
+      "sha256": "ecb5a1ed77e1ddf84e28285c9156b841b1d299562f31858f65c5790d8fae1749",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Grand Teton and the Cathedral Group above Jackson Hole, Wyoming",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "heights",
+      "file": "survey/massif-teton.bin",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+      "bytes": 1623602,
+      "sha256": "53ce05bc6f18f9bc8066bcd0762bb392fa748cec71d470a07d7f3ba46bd5240a",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Grand Teton and the Cathedral Group above Jackson Hole, Wyoming",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "metadata",
+      "file": "survey/massif-teton.json",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+      "bytes": 1447,
+      "sha256": "39b93f10f408be47f2f1bf7077354546e139c8df39cddf1465d43de731a18d81",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Maroon Bells above Maroon and Crater Lakes, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "heights",
+      "file": "survey/massif-maroon.bin",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+      "bytes": 1623602,
+      "sha256": "4947f3a08437de1d6dd2e9d703afd1ad494a48800fd9a6ba239408c4ee86c03c",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "survey",
+      "asset": "Maroon Bells above Maroon and Crater Lakes, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "metadata",
+      "file": "survey/massif-maroon.json",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage",
+      "bytes": 1385,
+      "sha256": "c9cac71840789e993d2a7a19ccf94e0e6aaf8707dbcdb7781fcba14482c050a4",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the forest kit bake reads it."
+    },
+    {
+      "set": "mannequin",
+      "asset": "Universal Animation Library 1 (Swim_Fwd_Loop, Swim_Idle_Loop)",
+      "author": "Quaternius",
+      "license": "CC0",
+      "map": "animation",
+      "file": "mannequin-swim.glb",
+      "url": "https://quaternius.itch.io/universal-animation-library",
+      "bytes": 139580,
+      "sha256": "732930926035bd82c65aff9402e78b23fcceded6345b1b6d93ca1921bc8d33e8",
+      "note": "Animation-only clips for the starter mannequin.glb rig, merged from UAL1_Standard.glb and resampled losslessly."
     }
   ],
   "generated": {
@@ -777,6 +962,118 @@
         "license": "CC0",
         "url": "https://polyhaven.com/a/fir_tree_01",
         "note": "Poly Haven's own authored LOD2 of tree b (fir_tree_01_b_LOD2, 54,927 triangles, full crown), exported by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-fir.py from the 1k .blend; the forest starter kit's fir."
+      },
+      {
+        "asset": "Tree Small 02",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/tree_small_02",
+        "note": "tree_small_02/broadleaf-{near,mid}.glb and broadleaf-b-{near,mid}.glb (the second mirrored, 2.6x against 3x): the trunk and branches of the 1k .blend's LOD1, decimated, with its 111,621 leaves rebuilt as cards from the .blend's own four leaf clusters, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-broadleaf.py. near 9,988 triangles (1,555,332 bytes), mid 2,119 (1,129,324 bytes). The forest preview's canopy."
+      },
+      {
+        "asset": "Grass Medium 01, Grass Medium 02",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/grass_medium_01",
+        "note": "grass_medium/field.glb (64 triangles, 393,944 bytes), tuft.glb (12, 390,300), reed.glb (8, 390,020) and mat.glb (8, 390,016): eight open clumps of grass_medium_01 and grass_medium_02 (https://polyhaven.com/a/grass_medium_02) rendered unlit from the side into one 1024 px RGBA atlas, drawn by crossed alpha cards (0.5 clip), by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-grass.py. The forest preview's grass and meadow rows; ?grass=fab keeps the licensed set."
+      },
+      {
+        "asset": "Dead Tree Trunk",
+        "authors": "Rob Tuytel",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/dead_tree_trunk",
+        "note": "dead_tree_trunk/dead_tree_trunk.glb (321,696 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's deadfall."
+      },
+      {
+        "asset": "Dead Tree Trunk 02",
+        "authors": "Jenelle van Heerden, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/dead_tree_trunk_02",
+        "note": "dead_tree_trunk_02/dead_tree_trunk_02.glb (388,708 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's deadfall."
+      },
+      {
+        "asset": "Tree Stump 01",
+        "authors": "Rob Tuytel",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/tree_stump_01",
+        "note": "tree_stump_01/tree_stump_01.glb (401,588 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's deadfall."
+      },
+      {
+        "asset": "Root Cluster 01",
+        "authors": "Jenelle van Heerden, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/root_cluster_01",
+        "note": "root_cluster_01/root_cluster_01.glb (357,060 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's deadfall."
+      },
+      {
+        "asset": "Dry Branches Medium 01",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/dry_branches_medium_01",
+        "note": "dry_branches_medium_01/dry_branches_medium_01_a.glb (352,688 bytes), dry_branches_medium_01/dry_branches_medium_01_b.glb (342,456 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's litter."
+      },
+      {
+        "asset": "Weed Plant 02",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/weed_plant_02",
+        "note": "weed_plant_02/weed_plant_02_a.glb (502,344 bytes), weed_plant_02/weed_plant_02_b.glb (495,420 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's ground mounds (scrub)."
+      },
+      {
+        "asset": "Moss 01",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/moss_01",
+        "note": "moss_01/moss_01_tall_b.glb (166,348 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's ground mounds (scrub)."
+      },
+      {
+        "asset": "Shrub 02",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/shrub_02",
+        "note": "shrub_02/shrub_02_a.glb (603,420 bytes), shrub_02/shrub_02_b.glb (540,532 bytes), shrub_02/shrub_02_c.glb (624,532 bytes), shrub_02/shrub_02_d.glb (537,900 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's understorey shrubs (bush, sapling)."
+      },
+      {
+        "asset": "Shrub 04",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/shrub_04",
+        "note": "shrub_04/shrub_04.glb (535,528 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's bush."
+      },
+      {
+        "asset": "Shrub 03",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/shrub_03",
+        "note": "shrub_03/shrub_03_a.glb (545,804 bytes, 2,385 triangles): one mesh node of the 1k glTF with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest starter kit's fern-b ground shrub."
+      },
+      {
+        "asset": "Nettle Plant",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/nettle_plant",
+        "note": "nettle_plant/nettle_plant_tall_a.glb (500,528 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's sapling slot."
+      },
+      {
+        "asset": "Celandine 01",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/celandine_01",
+        "note": "celandine_01/celandine_01_a.glb (385,128 bytes), celandine_01/celandine_01_b.glb (384,416 bytes), celandine_01/celandine_01_d.glb (463,060 bytes), celandine_01/celandine_01_e.glb (379,760 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 2,500 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's meadow flowers (poppy, bloom)."
+      },
+      {
+        "asset": "Dandelion 01",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/dandelion_01",
+        "note": "dandelion_01/dandelion_01_a.glb (537,372 bytes), dandelion_01/dandelion_01_b.glb (539,164 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 2,500 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's meadow flowers (poppy, bloom)."
+      },
+      {
+        "asset": "Periwinkle Plant",
+        "authors": "Amal Kumar",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/periwinkle_plant",
+        "note": "periwinkle_plant/periwinkle_plant_02.glb (461,556 bytes), periwinkle_plant/periwinkle_plant_05.glb (421,812 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 2,500 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's meadow flowers (poppy, bloom)."
       },
       {
         "asset": "Rock Moss Set 01",
