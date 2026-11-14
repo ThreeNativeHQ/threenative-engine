@@ -206,6 +206,21 @@ describe("Arbor species in a terrain cook", () => {
       expect(presets.size, row.id).toBeGreaterThanOrEqual(3);
       for (const [preset, seeds] of presets)
         expect(seeds, `${row.id}: ${preset}`).toBeGreaterThan(1);
+      // Each bake is its own set of draws at every LOD level and shadow cluster, so a seed past the
+      // second buys variety at a frame cost: nine bakes held the European forest's CPU frame above
+      // the starter's (PRD-887 AC-3). Two full-size seeds per species, and at most one sapling band.
+      const full = new Map<string, number>();
+      for (const canopy of foliage) {
+        if ((canopy.scale?.[1] ?? 1) <= 0.5) continue;
+        const preset = parseArborSpecies(canopy.species)?.preset as string;
+        full.set(preset, (full.get(preset) ?? 0) + 1);
+      }
+      for (const [preset, seeds] of full)
+        expect(seeds, `${row.id}: full-size ${preset} seeds`).toBeLessThanOrEqual(2);
+      expect(
+        foliage.length - [...full.values()].reduce((a, b) => a + b, 0),
+        row.id,
+      ).toBeLessThanOrEqual(1);
       // The rows it replaces are the kit's own art, and the merged biome is a valid one.
       const assets = JSON.parse(
         await readFile(new URL(`../starter/${row.kit}/assets.json`, import.meta.url), "utf8"),

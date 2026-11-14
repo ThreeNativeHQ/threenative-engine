@@ -129,12 +129,10 @@ export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
       foliage: [
         canopyRow("arbor:beech@11", 900, 466611),
         canopyRow("arbor:beech@12", 900, 466612),
-        canopyRow("arbor:oak@13", 460, 466613),
-        canopyRow("arbor:oak@14", 460, 466614),
-        canopyRow("arbor:oak@18", 380, 466618),
-        canopyRow("arbor:birch@15", 320, 466615),
-        canopyRow("arbor:birch@16", 320, 466616),
-        canopyRow("arbor:birch@19", 260, 466619),
+        canopyRow("arbor:oak@13", 650, 466613),
+        canopyRow("arbor:oak@14", 650, 466614),
+        canopyRow("arbor:birch@15", 450, 466615),
+        canopyRow("arbor:birch@16", 450, 466616),
         // Beech regeneration: the young beech a closed beech wood grows in its own light gaps, so the
         // clearings fill with saplings (the kit's `firs-young` band, at the same scale).
         canopyRow("arbor:beech@20", 700, 466620, [0.2, 0.45], { type: "not", mask: CLEARINGS }),
