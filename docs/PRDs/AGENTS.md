@@ -11,8 +11,8 @@ Read `/AGENTS.md` first. This file is about filing, not about how the work gets 
 - Still-doable work left → the PRD stays where it is, whatever its status. A dependency that is not
   ready blocks its own `## Blocked on` lines, not the file.
 - **Strata terrain** (`packages/terrain/`, the Strata preview) → `packages/terrain/docs/PRDs/`, beside the
-  code; a finished one moves to `packages/terrain/docs/PRDs/done/`. Strata PRDs already in `docs/PRDs/done/`
-  or `docs/PRDs/BLOCKED/` stay there. (owner, 2026-11-13)
+  code; a finished one moves to `packages/terrain/docs/PRDs/done/` and a blocked one to
+  `packages/terrain/docs/PRDs/BLOCKED/<reason>/`. (owner, 2026-11-13)
 - **Release-critical** → `docs/PRDs/production-readiness/critical/`. Only a PRD there blocks a
   release; one whose last open work is blocked moves to `BLOCKED/<reason>/` (R6 below) so it stops
   reading as a live release blocker while the owner can still validate it.

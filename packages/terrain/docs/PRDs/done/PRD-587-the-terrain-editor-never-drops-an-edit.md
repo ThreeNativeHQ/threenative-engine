@@ -5,8 +5,8 @@
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Parent:** [PRD-467](../done/PRD-467-strata-live-terrain-editor.md)
-**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md)
+**Parent:** [PRD-467](PRD-467-strata-live-terrain-editor.md)
+**Epic:** [Strata terrain hardening](../README.md)
 
 ## Context
 

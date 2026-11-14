@@ -7,7 +7,7 @@
 **Depends on:** None
 **Progress:** 4/4 phases verified (10/10 retained phase boxes); 1/1 canonical acceptance box verified; prd:100%. AC-5, K3 and K4 art criteria moved to PRD-580 by owner decision.
 **Required companion:** [PRD-467 — live terrain editor](PRD-467-strata-live-terrain-editor.md)
-**Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
+**Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](../../../../../docs/PRDs/done/PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
 
@@ -87,7 +87,7 @@ camera, light, material, or render loop. `three` is a peer dependency. Keep phys
 integration in game source using the existing engine API; the generator does not
 depend on Rapier or install a second physics world.
 
-The current [charter](../../architecture/CHARTER.md) excludes recipe systems and
+The current [charter](../../../../../docs/architecture/CHARTER.md) excludes recipe systems and
 allows a new framework package only for an isolated dependency. Strata authoring
 does not automatically satisfy that rule. This plan explicitly proposes a narrow
 allowance for the requested optional terrain authoring addon in phase 1. Recipes
@@ -457,7 +457,7 @@ locations when each phase is implemented; no future line numbers are asserted.
   Only the edges changed, and the credit records the change. The original file stays in git history.
 
 - 2026-10-09 (João, owner, art scope; recorded by the implementing agent):
-  K3, K4 and AC-5 art acceptance move to [PRD-580](../../../packages/terrain/docs/PRDs/PRD-580-strata-starter-kit-art-bar.md).
+  K3, K4 and AC-5 art acceptance move to [PRD-580](../PRD-580-strata-starter-kit-art-bar.md).
   João gave in-session go-ahead: "ok, update label, push forward to 100%" in response to
   the plan "if the judge stays below 4, K3, K4 and AC-5 move to Blocked on / a follow-up
   with a Decisions entry; I will not tick an art box the judge scored 3".
@@ -3224,9 +3224,9 @@ post pipeline and direct overlay expose this sample-switching path. Actual sampl
 allocation counts and deferred GPU frees were not recorded, so this establishes churn rather
 than an OOM cause or retained leak. No production renderer/tone change was made.
 
-The original [pre-fix forest PNG](../../benchmark/strata-loading-2026-10-06/pre-fix-forest.png)
+The original [pre-fix forest PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/pre-fix-forest.png)
 comes from `ea0a0621b988eaa26fa2cd6450f03473cbf3fa17`; its run reached spawn but failed the
-overall gate. The [post-fix curtain PNG](../../benchmark/strata-loading-2026-10-06/post-fix-curtain.png)
+overall gate. The [post-fix curtain PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/post-fix-curtain.png)
 comes from `afd3ccef62f1dad335f839c71f1384483894e52b` and depicts loading cover only.
 Both are unmodified 1920×1080 captures. They are not matched before/after gameplay evidence;
 there is no post-fix gameplay image. Raw profiles, memory timeline, console errors, CPU probe
@@ -3337,7 +3337,7 @@ All three worlds also report HLOD loaded/compiled/observed/active/pending at zer
 with this custom adapter's exact source fallback. This is observed HLOD runtime status;
 integrated HLOD source remains intact.
 
-The unmodified [attachment-fix curtain PNG](../../benchmark/strata-loading-2026-10-06/attachment-fix-curtain.png)
+The unmodified [attachment-fix curtain PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/attachment-fix-curtain.png)
 is 9308 bytes, SHA256 `43872ae4c4110356e1300abfb81e999032476fcb4aa20441d523fe1fa464c7f2`.
 The observer verified the curtain across that capture, then stopped at its existing 5 s read
 deadline. There is no gameplay PNG or matched post-fix visual/FPS claim. Shared native CPU work
@@ -3556,9 +3556,9 @@ steady FPS and changed-source load/walk acceptance remain open.
 
 Actual PNGs, copied without pixel changes, are retained below and attached to PR #381:
 
-- [Ready forest, source `6cff71c04`](../../benchmark/strata-loading-2026-10-06/forest-ready-6cff71c04.png): 1920×1080, scale 1, MSAA4, full licensed assets/density; the run reached both worlds and walked, but exited 1 on the false startup-stall diagnostic. The independent judge still identifies bright needle filigree, sheet-like lower sprays and weak shadow grounding.
-- [Ready coast, source `6cff71c04`](../../benchmark/strata-loading-2026-10-06/coastal-ready-6cff71c04.png): the same settings and result; no trees in this framing.
-- [Loading curtain, source `88af7c59b`](../../benchmark/strata-loading-2026-10-06/loading-curtain-88af7c59b.png): the same quality settings; real spawn deadline failure, no ready frame.
+- [Ready forest, source `6cff71c04`](../../../../../docs/benchmark/strata-loading-2026-10-06/forest-ready-6cff71c04.png): 1920×1080, scale 1, MSAA4, full licensed assets/density; the run reached both worlds and walked, but exited 1 on the false startup-stall diagnostic. The independent judge still identifies bright needle filigree, sheet-like lower sprays and weak shadow grounding.
+- [Ready coast, source `6cff71c04`](../../../../../docs/benchmark/strata-loading-2026-10-06/coastal-ready-6cff71c04.png): the same settings and result; no trees in this framing.
+- [Loading curtain, source `88af7c59b`](../../../../../docs/benchmark/strata-loading-2026-10-06/loading-curtain-88af7c59b.png): the same quality settings; real spawn deadline failure, no ready frame.
 
 These images are different phases and cannot demonstrate a matched visual improvement.
 Original source/build/image hashes remain in the owned capture receipts. The existing benchmark
@@ -3638,8 +3638,8 @@ GPU duration or an image-copy cause. Steady FPS and native-host qualification re
 
 Matched camera frames, copied without pixel changes and independently judged:
 
-- Forest: [before, source `6cff71c04`](../../benchmark/strata-loading-2026-10-06/forest-ready-6cff71c04.png) and [after, source `2eb318859`](../../benchmark/strata-loading-2026-10-06/forest-ready-2eb318859.png).
-- Coast: [before, source `6cff71c04`](../../benchmark/strata-loading-2026-10-06/coastal-ready-6cff71c04.png) and [after, source `2eb318859`](../../benchmark/strata-loading-2026-10-06/coastal-ready-2eb318859.png).
+- Forest: [before, source `6cff71c04`](../../../../../docs/benchmark/strata-loading-2026-10-06/forest-ready-6cff71c04.png) and [after, source `2eb318859`](../../../../../docs/benchmark/strata-loading-2026-10-06/forest-ready-2eb318859.png).
+- Coast: [before, source `6cff71c04`](../../../../../docs/benchmark/strata-loading-2026-10-06/coastal-ready-6cff71c04.png) and [after, source `2eb318859`](../../../../../docs/benchmark/strata-loading-2026-10-06/coastal-ready-2eb318859.png).
 
 The independent pixel judge finds aligned framing/placements and no obvious density or surface
 regression. Coarse needle/card foliage, weak visible trunk grounding, the broad coast water-color
@@ -3690,9 +3690,9 @@ equality are unproven. Sample-to-PNG timing and complete light transforms are no
 
 | View | Before: explicit radial | After: authored default |
 | --- | --- | --- |
-| Player | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-player-radial-2d093a4fc.jpg) | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-player-authored-2d093a4fc.jpg) |
-| Meadow closeup | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-meadow-close-radial-2d093a4fc.jpg) | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-meadow-close-authored-2d093a4fc.jpg) |
-| Wide terrain | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-overview-radial-2d093a4fc.jpg) | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-overview-authored-2d093a4fc.jpg) |
+| Player | [Original PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/canopy-player-radial-2d093a4fc.jpg) | [Original PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/canopy-player-authored-2d093a4fc.jpg) |
+| Meadow closeup | [Original PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/canopy-meadow-close-radial-2d093a4fc.jpg) | [Original PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/canopy-meadow-close-authored-2d093a4fc.jpg) |
+| Wide terrain | [Original PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/canopy-overview-radial-2d093a4fc.jpg) | [Original PNG](../../../../../docs/benchmark/strata-loading-2026-10-06/canopy-overview-authored-2d093a4fc.jpg) |
 
 All six PNGs are unmodified capture bytes, hash-checked during copying. Benchmark evidence is
 193.78 MiB, below its unchanged 200 MiB limit. No licensed model/texture bytes are committed.
@@ -3763,8 +3763,8 @@ Measured on the forest meadow view (RTX 2080, Chrome WebGPU, 1920×1080, MSAA 4,
   sky 6 → 6, overall vs Gaia/Unreal references 3 → 4. Ranked remaining defects: no sun structure
   (no tree shadows or dappled pools on the meadow), no trunk contact occlusion, uniform
   sticker-like tall grass, dark repeated crowns without translucency, no depth haze. Captures:
-  [before](../../benchmark/strata-loading-2026-10-06/shadow-receivers-before-9977b16fa.jpg),
-  [after](../../benchmark/strata-loading-2026-10-06/shadow-receivers-after-43f97d8e2.jpg).
+  [before](../../../../../docs/benchmark/strata-loading-2026-10-06/shadow-receivers-before-9977b16fa.jpg),
+  [after](../../../../../docs/benchmark/strata-loading-2026-10-06/shadow-receivers-after-43f97d8e2.jpg).
 - **Not the textures.** All 55 live textures carry full GPU mip chains; KTX2 files carry full
   chains. The owner's screenshots were 255-colour palette PNGs, which posterize the sky; the
   true-colour capture's clouds are hard-edged by the deliberately narrow coverage ramps.
@@ -3798,7 +3798,7 @@ their main light and the meadow went back to dark speckle. That speckle was the 
 near-black root albedo, (0.025, 0.052, 0.008) linear. Lifting the root to (0.06, 0.10, 0.025) and its
 root AO from 0.35 to 0.55 is kept: near-meadow pixels below luma 30 fell 2.0% → 0.2%, p10 39 → 54,
 and a fresh judge scored the ground 3 → 3.5 ("keep; small improvement";
-[capture](../../benchmark/strata-loading-2026-10-06/field-grass-lifted-root.jpg)). The sun/env rebalance is
+[capture](../../../../../docs/benchmark/strata-loading-2026-10-06/field-grass-lifted-root.jpg)). The sun/env rebalance is
 the next lever and needs the grass lit by more than the env map first.
 
 Rejected round (not committed as code): forest sun 5.8 → 9.3, non-canopy forest `envMapIntensity`
@@ -3813,8 +3813,8 @@ stage with MRT velocity and renders its world pass single-sampled, because TRAA 
 and a 4× target produced 747 WebGPU validation errors per run. Opaque foliage no longer averages with
 soil and sky, so forest exposure rises 0.45 EV. Fresh judge, same camera: ground 4 → 6, trees
 4.5 → 5.5, overall vs reference 3.5 → 4.5, 0 console errors
-([meadow](../../benchmark/strata-loading-2026-10-06/forest-traa-meadow.jpg),
-[player](../../benchmark/strata-loading-2026-10-06/forest-traa-player.jpg)). New artifact: 1–2 px
+([meadow](../../../../../docs/benchmark/strata-loading-2026-10-06/forest-traa-meadow.jpg),
+[player](../../../../../docs/benchmark/strata-loading-2026-10-06/forest-traa-player.jpg)). New artifact: 1–2 px
 stair-steps on silhouettes against the sky. Not verified: ghosting in motion, the other four worlds
 (they keep MSAA), native desktop. `terrain.playtest.json` (web, `--browser-recipe webgpu`) is RED at
 its first step in both arms on this host on 2026-10-07: `GameState.worldReady` did not arrive within
@@ -3863,7 +3863,7 @@ work is what can turn it green.
 Kept: forest haze density 0.00055 → 0.0011 per metre (only `temperate`, which every other world
 overrides). The far band of the elevated view moves 119 → 137 luma into the sky's blue-grey; a fresh
 judge scored that view 5 → 6 ("real aerial perspective at range with no cost up close"), the meadow
-unchanged at 6 ([capture](../../benchmark/strata-loading-2026-10-06/forest-haze-player.jpg)).
+unchanged at 6 ([capture](../../../../../docs/benchmark/strata-loading-2026-10-06/forest-haze-player.jpg)).
 Remaining named causes: repeated noise texture on the far hills and uniform tree shapes.
 
 Quieter host (load 9–17): the unchanged `terrain.playtest.json` still fails its first step
@@ -3894,7 +3894,7 @@ Native ground textures fixed in the example: `test:terrain:desktop` now runs
 (65 files) into a gitignored `assets/`, the path the native host searches. Red → green on the same
 fresh native host: `alpine-ground-ready` timed out with `groundBiome` stuck at `"baked"` before;
 after, every phase runs, the ground draws its grass and rock maps
-([capture](../../benchmark/strata-loading-2026-10-06/native-ground-staged-meadow.jpg)) and the run
+([capture](../../../../../docs/benchmark/strata-loading-2026-10-06/native-ground-staged-meadow.jpg)) and the run
 logs 0 console errors. Staging the licensed `local-assets/` roots as well was tried and rejected: the
 cooked KTX2 spruce then loaded untextured (blue-white cards, 143 `GLTFLoader: Couldn't load texture
 ../shared/images/*.ktx2` errors), worse than the procedural fallback; native KTX2 decoding is the
@@ -3929,8 +3929,8 @@ An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) rank
    14%, HDR sun 44%, HDR sky 36%, hemisphere 6%. The ground receives no env light at all. **Fixed** in
    `d5bef2ff9`: `loadSkyLight` caps texel luminance at 30 and forest exposure rises to `2 ** 0.87`; a
    fresh judge scored the meadow 5.0 → 6.0 and the elevated view 4.5 → 5.5 (strong tree shadows, lit
-   crown side, 0.02% clipped) ([meadow](../../benchmark/strata-loading-2026-10-06/sky-sun-clamped-meadow.jpg),
-   [elevated](../../benchmark/strata-loading-2026-10-06/sky-sun-clamped-player.jpg)). Ground env
+   crown side, 0.02% clipped) ([meadow](../../../../../docs/benchmark/strata-loading-2026-10-06/sky-sun-clamped-meadow.jpg),
+   [elevated](../../../../../docs/benchmark/strata-loading-2026-10-06/sky-sun-clamped-player.jpg)). Ground env
    light is still absent.
 2. **TRAA let the auto scaler fall to 0.23** (442×248 on 1920×1080): core lifted the desktop floor for
    any velocity consumer. **Fixed** in `4ad7d9750`: same host, buffer now 1171×659 (the 0.61 floor).
@@ -3951,10 +3951,10 @@ An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) rank
    non-backlit elevated view unchanged; fresh judge 4 → 5/10 (mid meadow believable; near field
    lifts the gaps too). The earlier "grass transmission had no effect" round edited `cutoutSurface`,
    which alpha-tested grass never reaches, so it was a no-op, not a measurement.
-   ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-meadow.jpg)). Gated by
+   ([capture](../../../../../docs/benchmark/strata-loading-2026-10-06/foliage-transmission-meadow.jpg)). Gated by
    blade height (`smoothstep(0.02, 0.4, positionGeometry.y)`) so roots and gaps stay dark: near-meadow
    p5/p95 48/151 → 31/164, contrast ~34 → 45, 0% blown; fresh judge 5/10 against 4 (uniform) and 3.5
-   (none) ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-gated-meadow.jpg)). 8. Mid/far terrain detail was replaced by flat colour beyond 32–115 m (86%) with relief cut to 0.12.
+   (none) ([capture](../../../../../docs/benchmark/strata-loading-2026-10-06/foliage-transmission-gated-meadow.jpg)). 8. Mid/far terrain detail was replaced by flat colour beyond 32–115 m (86%) with relief cut to 0.12.
    **Eased**: the field colour now takes 55% over 60–220 m and distant relief keeps 0.35. Elevated
    mid-band edge energy +11%, no tiling or shimmer; fresh judge 3 → 3.5/10 for that band ("small gain;
    the flat band past ~60 m needs ground cover or larger-scale material variation"). Extending grass,
@@ -4099,8 +4099,8 @@ fading only from 300 to 600 m. Three strengths were judged by fresh judges: fain
 too weak), strong (6.5 from one judge but "mud smears, worm-like noise edges, orange hue" and 5.5 from
 the next), and the shipped soft, cooler tint: **elevated 7 against 6.5 for no floor**, no worm edges
 or mud, no tint in open meadow, meadow view unchanged
-([elevated](../../benchmark/strata-loading-2026-10-06/forest-floor-canopy-player.jpg),
-[meadow](../../benchmark/strata-loading-2026-10-06/forest-floor-canopy-meadow.jpg)). Remaining gaps the
+([elevated](../../../../../docs/benchmark/strata-loading-2026-10-06/forest-floor-canopy-player.jpg),
+[meadow](../../../../../docs/benchmark/strata-loading-2026-10-06/forest-floor-canopy-meadow.jpg)). Remaining gaps the
 judges name: no understory at range, the flat yellow-green open ground, and dappled light.
 
 Rejected the same day: a cooler meadow turf multiplier (`MEADOW` 0.47/0.72/0.40 → 0.41/0.68/0.43). A
@@ -4171,8 +4171,8 @@ WebGPU refused the pipeline (the ground holds 15 of 16). Instead `skyIrradiance`
 the clamped HDR to two cosine-weighted colours, sky-up and ground-bounce, and the temperate ground
 adds `albedo × mix(down, up, n.y) × 0.6` as its diffuse sky term (no sampler). A fresh judge scored
 the elevated view 6 → 6.5 (lighter, cooler, still readable tree shadows; no glow or wash-out) and
-the meadow unchanged at 7.5 ([elevated](../../benchmark/strata-loading-2026-10-06/ground-sky-light-player.jpg),
-[meadow](../../benchmark/strata-loading-2026-10-06/ground-sky-light-meadow.jpg)).
+the meadow unchanged at 7.5 ([elevated](../../../../../docs/benchmark/strata-loading-2026-10-06/ground-sky-light-player.jpg),
+[meadow](../../../../../docs/benchmark/strata-loading-2026-10-06/ground-sky-light-meadow.jpg)).
 
 ### 2026-10-10 — clean-checkout CI and starter asset caps
 

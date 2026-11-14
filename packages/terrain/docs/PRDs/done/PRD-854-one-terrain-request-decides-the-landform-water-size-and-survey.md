@@ -3,8 +3,8 @@
 **Status:** PARTIAL — Phases 1 to 3 landed (2026-11-07). The two acceptance boxes are open.
 **Priority:** P1 — `terrain_generate` drops every request word except the biome word, so "a forest with mountains and a river" cooks a flat default forest (Phase 1).
 **Complexity:** 5 (MEDIUM)
-**Depends on:** [PRD-762](../../../packages/terrain/docs/PRDs/P0/PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (same MCP tool, path must start first)
-**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md), chain step PR-5 in PR-CHAIN.md
+**Depends on:** [PRD-762](../P0/PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (same MCP tool, path must start first)
+**Epic:** [Strata terrain hardening](../README.md), chain step PR-5 in PR-CHAIN.md
 
 ## Problem
 

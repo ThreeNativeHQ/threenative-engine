@@ -5,7 +5,7 @@
 **Complexity:** 6 (MEDIUM); risk override: compatibility — a wrong patch breaks every game's renderer
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md)
+**Epic:** [Strata terrain hardening](../README.md)
 
 ## Context
 

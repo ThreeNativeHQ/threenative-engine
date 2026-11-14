@@ -6,7 +6,7 @@
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466 phases 1–2 public authoring/rendering contract
 **Progress:** 3/3 phases verified (8/8 phase boxes); 1/1 acceptance box verified; prd:100%.
-**Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
+**Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](../../../../../docs/PRDs/done/PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
 
@@ -246,7 +246,7 @@ the same edited placement transforms; reference images are not embedded by defau
 
 ### World controls and asset injection
 
-[PRD-468](PRD-468-strata-world-controls-and-asset-imports.md) owns the controller's
+[PRD-468](../../../../../docs/PRDs/done/PRD-468-strata-world-controls-and-asset-imports.md) owns the controller's
 camera CRUD/focus operations, editable atmosphere/sky/sun/fog/ocean settings, and
 GLB/PBR-image/HDR-environment import through both agent and GUI paths. These are
 required parts of this terrain editor. Reuse this PRD's validated revisions,

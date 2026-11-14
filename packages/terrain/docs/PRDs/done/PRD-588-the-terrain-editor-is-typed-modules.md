@@ -4,9 +4,9 @@
 **Priority:** P2 — Browser proof of the mechanics move, keyboard access and a single export encoder remain open in AC-3, AC-4 and AC-6.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-587](../done/PRD-587-the-terrain-editor-never-drops-an-edit.md) (lands its save model first, so the port moves settled code)
-**Parent:** [PRD-467](../done/PRD-467-strata-live-terrain-editor.md)
-**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md)
+**Depends on:** [PRD-587](PRD-587-the-terrain-editor-never-drops-an-edit.md) (lands its save model first, so the port moves settled code)
+**Parent:** [PRD-467](PRD-467-strata-live-terrain-editor.md)
+**Epic:** [Strata terrain hardening](../README.md)
 
 ## Context
 

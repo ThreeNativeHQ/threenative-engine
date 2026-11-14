@@ -16,7 +16,7 @@ I'll execute later".
 - Look: on the 2026-11-09 baseline in [PRD-580](PRD-580-strata-starter-kit-art-bar.md),
   no world reaches 4 out of 5 on any rubric row. Forest scores 3/3/3/2/3. Tundra scores 2/1/2/1/1.
 - Speed: the forest overview costs 31 to 39 ms of GPU time on the RTX 2080 at 1600x900, which is 20
-  to 30 FPS (reading in [PRD-866](../../../../docs/PRDs/BLOCKED/requires-owner-decision/PRD-866-a-generated-forest-stands-under-mountains-with-real-shapes.md)).
+  to 30 FPS (reading in [PRD-866](BLOCKED/requires-owner-decision/PRD-866-a-generated-forest-stands-under-mountains-with-real-shapes.md)).
 - Focus: about 22 terrain PRDs are open across five worlds. Recent changes were judged NEUTRAL or a
   small IMPROVEMENT.
 

@@ -91,11 +91,11 @@ wait for the forest lane to commit its edits to `world-cell-render.ts`, `world-g
 
 ## Relation to the Strata epic (PR #483)
 
-- [PRD-790](../../../../packages/terrain/docs/PRDs/P2/PRD-790-a-new-biome-is-a-data-row-and-the-world-streams-past-one-square.md)
+- [PRD-790](../../P2/PRD-790-a-new-biome-is-a-data-row-and-the-world-streams-past-one-square.md)
   Phase 1 (biome rows, 0 branches, fail-closed field) is the game half of PRD-791. PRD-791 moves the
   schema into `@threenative/terrain` so the MCP can read it; PRD-790 Phase 2 (streaming) and Phase 3
   (a sixth biome) stay there.
-- [PRD-591](../../../../packages/terrain/docs/PRDs/P2/PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md)
+- [PRD-591](../../P2/PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md)
   AC-4 (measured height bands) feeds the band fields of `ILayerInfo`.
 - [PRD-595](../PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md)
   did the first `world-cells.ts` split; PRD-799 is the second and waits for its AC-3.

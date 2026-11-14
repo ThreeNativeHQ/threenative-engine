@@ -4,8 +4,8 @@
 **Priority:** P1 — the owner named the mountains as one of the two defects that keep the forest from "good to go" (2026-11-09); AC-1 is that defect.
 **Complexity:** 6 (MEDIUM) — 6 to 10 files (2), a new placement module (2), state across bake and cook (2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-854](../../done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) (the survey fetch this PRD reuses, landed), [PRD-864](../../../../packages/terrain/docs/PRDs/P2/PRD-864-prop-and-collar-mechanisms-leave-the-strata-preview.md) (only for a kit game to draw the far ring; no box here waits on it)
-**Epic:** [Strata terrain hardening](../../../../packages/terrain/docs/PRDs/README.md). Continues the shape work of [PRD-856](../../../../packages/terrain/docs/PRDs/P2/PRD-856-the-mountains-carry-real-silhouettes-erosion-and-rock.md), whose open boxes stay there.
+**Depends on:** [PRD-854](../../done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) (the survey fetch this PRD reuses, landed), [PRD-864](../../P2/PRD-864-prop-and-collar-mechanisms-leave-the-strata-preview.md) (only for a kit game to draw the far ring; no box here waits on it)
+**Epic:** [Strata terrain hardening](../../README.md). Continues the shape work of [PRD-856](../../P2/PRD-856-the-mountains-carry-real-silhouettes-erosion-and-rock.md), whose open boxes stay there.
 
 ## Problem
 
