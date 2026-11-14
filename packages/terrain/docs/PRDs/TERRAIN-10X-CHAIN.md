@@ -38,6 +38,10 @@ Where the chain actually stands, measured, so the next agent does not repeat it:
   the starter's (4.9-5.2 against 2.9-3.4 ms) on 22 ms of CPU for nine species. The judge's top look gaps
   are Arbor form and bark (an open-grown beech that forks at 28 % of its height) and the floor (grass
   where a beech wood has litter): PRD-855's Arbor and cover rows, step 2 below.
+- **Step 5's cost gate failed (2026-11-14).** PRD-668 Phase 1 prices the dice offline on the quarry.
+  The added micro-triangles exceed the submitted triangles in all 5 poses, by 1.02x to 1.74x.
+  Phases 2 and 3 stay deferred. The forest ground is not priced, because its streamed ring has
+  no offline loader. The PRD's `## Decisions` names what the row needs.
 - **No other strata worktree is live.** `.claude/worktrees/strata-forest-aaa` is fully merged;
   `strata-forest-understorey` and `strata-chain` are pre-develop snapshots (about 1 890 files apart
   from `develop`, no open PR). Work the chain in PR #677's worktree until it merges.

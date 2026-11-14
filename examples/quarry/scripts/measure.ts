@@ -4,11 +4,30 @@
 // of these markers by hand once, and that is what `playtest perf` was written to stop.
 //
 //   pnpm --filter quarry measure -- --arm dense --url http://127.0.0.1:5191
+//   pnpm --filter quarry measure -- --displacement-probe     (PRD-668 Phase 1, offline)
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { QUARRY_ARMS, type QuarryArm, parseArm } from "../src/quarry/arm.js";
+import { type Group, type Mesh, MeshBasicMaterial, PerspectiveCamera, Scene } from "three";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+// The probe reads core's source, as the loader spec does: `VirtualGeometryPlugin` is not exported.
+import { ClusteredBatch } from "../../../packages/core/src/clustered-batch.js";
+import {
+  ClusteredMesh,
+  VirtualGeometryPlugin,
+  updateClusteredMeshes,
+} from "../../../packages/core/src/clustered-mesh.js";
+import {
+  type IOcclusionBuffer,
+  occlusionBuffer,
+  priceDisplacedSurface,
+} from "../../../packages/core/src/displaced-surface.js";
+import { InstancedBatch } from "../../../packages/core/src/instanced-batch.js";
+import { QUARRY_ARMS, type QuarryArm, bodiesModelPath, parseArm } from "../src/quarry/arm.js";
+import { BOULDER_SUBDIVISIONS, boulderPlacements } from "../src/quarry/bodies.js";
+import { ROUTE_MARKS, routePose } from "../src/quarry/route.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(here, "../../..");
@@ -288,6 +307,148 @@ function main(): void {
   console.log(JSON.stringify(measurement, null, 2));
 }
 
-if (!QUARRY_ARMS.includes(process.argv[process.argv.indexOf("--arm") + 1] as QuarryArm))
-  throw new Error(`TN_QUARRY_MEASURE_ARM: --arm must be one of ${QUARRY_ARMS.join(", ")}.`);
-main();
+/**
+ * PRD-668 Phase 1: what Nanite-style dicing would add at each route mark, before a dice pass exists.
+ *
+ * Offline and read-only: the baked `.glb` files, the same scene `src/game.ts` assembles, the same
+ * cut at 1920x1080, then `priceDisplacedSurface` over every triangle the cut submits.
+ *
+ *   pnpm --filter quarry bake && pnpm --filter quarry measure -- --displacement-probe
+ */
+async function displacementProbe(): Promise<void> {
+  const arm = parseArm(argument("arm", "virtual"));
+  const assets = resolve(here, "../public/assets");
+  const parse = async (file: string): Promise<Group> => {
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(resolve(assets, file));
+    } catch {
+      throw new Error(
+        `TN_QUARRY_PROBE_NOT_BAKED: ${file} is missing; run pnpm --filter quarry bake.`,
+      );
+    }
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.register((parser) => new VirtualGeometryPlugin(parser as never) as never);
+    const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const gltf = await new Promise<{ scene: Group }>((done, fail) =>
+      loader.parse(data as ArrayBuffer, "", done as never, fail),
+    );
+    return gltf.scene;
+  };
+  const [floorModel, bodiesModel] = await Promise.all([
+    parse("quarry-floor.glb"),
+    parse(bodiesModelPath(arm).replace("assets/", "")),
+  ]);
+  const named = (root: Group, name: string): Mesh => {
+    const found = root.getObjectByName(name) as Mesh | undefined;
+    if (found?.isMesh !== true) throw new Error(`TN_QUARRY_BODY_MISSING: no mesh named '${name}'.`);
+    return found;
+  };
+
+  // The scene `src/game.ts` enter() assembles, without its look: the price reads geometry only.
+  const scene = new Scene();
+  const material = new MeshBasicMaterial();
+  for (const [root, name] of [
+    [floorModel, "floor"],
+    [bodiesModel, "cliff"],
+    [bodiesModel, "gantry"],
+    [bodiesModel, "grating"],
+  ] as const)
+    scene.add(named(root, name));
+  const placements = boulderPlacements();
+  for (let source = 0; source < BOULDER_SUBDIVISIONS.length; source += 1) {
+    const template = named(bodiesModel, `boulder-${source}`);
+    const batch =
+      template instanceof ClusteredMesh
+        ? new ClusteredBatch({ geometry: template.geometry, material, table: template.table })
+        : new InstancedBatch({ geometry: template.geometry, material });
+    for (const placement of placements)
+      if (placement.source === source)
+        batch.place({
+          position: [placement.x, placement.y, placement.z],
+          rotation: [0, placement.rotationY, 0],
+          scale: placement.scale,
+        });
+    batch.build({ name: `boulders-${source}`, parent: scene });
+  }
+
+  // The game's camera: core's default 60-degree lens, the look's near and far, a 1080p view.
+  const width = 1920;
+  const height = 1080;
+  const camera = new PerspectiveCamera(60, width / height, 0.08, 420);
+  const rows = ROUTE_MARKS.map((mark) => {
+    const pose = routePose(mark.frame);
+    camera.position.set(...pose.position);
+    camera.lookAt(...pose.target);
+    camera.updateMatrixWorld();
+    scene.updateMatrixWorld(true);
+    updateClusteredMeshes(scene, camera, height);
+    // Rock displaces: the floor, the cliff and the boulders. The gantry and its grating are metal
+    // and alpha-cut, so they are submitted but never diced.
+    const submitted = priceDisplacedSurface(scene, camera, height).triangles;
+    const rock = scene.children.filter((body) => body.name !== "gantry" && body.name !== "grating");
+    // Unreal culls every patch against its HZB; this buffer is a conservative stand-in, a quarter
+    // of the view on each axis, rasterized from everything the cut submits.
+    const occlusion = occlusionBuffer(scene, camera, width / 4, height / 4);
+    const sum = (fadeOutPixels: number, occlusion?: IOcclusionBuffer) => {
+      const total = { added: 0, diced: 0, fadeDistance: 0, micro: 0, patches: 0, visible: 0 };
+      const by: Record<string, number> = {};
+      for (const body of rock) {
+        const price = priceDisplacedSurface(body, camera, height, {
+          fadeOutPixels,
+          ...(occlusion === undefined ? {} : { occlusion }),
+        });
+        const key = body.name.startsWith("boulders-") ? "boulders" : body.name;
+        by[key] = (by[key] ?? 0) + price.addedMicroTriangles;
+        total.added += price.addedMicroTriangles;
+        total.diced += price.dicedTriangles;
+        total.micro += price.microTriangles;
+        total.patches += price.patches;
+        total.visible += price.visibleTriangles;
+        total.fadeDistance = price.fadeDistance;
+      }
+      return { ...total, by };
+    };
+    const stock = sum(0, occlusion);
+    const faded = sum(1, occlusion);
+    const unoccluded = sum(0);
+    return {
+      added: stock.added,
+      addedBy: stock.by,
+      addedFadeOn: faded.added,
+      addedNoOcclusion: unoccluded.added,
+      dicedTriangles: stock.diced,
+      fadeDistance: Math.round(faded.fadeDistance * 100) / 100,
+      frame: mark.frame,
+      microTriangles: stock.micro,
+      passes: stock.added <= submitted,
+      patches: stock.patches,
+      pose: mark.label,
+      ratio: Math.round((stock.added / submitted) * 1000) / 1000,
+      submitted,
+      visibleRock: stock.visible,
+    };
+  });
+  const report = {
+    arm,
+    diceRatePixels: 2,
+    gate: rows.every((row) => row.passes) ? "PASS" : "FAIL",
+    magnitudeMetres: 0.04,
+    rows,
+    rule: "added micro-triangles <= submitted triangles in every pose (Unreal stock: fade off; patches culled by frustum and a conservative occlusion buffer)",
+    viewport: `${width}x${height}`,
+  };
+  const out = resolve(repositoryRoot, "artifacts/quarry/displacement-probe.json");
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
+  console.table(rows);
+  console.log(JSON.stringify(report, null, 2));
+}
+
+if (process.argv.includes("--displacement-probe")) await displacementProbe();
+else {
+  if (!QUARRY_ARMS.includes(process.argv[process.argv.indexOf("--arm") + 1] as QuarryArm))
+    throw new Error(`TN_QUARRY_MEASURE_ARM: --arm must be one of ${QUARRY_ARMS.join(", ")}.`);
+  main();
+}

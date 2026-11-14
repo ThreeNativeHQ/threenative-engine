@@ -228,7 +228,7 @@
 <rect x="362.60301046210975" y="377.45034254013046" width="37.48818162795243" height="36.384793419978564" rx="2" fill="#6c7176"><title>Nanite · Curve data and decode · Deferred</title></rect>
 <text x="365.60301046210975" y="388.45034254013046" class="l">Curv…</text>
 <rect x="362.60301046210975" y="414.835135960109" width="37.48818162795243" height="36.207494264192746" rx="2" fill="#d9961f"><title>Nanite · [builder] Displacement, skinning and ray tracing encode · In progress</title></rect>
-<rect x="362.60301046210975" y="448.0426302243018" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="362.60301046210975" y="448.0426302243018" width="3.946124381889729" height="3" fill="#fff" opacity=".85"/>
 <text x="365.60301046210975" y="425.835135960109" class="l">[bui…</text>
 <rect x="401.0911920900622" y="260.68618422976385" width="34.17470381840491" height="39.62931891316083" rx="2" fill="#4a86d6"><title>Nanite · Brick raster and trace · Not started</title></rect>
 <text x="404.0911920900622" y="271.68618422976385" class="l">Bric…</text>
@@ -256,9 +256,11 @@
 <text x="475.7534452071623" y="312.3155031429247" class="l">Edi…</text>
 <rect x="505.31286373174544" y="301.3155031429247" width="31.313289010898416" height="26.724924200301018" rx="2" fill="#3aa56c"><title>Nanite · [builder] Hierarchy encode · Done</title></rect>
 <text x="508.31286373174544" y="312.3155031429247" class="l">[bu…</text>
-<rect x="537.6261527426439" y="301.3155031429247" width="29.484898337811615" height="26.724924200301018" rx="2" fill="#4a86d6"><title>Nanite · Tessellation pattern table · Not started</title></rect>
+<rect x="537.6261527426439" y="301.3155031429247" width="29.484898337811615" height="26.724924200301018" rx="2" fill="#d9961f"><title>Nanite · Tessellation pattern table · In progress</title></rect>
+<rect x="537.6261527426439" y="325.0404273432257" width="6.552199630624803" height="3" fill="#fff" opacity=".85"/>
 <text x="540.6261527426439" y="312.3155031429247" class="l">Tes…</text>
-<rect x="437.9436997003186" y="329.0404273432257" width="28.839264365941006" height="24.874566980561042" rx="2" fill="#4a86d6"><title>Nanite · Patch split and dice queues · Not started</title></rect>
+<rect x="437.9436997003186" y="329.0404273432257" width="28.839264365941006" height="24.874566980561042" rx="2" fill="#d9961f"><title>Nanite · Patch split and dice queues · In progress</title></rect>
+<rect x="437.9436997003186" y="350.91499432378674" width="6.408725414653556" height="3" fill="#fff" opacity=".85"/>
 <text x="440.9436997003186" y="340.0404273432257" class="l">Pat…</text>
 <rect x="437.9436997003186" y="354.91499432378674" width="28.839264365941006" height="24.384518363504924" rx="2" fill="#6c7176"><title>Nanite · Ray-triangle decode for ray tracing · Deferred</title></rect>
 <text x="440.9436997003186" y="365.91499432378674" class="l">Ray…</text>
@@ -273,7 +275,8 @@
 <text x="470.7829640662596" y="340.0404273432257" class="l">Pa…</text>
 <rect x="494.50258001028374" y="329.0404273432257" width="25.497569274129205" height="25.341651948068375" rx="2" fill="#4a86d6"><title>Nanite · Voxel brick trace in the rasterizer · Not started</title></rect>
 <text x="497.50258001028374" y="340.0404273432257" class="l">Vo…</text>
-<rect x="521.0001492844129" y="329.0404273432257" width="22.83300923538991" height="25.341651948068375" rx="2" fill="#4a86d6"><title>Nanite · Vertex deformation · Not started</title></rect>
+<rect x="521.0001492844129" y="329.0404273432257" width="22.83300923538991" height="25.341651948068375" rx="2" fill="#d9961f"><title>Nanite · Vertex deformation · In progress</title></rect>
+<rect x="521.0001492844129" y="351.3820792912941" width="2.4034746563568326" height="3" fill="#fff" opacity=".85"/>
 <text x="524.0001492844129" y="340.0404273432257" class="l">Ve…</text>
 <rect x="544.8331585198029" y="329.0404273432257" width="22.277892560652617" height="25.341651948068375" rx="2" fill="#3aa56c"><title>Nanite · Material visibility pre-pass · Done</title></rect>
 <text x="547.8331585198029" y="340.0404273432257" class="l">Ma…</text>
@@ -283,7 +286,8 @@
 <text x="470.7829640662596" y="391.49605701908473" class="l">Cu…</text>
 <rect x="467.7829640662596" y="405.24664921705204" width="23.144093316444014" height="22.57968326853654" rx="2" fill="#4a86d6"><title>Nanite · Voxel renderer setup · Not started</title></rect>
 <text x="470.7829640662596" y="416.24664921705204" class="l">Vo…</text>
-<rect x="467.7829640662596" y="428.8263324855886" width="23.144093316444014" height="22.216297738713195" rx="2" fill="#4a86d6"><title>Nanite · Tessellation patches in the rasterizer · Not started</title></rect>
+<rect x="467.7829640662596" y="428.8263324855886" width="23.144093316444014" height="22.216297738713195" rx="2" fill="#d9961f"><title>Nanite · Tessellation patches in the rasterizer · In progress</title></rect>
+<rect x="467.7829640662596" y="448.0426302243018" width="5.14313184809867" height="3" fill="#fff" opacity=".85"/>
 <text x="470.7829640662596" y="439.8263324855886" class="l">Te…</text>
 <rect x="491.9270573827036" y="355.3820792912941" width="25.758452107420283" height="19.729427126220855" rx="2" fill="#3aa56c"><title>Nanite · Raster pipeline permutations and PSO precache · Done</title></rect>
 <text x="494.9270573827036" y="366.3820792912941" class="l">Ra…</text>
@@ -294,7 +298,8 @@
 <rect x="491.9270573827036" y="398.26967319385443" width="20.029555388762617" height="17.774178963216514" rx="2" fill="#6c7176"><title>Nanite · Visibility buffer clear and raster context · Deferred</title></rect>
 <rect x="491.9270573827036" y="417.04385215707094" width="20.029555388762617" height="17.125194999055964" rx="2" fill="#4a86d6"><title>Nanite · Stats filter and print · Not started</title></rect>
 <rect x="491.9270573827036" y="435.1690471561269" width="20.029555388762617" height="15.873583068174867" rx="2" fill="#6c7176"><title>Nanite · [builder] Assemblies · Deferred</title></rect>
-<rect x="512.9566127714662" y="376.11150641751493" width="18.193528873900505" height="17.081363979130117" rx="2" fill="#4a86d6"><title>Nanite · Edge factors and displacement fade · Not started</title></rect>
+<rect x="512.9566127714662" y="376.11150641751493" width="18.193528873900505" height="17.081363979130117" rx="2" fill="#d9961f"><title>Nanite · Edge factors and displacement fade · In progress</title></rect>
+<rect x="512.9566127714662" y="390.19287039664505" width="4.043006416422334" height="3" fill="#fff" opacity=".85"/>
 <rect x="532.1501416453667" y="376.11150641751493" width="17.11524073491728" height="17.081363979130117" rx="2" fill="#4a86d6"><title>Nanite · Debug view modes · Not started</title></rect>
 <rect x="550.265382380284" y="376.11150641751493" width="16.845668700171473" height="17.081363979130117" rx="2" fill="#4a86d6"><title>Nanite · Shared and glue · Not started</title></rect>
 <rect x="512.9566127714662" y="394.19287039664505" width="18.850572329886745" height="14.518511802225078" rx="2" fill="#4a86d6"><title>Nanite · Packed views and multi-view passes · Not started</title></rect>
