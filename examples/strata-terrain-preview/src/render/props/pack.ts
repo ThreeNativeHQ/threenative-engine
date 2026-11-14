@@ -530,7 +530,9 @@ function tintedFoliage(
   material.colorNode = sampled.rgb.mul(vec3(...tint));
   // The spruce atlas is photographed warm under Unreal's exposure: cool and darken it toward a
   // spruce green, and sink its orange cone texels to shadowed brown instead of lit specks.
-  if (look.woodCanopy && canopy && cutout) {
+  // The spruce hue is the needle atlas's: the broadleaf canopy keeps its own photographed leaf
+  // green, lit through by `lightNeedles` (owner reference: bright yellow-green leaves against the sun).
+  if (look.woodCanopy && canopy && cutout && SPRUCE_TREES) {
     // The atlas is photographed olive-yellow (opaque mean RGB 90,81,21: almost no blue), which no
     // channel gain turns blue-green. Keep its luminance detail and give it a spruce hue.
     const needle = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
