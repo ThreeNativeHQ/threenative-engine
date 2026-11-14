@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import {
+  COLLAR_UNDER_TILE,
   type HorizonSurroundings,
   collarArithmeticHeight,
   collarDrawnHeight,
@@ -104,4 +105,7 @@ it("meets the streamed tiles with no step where the collar takes over", () => {
   expect(before).toBeGreaterThan(1);
   expect(gap).toBeLessThanOrEqual(0.01);
   expect(fold).toBeLessThanOrEqual(0.5);
+  // The collar draws under the tiles' edge far enough that a view 2 degrees above the ground,
+  // across the largest fold, meets a surface, not the sky: the dotted white seam from high views.
+  expect(COLLAR_UNDER_TILE).toBeGreaterThanOrEqual(fold / Math.tan((2 * Math.PI) / 180));
 }, 60_000);

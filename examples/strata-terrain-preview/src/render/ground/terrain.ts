@@ -86,6 +86,7 @@ import {
 } from "../water/river.js";
 import {
   type IPackedMassif,
+  COLLAR_UNDER_TILE,
   STREAM_TILE,
   collarColors,
   collarMorph,
@@ -1479,7 +1480,8 @@ export function createTerrain(
             abs(positionWorld.z.sub(stream.centre.y)),
           );
           const far = ground.clone();
-          far.maskNode = fromCentre.greaterThanEqual(stream.half);
+          // The collar draws under the block's edge too: the depth test picks the nearer surface there.
+          far.maskNode = fromCentre.greaterThanEqual(stream.half.sub(COLLAR_UNDER_TILE));
           horizon.material = far;
           // The outermost streamed tile slides onto the collar's drawn height (PRD-790 box 2).
           tile.positionNode = collarMorph(collar, stream, STREAM_TILE);

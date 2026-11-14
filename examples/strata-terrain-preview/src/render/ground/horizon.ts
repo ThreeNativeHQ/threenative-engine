@@ -131,6 +131,12 @@ const HORIZON_RINGS = 384;
 export const HORIZON_REACH = 2100;
 /** Streamed tile width in metres; the outermost tile of the drawn square is the morph band. */
 export const STREAM_TILE = 64;
+/**
+ * Metres the collar also draws under the streamed block's edge. The tile and the collar cut their
+ * triangles differently, so at the split their surfaces part by up to the fold `collarSeamGap`
+ * measures; cut at one line, a view across that step saw the sky through it as a dotted white seam.
+ */
+export const COLLAR_UNDER_TILE = STREAM_TILE / 4;
 /** How the rings spread: ring `k` stands `(k / rings) ** 1.65` of the reach past the edge. */
 const HORIZON_POWER = 1.65;
 
