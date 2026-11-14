@@ -182,6 +182,24 @@ it("keeps the numeric contract and leaves the caller map empty without a replace
   }
 });
 
+it("leaves the owned engine's compressed textures to the engine, which holds their mips", async () => {
+  const { device, writeTexture } = mockDevice();
+  const renderer = await webgpuRenderer({ backend: { device }, info: { engine: {} } });
+  try {
+    // The owned engine's facade reads no CPU mips back: the bytes live in the engine's heap.
+    const owned = new CompressedTexture([], 0, 0, RGBA_BPTC_Format);
+    owned.needsUpdate = true;
+    const replacements = new Map<Texture, Texture>();
+    await expect(
+      renderer.prepareTextures?.([owned], undefined, undefined, replacements),
+    ).resolves.toBe(0);
+    expect(replacements.size).toBe(0);
+    expect(writeTexture).not.toHaveBeenCalled();
+  } finally {
+    renderer.dispose();
+  }
+});
+
 it("fails closed when no public GPU device is reachable", async () => {
   const renderer = await webgpuRenderer();
   try {
