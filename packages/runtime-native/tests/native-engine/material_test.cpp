@@ -360,6 +360,21 @@ void alphaToCoverageFadesDiffuseColor() {
     CHECK(!fades(buildLambert(hard).fragment) && fades(buildLambert(faded).fragment));
     CHECK(!fades(buildStandard(StandardMaterial{}, hard).fragment) && fades(buildStandard(StandardMaterial{}, faded).fragment));
     CHECK(fades(buildBasic(flat).fragment) && !fades(buildBasic(untested).fragment));
+    // A map-only cutout (no colorNode, no opacityNode) whose MRT slot reads diffuseColor, as the impostor bake's
+    // capture does: that slot reads the faded alpha too, a second smoothstep beside the colour output's own.
+    VertexVariant mapped;
+    mapped.map = mapped.alphaToCoverage = true;
+    mapped.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.3f});
+    mapped.nodes.mrt = {{"output", g::materialInput("diffuseColor", Type::vec(4))}};
+    const auto smoothsteps = [](const Program& program) {
+        const auto code = WgslEmitter::emit(program, 1);
+        CHECK(code.ok());
+        std::size_t count = 0;
+        for (auto at = code.code.find("smoothstep("); at != std::string::npos; at = code.code.find("smoothstep(", at + 1)) ++count;
+        return count;
+    };
+    CHECK(smoothsteps(buildBasic(mapped).fragment) >= 2);
+    CHECK(smoothsteps(buildStandard(StandardMaterial{}, mapped).fragment) >= 2);
 }
 
 // NodeMaterial.alphaTestNode (three r187 setupDiffuseColor): the node replaces alphaTest as the cutoff in every colour

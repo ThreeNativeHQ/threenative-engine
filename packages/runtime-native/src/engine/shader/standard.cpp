@@ -581,6 +581,8 @@ static ExprId clearcoatNormal(Program& f, const VertexVariant& variant, ExprId m
 // three's setupDiffuseColor: the map texel multiplies the diffuse colour and alpha. It is sampled at
 // the texture's uv transform (repeat/offset/rotation/center); an sRGB map is decoded here, as
 // upstream's ColorSpaceNode does, so the sample is linear.
+static bool coverageFaded(const VertexVariant& variant);
+
 static ExprId mapTexel(Program& f, const VertexVariant& variant) {
     if (!variant.map) return kInvalid;
     const ExprId uv = f.varying("uv", Type::vec(2));
@@ -656,7 +658,7 @@ static void materialInputs(Program& f, const VertexVariant& variant,
                 // three's diffuseColor (NodeMaterial.setupDiffuseColor): the colour times its map and vertex colour,
                 // the opacity times the map's alpha. A colorNode or opacityNode replaces those terms first, and
                 // those slots lower only once the program's Lowering exists: nodeDiffuseColor supplies it then.
-                if (nodes.colorNode || nodes.opacityNode) continue;
+                if (nodes.colorNode || nodes.opacityNode || coverageFaded(variant)) continue;
                 const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
                 const ExprId texel = variant.map && !variant.background ? mapTexel(f, variant) : kInvalid;
                 ExprId rgb = materialColor(f, variant, diffuse), alpha = f.swizzle(diffuse, "w");
@@ -745,7 +747,9 @@ static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVaria
 // needs those two slots lowered, so it is supplied once the Lowering exists and before any other slot lowers.
 static void nodeDiffuseColor(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
     const auto& nodes = variant.nodes;
-    if (!nodes.colorNode && !nodes.opacityNode) return;
+    // A map-only cutout under alphaToCoverage takes this path too: its faded alpha needs the cutoff slot, which
+    // lowers only here. Supplied raw, the bake captured the mip-thinned leaf alpha and a sparse crown baked empty.
+    if (!nodes.colorNode && !nodes.opacityNode && !coverageFaded(variant)) return;
     bool read = false;
     for (const graph::Node* node : {&nodes.emissiveNode, &nodes.roughnessNode, &nodes.metalnessNode, &nodes.aoNode, &nodes.irradianceNode,
                                     &nodes.envNode, &nodes.fragmentNode, &nodes.depthNode, &nodes.maskNode, &nodes.alphaTestNode})
