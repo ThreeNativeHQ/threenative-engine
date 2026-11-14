@@ -35,6 +35,7 @@ import {
 } from "../src/mcp/tools.js";
 import { measureGlb } from "../src/package/glb-stats.js";
 import { PLAY_AREA_CLEAR_RADIUS, parseBounds } from "../src/population/foliage.js";
+import { ECOREGION_ROWS } from "../src/request/ecoregions.js";
 import { BIOME_OWN } from "../src/request/request-words.js";
 
 // The starter forest document as the forest bake evaluates it: `recipe.json` wraps it in `recipe`,
@@ -1529,6 +1530,7 @@ describe("terrain_generate request words", () => {
       // PRD-866: rolling hills carry no massif rows, so the ring is not cooked.
       backdrop: { value: "none", source: "default" },
       tree: { value: null, source: "default" },
+      region: { value: null, source: "default" },
     });
     // A word that named a row is spent even when an argument overruled it, so it is not unused.
     expect(unused).toEqual([]);
@@ -1557,6 +1559,7 @@ describe("terrain_generate request words", () => {
       // PRD-866: a mountain preset on its survey cooks the far ring with a real massif.
       backdrop: { value: "massif", source: "default" },
       tree: { value: null, source: "default" },
+      region: { value: null, source: "default" },
     });
     // "create", "with", "and", "a" are scaffolding; only the words that named nothing are listed.
     expect(unused).toEqual(["floating", "castles"]);
@@ -1574,6 +1577,7 @@ describe("terrain_generate request words", () => {
       ground: { value: "starter", source: "default" },
       backdrop: { value: "none", source: "default" },
       tree: { value: null, source: "default" },
+      region: { value: null, source: "default" },
     });
     expect(unused).toEqual([]);
   });
@@ -1731,6 +1735,132 @@ describe("every landform under every biome", () => {
     },
     180_000,
   );
+});
+
+/** The checked-in terrarium tiles, used as the whole tile cache these tests read. */
+const REGION_TILES = new URL("./fixtures/terrarium/", import.meta.url).pathname;
+const NO_NETWORK = () => {
+  throw new Error("a region cook reads the checked-in tiles, never the network");
+};
+
+// PRD-887: a region word is a real place with a plant community: the row's own survey grounds the
+// world, its canopy rows plant it, and a tree word still moves its species to the front.
+describe("terrain_generate regions", () => {
+  it.each([
+    ["european beech forest", "european-broadleaf", "european", "forest"],
+    ["boreal forest", "boreal", "boreal", "forest"],
+    ["a mediterranean hills", "mediterranean", "mediterranean", "desert"],
+    ["a pacific northwest forest", "pacific-northwest", "pacific northwest", "forest"],
+    ["cascadia", "pacific-northwest", "cascadia", "forest"],
+  ])("reads '%s' as the %s region", (request, region, word, kit) => {
+    const { input, decided, unused } = parseGenerateRequest({ request });
+    expect(decided.region).toEqual({ value: region, source: { word } });
+    expect(input.kit).toBe(kit);
+    expect(input.region?.id).toBe(region);
+    // The row's own site grounds the world, and the region is the whole locale: a far ring from
+    // another country's massifs would stand behind it.
+    expect(decided.ground).toEqual({ value: "survey", source: { word } });
+    expect(decided.backdrop).toEqual({ value: "none", source: { word } });
+    expect(unused).toEqual([]);
+  });
+
+  it("stays the quick path for a tree word with no region", () => {
+    const { input, decided } = parseGenerateRequest({ request: "beech forest" });
+    expect(input.treeSpecies).toBe("arbor:beech");
+    expect(input.region).toBeUndefined();
+    expect(decided.region).toEqual({ value: null, source: "default" });
+    expect(decided.ground).toEqual({ value: "starter", source: "default" });
+  });
+
+  it("lets an explicit kit or ground win over the row", () => {
+    const { input, decided } = parseGenerateRequest({
+      request: "european forest",
+      kit: "alpine",
+      ground: { location: { lat: 46.5, lon: 8.5 } },
+    });
+    expect(input.kit).toBe("alpine");
+    expect(input.region?.id).toBe("european-broadleaf");
+    expect(decided.ground).toEqual({
+      value: { location: { lat: 46.5, lon: 8.5 } },
+      source: "argument",
+    });
+  });
+
+  it("moves a tree word to the first canopy row and keeps the rest of the community", () => {
+    const { input, decided } = parseGenerateRequest({ request: "a european oak forest" });
+    const species = (input.region?.overrides.foliage ?? []).map((row) => row.species);
+    expect(species.slice(0, 2)).toEqual(["arbor:oak@13", "arbor:oak@14"]);
+    expect(species).toEqual(
+      expect.arrayContaining(["arbor:beech@11", "arbor:beech@12", "arbor:birch@15"]),
+    );
+    // The kit's one tree art is not swapped: the region's community grows instead.
+    expect(input.treeSpecies).toBeUndefined();
+    expect(decided.tree).toEqual({ value: "arbor:oak", source: { word: "oak" } });
+  });
+
+  it("cooks the region's own ground and its canopy community", async () => {
+    const project = await realpath(await makeTempDir("tn-terrain-region-"));
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", REGION_TILES);
+    vi.stubGlobal("fetch", NO_NETWORK);
+    try {
+      await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+      await symlink(
+        new URL("../../assets/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "assets"),
+      );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      );
+      await writeFile(
+        join(project, "threenative.config.ts"),
+        'export default { assets: { source: "assets" } };',
+      );
+      const { input } = parseGenerateRequest({ request: "european beech forest" });
+      const result = JSON.parse(
+        await cookKit({
+          ...input,
+          out: join(project, "assets", "worlds", "european"),
+          projectRoot: project,
+        }),
+      );
+      const row = ECOREGION_ROWS.find((entry) => entry.id === "european-broadleaf");
+      // AC-1: the world stands on the row's site, with the source's own attribution.
+      expect(result.ground).toEqual({
+        source: "survey",
+        name: row?.site.name,
+        lat: row?.site.lat,
+        lon: row?.site.lon,
+        attribution: row?.site.attribution,
+      });
+      expect(result.backdrop).toEqual({ source: "none" });
+      expect(result.biome).toBe("european-broadleaf");
+      // AC-2: the canopy is a community — three presets at least, each baked at more than one seed.
+      const baked = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
+      const counts = new Map<string, number>();
+      for (const cell of baked.cells as { runs: { asset: string; count: number }[] }[]) {
+        for (const run of cell.runs)
+          counts.set(run.asset, (counts.get(run.asset) ?? 0) + run.count);
+      }
+      const seeds = new Map<string, Set<string>>();
+      for (const asset of counts.keys()) {
+        const match = /^arbor-([a-z]+)-(\d+)$/u.exec(asset);
+        if (match === null) continue;
+        const set = seeds.get(match[1] as string) ?? new Set<string>();
+        set.add(match[2] as string);
+        seeds.set(match[1] as string, set);
+      }
+      expect(seeds.size).toBeGreaterThanOrEqual(3);
+      for (const [preset, set] of seeds) expect(set.size, preset).toBeGreaterThan(1);
+      // The kit's own canopy art was replaced, so the world ships none of it; its understorey stays.
+      expect([...counts.keys()]).not.toContain("fir");
+      expect([...counts.keys()]).toContain("fern-a");
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      await rm(project, { recursive: true, force: true });
+    }
+  }, 240_000);
 });
 
 // PRD-793 phase 3: a sixth biome is one call — a data folder and a cook, no code edit.

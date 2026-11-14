@@ -44,7 +44,8 @@ one pass. [`cook.md`](cook.md) names the function behind every box.
 ```mermaid
 flowchart LR
   request["request: words + arguments"] --> parse["parseGenerateRequest<br/>src/request/generate-request.ts"]
-  parse --> decided["IGenerateDecided<br/>biome, landform, water, size,<br/>ground, backdrop, tree"]
+  parse --> decided["IGenerateDecided<br/>biome, region, landform, water, size,<br/>ground, backdrop, tree"]
+  parse --> region["ECOREGION_ROWS row<br/>src/request/ecoregions.ts<br/>site + canopy + kit"]
   decided --> recipe["recipe<br/>starter/&lt;world&gt;/recipe.json<br/>or a landform preset"]
   recipe --> edits["recipe edits<br/>water rows, survey ground,<br/>features, coast, lakes, rivers"]
   edits --> evaluator["Terrain evaluator<br/>src/core/terrain.ts"]
@@ -163,6 +164,7 @@ of you; "Page" is where you see it.
 | Far ring | `packages/terrain/src/ground/massif.ts` and `farRing` in `packages/terrain/src/ground/ground.ts`; the preview's read in `examples/strata-terrain-preview/src/render/ground/horizon.ts` | package build, then the cook | `?world=alpine`, and the `vista` playtest pose |
 | Loading and streaming | `packages/core/src/` (`WorldCells`, `TerrainTiles`) and `examples/strata-terrain-preview/src/render/loading.ts`, `streamLanes.ts` | `pnpm --filter strata-terrain-preview dev:fresh` | `?stream=1`, then `pnpm --filter strata-terrain-preview test:terrain:web` |
 | Request words | `packages/terrain/src/request/request-words.ts`, `packages/terrain/src/request/biome-words.ts`, `packages/terrain/src/request/generate-request.ts` | `pnpm --filter @threenative/terrain build` | the `terrain_generate` reply's `decided` and `unused` |
+| Region words | `packages/terrain/src/request/ecoregions.ts` (one row per region: its words, its `ISurveyRow` site, its kit, and the `IBiomeSpec` overrides that are its canopy) and `ecoregionHit` in `packages/terrain/src/request/generate-request.ts` | `pnpm --filter @threenative/terrain build`, then a cook of `terrain_generate` with the region's word | the reply's `decided.region`, `decided.ground` and the cooked canopy's species |
 | The world package format | `packages/core/src/world-package.ts` (the contract) and `packages/terrain/src/package/world-package.ts` (the writer); see [`world-package.md`](world-package.md) | `pnpm --filter strata-terrain-preview dev:fresh` | every world |
 
 ## 6. Stale output
@@ -185,7 +187,7 @@ is the stage; a file two stages import lives at the root of `src/` or in `core/`
 | --- | --- | --- |
 | `packages/terrain/src/` | The public entries | One file per published entry: `index.ts`, `three.ts`, `export.ts`, `kit.ts`, `starter.ts`, and `kit-assets.ts` beside them |
 | `packages/terrain/src/core/` | The evaluator and the shared types | The recovered evaluator and the files every stage reads: the height layers and their passes, masks, math, types, validation, stats and the byte codecs |
-| `packages/terrain/src/request/` | Words to a decided request | `request-words.ts` and `biome-words.ts` (the tables) and `generate-request.ts` (`parseGenerateRequest`, its argument checks and the record of what decided each choice) |
+| `packages/terrain/src/request/` | Words to a decided request | `request-words.ts`, `biome-words.ts` and `ecoregions.ts` (the tables: words, and the regions' sites and canopies) and `generate-request.ts` (`parseGenerateRequest`, its argument checks and the record of what decided each choice) |
 | `packages/terrain/src/biome/` | The biome file and its rules | `biome.ts` (the schema), `bands.ts`, `kits.ts` and `bake-biome.ts` (the bake every producer shares) |
 | `packages/terrain/src/ground/` | Where the heights come from | `surveys.ts`, `presets.ts`, `massif.ts`, `survey.ts` (the fetch) and `ground.ts` (the survey, heightmap and procedural ground, plus the far ring) |
 | `packages/terrain/src/water/` | Rivers, lakes, coast | `water.ts` (the segment index a consumer reads) and `stages.ts` (water rows, sea level, coast, lakes, rivers and the flooded bodies the reply reports) |

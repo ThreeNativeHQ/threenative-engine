@@ -54,13 +54,22 @@ const PLAY_AREA_CLEAR: IScatterClear = {
   opacity: 1,
 };
 
+/**
+ * A biome's foliage rows as the scatter rules `Terrain.evaluate()` runs, on the ground a preset or a
+ * region's stand stands on.
+ *
+ * A starter's own recipe already authors its stand, so its rows are placed only when the request's
+ * rows replaced that stand (`replacedStand`): a region's canopy is the region's, and the kit's ferns,
+ * stones and water stay the kit's.
+ */
 export function scatterFoliage(
   state: ITerrainState,
   biome: IBiomeSpec,
   kind: LandformKind | undefined,
   assetTable: Record<string, IAssetSpec>,
+  replacedStand = false,
 ): ITerrainState {
-  if (kind === undefined) return state;
+  if (kind === undefined && !replacedStand) return state;
   const tree = Object.keys(assetTable).find((id) => assetTable[id]?.tree === true);
   // The file carries one tree row, as the ordered scatter reads it, and it is the row a kit's own
   // tree stands in for; a shrub row keeps its own species or draws nothing.

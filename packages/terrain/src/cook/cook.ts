@@ -10,15 +10,16 @@ import { round } from "../core/math.js";
 import { Terrain } from "../core/terrain.js";
 import type { ITerrainState } from "../core/types.js";
 import { assertDistFresh } from "../dist-fresh.js";
-import { RING_SCALE, applyGround, farRing } from "../ground/ground.js";
+import { RING_SCALE, applyGround, farRing, forestFloor } from "../ground/ground.js";
 import { landform } from "../ground/presets.js";
 import type { LandformKind } from "../ground/presets.js";
 import type { IGroundRequest } from "../ground/surveys.js";
 import { starterAssetsDir } from "../kit-assets.js";
-import { TERRAIN_KITS, resolveAssetSource } from "../mcp/tools.js";
+import { TERRAIN_KITS, newBiomeSpec, resolveAssetSource } from "../mcp/tools.js";
 import { growArborRows, growArborSpecies, parseArborSpecies } from "../population/arbor-species.js";
 import { type IAssetSpec, parseBounds, scatterFoliage } from "../population/foliage.js";
 import { applyPlacementOverrides } from "../population/placements.js";
+import type { IEcoregionRow } from "../request/ecoregions.js";
 import type { TerrainFeature } from "../request/request-words.js";
 import {
   applyWaterRows,
@@ -56,6 +57,8 @@ export interface ICookRequest {
   backdropRange?: LandformKind;
   /** `arbor:<preset>[@seed]`: a request that names a tree, drawn by Arbor in place of the kit's tree. */
   treeSpecies?: string;
+  /** The ecoregion a request word named: its site grounds the world and its canopy rows plant it. */
+  region?: IEcoregionRow;
 }
 
 /** The package's own asset manifest, as a starter's `assets.json` writes it: layers and their maps. */
@@ -176,14 +179,19 @@ async function cookInto(
   const started = performance.now();
   // The starter's biome file is the world's own record of the biome; the bake validates it here, so
   // a starter that drifts from the schema fails at its cook instead of at a game's load. A request's
-  // own spec replaces the file, and its `water` rows replace only what the biome declares it floods.
+  // own spec replaces the file, a region replaces the fields its row names (the same overrides
+  // `terrain_biome_new` takes), and its `water` rows replace only what the biome declares it floods.
   const file = request.spec ?? JSON.parse(await readFile(join(kitDir, "biome.data.json"), "utf8"));
+  const based =
+    request.region === undefined
+      ? file
+      : newBiomeSpec(file, request.region.id, request.region.overrides as Record<string, unknown>);
   const declared = (
     request.water === undefined
-      ? file
-      : { ...(file as Record<string, unknown>), water: request.water }
+      ? based
+      : { ...(based as Record<string, unknown>), water: request.water }
   ) as unknown;
-  const declaredBiome = validateBiome(declared, request.biome ?? request.kit);
+  const declaredBiome = validateBiome(declared, request.biome ?? request.region?.id ?? request.kit);
   if (request.treeSpecies !== undefined && parseArborSpecies(request.treeSpecies) === undefined)
     throw new Error(
       `cook: treeSpecies '${request.treeSpecies}' must read arbor:<preset> or arbor:<preset>@<seed>.`,
@@ -209,8 +217,12 @@ async function cookInto(
   if (request.sizeMeters !== undefined) recipe.recipe.config.size = request.sizeMeters;
   if (request.seed !== undefined) recipe.recipe.config.seed = request.seed;
   // Before any evaluation: the ground is what the preset's later layers reshape, and a survey that
-  // cannot be read fails here rather than after a long bake.
-  const ground = await applyGround(recipe.recipe, request, kind);
+  // cannot be read fails here rather than after a long bake. A region's own place is a forest floor at
+  // the world's own square, gated where it is cut; an explicit `ground` still wins over it.
+  const ground =
+    request.ground === undefined && request.region !== undefined
+      ? await forestFloor(recipe.recipe, request.region.site, request.seed)
+      : await applyGround(recipe.recipe, request, kind);
   const farRingResult = await farRing(
     request,
     kind,
@@ -233,6 +245,17 @@ async function cookInto(
     IAssetSpec
   >;
   const surface = JSON.parse(await readFile(join(kitDir, "surface.json"), "utf8")) as ISurface;
+  // A region's rows are that region's stand: the kit's authored canopy is replaced by them, and the
+  // understorey, the stones, the road and the water stay the kit's own. The replaced tree art is
+  // dropped before it is baked, so the world ships no tree nothing draws.
+  const canopy = request.region?.canopy ?? [];
+  for (const id of canopy) delete assetTable[id];
+  if (canopy.length > 0) {
+    recipe.recipe.layers = recipe.recipe.layers.filter(
+      (layer: { params?: { asset?: unknown }; type?: string }) =>
+        layer.type !== "scatter" || !canopy.includes(layer.params?.asset as string),
+    );
+  }
   // The kit's own `arbor` rows, `arbor:<preset>[@seed]` species and a request's tree word join the
   // table before any scatter.
   const kitArbor = await growArborRows(assetTable, request.projectRoot, scratch);
@@ -257,7 +280,8 @@ async function cookInto(
   if (rivers.length > 0) routeRivers(recipe.recipe, rivers);
   const evaluated = Terrain.fromJSON(recipe.recipe).evaluate();
   const state = applyPlacementOverrides(
-    scatterFoliage(evaluated, biome, kind, assetTable),
+    // A region always places its own rows: they are the stand, whether or not the kit shipped one.
+    scatterFoliage(evaluated, biome, kind, assetTable, request.region !== undefined),
     recipe.placementOverrides ?? {},
   );
 

@@ -1,6 +1,6 @@
 # PRD-887 — A region request cooks its real ground and its plant community
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (2026-11-13) — Phase 1 is done and verified, and the four rows cook through the MCP server with their numbers in Phase 2's first box. AC-1 and AC-2 are ticked. AC-3's cook time and GLB size pass but its streamed-package size does not, and its frame-time arm is unrun; AC-4's judge and Phase 2's consumer box are unrun.
 **Priority:** P2 — A request such as "European beech forest" cooks United States ground with one swapped tree species (AC-1 to AC-4 open), so the terrain MCP cannot give a regional forest that reads as real.
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
@@ -118,44 +118,58 @@ texture sets, and a cache of cooked worlds.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `terrain_generate` with `request: "european beech forest"` reports `decided.region` as `european-broadleaf`, grounds on that row's site with its attribution, and leaves "european" out of `unused`. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: The cooked world of that request scatters at least three canopy species, each with more than one seed. proof: a case in `packages/terrain/__tests__/terrain-mcp.spec.ts` that counts placements per species in the cooked `world.json` — Evidence: pending.
-- [ ] AC-3 [local]: A region world cooks in 30 s or less on the desktop, stays at or under 25 MiB, and its presented p95 frame time is not above the forest starter's on the same pose. proof: the cook result's time and bytes, and `measure-steady-state-fps` with paired arms on one code state — Evidence: pending.
-- [ ] AC-4 [local]: A fresh visual judge returns IMPROVEMENT for the European forest against today's output of the same request, with reference photos of a Central European beech forest. proof: `KIT=forest pnpm --filter strata-terrain-preview test:kit` on each arm, two headed WebGPU runs per arm, sheets and verdict on the PR — Evidence: pending.
+- [x] AC-1 [local]: `terrain_generate` with `request: "european beech forest"` reports `decided.region` as `european-broadleaf`, grounds on that row's site with its attribution, and leaves "european" out of `unused`. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts` — Evidence: 2026-11-13, `terrain_generate regions > cooks the region's own ground and its canopy community` cooks that request offline from the checked-in tiles and asserts the reply's `ground` is `{ source: "survey", name: "Hainich National Park, Thuringia, Germany", lat: 51.0833, lon: 10.4667, attribution: <EU-DEM + AWS Terrain Tiles> }`, `backdrop: { source: "none" }` and `biome: "european-broadleaf"`; `reads 'european beech forest' as the european-broadleaf region` asserts `decided.region` `{ value, source: { word: "european" } }` and `unused: []`. The same session's 221 focused tests (terrain-mcp, terrain-survey, arbor-species, biome-words, biome-spec, mcp-tool-schemas, terrain-architecture-census) pass, 0 failed.
+- [x] AC-2 [local]: The cooked world of that request scatters at least three canopy species, each with more than one seed. proof: a case in `packages/terrain/__tests__/terrain-mcp.spec.ts` that counts placements per species in the cooked `world.json` — Evidence: 2026-11-13, the same case groups `world.json`'s `cells[].runs[]` by `arbor-<preset>-<seed>` and asserts ≥3 presets with >1 seed each. The cooked world holds beech×2 900+900, oak×2 650+650, birch×2 450+450 (34 220 instances); `fir` is absent because the region's rows replaced the kit's authored canopy, and `fern-a` is present because the understorey stayed. `arbor-species.spec.ts` checks the same shape for all four rows from the data side.
+- [ ] AC-3 [local]: A region world cooks in 30 s or less on the desktop, stays at or under 25 MiB, and its presented p95 frame time is not above the forest starter's on the same pose. proof: the cook result's time and bytes, and `measure-steady-state-fps` with paired arms on one code state — Evidence: partially measured 2026-11-13 through the MCP server on this desktop (AMD Ryzen 9 5900X): cook 9.2 s (european-broadleaf), 8.7 s (boreal), 5.4 s (mediterranean), 6.7 s (pacific-northwest), all inside 30 s. The European `world.glb` is 20.8 MiB, inside 25 MiB, but its streamed world folder is 45.1 MiB, outside it — and today's forest starter is 32.4 MiB there, so the 25 MiB clause is not met by the starter either. The presented p95 frame time is unrun: no paired headed-WebGPU arm was measured in this session.
+- [ ] AC-4 [local]: A fresh visual judge returns IMPROVEMENT for the European forest against today's output of the same request, with reference photos of a Central European beech forest. proof: `KIT=forest pnpm --filter strata-terrain-preview test:kit` on each arm, two headed WebGPU runs per arm, sheets and verdict on the PR — Evidence: unrun. The capture lane is available on this host (`node packages/playtest/dist/runner/cli.js doctor --text`: chromium and a display are there), and the arms are one cook apart on one code state (`request: "beech forest"` still cooks today's one-swapped-tree world; `request: "european beech forest"` cooks the region world). What is missing is the capture, the fresh read-only judge and the sheets.
 
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
-| Region word in a terrain request | An agent calls the MCP tool `terrain_generate` → `parseGenerateRequest` → `cookKit` (fill the `file:line` after PRD-886 moves them) | Adds a table. The one-tree swap stays for a request with a tree word and no region word | AC-1, AC-2 |
+| Region word in a terrain request | An agent calls the MCP tool `terrain_generate` → `parseGenerateRequest` (`packages/terrain/src/request/generate-request.ts` `ecoregionHit`, and the `decided.region` record) → `cookKit` (`packages/terrain/src/cook/cook.ts`: the `newBiomeSpec` merge, the region ground, the replaced canopy) | Adds a table. The one-tree swap stays for a request with a tree word and no region word | AC-1, AC-2 |
 | Region world in a game | The scaffolded game in `examples/strata-terrain-preview/scripts/verify-consumer.mjs` loads the cooked world with no authoring package | None | Phase 2 box 2 |
 
 ## Decisions
 
 - 2026-11-13 (agent): a region is a data row that fills existing arguments, not a new cook path. `growArborSpecies` already bakes every `arbor:` row of a biome, so the smallest change is the table and the parser rule.
 - 2026-11-13 (agent): the 30 s cook budget in AC-3 is a proposal with no measurement behind it. Phase 2 box 1 measures the cook. The owner can change the number then.
+- 2026-11-13 (implementation): a region keeps its kit's authored recipe and replaces only its canopy, rather
+  than cooking a landform preset. A preset recipe authors no understorey, so that path would have left the
+  European wood with bare ground between trunks — the look AC-4 judges. So a row carries the kit's canopy
+  asset ids it replaces (`canopy`), the cook drops those `scatter` layers before they are baked, and
+  `scatterFoliage` places the region's rows on the starter's own understorey, stones, road, river and lake.
+- 2026-11-13 (implementation): a region cooks no far ring (`backdrop: "none"`). `MASSIFS` holds ranges per
+  landform, so `temperateMountains` would have stood Longs Peak, Colorado, behind a Thuringian wood.
+- 2026-11-13 (implementation): the four sites are 3 km crops at zoom 12, not 6 km. The relief bar
+  `isForestFloor` applies scales with the side, and a 3 km crop decodes to a tighter range at about half
+  the fixture weight (20 tiles, 1.7 MiB, for all four rows at both zooms).
+- 2026-11-13 (implementation): the Pacific Northwest row is the Humptulips valley of the Olympic National
+  Forest, not the Hoh. The Hoh's 6 km crop spans 151-1 281 m at a 38.9-degree 90th-percentile slope, and
+  its 512 m crop is 2.2 % hydro-flattened water: not a forest floor by `isForestFloor`. Phase 1's own
+  instruction is to replace a site whose crop is not one.
 
 ## Execution Phases
 
 #### Phase 1: A region word decides the site and the plants
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-11-13). `src/request/ecoregions.ts` holds the four rows; `parseGenerateRequest` resolves a region word (a phrase like "pacific northwest" too), records `decided.region`, grounds the request on the row's site unless `ground` is given, sets no far ring, and passes the row's `IBiomeSpec` overrides to the cook, which merges them onto the kit's file with `newBiomeSpec` and replaces the kit's authored canopy with them.
 **Files:** `packages/terrain/src/request/ecoregions.ts` (new), the request parser, `packages/terrain/src/request/generate-request.ts` (the `decided.region` record) and `packages/terrain/src/mcp/tools.ts` (the tool description), `packages/terrain/__tests__/terrain-mcp.spec.ts`, `packages/terrain/__tests__/terrain-survey.spec.ts`, `packages/terrain/__tests__/arbor-species.spec.ts`, `packages/create-threenative/terrain-mcp-tools.json` (regenerated by `scripts/capture-terrain-mcp-tools.ts`).
 **Implementation:** Red first: a spec case per row that fails today because the word is in `unused`. Add the table and the parser rule. Fetch each site once, record the measured range, and keep a fixture tile for the spec so the test needs no network.
 **Verification:** the three specs above and `pnpm exec vitest run scripts/__tests__/mcp-tool-schemas.spec.ts`.
 
-- [ ] Each of the four rows parses from its words to its site, kit and overrides, and an explicit argument wins over the row. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts`
-- [ ] Each row's site decodes to its recorded range, and each species a row names is an Arbor preset. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts packages/terrain/__tests__/arbor-species.spec.ts`
+- [x] Each of the four rows parses from its words to its site, kit and overrides, and an explicit argument wins over the row. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts` — Evidence: 2026-11-13, the `terrain_generate regions` describe passes: `reads '<request>' as the <row> region` per row (including `cascadia` and the two-word phrase), `stays the quick path for a tree word with no region`, `lets an explicit kit or ground win over the row`, `moves a tree word to the first canopy row and keeps the rest of the community`, and the offline cook case.
+- [x] Each row's site decodes to its recorded range, and each species a row names is an Arbor preset. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts packages/terrain/__tests__/arbor-species.spec.ts` — Evidence: 2026-11-13, `the ecoregion rows` decodes all four sites from 20 checked-in terrarium tiles (`packages/terrain/__tests__/fixtures/terrarium/`, 1.7 MiB of them) to the ranges their rows record (309-496 m, 158-342, 283-434, 45-221), proves each row's own 512 m crop is a forest floor, and proves `forestFloor` returns the row's survey with its attribution; `plants each region a mix of presets` proves every species a row names is one `vegetationPresets()` bakes, ≥3 presets each at >1 seed, every `canopy` id is in the kit's `assets.json`, and the merged biome validates.
 
 #### Phase 2: The region world cooks and plays
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — the four rows cook through the real MCP server and their numbers are below. The scaffolder consumer proof is unrun.
 **Files:** `packages/terrain/src/cook/cook.ts` only if a measured cost needs a change, `examples/strata-terrain-preview/scripts/verify-consumer.mjs` (one more request in its MCP stage), `packages/create-threenative/agent-docs/references/terrain-authoring.md` (the region words), `packages/terrain/docs/architecture/architecture.md` (the routing row for region words).
 **Implementation:** Cook the four rows through the real MCP server. Record time, bytes and placements per species. If a row is over budget, reduce its species or seeds in the row. Do not add a cache.
 **Verification:** `pnpm --filter strata-terrain-preview test:consumer`, and a playtest of the scaffolded game from the spawn that reads `TN_FRAME_BUDGET` and `TN_SCENE_WARNING`.
 
-- [ ] The four rows cook through the MCP server, and each result records its time, bytes and placements per species. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts`, with the four results in this box
-- [ ] A scaffolded game outside the workspace loads the European world and plays from the spawn with no `TN_SCENE_WARNING`. proof: `pnpm --filter strata-terrain-preview test:consumer`
+- [x] The four rows cook through the MCP server, and each result records its time, bytes and placements per species. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts`, with the four results in this box — Evidence: 2026-11-13, a stdio `tools/call` to `dist/mcp/server.js` from a temp game project with the starter assets linked and the checked-in tiles as the cache, AMD Ryzen 9 5900X. `european beech forest` → european-broadleaf, Hainich National Park, 9 193 ms cook (10 020 ms tool call), world.glb 20.8 MiB, world folder 45.1 MiB, 34 220 instances; canopy arbor-beech-11 900, beech-12 900, oak-13 650, oak-14 650, birch-15 450, birch-16 450. `boreal forest` → Oulanka, 8 678 ms, 19.6 / 42.7 MiB, 34 220 instances; spruce-21/22 1 000 each, birch-23/24 600 each, aspen-25/26 400 each. `a mediterranean hills` → Val d'Orcia, 5 360 ms, 11.9 / 29.6 MiB, 2 300 instances; olive-31/32 500 each, cypress-33/34 350 each, oak-35/36 300 each. `a pacific northwest forest` → Humptulips valley, 6 739 ms, 18.2 / 40.3 MiB, 33 820 instances; douglasfir-41/42 900 each, redcedar-43/44 550 each, bigleafmaple-45/46 350 each. Every reply reports `source: "cooked"` and `unused: []`.
+- [ ] A scaffolded game outside the workspace loads the European world and plays from the spawn with no `TN_SCENE_WARNING`. proof: `pnpm --filter strata-terrain-preview test:consumer` — Evidence: unrun.
 
 #### Phase 3: The European forest reads as one
 
@@ -164,4 +178,4 @@ texture sets, and a cache of cooked worlds.
 **Implementation:** Set the acceptance criteria for the judge before the capture: canopy mix visible, no cloned silhouettes in one frame, understory present at walking height. Capture the before arm (today's output of the same request) and the after arm on the same pose. Tune the row only. A failure caused by the surface or the understory art goes to PRD-855 or PRD-870 as a note, not into this PRD.
 **Verification:** the visual judge that the root `AGENTS.md` describes, on headed WebGPU with `adapter.info` checked.
 
-- [ ] The judge's verdict for the European forest is IMPROVEMENT, with both sheets on the PR. proof: the PR comment that carries the sheets and the verdict
+- [ ] The judge's verdict for the European forest is IMPROVEMENT, with both sheets on the PR. proof: the PR comment that carries the sheets and the verdict — Evidence: unrun; the pair is one request apart on one code state (see AC-4).

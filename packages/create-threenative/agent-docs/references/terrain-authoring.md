@@ -26,6 +26,18 @@ Then `await addForest(ctx, player)` in `Scene.load` and `ctx.add(forestDaylight(
 `COLLIDERS` in `world.ts` for what stops the player, `surface.json` and `sky.ts` for the look, and
 re-run the bake. The bake writes the engine's `WorldCells` package (`bakeWorldPackage`).
 
+## Name a region, not just a biome
+
+The terrain MCP's `terrain_generate` reads a region word and cooks that region's own world: its real
+ground from a survey, and its plant community — several species, each baked at more than one seed —
+on the starter's own surface, understorey, road and water. The words today are `european` and
+`europe` (a Central European beech wood), `boreal`, `taiga`, `nordic` and `scandinavian`,
+`mediterranean` and `tuscan`, and `pacific northwest` and `cascadia`. The reply's `decided.region`
+names the row behind it, `decided.ground` the survey it stands on with the attribution its source
+requires, and `unused` the words nothing answered to. A tree word in a region request moves that
+species to the front of the canopy and leaves the rest; `kit`, `biome` and `ground` still win over
+the row.
+
 ## Generate once, play the bake
 
 Run this in an authoring/build script, outside the game loop:

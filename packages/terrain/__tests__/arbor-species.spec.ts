@@ -6,6 +6,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { cookKit } from "../src/cook/cook.js";
 import { TERRAIN_TOOLS, newBiomeSpec, parseGenerateRequest } from "../src/mcp/tools.js";
 import { ARBOR_TREE_IDS, parseArborSpecies } from "../src/population/arbor-species.js";
+import { ECOREGION_ROWS } from "../src/request/ecoregions.js";
 import { TREE_WORD_ROWS } from "../src/request/request-words.js";
 
 async function project(options: { vegetation: boolean }) {
@@ -156,6 +157,38 @@ describe("Arbor species in a terrain cook", () => {
       await remove();
     }
   }, 240_000);
+
+  it("plants each region a mix of presets, from the kit's own canopy", async () => {
+    const trees = vegetationPresets()
+      .filter((preset) => preset.kind === "tree")
+      .map((preset) => preset.id);
+    for (const row of ECOREGION_ROWS) {
+      const foliage = row.overrides.foliage ?? [];
+      // More than one species, each at more than one seed: a community, not one cloned tree.
+      const presets = new Map<string, number>();
+      for (const canopy of foliage) {
+        const species = parseArborSpecies(canopy.species);
+        expect(species, `${row.id}: ${canopy.species}`).toBeDefined();
+        expect(trees, `${row.id}: ${canopy.species}`).toContain(species?.preset);
+        const preset = species?.preset as string;
+        presets.set(preset, (presets.get(preset) ?? 0) + 1);
+      }
+      expect(presets.size, row.id).toBeGreaterThanOrEqual(3);
+      for (const [preset, seeds] of presets)
+        expect(seeds, `${row.id}: ${preset}`).toBeGreaterThan(1);
+      // The rows it replaces are the kit's own art, and the merged biome is a valid one.
+      const assets = JSON.parse(
+        await readFile(new URL(`../starter/${row.kit}/assets.json`, import.meta.url), "utf8"),
+      ) as Record<string, unknown>;
+      for (const id of row.canopy) expect(Object.keys(assets), `${row.id}: ${id}`).toContain(id);
+      const base = JSON.parse(
+        await readFile(new URL(`../starter/${row.kit}/biome.data.json`, import.meta.url), "utf8"),
+      ) as Record<string, unknown>;
+      expect(() =>
+        newBiomeSpec(base, row.id, row.overrides as Record<string, unknown>),
+      ).not.toThrow();
+    }
+  });
 
   it("keeps the request words, the schema text and the package's presets in step", () => {
     const trees = vegetationPresets()

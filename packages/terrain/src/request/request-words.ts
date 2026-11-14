@@ -2,6 +2,7 @@ import type { IBiomeWaterBody } from "../biome/biome.js";
 import type { TerrainKit } from "../biome/kits.js";
 import type { LandformKind } from "../ground/presets.js";
 import { BIOME_WORD_ROWS } from "./biome-words.js";
+import { ECOREGION_WORDS } from "./ecoregions.js";
 
 /**
  * The words a request may use beyond the biome's own: the landform it asks for, the water it asks
@@ -188,5 +189,6 @@ export const REQUEST_KNOWN_WORDS: ReadonlySet<string> = new Set([
     ...FEATURE_WORD_ROWS,
     ...TREE_WORD_ROWS,
   ].flatMap(([, names]) => names),
+  ...ECOREGION_WORDS,
   ...BACKDROP_WORDS,
 ]);

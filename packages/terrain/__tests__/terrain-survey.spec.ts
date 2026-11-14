@@ -8,12 +8,19 @@ import { cookKit } from "../src/cook/cook.js";
 import { encodeHeightPNG } from "../src/core/io.js";
 import { terrainStats } from "../src/core/stats.js";
 import { Terrain } from "../src/core/terrain.js";
-import { flatShare, isForestFloor, massifBearing, woodedFoot } from "../src/ground/ground.js";
+import {
+  flatShare,
+  forestFloor,
+  isForestFloor,
+  massifBearing,
+  woodedFoot,
+} from "../src/ground/ground.js";
 import { placeMassif } from "../src/ground/massif.js";
 import { LANDFORMS, type LandformKind } from "../src/ground/presets.js";
 import { surveyHeights } from "../src/ground/survey.js";
 import { MASSIFS, SURVEYS, locationSurvey } from "../src/ground/surveys.js";
 import { TERRAIN_TOOLS, parseGenerateInput, parseGenerateRequest } from "../src/mcp/tools.js";
+import { ECOREGION_ROWS } from "../src/request/ecoregions.js";
 
 /** The checked-in terrarium tiles, used as the whole tile cache these tests read. */
 const FIXTURE_CACHE = new URL("./fixtures/terrarium/", import.meta.url).pathname;
@@ -300,6 +307,67 @@ describe("the ground argument", () => {
       properties: Record<string, { anyOf?: readonly unknown[] }>;
     };
     expect(schema.properties.ground?.anyOf).toHaveLength(3);
+  });
+});
+
+// PRD-887: a region is a real place. Each row records the range of its own crop, and the floor the
+// cook cuts from it is that row's survey, with the attribution its source requires.
+describe("the ecoregion rows", () => {
+  beforeEach(() => {
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", FIXTURE_CACHE);
+    vi.stubGlobal("fetch", OFFLINE);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ["european-broadleaf", 309, 496],
+    ["boreal", 158, 342],
+    ["mediterranean", 283, 434],
+    ["pacific-northwest", 45, 221],
+  ])("decodes %s's site to the range its row records", async (id, min, max) => {
+    const row = ECOREGION_ROWS.find((entry) => entry.id === id);
+    expect(row, id).toBeDefined();
+    const survey = await surveyHeights((row as (typeof ECOREGION_ROWS)[number]).site, 257);
+    expect(survey.min).toBeCloseTo(min, 0);
+    expect(survey.max).toBeCloseTo(max, 0);
+  });
+
+  it("cuts every row's floor at the world's own square, and it is a forest floor", async () => {
+    for (const row of ECOREGION_ROWS) {
+      // The crop the cook cuts: the world's side at the finest zoom, inside the row's own extent.
+      const crop = await surveyHeights({ ...row.site, extentMeters: 512, zoom: 15 }, 257);
+      const stats = terrainStats(crop.values, 257, 512);
+      expect(
+        isForestFloor(crop.max - crop.min, stats.slopeP90, 512, flatShare(crop.values, 257)),
+        row.id,
+      ).toBe(true);
+    }
+  });
+
+  it("grounds a region on its row's own survey and names its source", async () => {
+    for (const row of ECOREGION_ROWS) {
+      const document = {
+        config: { resolution: 257, size: 512 },
+        layers: [{ id: "hills", type: "noise", params: { amplitude: 30, scale: 100 } }],
+      };
+      const floor = await forestFloor(
+        structuredClone(document) as Parameters<typeof forestFloor>[0],
+        row.site,
+        undefined,
+      );
+      expect(floor.ground, row.id).toEqual({
+        source: "survey",
+        name: row.site.name,
+        lat: row.site.lat,
+        lon: row.site.lon,
+        attribution: row.site.attribution,
+      });
+      // The attribution the data source requires rides with the cooked world.
+      expect(floor.readme, row.id).toContain(row.site.attribution);
+    }
   });
 });
 

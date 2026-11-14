@@ -4,6 +4,7 @@ import { LANDFORMS, type LandformKind } from "../ground/presets.js";
 import { type IGroundChoice, type IGroundRequest, MASSIFS } from "../ground/surveys.js";
 import { closedRecord, isRecord, parseGround, relativeDirectory } from "./args.js";
 import { BIOME_WORD_ROWS, biomeWordList } from "./biome-words.js";
+import { ECOREGION_ROWS, type IBiomeOverrides, type IEcoregionRow } from "./ecoregions.js";
 import {
   BACKDROP_WORDS,
   BIOME_OWN,
@@ -42,6 +43,8 @@ export interface IGenerateInput {
   backdropRange?: LandformKind;
   /** `arbor:<preset>[@seed]`, drawn in place of the kit's tree; a request's tree word sets it. */
   treeSpecies?: string;
+  /** The ecoregion a request word named: its site grounds the world and its rows plant it. */
+  region?: IEcoregionRow;
   out?: string;
 }
 
@@ -67,6 +70,8 @@ export interface IGenerateDecided {
   readonly backdrop: IChoice<"massif" | "none">;
   /** The Arbor species that replaces the kit's tree (`arbor:<preset>`), or null for the kit's own. */
   readonly tree: IChoice<string | null>;
+  /** The ecoregion a word named (`european-broadleaf`), or null when the request names none. */
+  readonly region: IChoice<string | null>;
 }
 
 /** A parsed request: the cook's own input, and the record of what its words and arguments decided. */
@@ -160,6 +165,43 @@ function rowHit<ROW>(
   return undefined;
 }
 
+/**
+ * The ecoregion a request names, in table order. A row's word matches the request's own word, or, for
+ * a phrase like "pacific northwest", the words a request writes it in: padding both sides keeps
+ * "pacific" alone from naming the row.
+ */
+function ecoregionHit(
+  words: readonly string[],
+): { readonly row: IEcoregionRow; readonly word: string } | undefined {
+  const request = ` ${words.join(" ")} `;
+  for (const row of ECOREGION_ROWS) {
+    const word = row.words.find((candidate) => request.includes(` ${candidate} `));
+    if (word !== undefined) return { row, word };
+  }
+  return undefined;
+}
+
+/**
+ * A tree word in a region request moves that species to the first canopy row and leaves the rest: the
+ * region's community is what grows, not one species swapped for the kit's tree. The word names a
+ * preset, so every seed of it moves, and a species the region does not grow takes the first row's own
+ * density, spacing and slope, so naming one is never a word that did nothing.
+ */
+function canopyFirst(overrides: IBiomeOverrides, preset: string): IBiomeOverrides {
+  const foliage = overrides.foliage;
+  const first = foliage?.[0];
+  if (foliage === undefined || first === undefined) return overrides;
+  const is = (row: { readonly species: string }) => row.species.split("@")[0] === `arbor:${preset}`;
+  const named = foliage.filter(is);
+  return {
+    ...overrides,
+    foliage: [
+      ...(named.length > 0 ? named : [{ ...first, species: `arbor:${preset}` }]),
+      ...foliage.filter((row) => !is(row)),
+    ],
+  };
+}
+
 /** Whether the biome already declares this body, kind and measurement alike. */
 function declaredWater(rows: readonly IBiomeWaterBody[], row: IBiomeWaterBody): boolean {
   return rows.some(
@@ -191,6 +233,9 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   const words = typeof request === "string" ? request.toLowerCase().split(/[^a-z]+/u) : [];
   const { kit: biomeKit, spec } = parseBiomeArgument(args.biome);
   const biomeWord = rowHit(BIOME_WORD_ROWS, words);
+  // A region names the real ground and the plant community behind the request's world; its row's kit
+  // is the fallback, so a request that names a starter keeps that starter's own surface.
+  const regionHit = spec === undefined ? ecoregionHit(words) : undefined;
   const arguedKit = args.kit ?? biomeKit;
   // A request that names no biome still names a world: its sea or its shape picks the starter whose
   // surface suits it, and with neither the forest cooks. `decided.biome` says which word chose it.
@@ -209,7 +254,9 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   const kit =
     arguedKit ??
     // A spec carries no appearance, so it cooks with the forest starter's surface and assets.
-    (spec === undefined ? (biomeWord?.row ?? inferred?.kit ?? DEFAULT_BIOME) : "forest");
+    (spec === undefined
+      ? (biomeWord?.row ?? regionHit?.row.kit ?? inferred?.kit ?? DEFAULT_BIOME)
+      : "forest");
   if (typeof kit !== "string" || !(TERRAIN_KITS as readonly string[]).includes(kit)) {
     throw new TypeError(
       `terrain_generate: kit must be one of ${TERRAIN_KITS.join(", ")}. Words a request may use: ${biomeWordList()}.`,
@@ -301,6 +348,10 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   if (groundArgument !== undefined) {
     parsed.ground = groundArgument;
     ground = { value: groundArgument, source: "argument" };
+  } else if (regionHit !== undefined) {
+    // The region decides the place: its site is the survey the world is cut from, at the world's own
+    // square, so the row's range is what the ground is measured against.
+    ground = { value: "survey", source: { word: regionHit.word } };
   } else {
     ground = { value: presetKind === undefined ? "starter" : "survey", source: "default" };
   }
@@ -312,6 +363,11 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
       throw new TypeError('terrain_generate: backdrop must be "none" when given.');
     parsed.backdrop = "none";
     backdrop = { value: "none", source: "argument" };
+  } else if (regionHit !== undefined) {
+    // A region is the whole locale: its ring would have to come from another range's massifs, which
+    // is another country standing past a region's square.
+    parsed.backdrop = "none";
+    backdrop = { value: "none", source: { word: regionHit.word } };
   } else {
     const surveyed =
       ground.value === "survey" || (typeof ground.value === "object" && "location" in ground.value);
@@ -323,8 +379,17 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   const treeWord = spec === undefined ? rowHit(TREE_WORD_ROWS, words) : undefined;
   let tree: IChoice<string | null> = { value: null, source: "default" };
   if (treeWord !== undefined) {
-    parsed.treeSpecies = `arbor:${treeWord.row}`;
-    tree = { value: parsed.treeSpecies, source: { word: treeWord.word } };
+    // In a region the word moves that species to the first canopy row and the community stays, so the
+    // kit's one tree art is not swapped at all.
+    if (regionHit === undefined) parsed.treeSpecies = `arbor:${treeWord.row}`;
+    tree = { value: `arbor:${treeWord.row}`, source: { word: treeWord.word } };
+  }
+  if (regionHit !== undefined) {
+    const row = regionHit.row;
+    parsed.region = {
+      ...row,
+      overrides: treeWord === undefined ? row.overrides : canopyFirst(row.overrides, treeWord.row),
+    };
   }
   if (seed !== undefined) {
     if (typeof seed !== "number" || !Number.isSafeInteger(seed)) {
@@ -336,6 +401,7 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
   let biomeSource: IRequestSource = "default";
   if (arguedKit !== undefined) biomeSource = "argument";
   else if (biomeWord !== undefined) biomeSource = { word: biomeWord.word };
+  else if (regionHit !== undefined) biomeSource = { word: regionHit.word };
   else if (inferred !== undefined) biomeSource = { word: inferred.word };
   return {
     input: parsed,
@@ -348,6 +414,10 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
       ground,
       backdrop,
       tree,
+      region:
+        regionHit === undefined
+          ? { value: null, source: "default" }
+          : { value: regionHit.row.id, source: { word: regionHit.word } },
     },
     // What is left is what the tool could not act on: a retry names a word, not a guess.
     unused: [...new Set(words)].filter(

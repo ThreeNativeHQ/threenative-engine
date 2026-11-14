@@ -59,16 +59,16 @@ flowchart TD
 
 | Stage | Function | Reads | Changes | Folder |
 | --- | --- | --- | --- | --- |
-| 1. Biome spec | `validateBiome` (`packages/terrain/src/biome/biome.ts`) | `starter/<kit>/biome.data.json`, or the request's own spec; request `water` rows replace the file's | nothing yet; a bad spec fails here | `biome/` |
+| 1. Biome spec | `validateBiome` (`packages/terrain/src/biome/biome.ts`), `newBiomeSpec` (`packages/terrain/src/mcp/tools.ts`) | `starter/<kit>/biome.data.json`, the request's own spec, or a region's overrides on that file; request `water` rows replace the file's | nothing yet; a bad spec fails here | `biome/` |
 | 2. Recipe | `landform` (`packages/terrain/src/ground/presets.ts`) | the kit's `recipe.json` when no landform is named | the layer list; `seed` and `sizeMeters` overrides go into `config` | `ground/` |
 | 3. Water rows | `applyWaterRows` | request `water` rows | resizes the recipe's own river and lake layers; adds ocean layers; returns rows with no layer | `water/` |
-| 4. Ground | `applyGround`, `readGroundHeightmap`, `forestFloor` (`packages/terrain/src/ground/ground.ts`) | a survey (`packages/terrain/src/ground/survey.ts`) or a heightmap file | the base height layer | `ground/` |
+| 4. Ground | `applyGround`, `readGroundHeightmap`, `forestFloor` (`packages/terrain/src/ground/ground.ts`) | a survey (`packages/terrain/src/ground/survey.ts`), a heightmap file, or a region row's site, which `cookInto` takes through `forestFloor` at the world's own square | the base height layer | `ground/` |
 | 5. Far ring | `farRing`, `massifBearing` (`packages/terrain/src/ground/ground.ts`; `packages/terrain/src/ground/massif.ts` holds the placement) | the survey row and the camera offset | nothing in the recipe; returns the `ring.json` bytes | `ground/` |
 | 6. Tree species | `growArborRows`, `growArborSpecies` (`packages/terrain/src/population/arbor-species.ts`) | `assets.json` `arbor` rows, `treeSpecies` | adds baked Arbor GLBs to the asset table | `population/` |
 | 7. Features and coast | `carveFeatures`, `shapeCoast` (`packages/terrain/src/water/stages.ts`) | request `features` (canyon, fjord), the sea level | adds mesa stamps before the first erosion | `water/` |
 | 8. Unrouted water | `placeLakes`, `routeRivers` (`packages/terrain/src/water/stages.ts`) | rows that step 3 returned | adds lake and river layers on the finished drainage | `water/` |
 | 9. Evaluate | `Terrain.fromJSON(...).evaluate()` (`packages/terrain/src/core/terrain.ts`) | the edited recipe | produces `ITerrainState`: heights, splat, waters, rivers | `core/` |
-| 10. Population | `scatterFoliage` (`packages/terrain/src/population/foliage.ts`), `applyPlacementOverrides` (`packages/terrain/src/population/placements.ts`) | the biome's foliage rows and the asset table | fills `state.instances` | `population/` |
+| 10. Population | `scatterFoliage` (`packages/terrain/src/population/foliage.ts`), `applyPlacementOverrides` (`packages/terrain/src/population/placements.ts`) | the biome's foliage rows and the asset table, with a region's own rows in place of the kit's authored canopy | fills `state.instances` | `population/` |
 | 11. World cook | `cookTerrainWorld` (`packages/assets/src/world/terrain-world.ts`) | the state, the species and the surface layers | writes `world.glb`, `world.json` and the binary files | stays in `@threenative/assets` |
 | 12. Side files | `cookInto` (`packages/terrain/src/cook/cook.ts`) | the state and the ring | writes `README.md`, `ring.json`, `water.json`, `recipe.json` | `cook/` |
 | 13. Load snippet | `worldReply`, `grassSnippet` (`packages/terrain/src/cook/reply.ts`) | the output path and the decisions | returns the game source the reply carries | `cook/` |

@@ -22,12 +22,12 @@ export interface ISurveyRow {
 }
 
 /** Where every survey comes from, at every zoom: one tile set, one credit. */
-const TILES = "AWS Terrain Tiles (github.com/tilezen/joerd, Mapzen terrain tiles).";
+export const TILES = "AWS Terrain Tiles (github.com/tilezen/joerd, Mapzen terrain tiles).";
 
 // The per-source statements `tilezen/joerd` asks for, verbatim (docs/attribution.md).
-const USGS_3DEP =
+export const USGS_3DEP =
   "United States 3DEP (formerly NED) terrain data courtesy of the U.S. Geological Survey.";
-const EU_DEM =
+export const EU_DEM =
   "Produced using Copernicus data and information funded by the European Union - EU-DEM layers.";
 const SRTM = "SRTM data courtesy of the U.S. Geological Survey.";
 
