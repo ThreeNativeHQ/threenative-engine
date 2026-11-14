@@ -5,7 +5,7 @@
 **Complexity:** 5 (MEDIUM); risk override: both files decide what the world draws and casts, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
 **Depends on:** None. Start after the forest lane commits its open edits to both files (`git status` on 2026-11-04 shows them modified).
-**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](strata-refactoring/README.md)
 
 ## Context
 

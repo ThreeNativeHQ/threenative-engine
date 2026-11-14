@@ -5,7 +5,7 @@
 **Complexity:** 6 (MEDIUM); risk override: water look and swim physics must not change, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md) (the `IWaterBody` rows)
-**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](strata-refactoring/README.md)
 
 ## Context
 

@@ -10,7 +10,7 @@ example's `vista` cover measurement read 0 on `35ece77df`; `1ffce6548` repaired 
 **Complexity:** 5 (MEDIUM); risk override: the horizon reaches the screen, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md) (ring and band values in the biome row); coordinates with PRD-790 Phase 2 (tiles meet the ring)
-**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](strata-refactoring/README.md)
 
 ## Context
 

@@ -13,7 +13,7 @@ and the terrain half stops on an engine bundle bug fixed in `4103d2508` that wai
 **Complexity:** 6 (MEDIUM); risk override: placements change what reaches the screen, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md)
-**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](strata-refactoring/README.md)
 
 ## Context
 

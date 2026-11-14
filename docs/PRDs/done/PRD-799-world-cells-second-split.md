@@ -9,7 +9,7 @@ bug fixed in `4103d2508` that waits for a Wasm build.
 **Complexity:** 5 (MEDIUM); risk override: complex async state
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-595](PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md) AC-3 (walk playtests after the first split). Start after the forest lane commits its open edits to `world-cells.ts` and `world-cell-data.ts`.
-**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](strata-refactoring/README.md)
 
 ## Context
 

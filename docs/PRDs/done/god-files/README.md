@@ -4,7 +4,7 @@
 [`done/god-files/`](../../done/god-files/)).
 
 **Goal:** no source file is a god file, and none can grow back into one. The world files that Strata
-depends on are split in [strata-refactoring](../../../../packages/terrain/docs/PRDs/strata-refactoring/README.md) (PRD-797 to PRD-799).
+depends on are split in [strata-refactoring](../strata-refactoring/README.md) (PRD-797 to PRD-799).
 
 ## Evidence that files regrow
 

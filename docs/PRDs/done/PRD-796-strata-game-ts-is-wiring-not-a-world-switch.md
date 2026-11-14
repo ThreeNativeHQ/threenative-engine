@@ -5,7 +5,7 @@
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md)
-**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](strata-refactoring/README.md)
 
 ## Context
 

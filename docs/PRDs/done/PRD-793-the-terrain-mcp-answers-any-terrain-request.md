@@ -9,7 +9,7 @@ engine. AC-4's fresh judge passed (verdict text in the AC-4 box; no judge report
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md), [PRD-792](PRD-792-one-bake-for-every-biome.md)
-**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](strata-refactoring/README.md)
 
 ## Context
 
