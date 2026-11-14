@@ -191,8 +191,8 @@ const LANDSCAPE_PRO = "landscape-pro/fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Mo
  * The forest floor's Poly Haven CC0 scans (`packages/terrain/starter-assets`), as [GLB, metres] per
  * variant: dead trunks, a stump and an upturned root plate for the deadfall, dry branches for the
  * litter, weeds and moss for the ground mounds, shrubs and a nettle where the spruce saplings stood,
- * and the kit's own fern (owner, 2026-11-14: "not enough ground/debris/trunks vegetation on the
- * floor"). Metres are each scan's own size, near enough. `?floor=fab` is the named override: the
+ * celandine, dandelion and periwinkle where the meadow flowers stood, and the kit's own fern
+ * (owner, 2026-11-14: "not enough ground/debris/trunks vegetation on the floor"). Metres are each scan's own size, near enough. `?floor=fab` is the named override: the
  * licensed set in `TEMPERATE_PATHS` and Landscape Pro's deadfall.
  */
 const POLYHAVEN_FLOOR: Record<string, readonly (readonly [string, number])[]> = {
@@ -220,6 +220,18 @@ const POLYHAVEN_FLOOR: Record<string, readonly (readonly [string, number])[]> = 
     ["shrub_02/shrub_02_b.glb", 1.5],
     ["shrub_02/shrub_02_c.glb", 1.3],
     ["nettle_plant/nettle_plant_tall_a.glb", 0.5],
+  ],
+  poppy: [
+    ["celandine_01/celandine_01_a.glb", 0.25],
+    ["celandine_01/celandine_01_b.glb", 0.2],
+    ["dandelion_01/dandelion_01_a.glb", 0.22],
+    ["celandine_01/celandine_01_e.glb", 0.18],
+  ],
+  bloom: [
+    ["periwinkle_plant/periwinkle_plant_02.glb", 0.4],
+    ["dandelion_01/dandelion_01_b.glb", 0.16],
+    ["celandine_01/celandine_01_d.glb", 0.2],
+    ["periwinkle_plant/periwinkle_plant_05.glb", 0.22],
   ],
   fern: [
     ["fern_02/fern-a.glb", 0.55],

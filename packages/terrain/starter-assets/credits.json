@@ -856,6 +856,27 @@
         "note": "nettle_plant/nettle_plant_tall_a.glb (500,528 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's sapling slot."
       },
       {
+        "asset": "Celandine 01",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/celandine_01",
+        "note": "celandine_01/celandine_01_a.glb (385,128 bytes), celandine_01/celandine_01_b.glb (384,416 bytes), celandine_01/celandine_01_d.glb (463,060 bytes), celandine_01/celandine_01_e.glb (379,760 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 2,500 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's meadow flowers (poppy, bloom)."
+      },
+      {
+        "asset": "Dandelion 01",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/dandelion_01",
+        "note": "dandelion_01/dandelion_01_a.glb (537,372 bytes), dandelion_01/dandelion_01_b.glb (539,164 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 2,500 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's meadow flowers (poppy, bloom)."
+      },
+      {
+        "asset": "Periwinkle Plant",
+        "authors": "Amal Kumar",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/periwinkle_plant",
+        "note": "periwinkle_plant/periwinkle_plant_02.glb (461,556 bytes), periwinkle_plant/periwinkle_plant_05.glb (421,812 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 2,500 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's meadow flowers (poppy, bloom)."
+      },
+      {
         "asset": "Rock Moss Set 01",
         "authors": "Rob Tuytel, Rico Cilliers",
         "license": "CC0",
