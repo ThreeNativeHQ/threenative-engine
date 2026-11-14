@@ -147,13 +147,13 @@ export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
     kit: "forest",
     site: {
       name: "Oulanka National Park, Kuusamo, Finland",
-      lat: 66.3667,
+      lat: 66.36221,
       lon: 29.3167,
       extentMeters: 3_000,
       attribution: `${COPERNICUS} ${TILES}`,
-      // measured: 144..325 m over its 3 km, and 158..206 m at 512 m (a spruce stand on a river's
-      // bank: 25.8 degrees at the 90th percentile, and 8.5 % of it hydro-flattened water, so the
-      // 512 m crop fails the floor gate at this site until PRD-885 Phase 3 retunes the gate or the site)
+      // measured: 144..325 m over its 3 km, and 177..253 m at 512 m (a spruce stand: 15.4 degrees at
+      // the 90th percentile, 0.6 % hydro-flattened water). Moved 500 m south of the old centre
+      // (66.3667, 29.3167), whose 512 m crop was 8.5 % flattened river and lake water on Mapterhorn data.
     },
     canopy: ["fir", "fir-c"],
     overrides: {
@@ -203,13 +203,13 @@ export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
     kit: "forest",
     site: {
       name: "Humptulips valley, Olympic National Forest, Washington",
-      lat: 47.2,
-      lon: -123.9,
+      lat: 47.19775,
+      lon: -123.88678,
       extentMeters: 3_000,
       attribution: `${USGS_3DEP} ${TILES}`,
-      // measured: 46..205 m over its 3 km, and 77..151 m at 512 m (a Douglas-fir valley floor: 31.0
-      // degrees at the 90th percentile, over the 28 the floor gate accepts, until PRD-885 Phase 3
-      // retunes the gate or the site)
+      // measured: 52..212 m over its 3 km, and 96..163 m at 512 m (a Douglas-fir valley floor: 25.9
+      // degrees at the 90th percentile, under the 28 the floor accepts). Moved 1 km north-east of the
+      // old centre (47.2, -123.9), whose 512 m crop read 31.0 degrees on Mapterhorn's lidar.
     },
     canopy: ["fir", "fir-c"],
     overrides: {

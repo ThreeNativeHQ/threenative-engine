@@ -397,9 +397,9 @@ describe("the ecoregion rows", () => {
 
   it.each([
     ["european-broadleaf", 304.6, 483],
-    ["boreal", 143.5, 324.8],
+    ["boreal", 143.5, 324.9],
     ["mediterranean", 276.2, 436],
-    ["pacific-northwest", 46, 205.4],
+    ["pacific-northwest", 52.1, 211.7],
   ])("decodes %s's site to the range its row records", async (id, min, max) => {
     const row = ECOREGION_ROWS.find((entry) => entry.id === id);
     expect(row, id).toBeDefined();
@@ -408,29 +408,18 @@ describe("the ecoregion rows", () => {
     expect(survey.max).toBeCloseTo(max, 0);
   });
 
-  // The lidar these sites now read is finer than the AWS tiles the floor gate was tuned on. At the
-  // world's own square, boreal's river reads as 8.5 % hydro-flattened water and the Pacific
-  // Northwest valley as a 31 degree 90th-percentile slope, so both centres fail the gate until
-  // PRD-885 Phase 3 retunes the gate or moves the site. The cook still takes the centre as the last spot.
-  it("cuts every row's floor at the world's own square, and says which are forest floors", async () => {
-    const floors: Record<string, boolean> = {};
+  // PRD-887: every region's own ground is a forest floor at the world's own square, on Mapterhorn's
+  // finer data too (the boreal and Pacific Northwest sites moved to ground that passes the gate).
+  it("cuts every row's floor at the world's own square, and it is a forest floor", async () => {
     for (const row of ECOREGION_ROWS) {
       // The crop the cook cuts: the world's side at the finest zoom, inside the row's own extent.
       const crop = await surveyHeights({ ...row.site, extentMeters: 512 }, 257);
       const stats = terrainStats(crop.values, 257, 512);
-      floors[row.id] = isForestFloor(
-        crop.max - crop.min,
-        stats.slopeP90,
-        512,
-        flatShare(crop.values, 257),
-      );
+      expect(
+        isForestFloor(crop.max - crop.min, stats.slopeP90, 512, flatShare(crop.values, 257)),
+        row.id,
+      ).toBe(true);
     }
-    expect(floors).toEqual({
-      "european-broadleaf": true,
-      boreal: false,
-      mediterranean: true,
-      "pacific-northwest": false,
-    });
   });
 
   it("grounds a region on its row's own survey and names its source", async () => {
