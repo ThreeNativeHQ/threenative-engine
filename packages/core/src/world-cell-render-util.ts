@@ -2,7 +2,7 @@ import { BufferGeometry, InstancedMesh, type Material, type Mesh, type Object3D 
 import {
   composeSilencedByFreeze,
   isStatic,
-  markStatic,
+  markEngineStatic,
   worldSilencedByFreeze,
 } from "./static-transform.js";
 import type { SharedBatch } from "./world-cell-batches.js";
@@ -210,7 +210,7 @@ export function freshMeshFor(
   next.matrixWorldAutoUpdate = old.matrixWorldAutoUpdate || worldSilencedByFreeze(old);
   // A dressed batch is frozen, and the freeze is keyed by the object: a replacement that did not
   // re-arm it would compose its own world matrix every walk forever.
-  if (isStatic(old)) markStatic(next);
+  if (isStatic(old)) markEngineStatic(next);
   return next;
 }
 

@@ -36,6 +36,13 @@ interface IFrozenRoot {
   readonly snapshot: Float64Array;
   /** Bumped every time the subtree is re-armed; the contract a consumer checks, not the flag. */
   version: number;
+  /**
+   * Set by {@link markEngineStatic}: the parent the root was frozen under. The engine owns the root's
+   * local transform, so the per-frame check reads only this parent's world matrix, once per parent.
+   */
+  parent?: Object3D | null;
+  /** An engine-owned root not yet checked in full since it froze. */
+  fresh?: boolean;
 }
 
 /**
@@ -68,8 +75,7 @@ function writeSnapshot(root: Object3D, into: Float64Array): void {
   into[7] = scale.x;
   into[8] = scale.y;
   into[9] = scale.z;
-  for (let element = 0; element < 16; element += 1)
-    into[10 + element] = matrix[element] ?? 0;
+  for (let element = 0; element < 16; element += 1) into[10 + element] = matrix[element] ?? 0;
   // The frozen world matrix is the parent's times the root's own, so a root attached after it froze,
   // or one whose ancestor moved, is as stale as one the author moved. A streamed world freezes each
   // draw before it joins the world root, and a seated world (`world.position.y = -ground`) drew
@@ -169,6 +175,21 @@ function freeze(root: Object3D): number {
  * `invalidateStatic` does and the reason a generator can emit the call unconditionally.
  */
 export function markStatic(root: Object3D): number {
+  return freezeRoot(root, false);
+}
+
+/**
+ * `markStatic` for a draw the engine creates and owns, such as a streamed world's instanced batches:
+ * nothing but the engine writes its local transform, and the engine re-arms it when it does. The
+ * per-frame check then reads its parent's world matrix once for every draw under that parent, rather
+ * than every draw's own transform: a cooked region froze 2,077 batches at its overview and paid the
+ * per-root check for each (PRD-887 AC-3). A draw moved under another parent still re-arms.
+ */
+export function markEngineStatic(root: Object3D): number {
+  return freezeRoot(root, true);
+}
+
+function freezeRoot(root: Object3D, engine: boolean): number {
   const existing = frozen.get(root);
   // A second mark re-arms: thaw first, or `freeze`'s update skips the root's own world compose (the
   // first freeze turned it off) and the subtree keeps the world matrix of its first parent.
@@ -177,7 +198,12 @@ export function markStatic(root: Object3D): number {
   const snapshot = existing?.snapshot ?? new Float64Array(SNAPSHOT_LENGTH);
   writeSnapshot(root, snapshot);
   const version = (existing?.version ?? 0) + 1;
-  frozen.set(root, { objects, root, snapshot, version });
+  frozen.set(
+    root,
+    engine
+      ? { objects, root, snapshot, version, parent: root.parent, fresh: true }
+      : { objects, root, snapshot, version },
+  );
   return version;
 }
 
@@ -255,11 +281,51 @@ let rearmedSinceCensus = 0;
  */
 export function refreshStaticTransforms(): void {
   if (frozen.size === 0) return;
+  parentMovedThisFrame.clear();
   for (const entry of frozen.values()) {
-    if (snapshotMatches(entry.root, entry.snapshot, scratch)) continue;
-    markStatic(entry.root);
+    const engine = entry.parent !== undefined;
+    if (engine) {
+      const parent = entry.root.parent;
+      // Read even for a fresh root, so the parent's matrix is on record before the next frame.
+      const moved = parentMoved(parent);
+      if (parent === entry.parent && entry.fresh !== true && !moved) continue;
+      entry.fresh = false;
+      // A draw frozen before it joined its parent, at the pose that parent still has, stays frozen
+      // and is watched under the parent it has now.
+      if (snapshotMatches(entry.root, entry.snapshot, scratch)) {
+        entry.parent = parent;
+        continue;
+      }
+    } else if (snapshotMatches(entry.root, entry.snapshot, scratch)) continue;
+    freezeRoot(entry.root, engine);
     rearmedSinceCensus += 1;
   }
+}
+
+/** Each watched parent's world matrix as the previous refresh read it. */
+const parentSeen = new WeakMap<Object3D, Float64Array>();
+/** This refresh's answer per parent, so a parent shared by a thousand draws is read once. */
+const parentMovedThisFrame = new Map<Object3D, boolean>();
+
+/** Whether `parent`'s world matrix changed since the previous refresh read it; null never moves. */
+function parentMoved(parent: Object3D | null): boolean {
+  if (parent === null) return false;
+  const answered = parentMovedThisFrame.get(parent);
+  if (answered !== undefined) return answered;
+  const elements = parent.matrixWorld.elements;
+  let seen = parentSeen.get(parent);
+  let moved = seen === undefined;
+  if (seen === undefined) {
+    seen = new Float64Array(16);
+    parentSeen.set(parent, seen);
+  }
+  for (let element = 0; element < 16; element += 1) {
+    const value = elements[element] ?? 0;
+    if (seen[element] !== value) moved = true;
+    seen[element] = value;
+  }
+  parentMovedThisFrame.set(parent, moved);
+  return moved;
 }
 
 /** The census, and the re-arm counter it resets. */
@@ -278,5 +344,6 @@ export function staticTransformCensus(): IStaticTransformCensus {
 /** Drops every registration. A game that tore down its scene must not keep its roots alive. */
 export function resetStaticTransforms(): void {
   frozen.clear();
+  parentMovedThisFrame.clear();
   rearmedSinceCensus = 0;
 }
