@@ -4,8 +4,8 @@
 **Priority:** P2 — Biome rules are 71 code branches and every world is one 512 m square, so a sixth biome or a larger world needs edits in four files (Phase 1 and Phase 2 boxes open).
 **Complexity:** 7 (MEDIUM-HIGH); risk override: the refactor must not change the look of the five worlds, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-591](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) AC-4 (height bands from the measured height range) for the band fields of a row
-**Epic:** [Strata terrain hardening](README.md) (PR #483)
+**Depends on:** [PRD-591](../P2/PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) AC-4 (height bands from the measured height range) for the band fields of a row
+**Epic:** [Strata terrain hardening](../README.md) (PR #483)
 
 ## Context
 

@@ -3,8 +3,8 @@
 **Status:** PARTIAL — the bare soil reads L* 35 at the walk pose (Phase 2); references, cover and near detail are open.
 **Priority:** P1 — the ground is too bright (soil L 46–51 against a 29–37 reference) and has no cover at walking height (Phase 2, Phase 3).
 **Complexity:** 6 (MEDIUM-HIGH)
-**Depends on:** [PRD-591](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) AC-4 (measured height bands)
-**Epic:** [Strata terrain hardening](README.md), chain step PR-6 in [PR-CHAIN.md](PR-CHAIN.md)
+**Depends on:** [PRD-591](../P2/PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) AC-4 (measured height bands)
+**Epic:** [Strata terrain hardening](../README.md), chain step PR-6 in PR-CHAIN.md
 
 ## Problem
 

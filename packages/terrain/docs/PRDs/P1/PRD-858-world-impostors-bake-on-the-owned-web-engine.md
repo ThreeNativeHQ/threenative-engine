@@ -3,8 +3,8 @@
 **Status:** OPEN — found 2026-11-08 while PRD-762 brought the forest starter kit up on the default engine.
 **Priority:** P1 — the forest kit's overview draws 100 times the triangles of the `engine: "threejs"` arm on the default engine.
 **Complexity:** 7 (HIGH)
-**Depends on:** [PRD-762](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (the kit starts on the default engine)
-**Epic:** [Strata terrain hardening](README.md), part of chain step PR-1 in [PR-CHAIN.md](PR-CHAIN.md)
+**Depends on:** [PRD-762](../P0/PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (the kit starts on the default engine)
+**Epic:** [Strata terrain hardening](../README.md), part of chain step PR-1 in PR-CHAIN.md
 
 ## Problem
 

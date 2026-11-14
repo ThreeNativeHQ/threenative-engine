@@ -5,7 +5,7 @@
 **Complexity:** 3 (LOW); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md)
+**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md)
 
 ## Context
 

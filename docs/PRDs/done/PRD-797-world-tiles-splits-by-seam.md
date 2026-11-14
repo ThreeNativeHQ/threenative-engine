@@ -7,7 +7,7 @@
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** None (land before PRD-790 Phase 2 to keep the streaming diff small)
-**Batch:** [Strata refactoring](../refactoring/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
 
 ## Context
 

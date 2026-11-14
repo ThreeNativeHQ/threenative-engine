@@ -7,7 +7,7 @@
 **Complexity:** 5 (MEDIUM); risk override: the five worlds must keep their look, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
 **Depends on:** None (coordinates with PRD-790 Phase 1 and PRD-591 AC-4)
-**Batch:** [Strata refactoring](../refactoring/strata-refactoring/README.md)
+**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
 
 ## Context
 

@@ -4,7 +4,7 @@
 **Priority:** P2 — The walkable ground of a cooked world carries no real relief under 10 m (AC-2 and AC-3 open), which the ground judges read as "one smooth dirt sheet".
 **Complexity:** 2 (LOW); risk override: none
 **Owner:** ThreeNative maintainers
-**Depends on:** None. [PRD-854](../../../../docs/PRDs/done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) landed the survey fetch that this PRD changes.
+**Depends on:** None. [PRD-854](../../../../../docs/PRDs/done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) landed the survey fetch that this PRD changes.
 
 ## Context
 

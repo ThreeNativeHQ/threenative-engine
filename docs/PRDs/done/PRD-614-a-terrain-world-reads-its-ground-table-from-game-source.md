@@ -5,7 +5,7 @@
 **Complexity:** 7 (HIGH); risk override: none. Three packages (core, terrain, assets), five kits, the kit fixture and verifier, two conformance cases, one optional package file and three visual judges. `WorldCells` does not change.
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md)
+**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md)
 
 ## Context
 
@@ -72,7 +72,7 @@ Inference: stable IDs exist at bake time, and the runtime cannot see them. One s
 - **A7.** Asset entries come from the kit `assets.json` (`kit.ts:110-122`). Core requires `bounds` on each asset (`core/src/world-package.ts:58`, `282-283`). The dress pass loads `base + glb` (`starter.ts:200`), but cell chunks use `resolveRelative` (`packages/core/src/world-cell-chunks.ts:155-158`).
 - **A8.** `sky.ts` builds sun, sky, fill, haze, exposure and tone mapping at runtime (`starter/forest/sky.ts:13-22`). `lighting.dress` sets prop material values (`starter.ts:45-50`, `:211`). `materialFactory` sets the ground graph (`forest/world.ts:92-93`).
 - **A9.** No generator code writes `KHR_lights_punctual`. The only match counts lights in an imported GLB (`packages/terrain/src/editor/assets.ts:251`).
-- **A10.** The cost is real. [PRD-580](../open-world/PRD-580-strata-starter-kit-art-bar.md) needed a hand rewrite of the staged table for a moss tint (line 168).
+- **A10.** The cost is real. [PRD-580](../../../packages/terrain/docs/PRDs/PRD-580-strata-starter-kit-art-bar.md) needed a hand rewrite of the staged table for a moss tint (line 168).
 
 ### Audit: what still needs a bake
 
@@ -101,7 +101,7 @@ Inference: stable IDs exist at bake time, and the runtime cannot see them. One s
 
 ### Consumer problems that are not generator defects
 
-The preview's staged forest arms are baked copies of the kit (`examples/strata-terrain-preview/src/world/forestStage.ts:35,57-66`, `vite.config.ts:40`), and its stage path builds its own sky (`src/game.ts:222`). These belong to [PRD-591](../strata-terrain-hardening/PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) and PRD-580. This PRD does not change them.
+The preview's staged forest arms are baked copies of the kit (`examples/strata-terrain-preview/src/world/forestStage.ts:35,57-66`, `vite.config.ts:40`), and its stage path builds its own sky (`src/game.ts:222`). These belong to [PRD-591](../../../packages/terrain/docs/PRDs/P2/PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) and PRD-580. This PRD does not change them.
 
 ### Wildwood comparison
 

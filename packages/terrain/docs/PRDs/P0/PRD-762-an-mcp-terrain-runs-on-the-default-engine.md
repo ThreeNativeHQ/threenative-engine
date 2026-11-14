@@ -2,7 +2,7 @@
 
 **Status:** IN PROGRESS — Phase 1: the MCP path starts on the default engine (2026-11-08); its world draws 97x too many triangles there.
 **Priority:** P0. An agent that follows the shipped path gets a game that does not start.
-**Epic:** [Strata terrain hardening](README.md). Delivered with PR #483.
+**Epic:** [Strata terrain hardening](../README.md). Delivered with PR #483.
 
 ## Problem
 
@@ -58,7 +58,7 @@ spec.
 - [ ] `verify-starter-kit.mjs` passes on the default engine. proof: `node examples/strata-terrain-preview/scripts/verify-starter-kit.mjs` exit 0
   2026-11-08: the verifier hung for 50 min (exit 124) right after the bridge connected: the playtest runner's worker probe asked each page worker with no timeout, and the owned engine's 8 Wasm pthread workers never answer a CDP evaluate (found by step markers in the runner). Fixed in `packages/playtest/src/runner/worker-probe.ts`: every worker at once, each bounded; `worker-game-probe.spec.ts` red (both cases time out) then green, playtest specs 1 960 passed (1 unrelated `generated-shooter-input` pack failure). The kit scenario then runs every step: 25 of 26 assertions pass, 0 console errors; the one red is `maxFrameMsP95` 28.6 ms against 16.7 ms (GPU p95 22.7 ms).
   2026-11-08, HEAD 5bed1f3c2, RTX 2080 headed, host load 36 (other agents' wasm-opt and esbuild): every assertion passes but two, `maxFrameMsP95` 50.31 ms (CPU 50.31, GPU 21.32) against 16.7 ms and `maxPhaseMsP95.render` 50.31 against 40 ms. The CPU figure is not a clean reading at that load; the GPU 21.3 ms matches the earlier 22.7 ms and is PRD-858's open gap.
-  Blocked on [PRD-858](PRD-858-world-impostors-bake-on-the-owned-web-engine.md). The overview and edge views run at 12 to 15 fps on the default engine (overview `wideTris` 26.2 M, frame p95 73.5 ms) against 60 fps on the threejs arm (256 k, 4.95 ms), because the Wasm engine has no impostor bake; the scenario asserts render p95 at most 40 ms.
+  Blocked on [PRD-858](../P1/PRD-858-world-impostors-bake-on-the-owned-web-engine.md). The overview and edge views run at 12 to 15 fps on the default engine (overview `wideTris` 26.2 M, frame p95 73.5 ms) against 60 fps on the threejs arm (256 k, 4.95 ms), because the Wasm engine has no impostor bake; the scenario asserts render p95 at most 40 ms.
 
 ### Phase 3 — proof
 

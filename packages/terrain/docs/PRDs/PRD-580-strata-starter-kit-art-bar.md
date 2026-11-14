@@ -4,8 +4,8 @@
 **Priority:** P2 — Five starter kits still need a score of at least 4 on every visual rubric row.
 **Complexity:** 5 (MEDIUM); risk override: none — authored kit/preview changes plus newly versioned portable assets cross a release boundary.
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-466](../done/PRD-466-strata-terrain-threejs-integration.md), retained terrain and starter-kit contracts
-**Parent:** [PRD-466](../done/PRD-466-strata-terrain-threejs-integration.md)
+**Depends on:** [PRD-466](../../../../docs/PRDs/done/PRD-466-strata-terrain-threejs-integration.md), retained terrain and starter-kit contracts
+**Parent:** [PRD-466](../../../../docs/PRDs/done/PRD-466-strata-terrain-threejs-integration.md)
 
 ## Context
 

@@ -4,8 +4,8 @@
 **Priority:** P2 — `world-cells.ts` is 10 228 lines and its async load/evict orderings are proven for one interleaving only (AC-1 to AC-3).
 **Complexity:** 5 (MEDIUM); risk override: complex async state
 **Owner:** ThreeNative maintainers
-**Depends on:** None (coordinate with [PRD-473](../../../../docs/PRDs/done/PRD-473-open-worlds-hold-120-fps-gpu-driven.md), which edits the same file)
-**Epic:** [Strata terrain hardening](README.md)
+**Depends on:** None (coordinate with [PRD-473](../../../../../docs/PRDs/done/PRD-473-open-worlds-hold-120-fps-gpu-driven.md), which edits the same file)
+**Epic:** [Strata terrain hardening](../README.md)
 
 ## Context
 

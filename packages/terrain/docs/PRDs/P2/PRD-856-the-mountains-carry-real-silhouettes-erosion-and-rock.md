@@ -3,12 +3,12 @@
 **Status:** PARTIAL — the level bedding stripes are gone from the forest backdrop (2026-11-08, PR #635). Shape, erosion and baked masks are open.
 **Priority:** P2 — the mountains need visible improvement; Phase 1 names the defects first.
 **Complexity:** 6 (MEDIUM-HIGH)
-**Depends on:** [PRD-854](../../../../docs/PRDs/done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) (real-world backdrop), [PRD-855](PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) (ground layers)
-**Epic:** [Strata terrain hardening](README.md), chain step PR-7 in [PR-CHAIN.md](PR-CHAIN.md)
+**Depends on:** [PRD-854](../../../../../docs/PRDs/done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) (real-world backdrop), [PRD-855](../P1/PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) (ground layers)
+**Epic:** [Strata terrain hardening](../README.md), chain step PR-7 in PR-CHAIN.md
 
 ## Problem
 
-Owner, 2026-11-07: the mountains need to improve. The request does not name the defects, so Phase 1 names them from captures. The spike in [PR-CHAIN.md](PR-CHAIN.md) measured that fluvial erosion is about 80% of the 2.1–2.3 s alpine bake.
+Owner, 2026-11-07: the mountains need to improve. The request does not name the defects, so Phase 1 names them from captures. The spike in PR-CHAIN.md measured that fluvial erosion is about 80% of the 2.1–2.3 s alpine bake.
 
 ## Execution Phases
 

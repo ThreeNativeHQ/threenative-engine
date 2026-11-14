@@ -3,8 +3,8 @@
 **Status:** PARTIAL — Phase 1 code in (2026-11-08); the sandbox reading and the native usage test are open.
 **Priority:** P1 — a cooked forest world draws 19.5 M main-pass triangles on the CPU world path on the default engine, because the GPU world scene is off there (all boxes open).
 **Complexity:** 6 (MEDIUM-HIGH)
-**Depends on:** [PRD-762](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (the MCP terrain path and its sandbox)
-**Epic:** [Strata terrain hardening](README.md), part of chain step PR-1 in [PR-CHAIN.md](PR-CHAIN.md)
+**Depends on:** [PRD-762](../P0/PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (the MCP terrain path and its sandbox)
+**Epic:** [Strata terrain hardening](../README.md), part of chain step PR-1 in PR-CHAIN.md
 
 ## Problem
 

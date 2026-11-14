@@ -4,8 +4,8 @@
 **Priority:** P2 — A second prop LOD pipeline, a spawn-readiness gate and the scatter loop stay in example code where every terrain game must copy them (AC-1 to AC-4).
 **Complexity:** 6 (MEDIUM); risk override: visual output changes, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-585](PRD-585-strata-proof-runs-in-ci.md) (the CI job guards the moves)
-**Epic:** [Strata terrain hardening](README.md)
+**Depends on:** [PRD-585](../P1/PRD-585-strata-proof-runs-in-ci.md) (the CI job guards the moves)
+**Epic:** [Strata terrain hardening](../README.md)
 
 ## Context
 

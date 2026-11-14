@@ -3,8 +3,8 @@
 **Status:** PARTIAL — Phases 1 to 3 landed (2026-11-07). The two acceptance boxes are open.
 **Priority:** P1 — `terrain_generate` drops every request word except the biome word, so "a forest with mountains and a river" cooks a flat default forest (Phase 1).
 **Complexity:** 5 (MEDIUM)
-**Depends on:** [PRD-762](../strata-terrain-hardening/PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (same MCP tool, path must start first)
-**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md), chain step PR-5 in [PR-CHAIN.md](../strata-terrain-hardening/PR-CHAIN.md)
+**Depends on:** [PRD-762](../../../packages/terrain/docs/PRDs/P0/PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (same MCP tool, path must start first)
+**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md), chain step PR-5 in PR-CHAIN.md
 
 ## Problem
 
@@ -12,7 +12,7 @@ Owner direction (2026-11-07): the terrain MCP receives a request such as "create
 
 Today `parseGenerateInput` (`packages/terrain/src/mcp/tools.ts:192`) reads only the biome words (`BIOME_WORD_ROWS`). "Mountains", "river", "island", "huge" and every other word are dropped silently. `landform`, `water` and `sizeMeters` come only from explicit arguments.
 
-The spike in [PR-CHAIN.md](../strata-terrain-hardening/PR-CHAIN.md) measured the parts: AWS terrarium tiles need no key (Mount Fuji z12 decodes to 1 317–3 754 m at 31.2 m/px), and `decodeHeightPNG`, `decodeRAW16` and the `heightmap` layer already ship.
+The spike in PR-CHAIN.md measured the parts: AWS terrarium tiles need no key (Mount Fuji z12 decodes to 1 317–3 754 m at 31.2 m/px), and `decodeHeightPNG`, `decodeRAW16` and the `heightmap` layer already ship.
 
 All work is bake time. No network call at runtime.
 

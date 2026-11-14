@@ -2,8 +2,8 @@
 
 **Status:** IN PROGRESS — Phase 1 started 2026-11-10 (PR #635).
 **Priority:** P1 — a fix in the preview leaves every kit and every game with the bug.
-**Complexity:** 6 (MEDIUM-HIGH): water, streaming and terrain fields; props, models and the collar are [PRD-864](../strata-terrain-hardening/PRD-864-prop-and-collar-mechanisms-leave-the-strata-preview.md).
-**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md); rides PR #635 (owner, this session: no extra PRs).
+**Complexity:** 6 (MEDIUM-HIGH): water, streaming and terrain fields; props, models and the collar are [PRD-864](../../../packages/terrain/docs/PRDs/P2/PRD-864-prop-and-collar-mechanisms-leave-the-strata-preview.md).
+**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md); rides PR #635 (owner, this session: no extra PRs).
 
 ## Problem
 

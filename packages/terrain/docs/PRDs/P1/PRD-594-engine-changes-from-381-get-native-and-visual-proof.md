@@ -5,7 +5,7 @@
 **Complexity:** 5 (MEDIUM); risk override: supported-platform parity
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Epic:** [Strata terrain hardening](README.md)
+**Epic:** [Strata terrain hardening](../README.md)
 
 ## Context
 

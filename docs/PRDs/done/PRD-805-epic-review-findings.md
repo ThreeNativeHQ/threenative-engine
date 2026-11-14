@@ -9,7 +9,7 @@
 
 ## Problem
 
-A multi-agent review of the PR #483 epic diff reported 76 findings. A second pass checked each one on HEAD `21c713b7d`, by a code trace or by one spec run. The per-finding facts, the cited `file:line` and a one-line fix sketch are in [the evidence file](../refactoring/strata-refactoring/PRD-805-epic-review-findings.evidence.md). The verifier was a DeepSeek arm, so read each cited line before you fix it. Name the layer first: engine (`packages/`) or game (`examples/`).
+A multi-agent review of the PR #483 epic diff reported 76 findings. A second pass checked each one on HEAD `21c713b7d`, by a code trace or by one spec run. The per-finding facts, the cited `file:line` and a one-line fix sketch are in [the evidence file](../../../packages/terrain/docs/PRDs/strata-refactoring/PRD-805-epic-review-findings.evidence.md). The verifier was a DeepSeek arm, so read each cited line before you fix it. Name the layer first: engine (`packages/`) or game (`examples/`).
 
 ## Execution Phases
 

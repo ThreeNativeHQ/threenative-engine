@@ -6,7 +6,7 @@
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-587](../done/PRD-587-the-terrain-editor-never-drops-an-edit.md) (lands its save model first, so the port moves settled code)
 **Parent:** [PRD-467](../done/PRD-467-strata-live-terrain-editor.md)
-**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md)
+**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md)
 
 ## Context
 

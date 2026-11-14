@@ -4,7 +4,7 @@
 **Priority:** P2 — A request such as "European beech forest" cooks United States ground with one swapped tree species (AC-1 to AC-4 open), so the terrain MCP cannot give a regional forest that reads as real.
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-886](PRD-886-terrain-code-sits-in-one-folder-per-stage-with-an-architecture-map.md) Phase 2 (the `request/` and `ground/` folders this PRD adds rows to). No box here waits on a look PRD.
+**Depends on:** [PRD-886](../P2/PRD-886-terrain-code-sits-in-one-folder-per-stage-with-an-architecture-map.md) Phase 2 (the `request/` and `ground/` folders this PRD adds rows to). No box here waits on a look PRD.
 
 ## Context
 
@@ -94,7 +94,7 @@ comment as `surveys.ts` does, and replaces a site whose crop is not a forest flo
 ### Reused, not built
 
 `parseGenerateRequest`, `newBiomeSpec` (`tools.ts:628`), `validateBiome`, `surveyHeights`,
-`growArborSpecies` and `cookKit` are reused as they are. [PRD-885](PRD-885-a-terrain-survey-reads-lidar-grade-ground-from-mapterhorn.md)
+`growArborSpecies` and `cookKit` are reused as they are. [PRD-885](../P2/PRD-885-a-terrain-survey-reads-lidar-grade-ground-from-mapterhorn.md)
 changes the tile source under `surveyHeights`. A row's `site` works with both sources.
 
 ### Risks
@@ -104,13 +104,13 @@ changes the tile source under `surveyHeights`. A row's `site` works with both so
 - **World size.** PRD-885 AC-4 holds a cooked kit at 25 MiB. More species add models. AC-3 uses
   the same cap.
 - **Frame cost.** The forest overview is over budget today
-  ([PRD-584](PRD-584-an-agent-asks-for-a-forest-over-mcp-and-gets-a-60-fps-glb.md)
+  ([PRD-584](../P1/PRD-584-an-agent-asks-for-a-forest-over-mcp-and-gets-a-60-fps-glb.md)
   AC-4 is open). This PRD does not promise 60 FPS. AC-3 requires that a region world costs no more
   than the forest starter on the same pose.
 - **Look.** Arbor trees and the kit's CC0 surface decide the look. If the judge in AC-4 fails a row
   for the surface or the understory, that work belongs to
-  [PRD-855](PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md)
-  and [PRD-870](PRD-870-the-procedural-forest-set-reads-like-the-fab-set.md),
+  [PRD-855](../P1/PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md)
+  and [PRD-870](../P2/PRD-870-the-procedural-forest-set-reads-like-the-fab-set.md),
   not to a second surface system here.
 
 Not in this PRD: climate data, a biome border between two regions (PRD-790 Phase 3), new surface

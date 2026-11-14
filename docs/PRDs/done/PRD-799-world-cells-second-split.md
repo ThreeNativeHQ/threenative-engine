@@ -8,8 +8,8 @@ bug fixed in `4103d2508` that waits for a Wasm build.
 **Priority:** P2 — `WorldCells` is back at 2 977 lines with a 450-line constructor and an LOD-bias controller that no spec pinned; the split and the pins are done and the playtest box (Phase 3) stays open.
 **Complexity:** 5 (MEDIUM); risk override: complex async state
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-595](../strata-terrain-hardening/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md) AC-3 (walk playtests after the first split). Start after the forest lane commits its open edits to `world-cells.ts` and `world-cell-data.ts`.
-**Batch:** [Strata refactoring](../refactoring/strata-refactoring/README.md)
+**Depends on:** [PRD-595](../../../packages/terrain/docs/PRDs/P2/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md) AC-3 (walk playtests after the first split). Start after the forest lane commits its open edits to `world-cells.ts` and `world-cell-data.ts`.
+**Batch:** [Strata refactoring](../../../packages/terrain/docs/PRDs/strata-refactoring/README.md)
 
 ## Context
 

@@ -4,8 +4,8 @@
 **Priority:** P2 — a generated forest on a machine without the owner's licensed library draws the procedural set (AC-1 open); the owner asked for it to match the Fab art (2026-11-09).
 **Complexity:** 6 (MEDIUM) — 4 to 6 files in `examples/strata-terrain-preview/src/render/` and `scripts/` (2), procedural geometry and atlas generation (2), a judged look target (2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-866](../../../../docs/PRDs/BLOCKED/requires-owner-decision/PRD-866-a-generated-forest-stands-under-mountains-with-real-shapes.md) (the cooked forest these props stand in; no box here waits on it)
-**Epic:** [Strata terrain hardening](README.md)
+**Depends on:** [PRD-866](../../../../../docs/PRDs/BLOCKED/requires-owner-decision/PRD-866-a-generated-forest-stands-under-mountains-with-real-shapes.md) (the cooked forest these props stand in; no box here waits on it)
+**Epic:** [Strata terrain hardening](../README.md)
 
 ## Problem
 

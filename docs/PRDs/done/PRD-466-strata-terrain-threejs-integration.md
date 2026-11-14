@@ -457,7 +457,7 @@ locations when each phase is implemented; no future line numbers are asserted.
   Only the edges changed, and the credit records the change. The original file stays in git history.
 
 - 2026-10-09 (João, owner, art scope; recorded by the implementing agent):
-  K3, K4 and AC-5 art acceptance move to [PRD-580](../open-world/PRD-580-strata-starter-kit-art-bar.md).
+  K3, K4 and AC-5 art acceptance move to [PRD-580](../../../packages/terrain/docs/PRDs/PRD-580-strata-starter-kit-art-bar.md).
   João gave in-session go-ahead: "ok, update label, push forward to 100%" in response to
   the plan "if the judge stays below 4, K3, K4 and AC-5 move to Blocked on / a follow-up
   with a Decisions entry; I will not tick an art box the judge scored 3".

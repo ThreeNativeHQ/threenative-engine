@@ -4,8 +4,8 @@
 **Priority:** P1 — The epic's headline outcome: no MCP tool generates terrain today, and no measured number shows a handed-over Strata world holding 60 fps (AC-1 to AC-5).
 **Complexity:** 7 (HIGH); risk override: closed-list boundary — a request-to-world tool sits next to the closed "preset/genre system" item
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-583](PRD-583-a-strata-world-bakes-headlessly-into-an-instanced-glb.md)
-**Epic:** [Strata terrain hardening](README.md)
+**Depends on:** [PRD-583](../P1/PRD-583-a-strata-world-bakes-headlessly-into-an-instanced-glb.md)
+**Epic:** [Strata terrain hardening](../README.md)
 
 ## Context
 
@@ -76,7 +76,7 @@ sequenceDiagram
 - [x] AC-4 [local]: The starter template loads the generated forest and holds p95 frame time ≤ 16.7 ms over a 300-frame walk on a named real GPU (WebGPU, `adapter.info` recorded), with grass, low plants and ferns visibly present at walking height in the generated forest starter consumer under the original streaming budgets. proof: `node packages/playtest/dist/runner/cli.js <terrain-forest>.playtest.json --browser-recipe webgpu` and matched headed walking-height captures with fresh independent visual judgment — Evidence: 2026-11-13 PASS, see the Phase 3 web box (3 of 3 real-display RTX 2080 walks, GPU p95 15.2-15.4 ms, judge NEUTRAL). Partial, NOT the prescribed scenario (no template forest walk scenario exists yet, so this stays open): 2026-10-11 `KIT=forest pnpm test:kit` on `19a2fb3b2`, adapter nvidia/turing (RTX 2080), headed WebGPU, 819 frames, pass. Machine load 7.9: frame p95 overview 10.5, lake 12.0, ground 13.6, edge 10.7 ms; GPU p95 2.47, 6.32, 4.88, 5.65 ms. An earlier run at load 39 measured ground 111.2 and edge 116.0 ms with the same GPU p95, so the measurement needs a quiet host.
 - [ ] AC-5 [local]: The same scenario holds p95 ≤ 16.7 ms on the native desktop host. proof: same scenario `--target desktop` — Evidence: pending.
 
-Forest appearance follow-up: [existing PRD-584 child](forest-leaf-alpha.md), AC-5, retains the unresolved squared needle tips; its earlier leaf IMPROVEMENT is historical. The scoped CPU audit finds trees/boulders but no low cover in the shipped source recipe; ignored staged BEFORE/AFTER packages already contain 9,000 fern and 5,000 small-fern placements, which prove neither runtime visibility nor delivery.
+Forest appearance follow-up: existing PRD-584 child, AC-5, retains the unresolved squared needle tips; its earlier leaf IMPROVEMENT is historical. The scoped CPU audit finds trees/boulders but no low cover in the shipped source recipe; ignored staged BEFORE/AFTER packages already contain 9,000 fern and 5,000 small-fern placements, which prove neither runtime visibility nor delivery.
 
 ## Blocked on
 

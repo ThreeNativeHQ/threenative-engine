@@ -4,7 +4,7 @@
 **Priority:** P2 — An agent that changes terrain output cannot find the owning file from the folder names (AC-1 to AC-4 open); no architecture document for terrain exists.
 **Complexity:** 3 (LOW); risk override: MEDIUM, because `@threenative/terrain` is published and its public exports, `dist` layout and capability manifest must not change.
 **Owner:** ThreeNative maintainers
-**Depends on:** None. [PRD-887](PRD-887-a-region-request-cooks-its-real-ground-and-plant-community.md) builds on the folders this PRD creates.
+**Depends on:** None. [PRD-887](../P2/PRD-887-a-region-request-cooks-its-real-ground-and-plant-community.md) builds on the folders this PRD creates.
 
 ## Context
 
@@ -49,8 +49,8 @@ Read on 2026-11-13 at `dc131b610` (branch `prd-584-forest-60fps`):
   `AGENTS.md` and five starter READMEs.
 
 Related work that this PRD does not repeat: PRD-588 (done) split the editor into typed modules.
-PRD-797 to PRD-799 split the core world files. [PRD-864](PRD-864-prop-and-collar-mechanisms-leave-the-strata-preview.md)
-and [PRD-591](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md)
+PRD-797 to PRD-799 split the core world files. [PRD-864](../P2/PRD-864-prop-and-collar-mechanisms-leave-the-strata-preview.md)
+and [PRD-591](../P2/PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md)
 move mechanisms out of the preview into the engine. This PRD moves files and writes the map. It
 changes no behaviour.
 

@@ -7,7 +7,7 @@
 
 ## Problem
 
-The per-finding facts, the cited `file:line` and a one-line fix sketch are in [the evidence file](../refactoring/strata-refactoring/PRD-805-epic-review-findings.evidence.md). The verifier was a DeepSeek arm, so read each cited line before you fix it. Each fix gets a red-green spec. A fix that changes what reaches the screen (E46, E56, E73) also needs the visual judge.
+The per-finding facts, the cited `file:line` and a one-line fix sketch are in [the evidence file](../../../packages/terrain/docs/PRDs/strata-refactoring/PRD-805-epic-review-findings.evidence.md). The verifier was a DeepSeek arm, so read each cited line before you fix it. Each fix gets a red-green spec. A fix that changes what reaches the screen (E46, E56, E73) also needs the visual judge.
 
 ## Execution Phases
 
