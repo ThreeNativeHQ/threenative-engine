@@ -67,6 +67,16 @@ After the chain: PRD-580 phases 2 and 3 for coastal, alpine, desert and tundra, 
 - The owner's reference frame is a low warm sun, about one hour before sunset, with haze between the
   tree stands. The forest kit uses a fixed mid-morning sun. Test the low sun and the haze first. It
   is a change of constants in the kit's `sky.ts`.
+  Tested 2026-11-14 on PR #677, seven arms on the kit lane, a fresh judge per arm: **no constant set
+  passes, so the kit keeps its mid-morning sun.** Every late-sun arm (13-29 degrees, `0xffd3a2`) wins
+  the eye-level poses: warm floor patches, deeper shade, no crushed blacks. Every arm also loses green in
+  the far forest: overview far-forest crop G-B 11.5 falls to 8.2-9.0, with the haze returned to the
+  starter's own value and the exposure too, and the sky's B-R back to exactly 12.5. At 13 degrees the
+  closed canopy takes all the sun, and the floor goes black. A denser or warmer haze turns the sky
+  grey-white. What is left is not a constant: the far canopy's colour under a low sun, either through
+  far-canopy shading, impostor lighting or a sky-lit tint. Measure the far crop before the next try:
+  mean RGB of the kit lane's `overview.png` in the box x 820-1080, y 380-600 (1920x1080), and of its
+  sky in x 600-1900, y 40-240.
 - Each look change needs the visual judge that `/AGENTS.md` describes: the same pose before and
   after, two headed WebGPU runs for each arm, and a fresh judge.
 
