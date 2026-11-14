@@ -1,6 +1,6 @@
 # PRD-885 — A terrain survey reads lidar-grade ground from Mapterhorn
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-11-14)
 **Priority:** P2 — The walkable ground of a cooked world carries no real relief under 10 m (AC-2 and AC-3 open), which the ground judges read as "one smooth dirt sheet".
 **Complexity:** 2 (LOW); risk override: none
 **Owner:** ThreeNative maintainers
@@ -69,9 +69,9 @@ triangles near the camera need a frame-time reading.
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: A survey at a lidar site returns Mapterhorn ground at the finest zoom the site has, and the cook result names the source, zoom and metres per pixel. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts` with fixture tiles for a zoom 17 site and a zoom 16 site — Evidence: 2026-11-15, `mapterhorn tiles` cases: Étretat (zoom 17 tile, 0.39 m/px) decodes to a centre elevation of 6.953125 m read straight from the tile and reports `zoom: 17`; Sprague Lake steps from a 404 at zoom 17 to its zoom 16 tile (2 660.19 m at the centre) and reports `zoom: 16`, 0.91 m/px. The cook's `ground` reply carries `tiles: "mapterhorn"`, `zoom` and `metersPerPixel` (volcanic cook: zoom 12, 15.58 m/px). terrain-survey and terrain-mcp: 189 tests pass.
-- [ ] AC-2 [local]: The cooked forest-floor heights keep at least 80% of the source's relief under 10 m (RMS after a 10 m low-pass) at 1 m cells. proof: a new case in `packages/terrain/__tests__/terrain-survey.spec.ts` on the Sprague Lake fixture — Evidence: pending.
-- [ ] AC-3 [local]: At walking pose on the cooked forest floor, a fresh visual judge returns IMPROVEMENT on the `ground` row against the AWS arm. proof: `KIT=forest pnpm --filter strata-terrain-preview test:kit`, two headed WebGPU runs per arm, sheets on the PR — Evidence: pending.
-- [ ] AC-4 [local]: The cooked kit stays at or under 25 MiB and presented p95 frame time does not rise. proof: `pnpm --filter strata-terrain-preview test:consumer` for the size, and `measure-steady-state-fps` with paired arms on one code state for the frame time — Evidence: pending.
+- [x] AC-2 [local]: The cooked forest-floor heights keep at least 80% of the source's relief under 10 m (RMS after a 10 m low-pass) at 1 m cells. proof: a new case in `packages/terrain/__tests__/terrain-survey.spec.ts` on the Sprague Lake fixture — Evidence: 2026-11-14, `keeps at least 80% of the source's relief under 10 m`: red first (the floor cooked at 257, so its grid did not match the 513 source), green after Phase 3. The evaluated floor (ground, surface runoff, loose talus, grain smoothing) keeps 97.4%: 0.438 m RMS against the source's 0.450 m. Three Sprague Lake zoom 16 tiles joined the fixtures (270 KB).
+- [x] AC-3 [local]: At walking pose on the cooked forest floor, a fresh visual judge returns IMPROVEMENT on the `ground` row against the AWS arm. proof: `KIT=forest pnpm --filter strata-terrain-preview test:kit`, two headed WebGPU runs per arm, sheets on the PR — Evidence: 2026-11-14, IMPROVEMENT, the Phase 1 verdict and sheets ([PR #677 comment](https://github.com/ThreeNativeHQ/threenative-engine/pull/677#issuecomment-6876917806)). The shipped cook of the same request writes a `heightmap.u16`, `placements.bin` and `world.glb` byte-identical (sha256) to the Phase 1 AFTER arm, so those captures are of the shipped ground.
+- [x] AC-4 [local]: The cooked kit stays at or under 25 MiB and presented p95 frame time does not rise. proof: `pnpm --filter strata-terrain-preview test:consumer` for the size, and `measure-steady-state-fps` with paired arms on one code state for the frame time — Evidence: 2026-11-14. Size, by the starter-kit rule (each representation under 25 MiB): the shipped cook's `world.glb` is 19.16 MiB and its streamed package 18.71 MiB (AWS arm: 7.78 and 15.54). The named proof does not reach a size: `strata-terrain-preview test:consumer` exits 1 at its precondition (`bake.mjs exported only`, the bake module no longer exports recipes), unchanged by this PRD; `@threenative/terrain test:consumer` passes 19/19. Frame time: one kit-game build per arm from this code state, traced A M A M with `threenative-playtest trace --no-input --seconds 30 --settle 10` on the real 59.96 Hz display, `nvidia/turing`, empty-page rAF control p95 16.8 ms. Presented p95 (FireAnimationFrame intervals, 1 792 frames each): AWS 17.26 and 17.27 ms, Mapterhorn 17.22 and 17.14 ms, so no rise. Limits: a standing spawn camera (the trace warns that it is optimistic); the kit scenario's driven views read cost p95 GPU 19.8 ms in both arms and CPU 3.0 to 3.3 ms against 6.3 to 6.7 ms with the 4 times larger ground.
 
 ## Integration Ledger
 
@@ -87,6 +87,9 @@ triangles near the camera need a frame-time reading.
 
 - 2026-11-15 (Phase 2, site moves): Mapterhorn's finer data pushed two ecoregion floors past the forest-floor gate that PRD-887 relies on (boreal: 8.5 % hydro-flattened water against a 2 % gate; Pacific Northwest: a 31 degree 90th-percentile slope against 28). The gate stays as it is. A 17 x 17 grid of 250 m offsets around each site, scored with `isForestFloor` on live tiles, gave the new sites: boreal 66.36221, 29.3167 (500 m south: relief 76 m, 15.4 degrees, 0.6 % flat) and Pacific Northwest 47.19775, -123.88678 (1 km north-east: relief 68 m, 25.9 degrees, 0.01 % flat). The spec asserts that every ecoregion row passes the gate.
 - 2026-11-15 (Phase 2, design): the zoom comes from the grid cell (the coarsest zoom whose pixel is no wider than a cell, at most 17), so the `zoom` field left `ISurveyRow` and the three call sites that overrode it (floor, massif, ring) lost their overrides. Step-down is per footprint: one 404 on any tile moves all of its tiles one zoom coarser. Attribution is `© Mapterhorn` with the link to its attribution page plus the producer lines named in `attribution.json` (3DEP, swisstopo, IGN, GSI, Copernicus GLO-30). Mapterhorn publishes no usage policy for automated clients; the cook caches every tile on disk and reads about ten per cook.
+
+- 2026-11-14 (Phase 3, design): the floor surveys at half the recipe's cell and keeps that grid only when the source pixel is no wider than it; otherwise it takes every other sample, which is exactly the coarser grid. The forest-floor gate always reads the recipe's own grid, so a finer source does not move the spot a seed picks.
+- 2026-11-14 (Phase 3, no erosion change): the surveyed erosion pass and the preset's `grain` smoothing keep 97.4% of the relief under 10 m at 1 m cells, so AC-2 holds with both left as they are.
 
 ## Execution Phases
 
@@ -111,9 +114,9 @@ triangles near the camera need a frame-time reading.
 
 #### Phase 3: The forest floor carries the relief
 
-**Status:** NOT STARTED
-**Files:** `packages/terrain/src/mcp/cook.ts` (`forestFloor` zoom and resolution, the layers that follow the heightmap).
+**Status:** DONE (2026-11-14)
+**Files:** `packages/terrain/src/ground/ground.ts` (`forestFloor`; the PRD named `mcp/cook.ts`), `packages/terrain/__tests__/terrain-survey.spec.ts` and three fixture tiles.
 **Implementation:** Cook at 1 m cells when the source allows it. Reduce or mask the erosion and smoothing passes on this path until AC-2 holds. Read the kit size and the frame time.
 **Verification:** AC-2 spec case, then the AC-3 captures and the AC-4 readings.
 
-- [ ] The forest floor cooks at resolution 513 from a source of 1 m per pixel or finer, and at 257 otherwise. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts`
+- [x] The forest floor cooks at resolution 513 from a source of 1 m per pixel or finer, and at 257 otherwise. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts` — Evidence: 2026-11-14, red first (`expected 257 to be 513`), then green: Sprague Lake lands on zoom 16 at 0.91 m/px and cooks at 513; the European broadleaf site has only coarse tiles and stays at 257. terrain-survey and terrain-mcp: 191 tests pass. `@threenative/terrain typecheck` passes. `@threenative/terrain test`: 677 of 678 pass; the one red is `forest-ground-cover.spec.ts` (`fern-a` has no `near` file in `assets.json`), which this PRD does not touch.

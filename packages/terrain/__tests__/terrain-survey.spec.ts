@@ -16,7 +16,7 @@ import {
   woodedFoot,
 } from "../src/ground/ground.js";
 import { placeMassif } from "../src/ground/massif.js";
-import { LANDFORMS, type LandformKind } from "../src/ground/presets.js";
+import { LANDFORMS, type LandformKind, landform } from "../src/ground/presets.js";
 import { surveyHeights } from "../src/ground/survey.js";
 import { MASSIFS, SURVEYS, locationSurvey } from "../src/ground/surveys.js";
 import { TERRAIN_TOOLS, parseGenerateInput, parseGenerateRequest } from "../src/mcp/tools.js";
@@ -623,6 +623,78 @@ describe("the forest floor gate", () => {
     expect(isForestFloor(80, 19, 256)).toBe(true);
     expect(isForestFloor(40, 31, 1024)).toBe(false);
   });
+});
+
+/** RMS of the height left after a Gaussian low-pass of 10 m, on the central 75% of a square grid. */
+function detailUnder10m(values: ArrayLike<number>, resolution: number, cell: number): number {
+  const sigma = 10 / cell;
+  const reach = Math.ceil(3 * sigma);
+  const kernel = Array.from({ length: 2 * reach + 1 }, (_, i) =>
+    Math.exp(-0.5 * ((i - reach) / sigma) ** 2),
+  );
+  const total = kernel.reduce((sum, weight) => sum + weight, 0);
+  const at = (grid: ArrayLike<number>, r: number, c: number) =>
+    grid[
+      Math.min(resolution - 1, Math.max(0, r)) * resolution +
+        Math.min(resolution - 1, Math.max(0, c))
+    ] as number;
+  const pass = (grid: ArrayLike<number>, rows: boolean) =>
+    Float64Array.from({ length: resolution * resolution }, (_, index) => {
+      const r = Math.floor(index / resolution);
+      const c = index % resolution;
+      let sum = 0;
+      for (let k = -reach; k <= reach; k++)
+        sum += (kernel[k + reach] as number) * (rows ? at(grid, r + k, c) : at(grid, r, c + k));
+      return sum / total;
+    });
+  const low = pass(pass(values, true), false);
+  const edge = Math.floor(resolution / 8);
+  let squares = 0;
+  let count = 0;
+  for (let r = edge; r < resolution - edge; r++)
+    for (let c = edge; c < resolution - edge; c++) {
+      squares +=
+        ((values[r * resolution + c] as number) - (low[r * resolution + c] as number)) ** 2;
+      count++;
+    }
+  return Math.sqrt(squares / count);
+}
+
+// PRD-885 Phase 3: lidar ground at 1 m cells. The fixture holds Sprague Lake's zoom 16 tiles (0.91 m/px)
+// and no zoom 17 tile, as the live service has; the European broadleaf site has only coarse tiles.
+describe("the forest floor at lidar cells", () => {
+  const floorRecipe = () =>
+    landform("temperateMountains", { resolution: 257, seed: 73, size: 512 }).toJSON();
+  beforeEach(() => {
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", FIXTURE_CACHE);
+    vi.stubGlobal("fetch", NO_TILE);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("cooks at resolution 513 from a source of 1 m per pixel or finer, and at 257 otherwise", async () => {
+    const lidar = floorRecipe();
+    const fine = await forestFloor(lidar, SURVEYS.temperateMountains, undefined);
+    expect(lidar.config.resolution).toBe(513);
+    expect(fine.ground).toMatchObject({ zoom: 16, metersPerPixel: 0.91 });
+    const coarse = floorRecipe();
+    const site = ECOREGION_ROWS.find((row) => row.id === "european-broadleaf")?.site;
+    const floor = await forestFloor(coarse, site as NonNullable<typeof site>, undefined);
+    expect(coarse.config.resolution).toBe(257);
+    expect((floor.ground as { metersPerPixel: number }).metersPerPixel).toBeGreaterThan(1);
+  });
+
+  it("keeps at least 80% of the source's relief under 10 m", async () => {
+    const document = floorRecipe();
+    await forestFloor(document, SURVEYS.temperateMountains, undefined);
+    const source = await surveyHeights({ ...SURVEYS.temperateMountains, extentMeters: 512 }, 513);
+    const cooked = Terrain.fromJSON(document).evaluate().height;
+    expect(cooked).toHaveLength(513 * 513);
+    const kept = detailUnder10m(cooked, 513, 1) / detailUnder10m(source.values, 513, 1);
+    expect(kept).toBeGreaterThanOrEqual(0.8);
+  }, 120_000);
 });
 
 // PRD-866: the massif was drawn from the whole circle, so a seed could put it behind the camera.

@@ -94,7 +94,7 @@ comment as `surveys.ts` does, and replaces a site whose crop is not a forest flo
 ### Reused, not built
 
 `parseGenerateRequest`, `newBiomeSpec` (`tools.ts:628`), `validateBiome`, `surveyHeights`,
-`growArborSpecies` and `cookKit` are reused as they are. [PRD-885](../P2/PRD-885-a-terrain-survey-reads-lidar-grade-ground-from-mapterhorn.md)
+`growArborSpecies` and `cookKit` are reused as they are. [PRD-885](../done/PRD-885-a-terrain-survey-reads-lidar-grade-ground-from-mapterhorn.md)
 changes the tile source under `surveyHeights`. A row's `site` works with both sources.
 
 ### Risks

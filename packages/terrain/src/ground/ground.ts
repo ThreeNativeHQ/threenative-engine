@@ -8,7 +8,7 @@ import { Terrain } from "../core/terrain.js";
 import type { Layer } from "../core/types.js";
 import { placeMassif } from "./massif.js";
 import { LANDFORMS, type LandformKind } from "./presets.js";
-import { surveyHeights } from "./survey.js";
+import { type ISurveyHeights, surveyHeights } from "./survey.js";
 import { MASSIFS, SURVEYS, locationSurvey } from "./surveys.js";
 import type { IGroundDecision, IGroundRequest, ISurveyRow } from "./surveys.js";
 
@@ -159,19 +159,30 @@ export async function forestFloor(
     lon: row.lon + east / (111_320 * Math.cos((row.lat * Math.PI) / 180)),
     extentMeters: size,
   });
+  // PRD-885: a site with lidar (a pixel no wider than half the recipe's cell) cooks at that half cell,
+  // so the floor carries the relief under 10 m; a coarser site keeps the recipe's own grid.
+  const fine = (resolution - 1) * 2 + 1;
   let picked: { survey: ISurveyRow; grid: Awaited<ReturnType<typeof surveyHeights>> } | undefined;
   for (const [north, east] of [...spots, [0, 0] as const]) {
     const survey = patch(north, east);
-    const grid = await surveyHeights(survey, resolution);
-    const stats = terrainStats(grid.values, resolution, size);
-    picked = { survey, grid };
+    const sampled = await surveyHeights(survey, fine);
+    // The gate reads the recipe's own grid at every source, so a finer source picks the same spots.
+    const gated = everyOther(sampled, resolution);
+    const stats = terrainStats(gated.values, resolution, size);
+    picked = { survey, grid: sampled.metersPerPixel <= size / (fine - 1) ? sampled : gated };
     // A forest floor: the pinned valley spans 41 m and its steepest tenth 22 degrees.
     if (
-      isForestFloor(grid.max - grid.min, stats.slopeP90, size, flatShare(grid.values, resolution))
+      isForestFloor(
+        gated.max - gated.min,
+        stats.slopeP90,
+        size,
+        flatShare(gated.values, resolution),
+      )
     )
       break;
   }
   const { survey, grid } = picked as NonNullable<typeof picked>;
+  document.config.resolution = grid.width;
   applyGroundLayer(document.layers, grid, 1, -grid.min);
   // Real ground is already eroded. The preset's fluvial pass, built to wear a scaled or noise ground,
   // lowered this border 10-40 m under the ring that continues it, so a true-scale floor takes the
@@ -192,6 +203,22 @@ export async function forestFloor(
     },
     readme: groundReadme(survey, grid),
   };
+}
+
+/** Every other sample of a survey grid: the grid of twice the cell over the same square, exactly. */
+function everyOther(grid: ISurveyHeights, resolution: number): ISurveyHeights {
+  const step = (grid.width - 1) / (resolution - 1);
+  const values = new Float32Array(resolution * resolution);
+  for (let r = 0; r < resolution; r++)
+    for (let c = 0; c < resolution; c++)
+      values[r * resolution + c] = grid.values[r * step * grid.width + c * step] as number;
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+  }
+  return { ...grid, width: resolution, height: resolution, values, min, max };
 }
 
 /** What the cook reports of the tiles it read: the source, the zoom it landed on and that zoom's pixel size. */
