@@ -215,7 +215,7 @@ and AC-4 prove it through the packed package, the MCP spec and the kit bake.
 
 #### Phase 3: The preview has one folder per concern
 
-**Status:** NOT STARTED
+**Status:** NOT STARTED (2026-11-14): the preview is in flight — PR #591 edits `examples/strata-terrain-preview`, and this PRD's own Risks say to inventory and land the move with those branches quiet. Phase 2 closes every acceptance criterion; this box moves file paths only and keeps its own commit.
 **Files:** `examples/strata-terrain-preview/src/render/**`, `scripts/**`, `package.json`, `AGENTS.md` (script index), `__tests__/**` (import paths), `scripts/__tests__/strata-script-census.spec.ts` if a path pattern changes, `packages/terrain/docs/architecture/architecture.md`.
 **Implementation:** Inventory open pull requests and worktrees first (Risks). Move `src/render/` in one commit and `scripts/` in a second one, with import paths as the only content change.
 **Verification:** `pnpm --filter strata-terrain-preview typecheck`, `pnpm --filter strata-terrain-preview test`, `pnpm --filter strata-terrain-preview test:terrain:web`, both census specs.
