@@ -86,9 +86,9 @@ import {
 } from "../water/river.js";
 import {
   COLLAR_UNDER_TILE,
-  TILE_INSIDE_SQUARE,
   type IPackedMassif,
   STREAM_TILE,
+  TILE_INSIDE_SQUARE,
   collarColors,
   collarMorph,
   createHorizonCollar,
