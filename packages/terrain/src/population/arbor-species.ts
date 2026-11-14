@@ -11,6 +11,7 @@ interface IVegetation {
     preset: string;
     seed: number;
     form?: Readonly<Record<string, unknown>>;
+    leafImage?: string;
   }): Promise<
     { bounds: { max: [number, number, number]; min: [number, number, number] }; path: string }[]
   >;
@@ -113,7 +114,7 @@ export async function growArborAsset(
   scratch: string,
   species: string,
   seedOffset = 0,
-  form?: Readonly<Record<string, unknown>>,
+  patch: { form?: Readonly<Record<string, unknown>>; leafImage?: string } = {},
 ): Promise<IArborAsset> {
   const parsed = parseArborSpecies(species);
   if (parsed === undefined) throw new Error(`cook: species '${species}' must start with arbor:.`);
@@ -129,7 +130,7 @@ export async function growArborAsset(
     out: join(scratch, id),
     preset: parsed.preset,
     seed,
-    ...(form === undefined ? {} : { form }),
+    ...patch,
   });
   const [near, mid] = files as [(typeof files)[number], (typeof files)[number]];
   return { bounds: near.bounds, maxDistance: 600, mid: mid.path, midDistance: 45, near: near.path };
@@ -138,23 +139,30 @@ export async function growArborAsset(
 /**
  * Grows each kit asset row written `{ "arbor": "douglasfir@3" }` in place: the baked near and mid
  * levels and bounds join the row, and the row's own fields win. A row's `form` is the game's patch
- * over the Arbor preset (`bakeVegetation`'s `form`), so a kit grows a forest-grown form or its own
- * leaf card with no package edit. Returns whether any row grew.
+ * over the Arbor preset (`bakeVegetation`'s `form`), and its `leafImage` is a PNG atlas under
+ * `assetsDir` the leaves draw instead of Arbor's card, so a kit grows a forest-grown form and its
+ * own needles with no package edit. Returns whether any row grew.
  */
 export async function growArborRows(
   table: Record<string, object>,
   projectRoot: string,
   scratch: string,
+  assetsDir = projectRoot,
 ): Promise<boolean> {
   let grew = false;
   for (const [id, spec] of Object.entries(table)) {
-    const { arbor, form, ...row } = spec as {
+    const { arbor, form, leafImage, ...row } = spec as {
       arbor?: string;
       form?: Readonly<Record<string, unknown>>;
+      leafImage?: string;
     };
     if (arbor === undefined) continue;
+    const patch = {
+      ...(form === undefined ? {} : { form }),
+      ...(leafImage === undefined ? {} : { leafImage: resolve(assetsDir, leafImage) }),
+    };
     table[id] = {
-      ...(await growArborAsset(projectRoot, scratch, `arbor:${arbor}`, 0, form)),
+      ...(await growArborAsset(projectRoot, scratch, `arbor:${arbor}`, 0, patch)),
       ...row,
     };
     grew = true;

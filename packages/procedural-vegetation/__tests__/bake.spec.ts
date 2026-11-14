@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createCanvas } from "@napi-rs/canvas";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { bakeVegetation, vegetationPresets } from "../src/index.js";
@@ -97,6 +98,24 @@ describe("bakeVegetation", () => {
     await expect(
       bakeVegetation({ out, preset: "spruce", form: { leaves: [{}, { count: 3 }] } }),
     ).rejects.toThrow(/form\.leaves has 2 rows; spruce has 1/u);
+  });
+
+  it("embeds a game's leaf image as the leaf texture, and refuses a file that is not a PNG", async () => {
+    const out = await makeTempDir("tn-vegetation-");
+    const canvas = createCanvas(64, 64);
+    canvas.getContext("2d").fillRect(0, 0, 32, 32);
+    const png = canvas.toBuffer("image/png");
+    const image = path.join(out, "needles.png");
+    await writeFile(image, png);
+    const [plain] = await bakeVegetation({ out, preset: "spruce", seed: 7 });
+    const [atlas] = await bakeVegetation({ out, preset: "spruce", seed: 7, leafImage: image });
+    expect(atlas?.path).not.toBe(plain?.path);
+    expect((await readFile(atlas?.path ?? "")).includes(png)).toBe(true);
+    const text = path.join(out, "not.png");
+    await writeFile(text, "leaves");
+    await expect(bakeVegetation({ out, preset: "spruce", leafImage: text })).rejects.toThrow(
+      /leafImage .*not\.png is not a PNG/u,
+    );
   });
 
   it("lists the trees with latin names", () => {

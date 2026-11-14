@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import Arbor, { type IArborPreset } from "../vendor/arbor.js";
@@ -28,6 +28,12 @@ export interface IBakeVegetationOptions {
    * hash of the patch, so a formed bake never overwrites the stock one.
    */
   readonly form?: Readonly<Record<string, unknown>>;
+  /**
+   * A PNG the leaves draw instead of Arbor's drawn card, as an atlas laid out on the preset's
+   * `tex.grid` (cell 0 top-left, row by row); `form` picks the grid and each leaf row's `cells`.
+   * The file names carry a hash of its bytes.
+   */
+  readonly leafImage?: string;
 }
 
 export interface IVegetationBake {
@@ -41,6 +47,7 @@ export interface IVegetationBake {
 }
 
 const MAX_LOD = 2;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
  * List every Arbor preset: id, name, latin name and kind.
@@ -138,6 +145,24 @@ function withForm(
   return merged as unknown as IArborPreset;
 }
 
+/** The leaf PNG (the game's image, else Arbor's drawn card) and the file-name tag of a game's patch. */
+async function leafOf(
+  source: IArborPreset,
+  options: IBakeVegetationOptions,
+): Promise<{ leaf: Uint8Array; tag: string }> {
+  const image = options.leafImage === undefined ? undefined : await readFile(options.leafImage);
+  if (image !== undefined && !image.subarray(0, 8).equals(PNG_SIGNATURE))
+    throw new Error(`bakeVegetation: leafImage ${options.leafImage} is not a PNG`);
+  const patched = options.form !== undefined || image !== undefined;
+  const hash = createHash("sha256")
+    .update(JSON.stringify(options.form ?? null))
+    .update(image ?? "");
+  const tag = patched ? `-f${hash.digest("hex").slice(0, 8)}` : "";
+  if (image !== undefined) return { leaf: image, tag };
+  const drawn = Arbor.leafTexture(source, { createCanvas });
+  return { leaf: rgbaPng(drawn.width, drawn.height, drawn.data), tag };
+}
+
 /**
  * Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model.
  * Each GLB carries the _WIND vertex attribute, COLOR_0, TEXCOORD_0, embedded bark and leaf textures and alpha-masked leaves.
@@ -166,12 +191,8 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
     );
   if (new Set(lods).size !== lods.length) throw new Error(`bakeVegetation: lods repeat: [${lods}]`);
   const source = withForm(preset, Arbor.PRESETS[preset] as IArborPreset, options.form);
-  const tag =
-    options.form === undefined
-      ? ""
-      : `-f${createHash("sha256").update(JSON.stringify(options.form)).digest("hex").slice(0, 8)}`;
+  const { leaf, tag } = await leafOf(source, options);
   const bark = source.noBark ? undefined : Arbor.barkTexture(source.bark);
-  const leaf = Arbor.leafTexture(source, { createCanvas });
   const textures = {
     ...(bark
       ? {
@@ -179,7 +200,7 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
           barkNormal: rgbaPng(bark.width, bark.height, bark.normal),
         }
       : {}),
-    leaf: rgbaPng(leaf.width, leaf.height, leaf.data),
+    leaf,
   };
   await mkdir(out, { recursive: true });
   const baked: IVegetationBake[] = [];

@@ -74,8 +74,16 @@ describe("Arbor species in a terrain cook", () => {
       const table: Record<string, object> = {
         fir: { arbor: "spruce@7", form: { leaves: [{ count: 40 }] }, tree: true },
         plain: { arbor: "spruce@7" },
+        needles: { arbor: "spruce@7", leafImage: "needles.png" },
       };
-      await growArborRows(table, fixture.root, join(fixture.root, "scratch"));
+      const pixel =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+      await writeFile(join(fixture.root, "needles.png"), Buffer.from(pixel, "base64"));
+      await growArborRows(table, fixture.root, join(fixture.root, "scratch"), fixture.root);
+      expect((table.needles as { near: string }).near).toMatch(
+        /spruce-7-f[0-9a-f]{8}-lod\d\.glb$/u,
+      );
+      expect(table.needles).not.toHaveProperty("leafImage");
       const fir = table.fir as { near: string; tree?: boolean };
       expect(fir.near).toMatch(/spruce-7-f[0-9a-f]{8}-lod\d\.glb$/u);
       expect((table.plain as { near: string }).near).toMatch(/spruce-7-lod\d\.glb$/u);

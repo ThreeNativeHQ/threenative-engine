@@ -259,7 +259,7 @@ async function cookInto(
   }
   // The kit's own `arbor` rows, `arbor:<preset>[@seed]` species and a request's tree word join the
   // table before any scatter.
-  const kitArbor = await growArborRows(assetTable, request.projectRoot, scratch);
+  const kitArbor = await growArborRows(assetTable, request.projectRoot, scratch, assetsDir);
   const biome = await growArborSpecies({
     assetTable,
     biome: declaredBiome,
