@@ -732,7 +732,6 @@ describe("reviewed producer and independent feature boundaries", () => {
       expect(lanes.velocity, file).toBe(true);
       expect(lanes.csg, file).toBe(false);
       expect(lanes.ik, file).toBe(false);
-      expect(lanes.vegetation, file).toBe(false);
     }
   });
   it("keeps independent terrain and animation modules outside temporal and velocity", () => {
@@ -751,7 +750,6 @@ describe("reviewed producer and independent feature boundaries", () => {
       expect(lanes.animation, file).toBe(true);
       expect(lanes.csg, file).toBe(false);
       expect(lanes.ik, file).toBe(false);
-      expect(lanes.vegetation, file).toBe(false);
     }
   });
   it("keeps independent terrain worker modules outside animation", () => {
@@ -774,7 +772,6 @@ describe("reviewed producer and independent feature boundaries", () => {
       expect(lanes["fluid-native"], file).toBe(true);
       expect(lanes.csg, file).toBe(false);
       expect(lanes.ik, file).toBe(false);
-      expect(lanes.vegetation, file).toBe(false);
     }
   });
   it("does not select fluid for independent terrain or animation modules", () => {

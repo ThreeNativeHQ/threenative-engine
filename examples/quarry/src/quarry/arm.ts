@@ -36,13 +36,34 @@ export function armFromLocation(): QuarryArm {
   return parseArm(new URLSearchParams(search).get("arm"));
 }
 
-export const QUARRY_MODES = ["control", "free", "route"] as const;
+/**
+ * Whether the route draws only what the view holds, from `?viewCull=` on the web.
+ *
+ * `?viewCull=off` is PRD-600's measurement arm: every cluster and every copy is drawn, exactly as the
+ * route drew them before the cut was pruned by the view, so two runs of the same build differ only by
+ * the cull. Anything else is on, and a misspelling fails closed rather than measuring the wrong arm.
+ */
+export function viewCullFromLocation(): boolean {
+  // A native entry has no URL, so the before arm is baked in instead: `VITE_QUARRY_VIEW_CULL=off`
+  // at bundle time builds the every-cluster arm of the same source.
+  if (import.meta.env?.VITE_QUARRY_VIEW_CULL === "off") return false;
+  const search = globalThis.location?.search;
+  if (typeof search !== "string") return true;
+  const value = new URLSearchParams(search).get("viewCull");
+  if (value === undefined || value === null || value === "") return true;
+  if (value === "on") return true;
+  if (value === "off") return false;
+  throw new Error(`TN_QUARRY_UNKNOWN_VIEW_CULL: '${value}' is on or off.`);
+}
+
+export const QUARRY_MODES = ["control", "free", "pose", "route"] as const;
 
 export type QuarryMode = (typeof QUARRY_MODES)[number];
 
 /**
  * `?mode=free` hands the walk to a person, `?mode=control` parks the camera over the pit floor so
- * the control surface can be diffed between arms, and anything else drives the fixed route.
+ * the control surface can be diffed between arms, `?mode=pose` stands still on one route frame so a
+ * before/after pair is the same pose, and anything else drives the fixed route.
  */
 export function modeFromLocation(): QuarryMode {
   const search = globalThis.location?.search;
@@ -55,4 +76,24 @@ export function modeFromLocation(): QuarryMode {
   if (found === undefined)
     throw new Error(`TN_QUARRY_UNKNOWN_MODE: '${value}' is not one of ${QUARRY_MODES.join(", ")}.`);
   return found;
+}
+
+/**
+ * The route frame `?mode=pose` stands on, from `?frame=`.
+ *
+ * A route screenshot is taken when a scenario step's ticks elapse, and how many route frames pass
+ * per tick depends on the machine — so two runs of two builds frame different poses and an image
+ * difference between them means nothing. Freezing the pose is what makes a pair comparable.
+ */
+export function poseFrameFromLocation(): number {
+  const search = globalThis.location?.search;
+  if (typeof search !== "string") return 0;
+  const value = new URLSearchParams(search).get("frame");
+  if (value === null || value === "") return 0;
+  const frame = Number(value);
+  // Fails closed, like the arm and the mode: a paused route on the wrong frame is a pair of images
+  // that are silently not the same pose.
+  if (!Number.isSafeInteger(frame) || frame < 0)
+    throw new Error(`TN_QUARRY_UNKNOWN_FRAME: '${value}' is not a route frame index.`);
+  return frame;
 }

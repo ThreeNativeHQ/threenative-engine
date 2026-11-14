@@ -702,17 +702,21 @@ void Renderer::encodeFrame(FrameJob& job) {
             std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
             boundIndex = nullptr;
         }
-        for (const shader::VertexAttribute& a : p.program->vertex.attributes) {
-            // instanceMatrix0..3 are the columns of one buffer of mat4s, bound at 16-byte steps.
-            const bool column = a.name.rfind("instanceMatrix", 0) == 0;
+        // One slot per attribute, except instanceMatrix0..3: one buffer of mat4s in one slot (see
+        // shader::sharesMatrixSlot), which the pipeline reads at 16-byte steps.
+        uint32_t slot = 0;
+        const auto& vertexAttributes = p.program->vertex.attributes;
+        for (size_t i = 0; i < vertexAttributes.size(); ++i) {
+            const shader::VertexAttribute& a = vertexAttributes[i];
+            if (shader::sharesMatrixSlot(vertexAttributes, i)) continue;
             BufferStore* source = vertexSourceOf(item, a);
             if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
             const BufferStore& store = *source;
-            const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
-            if (a.location < std::size(boundVertex) && boundVertex[a.location] == &store) continue;
+            const uint32_t at = slot++;
+            if (at < std::size(boundVertex) && boundVertex[at] == &store) continue;
             const auto resolved = geometry_->cache.resolved(store);
-            TN_ENCODE(SetVertexBuffer, a.location, geometry_->gpu.buffer(resolved.buffer), offset, resolved.bytes - offset);
-            if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
+            TN_ENCODE(SetVertexBuffer, at, geometry_->gpu.buffer(resolved.buffer), 0, resolved.bytes);
+            if (at < std::size(boundVertex)) boundVertex[at] = &store;
         }
         // A required group that resolved to null means the draw's storage source is gone. A cached
         // program whose providing scene was torn down may keep a null group, but an active draw must

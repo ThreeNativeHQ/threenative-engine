@@ -740,6 +740,56 @@
   },
   {
    "scene": {
+    "name": "props-vertex-displaced",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "sway",
+      "type": "MeshStandardMaterial",
+      "displaced": true
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 300
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "sway",
+      "repeat": 240,
+      "ownGeometry": "varied"
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 540,
+    "projectedObjects": 300,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 240,
+    "exact": {
+     "vertexDisplaced": 240
+    }
+   }
+  },
+  {
+   "scene": {
     "name": "props-morph",
     "geometries": [
      {
