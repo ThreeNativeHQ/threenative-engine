@@ -104,6 +104,54 @@ async function loadVegetation(projectRoot: string, wanted: string): Promise<IVeg
 }
 
 /**
+ * Bakes one `arbor:<preset>[@seed]` species into `scratch` as a near and a mid level, with the
+ * asset row a cook or a kit bake reads. `@threenative/procedural-vegetation` comes from `projectRoot`.
+ */
+export async function growArborAsset(
+  projectRoot: string,
+  scratch: string,
+  species: string,
+  seedOffset = 0,
+): Promise<IArborAsset> {
+  const parsed = parseArborSpecies(species);
+  if (parsed === undefined) throw new Error(`cook: species '${species}' must start with arbor:.`);
+  const seed = parsed.seed + seedOffset;
+  const id = idOf(parsed.preset, seed);
+  const vegetation = await loadVegetation(projectRoot, species);
+  if (!vegetation.vegetationPresets().some((p) => p.id === parsed.preset))
+    throw new Error(
+      `cook: species '${species}' names no Arbor preset. Call vegetationPresets() from ${PACKAGE} for the ids.`,
+    );
+  const files = await vegetation.bakeVegetation({
+    lods: LODS,
+    out: join(scratch, id),
+    preset: parsed.preset,
+    seed,
+  });
+  const [near, mid] = files as [(typeof files)[number], (typeof files)[number]];
+  return { bounds: near.bounds, maxDistance: 600, mid: mid.path, midDistance: 45, near: near.path };
+}
+
+/**
+ * Grows each kit asset row written `{ "arbor": "douglasfir@3" }` in place: the baked near and mid
+ * levels and bounds join the row, and the row's own fields win. Returns whether any row grew.
+ */
+export async function growArborRows(
+  table: Record<string, object>,
+  projectRoot: string,
+  scratch: string,
+): Promise<boolean> {
+  let grew = false;
+  for (const [id, spec] of Object.entries(table)) {
+    const { arbor, ...row } = spec as { arbor?: string };
+    if (arbor === undefined) continue;
+    table[id] = { ...(await growArborAsset(projectRoot, scratch, `arbor:${arbor}`)), ...row };
+    grew = true;
+  }
+  return grew;
+}
+
+/**
  * Grows the Arbor species a cook names. An explicit `arbor:<preset>[@seed]` row of the biome, and
  * `treeSpecies` (a request that names a tree) in place of the kit's own tree art, each bake once per
  * distinct preset and seed into `scratch`, and join `assetTable` under a bare id. The returned biome
@@ -124,33 +172,12 @@ export async function growArborSpecies(options: {
     ),
   );
   if (named.size === 0 && treeSpecies === undefined) return biome;
-  let vegetation: IVegetation | undefined;
   const baked = new Map<string, IArborAsset>();
   const grow = async (species: string, seedOffset = 0): Promise<[string, IArborAsset]> => {
     const parsed = parseArborSpecies(species) as { preset: string; seed: number };
-    const seed = parsed.seed + seedOffset;
-    const id = idOf(parsed.preset, seed);
-    const known = baked.get(id);
-    if (known !== undefined) return [id, known];
-    vegetation ??= await loadVegetation(projectRoot, species);
-    if (!vegetation.vegetationPresets().some((p) => p.id === parsed.preset))
-      throw new Error(
-        `cook: species '${species}' names no Arbor preset. Call vegetationPresets() from ${PACKAGE} for the ids.`,
-      );
-    const files = await vegetation.bakeVegetation({
-      lods: LODS,
-      out: join(scratch, id),
-      preset: parsed.preset,
-      seed,
-    });
-    const [near, mid] = files as [(typeof files)[number], (typeof files)[number]];
-    const asset: IArborAsset = {
-      bounds: near.bounds,
-      maxDistance: 600,
-      mid: mid.path,
-      midDistance: 45,
-      near: near.path,
-    };
+    const id = idOf(parsed.preset, parsed.seed + seedOffset);
+    const asset =
+      baked.get(id) ?? (await growArborAsset(projectRoot, scratch, species, seedOffset));
     baked.set(id, asset);
     return [id, asset];
   };

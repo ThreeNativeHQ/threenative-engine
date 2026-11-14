@@ -1004,6 +1004,18 @@ function appendCardCopies(primitive: Primitive, copies: readonly ICardCopies[]):
 
 /** Thin MASK card sets into a standalone mesh; opaque parts and every vertex attribute survive. */
 export function thinFoliageCards(document: Document, keepRatio: number): number {
+  return thinCoveringCards(document, keepRatio, 0);
+}
+
+/**
+ * `thinFoliageCards`, refusing as for cards that cannot be thinned when the scaled survivors cover
+ * less than `minCoverage` of the LOD0 card area: below it the crown reads as bare branches.
+ */
+export function thinCoveringCards(
+  document: Document,
+  keepRatio: number,
+  minCoverage: number,
+): number {
   if (!Number.isFinite(keepRatio) || keepRatio <= 0 || keepRatio >= 1)
     throw new Error("thinFoliageCards keepRatio must be in (0, 1).");
   let reduced = 0;
@@ -1030,6 +1042,11 @@ export function thinFoliageCards(document: Document, keepRatio: number): number 
       );
       if (chain === null)
         throw new Error("thinFoliageCards cannot reduce this MASK primitive as whole cards.");
+      const coverage = chain.levels.at(-1)?.areaCoverage ?? 1;
+      if (coverage < minCoverage)
+        throw new Error(
+          `thinFoliageCards cannot reduce this MASK primitive to ${keepRatio} and keep ${minCoverage} of its card area (got ${coverage.toFixed(2)}).`,
+        );
       appendCardCopies(primitive, chain.copies);
       primitive.setIndices(
         (

@@ -1,13 +1,6 @@
 {
   "fir": {
-    "near": "fir_tree_01/fir-b-lod1.glb",
-    "maxDistance": 600,
-    "bounds": {
-      "min": [-2.869, 0, -3.619],
-      "max": [2.763, 14.078, 2.465]
-    },
-    "mid": "fir_tree_01/fir-b-lod2.glb",
-    "midDistance": 45,
+    "arbor": "douglasfir@3",
     "tree": true
   },
   "boulder": {
@@ -21,30 +14,15 @@
     }
   },
   "fir-c": {
-    "near": "fir_tree_01/fir-c-lod1.glb",
-    "maxDistance": 600,
-    "bounds": {
-      "min": [-2.727, 0, -3.498],
-      "max": [3.623, 14.552, 2.508]
-    },
-    "mid": "fir_tree_01/fir-c-lod2.glb",
-    "midDistance": 45
+    "arbor": "spruce@7"
   },
   "fern-a": {
-    "near": "fern_02/fern-a.glb",
-    "maxDistance": 50,
-    "bounds": {
-      "min": [-0.699, 0, -0.744],
-      "max": [0.764, 0.62, 0.802]
-    }
+    "arbor": "bracken@6",
+    "maxDistance": 50
   },
   "fern-b": {
-    "near": "fern_02/fern-b.glb",
-    "maxDistance": 50,
-    "bounds": {
-      "min": [-0.758, 0, -0.879],
-      "max": [0.655, 0.687, 0.643]
-    }
+    "arbor": "blueberry@2",
+    "maxDistance": 50
   },
   "boulder-small-a": {
     "near": "rock_moss_set_01/pebble-a.glb",

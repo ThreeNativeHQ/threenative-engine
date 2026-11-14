@@ -35,6 +35,16 @@ Owner, 2026-11-07: the ground vegetation looks bad and too bright. Known measure
 - [ ] Frame time, streaming, the 25 MiB cooked-kit budget and `pipelinesSinceReveal` 0 in `loop.playtest.json` stay at their original values. proof: `loop.playtest.json` and the starter-kit size spec
   - 2026-11-09, open: `packages/terrain/__tests__/starter-kit.spec.ts` passes 19/19 (the PRD-855 edits are example render code only, so kit bytes cannot move). `loop.playtest.json`, headed WebGPU, 2 runs per arm: at `2e49e1000` `pipelinesSinceReveal` 1 then 0, timeToReady 18.7 / 18.3 s; the control (`terrain.ts` and `pack.ts` at `6f5bf56a4`) 0 (run lost its network, `ERR_NETWORK_CHANGED`) then 1, timeToReady 17.8 / 17.4 s. The one late pipeline is a flake on both arms. The 0.9 s ready gap is unresolved on 2 runs, and no frame-time comparison was made.
 
+### Phase 4 — Arbor species and streamed grass in every starter kit
+
+Owner, 2026-11-14: "can you please use the arbor and grass abstractions from latest commits instead of this crap", "create realistic seeds based on them, for any environment", "there are many kinds of vegetations that can be used, find the ones appropriate depending on each kind of environment". The kits stand on Colorado surveys, so each palette is a Colorado (or, for the coast and the desert, a matching North American) plant community built from the 29 Arbor trees and 24 cover presets.
+
+- [ ] A kit `assets.json` row `{ "arbor": "<preset>@<seed>" }` is an Arbor species that `bakeKit` and the MCP cook both grow (`growArborRows`), and the derived far levels stop at the species' impostor distance. proof: `starter-kit.spec.ts`, `kit-assets.spec.ts`, `arbor-species.spec.ts`, `terrain-mcp.spec.ts`, and the new impostor case in `packages/assets/__tests__/terrain-world.spec.ts`
+- [ ] Forest: Douglas fir, spruce, bracken and blueberry (Colorado montane). proof: kit proof frames and a fresh judge
+- [ ] The kits draw `GrassField3D` grass from their biome grass rows. proof: kit proof frames
+- [ ] Coastal, alpine, desert and tundra palettes. proof: kit proof frames per world
+- [ ] The forest walk holds 60 FPS on the RTX 2080 (PRD-584 AC-4 lane, display :0). proof: three walks, GPU p95 under 16.7 ms
+
 ## Acceptance Criteria
 
 - [ ] A fresh visual judge returns IMPROVEMENT on the ground frames of all five worlds, with before/after sheets on the PR. proof: judge verdict on the PR

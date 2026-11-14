@@ -14,11 +14,11 @@ const starterAssets = join(packageRoot, "starter-assets");
 // Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
   forest: {
-    "world.glb": "9d424c285ed8e6db2f4076a14604571ba1c556abf7b8f365848a008e6cd67675",
+    "world.glb": "03c9810d9c222ebc4493b3aac3f1fc90dcfc31da497f77adb858c4989df638b4",
     "heightmap.u16": "800715834e5db9a414ef7207495948bae231923fdfd82bc36b44e51131f06968",
-    "placements.bin": "0853ed2486043db7287b5e98676bc9894f057ea43fb09258cc26d8416518fc8a",
+    "placements.bin": "929300652a90254b954751543f6c43cfa3dbb1805b9b561f9e42f8e00d80052f",
     "splat.rgba": "46b2dee04b232ed6ab36a64402463cb15b0288318f694206acaf3d2f8068da7e",
-    "world.json": "78ae2bb83db86acf1b54cc67c59e5aaf8b9b5faadaee3c51f678da2e40fddaa7",
+    "world.json": "55a744b509ba9d57e7728b60ae9d15795fc46351c8a2f1a86693e36a214c2893",
   },
   alpine: {
     "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
@@ -97,6 +97,12 @@ function kitInTempDir(kitName = "forest"): string {
     join(dir, "node_modules", "@threenative", "assets"),
     "dir",
   );
+  // The kit's `arbor` rows grow with this package, the README's third devDependency.
+  symlinkSync(
+    join(packageRoot, "..", "procedural-vegetation"),
+    join(dir, "node_modules", "@threenative", "procedural-vegetation"),
+    "dir",
+  );
   return dir;
 }
 
@@ -156,13 +162,13 @@ describe("forest starter kit", () => {
       "800715834e5db9a414ef7207495948bae231923fdfd82bc36b44e51131f06968",
     );
     expect(files.get("placements.bin")).toBe(
-      "0853ed2486043db7287b5e98676bc9894f057ea43fb09258cc26d8416518fc8a",
+      "929300652a90254b954751543f6c43cfa3dbb1805b9b561f9e42f8e00d80052f",
     );
     expect(files.get("splat.rgba")).toBe(
       "46b2dee04b232ed6ab36a64402463cb15b0288318f694206acaf3d2f8068da7e",
     );
     expect(files.get("world.json")).toBe(
-      "78ae2bb83db86acf1b54cc67c59e5aaf8b9b5faadaee3c51f678da2e40fddaa7",
+      "55a744b509ba9d57e7728b60ae9d15795fc46351c8a2f1a86693e36a214c2893",
     );
 
     // One recipe and seed, one package: a second bake is byte-identical.

@@ -26,7 +26,7 @@ import type {
   SplinePoint,
 } from "../core/types.js";
 import { starterAssetsDir } from "../kit-assets.js";
-import { growArborSpecies, parseArborSpecies } from "./arbor-species.js";
+import { growArborRows, growArborSpecies, parseArborSpecies } from "./arbor-species.js";
 import { measureGlb } from "./glb-stats.js";
 import { surveyHeights } from "./survey.js";
 import { TERRAIN_KITS, resolveAssetSource } from "./tools.js";
@@ -623,13 +623,12 @@ function floodedBodies(state: ITerrainState): IBiomeWaterBody[] {
  * its authored rules, so its cook stays the world its own bake writes.
  */
 /**
- * The radius, in metres, around the world's centre that a preset's trees keep out of. The starter
- * game's arena stands there (template `render/arena.ts` `ARENA`: ±13 m by ±11 m inside 1 m walls,
- * a half-diagonal of 18.4 m), and the cook seats the ground under its floor, so a tree inside it
- * grows through the floor or a wall; the radius adds a fir crown (3.6 m) and rounds up.
- * ponytail: fixed to the starter arena; read the game's own footprint once a cook can see it.
+ * The radius, in metres, around the world's centre that a preset's trees keep out of: the player
+ * spawns there. A cooked world is the level, so the template's prototype arena goes (owner,
+ * 2026-11-14: "why the fuck do we have that weird starter scene on the middle of the forest? we
+ * just need the humanoid"); a trunk at the spawn is all this guards, with a fir crown's room.
  */
-export const PLAY_AREA_CLEAR_RADIUS = 23;
+export const PLAY_AREA_CLEAR_RADIUS = 4;
 // The mask's soft edge is the outer 2% of its radius, where a tree still passes by chance: the
 // mask is drawn that much wider, so the whole promised radius is clear (a denser forest row put a
 // trunk at 22.79 m).
@@ -1205,7 +1204,9 @@ async function cookInto(
     IAssetSpec
   >;
   const surface = JSON.parse(await readFile(join(kitDir, "surface.json"), "utf8")) as ISurface;
-  // `arbor:<preset>[@seed]` species, and a request's tree word, join the table before any scatter.
+  // The kit's own `arbor` rows, `arbor:<preset>[@seed]` species and a request's tree word join the
+  // table before any scatter.
+  const kitArbor = await growArborRows(assetTable, request.projectRoot, scratch);
   const biome = await growArborSpecies({
     assetTable,
     biome: declaredBiome,
@@ -1214,7 +1215,7 @@ async function cookInto(
     ...(request.treeSpecies === undefined ? {} : { treeSpecies: request.treeSpecies }),
   });
   // Baked Arbor trees carry `_WIND`; the game sways them with the copy-out `starter/arbor/wind.ts`.
-  const arborTrees = biome !== declaredBiome;
+  const arborTrees = kitArbor || biome !== declaredBiome;
 
   // A landform preset authors the ground and no scatter rules, so the biome file's foliage is placed
   // on it through the stages every starter scatter runs.
@@ -1231,6 +1232,12 @@ async function cookInto(
     recipe.placementOverrides ?? {},
   );
 
+  // A row's `far.impostor` ends its species' far-level ladder: a level past the impostor never draws.
+  const impostors = new Map(
+    biome.foliage.flatMap((row) =>
+      row.far?.impostor === undefined ? [] : [[row.species, row.far.impostor] as const],
+    ),
+  );
   const species = Object.fromEntries(
     Object.entries(assetTable).map(([id, spec]) => [
       id,
@@ -1241,6 +1248,7 @@ async function cookInto(
           ? [{ distance: spec.midDistance ?? 40, glb: resolve(assetsDir, spec.mid) }]
           : [],
         maxDistance: spec.maxDistance,
+        ...(impostors.has(id) ? { impostorDistance: impostors.get(id) } : {}),
       },
     ]),
   );
@@ -1365,6 +1373,8 @@ async function cookInto(
       'import { CollisionShape3D as TerrainCollisionShape, RigidBody3D as TerrainRigidBody } from "@threenative/physics";',
       'import { Object3D as TerrainAnchor } from "three";',
       ...(arborTrees ? ['import { arborWind } from "./render/arborWind.js";'] : []),
+      "// This world is the level: delete the template's prototype arena (its grid ground, walls and ramp)",
+      "// and keep only the player, spawned at the centre on terrainField.heightAt(0, 0) + terrainSeat.",
       `const terrainWorld = ${physical};`,
       `const [terrainHeightmapUrl] = await ctx.assets.resolve(${JSON.stringify(heightmapUrl)});`,
       'if (terrainHeightmapUrl === undefined) throw new Error("terrain: the world heightmap is not served.");',
@@ -1446,9 +1456,8 @@ function grassSnippet(
     `const grassBiome = ${JSON.stringify({ grass: biome.grass, seed: biome.seed })} as const;`,
     `const grassPlacement = grassFieldFromBiome(grassBiome, { heightAt: (x, z) => terrainField.heightAt(x, z) + terrainSeat, floor: terrainSeat, waterLevel: ${ocean === undefined ? "null" : `${ocean.level} + terrainSeat`} });`,
     'if (grassPlacement === null) throw new Error("terrain: the biome has no grass row.");',
-    // The starter arena stands on the cooked centre (PLAY_AREA_CLEAR_RADIUS above), so no blade grows through its floor.
-    "// Named override: grassKeepOut = null grows grass there too; set it to the game's own floor half-size otherwise.",
-    "const grassKeepOut: { x: number; z: number } | null = { x: 14, z: 12 };",
+    "// Named override: set grassKeepOut to a floor's half-size to keep blades from growing through it.",
+    "const grassKeepOut: { x: number; z: number } | null = null;",
     "const grassCover = grassPlacement.getDensity;",
     `const grass = new GrassField3D({ ...grassPlacement, getDensity: (x, z, y, normalY) => (grassKeepOut !== null && Math.abs(x) < grassKeepOut.x && Math.abs(z) < grassKeepOut.z ? 0 : grassCover(x, z, y, normalY)), blade: grassBlade(), material: grassMaterial, bounds: { minX: ${extent.minX}, minZ: ${extent.minZ}, maxX: ${extent.minX + extent.sizeX}, maxZ: ${extent.minZ + extent.sizeZ} } });`,
     "ctx.add(grass);",

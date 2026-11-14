@@ -1,8 +1,10 @@
 // Offline kit authoring; recipes, assets and sky choices remain in the copied game source.
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { starterAssetsDir } from "./kit-assets.js";
+import { growArborRows } from "./mcp/arbor-species.js";
 export { starterAssetsDir } from "./kit-assets.js";
 import type { ITerrainState } from "./core/types.js";
 import type { IWorldPackageAsset, IWorldPackageManifest } from "./core/world-package.js";
@@ -100,6 +102,10 @@ export async function bakeKit(
     string,
     KitAsset
   >;
+  // A row `{ "arbor": "douglasfir@3" }` is an Arbor species baked here, from the game's own
+  // `@threenative/procedural-vegetation`; the row's other fields override the baked ones.
+  const arborScratch = await mkdtemp(join(tmpdir(), "tn-kit-arbor-"));
+  await growArborRows(assetTable, here, arborScratch);
   const surface = JSON.parse(await readFile(join(here, "surface.json"), "utf8"));
 
   const state = applyPlacementOverrides(
@@ -129,10 +135,10 @@ export async function bakeKit(
           Object.entries(assetTable).map(([id, spec]) => [
             id,
             {
-              glb: join(assetsDir, spec.near),
+              glb: resolve(assetsDir, spec.near),
               bounds: spec.bounds,
               lods: spec.mid
-                ? [{ distance: spec.midDistance ?? 40, glb: join(assetsDir, spec.mid) }]
+                ? [{ distance: spec.midDistance ?? 40, glb: resolve(assetsDir, spec.mid) }]
                 : [],
               maxDistance: spec.maxDistance,
             },
@@ -169,7 +175,7 @@ export async function bakeKit(
 
   async function copy(from: string, to: string) {
     await mkdir(join(outDir, dirname(to)), { recursive: true });
-    await copyFile(join(assetsDir, from), join(outDir, to));
+    await copyFile(resolve(assetsDir, from), join(outDir, to));
     written.set(to, (await readFile(join(outDir, to))).byteLength);
   }
 
@@ -217,6 +223,8 @@ export async function bakeKit(
     "terrain-table.json",
     `${JSON.stringify({ ...surface, splat, textures: "textures" }, null, 2)}\n`,
   );
+
+  await rm(arborScratch, { recursive: true, force: true });
 
   if (cooked) {
     console.log(

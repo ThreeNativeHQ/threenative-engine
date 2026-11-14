@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -110,13 +110,19 @@ describe("pinned starter assets", () => {
     await cp(join(root, "starter/forest"), kit, { recursive: true });
     await copyFile(join(root, "starter-assets/credits.json"), join(kit, "credits.json"));
     await copyTerrainKit("forest", game, join(fixture.dir, "templates"));
+    // The README's third devDependency: the bake grows the kit's Arbor trees and understory.
+    await mkdir(join(game, "node_modules", "@threenative"), { recursive: true });
+    await symlink(
+      join(root, "../procedural-vegetation"),
+      join(game, "node_modules", "@threenative", "procedural-vegetation"),
+    );
     await fixture.bake(pathToFileURL(join(game, "bake.mjs")).href, {
       sky: "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
     });
     expect(JSON.parse(await readFile(join(game, "recipe.json"), "utf8"))).toHaveProperty("recipe");
     expect(
-      (await readFile(join(game, "world/models/fir-b-lod1.glb"))).equals(
-        await readFile(join(root, "starter-assets/fir_tree_01/fir-b-lod1.glb")),
+      (await readFile(join(game, "world/models/boulder-near.glb"))).equals(
+        await readFile(join(root, "starter-assets/boulder_01/boulder-near.glb")),
       ),
     ).toBe(true);
     expect(

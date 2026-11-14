@@ -29,6 +29,10 @@ async function gameProject(): Promise<string> {
     new URL("../../assets/", import.meta.url).pathname,
     join(root, "node_modules", "@threenative", "assets"),
   );
+  await symlink(
+    new URL("../../procedural-vegetation/", import.meta.url).pathname,
+    join(root, "node_modules", "@threenative", "procedural-vegetation"),
+  );
   await writeFile(
     join(root, "threenative.config.ts"),
     'export default { assets: { source: "assets" } };',

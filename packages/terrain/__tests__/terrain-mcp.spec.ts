@@ -135,6 +135,10 @@ describe("terrain_generate catalog and cook cache", () => {
         new URL("../../assets/", import.meta.url).pathname,
         join(project, "node_modules", "@threenative", "assets"),
       );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      );
       const ask = async (args: Record<string, unknown>) => {
         const started = performance.now();
         const reply = await askServer(project, "terrain_generate", args);
@@ -694,6 +698,8 @@ async function runEmittedLoad(
       },
     },
     three: { Object3D },
+    // The game's copy of `starter/arbor/wind.ts`, which the cook writes beside an Arbor world.
+    "./render/arborWind.js": { arborWind: () => undefined },
   };
   // The curtain the load holds until the streamed ground is in.
   const holds: string[] = [];
@@ -774,6 +780,10 @@ describe("terrain_generate result", () => {
           new URL("../../assets/", import.meta.url).pathname,
           join(project, "node_modules", "@threenative", "assets"),
         );
+        await symlink(
+          new URL("../../procedural-vegetation/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        );
         await writeFile(
           join(project, "threenative.config.ts"),
           `export default { assets: { source: "${source}" } };`,
@@ -812,9 +822,9 @@ describe("terrain_generate result", () => {
         expect(result.grass).toContain("} as const;");
         expect(result.grass).toContain("new GrassField3D(");
         expect(result.grass).toContain("grass.update(ctx.camera)");
-        // The kit's own trees carry no wind: no sway file, no partMaterial.
-        expect(result.trees).toBeNull();
-        expect(result.load).not.toContain("partMaterial");
+        // The forest kit's trees are Arbor species: they carry `_WIND`, so the cook writes the sway.
+        expect(result.trees?.file).toBe("src/render/arborWind.ts");
+        expect(result.load).toContain("partMaterial: arborWind");
         // No authoring import leaks into the game: only core/world, physics and three are allowed.
         expect(
           result.load.split("\n").filter((line: string) => line.includes("@threenative/terrain")),
@@ -905,6 +915,10 @@ describe("terrain_generate cold GLB handoff", () => {
       new URL("../../assets/", import.meta.url).pathname,
       join(project, "node_modules", "@threenative", "assets"),
     );
+    await symlink(
+      new URL("../../procedural-vegetation/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-vegetation"),
+    );
     const start = performance.now();
     const child = spawn(
       process.execPath,
@@ -978,6 +992,10 @@ describe("every shipped kit cooks", () => {
         await symlink(
           new URL("../../assets/", import.meta.url).pathname,
           join(project, "node_modules", "@threenative", "assets"),
+        );
+        await symlink(
+          new URL("../../procedural-vegetation/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-vegetation"),
         );
         await writeFile(
           join(project, "threenative.config.ts"),
@@ -1055,6 +1073,10 @@ describe("terrain_generate overrides", () => {
     await symlink(
       new URL("../../assets/", import.meta.url).pathname,
       join(project, "node_modules", "@threenative", "assets"),
+    );
+    await symlink(
+      new URL("../../procedural-vegetation/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-vegetation"),
     );
     await writeFile(
       join(project, "threenative.config.ts"),
@@ -1162,6 +1184,10 @@ describe("terrain_generate biome cooks", () => {
     await symlink(
       new URL("../../assets/", import.meta.url).pathname,
       join(project, "node_modules", "@threenative", "assets"),
+    );
+    await symlink(
+      new URL("../../procedural-vegetation/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-vegetation"),
     );
     await writeFile(
       join(project, "threenative.config.ts"),
@@ -1575,6 +1601,10 @@ describe("terrain_generate request words", () => {
         new URL("../../assets/", import.meta.url).pathname,
         join(project, "node_modules", "@threenative", "assets"),
       );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      );
       await writeFile(
         join(project, "threenative.config.ts"),
         'export default { assets: { source: "assets" } };',
@@ -1644,6 +1674,10 @@ describe("every landform under every biome", () => {
           new URL("../../assets/", import.meta.url).pathname,
           join(project, "node_modules", "@threenative", "assets"),
         );
+        await symlink(
+          new URL("../../procedural-vegetation/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        );
         await writeFile(
           join(project, "threenative.config.ts"),
           'export default { assets: { source: "assets" } };',
@@ -1673,8 +1707,8 @@ describe("every landform under every biome", () => {
             cell.runs.map((run) => run.asset),
           );
           expect(new Set(placed)).toEqual(new Set([stand]));
-          // PRD-806 E62 judge: the starter game's arena stands at the world's centre, so no tree
-          // grows through its floor or walls (eight float32 per record, x and z at 0 and 2).
+          // The player spawns at the world's centre, so no trunk stands on it; the template's arena
+          // is deleted, so the forest grows up to it (eight float32 per record, x and z at 0 and 2).
           const bytes = await readFile(
             join(project, dirname(result.worldPackage), manifest.placements),
           );
@@ -1683,6 +1717,7 @@ describe("every landform under every biome", () => {
           for (let i = 0; i < records.length; i += 8)
             nearest = Math.min(nearest, Math.hypot(records[i] as number, records[i + 2] as number));
           expect(nearest).toBeGreaterThanOrEqual(PLAY_AREA_CLEAR_RADIUS);
+          expect(nearest).toBeLessThan(23);
         }
         // The preset's own chain: a starter heightmap crop is what `landform` replaces.
         const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
@@ -1753,6 +1788,10 @@ describe("terrain_biome_new", () => {
         new URL("../../assets/", import.meta.url).pathname,
         join(project, "node_modules", "@threenative", "assets"),
       );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      );
       const retry = await askServer(project, "terrain_biome_new", {
         from: "forest",
         name: "savanna",
@@ -1772,6 +1811,10 @@ describe("terrain_biome_new", () => {
       await symlink(
         new URL("../../assets/", import.meta.url).pathname,
         join(project, "node_modules", "@threenative", "assets"),
+      );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),

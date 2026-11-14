@@ -38,7 +38,7 @@ import {
   LOD_ERROR_TARGETS,
   LOD_MIN_SAVING,
   generateDiscreteLod,
-  thinFoliageCards,
+  thinCoveringCards,
   validateDiscreteLod,
 } from "../lod/generate.js";
 import { createSimplifyPool } from "../lod/simplify-pool.js";
@@ -62,6 +62,8 @@ export interface ISpeciesSpec {
   };
   readonly lods?: readonly ISpeciesLODSpec[];
   readonly maxDistance?: number;
+  /** Metres where the engine's whole-asset impostor takes over: no far level is derived past it. */
+  readonly impostorDistance?: number;
 }
 
 export interface ICookTerrainWorldMaterialLayer {
@@ -275,6 +277,13 @@ async function parseSpecies(bytes: Uint8Array): Promise<Document> {
  */
 const FAR_LEVEL_KEEP_RATIOS: readonly number[] = [0.25, 0.06, 0.015, 0.004];
 
+/**
+ * The least share of the coarsest level's card area a far level's scaled cards cover. Below it the
+ * crown reads as bare branches with a few huge cards: an Arbor forest's lake and overview views
+ * (owner frames, 2026-11-14). The ladder ends at the last level that keeps it.
+ */
+const FAR_LEVEL_MIN_COVERAGE = 0.5;
+
 function documentTriangles(doc: Document): number {
   let total = 0;
   for (const mesh of doc.getRoot().listMeshes())
@@ -320,7 +329,7 @@ async function farLevelDocument(bytes: Uint8Array, keep: number): Promise<Docume
   for (const extension of doc.getRoot().listExtensionsUsed())
     if (extension.extensionName === TN_DISCRETE_LOD) extension.dispose();
   try {
-    thinFoliageCards(doc, keep);
+    thinCoveringCards(doc, keep, FAR_LEVEL_MIN_COVERAGE);
   } catch (error) {
     // Only the documented "these cards cannot be thinned" refusals keep the authored chain; any
     // other error is a defect and must not silently drop every far level.
@@ -346,13 +355,13 @@ async function farLevelDocument(bytes: Uint8Array, keep: number): Promise<Docume
  * `SQRT2` sooner than that, so over its band the density stays within half to twice the authored
  * density, not one to four times (PRD-584 AC-4: the far fir band cost 5 ms of a 18.3 ms GPU frame).
  * A level that saves less than `LOD_MIN_SAVING` of the one before it, or would switch at or past
- * `maxDistance`, is not shipped. A species whose alpha cards cannot be thinned keeps its chain.
+ * `maxDistance` or the impostor distance, is not shipped. A species whose alpha cards cannot be thinned keeps its chain.
  */
 async function deriveFarLevels(
   speciesId: string,
   coarsest: { readonly distance: number; readonly glb: Uint8Array; readonly doc: Document },
   firstIndex: number,
-  maxDistance: number | undefined,
+  maxDistance: number,
 ): Promise<{ distance: number; glb: Uint8Array; filename: string; doc: Document }[]> {
   await MeshoptSimplifier.ready;
   const anchor = documentTriangles(coarsest.doc);
@@ -364,7 +373,7 @@ async function deriveFarLevels(
     const triangles = documentTriangles(doc);
     if (triangles <= 0 || triangles > (1 - LOD_MIN_SAVING) * previous) continue;
     const distance = (coarsest.distance * Math.sqrt(anchor / triangles)) / Math.SQRT2;
-    if (maxDistance !== undefined && distance >= maxDistance) break;
+    if (distance >= maxDistance) break;
     const writer = await createGltfWriter();
     levels.push({
       distance: Math.round(distance * 10) / 10,
@@ -803,7 +812,12 @@ export async function cookTerrainWorld(
       const coarsest = lods.at(-1);
       if (coarsest !== undefined)
         lods.push(
-          ...(await deriveFarLevels(speciesId, coarsest, lods.length + 1, spec.maxDistance)),
+          ...(await deriveFarLevels(
+            speciesId,
+            coarsest,
+            lods.length + 1,
+            Math.min(spec.maxDistance ?? Infinity, spec.impostorDistance ?? Infinity),
+          )),
         );
 
       // One file carries every level of this species, so its levels share one texture set.

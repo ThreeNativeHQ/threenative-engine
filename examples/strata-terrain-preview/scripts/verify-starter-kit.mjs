@@ -29,6 +29,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Packed with the rest, installed by the agent step below rather than by the scaffolder. */
 const TERRAIN = "@threenative/terrain";
+const VEGETATION = "@threenative/procedural-vegetation";
 const PORT = 5187;
 const REPO = join(import.meta.dirname, "../../..");
 const ARM = process.env.KIT_ARM ?? "default";
@@ -513,6 +514,8 @@ async function main() {
     const workspacePackages = JSON.parse(
       run("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"]),
     );
+    // The kit bake grows its Arbor species with this package (the README's install step).
+    dependencies.add(VEGETATION);
     // The workspace closure, not only the template's direct dependencies: a dependency's own
     // workspace dependency (runtime-native's three-native) at an unpublished version 404s on npm.
     const byName = new Map(workspacePackages.map((entry) => [entry.name, entry]));
@@ -573,7 +576,7 @@ async function main() {
     say(`scaffolded ${game}`);
 
     // --- the agent's own three steps, from the kit's README --------------------------------------------
-    run("pnpm", ["add", "-D", archives[TERRAIN]], { cwd: game });
+    run("pnpm", ["add", "-D", archives[TERRAIN], archives[VEGETATION]], { cwd: game });
     cpSync(
       join(game, "node_modules", ...TERRAIN.split("/"), "starter", KIT),
       join(game, "src/terrain", KIT),

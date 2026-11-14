@@ -18,9 +18,11 @@ Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.
 ## Three steps
 
 1. Copy `node_modules/@threenative/terrain/starter/forest` to `src/terrain/forest`.
-2. Run `node src/terrain/forest/bake.mjs --out assets/terrain/forest`. The bake imports both
-   `@threenative/terrain` and `@threenative/assets`, so install them as devDependencies
-   (`npm install --save-dev @threenative/terrain @threenative/assets`); `three` must be installed
+2. Run `node src/terrain/forest/bake.mjs --out assets/terrain/forest`. The bake imports
+   `@threenative/terrain` and `@threenative/assets`, and grows the trees and understory that
+   `assets.json` names `arbor` with `@threenative/procedural-vegetation`, so install all three as
+   devDependencies (`npm install --save-dev @threenative/terrain @threenative/assets
+   @threenative/procedural-vegetation`); `three` must be installed
    too, because `@threenative/terrain` declares it as a peer dependency. The same recipe always
    writes the same bytes.
 3. Add it to a scene:

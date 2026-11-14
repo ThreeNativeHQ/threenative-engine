@@ -10,9 +10,9 @@ vi.mock("../src/lod/generate.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../src/lod/generate.js")>();
   return {
     ...original,
-    thinFoliageCards: (...args: Parameters<typeof original.thinFoliageCards>) => {
+    thinCoveringCards: (...args: Parameters<typeof original.thinCoveringCards>) => {
       if (thinning.error) throw thinning.error;
-      return original.thinFoliageCards(...args);
+      return original.thinCoveringCards(...args);
     },
   };
 });
