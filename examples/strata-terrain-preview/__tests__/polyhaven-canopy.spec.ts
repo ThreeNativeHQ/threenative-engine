@@ -14,8 +14,22 @@ describe("the forest canopy is Poly Haven art the starter ships", () => {
       expect(existsSync(join(STARTER, one.path)), one.path).toBe(true);
     }
   });
-  it("draws the forest floor's deadfall, litter, mounds, shrubs, ferns and flowers from starter-assets scans", () => {
-    const floor = ["deadfall", "litter", "scrub", "bush", "sapling", "fern", "poppy", "bloom"];
+  it("draws the forest floor's deadfall, litter, mounds, shrubs, ferns, flowers and stone from starter-assets scans", () => {
+    const floor = [
+      "deadfall",
+      "litter",
+      "scrub",
+      "bush",
+      "sapling",
+      "fern",
+      "poppy",
+      "bloom",
+      "boulder",
+      "riverrock",
+      "scree",
+      "cliff",
+      "mountain",
+    ];
     const rows = speciesFor("forest").filter((one) => floor.includes(one.asset));
     expect(new Set(rows.map((one) => one.asset))).toEqual(new Set(floor));
     for (const one of rows) {

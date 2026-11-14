@@ -233,6 +233,20 @@ const POLYHAVEN_FLOOR: Record<string, readonly (readonly [string, number])[]> = 
     ["celandine_01/celandine_01_d.glb", 0.2],
     ["periwinkle_plant/periwinkle_plant_05.glb", 0.22],
   ],
+  // Stone: the kit's Poly Haven `boulder_01` (its authored LOD1, LOD2 where it is scaled past a
+  // boulder or seen small), by its longest side.
+  boulder: [
+    ["boulder_01/boulder-near.glb", 2.1],
+    ["boulder_01/boulder-mid.glb", 5.2],
+    ["boulder_01/boulder-near.glb", 2.5],
+  ],
+  riverrock: [["boulder_01/boulder-mid.glb", 0.8]],
+  scree: [["boulder_01/boulder-mid.glb", 5.8]],
+  cliff: [["boulder_01/boulder-near.glb", 18]],
+  mountain: [
+    ["boulder_01/boulder-near.glb", 24],
+    ["boulder_01/boulder-near.glb", 24],
+  ],
   fern: [
     ["fern_02/fern-a.glb", 0.55],
     ["fern_02/fern-b.glb", 0.5],
@@ -955,9 +969,6 @@ export function speciesFor(world: WorldName): IPackSpecies[] {
     .filter((one) => held.has(one.asset))
     // The temperate understorey is the licensed species set; every other world keeps its own.
     .map((one) => {
-      const scan =
-        look.lawnGround && !FAB_FLOOR ? POLYHAVEN_FLOOR[one.asset]?.[one.variant] : undefined;
-      if (scan) return { ...one, path: scan[0], metres: scan[1] };
       const path = look.lawnGround ? TEMPERATE_PATHS[one.asset]?.[one.variant] : undefined;
       return path ? { ...one, path } : one;
     });
@@ -969,7 +980,11 @@ export function speciesFor(world: WorldName): IPackSpecies[] {
   );
   if (look.scrubBush && held.has("bush"))
     selected.push({ asset: "bush", variant: 0, path: "scrub/0", metres: 0.45 });
-  return selected;
+  return selected.map((one) => {
+    const scan =
+      look.lawnGround && !FAB_FLOOR ? POLYHAVEN_FLOOR[one.asset]?.[one.variant] : undefined;
+    return scan ? { ...one, path: scan[0], metres: scan[1] } : one;
+  });
 }
 
 /** The baked crown weight, 0 in the open and about 1 under a closed stand, at a world position. */
