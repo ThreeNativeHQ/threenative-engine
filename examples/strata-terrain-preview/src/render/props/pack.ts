@@ -198,7 +198,8 @@ const LANDSCAPE_PRO = "landscape-pro/fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Mo
 const POLYHAVEN_FLOOR: Record<string, readonly (readonly [string, number])[]> = {
   deadfall: [
     ["dead_tree_trunk/dead_tree_trunk.glb", 3.1],
-    ["dead_tree_trunk_02/dead_tree_trunk_02.glb", 4.0],
+    // dead_tree_trunk_02 is not drawn: it was scanned propped on a branch, so it floats on flat ground.
+    ["dead_tree_trunk/dead_tree_trunk.glb", 4.0],
     ["tree_stump_01/tree_stump_01.glb", 1.6],
     ["root_cluster_01/root_cluster_01.glb", 4.1],
   ],
@@ -966,6 +967,15 @@ function addRadialCoverage(
 }
 
 /** One whole-model base and scale for all sections: scaling each part separately detached crowns. */
+/**
+ * The model height a prop's base stands on. A starter-assets `.glb` is a Poly Haven scan whose origin
+ * is the ground it was scanned on, so a branch or root below y = 0 stays buried; licensed art stands
+ * on its lowest vertex.
+ */
+export function standingBase(box: Box3, path: string): number {
+  return path.endsWith(".glb") ? Math.max(box.min.y, 0) : box.min.y;
+}
+
 function prepareGeometry(
   mesh: Mesh,
   one: IPackSpecies,
@@ -1098,6 +1108,7 @@ export async function loadPack(
     });
     const box = new Box3().setFromObject(root); // engine-override: center baked geometry after unit normalization
     const size = box.getSize(new Vector3());
+    box.min.y = standingBase(box, one.path);
     const stone = STONE.has(one.asset);
     const entry = parts.get(`${one.asset}:${one.variant}`) ?? [];
     const horizon = new Map<IPropPart, BufferGeometry>();
