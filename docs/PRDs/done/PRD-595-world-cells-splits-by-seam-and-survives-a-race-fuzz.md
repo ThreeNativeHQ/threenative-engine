@@ -1,11 +1,11 @@
 # PRD-595 — `world-cells.ts` splits by seam and survives a load/evict race fuzz
 
-**Status:** PARTIAL
+**Status:** CLOSED — superseded (2026-11-13). [PRD-799](PRD-799-world-cells-second-split.md) finished the split (`world-cells.ts` is 1 487 lines) and [PRD-879](PRD-879-world-cells-and-terrain-tiles-run-in-the-engine.md) moved world cells into the engine. AC-3 stays unticked: every walk assertion passes, and the only reds are the PRD-585 timing budgets and the machinefall FPS bounds that the develop control also fails.
 **Priority:** P2 — `world-cells.ts` is 10 228 lines and its async load/evict orderings are proven for one interleaving only (AC-1 to AC-3).
 **Complexity:** 5 (MEDIUM); risk override: complex async state
 **Owner:** ThreeNative maintainers
-**Depends on:** None (coordinate with [PRD-473](../../../../../docs/PRDs/done/PRD-473-open-worlds-hold-120-fps-gpu-driven.md), which edits the same file)
-**Epic:** [Strata terrain hardening](../README.md)
+**Depends on:** None (coordinate with [PRD-473](PRD-473-open-worlds-hold-120-fps-gpu-driven.md), which edits the same file)
+**Epic:** [Strata terrain hardening](../../../packages/terrain/docs/PRDs/README.md)
 
 ## Context
 

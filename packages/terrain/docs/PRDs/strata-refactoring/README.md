@@ -97,7 +97,7 @@ wait for the forest lane to commit its edits to `world-cell-render.ts`, `world-g
   (a sixth biome) stay there.
 - [PRD-591](../P2/PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md)
   AC-4 (measured height bands) feeds the band fields of `ILayerInfo`.
-- [PRD-595](../P2/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md)
+- [PRD-595](../../../../../docs/PRDs/done/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md)
   did the first `world-cells.ts` split; PRD-799 is the second and waits for its AC-3.
 
 ## Names borrowed from Unreal
