@@ -816,7 +816,10 @@ export async function cookTerrainWorld(
             speciesId,
             coarsest,
             lods.length + 1,
-            Math.min(spec.maxDistance ?? Infinity, spec.impostorDistance ?? Infinity),
+            Math.min(
+              spec.maxDistance ?? Number.POSITIVE_INFINITY,
+              spec.impostorDistance ?? Number.POSITIVE_INFINITY,
+            ),
           )),
         );
 
