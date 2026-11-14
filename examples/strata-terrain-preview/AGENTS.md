@@ -1,6 +1,9 @@
 # AGENTS.md — Strata terrain preview
 
 Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime recipes.
+Before changing what this preview shows, read [the terrain map](../../packages/terrain/docs/architecture.md):
+it names the stage folders, the three producers of terrain output and the command that puts a change
+on screen.
 
 - Units are metres; Y is up; canonical heights are row-major Z then X, centred at zero.
 - `scripts/bake.mjs` owns authoring. The game imports baked JSON and never evaluates terrain.

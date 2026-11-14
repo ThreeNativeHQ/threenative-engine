@@ -300,6 +300,25 @@ describe("shared model images", () => {
     expect(decoded.getRoot().listNodes()[0]?.getName()).toBe("marker");
   });
 
+  it("should name an unnamed image by its shared file, and keep an authored name", async () => {
+    // A runtime matches two loads of one image by name: an unnamed one has nothing to match on.
+    const document = new Document();
+    const pixels = (fill: number) => new Uint8Array([0x89, 0x50, 0x4e, 0x47, fill]);
+    document.createTexture().setImage(pixels(1)).setMimeType("image/png").setURI("a.png");
+    document
+      .createTexture("bark")
+      .setImage(pixels(2))
+      .setMimeType("image/png")
+      .setURI("b.png");
+    let n = 0;
+    const written = await writeSharedGlb(new NodeIO(), document, "leaf.glb", () => {
+      n += 1;
+      return `shared/images/${String(n).padStart(16, "0")}.none.png`;
+    });
+    const names = (written.json.images ?? []).map((image) => image.name);
+    expect(names).toEqual(["0000000000000001.none", "bark"]);
+  });
+
   it("should name a container whose first chunk is not the JSON chunk", () => {
     // Correctly framed chunks that lead with the BIN chunk: the spec puts the JSON there, so
     // this container carries no document at all.

@@ -598,6 +598,16 @@ async function main() {
   const sourceHashes = packageHashes(world);
   const publicWorld = join(game, "public/terrain", KIT);
   const publicHashes = existsSync(publicWorld) ? packageHashes(publicWorld) : undefined;
+  // A kept game builds with `vite build`, which ships the cooked `public/` as it stands: a re-bake
+  // that was never cooked would capture the previous trees and look like a no-op.
+  const newest = (dir) =>
+    Math.max(
+      ...readdirSync(dir, { recursive: true }).map((file) => statSync(join(dir, file)).mtimeMs),
+    );
+  if (process.env.KIT_GAME && publicHashes && newest(world) > newest(publicWorld))
+    throw new Error(
+      `TN_KIT_STALE_COOK: ${world} is newer than ${publicWorld}; run \`pnpm build:web\` in ${game} first`,
+    );
   // The forest scene is written around a stand the proof reads from its bake. The alpine scene picks
   // its own spawn and views from the loaded heightfield, so the alpine kit has no generated stand.
   if (CONFIG.generatedStand) {

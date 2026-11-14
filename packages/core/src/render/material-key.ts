@@ -20,7 +20,11 @@ function textureKey(texture: Texture | null | undefined): string {
   if (texture === null || texture === undefined) return "-";
   const image = texture.image as { width?: number; height?: number } | undefined;
   const mips = (texture as { mipmaps?: readonly { data?: { byteLength?: number } }[] }).mipmaps;
-  return `${texture.name}:${String(image?.width ?? 0)}x${String(image?.height ?? 0)}:${String(mips?.[0]?.data?.byteLength ?? 0)}:${texture.flipY ? 1 : 0}`;
+  // A name is what lets two loads of one image match. Without one, nothing here tells two images of
+  // one size apart (generated leaf atlases are all 1024², unnamed, with no mip bytes), so the
+  // texture's own source is its identity: it never shares, and never draws another's pixels.
+  const id = texture.name !== "" ? texture.name : `source:${texture.source.uuid}`;
+  return `${id}:${String(image?.width ?? 0)}x${String(image?.height ?? 0)}:${String(mips?.[0]?.data?.byteLength ?? 0)}:${texture.flipY ? 1 : 0}`;
 }
 
 /**

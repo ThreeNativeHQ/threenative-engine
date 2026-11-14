@@ -3,6 +3,8 @@
 # AGENTS.md — @threenative/terrain
 
 Read `/AGENTS.md` first. This optional addon is authoring tooling, not a game runtime.
+Before changing what a terrain produces, read [the terrain map](docs/architecture.md): it names the
+stage folders, the three producers of terrain output and the command that puts a change on screen.
 
 - Preserve the recovered evaluator, stable semantic IDs, validation and atomic transactions.
 - The root is headless; `/three` creates only ordinary indexed geometry from supplied arrays.

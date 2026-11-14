@@ -56,7 +56,7 @@ changes no behaviour.
 
 ## Solution
 
-### 1. The map: `packages/terrain/docs/architecture.md`
+### 1. The map: `packages/terrain/docs/architecture/architecture.md`
 
 Strata documents live in `packages/terrain/docs/`, beside the code (owner, 2026-11-13).
 `packages/playtest/docs/` and `packages/runtime-native/docs/` are the precedent. The package
@@ -152,7 +152,7 @@ A guard is a separate change in `packages/terrain/src/kit.ts` and `packages/asse
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `packages/terrain/docs/architecture.md` has the four Mermaid diagrams, the routing table and the stale-output table, and each path it names exists. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts && pnpm check:docs` — Evidence: pending.
+- [ ] AC-1 [local]: `packages/terrain/docs/architecture/architecture.md` has the four Mermaid diagrams, the routing table and the stale-output table, and each path it names exists. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts && pnpm check:docs` — Evidence: pending.
 - [ ] AC-2 [local]: No stage function is left in the cook: `cook/cook.ts` is 450 lines or fewer, and `core/` holds the evaluator files only. proof: `wc -l packages/terrain/src/cook/cook.ts` and `ls packages/terrain/src/core` against the Solution table — Evidence: pending.
 - [ ] AC-3 [local]: The published package and the capability manifest are the same before and after. proof: `npm pack --dry-run --json` in `packages/terrain` gives the same file list on both arms, and `pnpm build && git diff --exit-code packages/core/capabilities.json` — Evidence: pending.
 - [ ] AC-4 [local]: Terrain output is the same before and after. proof: `pnpm --filter @threenative/terrain test` (it includes `bake-golden.spec.ts` and `terrain-mcp.spec.ts`), and `sha256sum` of `world.glb` from `node packages/terrain/starter/forest/bake.mjs --out <dir>` is equal on both arms — Evidence: pending.
@@ -179,17 +179,17 @@ and AC-4 prove it through the packed package, the MCP spec and the kit bake.
 #### Phase 1: The map exists and a spec keeps it true
 
 **Status:** NOT STARTED
-**Files:** `packages/terrain/docs/architecture.md` (new), `scripts/__tests__/terrain-architecture-census.spec.ts` (new, cloned from `strata-script-census.spec.ts`), `packages/terrain/AGENTS.md`, `examples/strata-terrain-preview/AGENTS.md`, `docs/PRDs/AGENTS.md`, `.ignore`, the generated `CLAUDE.md` mirrors, and the moved PRD folders.
+**Files:** `packages/terrain/docs/architecture/architecture.md` (new), `scripts/__tests__/terrain-architecture-census.spec.ts` (new, cloned from `strata-script-census.spec.ts`), `packages/terrain/AGENTS.md`, `examples/strata-terrain-preview/AGENTS.md`, `docs/PRDs/AGENTS.md`, `.ignore`, the generated `CLAUDE.md` mirrors, and the moved PRD folders.
 **Implementation:** Write the six parts from Solution 1 against the layout as it is today. Trace each diagram edge from an import or a call, not from memory. Add the pointer lines and run `pnpm sync:agents`. Then move the Strata PRDs in one commit of `git mv` and fix each link.
 **Verification:** the census spec, `pnpm check:docs`, `pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts`.
 
-- [ ] `packages/terrain/docs/architecture.md` is written, both AGENTS files point to it, and the census spec fails when the map names a missing path or omits a terrain folder. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts`
+- [ ] `packages/terrain/docs/architecture/architecture.md` is written, both AGENTS files point to it, and the census spec fails when the map names a missing path or omits a terrain folder. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts`
 - [ ] The open Strata PRDs are under `packages/terrain/docs/PRDs/` and each link resolves. proof: `ls packages/terrain/docs/PRDs docs/PRDs/refactoring/strata-refactoring` finds no folder, and `pnpm check:docs` exits 0
 
 #### Phase 2: `packages/terrain/src/` has one folder per stage
 
 **Status:** NOT STARTED
-**Files:** every file in the Solution 2 table, the public entry files (import paths only), `packages/terrain/tsup.config.ts` (source paths only, same keys), the deep-path consumers under Risks, `packages/terrain/docs/architecture.md`.
+**Files:** every file in the Solution 2 table, the public entry files (import paths only), `packages/terrain/tsup.config.ts` (source paths only, same keys), the deep-path consumers under Risks, `packages/terrain/docs/architecture/architecture.md`.
 **Implementation:** Record the before arm first: the packed file list and the forest `world.glb` hash. Move one stage per commit with `git mv` and fix imports. Then cut the stage functions out of `cook.ts` into their stage folders. Keep each exported name. Update the map in the same commit as each move.
 **Verification:** `pnpm --filter @threenative/terrain typecheck`, `pnpm --filter @threenative/terrain test`, the census spec, `pnpm exec vitest run scripts/__tests__/mcp-tool-schemas.spec.ts scripts/__tests__/temp-dir-guard.spec.ts scripts/__tests__/prepare-release.spec.ts`.
 
@@ -199,7 +199,7 @@ and AC-4 prove it through the packed package, the MCP spec and the kit bake.
 #### Phase 3: The preview has one folder per concern
 
 **Status:** NOT STARTED
-**Files:** `examples/strata-terrain-preview/src/render/**`, `scripts/**`, `package.json`, `AGENTS.md` (script index), `__tests__/**` (import paths), `scripts/__tests__/strata-script-census.spec.ts` if a path pattern changes, `packages/terrain/docs/architecture.md`.
+**Files:** `examples/strata-terrain-preview/src/render/**`, `scripts/**`, `package.json`, `AGENTS.md` (script index), `__tests__/**` (import paths), `scripts/__tests__/strata-script-census.spec.ts` if a path pattern changes, `packages/terrain/docs/architecture/architecture.md`.
 **Implementation:** Inventory open pull requests and worktrees first (Risks). Move `src/render/` in one commit and `scripts/` in a second one, with import paths as the only content change.
 **Verification:** `pnpm --filter strata-terrain-preview typecheck`, `pnpm --filter strata-terrain-preview test`, `pnpm --filter strata-terrain-preview test:terrain:web`, both census specs.
 

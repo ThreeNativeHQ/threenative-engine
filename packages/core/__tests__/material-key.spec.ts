@@ -42,4 +42,13 @@ describe("materialKey", () => {
     large.map = largeMap;
     expect(materialKey(small)).not.toBe(materialKey(large));
   });
+
+  it("keeps two unnamed maps of one size apart", () => {
+    // Two generated leaf atlases: same size, no name, no mip bytes, different pixels.
+    const daisy = new MeshStandardMaterial();
+    daisy.map = new DataTexture(new Uint8Array(4 * 4 * 4).fill(255), 4, 4);
+    const salal = new MeshStandardMaterial();
+    salal.map = new DataTexture(new Uint8Array(4 * 4 * 4), 4, 4);
+    expect(materialKey(daisy)).not.toBe(materialKey(salal));
+  });
 });

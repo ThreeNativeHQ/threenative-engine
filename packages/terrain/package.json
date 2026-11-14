@@ -69,7 +69,14 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm run build && vitest run --root ../.. terrain/__tests__ && publint --strict"
+    "test": "pnpm run build && vitest run --root ../.. terrain/__tests__ && publint --strict",
+    "test:consumer": "pnpm run build && vitest run --root ../.. packages/terrain/__tests__/terrain-consumer.spec.ts",
+    "test:map": "vitest run --root ../.. scripts/__tests__/terrain-architecture-census.spec.ts",
+    "bake:forest": "pnpm run build && node starter/forest/bake.mjs --out ../../artifacts/terrain/forest",
+    "bake:coastal": "pnpm run build && node starter/coastal/bake.mjs --out ../../artifacts/terrain/coastal",
+    "bake:alpine": "pnpm run build && node starter/alpine/bake.mjs --out ../../artifacts/terrain/alpine",
+    "bake:desert": "pnpm run build && node starter/desert/bake.mjs --out ../../artifacts/terrain/desert",
+    "bake:tundra": "pnpm run build && node starter/tundra/bake.mjs --out ../../artifacts/terrain/tundra"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -24,7 +24,7 @@ import {
   mix,
   modelWorldMatrix,
   normalize,
-  positionLocal,
+  positionGeometry,
   positionWorld,
   pow,
   sin,
@@ -169,8 +169,10 @@ export function grassMaterial(field: IGrassFieldUniforms): MeshStandardNodeMater
   const clump = attribute("grassClump", "vec4");
   const windAngle = (g.windDirection * Math.PI) / 180;
   const wind = vec2(Math.cos(windAngle), Math.sin(windAngle));
-  const t = positionLocal.y;
-  const side = positionLocal.x.mul(2);
+  // The blade's own vertex: after `positionNode` moves it, `positionLocal` reads the moved
+  // vertex, whose y is the ground height, not the share of the blade.
+  const t = positionGeometry.y;
+  const side = positionGeometry.x.mul(2);
   const rootWorld = modelWorldMatrix.mul(vec4(root, 1)).xyz;
   const dist = rootWorld.distance(cameraPosition);
   const r0 = fract(sin(rand.z.mul(9871.13).add(0.71)).mul(43758.5453));

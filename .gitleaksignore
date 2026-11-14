@@ -27,7 +27,7 @@ f66af22303112d84174d7031cf6a2b28502d3095:packages/assets/__tests__/shared-images
 e2e871f1feac6fa0f7dc4d372f30d3cb586a8f72:packages/core/__tests__/warmup-default.spec.ts:generic-api-key:115
 
 # Verified 2026-10-11: PRD-595's slash-separated CellPrewarm counter names are prose, not a credential.
-0c2f9e4b57382d980ef98424f6ac03b86e1d785b:docs/PRDs/strata-terrain-hardening/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md:generic-api-key:63
+0c2f9e4b57382d980ef98424f6ac03b86e1d785b:packages/terrain/docs/PRDs/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md:generic-api-key:63
 # Verified 2026-10-27: PRD-750 scripts/kit-loop.mjs line 45 is a KPI field id string (k2ScenarioPct), not a credential. The commit is on #575's branch; the full-history scan reads every fetched ref.
 f799f51aba375ce12df5eb43db2a7c69b65d96ae:scripts/kit-loop.mjs:generic-api-key:45
 # Verified 2026-10-27: line 31 of the commit below is the earlier wording of the comment above (it quoted the same field id), not a credential.
@@ -40,6 +40,6 @@ f799f51aba375ce12df5eb43db2a7c69b65d96ae:scripts/kit-loop.mjs:generic-api-key:45
 
 # Verified 2026-11-06 at the recorded commit: the generic-api-key heuristic fires on PRD-595 prose
 # that names a queue/key set and `keysForShadow`, not a credential. Scope to this finding only.
-972d1e371728121b973a085e34ed045ed868b6df:docs/PRDs/strata-terrain-hardening/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md:generic-api-key:65
+972d1e371728121b973a085e34ed045ed868b6df:packages/terrain/docs/PRDs/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md:generic-api-key:65
 3dc61adc8a80b779e36087b66752dfbe0d1c56ef:scripts/stress-loop.mjs:generic-api-key:324
 3a05dec8338a4b984baa8cbbe88eb1a20a8cb18e:scripts/stress-loop.mjs:generic-api-key:335
