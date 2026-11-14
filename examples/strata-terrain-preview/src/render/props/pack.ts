@@ -201,7 +201,8 @@ const POLYHAVEN_FLOOR: Record<string, readonly (readonly [string, number])[]> = 
     // dead_tree_trunk_02 is not drawn: it was scanned propped on a branch, so it floats on flat ground.
     ["dead_tree_trunk/dead_tree_trunk.glb", 4.0],
     ["tree_stump_01/tree_stump_01.glb", 1.6],
-    ["root_cluster_01/root_cluster_01.glb", 4.1],
+    // root_cluster_01 is not drawn: its 4.1 x 2.7 m root plate cut through trunks and lay on slopes as a slab.
+    ["tree_stump_01/tree_stump_01.glb", 1.1],
   ],
   litter: [
     ["dry_branches_medium_01/dry_branches_medium_01_a.glb", 0.34],

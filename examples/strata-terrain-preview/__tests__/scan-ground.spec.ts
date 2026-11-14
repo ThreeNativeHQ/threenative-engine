@@ -77,4 +77,15 @@ describe("a scanned prop stands on its scanned ground", () => {
       expect(lifted, one.path).toBeLessThan(0.1);
     }
   });
+  it("draws no fallen wood wider than 1.7 m across, so none spans between trunks or lies on a slope as a slab", () => {
+    // root_cluster_01 is a 4.1 x 2.7 m root plate: it cut through standing trunks and lay on shore
+    // slopes as one flat brown slab.
+    for (const one of speciesFor("forest").filter((row) => row.asset === "deadfall")) {
+      const points = vertices(one.path);
+      const span = (k: 0 | 2) =>
+        Math.max(...points.map((v) => v[k])) - Math.min(...points.map((v) => v[k]));
+      const across = (Math.min(span(0), span(2)) * one.metres) / Math.max(span(0), span(2));
+      expect(across, one.path).toBeLessThan(1.7);
+    }
+  });
 });
