@@ -254,6 +254,25 @@ const POLYHAVEN_FLOOR: Record<string, readonly (readonly [string, number])[]> = 
   ],
 };
 const FAB_FLOOR = new URLSearchParams(globalThis.location?.search ?? "").get("floor") === "fab";
+/**
+ * The grass: Poly Haven CC0 grass_medium_01/02 baked to crossed cards on one atlas
+ * (`scripts/prep/prep-polyhaven-grass.py`), as [GLB, metres tall] per variant at the licensed
+ * rows' heights: a field patch for the field grass, tufts and a reed for the Grass Library tufts, and
+ * a low clump for the mat. `?grass=fab` is the named override: the licensed set in `TEMPERATE_PATHS`.
+ */
+const POLYHAVEN_GRASS: Record<string, readonly (readonly [string, number])[]> = {
+  grass: [
+    ["grass_medium/field.glb", 0.3],
+    ["grass_medium/tuft.glb", 0.55],
+    ["grass_medium/reed.glb", 0.75],
+    ["grass_medium/tuft.glb", 0.45],
+  ],
+  meadow: [
+    ["grass_medium/field.glb", 0.42],
+    ["grass_medium/mat.glb", 0.3],
+  ],
+};
+const FAB_GRASS = new URLSearchParams(globalThis.location?.search ?? "").get("grass") === "fab";
 /** The species drawn as stone: they stand on their lowest point and take a hull collider. */
 export const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
 /** Meadow Flowers species: photographed petals kept, stems lifted, no foliage tint. */
@@ -981,8 +1000,11 @@ export function speciesFor(world: WorldName): IPackSpecies[] {
   if (look.scrubBush && held.has("bush"))
     selected.push({ asset: "bush", variant: 0, path: "scrub/0", metres: 0.45 });
   return selected.map((one) => {
+    const grass =
+      look.lawnGround && !FAB_GRASS ? POLYHAVEN_GRASS[one.asset]?.[one.variant] : undefined;
     const scan =
-      look.lawnGround && !FAB_FLOOR ? POLYHAVEN_FLOOR[one.asset]?.[one.variant] : undefined;
+      grass ??
+      (look.lawnGround && !FAB_FLOOR ? POLYHAVEN_FLOOR[one.asset]?.[one.variant] : undefined);
     return scan ? { ...one, path: scan[0], metres: scan[1] } : one;
   });
 }

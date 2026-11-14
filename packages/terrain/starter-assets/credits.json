@@ -786,6 +786,13 @@
         "note": "tree_small_02/broadleaf-{near,mid}.glb and broadleaf-b-{near,mid}.glb (the second mirrored, 2.6x against 3x): the trunk and branches of the 1k .blend's LOD1, decimated, with its 111,621 leaves rebuilt as cards from the .blend's own four leaf clusters, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-broadleaf.py. near 9,988 triangles (1,555,332 bytes), mid 2,119 (1,129,324 bytes). The forest preview's canopy."
       },
       {
+        "asset": "Grass Medium 01, Grass Medium 02",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/grass_medium_01",
+        "note": "grass_medium/field.glb (64 triangles, 393,944 bytes), tuft.glb (12, 390,300), reed.glb (8, 390,020) and mat.glb (8, 390,016): eight open clumps of grass_medium_01 and grass_medium_02 (https://polyhaven.com/a/grass_medium_02) rendered unlit from the side into one 1024 px RGBA atlas, drawn by crossed alpha cards (0.5 clip), by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-grass.py. The forest preview's grass and meadow rows; ?grass=fab keeps the licensed set."
+      },
+      {
         "asset": "Dead Tree Trunk",
         "authors": "Rob Tuytel",
         "license": "CC0",
