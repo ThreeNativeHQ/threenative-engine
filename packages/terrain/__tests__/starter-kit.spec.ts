@@ -14,11 +14,11 @@ const starterAssets = join(packageRoot, "starter-assets");
 // Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
   forest: {
-    "world.glb": "03c9810d9c222ebc4493b3aac3f1fc90dcfc31da497f77adb858c4989df638b4",
+    "world.glb": "a4a5adcf708ff5b11f0f3609d2f5e7af1cfd3065db9bb48df99b26791f98172d",
     "heightmap.u16": "800715834e5db9a414ef7207495948bae231923fdfd82bc36b44e51131f06968",
     "placements.bin": "929300652a90254b954751543f6c43cfa3dbb1805b9b561f9e42f8e00d80052f",
     "splat.rgba": "7a9cf052f401d46b980d6675b374f4ece2d4974a73f4cd1e34f263fb7f2ca6d4",
-    "world.json": "55a744b509ba9d57e7728b60ae9d15795fc46351c8a2f1a86693e36a214c2893",
+    "world.json": "aa2718670e3c2c32efdc0999b0ba14db60dafa5872af21a33747e3f4a7254fd7",
   },
   alpine: {
     "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
@@ -168,7 +168,7 @@ describe("forest starter kit", () => {
       "7a9cf052f401d46b980d6675b374f4ece2d4974a73f4cd1e34f263fb7f2ca6d4",
     );
     expect(files.get("world.json")).toBe(
-      "55a744b509ba9d57e7728b60ae9d15795fc46351c8a2f1a86693e36a214c2893",
+      "aa2718670e3c2c32efdc0999b0ba14db60dafa5872af21a33747e3f4a7254fd7",
     );
 
     // One recipe and seed, one package: a second bake is byte-identical.

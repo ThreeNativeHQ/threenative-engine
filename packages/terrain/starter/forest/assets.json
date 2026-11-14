@@ -1,6 +1,20 @@
 {
   "fir": {
     "arbor": "douglasfir@3",
+    "leafImage": "needle-atlas.png",
+    "form": {
+      "tex": { "grid": [2, 2] },
+      "levels": [{ "kids": 100 }, { "curveEnd": 40 }],
+      "leaves": [
+        {
+          "count": 60,
+          "size": [0.62, 0.62],
+          "droop": 0.6,
+          "cells": [0, 1, 2],
+          "tint": [[0.55, 0.68, 0.85], [0.7, 0.82, 0.98]]
+        }
+      ]
+    },
     "tree": true
   },
   "boulder": {
@@ -14,7 +28,21 @@
     }
   },
   "fir-c": {
-    "arbor": "spruce@7"
+    "arbor": "spruce@7",
+    "leafImage": "needle-atlas.png",
+    "form": {
+      "tex": { "grid": [2, 2] },
+      "levels": [{ "from": 0.16, "kids": 96 }, { "curve": -18, "curveEnd": 50 }],
+      "leaves": [
+        {
+          "count": 70,
+          "size": [0.58, 0.58],
+          "droop": 0.9,
+          "cells": [0, 1, 2],
+          "tint": [[0.5, 0.64, 0.82], [0.66, 0.78, 0.95]]
+        }
+      ]
+    }
   },
   "fern-a": {
     "arbor": "bracken@6",
