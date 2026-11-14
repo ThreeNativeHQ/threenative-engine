@@ -7,9 +7,11 @@ water. It is game source: once copied, every file is yours to edit.
 | File | What it decides |
 | --- | --- |
 | `recipe.json` | The terrain: the survey heightmap, erosion, the rock and sand surfaces, the ocean and the stands. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
+| `biome.data.json` | The biome record the `terrain_generate` MCP tool cooks from. The bake does not read it. |
 | `assets.json` | The fir model, its LOD distance and draw distance, its bounds, and `"tree": true`: the art a landform cook plants the biome's own tree with. |
 | `surface.json` | The ground: the sand base, the rock layer, tiles, tints and blend thresholds. |
-| `bake.mjs` | Writes the world package and `world/water.json` from the three files above. |
+| `bake.mjs` | Writes the world package and `water.json` from `recipe.json`, `heightmap.r16`, `assets.json` and `surface.json`. |
 | `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the firs near the player, and the sky as the props' light. |
 | `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
 | `sea.ts` | The sea: the installed spectral simulation drives a lit water surface at the level the bake wrote. |

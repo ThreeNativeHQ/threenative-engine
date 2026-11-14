@@ -11,11 +11,11 @@ import {
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import type { Plugin } from "vite";
-import { validatePlacementOverrides } from "../core/placements.js";
+import { loadCooker } from "../cook/cook.js";
 import { type PatchCommand, Terrain, TerrainEvaluator } from "../core/terrain.js";
 import type { ITerrainDocument } from "../core/types.js";
 import type { IPlacementOverride } from "../core/types.js";
-import { loadCooker } from "../mcp/cook.js";
+import { validatePlacementOverrides } from "../population/placements.js";
 import { AssetStore } from "./assetStore.js";
 import {
   type IAssetLimits,

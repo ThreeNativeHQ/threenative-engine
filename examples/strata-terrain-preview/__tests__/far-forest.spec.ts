@@ -5,19 +5,19 @@ import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
 import { BIOMES, measureBiome } from "../src/render/biomes.js";
 import {
+  type HorizonSurroundings,
+  createHorizonCollar,
+  setHorizonSurroundings,
+} from "../src/render/ground/horizon.js";
+import type { IBakedWorld } from "../src/render/ground/terrain.js";
+import {
   FAR_FOREST,
   FAR_FOREST_LAYER,
   collarSampler,
   farForestPlacements,
-} from "../src/render/farForest.js";
-import {
-  type HorizonSurroundings,
-  createHorizonCollar,
-  setHorizonSurroundings,
-} from "../src/render/horizon.js";
-import { streamProps } from "../src/render/propWorld.js";
-import { variantFor } from "../src/render/props.js";
-import type { IBakedWorld } from "../src/render/terrain.js";
+} from "../src/render/props/farForest.js";
+import { streamProps } from "../src/render/props/propWorld.js";
+import { variantFor } from "../src/render/props/props.js";
 
 const read = (name: string) =>
   JSON.parse(readFileSync(new URL(`../src/world/${name}`, import.meta.url), "utf8"));
@@ -42,7 +42,7 @@ describe("far forest", () => {
     // No location means no query: the default, `near` (owner, 2026-11-09: bare hills read as a bug).
     expect(FAR_FOREST).toBe(true);
     const documented = new Set(
-      ["../src/render/farForest.ts", "../src/sceneProps.ts"].flatMap((name) =>
+      ["../src/render/props/farForest.ts", "../src/sceneProps.ts"].flatMap((name) =>
         [
           ...readFileSync(new URL(name, import.meta.url), "utf8").matchAll(/`\?farForest=(\w+)`/g),
         ].map(([, value]) => value),

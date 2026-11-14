@@ -12,10 +12,10 @@ import {
   elevationBand,
   measureBiome,
 } from "../src/render/biomes.js";
-import { setHorizonSurroundings } from "../src/render/horizon.js";
-import { loadPack, nearCameraFade, sightLine } from "../src/render/pack.js";
-import { createPropSurfaces, createRockGround } from "../src/render/propMaterials.js";
-import { createTerrain } from "../src/render/terrain.js";
+import { setHorizonSurroundings } from "../src/render/ground/horizon.js";
+import { createTerrain } from "../src/render/ground/terrain.js";
+import { loadPack, nearCameraFade, sightLine } from "../src/render/props/pack.js";
+import { createPropSurfaces, createRockGround } from "../src/render/props/propMaterials.js";
 
 const BIOMES = Object.fromEntries(
   Object.entries(AUTHORED_BIOMES).map(([world, biome]) => [world, measureBiome(biome, [-10, 90])]),
@@ -347,7 +347,10 @@ it("documents sway()'s shadow pass as the rest pose, not a second sway", () => {
   // E28: the doc above sway() read "…and to its shadow pass so the shadow sways too", directly over
   // the `castShadowPositionNode = positionLocal` that casts the rest pose; pack.ts cites this doc for
   // the reason. The code is right, so the doc has to say what the code does and why.
-  const source = readFileSync(new URL("../src/render/propMaterials.ts", import.meta.url), "utf8");
+  const source = readFileSync(
+    new URL("../src/render/props/propMaterials.ts", import.meta.url),
+    "utf8",
+  );
   const head = source.slice(0, source.indexOf("function sway("));
   const doc = head.slice(head.lastIndexOf("/**"), head.lastIndexOf("*/") + 2);
   expect(head.length).toBeGreaterThan(0);

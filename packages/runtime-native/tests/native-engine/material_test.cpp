@@ -304,6 +304,79 @@ void maskNode() {
     }
 }
 
+// The masked shadow depth fragment as three r187's shadow pass builds it (Renderer._getShadowNodes): the caster's
+// shadow mask (`maskShadowNode || maskNode`, which the renderer hands in the maskNode slot) discards, and the alpha
+// takes the colorNode's alpha. Without both, an impostor quad (no map, alpha 1, coverage only in colorNode.a and
+// maskShadowNode) cast a solid square from every far tree on the default engine.
+void maskedDepthMasksAndReadsColorAlpha() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    plain.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.2f});
+    VertexVariant masked = plain;
+    masked.nodes.maskNode = g::lessThan(g::uniform("nodeCoverage", Type::f32(), {0.5f}), g::float_(0.25));
+    VertexVariant coloured = plain;
+    coloured.nodes.colorNode = g::uniform("nodeTint", Type::vec(4), {1.0f, 1.0f, 1.0f, 0.5f});
+    const auto discards = [](const std::string& code) {
+        std::size_t count = 0;
+        for (std::size_t at = code.find("discard"); at != std::string::npos; at = code.find("discard", at + 1)) ++count;
+        return count;
+    };
+    const auto a = WgslEmitter::emit(buildMaskedDepth(plain).fragment, 1);
+    const auto b = WgslEmitter::emit(buildMaskedDepth(masked).fragment, 1);
+    const auto c = WgslEmitter::emit(buildMaskedDepth(coloured).fragment, 1);
+    CHECK(a.ok() && b.ok() && c.ok());
+    CHECK(b.code.find("f_nodeCoverage") != std::string::npos);
+    CHECK(discards(b.code) == discards(a.code) + 1);
+    CHECK(a.code.find("f_nodeTint") == std::string::npos);
+    CHECK(c.code.find("f_nodeTint") != std::string::npos);
+    // The bound setter: a game's maskShadowNode reaches the engine instead of staying a JS expando.
+    VertexVariant shadowOnly;
+    shadowOnly.nodes.maskShadowNode = masked.nodes.maskNode;
+    CHECK(shadowOnly.key() != VertexVariant{}.key());
+}
+
+// three r187 setupDiffuseColor with alphaToCoverage: a tested cutoff fades diffuseColor's alpha over one pixel,
+// `smoothstep(cutoff, cutoff + fwidth(a), a)`, and discards `a <= 0`. The impostor bake captures diffuseColor's alpha as
+// the atlas coverage; without the fade it took the raw mip-thinned leaf alpha and every far tree drew as specks.
+void alphaToCoverageFadesDiffuseColor() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant hard;
+    hard.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.3f});
+    hard.nodes.colorNode = g::uniform("nodeTint", Type::vec(4), {1.0f, 1.0f, 1.0f, 0.5f});
+    hard.nodes.mrt = {{"output", g::materialInput("diffuseColor", Type::vec(4))}};
+    VertexVariant faded = hard;
+    faded.alphaToCoverage = true;
+    CHECK(hard.key() != faded.key());
+    VertexVariant flat;  // the flat cutoff fades too: material.alphaTest > 0 with no node
+    flat.alphaTest = flat.alphaToCoverage = true;
+    VertexVariant untested;  // no cutoff at all: three fades nothing
+    untested.alphaToCoverage = true;
+    const auto fades = [](const Program& program) {
+        const auto code = WgslEmitter::emit(program, 1);
+        CHECK(code.ok());
+        return code.code.find("fwidth(") != std::string::npos && code.code.find("smoothstep(") != std::string::npos;
+    };
+    CHECK(!fades(buildBasic(hard).fragment) && fades(buildBasic(faded).fragment));
+    CHECK(!fades(buildLambert(hard).fragment) && fades(buildLambert(faded).fragment));
+    CHECK(!fades(buildStandard(StandardMaterial{}, hard).fragment) && fades(buildStandard(StandardMaterial{}, faded).fragment));
+    CHECK(fades(buildBasic(flat).fragment) && !fades(buildBasic(untested).fragment));
+    // A map-only cutout (no colorNode, no opacityNode) whose MRT slot reads diffuseColor, as the impostor bake's
+    // capture does: that slot reads the faded alpha too, a second smoothstep beside the colour output's own.
+    VertexVariant mapped;
+    mapped.map = mapped.alphaToCoverage = true;
+    mapped.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.3f});
+    mapped.nodes.mrt = {{"output", g::materialInput("diffuseColor", Type::vec(4))}};
+    const auto smoothsteps = [](const Program& program) {
+        const auto code = WgslEmitter::emit(program, 1);
+        CHECK(code.ok());
+        std::size_t count = 0;
+        for (auto at = code.code.find("smoothstep("); at != std::string::npos; at = code.code.find("smoothstep(", at + 1)) ++count;
+        return count;
+    };
+    CHECK(smoothsteps(buildBasic(mapped).fragment) >= 2);
+    CHECK(smoothsteps(buildStandard(StandardMaterial{}, mapped).fragment) >= 2);
+}
+
 // NodeMaterial.alphaTestNode (three r187 setupDiffuseColor): the node replaces alphaTest as the cutoff in every colour
 // builder and in the masked shadow depth fragment, and a set node tests without the alphaTest > 0 gate.
 void alphaTestNodeProgram() {
@@ -617,6 +690,8 @@ void builds() {
     surfacePrefix();
     aoNode();
     maskNode();
+    maskedDepthMasksAndReadsColorAlpha();
+    alphaToCoverageFadesDiffuseColor();
     alphaTestNodeProgram();
     irradianceNode();
     albedoOutput();

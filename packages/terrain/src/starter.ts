@@ -25,10 +25,10 @@ import {
   type IWorldPlacementEdits,
   editWorldPlacements,
   validatePlacementIds,
-} from "./core/placement-edits.js";
+} from "./population/placement-edits.js";
 
-export { editWorldPlacements } from "./core/placement-edits.js";
-export type { IRemovedPlacement, IWorldPlacementEdits } from "./core/placement-edits.js";
+export { editWorldPlacements } from "./population/placement-edits.js";
+export type { IRemovedPlacement, IWorldPlacementEdits } from "./population/placement-edits.js";
 
 export type StarterContext = ICtx<Record<string, unknown>, IPhysicsContext>;
 export type StarterColliders = Readonly<
@@ -75,7 +75,7 @@ export interface IStarterWorldSpec<Extra extends { dispose(): void }> {
   };
   readonly streaming: Pick<
     IWorldCellsLoadOptions,
-    "ring" | "impostors" | "gpuScene" | "shadows" | "budgets" | "terrain"
+    "ring" | "impostors" | "gpuScene" | "shadows" | "budgets" | "terrain" | "partMaterial"
   >;
   readonly water?: (
     ctx: StarterContext,

@@ -61,7 +61,9 @@ export function appendShellDialogs(parent: Node): void {
   shellElement(n22, "br");
   n22.appendChild(document.createTextNode("Agent instructions: "));
   const n27 = shellElement(n22, "code");
-  n27.appendChild(document.createTextNode("docs/AGENT_GUIDE.md"));
+  n27.appendChild(
+    document.createTextNode("node_modules/@threenative/terrain/docs/authoring/editor.md"),
+  );
   const n28 = shellElement(n1, "div", { class: "dialog-footer" });
   const n29 = shellElement(n28, "button", { id: "copy-recipe", class: "ghost" });
   shellElement(n29, "span", { "data-icon": "copy" });

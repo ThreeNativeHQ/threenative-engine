@@ -25,7 +25,7 @@ import {
 } from "../../../packages/core/src/model-lod.js";
 import { Scene, type SceneConstructor } from "../../../packages/core/src/scene.js";
 import type { WorldName } from "../src/render/biomes.js";
-import { type ICanopyComparison, loadPack } from "../src/render/pack.js";
+import { type ICanopyComparison, loadPack } from "../src/render/props/pack.js";
 import { WORLD_SELECT } from "../src/worlds.js";
 
 describe("canopy comparison scene lifetime", () => {
@@ -160,13 +160,13 @@ describe("canopy comparison startup", () => {
       resumeScene: vi.fn(),
       start,
     };
-    const pack = await import("../src/render/pack.js");
+    const pack = await import("../src/render/props/pack.js");
     const imports: Record<string, unknown> = {
       "./game.js": { __esModule: true, default: game },
       "./launchFailure.js": { showLaunchFailures: () => ({ ready: () => undefined }) },
       "@threenative/core": { exposeDebug: vi.fn() },
       "./render/biomes.js": { BIOMES: { forest: {}, coastal: {} } },
-      "./render/pack.js": pack,
+      "./render/props/pack.js": pack,
     };
     runInNewContext(code, {
       exports: {},
@@ -238,8 +238,8 @@ describe("licensed pack characterization", () => {
     const assets = {
       resolve: async () => [],
       model: async (path: string) => {
-        if (near && /^temperate\/spruce\/\d\.glb$/.test(path)) return { scene: near };
-        if (far && /^temperate\/spruce\/\d-far\.glb$/.test(path)) return { scene: far };
+        if (near && /^tree_small_02\/broadleaf(-b)?-near\.glb$/.test(path)) return { scene: near };
+        if (far && /^tree_small_02\/broadleaf(-b)?-mid\.glb$/.test(path)) return { scene: far };
         throw new Error(`Missing optional fixture ${path}`);
       },
     } as unknown as IAssetLoader;
@@ -492,9 +492,9 @@ describe("licensed pack characterization", () => {
           present(part.geometry.boundingBox).max.y,
         ]),
       ).toEqual([
-        // Variant 0 is a 13 m spruce (SPRUCE_METRES).
-        [0, 6.5],
-        [6.5, 13],
+        // Variant 0 is a 12 m broadleaf (BROADLEAF_METRES).
+        [0, 6],
+        [6, 12],
       ]);
     } finally {
       pack.dispose();
@@ -514,8 +514,8 @@ describe("licensed pack characterization", () => {
     const geometry = present(present(pack.parts.get("spruce:0"))[0]).geometry;
     geometry.computeBoundingBox();
     expect(present(geometry.boundingBox).min.y).toBe(0);
-    expect(present(geometry.boundingBox).max.y).toBe(13);
-    expect(present(geometry.boundingBox).min.x).toBeCloseTo(10.92, 5);
+    expect(present(geometry.boundingBox).max.y).toBe(12);
+    expect(present(geometry.boundingBox).min.x).toBeCloseTo(10.08, 5);
     expect(
       ["position", "normal", "uv"].map((key) =>
         Array.from((near.geometry.getAttribute(key) as BufferAttribute).array),
@@ -582,7 +582,11 @@ describe("licensed pack characterization", () => {
   async function loadedWorld(world: WorldName, near: Group) {
     const assets = {
       resolve: async () => [],
-      model: async (path: string) => (path.startsWith("temperate/") ? { scene: near } : undefined),
+      // The forest grass rows draw the starter's `grass_medium` cards; the licensed rows elsewhere.
+      model: async (path: string) =>
+        path.startsWith("temperate/") || path.startsWith("grass_medium/")
+          ? { scene: near }
+          : undefined,
     } as unknown as IAssetLoader;
     return loadPack(assets, world);
   }

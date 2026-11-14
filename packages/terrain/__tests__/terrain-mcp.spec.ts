@@ -12,15 +12,13 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { IsolatedKillError, childExecArgv, runIsolated } from "../src/cook/child.js";
+import { cookKit, loadCooker } from "../src/cook/cook.js";
 import { decodeRAW16 } from "../src/core/io.js";
-import type { LandformKind } from "../src/core/presets.js";
-import { BIOME_OWN } from "../src/core/request-words.js";
-import type { IGroundRequest } from "../src/core/surveys.js";
 import { Terrain } from "../src/core/terrain.js";
 import type { ITerrainDocument } from "../src/core/types.js";
-import { IsolatedKillError, childExecArgv, runIsolated } from "../src/mcp/child.js";
-import { PLAY_AREA_CLEAR_RADIUS, cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
-import { measureGlb } from "../src/mcp/glb-stats.js";
+import type { LandformKind } from "../src/ground/presets.js";
+import type { IGroundRequest } from "../src/ground/surveys.js";
 import {
   TERRAIN_KITS,
   TERRAIN_TOOLS,
@@ -35,6 +33,10 @@ import {
   resolveAssetSource,
   resolveOutput,
 } from "../src/mcp/tools.js";
+import { measureGlb } from "../src/package/glb-stats.js";
+import { PLAY_AREA_CLEAR_RADIUS, parseBounds } from "../src/population/foliage.js";
+import { ECOREGION_ROWS } from "../src/request/ecoregions.js";
+import { BIOME_OWN } from "../src/request/request-words.js";
 
 // The starter forest document as the forest bake evaluates it: `recipe.json` wraps it in `recipe`,
 // and its raw16 heightmap is decoded into `values` first (bake.mjs, same 0.1 m lattice).
@@ -134,6 +136,10 @@ describe("terrain_generate catalog and cook cache", () => {
       await symlink(
         new URL("../../assets/", import.meta.url).pathname,
         join(project, "node_modules", "@threenative", "assets"),
+      );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
       );
       const ask = async (args: Record<string, unknown>) => {
         const started = performance.now();
@@ -694,6 +700,8 @@ async function runEmittedLoad(
       },
     },
     three: { Object3D },
+    // The game's copy of `starter/arbor/wind.ts`, which the cook writes beside an Arbor world.
+    "./render/arborWind.js": { arborWind: () => undefined },
   };
   // The curtain the load holds until the streamed ground is in.
   const holds: string[] = [];
@@ -774,6 +782,10 @@ describe("terrain_generate result", () => {
           new URL("../../assets/", import.meta.url).pathname,
           join(project, "node_modules", "@threenative", "assets"),
         );
+        await symlink(
+          new URL("../../procedural-vegetation/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        );
         await writeFile(
           join(project, "threenative.config.ts"),
           `export default { assets: { source: "${source}" } };`,
@@ -812,9 +824,10 @@ describe("terrain_generate result", () => {
         expect(result.grass).toContain("} as const;");
         expect(result.grass).toContain("new GrassField3D(");
         expect(result.grass).toContain("grass.update(ctx.camera)");
-        // The kit's own trees carry no wind: no sway file, no partMaterial.
+        // The forest kit's trees are Poly Haven scans, not Arbor species: no `_WIND`, so the cook
+        // writes no Arbor sway (an `arbor` row still does; see the arbor-species spec).
         expect(result.trees).toBeNull();
-        expect(result.load).not.toContain("partMaterial");
+        expect(result.load).not.toContain("partMaterial: arborWind");
         // No authoring import leaks into the game: only core/world, physics and three are allowed.
         expect(
           result.load.split("\n").filter((line: string) => line.includes("@threenative/terrain")),
@@ -905,6 +918,10 @@ describe("terrain_generate cold GLB handoff", () => {
       new URL("../../assets/", import.meta.url).pathname,
       join(project, "node_modules", "@threenative", "assets"),
     );
+    await symlink(
+      new URL("../../procedural-vegetation/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-vegetation"),
+    );
     const start = performance.now();
     const child = spawn(
       process.execPath,
@@ -978,6 +995,10 @@ describe("every shipped kit cooks", () => {
         await symlink(
           new URL("../../assets/", import.meta.url).pathname,
           join(project, "node_modules", "@threenative", "assets"),
+        );
+        await symlink(
+          new URL("../../procedural-vegetation/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-vegetation"),
         );
         await writeFile(
           join(project, "threenative.config.ts"),
@@ -1055,6 +1076,10 @@ describe("terrain_generate overrides", () => {
     await symlink(
       new URL("../../assets/", import.meta.url).pathname,
       join(project, "node_modules", "@threenative", "assets"),
+    );
+    await symlink(
+      new URL("../../procedural-vegetation/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-vegetation"),
     );
     await writeFile(
       join(project, "threenative.config.ts"),
@@ -1162,6 +1187,10 @@ describe("terrain_generate biome cooks", () => {
     await symlink(
       new URL("../../assets/", import.meta.url).pathname,
       join(project, "node_modules", "@threenative", "assets"),
+    );
+    await symlink(
+      new URL("../../procedural-vegetation/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-vegetation"),
     );
     await writeFile(
       join(project, "threenative.config.ts"),
@@ -1502,6 +1531,7 @@ describe("terrain_generate request words", () => {
       // PRD-866: rolling hills carry no massif rows, so the ring is not cooked.
       backdrop: { value: "none", source: "default" },
       tree: { value: null, source: "default" },
+      region: { value: null, source: "default" },
     });
     // A word that named a row is spent even when an argument overruled it, so it is not unused.
     expect(unused).toEqual([]);
@@ -1530,6 +1560,7 @@ describe("terrain_generate request words", () => {
       // PRD-866: a mountain preset on its survey cooks the far ring with a real massif.
       backdrop: { value: "massif", source: "default" },
       tree: { value: null, source: "default" },
+      region: { value: null, source: "default" },
     });
     // "create", "with", "and", "a" are scaffolding; only the words that named nothing are listed.
     expect(unused).toEqual(["floating", "castles"]);
@@ -1547,6 +1578,7 @@ describe("terrain_generate request words", () => {
       ground: { value: "starter", source: "default" },
       backdrop: { value: "none", source: "default" },
       tree: { value: null, source: "default" },
+      region: { value: null, source: "default" },
     });
     expect(unused).toEqual([]);
   });
@@ -1574,6 +1606,10 @@ describe("terrain_generate request words", () => {
       await symlink(
         new URL("../../assets/", import.meta.url).pathname,
         join(project, "node_modules", "@threenative", "assets"),
+      );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),
@@ -1644,6 +1680,10 @@ describe("every landform under every biome", () => {
           new URL("../../assets/", import.meta.url).pathname,
           join(project, "node_modules", "@threenative", "assets"),
         );
+        await symlink(
+          new URL("../../procedural-vegetation/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        );
         await writeFile(
           join(project, "threenative.config.ts"),
           'export default { assets: { source: "assets" } };',
@@ -1673,8 +1713,8 @@ describe("every landform under every biome", () => {
             cell.runs.map((run) => run.asset),
           );
           expect(new Set(placed)).toEqual(new Set([stand]));
-          // PRD-806 E62 judge: the starter game's arena stands at the world's centre, so no tree
-          // grows through its floor or walls (eight float32 per record, x and z at 0 and 2).
+          // The player spawns at the world's centre, so no trunk stands on it; the template's arena
+          // is deleted, so the forest grows up to it (eight float32 per record, x and z at 0 and 2).
           const bytes = await readFile(
             join(project, dirname(result.worldPackage), manifest.placements),
           );
@@ -1683,6 +1723,7 @@ describe("every landform under every biome", () => {
           for (let i = 0; i < records.length; i += 8)
             nearest = Math.min(nearest, Math.hypot(records[i] as number, records[i + 2] as number));
           expect(nearest).toBeGreaterThanOrEqual(PLAY_AREA_CLEAR_RADIUS);
+          expect(nearest).toBeLessThan(23);
         }
         // The preset's own chain: a starter heightmap crop is what `landform` replaces.
         const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
@@ -1695,6 +1736,141 @@ describe("every landform under every biome", () => {
     },
     180_000,
   );
+});
+
+/** The checked-in Mapterhorn tiles, used as the whole tile cache these tests read. */
+const REGION_TILES = new URL("./fixtures/mapterhorn/", import.meta.url).pathname;
+// A tile that is not checked in answers 404, as a site with no tile at a zoom does: the survey steps down.
+const NO_NETWORK = () => Promise.resolve(new Response(null, { status: 404 }));
+
+// PRD-887: a region word is a real place with a plant community: the row's own survey grounds the
+// world, its canopy rows plant it, and a tree word still moves its species to the front.
+describe("terrain_generate regions", () => {
+  it.each([
+    ["european beech forest", "european-broadleaf", "european", "forest"],
+    ["boreal forest", "boreal", "boreal", "forest"],
+    ["a mediterranean hills", "mediterranean", "mediterranean", "desert"],
+    ["a pacific northwest forest", "pacific-northwest", "pacific northwest", "forest"],
+    ["cascadia", "pacific-northwest", "cascadia", "forest"],
+  ])("reads '%s' as the %s region", (request, region, word, kit) => {
+    const { input, decided, unused } = parseGenerateRequest({ request });
+    expect(decided.region).toEqual({ value: region, source: { word } });
+    expect(input.kit).toBe(kit);
+    expect(input.region?.id).toBe(region);
+    // The row's own site grounds the world, and the region is the whole locale: a far ring from
+    // another country's massifs would stand behind it.
+    expect(decided.ground).toEqual({ value: "survey", source: { word } });
+    expect(decided.backdrop).toEqual({ value: "none", source: { word } });
+    expect(unused).toEqual([]);
+  });
+
+  it("stays the quick path for a tree word with no region", () => {
+    const { input, decided } = parseGenerateRequest({ request: "beech forest" });
+    expect(input.treeSpecies).toBe("arbor:beech");
+    expect(input.region).toBeUndefined();
+    expect(decided.region).toEqual({ value: null, source: "default" });
+    expect(decided.ground).toEqual({ value: "starter", source: "default" });
+  });
+
+  it("lets an explicit kit or ground win over the row", () => {
+    const { input, decided } = parseGenerateRequest({
+      request: "european forest",
+      kit: "alpine",
+      ground: { location: { lat: 46.5, lon: 8.5 } },
+    });
+    expect(input.kit).toBe("alpine");
+    expect(input.region?.id).toBe("european-broadleaf");
+    expect(decided.ground).toEqual({
+      value: { location: { lat: 46.5, lon: 8.5 } },
+      source: "argument",
+    });
+  });
+
+  it("moves a tree word to the first canopy row and keeps the rest of the community", () => {
+    const { input, decided } = parseGenerateRequest({ request: "a european oak forest" });
+    const species = (input.region?.overrides.foliage ?? []).map((row) => row.species);
+    expect(species.slice(0, 2)).toEqual(["arbor:oak@13", "arbor:oak@14"]);
+    expect(species).toEqual(
+      expect.arrayContaining(["arbor:beech@11", "arbor:beech@12", "arbor:birch@15"]),
+    );
+    // The kit's one tree art is not swapped: the region's community grows instead.
+    expect(input.treeSpecies).toBeUndefined();
+    expect(decided.tree).toEqual({ value: "arbor:oak", source: { word: "oak" } });
+  });
+
+  it("cooks the region's own ground and its canopy community", async () => {
+    const project = await realpath(await makeTempDir("tn-terrain-region-"));
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", REGION_TILES);
+    vi.stubGlobal("fetch", NO_NETWORK);
+    try {
+      await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+      await symlink(
+        new URL("../../assets/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "assets"),
+      );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      );
+      await writeFile(
+        join(project, "threenative.config.ts"),
+        'export default { assets: { source: "assets" } };',
+      );
+      const { input } = parseGenerateRequest({ request: "european beech forest" });
+      const result = JSON.parse(
+        await cookKit({
+          ...input,
+          out: join(project, "assets", "worlds", "european"),
+          projectRoot: project,
+        }),
+      );
+      const row = ECOREGION_ROWS.find((entry) => entry.id === "european-broadleaf");
+      // AC-1: the world stands on the row's site, with the source's own attribution.
+      expect(result.ground).toEqual({
+        source: "survey",
+        name: row?.site.name,
+        lat: row?.site.lat,
+        lon: row?.site.lon,
+        attribution: row?.site.attribution,
+        tiles: "mapterhorn",
+        zoom: 15,
+        metersPerPixel: 1.5,
+      });
+      expect(result.backdrop).toEqual({ source: "none" });
+      expect(result.biome).toBe("european-broadleaf");
+      // AC-2: the canopy is a community — three presets at least, each baked at more than one seed.
+      const baked = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
+      const counts = new Map<string, number>();
+      for (const cell of baked.cells as { runs: { asset: string; count: number }[] }[]) {
+        for (const run of cell.runs)
+          counts.set(run.asset, (counts.get(run.asset) ?? 0) + run.count);
+      }
+      const seeds = new Map<string, Set<string>>();
+      for (const asset of counts.keys()) {
+        const match = /^arbor-([a-z]+)-(\d+)$/u.exec(asset);
+        if (match === null) continue;
+        const set = seeds.get(match[1] as string) ?? new Set<string>();
+        set.add(match[2] as string);
+        seeds.set(match[1] as string, set);
+      }
+      expect(seeds.size).toBeGreaterThanOrEqual(3);
+      for (const [preset, set] of seeds) expect(set.size, preset).toBeGreaterThan(1);
+      // The kit's own canopy art was replaced, so the world ships none of it; its understorey stays.
+      expect([...counts.keys()]).not.toContain("fir");
+      expect([...counts.keys()]).toContain("fern-a");
+      // The kit's lake is pinned to its own crop's heights. Hainich is a plateau with no basin, so
+      // the region cooks no lake rather than a level standing under the ground or a dug crater.
+      const water = JSON.parse(
+        await readFile(join(dirname(join(project, result.worldPackage)), "water.json"), "utf8"),
+      );
+      expect(water.lakes).toEqual([]);
+      expect(water.rivers.length).toBeGreaterThan(0);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      await rm(project, { recursive: true, force: true });
+    }
+  }, 240_000);
 });
 
 // PRD-793 phase 3: a sixth biome is one call — a data folder and a cook, no code edit.
@@ -1753,6 +1929,10 @@ describe("terrain_biome_new", () => {
         new URL("../../assets/", import.meta.url).pathname,
         join(project, "node_modules", "@threenative", "assets"),
       );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      );
       const retry = await askServer(project, "terrain_biome_new", {
         from: "forest",
         name: "savanna",
@@ -1772,6 +1952,10 @@ describe("terrain_biome_new", () => {
       await symlink(
         new URL("../../assets/", import.meta.url).pathname,
         join(project, "node_modules", "@threenative", "assets"),
+      );
+      await symlink(
+        new URL("../../procedural-vegetation/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-vegetation"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),

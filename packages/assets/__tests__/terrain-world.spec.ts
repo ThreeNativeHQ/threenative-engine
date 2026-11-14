@@ -358,6 +358,10 @@ function instancedNodes(scene: Group): { name: string; instances: number }[] {
   return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const FOREST_POLYHAVEN_ASSETS = path.resolve(
+  "packages/assets/__tests__/fixtures/forest-polyhaven-assets.json",
+);
+
 describe("cookTerrainWorld", () => {
   let dir: string;
 
@@ -531,7 +535,8 @@ describe("cookTerrainWorld", () => {
         (value) => Math.round(value * 10) / 10,
       );
     }
-    const table = JSON.parse(await readFile(path.join(kit, "assets.json"), "utf8")) as Record<
+    // The Poly Haven table the kit drew before its Arbor species: real geometry for the chains.
+    const table = JSON.parse(await readFile(FOREST_POLYHAVEN_ASSETS, "utf8")) as Record<
       string,
       {
         near: string;
@@ -1390,7 +1395,7 @@ describe("cookTerrainWorld", () => {
     });
     const lods = result.manifest.assets.fir?.lods ?? [];
     expect(lods[0]).toEqual({ distance: 45, glb: "models/fir.glb", scene: "fir_lod1" });
-    expect(lods.length).toBeGreaterThanOrEqual(3);
+    expect(lods.length).toBeGreaterThanOrEqual(2);
     const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
     const triangles = async (level: { glb: string; scene?: string }): Promise<number> => {
       let total = 0;
@@ -1413,7 +1418,37 @@ describe("cookTerrainWorld", () => {
       expect(lods[level]?.distance).toBeGreaterThan(lods[level - 1]?.distance as number);
       expect(lods[level]?.distance).toBeLessThan(600);
     }
-    expect(counts.at(-1)).toBeLessThan(12_000);
+    // The ladder descends while a level's scaled cards still cover half the crown: deeper, the
+    // fir read as bare branches. A level a quarter of the mid is the floor the fir reaches.
+    expect(counts.at(-1)).toBeLessThan(0.3 * (counts[0] as number));
+    // Each far level switches in where its on-screen density is half the authored level's at 45 m,
+    // so a band runs from half to twice that density (PRD-584 AC-4: 12M to 6.9M walk triangles).
+    for (let level = 1; level < lods.length; level += 1)
+      expect(lods[level]?.distance).toBeCloseTo(
+        (45 * Math.sqrt((counts[0] as number) / (counts[level] as number))) / Math.SQRT2,
+        0,
+      );
+  });
+
+  it("derives no far level past the species' impostor distance", async () => {
+    // A level past the impostor never draws, and the world package refuses an impostor that a
+    // level still follows (an Arbor oak's ladder ran to 579 m against a 400 m impostor).
+    const assets = path.resolve("packages/terrain/starter-assets/fir_tree_01");
+    const result = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: {
+        fir: {
+          glb: path.join(assets, "fir-b-lod1.glb"),
+          lods: [{ distance: 45, glb: path.join(assets, "fir-b-lod2.glb") }],
+          maxDistance: 600,
+          impostorDistance: 100,
+        },
+      },
+      out: dir,
+    });
+    const lods = result.manifest.assets.fir?.lods ?? [];
+    expect(lods.length).toBeGreaterThanOrEqual(2);
+    for (const level of lods) expect(level.distance).toBeLessThan(100);
   });
 
   it("discovers an authored -mid sibling before falling back to simplification", async () => {

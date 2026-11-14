@@ -54,9 +54,20 @@
     },
     {
       "kind": "input",
+      "label": "click-to-capture",
+      "pointerPosition": {
+        "buttons": 0,
+        "x": 0.02,
+        "y": 0.5
+      },
+      "holdTicks": 10,
+      "release": false
+    },
+    {
+      "kind": "input",
       "label": "turn-half",
       "pointerPosition": {
-        "buttons": 1,
+        "buttons": 0,
         "x": 0.5,
         "y": 0.5
       },
@@ -67,7 +78,7 @@
       "kind": "input",
       "label": "turn",
       "pointerPosition": {
-        "buttons": 1,
+        "buttons": 0,
         "x": 0.98,
         "y": 0.5
       },

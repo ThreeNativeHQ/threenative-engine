@@ -3,9 +3,9 @@ import type {
   TransformControls,
   TransformControlsEventMap,
 } from "three/addons/controls/TransformControls.js";
-import { validatePlacementOverrides } from "../core/placements.js";
 import type { IPlacementOverride } from "../core/types.js";
 import type { Layer } from "../core/types.js";
+import { validatePlacementOverrides } from "../population/placements.js";
 import type { TerrainEditorController } from "./index.js";
 import { landformPose, transformedLandform } from "./landforms.js";
 import type { IEditorSnapshot } from "./server.js";

@@ -18,13 +18,17 @@ import {
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
 import { BENCHMARK, posesFor } from "../src/render/benchmark.js";
-import { FAR_FOREST, FAR_FOREST_WORLDS, farForestPlacements } from "../src/render/farForest.js";
-import { HORIZON_WALK_BAND } from "../src/render/horizon.js";
+import { HORIZON_WALK_BAND } from "../src/render/ground/horizon.js";
+import { meadowCover } from "../src/render/ground/scatter.js";
+import { OPEN_MEADOW } from "../src/render/ground/terrain.js";
 import { createLoadingScreen } from "../src/render/loading.js";
-import type { IPropPreparationProgress } from "../src/render/propProgress.js";
-import { meadowCover } from "../src/render/scatter.js";
-import { SHADOW_REACH } from "../src/render/sky.js";
-import { OPEN_MEADOW } from "../src/render/terrain.js";
+import {
+  FAR_FOREST,
+  FAR_FOREST_WORLDS,
+  farForestPlacements,
+} from "../src/render/props/farForest.js";
+import type { IPropPreparationProgress } from "../src/render/props/propProgress.js";
+import { SHADOW_REACH } from "../src/render/sky/sky.js";
 
 const GAME_URL = new URL("../src/game.ts", import.meta.url);
 /**
@@ -1100,7 +1104,7 @@ it("alpine composition uses actual sidecar IDs and leaves every package byte unc
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
+  const verifierUrl = new URL("../scripts/verify/verify-starter-kit.mjs", import.meta.url).href;
   const { alpineComposition, packageHashes, compositionSource } = await import(verifierUrl);
   const directory = mkdtempSync(join(tmpdir(), "prd614-arm-test-"));
   try {
@@ -1282,7 +1286,7 @@ it.each(["missing", "malformed", "wrong path", "wrong kit", "valid"])(
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
-    const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url);
+    const verifierUrl = new URL("../scripts/verify/verify-starter-kit.mjs", import.meta.url);
     const { packageHashes } = await import(verifierUrl.href);
     const directory = mkdtempSync(join(tmpdir(), "prd614-ownership-test-"));
     try {
@@ -1333,7 +1337,7 @@ it.each(["missing", "malformed", "wrong path", "wrong kit", "valid"])(
 );
 
 it("composition far proof shares the original target without default composition effects", async () => {
-  const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
+  const verifierUrl = new URL("../scripts/verify/verify-starter-kit.mjs", import.meta.url).href;
   const { compositionSource } = await import(verifierUrl);
   const target = [31, 22, -47];
   const clearTarget = [-53, 19];
@@ -1391,7 +1395,7 @@ it("composition far pose centers the original record at 90 metres without changi
 });
 
 it("composition far scenario appends Digit5 and Digit6 with all view metrics while retaining existing gates", async () => {
-  const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
+  const verifierUrl = new URL("../scripts/verify/verify-starter-kit.mjs", import.meta.url).href;
   const { appendCompositionFarScenario } = await import(verifierUrl);
   const original = JSON.parse(
     readFileSync(
@@ -1486,7 +1490,7 @@ it("composition clear pose centers the shared circle on the heightfield at 30 me
   expect(text).toContain('if (proofClearTarget) VIEW_NAMES.push("composition-clear")');
   expect(text).toContain('"composition-clear": compositionClearView(proofClearTarget, kit.field)');
   const verifier = readFileSync(
-    new URL("../scripts/verify-starter-kit.mjs", import.meta.url),
+    new URL("../scripts/verify/verify-starter-kit.mjs", import.meta.url),
     "utf8",
   );
   expect(verifier).toContain('CONFIG.views.push("composition-far", "composition-clear")');

@@ -333,6 +333,9 @@ export async function writeSharedGlb(
     }
     delete resources[image.uri];
     image.uri = uriFor(bytes);
+    // A runtime matches two loads of one image by its name; an unnamed image (a generated leaf atlas)
+    // takes its content-addressed file's, so equal bytes still share and different bytes never do.
+    image.name ??= path.posix.basename(image.uri, path.posix.extname(image.uri));
   }
   const buffers = json.buffers ?? [];
   const external = buffers.filter((buffer) => buffer.uri !== undefined);

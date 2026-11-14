@@ -7,9 +7,11 @@ game source: once copied, every file is yours to edit.
 | File | What it decides |
 | --- | --- |
 | `recipe.json` | The terrain: the survey heightmap, erosion, the rock, dirt and snow surfaces, and the scree. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
+| `biome.data.json` | The biome record the `terrain_generate` MCP tool cooks from. The bake does not read it. |
 | `assets.json` | The boulder model, its LOD distance and draw distance, and its bounds. |
 | `surface.json` | The ground: the rock base, the dirt and snow layers, tiles, tints and blend thresholds. |
-| `bake.mjs` | Writes the world package from the three files above. |
+| `bake.mjs` | Writes the world package from `recipe.json`, `heightmap.r16`, `assets.json` and `surface.json`. |
 | `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the boulders near the player, and the sky as the props' light. |
 | `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
 

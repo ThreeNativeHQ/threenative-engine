@@ -8,7 +8,8 @@ no earlier copyright/license notice; no upstream license or attribution is inven
 Source SHA-256:
 
 - `strata-terrain.html`: `c0230e6891db829a5196d93ff7c9d714a8f2d964cac4722eb8ce4b2f723d794b`.
-- `AGENT_GUIDE.md`: `487453218f870c5e829d58aea3fe9323e74ea93e0aecef8d5c329ecf56972d06`.
+- `AGENT_GUIDE.md`: `487453218f870c5e829d58aea3fe9323e74ea93e0aecef8d5c329ecf56972d06`. Its maintained
+  content now lives in `README.md` and `docs/authoring/`.
 
 Recovery used the HTML's named `sources` module map, rather than its duplicated
 worker blob or minified viewer. The algorithms, validation and transactions are

@@ -8,6 +8,7 @@ import {
   Sphere,
   Vector3,
 } from "three";
+import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import type { InstancedBatch } from "./instanced-batch.js";
 import { pooledCapacity, pooledMesh } from "./render/mesh-pool.js";
 import { type IRecordWriter, batchRecords } from "./world-cell-records.js";
@@ -274,6 +275,9 @@ export class SharedBatch implements IRecordWriter {
     view.boundingSphere = source.boundingSphere;
     view.setDrawRange(source.drawRange.start, source.drawRange.count);
     view.userData.tnPublishedLodRangeView = true;
+    // The view is drawn in the source's place, so it keeps the loader's provenance stamp.
+    const stamp = source.userData[GEOMETRY_ASSET_KEY];
+    if (stamp !== undefined) view.userData[GEOMETRY_ASSET_KEY] = stamp;
     const ranges = new InstancedBufferAttribute(
       new Float32Array(capacity * LOD_RANGE_STRIDE),
       LOD_RANGE_STRIDE,

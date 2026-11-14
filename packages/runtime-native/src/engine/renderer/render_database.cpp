@@ -295,6 +295,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.alphaTest = float(m.alphaTest);
     p.maxPositionOffset = m.maxPositionOffset;
     p.alphaHash = m.alphaHash;
+    p.alphaToCoverage = m.alphaToCoverage;
     p.roughness = float(m.roughness);
     p.metalness = float(m.metalness);
     p.envMapIntensity = float(m.envMapIntensity);

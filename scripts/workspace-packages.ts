@@ -476,7 +476,8 @@ function main(): void {
   if (process.argv.includes("--json")) {
     process.stdout.write(
       `${JSON.stringify(
-        workspacePackages().map(({ directory, name, version }) => ({
+        workspacePackages().map(({ dependencies, directory, name, version }) => ({
+          dependencies,
           directory: path.relative(REPO_ROOT, directory),
           name,
           version,

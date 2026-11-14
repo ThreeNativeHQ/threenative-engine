@@ -17,28 +17,28 @@ import {
 import type { IRevealProbe } from "./diagnostics.js";
 import { posesFor } from "./render/benchmark.js";
 import type { IBiome, IWorldBiome, WorldName } from "./render/biomes.js";
+import { HORIZON_WALK_BAND } from "./render/ground/horizon.js";
+import { meadowCover } from "./render/ground/scatter.js";
+import { type IBakedWorld, OPEN_MEADOW } from "./render/ground/terrain.js";
 import {
   FAR_FOREST,
   FAR_FOREST_WORLDS,
   collarSampler,
   farForestPlacements,
-} from "./render/farForest.js";
-import { HORIZON_WALK_BAND } from "./render/horizon.js";
-import { loadPack, loadSkyLight } from "./render/pack.js";
-import { loadPreparedProps } from "./render/prepared.js";
-import { createPropSurfaces } from "./render/propMaterials.js";
-import type { IPropPreparationProgress } from "./render/propProgress.js";
-import type { IScatter } from "./render/propWorld.js";
-import { invalidatePropShadows, streamProps } from "./render/propWorld.js";
+} from "./render/props/farForest.js";
+import { loadPack, loadSkyLight } from "./render/props/pack.js";
+import { loadPreparedProps } from "./render/props/prepared.js";
+import { createPropSurfaces } from "./render/props/propMaterials.js";
+import type { IPropPreparationProgress } from "./render/props/propProgress.js";
+import type { IScatter } from "./render/props/propWorld.js";
+import { invalidatePropShadows, streamProps } from "./render/props/propWorld.js";
 import {
   type PropGroundQuery,
   buildPropVariants,
   flatPropMaterials,
   variantFor,
-} from "./render/props.js";
-import { meadowCover } from "./render/scatter.js";
-import { SHADOW_REACH } from "./render/sky.js";
-import { type IBakedWorld, OPEN_MEADOW } from "./render/terrain.js";
+} from "./render/props/props.js";
+import { SHADOW_REACH } from "./render/sky/sky.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import type { TerrainCtx } from "./sceneState.js";
 import type { ISpawnGate, ISpawnWitness } from "./spawnGate.js";
@@ -71,7 +71,7 @@ export interface IMeadowOptions {
   readonly fallbackParts: Variants | undefined;
   /** Where the player starts in this world: the point every stream measures its spawn cells around. */
   readonly spawn: Vector3;
-  /** PRD-790: the streamed ground's first tiles, drawn behind the curtain; absent without `?stream=1`. */
+  /** PRD-790: the streamed ground's first tiles, drawn behind the curtain; absent under `?stream=off`. */
   readonly groundReady?: Promise<void> | undefined;
   readonly gate: ISpawnGate;
   readonly reveal: IRevealProbe;

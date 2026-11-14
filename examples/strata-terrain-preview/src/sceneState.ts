@@ -1,7 +1,7 @@
 import type { ICtx } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { initialDiagnosticsState } from "./diagnostics.js";
-import type { ICanopyComparison } from "./render/pack.js";
+import type { ICanopyComparison } from "./render/props/pack.js";
 
 /**
  * The state this game reports through: every measurement `diagnostics.ts` owns, plus the two values
@@ -15,11 +15,17 @@ export const initialState = {
   ...initialDiagnosticsState,
   canopyComparison: { normals: "authored", specular: "disabled" } as ICanopyComparison,
   showcase: false,
-  /** PRD-790 streamed ground (`?stream=1`): resident tiles, and the half-width of the square they draw. */
+  /** "off" when the `?stream=off` override is in use, so a run reports the arm it ran. */
+  streamOverride: "" as "" | "off",
+  /** PRD-790 streamed ground (on by default): resident tiles, and the half-width of the square they draw. */
   streamTiles: 0,
   streamCoveredHalf: 0,
   /** Largest tile-edge height gap; -1 until `?tnTerrainValidate=1` measures it. */
   streamSeamGap: -1,
+  /** Largest height step at a tile vertex where the tiles meet the collar; -1 until measured. */
+  streamCollarGap: -1,
+  /** Largest step between those vertices, where a fold of the collar's triangles crosses a tile edge. */
+  streamCollarFold: -1,
 };
 
 export type TerrainState = typeof initialState;

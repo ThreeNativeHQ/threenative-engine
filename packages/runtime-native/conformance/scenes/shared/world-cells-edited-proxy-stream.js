@@ -1,4 +1,4 @@
-import { editWorldPlacements } from "../../../../terrain/src/core/placement-edits.ts";
+import { editWorldPlacements } from "../../../../terrain/src/population/placement-edits.ts";
 import { assertCondition } from "./scene-support.js";
 import {
   createWorldCellsProxyData,

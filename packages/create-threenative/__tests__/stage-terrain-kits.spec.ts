@@ -10,7 +10,7 @@ const run = promisify(execFile);
 const script = fileURLToPath(new URL("../scripts/stage-terrain-kits.mjs", import.meta.url));
 
 const terrain = fileURLToPath(new URL("../../terrain", import.meta.url));
-const KITS = ["alpine", "coastal", "desert", "forest", "tundra"];
+const KITS = ["alpine", "coastal", "desert", "tundra"];
 
 describe("stage-terrain-kits", () => {
   it("names the missing terrain build instead of a module resolution error (audit STRATA-08)", async () => {

@@ -5,7 +5,7 @@ import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
 import { BIOMES, measureBiome } from "../src/render/biomes.js";
-import { cubicAt, setHorizonSurroundings } from "../src/render/horizon.js";
+import { cubicAt, setHorizonSurroundings } from "../src/render/ground/horizon.js";
 
 // `pnpm test` bakes first, so the forest backdrop in horizon.json is the one the game loads.
 // The smooth USGS surroundings that read as rounded blobs measure curvature kurtosis 13.7; the

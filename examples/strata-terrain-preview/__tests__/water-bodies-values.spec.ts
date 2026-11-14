@@ -15,8 +15,8 @@
 import { readFileSync } from "node:fs";
 import { Heightfield, type IWaterOcean } from "@threenative/core/world";
 import { describe, expect, it } from "vitest";
-import { SEA_EXTENT, createOcean, createWaterMesh } from "../src/render/ocean.js";
-import type { IBakedWorld } from "../src/render/terrain.js";
+import type { IBakedWorld } from "../src/render/ground/terrain.js";
+import { SEA_EXTENT, createOcean, createWaterMesh } from "../src/render/water/ocean.js";
 import { waterBodies, waterCurrentAt, waterSurfaceAt } from "../src/world/water.js";
 
 /** One fixed probe: where it stands, the surface a swimmer rests on and the flow that carries them. */

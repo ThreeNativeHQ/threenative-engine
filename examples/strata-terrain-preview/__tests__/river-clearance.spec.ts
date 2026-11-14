@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Heightfield, WATER_RIBBON_REACH } from "@threenative/core/world";
 import { propAssetOf } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import { propCounts } from "../src/render/propWorld.js";
+import { propCounts } from "../src/render/props/propWorld.js";
 import { waterSurfaceAt } from "../src/world/water.js";
 import { readBakedPropPackage } from "./bakedPropPackage.js";
 

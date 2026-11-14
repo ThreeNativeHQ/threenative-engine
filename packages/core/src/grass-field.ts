@@ -469,7 +469,17 @@ export class GrassField3D extends Group {
     const oz = iz * S;
     const seed = this.seed | 0;
     const rng = mulberry32(hashInt(ix, iz, seed));
-    const ground = groundGrid(this.getHeight, ox, oz, S, this.heightSampleSpacing);
+    // The slope ring reaches one cell past the chunk: past the field's bounds it reads the edge
+    // height, so a ground that exists only inside the bounds (a resident heightfield) is never
+    // asked for a point it does not hold.
+    const b = this.bounds;
+    const getHeight = this.getHeight;
+    const height =
+      b === null
+        ? getHeight
+        : (x: number, z: number) =>
+            getHeight(Math.min(b.maxX, Math.max(b.minX, x)), Math.min(b.maxZ, Math.max(b.minZ, z)));
+    const ground = groundGrid(height, ox, oz, S, this.heightSampleSpacing);
     // A jittered grid visited in a seeded random order: any prefix covers the chunk evenly, so
     // thinning by distance is a plain instance count.
     const n = Math.max(1, Math.ceil(Math.sqrt(this.density * this.densityScale * S * S)));

@@ -1,7 +1,7 @@
 import { Terrain } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import { makeExport } from "../src/core/export.js";
 import { decodeHeightPNG, encodeHeightPNG } from "../src/core/io.js";
+import { makeExport } from "../src/package/export.js";
 
 const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, initial) => {
   let n = initial;

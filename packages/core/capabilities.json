@@ -5468,9 +5468,10 @@
       "signature": "export function lakeSurfaceGeometry( lake: IWaterLake, field: Heightfield, options: ILakeSurfaceOptions = { … }",
       "situations": [
         "draw a lake's water surface from the baked level and seed",
-        "a lake's drawn water and the swimmer's water disagree"
+        "a lake's drawn water and the swimmer's water disagree",
+        "lake water ends in a straight edge over a valley past the basin's rim"
       ],
-      "summary": "A lake's water surface: a level disc out to `lakeReach`, the footprint `WaterBodies` floods, with a `metres` attribute (water depth over the ground). Only cells with water at a corner get triangles, so the surface does not hover over dry hillside and the shore follows the ground's contour. The rings pack towards the middle, so an irregular basin costs vertices where the camera sees them. Returns `undefined` when the basin holds no water at its level.",
+      "summary": "A lake's water surface: a level disc out to `lakeReach`, the footprint `WaterBodies` floods, with a `metres` attribute (water depth over the ground). Only cells with a corner the seed's water reaches get triangles, so the surface does not hover over dry hillside, a hollow past the basin's rim (a river valley beyond the dam) stays dry instead of standing under a sheet that stops where the reach does, and the shore follows the ground's contour. The rings pack towards the middle, so an irregular basin costs vertices where the camera sees them. Returns `undefined` when the basin holds no water at its level.",
       "supersedes": [],
       "symbol": "lakeSurfaceGeometry"
     },

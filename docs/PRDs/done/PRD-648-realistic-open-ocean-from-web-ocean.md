@@ -27,7 +27,7 @@ Source inventory checked against `origin/develop` at `bae2dd9e6967c07ea42b0f8a44
 | Local disturbance and buoyancy | `packages/core/src/ripple-field.ts`, `packages/physics/src/Buoyancy3D.ts` | Existing interaction and fixed-step forces; no parallel buoyancy solver. |
 | Opt-in editable water source distribution | `packages/create-threenative/template-assets/clearwater/`; [Clearwater](../done/PRD-clearwater-shallow-water.md) | Existing source-bundle delivery pattern and refusal to overwrite edited files; no default-template changes. |
 | Native water/atmosphere substrate qualification | [PRD-491](../open-world/PRD-491-water-and-atmosphere-run-native.md) | Register and execute existing mechanisms there; do not create a duplicate parity project. |
-| Coastal/shore visual acceptance | [PRD-580](../open-world/PRD-580-strata-starter-kit-art-bar.md), `examples/strata-terrain-preview/src/render/ocean.ts` | Shore foam and terrain-aware water remain that work's responsibility. |
+| Coastal/shore visual acceptance | [PRD-580](../../../packages/terrain/docs/PRDs/PRD-580-strata-starter-kit-art-bar.md), `examples/strata-terrain-preview/src/render/ocean.ts` | Shore foam and terrain-aware water remain that work's responsibility. |
 
 ## What to take from the reference
 

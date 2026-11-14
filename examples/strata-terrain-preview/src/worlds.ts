@@ -2,7 +2,7 @@ import type { IAssetLoader } from "@threenative/core";
 import type { IBiomeSpec } from "@threenative/terrain";
 import { fetchBakedFile } from "./render/bakedFile.js";
 import type { WorldName } from "./render/biomes.js";
-import type { IBakedWorld } from "./render/terrain.js";
+import type { IBakedWorld } from "./render/ground/terrain.js";
 import { WORLD_NAMES } from "./render/worldNames.js";
 
 /**

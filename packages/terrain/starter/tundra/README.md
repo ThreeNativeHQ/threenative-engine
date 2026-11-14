@@ -7,9 +7,11 @@ erratics. It is game source: once copied, every file is yours to edit.
 | File | What it decides |
 | --- | --- |
 | `recipe.json` | The terrain: the survey heightmap, erosion, the kettle beds, the two rivers, the two lakes, the surfaces and the erratics. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
+| `biome.data.json` | The biome record the `terrain_generate` MCP tool cooks from. The bake does not read it. |
 | `assets.json` | The boulder model, its LOD distance and draw distance, and its bounds. |
 | `surface.json` | The ground: the moss base, the snow and rock layers, tiles, tints and blend thresholds. |
-| `bake.mjs` | Writes the world package and `world/water.json` (the rivers and lakes) from the three files above. |
+| `bake.mjs` | Writes the world package and `water.json` (the rivers and lakes) from `recipe.json`, `heightmap.r16`, `assets.json` and `surface.json`. |
 | `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the boulders near the player, and the sky as the props' light. |
 | `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. It also lights the lakes' mirror. |
 | `water.ts` | The kettle lakes and meltwater rivers, drawn with a pale ice tint on the lakes. |

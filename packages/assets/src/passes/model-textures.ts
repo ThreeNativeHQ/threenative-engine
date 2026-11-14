@@ -133,6 +133,8 @@ export interface IEmbeddedTextureSummary {
 export interface IModelTextureBinding {
   readonly height: number;
   readonly key: string;
+  /** The image came unnamed; the cook may name it by its shared file, which is not a rename. */
+  readonly unnamed: boolean;
   /** KTX2 mip levels; 1 for a still-uncompressed source image. */
   readonly levels: number;
   readonly mimeType: string;
@@ -298,6 +300,7 @@ export function textureBindings(root: RootOf): IModelTextureBindings {
       return {
         height: shape.height,
         key: keys[index] ?? `texture#${String(index)}`,
+        unnamed: texture.getName() === "",
         levels: shape.levels,
         mimeType,
         slots: [...listTextureSlots(texture)].sort(),
@@ -335,7 +338,7 @@ export function assertNoTextureDrift(
     const before = source.textures[index];
     const after = output.textures[index];
     if (before === undefined || after === undefined) continue;
-    if (before.key !== after.key) {
+    if (before.key !== after.key && !before.unnamed) {
       failures.push(`texture ${String(index)} renamed ${before.key} -> ${after.key}`);
       continue;
     }

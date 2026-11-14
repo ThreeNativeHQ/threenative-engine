@@ -598,7 +598,7 @@ describe("editor worker transfer", () => {
     "%s transfers height, genuine normal and splat buffers and can evaluate again",
     async (entry) => {
       const { Terrain } = await import("../src/index.js");
-      const { bakeMesh } = await import("../src/core/bake.js");
+      const { bakeMesh } = await import("../src/package/bake.js");
       const recipe = new Terrain({ resolution: 17, size: 16 }).noise({ amplitude: 4 }).toJSON();
       const channel = new MessageChannel();
       const sent: ArrayBuffer[] = [];

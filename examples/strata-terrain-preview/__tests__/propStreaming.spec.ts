@@ -1,12 +1,12 @@
 import type { IPlacement } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import { FAR_FOREST_LAYER } from "../src/render/farForest.js";
+import { FAR_FOREST_LAYER } from "../src/render/props/farForest.js";
 import {
   LOD_BANDS,
   impostorDistanceForScale,
   spruceGateScales,
   variantFor,
-} from "../src/render/props.js";
+} from "../src/render/props/props.js";
 
 function placementFor(asset: string, id: string, scale: number, layer = "forest"): IPlacement {
   return {

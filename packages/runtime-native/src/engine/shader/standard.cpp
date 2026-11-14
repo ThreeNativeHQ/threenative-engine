@@ -581,6 +581,8 @@ static ExprId clearcoatNormal(Program& f, const VertexVariant& variant, ExprId m
 // three's setupDiffuseColor: the map texel multiplies the diffuse colour and alpha. It is sampled at
 // the texture's uv transform (repeat/offset/rotation/center); an sRGB map is decoded here, as
 // upstream's ColorSpaceNode does, so the sample is linear.
+static bool coverageFaded(const VertexVariant& variant);
+
 static ExprId mapTexel(Program& f, const VertexVariant& variant) {
     if (!variant.map) return kInvalid;
     const ExprId uv = f.varying("uv", Type::vec(2));
@@ -656,7 +658,7 @@ static void materialInputs(Program& f, const VertexVariant& variant,
                 // three's diffuseColor (NodeMaterial.setupDiffuseColor): the colour times its map and vertex colour,
                 // the opacity times the map's alpha. A colorNode or opacityNode replaces those terms first, and
                 // those slots lower only once the program's Lowering exists: nodeDiffuseColor supplies it then.
-                if (nodes.colorNode || nodes.opacityNode) continue;
+                if (nodes.colorNode || nodes.opacityNode || coverageFaded(variant)) continue;
                 const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
                 const ExprId texel = variant.map && !variant.background ? mapTexel(f, variant) : kInvalid;
                 ExprId rgb = materialColor(f, variant, diffuse), alpha = f.swizzle(diffuse, "w");
@@ -703,6 +705,26 @@ static ExprId alphaCutoff(Program& f, graph::Lowering& slots, const VertexVarian
     return slotValue(f, slots, variant.nodes.alphaTestNode, Type::f32(), kInvalid);
 }
 
+// three r187 NodeMaterial.setupDiffuseColor with alphaToCoverage: a tested cutoff fades the alpha over one pixel,
+// `smoothstep(cutoff, cutoff + fwidth(a), a)`, and diffuseColor keeps that faded alpha. A slot reading diffuseColor sees
+// it too: the impostor bake's coverage capture took the raw, mip-thinned leaf alpha instead and baked a speckled atlas.
+static bool coverageFaded(const VertexVariant& variant) {
+    return variant.alphaToCoverage && (variant.nodes.alphaTestNode || variant.alphaTest);
+}
+
+// The cutoff the colour output discards at: with the fade it is `a <= 0`, as three's, since the alpha is already faded.
+static ExprId discardCutoff(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
+    return coverageFaded(variant) ? f.constant(0.0f) : alphaCutoff(f, slots, variant);
+}
+
+static ExprId fadedAlpha(Program& f, graph::Lowering& slots, const VertexVariant& variant, ExprId alpha) {
+    if (!coverageFaded(variant)) return alpha;
+    ExprId cutoff = alphaCutoff(f, slots, variant);
+    if (cutoff == kInvalid) cutoff = f.uniform("alphaTest", Type::f32());
+    const ExprId held = f.load(f.var(Type::f32(), alpha));
+    return f.call("smoothstep", {cutoff, f.add(cutoff, f.call("fwidth", {held})), held});
+}
+
 static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVariant& variant, ExprId diffuse, ExprId texel) {
     ExprId alpha = f.swizzle(diffuse, "w");
     if (variant.vertexColors) alpha = f.mul(alpha, f.swizzle(f.varying("instanceColor", tintType(variant)), "w"));
@@ -717,7 +739,7 @@ static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVaria
                           slotValue(f, slots, variant.nodes.opacityNode, Type::f32(), kInvalid));
         }
     }
-    return alpha;
+    return fadedAlpha(f, slots, variant, alpha);
 }
 
 // three's diffuseColor beside a colorNode or opacityNode, for a slot that reads it (the impostor bake's capture `output`
@@ -725,7 +747,9 @@ static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVaria
 // needs those two slots lowered, so it is supplied once the Lowering exists and before any other slot lowers.
 static void nodeDiffuseColor(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
     const auto& nodes = variant.nodes;
-    if (!nodes.colorNode && !nodes.opacityNode) return;
+    // A map-only cutout under alphaToCoverage takes this path too: its faded alpha needs the cutoff slot, which
+    // lowers only here. Supplied raw, the bake captured the mip-thinned leaf alpha and a sparse crown baked empty.
+    if (!nodes.colorNode && !nodes.opacityNode && !coverageFaded(variant)) return;
     bool read = false;
     for (const graph::Node* node : {&nodes.emissiveNode, &nodes.roughnessNode, &nodes.metalnessNode, &nodes.aoNode, &nodes.irradianceNode,
                                     &nodes.envNode, &nodes.fragmentNode, &nodes.depthNode, &nodes.maskNode, &nodes.alphaTestNode})
@@ -1747,7 +1771,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     out.emissive = emissive;
     out.indirectDiffuse = totalIndirectDiffuse;
     out.normal = n;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1907,7 +1931,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     out.albedo = diffuseColor;
     out.emissive = emissive;
     out.indirectDiffuse = indirectDiffuse;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -2004,7 +2028,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
+    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -2035,9 +2059,13 @@ StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
     Program& f = out.fragment;
     graph::Lowering slots = slotLowering(f, variant, kInvalid);
     nodeDiffuseColor(f, slots, variant);
+    discardMasked(f, slots, variant);  // the caller put the shadow mask (maskShadowNode || maskNode) in maskNode
     const ExprId texel = mapTexel(f, variant);
     ExprId alpha = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
     if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
+    // three r187 Renderer._getShadowNodes: the shadow alpha is map.a times colorNode.a.
+    if (variant.nodes.colorNode)
+        alpha = f.mul(alpha, f.swizzle(slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), kInvalid), "w"));
     // The stage needs an output; a depth-only pipeline has no colour target, so it is never written.
     f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)}));
     out.vertex.linkVaryings(out.fragment);

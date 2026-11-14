@@ -38,7 +38,7 @@ import {
   LOD_ERROR_TARGETS,
   LOD_MIN_SAVING,
   generateDiscreteLod,
-  thinFoliageCards,
+  thinCoveringCards,
   validateDiscreteLod,
 } from "../lod/generate.js";
 import { createSimplifyPool } from "../lod/simplify-pool.js";
@@ -62,6 +62,8 @@ export interface ISpeciesSpec {
   };
   readonly lods?: readonly ISpeciesLODSpec[];
   readonly maxDistance?: number;
+  /** Metres where the engine's whole-asset impostor takes over: no far level is derived past it. */
+  readonly impostorDistance?: number;
 }
 
 export interface ICookTerrainWorldMaterialLayer {
@@ -267,8 +269,20 @@ async function parseSpecies(bytes: Uint8Array): Promise<Document> {
  * holds out to 600 m, so a 512 m forest drew 62.5M triangles a frame for ~1,100 trees in view:
  * 113-120 ms GPU on an Iris Xe laptop and 18-31 ms on an RTX 2080. With these two levels the same
  * pose drew 10-22M (the adaptive LOD bias moves it) at 47-61 ms and 9 ms (PRD-762).
+ *
+ * Two steps still stopped the fir at 9.8k triangles from 107 m to the 600 m cull: 9.5M of the
+ * forest walk's 13.8M triangles (PRD-584 AC-4). Each step now keeps about a quarter of the one
+ * before, and the ladder ends where the next level would switch at or past `maxDistance`. Every
+ * level keeps the on-screen triangle density the authored coarsest level had at its own switch.
  */
-const FAR_LEVEL_KEEP_RATIOS: readonly number[] = [0.25, 0.06];
+const FAR_LEVEL_KEEP_RATIOS: readonly number[] = [0.25, 0.06, 0.015, 0.004];
+
+/**
+ * The least share of the coarsest level's card area a far level's scaled cards cover. Below it the
+ * crown reads as bare branches with a few huge cards: an Arbor forest's lake and overview views
+ * (owner frames, 2026-11-14). The ladder ends at the last level that keeps it.
+ */
+const FAR_LEVEL_MIN_COVERAGE = 0.5;
 
 function documentTriangles(doc: Document): number {
   let total = 0;
@@ -315,7 +329,7 @@ async function farLevelDocument(bytes: Uint8Array, keep: number): Promise<Docume
   for (const extension of doc.getRoot().listExtensionsUsed())
     if (extension.extensionName === TN_DISCRETE_LOD) extension.dispose();
   try {
-    thinFoliageCards(doc, keep);
+    thinCoveringCards(doc, keep, FAR_LEVEL_MIN_COVERAGE);
   } catch (error) {
     // Only the documented "these cards cannot be thinned" refusals keep the authored chain; any
     // other error is a defect and must not silently drop every far level.
@@ -335,17 +349,19 @@ async function farLevelDocument(bytes: Uint8Array, keep: number): Promise<Docume
 }
 
 /**
- * Far levels past a species' coarsest level, each switched in where it holds the same on-screen
- * triangle density the coarsest level had at its own switch: a level with `1/k` of the triangles
- * takes over at `sqrt(k)` times the distance, since projected area falls with distance squared.
+ * Far levels past a species' coarsest level. On-screen triangle density follows triangles over
+ * projected area, and area falls with distance squared, so a level with `1/k` of the triangles holds
+ * the coarsest level's switch density at `sqrt(k)` times its distance. Each level switches in
+ * `SQRT2` sooner than that, so over its band the density stays within half to twice the authored
+ * density, not one to four times (PRD-584 AC-4: the far fir band cost 5 ms of a 18.3 ms GPU frame).
  * A level that saves less than `LOD_MIN_SAVING` of the one before it, or would switch at or past
- * `maxDistance`, is not shipped. A species whose alpha cards cannot be thinned keeps its chain.
+ * `maxDistance` or the impostor distance, is not shipped. A species whose alpha cards cannot be thinned keeps its chain.
  */
 async function deriveFarLevels(
   speciesId: string,
   coarsest: { readonly distance: number; readonly glb: Uint8Array; readonly doc: Document },
   firstIndex: number,
-  maxDistance: number | undefined,
+  maxDistance: number,
 ): Promise<{ distance: number; glb: Uint8Array; filename: string; doc: Document }[]> {
   await MeshoptSimplifier.ready;
   const anchor = documentTriangles(coarsest.doc);
@@ -356,8 +372,8 @@ async function deriveFarLevels(
     if (doc === undefined) return levels;
     const triangles = documentTriangles(doc);
     if (triangles <= 0 || triangles > (1 - LOD_MIN_SAVING) * previous) continue;
-    const distance = coarsest.distance * Math.sqrt(anchor / triangles);
-    if (maxDistance !== undefined && distance >= maxDistance) break;
+    const distance = (coarsest.distance * Math.sqrt(anchor / triangles)) / Math.SQRT2;
+    if (distance >= maxDistance) break;
     const writer = await createGltfWriter();
     levels.push({
       distance: Math.round(distance * 10) / 10,
@@ -796,7 +812,15 @@ export async function cookTerrainWorld(
       const coarsest = lods.at(-1);
       if (coarsest !== undefined)
         lods.push(
-          ...(await deriveFarLevels(speciesId, coarsest, lods.length + 1, spec.maxDistance)),
+          ...(await deriveFarLevels(
+            speciesId,
+            coarsest,
+            lods.length + 1,
+            Math.min(
+              spec.maxDistance ?? Number.POSITIVE_INFINITY,
+              spec.impostorDistance ?? Number.POSITIVE_INFINITY,
+            ),
+          )),
         );
 
       // One file carries every level of this species, so its levels share one texture set.

@@ -3,7 +3,7 @@ import { PerspectiveCamera } from "three";
 import { PCFShadowFilter } from "three/tsl";
 import { expect, it } from "vitest";
 import { BIOMES } from "../src/render/biomes.js";
-import { createOutdoorSky } from "../src/render/sky.js";
+import { createOutdoorSky } from "../src/render/sky/sky.js";
 
 it.each(Object.values(BIOMES))("sets $world shadow contact bias as intended", (biome) => {
   const sky = createOutdoorSky(new PerspectiveCamera(), biome);

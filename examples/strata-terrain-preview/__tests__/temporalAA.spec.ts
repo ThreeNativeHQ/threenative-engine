@@ -5,7 +5,7 @@ import type RTTNode from "three/src/nodes/utils/RTTNode.js";
 import { texture, vec4 } from "three/tsl";
 import type { TextureNode } from "three/webgpu";
 import { describe, expect, it } from "vitest";
-import { createOutdoorTRAA } from "../src/render/sky.js";
+import { createOutdoorTRAA } from "../src/render/sky/sky.js";
 
 describe("Strata temporal AA input", () => {
   it("primes the actual beauty RTT and leaves automatic resizing enabled", () => {

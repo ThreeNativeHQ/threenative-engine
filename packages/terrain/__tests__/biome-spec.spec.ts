@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { foliageScatterRules } from "../src/biome/bake-biome.js";
 import { validateBiome } from "../src/index.js";
 
 const KITS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
@@ -291,6 +292,29 @@ describe("a biome file", () => {
     rejects("'grass[0].cobbledBed' must be true or false", (file) => {
       grass(file).cobbledBed = null;
     });
+  });
+
+  it("hands a foliage row's scale and stand mask to its scatter rule, and refuses a bad mask", () => {
+    // PRD-887: a region's Arbor canopy had no way to say its scale, so the scatter's default
+    // [0.8, 1.3] stood a 28.6 m beech at up to 37 m; nor its stands, so it scattered evenly.
+    const row = (read("forest").foliage as Record<string, unknown>[])[0] as Record<string, unknown>;
+    const mask = { type: "noise", scale: 120, threshold: 0.44, seed: 7, fade: 0.24 };
+    const spec = validateBiome(
+      { ...read("forest"), foliage: [{ ...row, scale: [0.55, 1], mask }] },
+      "forest",
+    );
+    const [rule] = foliageScatterRules(spec.foliage, [0, 10]);
+    expect(rule?.scale).toEqual([0.55, 1]);
+    expect(rule?.mask).toEqual(mask);
+    // A row that names neither keeps the scatter's own defaults, so every shipped kit is unchanged.
+    const [plain] = foliageScatterRules(validateBiome(read("forest"), "forest").foliage, [0, 10]);
+    expect(plain?.scale).toBeUndefined();
+    expect(plain?.mask).toBeUndefined();
+    const bad = rejection(
+      { ...read("forest"), foliage: [{ ...row, mask: { type: "noise", scale: 0 } }] },
+      "forest",
+    );
+    expect(bad).toContain("'foliage[0].mask'");
   });
 
   it("names the biome it is asked about, not the file it was read from", () => {

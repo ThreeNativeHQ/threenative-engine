@@ -1,7 +1,13 @@
 import { Vector3 } from "three";
 import { expect, it } from "vitest";
-import { POPPY, WILDFLOWER, fernClump, grassClump, poppyCluster } from "../src/render/cover.js";
-import { SPRUCE, spruceVariants } from "../src/render/spruce.js";
+import {
+  POPPY,
+  WILDFLOWER,
+  fernClump,
+  grassClump,
+  poppyCluster,
+} from "../src/render/ground/cover.js";
+import { SPRUCE, spruceVariants } from "../src/render/props/spruce.js";
 
 it("keeps contiguous grass, fern and flower stem vertices together in the wind", () => {
   const flowers = poppyCluster(73, { u0: 0.5, v0: 0, u1: 1, v1: 0.5 });

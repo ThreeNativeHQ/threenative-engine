@@ -138,7 +138,7 @@ filed for the gaps this map found (PRD-660 to PRD-683).
 | 5 | PRD-664 | Smoke and explosions as lit volumes | VFX | 6 | 1 | 0/10 | — | Off at Unreal low and medium tiers |
 | 5 | PRD-660 | Many shadowed lamps, one fixed budget (MegaLights) | Perf | 8 | 1 | 0/10 | PRD-650 | Off in a fresh Unreal project |
 | 5 | PRD-661 | ReSTIR: fewer GI rays, same quality | Perf | 7 | 1 | 0/9 | PRD-640, PRD-641 | No Unreal tier turns it on |
-| 5 | PRD-668 | Displacement changes the silhouette | Look | 7 | 1 | 0/9 | PRD-600 | Per-material opt-in in Unreal |
+| 5 | PRD-668 | Displacement changes the silhouette | Look | 7 | 1 | 2/9 | PRD-600 | Per-material opt-in in Unreal |
 | 5 | PRD-669 | Far foliage as voxels | Perf | 7 | 1 | 0/9 | — | Off in a fresh Unreal project |
 | 5 | PRD-671 | Strand hair | Look | 7 | 1 | 0/9 | PRD-VQ-15 | Off in a fresh Unreal project |
 | 5 | PRD-672 | Terrain layers cached in virtual pages | Perf | 8 | 1 | 0/9 | PRD-VQ-10 | Saves shading time on many-layer terrain |

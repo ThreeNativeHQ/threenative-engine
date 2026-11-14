@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import Arbor, { type IArborPreset } from "../vendor/arbor.js";
@@ -21,6 +21,19 @@ export interface IBakeVegetationOptions {
   readonly seed?: number;
   /** Levels of detail to write, each 0 (full) to 2 (far). Default `[0]`. */
   readonly lods?: readonly number[];
+  /**
+   * A patch over the preset, so a game changes a species' form and leaf card with no package edit:
+   * `levels`, `leaves` and `tex.cells` merge row by row into the preset's own rows, and any other key
+   * replaces the preset's value. Each key must name a field the preset has. The file names carry a
+   * hash of the patch, so a formed bake never overwrites the stock one.
+   */
+  readonly form?: Readonly<Record<string, unknown>>;
+  /**
+   * A PNG the leaves draw instead of Arbor's drawn card, as an atlas laid out on the preset's
+   * `tex.grid` (cell 0 top-left, row by row); `form` picks the grid and each leaf row's `cells`.
+   * The file names carry a hash of its bytes.
+   */
+  readonly leafImage?: string;
 }
 
 export interface IVegetationBake {
@@ -34,6 +47,7 @@ export interface IVegetationBake {
 }
 
 const MAX_LOD = 2;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
  * List every Arbor preset: id, name, latin name and kind.
@@ -93,6 +107,83 @@ function rgbaPng(width: number, height: number, bottomUp: Uint8Array): Uint8Arra
   return canvas.encodeSync("png");
 }
 
+/** The preset with a game's form patch merged in: list rows merge by index, other keys replace. */
+function withForm(
+  id: string,
+  source: IArborPreset,
+  form: Readonly<Record<string, unknown>> | undefined,
+): IArborPreset {
+  if (form === undefined) return source;
+  const base = source as unknown as Record<string, unknown>;
+  const rows = (key: string, own: unknown, patch: unknown): unknown[] => {
+    const list = (own ?? []) as Record<string, unknown>[];
+    if (!Array.isArray(patch))
+      throw new Error(`bakeVegetation: form.${key} must be a list of rows`);
+    if (patch.length > list.length)
+      throw new Error(
+        `bakeVegetation: form.${key} has ${patch.length} rows; ${id} has ${list.length}`,
+      );
+    return list.map((row, i) => ({ ...row, ...((patch[i] as object | undefined) ?? {}) }));
+  };
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(form)) {
+    if (!Object.hasOwn(base, key))
+      throw new Error(
+        `bakeVegetation: form key "${key}" is not a field of ${id}: ${Object.keys(base).join(", ")}`,
+      );
+    if (key === "levels" || key === "leaves") merged[key] = rows(key, base[key], value);
+    else if (key === "tex") {
+      const own = base.tex as { cells?: unknown[] };
+      const patch = value as { cells?: unknown };
+      merged.tex = {
+        ...own,
+        ...patch,
+        ...(patch.cells === undefined ? {} : { cells: rows("tex.cells", own.cells, patch.cells) }),
+      };
+    } else merged[key] = value;
+  }
+  return merged as unknown as IArborPreset;
+}
+
+/**
+ * Arbor numbers its atlas cells from the bottom row up (it paints and stores its own card bottom-up),
+ * while a game's `leafImage` numbers them from the top-left. Each leaf row's cells are flipped by row,
+ * so cell 0 of a game's image is its top-left cell, as the option says.
+ */
+function topDownCells(source: IArborPreset): IArborPreset {
+  const preset = source as unknown as {
+    tex?: { grid: readonly [number, number] };
+    leaves?: readonly { cells?: readonly number[] }[];
+  };
+  const [cols, rows] = preset.tex?.grid ?? [1, 1];
+  const flip = (cell: number): number =>
+    (rows - 1 - Math.floor(cell / cols)) * cols + (cell % cols);
+  return {
+    ...preset,
+    leaves: preset.leaves?.map((row) =>
+      row.cells === undefined ? row : { ...row, cells: row.cells.map(flip) },
+    ),
+  } as unknown as IArborPreset;
+}
+
+/** The leaf PNG (the game's image, else Arbor's drawn card) and the file-name tag of a game's patch. */
+async function leafOf(
+  source: IArborPreset,
+  options: IBakeVegetationOptions,
+): Promise<{ leaf: Uint8Array; tag: string }> {
+  const image = options.leafImage === undefined ? undefined : await readFile(options.leafImage);
+  if (image !== undefined && !image.subarray(0, 8).equals(PNG_SIGNATURE))
+    throw new Error(`bakeVegetation: leafImage ${options.leafImage} is not a PNG`);
+  const patched = options.form !== undefined || image !== undefined;
+  const hash = createHash("sha256")
+    .update(JSON.stringify(options.form ?? null))
+    .update(image ?? "");
+  const tag = patched ? `-f${hash.digest("hex").slice(0, 8)}` : "";
+  if (image !== undefined) return { leaf: image, tag };
+  const drawn = Arbor.leafTexture(source, { createCanvas });
+  return { leaf: rgbaPng(drawn.width, drawn.height, drawn.data), tag };
+}
+
 /**
  * Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model.
  * Each GLB carries the _WIND vertex attribute, COLOR_0, TEXCOORD_0, embedded bark and leaf textures and alpha-masked leaves.
@@ -120,9 +211,10 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
       `bakeVegetation: lods must be a non-empty list of integers 0 to ${MAX_LOD}, got [${lods}]`,
     );
   if (new Set(lods).size !== lods.length) throw new Error(`bakeVegetation: lods repeat: [${lods}]`);
-  const source = Arbor.PRESETS[preset] as IArborPreset;
+  const formed = withForm(preset, Arbor.PRESETS[preset] as IArborPreset, options.form);
+  const source = options.leafImage === undefined ? formed : topDownCells(formed);
+  const { leaf, tag } = await leafOf(source, options);
   const bark = source.noBark ? undefined : Arbor.barkTexture(source.bark);
-  const leaf = Arbor.leafTexture(preset, { createCanvas });
   const textures = {
     ...(bark
       ? {
@@ -130,13 +222,13 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
           barkNormal: rgbaPng(bark.width, bark.height, bark.normal),
         }
       : {}),
-    leaf: rgbaPng(leaf.width, leaf.height, leaf.data),
+    leaf,
   };
   await mkdir(out, { recursive: true });
   const baked: IVegetationBake[] = [];
   for (const lod of lods) {
-    const tree = Arbor.generate(preset, { seed, lod });
-    const file = path.join(out, `${preset}-${seed}-lod${lod}.glb`);
+    const tree = Arbor.generate(source, { seed, lod });
+    const file = path.join(out, `${preset}-${seed}${tag}-lod${lod}.glb`);
     const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
     try {
       await writeFile(temporary, Arbor.toGLB(tree, textures), { flag: "wx" });

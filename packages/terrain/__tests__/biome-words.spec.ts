@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { BIOME_WORDS, biomeWordList } from "../src/core/biome-words.js";
-import { TERRAIN_KITS } from "../src/core/kits.js";
+import { TERRAIN_KITS } from "../src/biome/kits.js";
+import { BIOME_WORDS, biomeWordList } from "../src/request/biome-words.js";
 
 /**
  * The tool's request parser is synchronous, so the aliases a request matches against are a mirror of
