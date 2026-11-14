@@ -1,6 +1,6 @@
 # Strata refactoring
 
-**Status:** PARTIAL — 5 of 9 PRDs closed (filed 2026-11-04; PRD-793 to 797 are in `done/`). Open: PRD-791 and PRD-792 (the web and loop playtest box each) and PRD-798 and PRD-799 (the Strata and abyss playtests, and AC-1 of PRD-798 reopened). Per PRD:
+**Status:** DONE (2026-11-13) — all 9 PRDs (791 to 799) are in `docs/PRDs/done/`. PRD-798 closed last, when the owner accepted its reworded AC-1. The per-PRD notes below are history.
 
 - **PRD-791** — code complete and the five-world visual judge passed (AC-4, 2026-11-05); one box stays
   open: the web and loop playtest (loop half green, terrain half red at the engine bundle bug fixed in
@@ -82,7 +82,7 @@ Not moved, with the reason:
 | 5 | P2 | [PRD-795](../../../../../docs/PRDs/done/PRD-795-the-far-ring-and-ground-queries-read-the-heightfield.md) | The far ring and ground queries read the heightfield, not world names |
 | 6 | P2 | [PRD-796](../../../../../docs/PRDs/done/PRD-796-strata-game-ts-is-wiring-not-a-world-switch.md) | Strata `game.ts` is wiring, not a world switch |
 | 7 | P2 | [PRD-797](../../../../../docs/PRDs/done/PRD-797-world-tiles-splits-by-seam.md) | `world-tiles.ts` splits by seam |
-| 8 | P2 | [PRD-798](PRD-798-world-gpu-scene-and-cell-render-split-with-pins.md) | `world-gpu-scene.ts` and `world-cell-render.ts` split, with `CellRender` pins |
+| 8 | P2 | [PRD-798](../../../../../docs/PRDs/done/PRD-798-world-gpu-scene-and-cell-render-split-with-pins.md) | `world-gpu-scene.ts` and `world-cell-render.ts` split, with `CellRender` pins |
 | 9 | P2 | [PRD-799](../../../../../docs/PRDs/done/PRD-799-world-cells-second-split.md) | `world-cells.ts` second split |
 
 PRDs 797 to 799 touch no Strata file and may run in parallel with 791 to 796. PRD-798 and PRD-799
