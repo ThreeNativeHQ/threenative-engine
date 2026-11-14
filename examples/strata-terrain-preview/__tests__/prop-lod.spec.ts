@@ -25,7 +25,7 @@ import {
 } from "../../../packages/core/src/model-lod.js";
 import { Scene, type SceneConstructor } from "../../../packages/core/src/scene.js";
 import type { WorldName } from "../src/render/biomes.js";
-import { type ICanopyComparison, loadPack } from "../src/render/pack.js";
+import { type ICanopyComparison, loadPack } from "../src/render/props/pack.js";
 import { WORLD_SELECT } from "../src/worlds.js";
 
 describe("canopy comparison scene lifetime", () => {
@@ -160,13 +160,13 @@ describe("canopy comparison startup", () => {
       resumeScene: vi.fn(),
       start,
     };
-    const pack = await import("../src/render/pack.js");
+    const pack = await import("../src/render/props/pack.js");
     const imports: Record<string, unknown> = {
       "./game.js": { __esModule: true, default: game },
       "./launchFailure.js": { showLaunchFailures: () => ({ ready: () => undefined }) },
       "@threenative/core": { exposeDebug: vi.fn() },
       "./render/biomes.js": { BIOMES: { forest: {}, coastal: {} } },
-      "./render/pack.js": pack,
+      "./render/props/pack.js": pack,
     };
     runInNewContext(code, {
       exports: {},

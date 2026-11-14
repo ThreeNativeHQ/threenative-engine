@@ -104,8 +104,8 @@ flowchart LR
     m2 --> m3["cookKit()<br/>src/cook/cook.ts"]
     m3 --> m4["world.glb, world.json, ring.json,<br/>water.json, recipe.json, README.md"]
   end
-  subgraph preview["preview: examples/strata-terrain-preview/scripts/bake.mjs"]
-    p1["examples/strata-terrain-preview/scripts/recipe.mjs"] --> p2["bakeBiome()<br/>@threenative/terrain"]
+  subgraph preview["preview: examples/strata-terrain-preview/scripts/bake/bake.mjs"]
+    p1["examples/strata-terrain-preview/scripts/bake/recipe.mjs"] --> p2["bakeBiome()<br/>@threenative/terrain"]
     p2 --> p3["src/world/*.json, *.bin,<br/>*.splat.rgba8"]
   end
   m4 -.->|"STRATA_WORLD=&lt;out dir&gt;"| p1
@@ -115,12 +115,12 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | Starter bake | `packages/terrain/starter/<world>/bake.mjs`, through `bakeKit` (`packages/terrain/src/kit.ts`); in this repository `pnpm --filter @threenative/terrain bake:forest` | the starter's `recipe.json`, `assets.json`, `surface.json` | `world.glb`, `world.json`, `placements.bin`, `placement-ids.json`, `terrain-table.json`, `heightmap.u16`, `splat.rgba`, `models/`, `textures/`, `sky.hdr`, `water.json` | the game's: `src/render/` in the copied starter |
 | MCP tool | `terrain_generate` → `packages/terrain/src/mcp/server.ts` → `packages/terrain/src/cook/cook-child.ts` → `cookKit` (`packages/terrain/src/cook/cook.ts`) | the request, the starter kit it names (including its `biome.data.json`), the project's installed `@threenative/assets` | the same package plus `ring.json`, `recipe.json` and `README.md` | the requesting game's: the reply's `load` snippet is game source |
-| Preview | `examples/strata-terrain-preview/scripts/bake.mjs`, run by `pnpm --filter strata-terrain-preview bake` | `examples/strata-terrain-preview/scripts/recipe.mjs`, `examples/strata-terrain-preview/scripts/dem/`, `examples/strata-terrain-preview/src/render/biomes.ts`, `examples/strata-terrain-preview/src/world/terrainAssets.ts` | `src/world/<world>.*` | the preview's own `src/render/` |
+| Preview | `examples/strata-terrain-preview/scripts/bake/bake.mjs`, run by `pnpm --filter strata-terrain-preview bake` | `examples/strata-terrain-preview/scripts/bake/recipe.mjs`, `examples/strata-terrain-preview/scripts/dem/`, `examples/strata-terrain-preview/src/render/biomes.ts`, `examples/strata-terrain-preview/src/world/terrainAssets.ts` | `src/world/<world>.*` | the preview's own `src/render/` |
 
 `STRATA_WORLD` is the only bridge: set it to an MCP cook's output directory, run
 `STRATA_WORLD=<out dir> pnpm --filter strata-terrain-preview bake`, and the forest is re-baked from
 that cook's own `recipe.json` and `ring.json` under the preview's look
-(`examples/strata-terrain-preview/scripts/recipe.mjs`).
+(`examples/strata-terrain-preview/scripts/bake/recipe.mjs`).
 
 ## 4. Edit to pixel
 
@@ -154,13 +154,13 @@ of you; "Page" is where you see it.
 
 | Change | File | Rebuild | Page |
 | --- | --- | --- | --- |
-| Ground shape | `packages/terrain/src/ground/presets.ts` (the landform presets), and `packages/terrain/src/ground/ground.ts` for where the heights come from, or the recipe in `examples/strata-terrain-preview/scripts/recipe.mjs` | `pnpm --filter strata-terrain-preview rebake` | `pnpm --filter strata-terrain-preview dev`, `?world=forest` |
-| Ground texture and bands | `packages/terrain/src/biome/biome.ts` (band and layer rows) and the surface manifest in `examples/strata-terrain-preview/scripts/recipe.mjs` | `pnpm --filter strata-terrain-preview rebake` | `?world=forest`, `?showcase=1` |
+| Ground shape | `packages/terrain/src/ground/presets.ts` (the landform presets), and `packages/terrain/src/ground/ground.ts` for where the heights come from, or the recipe in `examples/strata-terrain-preview/scripts/bake/recipe.mjs` | `pnpm --filter strata-terrain-preview rebake` | `pnpm --filter strata-terrain-preview dev`, `?world=forest` |
+| Ground texture and bands | `packages/terrain/src/biome/biome.ts` (band and layer rows) and the surface manifest in `examples/strata-terrain-preview/scripts/bake/recipe.mjs` | `pnpm --filter strata-terrain-preview rebake` | `?world=forest`, `?showcase=1` |
 | Tree species | `packages/terrain/src/population/arbor-species.ts` and `packages/terrain/starter/<world>/assets.json` | `pnpm --filter @threenative/terrain bake:forest` (or the world you changed) | the cooked world in its game |
 | Tree density | `packages/terrain/src/population/scatter-ordered.ts` (the generators) and `<world>/biome.data.json` (the rows) | `pnpm --filter strata-terrain-preview rebake` | `?world=forest` |
-| Water | `packages/terrain/src/water/water.ts` (the segment index) and `packages/terrain/src/water/stages.ts` (the water rows, coast, lakes and rivers); the look in `examples/strata-terrain-preview/src/render/water.ts` | `pnpm --filter strata-terrain-preview rebake` for the shape; nothing for the look | `?waterproof=1`, then `pnpm --filter strata-terrain-preview test:terrain:web` |
-| Sky and light | `examples/strata-terrain-preview/src/render/sky.ts`, `atmosphere.ts`, `environmentImages.ts` | nothing | `?world=forest&showcase=1` |
-| Far ring | `packages/terrain/src/ground/massif.ts` and `farRing` in `packages/terrain/src/ground/ground.ts`; the preview's read in `src/render/horizon.ts` | package build, then the cook | `?world=alpine`, and the `vista` playtest pose |
+| Water | `packages/terrain/src/water/water.ts` (the segment index) and `packages/terrain/src/water/stages.ts` (the water rows, coast, lakes and rivers); the look in `examples/strata-terrain-preview/src/render/water/water.ts` | `pnpm --filter strata-terrain-preview rebake` for the shape; nothing for the look | `?waterproof=1`, then `pnpm --filter strata-terrain-preview test:terrain:web` |
+| Sky and light | `examples/strata-terrain-preview/src/render/sky/sky.ts`, `atmosphere.ts`, `environmentImages.ts` | nothing | `?world=forest&showcase=1` |
+| Far ring | `packages/terrain/src/ground/massif.ts` and `farRing` in `packages/terrain/src/ground/ground.ts`; the preview's read in `src/render/ground/horizon.ts` | package build, then the cook | `?world=alpine`, and the `vista` playtest pose |
 | Loading and streaming | `packages/core/src/` (`WorldCells`, `TerrainTiles`) and `examples/strata-terrain-preview/src/render/loading.ts`, `streamLanes.ts` | `pnpm --filter strata-terrain-preview dev:fresh` | `?stream=1`, then `pnpm --filter strata-terrain-preview test:terrain:web` |
 | Request words | `packages/terrain/src/request/request-words.ts`, `packages/terrain/src/request/biome-words.ts`, `packages/terrain/src/request/generate-request.ts` | `pnpm --filter @threenative/terrain build` | the `terrain_generate` reply's `decided` and `unused` |
 | The world package format | `packages/core/src/world-package.ts` (the contract) and `packages/terrain/src/package/world-package.ts` (the writer); see [`world-package.md`](world-package.md) | `pnpm --filter strata-terrain-preview dev:fresh` | every world |
@@ -197,8 +197,17 @@ is the stage; a file two stages import lives at the root of `src/` or in `core/`
 | `packages/terrain/scripts/` | The package's own data prep | Bake one shipped table from licensed sources; nothing here runs in a game |
 | `packages/terrain/starter/` | Copy-out game source | One folder per world: recipe, bake, look, colliders. Package code never imports it |
 | `packages/terrain/docs/` | Strata documents | This map, its companions in `packages/terrain/docs/architecture/`, and the Strata PRDs in `packages/terrain/docs/PRDs/` |
-| `examples/strata-terrain-preview/src/render/` | Appearance and the live scene | Every material, light, sky, water look and instanced batch the preview draws |
-| `examples/strata-terrain-preview/scripts/` | The preview's bake, prep, proofs and measures | `bake.mjs`, `recipe.mjs` and the verifiers that put a world on screen |
+| `examples/strata-terrain-preview/src/render/` | The preview entry to appearance | The files that serve every concern: `biomes.ts`, `benchmark.ts`, `loading.ts`, `lookKnobs.ts`, `orbitCamera.ts`, `bakedFile.ts`, `texturePreparation.ts`, `worldNames.ts`, `streamLanes.ts` and the separate games |
+| `examples/strata-terrain-preview/src/render/ground/` | The ground look | `terrain.ts` (layers, tiles, blends), `surfaces.ts`, `cover.ts`, `scatter.ts`, `horizon.ts`, `portable.ts` and `palette.js` |
+| `examples/strata-terrain-preview/src/render/props/` | Trees, rocks and imported models | `props.ts`, `propWorld.ts`, `propMaterials.ts`, `propProgress.ts`, `prepared.ts`, `spruce.ts`, `farForest.ts`, `pack.ts` and `imports.ts` |
+| `examples/strata-terrain-preview/src/render/water/` | The water look | `water.ts`, `river.ts`, `ocean.ts` and `waterProof.ts` |
+| `examples/strata-terrain-preview/src/render/sky/` | Sky and light | `sky.ts`, `atmosphere.ts`, `environmentImages.ts` and `skyVisibility.ts` |
+| `examples/strata-terrain-preview/src/render/editor/` | What only the editor shows | `editorView.ts`, `selection.ts` and `lookTweaks.ts` |
+| `examples/strata-terrain-preview/scripts/` | The preview's scripts, one folder per job | Entry points only: the index is [`examples/strata-terrain-preview/docs/scripts.md`](../../../../examples/strata-terrain-preview/docs/scripts.md) |
+| `examples/strata-terrain-preview/scripts/bake/` | The bake | `bake.mjs`, the five worlds' `recipe.mjs`, the prop half in `props.mjs`, the `stamp.mjs` cache and `world-files.mjs` |
+| `examples/strata-terrain-preview/scripts/prep/` | Asset preparation | The licensed-source importers (`prep-fab-temperate.mjs`, `prep-landscape-pro.mjs`, the Python source cutters), the needle atlas and `stage-native-assets.mjs` |
+| `examples/strata-terrain-preview/scripts/verify/` | The proofs | Every `verify-*.mjs`, `check-water.mjs` and the consumer server `consumer-world.mjs` |
+| `examples/strata-terrain-preview/scripts/measure/` | The measures | `measure-terrain.mjs`, `measure-light.mjs`, `measure-spikes.mjs` and `measure-embankment.mjs` |
 | `examples/strata-terrain-preview/scripts/dem/` | Elevation input | The survey tiles and elevation crops the bake reads |
 | `examples/strata-terrain-preview/scripts/fixtures/` | Recorded inputs | Committed fixtures a proof replays instead of re-authoring: documents, baked worlds and game modules |
 | `examples/strata-terrain-preview/scripts/fixtures/handoff-game/` | A fixture game's scene | The scene a consumer proof hands a cooked world to, with no authoring import |

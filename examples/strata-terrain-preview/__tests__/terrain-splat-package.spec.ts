@@ -14,13 +14,13 @@ import { float } from "three/tsl";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
 import { BIOMES } from "../src/render/biomes.js";
-import { setHorizonSurroundings } from "../src/render/horizon.js";
-import { createGroundMaterial, createTerrain } from "../src/render/terrain.js";
+import { setHorizonSurroundings } from "../src/render/ground/horizon.js";
+import { createGroundMaterial, createTerrain } from "../src/render/ground/terrain.js";
 import { GROUND_MAPS, GROUND_TILE } from "../src/world/terrainAssets.js";
 
 const base = new URL("../", import.meta.url);
-// The packaging function lives in `scripts/recipe.mjs` since the bake became a `bakeBiome` call (PRD-792).
-const bake = readFileSync(new URL("scripts/recipe.mjs", base), "utf8");
+// The packaging function lives in `scripts/bake/recipe.mjs` since the bake became a `bakeBiome` call (PRD-792).
+const bake = readFileSync(new URL("scripts/bake/recipe.mjs", base), "utf8");
 const declaration = ts
   .createSourceFile("recipe.mjs", bake, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
   .statements.find(
@@ -198,7 +198,7 @@ it("delivers flat descriptors, tables, raw masks and prop packages through Vite 
         ),
         { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
       ).outputText;
-    // A config or script that imports a sibling module (`./scripts/world-files.mjs`) is answered
+    // A config or script that imports a sibling module (`./scripts/bake/world-files.mjs`) is answered
     // synchronously, the way CommonJS `require` is: the module is transpiled against the same
     // sandbox and its `exports` object is filled before the first await either way.
     function requireFrom(name: string, from: string): unknown {
@@ -262,7 +262,7 @@ it("delivers flat descriptors, tables, raw masks and prop packages through Vite 
           ? "mannequin"
           : contents.get(path.basename(file.fileName)),
       );
-    await execute("scripts/stage-native-assets.mjs");
+    await execute("scripts/prep/stage-native-assets.mjs");
     for (const [name, content] of [
       ["basis_transcoder.js", "first-js"],
       ["basis_transcoder.wasm", "first-wasm"],
@@ -279,7 +279,7 @@ it("delivers flat descriptors, tables, raw masks and prop packages through Vite 
     // A file the manifest names but the bake did not write stops the build by name.
     rmSync(path.join(project, "src/world/forest.local-true.reach.bin"));
     expect(emit).toThrow("TN_STRATA_BUILD_MISSING forest.local-true.reach.bin");
-    await expect(execute("scripts/stage-native-assets.mjs")).rejects.toThrow(
+    await expect(execute("scripts/prep/stage-native-assets.mjs")).rejects.toThrow(
       "TN_STRATA_BUILD_MISSING forest.local-true.reach.bin",
     );
   } finally {

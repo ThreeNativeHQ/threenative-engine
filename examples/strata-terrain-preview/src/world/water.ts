@@ -1,5 +1,10 @@
 import { type Heightfield, type IWaterOcean, WaterBodies } from "@threenative/core/world";
-import { type IBakedLake, type IBakedRiver, LAKE_REACH, RIVER_FLOW_MPS } from "../render/river.js";
+import {
+  type IBakedLake,
+  type IBakedRiver,
+  LAKE_REACH,
+  RIVER_FLOW_MPS,
+} from "../render/water/river.js";
 
 /**
  * The baked water rows as the one mechanism reads them, and the queries the swimmer asks.

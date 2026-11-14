@@ -137,7 +137,7 @@ function snapshot() {
 function bake(): Record<string, unknown> {
   execFileSync(
     process.execPath,
-    [fileURLToPath(new URL("../scripts/bake.mjs", import.meta.url)), "--force"],
+    [fileURLToPath(new URL("../scripts/bake/bake.mjs", import.meta.url)), "--force"],
     {
       cwd: exampleRoot,
       stdio: ["ignore", "pipe", "pipe"],

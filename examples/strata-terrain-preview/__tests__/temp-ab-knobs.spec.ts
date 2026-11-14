@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
-import { meadowCover } from "../src/render/scatter.js";
+import { meadowCover } from "../src/render/ground/scatter.js";
 
 /**
  * PRD-806 E30: two TEMP lane A/B knobs were still live at HEAD — `?meadowBase=off` (`scatter.ts`)
@@ -28,7 +28,7 @@ it("plants the shipped meadow carpet whatever the URL asks for", () => {
 
 it("keeps neither knob's URL read in the render sources", () => {
   for (const name of ["terrain.ts", "scatter.ts"]) {
-    const source = readFileSync(new URL(`../src/render/${name}`, import.meta.url), "utf8");
+    const source = readFileSync(new URL(`../src/render/ground/${name}`, import.meta.url), "utf8");
     expect(/get\("(?:peaks|meadowBase)"\)/.test(source), name).toBe(false);
   }
 });

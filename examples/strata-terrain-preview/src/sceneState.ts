@@ -1,7 +1,7 @@
 import type { ICtx } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { initialDiagnosticsState } from "./diagnostics.js";
-import type { ICanopyComparison } from "./render/pack.js";
+import type { ICanopyComparison } from "./render/props/pack.js";
 
 /**
  * The state this game reports through: every measurement `diagnostics.ts` owns, plus the two values

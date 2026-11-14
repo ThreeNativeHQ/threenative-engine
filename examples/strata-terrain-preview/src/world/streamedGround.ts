@@ -9,8 +9,8 @@ import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenativ
 import type { Object3D } from "three";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
 import type { WorldName } from "../render/biomes.js";
-import { HORIZON_REACH, createWorldHeight } from "../render/horizon.js";
-import type { IBakedWorld, ITerrainStream } from "../render/terrain.js";
+import { HORIZON_REACH, createWorldHeight } from "../render/ground/horizon.js";
+import type { IBakedWorld, ITerrainStream } from "../render/ground/terrain.js";
 
 /** Tile width in metres: 32 cells of the square's own 2 m spacing, so tile and square share vertices. */
 const TILE = 64;

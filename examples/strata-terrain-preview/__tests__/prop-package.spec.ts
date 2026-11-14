@@ -19,9 +19,13 @@ import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
 import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { streamProps } from "../src/render/propWorld.js";
-import { type PropGroundQuery, buildPropVariants, flatPropMaterials } from "../src/render/props.js";
-import type { IBakedWorld } from "../src/render/terrain.js";
+import type { IBakedWorld } from "../src/render/ground/terrain.js";
+import { streamProps } from "../src/render/props/propWorld.js";
+import {
+  type PropGroundQuery,
+  buildPropVariants,
+  flatPropMaterials,
+} from "../src/render/props/props.js";
 import { readBakedPropPackage } from "./bakedPropPackage.js";
 
 const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;

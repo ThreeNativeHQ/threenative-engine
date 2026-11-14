@@ -37,17 +37,21 @@ import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.j
 import { BENCHMARK, type ViewName, posesFor } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
-import { HORIZON_REACH, HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
+import { openLookTweaks } from "./render/editor/lookTweaks.js";
+import {
+  HORIZON_REACH,
+  HORIZON_WALK_BAND,
+  loadHorizonSurroundings,
+} from "./render/ground/horizon.js";
+import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/ground/terrain.js";
 import { createLoadingScreen } from "./render/loading.js";
-import { openLookTweaks } from "./render/lookTweaks.js";
-import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/ocean.js";
-import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/propWorld.js";
-import { invalidatePropShadows } from "./render/propWorld.js";
-import { buildPropVariants } from "./render/props.js";
-import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
-import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
-import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/terrain.js";
-import { sampleActiveWaterProof, waterProofEnabled } from "./render/waterProof.js";
+import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/props/propWorld.js";
+import { invalidatePropShadows } from "./render/props/propWorld.js";
+import { buildPropVariants } from "./render/props/props.js";
+import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky/sky.js";
+import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/water/ocean.js";
+import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/water/river.js";
+import { sampleActiveWaterProof, waterProofEnabled } from "./render/water/waterProof.js";
 import { type IMeadow, type Scatter, type Variants, createMeadow } from "./sceneProps.js";
 import { type TerrainCtx, type TerrainState, initialState } from "./sceneState.js";
 import { createSpawnGate } from "./spawnGate.js";
@@ -360,12 +364,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // One rig owns the whole of the sky, the sun, the shadows that follow the eye, the haze the
       // far ridges fade into and the tone curve. It used to be a flat `Color` background, a
       // hand-set `FogExp2`, a sun with a five metre shadow box that missed everything, and no tone
-      // mapping at all; the numbers behind all of that now live in `src/render/sky.ts`.
+      // mapping at all; the numbers behind all of that now live in `src/render/sky/sky.ts`.
       ctx.add(sky.daylight);
       ctx.add(sky.atmosphere);
       ctx.add(sky.sun);
       this.#sky = sky;
-      // `?tweak`: range bars over the wood's look, on the running scene (`src/render/lookTweaks.ts`).
+      // `?tweak`: range bars over the wood's look, on the running scene (`src/render/editor/lookTweaks.ts`).
       if (world === "forest" && debugFlag("tweak")) openLookTweaks(sky, ctx.renderer);
       ctx.entities.add("sun", {
         object: sky.sun,

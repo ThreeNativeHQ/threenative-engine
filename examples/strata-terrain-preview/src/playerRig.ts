@@ -16,7 +16,7 @@ import {
   type WallProbe,
   createOrbitCamera,
 } from "./render/orbitCamera.js";
-import { SIGHT_RADIUS, sightLine } from "./render/pack.js";
+import { SIGHT_RADIUS, sightLine } from "./render/props/pack.js";
 import type { TerrainCtx } from "./sceneState.js";
 
 /** The starter kit's mannequin (Quaternius Universal Animation Library, CC0). */

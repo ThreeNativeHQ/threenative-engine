@@ -42,7 +42,7 @@ Numbers in the "Forest" column come from `pnpm --filter @threenative/terrain bak
 | `terrain-table.json` | the ground layers: `base`, `layers`, `breakup`, `macro`, `splat`, `textures`; `sources` is for the bake only | 2 KB | `bakeKit` or the cook | the game's ground material, `loadTerrainSplat` |
 | `water.json` | `lakes` (`id`, `kind`, `at`, `radius`, `level`) and `rivers` (`id`, `width`, `points`) | 9 KB | `bakeKit` or `cookInto` | the game's water, such as `starter/<world>/water.ts` |
 | `sky.hdr` | the sky the props are lit by | 1.6 MB | `bakeKit` copies it | the game's `sky.ts` |
-| `ring.json` | the far-ring massif heights past the playable square (MCP cook only) | | `farRing` | the game's horizon, such as the preview's `src/render/horizon.ts` |
+| `ring.json` | the far-ring massif heights past the playable square (MCP cook only) | | `farRing` | the game's horizon, such as the preview's `src/render/ground/horizon.ts` |
 | `recipe.json` | the edited recipe with the heightmap inlined (MCP cook only) | | `cookInto` | `terrain_patch`, and the preview through `STRATA_WORLD` |
 | `README.md` | the survey and far-ring attribution (MCP cook only) | | `cookInto` | a person |
 

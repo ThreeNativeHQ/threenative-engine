@@ -603,7 +603,7 @@ it("fades a published level change in the colour pass only", () => {
 });
 
 it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold", async () => {
-  const { loadPack } = await import("../../../examples/strata-terrain-preview/src/render/pack.js");
+  const { loadPack } = await import("../../../examples/strata-terrain-preview/src/render/props/pack.js");
   const { createAssetLoader } = await import("../src/assets.js");
   const assets = createAssetLoader();
   vi.spyOn(assets, "resolve").mockResolvedValue([]);

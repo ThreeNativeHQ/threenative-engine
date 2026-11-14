@@ -5,16 +5,19 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DataUtils, HalfFloatType, RGBAFormat } from "three";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
-import { readWaterProofMode } from "../src/render/waterProof.js";
+import { readWaterProofMode } from "../src/render/water/waterProof.js";
 import {
   WaterProofProbe,
   installWaterProof,
   sampleActiveWaterProof,
-} from "../src/render/waterProof.js";
+} from "../src/render/water/waterProof.js";
 
 // The package script runs vitest from the package directory with `--root ../..`, so cwd is not the repo root.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const verifyOcean = resolve(repoRoot, "examples/strata-terrain-preview/scripts/verify-ocean.mjs");
+const verifyOcean = resolve(
+  repoRoot,
+  "examples/strata-terrain-preview/scripts/verify/verify-ocean.mjs",
+);
 const strataPackage = resolve(repoRoot, "examples/strata-terrain-preview/package.json");
 const ROI = { x: 0, y: 0, width: 280, height: 100 };
 const half = (value: number): number => DataUtils.toHalfFloat(value);
@@ -35,7 +38,7 @@ it("runs the canonical terrain proof against the production Vite build", () => {
   );
   expect(command).toContain("--browser-recipe webgpu --headed --artifacts artifacts/playtest/web");
   expect(command).toContain(
-    "&& node scripts/verify-ocean.mjs artifacts/playtest/web --proof=water",
+    "&& node scripts/verify/verify-ocean.mjs artifacts/playtest/web --proof=water",
   );
   expect(command).not.toContain("pnpm dev");
 
@@ -51,7 +54,7 @@ it("runs the canonical terrain proof against the production Vite build", () => {
     "--browser-recipe webgpu --headed --artifacts artifacts/playtest/water-control",
   );
   expect(controlCommand).toContain(
-    "&& node scripts/verify-ocean.mjs artifacts/playtest/water-control --proof=foam",
+    "&& node scripts/verify/verify-ocean.mjs artifacts/playtest/water-control --proof=foam",
   );
   expect(controlCommand).not.toContain("pnpm dev");
 });
@@ -65,10 +68,10 @@ it("runs the shared water regressions from the package's own test lane", () => {
     scripts: Record<string, string>;
   };
 
-  expect(manifest.scripts["test:water"]).toBe("pnpm exec tsx scripts/check-water.mjs");
+  expect(manifest.scripts["test:water"]).toBe("pnpm exec tsx scripts/verify/check-water.mjs");
   expect(manifest.scripts.test).toContain("pnpm test:water");
   expect(
-    existsSync(resolve(repoRoot, "examples/strata-terrain-preview/scripts/check-water.mjs")),
+    existsSync(resolve(repoRoot, "examples/strata-terrain-preview/scripts/verify/check-water.mjs")),
   ).toBe(true);
 });
 

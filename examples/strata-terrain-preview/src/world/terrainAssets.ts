@@ -10,7 +10,7 @@
 // and a `model` is a placement asset a variant resolves to. Neither carries a scale, a material or
 // a role decision; those are the render modules' business.
 
-/** The surfaces that can cover ground. Order is the blend order in `src/render/terrain.ts`. */
+/** The surfaces that can cover ground. Order is the blend order in `src/render/ground/terrain.ts`. */
 export type LayerKey = "grass" | "dirt" | "rock" | "moss" | "sand" | "snow";
 
 /**
@@ -148,7 +148,7 @@ export interface IPreparedFile {
  * The prepared files, in the order they are asked for.
  *
  * **Nothing on this list any more.** The three CC0 rocks and the two prepared firs were replaced by
- * the licensed Landscape Pro species in `src/render/pack.ts` — real photoscanned stone at 7,178
+ * the licensed Landscape Pro species in `src/render/props/pack.ts` — real photoscanned stone at 7,178
  * triangles where the CC0 set's were 1–2k, and real pines where the fir's crown measured 0.3% of
  * its own silhouette at the tree budget (`credits.json` has that number, and it is why the starter
  * kept its procedural spruce). The list and its loader stay because they are how the next source is

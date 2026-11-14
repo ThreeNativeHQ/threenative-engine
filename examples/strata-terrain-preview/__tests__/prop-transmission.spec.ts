@@ -1,7 +1,7 @@
 import { float, vec3 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
-import { lightNeedles } from "../src/render/propMaterials.js";
+import { lightNeedles } from "../src/render/props/propMaterials.js";
 
 /**
  * One look for thin-needle transmission on both engines.

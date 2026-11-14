@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import * as horizon from "../src/render/horizon.js";
+import * as horizon from "../src/render/ground/horizon.js";
 
 // The first root that answers wins; one root is enough to see a failure turn into a retry.
 const ASSETS = { resolve: async () => ["https://assets.test/world/horizon.json"] };

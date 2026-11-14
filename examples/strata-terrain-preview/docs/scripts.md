@@ -57,52 +57,52 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `playtests/water-proof.playtest.json`: the coastal water-contribution proof on the owned engine: it enters the coast from the forest walk as the terrain scenario does, and the sheltered pool's diagnostic attachment reads back above the gate.
 
 - Verification and test suites:
-  - `scripts/verify-assets.mjs`: verifies asset manifests, replacement tables, and model loading.
-  - `scripts/verify-authored-world.mjs`: verifies that editor-authored modifications reproduce committed baseline output.
-  - `scripts/verify-cameras.mjs`: checks camera viewpoints, transitions, and framing across all world biomes.
-  - `scripts/verify-consumer.mjs`: verifies packaging and consumption of the authored world in an external project.
-  - `scripts/verify-custom-assets.mjs`: proves custom asset overrides swap cleanly without starter assets.
-  - `scripts/verify-editor.mjs`: verifies live editor tool application, brush operations, and undo/redo state.
-  - `scripts/verify-environment.mjs`: tests biome-specific environmental lighting and atmosphere settings.
-  - `scripts/verify-game-handoff.mjs`: verifies clean scene handoff into an ordinary playable ThreeNative game.
-  - `scripts/verify-import-export.mjs`: checks full import and export roundtrips for world documents.
-  - `scripts/verify-landforms.mjs`: validates terrain elevation bounds, slopes, and landform contours.
-  - `scripts/verify-ocean.mjs`: verifies ocean surface rendering, shorelines, and waterline properties.
-  - `scripts/verify-sky.mjs`: checks procedural and LUT sky dome conditions across time and weather.
-  - `scripts/verify-starter-kit.mjs`: verifies starter kit configuration, generation, and multi-world playtests.
-  - `scripts/verify-surfaces.mjs`: verifies PBR terrain surface materials, splat textures, and blend transitions.
-  - `scripts/verify-tool-groups.mjs`: tests editor UI tool groupings, interactions, and parameter schemas.
-  - `scripts/verify-transforms.mjs`: validates coordinate transforms, rotations, and placement matrices.
-  - `scripts/verify-variations.mjs`: PRD-866 Phase 3: cooks "a spruce forest under mountains" through the terrain MCP server with seeds 1, 2 and 3, bakes each with `STRATA_WORLD`, and asserts three ground hashes, three massif poses and the backdrop gates on each ring (network on a cold tile cache).
-  - `scripts/verify-world-export.mjs`: verifies headless static world GLB export and vanilla Three.js loading.
-  - `scripts/check-water.mjs`: regression tests for shared water rendering and shoreline depths.
+  - `scripts/verify/verify-assets.mjs`: verifies asset manifests, replacement tables, and model loading.
+  - `scripts/verify/verify-authored-world.mjs`: verifies that editor-authored modifications reproduce committed baseline output.
+  - `scripts/verify/verify-cameras.mjs`: checks camera viewpoints, transitions, and framing across all world biomes.
+  - `scripts/verify/verify-consumer.mjs`: verifies packaging and consumption of the authored world in an external project.
+  - `scripts/verify/verify-custom-assets.mjs`: proves custom asset overrides swap cleanly without starter assets.
+  - `scripts/verify/verify-editor.mjs`: verifies live editor tool application, brush operations, and undo/redo state.
+  - `scripts/verify/verify-environment.mjs`: tests biome-specific environmental lighting and atmosphere settings.
+  - `scripts/verify/verify-game-handoff.mjs`: verifies clean scene handoff into an ordinary playable ThreeNative game.
+  - `scripts/verify/verify-import-export.mjs`: checks full import and export roundtrips for world documents.
+  - `scripts/verify/verify-landforms.mjs`: validates terrain elevation bounds, slopes, and landform contours.
+  - `scripts/verify/verify-ocean.mjs`: verifies ocean surface rendering, shorelines, and waterline properties.
+  - `scripts/verify/verify-sky.mjs`: checks procedural and LUT sky dome conditions across time and weather.
+  - `scripts/verify/verify-starter-kit.mjs`: verifies starter kit configuration, generation, and multi-world playtests.
+  - `scripts/verify/verify-surfaces.mjs`: verifies PBR terrain surface materials, splat textures, and blend transitions.
+  - `scripts/verify/verify-tool-groups.mjs`: tests editor UI tool groupings, interactions, and parameter schemas.
+  - `scripts/verify/verify-transforms.mjs`: validates coordinate transforms, rotations, and placement matrices.
+  - `scripts/verify/verify-variations.mjs`: PRD-866 Phase 3: cooks "a spruce forest under mountains" through the terrain MCP server with seeds 1, 2 and 3, bakes each with `STRATA_WORLD`, and asserts three ground hashes, three massif poses and the backdrop gates on each ring (network on a cold tile cache).
+  - `scripts/verify/verify-world-export.mjs`: verifies headless static world GLB export and vanilla Three.js loading.
+  - `scripts/verify/check-water.mjs`: regression tests for shared water rendering and shoreline depths.
 
 - Authoring, staging and data preparation:
   - `scripts/fixtures/editor-conflict.ts`: mounts two editor clients against the same document for the conflict scenario.
-  - `scripts/bake.mjs`: bakes source elevation data and generates canonical world JSON packages.
-  - `scripts/recipe.mjs`: the five worlds' landform recipes and surface manifests as a module; `bake.mjs` evaluates them, nothing else imports it.
-  - `scripts/recipe.d.mts`: the TypeScript declarations for `recipe.mjs` (`outputDir`); the recipe's worlds stay untyped script values.
-  - `scripts/props.mjs`: the prop half of the bake: one container per streamed world through `compilePropBuckets`, with the game's own bucket and reach policy.
-  - `scripts/stamp.mjs`: hashes every input a bake depends on and reports whether the written worlds are stale; `pnpm dev` checks it on every start.
-  - `scripts/stamp.d.mts`: the TypeScript declarations for `stamp.mjs` (`stamp`, `isFresh`).
-  - `scripts/world-files.mjs`: lists the baked files the game fetches, read from the bake's own `<world>.props.json` manifests, and stops the build by name (`TN_STRATA_BUILD_MISSING`) on a file the bake did not write.
-  - `scripts/consumer-world.mjs`: exports `openConsumerPage` to serve an installed consumer directory to headless Chromium and run vanilla full-world export against packed tarballs.
-  - `scripts/stage-native-assets.mjs`: stages textures and models for native desktop/mobile bundles.
-  - `scripts/verify-native-staging.mjs`: verifies staged native assets resolve with their manifest hashes and sizes.
+  - `scripts/bake/bake.mjs`: bakes source elevation data and generates canonical world JSON packages.
+  - `scripts/bake/recipe.mjs`: the five worlds' landform recipes and surface manifests as a module; `bake.mjs` evaluates them, nothing else imports it.
+  - `scripts/bake/recipe.d.mts`: the TypeScript declarations for `recipe.mjs` (`outputDir`); the recipe's worlds stay untyped script values.
+  - `scripts/bake/props.mjs`: the prop half of the bake: one container per streamed world through `compilePropBuckets`, with the game's own bucket and reach policy.
+  - `scripts/bake/stamp.mjs`: hashes every input a bake depends on and reports whether the written worlds are stale; `pnpm dev` checks it on every start.
+  - `scripts/bake/stamp.d.mts`: the TypeScript declarations for `stamp.mjs` (`stamp`, `isFresh`).
+  - `scripts/bake/world-files.mjs`: lists the baked files the game fetches, read from the bake's own `<world>.props.json` manifests, and stops the build by name (`TN_STRATA_BUILD_MISSING`) on a file the bake did not write.
+  - `scripts/verify/consumer-world.mjs`: exports `openConsumerPage` to serve an installed consumer directory to headless Chromium and run vanilla full-world export against packed tarballs.
+  - `scripts/prep/stage-native-assets.mjs`: stages textures and models for native desktop/mobile bundles.
+  - `scripts/verify/verify-native-staging.mjs`: verifies staged native assets resolve with their manifest hashes and sizes.
   - `playtests/reveal.playtest.json`: checks startup readiness and publication, shadow and impostor stability after reveal.
-  - `scripts/make-needle-atlas.mjs`: procedural generator for conifer needle foliage atlases.
-  - `scripts/prep-fab-pines.py`: manual prep script requiring Blender CLI and authored Fab Scots pine GLB to decimate and budget pines.
-  - `scripts/prep-fab-temperate.mjs`: cooks and fixes texture atlas and opacity bindings for temperate models.
-  - `scripts/prep-landscape-pro.mjs`: stages licensed Landscape Pro species for game runtime loading.
-  - `scripts/prep-polyhaven-fir.py`: manual prep script requiring Blender CLI and authored Poly Haven fir 1k .blend to export game GLBs.
-  - `scripts/prep-polyhaven-rock.py`: manual prep script requiring Blender CLI and authored Poly Haven boulder 1k .blend to export game GLBs.
-  - `scripts/prep-trees.py`: manual prep script requiring Blender CLI and authored CC0 tree models to decimate to triangle and atlas budgets.
+  - `scripts/prep/make-needle-atlas.mjs`: procedural generator for conifer needle foliage atlases.
+  - `scripts/prep/prep-fab-pines.py`: manual prep script requiring Blender CLI and authored Fab Scots pine GLB to decimate and budget pines.
+  - `scripts/prep/prep-fab-temperate.mjs`: cooks and fixes texture atlas and opacity bindings for temperate models.
+  - `scripts/prep/prep-landscape-pro.mjs`: stages licensed Landscape Pro species for game runtime loading.
+  - `scripts/prep/prep-polyhaven-fir.py`: manual prep script requiring Blender CLI and authored Poly Haven fir 1k .blend to export game GLBs.
+  - `scripts/prep/prep-polyhaven-rock.py`: manual prep script requiring Blender CLI and authored Poly Haven boulder 1k .blend to export game GLBs.
+  - `scripts/prep/prep-trees.py`: manual prep script requiring Blender CLI and authored CC0 tree models to decimate to triangle and atlas budgets.
 
 - Landform measurement and diagnostics:
-  - `scripts/measure-embankment.mjs`: measures cross-section geometry and bench cut slope of road embankments.
-  - `scripts/measure-light.mjs`: measures display-referred Rec.709 luminance against reference calibration.
-  - `scripts/measure-spikes.mjs`: detects elevation spikes and gradient discontinuities across terrain bakes.
-  - `scripts/measure-terrain.mjs`: tabulates terrain relief, slope, bake timing, and drainage metrics.
+  - `scripts/measure/measure-embankment.mjs`: measures cross-section geometry and bench cut slope of road embankments.
+  - `scripts/measure/measure-light.mjs`: measures display-referred Rec.709 luminance against reference calibration.
+  - `scripts/measure/measure-spikes.mjs`: detects elevation spikes and gradient discontinuities across terrain bakes.
+  - `scripts/measure/measure-terrain.mjs`: tabulates terrain relief, slope, bake timing, and drainage metrics.
 
 - USGS DEM source data and cropping:
   - `scripts/dem/crop.mjs`: crops and transforms raw USGS 3DEP GeoTIFFs into canonical DEM bins and metadata.

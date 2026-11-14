@@ -14,8 +14,8 @@ import {
   Vector3,
 } from "three";
 import { expect, it, vi } from "vitest";
-import type { IPropPreparationProgress } from "../src/render/propProgress.js";
-import { invalidatePropShadows, streamProps } from "../src/render/propWorld.js";
+import type { IPropPreparationProgress } from "../src/render/props/propProgress.js";
+import { invalidatePropShadows, streamProps } from "../src/render/props/propWorld.js";
 import {
   DRAW_REACH,
   type IPropPoseOverride,
@@ -24,7 +24,7 @@ import {
   buildPropVariants,
   preparePose,
   variantFor,
-} from "../src/render/props.js";
+} from "../src/render/props/props.js";
 
 function authoredPartForGeometry<T extends { geometry: import("three").BufferGeometry }>(
   geometry: import("three").BufferGeometry,

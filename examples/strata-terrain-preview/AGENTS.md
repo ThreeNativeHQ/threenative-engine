@@ -8,8 +8,8 @@ on screen.
 ## Rules
 
 - Units are metres; Y is up; canonical heights are row-major Z then X, centred at zero.
-- `scripts/bake.mjs` owns authoring. The game imports baked JSON and never evaluates terrain.
-- Game appearance lives in `src/render/`; the ocean uses installed `SpectralOcean`.
+- `scripts/bake/bake.mjs` owns authoring. The game imports baked JSON and never evaluates terrain.
+- Game appearance lives in `src/render/` (`ground/`, `props/`, `water/`, `sky/`, `editor/`, with what serves all of them beside them); the ocean uses installed `SpectralOcean`.
 - Use one `Heightfield` buffer for geometry and existing heightfield collision; do not resample.
 - Ground contacts use actual mesh and physics queries. Bilinear heights are not triangle contacts.
 - Licensed forest bytes are LOCAL-ONLY and never committed; provenance is in `CREDITS.md`.

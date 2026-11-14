@@ -1,7 +1,7 @@
 import { mountTerrainEditor } from "@threenative/terrain/editor";
-import { createEditorView } from "./render/editorView.js";
-import { type HorizonSurroundings, setHorizonSurroundings } from "./render/horizon.js";
-import { terrainPalette } from "./render/palette.js";
+import { createEditorView } from "./render/editor/editorView.js";
+import { type HorizonSurroundings, setHorizonSurroundings } from "./render/ground/horizon.js";
+import { terrainPalette } from "./render/ground/palette.js";
 
 let view: Awaited<ReturnType<typeof createEditorView>>;
 void mountTerrainEditor({
