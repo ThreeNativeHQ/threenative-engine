@@ -304,6 +304,37 @@ void maskNode() {
     }
 }
 
+// The masked shadow depth fragment as three r187's shadow pass builds it (Renderer._getShadowNodes): the caster's
+// shadow mask (`maskShadowNode || maskNode`, which the renderer hands in the maskNode slot) discards, and the alpha
+// takes the colorNode's alpha. Without both, an impostor quad (no map, alpha 1, coverage only in colorNode.a and
+// maskShadowNode) cast a solid square from every far tree on the default engine.
+void maskedDepthMasksAndReadsColorAlpha() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    plain.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.2f});
+    VertexVariant masked = plain;
+    masked.nodes.maskNode = g::lessThan(g::uniform("nodeCoverage", Type::f32(), {0.5f}), g::float_(0.25));
+    VertexVariant coloured = plain;
+    coloured.nodes.colorNode = g::uniform("nodeTint", Type::vec(4), {1.0f, 1.0f, 1.0f, 0.5f});
+    const auto discards = [](const std::string& code) {
+        std::size_t count = 0;
+        for (std::size_t at = code.find("discard"); at != std::string::npos; at = code.find("discard", at + 1)) ++count;
+        return count;
+    };
+    const auto a = WgslEmitter::emit(buildMaskedDepth(plain).fragment, 1);
+    const auto b = WgslEmitter::emit(buildMaskedDepth(masked).fragment, 1);
+    const auto c = WgslEmitter::emit(buildMaskedDepth(coloured).fragment, 1);
+    CHECK(a.ok() && b.ok() && c.ok());
+    CHECK(b.code.find("f_nodeCoverage") != std::string::npos);
+    CHECK(discards(b.code) == discards(a.code) + 1);
+    CHECK(a.code.find("f_nodeTint") == std::string::npos);
+    CHECK(c.code.find("f_nodeTint") != std::string::npos);
+    // The bound setter: a game's maskShadowNode reaches the engine instead of staying a JS expando.
+    VertexVariant shadowOnly;
+    shadowOnly.nodes.maskShadowNode = masked.nodes.maskNode;
+    CHECK(shadowOnly.key() != VertexVariant{}.key());
+}
+
 // NodeMaterial.alphaTestNode (three r187 setupDiffuseColor): the node replaces alphaTest as the cutoff in every colour
 // builder and in the masked shadow depth fragment, and a set node tests without the alphaTest > 0 gate.
 void alphaTestNodeProgram() {
@@ -617,6 +648,7 @@ void builds() {
     surfacePrefix();
     aoNode();
     maskNode();
+    maskedDepthMasksAndReadsColorAlpha();
     alphaTestNodeProgram();
     irradianceNode();
     albedoOutput();

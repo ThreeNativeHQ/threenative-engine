@@ -292,7 +292,8 @@ StandardPrograms buildDepth(const VertexVariant& variant);
 /**
  * The shadow depth program of an alpha-tested caster (PRD-651): buildBasic's vertex, uv included, and a
  * fragment that writes nothing and discards where materialAlpha would (map alpha x diffuse opacity at or
- * below alphaTest or the variant's alphaTestNode), as three's shadow pass copies alphaTest, alphaTestNode and map. Fragment uniforms "diffuse",
+ * below alphaTest or the variant's alphaTestNode, the alpha times the colorNode's alpha when set) or where the variant's
+ * maskNode (the caller's `maskShadowNode || maskNode`) is false, as three r187's shadow pass does. Fragment uniforms "diffuse",
  * "alphaTest", "opaque", "uvTransform"; binding "map" when variant.map.
  */
 StandardPrograms buildMaskedDepth(const VertexVariant& variant);

@@ -1584,6 +1584,7 @@ readonly type: string;
 vertexColors: boolean;
 vertexNode: Node | null;
 visible: boolean;
+maskShadowNode: Node | null;
 
   clone(): this;
 
@@ -1757,6 +1758,7 @@ readonly type: string;
 vertexColors: boolean;
 vertexNode: Node | null;
 visible: boolean;
+maskShadowNode: Node | null;
 
   clone(): this;
 
@@ -1885,6 +1887,7 @@ readonly type: string;
 vertexColors: boolean;
 vertexNode: Node | null;
 visible: boolean;
+maskShadowNode: Node | null;
 
   clone(): this;
 

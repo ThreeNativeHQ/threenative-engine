@@ -12474,6 +12474,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "maskShadowNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -14027,6 +14036,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "maskShadowNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -14749,6 +14767,15 @@
         {
           "name": "visible",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maskShadowNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {

@@ -2035,9 +2035,13 @@ StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
     Program& f = out.fragment;
     graph::Lowering slots = slotLowering(f, variant, kInvalid);
     nodeDiffuseColor(f, slots, variant);
+    discardMasked(f, slots, variant);  // the caller put the shadow mask (maskShadowNode || maskNode) in maskNode
     const ExprId texel = mapTexel(f, variant);
     ExprId alpha = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
     if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
+    // three r187 Renderer._getShadowNodes: the shadow alpha is map.a times colorNode.a.
+    if (variant.nodes.colorNode)
+        alpha = f.mul(alpha, f.swizzle(slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), kInvalid), "w"));
     // The stage needs an output; a depth-only pipeline has no colour target, so it is never written.
     f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)}));
     out.vertex.linkVaryings(out.fragment);

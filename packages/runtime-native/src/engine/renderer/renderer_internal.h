@@ -187,6 +187,11 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 static inline bool alphaTested(const shader::StandardMaterial& material, const shader::MaterialNodes& nodes) {
     return material.alphaTest > 0 || bool(nodes.alphaTestNode);
 }
+// A shadow caster whose depth fragment cuts: alpha-tested, or masked as three r187's shadow pass masks
+// (`maskShadowNode || maskNode`, Renderer._getShadowNodes). An impostor quad is only its mask: unmasked it casts a square.
+static inline bool shadowMasked(const shader::StandardMaterial& material, const shader::MaterialNodes& nodes) {
+    return alphaTested(material, nodes) || bool(nodes.maskShadowNode) || bool(nodes.maskNode);
+}
 
 // Authored uniform data accompanies the graph, not the cached program. Both colour and shadow
 // draws bind it, so a graph positionNode has exactly the same deformation in the two passes.

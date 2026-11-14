@@ -1345,7 +1345,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
                 if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
                     throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
-                masked = alphaTested(*item.material, *item.nodes);
+                masked = shadowMasked(*item.material, *item.nodes);
                 alphaHash = variant.alphaHash;
                 if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
                     cachedDepth = static_cast<Program*>(cache->depthProgram);
@@ -1544,7 +1544,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 for (double e : member->matrixWorld) instances.push_back(float(e));
                 instances.insert(instances.end(), {1.0f, 1.0f, 1.0f, 0.0f});  // no instance colour: a depth pass reads none
             }
-            const bool masked = alphaTested(*row.material, *row.nodes);
+            const bool masked = shadowMasked(*row.material, *row.nodes);
             const shader::VertexVariant variant = variantOf(row);
             Program& program = depthProgram(variant, masked);
             const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &program.fragment : nullptr;
@@ -1621,7 +1621,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             for (Planned& planned : kept.draws) {
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
-                const bool masked = alphaTested(*item.material, *item.nodes);
+                const bool masked = shadowMasked(*item.material, *item.nodes);
                 const bool fragmentBlock = masked || variantOf(item).alphaHash;
                 const uint64_t v = frameUniforms_.size();
                 const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
