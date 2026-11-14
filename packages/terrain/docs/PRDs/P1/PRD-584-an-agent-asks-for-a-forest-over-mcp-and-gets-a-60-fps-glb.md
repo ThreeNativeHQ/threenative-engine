@@ -37,7 +37,7 @@ Tools:
 - `terrain_generate({ request, sizeMeters?, seed?, out? })` — picks one starter recipe
   (`forest`, `coastal`, `alpine`, `desert`, `tundra`) from the request, sets size and seed, runs
   `Terrain.evaluate` and PRD-583's `cookTerrainWorld` in a child process with a timeout (the
-  evaluator only checks `AbortSignal` between operations; `AGENT_GUIDE.md` "Bounds"), and writes
+  evaluator only checks `AbortSignal` between operations; `docs/authoring/recipes.md` "Limits"), and writes
   `public/worlds/<name>/world.glb`, `recipe.json` and the world package. It returns the paths,
   triangle, instance and draw counts, and a three-line load snippet.
 - `terrain_patch({ recipe, commands })` reuses the editor's command vocabulary (`upsert`,

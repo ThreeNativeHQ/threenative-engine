@@ -1,25 +1,57 @@
 # AGENTS.md — @threenative/terrain
 
-Read `/AGENTS.md` first. This optional addon is authoring tooling, not a game runtime.
-Before changing what a terrain produces, read [the terrain map](docs/architecture/architecture.md): it names the
-stage folders, the three producers of terrain output and the command that puts a change on screen.
-Its companions are [the cook stages](docs/architecture/cook.md) and [the world package](docs/architecture/world-package.md).
+Optional, headless terrain authoring recovered from Strata: authoring tooling, not a game runtime.
+This file ships in the npm package. In the engine repository, read `/AGENTS.md` first.
+
+## Rules
 
 - Preserve the recovered evaluator, stable semantic IDs, validation and atomic transactions.
 - The root is headless; `/three` creates only ordinary indexed geometry from supplied arrays.
 - Keep renderer, scene, camera, material, DOM, editor and worker code outside both imports.
-- `/export` encodes caller-prepared static worlds; browser FileReader/canvas is required only when encoding.
-- Its MeshStandardMaterial images and final placement/water matrices come from the game; unresolved/deforming/stale content fails.
-- Appearance belongs to game `src/render/`; never add palette, material or lighting defaults.
-- `starter/<world>/` is copy-out game source (recipe, bake, look, colliders); package code never imports it.
-- Bake before play. Games own their camera, mesh lifetime and existing physics registration.
+- Appearance belongs to game `src/render/`; add no palette, material or lighting defaults.
+- `starter/<world>/` is copy-out game source (recipe, bake, look, colliders); package code does not import it.
+- `/export` encodes caller-prepared static worlds; its images and final matrices come from the game, and unresolved, deforming or stale content fails.
+- Bake before play. Games own their camera, mesh lifetime and physics registration.
 - Keep raw terrain-only exports labelled; they do not prove full-world GLB delivery.
 
-Common commands, from the repository root:
+## Facts every edit depends on
 
-- `pnpm --filter @threenative/terrain test:consumer`: build, then the fast consumer spec. Run it after each change.
-- `pnpm --filter @threenative/terrain test`: every package test, including the golden bake and the MCP spec.
-- `pnpm --filter @threenative/terrain test:map`: the terrain map still names real paths, folders and scripts.
-- `pnpm --filter @threenative/terrain bake:forest`: build, then bake the forest starter into `artifacts/terrain/forest/`.
-  `bake:coastal`, `bake:alpine`, `bake:desert` and `bake:tundra` bake the other starters.
-- `pnpm --filter strata-terrain-preview rebake`: build this package, then re-bake the preview worlds.
+- Metres, Y up, X and Z from `-size/2` to `+size/2`. Degrees for rotations and slopes; placement yaw is radians.
+- An operation records intent; `evaluate()` returns disposable arrays. Edit the recipe, not the arrays.
+- Reusing a layer ID replaces that layer in place. Save placement IDs, not instance indices.
+- A bake reads the package's built `dist`, not `src/`. Rebuild before you bake, or you see the old result.
+
+## Commands (engine repository, from the root)
+
+| When | Command |
+| --- | --- |
+| After any `src/` edit (build + fast spec, about 11 s) | `pnpm --filter @threenative/terrain test:consumer` |
+| Before you commit a package change | `pnpm --filter @threenative/terrain typecheck` and `pnpm --filter @threenative/terrain test` |
+| After a doc, folder or script change | `pnpm --filter @threenative/terrain test:map` |
+| See a `src/` edit in the preview (about 27 s, then reload) | `pnpm --filter strata-terrain-preview rebake` |
+| Start the preview | `pnpm --filter strata-terrain-preview dev` |
+| The preview still shows an old result | `pnpm --filter strata-terrain-preview dev:fresh` |
+| Bake one starter into `artifacts/terrain/<world>/` (about 14 s) | `pnpm --filter @threenative/terrain bake:forest`, or `bake:coastal`, `bake:alpine`, `bake:desert`, `bake:tundra` |
+| Prove the preview on WebGPU | `pnpm --filter strata-terrain-preview test:terrain:web` |
+| Prove the starter kits in a scaffolded game | `pnpm --filter strata-terrain-preview test:kit` |
+
+## Entry points
+
+| Import | Use |
+| --- | --- |
+| `@threenative/terrain` | `Terrain`, `Mask`, `landform`, `terrainStats`, `bakeTerrain`, `makeExport`, `bakeBiome`, `bakeWorldPackage` |
+| `/three` | `toGeometry(bakeMesh(state))`: indexed geometry from your installed Three.js |
+| `/kit`, `/starter` | `bakeKit` for a copied starter's `bake.mjs`; `addStarterWorld` loads the baked world and its collider |
+| `/editor`, `/editor/server` | the live editor: browser mount and the Vite plugin `terrainEditor({ documentPath })` |
+| `/export` | `prepareWorldGLTF`: a resolved static world for `cookTerrainWorld` in `@threenative/assets` |
+| bin `dist/mcp/server.js` | MCP tools `terrain_generate`, `terrain_biome_new`, `terrain_patch` |
+
+## More detail
+
+| Read | When |
+| --- | --- |
+| [Authoring a recipe](docs/authoring/recipes.md) | You write or patch a recipe: operations, masks, materials, water, export formats, limits |
+| [README](README.md) | You use the live editor, placement overrides or the static-world export |
+| [The terrain map](docs/architecture/architecture.md) | You change what a terrain produces: stages, the three producers, edit-to-pixel (repository only) |
+| [The cook stages](docs/architecture/cook.md) | You change `terrain_generate` (repository only) |
+| [The world package](docs/architecture/world-package.md) | You change a baked file or its reader (repository only) |

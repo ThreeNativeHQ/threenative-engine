@@ -30,7 +30,7 @@ The default GUI full-world action, chosen-resolution baking and five final start
 world exports remain pending. See the agent guide for the explicit contract.
 No browser/native terrain-game acceptance result is claimed by these library tests.
 
-See [agent guide](AGENT_GUIDE.md) and [source provenance](THIRD_PARTY_NOTICES.md).
+See [AGENTS.md](AGENTS.md), [authoring a recipe](docs/authoring/recipes.md) and [source provenance](THIRD_PARTY_NOTICES.md).
 
 Optional live authoring uses `@threenative/terrain/editor/server` in the project's
 Vite configuration and `@threenative/terrain/editor` in its browser authoring entry.

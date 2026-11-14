@@ -24,7 +24,8 @@
     "starter-assets.json",
     "starter-credits.json",
     "README.md",
-    "AGENT_GUIDE.md",
+    "AGENTS.md",
+    "docs/authoring/*.md",
     "THIRD_PARTY_NOTICES.md"
   ],
   "bin": "./dist/mcp/server.js",

@@ -83,7 +83,7 @@ describe("terrain authoring discovery", () => {
       "npm install --save-dev @threenative/terrain",
       "@threenative/terrain/editor/server",
       "prepareWorldGLTF",
-      "node_modules/@threenative/terrain/AGENT_GUIDE.md",
+      "node_modules/@threenative/terrain/AGENTS.md",
     ])
       expect(guide).toContain(required);
   });

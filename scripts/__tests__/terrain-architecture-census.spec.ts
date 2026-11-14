@@ -27,10 +27,12 @@ const REPO_PATH = /^(?:docs|examples|packages|scripts)\//u;
 
 const map = readFileSync(path.join(repoRoot, MAP), "utf8");
 
-/** Every document in the map's folder: the map plus its companions, all held to real paths. */
-const DOCS = readdirSync(path.join(repoRoot, path.dirname(MAP)))
-  .filter((name) => name.endsWith(".md"))
-  .map((name) => `${path.dirname(MAP)}/${name}`);
+/** Every terrain document: the map, its companions and the authoring reference, all held to real paths. */
+const DOCS = [path.dirname(MAP), "packages/terrain/docs/authoring"].flatMap((folder) =>
+  readdirSync(path.join(repoRoot, folder))
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => `${folder}/${name}`),
+);
 
 function backtickSpans(markdown: string): string[] {
   return Array.from(markdown.matchAll(/`([^`\n]+)`/g), (match) => match[1] as string);
@@ -52,7 +54,8 @@ describe("terrain architecture map", () => {
       .filter((span) => REPO_PATH.test(span))
       // `<world>` is a placeholder filled per starter, and a glob names a set, not one path.
       .filter((span) => !span.includes("<") && !span.includes("*"));
-    expect(named.length).toBeGreaterThan(doc === MAP ? 10 : 0);
+    // The map must name its paths; the shipped authoring reference may name none.
+    if (doc === MAP) expect(named.length).toBeGreaterThan(10);
 
     const missing = named.filter((span) => !existsSync(path.join(repoRoot, span)));
     expect([...new Set(missing)].sort()).toEqual([]);
