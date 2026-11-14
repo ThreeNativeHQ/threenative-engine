@@ -17,8 +17,33 @@ I'll execute later".
   no world reaches 4 out of 5 on any rubric row. Forest scores 3/3/3/2/3. Tundra scores 2/1/2/1/1.
 - Speed: the forest overview costs 31 to 39 ms of GPU time on the RTX 2080 at 1600x900, which is 20
   to 30 FPS (reading in [PRD-866](BLOCKED/requires-owner-decision/PRD-866-a-generated-forest-stands-under-mountains-with-real-shapes.md)).
-- Focus: about 22 terrain PRDs are open across five worlds. Recent changes were judged NEUTRAL or a
-  small IMPROVEMENT.
+- Focus: about 22 terrain PRDs are open across five worlds. Recent changes were judged NEUTRAL or a small IMPROVEMENT.
+
+## State on PR #677 (`prd-584-forest-60fps`), 2026-11-14
+
+Where the chain actually stands, measured, so the next agent does not repeat it:
+
+- **Step 1 is met, web only.** PRD-584 AC-4: 3 of 3 headed walks on the RTX 2080 display `:0`,
+  `nvidia/turing`, 300 frames at 59.9 FPS, GPU p95 15.2 / 15.4 / 15.4 ms, 6.86 M triangles against
+  13.3 M before. AC-5 (the native desktop host) is open. Recorded on PR #677.
+- **Step 2 is partly done.** PRD-855's 60 FPS box is ticked from that same lane. Its open work is the
+  look: Phase 3 cover density and clump scale at the walk pose, needle litter and a detail normal, and
+  Phase 4's Arbor species rows (`{ "arbor": "<preset>@<seed>" }`), the forest palette (Douglas fir,
+  spruce, bracken, blueberry), `GrassField3D` from the biome grass rows, and the other four palettes.
+  Nothing of PRD-580 F1 is started.
+- **A region world costs more than the starter and reads worse, and both causes are named.** PRD-887
+  cooks a real Hainich survey with a beech/oak/birch canopy: cost p95 37.97 ms against the
+  starter's 26.19 ms on one lane, one pose set, one code state, and a fresh judge returned REGRESSION
+  on all four poses. The cost is per tree — the region's Arbor species have no far level, while the
+  firs are cheap because of the step-1 thinning — so the fix is an Arbor LOD budget, not a row's
+  counts. Do that before adding more species anywhere.
+- **No other strata worktree is live.** `.claude/worktrees/strata-forest-aaa` is fully merged;
+  `strata-forest-understorey` and `strata-chain` are pre-develop snapshots (about 1 890 files apart
+  from `develop`, no open PR). Work the chain in PR #677's worktree until it merges.
+- **The capture lane is load-flaky.** One run per arm is what PRD-887 could defend: a second attempt
+  per arm stalled at the 30-frame warmup (`waitFrames` 615 s) while another project's jest run sat on
+  the host. Measure pairs back to back, and treat a single slow arm as host load before calling it a
+  regression.
 
 ## The chain
 
