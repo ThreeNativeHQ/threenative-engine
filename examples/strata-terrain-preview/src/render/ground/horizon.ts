@@ -142,7 +142,7 @@ export const COLLAR_UNDER_TILE = STREAM_TILE / 4;
  * that edge; a mask cut on the edge itself dropped it, and the rounding cracks where the square
  * and the tiles meet showed the sky as a dotted white line along low-view crests.
  */
-export const TILE_INSIDE_SQUARE = 0;
+export const TILE_INSIDE_SQUARE = 0.5;
 /** How the rings spread: ring `k` stands `(k / rings) ** 1.65` of the reach past the edge. */
 const HORIZON_POWER = 1.65;
 
