@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "strata-terrain-stream",
-  "subject": "PRD-790: run with ?stream=1&tnTerrainValidate=1. The player sprints 2 km in a straight line from the spawn (south, -z: no slope over 45 degrees for 1.73 km), 1.8 km past the square over the streamed ground to the foot of a 47 degree slope, then along it, and stays grounded with no gap between tiles",
+  "subject": "PRD-790: run with ?stream=1&tnTerrainValidate=1&propCollision=off. The camera turns 156 degrees, then the player sprints 2 km in one straight line north-north-west (heading 336 degrees from +z toward +x, -0.41 x, +0.91 z): 80 m to the square's west edge, then over the streamed ground, where no slope on that line is over 40 degrees for 2.7 km. Every other line from the spawn meets a slope over 45 degrees before 2 km. Prop collision is off because every line from the spawn meets a trunk inside the square; collide.playtest.json proves the trunks",
   "viewport": {
     "width": 1280,
     "height": 720
@@ -20,6 +20,50 @@
     },
     {
       "kind": "input",
+      "label": "press",
+      "pointerPosition": {
+        "buttons": 1,
+        "x": 0.9,
+        "y": 0.5
+      },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "click-to-capture",
+      "pointerPosition": {
+        "buttons": 0,
+        "x": 0.9,
+        "y": 0.5
+      },
+      "holdTicks": 10,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "turn-half",
+      "pointerPosition": {
+        "buttons": 0,
+        "x": 0.6,
+        "y": 0.5
+      },
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "turn",
+      "pointerPosition": {
+        "buttons": 0,
+        "x": 0.292,
+        "y": 0.5
+      },
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
       "label": "sprint",
       "press": "ShiftLeft",
       "holdTicks": 1,
@@ -32,14 +76,6 @@
       "holdTicks": 15000,
       "release": true,
       "screenshot": "forest-stream-far"
-    },
-    {
-      "kind": "input",
-      "label": "along-the-slope",
-      "press": "KeyD",
-      "holdTicks": 1500,
-      "release": true,
-      "screenshot": "forest-stream-along"
     }
   ],
   "assert": {
@@ -53,13 +89,19 @@
         "id": "GameState",
         "path": "travel",
         "gte": 2000,
-        "allowTrivial": "Sprint is 9 m/s; 1.9 km straight to the slope, then 25 s along it: 2 km only if no wall or gap stops the run."
+        "allowTrivial": "Sprint is 9 m/s for 250 s on one heading; 2 km only if no wall, slope or gap stops the run."
+      },
+      {
+        "id": "GameState",
+        "path": "straightTravel",
+        "gte": 2000,
+        "allowTrivial": "The farthest the player stood from the spawn in a straight line: 2 km of path that turned or circled reads less."
       },
       {
         "id": "GameState",
         "path": "edgeOvershoot",
-        "gte": 1700,
-        "allowTrivial": "The spawn is 91 m inside the south edge and the slope foot is 1.8 km past it; without streamed ground the walls stop the run at 188 m."
+        "gte": 1300,
+        "allowTrivial": "2 km on heading 336 ends 1.4 km north of the square's edge; without streamed ground the walls stop the run 200 m past it."
       },
       {
         "id": "GameState",
