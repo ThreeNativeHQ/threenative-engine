@@ -1753,7 +1753,7 @@ function writeRelief(
   const degrees = Math.PI / 180;
   const band = (edge0: number, edge1: number, value: number): number => {
     const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-    return t * t * (3 - 2 * t);
+    return MathUtils.smoothstep(t, 0, 1);
   };
   // The 9.8 m collar measured a hollow across 2 cells and talus within 3 cells; keep those metres.
   const span = Math.max(2, Math.round(19.6 / cell));

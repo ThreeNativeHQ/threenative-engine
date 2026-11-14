@@ -1,5 +1,5 @@
 import { measureBands } from "@threenative/terrain";
-import { ACESFilmicToneMapping, AgXToneMapping, type Texture, type ToneMapping } from "three";
+import { ACESFilmicToneMapping, type Texture, type ToneMapping } from "three";
 /** Game-owned biome choices; all five worlds share the same rendering and collision paths. */
 import {
   abs,
@@ -19,12 +19,7 @@ import {
   vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import {
-  GROUND_MAPS,
-  type IGroundMaps,
-  type LayerKey,
-  ROCKFACE_MAPS,
-} from "../world/terrainAssets.js";
+import { GROUND_MAPS, type IGroundMaps, type LayerKey } from "../world/terrainAssets.js";
 import type { WORLD_NAMES } from "./worldNames.js";
 
 export type WorldName = (typeof WORLD_NAMES)[number];

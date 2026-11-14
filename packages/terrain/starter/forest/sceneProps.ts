@@ -32,7 +32,7 @@ import { loadPreparedProps } from "./render/props/prepared.js";
 import { createPropSurfaces } from "./render/props/propMaterials.js";
 import type { IPropPreparationProgress } from "./render/props/propProgress.js";
 import type { IScatter } from "./render/props/propWorld.js";
-import { invalidatePropShadows, streamProps } from "./render/props/propWorld.js";
+import { streamProps } from "./render/props/propWorld.js";
 import {
   type PropGroundQuery,
   buildPropVariants,

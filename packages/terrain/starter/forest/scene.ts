@@ -9,10 +9,8 @@ import { Heightfield, warmUnculled } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import {
   type AnimationClip,
-  InstancedMesh,
   Mesh,
   MeshStandardMaterial,
-  OrthographicCamera,
   type PerspectiveCamera,
   Vector2,
   Vector3,
@@ -34,11 +32,7 @@ import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.j
 import { BENCHMARK, type ViewName, posesFor } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, measureBiome } from "./render/biomes.js";
-import {
-  HORIZON_REACH,
-  HORIZON_WALK_BAND,
-  loadHorizonSurroundings,
-} from "./render/ground/horizon.js";
+import { HORIZON_REACH, loadHorizonSurroundings } from "./render/ground/horizon.js";
 import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/ground/terrain.js";
 import { forestAssets } from "./render/kitAssets.js";
 import { createLoadingScreen } from "./render/loading.js";
@@ -604,7 +598,6 @@ export class ForestScene extends Scene<TerrainState, IPhysicsContext> {
     // Distance detail, once the camera is placed for this frame: a prepared tree draws from its
     // full geometry inside the near band and from the mid level beyond it, with a fifth of the
     // band of slack so a camera on the boundary does not alternate the tree between two levels.
-    const { views } = BENCHMARK[world];
     const poses = posesFor(world, data.size);
     const at = (x: number, z: number, up: number): Vector3 =>
       new Vector3(x, field.heightAt(x, z) + up, z);

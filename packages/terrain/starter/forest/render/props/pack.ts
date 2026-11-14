@@ -344,9 +344,8 @@ const SIGHT_RADIUS = 1.2;
  * `radius` to {@link SIGHT_RADIUS} while the player view is live, 0 for the fixed views.
  */
 export const sightLine = { aim: uniform(new Vector3()), radius: uniform(0) };
-/** `?riverbed=off` is the river A/B's before arm: the waterline rocks stay dry. */
-export const RIVER_BED =
-  new URLSearchParams(globalThis.location?.search ?? "").get("riverbed") !== "off";
+/** The waterline rocks stand in the river bed. */
+export const RIVER_BED = true;
 export { SIGHT_RADIUS };
 
 /**

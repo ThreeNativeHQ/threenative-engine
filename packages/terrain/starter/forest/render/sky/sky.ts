@@ -1,16 +1,6 @@
 // Game-owned sun, shadows and daylight; atmosphere.ts owns the LUT sky and surface air.
 import { Atmosphere, Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
-import {
-  Color,
-  DirectionalLight,
-  HalfFloatType,
-  Mesh,
-  NoColorSpace,
-  type Object3D,
-  RGBAFormat,
-  SphereGeometry,
-  Vector3,
-} from "three";
+import { Color, DirectionalLight, Mesh, type Object3D, SphereGeometry, Vector3 } from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";

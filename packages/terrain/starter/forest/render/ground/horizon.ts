@@ -4,7 +4,7 @@ import {
   HeightfieldCollar,
   type IHeightfieldCollarSite,
 } from "@threenative/core/world";
-import { DataTexture, FloatType, NearestFilter, RedFormat } from "three";
+import { DataTexture, FloatType, MathUtils, NearestFilter, RedFormat } from "three";
 import {
   abs,
   float,
@@ -208,7 +208,8 @@ function collarHeight(
     // stairs while it keeps every ridge and gully the survey holds. The box-filtered copy it
     // replaces erased them, and a 1 km peak read as smooth clay.
     const fold = Math.min(1, Math.max(0, (distance - 300) / 600));
-    const smoothed = fold > 0 ? (cubicAt(world, x, z) - near) * fold * fold * (3 - 2 * fold) : 0;
+    const smoothed =
+      fold > 0 ? (cubicAt(world, x, z) - near) * MathUtils.smoothstep(fold, 0, 1) : 0;
     // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
     // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real. The
     // square's edge is read between its vertices too, so a streamed tile meets it with no step.
@@ -504,7 +505,7 @@ export function createMorphedHeight(
     if (past <= 0) return fine;
     const fromCentre = Math.max(Math.abs(x - centreX), Math.abs(z - centreZ));
     const t = Math.min(1, Math.max(0, (fromCentre - (half - band)) / band));
-    const weight = t * t * (3 - 2 * t);
+    const weight = MathUtils.smoothstep(t, 0, 1);
     return fine + (collarArithmeticHeight(collar, x, z) - fine) * weight;
   };
 }

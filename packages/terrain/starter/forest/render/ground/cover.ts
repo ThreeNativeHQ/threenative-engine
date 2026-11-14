@@ -186,19 +186,6 @@ class CoverBuffer {
 }
 
 /**
- * The root and tip colours a grass blade is graded between. Dark at the root is what gives depth.
- *
- * These are linear, not sRGB: a vertex colour is used as it is written, and a meadow green written
- * as the sRGB numbers a colour picker shows (0.36, 0.5, 0.18) comes out of the tone curve as sage.
- *
- * One clump is graded between these and one neighbour of them: a meadow is not one green, and a
- * carpet of identically tinted blades reads as astroturf however good the blade is. The variation
- * is per clump and seeded, so the same meadow grows the same greens every time it is loaded.
- */
-const BLADE_ROOT = new Vector3(0.1, 0.19, 0.07);
-const BLADE_TIP = new Vector3(0.18, 0.34, 0.06);
-
-/**
  * The four meadow greens a clump is drawn from, root to tip.
  *
  * A meadow is not one green and it is not two. Four here — a deep olive, the meadow's own green, a

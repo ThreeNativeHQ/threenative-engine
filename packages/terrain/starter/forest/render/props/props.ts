@@ -6,14 +6,11 @@
 //   - The shapes, their variants, their materials and their placement rule are all this file's. They
 //     are the picture, and the picture is the game's (AGENTS rule 3).
 //   - preparePose grounds each pose on plain math; propWorld.ts delegates instancing and LOD to WorldCells.
-import { createRandom } from "@threenative/core";
 import { type IBaseRing, baseRingGap, footprintGap, staticLowestY } from "@threenative/core/world";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type BufferGeometry,
   DoubleSide,
-  Euler,
-  Group,
   type Material,
   Matrix4,
   MeshStandardMaterial,
@@ -22,7 +19,7 @@ import {
 } from "three";
 import { WILDFLOWER, boulder, fernClump, grassClump, poppyCluster } from "../ground/cover.js";
 import { FAR_FOREST_LAYER } from "./farForest.js";
-import { ATLAS_CELLS, SPRUCE, spruceFarCrown, spruceVariants } from "./spruce.js";
+import { SPRUCE, spruceFarCrown, spruceVariants } from "./spruce.js";
 
 /** Which cell of the needle atlas the poppy petals sample. */
 const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };

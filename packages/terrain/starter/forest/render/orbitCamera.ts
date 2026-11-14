@@ -143,10 +143,10 @@ export function createOrbitCamera(camera: Camera): IOrbitCamera {
         // Running at the camera does not spin it round: only travel within 120° of the view swings it.
         if (Math.abs(turn) < (Math.PI * 2) / 3) {
           const rate = CAMERA_RIG.swingRate * Math.min(1, speed / 9.6);
-          yaw += turn * (1 - Math.exp(-dt * rate));
+          yaw = MathUtils.damp(yaw, yaw + turn, rate, dt);
         }
       }
-      place(target, probe, 1 - Math.exp(-dt * CAMERA_RIG.followRate));
+      place(target, probe, MathUtils.damp(0, 1, CAMERA_RIG.followRate, dt));
     },
     debug() {
       return { closest, cuts, distance, elevation, peakElevation, pulledIn, tilt, yaw };

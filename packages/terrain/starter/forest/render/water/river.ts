@@ -36,7 +36,7 @@ import {
   lakeSurfaceGeometry,
   riverRibbonGeometry,
 } from "@threenative/core/world";
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, Mesh } from "three";
+import { BufferAttribute, Color, DoubleSide, Mesh } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   attribute,

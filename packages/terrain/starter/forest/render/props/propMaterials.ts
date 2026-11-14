@@ -59,7 +59,6 @@ import {
   sign,
   smoothstep,
   texture,
-  textureSize,
   transformNormalToView,
   uniform,
   uv,
