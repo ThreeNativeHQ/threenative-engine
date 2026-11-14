@@ -47,14 +47,14 @@ function undersides(path: string): number[] {
 }
 
 describe("the forest kit: a scanned prop stands on its scanned ground", () => {
-  it("rests a fallen trunk on y = 0, with the branch that reached under the scan's ground buried", () => {
-    // dead_tree_trunk_02 holds a branch 0.33 m below its scan ground: basing on that branch tip
-    // lifted the whole trunk off the floor ("FLOATING TRUNKS").
-    const lowest = lowestVertex("dead_tree_trunk_02/dead_tree_trunk_02.glb");
-    expect(lowest).toBeLessThan(-0.3);
-    const box = new Box3(new Vector3(-2, lowest, -0.5), new Vector3(2, 0.73, 0.5));
-    expect(standingBase(box, "dead_tree_trunk_02/dead_tree_trunk_02.glb")).toBe(0);
+  it("rests a stump on y = 0, with the roots that reach under the scan's ground buried", () => {
+    // tree_stump_01 holds roots 0.19 m below its scan ground: basing on a root tip lifted the
+    // whole stump off the floor ("FLOATING TRUNKS").
+    const lowest = lowestVertex("tree_stump_01/tree_stump_01.glb");
+    expect(lowest).toBeLessThan(-0.15);
+    const box = new Box3(new Vector3(-1, lowest, -1), new Vector3(1, 1.2, 1));
     expect(standingBase(box, "tree_stump_01/tree_stump_01.glb")).toBe(0);
+    expect(standingBase(box, "dead_tree_trunk/dead_tree_trunk.glb")).toBe(0);
   });
   it("keeps the lowest vertex as the base for licensed art, whose origin is not its ground", () => {
     const box = new Box3(new Vector3(-1, 0.4, -1), new Vector3(1, 3, 1));

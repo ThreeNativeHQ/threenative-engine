@@ -488,13 +488,15 @@ try {
     JSON.stringify(Object.fromEntries(worldNames.map((name) => [name, recipes[name].toJSON()]))),
   );
 
-  // The forest starter's cooked world, copied into this isolated install as the fixture its
-  // vanilla-loader proof reads. A missing fixture fails instead of silently skipping the proof.
-  const forestWorld = join(repo, "packages/terrain/starter/forest/world");
-  if (!existsSync(join(forestWorld, "world.glb")) || !existsSync(join(forestWorld, "world.json")))
-    throw new Error(
-      "Missing cooked forest fixture: run node packages/terrain/starter/forest/bake.mjs first",
-    );
+  // The forest's landform inputs (recipe.json, assets.json, surface.json, heightmap.r16) cooked to
+  // one world.glb by `bakeKit` and the asset cook, as the fixture the vanilla-loader proof reads.
+  const forestWorld = join(consumer, "forest-cook");
+  run(process.execPath, [
+    join(root, "scripts/verify/cook-forest-fixture.mjs"),
+    "--out",
+    forestWorld,
+  ]);
+  assert(existsSync(join(forestWorld, "world.glb")), "the forest cook wrote no world.glb");
   copyFileSync(join(forestWorld, "world.glb"), join(consumer, "forest-world.glb"));
   copyFileSync(join(forestWorld, "world.json"), join(consumer, "forest-world.json"));
 

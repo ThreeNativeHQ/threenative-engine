@@ -61,6 +61,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/verify/verify-authored-world.mjs`: verifies that editor-authored modifications reproduce committed baseline output.
   - `scripts/verify/verify-cameras.mjs`: checks camera viewpoints, transitions, and framing across all world biomes.
   - `scripts/verify/verify-consumer.mjs`: verifies packaging and consumption of the authored world in an external project.
+  - `scripts/verify/cook-forest-fixture.mjs`: cooks the forest kit's landform inputs to one `world.glb`, the stock-loader fixture `verify-consumer.mjs` reads.
   - `scripts/verify/verify-custom-assets.mjs`: proves custom asset overrides swap cleanly without starter assets.
   - `scripts/verify/verify-editor.mjs`: verifies live editor tool application, brush operations, and undo/redo state.
   - `scripts/verify/verify-environment.mjs`: tests biome-specific environmental lighting and atmosphere settings.
@@ -149,9 +150,10 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/fixtures/handoff-game/state.ts`: reactive state management for handoff fixture game.
   - `scripts/fixtures/kit-game/KitScene.ts`: shared starter kit fixture scene parameterised by biome.
   - `scripts/fixtures/kit-game/game.ts`: standalone multi-world game harness testing starter kit scenes.
+  - `scripts/fixtures/kit-game/forest-game.ts`: the forest source kit's README game (`ForestScene`, `FOREST_GAME`) plus the playtest plugin.
   - `scripts/fixtures/kit-game/state.ts`: shared state for starter kit game fixture.
   - `scripts/fixtures/kit-game/playtests/alpine.playtest.json`: playtest scenario for starter kit alpine world.
   - `scripts/fixtures/kit-game/playtests/coastal.playtest.json`: playtest scenario for starter kit coastal world.
   - `scripts/fixtures/kit-game/playtests/desert.playtest.json`: playtest scenario for starter kit desert world.
-  - `scripts/fixtures/kit-game/playtests/kit.playtest.json`: master playtest scenario verifying starter kit worlds.
+  - `scripts/fixtures/kit-game/playtests/forest.playtest.json`: playtest scenario for the forest source kit: load, views, a 50 m walk.
   - `scripts/fixtures/kit-game/playtests/tundra.playtest.json`: playtest scenario for starter kit tundra world.

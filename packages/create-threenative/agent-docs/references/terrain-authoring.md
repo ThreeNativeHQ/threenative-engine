@@ -18,13 +18,14 @@ sky, props and colliders. `@threenative/terrain` ships them under `starter/<worl
 
 ```sh
 cp -r node_modules/@threenative/terrain/starter/forest src/terrain/forest
-node src/terrain/forest/bake.mjs --out assets/terrain/forest
+npm install --save-dev tsx
+node src/terrain/forest/bake.mjs
 ```
 
-Then `await addForest(ctx, player)` in `Scene.load` and `ctx.add(forestDaylight(ctx.camera))` in
-`Scene.enter`; the kit's `README.md` says what each file decides. Edit `recipe.json` for layout,
-`COLLIDERS` in `world.ts` for what stops the player, `surface.json` and `sky.ts` for the look, and
-re-run the bake. The bake writes the engine's `WorldCells` package (`bakeWorldPackage`).
+Then start the game on its scene: `defineGame({ ...FOREST_GAME, plugins: [rapier()], scenes:
+{ forest: ForestScene }, start: "forest" })`, both from `./terrain/forest/scene.js`. The kit's
+`README.md` says what each file decides: the landform in `bake.mjs`, what grows where in
+`biome.data.json`, every art path in `world/terrainAssets.ts`, and the look in `render/biomes.ts`.
 
 ## Name a region, not just a biome
 
