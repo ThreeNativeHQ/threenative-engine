@@ -8577,6 +8577,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -11369,8 +11378,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12483,6 +12491,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -12619,8 +12636,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -14045,6 +14061,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -14776,6 +14801,15 @@
         {
           "name": "maskShadowNode",
           "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -18559,6 +18593,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -21955,6 +21998,15 @@
         },
         {
           "name": "visible",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaToCoverage",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -29011,6 +29063,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -29415,6 +29476,15 @@
         },
         {
           "name": "visible",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaToCoverage",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",

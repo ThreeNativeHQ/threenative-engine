@@ -335,6 +335,33 @@ void maskedDepthMasksAndReadsColorAlpha() {
     CHECK(shadowOnly.key() != VertexVariant{}.key());
 }
 
+// three r187 setupDiffuseColor with alphaToCoverage: a tested cutoff fades diffuseColor's alpha over one pixel,
+// `smoothstep(cutoff, cutoff + fwidth(a), a)`, and discards `a <= 0`. The impostor bake captures diffuseColor's alpha as
+// the atlas coverage; without the fade it took the raw mip-thinned leaf alpha and every far tree drew as specks.
+void alphaToCoverageFadesDiffuseColor() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant hard;
+    hard.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.3f});
+    hard.nodes.colorNode = g::uniform("nodeTint", Type::vec(4), {1.0f, 1.0f, 1.0f, 0.5f});
+    hard.nodes.mrt = {{"output", g::materialInput("diffuseColor", Type::vec(4))}};
+    VertexVariant faded = hard;
+    faded.alphaToCoverage = true;
+    CHECK(hard.key() != faded.key());
+    VertexVariant flat;  // the flat cutoff fades too: material.alphaTest > 0 with no node
+    flat.alphaTest = flat.alphaToCoverage = true;
+    VertexVariant untested;  // no cutoff at all: three fades nothing
+    untested.alphaToCoverage = true;
+    const auto fades = [](const Program& program) {
+        const auto code = WgslEmitter::emit(program, 1);
+        CHECK(code.ok());
+        return code.code.find("fwidth(") != std::string::npos && code.code.find("smoothstep(") != std::string::npos;
+    };
+    CHECK(!fades(buildBasic(hard).fragment) && fades(buildBasic(faded).fragment));
+    CHECK(!fades(buildLambert(hard).fragment) && fades(buildLambert(faded).fragment));
+    CHECK(!fades(buildStandard(StandardMaterial{}, hard).fragment) && fades(buildStandard(StandardMaterial{}, faded).fragment));
+    CHECK(fades(buildBasic(flat).fragment) && !fades(buildBasic(untested).fragment));
+}
+
 // NodeMaterial.alphaTestNode (three r187 setupDiffuseColor): the node replaces alphaTest as the cutoff in every colour
 // builder and in the masked shadow depth fragment, and a set node tests without the alphaTest > 0 gate.
 void alphaTestNodeProgram() {
@@ -649,6 +676,7 @@ void builds() {
     aoNode();
     maskNode();
     maskedDepthMasksAndReadsColorAlpha();
+    alphaToCoverageFadesDiffuseColor();
     alphaTestNodeProgram();
     irradianceNode();
     albedoOutput();

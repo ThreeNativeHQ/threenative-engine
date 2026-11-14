@@ -4319,6 +4319,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -4354,6 +4355,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -5135,6 +5137,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -5170,6 +5173,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -5222,6 +5226,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "aoNode",
         "blendDst",
@@ -5276,6 +5281,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "aoNode",
         "blendDst",
@@ -5347,6 +5353,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -5388,6 +5395,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -5450,6 +5458,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -5495,6 +5504,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -5570,6 +5580,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "anisotropy",
         "aoMapIntensity",
         "blendDst",
@@ -5629,6 +5640,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "anisotropy",
         "aoMap",
         "aoMapIntensity",
@@ -5742,6 +5754,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "anisotropy",
         "aoMapIntensity",
@@ -5820,6 +5833,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "anisotropy",
         "aoMap",
@@ -5952,6 +5966,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "aoMapIntensity",
         "blendDst",
         "blendDstAlpha",
@@ -5999,6 +6014,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "aoMap",
         "aoMapIntensity",
         "blendDst",
@@ -6086,6 +6102,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "aoMapIntensity",
         "aoNode",
@@ -6152,6 +6169,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "aoMap",
         "aoMapIntensity",
@@ -6258,6 +6276,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "aoNode",
         "blendDst",
@@ -6306,6 +6325,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "aoNode",
         "blendDst",
@@ -7777,6 +7797,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -7814,6 +7835,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -9548,6 +9570,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -9585,6 +9608,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blendDst",
         "blendDstAlpha",
         "blendEquation",
@@ -9639,6 +9663,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "aoNode",
         "blendDst",
@@ -9697,6 +9722,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "alphaTestNode",
         "aoNode",
         "blendDst",

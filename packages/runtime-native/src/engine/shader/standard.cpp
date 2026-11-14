@@ -703,6 +703,26 @@ static ExprId alphaCutoff(Program& f, graph::Lowering& slots, const VertexVarian
     return slotValue(f, slots, variant.nodes.alphaTestNode, Type::f32(), kInvalid);
 }
 
+// three r187 NodeMaterial.setupDiffuseColor with alphaToCoverage: a tested cutoff fades the alpha over one pixel,
+// `smoothstep(cutoff, cutoff + fwidth(a), a)`, and diffuseColor keeps that faded alpha. A slot reading diffuseColor sees
+// it too: the impostor bake's coverage capture took the raw, mip-thinned leaf alpha instead and baked a speckled atlas.
+static bool coverageFaded(const VertexVariant& variant) {
+    return variant.alphaToCoverage && (variant.nodes.alphaTestNode || variant.alphaTest);
+}
+
+// The cutoff the colour output discards at: with the fade it is `a <= 0`, as three's, since the alpha is already faded.
+static ExprId discardCutoff(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
+    return coverageFaded(variant) ? f.constant(0.0f) : alphaCutoff(f, slots, variant);
+}
+
+static ExprId fadedAlpha(Program& f, graph::Lowering& slots, const VertexVariant& variant, ExprId alpha) {
+    if (!coverageFaded(variant)) return alpha;
+    ExprId cutoff = alphaCutoff(f, slots, variant);
+    if (cutoff == kInvalid) cutoff = f.uniform("alphaTest", Type::f32());
+    const ExprId held = f.load(f.var(Type::f32(), alpha));
+    return f.call("smoothstep", {cutoff, f.add(cutoff, f.call("fwidth", {held})), held});
+}
+
 static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVariant& variant, ExprId diffuse, ExprId texel) {
     ExprId alpha = f.swizzle(diffuse, "w");
     if (variant.vertexColors) alpha = f.mul(alpha, f.swizzle(f.varying("instanceColor", tintType(variant)), "w"));
@@ -717,7 +737,7 @@ static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVaria
                           slotValue(f, slots, variant.nodes.opacityNode, Type::f32(), kInvalid));
         }
     }
-    return alpha;
+    return fadedAlpha(f, slots, variant, alpha);
 }
 
 // three's diffuseColor beside a colorNode or opacityNode, for a slot that reads it (the impostor bake's capture `output`
@@ -1747,7 +1767,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     out.emissive = emissive;
     out.indirectDiffuse = totalIndirectDiffuse;
     out.normal = n;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1907,7 +1927,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     out.albedo = diffuseColor;
     out.emissive = emissive;
     out.indirectDiffuse = indirectDiffuse;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -2004,7 +2024,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant), variant.alphaTest)));
+    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);

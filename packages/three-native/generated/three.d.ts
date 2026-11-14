@@ -1149,6 +1149,7 @@ transparent: boolean;
 readonly type: string;
 vertexColors: boolean;
 visible: boolean;
+alphaToCoverage: boolean;
 
   clone(): this;
 
@@ -1585,6 +1586,7 @@ vertexColors: boolean;
 vertexNode: Node | null;
 visible: boolean;
 maskShadowNode: Node | null;
+alphaToCoverage: boolean;
 
   clone(): this;
 
@@ -1759,6 +1761,7 @@ vertexColors: boolean;
 vertexNode: Node | null;
 visible: boolean;
 maskShadowNode: Node | null;
+alphaToCoverage: boolean;
 
   clone(): this;
 
@@ -1888,6 +1891,7 @@ vertexColors: boolean;
 vertexNode: Node | null;
 visible: boolean;
 maskShadowNode: Node | null;
+alphaToCoverage: boolean;
 
   clone(): this;
 
@@ -2295,6 +2299,7 @@ vertexColors: boolean;
 visible: boolean;
 color: Color;
 map: Texture | null;
+alphaToCoverage: boolean;
 
   clone(): this;
 
@@ -2793,6 +2798,7 @@ transparent: boolean;
 readonly type: string;
 vertexColors: boolean;
 visible: boolean;
+alphaToCoverage: boolean;
 
   clone(): this;
 
@@ -3549,6 +3555,7 @@ twoSidedFoliage: boolean;
 readonly type: string;
 vertexColors: boolean;
 visible: boolean;
+alphaToCoverage: boolean;
 
   clone(): this;
 
@@ -3599,6 +3606,7 @@ twoSidedFoliage: boolean;
 readonly type: string;
 vertexColors: boolean;
 visible: boolean;
+alphaToCoverage: boolean;
 
   clone(): this;
 

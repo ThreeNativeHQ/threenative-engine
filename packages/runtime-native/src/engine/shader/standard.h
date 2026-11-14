@@ -29,6 +29,7 @@ struct StandardMaterial {
     float alphaTest = 0;  // > 0: fragments with opacity <= alphaTest are discarded
     double maxPositionOffset = 0;  // Material::maxPositionOffset: how far a positionNode moves a vertex, 0 unknown
     bool alphaHash = false;
+    bool alphaToCoverage = false;
     float roughness = 1;
     float metalness = 0;
     std::array<float, 3> emissive{0, 0, 0};
@@ -79,6 +80,9 @@ inline constexpr int kStandardPbrMapCount = kSpecularColorMap;
 
 struct VertexVariant {
     bool alphaHash = false;
+    /** material.alphaToCoverage (three r187 setupDiffuseColor): a tested cutoff becomes
+     * `a = smoothstep(cutoff, cutoff + fwidth(a), a)`, discarding `a <= 0`, so diffuseColor carries the faded alpha. */
+    bool alphaToCoverage = false;
     /** material.alphaTest > 0: the flat cutoff is compiled in, as three builds it only then. Off, an opaque program
      * carries no discard and keeps early depth testing. An alphaTestNode tests either way. */
     bool alphaTest = false;
@@ -183,7 +187,7 @@ struct VertexVariant {
     bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (alphaTest ? "alphaTest|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + (premultipliedAlpha ? "premultiplied|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
+        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (alphaToCoverage ? "a2c|" : "") + (alphaTest ? "alphaTest|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + (premultipliedAlpha ? "premultiplied|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
