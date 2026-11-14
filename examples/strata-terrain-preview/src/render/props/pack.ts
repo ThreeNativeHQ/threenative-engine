@@ -187,6 +187,47 @@ const LANDSCAPE_PRO = "landscape-pro/fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Mo
 ).forEach(([model, metres], variant) =>
   species.push({ asset: "deadfall", variant, metres, path: `${LANDSCAPE_PRO}/${model}` }),
 );
+/**
+ * The forest floor's Poly Haven CC0 scans (`packages/terrain/starter-assets`), as [GLB, metres] per
+ * variant: dead trunks, a stump and an upturned root plate for the deadfall, dry branches for the
+ * litter, weeds and moss for the ground mounds, shrubs and a nettle where the spruce saplings stood,
+ * and the kit's own fern (owner, 2026-11-14: "not enough ground/debris/trunks vegetation on the
+ * floor"). Metres are each scan's own size, near enough. `?floor=fab` is the named override: the
+ * licensed set in `TEMPERATE_PATHS` and Landscape Pro's deadfall.
+ */
+const POLYHAVEN_FLOOR: Record<string, readonly (readonly [string, number])[]> = {
+  deadfall: [
+    ["dead_tree_trunk/dead_tree_trunk.glb", 3.1],
+    ["dead_tree_trunk_02/dead_tree_trunk_02.glb", 4.0],
+    ["tree_stump_01/tree_stump_01.glb", 1.6],
+    ["root_cluster_01/root_cluster_01.glb", 4.1],
+  ],
+  litter: [
+    ["dry_branches_medium_01/dry_branches_medium_01_a.glb", 0.34],
+    ["dry_branches_medium_01/dry_branches_medium_01_b.glb", 0.14],
+  ],
+  scrub: [
+    ["weed_plant_02/weed_plant_02_a.glb", 0.07],
+    ["weed_plant_02/weed_plant_02_b.glb", 0.07],
+    ["moss_01/moss_01_tall_b.glb", 0.04],
+  ],
+  bush: [
+    ["shrub_02/shrub_02_d.glb", 1.2],
+    ["shrub_04/shrub_04.glb", 0.3],
+  ],
+  sapling: [
+    ["shrub_02/shrub_02_a.glb", 1.7],
+    ["shrub_02/shrub_02_b.glb", 1.5],
+    ["shrub_02/shrub_02_c.glb", 1.3],
+    ["nettle_plant/nettle_plant_tall_a.glb", 0.5],
+  ],
+  fern: [
+    ["fern_02/fern-a.glb", 0.55],
+    ["fern_02/fern-b.glb", 0.5],
+    ["fern_02/fern-a.glb", 0.75],
+  ],
+};
+const FAB_FLOOR = new URLSearchParams(globalThis.location?.search ?? "").get("floor") === "fab";
 /** The species drawn as stone: they stand on their lowest point and take a hull collider. */
 export const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
 /** Meadow Flowers species: photographed petals kept, stems lifted, no foliage tint. */
@@ -902,6 +943,9 @@ export function speciesFor(world: WorldName): IPackSpecies[] {
     .filter((one) => held.has(one.asset))
     // The temperate understorey is the licensed species set; every other world keeps its own.
     .map((one) => {
+      const scan =
+        look.lawnGround && !FAB_FLOOR ? POLYHAVEN_FLOOR[one.asset]?.[one.variant] : undefined;
+      if (scan) return { ...one, path: scan[0], metres: scan[1] };
       const path = look.lawnGround ? TEMPERATE_PATHS[one.asset]?.[one.variant] : undefined;
       return path ? { ...one, path } : one;
     });

@@ -14,4 +14,13 @@ describe("the forest canopy is Poly Haven art the starter ships", () => {
       expect(existsSync(join(STARTER, one.path)), one.path).toBe(true);
     }
   });
+  it("draws the forest floor's deadfall, litter, mounds, shrubs and ferns from starter-assets scans", () => {
+    const floor = ["deadfall", "litter", "scrub", "bush", "sapling", "fern"];
+    const rows = speciesFor("forest").filter((one) => floor.includes(one.asset));
+    expect(new Set(rows.map((one) => one.asset))).toEqual(new Set(floor));
+    for (const one of rows) {
+      expect(one.path, `${one.asset}:${one.variant}`).toMatch(/\.glb$/u);
+      expect(existsSync(join(STARTER, one.path)), one.path).toBe(true);
+    }
+  });
 });

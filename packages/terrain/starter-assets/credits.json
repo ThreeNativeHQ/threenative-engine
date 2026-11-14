@@ -786,6 +786,76 @@
         "note": "tree_small_02/broadleaf-{near,mid}.glb and broadleaf-b-{near,mid}.glb (the second mirrored, 2.6x against 3x): the trunk and branches of the 1k .blend's LOD1, decimated, with its 111,621 leaves rebuilt as cards from the .blend's own four leaf clusters, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-broadleaf.py. near 9,988 triangles (1,555,332 bytes), mid 2,119 (1,129,324 bytes). The forest preview's canopy."
       },
       {
+        "asset": "Dead Tree Trunk",
+        "authors": "Rob Tuytel",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/dead_tree_trunk",
+        "note": "dead_tree_trunk/dead_tree_trunk.glb (321,696 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's deadfall."
+      },
+      {
+        "asset": "Dead Tree Trunk 02",
+        "authors": "Jenelle van Heerden, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/dead_tree_trunk_02",
+        "note": "dead_tree_trunk_02/dead_tree_trunk_02.glb (388,708 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's deadfall."
+      },
+      {
+        "asset": "Tree Stump 01",
+        "authors": "Rob Tuytel",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/tree_stump_01",
+        "note": "tree_stump_01/tree_stump_01.glb (401,588 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's deadfall."
+      },
+      {
+        "asset": "Root Cluster 01",
+        "authors": "Jenelle van Heerden, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/root_cluster_01",
+        "note": "root_cluster_01/root_cluster_01.glb (357,060 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's deadfall."
+      },
+      {
+        "asset": "Dry Branches Medium 01",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/dry_branches_medium_01",
+        "note": "dry_branches_medium_01/dry_branches_medium_01_a.glb (352,688 bytes), dry_branches_medium_01/dry_branches_medium_01_b.glb (342,456 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's litter."
+      },
+      {
+        "asset": "Weed Plant 02",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/weed_plant_02",
+        "note": "weed_plant_02/weed_plant_02_a.glb (502,344 bytes), weed_plant_02/weed_plant_02_b.glb (495,420 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's ground mounds (scrub)."
+      },
+      {
+        "asset": "Moss 01",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/moss_01",
+        "note": "moss_01/moss_01_tall_b.glb (166,348 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's ground mounds (scrub)."
+      },
+      {
+        "asset": "Shrub 02",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/shrub_02",
+        "note": "shrub_02/shrub_02_a.glb (603,420 bytes), shrub_02/shrub_02_b.glb (540,532 bytes), shrub_02/shrub_02_c.glb (624,532 bytes), shrub_02/shrub_02_d.glb (537,900 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's understorey shrubs (bush, sapling)."
+      },
+      {
+        "asset": "Shrub 04",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/shrub_04",
+        "note": "shrub_04/shrub_04.glb (535,528 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's bush."
+      },
+      {
+        "asset": "Nettle Plant",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/nettle_plant",
+        "note": "nettle_plant/nettle_plant_tall_a.glb (500,528 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's sapling slot."
+      },
+      {
         "asset": "Rock Moss Set 01",
         "authors": "Rob Tuytel, Rico Cilliers",
         "license": "CC0",
