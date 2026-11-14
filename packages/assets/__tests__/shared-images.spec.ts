@@ -305,11 +305,7 @@ describe("shared model images", () => {
     const document = new Document();
     const pixels = (fill: number) => new Uint8Array([0x89, 0x50, 0x4e, 0x47, fill]);
     document.createTexture().setImage(pixels(1)).setMimeType("image/png").setURI("a.png");
-    document
-      .createTexture("bark")
-      .setImage(pixels(2))
-      .setMimeType("image/png")
-      .setURI("b.png");
+    document.createTexture("bark").setImage(pixels(2)).setMimeType("image/png").setURI("b.png");
     let n = 0;
     const written = await writeSharedGlb(new NodeIO(), document, "leaf.glb", () => {
       n += 1;
