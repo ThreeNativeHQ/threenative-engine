@@ -254,6 +254,15 @@ const POLYHAVEN_FLOOR: Record<string, readonly (readonly [string, number])[]> = 
   ],
 };
 const FAB_FLOOR = new URLSearchParams(globalThis.location?.search ?? "").get("floor") === "fab";
+
+/**
+ * The licensed floor's own grades: damp bark with a sky-facing moss coat on its boughs, and a dry pull
+ * on its needle-card litter. A Poly Haven scan keeps its photographed bark, moss and twigs: the flat
+ * moss coat turned a 4 m dead trunk into a smooth dark-green slab (owner, 2026-11-14: "bugged surfaces").
+ */
+export function floorGrade(asset: string, fabFloor = FAB_FLOOR): "deadfall" | "litter" | undefined {
+  return fabFloor && (asset === "deadfall" || asset === "litter") ? asset : undefined;
+}
 /**
  * The grass: Poly Haven CC0 grass_medium_01/02 baked to crossed cards on one atlas
  * (`scripts/prep/prep-polyhaven-grass.py`), as [GLB, metres tall] per variant at the licensed
@@ -572,7 +581,7 @@ function tintedFoliage(
         ? vec3(0.11, 0.1, 0.085).mul(LOOK.limb)
         : vec3(0.2, 0.18, 0.15).mul(LOOK.bark),
     );
-  if (!otherBiome && asset === "deadfall" && !cutout) {
+  if (!otherBiome && floorGrade(asset) === "deadfall" && !cutout) {
     // Wood that has lain a few winters: dark, damp bark, and moss on the side that faces the sky.
     const bark = sampled.rgb.mul(vec3(0.3, 0.26, 0.2));
     const moss = smoothstep(0.25, 0.8, normalWorldGeometry.y).mul(
@@ -580,7 +589,7 @@ function tintedFoliage(
     );
     material.colorNode = mix(bark, vec3(0.085, 0.12, 0.035), moss.mul(0.85));
   }
-  if (!otherBiome && asset === "litter") {
+  if (!otherBiome && floorGrade(asset) === "litter") {
     // Needle litter is the spruce atlas photographed dry: pull it toward bark brown and lay it
     // flat, so the forest floor carries a dead layer instead of more green.
     const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
