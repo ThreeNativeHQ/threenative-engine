@@ -243,6 +243,40 @@ describe("the per-frame cost of the convention nobody opted into", () => {
       island.traverse = original;
     }
   });
+
+  it("reads each matrix's `elements` once per root, because on the owned engine it is an accessor", () => {
+    // The owned engine's `Matrix4.elements` is a getter that resolves a Wasm heap view on every
+    // read. Indexing it sixteen times per matrix made the check 0.8 ms of a 4.2 ms frame on a
+    // streamed world of 1,030 frozen batches (PRD-887 AC-3), so the count is the contract.
+    const scene = new Scene();
+    const parent = new Group();
+    scene.add(parent);
+    const roots = Array.from({ length: 8 }, (_, index) => {
+      const root = new Mesh();
+      root.position.set(index, 0, 0);
+      parent.add(root);
+      return root;
+    });
+    scene.updateMatrixWorld(true);
+    for (const root of roots) markStatic(root);
+    let reads = 0;
+    const counted = (matrix: { elements: number[] }): void => {
+      const values = matrix.elements;
+      Object.defineProperty(matrix, "elements", {
+        configurable: true,
+        get: () => {
+          reads += 1;
+          return values;
+        },
+      });
+    };
+    counted(parent.matrixWorld);
+    for (const root of roots) counted(root.matrix);
+    refreshStaticTransforms();
+    expect(staticTransformCensus().rearmed).toBe(0);
+    // One read of the root's own matrix and one of its parent's world matrix, per root.
+    expect(reads).toBeLessThanOrEqual(roots.length * 2);
+  });
 });
 
 describe("validateWorldMatrices", () => {

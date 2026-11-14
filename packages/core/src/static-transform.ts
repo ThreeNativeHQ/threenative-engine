@@ -55,7 +55,9 @@ function writeSnapshot(root: Object3D, into: Float64Array): void {
   const position: Vector3 = root.position;
   const quaternion: Quaternion = root.quaternion;
   const scale: Vector3 = root.scale;
-  const matrix: Matrix4 = root.matrix;
+  // One read of each `elements`: on the owned engine it is an accessor that resolves a Wasm heap
+  // view per read, and this runs for every frozen root every frame (PRD-887 AC-3).
+  const matrix: Matrix4["elements"] = root.matrix.elements;
   into[0] = position.x;
   into[1] = position.y;
   into[2] = position.z;
@@ -67,7 +69,7 @@ function writeSnapshot(root: Object3D, into: Float64Array): void {
   into[8] = scale.y;
   into[9] = scale.z;
   for (let element = 0; element < 16; element += 1)
-    into[10 + element] = matrix.elements[element] ?? 0;
+    into[10 + element] = matrix[element] ?? 0;
   // The frozen world matrix is the parent's times the root's own, so a root attached after it froze,
   // or one whose ancestor moved, is as stale as one the author moved. A streamed world freezes each
   // draw before it joins the world root, and a seated world (`world.position.y = -ground`) drew
