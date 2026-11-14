@@ -90,7 +90,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #stageLoad = 0;
     /** Bumped when a scene is left, so a band build still slicing stops instead of joining the next scene. */
     #bandLoad = 0;
-    /** PRD-790: the streamed ground past the square, on `?stream=1` until its judge passes. */
+    /** PRD-790: the streamed ground past the square; absent under the `?stream=off` override. */
     #stream: { split: ITerrainStream; material: Promise<MeshStandardNodeMaterial> } | undefined;
     #mannequin: IMannequin | undefined;
     #swimClips: readonly AnimationClip[] = [];
@@ -134,8 +134,15 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // Prepare scenery while the scene loads; enter only attaches it.
       // `?skyAo=off` is the named before arm: the ground keeps the whole sky, as it did before.
       const skyAo = new URLSearchParams(globalThis.location?.search ?? "").get("skyAo") !== "off";
+      // PRD-790: the ground streams past the playable square by default; `?stream=off` is the named
+      // override (the collar alone, walls at its 200 m walk band), and it says so.
       const streaming =
-        new URLSearchParams(globalThis.location?.search ?? "").get("stream") === "1";
+        new URLSearchParams(globalThis.location?.search ?? "").get("stream") !== "off";
+      if (!streaming)
+        console.info(
+          "TN_STREAM_OVERRIDE stream=off: no streamed ground past the playable square; the collar draws it and the walls stand at its walk band.",
+        );
+      ctx.state.set({ streamOverride: streaming ? "" : "off" });
       let tileSurface: (material: MeshStandardNodeMaterial) => void = () => undefined;
       const material = new Promise<MeshStandardNodeMaterial>((resolve) => {
         tileSurface = resolve;
@@ -404,7 +411,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const actor = rig.actor;
       const stream = this.#stream;
       // ponytail: a ground material that never loads leaves this pending, and the spawn deadline
-      // then fails the scene by name; `?stream=1` is opt-in, so no tile-less fallback yet.
+      // then fails the scene by name; `?stream=off` is the tile-less arm, so no fallback here.
       let groundReady: Promise<void> | undefined;
       if (stream && mesh && collar) {
         const streamLoad = this.#bandLoad;

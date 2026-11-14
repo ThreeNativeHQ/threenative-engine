@@ -86,7 +86,9 @@ import {
 } from "../water/river.js";
 import {
   type IPackedMassif,
+  STREAM_TILE,
   collarColors,
+  collarMorph,
   createHorizonCollar,
   horizonSurroundings,
 } from "./horizon.js";
@@ -1479,6 +1481,8 @@ export function createTerrain(
           const far = ground.clone();
           far.maskNode = fromCentre.greaterThanEqual(stream.half);
           horizon.material = far;
+          // The outermost streamed tile slides onto the collar's drawn height (PRD-790 box 2).
+          tile.positionNode = collarMorph(collar, stream, STREAM_TILE);
           tile.maskNode = fromCentre
             .lessThan(stream.half)
             .and(max(abs(positionWorld.x), abs(positionWorld.z)).greaterThan(data.size / 2));

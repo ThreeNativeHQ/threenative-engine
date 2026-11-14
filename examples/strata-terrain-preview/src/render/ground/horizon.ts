@@ -4,9 +4,27 @@ import {
   HeightfieldCollar,
   type IHeightfieldCollarSite,
 } from "@threenative/core/world";
+import { DataTexture, FloatType, NearestFilter, RedFormat } from "three";
+import {
+  abs,
+  float,
+  floor,
+  max,
+  min,
+  modelWorldMatrix,
+  positionGeometry,
+  positionLocal,
+  select,
+  smoothstep,
+  texture,
+  vec2,
+  vec3,
+  vec4,
+} from "three/tsl";
+import type { Node } from "three/webgpu";
 import { fetchBakedFile } from "../bakedFile.js";
 import type { WorldName } from "../biomes.js";
-import type { IBakedWorld } from "./terrain.js";
+import type { IBakedWorld, ITerrainStream } from "./terrain.js";
 
 /** `world/horizon.json`: each world's same-site USGS surroundings, as `scripts/bake/bake.mjs` writes them. */
 export type HorizonSurroundings = Record<
@@ -111,6 +129,10 @@ export const HORIZON_WALK_BAND = 200;
 /** Rings of the far collar, and the radius they reach: the survey's own rim, at 2.1 km. */
 const HORIZON_RINGS = 384;
 export const HORIZON_REACH = 2100;
+/** Streamed tile width in metres; the outermost tile of the drawn square is the morph band. */
+export const STREAM_TILE = 64;
+/** How the rings spread: ring `k` stands `(k / rings) ** 1.65` of the reach past the edge. */
+const HORIZON_POWER = 1.65;
 
 /**
  * The far collar for one world: the square's edge continued onto that site's surveyed surroundings,
@@ -121,7 +143,7 @@ export function createHorizonCollar(data: IBakedWorld, world: WorldName): Height
   return new HeightfieldCollar({
     height: collarHeight(data, world),
     resolution: data.resolution,
-    ringDistance: (ring) => (ring / HORIZON_RINGS) ** 1.65 * HORIZON_REACH,
+    ringDistance: (ring) => (ring / HORIZON_RINGS) ** HORIZON_POWER * HORIZON_REACH,
     rings: HORIZON_RINGS,
     size: data.size,
     walkBand: HORIZON_WALK_BAND,
@@ -296,4 +318,187 @@ export function collarSeamGap(
       }
     }
   return { fold, gap };
+}
+
+/**
+ * The collar triangle under `(x, z)` found by arithmetic alone, as the tile shader finds it: the
+ * ring from the ring spacing, the perimeter step from the face the point projects onto, and the
+ * triangle from the point's place in the quad. On one face the world point is an affine map of
+ * `(scale, share * scale)`, so weights read there are the drawn triangle's own.
+ */
+export function collarArithmeticHeight(collar: HeightfieldCollar, x: number, z: number): number {
+  const position = collar.geometry.getAttribute("position");
+  const at = (ring: number, vertex: number): number =>
+    position.getY(ring * collar.perimeter + vertex);
+  const q = collarQuad(collar.perimeter, collar.rings, collarHalf(collar), x, z);
+  return q.first
+    ? q.wa * at(q.lower, q.from) + q.wb * at(q.lower, q.to) + q.wc * at(q.lower + 1, q.from)
+    : q.wb * at(q.lower, q.to) + q.wd * at(q.lower + 1, q.to) + q.wc * at(q.lower + 1, q.from);
+}
+
+/** Half the playable square, read off the collar's first ring. */
+function collarHalf(collar: HeightfieldCollar): number {
+  const position = collar.geometry.getAttribute("position");
+  return Math.abs(position.getZ(0));
+}
+
+function collarQuad(perimeter: number, rings: number, half: number, x: number, z: number) {
+  const segments = perimeter / 4;
+  const cell = (2 * half) / segments;
+  const scaleOf = (ring: number): number =>
+    1 + ((ring / rings) ** HORIZON_POWER * HORIZON_REACH) / half;
+  const chebyshev = Math.max(Math.abs(x), Math.abs(z));
+  const scale = chebyshev / half;
+  const past = Math.max(0, chebyshev - half);
+  const lower = Math.min(
+    rings - 1,
+    Math.max(0, Math.floor(rings * (past / HORIZON_REACH) ** (1 / HORIZON_POWER))),
+  );
+  const low = scaleOf(lower);
+  const high = scaleOf(lower + 1);
+  const edgeX = x / scale;
+  const edgeZ = z / scale;
+  const along =
+    Math.abs(z) >= Math.abs(x)
+      ? z < 0
+        ? (edgeX + half) / cell
+        : 2 * segments + (half - edgeX) / cell
+      : x > 0
+        ? segments + (edgeZ + half) / cell
+        : 3 * segments + (half - edgeZ) / cell;
+  const from = Math.min(perimeter - 1, Math.max(0, Math.floor(along)));
+  const share = along - from;
+  const ring = (scale - low) / (high - low);
+  const b = (share * scale) / low;
+  const first = b + ring <= 1;
+  const back = 1 - ring;
+  const d = (share * scale - back * low) / high;
+  return {
+    first,
+    from,
+    lower,
+    to: (from + 1) % perimeter,
+    wa: 1 - b - ring,
+    wb: first ? b : back,
+    wc: first ? ring : 1 - back - d,
+    wd: d,
+  };
+}
+
+/**
+ * PRD-790 box 2: the streamed tiles' vertex shift. Only the outermost tile of the square the tiles
+ * draw slides onto the collar's drawn height, smoothly over that tile, so at the square's edge every
+ * tile vertex stands on the collar; the ground inside keeps the survey's smooth surface. The
+ * collar's heights go to the GPU once, as a float texture of rings by perimeter steps.
+ */
+export function collarMorph(
+  collar: HeightfieldCollar,
+  stream: ITerrainStream,
+  band: number,
+): Node<"vec3"> {
+  const { perimeter, rings } = collar;
+  const half = collarHalf(collar);
+  const segments = perimeter / 4;
+  const cell = (2 * half) / segments;
+  const position = collar.geometry.getAttribute("position");
+  const heights = new Float32Array(perimeter * (rings + 1));
+  for (let index = 0; index < heights.length; index += 1) heights[index] = position.getY(index);
+  const map = new DataTexture(heights, perimeter, rings + 1, RedFormat, FloatType);
+  map.minFilter = NearestFilter;
+  map.magFilter = NearestFilter;
+  map.needsUpdate = true;
+  const at = (ring: Node<"float">, vertex: Node<"float">): Node<"float"> =>
+    texture(map, vec2(vertex.add(0.5).div(perimeter), ring.add(0.5).div(rings + 1))).r;
+
+  const world = modelWorldMatrix.mul(vec4(positionGeometry, 1));
+  const x = world.x;
+  const z = world.z;
+  const chebyshev = max(abs(x), abs(z));
+  const scale = chebyshev.div(half);
+  const past = chebyshev.sub(half).max(0);
+  const lower = min(
+    float(rings - 1),
+    floor(
+      past
+        .div(HORIZON_REACH)
+        .pow(1 / HORIZON_POWER)
+        .mul(rings),
+    ),
+  );
+  const scaleOf = (ring: Node<"float">): Node<"float"> =>
+    ring
+      .div(rings)
+      .pow(HORIZON_POWER)
+      .mul(HORIZON_REACH / half)
+      .add(1);
+  const low = scaleOf(lower);
+  const high = scaleOf(lower.add(1));
+  const edgeX = x.div(scale);
+  const edgeZ = z.div(scale);
+  const along = select(
+    abs(z).greaterThanEqual(abs(x)),
+    select(
+      z.lessThan(0),
+      edgeX.add(half).div(cell),
+      float(half)
+        .sub(edgeX)
+        .div(cell)
+        .add(2 * segments),
+    ),
+    select(
+      x.greaterThan(0),
+      edgeZ.add(half).div(cell).add(segments),
+      float(half)
+        .sub(edgeZ)
+        .div(cell)
+        .add(3 * segments),
+    ),
+  );
+  const from = min(float(perimeter - 1), floor(along).max(0));
+  const share = along.sub(from);
+  const to = select(from.equal(perimeter - 1), float(0), from.add(1));
+  const ring = scale.sub(low).div(high.sub(low));
+  const b = share.mul(scale).div(low);
+  const back = float(1).sub(ring);
+  const d = share.mul(scale).sub(back.mul(low)).div(high);
+  const upper = lower.add(1);
+  const first = at(lower, from)
+    .mul(float(1).sub(b).sub(ring))
+    .add(at(lower, to).mul(b))
+    .add(at(upper, from).mul(ring));
+  const second = at(lower, to)
+    .mul(back)
+    .add(at(upper, to).mul(d))
+    .add(at(upper, from).mul(float(1).sub(back).sub(d)));
+  const drawn = select(b.add(ring).lessThanEqual(1), first, second);
+  // The outermost tile of the drawn square, and never inside the playable square.
+  const fromCentre = max(abs(x.sub(stream.centre.x)), abs(z.sub(stream.centre.y)));
+  const weight = smoothstep(stream.half.sub(band), stream.half, fromCentre).mul(
+    past.greaterThan(0).select(float(1), float(0)),
+  );
+  return positionLocal.add(vec3(0, drawn.sub(world.y).mul(weight), 0));
+}
+
+/**
+ * The height a tile vertex stands at once `collarMorph` moved it: the survey inside the band, the
+ * collar's arithmetic height at the drawn square's edge. The seam measure reads this.
+ */
+export function createMorphedHeight(
+  collar: HeightfieldCollar,
+  height: (x: number, z: number) => number,
+  centreX: number,
+  centreZ: number,
+  half: number,
+  band: number,
+): (x: number, z: number) => number {
+  const square = collarHalf(collar);
+  return (x, z) => {
+    const fine = height(x, z);
+    const past = Math.max(Math.abs(x), Math.abs(z)) - square;
+    if (past <= 0) return fine;
+    const fromCentre = Math.max(Math.abs(x - centreX), Math.abs(z - centreZ));
+    const t = Math.min(1, Math.max(0, (fromCentre - (half - band)) / band));
+    const weight = t * t * (3 - 2 * t);
+    return fine + (collarArithmeticHeight(collar, x, z) - fine) * weight;
+  };
 }

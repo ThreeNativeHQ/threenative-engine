@@ -71,7 +71,7 @@ export interface IMeadowOptions {
   readonly fallbackParts: Variants | undefined;
   /** Where the player starts in this world: the point every stream measures its spawn cells around. */
   readonly spawn: Vector3;
-  /** PRD-790: the streamed ground's first tiles, drawn behind the curtain; absent without `?stream=1`. */
+  /** PRD-790: the streamed ground's first tiles, drawn behind the curtain; absent under `?stream=off`. */
   readonly groundReady?: Promise<void> | undefined;
   readonly gate: ISpawnGate;
   readonly reveal: IRevealProbe;

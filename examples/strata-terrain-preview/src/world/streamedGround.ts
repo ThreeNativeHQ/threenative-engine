@@ -10,11 +10,17 @@ import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenativ
 import type { Object3D } from "three";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
 import type { WorldName } from "../render/biomes.js";
-import { HORIZON_REACH, collarSeamGap, createWorldHeight } from "../render/ground/horizon.js";
+import {
+  HORIZON_REACH,
+  STREAM_TILE,
+  collarSeamGap,
+  createMorphedHeight,
+  createWorldHeight,
+} from "../render/ground/horizon.js";
 import type { IBakedWorld, ITerrainStream } from "../render/ground/terrain.js";
 
 /** Tile width in metres: 32 cells of the square's own 2 m spacing, so tile and square share vertices. */
-const TILE = 64;
+const TILE = STREAM_TILE;
 /** Tiles each side of the player's: a 576 m square, wider than the playable square itself. */
 const RADIUS = 4;
 /** Tiles each side of the player's that collide: the player only ever stands on its own or a neighbour. */
@@ -25,9 +31,9 @@ const ADMISSION_MS = 2;
 /**
  * PRD-790: the ground past the playable square, streamed around the player by `TerrainTiles` out to
  * the collar's reach. Tiles sample `createWorldHeight`, the surface the square and the collar's
- * vertices stand on, so a tile meets the square and its neighbours with no step. Where the tiles
- * meet the collar, the collar's coarser triangles cut between its vertices; `?tnTerrainValidate=1`
- * reports that step as `streamCollarGap` (PRD-790 Phase 2 box 2, open). The largest block of
+ * vertices stand on, so a tile meets the square and its neighbours with no step. The tile material
+ * slides the outermost tile onto the collar's drawn height (`collarMorph`), so at the collar every
+ * tile vertex stands on it; `?tnTerrainValidate=1` reports `streamCollarGap`. The largest block of
  * resident tiles around the player is written to `split` each frame: the tiles draw inside it, the collar everywhere else, so a tile that
  * is still building leaves the collar showing, never a hole.
  */
@@ -44,6 +50,7 @@ export function addStreamedGround(
     streamCoveredHalf: number;
     streamSeamGap: number;
     streamCollarGap: number;
+    streamCollarFold: number;
   }) => void,
 ): { dispose(): void; readonly ready: Promise<void>; readonly tiles: TerrainTiles } {
   const half = data.size / 2;
@@ -98,7 +105,8 @@ export function addStreamedGround(
     const key = `${x},${y},${split.half.value}`;
     if (tileSeam !== undefined && split.half.value > 0 && key !== collarSeam.key) {
       // Every 0.5 m, 0.7 ms per move; 0.1 m cost 4.2 ms and read the same fold on the route.
-      const seam = collarSeamGap(collar, height, x, y, split.half.value, spacing, 0.5);
+      const morphed = createMorphedHeight(collar, height, x, y, split.half.value, TILE);
+      const seam = collarSeamGap(collar, morphed, x, y, split.half.value, spacing, 0.5);
       collarSeam.gap = Math.max(collarSeam.gap, seam.gap);
       collarSeam.fold = Math.max(collarSeam.fold, seam.fold);
       collarSeam.key = key;
@@ -107,8 +115,10 @@ export function addStreamedGround(
       streamTiles: tiles.residentTileCount,
       streamCoveredHalf: split.half.value,
       streamSeamGap: tileSeam ?? -1,
-      // The tile-to-collar step, at the tile vertices and between them; -1 when not measured.
-      streamCollarGap: tileSeam === undefined ? -1 : Math.max(collarSeam.gap, collarSeam.fold),
+      // The tile-to-collar step at the tile vertices, as core measures a tile-to-tile seam, and the
+      // step between them where a collar fold crosses a tile's edge; -1 when not measured.
+      streamCollarGap: tileSeam === undefined ? -1 : collarSeam.gap,
+      streamCollarFold: tileSeam === undefined ? -1 : collarSeam.fold,
     });
   });
   // The tiles around the spawn draw unculled behind the curtain until the whole block has drawn
