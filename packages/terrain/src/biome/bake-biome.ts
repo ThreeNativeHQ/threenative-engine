@@ -1,6 +1,5 @@
 import { Heightfield } from "@threenative/core/world";
 import type { IScatterRule, ITerrainState } from "../core/types.js";
-import { assertDistFresh } from "../dist-fresh.js";
 import {
   type IBakeWorldPackageOptions,
   type IBakedWorldPackage,
@@ -164,7 +163,6 @@ export function withImpostorDistances(
  * @example const baked = bakeBiome({ state: terrain.evaluate(), spec: validateBiome(json, "savanna"), assets });
  */
 export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome {
-  assertDistFresh();
   const spec = validateBiome(options.spec, options.spec.look);
   // An ordered biome runs its fifteen generators on one stream, so this bake owns the instances
   // instead of reading the ones the recipe's own rules accepted.

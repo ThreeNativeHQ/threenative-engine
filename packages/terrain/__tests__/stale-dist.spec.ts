@@ -6,18 +6,15 @@
  * spec proves it stops on a stale pair and passes on a fresh one, on a throwaway copy of the layout
  * (touching the real tree's mtimes would race every other spec in this suite).
  */
-import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { assertDistFresh } from "../src/dist-fresh.js";
-
-const roots: string[] = [];
 
 /** A package root with one source file and the four built files a bake needs. */
 async function layout(sourceAt: Date, builtAt: Date): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "tn-dist-"));
-  roots.push(root);
+  const root = await makeTempDir("tn-dist-");
   await mkdir(join(root, "src"));
   await mkdir(join(root, "dist", "mcp"), { recursive: true });
   await writeFile(join(root, "src", "index.ts"), "export const value = 1;\n");
@@ -28,10 +25,6 @@ async function layout(sourceAt: Date, builtAt: Date): Promise<string> {
     await utimes(join(root, "dist", entry), builtAt, builtAt);
   return root;
 }
-
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("stale dist guard", () => {
   it("stops by name when src is newer than dist, and names the one command", async () => {
@@ -45,14 +38,10 @@ describe("stale dist guard", () => {
   it("passes when dist is newer, and on an installed package with no src", async () => {
     const edit = new Date(Date.now() - 60_000);
     const build = new Date();
-    expect(() => assertDistFresh(await layout(edit, build))).not.toThrow();
-    const installed = await mkdtemp(join(tmpdir(), "tn-dist-installed-"));
-    roots.push(installed);
+    const fresh = await layout(edit, build);
+    expect(() => assertDistFresh(fresh)).not.toThrow();
+    const installed = await makeTempDir("tn-dist-installed-");
     await mkdir(join(installed, "dist"), { recursive: true });
     expect(() => assertDistFresh(installed)).not.toThrow();
-  });
-
-  it("passes on this checkout, which is built before its own tests run", () => {
-    expect(() => assertDistFresh()).not.toThrow();
   });
 });

@@ -172,7 +172,7 @@ it before you debug the wrong file.
 
 | Trap | Symptom | One command |
 | --- | --- | --- |
-| Stale `dist` | an edit under `packages/terrain/src/` changes nothing in an MCP cook or a starter bake: the bake imports the package's `dist`, not its source | `pnpm --filter strata-terrain-preview rebake` |
+| Stale `dist` | a bake stops with `the built package is older than packages/terrain/src` (PRD-886): the bake imports the package's `dist`, not its source, so it refuses to cook the previous world | `pnpm --filter @threenative/terrain build` (or `pnpm --filter strata-terrain-preview rebake`, which builds first) |
 | Stale bake | the page shows the previous trees, water or ground after a recipe edit: `world.glb` and `src/world/*` are generated and are not tracked | `pnpm --filter strata-terrain-preview bake` |
 | Vite prebundle | an installed workspace package keeps serving its previous build until the dev server restarts | `pnpm --filter strata-terrain-preview dev:fresh` (it passes `--force` to Vite) |
 

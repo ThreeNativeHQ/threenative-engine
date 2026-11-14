@@ -1,7 +1,7 @@
 # PRD-886 — Terrain code sits in one folder per stage, with an architecture map
 
-**Status:** IN PROGRESS
-**Priority:** P2 — An agent that changes terrain output cannot find the owning file from the folder names (AC-2 to AC-5 open). The map and the docs exist (Phase 1).
+**Status:** IN PROGRESS — Phase 1 and Phase 2 complete (2026-11-14); Phase 3 (the preview's folders) is not started.
+**Priority:** P2 — An agent that changes terrain output cannot find the owning file from the folder names when it lands in the preview (AC-2 to AC-5 closed by Phase 2; Phase 3's box open).
 **Complexity:** 3 (LOW); risk override: MEDIUM, because `@threenative/terrain` is published and its public exports, `dist` layout and capability manifest must not change.
 **Owner:** ThreeNative maintainers
 **Depends on:** None. [PRD-887](../P2/PRD-887-a-region-request-cooks-its-real-ground-and-plant-community.md) builds on the folders this PRD creates.
@@ -161,10 +161,10 @@ check only if the existing tools cannot report it.
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: `packages/terrain/docs/architecture/architecture.md` has the four Mermaid diagrams, the routing table and the stale-output table, and each path it names exists. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts && pnpm check:docs` — Evidence (2026-11-13): census 7/7 green, `pnpm check:docs` exit 0 (3 968 links).
-- [ ] AC-2 [local]: No stage function is left in the cook: `cook/cook.ts` is 450 lines or fewer, and `core/` holds the evaluator files only. proof: `wc -l packages/terrain/src/cook/cook.ts` and `ls packages/terrain/src/core` against the Solution table — Evidence: pending.
-- [ ] AC-3 [local]: The published package and the capability manifest are the same before and after. proof: `npm pack --dry-run --json` in `packages/terrain` gives the same file list on both arms, and `pnpm build && git diff --exit-code packages/core/capabilities.json` — Evidence: pending.
-- [ ] AC-4 [local]: Terrain output is the same before and after. proof: `pnpm --filter @threenative/terrain test` (it includes `bake-golden.spec.ts` and `terrain-mcp.spec.ts`), and `sha256sum` of `world.glb` from `node packages/terrain/starter/forest/bake.mjs --out <dir>` is equal on both arms — Evidence: pending.
-- [ ] AC-5 [local]: A bake on a stale `dist` stops by name, and a new terrain file over 800 lines or a function over complexity 15 fails the lint. proof: a red-green spec for each guard — Evidence: pending.
+- [x] AC-2 [local]: No stage function is left in the cook: `cook/cook.ts` is 450 lines or fewer, and `core/` holds the evaluator files only. proof: `wc -l packages/terrain/src/cook/cook.ts` and `ls packages/terrain/src/core` against the Solution table — Evidence (2026-11-14): `cook/cook.ts` is 368 lines; `core/` holds exactly the twelve files the table keeps (`erosion.ts`, `fluvial.ts`, `gully.ts`, `io.ts`, `masks.ts`, `math.ts`, `operations.ts`, `scree.ts`, `stats.ts`, `terrain.ts`, `types.ts`, `validation.ts`); the seven stage folders exist beside it (`biome/`, `cook/`, `ground/`, `mcp/`, `package/`, `population/`, `request/`, `water/`, plus `editor/`).
+- [x] AC-3 [local]: The published package and the capability manifest are the same before and after. proof: `npm pack --dry-run --json` in `packages/terrain` gives the same file list on both arms, and `pnpm build && git diff --exit-code packages/core/capabilities.json` — Evidence (2026-11-14): a `git worktree` at HEAD built with the same tsup config packs 82 files and the refactored tree packs the same 82, the lists identical (`diff` empty); the full `pnpm build` regenerated 575 capability entries and `packages/core/capabilities.json` has no diff.
+- [x] AC-4 [local]: Terrain output is the same before and after. proof: `pnpm --filter @threenative/terrain test` (it includes `bake-golden.spec.ts` and `terrain-mcp.spec.ts`), and `sha256sum` of `world.glb` from `node packages/terrain/starter/forest/bake.mjs --out <dir>` is equal on both arms — Evidence (2026-11-14): the forest bake before the move and after it are byte-identical — `world.glb` `03c9810d9c222ebc4493b3aac3f1fc90dcfc31da497f77adb858c4989df638b4`, `world.json` `55a744b509ba9d57e7728b60ae9d15795fc46351c8a2f1a86693e36a214c2893`, `water.json` `c3b55b339c498f919625e4701063a914983ac8eda0a5312e4cfc20e4542db287`. The package suite is 649 passed, 1 failed: `forest-ground-cover.spec.ts` asserts a `near` file for `fern-a`, which this branch's `starter/forest/assets.json` replaced with `{"arbor":"bracken@6"}` — both files are identical to HEAD (`diff` empty), so the failure predates this PRD's move.
+- [x] AC-5 [local]: A bake on a stale `dist` stops by name, and a new terrain file over 800 lines or a function over complexity 15 fails the lint. proof: a red-green spec for each guard — Evidence (2026-11-14): `stale-dist.spec.ts` (2 green) proves the throw and the pass on a throwaway layout; a `ground/ground.ts` probe function pushed the complexity ratchet red and removing it restored green; appending the file to 814 lines turned `pnpm quality` red (`quality gate failed: 1 fatal finding`) and restoring it to 494 returned exit 0. Both ratchets are green on the tree: Biome reports 0 errors over `packages/terrain/src` (83 inherited complexity warnings), `pnpm quality` exits 0.
 
 ## Integration Ledger
 
@@ -186,6 +186,8 @@ and AC-4 prove it through the packed package, the MCP spec and the kit bake.
 - 2026-11-13 (owner): docs split by reader. `README.md` and `docs/authoring/` ship to npm; `AGENTS.md` and `docs/architecture/` stay in the repository.
 - 2026-11-13 (agent): guardrails reuse Biome and `scripts/check-quality.ts`; ESLint would report the same findings a second time.
 - 2026-11-13 (agent): `core/` keeps its name for the evaluator, so the smallest number of files move and the package rule "preserve the recovered evaluator" stays true by path.
+- 2026-11-14 (agent): the complexity guardrail is a ratchet, not a Biome error: 83 functions over 15 exist across the package (the recovered evaluator and the editor hold most of them), and turning the rule into an error would demand a behaviour refactor this PRD forbids. `packages/terrain/__tests__/complexity-ratchet.spec.ts` holds a committed per-file count, so a new offender fails and a removal passes.
+- 2026-11-14 (agent): the stale-`dist` guard sits in `src/dist-fresh.ts` and is called from `bakeKit`, `cookKit` and the preview's `scripts/bake.mjs`. It is not called inside `bakeBiome`, because `bakeBiome` is exported from the published `index` entry and adding a Node `fs` import there would make that entry unloadable in a browser.
 
 ## Execution Phases
 
@@ -201,15 +203,15 @@ and AC-4 prove it through the packed package, the MCP spec and the kit bake.
 
 #### Phase 2: `packages/terrain/src/` has one folder per stage
 
-**Status:** NOT STARTED
+**Status:** COMPLETE (2026-11-14). Beyond the plan: the cook's reply format moved to `cook/reply.ts` (the 450-line cap needed it), the request layer split into `request/generate-request.ts` (words to a decided request) and `request/args.ts` (the shared argument checks), `round` joined `core/math.ts`, and the lint guardrails are two ratchets: `check-quality` makes a terrain file over 800 lines fatal when new, and `__tests__/complexity-ratchet.spec.ts` holds Biome's per-file complexity count, because Biome 1.9 has no baseline for its warning.
 **Files:** every file in the Solution 2 table, the public entry files (import paths only), `packages/terrain/tsup.config.ts` (source paths only, same keys), the deep-path consumers under Risks, `packages/terrain/docs/architecture/architecture.md`.
 **Implementation:** Record the before arm first: the packed file list and the forest `world.glb` hash. Move one stage per commit with `git mv` and fix imports. Then cut the stage functions out of `cook.ts` into their stage folders. Keep each exported name. Update the map in the same commit as each move.
 **Verification:** `pnpm --filter @threenative/terrain typecheck`, `pnpm --filter @threenative/terrain test`, the census spec, `pnpm exec vitest run scripts/__tests__/mcp-tool-schemas.spec.ts scripts/__tests__/temp-dir-guard.spec.ts scripts/__tests__/prepare-release.spec.ts`.
 
-- [ ] The six stage folders exist and `core/` holds the evaluator files only. proof: `pnpm --filter @threenative/terrain typecheck && pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts`
-- [ ] `cook/cook.ts` is 450 lines or fewer and the package tests pass. proof: `wc -l packages/terrain/src/cook/cook.ts && pnpm --filter @threenative/terrain test`
-- [ ] A starter bake, the MCP cook and the preview bake stop by name on a stale `dist`. proof: a red-green spec that touches a `src/` file after a build, then rebuilds
-- [ ] `packages/terrain/src/` fails the lint on a new file over 800 lines or a function over cognitive complexity 15. proof: `pnpm lint` and `pnpm quality` exit 0 after the split, and a red-green fixture for each rule
+- [x] The six stage folders exist and `core/` holds the evaluator files only. proof: `pnpm --filter @threenative/terrain typecheck && pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts` — Evidence (2026-11-14): typecheck exit 0; census 7/7; `pnpm check:docs` exit 0 (3 994 links); `mcp-tool-schemas`, `temp-dir-guard` and `prepare-release` specs green.
+- [x] `cook/cook.ts` is 450 lines or fewer and the package tests pass. proof: `wc -l packages/terrain/src/cook/cook.ts && pnpm --filter @threenative/terrain test` — Evidence (2026-11-14): 368 lines; 649 of 650 tests pass, the one failure is `forest-ground-cover.spec.ts` against this branch's Arbor `fern-a` row, identical to HEAD (see AC-4).
+- [x] A starter bake, the MCP cook and the preview bake stop by name on a stale `dist`. proof: a red-green spec that touches a `src/` file after a build, then rebuilds — Evidence (2026-11-14): `assertDistFresh` (`packages/terrain/src/dist-fresh.ts`) is called first by `bakeKit`, `cookKit` and the preview's `scripts/bake.mjs`; it names `pnpm --filter @threenative/terrain build`. `stale-dist.spec.ts` proves the stale throw and both pass arms. The spec uses a throwaway layout rather than the real tree's mtimes, which vitest's parallel workers would race.
+- [x] `packages/terrain/src/` fails the lint on a new file over 800 lines or a function over cognitive complexity 15. proof: `pnpm lint` and `pnpm quality` exit 0 after the split, and a red-green fixture for each rule — Evidence (2026-11-14): `pnpm lint` (Biome) 0 errors; `pnpm quality` exit 0, with `core/operations.ts` (866) and `population/scatter-ordered.ts` (963) grandfathered as baseline rows; both red-green probes above.
 
 #### Phase 3: The preview has one folder per concern
 

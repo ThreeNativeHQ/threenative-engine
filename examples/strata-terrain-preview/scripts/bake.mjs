@@ -7,12 +7,17 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { BufferGeometry, Float32BufferAttribute, Mesh } from "three";
 import { register } from "tsx/esm/api";
 
 register();
 import { bakeBiome, validateBiome } from "@threenative/terrain";
+
+// A bake imports the built package, never its source, so an edit since the last build would re-bake
+// the previous world and read as "my edit did nothing": stop by name instead (PRD-886).
+const { assertDistFresh } = await import("../../../packages/terrain/src/dist-fresh.ts");
+assertDistFresh(fileURLToPath(new URL("../../../packages/terrain/", import.meta.url)));
 
 const {
   cooked,

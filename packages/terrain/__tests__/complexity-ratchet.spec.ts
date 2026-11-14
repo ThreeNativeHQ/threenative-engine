@@ -22,7 +22,8 @@ type IComplexityBaseline = { readonly total: number; readonly files: Record<stri
 /** Every function over complexity 15 in `packages/terrain/src`, counted per file. */
 function offenders(): Record<string, number> {
   const args = ["check", "packages/terrain/src", "--max-diagnostics=1000", "--reporter=json"];
-  const output = execFileSync(biome, args, { cwd: repoRoot, encoding: "utf8" });
+  // Each diagnostic embeds its function's source, so the JSON runs to megabytes.
+  const output = execFileSync(biome, args, { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 << 20 });
   const report = JSON.parse(output) as {
     diagnostics: readonly { category: string; location: { path: { file: string } } }[];
   };

@@ -11,7 +11,7 @@
 Owner, 2026-11-13: "investigate how we can make strata terrain 10x better ... I saw this Mapterhorn
 on github, see if useful".
 
-`packages/terrain/src/mcp/survey.ts` fetches real ground from the AWS terrain tiles
+`packages/terrain/src/ground/survey.ts` fetches real ground from the AWS terrain tiles
 (`s3.amazonaws.com/elevation-tiles-prod/terrarium`, 256 px PNG, the frozen `tilezen/joerd` set).
 `forestFloor` in `packages/terrain/src/mcp/cook.ts:793` reads zoom 15, about 3.7 m per pixel, and
 resamples it on a 2 m grid over 512 m. `packages/terrain/docs/PRDs/PR-CHAIN.md:32` already
@@ -77,7 +77,7 @@ triangles near the camera need a frame-time reading.
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
-| Survey tile fetch | `terrain_generate` with `ground: {location}` or a landform word → `cookKit` → `surveyHeights` (`packages/terrain/src/mcp/survey.ts`) | AWS terrarium fetch and PNG tile decoder are deleted | AC-1 |
+| Survey tile fetch | `terrain_generate` with `ground: {location}` or a landform word → `cookKit` → `surveyHeights` (`packages/terrain/src/ground/survey.ts`) | AWS terrarium fetch and PNG tile decoder are deleted | AC-1 |
 | Forest-floor patch | `cookKit` → `forestFloor` (`packages/terrain/src/mcp/cook.ts:781`) | zoom 15 on a 2 m grid is replaced | AC-2, AC-3 |
 
 ## Decisions
@@ -99,7 +99,7 @@ triangles near the camera need a frame-time reading.
 #### Phase 2: The survey reads Mapterhorn
 
 **Status:** NOT STARTED
-**Files:** `packages/terrain/src/mcp/survey.ts` (source, 512 px, WebP decode, zoom step-down), `packages/terrain/src/core/surveys.ts` (attribution text), `packages/terrain/package.json` (`sharp`), `packages/terrain/__tests__/terrain-survey.spec.ts` and its fixtures.
+**Files:** `packages/terrain/src/ground/survey.ts` (source, 512 px, WebP decode, zoom step-down), `packages/terrain/src/core/surveys.ts` (attribution text), `packages/terrain/package.json` (`sharp`), `packages/terrain/__tests__/terrain-survey.spec.ts` and its fixtures.
 **Implementation:** Replace the tile URL and the decoder. Pick the zoom from the grid cell size. Step down on 404 and report the zoom used. Write the attribution from Mapterhorn's licence files into the kit, as the AWS path does today.
 **Verification:** `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts` — AC-1.
 

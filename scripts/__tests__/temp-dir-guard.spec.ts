@@ -11,6 +11,10 @@ const allowedProductionCreators = new Map<string, string>([
     "A cook bakes its Arbor tree GLBs into one scratch folder, which the cooked world copies and the cook removes in finally.",
   ],
   [
+    "packages/terrain/src/kit.ts",
+    "A kit bake stages the Arbor GLBs one kit row names in one scratch folder and removes it when the bake ends.",
+  ],
+  [
     "packages/terrain/src/kit-assets.ts",
     "The starter-asset archive extracts into a sibling scratch directory renamed into the cache and removed in finally.",
   ],
