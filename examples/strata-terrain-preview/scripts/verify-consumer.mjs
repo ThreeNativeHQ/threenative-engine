@@ -190,10 +190,10 @@ try {
     "npm install --save-dev @threenative/terrain",
     "@threenative/terrain/editor/server",
     "prepareWorldGLTF",
-    "node_modules/@threenative/terrain/AGENTS.md",
+    "node_modules/@threenative/terrain/README.md",
   ])
     assert(workflow.includes(required), `The shipped terrain workflow lacks: ${required}`);
-  readFileSync(join(consumer, "node_modules/@threenative/terrain/AGENTS.md"), "utf8");
+  readFileSync(join(consumer, "node_modules/@threenative/terrain/README.md"), "utf8");
 
   // --- PRD-467 AC-7: the editor stays optional, and every command the workflow names runs ----------
   // (1) The headless entries carry no DOM, server or editor module: walk their import graph.

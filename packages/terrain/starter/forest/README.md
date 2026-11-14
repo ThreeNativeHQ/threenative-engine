@@ -6,9 +6,11 @@ stands, young firs and boulder fields. It is game source: once copied, every fil
 | File | What it decides |
 | --- | --- |
 | `recipe.json` | The terrain and the scatter: seed, size, erosion, `count`, `minDistance`, slope limits, `scale`, masks. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
+| `biome.data.json` | The biome record the `terrain_generate` MCP tool cooks from. The bake does not read it. |
 | `assets.json` | Each prop's models, LOD distance, draw distance and bounds; `"tree": true` marks the art a landform cook plants the biome's own tree with. |
 | `surface.json` | The ground: texture layers, tiles, tints, far tiles and blend thresholds. |
-| `bake.mjs` | Writes the world package and `world/water.json` (the lake and river) from the three files above. |
+| `bake.mjs` | Writes the world package and `water.json` (the lake and river) from `recipe.json`, `heightmap.r16`, `assets.json` and `surface.json`. |
 | `world.ts` | `addForest(ctx, follow)`: terrain, props, shadows, collision; `COLLIDERS` per prop. |
 | `water.ts` | `addForestWater(ctx, water, field)`: the lake's surface (`WaterSurface3D`) and the river's ribbon, from `water.json`. |
 | `sky.ts` | `forestDaylight(follow)`: sun, sky, fill, haze, exposure and tone curve. |

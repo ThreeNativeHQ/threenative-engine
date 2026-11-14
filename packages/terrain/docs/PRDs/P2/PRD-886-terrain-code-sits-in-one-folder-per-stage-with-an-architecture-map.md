@@ -1,7 +1,7 @@
 # PRD-886 — Terrain code sits in one folder per stage, with an architecture map
 
 **Status:** IN PROGRESS
-**Priority:** P2 — An agent that changes terrain output cannot find the owning file from the folder names (AC-1 to AC-4 open); no architecture document for terrain exists.
+**Priority:** P2 — An agent that changes terrain output cannot find the owning file from the folder names (AC-2 to AC-5 open). The map and the docs exist (Phase 1).
 **Complexity:** 3 (LOW); risk override: MEDIUM, because `@threenative/terrain` is published and its public exports, `dist` layout and capability manifest must not change.
 **Owner:** ThreeNative maintainers
 **Depends on:** None. [PRD-887](../P2/PRD-887-a-region-request-cooks-its-real-ground-and-plant-community.md) builds on the folders this PRD creates.
@@ -147,8 +147,16 @@ the script index in the preview `AGENTS.md` and the test imports change with the
 - **A move that changes output.** The moves change no logic. AC-4 proves it with the golden bake
   digests and the kit bake.
 
-Not in this PRD: a bake that detects a stale `dist` and fails closed. The map documents the trap.
-A guard is a separate change in `packages/terrain/src/kit.ts` and `packages/assets`.
+A bake that detects a stale `dist` fails closed (owner, 2026-11-13). Phase 2 adds the guard in
+`packages/terrain/src/kit.ts`, the cook and the preview bake: when a package's `src/` is newer than
+its `dist`, the bake stops with a named error and the one command that fixes it.
+
+Guardrails keep the stage folders small after the split (owner, 2026-11-13: "guardrails like eslint
+to avoid ... DRY/SRP/KISS violations, godzilla files"). Biome already lints this package, so no
+second linter: `scripts/check-quality.ts` ratchets file length (notice 400, loud 800, cap 3 000) and
+Biome's `noExcessiveCognitiveComplexity` (15) warns on 83 functions today. Phase 2 makes both fail
+for `packages/terrain/src/` once the split removes the existing offenders, and adds a duplicate-code
+check only if the existing tools cannot report it.
 
 ## Acceptance Criteria
 
@@ -156,6 +164,7 @@ A guard is a separate change in `packages/terrain/src/kit.ts` and `packages/asse
 - [ ] AC-2 [local]: No stage function is left in the cook: `cook/cook.ts` is 450 lines or fewer, and `core/` holds the evaluator files only. proof: `wc -l packages/terrain/src/cook/cook.ts` and `ls packages/terrain/src/core` against the Solution table — Evidence: pending.
 - [ ] AC-3 [local]: The published package and the capability manifest are the same before and after. proof: `npm pack --dry-run --json` in `packages/terrain` gives the same file list on both arms, and `pnpm build && git diff --exit-code packages/core/capabilities.json` — Evidence: pending.
 - [ ] AC-4 [local]: Terrain output is the same before and after. proof: `pnpm --filter @threenative/terrain test` (it includes `bake-golden.spec.ts` and `terrain-mcp.spec.ts`), and `sha256sum` of `world.glb` from `node packages/terrain/starter/forest/bake.mjs --out <dir>` is equal on both arms — Evidence: pending.
+- [ ] AC-5 [local]: A bake on a stale `dist` stops by name, and a new terrain file over 800 lines or a function over complexity 15 fails the lint. proof: a red-green spec for each guard — Evidence: pending.
 
 ## Integration Ledger
 
@@ -172,19 +181,23 @@ and AC-4 prove it through the packed package, the MCP spec and the kit bake.
 
 - 2026-11-13 (owner): Strata PRDs and Strata documents live in a docs folder inside `packages/terrain/`, not in the engine root `docs/`.
 - 2026-11-13 (agent): the structural work and the region work are two PRDs, because the filing rule caps a PRD at 3 phases and about 8 boxes. PRD-887 holds the region work.
+- 2026-11-13 (owner): Phase 2 runs on its own branch from `origin/develop`, in its own draft PR, after PR #677 merges.
+- 2026-11-13 (owner): a bake on a stale `dist` fails closed with a named error; it does not rebuild or only warn.
+- 2026-11-13 (owner): docs split by reader. `README.md` and `docs/authoring/` ship to npm; `AGENTS.md` and `docs/architecture/` stay in the repository.
+- 2026-11-13 (agent): guardrails reuse Biome and `scripts/check-quality.ts`; ESLint would report the same findings a second time.
 - 2026-11-13 (agent): `core/` keeps its name for the evaluator, so the smallest number of files move and the package rule "preserve the recovered evaluator" stays true by path.
 
 ## Execution Phases
 
 #### Phase 1: The map exists and a spec keeps it true
 
-**Status:** IN PROGRESS — the map is done; the `docs/PRDs/AGENTS.md` rule and the `.ignore` entry for the moved PRDs are still open.
+**Status:** COMPLETE (2026-11-13). Beyond the plan: shipped authoring docs in `docs/authoring/` (recipes, editor, world export) replace `AGENT_GUIDE.md`; `README.md` is the npm entry and `AGENTS.md` is repository-only; the preview `AGENTS.md` keeps its rules and moves its script index to `examples/strata-terrain-preview/docs/scripts.md`; package scripts `rebake`, `dev:fresh`, `bake:<world>`, `test:map`, `test:consumer`.
 **Files:** `packages/terrain/docs/architecture/architecture.md` (new), `scripts/__tests__/terrain-architecture-census.spec.ts` (new, cloned from `strata-script-census.spec.ts`), `packages/terrain/AGENTS.md`, `examples/strata-terrain-preview/AGENTS.md`, `docs/PRDs/AGENTS.md`, `.ignore`, the generated `CLAUDE.md` mirrors, and the moved PRD folders.
 **Implementation:** Write the six parts from Solution 1 against the layout as it is today. Trace each diagram edge from an import or a call, not from memory. Add the pointer lines and run `pnpm sync:agents`. Then move the Strata PRDs in one commit of `git mv` and fix each link.
 **Verification:** the census spec, `pnpm check:docs`, `pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts`.
 
 - [x] `packages/terrain/docs/architecture/architecture.md` is written, both AGENTS files point to it, and the census spec fails when the map names a missing path or omits a terrain folder. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts` — Evidence (2026-11-13): census 7/7, and with `primary-docs`, `sync-agent-docs`, `check-doc-links` and `strata-script-census` 35/35; a fake path and a fake script name in `cook.md` each turned the spec red, and restoring it turned it green. The map also has two companions, `cook.md` and `world-package.md`, held to the same checks.
-- [ ] The open Strata PRDs are under `packages/terrain/docs/PRDs/` and each link resolves. proof: `ls packages/terrain/docs/PRDs docs/PRDs/refactoring/strata-refactoring` finds no folder, and `pnpm check:docs` exits 0
+- [x] The open Strata PRDs are under `packages/terrain/docs/PRDs/` and each link resolves. proof: `ls packages/terrain/docs/PRDs docs/PRDs/refactoring/strata-refactoring` finds no folder, and `pnpm check:docs` exits 0 — Evidence (2026-11-13): `docs/PRDs/refactoring/strata-refactoring` and `docs/PRDs/open-world/PRD-580*` are gone (moved in `ae25772ac`); `docs/PRDs/AGENTS.md` names `packages/terrain/docs/PRDs/` and its `done/`, `.ignore` hides that `done/`; `pnpm check:docs` exit 0 (3 989 links).
 
 #### Phase 2: `packages/terrain/src/` has one folder per stage
 
@@ -195,6 +208,8 @@ and AC-4 prove it through the packed package, the MCP spec and the kit bake.
 
 - [ ] The six stage folders exist and `core/` holds the evaluator files only. proof: `pnpm --filter @threenative/terrain typecheck && pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts`
 - [ ] `cook/cook.ts` is 450 lines or fewer and the package tests pass. proof: `wc -l packages/terrain/src/cook/cook.ts && pnpm --filter @threenative/terrain test`
+- [ ] A starter bake, the MCP cook and the preview bake stop by name on a stale `dist`. proof: a red-green spec that touches a `src/` file after a build, then rebuilds
+- [ ] `packages/terrain/src/` fails the lint on a new file over 800 lines or a function over cognitive complexity 15. proof: `pnpm lint` and `pnpm quality` exit 0 after the split, and a red-green fixture for each rule
 
 #### Phase 3: The preview has one folder per concern
 

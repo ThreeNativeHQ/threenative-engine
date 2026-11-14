@@ -1,8 +1,13 @@
 # @threenative/terrain
 
-Optional, headless terrain authoring recovered from Strata. One seeded recipe produces
-height/splat arrays, resolved placements, baked LOD chunks and numerical exports.
-Games consume baked data and own appearance, collision registration and disposal.
+Optional, headless terrain authoring recovered from Strata. One seeded recipe produces height and splat
+arrays, resolved placements, baked LOD chunks and world packages. It is authoring tooling: run it in build
+and authoring jobs, and let the game load the baked result. The game owns appearance, collision
+registration and disposal.
+
+```sh
+npm install --save-dev @threenative/terrain three
+```
 
 ```ts
 import { Terrain, Mask, bakeMesh } from '@threenative/terrain';
@@ -12,61 +17,36 @@ const terrain = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .noise({ id: 'hills', amplitude: 35 })
   .flatten({ id: 'camp', height: 12, mask: Mask.circle([20, 30], 15) });
 const geometry = toGeometry(bakeMesh(terrain.evaluate()));
-// Your game creates the Mesh/material and disposes geometry.
+// Your game creates the Mesh and material, and disposes the geometry.
 ```
 
-Repeating an operation ID replaces that layer in place. `applyPatch` batches edits
-atomically; malformed writes preserve the previous recipe. Evaluation is synchronous
-and belongs in authoring/build jobs. Browser/editor dependencies are absent from
-root and geometry imports. Three.js is a peer, never a bundled second copy.
+## Know this first
 
-The recovered `makeExport` GLB/runtime archives contain terrain geometry. The separate
-`@threenative/terrain/export` entry exports resolved static worlds through Three.js
-GLTFExporter: the caller supplies final models/matrices, baked UV PBR maps and
-coherent water snapshots. It requires browser FileReader/canvas for encoding,
-embeds images/buffers, excludes model cameras/lights, and uses ordinary shared
-mesh nodes. Missing models/maps, shader deformation or stale water fail by name.
-The default GUI full-world action, chosen-resolution baking and five final starter
-world exports remain pending. See the agent guide for the explicit contract.
-No browser/native terrain-game acceptance result is claimed by these library tests.
+- Metres, Y up, X and Z from `-size/2` to `+size/2`. Degrees for rotations and slopes; placement yaw is radians.
+- An operation records intent; `evaluate()` returns disposable arrays. Edit the recipe, not the arrays.
+- Reusing a layer ID replaces that layer in place. `applyPatch` is atomic: a bad write keeps the previous recipe.
+- `evaluate()` is synchronous. The root and `/three` imports carry no DOM, renderer or editor code, and
+  Three.js is a peer dependency, never a second bundled copy.
 
-See [AGENTS.md](AGENTS.md), [authoring a recipe](docs/authoring/recipes.md) and [source provenance](THIRD_PARTY_NOTICES.md).
+## Entry points
 
-Optional live authoring uses `@threenative/terrain/editor/server` in the project's
-Vite configuration and `@threenative/terrain/editor` in its browser authoring entry.
-`terrainEditor({ documentPath })` mounts revisioned JSON/SSE endpoints on the
-existing loopback server. The configured file contains `{ version: 1, recipe }`;
-agent patches and GUI changes share that authority. Invalid external saves retain
-the last valid document with a diagnostic, and stale writes return conflict.
+| Import | Use |
+| --- | --- |
+| `@threenative/terrain` | `Terrain`, `Mask`, `landform`, `terrainStats`, `bakeTerrain`, `makeExport`, `bakeBiome`, `bakeWorldPackage` |
+| `/three` | `toGeometry(bakeMesh(state))`: indexed geometry from your installed Three.js |
+| `/kit`, `/starter` | `bakeKit` for a copied starter's `bake.mjs`; `addStarterWorld` loads the baked world and its collider |
+| `/editor`, `/editor/server` | the live editor: browser mount and the Vite plugin `terrainEditor({ documentPath })` |
+| `/export` | `prepareWorldGLTF`: a resolved static world for `cookTerrainWorld` in `@threenative/assets` |
+| bin `dist/mcp/server.js` | MCP tools `terrain_generate`, `terrain_biome_new`, `terrain_patch` |
 
-The project provides `/terrain-editor/index.html` and calls `mountTerrainEditor`
-with its own `IEditorView` and material colours. The addon creates no renderer or
-scene. `TerrainEditorController(editorUrl)` exposes `activate`, `snapshot` and
-atomic `commit`; the activation result names the actually bound URL, project,
-session and revision. Use a configured forwarded viewer URL for remote access;
-the loopback API does not become a public write service.
+Five starter worlds ship as copy-out game source in `starter/<world>/` (`forest`, `coastal`, `alpine`,
+`desert`, `tundra`). Each folder's `README.md` says how to copy, bake and load it.
 
-Scatter placement `id` identifies the layer, unsigned seed and candidate attempt,
-not the accepted array index. Mask/spacing changes can remove candidates without
-retargeting surviving keys or their seeded scale/yaw. Changing a seed creates new
-identities. Save keys rather than mesh instance indices for later authoring edits.
+## More detail
 
-The authoring document may also contain `placementOverrides`, keyed by those IDs.
-`validatePlacementOverrides()` validates finite position/quaternion/positive scale
-and defaults omitted `grounding` to true. `applyPlacementOverrides(state, overrides)`
-attaches each requested transform to its placement and reports retained unmatched
-keys. `bakeTerrain()` preserves those records. The game applies grounding against
-its actual mesh bounds and terrain triangles; disabling grounding retains measured
-clearance. The example's Select tool uses ordinary Three.js TransformControls and
-numeric fields, saves once per drag, and preserves newer edits on conflict.
-
-`mountTerrainEditor` passes `(host, controller)` to `createView`. The view implements
-`setDocument(document, revision)` for metadata changes without terrain evaluation;
-its `update(state)` may return the resolved state for inspection and data bakes.
-
-The example also selects stamp, paste and heightmap layers by stable ID. One proxy
-edits recipe footprints and vertical gain/offset; its line follows the visible
-terrain, with rebuilding on commit. X/Z rotation is disabled because a heightfield
-cannot overhang. `stamp`/`paste` accept positive vertical `scale`; `heightmap` also
-accepts optional metre `at`/`size`, degree `rotation` and `falloff` for a bounded
-footprint. The original full-world heightmap path remains the default.
+| Read | When |
+| --- | --- |
+| [Authoring a recipe](docs/authoring/recipes.md) | You write or patch a recipe: operations, masks, materials, water, export formats, limits |
+| [The live editor](docs/authoring/editor.md) | You run the editor, change its environment or assets, or save placement overrides |
+| [Exporting a static world](docs/authoring/world-export.md) | You export terrain, models and water as one GLB for another project |
+| [Source provenance](THIRD_PARTY_NOTICES.md) | You need the origin and license of the recovered Strata code |

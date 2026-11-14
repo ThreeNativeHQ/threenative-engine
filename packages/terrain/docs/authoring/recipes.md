@@ -1,7 +1,7 @@
 # Terrain: authoring a recipe
 
 The reference for writing a terrain recipe with `@threenative/terrain`. Read
-[`../../AGENTS.md`](../../AGENTS.md) first. This file ships in the npm package.
+[`../../README.md`](../../README.md) first. This file ships in the npm package.
 
 ## Units and identity
 

@@ -128,7 +128,7 @@ runtime. Bake committed data before handing it to the game. The editor's GLB act
 `prepareWorldGLTF` from `@threenative/terrain/export` prepares the resolved world for
 Node `cookTerrainWorld({ preparedWorld: prepared.json })` from `@threenative/assets` (terrain,
 props, final transforms, embedded PBR maps); the root `encodeGLB` stays terrain-only. Start at
-`node_modules/@threenative/terrain/AGENTS.md`; the full operation list, units and patch rules ship in
+`node_modules/@threenative/terrain/README.md`; the full operation list, units and patch rules ship in
 `node_modules/@threenative/terrain/docs/authoring/recipes.md`.
 
 For individual props, save `placementOverrides` in the authoring document, keyed
