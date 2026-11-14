@@ -735,7 +735,7 @@
   "generated": {
     "needle-atlas.png": {
       "what": "A 2x2 RGBA atlas: three spruce branch cards (needles drawn as bundles of side shoots at several angles, lighter tips, dark twig) and one poppy petal, on a hard alpha edge",
-      "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
+      "generator": "examples/strata-terrain-preview/scripts/prep/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
       "bytes": 320942,
@@ -746,7 +746,7 @@
     },
     "needle-surface.png": {
       "what": "The same four cells as relief: RG a tangent-space normal cooked from the albedo's own per-needle ridge field, B the ambient occlusion the canopy drops on itself",
-      "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
+      "generator": "examples/strata-terrain-preview/scripts/prep/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
       "bytes": 1024122,
@@ -758,7 +758,7 @@
   },
   "prepared": {
     "why": "The starter's own art folder is the only place a prepared prop can live: it is what the terrain world's Vite publicDir serves and what ctx.assets loads by path, so the ground maps and the props come from one place with one credits file.",
-    "generator": "examples/strata-terrain-preview/scripts/prep-trees.py",
+    "generator": "examples/strata-terrain-preview/scripts/prep/prep-trees.py",
     "command": "~/.local/bin/blender -b --factory-startup --python scripts/prep-trees.py -- --source <scratch>/<download> --out packages/terrain/starter-assets/<set> --species <name> --variant <node> --near <budget> --mid <budget>",
     "license": "CC0 1.0 Universal (public domain dedication), unchanged from the source assets",
     "rawDownloads": "never committed; the upstream .gltf and .bin stay in a scratch directory outside this repository",
@@ -776,7 +776,7 @@
         "authors": "Rob Tuytel, Rico Cilliers",
         "license": "CC0",
         "url": "https://polyhaven.com/a/fir_tree_01",
-        "note": "Poly Haven's own authored LOD2 of tree b (fir_tree_01_b_LOD2, 54,927 triangles, full crown), exported by examples/strata-terrain-preview/scripts/prep-polyhaven-fir.py from the 1k .blend; the forest starter kit's fir."
+        "note": "Poly Haven's own authored LOD2 of tree b (fir_tree_01_b_LOD2, 54,927 triangles, full crown), exported by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-fir.py from the 1k .blend; the forest starter kit's fir."
       },
       {
         "asset": "Rock Moss Set 01",
@@ -797,7 +797,7 @@
         "authors": "Poly Haven",
         "license": "CC0",
         "url": "https://polyhaven.com/a/boulder_01",
-        "note": "Authored LOD1 (33,060 tris) and LOD2 (16,530 tris) with base, normal and roughness maps, exported by examples/strata-terrain-preview/scripts/prep-polyhaven-rock.py; the forest starter kit's boulder."
+        "note": "Authored LOD1 (33,060 tris) and LOD2 (16,530 tris) with base, normal and roughness maps, exported by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-rock.py; the forest starter kit's boulder."
       },
       {
         "asset": "Fern 02",
