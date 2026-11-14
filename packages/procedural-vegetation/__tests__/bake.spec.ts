@@ -118,6 +118,39 @@ describe("bakeVegetation", () => {
     );
   });
 
+  it("draws a game leaf image's cell 0 from its top-left quadrant", async () => {
+    const out = await makeTempDir("tn-vegetation-");
+    const canvas = createCanvas(64, 64);
+    canvas.getContext("2d").fillRect(0, 0, 32, 32);
+    const image = path.join(out, "atlas.png");
+    await writeFile(image, canvas.toBuffer("image/png"));
+    const form = { leaves: [{ cells: [0] }] };
+    const [baked] = await bakeVegetation({
+      out,
+      preset: "spruce",
+      seed: 7,
+      form,
+      leafImage: image,
+    });
+    const bytes = await readFile(baked?.path ?? "");
+    const gltf = parseGlb(bytes) as IGltf & {
+      accessors: { bufferView: number; count: number }[];
+      bufferViews: { byteOffset?: number }[];
+    };
+    const leaves = gltf.meshes[0]?.primitives[1]?.attributes.TEXCOORD_0 ?? -1;
+    const accessor = gltf.accessors[leaves];
+    expect(accessor).toBeDefined();
+    const binary = 20 + bytes.readUInt32LE(12) + 8;
+    const start = binary + (gltf.bufferViews[accessor?.bufferView ?? 0]?.byteOffset ?? 0);
+    let [uMax, vMax] = [0, 0];
+    for (let i = 0; i < (accessor?.count ?? 0); i++) {
+      uMax = Math.max(uMax, bytes.readFloatLE(start + i * 8));
+      vMax = Math.max(vMax, bytes.readFloatLE(start + i * 8 + 4));
+    }
+    // glTF puts v = 0 at the image's top row, so the top-left quadrant is u and v below a half.
+    expect([uMax, vMax].every((value) => value > 0 && value < 0.5)).toBe(true);
+  });
+
   it("lists the trees with latin names", () => {
     const presets = vegetationPresets();
     expect(presets.find((preset) => preset.id === "oak")).toMatchObject({

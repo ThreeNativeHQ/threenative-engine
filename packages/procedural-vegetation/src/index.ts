@@ -145,6 +145,27 @@ function withForm(
   return merged as unknown as IArborPreset;
 }
 
+/**
+ * Arbor numbers its atlas cells from the bottom row up (it paints and stores its own card bottom-up),
+ * while a game's `leafImage` numbers them from the top-left. Each leaf row's cells are flipped by row,
+ * so cell 0 of a game's image is its top-left cell, as the option says.
+ */
+function topDownCells(source: IArborPreset): IArborPreset {
+  const preset = source as unknown as {
+    tex?: { grid: readonly [number, number] };
+    leaves?: readonly { cells?: readonly number[] }[];
+  };
+  const [cols, rows] = preset.tex?.grid ?? [1, 1];
+  const flip = (cell: number): number =>
+    (rows - 1 - Math.floor(cell / cols)) * cols + (cell % cols);
+  return {
+    ...preset,
+    leaves: preset.leaves?.map((row) =>
+      row.cells === undefined ? row : { ...row, cells: row.cells.map(flip) },
+    ),
+  } as unknown as IArborPreset;
+}
+
 /** The leaf PNG (the game's image, else Arbor's drawn card) and the file-name tag of a game's patch. */
 async function leafOf(
   source: IArborPreset,
@@ -190,7 +211,8 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
       `bakeVegetation: lods must be a non-empty list of integers 0 to ${MAX_LOD}, got [${lods}]`,
     );
   if (new Set(lods).size !== lods.length) throw new Error(`bakeVegetation: lods repeat: [${lods}]`);
-  const source = withForm(preset, Arbor.PRESETS[preset] as IArborPreset, options.form);
+  const formed = withForm(preset, Arbor.PRESETS[preset] as IArborPreset, options.form);
+  const source = options.leafImage === undefined ? formed : topDownCells(formed);
   const { leaf, tag } = await leafOf(source, options);
   const bark = source.noBark ? undefined : Arbor.barkTexture(source.bark);
   const textures = {
