@@ -92,12 +92,12 @@ triangles near the camera need a frame-time reading.
 
 #### Phase 1: The ceiling, measured before any shipping change
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-11-14)
 **Files:** none shipped. A scratch script cooks the same Sprague Lake forest floor from each source.
 **Implementation:** Cook the patch from AWS zoom 15 at resolution 257 (today), and from Mapterhorn zoom 16 at resolution 513. Capture the same walking pose for each arm. If the judge reads NEUTRAL, record that under Decisions, keep AC-1 only (the maintained source and the finer far data), and delete AC-2 to AC-4 as moot.
 **Verification:** two headed runs per arm, `--browser-recipe webgpu`, fresh judge on the `ground` row.
 
-- [ ] The judge's verdict for lidar ground at 1 m cells against today's ground is recorded with both sheets. proof: the PR comment that carries the two sheets and the verdict
+- [x] The judge's verdict for lidar ground at 1 m cells against today's ground is recorded with both sheets. proof: the PR comment that carries the two sheets and the verdict — Evidence: 2026-11-14, [PR #677 comment](https://github.com/ThreeNativeHQ/threenative-engine/pull/677#issuecomment-6876917806), verdict **IMPROVEMENT** on the `ground` row from a fresh read-only `claude -p` judge (full frames IMPROVEMENT in both runs, the 1:1 crop NEUTRAL in both; micro-relief, natural undulation and no new artifacts all pass; watch item: a trunk base cut on a diagonal where it meets the slope). Same request for both arms (`forest` kit, `temperateMountains` under its own range, no seed, no ring): BEFORE cooked from `74d0b48b9~1` (AWS zoom 15, 257), AFTER from Mapterhorn zoom 16 at 0.91 m/px (513). Cooked relief under 10 m: 0.155 m RMS against 0.438 m. Both loaded through `test:kit` with `KIT_WORLD` and one pinned `KIT_STAND`, headed, `--browser-recipe webgpu`, `nvidia/turing` in all four runs. Both arms fail the scenario's own `maxFrameMsP95` (cost p95 19.8 ms, GPU-bound in both) and its `waterRivers` row (the cooked world has no water); neither comes from the ground.
 
 #### Phase 2: The survey reads Mapterhorn
 
