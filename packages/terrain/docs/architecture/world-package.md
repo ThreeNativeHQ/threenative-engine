@@ -5,13 +5,13 @@ each file holds and which code writes and reads it. Read [`architecture.md`](arc
 
 The contract is one declaration, `IWorldPackage` in `packages/core/src/world-package.ts`, and one
 validator, `validateWorldPackage` in the same file. The terrain package imports that type and never
-declares a second one (`packages/terrain/src/core/world-package.ts`). A format change starts in core.
+declares a second one (`packages/terrain/src/package/world-package.ts`). A format change starts in core.
 
 ## Who writes, who reads
 
 ```mermaid
 flowchart LR
-  state["ITerrainState<br/>heights, splat, instances,<br/>waters, rivers"] --> writer["bakeWorldPackage<br/>packages/terrain/src/core/world-package.ts"]
+  state["ITerrainState<br/>heights, splat, instances,<br/>waters, rivers"] --> writer["bakeWorldPackage<br/>packages/terrain/src/package/world-package.ts"]
   state --> cook["cookTerrainWorld<br/>packages/assets/src/world/terrain-world.ts"]
   cook --> writer
   writer --> files["world.json, heightmap.u16,<br/>splat.rgba, placements.bin,<br/>placement-ids.json"]
@@ -70,7 +70,7 @@ by x then z, and runs by asset ID, so the same recipe writes the same bytes.
 ## Changing the format
 
 1. Change `IWorldPackage` and `validateWorldPackage` in `packages/core/src/world-package.ts`.
-2. Change the writer in `packages/terrain/src/core/world-package.ts`, and the cook in
+2. Change the writer in `packages/terrain/src/package/world-package.ts`, and the cook in
    `packages/assets/src/world/terrain-world.ts` if it writes the new field.
 3. Rebuild `@threenative/assets` with `pnpm --filter @threenative/assets build` when step 2 touched
    it, then run `pnpm --filter strata-terrain-preview dev:fresh` (it rebuilds terrain and core). An

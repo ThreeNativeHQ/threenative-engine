@@ -2,7 +2,7 @@
 // never engaged. This holds the wiring both ways — a stated value reaches the package, and a caller's
 // own value wins — and refuses a value core would reject at load, naming the species.
 import { describe, expect, it } from "vitest";
-import { withImpostorDistances } from "../src/core/bake-biome.js";
+import { withImpostorDistances } from "../src/biome/bake-biome.js";
 
 const asset = {
   bounds: {

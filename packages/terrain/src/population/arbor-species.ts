@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { IBiomeSpec } from "../core/biome.js";
+import type { IBiomeSpec } from "../biome/biome.js";
 
 /** The slice of `@threenative/procedural-vegetation` the cook calls; loaded from the game project. */
 interface IVegetation {

@@ -7,7 +7,7 @@ const tempCreatorPattern = /\bmkdtemp(?:Sync)?\s*\(/u;
 
 const allowedProductionCreators = new Map<string, string>([
   [
-    "packages/terrain/src/mcp/cook.ts",
+    "packages/terrain/src/cook/cook.ts",
     "A cook bakes its Arbor tree GLBs into one scratch folder, which the cooked world copies and the cook removes in finally.",
   ],
   [

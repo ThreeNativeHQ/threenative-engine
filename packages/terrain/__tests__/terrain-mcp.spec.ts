@@ -12,15 +12,13 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { IsolatedKillError, childExecArgv, runIsolated } from "../src/cook/child.js";
+import { cookKit, loadCooker } from "../src/cook/cook.js";
 import { decodeRAW16 } from "../src/core/io.js";
-import type { LandformKind } from "../src/core/presets.js";
-import { BIOME_OWN } from "../src/core/request-words.js";
-import type { IGroundRequest } from "../src/core/surveys.js";
 import { Terrain } from "../src/core/terrain.js";
 import type { ITerrainDocument } from "../src/core/types.js";
-import { IsolatedKillError, childExecArgv, runIsolated } from "../src/mcp/child.js";
-import { PLAY_AREA_CLEAR_RADIUS, cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
-import { measureGlb } from "../src/mcp/glb-stats.js";
+import type { LandformKind } from "../src/ground/presets.js";
+import type { IGroundRequest } from "../src/ground/surveys.js";
 import {
   TERRAIN_KITS,
   TERRAIN_TOOLS,
@@ -35,6 +33,9 @@ import {
   resolveAssetSource,
   resolveOutput,
 } from "../src/mcp/tools.js";
+import { measureGlb } from "../src/package/glb-stats.js";
+import { PLAY_AREA_CLEAR_RADIUS, parseBounds } from "../src/population/foliage.js";
+import { BIOME_OWN } from "../src/request/request-words.js";
 
 // The starter forest document as the forest bake evaluates it: `recipe.json` wraps it in `recipe`,
 // and its raw16 heightmap is decoded into `values` first (bake.mjs, same 0.1 m lattice).

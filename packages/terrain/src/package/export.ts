@@ -1,12 +1,12 @@
-import { bakeMesh, bakeTerrain } from "./bake.js";
-import { encodeGLB, encodeHeightPNG, encodeRAW16, encodeSplatPNGs } from "./io.js";
+import { encodeGLB, encodeHeightPNG, encodeRAW16, encodeSplatPNGs } from "../core/io.js";
 import type {
   ExportKind,
   IExportArchive,
   IExportFile,
   ITerrainDocument,
   ITerrainState,
-} from "./types.js";
+} from "../core/types.js";
+import { bakeMesh, bakeTerrain } from "./bake.js";
 const enc = new TextEncoder();
 const table = Uint32Array.from({ length: 256 }, (_, initial) => {
   let n = initial;

@@ -1,4 +1,4 @@
-import type { IBiomeSpec, IGrassType } from "./biome.js";
+import type { IBiomeSpec, IGrassType } from "../biome/biome.js";
 
 /** The ground a biome's grass grows on: its height, and the sea it stays clear of. */
 export interface IGrassGround {

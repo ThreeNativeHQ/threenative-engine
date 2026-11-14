@@ -1,5 +1,5 @@
-import { MATERIAL_IDS } from "./masks.js";
-import type { IPlacement, ITerrainState } from "./types.js";
+import { MATERIAL_IDS } from "../core/masks.js";
+import type { IPlacement, ITerrainState } from "../core/types.js";
 
 /** One streamed asset: its LOD0 model, its authored bounds and the levels it swaps to. */
 export type IWorldPackageAsset = import("@threenative/core/world").IWorldAsset;

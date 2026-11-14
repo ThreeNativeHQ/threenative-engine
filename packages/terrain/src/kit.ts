@@ -3,17 +3,19 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { round } from "./core/math.js";
+import { assertDistFresh } from "./dist-fresh.js";
 import { starterAssetsDir } from "./kit-assets.js";
-import { growArborRows } from "./mcp/arbor-species.js";
+import { growArborRows } from "./population/arbor-species.js";
 export { starterAssetsDir } from "./kit-assets.js";
 import type { ITerrainState } from "./core/types.js";
-import type { IWorldPackageAsset, IWorldPackageManifest } from "./core/world-package.js";
 import {
   TerrainEvaluator,
   applyPlacementOverrides,
   bakeWorldPackage,
   decodeRAW16,
 } from "./index.js";
+import type { IWorldPackageAsset, IWorldPackageManifest } from "./package/world-package.js";
 
 type KitAsset = {
   readonly near: string;
@@ -84,6 +86,7 @@ export async function bakeKit(
   url: string,
   { sky, cookTerrainWorld }: IBakeKitOptions,
 ): Promise<void> {
+  assertDistFresh();
   const here = dirname(fileURLToPath(url));
   const assetsDir = process.argv.includes("--assets")
     ? flag("assets", "")
@@ -181,7 +184,6 @@ export async function bakeKit(
 
   if (!cooked) await write("world.json", `${JSON.stringify(manifest, null, 2)}\n`);
   // The lake and river the generator evaluated, so the game draws the water the bake shaped.
-  const round = (value: number) => Math.round(value * 1_000) / 1_000;
   await write(
     "water.json",
     `${JSON.stringify(

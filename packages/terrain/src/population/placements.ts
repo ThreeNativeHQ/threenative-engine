@@ -1,5 +1,5 @@
-import type { IPlacementOverride, ITerrainState } from "./types.js";
-import { finiteTree } from "./validation.js";
+import type { IPlacementOverride, ITerrainState } from "../core/types.js";
+import { finiteTree } from "../core/validation.js";
 
 /**
  * Validate and clone stable-key placement transforms before saving or previewing them.

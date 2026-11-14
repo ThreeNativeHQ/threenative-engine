@@ -1,19 +1,20 @@
 import { Heightfield } from "@threenative/core/world";
-import { type IMeasuredBands, measureBands } from "./bands.js";
-import { type IBiomeSpec, type IFoliageType, validateBiome } from "./biome.js";
-import {
-  type IOrderedScatter,
-  type IOrderedScatterField,
-  orderedScatterRules,
-  scatterProps,
-} from "./scatter-ordered.js";
-import type { IScatterRule, ITerrainState } from "./types.js";
+import type { IScatterRule, ITerrainState } from "../core/types.js";
+import { assertDistFresh } from "../dist-fresh.js";
 import {
   type IBakeWorldPackageOptions,
   type IBakedWorldPackage,
   type IWorldPackageAsset,
   bakeWorldPackage,
-} from "./world-package.js";
+} from "../package/world-package.js";
+import {
+  type IOrderedScatter,
+  type IOrderedScatterField,
+  orderedScatterRules,
+  scatterProps,
+} from "../population/scatter-ordered.js";
+import { type IMeasuredBands, measureBands } from "./bands.js";
+import { type IBiomeSpec, type IFoliageType, validateBiome } from "./biome.js";
 
 /**
  * The four stages a scatter runs, named after the PCG elements that do each one
@@ -163,6 +164,7 @@ export function withImpostorDistances(
  * @example const baked = bakeBiome({ state: terrain.evaluate(), spec: validateBiome(json, "savanna"), assets });
  */
 export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome {
+  assertDistFresh();
   const spec = validateBiome(options.spec, options.spec.look);
   // An ordered biome runs its fifteen generators on one stream, so this bake owns the instances
   // instead of reading the ones the recipe's own rules accepted.

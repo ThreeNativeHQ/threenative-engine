@@ -27,18 +27,18 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { type IBakedBiome, bakeBiome, foliageScatterRules } from "../src/core/bake-biome.js";
+import { type IBakedBiome, bakeBiome, foliageScatterRules } from "../src/biome/bake-biome.js";
 import {
   type IBiomeSpec,
   type IFoliageType,
   type IUnderstoreySpec,
   validateBiome,
-} from "../src/core/biome.js";
+} from "../src/biome/biome.js";
 import { decodeRAW16 } from "../src/core/io.js";
 import { finalizeState } from "../src/core/operations.js";
 import { Terrain } from "../src/core/terrain.js";
 import type { IPlacement, ITerrainState } from "../src/core/types.js";
-import type { IWorldPackageAsset } from "../src/core/world-package.js";
+import type { IWorldPackageAsset } from "../src/package/world-package.js";
 
 const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
 type World = (typeof WORLDS)[number];

@@ -1,12 +1,12 @@
-import { MATERIAL_IDS } from "./masks.js";
-import { world } from "./math.js";
+import { MATERIAL_IDS } from "../core/masks.js";
+import { world } from "../core/math.js";
 import type {
   IBakeMeshOptions,
   IBakeTerrainOptions,
   IBakedMesh,
   IBakedTerrain,
   ITerrainState,
-} from "./types.js";
+} from "../core/types.js";
 
 const toLinear = (color: number) =>
   color <= 0.04045 ? color / 12.92 : ((color + 0.055) / 1.055) ** 2.4;

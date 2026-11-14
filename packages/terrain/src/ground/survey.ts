@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { inflateSync } from "node:zlib";
-import type { ISurveyRow } from "../core/surveys.js";
+import type { ISurveyRow } from "./surveys.js";
 
 /**
  * Real ground for the cook: AWS terrain tiles, cached on disk, decoded and resampled onto the

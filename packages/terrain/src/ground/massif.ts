@@ -1,5 +1,5 @@
-import { clamp, random, sampleGrid, smoothstep } from "./math.js";
-import type { Terrain } from "./terrain.js";
+import { clamp, random, sampleGrid, smoothstep } from "../core/math.js";
+import type { Terrain } from "../core/terrain.js";
 
 /** A whole mountain cut from a survey, foot to foot: row-major, north row first, +X east. */
 export interface IMassifTile {

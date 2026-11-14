@@ -43,7 +43,7 @@ one pass. [`cook.md`](cook.md) names the function behind every box.
 
 ```mermaid
 flowchart LR
-  request["request: words + arguments"] --> parse["parseGenerateRequest<br/>src/mcp/tools.ts"]
+  request["request: words + arguments"] --> parse["parseGenerateRequest<br/>src/request/generate-request.ts"]
   parse --> decided["IGenerateDecided<br/>biome, landform, water, size,<br/>ground, backdrop, tree"]
   decided --> recipe["recipe<br/>starter/&lt;world&gt;/recipe.json<br/>or a landform preset"]
   recipe --> edits["recipe edits<br/>water rows, survey ground,<br/>features, coast, lakes, rivers"]
@@ -82,7 +82,7 @@ flowchart TD
 
 Two edges deserve their own line. `@threenative/assets` is not an import of the terrain package: the
 cook receives `cookTerrainWorld` through `loadCooker`, which resolves the installed package from the
-project root (`packages/terrain/src/mcp/cook.ts`), because a cook must run against the consumer's
+project root (`packages/terrain/src/cook/cook.ts`), because a cook must run against the consumer's
 installed asset pipeline and never a second copy. A starter's `bake.mjs` is game source, so it imports
 `@threenative/assets` itself and hands `cookTerrainWorld` to `bakeKit`.
 `@threenative/procedural-vegetation` is the same shape: an Arbor species is baked by the installed
@@ -101,7 +101,7 @@ flowchart LR
   end
   subgraph mcp["MCP tool: terrain_generate"]
     m1["src/mcp/server.ts"] --> m2["cook-child.ts in its own process"]
-    m2 --> m3["cookKit()<br/>src/mcp/cook.ts"]
+    m2 --> m3["cookKit()<br/>src/cook/cook.ts"]
     m3 --> m4["world.glb, world.json, ring.json,<br/>water.json, recipe.json, README.md"]
   end
   subgraph preview["preview: examples/strata-terrain-preview/scripts/bake.mjs"]
@@ -114,7 +114,7 @@ flowchart LR
 | Producer | Entry | Reads | Writes | Whose look |
 | --- | --- | --- | --- | --- |
 | Starter bake | `packages/terrain/starter/<world>/bake.mjs`, through `bakeKit` (`packages/terrain/src/kit.ts`); in this repository `pnpm --filter @threenative/terrain bake:forest` | the starter's `recipe.json`, `assets.json`, `surface.json` | `world.glb`, `world.json`, `placements.bin`, `placement-ids.json`, `terrain-table.json`, `heightmap.u16`, `splat.rgba`, `models/`, `textures/`, `sky.hdr`, `water.json` | the game's: `src/render/` in the copied starter |
-| MCP tool | `terrain_generate` → `packages/terrain/src/mcp/server.ts` → `packages/terrain/src/mcp/cook-child.ts` → `cookKit` (`packages/terrain/src/mcp/cook.ts`) | the request, the starter kit it names (including its `biome.data.json`), the project's installed `@threenative/assets` | the same package plus `ring.json`, `recipe.json` and `README.md` | the requesting game's: the reply's `load` snippet is game source |
+| MCP tool | `terrain_generate` → `packages/terrain/src/mcp/server.ts` → `packages/terrain/src/cook/cook-child.ts` → `cookKit` (`packages/terrain/src/cook/cook.ts`) | the request, the starter kit it names (including its `biome.data.json`), the project's installed `@threenative/assets` | the same package plus `ring.json`, `recipe.json` and `README.md` | the requesting game's: the reply's `load` snippet is game source |
 | Preview | `examples/strata-terrain-preview/scripts/bake.mjs`, run by `pnpm --filter strata-terrain-preview bake` | `examples/strata-terrain-preview/scripts/recipe.mjs`, `examples/strata-terrain-preview/scripts/dem/`, `examples/strata-terrain-preview/src/render/biomes.ts`, `examples/strata-terrain-preview/src/world/terrainAssets.ts` | `src/world/<world>.*` | the preview's own `src/render/` |
 
 `STRATA_WORLD` is the only bridge: set it to an MCP cook's output directory, run
@@ -154,16 +154,16 @@ of you; "Page" is where you see it.
 
 | Change | File | Rebuild | Page |
 | --- | --- | --- | --- |
-| Ground shape | `packages/terrain/src/core/presets.ts` (the landform presets), or the recipe in `examples/strata-terrain-preview/scripts/recipe.mjs` | `pnpm --filter strata-terrain-preview rebake` | `pnpm --filter strata-terrain-preview dev`, `?world=forest` |
-| Ground texture and bands | `packages/terrain/src/core/biome.ts` (band and layer rows) and the surface manifest in `examples/strata-terrain-preview/scripts/recipe.mjs` | `pnpm --filter strata-terrain-preview rebake` | `?world=forest`, `?showcase=1` |
-| Tree species | `packages/terrain/src/mcp/arbor-species.ts` and `packages/terrain/starter/<world>/assets.json` | `pnpm --filter @threenative/terrain bake:forest` (or the world you changed) | the cooked world in its game |
-| Tree density | `packages/terrain/src/core/scatter-ordered.ts` (the generators) and `<world>/biome.data.json` (the rows) | `pnpm --filter strata-terrain-preview rebake` | `?world=forest` |
-| Water | `packages/terrain/src/core/water.ts` and the cook's water stages (`packages/terrain/src/mcp/cook.ts`); the look in `examples/strata-terrain-preview/src/render/water.ts` | `pnpm --filter strata-terrain-preview rebake` for the shape; nothing for the look | `?waterproof=1`, then `pnpm --filter strata-terrain-preview test:terrain:web` |
+| Ground shape | `packages/terrain/src/ground/presets.ts` (the landform presets), and `packages/terrain/src/ground/ground.ts` for where the heights come from, or the recipe in `examples/strata-terrain-preview/scripts/recipe.mjs` | `pnpm --filter strata-terrain-preview rebake` | `pnpm --filter strata-terrain-preview dev`, `?world=forest` |
+| Ground texture and bands | `packages/terrain/src/biome/biome.ts` (band and layer rows) and the surface manifest in `examples/strata-terrain-preview/scripts/recipe.mjs` | `pnpm --filter strata-terrain-preview rebake` | `?world=forest`, `?showcase=1` |
+| Tree species | `packages/terrain/src/population/arbor-species.ts` and `packages/terrain/starter/<world>/assets.json` | `pnpm --filter @threenative/terrain bake:forest` (or the world you changed) | the cooked world in its game |
+| Tree density | `packages/terrain/src/population/scatter-ordered.ts` (the generators) and `<world>/biome.data.json` (the rows) | `pnpm --filter strata-terrain-preview rebake` | `?world=forest` |
+| Water | `packages/terrain/src/water/water.ts` (the segment index) and `packages/terrain/src/water/stages.ts` (the water rows, coast, lakes and rivers); the look in `examples/strata-terrain-preview/src/render/water.ts` | `pnpm --filter strata-terrain-preview rebake` for the shape; nothing for the look | `?waterproof=1`, then `pnpm --filter strata-terrain-preview test:terrain:web` |
 | Sky and light | `examples/strata-terrain-preview/src/render/sky.ts`, `atmosphere.ts`, `environmentImages.ts` | nothing | `?world=forest&showcase=1` |
-| Far ring | `packages/terrain/src/core/massif.ts` and `farRing` in `packages/terrain/src/mcp/cook.ts`; the preview's read in `src/render/horizon.ts` | package build, then the cook | `?world=alpine`, and the `vista` playtest pose |
+| Far ring | `packages/terrain/src/ground/massif.ts` and `farRing` in `packages/terrain/src/ground/ground.ts`; the preview's read in `src/render/horizon.ts` | package build, then the cook | `?world=alpine`, and the `vista` playtest pose |
 | Loading and streaming | `packages/core/src/` (`WorldCells`, `TerrainTiles`) and `examples/strata-terrain-preview/src/render/loading.ts`, `streamLanes.ts` | `pnpm --filter strata-terrain-preview dev:fresh` | `?stream=1`, then `pnpm --filter strata-terrain-preview test:terrain:web` |
-| Request words | `packages/terrain/src/core/request-words.ts`, `biome-words.ts`, `packages/terrain/src/mcp/tools.ts` | `pnpm --filter @threenative/terrain build` | the `terrain_generate` reply's `decided` and `unused` |
-| The world package format | `packages/core/src/world-package.ts` (the contract) and `packages/terrain/src/core/world-package.ts` (the writer); see [`world-package.md`](world-package.md) | `pnpm --filter strata-terrain-preview dev:fresh` | every world |
+| Request words | `packages/terrain/src/request/request-words.ts`, `packages/terrain/src/request/biome-words.ts`, `packages/terrain/src/request/generate-request.ts` | `pnpm --filter @threenative/terrain build` | the `terrain_generate` reply's `decided` and `unused` |
+| The world package format | `packages/core/src/world-package.ts` (the contract) and `packages/terrain/src/package/world-package.ts` (the writer); see [`world-package.md`](world-package.md) | `pnpm --filter strata-terrain-preview dev:fresh` | every world |
 
 ## 6. Stale output
 
@@ -185,7 +185,14 @@ is the stage; a file two stages import lives at the root of `src/` or in `core/`
 | --- | --- | --- |
 | `packages/terrain/src/` | The public entries | One file per published entry: `index.ts`, `three.ts`, `export.ts`, `kit.ts`, `starter.ts`, and `kit-assets.ts` beside them |
 | `packages/terrain/src/core/` | The evaluator and the shared types | The recovered evaluator and the files every stage reads: the height layers and their passes, masks, math, types, validation, stats and the byte codecs |
-| `packages/terrain/src/mcp/` | Tool schemas, dispatch and the cook | `server.ts` and `tools.ts` (the JSON-RPC surface, the argument schemas and the request parser), and `cook.ts` with its child process (see [`cook.md`](cook.md)) |
+| `packages/terrain/src/request/` | Words to a decided request | `request-words.ts` and `biome-words.ts` (the tables) and `generate-request.ts` (`parseGenerateRequest`, its argument checks and the record of what decided each choice) |
+| `packages/terrain/src/biome/` | The biome file and its rules | `biome.ts` (the schema), `bands.ts`, `kits.ts` and `bake-biome.ts` (the bake every producer shares) |
+| `packages/terrain/src/ground/` | Where the heights come from | `surveys.ts`, `presets.ts`, `massif.ts`, `survey.ts` (the fetch) and `ground.ts` (the survey, heightmap and procedural ground, plus the far ring) |
+| `packages/terrain/src/water/` | Rivers, lakes, coast | `water.ts` (the segment index a consumer reads) and `stages.ts` (water rows, sea level, coast, lakes, rivers and the flooded bodies the reply reports) |
+| `packages/terrain/src/population/` | What grows and where | `scatter-ordered.ts`, `placements.ts`, `placement-edits.ts`, `cover-field.ts`, `grass-field.ts`, `arbor-species.ts` and `foliage.ts` (the biome's rows on the evaluated ground) |
+| `packages/terrain/src/package/` | The files a world ships as | `world-package.ts`, `prop-package.ts`, `export.ts`, `far-field.ts`, `bake.ts` and `glb-stats.ts` |
+| `packages/terrain/src/cook/` | The cook's order of stages | `cook.ts` (`cookKit`, `loadCooker` and `cookInto`, the stage order), `reply.ts` (the tool result and its game snippets), `cook-child.ts` and `child.ts` |
+| `packages/terrain/src/mcp/` | Tool schemas and dispatch | `server.ts` (the JSON-RPC surface) and `tools.ts` (the tool schemas, the request arguments and the patch parser); the cook itself is in `packages/terrain/src/cook/` (see [`cook.md`](cook.md)) |
 | `packages/terrain/src/editor/` | The live editor | The typed editor modules PRD-588 split out; `packages/terrain/src/editor/app/` holds what runs in the page |
 | `packages/terrain/scripts/` | The package's own data prep | Bake one shipped table from licensed sources; nothing here runs in a game |
 | `packages/terrain/starter/` | Copy-out game source | One folder per world: recipe, bake, look, colliders. Package code never imports it |

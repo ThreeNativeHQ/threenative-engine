@@ -1,7 +1,7 @@
+import type { IBiomeWaterBody } from "../biome/biome.js";
+import type { TerrainKit } from "../biome/kits.js";
+import type { LandformKind } from "../ground/presets.js";
 import { BIOME_WORD_ROWS } from "./biome-words.js";
-import type { IBiomeWaterBody } from "./biome.js";
-import type { TerrainKit } from "./kits.js";
-import type { LandformKind } from "./presets.js";
 
 /**
  * The words a request may use beyond the biome's own: the landform it asks for, the water it asks

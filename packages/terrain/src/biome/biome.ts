@@ -1,4 +1,4 @@
-import { LANDFORMS, type LandformKind } from "./presets.js";
+import { LANDFORMS, type LandformKind } from "../ground/presets.js";
 
 /**
  * A biome as a data file: the rules one world grows by, and no appearance at all.

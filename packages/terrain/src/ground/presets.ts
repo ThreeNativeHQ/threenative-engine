@@ -1,6 +1,6 @@
-import { Terrain } from "./terrain.js";
-import type { ITerrainConfig } from "./types.js";
-import { RESOLUTIONS } from "./validation.js";
+import { Terrain } from "../core/terrain.js";
+import type { ITerrainConfig } from "../core/types.js";
+import { RESOLUTIONS } from "../core/validation.js";
 
 export type LandformKind =
   | "alpine"

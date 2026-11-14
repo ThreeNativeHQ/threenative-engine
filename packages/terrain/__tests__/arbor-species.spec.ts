@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { vegetationPresets } from "@threenative/procedural-vegetation";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { TREE_WORD_ROWS } from "../src/core/request-words.js";
-import { ARBOR_TREE_IDS, parseArborSpecies } from "../src/mcp/arbor-species.js";
-import { cookKit } from "../src/mcp/cook.js";
+import { cookKit } from "../src/cook/cook.js";
 import { TERRAIN_TOOLS, newBiomeSpec, parseGenerateRequest } from "../src/mcp/tools.js";
+import { ARBOR_TREE_IDS, parseArborSpecies } from "../src/population/arbor-species.js";
+import { TREE_WORD_ROWS } from "../src/request/request-words.js";
 
 async function project(options: { vegetation: boolean }) {
   const root = await realpath(await makeTempDir("tn-terrain-arbor-"));

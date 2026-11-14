@@ -4,14 +4,15 @@ import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { cookKit } from "../src/cook/cook.js";
 import { encodeHeightPNG } from "../src/core/io.js";
-import { placeMassif } from "../src/core/massif.js";
-import { LANDFORMS, type LandformKind } from "../src/core/presets.js";
 import { terrainStats } from "../src/core/stats.js";
-import { MASSIFS, SURVEYS, locationSurvey } from "../src/core/surveys.js";
 import { Terrain } from "../src/core/terrain.js";
-import { cookKit, flatShare, isForestFloor, massifBearing, woodedFoot } from "../src/mcp/cook.js";
-import { surveyHeights } from "../src/mcp/survey.js";
+import { flatShare, isForestFloor, massifBearing, woodedFoot } from "../src/ground/ground.js";
+import { placeMassif } from "../src/ground/massif.js";
+import { LANDFORMS, type LandformKind } from "../src/ground/presets.js";
+import { surveyHeights } from "../src/ground/survey.js";
+import { MASSIFS, SURVEYS, locationSurvey } from "../src/ground/surveys.js";
 import { TERRAIN_TOOLS, parseGenerateInput, parseGenerateRequest } from "../src/mcp/tools.js";
 
 /** The checked-in terrarium tiles, used as the whole tile cache these tests read. */

@@ -1,7 +1,8 @@
 # Terrain: inside the cook
 
 `terrain_generate` turns one request into one world package. Every stage below is a function in
-`packages/terrain/src/mcp/cook.ts` unless the table says otherwise. Read
+[`packages/terrain/src/cook/cook.ts`](../../src/cook/cook.ts) unless the table says otherwise; the stage
+functions themselves live in the folder its own row names. Read
 [`architecture.md`](architecture.md) first: it says which of the three producers you are looking at.
 This file covers only the MCP producer.
 
@@ -14,12 +15,12 @@ cannot take the server down.
 sequenceDiagram
   participant client as the MCP client
   participant server as src/mcp/server.ts
-  participant child as src/mcp/cook-child.ts
-  participant cook as cookKit (src/mcp/cook.ts)
+  participant child as src/cook/cook-child.ts
+  participant cook as cookKit (src/cook/cook.ts)
   participant assets as the project's @threenative/assets
   client->>server: terrain_generate { request, out }
-  server->>server: parseGenerateRequest (src/mcp/tools.ts)
-  server->>child: runIsolated (src/mcp/child.ts), 60 s budget
+  server->>server: parseGenerateRequest (src/request/generate-request.ts)
+  server->>child: runIsolated (src/cook/child.ts), 60 s budget
   child->>cook: cookKit(request)
   cook->>cook: claim out (mkdir, fails if it exists)
   cook->>assets: loadCooker(projectRoot)
@@ -56,25 +57,24 @@ flowchart TD
   files --> snippet["13. load snippet<br/>game source in the reply"]
 ```
 
-| Stage | Function | Reads | Changes | Planned folder (PRD-886) |
+| Stage | Function | Reads | Changes | Folder |
 | --- | --- | --- | --- | --- |
-| 1. Biome spec | `validateBiome` (`packages/terrain/src/core/biome.ts`) | `starter/<kit>/biome.data.json`, or the request's own spec; request `water` rows replace the file's | nothing yet; a bad spec fails here | `biome/` |
-| 2. Recipe | `landform` (`packages/terrain/src/core/presets.ts`) | the kit's `recipe.json` when no landform is named | the layer list; `seed` and `sizeMeters` overrides go into `config` | `ground/` |
+| 1. Biome spec | `validateBiome` (`packages/terrain/src/biome/biome.ts`) | `starter/<kit>/biome.data.json`, or the request's own spec; request `water` rows replace the file's | nothing yet; a bad spec fails here | `biome/` |
+| 2. Recipe | `landform` (`packages/terrain/src/ground/presets.ts`) | the kit's `recipe.json` when no landform is named | the layer list; `seed` and `sizeMeters` overrides go into `config` | `ground/` |
 | 3. Water rows | `applyWaterRows` | request `water` rows | resizes the recipe's own river and lake layers; adds ocean layers; returns rows with no layer | `water/` |
-| 4. Ground | `applyGround`, `readGroundHeightmap`, `forestFloor` | a survey (`packages/terrain/src/mcp/survey.ts`) or a heightmap file | the base height layer | `ground/` |
-| 5. Far ring | `farRing`, `massifBearing` (`packages/terrain/src/core/massif.ts` for the rows) | the survey row and the camera offset | nothing in the recipe; returns the `ring.json` bytes | `ground/` |
-| 6. Tree species | `growArborRows`, `growArborSpecies` (`packages/terrain/src/mcp/arbor-species.ts`) | `assets.json` `arbor` rows, `treeSpecies` | adds baked Arbor GLBs to the asset table | `population/` |
-| 7. Features and coast | `carveFeatures`, `shapeCoast` | request `features` (canyon, fjord), the sea level | adds mesa stamps before the first erosion | `water/` |
-| 8. Unrouted water | `placeLakes`, `routeRivers` | rows that step 3 returned | adds lake and river layers on the finished drainage | `water/` |
+| 4. Ground | `applyGround`, `readGroundHeightmap`, `forestFloor` (`packages/terrain/src/ground/ground.ts`) | a survey (`packages/terrain/src/ground/survey.ts`) or a heightmap file | the base height layer | `ground/` |
+| 5. Far ring | `farRing`, `massifBearing` (`packages/terrain/src/ground/ground.ts`; `packages/terrain/src/ground/massif.ts` holds the placement) | the survey row and the camera offset | nothing in the recipe; returns the `ring.json` bytes | `ground/` |
+| 6. Tree species | `growArborRows`, `growArborSpecies` (`packages/terrain/src/population/arbor-species.ts`) | `assets.json` `arbor` rows, `treeSpecies` | adds baked Arbor GLBs to the asset table | `population/` |
+| 7. Features and coast | `carveFeatures`, `shapeCoast` (`packages/terrain/src/water/stages.ts`) | request `features` (canyon, fjord), the sea level | adds mesa stamps before the first erosion | `water/` |
+| 8. Unrouted water | `placeLakes`, `routeRivers` (`packages/terrain/src/water/stages.ts`) | rows that step 3 returned | adds lake and river layers on the finished drainage | `water/` |
 | 9. Evaluate | `Terrain.fromJSON(...).evaluate()` (`packages/terrain/src/core/terrain.ts`) | the edited recipe | produces `ITerrainState`: heights, splat, waters, rivers | `core/` |
-| 10. Population | `scatterFoliage`, `applyPlacementOverrides` | the biome's foliage rows and the asset table | fills `state.instances` | `population/` |
+| 10. Population | `scatterFoliage` (`packages/terrain/src/population/foliage.ts`), `applyPlacementOverrides` (`packages/terrain/src/population/placements.ts`) | the biome's foliage rows and the asset table | fills `state.instances` | `population/` |
 | 11. World cook | `cookTerrainWorld` (`packages/assets/src/world/terrain-world.ts`) | the state, the species and the surface layers | writes `world.glb`, `world.json` and the binary files | stays in `@threenative/assets` |
-| 12. Side files | `cookInto` | the state and the ring | writes `README.md`, `ring.json`, `water.json`, `recipe.json` | `cook/` |
-| 13. Load snippet | `cookInto`, `grassSnippet` | the output path and the decisions | returns the game source the reply carries | `cook/` |
+| 12. Side files | `cookInto` (`packages/terrain/src/cook/cook.ts`) | the state and the ring | writes `README.md`, `ring.json`, `water.json`, `recipe.json` | `cook/` |
+| 13. Load snippet | `worldReply`, `grassSnippet` (`packages/terrain/src/cook/reply.ts`) | the output path and the decisions | returns the game source the reply carries | `cook/` |
 
-The planned folders come from [PRD-886](../PRDs/P2/PRD-886-terrain-code-sits-in-one-folder-per-stage-with-an-architecture-map.md).
-Until it lands, every stage function above except the named exceptions is in
-`packages/terrain/src/mcp/cook.ts`.
+Each function sits in the folder its stage names, and `cookInto` in `packages/terrain/src/cook/cook.ts`
+calls them in this order. The split is [PRD-886](../PRDs/P2/PRD-886-terrain-code-sits-in-one-folder-per-stage-with-an-architecture-map.md).
 
 ## Where to change what
 

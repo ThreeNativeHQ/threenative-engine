@@ -1,4 +1,4 @@
-import type { IPlacement } from "./types.js";
+import type { IPlacement } from "../core/types.js";
 import {
   type IWorldPackageManifest,
   type IWorldPackageRun,

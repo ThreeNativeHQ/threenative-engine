@@ -2,10 +2,10 @@ import { createRandom } from "@threenative/core";
 import type { HeightfieldCollar } from "@threenative/core/world";
 import { type BufferAttribute, MathUtils } from "three";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
-import type { IFarFieldRule } from "./biome.js";
-import { STAND_FIELD, fieldWeight } from "./cover-field.js";
-import type { IPlacement } from "./types.js";
-import { createSegmentIndex } from "./water.js";
+import type { IFarFieldRule } from "../biome/biome.js";
+import type { IPlacement } from "../core/types.js";
+import { STAND_FIELD, fieldWeight } from "../population/cover-field.js";
+import { createSegmentIndex } from "../water/water.js";
 
 /**
  * The far field: spruce on the collar past the playable square, by a rule of densities.

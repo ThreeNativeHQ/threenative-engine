@@ -4,9 +4,9 @@ import {
   type IWorldPackage,
   validateWorldPackage,
 } from "@threenative/core/world";
+import type { IPlacement, IPlacementOverride } from "../core/types.js";
+import { placementCells } from "../package/world-package.js";
 import { validatePlacementOverrides } from "./placements.js";
-import type { IPlacement, IPlacementOverride } from "./types.js";
-import { placementCells } from "./world-package.js";
 
 const RECORD_VALUES = 8;
 const RECORD_BYTES = RECORD_VALUES * Float32Array.BYTES_PER_ELEMENT;

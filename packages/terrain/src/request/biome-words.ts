@@ -1,4 +1,4 @@
-import { TERRAIN_KITS, type TerrainKit } from "./kits.js";
+import { TERRAIN_KITS, type TerrainKit } from "../biome/kits.js";
 
 /**
  * The words a request may use for each shipped biome: the `aliases` row of

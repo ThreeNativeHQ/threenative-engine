@@ -1,11 +1,11 @@
 import { createRandom } from "@threenative/core";
 import type { Heightfield } from "@threenative/core/world";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
-import type { IBiomeSpec, IFoliageType, IGrassType, IUnderstoreySpec } from "./biome.js";
+import type { IBiomeSpec, IFoliageType, IGrassType, IUnderstoreySpec } from "../biome/biome.js";
+import { slopeQuantile } from "../core/math.js";
+import type { IErosionMaps, IPlacement } from "../core/types.js";
+import { createSegmentIndex } from "../water/water.js";
 import { type ICoverField, MATS_FIELD, STAND_FIELD, fieldWeight } from "./cover-field.js";
-import { slopeQuantile } from "./math.js";
-import type { IErosionMaps, IPlacement } from "./types.js";
-import { createSegmentIndex } from "./water.js";
 
 /**
  * The ordered scatter: one stream of draws, in one fixed order, for a biome whose rules are code.
