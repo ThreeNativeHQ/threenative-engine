@@ -126,6 +126,12 @@ export const FIR_MAPS = {
   surface: "fir_tree_01/fir_tree_01_twig_diff_1k.jpg",
 } as const;
 
+/**
+ * Poly Haven's `tree_small_02` (CC0), grown to forest height as leaf cards: two silhouettes, each a
+ * `-near.glb` and a `-mid.glb` (`scripts/prep/prep-polyhaven-broadleaf.py`).
+ */
+export const BROADLEAF_TREES = ["tree_small_02/broadleaf", "tree_small_02/broadleaf-b"] as const;
+
 /** The fern's own atlas: a photographed frond and its separate cut-out alpha. */
 export const FERN_MAPS = {
   alpha: "fern_02/fern_02_alpha_512.png",

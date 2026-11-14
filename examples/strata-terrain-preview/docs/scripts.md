@@ -95,6 +95,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/prep/prep-fab-temperate.mjs`: cooks and fixes texture atlas and opacity bindings for temperate models.
   - `scripts/prep/prep-landscape-pro.mjs`: stages licensed Landscape Pro species for game runtime loading.
   - `scripts/prep/prep-polyhaven-fir.py`: manual prep script requiring Blender CLI and authored Poly Haven fir 1k .blend to export game GLBs.
+  - `scripts/prep/prep-polyhaven-broadleaf.py`: manual prep script requiring Blender CLI and a Poly Haven broadleaf tree 1k .blend (`tree_small_02`); rebuilds its leaves as cards and writes near and mid game GLBs.
   - `scripts/prep/prep-polyhaven-rock.py`: manual prep script requiring Blender CLI and authored Poly Haven boulder 1k .blend to export game GLBs.
   - `scripts/prep/prep-trees.py`: manual prep script requiring Blender CLI and authored CC0 tree models to decimate to triangle and atlas budgets.
 

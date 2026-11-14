@@ -779,6 +779,13 @@
         "note": "Poly Haven's own authored LOD2 of tree b (fir_tree_01_b_LOD2, 54,927 triangles, full crown), exported by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-fir.py from the 1k .blend; the forest starter kit's fir."
       },
       {
+        "asset": "Tree Small 02",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/tree_small_02",
+        "note": "tree_small_02/broadleaf-{near,mid}.glb and broadleaf-b-{near,mid}.glb (the second mirrored, 2.6x against 3x): the trunk and branches of the 1k .blend's LOD1, decimated, with its 111,621 leaves rebuilt as cards from the .blend's own four leaf clusters, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-broadleaf.py. near 9,988 triangles (1,555,332 bytes), mid 2,119 (1,129,324 bytes). The forest preview's canopy."
+      },
+      {
         "asset": "Rock Moss Set 01",
         "authors": "Rob Tuytel, Rico Cilliers",
         "license": "CC0",

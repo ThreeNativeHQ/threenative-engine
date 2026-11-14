@@ -64,7 +64,12 @@ import {
   vec4,
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
-import { GROUND_MAPS, ROCKFACE_MAPS, WORLD_ROCKS } from "../../world/terrainAssets.js";
+import {
+  BROADLEAF_TREES,
+  GROUND_MAPS,
+  ROCKFACE_MAPS,
+  WORLD_ROCKS,
+} from "../../world/terrainAssets.js";
 import { biomeSpec } from "../biomeData.js";
 import {
   BIOMES,
@@ -119,25 +124,31 @@ export function canopyComparison(
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
 /**
- * Crown heights of the five spruce models. The first three keep their skirt to the ground and stand
- * at a stand's edge height; the last two are the pack's bare-trunk trees, and stand as the wood's
- * veterans: a closed spruce stand is tall poles with the crown above a clean trunk.
+ * The forest's canopy: Poly Haven's CC0 broadleaf scan (`BROADLEAF_TREES`), two silhouettes at five
+ * heights (metres, crown top), so a stand reads as a European broadleaf wood rather than a spruce plantation (owner,
+ * 2026-11-14: "replace this trees with scanned trees from poly haven"). Each variant is a near GLB
+ * and a mid GLB of leaf cards from `scripts/prep/prep-polyhaven-broadleaf.py`.
  */
+const BROADLEAF_METRES = [12, 15, 14, 17, 19];
+/** `?trees=spruce` is the named override: the Landscape Pro spruce (or, without it, the procedural one). */
+const SPRUCE_TREES =
+  new URLSearchParams(globalThis.location?.search ?? "").get("trees") === "spruce";
 const SPRUCE_METRES = [13, 15, 14, 19, 21];
 const species: IPackSpecies[] = [];
 for (let i = 0; i < 5; i++) {
+  const tree = BROADLEAF_TREES[i % BROADLEAF_TREES.length];
+  const metres = SPRUCE_TREES ? (SPRUCE_METRES[i] ?? 12) : (BROADLEAF_METRES[i] ?? 15);
   species.push({
     asset: "spruce",
     variant: i,
-    path: `spruce/${i}`,
-    metres: SPRUCE_METRES[i] ?? 12,
+    path: SPRUCE_TREES ? `spruce/${i}` : `${tree}-near.glb`,
+    metres,
   });
-  // Whole-card thinning keeps the authored trunk and caps surviving card area growth at 4x.
   species.push({
     asset: "spruce",
     variant: i,
-    path: `spruce/${i}-far`,
-    metres: SPRUCE_METRES[i] ?? 12,
+    path: SPRUCE_TREES ? `spruce/${i}-far` : `${tree}-mid.glb`,
+    metres,
     level: 1,
   });
 }
@@ -964,6 +975,8 @@ export async function loadPack(
     selected.map(async (one) => {
       if (!assets || !FAB_ART) return undefined;
       try {
+        // A `.glb` path is starter art (`packages/terrain/starter-assets`), served as it is named.
+        if (one.path.endsWith(".glb")) return await assets.model<{ scene?: Group }>(one.path);
         const root = one.path.startsWith("landscape-pro/") ? "" : "temperate/";
         return await assets.model<{ scene?: Group }>(`${root}${one.path}.glb`);
       } catch {

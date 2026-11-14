@@ -613,4 +613,6 @@ def main(argv):
     log(json.dumps(exported, sort_keys=True))
 
 
-main(sys.argv)
+# Imported by prep-polyhaven-broadleaf.py for its export helpers; run only as the script.
+if __name__ == "__main__":
+    main(sys.argv)

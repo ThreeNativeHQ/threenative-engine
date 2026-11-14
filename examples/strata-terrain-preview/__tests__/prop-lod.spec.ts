@@ -238,8 +238,8 @@ describe("licensed pack characterization", () => {
     const assets = {
       resolve: async () => [],
       model: async (path: string) => {
-        if (near && /^temperate\/spruce\/\d\.glb$/.test(path)) return { scene: near };
-        if (far && /^temperate\/spruce\/\d-far\.glb$/.test(path)) return { scene: far };
+        if (near && /^tree_small_02\/broadleaf(-b)?-near\.glb$/.test(path)) return { scene: near };
+        if (far && /^tree_small_02\/broadleaf(-b)?-mid\.glb$/.test(path)) return { scene: far };
         throw new Error(`Missing optional fixture ${path}`);
       },
     } as unknown as IAssetLoader;
@@ -492,9 +492,9 @@ describe("licensed pack characterization", () => {
           present(part.geometry.boundingBox).max.y,
         ]),
       ).toEqual([
-        // Variant 0 is a 13 m spruce (SPRUCE_METRES).
-        [0, 6.5],
-        [6.5, 13],
+        // Variant 0 is a 12 m broadleaf (BROADLEAF_METRES).
+        [0, 6],
+        [6, 12],
       ]);
     } finally {
       pack.dispose();
@@ -514,8 +514,8 @@ describe("licensed pack characterization", () => {
     const geometry = present(present(pack.parts.get("spruce:0"))[0]).geometry;
     geometry.computeBoundingBox();
     expect(present(geometry.boundingBox).min.y).toBe(0);
-    expect(present(geometry.boundingBox).max.y).toBe(13);
-    expect(present(geometry.boundingBox).min.x).toBeCloseTo(10.92, 5);
+    expect(present(geometry.boundingBox).max.y).toBe(12);
+    expect(present(geometry.boundingBox).min.x).toBeCloseTo(10.08, 5);
     expect(
       ["position", "normal", "uv"].map((key) =>
         Array.from((near.geometry.getAttribute(key) as BufferAttribute).array),
