@@ -179,14 +179,19 @@ export const ASSET_UNUSED_AFTER_MS = 60_000;
 export const ASSET_UNUSED_FIX =
   "Nothing in the scene came from these models, which the reveal waited for. If nothing ever " +
   "builds one, delete its load; if the game builds it later, ctx.assets.prefetch it after the " +
-  "reveal and load it then.";
+  "reveal and load it then. A listed file may also be geometry the game merged into a new buffer, " +
+  "which drops its provenance: check that before deleting it.";
 
 /** Models the reveal waited for that no scene object came from, `sinceRevealMs` after the reveal. */
 export interface IUnusedModels {
+  /** The sum over the files whose size the manifest records. */
   readonly bytes: number;
-  readonly files: readonly { readonly bytes: number; readonly path: string }[];
+  /** `bytes` is absent where the manifest records no size: unknown, not zero. */
+  readonly files: readonly { readonly bytes?: number; readonly path: string }[];
   readonly fix: string;
   readonly sinceRevealMs: number;
+  /** Listed files whose size the manifest does not record, so they are in no byte count. */
+  readonly unsizedFiles: number;
 }
 
 /**
@@ -210,14 +215,15 @@ export function measureUnusedModels(
   });
   const files = [...resolved]
     .filter(([path, asset]) => asset.kind === "model" && !present.has(path))
-    .map(([path, asset]) => ({ bytes: asset.bytes ?? 0, path }))
-    .sort((a, b) => b.bytes - a.bytes);
+    .map(([path, asset]) => (asset.bytes === undefined ? { path } : { bytes: asset.bytes, path }))
+    .sort((a, b) => (b.bytes ?? -1) - (a.bytes ?? -1));
   if (files.length === 0) return undefined;
   return {
-    bytes: files.reduce((sum, file) => sum + file.bytes, 0),
+    bytes: files.reduce((sum, file) => sum + (file.bytes ?? 0), 0),
     files,
     fix: ASSET_UNUSED_FIX,
     sinceRevealMs,
+    unsizedFiles: files.filter((file) => file.bytes === undefined).length,
   };
 }
 

@@ -443,6 +443,17 @@ describe("measureUnusedModels", () => {
     expect(report?.fix).toContain("prefetch");
   });
 
+  it("should count a model with no recorded size as unsized, not as 0 bytes", () => {
+    const resolved = resolvedModels({ "sized.glb": 500 });
+    resolved.set("unsized.glb", { kind: "model", url: "/unsized.glb", via: "manifest" });
+
+    const report = measureUnusedModels(resolved, new Group(), 60_000);
+
+    expect(report?.files).toEqual([{ bytes: 500, path: "sized.glb" }, { path: "unsized.glb" }]);
+    expect(report?.bytes).toBe(500);
+    expect(report?.unsizedFiles).toBe(1);
+  });
+
   it("should stay silent when every awaited model is in the scene", () => {
     const scene = new Group();
     scene.add(placed("hull.glb", -10));
