@@ -140,15 +140,15 @@ async function measure(world: WorldName): Promise<IWorldPin> {
 /** The picture of every world, measured on the compile this box deleted (`8d118a9bb`). */
 const GOLDEN: Readonly<Record<WorldName, IWorldPin>> = {
   forest: {
-    placements: 431958,
+    placements: 431949,
     buckets: {
-      "horizon:true": 5649,
-      "local:false": 420762,
-      "local:true": 5547,
+      "horizon:true": 5648,
+      "local:false": 420758,
+      "local:true": 5543,
     },
     species: {
-      boulder: { count: 115, x: 856.58, y: 2192.15, z: 7957.531 },
-      bush: { count: 4261, x: 25698.9, y: 63617.3, z: 60067.611 },
+      boulder: { count: 112, x: 1516.067, y: 2139.572, z: 8450.214 },
+      bush: { count: 4260, x: 25916.641, y: 63600.403, z: 60233.161 },
       deadfall: { count: 846, x: 25821.36, y: 13428.405, z: 8774.001 },
       fern: { count: 30055, x: 551062.574, y: 484463.21, z: 1595374.939 },
       grass: { count: 259588, x: 6131295.664, y: 3428950.856, z: -5809487.928 },
@@ -157,9 +157,9 @@ const GOLDEN: Readonly<Record<WorldName, IWorldPin>> = {
       pebble: { count: 1638, x: -174227.954, y: 18847.816, z: -221424.512 },
       poppy: { count: 4082, x: 219622.254, y: 39420.941, z: -304859.172 },
       riverrock: { count: 318, x: -34376.854, y: 4042.729, z: -45401.142 },
-      sapling: { count: 9528, x: 119493.05, y: 140754.167, z: 26790.6 },
+      sapling: { count: 9524, x: 120378.225, y: 140690.153, z: 27456.404 },
       scrub: { count: 78269, x: 1823716.128, y: 1034398.312, z: -1749543.624 },
-      spruce: { count: 5649, x: 85870.645, y: 84460.393, z: 18144.631 },
+      spruce: { count: 5648, x: 86094.012, y: 84444.896, z: 18309.547 },
     },
   },
   coastal: {
@@ -209,14 +209,14 @@ const GOLDEN: Readonly<Record<WorldName, IWorldPin>> = {
     },
   },
   tundra: {
-    placements: 40459,
+    placements: 40453,
     buckets: {
       "local:false": 37225,
-      "local:true": 3234,
+      "local:true": 3228,
     },
     species: {
       boulder: { count: 2028, x: -27083.489, y: 69635.938, z: 9805.011 },
-      bush: { count: 594, x: 26772.235, y: 19253.181, z: 24156.513 },
+      bush: { count: 588, x: 25683.922, y: 19086.168, z: 23197.256 },
       grass: { count: 30490, x: 1494682.385, y: 999384.219, z: 1625718.106 },
       riverrock: { count: 612, x: 1478.68, y: 17797.25, z: 17228.411 },
       sapling: { count: 55, x: 142.766, y: 1706.777, z: 1107.647 },

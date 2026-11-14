@@ -43,15 +43,19 @@ import type { IWorldPackageAsset } from "../src/package/world-package.js";
 const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
 type World = (typeof WORLDS)[number];
 
-/** The Phase 1 table, copied from the example spec without a change. */
+/**
+ * The Phase 1 table, copied from the example spec. Since 2026-11-15 the forest and tundra rows omit
+ * the solid props inside the 4 m spawn clearing (forest 3 boulders, 1 bush, 4 saplings, 1 spruce;
+ * tundra 6 bushes); every other placement is unchanged.
+ */
 const PHASE_1: Record<
   World,
   { heights: string; manifest: string; placements: string; counts: Record<string, number> }
 > = {
   forest: {
     counts: {
-      boulder: 115,
-      bush: 4261,
+      boulder: 112,
+      bush: 4260,
       deadfall: 846,
       fern: 30055,
       grass: 259588,
@@ -60,9 +64,9 @@ const PHASE_1: Record<
       pebble: 1638,
       poppy: 4082,
       riverrock: 318,
-      sapling: 9528,
+      sapling: 9524,
       scrub: 78269,
-      spruce: 5649,
+      spruce: 5648,
     },
     heights: "c3b5a7ebe3784e844604799f599950ea52f98477ca3a3e8b0c63cf76c08b6770",
     manifest: "df9936f9e3a31532426972a19c47c168262efc6117040d5a577863500307dd2c",
@@ -99,7 +103,7 @@ const PHASE_1: Record<
     placements: "64ce8648b98a1f8248b60dd9b90d841b979fa10a7492657838a2fb3185793201",
   },
   tundra: {
-    counts: { boulder: 2028, bush: 594, grass: 30490, riverrock: 612, sapling: 55, scrub: 6680 },
+    counts: { boulder: 2028, bush: 588, grass: 30490, riverrock: 612, sapling: 55, scrub: 6680 },
     heights: "dc182307fa2789f7297d53e96c77720b7fac97119489f725d8ebbb44e1d60533",
     manifest: "72c72e6f86b2a800aeae246b4800390b6c57fe6b95dc87510193549f9106c943",
     placements: "2c0123035d9a528128da5053880256b56c9a6003002a25441394dcd4631d4867",
@@ -117,11 +121,11 @@ const PHASE_1: Record<
  * `placements.bin` was encoded from.
  */
 const PHASE_1_CANONICAL: Record<World, string> = {
-  forest: "0458cd3df1ee5c151edae1f93e03f9b223142a073f83d10627c15e9ffadd1099",
+  forest: "f9ec1259f6e14aa51fc24f86d40df980c1e856a3335fa30236dc16ab8d0694c1",
   coastal: "5ca73a9acf36f84c536e70b5fe86fd51f88554d871a453eb024d5dc34d304d4e",
   alpine: "10c755d4856a51fabe05f38fe59d9550bc5236edd4a1cb11e1f7f6ced1c9e7f8",
   desert: "fa52459ddcda51b336764219ce033add8ccd90f3fd299cd95d43878cf38813b3",
-  tundra: "319982c67ee71acfa2ebe966db540b8db2ed84fb565e658da804fe2a00555d77",
+  tundra: "16c97133058d9ab0b9585a62befbf859313c55d6f6d1dc13d55033e5fc76a04f",
 };
 
 /** Which Phase 1 line the ordered bake reproduces today, and which it cannot. */

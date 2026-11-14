@@ -325,6 +325,7 @@ export function scatterProps(
   data: IOrderedScatterField,
   focus: { x: number; z: number },
   clearings: readonly (readonly [number, number, number])[] = [],
+  spawn?: { x: number; z: number },
 ): IOrderedScatter {
   const { spec, rules } = data;
   const temperate = rules.ground === "wood";
@@ -928,9 +929,21 @@ export function scatterProps(
     (TRUNKS.has(asset) ? BANK : BANK.slice(0, 1)).some(
       ([dx, dz]) => wet(x + dx, z + dz) || nearRiver(x + dx, z + dz),
     );
+  // The player starts in the open: no trunk, rock, bush or log within `SPAWN_CLEARING` of the spawn,
+  // in the same pass, so the walk out of it is never boxed in and every other placement stays put.
+  const boxedIn = ({ asset, position: [x, , z] }: IPlacement) =>
+    spawn !== undefined &&
+    SOLID.has(asset) &&
+    Math.hypot(x - spawn.x, z - spawn.z) < SPAWN_CLEARING;
   const growing: Record<string, number> = {};
   const kept = placements
-    .filter((placement) => !drowned(placement))
+    .filter((placement) => {
+      if (drowned(placement)) return false;
+      if (!boxedIn(placement)) return true;
+      if (!GROWING.has(placement.asset))
+        counts[placement.asset] = (counts[placement.asset] ?? 1) - 1;
+      return false;
+    })
     .map((placement) => {
       if (!GROWING.has(placement.asset)) return placement;
       const index = growing[placement.asset] ?? 0;
@@ -954,6 +967,10 @@ const GROWING = new Set([
   "deadfall",
 ]);
 const TRUNKS = new Set(["spruce", "sapling"]);
+/** What a player cannot walk through: each has a bark or stone part, so the game gives it a body. */
+const SOLID = new Set([...TRUNKS, "boulder", "bush", "deadfall"]);
+/** Metres of open ground around the spawn. */
+const SPAWN_CLEARING = 4;
 const BANK = [
   [0, 0],
   [1, 0],

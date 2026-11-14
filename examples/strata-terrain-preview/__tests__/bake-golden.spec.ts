@@ -31,10 +31,10 @@ const DRAWN = new Set<string>(["forest", "coastal"]);
 /** The recipe's own output: the Phase 1 numbers, with the container digest re-measured at AC-2. */
 const GOLDEN = {
   forest: {
-    placements: "d108ef0946632404625e7cd82ec56f0cf22641140d0f627ce782b27476b47c0e",
+    placements: "c8f5d0439e240c693f1f5d47f0b20923d5891031d5589e2ec7da3093e745296e",
     counts: {
-      boulder: 115,
-      bush: 4261,
+      boulder: 112,
+      bush: 4260,
       deadfall: 846,
       fern: 30055,
       grass: 259588,
@@ -43,9 +43,9 @@ const GOLDEN = {
       pebble: 1638,
       poppy: 4082,
       riverrock: 318,
-      sapling: 9528,
+      sapling: 9524,
       scrub: 78269,
-      spruce: 5649,
+      spruce: 5648,
     },
     heights: "c3b5a7ebe3784e844604799f599950ea52f98477ca3a3e8b0c63cf76c08b6770",
     manifest: "df9936f9e3a31532426972a19c47c168262efc6117040d5a577863500307dd2c",
@@ -81,8 +81,8 @@ const GOLDEN = {
     manifest: "8d979f26cf4a02dd6c46d2a5c67e7aae7c50cab0920c1c9673039b7d43472872",
   },
   tundra: {
-    placements: "8f2d1b7b11444dd74bc9e8e3b5db1016271f57594b630a1d008486accbdb8942",
-    counts: { boulder: 2028, bush: 594, grass: 30490, riverrock: 612, sapling: 55, scrub: 6680 },
+    placements: "26e8912f173474b6ab5eff5db4693f9e6f98c5f0b3461372dfdd0b2b138fa827",
+    counts: { boulder: 2028, bush: 588, grass: 30490, riverrock: 612, sapling: 55, scrub: 6680 },
     heights: "dc182307fa2789f7297d53e96c77720b7fac97119489f725d8ebbb44e1d60533",
     manifest: "72c72e6f86b2a800aeae246b4800390b6c57fe6b95dc87510193549f9106c943",
   },

@@ -174,6 +174,7 @@ export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome {
           orderedField(options.state, spec),
           { x: spec.spawn.focus[0], z: spec.spawn.focus[1] },
           spec.cover.clearings,
+          { x: spec.spawn.at[0], z: spec.spawn.at[1] },
         )
       : null;
   const state: ITerrainState =

@@ -83,6 +83,7 @@ beforeAll(() => {
     field,
     { x: spec.spawn.focus[0], z: spec.spawn.focus[1] },
     spec.cover.clearings,
+    { x: spec.spawn.at[0], z: spec.spawn.at[1] },
   ).placements;
 });
 
@@ -148,5 +149,17 @@ describe("the forest cover-density rules", () => {
     const groundWeight = mean(grid);
     expect(ferns.length).toBeGreaterThan(0);
     expect(fernsWeight).toBeGreaterThan(groundWeight);
+  });
+});
+
+describe("the forest spawn", () => {
+  it("stands in a clearing: no trunk, sapling, rock or bush within 4 m of where the player starts", () => {
+    // Grass, scrub, ferns and flowers have no bark or stone part, so they take no collider.
+    const soft = new Set(["grass", "scrub", "fern", "flower"]);
+    const [sx, sz] = spec.spawn.at as readonly [number, number];
+    const near = placements
+      .filter((p) => !soft.has(p.asset) && Math.hypot(p.position[0] - sx, p.position[2] - sz) < 4)
+      .map((p) => p.asset);
+    expect(near).toEqual([]);
   });
 });
