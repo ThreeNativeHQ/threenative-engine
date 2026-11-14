@@ -1,5 +1,6 @@
 import type { IBiomeSpec, IFoliageType } from "../biome/biome.js";
 import type { TerrainKit } from "../biome/kits.js";
+import type { IMask } from "../core/types.js";
 import { EU_DEM, type ISurveyRow, TILES, USGS_3DEP } from "../ground/surveys.js";
 
 /**
@@ -56,22 +57,46 @@ const FAR = {
 } as const;
 
 /**
+ * The canopy gaps every species of a region leaves open: one field, so the clearings line up across
+ * species instead of one species filling another's gap. About a quarter of the floor is open.
+ */
+const CLEARINGS: IMask = { type: "noise", scale: 90, threshold: 0.4, seed: 466600, fade: 0.06 };
+
+/**
  * One canopy species of a region: an `arbor:<preset>@<seed>` id, its own count and spacing, and a
  * far-field seed of its own. Two rows per species give a stand two tree shapes instead of one cloned
  * one, which is what `arbor:<preset>@<seed>` names.
+ *
+ * `scale` is the kit's own canopy range: an Arbor tree is baked at its full height (a beech at
+ * 28.6 m), and the scatter's default `[0.8, 1.3]` stood the canopy at 23-37 m, crowns starting
+ * above the eye-level frame and the far impostor pushed out to about 285 m. Each species grows in its
+ * own `noise` patches, as the kit recipe's tree layers do, inside one `CLEARINGS` field every species
+ * shares: a wood is beech stands with oak and birch groups and open gaps between them, not one even
+ * carpet (the judge's overview, 2026-11-14).
  */
-function canopyRow(species: string, density: number, farSeed: number): IFoliageType {
+function canopyRow(
+  species: string,
+  density: number,
+  farSeed: number,
+  scale: readonly [number, number] = [0.55, 1],
+  mask: IMask = {
+    type: "and",
+    masks: [CLEARINGS, { type: "noise", scale: 120, threshold: 0.44, seed: farSeed, fade: 0.24 }],
+  },
+): IFoliageType {
   return {
     species,
     density,
     slope: [0, 32],
     height: null,
-    spacing: [3.6, 6.4],
+    spacing: [3.2, 6.4],
     collision: "trunk",
     stands: true,
     grassThreshold: 0.3,
     standThreshold: 0.16,
     far: { ...FAR, seed: farSeed },
+    scale,
+    mask,
   };
 }
 
@@ -105,10 +130,15 @@ export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
       foliage: [
         canopyRow("arbor:beech@11", 900, 466611),
         canopyRow("arbor:beech@12", 900, 466612),
-        canopyRow("arbor:oak@13", 650, 466613),
-        canopyRow("arbor:oak@14", 650, 466614),
-        canopyRow("arbor:birch@15", 450, 466615),
-        canopyRow("arbor:birch@16", 450, 466616),
+        canopyRow("arbor:oak@13", 460, 466613),
+        canopyRow("arbor:oak@14", 460, 466614),
+        canopyRow("arbor:oak@18", 380, 466618),
+        canopyRow("arbor:birch@15", 320, 466615),
+        canopyRow("arbor:birch@16", 320, 466616),
+        canopyRow("arbor:birch@19", 260, 466619),
+        // Beech regeneration: the young beech a closed beech wood grows in its own light gaps, so the
+        // clearings fill with saplings (the kit's `firs-young` band, at the same scale).
+        canopyRow("arbor:beech@20", 700, 466620, [0.2, 0.45], { type: "not", mask: CLEARINGS }),
       ],
     },
   },

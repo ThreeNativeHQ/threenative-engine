@@ -212,7 +212,8 @@ function chooseStand(game, world) {
   const others = props.filter((prop) => prop !== fir);
   const { spawn, clearance } = chooseSpawn(fir, others);
   const { edge, edgeClear } = chooseEdge(fir, props, dry);
-  return { fir, spawn, clearance, edge, edgeClear };
+  // The lake view frames the cooked lake: a world cooked on new ground seats it in that ground's basin.
+  return { fir, spawn, clearance, edge, edgeClear, lake: lakes[0] };
 }
 
 /**
@@ -255,11 +256,9 @@ function addCookedColliders(game, kit) {
 }
 
 /** A baseline has no water to count, so its playtest drops the water rows. */
-function stripWaterRows(playtestPath) {
+function stripWaterRows(playtestPath, paths = ["waterLakes", "waterRivers"]) {
   const json = JSON.parse(readFileSync(playtestPath, "utf8"));
-  json.assert.resources = json.assert.resources.filter(
-    (row) => !["waterLakes", "waterRivers"].includes(row.path),
-  );
+  json.assert.resources = json.assert.resources.filter((row) => !paths.includes(row.path));
   writeFileSync(playtestPath, `${JSON.stringify(json, null, 2)}\n`);
 }
 
@@ -660,7 +659,7 @@ async function main() {
   // The forest scene is written around a stand the proof reads from its bake. The alpine scene picks
   // its own spawn and views from the loaded heightfield, so the alpine kit has no generated stand.
   if (CONFIG.generatedStand) {
-    const { fir, spawn, clearance, edge, edgeClear } = chooseStand(game, world);
+    const { fir, spawn, clearance, edge, edgeClear, lake } = chooseStand(game, world);
     writeFileSync(
       join(game, "src/terrain/forest/stand.ts"),
       `// Written by the kit's proof from the placements this bake wrote: the fir the scene stands
@@ -670,7 +669,7 @@ export const stand = {
   fir: { x: ${round(fir.x)}, z: ${round(fir.z)} },
   groundY: ${round(fir.y)},
   spawn: { x: ${round(spawn.x)}, z: ${round(spawn.z)} },
-  edge: { x: ${round(edge.x)}, z: ${round(edge.z)} },
+  edge: { x: ${round(edge.x)}, z: ${round(edge.z)} },${lake ? `\n  lake: { x: ${round(lake.at[0])}, y: ${round(lake.level)}, z: ${round(lake.at[1])} },` : ""}
 } as const;
 `,
     );
@@ -689,6 +688,12 @@ export const stand = {
   cpSync(join(FIXTURES, "playtests", CONFIG.playtest), join(game, "playtests/kit.playtest.json"));
   if (process.env.KIT_BEFORE === "1") stripWaterRows(join(game, "playtests/kit.playtest.json"));
   if (KIT_WORLD) stripFirRows(join(game, "playtests/kit.playtest.json"));
+  // A cooked world on ground with no basin ships no lake (its water.json says so), so none is asserted.
+  if (
+    KIT_WORLD &&
+    JSON.parse(readFileSync(join(KIT_WORLD, "water.json"), "utf8")).lakes.length === 0
+  )
+    stripWaterRows(join(game, "playtests/kit.playtest.json"), ["waterLakes"]);
   mkdirSync(join(game, "src/scenes"), { recursive: true });
   cpSync(join(FIXTURES, "KitScene.ts"), join(game, "src/scenes/KitScene.ts"));
   const alpine =
@@ -762,7 +767,7 @@ import type { IStarterWorld } from "@threenative/terrain/starter";
 ${CONFIG.generatedStand ? 'import { stand } from "./forest/stand.js";' : ""}
 export { COLLIDERS, kitDaylight };
 export const KIT: string = "${title}";
-export const forestStand: { fir: { x: number; z: number }; spawn: { x: number; z: number }; edge: { x: number; z: number }; groundY: number } | undefined = ${CONFIG.generatedStand ? "stand" : "undefined"};
+export const forestStand: { fir: { x: number; z: number }; spawn: { x: number; z: number }; edge: { x: number; z: number }; groundY: number; lake?: { x: number; y: number; z: number } } | undefined = ${CONFIG.generatedStand ? "stand" : "undefined"};
 export interface IKitWorld extends IStarterWorld {
   readonly lakes?: readonly { at: readonly [number, number]; radius: number }[];
   readonly seaLevel?: number;

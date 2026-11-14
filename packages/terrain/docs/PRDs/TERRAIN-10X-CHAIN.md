@@ -31,12 +31,13 @@ Where the chain actually stands, measured, so the next agent does not repeat it:
   Phase 4's Arbor species rows (`{ "arbor": "<preset>@<seed>" }`), the forest palette (Douglas fir,
   spruce, bracken, blueberry), `GrassField3D` from the biome grass rows, and the other four palettes.
   Nothing of PRD-580 F1 is started.
-- **A region world costs more than the starter and reads worse, and both causes are named.** PRD-887
-  cooks a real Hainich survey with a beech/oak/birch canopy: cost p95 37.97 ms against the
-  starter's 26.19 ms on one lane, one pose set, one code state, and a fresh judge returned REGRESSION
-  on all four poses. The cost is per tree — the region's Arbor species have no far level, while the
-  firs are cheap because of the step-1 thinning — so the fix is an Arbor LOD budget, not a row's
-  counts. Do that before adding more species anywhere.
+- **A region world reads better than the starter's swap; its cost is now CPU.** PRD-887 cooks a real
+  Hainich survey with a beech/oak/birch canopy, and a fresh judge returned IMPROVEMENT (2026-11-14). The
+  morning's 4.7x GPU bill was the scale (a region row could not state one, so its Arbor trees stood 1.6x
+  the kit's), not the cards; GPU p95 fell 4-7x. Open: AC-3, the ground pose's presented p95 sits above
+  the starter's (4.9-5.2 against 2.9-3.4 ms) on 22 ms of CPU for nine species. The judge's top look gaps
+  are Arbor form and bark (an open-grown beech that forks at 28 % of its height) and the floor (grass
+  where a beech wood has litter): PRD-855's Arbor and cover rows, step 2 below.
 - **No other strata worktree is live.** `.claude/worktrees/strata-forest-aaa` is fully merged;
   `strata-forest-understorey` and `strata-chain` are pre-develop snapshots (about 1 890 files apart
   from `develop`, no open PR). Work the chain in PR #677's worktree until it merges.

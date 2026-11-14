@@ -168,6 +168,29 @@ export function shapeCoast(recipe: ITerrainDocument & { layers: Layer[] }): void
 }
 
 /**
+ * Lifts a starter's own lakes off ground they were not authored on. A kit's lake is a `water` layer at
+ * an absolute `level` over a `flatten` bed at the same centre, masked to the kit's own heights; on a
+ * survey or heightmap that replaced the kit's crop the bed's mask matches nothing and the level stands
+ * under the ground, so the world ships no lake. Removes both layers and returns one lake row each, of
+ * the same radius, for `placeLakes(recipe, rows, false)` to seat in the new ground's own basin, or to
+ * leave out where that ground holds no water.
+ */
+export function unpinLakes(recipe: { layers: Layer[] }): IBiomeWaterBody[] {
+  const lakes = recipe.layers.filter(
+    (layer) => layer.type === "water" && (layer.params as { kind?: string }).kind === "lake",
+  );
+  const centre = (layer: Layer) => JSON.stringify((layer.params as { at?: unknown }).at);
+  const centres = new Set(lakes.map(centre));
+  recipe.layers = recipe.layers.filter(
+    (layer) => !lakes.includes(layer) && !(layer.type === "flatten" && centres.has(centre(layer))),
+  );
+  return lakes.map((layer) => ({
+    kind: "lake",
+    radius: (layer.params as { radius: number }).radius,
+  }));
+}
+
+/**
  * Places each lake row the recipe had no layer for in the finished ground's deepest closed basin,
  * filled to the level it spills at: where water would stand. A basin is one the whole lake fits
  * around inside the square and on land (a lake radius from the nearest sea), clear of the lakes
@@ -178,6 +201,7 @@ export function shapeCoast(recipe: ITerrainDocument & { layers: Layer[] }): void
 export function placeLakes(
   recipe: ITerrainDocument & { layers: Layer[] },
   rows: readonly IBiomeWaterBody[],
+  dig = true,
 ): void {
   const sea = seaLevel(recipe);
   const placed: [number, number, number][] = [];
@@ -278,6 +302,9 @@ export function placeLakes(
       };
     };
     let found = site();
+    // A lake lifted off a kit's own crop stands only where the new ground holds water: a dug crater
+    // on a plateau is a disc, not a lake.
+    if (found.depth < 1 && !dig) return;
     if (found.depth < 1) {
       // A dug basin and its rim stay on land: an island too small for the lake takes a smaller one.
       radius = Math.min(radius, found.room * 0.55);

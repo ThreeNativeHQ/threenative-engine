@@ -1855,6 +1855,13 @@ describe("terrain_generate regions", () => {
       // The kit's own canopy art was replaced, so the world ships none of it; its understorey stays.
       expect([...counts.keys()]).not.toContain("fir");
       expect([...counts.keys()]).toContain("fern-a");
+      // The kit's lake is pinned to its own crop's heights. Hainich is a plateau with no basin, so
+      // the region cooks no lake rather than a level standing under the ground or a dug crater.
+      const water = JSON.parse(
+        await readFile(join(dirname(join(project, result.worldPackage)), "water.json"), "utf8"),
+      );
+      expect(water.lakes).toEqual([]);
+      expect(water.rivers.length).toBeGreaterThan(0);
     } finally {
       vi.unstubAllEnvs();
       vi.unstubAllGlobals();

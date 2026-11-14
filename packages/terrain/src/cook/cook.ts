@@ -27,6 +27,7 @@ import {
   placeLakes,
   routeRivers,
   shapeCoast,
+  unpinLakes,
 } from "../water/stages.js";
 import { worldReply } from "./reply.js";
 
@@ -274,6 +275,11 @@ async function cookInto(
   // A river the recipe has no layer for runs down the finished ground, survey or preset alike.
   carveFeatures(recipe.recipe, request.features ?? []);
   shapeCoast(recipe.recipe);
+  // A starter's lake is pinned to its own crop's heights. On a survey or heightmap that replaced the
+  // crop it would stand under the ground, so it moves to the new ground's own basin, or is left out
+  // where that ground holds none (Hainich is a karst plateau: no lake, as on the real place).
+  const replaced = ground.ground.source === "survey" || ground.ground.source === "heightmap";
+  if (kind === undefined && replaced) placeLakes(recipe.recipe, unpinLakes(recipe.recipe), false);
   const lakes = unrouted.filter((row) => row.kind === "lake");
   if (lakes.length > 0) placeLakes(recipe.recipe, lakes);
   const rivers = unrouted.filter((row) => row.kind === "river");

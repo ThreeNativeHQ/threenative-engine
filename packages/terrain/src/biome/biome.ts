@@ -1,3 +1,5 @@
+import type { IMask } from "../core/types.js";
+import { validateMask } from "../core/validation.js";
 import { LANDFORMS, type LandformKind } from "../ground/presets.js";
 
 /**
@@ -57,6 +59,16 @@ export interface IFoliageType {
   /** The least stand-field weight, 0..1, a spot must carry for this species to stand on it. */
   readonly standThreshold: number;
   readonly far: IFarFieldRule | null;
+  /**
+   * The placement scale range, `[min, max]`. Absent, the scatter's own `[0.8, 1.3]`: an Arbor tree
+   * baked at its full height then stands a third taller than the kit tree it replaces.
+   */
+  readonly scale?: readonly [number, number];
+  /**
+   * Where the row may stand, as a recipe mask: a `noise` mask grows the row in stands with clearings
+   * between them, as a kit recipe's tree layers do. Absent, the row covers its slope and height band.
+   */
+  readonly mask?: IMask;
 }
 
 /** One ground-cover species and the ground it accepts, on a grid of `spacing` metres. */
@@ -281,7 +293,10 @@ const FOLIAGE_FIELDS = [
   "grassThreshold",
   "standThreshold",
   "far",
+  "scale",
+  "mask",
 ] as const;
+const FOLIAGE_REQUIRED = FOLIAGE_FIELDS.filter((name) => name !== "scale" && name !== "mask");
 const FAR_FIELDS = [
   "cell",
   "spacing",
@@ -535,7 +550,7 @@ function cover(value: unknown, biome: string): ICoverSpec {
 }
 
 function foliage(value: unknown, biome: string, field: string): IFoliageType {
-  const row = closed(value, biome, field, FOLIAGE_FIELDS);
+  const row = closed(value, biome, field, FOLIAGE_FIELDS, FOLIAGE_REQUIRED);
   const height = row.height === null ? null : pair(row.height, biome, `${field}.height`);
   return {
     species: text(row.species, biome, `${field}.species`),
@@ -548,7 +563,18 @@ function foliage(value: unknown, biome: string, field: string): IFoliageType {
     grassThreshold: share(row.grassThreshold, biome, `${field}.grassThreshold`),
     standThreshold: share(row.standThreshold, biome, `${field}.standThreshold`),
     far: far(row.far, biome, `${field}.far`),
+    ...(row.scale === undefined ? {} : { scale: pair(row.scale, biome, `${field}.scale`) }),
+    ...(row.mask === undefined ? {} : { mask: standMask(row.mask, biome, `${field}.mask`) }),
   };
+}
+
+function standMask(value: unknown, biome: string, field: string): IMask {
+  try {
+    validateMask(value as IMask);
+  } catch (error) {
+    fail(biome, field, (error as Error).message);
+  }
+  return value as IMask;
 }
 
 function grass(value: unknown, biome: string, field: string): IGrassType {

@@ -82,6 +82,8 @@ export function foliageScatterRules(
     ...(row.height === null
       ? {}
       : { minHeight: floor + row.height[0], maxHeight: floor + row.height[1] }),
+    ...(row.scale === undefined ? {} : { scale: row.scale }),
+    ...(row.mask === undefined ? {} : { mask: row.mask }),
     avoidWater: true,
     opacity: 1,
     clear: [],
