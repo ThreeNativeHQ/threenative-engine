@@ -4,7 +4,7 @@
 **Priority:** P2 — A request such as "European beech forest" cooks United States ground with one swapped tree species (AC-1 to AC-4 open), so the terrain MCP cannot give a regional forest that reads as real.
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-886](../P2/PRD-886-terrain-code-sits-in-one-folder-per-stage-with-an-architecture-map.md) Phase 2 (the `request/` and `ground/` folders this PRD adds rows to). No box here waits on a look PRD.
+**Depends on:** [PRD-886](../done/PRD-886-terrain-code-sits-in-one-folder-per-stage-with-an-architecture-map.md) Phase 2 (the `request/` and `ground/` folders this PRD adds rows to). No box here waits on a look PRD.
 
 ## Context
 

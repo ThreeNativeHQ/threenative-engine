@@ -74,7 +74,7 @@ flowchart TD
 | 13. Load snippet | `worldReply`, `grassSnippet` (`packages/terrain/src/cook/reply.ts`) | the output path and the decisions | returns the game source the reply carries | `cook/` |
 
 Each function sits in the folder its stage names, and `cookInto` in `packages/terrain/src/cook/cook.ts`
-calls them in this order. The split is [PRD-886](../PRDs/P2/PRD-886-terrain-code-sits-in-one-folder-per-stage-with-an-architecture-map.md).
+calls them in this order. The split is [PRD-886](../PRDs/done/PRD-886-terrain-code-sits-in-one-folder-per-stage-with-an-architecture-map.md).
 
 ## Where to change what
 
