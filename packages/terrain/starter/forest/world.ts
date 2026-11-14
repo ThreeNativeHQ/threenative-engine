@@ -154,8 +154,12 @@ function dressProp(
   if (foliage && mesh.isMesh) bendCrownNormals(mesh.geometry, CROWN_NORMAL_BEND);
 }
 
-/** How strongly the sky lights foliage, which the sun alone leaves near-black from most sides. */
-export const FOLIAGE_SKY_LIGHT = 1;
+/**
+ * How strongly the sky lights foliage, which the sun alone leaves near-black from most sides. A
+ * conifer crown shades most of its own needles, so its sky light is well under a lone card's:
+ * at 1 the bent, sky-facing cards washed every crown pale green.
+ */
+export const FOLIAGE_SKY_LIGHT = 0.35;
 /** 0 keeps each card's own normal, 1 points every normal straight out from the crown's axis. */
 export const CROWN_NORMAL_BEND = 0.7;
 

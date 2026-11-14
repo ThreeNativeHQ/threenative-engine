@@ -13,10 +13,10 @@ I'll execute later".
 
 - The terrain shape is not the weak part. The cook already reads real elevation tiles and picks a
   real survey site for each landform (PRD-854, done).
-- Look: on the 2026-11-09 baseline in [PRD-580](../open-world/PRD-580-strata-starter-kit-art-bar.md),
+- Look: on the 2026-11-09 baseline in [PRD-580](../../../../docs/PRDs/open-world/PRD-580-strata-starter-kit-art-bar.md),
   no world reaches 4 out of 5 on any rubric row. Forest scores 3/3/3/2/3. Tundra scores 2/1/2/1/1.
 - Speed: the forest overview costs 31 to 39 ms of GPU time on the RTX 2080 at 1600x900, which is 20
-  to 30 FPS (reading in [PRD-866](../BLOCKED/requires-owner-decision/PRD-866-a-generated-forest-stands-under-mountains-with-real-shapes.md)).
+  to 30 FPS (reading in [PRD-866](../../../../docs/PRDs/BLOCKED/requires-owner-decision/PRD-866-a-generated-forest-stands-under-mountains-with-real-shapes.md)).
 - Focus: about 22 terrain PRDs are open across five worlds. Recent changes were judged NEUTRAL or a
   small IMPROVEMENT.
 
@@ -28,10 +28,10 @@ proofs.
 | Step | Work | Why it is at this position |
 | --- | --- | --- |
 | 1 | [PRD-584](PRD-584-an-agent-asks-for-a-forest-over-mcp-and-gets-a-60-fps-glb.md) AC-4: the forest holds 60 FPS on web | Each look step below adds GPU cost, and the frame is already 2 times over budget. |
-| 2 | Forest to the art bar, alone: merge PR #675 (PRD-883 swaying grass, PRD-884 baked trees), then [PRD-855](PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md), then box F1 of [PRD-580](../open-world/PRD-580-strata-starter-kit-art-bar.md) | Forest is the nearest world to the bar. Do not start the other four worlds before forest scores 4. |
+| 2 | Forest to the art bar, alone: merge PR #675 (PRD-883 swaying grass, PRD-884 baked trees), then [PRD-855](PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md), then box F1 of [PRD-580](../../../../docs/PRDs/open-world/PRD-580-strata-starter-kit-art-bar.md) | Forest is the nearest world to the bar. Do not start the other four worlds before forest scores 4. |
 | 3 | [PRD-790](PRD-790-a-new-biome-is-a-data-row-and-the-world-streams-past-one-square.md) Phase 2: streaming is on by default | It removes the white void past the 512 m square. PRD-580 AC-1 waits on it. |
 | 4 | [PRD-885](PRD-885-a-terrain-survey-reads-lidar-grade-ground-from-mapterhorn.md): lidar ground from Mapterhorn | Mapterhorn holds 3 to 21 times more real relief under 10 m at five of our survey sites. Phase 1 gets a visual verdict first. |
-| 5 | [PRD-668](../Unreal/rendering/PRD-668-a-displaced-surface-changes-its-silhouette-near-the-camera.md): displaced ground near the camera | Do it after step 4, because real relief can reduce its scope. |
+| 5 | [PRD-668](../../../../docs/PRDs/Unreal/rendering/PRD-668-a-displaced-surface-changes-its-silhouette-near-the-camera.md): displaced ground near the camera | Do it after step 4, because real relief can reduce its scope. |
 
 After the chain: PRD-580 phases 2 and 3 for coastal, alpine, desert and tundra, then
 [PRD-856](PRD-856-the-mountains-carry-real-silhouettes-erosion-and-rock.md) for the mountains.

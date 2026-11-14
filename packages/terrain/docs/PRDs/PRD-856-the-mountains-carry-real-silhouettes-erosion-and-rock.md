@@ -3,7 +3,7 @@
 **Status:** PARTIAL — the level bedding stripes are gone from the forest backdrop (2026-11-08, PR #635). Shape, erosion and baked masks are open.
 **Priority:** P2 — the mountains need visible improvement; Phase 1 names the defects first.
 **Complexity:** 6 (MEDIUM-HIGH)
-**Depends on:** [PRD-854](../done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) (real-world backdrop), [PRD-855](PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) (ground layers)
+**Depends on:** [PRD-854](../../../../docs/PRDs/done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) (real-world backdrop), [PRD-855](PRD-855-the-ground-vegetation-reads-like-a-real-forest-floor.md) (ground layers)
 **Epic:** [Strata terrain hardening](README.md), chain step PR-7 in [PR-CHAIN.md](PR-CHAIN.md)
 
 ## Problem

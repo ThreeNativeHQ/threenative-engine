@@ -4,7 +4,7 @@
 **Priority:** P2 — The walkable ground of a cooked world carries no real relief under 10 m (AC-2 and AC-3 open), which the ground judges read as "one smooth dirt sheet".
 **Complexity:** 2 (LOW); risk override: none
 **Owner:** ThreeNative maintainers
-**Depends on:** None. [PRD-854](../done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) landed the survey fetch that this PRD changes.
+**Depends on:** None. [PRD-854](../../../../docs/PRDs/done/PRD-854-one-terrain-request-decides-the-landform-water-size-and-survey.md) landed the survey fetch that this PRD changes.
 
 ## Context
 
@@ -14,7 +14,7 @@ on github, see if useful".
 `packages/terrain/src/mcp/survey.ts` fetches real ground from the AWS terrain tiles
 (`s3.amazonaws.com/elevation-tiles-prod/terrarium`, 256 px PNG, the frozen `tilezen/joerd` set).
 `forestFloor` in `packages/terrain/src/mcp/cook.ts:793` reads zoom 15, about 3.7 m per pixel, and
-resamples it on a 2 m grid over 512 m. `docs/PRDs/strata-terrain-hardening/PR-CHAIN.md:32` already
+resamples it on a 2 m grid over 512 m. `packages/terrain/docs/PRDs/PR-CHAIN.md:32` already
 names the gap: "A walkable 512 m square needs the erosion and grain layers on top, or 1 m lidar."
 
 [Mapterhorn](https://github.com/mapterhorn/mapterhorn) (BSD-3-Clause pipeline) is the maintained

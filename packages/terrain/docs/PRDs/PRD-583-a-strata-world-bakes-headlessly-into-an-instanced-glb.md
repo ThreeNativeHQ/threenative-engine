@@ -5,7 +5,7 @@
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Parent:** [PRD-466](../done/PRD-466-strata-terrain-threejs-integration.md), [PRD-468](../done/PRD-468-strata-world-controls-and-asset-imports.md)
+**Parent:** [PRD-466](../../../../docs/PRDs/done/PRD-466-strata-terrain-threejs-integration.md), [PRD-468](../../../../docs/PRDs/done/PRD-468-strata-world-controls-and-asset-imports.md)
 **Epic:** [Strata terrain hardening](README.md)
 
 ## Context
