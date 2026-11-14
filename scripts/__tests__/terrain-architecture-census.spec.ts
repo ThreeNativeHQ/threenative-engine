@@ -6,7 +6,7 @@
  * failure the map was written to end. So this spec fails in the same commit: every repository path
  * the document names in backticks exists, and every folder under the three code roots has a row.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -101,9 +101,15 @@ describe("terrain architecture map", () => {
   });
 
   it("links the map from the package and preview agent rules", () => {
-    for (const agents of ["packages/terrain/AGENTS.md", "examples/strata-terrain-preview/AGENTS.md"]) {
+    for (const agents of [
+      "packages/terrain/AGENTS.md",
+      "examples/strata-terrain-preview/AGENTS.md",
+    ]) {
       const text = readFileSync(path.join(repoRoot, agents), "utf8");
-      const target = path.relative(path.dirname(agents), "packages/terrain/docs/architecture/architecture.md");
+      const target = path.relative(
+        path.dirname(agents),
+        "packages/terrain/docs/architecture/architecture.md",
+      );
       expect(text).toContain(`(${target})`);
       expect(statSync(path.join(repoRoot, agents)).isFile()).toBe(true);
     }

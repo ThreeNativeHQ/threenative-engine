@@ -3,9 +3,17 @@
 # AGENTS.md — Strata terrain preview
 
 Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime recipes.
-Before changing what this preview shows, read [the terrain map](../../packages/terrain/docs/architecture.md):
+Before changing what this preview shows, read [the terrain map](../../packages/terrain/docs/architecture/architecture.md):
 it names the stage folders, the three producers of terrain output and the command that puts a change
 on screen.
+
+Common commands, from the repository root:
+
+- `pnpm --filter strata-terrain-preview dev`: bake when stale, then serve the preview.
+- `pnpm --filter strata-terrain-preview rebake`: rebuild `@threenative/terrain`, then bake. Use it after a `packages/terrain/src/` edit.
+- `pnpm --filter strata-terrain-preview dev:fresh`: rebuild terrain and core, bake, and serve with Vite's prebundle cleared. Use it when the page still shows an old result.
+- `pnpm --filter strata-terrain-preview test`: bake, unit tests and the water check.
+- `STRATA_WORLD=<cook out dir> pnpm --filter strata-terrain-preview bake`: bake the forest from an MCP cook's own recipe.
 
 - Units are metres; Y is up; canonical heights are row-major Z then X, centred at zero.
 - `scripts/bake.mjs` owns authoring. The game imports baked JSON and never evaluates terrain.

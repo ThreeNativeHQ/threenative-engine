@@ -3,8 +3,9 @@
 # AGENTS.md — @threenative/terrain
 
 Read `/AGENTS.md` first. This optional addon is authoring tooling, not a game runtime.
-Before changing what a terrain produces, read [the terrain map](docs/architecture.md): it names the
+Before changing what a terrain produces, read [the terrain map](docs/architecture/architecture.md): it names the
 stage folders, the three producers of terrain output and the command that puts a change on screen.
+Its companions are [the cook stages](docs/architecture/cook.md) and [the world package](docs/architecture/world-package.md).
 
 - Preserve the recovered evaluator, stable semantic IDs, validation and atomic transactions.
 - The root is headless; `/three` creates only ordinary indexed geometry from supplied arrays.
@@ -16,5 +17,11 @@ stage folders, the three producers of terrain output and the command that puts a
 - Bake before play. Games own their camera, mesh lifetime and existing physics registration.
 - Keep raw terrain-only exports labelled; they do not prove full-world GLB delivery.
 
-Run `pnpm --filter @threenative/terrain build` and
-`pnpm exec vitest run packages/terrain/__tests__/terrain-consumer.spec.ts`.
+Common commands, from the repository root:
+
+- `pnpm --filter @threenative/terrain test:consumer`: build, then the fast consumer spec. Run it after each change.
+- `pnpm --filter @threenative/terrain test`: every package test, including the golden bake and the MCP spec.
+- `pnpm --filter @threenative/terrain test:map`: the terrain map still names real paths, folders and scripts.
+- `pnpm --filter @threenative/terrain bake:forest`: build, then bake the forest starter into `artifacts/terrain/forest/`.
+  `bake:coastal`, `bake:alpine`, `bake:desert` and `bake:tundra` bake the other starters.
+- `pnpm --filter strata-terrain-preview rebake`: build this package, then re-bake the preview worlds.

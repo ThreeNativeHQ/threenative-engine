@@ -1,6 +1,6 @@
 # PRD-886 — Terrain code sits in one folder per stage, with an architecture map
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P2 — An agent that changes terrain output cannot find the owning file from the folder names (AC-1 to AC-4 open); no architecture document for terrain exists.
 **Complexity:** 3 (LOW); risk override: MEDIUM, because `@threenative/terrain` is published and its public exports, `dist` layout and capability manifest must not change.
 **Owner:** ThreeNative maintainers
@@ -152,7 +152,7 @@ A guard is a separate change in `packages/terrain/src/kit.ts` and `packages/asse
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `packages/terrain/docs/architecture/architecture.md` has the four Mermaid diagrams, the routing table and the stale-output table, and each path it names exists. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts && pnpm check:docs` — Evidence: pending.
+- [x] AC-1 [local]: `packages/terrain/docs/architecture/architecture.md` has the four Mermaid diagrams, the routing table and the stale-output table, and each path it names exists. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts && pnpm check:docs` — Evidence (2026-11-13): census 7/7 green, `pnpm check:docs` exit 0 (3 968 links).
 - [ ] AC-2 [local]: No stage function is left in the cook: `cook/cook.ts` is 450 lines or fewer, and `core/` holds the evaluator files only. proof: `wc -l packages/terrain/src/cook/cook.ts` and `ls packages/terrain/src/core` against the Solution table — Evidence: pending.
 - [ ] AC-3 [local]: The published package and the capability manifest are the same before and after. proof: `npm pack --dry-run --json` in `packages/terrain` gives the same file list on both arms, and `pnpm build && git diff --exit-code packages/core/capabilities.json` — Evidence: pending.
 - [ ] AC-4 [local]: Terrain output is the same before and after. proof: `pnpm --filter @threenative/terrain test` (it includes `bake-golden.spec.ts` and `terrain-mcp.spec.ts`), and `sha256sum` of `world.glb` from `node packages/terrain/starter/forest/bake.mjs --out <dir>` is equal on both arms — Evidence: pending.
@@ -178,12 +178,12 @@ and AC-4 prove it through the packed package, the MCP spec and the kit bake.
 
 #### Phase 1: The map exists and a spec keeps it true
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — the map is done; the `docs/PRDs/AGENTS.md` rule and the `.ignore` entry for the moved PRDs are still open.
 **Files:** `packages/terrain/docs/architecture/architecture.md` (new), `scripts/__tests__/terrain-architecture-census.spec.ts` (new, cloned from `strata-script-census.spec.ts`), `packages/terrain/AGENTS.md`, `examples/strata-terrain-preview/AGENTS.md`, `docs/PRDs/AGENTS.md`, `.ignore`, the generated `CLAUDE.md` mirrors, and the moved PRD folders.
 **Implementation:** Write the six parts from Solution 1 against the layout as it is today. Trace each diagram edge from an import or a call, not from memory. Add the pointer lines and run `pnpm sync:agents`. Then move the Strata PRDs in one commit of `git mv` and fix each link.
 **Verification:** the census spec, `pnpm check:docs`, `pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts`.
 
-- [ ] `packages/terrain/docs/architecture/architecture.md` is written, both AGENTS files point to it, and the census spec fails when the map names a missing path or omits a terrain folder. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts`
+- [x] `packages/terrain/docs/architecture/architecture.md` is written, both AGENTS files point to it, and the census spec fails when the map names a missing path or omits a terrain folder. proof: `pnpm exec vitest run scripts/__tests__/terrain-architecture-census.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts` — Evidence (2026-11-13): census 7/7, and with `primary-docs`, `sync-agent-docs`, `check-doc-links` and `strata-script-census` 35/35; a fake path and a fake script name in `cook.md` each turned the spec red, and restoring it turned it green. The map also has two companions, `cook.md` and `world-package.md`, held to the same checks.
 - [ ] The open Strata PRDs are under `packages/terrain/docs/PRDs/` and each link resolves. proof: `ls packages/terrain/docs/PRDs docs/PRDs/refactoring/strata-refactoring` finds no folder, and `pnpm check:docs` exits 0
 
 #### Phase 2: `packages/terrain/src/` has one folder per stage
