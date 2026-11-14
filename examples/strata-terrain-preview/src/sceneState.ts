@@ -20,6 +20,8 @@ export const initialState = {
   streamCoveredHalf: 0,
   /** Largest tile-edge height gap; -1 until `?tnTerrainValidate=1` measures it. */
   streamSeamGap: -1,
+  /** Largest height step where the tiles meet the collar (the edge of the square they draw); -1 until measured. */
+  streamCollarGap: -1,
 };
 
 export type TerrainState = typeof initialState;

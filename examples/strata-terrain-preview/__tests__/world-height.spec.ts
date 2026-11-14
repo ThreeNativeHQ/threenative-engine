@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import {
   type HorizonSurroundings,
+  collarSeamGap,
   createHorizonCollar,
   createWorldHeight,
   setHorizonSurroundings,
@@ -54,3 +55,28 @@ it("answers the heights the collar draws", () => {
     );
   expect(worst).toBeLessThanOrEqual(0.01);
 }, 60_000);
+
+/**
+ * PRD-790 Phase 2 box 2, open: where the tiles meet the collar, the collar's coarse triangles cut
+ * between its vertices. Along the 2 km route the step is 1.21 m (at the tiles' vertices and between
+ * them). `it.fails` keeps the red recorded: the fix (a geomorph band in the tile surface) turns it.
+ */
+it.fails(
+  "meets the streamed tiles with no step where the collar takes over",
+  () => {
+    setHorizonSurroundings(read("horizon.json") as HorizonSurroundings);
+    const forest = (read("baked.json") as { forest: IBakedWorld }).forest;
+    const collar = createHorizonCollar(forest, "forest");
+    const height = createWorldHeight(forest, "forest");
+    // The tiles' square around a player at the spawn, then along the 2 km route north-north-west.
+    let step = 0;
+    for (const along of [0, 300, 700, 1100, 1500, 1900]) {
+      const centreX = Math.floor((-0.41 * along + 32) / 64) * 64;
+      const centreZ = Math.floor((0.91 * along + 32) / 64) * 64;
+      const seam = collarSeamGap(collar, height, centreX, centreZ, 288, 2);
+      step = Math.max(step, seam.gap, seam.fold);
+    }
+    expect(step).toBeLessThanOrEqual(0.01);
+  },
+  60_000,
+);

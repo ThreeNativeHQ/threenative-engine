@@ -211,3 +211,89 @@ export function collarColors(collar: HeightfieldCollar, data: IBakedWorld): Floa
   }
   return colors;
 }
+
+/**
+ * The collar triangle under `(x, z)` as it is drawn (not a bilinear blend of its quad): its three
+ * vertex indices and the point's weights. Undefined where there is no collar.
+ */
+function collarTriangle(
+  collar: HeightfieldCollar,
+  x: number,
+  z: number,
+): { indices: [number, number, number]; weights: [number, number, number] } | undefined {
+  const quad = collar.locate(x, z);
+  if (quad === undefined) return undefined;
+  const position = collar.geometry.getAttribute("position");
+  const a = collar.index(quad.lower, quad.from);
+  const b = collar.index(quad.lower, quad.to);
+  const c = collar.index(quad.upper, quad.from);
+  const d = collar.index(quad.upper, quad.to);
+  // The collar's two triangles per quad are (a, b, c) and (b, d, c); the point's barycentrics in
+  // the plane pick the one it lies in.
+  for (const [p, q, r] of [
+    [a, b, c],
+    [b, d, c],
+  ] as const) {
+    const [px, pz] = [position.getX(p), position.getZ(p)];
+    const [qx, qz] = [position.getX(q), position.getZ(q)];
+    const [rx, rz] = [position.getX(r), position.getZ(r)];
+    const det = (qz - rz) * (px - rx) + (rx - qx) * (pz - rz);
+    const u = ((qz - rz) * (x - rx) + (rx - qx) * (z - rz)) / det;
+    const v = ((rz - pz) * (x - rx) + (px - rx) * (z - rz)) / det;
+    if (u >= -1e-6 && v >= -1e-6 && u + v <= 1 + 1e-6)
+      return { indices: [p, q, r], weights: [u, v, 1 - u - v] };
+  }
+  return undefined;
+}
+
+/** The collar's drawn height under `(x, z)`; null where there is no collar. */
+export function collarDrawnHeight(collar: HeightfieldCollar, x: number, z: number): number | null {
+  const triangle = collarTriangle(collar, x, z);
+  if (triangle === undefined) return null;
+  const position = collar.geometry.getAttribute("position");
+  const [p, q, r] = triangle.indices;
+  const [u, v, w] = triangle.weights;
+  return u * position.getY(p) + v * position.getY(q) + w * position.getY(r);
+}
+
+/**
+ * PRD-790: where streamed tiles meet the collar. The tiles draw inside the square
+ * `(centreX, centreZ, half)` and the collar outside it, so the seam is that square's edge, past the
+ * playable square. `gap` is the largest step at the tiles' edge vertices (`spacing` apart), as core
+ * measures a tile-to-tile seam; `fold` is the largest step between them, where a fold of the
+ * collar's coarser triangles crosses a tile's straight edge.
+ */
+export function collarSeamGap(
+  collar: HeightfieldCollar,
+  height: (x: number, z: number) => number,
+  centreX: number,
+  centreZ: number,
+  half: number,
+  spacing: number,
+  step = 0.1,
+): { fold: number; gap: number } {
+  let gap = 0;
+  let fold = 0;
+  const cells = Math.round((2 * half) / spacing);
+  // Each edge of the square: its first corner and the unit step along it.
+  const edges = [
+    [centreX - half, centreZ - half, 1, 0],
+    [centreX - half, centreZ + half, 1, 0],
+    [centreX - half, centreZ - half, 0, 1],
+    [centreX + half, centreZ - half, 0, 1],
+  ] as const;
+  for (const [startX, startZ, dx, dz] of edges)
+    for (let cell = 0; cell < cells; cell += 1) {
+      const h0 = height(startX + dx * cell * spacing, startZ + dz * cell * spacing);
+      const h1 = height(startX + dx * (cell + 1) * spacing, startZ + dz * (cell + 1) * spacing);
+      for (let offset = 0; offset < spacing; offset += step) {
+        const along = cell * spacing + offset;
+        const drawn = collarDrawnHeight(collar, startX + dx * along, startZ + dz * along);
+        if (drawn === null) continue;
+        const rise = Math.abs(drawn - (h0 + ((h1 - h0) * offset) / spacing));
+        if (offset === 0) gap = Math.max(gap, rise);
+        else fold = Math.max(fold, rise);
+      }
+    }
+  return { fold, gap };
+}

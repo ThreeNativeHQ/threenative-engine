@@ -406,7 +406,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // ponytail: a ground material that never loads leaves this pending, and the spawn deadline
       // then fails the scene by name; `?stream=1` is opt-in, so no tile-less fallback yet.
       let groundReady: Promise<void> | undefined;
-      if (stream && mesh) {
+      if (stream && mesh && collar) {
         const streamLoad = this.#bandLoad;
         groundReady = stream.material.then((surface) => {
           if (streamLoad !== this.#bandLoad) return surface.dispose();
@@ -415,6 +415,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             data,
             world,
             surface,
+            collar,
             stream.split,
             actor,
             (facts) => ctx.state.set(facts),

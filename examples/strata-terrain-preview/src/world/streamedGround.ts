@@ -1,6 +1,7 @@
 import type { ICtx } from "@threenative/core";
 import {
   AdmissionBudget,
+  type HeightfieldCollar,
   type IWorldTileColliderInput,
   TerrainTiles,
   warmUnculled,
@@ -9,7 +10,7 @@ import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenativ
 import type { Object3D } from "three";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
 import type { WorldName } from "../render/biomes.js";
-import { HORIZON_REACH, createWorldHeight } from "../render/ground/horizon.js";
+import { HORIZON_REACH, collarSeamGap, createWorldHeight } from "../render/ground/horizon.js";
 import type { IBakedWorld, ITerrainStream } from "../render/ground/terrain.js";
 
 /** Tile width in metres: 32 cells of the square's own 2 m spacing, so tile and square share vertices. */
@@ -23,9 +24,11 @@ const ADMISSION_MS = 2;
 
 /**
  * PRD-790: the ground past the playable square, streamed around the player by `TerrainTiles` out to
- * the collar's reach. Tiles sample `createWorldHeight`, the same surface the square and the collar
- * draw, so a tile meets both with no step. The largest block of resident tiles around the player is
- * written to `split` each frame: the tiles draw inside it, the collar everywhere else, so a tile that
+ * the collar's reach. Tiles sample `createWorldHeight`, the surface the square and the collar's
+ * vertices stand on, so a tile meets the square and its neighbours with no step. Where the tiles
+ * meet the collar, the collar's coarser triangles cut between its vertices; `?tnTerrainValidate=1`
+ * reports that step as `streamCollarGap` (PRD-790 Phase 2 box 2, open). The largest block of
+ * resident tiles around the player is written to `split` each frame: the tiles draw inside it, the collar everywhere else, so a tile that
  * is still building leaves the collar showing, never a hole.
  */
 export function addStreamedGround(
@@ -33,21 +36,25 @@ export function addStreamedGround(
   data: IBakedWorld,
   world: WorldName,
   surface: MeshStandardNodeMaterial,
+  collar: HeightfieldCollar,
   split: ITerrainStream,
   follow: Object3D,
   report: (facts: {
     streamTiles: number;
     streamCoveredHalf: number;
     streamSeamGap: number;
+    streamCollarGap: number;
   }) => void,
 ): { dispose(): void; readonly ready: Promise<void>; readonly tiles: TerrainTiles } {
   const half = data.size / 2;
   const reach = half + HORIZON_REACH;
+  const height = createWorldHeight(data, world);
+  const spacing = data.size / (data.resolution - 1);
   const tiles = new TerrainTiles({
     surface,
-    sampleHeight: createWorldHeight(data, world),
+    sampleHeight: height,
     tileSize: TILE,
-    tileResolution: TILE / (data.size / (data.resolution - 1)) + 1,
+    tileResolution: TILE / spacing + 1,
     // One level: 81 tiles of 33² vertices are ~166 k triangles, and a single level meets its
     // neighbour vertex for vertex (mixed levels left a raw 2 m step for the stitches to close).
     lodFactors: [1],
@@ -76,6 +83,9 @@ export function addStreamedGround(
       }),
   });
   ctx.add(tiles);
+  // `?tnTerrainValidate=1`: the tile-to-collar seam, read along the split square's edge each time it
+  // moves; tile-to-tile seams are core's `maxSeamGap`.
+  const collarSeam = { fold: 0, gap: 0, key: "" };
   ctx.beforeRender(() => {
     tiles.follow(follow.position, new AdmissionBudget(ADMISSION_MS, () => performance.now()));
     split.centre.value.set(
@@ -83,10 +93,22 @@ export function addStreamedGround(
       Math.floor((follow.position.z + TILE / 2) / TILE) * TILE,
     );
     split.half.value = tiles.settledHalf(follow.position);
+    const tileSeam = tiles.maxSeamGap;
+    const { x, y } = split.centre.value;
+    const key = `${x},${y},${split.half.value}`;
+    if (tileSeam !== undefined && split.half.value > 0 && key !== collarSeam.key) {
+      // Every 0.5 m, 0.7 ms per move; 0.1 m cost 4.2 ms and read the same fold on the route.
+      const seam = collarSeamGap(collar, height, x, y, split.half.value, spacing, 0.5);
+      collarSeam.gap = Math.max(collarSeam.gap, seam.gap);
+      collarSeam.fold = Math.max(collarSeam.fold, seam.fold);
+      collarSeam.key = key;
+    }
     report({
       streamTiles: tiles.residentTileCount,
       streamCoveredHalf: split.half.value,
-      streamSeamGap: tiles.maxSeamGap ?? -1,
+      streamSeamGap: tileSeam ?? -1,
+      // The tile-to-collar step, at the tile vertices and between them; -1 when not measured.
+      streamCollarGap: tileSeam === undefined ? -1 : Math.max(collarSeam.gap, collarSeam.fold),
     });
   });
   // The tiles around the spawn draw unculled behind the curtain until the whole block has drawn
