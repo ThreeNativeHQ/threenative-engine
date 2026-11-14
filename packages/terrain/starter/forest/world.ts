@@ -25,6 +25,7 @@ import {
 } from "three";
 import { cameraViewMatrix, normalWorld, vec3, vec4 } from "three/tsl";
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
+import { addForestHorizon } from "./horizon.js";
 import surface from "./surface.json" with { type: "json" };
 import { type IForestWater, type IForestWaterFile, addForestWater } from "./water.js";
 /** Where the game's asset source holds the baked `world/` folder. */
@@ -108,7 +109,18 @@ const spec: IStarterWorldSpec<IForestWater> = {
     budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
     terrain: { streamRadius: 6 },
   },
-  water: (ctx, file, field) => addForestWater(ctx, file as IForestWaterFile, field),
+  // The far collar rides on the water's handle, so the world's own dispose releases both.
+  water: (ctx, file, field, manifest) => {
+    const water = addForestWater(ctx, file as IForestWaterFile, field);
+    const horizon = addForestHorizon(ctx, field, manifest.extent);
+    return {
+      ...water,
+      dispose() {
+        water.dispose();
+        horizon.dispose();
+      },
+    };
+  },
 };
 export class PropColliders extends StarterPropColliders {
   constructor(

@@ -354,7 +354,14 @@ describe.each(kits)("$kit runtime", ({ kit, addWorld, Collider, asset, water }) 
     else expect(requests).not.toContain(`terrain/${kit}/water.json`);
     expect(alpine.colliders.active).toBe(1);
     expect(alpine.ground.shape.descriptor.kind).toBe("heightfield");
-    expect(ctx.scene.children).toHaveLength(3);
+    // The forest also grows its far collar past the square, so an elevated view sees land, not a void.
+    const horizon = ctx.scene.getObjectByName("forest-horizon") as Mesh | undefined;
+    expect(ctx.scene.children).toHaveLength(kit === "forest" ? 4 : 3);
+    if (kit !== "forest") return;
+    expect(horizon).toBeDefined();
+    horizon?.geometry.computeBoundingBox();
+    const reach = horizon?.geometry.boundingBox?.max.x ?? 0;
+    expect(reach).toBeGreaterThan(manifest.extent.sizeX * 4);
   });
 
   it("dresses the mid level its own assets.json bakes", async () => {
