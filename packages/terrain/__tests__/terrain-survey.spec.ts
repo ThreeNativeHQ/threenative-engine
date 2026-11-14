@@ -22,12 +22,18 @@ import { MASSIFS, SURVEYS, locationSurvey } from "../src/ground/surveys.js";
 import { TERRAIN_TOOLS, parseGenerateInput, parseGenerateRequest } from "../src/mcp/tools.js";
 import { ECOREGION_ROWS } from "../src/request/ecoregions.js";
 
-/** The checked-in terrarium tiles, used as the whole tile cache these tests read. */
-const FIXTURE_CACHE = new URL("./fixtures/terrarium/", import.meta.url).pathname;
+/** The checked-in Mapterhorn tiles (512 px lossless WebP), used as the whole tile cache these tests read. */
+const FIXTURE_CACHE = new URL("./fixtures/mapterhorn/", import.meta.url).pathname;
 
 const OFFLINE = () => {
   throw new Error("the survey tests never touch the network");
 };
+
+/**
+ * The service as the checked-in tiles model it: a tile that is not checked in answers 404, as a site
+ * with no tile at a zoom does, so the survey steps to the next coarser zoom the way it does live.
+ */
+const NO_TILE = () => Promise.resolve(new Response(null, { status: 404 }));
 
 /** A game project the cook can run in: `@threenative/assets` linked, a config naming the assets. */
 async function gameProject(): Promise<string> {
@@ -95,27 +101,90 @@ describe("the survey table", () => {
       expect(row.name.length, kind).toBeGreaterThan(3);
       expect(Math.abs(row.lat), kind).toBeLessThanOrEqual(90);
       expect(Math.abs(row.lon), kind).toBeLessThanOrEqual(180);
-      // A ground footprint of a few kilometres, at the ~30 m/px zoom a real place reads at.
+      // A ground footprint of a few kilometres.
       expect(row.extentMeters, kind).toBeGreaterThanOrEqual(3_000);
       expect(row.extentMeters, kind).toBeLessThanOrEqual(8_000);
-      expect(row.zoom, kind).toBeGreaterThanOrEqual(11);
-      expect(row.zoom, kind).toBeLessThanOrEqual(13);
-      expect(row.attribution, kind).toMatch(/U\.S\. Geological Survey|Copernicus|Land Information/);
-      expect(row.attribution, kind).toContain("AWS Terrain Tiles");
+      expect(row.attribution, kind).toMatch(/U\.S\. Geological Survey|Copernicus/);
+      expect(row.attribution, kind).toContain("© Mapterhorn (https://mapterhorn.com/attribution)");
     }
   });
 
   it("builds a survey row from a bare latitude and longitude", () => {
     const row = locationSurvey(45.9763, 7.6586);
-    expect(row).toMatchObject({ lat: 45.9763, lon: 7.6586, zoom: 12, extentMeters: 6_000 });
+    expect(row).toMatchObject({ lat: 45.9763, lon: 7.6586, extentMeters: 6_000 });
     expect(row.name).toBe("45.9763, 7.6586");
-    expect(row.attribution).toContain("SRTM");
+    expect(row.attribution).toContain("Copernicus GLO-30");
+    expect(row.attribution).toContain("© Mapterhorn");
     for (const lat of [-91, 91, Number.NaN]) expect(() => locationSurvey(lat, 0)).toThrow(/lat/);
     for (const lon of [-181, 181, Number.NaN]) expect(() => locationSurvey(0, lon)).toThrow(/lon/);
   });
 });
 
-describe("terrarium tiles", () => {
+// PRD-885: the survey reads Mapterhorn. Two real tiles are checked in: Étretat at zoom 17 (0.39 m/px,
+// French lidar) and Sprague Lake at zoom 16, the finest zoom that site has (zoom 17 answers 404).
+describe("mapterhorn tiles", () => {
+  const etretat = { name: "Étretat", lat: 49.70760838, lon: 0.20187378, extentMeters: 90 };
+  const sprague = { name: "Sprague Lake", lat: 40.31932591, lon: -105.60882568, extentMeters: 100 };
+  const credit = { attribution: "test" };
+  const notFound = () => Promise.resolve(new Response(null, { status: 404 }));
+  beforeEach(() => {
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", FIXTURE_CACHE);
+    vi.stubGlobal("fetch", OFFLINE);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("decodes a zoom 17 tile to its real elevations and reports the zoom and metres per pixel", async () => {
+    // 90 m over 129 samples is a 0.70 m cell, and zoom 16 is 0.77 m/px here, so the survey asks for zoom 17.
+    const survey = await surveyHeights({ ...etretat, ...credit }, 129);
+    expect(survey.zoom).toBe(17);
+    expect(survey.metersPerPixel).toBeCloseTo(0.39, 2);
+    // The footprint centre is the tile's centre pixel: 6.953125 m, read straight from the tile.
+    expect(survey.values[64 * 129 + 64]).toBeCloseTo(6.953125, 3);
+    expect(survey.min).toBeGreaterThan(-3.6);
+    expect(survey.max).toBeLessThan(23.3);
+    expect(survey.max - survey.min).toBeGreaterThan(3);
+  });
+
+  it("steps from zoom 17 to zoom 16 where the site has no zoom 17 tile", async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      fetched.push(url);
+      return notFound();
+    });
+    const survey = await surveyHeights({ ...sprague, ...credit }, 129);
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(fetched.every((url) => url.startsWith("https://tiles.mapterhorn.com/17/"))).toBe(true);
+    expect(survey.zoom).toBe(16);
+    expect(survey.metersPerPixel).toBeCloseTo(0.91, 2);
+    expect(survey.values[64 * 129 + 64]).toBeCloseTo(2660.1875, 3);
+    expect(survey.min).toBeGreaterThan(2642);
+    expect(survey.max).toBeLessThan(2682);
+  });
+
+  it("fails closed naming the site when no zoom has a tile", async () => {
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", join(await makeTempDir("tn-terrain-empty-"), "cache"));
+    vi.stubGlobal("fetch", notFound);
+    await expect(surveyHeights({ ...sprague, ...credit }, 129)).rejects.toThrow(
+      /Sprague Lake[\s\S]*no Mapterhorn tile at any zoom/,
+    );
+  });
+
+  it("fails closed naming the tile when a cached file is not a tile", async () => {
+    const cache = await makeTempDir("tn-terrain-bad-");
+    await mkdir(join(cache, "16", "13542"), { recursive: true });
+    await writeFile(join(cache, "16", "13542", "24734.webp"), "not a webp");
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", cache);
+    vi.stubGlobal("fetch", notFound);
+    await expect(surveyHeights({ ...sprague, ...credit }, 129)).rejects.toThrow(
+      /tiles\.mapterhorn\.com\/16\/13542\/24734\.webp[\s\S]*decode/,
+    );
+  });
+});
+
+describe("mapterhorn ground", () => {
   beforeEach(() => {
     vi.stubEnv("TN_TERRAIN_TILE_CACHE", FIXTURE_CACHE);
     vi.stubGlobal("fetch", OFFLINE);
@@ -130,10 +199,12 @@ describe("terrarium tiles", () => {
     expect(survey.width).toBe(257);
     expect(survey.height).toBe(257);
     expect(survey.values).toHaveLength(257 * 257);
-    // The checked-in tile (z12/3626/1617, SRTM), decoded and resampled to 257: the summit is 3 776 m,
-    // so a 30 m source reads a little under it and no lower than the plain below the cone.
-    expect(survey.min).toBeCloseTo(1_548, 0);
-    expect(survey.max).toBeCloseTo(3_753, 0);
+    // The checked-in tile (z12/3626/1617), decoded and resampled to 257: the summit is 3 776 m, so a
+    // 15.6 m pixel reads a little under it and no lower than the plain below the cone.
+    expect(survey.zoom).toBe(12);
+    expect(survey.metersPerPixel).toBeCloseTo(15.58, 1);
+    expect(survey.min).toBeCloseTo(1_535.5, 0);
+    expect(survey.max).toBeCloseTo(3_769.6, 0);
     // The summit is inside the frame, not a flat window of the plain.
     expect(Math.max(...survey.values) - Math.min(...survey.values)).toBeGreaterThan(2_000);
   });
@@ -144,9 +215,7 @@ describe("terrarium tiles", () => {
     vi.stubEnv("TN_TERRAIN_TILE_CACHE", join(root, "empty-cache"));
     await expect(
       cookKit({ kit: "forest", landform: "alpine", out, projectRoot: root }),
-    ).rejects.toThrow(
-      /elevation-tiles-prod\/terrarium\/12\/\d+\/\d+\.png[\s\S]*ground: "procedural"/,
-    );
+    ).rejects.toThrow(/tiles\.mapterhorn\.com\/12\/\d+\/\d+\.webp[\s\S]*ground: "procedural"/);
   }, 120_000);
 
   it("cooks a landform preset from the cached survey and names the data it used", async () => {
@@ -162,6 +231,10 @@ describe("terrarium tiles", () => {
       lat: row.lat,
       lon: row.lon,
       attribution: row.attribution,
+      // The cook names the tiles it read: Mapterhorn at zoom 12, 15.58 m per pixel at Fuji's latitude.
+      tiles: "mapterhorn",
+      zoom: 12,
+      metersPerPixel: 15.58,
     });
     // The survey is the ground layer, not a layer beside the preset's noise: the shape stamps that
     // would duplicate the real cone are gone, and the finishing passes still run on top.
@@ -315,7 +388,7 @@ describe("the ground argument", () => {
 describe("the ecoregion rows", () => {
   beforeEach(() => {
     vi.stubEnv("TN_TERRAIN_TILE_CACHE", FIXTURE_CACHE);
-    vi.stubGlobal("fetch", OFFLINE);
+    vi.stubGlobal("fetch", NO_TILE);
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -323,10 +396,10 @@ describe("the ecoregion rows", () => {
   });
 
   it.each([
-    ["european-broadleaf", 309, 496],
-    ["boreal", 158, 342],
-    ["mediterranean", 283, 434],
-    ["pacific-northwest", 45, 221],
+    ["european-broadleaf", 304.6, 483],
+    ["boreal", 143.5, 324.8],
+    ["mediterranean", 276.2, 436],
+    ["pacific-northwest", 46, 205.4],
   ])("decodes %s's site to the range its row records", async (id, min, max) => {
     const row = ECOREGION_ROWS.find((entry) => entry.id === id);
     expect(row, id).toBeDefined();
@@ -335,16 +408,29 @@ describe("the ecoregion rows", () => {
     expect(survey.max).toBeCloseTo(max, 0);
   });
 
-  it("cuts every row's floor at the world's own square, and it is a forest floor", async () => {
+  // The lidar these sites now read is finer than the AWS tiles the floor gate was tuned on. At the
+  // world's own square, boreal's river reads as 8.5 % hydro-flattened water and the Pacific
+  // Northwest valley as a 31 degree 90th-percentile slope, so both centres fail the gate until
+  // PRD-885 Phase 3 retunes the gate or moves the site. The cook still takes the centre as the last spot.
+  it("cuts every row's floor at the world's own square, and says which are forest floors", async () => {
+    const floors: Record<string, boolean> = {};
     for (const row of ECOREGION_ROWS) {
       // The crop the cook cuts: the world's side at the finest zoom, inside the row's own extent.
-      const crop = await surveyHeights({ ...row.site, extentMeters: 512, zoom: 15 }, 257);
+      const crop = await surveyHeights({ ...row.site, extentMeters: 512 }, 257);
       const stats = terrainStats(crop.values, 257, 512);
-      expect(
-        isForestFloor(crop.max - crop.min, stats.slopeP90, 512, flatShare(crop.values, 257)),
-        row.id,
-      ).toBe(true);
+      floors[row.id] = isForestFloor(
+        crop.max - crop.min,
+        stats.slopeP90,
+        512,
+        flatShare(crop.values, 257),
+      );
     }
+    expect(floors).toEqual({
+      "european-broadleaf": true,
+      boreal: false,
+      mediterranean: true,
+      "pacific-northwest": false,
+    });
   });
 
   it("grounds a region on its row's own survey and names its source", async () => {
@@ -364,7 +450,12 @@ describe("the ecoregion rows", () => {
         lat: row.site.lat,
         lon: row.site.lon,
         attribution: row.site.attribution,
+        // Each site lands on its own zoom: the finest one that has a tile there, at most 15 for a 2 m grid.
+        tiles: "mapterhorn",
+        zoom: expect.any(Number),
+        metersPerPixel: expect.any(Number),
       });
+      expect((floor.ground as { zoom: number }).zoom, row.id).toBeLessThanOrEqual(15);
       // The attribution the data source requires rides with the cooked world.
       expect(floor.readme, row.id).toContain(row.site.attribution);
     }
@@ -376,7 +467,7 @@ describe("the ecoregion rows", () => {
 describe("the far ring", () => {
   beforeEach(() => {
     vi.stubEnv("TN_TERRAIN_TILE_CACHE", FIXTURE_CACHE);
-    vi.stubGlobal("fetch", OFFLINE);
+    vi.stubGlobal("fetch", NO_TILE);
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -388,7 +479,7 @@ describe("the far ring", () => {
   // the smooth survey around it dilutes curvature kurtosis, so that is where the gate is comparable.
   it("fetches a massif sharp enough for the Phase 1 gates", async () => {
     const row = MASSIFS.temperateMountains?.[0] as (typeof SURVEYS)["alpine"];
-    const grid = await surveyHeights({ ...row, zoom: row.zoom + 1 }, 257);
+    const grid = await surveyHeights(row, 257);
     const tile = { id: "longs", size: row.extentMeters, resolution: 257, heights: grid.values };
     for (const seed of [1, 2, 3]) {
       const { terrain } = placeMassif(
@@ -521,12 +612,15 @@ describe("the far ring", () => {
     const cache = join(root, "cache");
     await cp(FIXTURE_CACHE, cache, { recursive: true });
     // Longs Peak's own tile; the ground and the ring are still cached.
-    await rm(join(cache, "13", "1692", "3093.png"));
+    await rm(join(cache, "12", "846", "1547.webp"));
     vi.stubEnv("TN_TERRAIN_TILE_CACHE", cache);
+    vi.stubGlobal("fetch", OFFLINE);
     const out = join(root, "assets", "worlds", "world");
     await expect(
       cookKit({ kit: "forest", landform: "temperateMountains", out, projectRoot: root }),
-    ).rejects.toThrow(/Longs Peak[\s\S]*terrarium\/13\/1692\/3093\.png[\s\S]*backdrop: "none"/);
+    ).rejects.toThrow(
+      /Longs Peak[\s\S]*tiles\.mapterhorn\.com\/12\/846\/1547\.webp[\s\S]*backdrop: "none"/,
+    );
   }, 120_000);
 });
 

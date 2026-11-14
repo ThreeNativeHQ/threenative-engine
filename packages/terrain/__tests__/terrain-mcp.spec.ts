@@ -1737,11 +1737,10 @@ describe("every landform under every biome", () => {
   );
 });
 
-/** The checked-in terrarium tiles, used as the whole tile cache these tests read. */
-const REGION_TILES = new URL("./fixtures/terrarium/", import.meta.url).pathname;
-const NO_NETWORK = () => {
-  throw new Error("a region cook reads the checked-in tiles, never the network");
-};
+/** The checked-in Mapterhorn tiles, used as the whole tile cache these tests read. */
+const REGION_TILES = new URL("./fixtures/mapterhorn/", import.meta.url).pathname;
+// A tile that is not checked in answers 404, as a site with no tile at a zoom does: the survey steps down.
+const NO_NETWORK = () => Promise.resolve(new Response(null, { status: 404 }));
 
 // PRD-887: a region word is a real place with a plant community: the row's own survey grounds the
 // world, its canopy rows plant it, and a tree word still moves its species to the front.
@@ -1832,6 +1831,9 @@ describe("terrain_generate regions", () => {
         lat: row?.site.lat,
         lon: row?.site.lon,
         attribution: row?.site.attribution,
+        tiles: "mapterhorn",
+        zoom: 15,
+        metersPerPixel: 1.5,
       });
       expect(result.backdrop).toEqual({ source: "none" });
       expect(result.biome).toBe("european-broadleaf");

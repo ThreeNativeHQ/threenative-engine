@@ -1,10 +1,10 @@
 import type { LandformKind } from "./presets.js";
 
 /**
- * One real place a landform is measured from: a square ground footprint cut out of the AWS terrain
- * tiles. Shape only, like the presets themselves: nothing here names a material or a colour.
+ * One real place a landform is measured from: a square ground footprint cut out of the Mapterhorn
+ * terrain tiles. Shape only, like the presets themselves: nothing here names a material or a colour.
  *
- * A row's `lat`/`lon`/`extentMeters`/`zoom` are what the cook fetches, so a row is a reproducible
+ * A row's `lat`/`lon`/`extentMeters` are what the cook fetches (at the zoom its grid cell needs), so a row is a reproducible
  * crop, not a hint. The measured range in each comment is the decoded metres of that crop (see
  * `mcp/survey.ts`), which is what `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts`
  * checks the decoder against.
@@ -15,26 +15,32 @@ export interface ISurveyRow {
   readonly lon: number;
   /** Ground footprint the survey covers, metres: a square centred on `lat`/`lon`. */
   readonly extentMeters: number;
-  /** Terrarium zoom: 12 is about 30 m per pixel, which a few kilometres of ground reads at. */
-  readonly zoom: number;
-  /** The data source's own attribution text, as `tilezen/joerd` requires it. */
+  /** The data source's own attribution text, as Mapterhorn and its producers require it. */
   readonly attribution: string;
 }
 
-/** Where every survey comes from, at every zoom: one tile set, one credit. */
-export const TILES = "AWS Terrain Tiles (github.com/tilezen/joerd, Mapzen terrain tiles).";
+/**
+ * Where every survey comes from: one tile set, one credit. Mapterhorn asks for "© Mapterhorn" with a
+ * link to its attribution page, and that page lists the producer and licence of every source it
+ * merges (https://download.mapterhorn.com/attribution.json: 151 sources, all open licences).
+ */
+export const TILES =
+  "Terrain tiles © Mapterhorn (https://mapterhorn.com/attribution), built from open elevation data; the producers and licences of its sources are listed there.";
 
-// The per-source statements `tilezen/joerd` asks for, verbatim (docs/attribution.md).
+// One statement per producer, as `attribution.json` names it and its licence file requires it.
 export const USGS_3DEP =
-  "United States 3DEP (formerly NED) terrain data courtesy of the U.S. Geological Survey.";
-export const EU_DEM =
-  "Produced using Copernicus data and information funded by the European Union - EU-DEM layers.";
-const SRTM = "SRTM data courtesy of the U.S. Geological Survey.";
+  "United States 3DEP terrain data, U.S. Geological Survey (public domain, U.S. Government work).";
+export const COPERNICUS =
+  "Copernicus GLO-30 DEM, © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA; all rights reserved.";
+const SWISSTOPO = "swissALTI3D, Federal Office of Topography swisstopo (Open Government Data).";
+const IGN =
+  "MNT LiDAR HD, Institut national de l'information géographique et forestière IGN (Licence Ouverte 2.0).";
+const GSI =
+  "Digital elevation model of the Fundamental Geospatial Data, Geospatial Information Authority of Japan (国土交通省国土地理院).";
 
 /**
- * The landform's own survey. Each row's source is the one the tile set actually composites there
- * (the `X-Imagery-Sources` header of its tiles): 3DEP/NED in the United States, EU-DEM in Europe
- * and SRTM elsewhere.
+ * The landform's own survey. Each row names the producers Mapterhorn merges there: 3DEP in the United
+ * States, the national lidar of the country in Europe and Japan, with Copernicus GLO-30 under all of it.
  */
 export const SURVEYS: Readonly<Record<LandformKind, ISurveyRow>> = {
   alpine: {
@@ -42,63 +48,56 @@ export const SURVEYS: Readonly<Record<LandformKind, ISurveyRow>> = {
     lat: 45.9763,
     lon: 7.6586,
     extentMeters: 6_000,
-    zoom: 12,
-    attribution: `${EU_DEM} ${TILES}`,
-    // measured: 2 168..4 352 m (the summit is 4 478 m, at about 30 m per pixel)
+    attribution: `${SWISSTOPO} ${COPERNICUS} ${TILES}`,
+    // measured: 2 164..4 468 m (the summit is 4 478 m, at 13 m per pixel)
   },
   temperateMountains: {
     name: "Sprague Lake and Glacier Creek, Rocky Mountain National Park, Colorado",
     lat: 40.32,
     lon: -105.6067,
     extentMeters: 6_000,
-    zoom: 12,
     attribution: `${USGS_3DEP} ${TILES}`,
-    // measured: 2 387..3 434 m
+    // measured: 2 385..3 433 m
   },
   rollingHills: {
     name: "Coon Valley, Driftless Area, Wisconsin",
     lat: 43.7019,
     lon: -91.0139,
     extentMeters: 6_000,
-    zoom: 12,
     attribution: `${USGS_3DEP} ${TILES}`,
-    // measured: 209..391 m: 3 % relief over its 6 km, which is the preset's own 0.03 ratio
+    // measured: 211..391 m: 3 % relief over its 6 km, which is the preset's own 0.03 ratio
   },
   desertMesa: {
     name: "Monument Valley, Arizona / Utah",
     lat: 36.998,
     lon: -110.0985,
     extentMeters: 5_000,
-    zoom: 12,
     attribution: `${USGS_3DEP} ${TILES}`,
-    // measured: 1 542..1 972 m (the valley floor to the butte tops)
+    // measured: 1 542..1 969 m (the valley floor to the butte tops)
   },
   coastalCliffs: {
     name: "Étretat chalk cliffs, Normandy, France",
     lat: 49.707,
     lon: 0.203,
     extentMeters: 4_000,
-    zoom: 12,
-    attribution: `${EU_DEM} ${TILES}`,
-    // measured: -9..112 m (the sea to the cliff top)
+    attribution: `${IGN} ${COPERNICUS} ${TILES}`,
+    // measured: -3..109 m (the sea to the cliff top)
   },
   tundra: {
     name: "Trail Ridge, Rocky Mountain National Park, Colorado",
     lat: 40.4103,
     lon: -105.735,
     extentMeters: 5_000,
-    zoom: 12,
     attribution: `${USGS_3DEP} ${TILES}`,
-    // measured: 2 956..3 797 m, above the tree line
+    // measured: 2 946..3 798 m, above the tree line
   },
   volcanic: {
     name: "Mount Fuji, Honshu, Japan",
     lat: 35.3606,
     lon: 138.7274,
     extentMeters: 6_000,
-    zoom: 12,
-    attribution: `${SRTM} ${TILES}`,
-    // measured: 1 548..3 753 m (the summit is 3 776 m)
+    attribution: `${GSI} ${COPERNICUS} ${TILES}`,
+    // measured: 1 535..3 770 m (the summit is 3 776 m)
   },
 };
 
@@ -116,7 +115,6 @@ export const MASSIFS: Readonly<Partial<Record<LandformKind, readonly ISurveyRow[
       lat: 40.2549,
       lon: -105.6101,
       extentMeters: 4_400,
-      zoom: 12,
       attribution: `${USGS_3DEP} ${TILES}`,
     },
   ],
@@ -126,7 +124,6 @@ export const MASSIFS: Readonly<Partial<Record<LandformKind, readonly ISurveyRow[
       lat: 43.7455,
       lon: -110.8024,
       extentMeters: 3_600,
-      zoom: 12,
       attribution: `${USGS_3DEP} ${TILES}`,
     },
     {
@@ -134,15 +131,13 @@ export const MASSIFS: Readonly<Partial<Record<LandformKind, readonly ISurveyRow[
       lat: 39.0708,
       lon: -106.989,
       extentMeters: 3_600,
-      zoom: 12,
       attribution: `${USGS_3DEP} ${TILES}`,
     },
   ],
 };
 
-/** How much ground a bare `{ location }` covers, and how finely: the survey rows' own defaults. */
+/** How much ground a bare `{ location }` covers: the survey rows' own default. */
 const LOCATION_EXTENT_METERS = 6_000;
-const LOCATION_ZOOM = 12;
 
 const finite = (value: number, axis: string): number => {
   if (!Number.isFinite(value))
@@ -151,9 +146,9 @@ const finite = (value: number, axis: string): number => {
 };
 
 /**
- * A survey row for a caller's own coordinates: the same footprint and zoom the curated rows use, and
- * the attribution the global fallback sources (SRTM and GMTED2010) require, since a bare coordinate
- * says nothing about which country's survey covers it.
+ * A survey row for a caller's own coordinates: the same footprint the curated rows use, and
+ * the attribution of the global base every Mapterhorn tile carries (Copernicus GLO-30), since a bare
+ * coordinate says nothing about which country's survey covers it.
  */
 export function locationSurvey(lat: number, lon: number): ISurveyRow {
   const latitude = finite(lat, "lat");
@@ -167,8 +162,7 @@ export function locationSurvey(lat: number, lon: number): ISurveyRow {
     lat: latitude,
     lon: longitude,
     extentMeters: LOCATION_EXTENT_METERS,
-    zoom: LOCATION_ZOOM,
-    attribution: `${SRTM} ${TILES}`,
+    attribution: `${COPERNICUS} ${TILES}`,
   };
 }
 
@@ -186,6 +180,10 @@ export type IGroundDecision =
       readonly lat: number;
       readonly lon: number;
       readonly attribution: string;
+      /** The tile source, the zoom the survey landed on after any step down, and that zoom's pixel size. */
+      readonly tiles: "mapterhorn";
+      readonly zoom: number;
+      readonly metersPerPixel: number;
     }
   | { readonly source: "heightmap"; readonly heightmap: string }
   | { readonly source: "procedural" };

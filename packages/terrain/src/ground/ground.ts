@@ -153,13 +153,11 @@ export async function forestFloor(
     const north = (next() * 2 - 1) * 0.4 * row.extentMeters;
     return [north, east] as const;
   });
-  // Terrarium's finest zoom: about 3.7 m at 40 degrees, for a 2 m grid over 512 m.
   const patch = (north: number, east: number): ISurveyRow => ({
     ...row,
     lat: row.lat + north / 111_320,
     lon: row.lon + east / (111_320 * Math.cos((row.lat * Math.PI) / 180)),
     extentMeters: size,
-    zoom: 15,
   });
   let picked: { survey: ISurveyRow; grid: Awaited<ReturnType<typeof surveyHeights>> } | undefined;
   for (const [north, east] of [...spots, [0, 0] as const]) {
@@ -190,18 +188,26 @@ export async function forestFloor(
       lat: survey.lat,
       lon: survey.lon,
       attribution: survey.attribution,
+      ...tilesRead(grid),
     },
-    readme: groundReadme(survey),
+    readme: groundReadme(survey, grid),
   };
 }
 
+/** What the cook reports of the tiles it read: the source, the zoom it landed on and that zoom's pixel size. */
+const tilesRead = (grid: { zoom: number; metersPerPixel: number }) => ({
+  tiles: "mapterhorn" as const,
+  zoom: grid.zoom,
+  metersPerPixel: Math.round(grid.metersPerPixel * 100) / 100,
+});
+
 /** The attribution rides with the kit: the data source requires it wherever the world is shipped. */
-const groundReadme = (survey: ISurveyRow): string =>
+const groundReadme = (survey: ISurveyRow, grid: { zoom: number; metersPerPixel: number }): string =>
   [
     "# Cooked terrain world",
     "",
     `The ground is a real survey: ${survey.name} at ${survey.lat}, ${survey.lon},`,
-    `${survey.extentMeters} m across at zoom ${survey.zoom}, resampled onto the recipe's grid.`,
+    `${survey.extentMeters} m across, read from Mapterhorn tiles at zoom ${grid.zoom} (${tilesRead(grid).metersPerPixel} m per pixel), resampled onto the recipe's grid.`,
     "",
     "## Data attribution",
     "",
@@ -315,9 +321,10 @@ export async function applyGround(
       lat: survey.lat,
       lon: survey.lon,
       attribution: survey.attribution,
+      ...tilesRead(grid),
     },
     // The attribution rides with the kit: the data source requires it wherever the world is shipped.
-    readme: groundReadme(survey),
+    readme: groundReadme(survey, grid),
   };
 }
 
@@ -415,16 +422,14 @@ export async function farRing(
     return { decision: { source: "none" } };
   const { row, scale, offset } = ground.survey;
   const resolution = 257;
-  // One zoom finer than its row (about 15 m at z13): the massif's detail is a game's relief map.
+  // A 14 m grid over the massif: its detail is a game's relief map.
   const MASSIF_RESOLUTION = 257;
   const fetchMassif = async (massif: ISurveyRow) => {
-    const grid = await surveyHeights({ ...massif, zoom: massif.zoom + 1 }, MASSIF_RESOLUTION).catch(
-      (error: unknown) => {
-        throw new Error(
-          `cook: far-ring massif '${massif.name}': ${error instanceof Error ? error.message : String(error)} Pass backdrop: "none" to cook without the far ring.`,
-        );
-      },
-    );
+    const grid = await surveyHeights(massif, MASSIF_RESOLUTION).catch((error: unknown) => {
+      throw new Error(
+        `cook: far-ring massif '${massif.name}': ${error instanceof Error ? error.message : String(error)} Pass backdrop: "none" to cook without the far ring.`,
+      );
+    });
     return {
       id: massif.name,
       size: massif.extentMeters,
@@ -433,10 +438,7 @@ export async function farRing(
     };
   };
   const [ringGrid, ...tiles] = await Promise.all([
-    surveyHeights(
-      { ...row, extentMeters: row.extentMeters * RING_SCALE, zoom: Math.max(1, row.zoom - 2) },
-      resolution,
-    ),
+    surveyHeights({ ...row, extentMeters: row.extentMeters * RING_SCALE }, resolution),
     ...rows.map(fetchMassif),
   ]);
   const size = config.size * RING_SCALE;

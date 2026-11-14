@@ -68,7 +68,7 @@ triangles near the camera need a frame-time reading.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A survey at a lidar site returns Mapterhorn ground at the finest zoom the site has, and the cook result names the source, zoom and metres per pixel. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts` with fixture tiles for a zoom 17 site and a zoom 16 site — Evidence: pending.
+- [x] AC-1 [local]: A survey at a lidar site returns Mapterhorn ground at the finest zoom the site has, and the cook result names the source, zoom and metres per pixel. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts` with fixture tiles for a zoom 17 site and a zoom 16 site — Evidence: 2026-11-15, `mapterhorn tiles` cases: Étretat (zoom 17 tile, 0.39 m/px) decodes to a centre elevation of 6.953125 m read straight from the tile and reports `zoom: 17`; Sprague Lake steps from a 404 at zoom 17 to its zoom 16 tile (2 660.19 m at the centre) and reports `zoom: 16`, 0.91 m/px. The cook's `ground` reply carries `tiles: "mapterhorn"`, `zoom` and `metersPerPixel` (volcanic cook: zoom 12, 15.58 m/px). terrain-survey and terrain-mcp: 189 tests pass.
 - [ ] AC-2 [local]: The cooked forest-floor heights keep at least 80% of the source's relief under 10 m (RMS after a 10 m low-pass) at 1 m cells. proof: a new case in `packages/terrain/__tests__/terrain-survey.spec.ts` on the Sprague Lake fixture — Evidence: pending.
 - [ ] AC-3 [local]: At walking pose on the cooked forest floor, a fresh visual judge returns IMPROVEMENT on the `ground` row against the AWS arm. proof: `KIT=forest pnpm --filter strata-terrain-preview test:kit`, two headed WebGPU runs per arm, sheets on the PR — Evidence: pending.
 - [ ] AC-4 [local]: The cooked kit stays at or under 25 MiB and presented p95 frame time does not rise. proof: `pnpm --filter strata-terrain-preview test:consumer` for the size, and `measure-steady-state-fps` with paired arms on one code state for the frame time — Evidence: pending.
@@ -85,6 +85,9 @@ triangles near the camera need a frame-time reading.
 - 2026-11-13 (author, reversible): decode WebP with `sharp` and do not write a VP8L decoder by hand. `sharp` is already in the catalog. A hand decoder is several hundred lines for one tile format. If the owner wants `@threenative/terrain` to stay free of native dependencies, the cook moves the decode behind an optional dependency and fails closed naming the install command.
 - 2026-11-13 (author, reversible): one source, no AWS arm kept in shipped code. The committed DEM crops of the five starter worlds do not change, so their look does not change.
 
+- 2026-11-15 (Phase 2, finding): the finer data moves two ecoregion floors across the floor gate. At the world's own 512 m square, boreal reads 8.5 % hydro-flattened water (gate 2 %) and the Pacific Northwest valley reads a 31 degree 90th-percentile slope (gate 28). The spec now records which rows pass (`european-broadleaf`, `mediterranean`) and which do not (`boreal`, `pacific-northwest`), and the cook still takes the centre as its last spot. Phase 3 decides whether the gate or the two sites change.
+- 2026-11-15 (Phase 2, design): the zoom comes from the grid cell (the coarsest zoom whose pixel is no wider than a cell, at most 17), so the `zoom` field left `ISurveyRow` and the three call sites that overrode it (floor, massif, ring) lost their overrides. Step-down is per footprint: one 404 on any tile moves all of its tiles one zoom coarser. Attribution is `© Mapterhorn` with the link to its attribution page plus the producer lines named in `attribution.json` (3DEP, swisstopo, IGN, GSI, Copernicus GLO-30). Mapterhorn publishes no usage policy for automated clients; the cook caches every tile on disk and reads about ten per cook.
+
 ## Execution Phases
 
 #### Phase 1: The ceiling, measured before any shipping change
@@ -98,13 +101,13 @@ triangles near the camera need a frame-time reading.
 
 #### Phase 2: The survey reads Mapterhorn
 
-**Status:** NOT STARTED
-**Files:** `packages/terrain/src/ground/survey.ts` (source, 512 px, WebP decode, zoom step-down), `packages/terrain/src/core/surveys.ts` (attribution text), `packages/terrain/package.json` (`sharp`), `packages/terrain/__tests__/terrain-survey.spec.ts` and its fixtures.
+**Status:** DONE (2026-11-15)
+**Files:** `packages/terrain/src/ground/survey.ts` (source, 512 px, WebP decode, zoom step-down), `packages/terrain/src/ground/surveys.ts` (attribution text; the PRD named `core/surveys.ts`), `packages/terrain/src/ground/ground.ts` (the `ground` reply and the kit README name the zoom), `packages/terrain/src/request/ecoregions.ts` (credit constants), `packages/terrain/src/mcp/tools.ts` and `packages/create-threenative/terrain-mcp-tools.json` (tool text), `packages/terrain/package.json` (`sharp`), `packages/terrain/__tests__/terrain-survey.spec.ts` and its fixtures.
 **Implementation:** Replace the tile URL and the decoder. Pick the zoom from the grid cell size. Step down on 404 and report the zoom used. Write the attribution from Mapterhorn's licence files into the kit, as the AWS path does today.
 **Verification:** `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts` — AC-1.
 
-- [ ] `surveyHeights` decodes a Mapterhorn fixture tile to its real elevations and steps from zoom 17 to 16 at a site that has no zoom 17 tile. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts`
-- [ ] No AWS tile URL and no PNG tile decoder are left in `packages/terrain/src`. proof: `rg -c 'elevation-tiles-prod|readPNGChunks' packages/terrain/src` prints nothing
+- [x] `surveyHeights` decodes a Mapterhorn fixture tile to its real elevations and steps from zoom 17 to 16 at a site that has no zoom 17 tile. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-survey.spec.ts` — Evidence: 2026-11-15, red first (4 `mapterhorn tiles` cases failed on the AWS decoder), then green after the change: the zoom 17 Étretat tile decodes to the independently measured 6.953125 m centre, the Sprague Lake case fetches only zoom 17 URLs (404) and lands on zoom 16, and an all-404 site and a corrupt cached tile fail closed naming the site and the tile. Tile fixtures: 31 files, 3.1 MB, in `__tests__/fixtures/mapterhorn/`.
+- [x] No AWS tile URL and no PNG tile decoder are left in `packages/terrain/src`. proof: `rg -c 'elevation-tiles-prod|readPNGChunks' packages/terrain/src` prints nothing — Evidence: 2026-11-15, the command prints nothing and exits 1; `rg readPNGChunks packages scripts examples` finds no other caller. `sharp` is now a `dependencies` entry of `@threenative/terrain` (lockfile specifier `>=0.35.4`, as `packages/assets` records it) and loads on the first decode only.
 
 #### Phase 3: The forest floor carries the relief
 

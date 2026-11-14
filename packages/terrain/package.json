@@ -78,6 +78,9 @@
     "bake:desert": "pnpm run build && node starter/desert/bake.mjs --out ../../artifacts/terrain/desert",
     "bake:tundra": "pnpm run build && node starter/tundra/bake.mjs --out ../../artifacts/terrain/tundra"
   },
+  "dependencies": {
+    "sharp": "catalog:"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/three": "catalog:",

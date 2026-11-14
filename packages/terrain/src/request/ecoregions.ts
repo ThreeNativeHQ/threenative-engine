@@ -1,7 +1,7 @@
 import type { IBiomeSpec, IFoliageType } from "../biome/biome.js";
 import type { TerrainKit } from "../biome/kits.js";
 import type { IMask } from "../core/types.js";
-import { EU_DEM, type ISurveyRow, TILES, USGS_3DEP } from "../ground/surveys.js";
+import { COPERNICUS, type ISurveyRow, TILES, USGS_3DEP } from "../ground/surveys.js";
 
 /**
  * The regions a request may name: a row per ecoregion, holding the real ground it stands on and the
@@ -118,10 +118,9 @@ export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
       lat: 51.0833,
       lon: 10.4667,
       extentMeters: 3_000,
-      zoom: 12,
-      attribution: `${EU_DEM} ${TILES}`,
-      // measured: 309..496 m over its 3 km, and 403..438 m at the world's own 512 m (a beech wood's
-      // floor: 5.6 and 4.5 degrees at the 90th percentile, no hydro-flattened water)
+      attribution: `${COPERNICUS} ${TILES}`,
+      // measured: 305..483 m over its 3 km, and 380..423 m at the world's own 512 m (a beech wood's
+      // floor: 5.8 degrees at the 90th percentile, no hydro-flattened water)
     },
     canopy: ["fir", "fir-c"],
     overrides: {
@@ -151,10 +150,10 @@ export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
       lat: 66.3667,
       lon: 29.3167,
       extentMeters: 3_000,
-      zoom: 12,
-      attribution: `${EU_DEM} ${TILES}`,
-      // measured: 158..342 m over its 3 km, and 175..226 m at 512 m (a spruce stand on a river's
-      // bank: 12.1 and 23.6 degrees at the 90th percentile)
+      attribution: `${COPERNICUS} ${TILES}`,
+      // measured: 144..325 m over its 3 km, and 158..206 m at 512 m (a spruce stand on a river's
+      // bank: 25.8 degrees at the 90th percentile, and 8.5 % of it hydro-flattened water, so the
+      // 512 m crop fails the floor gate at this site until PRD-885 Phase 3 retunes the gate or the site)
     },
     canopy: ["fir", "fir-c"],
     overrides: {
@@ -178,10 +177,9 @@ export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
       lat: 43.0667,
       lon: 11.6167,
       extentMeters: 3_000,
-      zoom: 12,
-      attribution: `${EU_DEM} ${TILES}`,
-      // measured: 283..434 m over its 3 km, and 334..401 m at 512 m (a clay hillside with its olive
-      // and cypress: 10.2 and 12.4 degrees at the 90th percentile)
+      attribution: `${COPERNICUS} ${TILES}`,
+      // measured: 276..436 m over its 3 km, and 328..403 m at 512 m (a clay hillside with its olive
+      // and cypress: 17.6 degrees at the 90th percentile)
     },
     // The desert kit ships no tree art of its own, so there is no authored canopy to replace.
     canopy: [],
@@ -208,10 +206,10 @@ export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
       lat: 47.2,
       lon: -123.9,
       extentMeters: 3_000,
-      zoom: 12,
       attribution: `${USGS_3DEP} ${TILES}`,
-      // measured: 45..221 m over its 3 km, and 84..163 m at 512 m (a Douglas-fir valley floor: 24.1
-      // and 26.7 degrees at the 90th percentile, under the 28 the floor accepts)
+      // measured: 46..205 m over its 3 km, and 77..151 m at 512 m (a Douglas-fir valley floor: 31.0
+      // degrees at the 90th percentile, over the 28 the floor gate accepts, until PRD-885 Phase 3
+      // retunes the gate or the site)
     },
     canopy: ["fir", "fir-c"],
     overrides: {
