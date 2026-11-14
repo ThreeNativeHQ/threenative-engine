@@ -496,7 +496,10 @@ try {
     "--out",
     forestWorld,
   ]);
-  assert(existsSync(join(forestWorld, "world.glb")), "the forest cook wrote no world.glb");
+  assert(
+    existsSync(join(forestWorld, "world.glb")),
+    "Missing cooked forest fixture: cook-forest-fixture.mjs wrote no world.glb",
+  );
   copyFileSync(join(forestWorld, "world.glb"), join(consumer, "forest-world.glb"));
   copyFileSync(join(forestWorld, "world.json"), join(consumer, "forest-world.json"));
 
