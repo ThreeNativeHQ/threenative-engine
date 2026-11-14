@@ -32,10 +32,10 @@ export interface IArborPreset {
 }
 declare const Arbor: {
   readonly PRESETS: Record<string, IArborPreset>;
-  generate(preset: string, opts?: { seed?: number; lod?: number }): IArborTree;
+  generate(preset: string | IArborPreset, opts?: { seed?: number; lod?: number }): IArborTree;
   barkTexture(id: string): IArborTexture;
   leafTexture(
-    preset: string,
+    preset: string | IArborPreset,
     opts?: { size?: number; createCanvas?: (w: number, h: number) => unknown },
   ): { readonly width: number; readonly height: number; readonly data: Uint8Array };
   toGLB(

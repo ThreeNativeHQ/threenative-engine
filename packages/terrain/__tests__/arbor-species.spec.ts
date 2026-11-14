@@ -5,7 +5,11 @@ import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { cookKit } from "../src/cook/cook.js";
 import { TERRAIN_TOOLS, newBiomeSpec, parseGenerateRequest } from "../src/mcp/tools.js";
-import { ARBOR_TREE_IDS, parseArborSpecies } from "../src/population/arbor-species.js";
+import {
+  ARBOR_TREE_IDS,
+  growArborRows,
+  parseArborSpecies,
+} from "../src/population/arbor-species.js";
 import { ECOREGION_ROWS } from "../src/request/ecoregions.js";
 import { TREE_WORD_ROWS } from "../src/request/request-words.js";
 
@@ -64,6 +68,24 @@ async function grove(species: readonly string[]) {
 }
 
 describe("Arbor species in a terrain cook", () => {
+  it("grows a kit row's form patch into its own bake, and keeps the patch out of the asset row", async () => {
+    const fixture = await project({ vegetation: true });
+    try {
+      const table: Record<string, object> = {
+        fir: { arbor: "spruce@7", form: { leaves: [{ count: 40 }] }, tree: true },
+        plain: { arbor: "spruce@7" },
+      };
+      await growArborRows(table, fixture.root, join(fixture.root, "scratch"));
+      const fir = table.fir as { near: string; tree?: boolean };
+      expect(fir.near).toMatch(/spruce-7-f[0-9a-f]{8}-lod\d\.glb$/u);
+      expect((table.plain as { near: string }).near).toMatch(/spruce-7-lod\d\.glb$/u);
+      expect(fir).not.toHaveProperty("form");
+      expect(fir.tree).toBe(true);
+    } finally {
+      await fixture.remove();
+    }
+  });
+
   it("parses arbor:<preset>[@seed] and fails closed on a malformed name", () => {
     expect(parseArborSpecies("arbor:oak@7")).toEqual({ preset: "oak", seed: 7 });
     expect(parseArborSpecies("arbor:spruce")).toEqual({ preset: "spruce", seed: 1 });

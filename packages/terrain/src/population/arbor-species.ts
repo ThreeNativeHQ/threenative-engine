@@ -10,6 +10,7 @@ interface IVegetation {
     out: string;
     preset: string;
     seed: number;
+    form?: Readonly<Record<string, unknown>>;
   }): Promise<
     { bounds: { max: [number, number, number]; min: [number, number, number] }; path: string }[]
   >;
@@ -112,6 +113,7 @@ export async function growArborAsset(
   scratch: string,
   species: string,
   seedOffset = 0,
+  form?: Readonly<Record<string, unknown>>,
 ): Promise<IArborAsset> {
   const parsed = parseArborSpecies(species);
   if (parsed === undefined) throw new Error(`cook: species '${species}' must start with arbor:.`);
@@ -127,6 +129,7 @@ export async function growArborAsset(
     out: join(scratch, id),
     preset: parsed.preset,
     seed,
+    ...(form === undefined ? {} : { form }),
   });
   const [near, mid] = files as [(typeof files)[number], (typeof files)[number]];
   return { bounds: near.bounds, maxDistance: 600, mid: mid.path, midDistance: 45, near: near.path };
@@ -134,7 +137,9 @@ export async function growArborAsset(
 
 /**
  * Grows each kit asset row written `{ "arbor": "douglasfir@3" }` in place: the baked near and mid
- * levels and bounds join the row, and the row's own fields win. Returns whether any row grew.
+ * levels and bounds join the row, and the row's own fields win. A row's `form` is the game's patch
+ * over the Arbor preset (`bakeVegetation`'s `form`), so a kit grows a forest-grown form or its own
+ * leaf card with no package edit. Returns whether any row grew.
  */
 export async function growArborRows(
   table: Record<string, object>,
@@ -143,9 +148,15 @@ export async function growArborRows(
 ): Promise<boolean> {
   let grew = false;
   for (const [id, spec] of Object.entries(table)) {
-    const { arbor, ...row } = spec as { arbor?: string };
+    const { arbor, form, ...row } = spec as {
+      arbor?: string;
+      form?: Readonly<Record<string, unknown>>;
+    };
     if (arbor === undefined) continue;
-    table[id] = { ...(await growArborAsset(projectRoot, scratch, `arbor:${arbor}`)), ...row };
+    table[id] = {
+      ...(await growArborAsset(projectRoot, scratch, `arbor:${arbor}`, 0, form)),
+      ...row,
+    };
     grew = true;
   }
   return grew;

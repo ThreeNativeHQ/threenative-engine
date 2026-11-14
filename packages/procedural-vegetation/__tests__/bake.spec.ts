@@ -73,6 +73,32 @@ describe("bakeVegetation", () => {
     await expect(readdir(out)).rejects.toThrow();
   });
 
+  it("grows a game's form patch over the preset, deterministically and under its own file name", async () => {
+    const out = await makeTempDir("tn-vegetation-");
+    const form = { leaves: [{ count: 40, size: [0.6, 0.45] }], levels: [{ from: 0.2 }] };
+    const [plain] = await bakeVegetation({ out, preset: "spruce", seed: 7 });
+    const [formed] = await bakeVegetation({ out, preset: "spruce", seed: 7, form });
+    const [again] = await bakeVegetation({
+      out: await makeTempDir("tn-vegetation-"),
+      preset: "spruce",
+      seed: 7,
+      form,
+    });
+    expect(formed?.path).not.toBe(plain?.path);
+    expect(formed?.triangles).toBeGreaterThan(plain?.triangles ?? Number.POSITIVE_INFINITY);
+    const sha = async (file?: string) =>
+      createHash("sha256")
+        .update(await readFile(file ?? ""))
+        .digest("hex");
+    expect(await sha(formed?.path)).toBe(await sha(again?.path));
+    await expect(bakeVegetation({ out, preset: "spruce", form: { leafs: [] } })).rejects.toThrow(
+      /form key "leafs"/u,
+    );
+    await expect(
+      bakeVegetation({ out, preset: "spruce", form: { leaves: [{}, { count: 3 }] } }),
+    ).rejects.toThrow(/form\.leaves has 2 rows; spruce has 1/u);
+  });
+
   it("lists the trees with latin names", () => {
     const presets = vegetationPresets();
     expect(presets.find((preset) => preset.id === "oak")).toMatchObject({
