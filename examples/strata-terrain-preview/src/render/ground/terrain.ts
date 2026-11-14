@@ -85,8 +85,8 @@ import {
   surfaceHeights,
 } from "../water/river.js";
 import {
-  type IPackedMassif,
   COLLAR_UNDER_TILE,
+  type IPackedMassif,
   STREAM_TILE,
   collarColors,
   collarMorph,
