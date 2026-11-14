@@ -2261,18 +2261,6 @@ describe("drawPastFrameGate", () => {
     expect(draws).toEqual([false, true]);
   });
 
-  it("waits longer when each retry shows the GPU takes a long time per frame", async () => {
-    // A software adapter holds each frame 2.5 to 7.5 s: a fixed 5 s wait expired before the gate's
-    // two in-flight frames finished, startup stayed collapsing for good, and Adventure's CI lane failed.
-    const { raw, draws, draw } = gated(3);
-    const slowFrames = () => {
-      draw();
-      return new Promise<void>((resolve) => setTimeout(resolve, 40));
-    };
-    await drawPastFrameGate(raw, slowFrames, 50);
-    expect(draws).toEqual([false, false, false, true]);
-  });
-
   it("fails, naming the gate, when the GPU never takes a frame", async () => {
     const { raw, draw } = gated(Number.POSITIVE_INFINITY);
     await expect(drawPastFrameGate(raw, draw, 50)).rejects.toThrow("TN_WARMUP_FRAME_GATE");

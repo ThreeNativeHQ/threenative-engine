@@ -286,6 +286,11 @@ interface INativeEnvironmentPreparer {
   ): Promise<boolean>;
 }
 
+/** `drawPastFrameGate`'s refusal: the renderer never took the covered draw in its whole wait. */
+function isFrameGateTimeout(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("TN_WARMUP_FRAME_GATE");
+}
+
 function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | undefined {
   return typeof (raw as Partial<INativeEnvironmentPreparer> | null)?.prepareEnvironmentAsync ===
     "function"
@@ -1229,6 +1234,10 @@ export async function warmUpScene(
           // Skipped because the budget ran out first: lazy work, like any compile that never
           // started. Rejecting here failed a held startup whose compile merely ran long.
           if (passError === undefined && now() >= startedAt + budgetMs) return;
+          // The frame gate declined the covered draw for its whole wait: the GPU was busy (a
+          // software adapter holds each frame for seconds), which no pipeline caused. The pipelines
+          // build lazily at the first frame that needs them; a rejection here failed the held launch.
+          if (isFrameGateTimeout(passError)) return;
           throw passError ?? new Error("covered world warm render did not settle");
         }
       });

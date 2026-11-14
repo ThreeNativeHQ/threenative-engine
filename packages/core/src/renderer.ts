@@ -1647,8 +1647,6 @@ function isOutputPassNode(node: unknown): node is PassNode {
 
 /** How long a covered warm-up draw waits for the GPU to take a frame before it fails. */
 const FRAME_GATE_WAIT_MS = 5000;
-/** How many of the slowest observed retries the wait covers when frames are slow: two in flight, one to draw, one spare. */
-const FRAME_GATE_FRAMES = 4;
 
 /** Cumulative render() calls the renderer declined to draw (the Wasm web engine's frame gate), when it counts them. */
 export function rendererFrameGateSkips(raw: unknown): number | undefined {
@@ -1757,20 +1755,14 @@ export function drawPastFrameGate(
   return (async () => {
     await first;
     // The wait starts once the declined draw settled, so a slow settle does not use up the retries.
-    const start = now();
-    // The gate opens when the frames on the GPU finish, and a software adapter holds each one for
-    // seconds. The slowest retry measures that, so the wait covers `FRAME_GATE_FRAMES` of such frames
-    // instead of a fixed 5 s that a slow lane cannot meet (the retry that drew never came).
-    let slowestRetryMs = 0;
-    while (now() < start + Math.max(waitMs, FRAME_GATE_FRAMES * slowestRetryMs)) {
-      const retryStart = now();
+    const deadline = now() + waitMs;
+    while (now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 16));
       const skips = rendererFrameGateSkips(raw);
       const drawn = draw();
       afterDraw?.();
       if (rendererFrameGateSkips(raw) === skips) return drawn;
       await drawn;
-      slowestRetryMs = Math.max(slowestRetryMs, now() - retryStart);
     }
     throw new Error(
       `TN_WARMUP_FRAME_GATE: the covered warm-up draw waited ${waitMs} ms for the GPU to take a frame and never drew.`,
