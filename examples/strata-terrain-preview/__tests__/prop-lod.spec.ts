@@ -582,7 +582,11 @@ describe("licensed pack characterization", () => {
   async function loadedWorld(world: WorldName, near: Group) {
     const assets = {
       resolve: async () => [],
-      model: async (path: string) => (path.startsWith("temperate/") ? { scene: near } : undefined),
+      // The forest grass rows draw the starter's `grass_medium` cards; the licensed rows elsewhere.
+      model: async (path: string) =>
+        path.startsWith("temperate/") || path.startsWith("grass_medium/")
+          ? { scene: near }
+          : undefined,
     } as unknown as IAssetLoader;
     return loadPack(assets, world);
   }
