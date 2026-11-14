@@ -2543,13 +2543,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             row.vertexOffset = p.vertexOffset; row.fragmentOffset = p.fragmentOffset;
             row.fragmentBlock = p.program->fragment.uniformBlockSize != 0;
             row.vertex.clear();
-            for (const shader::VertexAttribute& a : p.program->vertex.attributes) {
-                const bool column = a.name.rfind("instanceMatrix", 0) == 0;  // the columns of one buffer of mat4s
+            // Slots as the encode loop counts them: the mat4's four columns share one.
+            uint32_t slot = 0;
+            const auto& vertexAttributes = p.program->vertex.attributes;
+            for (size_t i = 0; i < vertexAttributes.size(); ++i) {
+                const shader::VertexAttribute& a = vertexAttributes[i];
+                if (shader::sharesMatrixSlot(vertexAttributes, i)) continue;
                 BufferStore* source = vertexSourceOf(item, a);
                 if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
-                const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
                 const auto resolved = geometry_->cache.resolved(*source);
-                row.vertex.push_back({a.location, geometry_->gpu.buffer(resolved.buffer), offset, resolved.bytes - offset});
+                row.vertex.push_back({slot++, geometry_->gpu.buffer(resolved.buffer), 0, resolved.bytes});
             }
             row.indirect = item.indirect ? geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer) : nullptr;
             row.indirectOffset = item.indirectOffset;

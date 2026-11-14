@@ -98,3 +98,51 @@ describe("createGameStore", () => {
     store.stop();
   });
 });
+
+describe("createGameStore changed-only publication", () => {
+  it("should publish nothing when every value put back is the one already published", () => {
+    const store = createGameStore({ credits: 40, score: 7 });
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => notifications++);
+
+    for (let frame = 0; frame < 600; frame++) {
+      store.set({ credits: 40, score: 7 });
+      store.flush();
+    }
+
+    expect(notifications).toBe(0);
+    unsubscribe();
+    store.stop();
+  });
+
+  it("should publish the one changed key and keep the unchanged siblings quiet", () => {
+    const store = createGameStore({ credits: 40, score: 7 });
+    const observed: Array<{ credits: number; score: number }> = [];
+    const unsubscribe = store.subscribe((state) => observed.push({ ...state }));
+
+    store.set({ credits: 40, score: 8 });
+    store.flush();
+
+    expect(observed).toEqual([{ credits: 40, score: 8 }]);
+    unsubscribe();
+    store.stop();
+  });
+
+  it("should publish nothing when the same object is mutated and set again", () => {
+    const inventory = { count: 1 };
+    const store = createGameStore<{ inventory: { count: number } }>({ inventory });
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => notifications++);
+
+    inventory.count = 2;
+    store.set({ inventory });
+    store.flush();
+    expect(notifications).toBe(0);
+
+    store.set({ inventory: { count: 2 } });
+    store.flush();
+    expect(notifications).toBe(1);
+    unsubscribe();
+    store.stop();
+  });
+});

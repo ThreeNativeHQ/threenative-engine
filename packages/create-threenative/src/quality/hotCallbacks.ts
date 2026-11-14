@@ -2,6 +2,10 @@ import type { Rule } from "eslint";
 import type * as ESTree from "estree";
 
 const FRAME_METHODS = new Set(["render", "update"]);
+/** Method names a class other than a `Scene` may use for its own per-frame step. A game's entity
+ * class is not a node, so the engine cannot see its `update`, and 22 allocation or tree-walk sites
+ * in kit entity `update` methods were invisible to the rules. */
+const ENTITY_FRAME_METHODS = new Set(["fixedUpdate", "step", "tick", "update"]);
 /** Registration calls whose first argument runs every frame (or every render call), by label. The
  * TSL node hooks run once per render call, and a post chain makes many a frame: the shooter's
  * backlight validated its controls in eight `onRenderUpdate` callbacks, 525 bridge reads a frame. */
@@ -58,8 +62,24 @@ function hookName(parent: ESTree.Node, node: FunctionNode): string | undefined {
   return name === undefined ? undefined : FRAME_HOOKS.get(name);
 }
 
+/** The label a class method carries when it runs each frame: `Scene.update`, or `Enemies.tick` for a
+ * game's own entity class. */
+function methodLabel(parent: Rule.Node, sceneLocals: ReadonlySet<string>): string | undefined {
+  if (parent.type !== "MethodDefinition" || parent.static || parent.key.type !== "Identifier")
+    return undefined;
+  const owner = (parent.parent?.parent as ESTree.Class | undefined) ?? undefined;
+  const base = owner?.superClass;
+  const isSceneBase = base?.type === "Identifier" && sceneLocals.has(base.name);
+  if (isSceneBase)
+    return FRAME_METHODS.has(parent.key.name) ? `Scene.${parent.key.name}` : undefined;
+  if (!ENTITY_FRAME_METHODS.has(parent.key.name)) return undefined;
+  const className = owner?.id?.name;
+  return className === undefined ? parent.key.name : `${className}.${parent.key.name}`;
+}
+
 /** Tracks whether the visitor is directly inside a per-frame callback: a `Scene` `update`/`render`
- * method, a function registered with `ctx.beforeRender` / `ctx.afterPhysics`, a TSL node's
+ * method, a non-static `update`/`fixedUpdate`/`tick`/`step` method on any other class, a function
+ * registered with `ctx.beforeRender` / `ctx.afterPhysics`, a TSL node's
  * `onRenderUpdate` / `onFrameUpdate` / `onObjectUpdate`, or `setAnimationLoop`; a callback handed to
  * an array iterator inside one is inside it too. Syntactic on purpose: a callback hidden behind a
  * helper is outside its coverage. Shared by every rule that means "this must not run every frame". */
@@ -69,11 +89,8 @@ export function trackHotCallbacks(): IHotCallbacks {
 
   const frameName = (node: FunctionNode): string | undefined => {
     const parent = (node as Rule.Node).parent as Rule.Node;
-    if (parent.type === "MethodDefinition" && !parent.static && parent.key.type === "Identifier") {
-      const base = (parent.parent?.parent as ESTree.Class | undefined)?.superClass;
-      const isSceneBase = base?.type === "Identifier" && sceneLocals.has(base.name);
-      if (isSceneBase && FRAME_METHODS.has(parent.key.name)) return `Scene.${parent.key.name}`;
-    }
+    const method = methodLabel(parent, sceneLocals);
+    if (method !== undefined) return method;
     const hook = hookName(parent, node);
     if (hook !== undefined) return hook;
     const member = calleeMember(parent, node);

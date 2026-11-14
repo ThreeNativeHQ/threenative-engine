@@ -145,6 +145,38 @@ describe("scene warm-up", () => {
     }
   }, 10_000);
 
+  test("settles a held completion whose covered pass the busy GPU declined", async () => {
+    // A software adapter holds frames for seconds, so the covered draw waits out the frame gate and
+    // throws TN_WARMUP_FRAME_GATE after the compile outran its budget. That is a busy GPU, not a broken
+    // pipeline: the held completion rejected with it and Adventure's launch stayed collapsing for good.
+    let resolveCompile: () => void = () => undefined;
+    const warmUpWorldPass = vi.fn(() => {
+      throw new Error(
+        "TN_WARMUP_FRAME_GATE: the covered warm-up draw waited 5000 ms and never drew.",
+      );
+    });
+    const result = await warmUpSceneWithCompletion(
+      {
+        compileAsync: () =>
+          new Promise<void>((resolve) => {
+            resolveCompile = resolve;
+          }),
+        warmUpWorldPass,
+      },
+      sceneOf(1) as never,
+      {} as never,
+      {
+        budgetMs: 10,
+        granularity: "scene",
+        yieldFrame: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+      },
+    );
+
+    expect(result.report.timedOut).toBe(true);
+    resolveCompile();
+    await expect(result.completion).resolves.toBeUndefined();
+  }, 10_000);
+
   test("preserves a timed-out compile rejection for the held startup gate", async () => {
     let rejectCompile: (error: Error) => void = () => undefined;
     let compileCalls = 0;

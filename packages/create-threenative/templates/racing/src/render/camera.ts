@@ -54,7 +54,7 @@ export function chaseCamera(
   desired.copy(target).addScaledVector(behind, -EYE_BACK);
   desired.y += EYE_UP;
   if (dt >= 1) camera.position.copy(desired);
-  else camera.position.lerp(desired, 1 - Math.exp(-dt / 0.2));
+  else camera.position.lerp(desired, MathUtils.damp(0, 1, 5, dt));
   // Look ahead along the same travel direction, so a fast car sees the corner it is entering
   // rather than the road immediately under its own nose.
   const speed = Math.hypot(velocity.x, velocity.z);

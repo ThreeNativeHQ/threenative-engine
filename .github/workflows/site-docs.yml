@@ -23,6 +23,7 @@ on:
       - "packages/engine-mcp/src/**"
       - "scripts/build-capability-manifest.ts"
       - "scripts/check-capability-docs.ts"
+      - "scripts/ctx-capabilities.ts"
       - "scripts/not-owned-capabilities.ts"
       - "scripts/realism-effects-coverage.ts"
       - "scripts/render-chain-capabilities.ts"

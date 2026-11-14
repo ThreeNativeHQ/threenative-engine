@@ -58,7 +58,7 @@ All of these export from `@threenative/core`.
 | Animated characters | `AnimationPlayer`, `SkeletalMesh3D` | `SkeletalMesh3D` clones the skeleton, so each character poses on its own. |
 | Many copies of one mesh | `InstancedBatch` | `add` or `place` each copy, then `build()` the `InstancedMesh`. |
 | Merged static geometry | `mergeParts` | Keeps each part's colour. `preserve` keeps authored normals and UVs. |
-| Dense static models | `ClusteredMesh`, `ClusteredBatch` | Use cluster data from the asset build. |
+| Dense static models | `ClusteredMesh`, `ClusteredBatch` | Use cluster data from the asset build. The cut is taken for the render camera only: a mesh drawn through a second camera (a mirror, a portal) sets `viewCull = false`, and `viewCullReport` says what it did. |
 | Distance detail | `updateModelLods`, `baseGeometryOf` | Picks asset-built LODs. `baseGeometryOf` returns LOD0 for collision. |
 | Visibility | `alwaysRender`, `MatrixWorldPass` | `alwaysRender` keeps a small object drawn at range. |
 | Camera-facing objects | `Billboard3D` | Turns an object to face the camera when you call `update()`. |

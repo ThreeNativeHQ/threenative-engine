@@ -457,6 +457,15 @@ export type { IMergeByMaterialOptions } from "./merge-parts.js";
  */
 export { debugFlag } from "./debug.js";
 /**
+ * Read the text a debug switch was given by the launch, on the same rule as `debugFlag`.
+ * @situation read a debug override whose value is not a boolean
+ * @situation override a quality tier or a mode for one run without changing the code
+ * @constraint the same name rule as `debugFlag`: `?quality=` on the web, `TN_DEBUG_QUALITY` on a native launch
+ * @example import { debugValue } from "@threenative/core";
+ * const tier = debugValue("quality");
+ */
+export { debugValue } from "./debug.js";
+/**
  * Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
  * @situation expose a game object to a capture script or the console in dev builds
  * @constraint development builds only; a production build publishes nothing
@@ -1477,6 +1486,30 @@ export type {
  */
 export { GPUReadback } from "./gpu-readback.js";
 export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js";
+/**
+ * Stream instanced grass in chunks around the camera; the game owns the blade and its TSL material.
+ * @situation grass that sways and parts around the player
+ * @situation a meadow, lawn or grassy field over terrain that streams around the camera
+ * @situation ground cover grass blades with distance thinning and LOD that does not pop
+ * @situation grass flattened or pushed aside where the player, a creature or a vehicle walks
+ * @situation grow grass on a terrain biome's grass rows with grassFieldFromBiome
+ * @constraint call `update(camera)` once per rendered frame from `ctx.beforeRender`; chunks build nearest first inside `buildBudgetMs`
+ * @constraint the material reads `GRASS_FIELD_ATTRIBUTES` and the field's `nodes` uniforms, so its thinning matches the CPU trim
+ * @constraint a chunk is built inside 1.3 × the draw distance and discarded past 1.4 ×, so a camera on the edge rebuilds nothing
+ * @override densityScale and cullDistanceScale scale every density and distance at once; prewarm() builds all in range on the next update
+ * @example // the look lives in the kit's src/render/grass.ts
+ * const grass = new GrassField3D({ blade: grassBlade(), material: grassMaterial, getHeight: height });
+ * ctx.add(grass);
+ * ctx.beforeRender(() => { grass.pushers[0]?.set(hero.x, hero.y, hero.z, 1.2); grass.update(ctx.camera); });
+ */
+export { GRASS_FIELD_ATTRIBUTES, GrassField3D } from "./grass-field.js";
+export type {
+  IGrassField3DOptions,
+  IGrassFieldBlade,
+  IGrassFieldBounds,
+  IGrassFieldNodes,
+  IGrassFieldStats,
+} from "./grass-field.js";
 /**
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects

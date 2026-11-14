@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — Phase 1 is an unbuilt cost gate. No game or template asks for displacement today, and a fresh Unreal project leaves it off on every material.
 **Complexity:** 7 (HIGH) — 1–5 implementation files (+1), a compute dice pass that feeds an indirect draw is a new mechanism (+2), crack-free edges between triangles of different density (+2), a visual judge (+1), native proof on the owned host (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Uses [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md)'s view-pruned cut when it has shipped, and the flat cut when it has not. Respects [PRD-601](PRD-601-far-clusters-keep-the-shading-of-the-source-mesh.md) (the bake keeps the source UVs that displacement samples) and [PRD-602](PRD-602-a-clustered-shadow-caster-draws-what-its-shadow-texel-resolves.md), which left displacement in shadows to this PRD.
+**Depends on:** None. Uses [PRD-600](../../done/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md)'s view-pruned cut when it has shipped, and the flat cut when it has not. Respects [PRD-601](PRD-601-far-clusters-keep-the-shading-of-the-source-mesh.md) (the bake keeps the source UVs that displacement samples) and [PRD-602](PRD-602-a-clustered-shadow-caster-draws-what-its-shadow-texel-resolves.md), which left displacement in shadows to this PRD.
 
 ## Context
 

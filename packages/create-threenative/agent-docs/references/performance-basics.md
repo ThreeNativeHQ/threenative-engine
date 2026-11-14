@@ -134,7 +134,8 @@ change a line.
 `pnpm check` runs the strict typecheck, ESLint and a Biome format check, and `pnpm test` runs it
 first. ESLint fails on a floating Promise and on an async callback given to a synchronous slot, and
 it warns when a `new Vector3()`-style math constructor runs directly inside `Scene.update`,
-`Scene.render` or a `ctx.beforeRender` callback. That warning is a prompt to measure, not a
+`Scene.render`, an entity's `update`/`fixedUpdate`/`tick`/`step` method or a `ctx.beforeRender`
+callback. That warning is a prompt to measure, not a
 finding: reuse an instance the scene owns only if `TN_FRAME_BUDGET` shows allocation pressure.
 It does not follow helper calls, so a quiet result is not proof a frame allocates nothing. A
 suppression needs a reason: `// eslint-disable-next-line <rule> -- <why>`. Lint does not prove a

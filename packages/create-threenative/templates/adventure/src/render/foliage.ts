@@ -3,7 +3,7 @@
 // The vale's planting and its floor, an old misty forest built in code. Giant gnarled trees (a
 // twisted trunk with ridged bark, thick roots and limbs, moss on every upward face) under broad
 // crowns of leaf clumps that sway; far trees in a lighter cut; big lobed broadleaf plants, ferns,
-// purple and pink flowers and grass tufts; mossy boulders; an irregular flagstone path; a stream;
+// purple and pink flowers; mossy boulders; an irregular flagstone path; a stream;
 // mushrooms and logs; ivy and vines on the cliff. Every kind is one `InstancedMesh`, so a forest
 // costs a few dozen draws and no light of its own. Nothing here is solid: `level/Vale.ts` decides
 // what blocks, and its height function is the floor everything here stands on.
@@ -24,6 +24,7 @@ import {
   IcosahedronGeometry,
   InstancedMesh,
   type Material,
+  MathUtils,
   Mesh,
   Object3D,
   OctahedronGeometry,
@@ -641,19 +642,8 @@ export function plantVale(site: IValeSite): {
     group.add(instanced(cluster(head), swaying(0.25), placements, false));
   }
 
-  // Grass tufts in the open spaces off the path, where the canopy lets light in.
-  const tufts: Placement[] = [];
-  for (let i = 0; i < 340; i += 1) {
-    // Half of them fringe the path, where the cobbles meet the moss.
-    const z = clearing.north + rng() * (clearing.south - clearing.north);
-    const x =
-      i % 2 === 0
-        ? site.pathX(z) + (rng() < 0.5 ? -1 : 1) * (1.75 + rng() * 1.4)
-        : (rng() * 2 - 1) * clearing.half;
-    if (Math.abs(x - site.pathX(z)) < 1.7 || site.stream.distance(x, z) < 1.4) continue;
-    tufts.push(P(x, 0, z, 0.7 + rng() * 0.9, 0.6 + rng() * 0.9));
-  }
-  group.add(instanced(fan(4, 0.04, 0.42, 0.4, C.grassTip), swaying(0.6), tufts, false));
+  // The grass itself is streamed: `render/grass.ts` is its look, `GrassField3D` in `scenes/Play.ts`
+  // grows it.
 
   // Mushrooms in rings under the giants, fallen logs, and mossy boulders.
   const mushrooms: Placement[] = [];
@@ -1006,7 +996,7 @@ export function valeGround(
     0.5 + 0.25 * (Math.sin(x * f + z * f * 0.55) + Math.sin(z * f * 1.4 - x * f * 0.37 + 1.3));
   const smooth = (a: number, b: number, t: number): number => {
     const u = Math.min(1, Math.max(0, (t - a) / (b - a)));
-    return u * u * (3 - 2 * u);
+    return MathUtils.smoothstep(u, 0, 1);
   };
   const paintGround = (geometry: BufferGeometry): void => {
     const position = geometry.attributes.position;

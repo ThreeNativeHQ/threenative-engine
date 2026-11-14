@@ -1763,6 +1763,8 @@ jobs:
           TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           TN_CI_NATIVE_RECEIPT: ${{ needs.native-platforms.outputs.coverage_receipt }}
           TN_CI_INTEGRATION_RECEIPT: ${{ needs.integration.outputs.coverage_receipt }}
+          # A queue reuse is re-decided here with scope's classifier, so it takes scope's GPU answer.
+          TN_CI_STRATA_GPU: ${{ !github.event.pull_request.head.repo.fork && vars.TN_RUNNER_GPU != '' && (!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-required.mjs
       # PRD-730: a queue run that reused a pull-request run leaves the proof of what it cited.

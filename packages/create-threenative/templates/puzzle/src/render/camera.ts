@@ -7,7 +7,7 @@
 // It still breathes. `settle` eases the framing in over the opening drop, and `nudge` lets the
 // shot drift a fraction of a metre toward the warden so the picture is not completely static.
 import type { PerspectiveCamera, Vector3 } from "three";
-import { Vector3 as Vec3 } from "three";
+import { MathUtils, Vector3 as Vec3 } from "three";
 
 export const VAULT_SHOT = {
   fov: 31,
@@ -64,7 +64,7 @@ export function createVaultCamera(camera: PerspectiveCamera): IVaultCamera {
     desired.copy(VAULT_SHOT.position).add(aim);
     // 1 - e^(-dt/tau) is the framerate-independent form of a lerp: the same second of drift at
     // 30 fps and at 120 fps ends in the same place.
-    camera.position.lerp(desired, 1 - Math.exp(-dt / 0.9));
+    camera.position.lerp(desired, MathUtils.damp(0, 1, 1 / 0.9, dt));
     camera.lookAt(currentAim);
   };
 

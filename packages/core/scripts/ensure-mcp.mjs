@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 // Installing ThreeNative wires its MCP servers into the project. An agent authoring a game here
@@ -39,5 +40,9 @@ export function runMcpSetup(environment = process.env, cwd = process.cwd()) {
 }
 
 const entry = process.argv[1];
-if (entry !== undefined && pathToFileURL(path.resolve(entry)).href === import.meta.url)
+// Node resolves the main module's symlinks, and pnpm links core into node_modules, so compare real paths.
+if (
+  entry !== undefined &&
+  pathToFileURL(realpathSync(path.resolve(entry))).href === import.meta.url
+)
   runMcpSetup();

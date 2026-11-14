@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — AC-1 and AC-2 are open: no test proves that a translucent primitive keeps its blend state through the cut, and no shipped asset has been counted that needs it. Unreal ships this path off by default.
 **Complexity:** 3 (LOW) — 1–5 implementation files (+1), a back-to-front cluster order in the existing compaction, gated by Phase 1 (+1), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Builds on the cluster cut of the virtual geometry batch ([README](../../done/nanite-like/README.md)). Composes with [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md): a view-pruned cut changes which clusters this PRD orders, not how it orders them.
+**Depends on:** None. Builds on the cluster cut of the virtual geometry batch ([README](../../done/nanite-like/README.md)). Composes with [PRD-600](../../done/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md): a view-pruned cut changes which clusters this PRD orders, not how it orders them.
 
 ## Context
 

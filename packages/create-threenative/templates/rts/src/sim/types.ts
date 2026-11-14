@@ -603,6 +603,7 @@ export function seeded(seed = 17): () => number {
   let s = seed;
   return () => {
     s |= 0;
+    // eslint-disable-next-line no-restricted-syntax -- Replays depend on this exact mulberry32 stream; the engine's seeded RNG is an LCG, so swapping it changes every recorded match.
     s = (s + 0x6d2b79f5) | 0;
     let t = Math.imul(s ^ (s >>> 15), 1 | s);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;

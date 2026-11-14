@@ -963,6 +963,22 @@
       "source": "template:action-rpg#Authoring flow",
       "expect": ["createInferno"],
       "reject": []
+    },
+    {
+      "id": "vegetation.procedural-oak",
+      "query": "procedural oak tree",
+      "scope": "mechanic",
+      "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ (Lantern Vale, the adventure kit)",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "prd883.grass-field",
+      "query": "grass that sways and parts around the player",
+      "scope": "mechanic",
+      "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ (Lantern Vale, the adventure kit)",
+      "expect": ["GrassField3D"],
+      "reject": []
     }
   ]
 }
