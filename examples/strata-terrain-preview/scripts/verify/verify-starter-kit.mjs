@@ -44,6 +44,17 @@ const ARTIFACTS =
     `../../artifacts/playtest/starter-kit${ARM === "default" ? "" : `-${ARM}`}`,
   );
 const FIXTURES = join(import.meta.dirname, "../fixtures/kit-game");
+/**
+ * A cooked world instead of the kit's own bake: `KIT_WORLD=<terrain_generate out dir>` renders an MCP
+ * world in the scaffolded game, so a region's ground and its canopy are played and judged in a real
+ * game rather than read out of a package. The kit's source still supplies the look, the water and the
+ * collider table; `KIT_WORLD_TREE` names the asset the stand, the spawn and the edge camera are
+ * written around, and the cooked world's own Arbor tree ids get the kit's trunk capsule.
+ */
+const KIT_WORLD = process.env.KIT_WORLD;
+const KIT_WORLD_TREE = process.env.KIT_WORLD_TREE ?? "fir";
+/** Every tree species a cooked world places, so the player stops at each as it stops at the kit's fir. */
+const KIT_WORLD_TREES = (process.env.KIT_WORLD_TREES ?? KIT_WORLD_TREE).split(",").filter(Boolean);
 
 /**
  * What differs between the starter kits the proof runs. `forest` is the kit K1 proves; `alpine` is the
@@ -192,8 +203,8 @@ function chooseStand(game, world) {
   const lakes = JSON.parse(readFileSync(join(world, "water.json"), "utf8")).lakes;
   const dry = (x, z, margin) =>
     lakes.every((lake) => Math.hypot(x - lake.at[0], z - lake.at[1]) >= lake.radius + margin);
-  const firs = props.filter((prop) => prop.asset === "fir" && dry(prop.x, prop.z, 15));
-  assert(firs.length > 0, "the bake placed no dry fir to stand next to");
+  const firs = props.filter((prop) => prop.asset === KIT_WORLD_TREE && dry(prop.x, prop.z, 15));
+  assert(firs.length > 0, `the world placed no dry ${KIT_WORLD_TREE} to stand next to`);
   const layers = JSON.parse(readFileSync(join(game, "src/terrain/forest/recipe.json"), "utf8"))
     .recipe.layers;
   const pad = layers.find((layer) => layer.id === "building-pad")?.params.at ?? [0, 0];
@@ -214,6 +225,33 @@ function stripWaterLayers(recipePath) {
     (layer) => !["lake-bed", "river", "lake"].includes(layer.id),
   );
   writeFileSync(recipePath, `${JSON.stringify(json, null, 2)}\n`);
+}
+
+/** A cooked world's trees are not the kit's fir batch, so the drawn-fir rows cannot be asserted. */
+function stripFirRows(playtestPath) {
+  const json = JSON.parse(readFileSync(playtestPath, "utf8"));
+  json.assert.resources = json.assert.resources.filter((row) => row.path !== "firInstancesDrawn");
+  writeFileSync(playtestPath, `${JSON.stringify(json, null, 2)}\n`);
+}
+
+/**
+ * A cooked world's tree species are not the kit's art, so the kit's collider table does not name them.
+ * Each one takes the same trunk capsule, so the player stops at them as it stops at the kit's fir.
+ */
+function addCookedColliders(game, kit) {
+  const worldSource = join(game, "src/terrain", kit, "world.ts");
+  const source = readFileSync(worldSource, "utf8");
+  const present = (id) => source.includes(`"${id}":`) || source.includes(` ${id}:`);
+  const missing = KIT_WORLD_TREES.filter((id) => !present(id));
+  if (missing.length === 0) return;
+  // Quoted, because a cooked world's species are `arbor-beech-11`, which is not an identifier.
+  const rows = missing.map((id) => `  ${JSON.stringify(id)}: { capsule: [3, 0.35] },`).join("\n");
+  const patched = source.replace(
+    /(export const COLLIDERS[^=]*= \{\n)/u,
+    (_head, head) => `${head}${rows}\n`,
+  );
+  assert(patched !== source, `the kit's ${kit} world.ts has no COLLIDERS table`);
+  writeFileSync(worldSource, patched);
 }
 
 /** A baseline has no water to count, so its playtest drops the water rows. */
@@ -590,11 +628,22 @@ async function main() {
       stripWaterLayers(join(game, "src/terrain", KIT, "recipe.json"));
     }
     const world = join(game, "assets/terrain", KIT);
-    say(
-      `bake: ${run("node", [`src/terrain/${KIT}/bake.mjs`, "--out", `assets/terrain/${KIT}`], { cwd: game }).trim()}`,
-    );
+    if (KIT_WORLD) {
+      assert(
+        process.env.KIT_BEFORE !== "1",
+        "KIT_WORLD renders a cooked world, so there is no kit recipe for KIT_BEFORE to strip",
+      );
+      // The cooked package is the kit bake's own shape, so the game loads it as its own world.
+      rmSync(world, { recursive: true, force: true });
+      cpSync(KIT_WORLD, world, { recursive: true });
+      say(`cooked: ${KIT_WORLD} -> assets/terrain/${KIT}`);
+    } else
+      say(
+        `bake: ${run("node", [`src/terrain/${KIT}/bake.mjs`, "--out", `assets/terrain/${KIT}`], { cwd: game }).trim()}`,
+      );
   }
   const world = join(game, "assets/terrain", KIT);
+  if (KIT_WORLD) addCookedColliders(game, KIT);
   const sourceHashes = packageHashes(world);
   const publicWorld = join(game, "public/terrain", KIT);
   const publicHashes = existsSync(publicWorld) ? packageHashes(publicWorld) : undefined;
@@ -626,7 +675,7 @@ export const stand = {
 `,
     );
     say(
-      `stand: fir ${round(fir.x)},${round(fir.z)} spawn ${round(spawn.x)},${round(spawn.z)} (${round(clearance)} m clear) edge ${round(edge.x)},${round(edge.z)} (${round(edgeClear)} m clear)`,
+      `stand: ${KIT_WORLD_TREE} ${round(fir.x)},${round(fir.z)} spawn ${round(spawn.x)},${round(spawn.z)} (${round(clearance)} m clear) edge ${round(edge.x)},${round(edge.z)} (${round(edgeClear)} m clear)`,
     );
   }
 
@@ -639,6 +688,7 @@ export const stand = {
   for (const name of ["game.ts", "state.ts"]) cpSync(join(FIXTURES, name), join(game, "src", name));
   cpSync(join(FIXTURES, "playtests", CONFIG.playtest), join(game, "playtests/kit.playtest.json"));
   if (process.env.KIT_BEFORE === "1") stripWaterRows(join(game, "playtests/kit.playtest.json"));
+  if (KIT_WORLD) stripFirRows(join(game, "playtests/kit.playtest.json"));
   mkdirSync(join(game, "src/scenes"), { recursive: true });
   cpSync(join(FIXTURES, "KitScene.ts"), join(game, "src/scenes/KitScene.ts"));
   const alpine =
@@ -706,10 +756,10 @@ export const stand = {
   writeFileSync(
     join(game, "src/terrain/kit.ts"),
     `
-import { add${title}, COLLIDERS } from "../${KIT}/world.js";
-import { ${KIT}Daylight as kitDaylight } from "../${KIT}/sky.js";
+import { add${title}, COLLIDERS } from "./${KIT}/world.js";
+import { ${KIT}Daylight as kitDaylight } from "./${KIT}/sky.js";
 import type { IStarterWorld } from "@threenative/terrain/starter";
-${CONFIG.generatedStand ? 'import { stand } from "../forest/stand.js";' : ""}
+${CONFIG.generatedStand ? 'import { stand } from "./forest/stand.js";' : ""}
 export { COLLIDERS, kitDaylight };
 export const KIT: string = "${title}";
 export const forestStand: { fir: { x: number; z: number }; spawn: { x: number; z: number }; edge: { x: number; z: number }; groundY: number } | undefined = ${CONFIG.generatedStand ? "stand" : "undefined"};
@@ -806,7 +856,16 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
   };
   // Each kit reports the numbers its own scene defines (`numbers` in KITS). A name with no playtest row
   // fails in value().
-  const kitNumbers = Object.fromEntries(CONFIG.numbers.map((name) => [name, value(name)]));
+  const reported = CONFIG.numbers.filter((name) => !(KIT_WORLD && name === "firInstancesDrawn"));
+  const kitNumbers = Object.fromEntries(reported.map((name) => [name, value(name)]));
+  const worldTreeCounts = {};
+  if (KIT_WORLD) {
+    const placements = JSON.parse(readFileSync(join(world, "world.json"), "utf8"));
+    for (const cell of placements.cells)
+      for (const run of cell.runs)
+        if (KIT_WORLD_TREES.includes(run.asset))
+          worldTreeCounts[run.asset] = (worldTreeCounts[run.asset] ?? 0) + run.count;
+  }
   const views = Object.fromEntries(
     CONFIG.views.map((view) => [
       view,
@@ -842,6 +901,7 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
     frames: value("frames"),
     groundError: value("groundError"),
     ...kitNumbers,
+    ...(KIT_WORLD ? { world: KIT_WORLD, worldTrees: worldTreeCounts } : {}),
     adapter: `${capture.adapter.vendor}/${capture.adapter.architecture}`,
     pass: true,
     propColliders: value("propColliders"),
