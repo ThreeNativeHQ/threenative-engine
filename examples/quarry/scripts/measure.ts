@@ -31,6 +31,8 @@ interface IFrameBudgetWindow {
 
 export interface IArmMeasurement {
   readonly adapter: unknown;
+  /** The run failed on the engine's perf warning alone, and was measured anyway. */
+  readonly perfWarning: boolean;
   readonly arm: QuarryArm;
   readonly target: string;
   readonly drawCalls: number;
@@ -148,8 +150,19 @@ function main(): void {
     resolve(here, ".."),
   ];
 
+  // A slow arm is what this script measures, so a run whose only failure is the engine's own perf
+  // warning is still a measurement; it is recorded below. Any other failure throws.
+  const runRoute = (args: Parameters<typeof execFileSync>): string => {
+    try {
+      return execFileSync(...args) as unknown as string;
+    } catch (error) {
+      const stdout = (error as { stdout?: string }).stdout;
+      if (typeof stdout !== "string" || stdout.trim() === "") throw error;
+      return stdout;
+    }
+  };
   const report = JSON.parse(
-    execFileSync(
+    runRoute([
       process.execPath,
       [
         resolve(repositoryRoot, "packages/playtest/dist/runner/cli.js"),
@@ -169,16 +182,20 @@ function main(): void {
         env: { ...process.env, SDL_VIDEODRIVER: "x11" },
         maxBuffer: 256 * 1024 * 1024,
       },
-    ),
+    ]),
   ) as {
     observations: {
       console: readonly { text: string }[];
       resourceSeries?: readonly { snapshots: Record<string, Record<string, number>> }[];
     };
     pass: boolean;
+    diagnostics?: readonly { code: string; severity?: string }[];
   };
 
-  if (report.pass !== true)
+  const failures = (report.diagnostics ?? []).filter((item) => item.severity === "error");
+  const perfWarningsOnly =
+    failures.length > 0 && failures.every((item) => item.code === "TN_PLAYTEST_PERF_WARNING");
+  if (report.pass !== true && !perfWarningsOnly)
     throw new Error(`TN_QUARRY_MEASURE_SCENARIO_FAILED: the ${arm} route did not pass.`);
 
   const windows: IFrameBudgetWindow[] = [];
@@ -227,6 +244,7 @@ function main(): void {
   const recutMs = steadyViews.reduce((sum, window) => sum + window.recutMs, 0);
   const recutBytes = steadyViews.reduce((sum, window) => sum + window.recutBytes, 0);
   const measurement: IArmMeasurement = {
+    perfWarning: perfWarningsOnly,
     // The browser lane names its adapter in `capture.json`; the desktop lane's adapter is the one
     // the host printed into its own log, and claiming otherwise would be inventing evidence.
     adapter:
