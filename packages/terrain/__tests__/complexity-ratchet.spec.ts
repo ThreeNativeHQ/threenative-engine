@@ -23,7 +23,11 @@ type IComplexityBaseline = { readonly total: number; readonly files: Record<stri
 function offenders(): Record<string, number> {
   const args = ["check", "packages/terrain/src", "--max-diagnostics=1000", "--reporter=json"];
   // Each diagnostic embeds its function's source, so the JSON runs to megabytes.
-  const output = execFileSync(biome, args, { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 << 20 });
+  const output = execFileSync(biome, args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    maxBuffer: 64 << 20,
+  });
   const report = JSON.parse(output) as {
     diagnostics: readonly { category: string; location: { path: { file: string } } }[];
   };
@@ -40,9 +44,10 @@ describe("terrain complexity ratchet", () => {
   it("fails when a terrain file gains a function over complexity 15", () => {
     // A checkout without the repository's own devDependencies cannot run the rule at all; say so
     // instead of passing with no observation.
-    expect(existsSync(biome), "run pnpm install at the repository root to run the lint ratchet").toBe(
-      true,
-    );
+    expect(
+      existsSync(biome),
+      "run pnpm install at the repository root to run the lint ratchet",
+    ).toBe(true);
     const baseline = JSON.parse(readFileSync(BASELINE, "utf8")) as IComplexityBaseline;
     const counted = offenders();
     const grew = Object.entries(counted)

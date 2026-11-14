@@ -18,10 +18,20 @@ async function layout(sourceAt: Date, builtAt: Date): Promise<string> {
   await mkdir(join(root, "src"));
   await mkdir(join(root, "dist", "mcp"), { recursive: true });
   await writeFile(join(root, "src", "index.ts"), "export const value = 1;\n");
-  for (const entry of ["index.js", "kit.js", join("mcp", "cook-child.js"), join("mcp", "server.js")])
+  for (const entry of [
+    "index.js",
+    "kit.js",
+    join("mcp", "cook-child.js"),
+    join("mcp", "server.js"),
+  ])
     await writeFile(join(root, "dist", entry), "");
   await utimes(join(root, "src", "index.ts"), sourceAt, sourceAt);
-  for (const entry of ["index.js", "kit.js", join("mcp", "cook-child.js"), join("mcp", "server.js")])
+  for (const entry of [
+    "index.js",
+    "kit.js",
+    join("mcp", "cook-child.js"),
+    join("mcp", "server.js"),
+  ])
     await utimes(join(root, "dist", entry), builtAt, builtAt);
   return root;
 }
