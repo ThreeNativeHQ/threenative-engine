@@ -17,14 +17,33 @@ import {
   type BufferGeometry,
   Color,
   EquirectangularReflectionMapping,
+  type Material,
   type Mesh,
   type MeshStandardMaterial,
   type Object3D,
   type Texture,
   Vector3,
 } from "three";
-import { cameraViewMatrix, normalWorld, vec3, vec4 } from "three/tsl";
-import { MeshPhysicalNodeMaterial } from "three/webgpu";
+import {
+  cameraViewMatrix,
+  dFdx,
+  dFdy,
+  float,
+  length,
+  log2,
+  max,
+  normalWorld,
+  positionGeometry,
+  positionLocal,
+  positionWorld,
+  sin,
+  time,
+  uv,
+  vec2,
+  vec3,
+  vec4,
+} from "three/tsl";
+import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { addForestHorizon } from "./horizon.js";
 import surface from "./surface.json" with { type: "json" };
 import { type IForestWater, type IForestWaterFile, addForestWater } from "./water.js";
@@ -108,6 +127,7 @@ const spec: IStarterWorldSpec<IForestWater> = {
     shadows: { cast: true, castLevels: 4, receive: true },
     budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
     terrain: { streamRadius: 6 },
+    partMaterial: forestPart,
   },
   // The far collar rides on the water's handle, so the world's own dispose releases both.
   water: (ctx, file, field, manifest) => {
@@ -154,6 +174,7 @@ function dressProp(
   const surfaces = [mesh.material ?? []].flat() as MeshStandardMaterial[];
   const foliage = surfaces.some((material) => material.alphaTest > 0);
   for (const material of surfaces) {
+    if (SWAYING.has(id)) material.userData.forestSway = true;
     material.envMap = sky;
     material.envMapIntensity = foliage ? FOLIAGE_SKY_LIGHT : PROP_SKY_LIGHT;
     const original = originals.get(material);
@@ -164,6 +185,76 @@ function dressProp(
     (material as MeshStandardMaterial & { specularIntensity?: number }).specularIntensity = 0.15;
   }
   if (foliage && mesh.isMesh) bendCrownNormals(mesh.geometry, CROWN_NORMAL_BEND);
+}
+
+/** The assets the wind bends: the trees. A rock, a log or a fern keeps still. */
+export const SWAYING = new Set(["fir", "fir-c"]);
+/**
+ * The wind on the trees: a sway weighted by the height above the root (a trunk base never moves), on
+ * a fast wave and a slower gust 0.37 times its rate, phased by world position so a stand does not
+ * move as one block. `bend` is metres per metre^1.5 of height: a 14 m tree's top moves about 0.3 m.
+ */
+export const FOREST_WIND = { direction: [0.82, 0.57] as const, rate: 0.45, bend: 0.006 };
+
+const forestParts = new WeakMap<Material, Material>();
+
+/**
+ * The game's surface for each streamed part (`partMaterial`): a tree part sways, and a leaf cut-out
+ * lowers its alpha threshold as its texture mips, because averaged mips fall under a fixed 0.5 and a
+ * tree past 45 m keeps only its trunk. Every other part keeps its own material.
+ */
+export function forestPart(source: Material, _geometry: BufferGeometry): Material {
+  const sway = source.userData.forestSway === true;
+  if (!sway && source.alphaTest <= 0) return source;
+  const known = forestParts.get(source);
+  if (known !== undefined) return known;
+  const from = source as MeshStandardMaterial;
+  const own = new MeshStandardNodeMaterial();
+  for (const key of [
+    "alphaTest",
+    "aoMap",
+    "color",
+    "emissive",
+    "emissiveMap",
+    "envMap",
+    "envMapIntensity",
+    "map",
+    "metalness",
+    "metalnessMap",
+    "name",
+    "normalMap",
+    "normalScale",
+    "roughness",
+    "roughnessMap",
+    "side",
+    "vertexColors",
+  ] as const)
+    if (from[key] !== undefined) (own as unknown as Record<string, unknown>)[key] = from[key];
+  if (from.alphaTest > 0) {
+    const image = from.map?.image as { width?: number; height?: number } | undefined;
+    const size = vec2(image?.width ?? 1024, image?.height ?? 1024);
+    const texels = max(length(dFdx(uv()).mul(size)), length(dFdy(uv()).mul(size)));
+    const mip = max(log2(texels.max(1)), float(0));
+    own.alphaTestNode = float(from.alphaTest).div(float(1).add(mip.mul(0.25)));
+    // The cutoff fades over a pixel instead of a hard test, so the far impostor bakes solid crowns.
+    own.alphaToCoverage = true;
+  }
+  if (sway) {
+    const { direction, rate, bend } = FOREST_WIND;
+    const phase = positionWorld.x.mul(0.07).add(positionWorld.z.mul(0.05));
+    const wave = sin(time.mul(rate * Math.PI * 2).add(phase));
+    const gust = sin(time.mul(rate * 0.37 * Math.PI * 2).add(phase.mul(0.6))).mul(0.55);
+    const weight = positionGeometry.y.max(0).pow(1.5).mul(bend);
+    own.positionNode = positionLocal.add(
+      vec3(direction[0], 0, direction[1]).mul(wave.add(gust).mul(weight)),
+    );
+    // Cached shadow pages would freeze a moving cast mid-sway; the shadow keeps the rest pose.
+    own.castShadowPositionNode = positionLocal;
+    // No `maxPositionOffset`: the shadow keeps the rest pose, so the geometry box holds the cast, and
+    // a declared offset makes the owned engine refuse the caster under automatic shadow depth.
+  }
+  forestParts.set(source, own);
+  return own;
 }
 
 /**

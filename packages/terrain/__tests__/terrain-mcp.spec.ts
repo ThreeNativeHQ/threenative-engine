@@ -824,9 +824,10 @@ describe("terrain_generate result", () => {
         expect(result.grass).toContain("} as const;");
         expect(result.grass).toContain("new GrassField3D(");
         expect(result.grass).toContain("grass.update(ctx.camera)");
-        // The forest kit's trees are Arbor species: they carry `_WIND`, so the cook writes the sway.
-        expect(result.trees?.file).toBe("src/render/arborWind.ts");
-        expect(result.load).toContain("partMaterial: arborWind");
+        // The forest kit's trees are Poly Haven scans, not Arbor species: no `_WIND`, so the cook
+        // writes no Arbor sway (an `arbor` row still does; see the arbor-species spec).
+        expect(result.trees).toBeNull();
+        expect(result.load).not.toContain("partMaterial: arborWind");
         // No authoring import leaks into the game: only core/world, physics and three are allowed.
         expect(
           result.load.split("\n").filter((line: string) => line.includes("@threenative/terrain")),

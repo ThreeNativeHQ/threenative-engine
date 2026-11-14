@@ -849,6 +849,13 @@
         "note": "shrub_04/shrub_04.glb (535,528 bytes): one GLB per mesh node of the 1k glTF, decimated to at most 8,000 triangles with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest preview's bush."
       },
       {
+        "asset": "Shrub 03",
+        "authors": "Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/shrub_03",
+        "note": "shrub_03/shrub_03_a.glb (545,804 bytes, 2,385 triangles): one mesh node of the 1k glTF with 512 px textures and a 0.5 alpha clip, by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-props.py. The forest starter kit's fern-b ground shrub."
+      },
+      {
         "asset": "Nettle Plant",
         "authors": "Rob Tuytel, Rico Cilliers",
         "license": "CC0",

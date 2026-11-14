@@ -1,7 +1,7 @@
 # Forest starter kit
 
-A 512 m forest on real elevations (USGS 3DEP), with hydraulic and thermal erosion, clustered fir
-stands, young firs and boulder fields. It is game source: once copied, every file is yours to edit.
+A 512 m forest on real elevations (USGS 3DEP), with hydraulic and thermal erosion, clustered broadleaf
+stands, young trees and boulder fields. It is game source: once copied, every file is yours to edit.
 
 | File | What it decides |
 | --- | --- |
@@ -21,12 +21,12 @@ Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.
 
 1. Copy `node_modules/@threenative/terrain/starter/forest` to `src/terrain/forest`.
 2. Run `node src/terrain/forest/bake.mjs --out assets/terrain/forest`. The bake imports
-   `@threenative/terrain` and `@threenative/assets`, and grows the trees and understory that
-   `assets.json` names `arbor` with `@threenative/procedural-vegetation`, so install all three as
-   devDependencies (`npm install --save-dev @threenative/terrain @threenative/assets
-   @threenative/procedural-vegetation`); `three` must be installed
-   too, because `@threenative/terrain` declares it as a peer dependency. The same recipe always
-   writes the same bytes.
+   `@threenative/terrain` and `@threenative/assets`, so install both as devDependencies
+   (`npm install --save-dev @threenative/terrain @threenative/assets`); `three` must be installed
+   too, because `@threenative/terrain` declares it as a peer dependency. The trees, ferns and
+   shrubs are Poly Haven scans from the starter art (`tree_small_02`, `fern_02`, `shrub_03`). A row
+   written `{ "arbor": "<preset>@<seed>" }` instead grows a procedural tree at the bake, with
+   `@threenative/procedural-vegetation` installed. The same recipe always writes the same bytes.
 3. Add it to a scene:
 
 ```ts

@@ -75,7 +75,7 @@ export interface IStarterWorldSpec<Extra extends { dispose(): void }> {
   };
   readonly streaming: Pick<
     IWorldCellsLoadOptions,
-    "ring" | "impostors" | "gpuScene" | "shadows" | "budgets" | "terrain"
+    "ring" | "impostors" | "gpuScene" | "shadows" | "budgets" | "terrain" | "partMaterial"
   >;
   readonly water?: (
     ctx: StarterContext,
