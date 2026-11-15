@@ -140,6 +140,8 @@ struct DrawCache {
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
+    bool prepass = false;             // PRD-888: `pipeline` is the depth-Equal one, drawn after a masked depth prepass
+    void* prepassPipeline = nullptr;  // ...and that prepass's depth-only pipeline, under `targetKey`
     std::pair<Box3, double> shadowBounds;
     // FG1: an instanced draw's world box per instance, built with `shadowBounds` under the same key; empty for any
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
@@ -840,6 +842,8 @@ public:
         uint32_t instanceCopies = 0;
         /** The grouped shadow rows the plan built (FM8): one per group per page, and mover pages share theirs. */
         uint32_t shadowGroupRows = 0;
+        /** PRD-888: the masked depth-only draws the main pass ran before shading those draws depth-Equal. */
+        uint32_t prepassDraws = 0;
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
@@ -1069,6 +1073,9 @@ private:
         std::map<std::string, std::unique_ptr<shader::StageModule>> auxMrt;
         /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
         DrawProbes probes;
+        /** PRD-888: the program's masked depth-only fragment (prepassFragment), built on first request. */
+        std::unique_ptr<shader::StageModule> prepass;
+        bool prepassBuilt = false;
     };
     /** A program's per-draw probes, resolved once in buildLayouts; read by every draw of every pass. */
     DrawProbes probesOf(const Program& program);
@@ -1082,6 +1089,12 @@ private:
      */
     const shader::StageModule* auxFragment(Program& program, uint8_t mask, const std::vector<std::string>& slots,
                                            bool zeroNamed = false);
+    /**
+     * PRD-888: a masked program's prepass fragment: its own fragment built again with a zero colour, pruned to the mask
+     * and cutoff its discards read. Same builder call, so the layout equals the program's and the draw's bind groups
+     * serve it; null when the builder refuses, the layout differs or the fragment has side effects.
+     */
+    const shader::StageModule* prepassFragment(Program& program);
     void buildLayouts(Program& program);
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,

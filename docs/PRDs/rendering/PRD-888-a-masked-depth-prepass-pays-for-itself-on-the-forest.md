@@ -1,6 +1,6 @@
 # PRD-888 — A masked depth prepass pays for itself on the forest
 
-**Status:** PARTIAL — the gate is measured and green; the renderer work is open.
+**Status:** PARTIAL — the prepass ships behind `?tnPrepass=1` and saves 7–17 ms at every pose; judge, MRT identity and native proof are open.
 **Branch:** `prd-584-forest-60fps` · **PR:** #677 · **Instrument:** the forest starter kit
 (`packages/terrain/starter/forest`) played as its own game at 1600×900, WebGPU, RTX 2080.
 **Numbering note:** this PRD is not a port of an Unreal feature. It exists because the forest's
@@ -76,21 +76,41 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       prepass is not measurable: the facade cannot clone an `InstancedMesh` and the twins drew unmasked.
 ### Phase 2 — the renderer work
 
-- [ ] Add the prepass pipeline role: a masked depth-only fragment stage (alpha → discard → depth),
-      deduplicated by vertex-graph hash, plus the same variant at `depthCompare: equal`,
-      `depthWrite: false`, `alphaTest = 0`, `alphaToCoverage = false`.
-- [ ] Issue both loops inside the same world render pass, front to back, so no extra MSAA depth
-      store and load is paid.
+- [x] Add the prepass pipeline role: a depth-only fragment pruned from the draw's own colour fragment
+      (its discards and the alpha they read stay, the lighting goes), the draw's own vertex module, colour
+      writeMask 0, same cull/face/bias/samples; the shading draw keeps its shipped program at
+      `depthCompare: equal`, `depthWrite: false`. **Changed from the plan:** stripping the shading
+      draw's discards or forcing `@invariant` moved 26–65 k pixels at overview and saved nothing
+      (38.2–38.6 vs 38.7 ms); with depth writes off, early-Z still rejects. proof:
+      `ctest -R "native_engine_(material|tsl_ir|tsl_shared|aux_fragment|prepass)"` 31/31
+      (`tests/native-engine/prepass_test.cpp`), 2026-11-14.
+- [x] Issue both loops inside the same world render pass, front to back, so no extra MSAA depth
+      store and load is paid. proof: `renderer.cpp` records the prepass rows first in the main bundle.
 - [ ] Refuse and fall back to the shipped path for: transparent/blended materials,
       `depthWrite = false`, `frag_depth` writers, fragment side effects, coplanar ties (two-sided
       cards built as two meshes).
-- [ ] Flag it: `?tnPrepass=1` arms it, unset is the shipped path, and the report says which ran.
+      Done and unit-tested except coplanar ties between two masked draws, which are not detected.
+      `stableRows` (off on both hosts) keeps the shipped draws.
+- [x] Flag it: `?tnPrepass=1` arms it (live: `globalThis.__tnPrepass`, read per frame by the web
+      host into `TN_PREPASS`), unset is the shipped path, and `prepassDraws` (frame field 90) says
+      which ran. proof: player 89/105, river 78/94, others 41–42/50 prepass/main draws.
 - [ ] Pixel identity at every fixed pose with time frozen: 0 changed pixels on the resolved output
       and on the `normal` MRT target.
-- [ ] Cost: `gpuSegmentScene` improves ≥ 2 ms at **every** fixed pose, with no CPU frame regression
-      (`renderDraws` doubles for eligible draws — add a `prepassDraws` counter).
+      Resolved output, sway and river clock frozen: 0 changed pixels at meadow-close, overview,
+      river, vista; player differs only inside the animated character. `normal` MRT not checked yet.
+- [x] Cost: `gpuSegmentScene` improves ≥ 2 ms at **every** fixed pose, with no CPU frame regression.
+      proof: paired ABBA, one page load, 2 runs, RTX 2080 `nvidia/turing`, 1600×900, 4× MSAA, base →
+      prepass: player 27.6/27.7 → 13.9/13.7, meadow-close 31.0/31.3 → 23.8/21.7, overview 52.1/53.4 →
+      38.4/38.1, river 26.0/26.0 → 14.9/14.3, vista 55.7/53.5 → 38.9/36.9 ms. CPU frame p50 off
+      7.0/5.7 ms, on 3.8/4.6 ms; spawn presents 16.68 ms (60 fps) with it on. 2026-11-14.
 - [ ] Visual judge (fresh read-only subagent, matched poses, before/after): NEUTRAL or IMPROVEMENT.
+      First judge: NEUTRAL, low confidence — the meadow-close dark leaf blocks also show in a
+      shipped BEFORE frame; a clean fresh-page recapture is pending.
 - [ ] Native proof on the desktop host, same pose, same sign.
+      The host builds from this tree (`tn-native-engine-player-v8`), but the forest kit does not
+      bundle for the desktop engine: 12 `TN_NATIVE_ENGINE_UNBOUND` (three/tsl `rotateUV`, `bumpMap`,
+      `mx_fractal_noise_float`, `GLTFLoader`, `KTX2Loader`, …). Needs a masked-foliage scene the
+      desktop player bundles, or those bindings.
 ### Phase 3 — the proof
 
 - [ ] Add the overdraw gauge this PRD was decided by, so the next regression names itself: a

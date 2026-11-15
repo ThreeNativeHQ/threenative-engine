@@ -1016,6 +1016,14 @@ void Renderer::encodeFrame(FrameJob& job) {
             bound = nullptr;
             boundIndex = nullptr;
             std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
+            // PRD-888: the range's masked depth-only draws first, in plan order (front to back), then every draw.
+            for (std::size_t k = from; k < to; ++k) {
+                if (!plan[k].prepass) continue;
+                Planned depthOnly = plan[k];
+                depthOnly.pipeline = plan[k].prepass;
+                encode(bundle, depthOnly, Tally::Extra);
+                ++lastFrame_.prepassDraws;
+            }
             for (std::size_t k = from; k < to; ++k) encode(bundle, plan[k], Tally::Main);
             WGPURenderBundleDescriptor finish{};
             const WGPURenderBundle recorded = wgpuRenderBundleEncoderFinish(bundle, &finish);
@@ -1041,6 +1049,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.draws = mainBundleStats_.draws;
         lastFrame_.triangles = mainBundleStats_.triangles;
         lastFrame_.mainSkinned = mainBundleStats_.mainSkinned;
+        lastFrame_.prepassDraws = mainBundleStats_.prepassDraws;
     }
     WGPURenderBundle mainBundles[3] = {mainBundle_};
     std::size_t mainCount = 1;
@@ -1346,6 +1355,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.instanceCopies = job.instanceCopies;
         waste::debugAdd(waste::counters().renderFrames);
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
+        waste::debugAdd(waste::counters().prepassDraws, lastFrame_.prepassDraws);
         waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);
         waste::debugAdd(waste::counters().auxPasses, lastFrame_.auxPasses);
         frameMail_ = lastFrame_;

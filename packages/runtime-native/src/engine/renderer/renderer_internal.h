@@ -14,6 +14,7 @@
 #include "engine/renderer/aux_bundle_key.h"
 #include "engine/renderer/texture_copy.h"
 #include "engine/renderer/aux_depth.h"
+#include "engine/renderer/prepass.h"
 #include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
@@ -355,6 +356,13 @@ inline bool shadowInstanceCullEnabled() {
     return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
+// PRD-888's lever: TN_PREPASS=1 draws the masked opaque draws depth-only first, then shades them depth-Equal with no
+// discard. Off (unset or 0) is the shipped path. Read per frame, so a page toggles both arms in one load.
+inline bool prepassEnabled() {
+    const char* flag = flags::read<flags::Prepass>();
+    return flag != nullptr && std::strcmp(flag, "0") != 0;
+}
+
 // A viewport texture binding: the frame's colour or depth as drawn before this draw.
 inline bool viewportBinding(std::string_view name) {
     return name == "t_viewportColor" || name == "smp_viewportColor" || name == "t_viewportDepth" ||
@@ -463,6 +471,9 @@ struct Renderer::Planned {
     WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
     uint64_t slot = 0;  // a main draw's uniform slot (PRD-754), 0 when its blocks were appended
+    // PRD-888: a main draw shaded depth-Equal: its masked depth-only pipeline, drawn first in the same pass with the same
+    // groups and offsets. It moves only with `pipeline` (both follow the program), so the bundle key needs no word of it.
+    WGPURenderPipeline prepass = nullptr;
     // A shadow row that draws several casters in one instanced draw names them, in instance order (FM8);
     // empty for a row that draws the one caster it points at.
     const DrawItem* const* members = nullptr;

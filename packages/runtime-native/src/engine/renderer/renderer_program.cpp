@@ -276,6 +276,43 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
     }
 }
 
+const shader::StageModule* Renderer::prepassFragment(Program& program) {
+    if (program.prepassBuilt) return program.prepass.get();
+    program.prepassBuilt = true;
+    const shader::VertexVariant& variant = program.variant;
+    const shader::LightLayout layout{program.lightKinds};
+    try {
+        shader::StandardPrograms source;
+        switch (program.kind) {
+        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
+        case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
+        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Basic: source = shader::buildBasic(variant); break;
+        }
+        auto& f = source.fragment;
+        if (!f.diagnostics().empty()) return nullptr;
+        const std::size_t varyings = f.varyings().size();
+        keepDiscardsOnly(f);
+        if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
+        shader::positionalGraphTextures(*module);
+        shader::positionalSerialNames(*module);
+        const auto& own = program.fragment;
+        bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
+        for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
+            same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
+        // A fragment side effect (a storage or storage-texture write) would run twice: such a draw keeps the shipped path.
+        same = same && own.wgsl.code.find("read_write") == std::string::npos &&
+               own.wgsl.code.find("texture_storage") == std::string::npos;
+        if (same) program.prepass = std::move(module);
+    } catch (const std::exception&) {
+        // Refused: the draw keeps the shipped path.
+    }
+    return program.prepass.get();
+}
+
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, bool masked) {
     ++programKeyBuilds_;
     ++programLookups_;

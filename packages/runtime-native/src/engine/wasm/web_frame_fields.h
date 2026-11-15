@@ -81,6 +81,7 @@ enum TnWebFrameField : int {
     TN_WEB_FRAME_TEXTURE_COMPRESSION_BC = 87,
     TN_WEB_FRAME_VIRTUAL_SHADOW_PENDING_LEVELS = 88,
     TN_WEB_FRAME_FRAME_SNAPSHOT = 89,
+    TN_WEB_FRAME_PREPASS_DRAWS = 90,
 };
 
 /// Whether `field` is one this table answers. The host asks before it touches the renderer, so an
@@ -163,6 +164,7 @@ constexpr bool tn_is_web_frame_field(int field) {
         case TN_WEB_FRAME_TEXTURE_COMPRESSION_BC: return true;
         case TN_WEB_FRAME_VIRTUAL_SHADOW_PENDING_LEVELS: return true;
         case TN_WEB_FRAME_FRAME_SNAPSHOT: return true;
+        case TN_WEB_FRAME_PREPASS_DRAWS: return true;
         default: return false;
     }
 }
