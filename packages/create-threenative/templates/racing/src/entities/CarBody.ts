@@ -129,6 +129,9 @@ export function noseRotation(yaw: number): number {
 }
 
 const DEG = Math.PI / 180;
+
+/** How fast the measured load follows the tyres, per second: about a 0.17 s time constant. */
+const LOAD_SMOOTHING = 6;
 const _box = new Box3();
 const _size = new Vector3();
 const _point = new Vector3();
@@ -192,6 +195,8 @@ export class CarBody {
   lateralLoad = 0;
   /** Forward acceleration in m/s²: positive under power, negative under braking. */
   longLoad = 0;
+  /** Bumped by every `teleport`, so a chase camera can cut instead of flying after the car. */
+  teleports = 0;
   #velocity = new Vector3();
   #last = new Vector3();
   #right = new Vector3();
@@ -286,8 +291,24 @@ export class CarBody {
     this.#delta.copy(this.#velocity).sub(this.#last);
     this.#last.copy(this.#velocity);
     const perSecond = dt > 0 ? 1 / dt : 60;
-    this.lateralLoad = this.#delta.dot(this.#right) * perSecond;
-    this.longLoad = this.#delta.dot(this.forward) * perSecond;
+    // One tick's velocity change is the tyres' impulse for that tick, and the ray-cast vehicle's
+    // friction alternates from tick to tick: measured, the raw reading swung the full ±30 m/s² in
+    // one tick mid-corner, which flipped the lean ±5° and the camera bank ±3° every tick — the
+    // shake. The load a driver feels is the average over a few ticks, so it is low-passed here.
+    // A barrier hit is hundreds of m/s² for one tick; past the tyres' limit the lean is already
+    // full, so the reading is clamped there before it is averaged.
+    const lateral = MathUtils.clamp(
+      this.#delta.dot(this.#right) * perSecond,
+      -FEEL.lateral,
+      FEEL.lateral,
+    );
+    const long = MathUtils.clamp(
+      this.#delta.dot(this.forward) * perSecond,
+      -FEEL.lateral,
+      FEEL.lateral,
+    );
+    this.lateralLoad = MathUtils.damp(this.lateralLoad, lateral, LOAD_SMOOTHING, dt);
+    this.longLoad = MathUtils.damp(this.longLoad, long, LOAD_SMOOTHING, dt);
   }
 
   /**
@@ -316,7 +337,10 @@ export class CarBody {
   /** Godot's `VehicleBody3D.teleport`: move the chassis and face the heading `yaw`. */
   teleport(position: Pick<Vector3, "x" | "y" | "z">, yaw: number): void {
     this.body.teleport(position, noseRotation(yaw));
+    this.teleports += 1;
     this.#last.set(0, 0, 0);
+    this.lateralLoad = 0;
+    this.longLoad = 0;
     this.measure(1 / 60);
   }
 

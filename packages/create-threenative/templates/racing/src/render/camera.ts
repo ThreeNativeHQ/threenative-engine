@@ -10,6 +10,9 @@ const EYE_BACK = 6.6;
 const LEAD_BASE = 1.5;
 const LEAD_PER_MPS = 0.42;
 
+/** How fast the chase heading turns toward the travel direction, per second (12% a 60 Hz tick). */
+const TURN_RATE = 7.7;
+
 /** The most the camera will bank, in radians. Past this a corner reads as a barrel roll. */
 const MAX_BANK = 0.055;
 
@@ -24,6 +27,8 @@ export function setupCamera(camera: PerspectiveCamera): void {
 // every racing game built from this template; three Vector clones a frame was pure garbage.
 const behind = new Vector3();
 const desired = new Vector3();
+/** The heading the camera chases, eased toward the travel direction rather than snapped to it. */
+let chaseYaw = 0;
 const look = new Vector3();
 const velocity = new Vector3();
 
@@ -50,7 +55,13 @@ export function chaseCamera(
     if (velocity.lengthSq() > 0.25) behind.copy(velocity).normalize();
   }
   if (behind.lengthSq() < 0.0001) behind.set(1, 0, 0);
-  behind.normalize();
+  // Ease the heading, as the kart kit's camera does (12% of the gap a 60 Hz tick). Snapped to the
+  // raw velocity, a kerb, a wall or the 0.5 m/s switch back to the nose swung the view 84° in one
+  // tick; eased, a corner still opens up ahead but the camera turns like a camera operator.
+  const wanted = Math.atan2(behind.z, behind.x);
+  const gap = MathUtils.euclideanModulo(wanted - chaseYaw + Math.PI, Math.PI * 2) - Math.PI;
+  chaseYaw = dt >= 1 ? wanted : chaseYaw + gap * MathUtils.damp(0, 1, TURN_RATE, dt);
+  behind.set(Math.cos(chaseYaw), 0, Math.sin(chaseYaw));
   desired.copy(target).addScaledVector(behind, -EYE_BACK);
   desired.y += EYE_UP;
   if (dt >= 1) camera.position.copy(desired);

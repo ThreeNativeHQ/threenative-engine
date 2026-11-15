@@ -8,7 +8,7 @@ import {
 } from "@threenative/core";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { IPhysicsContext } from "@threenative/physics";
-import { type PerspectiveCamera, type Texture, Vector3 } from "three";
+import { MathUtils, type Object3D, type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { type CarCtx, FEEL } from "../entities/CarBody.js";
 import { RacingCar } from "../entities/RacingCar.js";
 import { Rival } from "../entities/Rival.js";
@@ -57,6 +57,50 @@ function playerRanking(ranked: readonly IRankedRacer[]): IRankedRacer | undefine
     if (racer?.id === "player") return racer;
   }
   return undefined;
+}
+
+const DEG = 180 / Math.PI;
+
+/**
+ * The shake meter: the worst tick-to-tick step of the camera's bank and of the body's lean, and
+ * the worst second difference of the camera's yaw. A steady turn has a steady yaw rate, so its
+ * second difference is near zero; a camera that twitches from tick to tick does not.
+ */
+function createShakeMeter() {
+  let roll = 0;
+  let yaw = 0;
+  let yawRate = 0;
+  let lean = 0;
+  let samples = 0;
+  const dir = new Vector3();
+  const right = new Vector3();
+  const meter = {
+    cameraRollStep: 0,
+    cameraYawJerk: 0,
+    leanRollStep: 0,
+    /** A camera cut is not a shake: the next two samples rebuild the history. */
+    reset(): void {
+      samples = 0;
+    },
+    sample(camera: PerspectiveCamera, body: Object3D): void {
+      camera.getWorldDirection(dir);
+      right.setFromMatrixColumn(camera.matrixWorld, 0);
+      const nextYaw = Math.atan2(dir.z, dir.x);
+      const rate = Math.atan2(Math.sin(nextYaw - yaw), Math.cos(nextYaw - yaw));
+      const nextRoll = Math.asin(MathUtils.clamp(right.y, -1, 1));
+      if (samples >= 2) {
+        meter.cameraRollStep = Math.max(meter.cameraRollStep, Math.abs(nextRoll - roll) * DEG);
+        meter.cameraYawJerk = Math.max(meter.cameraYawJerk, Math.abs(rate - yawRate) * DEG);
+        meter.leanRollStep = Math.max(meter.leanRollStep, Math.abs(body.rotation.z - lean) * DEG);
+      }
+      samples += 1;
+      roll = nextRoll;
+      yaw = nextYaw;
+      yawRate = rate;
+      lean = body.rotation.z;
+    },
+  };
+  return meter;
 }
 
 function quantize(value: number, scale: number): number {
@@ -256,6 +300,9 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     let place = initialPlayer.place;
     let positionLabel = `P${place}`;
     const lastOnRoad: [number, number, number] = [SPAWN.x, SPAWN.y, SPAWN.z];
+    // A rescue or the autopilot's rejoin teleports the car, so the camera cuts to it instead of
+    // flying across the circuit.
+    let teleports = car.body.teleports;
     const observedPosition = SPAWN.clone();
     sector.update(SPAWN, car.forward, 0, 0);
     chaseCamera(camera, car.body.position, car.forward, 1, undefined);
@@ -284,6 +331,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     };
 
     const statePatch: Partial<GameState> = {};
+    const shake = ctx.entities.add("camera-rig", createShakeMeter());
 
     // The suspension and the camera both read the **solved** chassis, so they run in the
     // afterPhysics phase rather than in the scene frame: a wheel's spin angle and a car's velocity
@@ -298,8 +346,15 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       lighting.key.target.position.copy(car.body.position);
       lighting.key.position.copy(car.body.position).addScaledVector(SUN_DIRECTION, 90);
       const solved = car.body.body.linearVelocity;
-      chaseCamera(camera, car.body.position, car.travelDirection, dt, solved);
+      const cut = car.body.teleports !== teleports;
+      teleports = car.body.teleports;
+      chaseCamera(camera, car.body.position, car.travelDirection, cut ? 1 : dt, solved);
       camera.rotateZ(cameraBank(car.lateralLoad, FEEL.lateral));
+      if (cut) {
+        ctx.resetInterpolation(camera);
+        shake.reset();
+      }
+      shake.sample(camera, car.body.lean);
     });
 
     // Collect only after the loaded character and scene receivers are attached.
