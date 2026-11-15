@@ -170,6 +170,52 @@ y 344–720), hiding `strata-props:far` removes 38 962 of them and hiding `strat
 removes none. Its tiles resolve to a coarse mip whose averaged alpha reads as a solid block at a few
 pixels; that is the defect to fix when the far bands get their look decision.
 
+## The next lever, ranked (advisor review, 2026-11-14)
+
+0. **Measure the split first.** Record the prepass rows (`renderer.cpp` encodeFrame) in their own
+   render pass with their own timestamp segment (`TN_PREPASS=split`; the extra MSAA depth store and
+   load costs ~0.2 ms) and re-run the bill per band. Every choice below depends on that split.
+1. **Draw prepass instances near to far.** The final depth is the per-sample minimum, which does not
+   depend on draw order, and the Equal pass keeps its order, so this changes 0 pixels by
+   construction. Issue each prepass row as sub-draws over cell-contiguous instance ranges sorted by
+   cell distance (needs `world-cell-batches.ts` to be cell-contiguous; unverified). Gain 0–6 ms,
+   depending on whether Turing's ZCULL rejects tiles for a discarding shader — the split pass shows it.
+2. **Collapse the vertices the LOD gate discards.** Every level's material carries a fragment level
+   gate (`world-impostor-surface.ts`), so a draw rasterises instances every fragment rejects. If a
+   draw only admits its own level's instances, collapsing those vertices (w = 0) is 0 pixels. Check
+   per-band triangles against the admitted levels first.
+3. **Conservative Hi-Z occlusion** for the far bands: 0 pixels, but a large build, and it pays only
+   where ridges hide the ring.
+- ❌ **Dropped: alpha-to-coverage in the prepass rows.** There is none to drop:
+  `pipeline_cache.cpp` never sets `alphaToCoverageEnabled`; this engine's "a2c" is `smoothstep` +
+  `fwidth` + discard in `standard.cpp`, which cuts the same fragments as a hard cutoff. That is why
+  the runtime ablation moved +0.1 ms. Do not chase it.
+- ❌ Rejected: a 1-sample prepass (the equal test needs per-sample depth), alpha hash and implicit-LOD
+  coverage (both change pixels), and a per-draw opt-out (every band gains from the prepass).
+
+**The far cards' look.** `mipThresholdNode` (`world-impostor-surface.ts`) divides the cutoff by
+`1 + 0.75·log2(footprint)`; at ~64 texels per pixel a 0.5 cutoff becomes ~0.09, so the coarse mip's
+averaged alpha passes across the whole card — that is the navy rectangle. Two fixes in order: bake
+coverage-preserving mips (Castaño 2010, scale each mip's alpha so its coverage above the cutoff
+matches mip 0) and drop the cutoff division; then skip the impostor ray march when the footprint makes
+parallax sub-pixel and take one blended octahedral sample. Only then extend the impostor atlas to the
+horizon bucket (`propWorld.ts`, `impostors: farInstances > 0`) — impostoring it before the card is
+fixed replaces 5.69 M triangles with the same rectangles. Projected (unverified): far 9.7 → 2–3 ms,
+horizon 14.2 → 3–5 ms, overview ≈ 20–24 ms, which is still short of 16.6; the base square's 5.5 ms
+(`terrain.ts`) is the bill after that.
+
+**Proof protocol for a look change**: one page load with a live material toggle; freeze sway, river and
+LOD temporal clocks; ABBA × 2 runs at all 5 poses, median scene column; the changed pixels must be a
+subset of the far band's footprint (the pixels that move when the band is hidden in the same frozen
+frame); then a fresh read-only judge with the criterion "far silhouettes read as crowns, no solid
+rectangles", against an authored-geometry reference, must return IMPROVEMENT at overview, meadow-close
+and vista.
+
+**Acceptance, split.** AC-A (the prepass): 0 changed pixels and ≥ 2 ms at every pose — met. AC-B (the
+60 FPS claim): ≤ 16.6 ms with 0 changed pixels at player, river and meadow-close; at overview and
+vista ≤ 16.6 ms, or the measured ceiling written here, with the far-band change confined to its
+footprint and judged IMPROVEMENT.
+
 ## Acceptance
 
 Ship only with all of: 0 changed pixels, `gpuSegmentScene` ≥ 2 ms better at every fixed pose, no CPU
