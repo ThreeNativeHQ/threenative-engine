@@ -167,13 +167,15 @@ the horizon band costs 16.3 ms less and the far band 12.0 ms less — but the sh
 mask stripped is 10 ms, so masked coverage is three quarters of this frame.
 
 **The 60 FPS gate is a look decision, not an engine one.** At overview the two far bands are 23.9 of
-39.4 ms and 84 % of the frame's 10.95 M triangles sit in them, drawn at their authored last LOD
-because `strata-props:horizon` asks `WorldCells` for no impostor atlas (`propWorld.ts`:
-`impostors: farInstances > 0`). Impostoring that ring and repairing the card look would save the
-band (~13 ms by the far bucket's 9.7 ms for 82 k cards) and still leave the frame near 26 ms, because
-the same masked cards then pay fill rate. Reaching 16.6 ms at overview and vista needs either a ring
-that stops drawing per-tree geometry past 700 m or a cheaper accepted look for its cutouts; both
-change pixels, which "look unchanged" forbids. Measured 2026-11-14.
+39.4 ms and 84 % of the frame's 10.95 M triangles sit in them, drawn at their authored last LOD.
+**Corrected 2026-11-15:** the horizon band does get an impostor atlas. Square spruces land in
+`horizon:true` (`props.ts:179`, spruce has no `DRAW_REACH` entry), they go through
+`impostorDistanceForScale` (`propWorld.ts:550`), so `farInstances > 0` and `impostors: true`
+(`propWorld.ts:591-622`) — and the scene carries it: at overview the horizon band is 5 card rows of
+5 648 instances, and the far band 5 card rows of 46 597. What the far bands draw is therefore mostly
+*mesh*, not cards: 22.27 M capacity triangles of horizon mesh against 11 296 of horizon card, and
+769 826 of far mesh against 93 194 of far card. Impostoring the ring is not the open lever it was
+written as; the lever is the mesh those rows rasterise. Measured 2026-11-14, corrected 2026-11-15.
 
 ⚠️ Standing still at a fixed pose drifts the bill upward (38 → 56 ms at overview as
 `streamingInstances` reached 500 979), so a pose number is only comparable within seconds of entering
@@ -235,16 +237,46 @@ re-resolved after each arm.
 | vista · local | 26.52 (−1.0) | 9.05 (−0.7) |
 | vista · ground | 27.40 (−0.1) | 4.87 (−4.9) |
 
-Two readings matter. **The depth half is the two far bands and nothing else**: at overview the
-horizon band and the far cards each account for ~10.5 of the 21.45 ms, and they hide each other, so
-they are very nearly the whole of it; the near props (0.3) and the ground (0.1) contribute nothing
-there, because opaque geometry is early-Z's job and it already works. **The far cards' cost is
-entirely fragment work inside the mask**: hiding them *raises* the shade half by 46.7 ms at overview
-by uncovering the far forest behind them, so their own 10.5/15.9 ms is depth-half masked sampling —
-the octahedral ray march and the LOD gate that lever 3 (below) calls the far cards' look.
+**`strata-props:far:*` is the far-forest collar, not the impostor cards.** The collar trees draw
+their coarsest mesh out to 150 m and switch to a card past it (`props.ts:178`, `propWorld.ts:511-549`;
+at vista they start 55 m from the eye). So the "far" rows below are mesh plus cards, and the row-kind
+count below separates them: **769 826 collar mesh triangles against 93 194 card triangles at
+overview**. A card is 2 triangles, so 46 597 of them cannot cost 10.5 ms; the cost sits in the mesh.
 
-The local band's removal at overview (−0.3) is a bound, not a zero: the near spruces also occlude
-what is behind them, so hiding them gives back some depth work they were preventing.
+Two readings hold, one is an outlier. **The depth half is the two far bands and nothing else**: at
+overview the horizon band and the far collar each account for ~10.5 of the 21.45 ms, and they hide
+each other, so they are very nearly the whole of it. **The near props contribute nothing** (0.3), and
+their removal is a bound rather than a zero, because the near spruces also occlude what is behind
+them. **The ground row (−0.1) is a null control, not a finding**: `prepassEligible` admits only draws
+that cut, so opaque ground is not in the prepass at all. **The +46.7 ms shade reading is an
+unreplicated outlier** — 6 frames, and the same arm at vista reads +0.8 — so the claim that hiding the
+collar uncovers more shading behind it is not established; that arm needs a second run before anything
+rests on it.
+
+### Triangles per band and row kind (chain step 3, first sub-step)
+
+Every instanced row in the scene at the pose, independent of what is admitted, so these are capacity
+counts, not rasterised ones: `Σ instances × triangles of the geometry the row holds`.
+
+| pose | band · kind | rows | instances | triangles |
+| --- | --- | --- | --- | --- |
+| overview | horizon · mesh | 277 | 39 312 | 22 268 040 |
+| overview | horizon · card | 5 | 5 648 | 11 296 |
+| overview | far · mesh | 15 | 21 250 | 769 826 |
+| overview | far · card | 5 | 46 597 | 93 194 |
+| overview | local · mesh | 155 | 33 888 | 11 551 401 |
+| overview | ground · mesh | 10 | 10 | 1 046 528 |
+| vista | horizon · mesh | 287 | 38 205 | 18 553 870 |
+| vista | far · mesh | 15 | 26 264 | 978 216 |
+| vista | local · mesh | 156 | 29 160 | 6 138 675 |
+
+36.9 M capacity triangles at overview against the 10.95 M the engine reports planning, so most of a
+row's instances are never drawn; the ratio is the cull, not waste.
+
+**Unanswered, and it is the number step 3 needs:** how many of a row's instances its draw's level gate
+rejects. `tnPublishedLodRange` read all zeros at every row and `material.uniforms.lod` was null, so
+the admitted level is not reachable from the page in this build; the measurement has to come from the
+engine (a counted gate), or from the renderer's own per-row plan.
 
 ### Method caveats
 
@@ -256,6 +288,10 @@ what is behind them, so hiding them gives back some depth work they were prevent
   time.
 - Player is noisy in every arm (split shade 8.09/12.57, `on` scene 17.45/12.84): no delta under
   about 5 ms may be read from it. Overview and vista are tight (24.41/24.42, 26.07/25.96, n = 9–10).
+- The `all` baselines in the band table (21.45 at overview, 27.51 at vista) are from a second page
+  load than the per-pose table's split arms (24.41, 26.07). Same poses, same code, a different boot:
+  read the two tables as shapes, not as offsets. Standing still drifts the bill upward as the ring
+  streams in (see the warning above), which is the difference.
 - The rows after a viewport-texture copy get their own depth pass, run after the copy, and that pass
   is timed as `viewport`, not `prepass` (renderer.cpp keeps the copy's depth exactly as shipped). The
   whole `viewport` pass is 0.15–0.45 ms at these poses, so the `prepass` column is short by that much
