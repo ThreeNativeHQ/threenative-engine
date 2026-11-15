@@ -213,7 +213,12 @@ describe("pinned starter assets", () => {
 
 it("every starter asset directory has a kit or example reference", async () => {
   const references: string[] = [];
+  // A kit is a starter folder with an assets.json; any other (starter/arbor's copy-out wind) is source.
   for (const kit of await readdir(join(root, "starter"))) {
+    if (!(await readdir(join(root, "starter", kit))).includes("assets.json")) {
+      await source(join(root, "starter", kit));
+      continue;
+    }
     for (const file of ["assets.json", "surface.json", "bake.mjs"])
       references.push(await readFile(join(root, "starter", kit, file), "utf8"));
   }

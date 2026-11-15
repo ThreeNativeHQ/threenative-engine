@@ -9,6 +9,7 @@ import {
   Group,
   InstancedMesh,
   LineSegments,
+  MathUtils,
   Mesh,
   Object3D,
   PlaneGeometry,
@@ -27,16 +28,15 @@ export interface IObstacle {
 }
 
 function seededRandom(seed: number): () => number {
-  let state = seed;
+  let state = seed >>> 0;
   return () => {
     state = (state * 1664525 + 1013904223) >>> 0;
     return state / 4294967296;
   };
 }
-
 const smoothstep = (edge0: number, edge1: number, value: number) => {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 };
 
 /** Glade-edge pines by hand, then a ring of forest further out. `[x, z, height]`. */

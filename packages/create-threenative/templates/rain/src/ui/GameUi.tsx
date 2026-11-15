@@ -154,7 +154,7 @@ function RainInterface() {
       return;
     qualityChosen.current = true;
     // An operator asking for high on a phone or software adapter keeps that explicit choice.
-    const asked = automationRequest(window.location.search).quality;
+    const asked = automationRequest().quality;
     if (asked !== undefined) {
       send("setQuality", asked);
       return;

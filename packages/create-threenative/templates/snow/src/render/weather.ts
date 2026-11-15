@@ -1,7 +1,7 @@
 // Generated for you. Snowfall, the blizzard and the powder a boot kicks up. `GPUParticles3D` (the
 // scene passes it in) owns
 // the buffers, dispatch and lifetime; the flake's shape, colour, size, drift and fall are here.
-import { type Sprite, Vector2 } from "three";
+import { MathUtils, type Sprite, Vector2 } from "three";
 import {
   Fn,
   atan,
@@ -233,8 +233,6 @@ export function createWeather(options: {
   let wind = 0.4;
   let drifted = { x: 0, z: 0 };
   let fallen = 0;
-  const damp = (a: number, b: number, rate: number, dt: number) =>
-    a + (b - a) * (1 - Math.exp(-rate * Math.max(0, dt)));
   return {
     bursts: bursts.map((burst) => burst.particles),
     burst(at, strength) {
@@ -253,10 +251,10 @@ export function createWeather(options: {
     update(dt, centre, pixelScale, settings) {
       fall.pixelScale.value = pixelScale;
       time += dt;
-      storm = damp(storm, settings.blizzard ? 1 : 0, 0.95, dt);
+      storm = MathUtils.damp(storm, settings.blizzard ? 1 : 0, 0.95, dt);
       const gust = 1 + 0.22 * Math.sin(time * 1.1) + 0.12 * Math.sin(time * 2.73 + 1.6);
       const target = (settings.wind * (1 - storm) + (9.5 + settings.wind * 0.5) * storm) * gust;
-      wind = damp(wind, target, 2.3, dt);
+      wind = MathUtils.damp(wind, target, 2.3, dt);
       drifted = { x: drifted.x + wind * dt, z: drifted.z + wind * 0.24 * dt };
       fallen += settings.fallSpeed * (0.95 + storm * 0.7) * dt;
       fall.drift.value.set(drifted.x, drifted.z);

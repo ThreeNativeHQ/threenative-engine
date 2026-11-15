@@ -1,5 +1,5 @@
 import type { Group, PerspectiveCamera, Vector3 } from "three";
-import { Box3, MathUtils, Vector3 as V3 } from "three";
+import { Box3, MathUtils, Mesh, Vector3 as V3 } from "three";
 import { createReticle } from "../render/creatures.js";
 
 /** Anything Wren can lock onto and cut: Mosslings, the Warden, the practice dummies. */
@@ -60,6 +60,12 @@ export class LockOn {
   readonly #view = new V3();
   readonly #to = new V3();
   readonly #marker = new Box3();
+  /** The reticle's own box, measured once: it only moves, turns and scales. */
+  readonly #reticleBox = new Box3().setFromObject(this.reticle);
+  readonly #partBox = new Box3();
+  /** The target's meshes, collected once per target. */
+  #meshSource: ITarget | undefined;
+  #meshes: Mesh[] = [];
 
   update(
     dt: number,
@@ -94,14 +100,32 @@ export class LockOn {
       this.#sticky = this.target !== undefined;
       this.justAcquired = this.target !== undefined;
     }
+  }
+
+  /**
+   * Bounds and reticle for this frame, after everything that moves has moved.
+   *
+   * Called separately from `update` because the lock must be picked before the hero reads its
+   * target, while the creatures it frames move later in the frame; placing it here is what keeps
+   * the arrow on the body rather than a frame behind it.
+   */
+  place(camera: PerspectiveCamera, dt: number): void {
     const target = this.target;
     this.reticle.visible = target !== undefined;
     this.markerLift = 0;
     this.markerTop = 0;
     if (target !== undefined) {
       // The target's live bounds, not a fixed offset: a rearing Warden or a hopping Mossling keeps
-      // the arrow over its real top.
-      const box = this.bounds.setFromObject(target.mesh);
+      // the arrow over its real top. The meshes are collected once per target and each frame only
+      // transforms its own box, which is what `setFromObject` did without the per-frame walk.
+      target.mesh.updateWorldMatrix(true, true);
+      const box = this.bounds.makeEmpty();
+      for (const mesh of this.#meshesOf(target)) {
+        if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+        const part = mesh.geometry.boundingBox;
+        if (part === null) continue;
+        box.union(this.#partBox.copy(part).applyMatrix4(mesh.matrixWorld));
+      }
       const tall = MathUtils.clamp((box.max.y - box.min.y) / 1.8, 0.75, 1.25);
       this.#spin += dt * 1.6;
       const lift = LIFT + 0.05 * tall + Math.sin(this.#spin * 2.5) * 0.06;
@@ -118,10 +142,24 @@ export class LockOn {
         Math.tan(MathUtils.degToRad(camera.fov / 2));
       this.reticle.scale.setScalar(Math.max(tall, (MIN_SCREEN_SHARE * span) / ARROW_HEIGHT));
       // Measured, not assumed: the gap from the target's top to the marker's own lowest point.
-      const marker = this.#marker.setFromObject(this.reticle);
+      this.reticle.updateWorldMatrix(true, false);
+      const marker = this.#marker.copy(this.#reticleBox).applyMatrix4(this.reticle.matrixWorld);
       this.markerLift = marker.min.y - box.max.y;
       this.markerTop = marker.max.y;
     }
+  }
+
+  /** The meshes a target's bounds cover: `setFromObject` walked them every frame, and a creature's
+   * mesh set never changes while it is locked. */
+  #meshesOf(target: ITarget): readonly Mesh[] {
+    if (this.#meshSource !== target) {
+      this.#meshes = [];
+      target.mesh.traverse((object) => {
+        if (object instanceof Mesh) this.#meshes.push(object);
+      });
+      this.#meshSource = target;
+    }
+    return this.#meshes;
   }
 
   /**

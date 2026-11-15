@@ -5,6 +5,7 @@ import ts from "typescript";
 
 import { RELEVANCE_FLOOR, capabilitySituationTokens } from "../packages/engine-mcp/src/index.js";
 import { CAPABILITY_PACKAGE_ALLOWLIST, isPublicClassOrFunction } from "./check-capability-docs.js";
+import { CTX_MANIFEST_ENTRIES } from "./ctx-capabilities.js";
 import { type INotOwnedCapability, NOT_OWNED_CAPABILITIES } from "./not-owned-capabilities.js";
 import {
   REALISM_EFFECTS_COVERAGE,
@@ -728,6 +729,7 @@ export function buildCapabilityManifest(
       symbol: candidate.symbol,
     })),
     ...REALISM_EFFECTS_MANIFEST_ENTRIES.map((entry) => ({ ...entry, aliases: [] })),
+    ...CTX_MANIFEST_ENTRIES.map((entry) => ({ ...entry, aliases: entry.aliases ?? [] })),
     ...RENDER_CHAIN_MANIFEST_ENTRIES.map((entry) => ({
       ...entry,
       aliases: entry.aliases ?? [],

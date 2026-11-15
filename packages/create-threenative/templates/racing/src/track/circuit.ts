@@ -1,4 +1,4 @@
-import { CatmullRomCurve3, Vector3 } from "three";
+import { CatmullRomCurve3, MathUtils, Vector3 } from "three";
 
 /**
  * The circuit, once.
@@ -126,7 +126,7 @@ function bankFade(radius: number): number {
   if (!Number.isFinite(radius) || radius >= BANK_FULL_RADIUS) return 1;
   if (radius <= BANK_NONE_RADIUS) return 0;
   const fade = (radius - BANK_NONE_RADIUS) / (BANK_FULL_RADIUS - BANK_NONE_RADIUS);
-  return fade * fade * (3 - 2 * fade);
+  return MathUtils.smoothstep(fade, 0, 1);
 }
 
 /**
@@ -435,7 +435,7 @@ export function terrainHeight(x: number, z: number): number {
   const plane = centre.point.y - ROAD_LIFT - projection.lateral * centre.bank;
   if (lateral <= CORRIDOR) return plane;
   const blend = (lateral - CORRIDOR) / (BLEND_END - CORRIDOR);
-  return plane + (open - plane) * blend * blend * (3 - 2 * blend);
+  return plane + (open - plane) * MathUtils.smoothstep(blend, 0, 1);
 }
 
 /** Where the start/finish line, the sectors and the grid are, as a fraction of the lap. */

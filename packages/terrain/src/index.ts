@@ -43,6 +43,8 @@ export type {
 } from "./core/presets.js";
 export { terrainStats } from "./core/stats.js";
 export type { ITerrainStats } from "./core/stats.js";
+export { grassFieldFromBiome } from "./core/grass-field.js";
+export type { IGrassFieldPlacement, IGrassGround } from "./core/grass-field.js";
 export {
   sampleHeight,
   gradientAt,

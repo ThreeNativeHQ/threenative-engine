@@ -580,7 +580,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
 
       currentRoom = roomFor(player.mesh.position.x);
-      const previous = frameCtx.state.getState();
       frameState.abilityCooldown = quantize(ability.cooldownRemaining, 1000);
       frameState.baseDamage = damageStats.base;
       frameState.damage = Math.round(damageStats.value(elapsed));
@@ -595,20 +594,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         visibleEnemy.state === "aggro" || visibleEnemy.state === "attack" ? 1 : 0;
       frameState.wallEnemyAggro =
         wallEnemy.state === "aggro" || wallEnemy.state === "attack" ? 1 : 0;
-      const changed =
-        frameState.abilityCooldown !== previous.abilityCooldown ||
-        frameState.baseDamage !== previous.baseDamage ||
-        frameState.damage !== previous.damage ||
-        frameState.health !== previous.health ||
-        frameState.lineOfSightBlocked !== previous.lineOfSightBlocked ||
-        frameState.modifierActive !== previous.modifierActive ||
-        frameState.playerX !== previous.playerX ||
-        frameState.playerY !== previous.playerY ||
-        frameState.playerZ !== previous.playerZ ||
-        frameState.room !== previous.room ||
-        frameState.visibleEnemyAggro !== previous.visibleEnemyAggro ||
-        frameState.wallEnemyAggro !== previous.wallEnemyAggro;
-      if (changed) frameCtx.state.set(frameState);
+      frameCtx.state.set(frameState);
       if (currentRoom !== lastSavedRoom) {
         lastSavedRoom = currentRoom;
         saveRequested = true;

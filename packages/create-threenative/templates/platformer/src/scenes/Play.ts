@@ -217,7 +217,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // The coin lines are the route's teaching: one along the floor, one arced over every jump.
     // The opening nine weave, but inside the reach a straight run actually collects: a coin the
     // player can see and cannot take is worse than no coin at all.
-    for (let i = 0; i < 9; i += 1) addPickup("coin", -5 + i * 1.6, 1.25, Math.sin(i * 0.9) * 0.6);
+    // The line starts one step past the spawn: a coin under the spawn was collected on frame 1.
+    for (let i = 1; i <= 9; i += 1) addPickup("coin", -5 + i * 1.6, 1.25, Math.sin(i * 0.9) * 0.6);
     for (let i = 0; i < 8; i += 1) addPickup("coin", 12 + i * 2, 1.25, i % 2 ? 1.6 : -1.4);
     for (const point of coinArc([30, 1.3, 0], [34, 2.8, 0], 6, 1.6))
       addPickup("coin", point.x, point.y, point.z);

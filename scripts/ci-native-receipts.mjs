@@ -196,7 +196,12 @@ export async function nativeBuildEvidence(
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const env = process.env;
-    const plan = JSON.parse(env.TN_CI_PLAN ?? "null");
+    // An empty string is what a cancelled `scope` job hands its dependents: the variable is set but
+    // carries nothing. `?? "null"` does not catch it, so `JSON.parse("")` used to throw a bare
+    // "Unexpected end of JSON input" and hide the real cause (run 43342207855). Absent stays null,
+    // and `validateEventPlan` then names what is actually wrong.
+    const planText = env.TN_CI_PLAN?.trim() ?? "";
+    const plan = planText === "" ? null : JSON.parse(planText);
     const expected = nativeCandidatePreflight({
       plan,
       eventName: env.TN_CI_EVENT,

@@ -12,6 +12,13 @@
 // every vertex the sidecar recorded, and the shift that would undo it lives in a node transform the
 // sidecar never sees.
 //
+// The same shift breaks a clustered mesh for a different reason. The virtual bake runs before this
+// stage and records every cluster's bounds and spheres in the positions it read — the authored
+// space — and the run time tests those spheres against the mesh's own transform. Quantization
+// leaves them in a space the node matrix no longer maps from, so a view-pruned cut prunes the
+// wrong clusters: the quarry's cliff face disappeared from the frame at the rim, with every one of
+// its visible clusters provably "outside" a frustum built around a geometry 31x smaller.
+//
 // So a deforming mesh is held in source space across the stage: POSITION and the morph-target
 // deltas riding it keep the exact values their author wrote, and the mesh spends the stage detached
 // from its nodes, so there is no compensation to undo — the skin, the node matrices, the instancing
@@ -34,6 +41,7 @@ import type {
 } from "@gltf-transform/core";
 import { Node } from "@gltf-transform/core";
 import { deformingMesh, skinnedMeshes } from "../lod/eligibility.js";
+import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
 
 /** What a primitive and a morph target both expose for one attribute, so one call serves both. */
 type IAttributeOwner = {
@@ -83,13 +91,25 @@ export async function quantizeStaticGeometry(
   }
 }
 
+/**
+ * Whether a mesh carries a cluster DAG, whose bounds were baked in the positions it was given.
+ *
+ * Held for the same reason a deforming mesh is — its world is somewhere the node transform no
+ * longer points — and the same unit applies: one clustered primitive holds the whole mesh.
+ */
+function clusteredMesh(mesh: Mesh): boolean {
+  return mesh
+    .listPrimitives()
+    .some((primitive) => primitive.getExtension(TN_VIRTUAL_GEOMETRY) !== null);
+}
+
 function holdDeformingMeshes(document: Document): IHeldMesh[] {
   const skinned = skinnedMeshes(document);
   const held: IHeldMesh[] = [];
   for (const mesh of document.getRoot().listMeshes()) {
     // The mesh is the unit of source space, because the compensation is per mesh: one deforming
     // primitive in it holds the whole thing, or the shift would land on half of it.
-    if (!deformingMesh(mesh, skinned)) continue;
+    if (!deformingMesh(mesh, skinned) && !clusteredMesh(mesh)) continue;
     const nodes: Node[] = [];
     for (const parent of mesh.listParents()) {
       if (!(parent instanceof Node)) continue;
@@ -131,7 +151,7 @@ function releaseDeformingMeshes(held: readonly IHeldMesh[]): void {
       // a mesh whose every vertex has quietly moved.
       if (primitive.getIndices() !== indices)
         throw new Error(
-          "TN_ASSETS_MODEL_DEFORMING_RENUMBERED: quantization rewrote the index buffer of a deforming primitive; its positions were held in source space and can no longer be addressed by index.",
+          "TN_ASSETS_MODEL_HELD_RENUMBERED: quantization rewrote the index buffer of a primitive whose positions were held in source space, so they can no longer be addressed by index — a sidecar or a cluster DAG holds those indices.",
         );
       releaseAttribute(primitive, position);
       for (const { target, position: delta } of targets) releaseAttribute(target, delta);

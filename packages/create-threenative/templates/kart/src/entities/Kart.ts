@@ -1,3 +1,4 @@
+import { MathUtils } from "three";
 import { type ICourse, SURFACE_DRAG, type Surface } from "../track/Course.js";
 
 /**
@@ -327,7 +328,7 @@ export class Kart {
         Math.max(0, 1 - resist) *
         (1 + this.boost + this.miniTurbo + this.catchUp);
       if (brake && this.throttle === 0 && this.speed < 0.5) target = -f.reverse;
-      this.speed += (target - this.speed) * (1 - Math.exp(-ticks / f.lagTicks));
+      this.speed = MathUtils.damp(this.speed, target, 1 / f.lagTicks, ticks);
     }
 
     // Hop and drift. A press while grounded hops; with the stick held and enough speed the hop

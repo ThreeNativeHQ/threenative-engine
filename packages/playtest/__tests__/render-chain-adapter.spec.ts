@@ -579,7 +579,7 @@ describe("renderChain perAdapter GPU families", () => {
   // camera motion blur and no temporal resolve, so no tier requests `traa` or `motionBlur` (PRD-620 round 2).
   const lookHighStages = ["ambientOcclusion", "ssgi", "ssr", "bloom", "vignette", "antialias"];
   const lookMediumStages = ["ambientOcclusion", "ssr", "bloom", "vignette", "antialias"];
-  const lookLowStages = ["ssr", "bloom", "vignette", "antialias"];
+  const lookLowStages = ["bloom", "vignette", "antialias"];
   // The starter is no longer pinned to three.js, so the native render-chain scenario asserts the same preset chains.
   const nativeChainHighStages = lookHighStages;
   const nativeChainMediumStages = lookMediumStages;
@@ -623,6 +623,7 @@ describe("renderChain perAdapter GPU families", () => {
     expect(rows.every((row) => row.pass === true)).toBe(passes);
   });
 
+  // Low draws no screen-space reflections (core `quality.ts`, PRD-871), so its chain is bloom, vignette, antialias.
   // The four scenarios that once asserted a flat `high` alone. Each reports the stages its own
   // template authors at that tier: the starter drops ambientOcclusion and grain at low, while
   // sailing's bloom and rain's stormPost run at every tier, so their rows keep the stage check.

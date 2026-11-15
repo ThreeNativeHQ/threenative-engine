@@ -81,17 +81,20 @@
     "@typescript/native": "catalog:",
     "vite": "catalog:",
     "@threenative/core": "workspace:*",
-    "@threenative/physics": "workspace:*"
+    "@threenative/physics": "workspace:*",
+    "@threenative/procedural-vegetation": "workspace:*"
   },
   "peerDependencies": {
     "@threenative/core": ">=0.3.14 <0.4.0",
     "@threenative/physics": ">=0.3.14 <0.4.0",
+    "@threenative/procedural-vegetation": ">=0.1.0 <0.2.0",
     "three": ">=0.187.0 <0.188.0",
     "vite": ">=7.0.0 <9.0.0"
   },
   "peerDependenciesMeta": {
     "@threenative/core": { "optional": true },
     "@threenative/physics": { "optional": true },
+    "@threenative/procedural-vegetation": { "optional": true },
     "vite": {
       "optional": true
     }

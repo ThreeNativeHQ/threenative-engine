@@ -33,7 +33,7 @@ test("the conformance registry binds the composed render-chain scenario to deskt
   assert.ok(existsSync(scenarioPath), `scenario must exist: ${entry.scenario}`);
   const scenario = readJson(scenarioPath);
   // Sharp AA on every tier (owner, 2026-10-28): 4x MSAA plus the SMAA antialias stage, no temporal AA and no
-  // camera motion blur. High adds SSGI over medium; low drops the contact occlusion.
+  // camera motion blur. High adds SSGI over medium; low drops the contact occlusion and SSR.
   const finishing = ["bloom", "vignette", "antialias"];
   const excluded = ["traa", "motionBlur", "grade", "grain"];
   const chain = (stages, dropped, tier) => ({
@@ -47,7 +47,8 @@ test("the conformance registry binds the composed render-chain scenario to deskt
   });
   const fullChain = chain(["ambientOcclusion", "ssgi", "ssr"], [], "high");
   const mediumChain = chain(["ambientOcclusion", "ssr"], ["ssgi"], "medium");
-  const lowChain = chain(["ssr"], ["ambientOcclusion", "ssgi"], "low");
+  // PRD-871 turned SSR off on the low tier (core `look/quality.ts`).
+  const lowChain = chain([], ["ambientOcclusion", "ssgi"], "low");
   assert.deepEqual(scenario.assert?.renderChain, {
     ...fullChain,
     perAdapter: {

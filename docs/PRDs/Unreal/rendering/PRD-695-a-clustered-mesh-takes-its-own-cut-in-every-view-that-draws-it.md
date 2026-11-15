@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — Phase 1 is open: a game with an orthographic camera (`camera.projection: "orthogonal"`) and any primitive of 65,536 triangles or more throws in `pixelsPerUnit` on every frame, because virtual geometry is on by default and its cut accepts only a perspective camera. Phases 2 and 3 (other views) are P3 behind their gate.
 **Complexity:** 6 (MEDIUM) — 1–5 implementation files (+1), a per-view cut cache with draw-range slots is a new mechanism (+2), the cut now runs inside three's render and shadow callbacks (+1), state across frames: one cached cut per view (+1), native proof on the owned host (+1); risk override: none
 **Owner:** João
-**Depends on:** None. [PRD-602](PRD-602-a-clustered-shadow-caster-draws-what-its-shadow-texel-resolves.md) owns the directional shadow levels, and this PRD leaves them to it. Uses [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md)'s pruned walk when it has shipped (optional). Composes with [PRD-694](PRD-694-traces-and-colliders-see-a-clustered-mesh-at-one-fixed-error-not-at-the-camera-cut.md), which owns the consumers that do not rasterize.
+**Depends on:** None. [PRD-602](PRD-602-a-clustered-shadow-caster-draws-what-its-shadow-texel-resolves.md) owns the directional shadow levels, and this PRD leaves them to it. Uses [PRD-600](../../done/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md)'s pruned walk when it has shipped (optional). Composes with [PRD-694](PRD-694-traces-and-colliders-see-a-clustered-mesh-at-one-fixed-error-not-at-the-camera-cut.md), which owns the consumers that do not rasterize.
 
 ## Context
 

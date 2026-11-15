@@ -1,4 +1,14 @@
-import { BufferAttribute, BufferGeometry, type Camera, type Material, Mesh, Vector3 } from "three";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  type Camera,
+  Frustum,
+  type Material,
+  Matrix4,
+  Mesh,
+  Quaternion,
+  Vector3,
+} from "three";
 
 /**
  * A mesh that draws only the clusters this camera can resolve.
@@ -17,12 +27,26 @@ import { BufferAttribute, BufferGeometry, type Camera, type Material, Mesh, Vect
 
 /** The baked payload, exactly as `TN_virtual_geometry` stores it. */
 export interface IClusterTable {
-  /** Per cluster, `[centreX, centreY, centreZ, radius]`. Culling reads it; PRD-283 will. */
+  /**
+   * Per cluster, `[centreX, centreY, centreZ, radius]`, in the mesh's own space.
+   *
+   * "The mesh's own space" is the one its `POSITION` attribute is in, which is why the asset pass
+   * never quantizes a primitive that carries this table: quantization keeps the drawn positions but
+   * moves the space out from under them, and every sphere below is tested against a transform.
+   */
   readonly bounds: Float32Array;
-  /** Per cluster, `[axisX, axisY, axisZ, cutoff]`. */
+  /** Per cluster, `[axisX, axisY, axisZ, cutoff]`. Read into a field nothing uses yet. */
   readonly cones: Float32Array;
   /** Per cluster, `[ownError, parentError]`, in the mesh's own units. */
   readonly errors: Float32Array;
+  /**
+   * Per cluster, `[group, sourceGroup]`, or absent on a table built by hand.
+   *
+   * `group` is the group that folded this cluster one level up (`NO_GROUP` when nothing above
+   * replaces it), and `sourceGroup` is the group whose simplification produced it. Inverting `group`
+   * gives the children of every group, which is the descent a view-pruned cut walks.
+   */
+  readonly groups?: Uint32Array;
   /** Cluster-ordered triangles for every level, indexing the geometry's vertex buffer. */
   readonly indices: Uint32Array;
   /** Per cluster, the sphere `parentError` is projected through. */
@@ -32,6 +56,9 @@ export interface IClusterTable {
   /** Per cluster, the sphere its own error is projected through. */
   readonly sourceSpheres: Float32Array;
 }
+
+/** Written into `clusterGroups` where a cluster has no group on that side. */
+export const NO_CLUSTER_GROUP = 0xffffffff;
 
 export interface IClusteredMeshOptions {
   /**
@@ -51,6 +78,24 @@ export interface IClusteredMeshOptions {
    * radius.
    */
   readonly recutDistance?: number;
+  /**
+   * Whether clusters the camera cannot see are skipped.
+   *
+   * On by default, because a cluster behind the camera is a cluster nobody can resolve. A mesh that
+   * casts shadows keeps the unpruned cut until shadows have a cut of their own, and a game that
+   * renders the mesh through a second camera (a mirror, a portal) can turn it off; either way the
+   * mesh reports what it did through {@link ClusteredMesh.viewCullReport}.
+   */
+  readonly viewCull?: boolean;
+  /**
+   * How far the camera may turn, in radians, before the cut is taken again.
+   *
+   * A cut pruned by the view is only valid for the view it was taken with, so the frustum it was
+   * pruned by is widened by this angle and the cut is kept until the camera turns past it. It is the
+   * one constant this technique needs: too small re-cuts on every nudge, too large draws a sliver of
+   * clusters that turning would reveal. Default {@link DEFAULT_VIEW_MARGIN}.
+   */
+  readonly viewMargin?: number;
 }
 
 /** A cluster nearer than this to the camera is treated as this far away, rather than dividing by zero. */
@@ -58,6 +103,15 @@ const MIN_DISTANCE = 1e-4;
 
 const DEFAULT_ERROR_PIXELS = 1;
 const RECUT_FRACTION = 0.001;
+/**
+ * Radians the camera may turn before a view-pruned cut is taken again.
+ *
+ * Chosen from the measured re-cut cost on the quarry route: a re-cut copies a cut of a few hundred
+ * thousand indices and costs well under a millisecond there, so two degrees buys steadiness a nudge
+ * cannot spend and still re-cuts inside a normal look-around. Raising it trades a few clusters of
+ * overdraw for fewer re-cuts; the game can set its own.
+ */
+export const DEFAULT_VIEW_MARGIN = Math.PI / 90;
 
 /**
  * The two things a screen-space error needs from a camera.
@@ -146,6 +200,213 @@ export function selectClusterCut(
   return selected;
 }
 
+/**
+ * The six planes of a camera's view volume, in world space.
+ *
+ * The camera's own world matrix has to be current for this to mean anything, which is why every
+ * caller here walks the camera first. `projectionMatrix` is read as the renderer left it: rebuilding
+ * it here would silently disagree with the frame that is about to be drawn.
+ */
+export function worldFrustum(camera: Camera, into: Frustum, scratch: Matrix4): Frustum {
+  return into.setFromProjectionMatrix(
+    scratch.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+  );
+}
+
+/**
+ * Whether a sphere lies wholly outside the view volume.
+ *
+ * Every plane has to be crossed for the sphere to be out: a sphere that is behind the near plane is
+ * outside it, and one that is merely to the left of the left plane and also past the far plane is
+ * still outside. This is the read-only question PRD-600's counters ask — nothing is culled by it.
+ */
+export function outsideFrustum(frustum: Frustum, center: Vector3, radius: number): boolean {
+  for (const plane of frustum.planes) if (plane.distanceToPoint(center) < -radius) return true;
+  return false;
+}
+
+/**
+ * Radius of the sphere on the mesh's origin that holds every cluster's bounds, in the mesh's own
+ * units. A body pivoted off its centre (a rock on its base) reaches past its largest cluster.
+ */
+export function clusterTableRadius(table: IClusterTable): number {
+  let radius = 0;
+  const { bounds } = table;
+  for (let at = 0; at + 3 < bounds.length; at += 4)
+    radius = Math.max(
+      radius,
+      Math.hypot(bounds[at] as number, bounds[at + 1] as number, bounds[at + 2] as number) +
+        (bounds[at + 3] as number),
+    );
+  return radius;
+}
+
+/**
+ * The child lists a view-pruned cut descends by, built once from the bake's `clusterGroups`.
+ *
+ * A cluster's own error says whether it may draw; whether *its* children must be looked at is a
+ * different question, and answering it needs the DAG's edges rather than its errors. The edges are
+ * the inverse of `clusterGroups`' first value: every cluster folded into group *g* is one of the
+ * clusters *g* simplified, and a cluster's finer clusters are the ones the group that produced it
+ * folded.
+ */
+export interface IClusterHierarchy {
+  /** The clusters nothing above replaces — where a cut starts, and the only place it can. */
+  readonly roots: Uint32Array;
+  /** Per group *g*, its children are `children[starts[g]]` up to `children[starts[g + 1]]`. */
+  readonly starts: Uint32Array;
+  readonly children: Uint32Array;
+  /** Per cluster, `[group, sourceGroup]`, exactly as the bake wrote them. */
+  readonly groups: Uint32Array;
+}
+
+/**
+ * Builds the descent lists, and refuses a table whose edges do not reach every cluster.
+ *
+ * Fails closed like every other table check here: a DAG whose edges strand a cluster would draw a
+ * hole in the mesh the moment the walk used it, and a hole that only appears when a camera turns is
+ * the worst kind to find. The bake guarantees the reachability this checks for.
+ */
+/** One hierarchy per table: it is a pure function of the bake, and every clone walks the same one. */
+const hierarchies = new WeakMap<IClusterTable, IClusterHierarchy>();
+
+export function clusterHierarchy(table: IClusterTable): IClusterHierarchy {
+  let hierarchy = hierarchies.get(table);
+  if (hierarchy === undefined) {
+    hierarchy = buildClusterHierarchy(table);
+    hierarchies.set(table, hierarchy);
+  }
+  return hierarchy;
+}
+
+function buildClusterHierarchy(table: IClusterTable): IClusterHierarchy {
+  const groups = table.groups;
+  if (groups === undefined)
+    throw new Error(
+      "ClusteredMesh needs table.groups to prune its cut by view: re-bake the model with the current asset pipeline.",
+    );
+  const clusters = table.ranges.length / 2;
+  let groupCount = 0;
+  let rootCount = 0;
+  for (let cluster = 0; cluster < clusters; cluster += 1) {
+    const group = groups[cluster * 2] as number;
+    const source = groups[cluster * 2 + 1] as number;
+    if (source !== NO_CLUSTER_GROUP) groupCount = Math.max(groupCount, source + 1);
+    if (group === NO_CLUSTER_GROUP) rootCount += 1;
+    else groupCount = Math.max(groupCount, group + 1);
+  }
+  const starts = new Uint32Array(groupCount + 1);
+  for (let cluster = 0; cluster < clusters; cluster += 1) {
+    const group = groups[cluster * 2] as number;
+    if (group !== NO_CLUSTER_GROUP) starts[group + 1] = (starts[group + 1] as number) + 1;
+  }
+  for (let group = 0; group < groupCount; group += 1)
+    starts[group + 1] = (starts[group + 1] as number) + (starts[group] as number);
+  const children = new Uint32Array(clusters);
+  const cursor = starts.slice();
+  for (let cluster = 0; cluster < clusters; cluster += 1) {
+    const group = groups[cluster * 2] as number;
+    if (group === NO_CLUSTER_GROUP) continue;
+    children[cursor[group] as number] = cluster;
+    cursor[group] = (cursor[group] as number) + 1;
+  }
+  const roots = new Uint32Array(rootCount);
+  let written = 0;
+  for (let cluster = 0; cluster < clusters; cluster += 1)
+    if ((groups[cluster * 2] as number) === NO_CLUSTER_GROUP) {
+      roots[written] = cluster;
+      written += 1;
+    }
+  // Every cluster has to be under a root, or a cut taken by the walk would silently miss it.
+  const reached = reachableClusters({ children, groups, roots, starts });
+  if (reached !== clusters)
+    throw new Error(
+      `TN_CLUSTER_DAG_UNREACHABLE: the cluster DAG reaches ${reached} of ${clusters} clusters from its ${rootCount} roots; re-bake the model with the current asset pipeline.`,
+    );
+  return { children, groups, roots, starts };
+}
+
+/** How many clusters the roots reach by descending the produced-by edges. */
+function reachableClusters(hierarchy: IClusterHierarchy): number {
+  const { children, groups, roots, starts } = hierarchy;
+  const seen = new Uint8Array(groups.length / 2);
+  const stack: number[] = [];
+  for (const root of roots) {
+    seen[root] = 1;
+    stack.push(root);
+  }
+  let reached = roots.length;
+  while (stack.length > 0) {
+    const parent = groups[(stack.pop() as number) * 2 + 1] as number;
+    if (parent === NO_CLUSTER_GROUP) continue;
+    for (let slot = starts[parent] as number; slot < (starts[parent + 1] as number); slot += 1) {
+      const child = children[slot] as number;
+      if (seen[child] === 1) continue;
+      seen[child] = 1;
+      reached += 1;
+      stack.push(child);
+    }
+  }
+  return reached;
+}
+
+/**
+ * What a pruned cut is allowed to skip: one sphere against the view.
+ *
+ * Structural rather than a class, so a spec can hand the walk a plane it decides for itself.
+ */
+export interface IClusterView {
+  /**
+   * Whether anything inside this sphere — in the mesh's own units — could still touch the view.
+   *
+   * Answers `true` for a sphere that only grazes it and for one the walk cannot decide, because a
+   * wrong `false` is a hole and a wrong `true` is a few triangles.
+   */
+  touches(x: number, y: number, z: number, radius: number): boolean;
+}
+
+/**
+ * One camera's view, widened by the turn the cut stays valid for, and the mesh's own transform.
+ *
+ * The frustum lives in world space and the sphere comes in the mesh's own units, so the transform
+ * is applied here rather than at every call site. A sphere is scaled by the matrix's largest axis
+ * scale, the same way three's own frustum cull scales one, and a camera that has moved `d` away
+ * from the view it cut by keeps anything within `d` times the margin — which is exactly the set a
+ * turn inside the margin can reveal.
+ */
+export class ClusterView implements IClusterView {
+  readonly #frustum = new Frustum();
+  readonly #viewMatrix = new Matrix4();
+  readonly #eye = new Vector3();
+  readonly #center = new Vector3();
+  readonly #toWorld = new Matrix4();
+  #scale = 1;
+  #margin = 0;
+
+  /** Points this view at `camera`, kept valid for a turn of `margin` radians. */
+  setFromCamera(camera: Camera, margin: number): void {
+    camera.updateWorldMatrix(true, false);
+    worldFrustum(camera, this.#frustum, this.#viewMatrix);
+    this.#eye.setFromMatrixPosition(camera.matrixWorld);
+    // A turn of `m` rotates each plane about the eye, and a plane's normal moves by `2 sin(m / 2)` —
+    // the chord, not the sine. So a sphere at distance `d` keeps everything a turn that far can
+    // reveal when it is inflated by `d` times this, which is the exact bound rather than a guess.
+    this.#margin = 2 * Math.sin(margin / 2);
+  }
+
+  /** The transform from the units the spheres are given in to world space. */
+  setTransform(matrixWorld: Matrix4): void {
+    this.#toWorld.copy(matrixWorld);
+    this.#scale = matrixWorld.getMaxScaleOnAxis();
+  }
+
+  touches(x: number, y: number, z: number, radius: number): boolean {
+    this.#center.set(x, y, z).applyMatrix4(this.#toWorld);
+    const slack = this.#margin === 0 ? 0 : this.#center.distanceTo(this.#eye) * this.#margin;
+    return !outsideFrustum(this.#frustum, this.#center, radius * this.#scale + slack);
+  }
+}
+
 /** Index slots the finest possible cut needs: every cluster whose own error is zero. */
 function finestIndexCount(table: IClusterTable): number {
   let count = 0;
@@ -155,6 +416,102 @@ function finestIndexCount(table: IClusterTable): number {
   return count;
 }
 
+/**
+ * The view-pruned walk, and the scratch it needs to run without allocating.
+ *
+ * Selects exactly what {@link selectClusterCut} selects, without visiting clusters the view cannot
+ * hold: it descends only where the parent test still fails and the sphere that encloses a whole
+ * subtree still touches the (widened) frustum, and stops at the cluster it draws. `selectClusterCut`
+ * stays the oracle this is graded against. One of these belongs to one table.
+ */
+export class ClusterWalk {
+  readonly #table: IClusterTable;
+  readonly #hierarchy: IClusterHierarchy;
+  readonly #stack: Uint32Array;
+  /** Which cut last descended into each group, so a group shared by siblings is visited once. */
+  readonly #stamps: Int32Array;
+  #generation = 0;
+
+  constructor(table: IClusterTable, hierarchy: IClusterHierarchy = clusterHierarchy(table)) {
+    this.#table = table;
+    this.#hierarchy = hierarchy;
+    this.#stack = new Uint32Array(table.ranges.length / 2);
+    this.#stamps = new Int32Array(hierarchy.starts.length);
+  }
+
+  /** The cut, as cluster indices, written into `out`; returns how many were selected. */
+  select(
+    camera: Vector3,
+    scale: number,
+    errorPixels: number,
+    view: IClusterView,
+    out: Uint32Array,
+  ): number {
+    const { children, groups, roots, starts } = this.#hierarchy;
+    const { errors, parentSpheres, sourceSpheres } = this.#table;
+    this.#generation += 1;
+    const generation = this.#generation;
+    let selected = 0;
+    let depth = 0;
+    for (let root = 0; root < roots.length; root += 1) {
+      this.#stack[depth] = roots[root] as number;
+      depth += 1;
+      while (depth > 0) {
+        depth -= 1;
+        const cluster = this.#stack[depth] as number;
+        const own = projectedError(
+          errors[cluster * 2] as number,
+          sourceSpheres,
+          cluster,
+          camera,
+          scale,
+        );
+        if (own <= errorPixels) {
+          const parent = projectedError(
+            errors[cluster * 2 + 1] as number,
+            parentSpheres,
+            cluster,
+            camera,
+            scale,
+          );
+          if (parent <= errorPixels) continue;
+          if (selected >= out.length)
+            throw new Error(
+              `ClusteredMesh selected more than the ${out.length} clusters level 0 holds; the table is inconsistent.`,
+            );
+          out[selected] = cluster;
+          selected += 1;
+          continue;
+        }
+        // Too coarse to draw at this distance, so the clusters it replaced are the only candidates
+        // left — and none of them can be in view if the sphere holding all of them cannot be.
+        const source = groups[cluster * 2 + 1] as number;
+        if (source === NO_CLUSTER_GROUP) continue;
+        if (this.#stamps[source] === generation) continue;
+        this.#stamps[source] = generation;
+        if (
+          !view.touches(
+            sourceSpheres[cluster * 4] as number,
+            sourceSpheres[cluster * 4 + 1] as number,
+            sourceSpheres[cluster * 4 + 2] as number,
+            sourceSpheres[cluster * 4 + 3] as number,
+          )
+        )
+          continue;
+        for (
+          let slot = starts[source] as number;
+          slot < (starts[source + 1] as number);
+          slot += 1
+        ) {
+          this.#stack[depth] = children[slot] as number;
+          depth += 1;
+        }
+      }
+    }
+    return selected;
+  }
+}
+
 export class ClusteredMesh extends Mesh {
   /** The baked payload. The bake is the only thing that writes it; a copy takes the source's. */
   table!: IClusterTable;
@@ -162,16 +519,38 @@ export class ClusteredMesh extends Mesh {
   errorPixels: number;
   /** Camera movement, in the mesh's own units, below which the previous cut is kept. */
   recutDistance: number;
+  /**
+   * Whether the cut skips clusters the camera cannot see. Writable — a mesh drawn through a second
+   * camera can turn it off, and {@link ClusteredMesh.viewCullReport} says what happened either way.
+   */
+  viewCull: boolean;
+  /** Camera turn, in radians, the kept cut stays valid for. Writable. */
+  viewMargin: number;
 
   #cut!: Uint32Array;
   #selection!: Uint32Array;
+  #walk: ClusterWalk | undefined;
+  readonly #view = new ClusterView();
   readonly #cameraLocal = new Vector3();
   readonly #lastCut = new Vector3();
+  readonly #rotation = new Quaternion();
+  readonly #lastRotation = new Quaternion();
+  readonly #frustum = new Frustum();
+  readonly #viewMatrix = new Matrix4();
+  readonly #sphereCenter = new Vector3();
   #drawnClusters = 0;
   #drawnIndices = 0;
+  #drawnClustersOutsideView = 0;
+  #drawnTrianglesOutsideView = 0;
+  #recutMs = 0;
+  #recutBytes = 0;
+  #recutCount = 0;
   #hasCut = false;
+  #pruned = false;
   #lastScale = 0;
   #lastErrorPixels = 0;
+  /** The projection the cut was pruned by: an aspect or zoom change keeps the pixel scale. */
+  readonly #lastProjection = new Matrix4();
 
   constructor(
     geometry: BufferGeometry,
@@ -183,6 +562,9 @@ export class ClusteredMesh extends Mesh {
     assertTable(table);
     this.errorPixels = options.errorPixels ?? DEFAULT_ERROR_PIXELS;
     this.recutDistance = options.recutDistance ?? radiusOf(table) * RECUT_FRACTION;
+    this.viewCull = options.viewCull ?? true;
+    this.viewMargin = options.viewMargin ?? DEFAULT_VIEW_MARGIN;
+    assertViewMargin(this.viewMargin);
     this.#load(table, geometry);
     // Full detail until something cuts it. Virtual geometry ships on by default, so the mesh a
     // game never touches has to draw exactly what an ordinary `Mesh` would have drawn — a class
@@ -196,6 +578,13 @@ export class ClusteredMesh extends Mesh {
     this.table = table;
     this.#cut = new Uint32Array(finestIndexCount(table));
     this.#selection = new Uint32Array(table.ranges.length / 2);
+    // No camera has taken a cut of this table yet, so there is nothing outside a view to report.
+    this.#drawnClustersOutsideView = 0;
+    this.#drawnTrianglesOutsideView = 0;
+    this.#recutMs = 0;
+    this.#recutBytes = 0;
+    this.#recutCount = 0;
+    this.#walk = table.groups === undefined ? undefined : new ClusterWalk(table);
     // The geometry draws out of the cut buffer from here on. Its vertex attributes are untouched:
     // every level of the DAG indexes the vertices the mesh already shipped.
     //
@@ -217,6 +606,8 @@ export class ClusteredMesh extends Mesh {
     return new ClusteredMesh(withOwnCut(this.geometry), this.material, this.table, {
       errorPixels: this.errorPixels,
       recutDistance: this.recutDistance,
+      viewCull: this.viewCull,
+      viewMargin: this.viewMargin,
     }).copy(this, recursive) as this;
   }
 
@@ -237,6 +628,8 @@ export class ClusteredMesh extends Mesh {
     this.geometry = geometry;
     this.errorPixels = source.errorPixels;
     this.recutDistance = source.recutDistance;
+    this.viewCull = source.viewCull;
+    this.viewMargin = source.viewMargin;
     // Nothing this copy has drawn yet, so the next update has to cut it for where it stands.
     this.#hasCut = false;
     this.#compact(this.#finestCut());
@@ -265,6 +658,63 @@ export class ClusteredMesh extends Mesh {
   }
 
   /**
+   * Triangles in the current cut whose cluster bounds lie wholly outside the view volume.
+   *
+   * A measurement, not a cull: PRD-600 records this number before and after the walk learns to skip
+   * what the view does not hold. It is taken when the cut is taken, so a still camera reads the
+   * number its standing cut was made with.
+   */
+  get drawnTrianglesOutsideView(): number {
+    return this.#drawnTrianglesOutsideView;
+  }
+
+  /** Clusters in the current cut whose bounds lie wholly outside the view volume. */
+  get drawnClustersOutsideView(): number {
+    return this.#drawnClustersOutsideView;
+  }
+
+  /**
+   * Milliseconds the last re-cut took, from choosing the cut to the index buffer being marked for
+   * upload.
+   *
+   * The whole re-cut, because that is the cost a game pays for turning the camera and the number
+   * `viewMargin` is chosen against. The bytes below are only the compact's copy, so the throughput
+   * this divides out is the pessimistic one.
+   */
+  get recutMs(): number {
+    return this.#recutMs;
+  }
+
+  /** Index bytes the last re-cut copied and uploaded. */
+  get recutBytes(): number {
+    return this.#recutBytes;
+  }
+
+  /** Throughput of the last re-cut's copy of the cut, in megabytes per second. */
+  get recutMegabytesPerSecond(): number {
+    return this.#recutMs > 0 ? this.#recutBytes / 1e3 / this.#recutMs : 0;
+  }
+
+  /** How many re-cuts this mesh has taken, so a reader can tell a fresh one from a stale reading. */
+  get recutCount(): number {
+    return this.#recutCount;
+  }
+
+  /**
+   * What this mesh does about clusters outside the view, and why.
+   *
+   * `"on"` when the cut is pruned, and a reason when it is not — a mesh that silently kept drawing
+   * what nobody can see would be a performance bug with no symptom, and one that silently dropped
+   * what a second camera can see would be a hole with no cause.
+   */
+  get viewCullReport(): string {
+    if (!this.viewCull) return "off (viewCull = false)";
+    if (this.castShadow) return "off (castShadow)";
+    if (this.#walk === undefined) return "off (no clusterGroups)";
+    return "on";
+  }
+
+  /**
    * Chooses this frame's cut and compacts it into one index range.
    *
    * Called by the game before it renders, not from `onBeforeRender`: an empty cut has to skip the
@@ -280,23 +730,86 @@ export class ClusteredMesh extends Mesh {
     camera.updateWorldMatrix(true, false);
     this.#cameraLocal.setFromMatrixPosition(camera.matrixWorld);
     this.worldToLocal(this.#cameraLocal);
+    camera.getWorldQuaternion(this.#rotation);
 
+    // A cut pruned by the view is only right for the view it was pruned by, so it is kept while the
+    // camera stays inside the band and the turn it was widened by.
+    const pruned = this.viewCull && !this.castShadow && this.#walk !== undefined;
     const moved = this.#cameraLocal.distanceTo(this.#lastCut);
     const settled =
       this.#hasCut &&
+      pruned === this.#pruned &&
       moved <= this.recutDistance &&
+      this.#rotation.angleTo(this.#lastRotation) <= this.viewMargin &&
       scale === this.#lastScale &&
-      this.errorPixels === this.#lastErrorPixels;
+      this.errorPixels === this.#lastErrorPixels &&
+      camera.projectionMatrix.equals(this.#lastProjection);
     if (settled) return this.drawnTriangles;
 
     this.#lastCut.copy(this.#cameraLocal);
+    this.#lastRotation.copy(this.#rotation);
     this.#lastScale = scale;
     this.#lastErrorPixels = this.errorPixels;
+    this.#lastProjection.copy(camera.projectionMatrix);
+    this.#pruned = pruned;
     this.#hasCut = true;
-    this.#compact(
-      selectClusterCut(this.table, this.#cameraLocal, scale, this.errorPixels, this.#selection),
-    );
+    const started = performance.now();
+    const walk = this.#walk;
+    if (pruned && walk !== undefined) {
+      this.#view.setFromCamera(camera, this.viewMargin);
+      this.#view.setTransform(this.matrixWorld);
+      this.#compact(
+        walk.select(this.#cameraLocal, scale, this.errorPixels, this.#view, this.#selection),
+      );
+    } else {
+      this.#compact(
+        selectClusterCut(this.table, this.#cameraLocal, scale, this.errorPixels, this.#selection),
+      );
+    }
+    this.#recutMs = performance.now() - started;
+    this.#recutBytes = this.#drawnIndices * 4;
+    this.#recutCount += 1;
+    this.#countOutsideView(camera);
     return this.drawnTriangles;
+  }
+
+  /**
+   * Records how much of this cut the view volume does not hold.
+   *
+   * Read-only and taken when a cut is taken, so it costs one sphere test per selected cluster on the
+   * re-cut path and nothing at all on a frame the cut settled. The mesh's own scale is folded into
+   * the radius the way three folds it into its own cull, so a scaled placement is measured as it
+   * draws.
+   */
+  #countOutsideView(camera: Camera): void {
+    const frustum = worldFrustum(camera, this.#frustum, this.#viewMatrix);
+    const scale = this.matrixWorld.getMaxScaleOnAxis();
+    const world = this.matrixWorld;
+    let clusters = 0;
+    let indices = 0;
+    for (let slot = 0; slot < this.#drawnClusters; slot += 1) {
+      const cluster = this.#selection[slot] as number;
+      const count = this.table.ranges[cluster * 2 + 1] as number;
+      this.#sphereCenter
+        .set(
+          this.table.bounds[cluster * 4] as number,
+          this.table.bounds[cluster * 4 + 1] as number,
+          this.table.bounds[cluster * 4 + 2] as number,
+        )
+        .applyMatrix4(world);
+      if (
+        !outsideFrustum(
+          frustum,
+          this.#sphereCenter,
+          (this.table.bounds[cluster * 4 + 3] as number) * scale,
+        )
+      )
+        continue;
+      clusters += 1;
+      indices += count;
+    }
+    this.#drawnClustersOutsideView = clusters;
+    this.#drawnTrianglesOutsideView = indices / 3;
   }
 
   #compact(selected: number): void {
@@ -340,10 +853,16 @@ function withOwnCut(geometry: BufferGeometry): BufferGeometry {
 }
 
 function radiusOf(table: IClusterTable): number {
-  let radius = 0;
-  for (let cluster = 0; cluster * 4 < table.bounds.length; cluster += 1)
-    radius = Math.max(radius, table.bounds[cluster * 4 + 3] as number);
-  return radius;
+  return clusterTableRadius(table);
+}
+
+export function assertViewMargin(margin: number): void {
+  // Zero is a legal choice — re-cut on every degree — and a quarter turn or more is a half-sphere
+  // kept for nothing; neither is a bug worth throwing over, but NaN and negatives are.
+  if (!Number.isFinite(margin) || margin < 0 || margin >= Math.PI / 2)
+    throw new Error(
+      `ClusteredMesh viewMargin must be a turn in radians below a quarter circle, got ${margin}.`,
+    );
 }
 
 function assertTable(table: IClusterTable): void {
@@ -364,6 +883,10 @@ function assertTable(table: IClusterTable): void {
         `ClusteredMesh table.${name} holds ${array.length} values for ${clusters} clusters; it needs ${clusters * width}.`,
       );
   }
+  if (table.groups !== undefined && table.groups.length !== clusters * 2)
+    throw new Error(
+      `ClusteredMesh table.groups holds ${table.groups.length} values for ${clusters} clusters; it needs ${clusters * 2}.`,
+    );
   for (let cluster = 0; cluster < clusters; cluster += 1) {
     const start = table.ranges[cluster * 2] as number;
     const count = table.ranges[cluster * 2 + 1] as number;
@@ -381,6 +904,7 @@ interface IVirtualGeometryDef {
   readonly clusterBounds: number;
   readonly clusterCones: number;
   readonly clusterErrors: number;
+  readonly clusterGroups: number;
   readonly clusterParentSpheres: number;
   readonly clusterRanges: number;
   readonly clusterSourceSpheres: number;
@@ -407,6 +931,7 @@ const TABLE_FIELDS: readonly (keyof IVirtualGeometryDef)[] = [
   "clusterBounds",
   "clusterCones",
   "clusterErrors",
+  "clusterGroups",
   "clusterParentSpheres",
   "clusterRanges",
   "clusterSourceSpheres",
@@ -427,19 +952,22 @@ async function readTable(
     );
   const accessor = async (index: number): Promise<ArrayLike<number>> =>
     (await parser.getDependency("accessor", index)).array;
-  const [bounds, cones, errors, parentSpheres, ranges, sourceSpheres, indices] = await Promise.all([
-    accessor(def.clusterBounds),
-    accessor(def.clusterCones),
-    accessor(def.clusterErrors),
-    accessor(def.clusterParentSpheres),
-    accessor(def.clusterRanges),
-    accessor(def.clusterSourceSpheres),
-    accessor(def.indices),
-  ]);
+  const [bounds, cones, errors, groups, parentSpheres, ranges, sourceSpheres, indices] =
+    await Promise.all([
+      accessor(def.clusterBounds),
+      accessor(def.clusterCones),
+      accessor(def.clusterErrors),
+      accessor(def.clusterGroups),
+      accessor(def.clusterParentSpheres),
+      accessor(def.clusterRanges),
+      accessor(def.clusterSourceSpheres),
+      accessor(def.indices),
+    ]);
   return {
     bounds: typedFloat(bounds as Float32Array),
     cones: typedFloat(cones as Float32Array),
     errors: typedFloat(errors as Float32Array),
+    groups: typedUint(groups as Uint32Array),
     indices: typedUint(indices as Uint32Array),
     parentSpheres: typedFloat(parentSpheres as Float32Array),
     ranges: typedUint(ranges as Uint32Array),

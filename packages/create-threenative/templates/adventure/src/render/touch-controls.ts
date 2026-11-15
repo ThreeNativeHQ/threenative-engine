@@ -36,6 +36,9 @@ const STICK_RADIUS = 72;
 const BUTTON_RADIUS = 46;
 const EDGE = 36;
 
+/** The resting stick centre: `update` runs every frame, so it uses one instance. */
+const restPoint = new Vector2();
+
 /** Where each button sits: a quarter-circle fan around the bottom-right corner. */
 function buttonPoint(size: ITouchViewport, index: number): Vector2 {
   const cx = size.width - EDGE - BUTTON_RADIUS;
@@ -84,7 +87,7 @@ export class TouchControls {
   }
 
   update(pointers: ReadonlyMap<number, ITouchPointer>, size: ITouchViewport): ITouchInput {
-    const rest = new Vector2(STICK_RADIUS + EDGE, size.height - STICK_RADIUS - EDGE);
+    const rest = restPoint.set(STICK_RADIUS + EDGE, size.height - STICK_RADIUS - EDGE);
     let thumb: ITouchPointer | undefined;
     for (const pointer of pointers.values()) {
       if (pointer.position.x < size.width * 0.45 && pointer.position.y > size.height * 0.4) {

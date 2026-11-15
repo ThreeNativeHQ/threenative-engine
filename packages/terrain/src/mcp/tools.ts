@@ -15,6 +15,7 @@ import {
   REQUEST_KNOWN_WORDS,
   REQUEST_STOP_WORDS,
   SIZE_WORD_ROWS,
+  TREE_WORD_ROWS,
   WATER_WORD_ROWS,
 } from "../core/request-words.js";
 import type { TerrainFeature } from "../core/request-words.js";
@@ -23,8 +24,11 @@ import type { IGroundChoice, IGroundRequest } from "../core/surveys.js";
 import { Terrain } from "../core/terrain.js";
 import type { LayerPatch, PatchCommand } from "../core/terrain.js";
 import type { ITerrainDocument, Layer } from "../core/types.js";
+import { ARBOR_TREE_IDS } from "./arbor-species.js";
 
 export { TERRAIN_KITS, type TerrainKit } from "../core/kits.js";
+
+const ARBOR_SPECIES_NOTE = `A species named \`arbor:<preset>[@seed]\` (for example arbor:oak@7) is a procedural Arbor tree the cook bakes and scatters; needs npm i -D @threenative/procedural-vegetation; set the row's far.impostor beyond 190 m, past the tree's last LOD. Presets: ${ARBOR_TREE_IDS.join(", ")}.`;
 
 export interface IGenerateInput {
   kit: TerrainKit;
@@ -44,6 +48,8 @@ export interface IGenerateInput {
   backdrop?: "none";
   /** The range the far ring's massif comes from, when a request word names it apart from the ground. */
   backdropRange?: LandformKind;
+  /** `arbor:<preset>[@seed]`, drawn in place of the kit's tree; a request's tree word sets it. */
+  treeSpecies?: string;
   out?: string;
 }
 
@@ -67,6 +73,8 @@ export interface IGenerateDecided {
   readonly ground: IChoice<IGroundChoice>;
   /** The far ring: `"massif"` for a mountain landform cooked on a survey, else `"none"`. */
   readonly backdrop: IChoice<"massif" | "none">;
+  /** The Arbor species that replaces the kit's tree (`arbor:<preset>`), or null for the kit's own. */
+  readonly tree: IChoice<string | null>;
 }
 
 /** A parsed request: the cook's own input, and the record of what its words and arguments decided. */
@@ -121,14 +129,13 @@ export const TERRAIN_TOOLS = [
   {
     name: "terrain_generate",
     description:
-      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean), the features carved into any ground (canyon, gorge, ravine: a steep cut across it; fjord, inlet: a sea inlet into the land) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. A landform preset's ground is a real survey of the place its kind names, fetched from the AWS terrain tiles, resampled onto the recipe's grid, cooked with the attribution its source requires, and reported as `ground`; the preset's erosion and grain still run on top of it. `ground` replaces that choice: \"procedural\" cooks the preset's own noise, { heightmap } reads a 16-bit grayscale PNG or a square .r16 grid, { location } cuts a survey at a latitude and longitude. An alpine or temperateMountains world on a survey also writes ring.json, its survey continued to ten times the world's size with one real whole mountain from that range past the square, reported as `backdrop`; `backdrop: \"none\"` cooks none. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. A request that names only a starter (no shape, water, feature, size, seed or ground of its own) is that starter as shipped, judged and measured, reported as `source: \"catalog:<kit>\"`; anything else is `\"cooked\"`. The reply's `seed` is the seed the world was cooked with: pass another `seed` for a variation of the same request. A request repeated in the same project is copied from its cook cache (`node_modules/.cache/threenative-terrain`) and reported as `cache: \"hit\"`. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares and changes the cooked world: an ocean row floods to its level, a river or lake row re-shapes the recipe's own river or lake in order (width or radius), a recipe layer with no row is removed, and a river or lake row with no layer to take it fails. A `request`'s words also decide the landform (mountains, hills, mesa, cliffs, volcano), the water (river, lake, island, ocean), the features carved into any ground (canyon, gorge, ravine: a steep cut across it; fjord, inlet: a sea inlet into the land) and the size (huge, small: the biome's own size scaled); an explicit `landform`, `water` or `sizeMeters` wins over a word. A landform preset's ground is a real survey of the place its kind names, fetched from the AWS terrain tiles, resampled onto the recipe's grid, cooked with the attribution its source requires, and reported as `ground`; the preset's erosion and grain still run on top of it. `ground` replaces that choice: \"procedural\" cooks the preset's own noise, { heightmap } reads a 16-bit grayscale PNG or a square .r16 grid, { location } cuts a survey at a latitude and longitude. An alpine or temperateMountains world on a survey also writes ring.json, its survey continued to ten times the world's size with one real whole mountain from that range past the square, reported as `backdrop`; `backdrop: \"none\"` cooks none. The result's `decided` names each choice with the word behind it or `argument`, and `unused` lists the request words that named nothing. A request that names only a starter (no shape, water, feature, size, seed or ground of its own) is that starter as shipped, judged and measured, reported as `source: \"catalog:<kit>\"`; anything else is `\"cooked\"`. The reply's `seed` is the seed the world was cooked with: pass another `seed` for a variation of the same request. A request repeated in the same project is copied from its cook cache (`node_modules/.cache/threenative-terrain`) and reported as `cache: \"hit\"`. Returns the kit as recipe, the biome it bakes, the water bodies the cooked world floods, measured from the evaluated state as `water.json` records them, its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, a ctx.assets.model load snippet, and `grass`: the lines that grow the biome's grass rows as a streamed, swaying GrassField3D on the cooked ground through grassFieldFromBiome (null when the biome has no grass row; the blade and material come from the game's src/render/grass.ts). triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
     inputSchema: {
       type: "object",
       properties: {
         kit: { type: "string", enum: [...TERRAIN_KITS] },
         biome: {
-          description:
-            "A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with `kit`'s surface and assets, forest's when kit is absent.",
+          description: `A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with \`kit\`'s surface and assets, forest's when kit is absent. ${ARBOR_SPECIES_NOTE}`,
           anyOf: [{ type: "string", minLength: 1 }, { type: "object" }],
         },
         landform: { type: "string", enum: Object.keys(LANDFORMS) },
@@ -136,7 +143,7 @@ export const TERRAIN_TOOLS = [
           type: "string",
           minLength: 1,
           description:
-            "What the world should be, in any words: a biome, a landform (mountains, hills, canyon, volcano, fjord, ...), water (river, lake, sea, ...) and a size (huge, small); an explicit argument wins over a word. A request with no biome word takes the biome its sea or shape suits, else the forest; `decided` names the word behind each choice and `unused` the words that named nothing. A real place's name is not geocoded: pass its latitude and longitude as `ground: { location }` to cook that place's survey.",
+            "What the world should be, in any words: a biome, a landform (mountains, hills, canyon, volcano, fjord, ...), water (river, lake, sea, ...) and a size (huge, small); an explicit argument wins over a word. A request with no biome word takes the biome its sea or shape suits, else the forest; `decided` names the word behind each choice and `unused` the words that named nothing. A tree word (oak, birch, aspen, cedar, maple, cypress, olive, acacia, baobab, palm, bamboo, cactus, ...) cooks that Arbor species in place of the kit's tree and is reported as `decided.tree`; a spec's own species rows win. A real place's name is not geocoded: pass its latitude and longitude as `ground: { location }` to cook that place's survey.",
         },
         sizeMeters: { type: "number", exclusiveMinimum: 0 },
         seed: { type: "integer" },
@@ -178,8 +185,7 @@ export const TERRAIN_TOOLS = [
         },
         overrides: {
           type: "object",
-          description:
-            "IBiomeSpec fields to change on the base file (landform, foliage, grass, layers, water, spawn, species, aliases, bake). An unknown field fails.",
+          description: `IBiomeSpec fields to change on the base file (landform, foliage, grass, layers, water, spawn, species, aliases, bake). An unknown field fails. ${ARBOR_SPECIES_NOTE}`,
         },
         ground: GROUND_SCHEMA,
         out: {
@@ -544,6 +550,13 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
     const mountain = range !== undefined && MASSIFS[range] !== undefined;
     backdrop = { value: surveyed && mountain ? "massif" : "none", source: "default" };
   }
+  // A spec declares its own species rows, so only a request with no spec takes a tree word.
+  const treeWord = spec === undefined ? rowHit(TREE_WORD_ROWS, words) : undefined;
+  let tree: IChoice<string | null> = { value: null, source: "default" };
+  if (treeWord !== undefined) {
+    parsed.treeSpecies = `arbor:${treeWord.row}`;
+    tree = { value: parsed.treeSpecies, source: { word: treeWord.word } };
+  }
   if (seed !== undefined) {
     if (typeof seed !== "number" || !Number.isSafeInteger(seed)) {
       throw new TypeError("terrain_generate: seed must be a safe integer.");
@@ -565,6 +578,7 @@ export function parseGenerateRequest(input: unknown): IGenerateRequest {
       features,
       ground,
       backdrop,
+      tree,
     },
     // What is left is what the tool could not act on: a retry names a word, not a guess.
     unused: [...new Set(words)].filter(

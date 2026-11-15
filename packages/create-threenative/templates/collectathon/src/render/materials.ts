@@ -186,7 +186,6 @@ export function seeded(seed: number): () => number {
     return state / 0x1_0000_0000;
   };
 }
-
 /** The surfaces the island is made of, resolved once. */
 export function createMaterials() {
   return {

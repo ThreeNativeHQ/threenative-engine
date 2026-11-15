@@ -27,6 +27,13 @@ const BOARD_TRIMMED_KITS = new Set([
   "adventure",
   "platformer",
   "kart",
+  // sailing's longest scenario is also the first one alphabetically, so on a board it paid the
+  // kit's whole cold `pnpm dev` transform plus a cold SwiftShader pipeline compile inside its
+  // first-frame budget and reported `waitFrames requested 1 frame(s) exceeded 20250ms` at 0
+  // frames, while every later scenario in the same kit rendered (run 43355962916: 7650, 3620 and
+  // 1896 ticks against a 500 limit). The nightly builds the project and runs every scenario, and
+  // there the same scenario completes 7590 frames.
+  "sailing",
 ]);
 const BOARD_TICK_LIMIT = 500;
 const scriptedTicks = (scenario) =>

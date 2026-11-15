@@ -306,6 +306,7 @@ describe("forest starter kit", () => {
       "starter/coastal/world.ts",
       "starter/coastal/sky.ts",
       "starter/coastal/sea.ts",
+      "starter/arbor/wind.ts",
       "starter-assets.json",
       "starter-credits.json",
       "THIRD_PARTY_NOTICES.md",

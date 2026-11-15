@@ -208,6 +208,8 @@ export async function readCaptureProvenance(
     let rendererKind: "webgl" | "webgpu" | undefined;
     if (engine.includes("webgpu")) rendererKind = "webgpu";
     else if (engine.includes("webgl")) rendererKind = "webgl";
+    // three's WebGLRenderer tags `three.js r<n>`; its WebGPU backends always add "webgpu" (above).
+    else if (engine.startsWith("three.js")) rendererKind = "webgl";
     else if (adapter !== null && canvas !== null) {
       try {
         if (canvas.getContext("webgpu") !== null) rendererKind = "webgpu";
@@ -217,8 +219,18 @@ export async function readCaptureProvenance(
     }
     let webglAdapterInfo: Record<string, string> | undefined;
     if (rendererKind === undefined || rendererKind === "webgl") {
+      const contextOf = (target: HTMLCanvasElement | null | undefined) => {
+        try {
+          return target?.getContext("webgl2") ?? target?.getContext("webgl");
+        } catch {
+          return undefined;
+        }
+      };
       try {
-        const context = canvas?.getContext("webgl2") ?? canvas?.getContext("webgl");
+        // A tagged WebGL canvas a worker owns throws on getContext; the page's WebGL implementation
+        // is the same, so a fresh canvas describes it. An untagged canvas never gets this fallback.
+        const context = contextOf(canvas) ??
+          (rendererKind === "webgl" ? contextOf(document.createElement("canvas")) : undefined);
         if (context !== null && context !== undefined) {
           rendererKind = "webgl";
           const debugInfo = context.getExtension("WEBGL_debug_renderer_info") as {

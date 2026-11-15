@@ -1614,7 +1614,6 @@ describe("CI pipeline structure", () => {
     ["integration.yml:playstation", heavy("integration:playstation", "paths")],
     ["integration.yml:temporal", heavy("integration:temporal", "paths")],
     ["integration.yml:tone", heavy("integration:tone", "paths")],
-    ["integration.yml:vegetation", heavy("integration:vegetation", "paths")],
     ["integration.yml:velocity", heavy("integration:velocity", "paths")],
     ["native-platforms.yml:web-reference", heavy("native:web-reference")],
     ["native-platforms.yml:android-v8-source", heavy("native:android-v8-source")],
@@ -1897,7 +1896,6 @@ describe("CI pipeline structure", () => {
       "playstation",
       "temporal",
       "tone",
-      "vegetation",
       "velocity",
     ] as const) {
       expect(runsOn(job), `integration ${job} routes to idle tn-local first`).toBe(
@@ -4502,6 +4500,14 @@ describe("PRD-373 selective feature verification", () => {
       // The scope step's GPU answer and the strata job's runs-on GPU branch read the same variables.
       expect(ci).toContain("TN_CI_STRATA_GPU: ${{ !github.event.pull_request.head.repo.fork");
       expect(ci).toMatch(/strata:[\s\S]*?vars\.TN_RUNNER_GPU_HEAD[\s\S]*?vars\.TN_RUNNER_GPU /u);
+      // ci-required re-decides a queue reuse with the same classifier, so it reads the same GPU
+      // answer: without it strata defaulted to owed and refused a reuse scope had accepted (PR #673).
+      const gpu = ci.match(/^ +TN_CI_STRATA_GPU: .*$/gmu) ?? [];
+      expect(gpu).toHaveLength(2);
+      expect(gpu[1]?.trim()).toBe(gpu[0]?.trim());
+      expect(ci.slice(ci.indexOf("Reject every unsuccessful or missing selected job"))).toContain(
+        gpu[0]?.trim(),
+      );
     });
 
     it("skips strata job for an unrelated template change on develop PR", async () => {

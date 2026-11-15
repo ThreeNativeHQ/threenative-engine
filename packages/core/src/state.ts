@@ -13,6 +13,11 @@ export type GameStore<T extends Record<string, unknown>> = StoreApi<T> & {
 /**
  * A store the UI reads, coalesced to one publication per frame unless a game names an interval.
  *
+ * A key whose new value is `Object.is`-equal to the current value does not enter `pending`, so a
+ * frame that changed nothing publishes nothing and `flush` stays quiet. The flip side: mutating an
+ * object in place and setting it again is the same object, so nothing publishes — publish a new
+ * object or bump a version field on the value.
+ *
  * `intervalMs` is an override, not the rule. A fixed 100 ms default published the HUD ten times a
  * second whatever the frame rate was, which reads as a HUD that is not live — the number a player
  * watches moves in visible steps while the scene beside it runs smoothly. Left unset, `flush` is
@@ -47,9 +52,17 @@ export function createGameStore<T extends Record<string, unknown>>(
   gameStore.getState = () => current;
   gameStore.set = (patch: StatePatch<T>) => {
     const next = typeof patch === "function" ? patch(current) : patch;
-    Object.assign(pending, next);
-    Object.assign(current, next);
-    hasPending = true;
+    let changed = false;
+    for (const key in next) {
+      const value = next[key];
+      // The value the HUD would publish is the one it already has: no publish, no cross-process
+      // write on native. Five kits hand-wrote this comparison before every `set`.
+      if (Object.is(value, current[key])) continue;
+      Reflect.set(pending, key, value);
+      Reflect.set(current, key, value);
+      changed = true;
+    }
+    if (changed) hasPending = true;
   };
   gameStore.flush = flush;
   gameStore.start = () => {

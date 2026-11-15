@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -75,10 +76,27 @@ async function cookCached(
   const { out: _out, projectRoot, ...inputs } = request;
   const starter = new URL(`../../starter/${request.kit}/`, import.meta.url);
   const starterFiles = await readdir(starter).catch(() => [] as string[]);
+  // A cooked reply carries the Arbor wind source and GLBs the installed bake package wrote.
+  const arbor = new URL("../../starter/arbor/", import.meta.url);
+  const arborFiles = await readdir(arbor).catch(() => [] as string[]);
+  const bakePackage = (() => {
+    try {
+      return [
+        createRequire(join(projectRoot, "package.json")).resolve(
+          "@threenative/procedural-vegetation/package.json",
+        ),
+      ];
+    } catch {
+      return [];
+    }
+  })();
   const stamps = await Promise.all(
-    [COOK_CHILD, ...starterFiles.map((f) => fileURLToPath(new URL(f, starter)))].map(
-      async (file) => `${file}:${(await stat(file)).mtimeMs}`,
-    ),
+    [
+      COOK_CHILD,
+      ...starterFiles.map((f) => fileURLToPath(new URL(f, starter))),
+      ...arborFiles.map((f) => fileURLToPath(new URL(f, arbor))),
+      ...bakePackage,
+    ].map(async (file) => `${file}:${(await stat(file)).mtimeMs}`),
   );
   const key = createHash("sha256")
     .update(JSON.stringify({ inputs, version: SERVER_VERSION, stamps }))

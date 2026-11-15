@@ -12,6 +12,7 @@ import {
   DataTexture,
   Float32BufferAttribute,
   LinearMipmapLinearFilter,
+  MathUtils,
   MeshStandardMaterial,
   RepeatWrapping,
   SRGBColorSpace,
@@ -31,7 +32,7 @@ function noise(x: number, y: number, seed: number): number {
 /** Smoothstep, so the rubber band has a soft edge instead of a stripe painted across the road. */
 function falloff(value: number, edge: number): number {
   const t = Math.min(Math.max((Math.abs(value) - edge) / 0.28, 0), 1);
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 }
 
 function rgbaTexture(
@@ -121,8 +122,8 @@ function grainNormalTexture(size = 128): DataTexture {
       const y0 = Math.floor(v);
       const fx = u - x0;
       const fy = v - y0;
-      const sx = fx * fx * (3 - 2 * fx);
-      const sy = fy * fy * (3 - 2 * fy);
+      const sx = MathUtils.smoothstep(fx, 0, 1);
+      const sy = MathUtils.smoothstep(fy, 0, 1);
       const at = (i: number, j: number): number =>
         values[(((j % count) + count) % count) * count + (((i % count) + count) % count)] ?? 0;
       const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * sx;

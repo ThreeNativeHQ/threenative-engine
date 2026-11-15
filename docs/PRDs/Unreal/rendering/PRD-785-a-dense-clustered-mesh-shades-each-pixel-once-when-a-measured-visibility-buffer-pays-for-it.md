@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — the Phase 1 gate is unbuilt. The whole clustered quarry costs 1.28 ms of GPU time on the browser, and PRD-284 declined occlusion because that number is the whole prize. Adoption is also an owner call (see `## Blocked on`).
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (+1), an experimental upstream add-on whose interface can change (+1), Phase 2 crosses the native engine boundary (+2); risk override: none
 **Owner:** unassigned
-**Depends on:** None. Respects [PRD-279](../../done/nanite-like/PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md) decision 1 (no visibility buffer) until the owner reopens it, and [PRD-284](../../done/nanite-like/PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) (occlusion declined on 1.28 ms). Shares the quarry `?pipeline=` knob with [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md) Phase 1: the PRD that lands first adds it, and the other reuses it.
+**Depends on:** None. Respects [PRD-279](../../done/nanite-like/PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md) decision 1 (no visibility buffer) until the owner reopens it, and [PRD-284](../../done/nanite-like/PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) (occlusion declined on 1.28 ms). Shares the quarry `?pipeline=` knob with [PRD-600](../../done/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md) Phase 1: the PRD that lands first adds it, and the other reuses it.
 
 ## Context
 

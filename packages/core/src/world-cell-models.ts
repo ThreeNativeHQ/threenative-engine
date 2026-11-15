@@ -155,7 +155,10 @@ function scatterMaterial(
  */
 function renderableParts(
   model: Object3D,
-  surfaceFor: (material: Material) => { readonly key: string; readonly material: Material },
+  surfaceFor: (
+    material: Material,
+    geometry: BufferGeometry,
+  ) => { readonly key: string; readonly material: Material },
 ): readonly IAssetPart[] {
   model.updateMatrixWorld(true);
   const rootInverse = new Matrix4().copy(model.matrixWorld).invert();
@@ -165,7 +168,7 @@ function renderableParts(
     if (object instanceof SkinnedMesh || !(object instanceof Mesh)) return;
     const material = Array.isArray(object.material) ? object.material[0] : object.material;
     if (object.geometry === undefined || material === undefined) return;
-    const surface = surfaceFor(material);
+    const surface = surfaceFor(material, object.geometry);
     parts.push({
       geometry: object.geometry,
       local: local.multiplyMatrices(rootInverse, object.matrixWorld).clone(),
@@ -588,8 +591,9 @@ export class CellModels {
   readonly #autoLodMaxPixelError: number;
 
   readonly #transparentScatter: "cutout" | "blend";
+  readonly #partMaterial: IWorldCellsLoadOptions["partMaterial"];
   constructor(
-    init: Pick<IWorldCellsLoadOptions, "assets" | "loadModel" | "concurrency"> & {
+    init: Pick<IWorldCellsLoadOptions, "assets" | "loadModel" | "concurrency" | "partMaterial"> & {
       readonly ownsAssets?: boolean;
     },
     settings: ICellModelsSettings,
@@ -607,6 +611,7 @@ export class CellModels {
     this.#loader = init.assets ?? createAssetLoader();
     this.#ownsLoader = init.ownsAssets ?? init.assets === undefined;
     this.#loadModel = init.loadModel;
+    this.#partMaterial = init.partMaterial;
     this.#limiter = new ModelLoadLimiter(
       positiveInteger(init.concurrency ?? WORLD_LOAD_CONCURRENCY, "concurrency"),
     );
@@ -757,7 +762,16 @@ export class CellModels {
   /** One loaded model's drawable parts, or `undefined` when it carries nothing to draw. */
   #partsOf(model: Object3D | undefined): readonly IAssetPart[] | undefined {
     if (model === undefined) return undefined;
-    const parts = renderableParts(model, (material) => this.#surfaceFor(material));
+    let parts: readonly IAssetPart[];
+    try {
+      parts = renderableParts(model, (material, geometry) => this.#surfaceFor(material, geometry));
+    } catch (error) {
+      // A game `partMaterial` that threw or answered with no material: the model is refused, named.
+      this.#host.setFailures(this.#host.failures() + 1);
+      this.#host.reportCellFailure("asset", model.name || "model", [], error);
+      this.#host.setFailures(this.#host.failures() + this.disposeLoaded(model));
+      return undefined;
+    }
     if (parts.length === 0) {
       // Same as a refused load: counted, released, and the next acquire retries.
       this.#host.setFailures(this.#host.failures() + 1);
@@ -971,8 +985,21 @@ export class CellModels {
    * canonical one (converted to a cutout when it is transparent scatter), and every later material
    * with the same content is released on arrival and draws with it instead.
    */
-  #surfaceFor(source: Material): { readonly key: string; readonly material: Material } {
-    const key = this.#preserveAuthoredParts ? source.uuid : materialKey(source);
+  #surfaceFor(
+    source: Material,
+    geometry: BufferGeometry,
+  ): { readonly key: string; readonly material: Material } {
+    // The game's own surface for this part (a swaying tree): keyed by its identity, because its
+    // content can match an authored material that does not sway.
+    const game = this.#partMaterial?.(source, geometry);
+    if (game !== undefined && (game as Partial<Material> | null)?.isMaterial !== true)
+      throw new Error("WorldCells partMaterial must return a Material.");
+    const hooked = game !== undefined && game !== source;
+    const key = hooked
+      ? `part:${game.uuid}`
+      : this.#preserveAuthoredParts
+        ? source.uuid
+        : materialKey(source);
     const shared = this.#surfaces.get(key);
     if (shared !== undefined) {
       shared.users += 1;
@@ -980,8 +1007,9 @@ export class CellModels {
         this.#host.setFailures(this.#host.failures() + 1);
       return { key, material: shared.material };
     }
-    const drawn = scatterMaterial(source, this.#transparentScatter);
-    this.#surfaces.set(key, { material: drawn.material, owned: drawn.owned, users: 1 });
+    const drawn = scatterMaterial(hooked ? game : source, this.#transparentScatter);
+    const owned = hooked ? [source, ...drawn.owned] : drawn.owned;
+    this.#surfaces.set(key, { material: drawn.material, owned, users: 1 });
     return { key, material: drawn.material };
   }
 
