@@ -294,13 +294,21 @@ threshold, at the same two poses:
 | vista | far · L0/L1 | 19 022 | 659 378 | 18 919 | **18 884 · 593 788** |
 
 **At overview 15.84 M of the 19.1 M triangles those rows hold (83 %) are rasterised only to have
-every fragment thrown away; at vista 12.87 M of 12.93 M (99 %).** That is more than the engine's whole
-10.95 M planned-triangle count, at both poses, and it is exactly the fraction step 3 removes at 0
-pixels by collapsing the instance (w = 0) or by not drawing it. It also says the loss is not the
-fragment program: it is placement — these instances are in a level row far coarser than their
-distance, and the CPU refilter that should have moved them either has not run since the pose changed
-or admits the collar conservatively. That is the next question, and it is a placement question, not
-a shader one.
+every fragment thrown away; at vista 12.87 M of 12.93 M (99 %).** It is not a detached-camera
+artefact: at the walking poses the same count reads **16.1 M of 17.5 M (92 %) at meadow-close** and
+**7.3 M of 12.5 M (58 %) at river**. Order of magnitude, and bounded by the frame's own 10.95 M
+planned triangles (part of those rows' capacity is frustum-culled, so a share of the faded triangles
+is never submitted at all).
+
+So the loss is not the fragment program: it is **placement**. These instances sit in a level row far
+coarser than their distance (a level-0 spruce at 200 m), and the gate throws away every fragment they
+produce while the draw still submits and rasterises their triangles. Whatever the cause — an
+admission that pins the collar to its finest level, or a refilter that never re-levels a static eye —
+the fix is the same and it is step 3's: **the CPU already knows the distance and the gate, so it can
+stop drawing them**, and it must be worth 0 pixels because every one of their fragments is already
+discarded. Acceptance for the change: the same five-pose bill, with the prepass and shade halves both
+down and a frozen-clock 0-pixel diff, and the count above re-run afterwards to show the faded set is
+empty.
 
 ### Method caveats
 
