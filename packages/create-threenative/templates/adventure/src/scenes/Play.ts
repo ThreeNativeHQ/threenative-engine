@@ -59,6 +59,7 @@ import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createCompanion, createHeartVessel } from "../render/props.js";
+import { resolveQualityTier } from "../render/quality.js";
 import { type ISky, createSky, setupSky } from "../render/sky.js";
 import { loadSurfaces, untexturedSurfaces, updateSurfaceSampling } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
@@ -157,10 +158,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     this.#sky = createSky();
     setupSky(ctx.scene, this.#sky);
     const vale = buildVale(makeRng(1986));
-    // The forest floor: baked debris and ferns scattered under the old trees (PRD-889).
-    const floor = await buildWoodlandFloor(ctx.assets, vale);
-    vale.group.add(floor.group);
-    this.#floor = floor;
+    // The forest floor: baked debris and ferns scattered under the old trees (PRD-889). The `low`
+    // tier (a software adapter, or a GPU the tier table rates low) leaves it out: on a CPU adapter
+    // it held the first frame window past three minutes. Pass `tier` here to force it either way.
+    const tier = resolveQualityTier({
+      gpuClass: ctx.renderer.gpuClass?.class,
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
+    if (tier === "low") console.info("TN_WOODLAND_FLOOR off: quality tier low");
+    else {
+      const floor = await buildWoodlandFloor(ctx.assets, vale);
+      vale.group.add(floor.group);
+      this.#floor = floor;
+    }
     const hollow = buildHollow(makeRng(1998));
     this.#vale = vale;
     this.#hollow = hollow;
@@ -209,11 +220,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }),
     });
     ctx.entities.add("floor", {
-      debug: () => ({
-        instances: floor.fields.reduce((total, field) => total + field.stats.instances, 0),
-        tiles: floor.fields.reduce((total, field) => total + field.stats.tiles, 0),
-        visibleTiles: floor.fields.reduce((total, field) => total + field.stats.visibleTiles, 0),
-      }),
+      debug: () => {
+        // No fields when the `low` tier left the floor out, so every total reads 0.
+        const fields = this.#floor?.fields ?? [];
+        return {
+          instances: fields.reduce((total, field) => total + field.stats.instances, 0),
+          tiles: fields.reduce((total, field) => total + field.stats.tiles, 0),
+          visibleTiles: fields.reduce((total, field) => total + field.stats.visibleTiles, 0),
+        };
+      },
     });
     vale.dummies.forEach((at, i) => {
       this.#dummies.push(ctx.entities.add(`dummy.${i}`, new Dummy(`dummy.${i}`, at)));
