@@ -136,6 +136,13 @@ hidden and each delta came out at half its real value.
 | sun shadow (25 shadow draws, 56 k triangles) | — | 0.06 M | −0.9 |
 | streamed tiles · water | 1 · 2 | — | −0.7 · +0.5 |
 
+The same bill at vista (base 36.9 ms, 8.28 M triangles): `far` −14.2, `horizon` −9.5, base square
+−4.9, `local` −1.3. The two far bands are 23.7 of it, the same 64 % of the frame as overview.
+
+The frame records no auxiliary MRT target (`renderer.info.engine.passes.auxRecorded` 0 at both poses,
+`samples` 4, `temporal.active` false), so pixel identity can only be compared on the resolved output
+for this instrument; there is no `normal` target to differ.
+
 The prepass pays for **every** band, so a per-draw opt-out is not the next lever: arming it saves
 18.0 ms at overview (57.3 → 39.4) and still 7.7 ms with the horizon band hidden (33.8 → 26.1), so
 the horizon band alone owns 10.3 ms of that win. Made opaque instead (mask, `alphaTestNode`,
