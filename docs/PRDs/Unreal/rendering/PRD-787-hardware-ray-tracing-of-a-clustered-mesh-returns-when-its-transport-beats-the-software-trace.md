@@ -53,6 +53,12 @@ PRD-645 adds one idea for a later box: run the trace inside the C++ frame on GPU
 
 **Left out on purpose:** ReSTIR GI and hit lighting (PRD-645 left them out), skeletal and dynamic geometry in the TLAS, and DXR and Metal backends. The `rayBatch` path exists on Vulkan only.
 
+**Secondary reference: ThreeRT.** ThreeRT (MIT, `meshy-dev/ThreeRT@8964dc4`, checked 2026-11-13) is a Rust + wgpu path tracer with a three.js-style API. One kernel serves both traversals: WESL `@if(hwrt)` puts the wgpu ray query ([`renderer/shaders/trace_hw.wgsl`](https://github.com/meshy-dev/ThreeRT/blob/8964dc407c4412a6f717c3ac7805ed791becdd9d/renderer/shaders/trace_hw.wgsl)) in the place of the software BVH walk, and the software walk stays the reference that the hardware result is checked against. Its measured traps apply to Phase 2:
+
+- On Metal, the ray-query candidate loop lost about 0.1 % of hits near alpha-cutout foliage. Two runs of one offline render differed in 75–98 % of pixels. ThreeRT steps through cutout hits in order instead.
+- Culling cutout geometry with `RAY_FLAG_CULL_NO_OPAQUE` added 1.7 ms to Bistro's trace on Metal.
+- Shadow rays need up to 64 cutout steps. With 16, light leaked through dense foliage (up to 2.3 % bright in a region).
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local; needs a built desktop host]: The Phase 1 check reports the 100-probe transport ratio and the CLAS capability on the RTX 2080. proof: `pnpm parity --target desktop --only-tests raytracing-probe-trace` and `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/raytracing-contract.test.mjs` — Evidence: pending.

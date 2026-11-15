@@ -55,6 +55,8 @@ so it gets its own PRD that waits on PRD-640.
 - No reservoir, resampling or ReSTIR code exists in `packages/` (`rg -i "reservoir|restir" packages`,
   2026-10-21).
 
+- ThreeRT ([`pathtrace.wgsl`](https://github.com/meshy-dev/ThreeRT/blob/8964dc407c4412a6f717c3ac7805ed791becdd9d/renderer/shaders/pathtrace.wgsl), MIT, checked 2026-11-13) has RIS many-light sampling but no spatial or temporal reservoir reuse. It is not a ReSTIR reference. Unreal stays the only source for this PRD.
+
 ## Solution
 
 **The gate first (Phase 1).** After PRD-640 Phase 2 and PRD-641 land, run the screen probe gather on

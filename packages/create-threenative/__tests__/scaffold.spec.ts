@@ -116,67 +116,67 @@ const PACK_GENERATED_PAGES: readonly string[] = ["capability-reference.md"];
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
-    shared: "1da79b069ff7d69c2ade4fcdd085d90cdea5feb45e32080f2a4387bfc4da4142",
+    shared: "b118d8f88e412dc2187bc09a2b4d0b4d5b3a2fcae7fe01af5a07033e4668df7e",
     kit: "e851b6f6906226c367d5e5f29616416c108e43751ea72e769484afb007327e2d",
   },
   adventure: {
-    shared: "b696e17c96e0e1b6583d119ed1d9248db7df806a1f5b7145e5e2193d4ce7da18",
+    shared: "b3c2b3981d45491f0d52ec2e30b2752b09ed5b7da8412d22489e023cd9f825ac",
     kit: "b5412c16f56408acb6595a61c970a076e9df516777ee91ab17015238183e5c58",
   },
   collectathon: {
-    shared: "ca1fed0952b59d4e4a95ae954c088ab1de3d24feb28f479227de41a63d7d78be",
+    shared: "d6eb1c830ae33e81b2581c9e04e815a5466eee64fc580bfed3d54ea7a5ee26b5",
     kit: "ff05d4d6ac28a4abf58567158370c5aeb248ead53145c945b6585a2b83e2e61e",
   },
   kart: {
-    shared: "0d37501cd26b8b776bdc9a06872d371209fa9d3716781a98881d90bd2b73c0ab",
+    shared: "2c37807119b1c60e8c8e95a7c8bfcea79b91a0bf2c413100fae57443361ef2b7",
     kit: "5203881c2d58675610759648fd6ed16ec1576abebe78a9c312484ec8fc398641",
   },
   minimal: {
-    shared: "c3ec6d627ae7179dff4da43ba55224b40be020ef97ec8369db8f6485c518fe4d",
+    shared: "f4af51d1b0ff368ba426c4d13d7faa493e3164f710fe40b58944f199f618fedd",
     kit: "9ac53558b6e733bca2c04a2fa1fe277868f9af5b9d39fd4e661b18f4dd315ad4",
   },
   platformer: {
-    shared: "dc214fb679ee15d67275f6a1e81c286e707c72f69d4edba642fef15bda651c7c",
+    shared: "6d231b51f5744fb44d632bbe113b1bad78152b014f33f97b426234c3dfb948ce",
     kit: "cef0bc97403415779684b46f62e4727d3b5112364cf00217472eb029c8a0e226",
   },
   puzzle: {
-    shared: "7145f06e3428cda0165af08063ea815c642608884a481a85c7649d3c16b02cfe",
+    shared: "cc4572f0373554a638b36dbb2f5bdb7b6401e3f02008a77cb3fe3068e51cb0f2",
     kit: "ed7e09fa92712549f4223b99918d45632213ec8a7e1fe176aff2fb4c77143708",
   },
   racing: {
-    shared: "bc31777801c8aec0fdd7fa178f9fcd39cf42cb92759bb705242b1a1c60299403",
+    shared: "f0f32f882adc3c2673cc53e69c2dadfa3d9f2c70b216bb1a7d2e13b556c3301c",
     kit: "08a0486d6c62f861d54d22998d75af2c88ead12059d14463f1d74b6e199bd823",
   },
   rain: {
-    shared: "761d21aebc00bbe8b75a37c0a8dd67b17dd7fcf78ab3a29a9a82ad7bf71119d3",
+    shared: "044c95f868edb894c48c0bdccace8e95c91c78d63cf920aed4aa060da3c5a303",
     kit: "ab9a5994f5cfd2d7a671041d82c5d71d54786d410b4a72bba6872c873e0f23df",
   },
   rts: {
-    shared: "40898821275b3b391859efdb96a2b223eadf0c7b5e4091a6184affae49e6697e",
+    shared: "175e823560e13f9ce50a310cedf889488e0ed78ff01e0e35d567b1cba18078d7",
     kit: "3d36259917387c52637926878ca65486748fe4b90d5674a6913311c387bf3cff",
   },
   runner: {
-    shared: "5d3f7fde13c73426ab0320e96777ba660c1e5c844f38d41e11248d9d6246e861",
+    shared: "d47490bdd26723eaee8fd5def4ab40de24a967ffa3bbd8bc4e8445431f8492c4",
     kit: "6f7cec89bbfdb3228c0660693c64b274d47963fe9a2a9b4be018d97a28997d22",
   },
   sailing: {
-    shared: "9c036afebb6db487a4a69a52c2c08be24555b4c66804b605f0a0a87604739391",
+    shared: "936343e8cf9fa6ff219f977f95de147509fe77bc307cf3f84da2cdb007ce7e89",
     kit: "f027515f1364bee5888aebcfebed9c47aba94170094a286e82e203330c539a5a",
   },
   shooter: {
-    shared: "ede46ec4e52905a0829b87a2b9d1820a9889f8106322635203e47b89602d3a1f",
+    shared: "2858ff38b4175a4ba413ed979828c7f51d0635ef0986f0dff3d27f4800aa2a20",
     kit: "d1a2715c040c1bc8763edebd6ee82d82507f74851d0bdc6eca8380586f0ae6b3",
   },
   snow: {
-    shared: "29918a5b10ee296d903b10c6741ef8d78663e54be191de4350b5524248446b80",
+    shared: "873708a8c164134ca9cbb0b82211901a6b341a6c4c8c15759aab1e741f1257e3",
     kit: "6bf27fc248879779188a418a2220dfd6ba6f1b7cf7b6d44775640f28cdc9f379",
   },
   starter: {
-    shared: "20636d0769fdab2f5054781a879f7d2eb24873db6bd9f324828fe342d32e12a4",
+    shared: "3acdf35ddabecfed893556b6bde5e6d3d1a295039e6dc38bd1bfa13152e01c83",
     kit: "6a181a98b6b9da97596b1493acc3e20cf9b1564bc4aabdf1b2c899b4f02aadf4",
   },
   "tower-defense": {
-    shared: "d804c83f9bce5a20a42bc4e4b4c01646437b34556336d884425e7a890ded5856",
+    shared: "7a9f06656738c6f89e6beb91043146e2a196f6efc6597dfb492a56adfa708d18",
     kit: "d73fd529783d48efccc78937e1328411d54c1599e7be404fd3c7f4036797a9b6",
   },
   // scaffold-pin:end
