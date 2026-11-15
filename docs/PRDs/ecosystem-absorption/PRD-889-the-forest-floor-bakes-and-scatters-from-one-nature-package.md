@@ -62,13 +62,13 @@ flowchart LR
 - [x] AC-3 [local]: `engine_search_capabilities` returns `bakeVegetation` first for "a fallen mossy log and leaf litter on the forest floor" and for "reeds and cattails at a pond edge". proof: `pnpm exec vitest run packages/engine-mcp/__tests__` (search spec rows) — Evidence: two rows in `search.spec.ts` assert `results[0] === "bakeVegetation"`; the manifest rebuilt to 575 entries and the suite is green.
 
 #### Phase 2 — the runtime scatter
-- [ ] AC-4 [local]: `ScatterField3D` streams tiles round a moving follow point inside its build budget, swaps LOD by distance, and keeps the shuffled-prefix share; one seed gives the same instance digest twice, and `GrassField3D`'s attribute digest is unchanged after the shared-module extraction. proof: `pnpm exec vitest run packages/core/__tests__/scatter-field.spec.ts packages/core/__tests__/grass-field.spec.ts` — Evidence: pending.
+- [x] AC-4 [local]: `ScatterField3D` streams tiles round a moving follow point inside its build budget, swaps LOD by distance, and keeps the shuffled-prefix share; one seed gives the same instance digest twice, and `GrassField3D`'s attribute digest is unchanged after the shared-module extraction. proof: `pnpm exec vitest run packages/core/__tests__/scatter-field.spec.ts packages/core/__tests__/grass-field.spec.ts` — Evidence: 8/8 and 8/8. `packages/core/src/tile-ring.ts` holds the ring, the budget, the seeded hash and the shuffle both fields now share; the field's three live settings are read through getters, so a runtime change still re-keys the field. `GrassField3D`'s `grassRoot` buffers hash to sha256 `30e4d08d…6056` before and after the extraction — measured on `grass-field.ts` at c0295a124 and pinned in the spec. The scatter suite caught one real bug on the way: a part read another part's LOD slot when the parts had different level counts, so the flattening is now per part.
 - [ ] AC-5 [local]: the owned engine draws a `ScatterField3D` scene on the desktop native host without a declined projection (`TN_RENDER_PROJECTION` is not `notWorthwhile`). proof: a `--target desktop` playtest on the Phase 3 scenario — Evidence: pending.
 
 #### Phase 3 — the consumer and the map
 - [ ] AC-6 [local]: from the adventure kit spawn, the woodland edge shows baked logs, stumps, twigs, litter and ferns; the scenario asserts scatter instances in view above zero and `TN_FRAME_BUDGET` and `TN_SCENE_WARNING` clean. proof: `pnpm test:templates` (adventure, new `woodland-floor.playtest.json`) with `--browser-recipe webgpu` — Evidence: pending.
 - [ ] AC-7 [local]: a fresh read-only visual judge returns IMPROVEMENT on the woodland pose, two runs per arm, against: deadwood and litter read as a forest floor, no floating or sunk props, no visible tile seams or LOD pops at walking speed. proof: judge verdict on the PR, images on the `prd-889-screenshots` branch — Evidence: pending.
-- [ ] AC-8 [local]: `packages/procedural-vegetation/README.md` carries one "Nature map" table that names each piece above (trees, cover, debris, grass, scatter, sky, water, terrain, wind) and its import path. proof: `pnpm check:docs && pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts` — Evidence: pending.
+- [x] AC-8 [local]: `packages/procedural-vegetation/README.md` carries one "Nature map" table that names each piece above (trees, cover, debris, grass, scatter, sky, water, terrain, wind) and its import path. proof: `pnpm check:docs && pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts` — Evidence: 10 rows: trees, cover, debris, `GrassField3D`, `ScatterField3D`, the game's `src/render/` look and wind, `Daylight`, water, terrain and textures, each with its import path.
 
 ## Integration Ledger
 
@@ -94,7 +94,7 @@ flowchart LR
 **Verification:** AC-1 to AC-3.
 
 #### Phase 2: the runtime scatter
-**Status:** NOT STARTED
+**Status:** DONE (AC-5 needs the Phase 3 scene)
 **Files:** `packages/core/src/scatter-field.ts` (new), the chunk ring extracted from `packages/core/src/grass-field.ts`, the core export and API surface record, `packages/core/__tests__/scatter-field.spec.ts`.
 **Implementation:** search the manifest first (`InstancedBatch`, `attachInstancedLod`, `meshSections`) and reuse what fits. `place()` returning false skips a candidate; a bad geometry throws naming the layer.
 **Verification:** AC-4, then AC-5 after Phase 3 gives the scene.

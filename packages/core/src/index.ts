@@ -1510,6 +1510,31 @@ export type {
   IGrassFieldNodes,
   IGrassFieldStats,
 } from "./grass-field.js";
+
+/**
+ * Stream instanced copies of any baked mesh around a follow point, with distance thinning and levels
+ * of detail, from the game's own placement rule.
+ * @situation scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor
+ * @situation stream instanced props of any baked mesh round the player without one draw per prop
+ * @situation place rocks, debris or plants on a heightfield with distance thinning and level of detail
+ * @constraint call `update(follow)` once per rendered frame
+ * @constraint `place` runs once per candidate per tile build: return false for paths and clearings
+ * @constraint rotating or scaling the field is not supported; translating it is
+ * @requires npm i -D @threenative/procedural-vegetation for the bake these instances come from
+ * @example
+ * const floor = new ScatterField3D({ parts: [{ lods, material }], getHeight, density: 0.05, place });
+ * ctx.add(floor);
+ * ctx.beforeRender(() => floor.update(hero.position));
+ */
+export { ScatterField3D } from "./scatter-field.js";
+export type {
+  IScatterField3DOptions,
+  IScatterFieldBounds,
+  IScatterFieldStats,
+  IScatterPart,
+  IScatterPlacement,
+  IScatterPoint,
+} from "./scatter-field.js";
 /**
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects

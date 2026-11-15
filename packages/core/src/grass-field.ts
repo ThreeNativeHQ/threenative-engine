@@ -14,13 +14,20 @@ import {
 } from "three";
 import { float, uniform, vec2, vec3 } from "three/tsl";
 import type { Node, UniformNode } from "three/webgpu";
+import {
+  type ITileRingField,
+  TileRing,
+  clamp01,
+  groundGrid,
+  hashInt,
+  mulberry32,
+  sample,
+  shuffled,
+  smoothstep,
+} from "./tile-ring.js";
 
 const MAX_PUSHERS = 4;
 const DEG = Math.PI / 180;
-/** A chunk is built inside this many draw distances, so it exists before it is seen. */
-const CREATE_BAND = 1.3;
-/** A chunk is discarded only past this many draw distances, so a camera on the edge never thrashes. */
-const DISCARD_BAND = 1.4;
 
 /** The instance attributes every chunk carries; the game's material reads them by these names. */
 export const GRASS_FIELD_ATTRIBUTES = {
@@ -115,7 +122,6 @@ export interface IGrassFieldStats {
 interface IChunk {
   readonly ix: number;
   readonly iz: number;
-  seen: number;
   readonly count: number;
   readonly mesh: Mesh | null;
   readonly priority: Float32Array | null;
@@ -154,14 +160,17 @@ export class GrassField3D extends Group {
   readonly nodes: IGrassFieldNodes;
   /** x, y, z world position and w radius (0 = off) of what flattens the grass. */
   readonly pushers: readonly Vector4[];
-  readonly stats: IGrassFieldStats = {
-    chunks: 0,
-    visibleChunks: 0,
-    blades: 0,
-    triangles: 0,
-    pending: 0,
-    built: 0,
-  };
+  /** Chunks and budget from the shared ring; blades and triangles from this frame's LOD pass. */
+  get stats(): IGrassFieldStats {
+    return {
+      blades: this.#shown.blades,
+      built: this.#ring.stats.built,
+      chunks: this.#ring.stats.tiles,
+      pending: this.#ring.stats.pending,
+      triangles: this.#shown.triangles,
+      visibleChunks: this.#shown.visibleChunks,
+    };
+  }
   getHeight: (x: number, z: number) => number;
   getDensity: ((x: number, z: number, height: number, normalY: number) => number) | null;
   bounds: IGrassFieldBounds | null;
@@ -184,12 +193,10 @@ export class GrassField3D extends Group {
   override receiveShadow: boolean;
   densityScale: number;
   cullDistanceScale: number;
-  readonly #chunks = new Map<number, IChunk>();
-  readonly #queue: { ix: number; iz: number; d: number; k: number }[] = [];
-  #frame = 0;
+  readonly #ring: TileRing<IChunk>;
+  readonly #shown = { blades: 0, triangles: 0, visibleChunks: 0 };
   #version = 0;
   #layout = "";
-  #prewarm = false;
 
   constructor(options: IGrassField3DOptions) {
     super();
@@ -225,6 +232,7 @@ export class GrassField3D extends Group {
     this.densityScale = options.densityScale ?? 1;
     this.cullDistanceScale = options.cullDistanceScale ?? 1;
     this.#validate();
+    this.#ring = new TileRing<IChunk>(this.#hooks());
     this.pushers = Array.from({ length: MAX_PUSHERS }, () => new Vector4());
     const pushers = this.pushers.map((v) => uniform(v));
     this.nodes = {
@@ -265,7 +273,7 @@ export class GrassField3D extends Group {
 
   /** Builds every chunk in range on the next `update` regardless of budget: on load or after a teleport. */
   prewarm(): void {
-    this.#prewarm = true;
+    this.#ring.prewarm();
   }
 
   /** Re-scatter after the ground or the density changed: all chunks, or those touching a rectangle. */
@@ -274,18 +282,7 @@ export class GrassField3D extends Group {
       this.#version++;
       return;
     }
-    const S = this.chunkSize;
-    for (const [k, chunk] of this.#chunks) {
-      if (
-        chunk.ix * S > rect.maxX ||
-        (chunk.ix + 1) * S < rect.minX ||
-        chunk.iz * S > rect.maxZ ||
-        (chunk.iz + 1) * S < rect.minZ
-      )
-        continue;
-      this.#dispose(chunk);
-      this.#chunks.delete(k);
-    }
+    this.#ring.disposeInside(rect);
   }
 
   /** Streams, thins and LODs the chunks around `camera`. Call once per rendered frame. */
@@ -294,42 +291,13 @@ export class GrassField3D extends Group {
     this.#syncNodes();
     const layout = this.#layoutKey();
     if (layout !== this.#layout) {
-      for (const chunk of this.#chunks.values()) this.#dispose(chunk);
-      this.#chunks.clear();
+      this.#ring.clear();
       this.#layout = layout;
     }
     camera.getWorldPosition(scratch);
     this.worldToLocal(scratch);
-    const R = this.drawDistance * this.cullDistanceScale;
-    const frame = ++this.#frame;
-    this.stats.visibleChunks = this.stats.blades = this.stats.triangles = 0;
-    this.#visit(scratch.x, scratch.z, R, frame);
-    this.#buildQueued(R, frame);
-    this.#prewarm = false;
-    this.#evict(scratch.x, scratch.z, R, frame);
-    this.stats.chunks = this.#chunks.size;
-  }
-
-  /** Marks the chunks inside the create band and queues the missing ones. */
-  #visit(cx: number, cz: number, R: number, frame: number): void {
-    const S = this.chunkSize;
-    const reach = R * CREATE_BAND;
-    const queue = this.#queue;
-    queue.length = 0;
-    for (let iz = Math.floor((cz - reach) / S); iz <= Math.floor((cz + reach) / S); iz++) {
-      for (let ix = Math.floor((cx - reach) / S); ix <= Math.floor((cx + reach) / S); ix++) {
-        const d = chunkDistance(ix, iz, cx, cz, S);
-        if (d >= reach || !this.#inBounds(ix, iz)) continue;
-        const k = chunkKey(ix, iz);
-        const chunk = this.#chunks.get(k);
-        if (!chunk) {
-          queue.push({ ix, iz, d, k });
-          continue;
-        }
-        chunk.seen = frame;
-        this.#applyLod(chunk, d, R);
-      }
-    }
+    this.#shown.visibleChunks = this.#shown.blades = this.#shown.triangles = 0;
+    this.#ring.update(scratch.x, scratch.z);
   }
 
   #inBounds(ix: number, iz: number): boolean {
@@ -341,39 +309,31 @@ export class GrassField3D extends Group {
     );
   }
 
-  /** Builds queued chunks nearest first; one always builds, the rest only inside the budget. */
-  #buildQueued(R: number, frame: number): void {
-    const queue = this.#queue;
-    queue.sort((a, c) => a.d - c.d);
-    const budget = this.#prewarm ? Number.POSITIVE_INFINITY : this.buildBudgetMs;
-    const t0 = performance.now();
-    let built = 0;
-    for (const q of queue) {
-      if (built > 0 && performance.now() - t0 > budget) break;
-      const chunk = this.#build(q.ix, q.iz);
-      chunk.seen = frame;
-      this.#chunks.set(q.k, chunk);
-      this.#applyLod(chunk, q.d, R);
-      built++;
-    }
-    this.stats.built += built;
-    this.stats.pending = queue.length - built;
-  }
-
-  /** Hides chunks that left the view radius and frees those past the discard band. */
-  #evict(cx: number, cz: number, R: number, frame: number): void {
-    for (const [k, chunk] of this.#chunks) {
-      if (chunk.seen === frame) continue;
-      if (chunkDistance(chunk.ix, chunk.iz, cx, cz, this.chunkSize) > R * DISCARD_BAND) {
-        this.#dispose(chunk);
-        this.#chunks.delete(k);
-      } else if (chunk.mesh?.visible) chunk.mesh.visible = false;
-    }
+  /** The ring's hooks: a chunk that leaves the radius hides, one past the band is freed. */
+  #hooks(): ITileRingField<IChunk> {
+    const field = this;
+    return {
+      build: (ix, iz) => this.#build(ix, iz),
+      get buildBudgetMs() {
+        return field.buildBudgetMs;
+      },
+      get chunkSize() {
+        return field.chunkSize;
+      },
+      get drawDistance() {
+        return field.drawDistance * field.cullDistanceScale;
+      },
+      dispose: (chunk) => this.#dispose(chunk),
+      hide: (chunk) => {
+        if (chunk.mesh?.visible) chunk.mesh.visible = false;
+      },
+      inBounds: (ix, iz) => this.#inBounds(ix, iz),
+      show: (chunk, distance) => this.#applyLod(chunk, distance),
+    };
   }
 
   override dispose(): void {
-    for (const chunk of this.#chunks.values()) this.#dispose(chunk);
-    this.#chunks.clear();
+    this.#ring.clear();
     this.material.dispose();
   }
 
@@ -425,7 +385,7 @@ export class GrassField3D extends Group {
     ].join("|");
   }
 
-  #applyLod(chunk: IChunk, d: number, R: number): void {
+  #applyLod(chunk: IChunk, d: number): void {
     const mesh = chunk.mesh;
     if (!mesh || !chunk.priority) return;
     const k = this.cullDistanceScale;
@@ -447,7 +407,7 @@ export class GrassField3D extends Group {
     }
     // Every write below is guarded: a standing camera re-plans nothing on the owned engine.
     if (geo.instanceCount !== n) geo.instanceCount = n;
-    const visible = n > 0 && d < R;
+    const visible = n > 0 && d < this.drawDistance * this.cullDistanceScale;
     if (mesh.visible !== visible) mesh.visible = visible;
     if (!visible) return;
     const lods = this.blade.lods;
@@ -458,12 +418,12 @@ export class GrassField3D extends Group {
     if (geo.drawRange.start !== range.start || geo.drawRange.count !== range.count)
       geo.setDrawRange(range.start, range.count);
     if (mesh.receiveShadow !== this.receiveShadow) mesh.receiveShadow = this.receiveShadow;
-    this.stats.visibleChunks++;
-    this.stats.blades += n;
-    this.stats.triangles += n * (range.count / 3);
+    this.#shown.visibleChunks++;
+    this.#shown.blades += n;
+    this.#shown.triangles += n * (range.count / 3);
   }
 
-  #build(ix: number, iz: number): IChunk {
+  #build(ix: number, iz: number): IChunk | null {
     const S = this.chunkSize;
     const ox = ix * S;
     const oz = iz * S;
@@ -535,9 +495,8 @@ export class GrassField3D extends Group {
       maxY = Math.max(maxY, y);
       k++;
     }
-    if (k === 0)
-      // Remembered as empty so it is not rebuilt every frame.
-      return { ix, iz, seen: 0, count: 0, mesh: null, priority: null, radius: 0 };
+    // Remembered as empty by the ring, so it is not rebuilt every frame.
+    if (k === 0) return null;
     const blade = this.blade.geometry;
     const geo = new InstancedBufferGeometry();
     // The blade's arrays are shared; each chunk wraps them in its own attribute so disposing one
@@ -573,7 +532,7 @@ export class GrassField3D extends Group {
     mesh.updateMatrix();
     mesh.raycast = () => {};
     this.add(mesh);
-    return { ix, iz, seen: 0, count: k, mesh, priority: priority.slice(0, k), radius };
+    return { ix, iz, count: k, mesh, priority: priority.slice(0, k), radius };
   }
 
   #pointInBounds(x: number, z: number): boolean {
@@ -600,82 +559,8 @@ function setIfChanged(node: { value: number }, value: number): void {
   if (node.value !== value) node.value = value;
 }
 /** Height, d/dx and d/dz of the last `groundGrid` sample. */
-const sample = new Float64Array(3);
 /** x, z and random of the last `nearestTuft` centre. */
 const tuft = new Float64Array(3);
-
-/** Ground height on a grid one ring wider than the chunk, for gradients; `sample` reads it bilinearly. */
-function groundGrid(
-  getHeight: (x: number, z: number) => number,
-  ox: number,
-  oz: number,
-  S: number,
-  spacing: number,
-): { sample(lx: number, lz: number): void } {
-  const G = Math.max(1, Math.ceil(S / Math.max(spacing, 0.05)));
-  const gs = S / G;
-  const N = G + 3;
-  const hg = new Float32Array(N * N);
-  for (let j = 0; j < N; j++)
-    for (let i = 0; i < N; i++)
-      hg[j * N + i] = getHeight(ox + (i - 1) * gs, oz + (j - 1) * gs) || 0;
-  const gx = new Float32Array(N * N);
-  const gz = new Float32Array(N * N);
-  const inv2 = 1 / (2 * gs);
-  for (let j = 1; j < N - 1; j++)
-    for (let i = 1; i < N - 1; i++) {
-      const o = j * N + i;
-      gx[o] = ((hg[o + 1] as number) - (hg[o - 1] as number)) * inv2;
-      gz[o] = ((hg[o + N] as number) - (hg[o - N] as number)) * inv2;
-    }
-  return {
-    sample(lx, lz) {
-      const fx = lx / gs + 1;
-      const fz = lz / gs + 1;
-      const i0 = Math.min(fx | 0, G);
-      const j0 = Math.min(fz | 0, G);
-      const u = fx - i0;
-      const v = fz - j0;
-      const o = j0 * N + i0;
-      // Bilinear weights once, no closure per call: this runs for every candidate blade.
-      const w00 = (1 - u) * (1 - v);
-      const w10 = u * (1 - v);
-      const w01 = (1 - u) * v;
-      const w11 = u * v;
-      const o1 = o + 1;
-      const oN = o + N;
-      const oN1 = oN + 1;
-      sample[0] =
-        (hg[o] as number) * w00 +
-        (hg[o1] as number) * w10 +
-        (hg[oN] as number) * w01 +
-        (hg[oN1] as number) * w11;
-      sample[1] =
-        (gx[o] as number) * w00 +
-        (gx[o1] as number) * w10 +
-        (gx[oN] as number) * w01 +
-        (gx[oN1] as number) * w11;
-      sample[2] =
-        (gz[o] as number) * w00 +
-        (gz[o1] as number) * w10 +
-        (gz[oN] as number) * w01 +
-        (gz[oN1] as number) * w11;
-    },
-  };
-}
-
-/** 0..total-1 in a seeded random order (Fisher-Yates). */
-function shuffled(total: number, rng: () => number): Uint32Array {
-  const order = new Uint32Array(total);
-  for (let i = 0; i < total; i++) order[i] = i;
-  for (let i = total - 1; i > 0; i--) {
-    const j = (rng() * (i + 1)) | 0;
-    const tmp = order[i] as number;
-    order[i] = order[j] as number;
-    order[j] = tmp;
-  }
-  return order;
-}
 
 /** Tuft centres (x, z, random) of the cells round one chunk, hashed once per cell, not per blade. */
 let tuftCells = new Float64Array(0);
@@ -721,14 +606,6 @@ function nearestTuft(wx: number, wz: number, cs: number): void {
     }
 }
 
-function chunkDistance(ix: number, iz: number, cx: number, cz: number, S: number): number {
-  const dx = Math.max(ix * S - cx, 0, cx - (ix + 1) * S);
-  const dz = Math.max(iz * S - cz, 0, cz - (iz + 1) * S);
-  return Math.sqrt(dx * dx + dz * dz);
-}
-
-const chunkKey = (ix: number, iz: number): number => (ix + 0x8000) * 0x10000 + (iz + 0x8000);
-
 /**
  * `Math.atan2` within 1e-5 rad at a fraction of its cost: a blade's tuft angle runs once per
  * candidate blade, and the material only reads it through cos and sin.
@@ -748,29 +625,4 @@ export function fastAtan2(y: number, x: number): number {
   if (ay > ax) r = 1.57079637 - r;
   if (x < 0) r = 3.14159274 - r;
   return y < 0 ? -r : r;
-}
-
-function hashInt(x: number, y: number, s: number): number {
-  let h =
-    Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(s | 0, 0x9e3779b1);
-  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
-  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-  return (h ^ (h >>> 16)) >>> 0;
-}
-
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
-
-function smoothstep(e0: number, e1: number, x: number): number {
-  const t = clamp01((x - e0) / Math.max(e1 - e0, 1e-6));
-  return t * t * (3 - 2 * t);
 }
