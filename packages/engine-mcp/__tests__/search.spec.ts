@@ -706,6 +706,18 @@ describe("threenative-engine-mcp", () => {
    * "use mergeParts". Every one of those answered `verdict: none` because the index read only the
    * situations and aliases, so a symbol the manifest exports by that exact name was invisible.
    */
+  /**
+   * The forest floor had no row at all before PRD-889: `engine_search_capabilities` returned nothing
+   * for deadwood, litter or reeds, so an agent asking for a realistic forest floor hand-wrote what
+   * the bake already grows.
+   */
+  it.each([
+    "a fallen mossy log and leaf litter on the forest floor",
+    "reeds and cattails at a pond edge",
+  ])("finds the forest-floor bake for '%s' first", (query) => {
+    expect(searchResults(query, workspaceManifest)[0]?.symbol).toBe("bakeVegetation");
+  });
+
   // PR #643 (PRD-860, 861, 867): every streaming and decoder abstraction answers its own words.
   it.each([
     ["game takes too long to download before first play", "createAssetLoader"],

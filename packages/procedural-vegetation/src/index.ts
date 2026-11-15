@@ -2,13 +2,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
-import Arbor, { type IArborPreset } from "../vendor/arbor.js";
+import Arbor, { type IArborPart, type IArborPreset, type IArborTree } from "../vendor/arbor.js";
+import ForestKit, {
+  type IForestKitMesh,
+  type IForestKitPreset,
+} from "../vendor/forest-kit/index.js";
 
 export interface IVegetationPreset {
   readonly id: string;
   readonly name: string;
   readonly latin?: string;
-  /** `tree` or `cover` (grass, fern, flower, shrub). */
+  /** `tree`, `cover` (grass, fern, flower, shrub) or `debris` (log, twig, litter, stone). */
   readonly kind: string;
 }
 
@@ -50,20 +54,30 @@ const MAX_LOD = 2;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
- * List every Arbor preset: id, name, latin name and kind.
+ * List every preset a bake can grow: id, name, latin name and kind.
+ * Trees and cover come from Arbor; the `debris` rows (log, stump, twig, branch, leaflitter, rock)
+ * and the extra cover rows (reeds, tussock, seedgrass, clover, dock, plume) come from forest-kit.
  * @situation list the oak, pine, spruce, palm and other tree species a bake can grow
  * @situation choose a tree species id for bakeVegetation or a terrain arbor: species
- * @constraint ids come from the vendored Arbor presets; trees are kind "tree", grass, ferns and flowers are kind "cover"
+ * @situation what deadwood, leaf litter, boulders, reeds and tussocks can I bake for a forest floor
+ * @constraint ids come from the vendored Arbor and forest-kit presets; trees are kind "tree", grass, ferns and flowers are kind "cover", deadwood, litter and stone are kind "debris"
  * @requires npm i -D @threenative/procedural-vegetation
- * @example vegetationPresets().filter((p) => p.kind === "tree").map((p) => p.id);
+ * @example vegetationPresets().filter((p) => p.kind === "debris").map((p) => p.id);
  */
 export function vegetationPresets(): IVegetationPreset[] {
-  return Object.values(Arbor.PRESETS).map(({ id, name, latin, kind }) => ({
-    id,
-    name,
-    ...(latin ? { latin } : {}),
-    kind,
-  }));
+  return [
+    ...Object.values(Arbor.PRESETS).map(({ id, name, latin, kind }) => ({
+      id,
+      name,
+      ...(latin ? { latin } : {}),
+      kind,
+    })),
+    ...Object.entries(ForestKit.PRESETS).map(([id, preset]) => ({
+      id,
+      name: preset.name,
+      kind: preset.kind,
+    })),
+  ];
 }
 
 function distance(a: string, b: string): number {
@@ -83,7 +97,7 @@ function distance(a: string, b: string): number {
 
 /** The ids closest to `id`, for an error message. */
 function nearestPresets(id: string, count = 3): string[] {
-  return Object.keys(Arbor.PRESETS)
+  return [...Object.keys(Arbor.PRESETS), ...Object.keys(ForestKit.PRESETS)]
     .map((candidate) => ({
       candidate,
       score: candidate.includes(id) || id.includes(candidate) ? 0 : distance(id, candidate),
@@ -185,24 +199,34 @@ async function leafOf(
 }
 
 /**
- * Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model.
- * Each GLB carries the _WIND vertex attribute, COLOR_0, TEXCOORD_0, embedded bark and leaf textures and alpha-masked leaves.
- * @situation generate a procedural tree, an oak, pine, spruce, palm or any forest species as a GLB
- * @situation procedural oak tree GLB with level of detail for a game forest
- * @situation tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute
- * @constraint fails closed: an unknown preset throws naming the nearest ids, the seed must be an integer and each lod 0 to 2
- * @constraint the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)
- * @constraint bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped
- * @requires npm i -D @threenative/procedural-vegetation
- * @example await bakeVegetation({ preset: "oak", seed: 7, lods: [0, 1], out: "assets/trees" });
+ * The preset's source and the validated seed and lods, or the throw that names what is wrong.
+ * forest-kit presets carry no leaf card, so a form patch or a leaf image on one is the mistake.
  */
-export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> {
-  const { preset, out } = options;
+function resolveBake(
+  preset: string,
+  options: IBakeVegetationOptions,
+): {
+  arbor: IArborPreset | null;
+  forest: IForestKitPreset | null;
+  lods: readonly number[];
+  seed: number;
+} {
   const seed = options.seed ?? 1;
   const lods = options.lods ?? [0];
-  if (!Object.hasOwn(Arbor.PRESETS, preset))
+  const arbor = Object.hasOwn(Arbor.PRESETS, preset)
+    ? (Arbor.PRESETS[preset] as IArborPreset)
+    : null;
+  const forest =
+    arbor === null && Object.hasOwn(ForestKit.PRESETS, preset)
+      ? (ForestKit.PRESETS[preset] as IForestKitPreset)
+      : null;
+  if (arbor === null && forest === null)
     throw new Error(
       `bakeVegetation: unknown preset "${preset}". Nearest ids: ${nearestPresets(preset).join(", ")}. Call vegetationPresets() for the full list.`,
+    );
+  if (forest !== null && (options.form !== undefined || options.leafImage !== undefined))
+    throw new Error(
+      `bakeVegetation: form and leafImage patch an Arbor preset, and "${preset}" is a forest-kit ${forest.kind} with no leaf card to patch`,
     );
   if (!Number.isInteger(seed))
     throw new Error(`bakeVegetation: seed must be an integer, got ${seed}`);
@@ -211,7 +235,33 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
       `bakeVegetation: lods must be a non-empty list of integers 0 to ${MAX_LOD}, got [${lods}]`,
     );
   if (new Set(lods).size !== lods.length) throw new Error(`bakeVegetation: lods repeat: [${lods}]`);
-  const formed = withForm(preset, Arbor.PRESETS[preset] as IArborPreset, options.form);
+  return { arbor, forest, lods, seed };
+}
+
+/**
+ * Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model.
+ * Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0; the Arbor presets also embed
+ * their bark and leaf textures with alpha-masked leaves, while forest-kit debris and cover shade
+ * from COLOR_0 alone.
+ * @situation generate a procedural tree, an oak, pine, spruce, palm or any forest species as a GLB
+ * @situation procedural oak tree GLB with level of detail for a game forest
+ * @situation tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute
+ * @situation a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders
+ * @situation reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover
+ * @constraint fails closed: an unknown preset throws naming the nearest ids, the seed must be an integer and each lod 0 to 2
+ * @constraint the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)
+ * @constraint bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped
+ * @constraint _WIND is vec4 (trunk sway, branch sway, flutter, phase): forest-kit sway is flutter in z, and debris writes all four zero
+ * @constraint form and leafImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given either
+ * @requires npm i -D @threenative/procedural-vegetation
+ * @example await bakeVegetation({ preset: "oak", seed: 7, lods: [0, 1], out: "assets/trees" });
+ * @example await bakeVegetation({ preset: "log", seed: 3, out: "assets/debris" });
+ */
+export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> {
+  const { preset, out } = options;
+  const { arbor, forest, lods, seed } = resolveBake(preset, options);
+  if (forest !== null) return bakeForestKit(preset, forest, { lods, out, seed });
+  const formed = withForm(preset, arbor as IArborPreset, options.form);
   const source = options.leafImage === undefined ? formed : topDownCells(formed);
   const { leaf, tag } = await leafOf(source, options);
   const bark = source.noBark ? undefined : Arbor.barkTexture(source.bark);
@@ -232,6 +282,99 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
     const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
     try {
       await writeFile(temporary, Arbor.toGLB(tree, textures), { flag: "wx" });
+      await rename(temporary, file);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+    baked.push({
+      bounds: { max: tree.bounds.max, min: tree.bounds.min },
+      lod,
+      path: file,
+      triangles: tree.triangles,
+    });
+  }
+  return baked;
+}
+
+const EMPTY_PART: IArborPart = {
+  color: new Float32Array(0),
+  index: new Uint32Array(0),
+  normal: new Float32Array(0),
+  position: new Float32Array(0),
+  uv: new Float32Array(0),
+  wind: new Float32Array(0),
+};
+
+/**
+ * A GeoBuilder's arrays as Arbor's part. forest-kit's float sway is how far the vertex moves under a
+ * unit wind, which is Arbor's `_WIND.z` leaf flutter; its w phase stays 0 and the ground debris
+ * generators leave all four zero.
+ */
+function toPart(mesh: IForestKitMesh): IArborPart {
+  const wind = new Float32Array(mesh.wind.length * 4);
+  for (let i = 0; i < mesh.wind.length; i++) wind[i * 4 + 2] = mesh.wind[i] as number;
+  return {
+    color: new Float32Array(mesh.col),
+    index: new Uint32Array(mesh.idx),
+    normal: new Float32Array(mesh.nor),
+    position: new Float32Array(mesh.pos),
+    uv: new Float32Array(mesh.uv),
+    wind,
+  };
+}
+
+/** One forest-kit generator in Arbor's tree shape, so both bakes go through one GLB writer. */
+function forestKitTree(
+  id: string,
+  preset: IForestKitPreset,
+  options: { lod: number; seed: number },
+): IArborTree {
+  const mesh = preset.generate(options);
+  if (mesh.idx.length === 0)
+    throw new Error(`bakeVegetation: "${id}" baked no triangles at lod ${options.lod}`);
+  const part = toPart(mesh);
+  const min: [number, number, number] = [
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+  ];
+  const max: [number, number, number] = [
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ];
+  for (let i = 0; i < part.position.length; i += 3)
+    for (let k = 0; k < 3; k++) {
+      const value = part.position[i + k] as number;
+      if (value < (min[k] as number)) min[k] = value;
+      if (value > (max[k] as number)) max[k] = value;
+    }
+  // Debris is opaque wood and stone on the bark primitive; cover is a thin strip that must show
+  // from both sides and is alpha-masked like a leaf card, so it rides the foliage primitive.
+  const onBark = preset.part === "bark";
+  return {
+    bark: onBark ? part : EMPTY_PART,
+    bounds: { max, min },
+    leaves: onBark ? EMPTY_PART : part,
+    preset: { bark: "", id, name: preset.name },
+    triangles: mesh.idx.length / 3,
+  };
+}
+
+/** A forest-kit preset's GLBs: no bark or leaf atlas, all colour in COLOR_0. */
+async function bakeForestKit(
+  preset: string,
+  source: IForestKitPreset,
+  options: { lods: readonly number[]; out: string; seed: number },
+): Promise<IVegetationBake[]> {
+  await mkdir(options.out, { recursive: true });
+  const baked: IVegetationBake[] = [];
+  for (const lod of options.lods) {
+    const tree = forestKitTree(preset, source, { lod, seed: options.seed });
+    const file = path.join(options.out, `${preset}-${options.seed}-lod${lod}.glb`);
+    const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, Arbor.toGLB(tree), { flag: "wx" });
       await rename(temporary, file);
     } finally {
       await rm(temporary, { force: true });
