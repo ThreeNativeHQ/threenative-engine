@@ -478,7 +478,8 @@ if(EMSCRIPTEN OR NOT TN_ENGINE_CORE_ONLY)
     tn_native_engine_test(tn-native-engine-prepass-test tests/native-engine/prepass_test.cpp
         native_engine_prepass_eligible=eligible
         native_engine_prepass_targets=targets
-        native_engine_prepass_fragments=fragments)
+        native_engine_prepass_fragments=fragments
+        native_engine_prepass_modes=modes)
     target_link_libraries(tn-native-engine-prepass-test PRIVATE tn_engine_renderer)
 endif()
 

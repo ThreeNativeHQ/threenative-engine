@@ -356,21 +356,6 @@ inline bool shadowInstanceCullEnabled() {
     return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
-// PRD-888's lever: TN_PREPASS=1 draws the masked opaque draws depth-only first, then shades them depth-Equal with no
-// discard. Off (unset or 0) is the shipped path. Read per frame, so a page toggles both arms in one load.
-inline bool prepassEnabled() {
-    const char* flag = flags::read<flags::Prepass>();
-    return flag != nullptr && std::strcmp(flag, "0") != 0;
-}
-
-// PRD-888 lever 0: TN_PREPASS=split draws the prepass rows in their own render pass, so the timer prices the depth half
-// apart from the shade half (the trace names the pass `prepass`). An instrument arm: the extra MSAA depth store and
-// load costs ~0.2 ms and the two bundles are recorded every frame, so it is never the shipped path.
-inline bool prepassSplit() {
-    const char* flag = flags::read<flags::Prepass>();
-    return flag != nullptr && std::strcmp(flag, "split") == 0;
-}
-
 // A viewport texture binding: the frame's colour or depth as drawn before this draw.
 inline bool viewportBinding(std::string_view name) {
     return name == "t_viewportColor" || name == "smp_viewportColor" || name == "t_viewportDepth" ||

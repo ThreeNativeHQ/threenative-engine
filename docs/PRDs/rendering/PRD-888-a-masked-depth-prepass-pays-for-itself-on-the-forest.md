@@ -95,8 +95,10 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       the one reading that changes shape. `?tnPrepass=split` or `globalThis.__tnPrepass = "split"`
       arms it live; a draw that samples the frame as drawn before it keeps the shipped boundary (its
       own copy, and a second depth pass after the copy), so the arm stays pixel-identical. proof: the
-      bill below, 2026-11-14. The unit test (`prepass_test.cpp`, case `modes`) is written and
-      unverified: the desktop `ctest` had not run when this box was ticked.
+      bill below, 2026-11-14. The unit test's four cases all pass (`prepass_test.cpp`, built as
+      `tn-native-engine-prepass-test` in the `build/tn-engine-ui` tree, where the `native-engine`
+      label is configured): `eligible`, `targets`, `fragments` and the new `modes`; the case is
+      registered as `native_engine_prepass_modes`.
       The extra depth store and load costs nothing measurable: total frame p50 at overview is
       38.81/38.89 ms split against 42.03/39.14 one-pass, and 40.01/38.59 against 38.23/38.68 at vista.
 - [ ] Refuse and fall back to the shipped path for: transparent/blended materials,
