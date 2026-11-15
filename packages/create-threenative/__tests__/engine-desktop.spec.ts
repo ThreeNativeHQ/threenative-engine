@@ -252,6 +252,16 @@ describe("packageEngineDesktop", () => {
     expect(() => launcher(1280, 720, undefined, "high")).toThrow(/TN_ENGINE_PACKAGE_ARGS/u);
   });
 
+  it("opens fullscreen unless the game sets display.fullscreen false", () => {
+    expect(launcher(1280, 720)).toContain(':"${TN_PLAYER_FULLSCREEN:=1}"'.slice(1));
+    expect(launcher(1280, 720, undefined, "game", false)).toContain(
+      ':"${TN_PLAYER_FULLSCREEN:=0}"'.slice(1),
+    );
+    expect(launcher(1280, 720)).toContain(
+      "export TN_PLAYER_WIDTH TN_PLAYER_HEIGHT TN_PLAYER_PRIORITY TN_PLAYER_FULLSCREEN",
+    );
+  });
+
   it("opens the window with the game's title and size, a quote in the title included", async () => {
     const root = await temp("threenative-engine-package-title-");
     const player = path.join(root, "player");
