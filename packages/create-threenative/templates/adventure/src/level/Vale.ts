@@ -1,14 +1,23 @@
+import { ScatterField3D } from "@threenative/core";
 import {
   BoxGeometry,
+  type BufferGeometry,
   CylinderGeometry,
   Group,
+  type Material,
   MathUtils,
   Mesh,
   type Object3D,
   PlaneGeometry,
   Vector3,
 } from "three";
-import { type IValeSite, plantVale, valeGround } from "../render/foliage.js";
+import {
+  type FloorKind,
+  type IValeSite,
+  floorPart,
+  plantVale,
+  valeGround,
+} from "../render/foliage.js";
 import { flat, mottle } from "../render/materials.js";
 import { C } from "../render/palette.js";
 import { createHut, createPitcherLantern, createSign } from "../render/props.js";
@@ -46,6 +55,10 @@ export interface IVale {
   readonly hut: { readonly at: Vector3; readonly lanterns: number };
   /** Flagstones laid along the path, and the share of the path's centre line they cover. */
   readonly path: { readonly stones: number; readonly cover: number };
+  /** True on open ground: off the path, out of the ruin's lane and clear of the play spaces. */
+  readonly clear: (x: number, z: number, width: number) => boolean;
+  /** The old trees that frame the clearing, with the trunk radius nothing scatters inside. */
+  readonly trees: readonly { readonly radius: number; readonly x: number; readonly z: number }[];
 }
 
 // ------------------------------------------------------------------------------------ the ground
@@ -385,6 +398,8 @@ export function buildVale(rng: () => number): IVale {
 
   return {
     caveExit: at(0, -17),
+    clear: site.clear,
+    trees: trees.map(([x, z, s]) => ({ radius: 0.6 * s, x, z })),
     caveMouth: at(0, -23),
     dummies: [at(-1.6, 4), at(1.8, 4.5)],
     group,
@@ -406,4 +421,164 @@ export function buildVale(rng: () => number): IVale {
 /** True for the meshes `buildStaticColliders` should turn into fixed bodies. */
 export function isSolid(object: Object3D): boolean {
   return object.userData.solid === true;
+}
+
+// ------------------------------------------------------------------------- the woodland floor
+// Baked props, streamed round Wren. The generators live in @threenative/procedural-vegetation and
+// the bytes in ../template-assets/assets (regenerate with `pnpm tsx scripts/bake-floor-assets.ts`);
+// the material is the kit's own, in render/foliage.ts.
+
+/** What this needs of the loader: `ctx.assets` satisfies it. */
+export interface IFloorLoader {
+  model(path: string): Promise<{ readonly scene: Object3D }>;
+}
+
+/** One baked prop, its levels of detail near to far, and how many a square metre holds. */
+interface IFloorProp {
+  readonly density: number;
+  readonly drawDistance: number;
+  readonly files: readonly string[];
+  readonly kind: FloorKind;
+  readonly scale: readonly [number, number];
+}
+
+const FLOOR_PROPS: Readonly<Record<string, IFloorProp>> = {
+  // The kit's grass stands knee-high, so a prop that should read is sized to clear it.
+  fern: {
+    density: 0.16,
+    drawDistance: 24,
+    files: ["floor-fern-0.glb"],
+    kind: "frond",
+    scale: [1.3, 2],
+  },
+  litter: {
+    density: 0.32,
+    drawDistance: 18,
+    files: ["floor-litter-0.glb"],
+    kind: "litter",
+    scale: [1.2, 1.8],
+  },
+  log: {
+    density: 0.035,
+    drawDistance: 30,
+    files: ["floor-log-0.glb", "floor-log-1.glb"],
+    kind: "wood",
+    scale: [1.2, 1.7],
+  },
+  stump: {
+    density: 0.03,
+    drawDistance: 30,
+    files: ["floor-stump-0.glb"],
+    kind: "wood",
+    scale: [1, 1.5],
+  },
+  twig: {
+    density: 0.16,
+    drawDistance: 20,
+    files: ["floor-twig-0.glb"],
+    kind: "wood",
+    scale: [1.4, 2.2],
+  },
+};
+
+export interface IWoodlandFloor {
+  readonly group: Group;
+  /** One streamed field per prop; the playtest reads their totals. */
+  readonly fields: readonly ScatterField3D[];
+  /** Builds every tile on the next update regardless of budget: on load, behind the curtain. */
+  prewarm(): void;
+  update(follow: Vector3): void;
+}
+
+/** 0..1 from a point and a salt: a placement is the same whatever order the tiles build in. */
+const jitter = (x: number, z: number, salt: number): number => {
+  const h = Math.sin(x * 127.1 + z * 311.7 + salt * 74.7) * 43758.5453;
+  return h - Math.floor(h);
+};
+
+/** A loaded GLB's primitives in the kit's look: one part per glTF material. */
+function chainsOf(
+  model: { readonly scene: Object3D },
+  kind: FloorKind,
+): {
+  geometries: BufferGeometry[];
+  material: Material;
+}[] {
+  const chains: { geometries: BufferGeometry[]; material: Material }[] = [];
+  model.scene.traverse((object) => {
+    const mesh = object as Mesh;
+    if (mesh.isMesh !== true) return;
+    const part = floorPart(mesh, kind);
+    chains.push({ geometries: [part.geometry], material: part.material });
+  });
+  return chains;
+}
+
+/**
+ * The forest floor: logs, stumps, twigs and leaf litter under the old trees, with ferns among them.
+ * Every prop is a baked GLB streamed by `ScatterField3D`, placed off the path, out of the play spaces
+ * and clear of the trunks, so nothing floats over the ruin's lane or grows out of a tree.
+ */
+export async function buildWoodlandFloor(
+  assets: IFloorLoader,
+  vale: IVale,
+  seed = 1986,
+): Promise<IWoodlandFloor> {
+  const group = new Group();
+  group.name = "woodland floor";
+  const fields: ScatterField3D[] = [];
+  let salt = 1;
+  for (const [name, prop] of Object.entries(FLOOR_PROPS)) {
+    const models = await Promise.all(prop.files.map((file) => assets.model(file)));
+    // Each baked level replaces its part's geometry; the kit's material and the instances stay.
+    const chains = chainsOf(models[0] as { scene: Object3D }, prop.kind);
+    for (const model of models.slice(1)) {
+      chainsOf(model, prop.kind).forEach((deeper, index) => {
+        const chain = chains[index];
+        if (chain !== undefined) chain.geometries.push(...deeper.geometries);
+      });
+    }
+    const propSalt = salt;
+    salt += 1;
+    const field = new ScatterField3D({
+      // A tile draws once per part, so the floor takes tiles four times the default area: five
+      // fields at 16 m tiles add enough lone draws to tip the scene's projection to declining.
+      chunkSize: 32,
+      density: prop.density,
+      drawDistance: prop.drawDistance,
+      getHeight: valeHeight,
+      parts: chains.map(({ geometries, material }) => ({ lods: geometries, material })),
+      place: (point, out) => {
+        if (!vale.clear(point.x, point.z, 0.9)) return false;
+        // Deadwood and litter gather at the foot of the old trees, so only the trunk itself is out of
+        // bounds: a prop half a metre from a trunk is the look, one inside it is a clipped mesh.
+        for (const tree of vale.trees)
+          if (Math.hypot(point.x - tree.x, point.z - tree.z) < tree.radius) return false;
+        out.x = point.x;
+        out.y = point.y + 0.012;
+        out.z = point.z;
+        out.yaw = jitter(point.x, point.z, propSalt) * Math.PI * 2;
+        out.scale =
+          prop.scale[0] + jitter(point.x, point.z, propSalt + 7) * (prop.scale[1] - prop.scale[0]);
+        return true;
+      },
+      farDensity: 0.45,
+      seed: seed + propSalt,
+      thinEnd: 24,
+      thinStart: 8,
+    });
+    field.name = `floor ${name}`;
+    fields.push(field);
+    group.add(field);
+  }
+  return {
+    fields,
+    group,
+    prewarm: () => {
+      for (const field of fields) field.prewarm();
+    },
+    update: (follow) => {
+      for (const field of fields) field.update(follow);
+    },
+  };
 }

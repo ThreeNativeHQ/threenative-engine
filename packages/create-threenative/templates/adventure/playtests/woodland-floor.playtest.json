@@ -1,0 +1,61 @@
+{
+  "name": "adventure-woodland-floor",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "holdTicks": 30,
+      "kind": "input",
+      "label": "walk out under the old trees",
+      "press": "KeyW",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stand on the forest floor",
+      "release": true,
+      "waitTicks": 80
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "floor",
+        "component": "instances",
+        "gte": 20,
+        "allowTrivial": "Baked logs, stumps, twigs, litter and ferns draw round Wren: the floor is not empty."
+      },
+      {
+        "entity": "floor",
+        "component": "visibleTiles",
+        "gte": 3,
+        "allowTrivial": "At least three streamed floor tiles stand inside the draw distance."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 1.0
+    }
+  },
+  "setup": {
+    "aim": {
+      "pitch": 0,
+      "yaw": 0
+    }
+  }
+}

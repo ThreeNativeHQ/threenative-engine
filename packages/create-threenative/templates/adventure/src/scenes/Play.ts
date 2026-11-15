@@ -42,8 +42,10 @@ import { type IHollow, buildHollow } from "../level/Hollow.js";
 import {
   GRASS_BOUNDS,
   type IVale,
+  type IWoodlandFloor,
   STREAM,
   buildVale,
+  buildWoodlandFloor,
   grassCover,
   isSolid,
   makeRng,
@@ -132,6 +134,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
   #sky: ISky | undefined;
   #vale: IVale | undefined;
+  #floor: IWoodlandFloor | undefined;
   #grass: GrassField3D | undefined;
   #hollow: IHollow | undefined;
   #hero: Hero | undefined;
@@ -154,6 +157,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     this.#sky = createSky();
     setupSky(ctx.scene, this.#sky);
     const vale = buildVale(makeRng(1986));
+    // The forest floor: baked debris and ferns scattered under the old trees (PRD-889).
+    const floor = await buildWoodlandFloor(ctx.assets, vale);
+    vale.group.add(floor.group);
+    this.#floor = floor;
     const hollow = buildHollow(makeRng(1998));
     this.#vale = vale;
     this.#hollow = hollow;
@@ -197,6 +204,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         standFar: standAt(3),
         standNear: standAt(0.5),
         visibleChunks: grass.stats.visibleChunks,
+      }),
+    });
+    ctx.entities.add("floor", {
+      debug: () => ({
+        instances: floor.fields.reduce((total, field) => total + field.stats.instances, 0),
+        tiles: floor.fields.reduce((total, field) => total + field.stats.tiles, 0),
+        visibleTiles: floor.fields.reduce((total, field) => total + field.stats.visibleTiles, 0),
       }),
     });
     vale.dummies.forEach((at, i) => {
@@ -251,6 +265,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       this.#sky === undefined
     )
       throw new Error("Play.enter ran before load() built the world.");
+    const floor = this.#floor;
+    if (floor !== undefined) {
+      floor.prewarm();
+      ctx.beforeRender(() => {
+        if (vale.group.visible) floor.update(hero.mesh.position);
+      });
+    }
     const grass = this.#grass;
     if (grass !== undefined) {
       // Once per drawn frame: Wren's feet flatten the grass, then the field streams round the camera.

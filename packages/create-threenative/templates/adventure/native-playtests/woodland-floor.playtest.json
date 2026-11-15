@@ -1,0 +1,61 @@
+{
+  "assert": {
+    "components": [
+      {
+        "allowTrivial": "Baked logs, stumps, twigs, litter and ferns draw round Wren on the native host too: the owned engine's own scatter, not a browser-only path.",
+        "component": "instances",
+        "entity": "floor",
+        "gte": 20
+      },
+      {
+        "allowTrivial": "At least three streamed floor tiles stand inside the draw distance on the native host.",
+        "component": "visibleTiles",
+        "entity": "floor",
+        "gte": 3
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 1.0
+    }
+  },
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "name": "adventure-native-woodland-floor",
+  "schemaVersion": 1,
+  "setup": {
+    "aim": {
+      "pitch": 0,
+      "yaw": 0
+    }
+  },
+  "steps": [
+    {
+      "holdTicks": 30,
+      "kind": "input",
+      "label": "walk out under the old trees",
+      "press": "KeyW",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stand on the forest floor",
+      "release": true,
+      "waitTicks": 80
+    }
+  ],
+  "subject": "player",
+  "target": "desktop",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 10
+}

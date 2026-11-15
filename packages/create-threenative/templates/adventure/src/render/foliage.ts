@@ -20,12 +20,14 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
+  FrontSide,
   Group,
   IcosahedronGeometry,
   InstancedMesh,
   type Material,
   MathUtils,
   Mesh,
+  MeshStandardMaterial,
   Object3D,
   OctahedronGeometry,
   SphereGeometry,
@@ -334,10 +336,19 @@ function limb(
   return tube;
 }
 
-/** Colours bark by its normal: moss on every face that looks up, bark below, darker at the foot. */
-export function mossBark(geometry: BufferGeometry, moss: number): BufferGeometry {
+/**
+ * Colours bark by its normal: moss on every face that looks up, bark below, darker at the foot.
+ * `keepNormals` trusts the normals the geometry already carries instead of recomputing them, for a
+ * baked mesh: a recomputed normal on a two-centimetre triangle collapses to NaN, and the NaN lands
+ * in the vertex colours this function writes, where bloom carries it across the whole frame.
+ */
+export function mossBark(
+  geometry: BufferGeometry,
+  moss: number,
+  keepNormals = false,
+): BufferGeometry {
   const g = geometry.index === null ? geometry : geometry.toNonIndexed();
-  g.computeVertexNormals();
+  if (!keepNormals || g.attributes.normal === undefined) g.computeVertexNormals();
   const normal = g.attributes.normal;
   const position = g.attributes.position;
   if (normal === undefined || position === undefined) return g;
@@ -1059,4 +1070,42 @@ export function valeGround(
   meshes.outer.receiveShadow = true;
   meshes.inner.name = "vale-floor";
   return meshes;
+}
+
+/** What a baked forest-floor part is, so it takes the matching look of the kit. */
+export type FloorKind = "frond" | "litter" | "wood";
+
+/**
+ * The forest floor in the kit's own look, tuned here and nowhere else. Wood (logs, stumps, twigs)
+ * takes the old trees' mossy ridged bark, so a fallen log reads as one of them. Litter keeps the
+ * bake's COLOR_0 times its base colour. A frond keeps Arbor's leaf atlas, cut out rather than
+ * blended, exactly as the tree crowns are.
+ */
+export function floorPart(
+  mesh: Mesh,
+  kind: FloorKind,
+): { geometry: BufferGeometry; material: Material } {
+  if (kind === "wood") {
+    // The bake's own normals, never recomputed: see `mossBark`'s `keepNormals`.
+    const baked = mesh.geometry.index === null ? mesh.geometry : mesh.geometry.toNonIndexed();
+    return {
+      geometry: mossBark(baked, 0.55, true),
+      material: surfaced(0xffffff, "bark", { vertexColors: true }),
+    };
+  }
+  const baked = mesh.material as MeshStandardMaterial;
+  const frond = kind === "frond";
+  return {
+    geometry: mesh.geometry,
+    material: new MeshStandardMaterial({
+      // COLOR_0 is the bake's variation; the base colour is its tone, so both multiply.
+      color: frond ? 0xffffff : baked.color,
+      map: frond ? baked.map : null,
+      metalness: 0,
+      roughness: 0.9,
+      side: frond ? DoubleSide : FrontSide,
+      vertexColors: true,
+      ...(frond ? { alphaTest: 0.45 } : {}),
+    }),
+  };
 }
