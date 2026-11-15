@@ -80,6 +80,14 @@ flowchart LR
   `@threenative/procedural-vegetation` presets. A species with neither becomes a new preset in that
   package.
 
+- **The vegetation package already holds most of the four biomes** (checked 2026-11-15 on
+  `origin/prd-584-forest-60fps`: 28 Arbor trees, 27 Arbor cover plants, 12 forest-kit cover and debris
+  presets). Desert has `saguaro`, `joshua`, `creosote`, `agave`, `bunchgrass`; the cold kits have
+  `blackspruce`, `tundragrass`, `tussock`, `blueberry`, `fireweed`. A krummholz or dwarf tree is a
+  `form` patch on an existing preset, not a new species. Gaps: dwarf willow, marram grass, lichen.
+  Lichen and moss read as ground, so they go in the splat table, not a preset. The forest-kit `rock`
+  and `log` presets are named "mossy". Phase 2 checks that the kit material, not the preset, sets that look.
+
 ## Execution Phases
 
 ### Phase 1 — one kit path, forest unchanged
@@ -90,10 +98,10 @@ flowchart LR
 
 ### Phase 2 — four biomes as data
 
-- [ ] Alpine: Longs Peak survey and far ring; krummholz and dwarf conifer stands, alpine tussock, lichen scree. proof: `KIT=alpine pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
-- [ ] Desert: a real desert survey replaces the Colorado crop; shrub and succulent stands, dry debris, dune and wash cover. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
-- [ ] Tundra: a real tundra survey replaces the Colorado crop; dwarf birch and willow, sedge tussock, lichen, kettle ponds. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
-- [ ] Coastal: a real coast survey replaces the Colorado crop; coastal pine stands, dune grass, driftwood, reeds. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
+- [ ] Alpine: Longs Peak survey and far ring; `spruce`, `scotspine` and `blackspruce` stands with a krummholz form patch at the tree line, `tundragrass`, `tussock`, `fireweed`, `blueberry`, `rock` scree. proof: `KIT=alpine pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
+- [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
+- [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
+- [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 
 ### Phase 3 — the revamp holds
 
@@ -108,5 +116,5 @@ flowchart LR
 
 ## Decisions
 
-- 2026-11-15 (agent, owner asked "see whats best"): one shared kit path plus biome data rows, not a copied forest scaffold. Reason: a copy gives five paths, and each later performance win would need five ports. The PRD-887 region rows already show that a biome works as data.
+- 2026-11-15 (agent proposed, owner confirmed the same day): one shared kit path plus biome data rows, not a copied forest scaffold. Reason: a copy gives five paths, and each later performance win would need five ports. The PRD-887 region rows already show that a biome works as data.
 - 2026-11-15 (agent): this PRD covers the starter kits under `packages/terrain/starter/`. The preview-side part of PRD-790 (biome branches in `examples/strata-terrain-preview/src`) has one branch left and stays in PRD-790. Its streaming past one square also stays there.
