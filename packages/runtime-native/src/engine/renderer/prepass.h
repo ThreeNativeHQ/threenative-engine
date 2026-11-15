@@ -20,8 +20,8 @@ inline bool prepassEnabled() {
 }
 
 // Lever 0: TN_PREPASS=split draws the prepass rows in their own render pass, so the timer prices the depth half apart
-// from the shade half (the trace names the pass `prepass`). An instrument arm: the extra MSAA depth store and load
-// costs ~0.2 ms and both bundles are recorded every frame, so it is never the shipped path.
+// from the shade half (the trace names the pass `prepass`). An instrument arm: the depth half pays an extra MSAA store
+// and load, measured under 1 ms, and the scene pass runs in two passes instead of one.
 inline bool prepassSplit() {
     const char* flag = flags::read<flags::Prepass>();
     return flag != nullptr && std::strcmp(flag, "split") == 0;

@@ -86,8 +86,9 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       (`tests/native-engine/prepass_test.cpp`), 2026-11-14.
 - [x] Issue both loops inside the same world render pass, front to back, so no extra MSAA depth
       store and load is paid. proof: `renderer.cpp` records the prepass rows first in the main bundle.
-- [x] Lever 0, `TN_PREPASS=split` records the prepass rows in their own render pass with their own
-      timestamp segment, so the depth half is priced apart from the shade half.
+- [x] Lever 0, `TN_PREPASS=split` records the prepass rows in their own timed render pass, named
+      `prepass` in `TN_GPU_PASSES` and summed into segment 2 (`other`), so the depth half is priced
+      apart from the shade half.
       proof: `TN_GPU_PASSES` names a `prepass` pass at all 5 poses and the bill is in "The split,
       measured" below. Built as its own timed pass rather than a seventh segment bucket: the trace
       carries the pass name and its ms, and no frame-field ABI moves for an instrument arm. With it
@@ -189,40 +190,92 @@ pixels; that is the defect to fix when the far bands get their look decision.
 
 One page load, every arm live on the same plan (`globalThis.__tnPrepass`), ABBA × 2 runs per pose,
 median of the `TN_GPU_PASSES` per-pass sample: RTX 2080 `nvidia/turing`, 1600×900, 4× MSAA, forest
-kit played as its own game, 928 MiB of 8 GB already resident before the probe.
+kit played as its own game, 928 MiB of 8 GB resident before the probe. `scene` is the `scene` pass
+and `frame` is the whole trace sum (shadow, prepass, shade, viewport copy, post, output), so `on:
+frame` is what `split: frame` is compared with — not `on: scene`.
 
-| pose | off (shipped) | on (one pass) | split: prepass | split: shade | split: frame |
-| --- | --- | --- | --- | --- | --- |
-| player | 30.09 / 27.16 | 17.45 / 12.84 | 5.90 / 5.45 | 8.09 / 12.57 | 15.42 / 20.43 |
-| meadow-close | 47.15 / 31.31 | 18.37 / 21.42 | 10.78 / 11.60 | 9.56 / 9.92 | 21.84 / 23.07 |
-| overview | 107.12 / 51.01 | 39.69 / 36.78 | 24.41 / 24.42 | 12.00 / 12.07 | 38.81 / 38.89 |
-| river | 27.88 / 25.74 | 14.25 / 14.08 | 5.08 / 4.94 | 9.19 / 9.18 | 15.83 / 15.89 |
-| vista | 55.70 / 54.12 | 35.64 / 36.11 | 26.07 / 25.96 | 9.90 / 10.03 | 40.01 / 38.59 |
+| pose | off: scene | on: scene | on: frame | split: prepass | split: shade | split: frame |
+| --- | --- | --- | --- | --- | --- | --- |
+| player | 30.09 / 27.16 | 17.45 / 12.84 | 18.91 / 14.27 | 5.90 / 5.45 | 8.09 / 12.57 | 15.42 / 20.43 |
+| meadow-close | 47.15 / 31.31 | 18.37 / 21.42 | 19.88 / 22.85 | 10.78 / 11.60 | 9.56 / 9.92 | 21.84 / 23.07 |
+| overview | 107.12 / 51.01 | 39.69 / 36.78 | 42.03 / 39.14 | 24.41 / 24.42 | 12.00 / 12.07 | 38.81 / 38.89 |
+| river | 27.88 / 25.74 | 14.25 / 14.08 | 15.93 / 15.71 | 5.08 / 4.94 | 9.19 / 9.18 | 15.83 / 15.89 |
+| vista | 55.70 / 54.12 | 35.64 / 36.11 | 38.23 / 38.68 | 26.07 / 25.96 | 9.90 / 10.03 | 40.01 / 38.59 |
 
-`split: frame` is the whole `TN_GPU_PASSES` sum (shadow, prepass, shade, viewport copy, post,
-output), so it compares with `on` directly: the two-pass arm is not slower, which is the extra MSAA
-depth store and load being smaller than the sample noise.
+The two arms cost the same within the sample noise: `split: frame` against `on: frame` is
+38.81/38.89 against 42.03/39.14 at overview, 40.01/38.59 against 38.23/38.68 at vista, 21.84/23.07
+against 19.88/22.85 at meadow-close. The extra MSAA depth store and load is therefore not
+measurable above about 1 ms (the earlier "~0.2 ms" here was an estimate, never a measurement). The
+decomposition is faithful: prepass + shade lands on the one-pass `scene` at river (14.27 against
+14.25/14.08) and vista (35.96 against 35.64/36.11).
 
 **What it answers.** At the two poses that miss 60 FPS the *depth half* owns the frame: 24.4 of
-38.9 ms at overview and 26.0 of 38.6 ms at vista, against 12.0 and 10.0 ms of shading. So the far
-bands cost what they cost because 10.95 M masked triangles are rasterised to depth and thrown away,
-not because the sun's five taps are sampled too often: levers that shorten the shade half have
-12 ms to win, and levers that shrink the depth half have 24–26. Ordering the prepass near to far
-(lever 1) and collapsing the vertices the fragment level gate discards (lever 2) are the only two
-that touch it.
+38.9 ms at overview and 26.0 of 38.6 at vista, against 12.0 and 10.0 ms of shading. The one-pass
+arm clears 60 FPS at river (14.3 ms of scene) and at the closing player arm (12.8), which are
+shade-bound (5.0 against 9.2, and 5.5 against 12.6). Meadow-close is **depth-bound** the other way
+(10.8 prepass against 9.6 shade) and is *not* at 60 FPS: its one-pass scene reads 18.37/21.42.
 
-At meadow-close, river and player the split is 5.7/10.3, 5.0/9.2 and 5.7/10.3 — the near poses are
-shade-bound, which is why the one-pass arm already clears 60 FPS there.
+### The same bill per band, on the split arm
 
-`off` read 107 ms once at overview, on 4 samples 5 s into that pose: the ring was still streaming
-in. The second `off` run at the same pose read 51.0, and every other pose agrees with PRD-888's
-earlier table, so read `off` from the closing arm of each pose, never the opening one.
+Hide one band, read the medians of both halves. Bands are the kit's own groups:
+`strata-props:horizon:*`, `strata-props:far:*` (the impostor cards), `strata-props:local:*` (four
+groups) and the ground (`tn-terrain-block:*` plus `authored-terrain`). Everything is restored and
+re-resolved after each arm.
+
+| pose · band hidden | prepass ms | shade ms |
+| --- | --- | --- |
+| overview · nothing (`all`, read twice, identical) | **21.45** | **11.77** |
+| overview · horizon | 11.27 (−10.2) | 12.59 (+0.8) |
+| overview · far cards | 10.99 (−10.5) | 58.47 (+46.7) |
+| overview · local | 21.17 (−0.3) | 11.19 (−0.6) |
+| overview · ground | 21.58 (+0.1) | 5.25 (−6.5) |
+| vista · nothing | **27.51** | **9.75** |
+| vista · horizon | 17.34 (−10.2) | 11.24 (+1.5) |
+| vista · far cards | 11.62 (−15.9) | 10.53 (+0.8) |
+| vista · local | 26.52 (−1.0) | 9.05 (−0.7) |
+| vista · ground | 27.40 (−0.1) | 4.87 (−4.9) |
+
+Two readings matter. **The depth half is the two far bands and nothing else**: at overview the
+horizon band and the far cards each account for ~10.5 of the 21.45 ms, and they hide each other, so
+they are very nearly the whole of it; the near props (0.3) and the ground (0.1) contribute nothing
+there, because opaque geometry is early-Z's job and it already works. **The far cards' cost is
+entirely fragment work inside the mask**: hiding them *raises* the shade half by 46.7 ms at overview
+by uncovering the far forest behind them, so their own 10.5/15.9 ms is depth-half masked sampling —
+the octahedral ray march and the LOD gate that lever 3 (below) calls the far cards' look.
+
+The local band's removal at overview (−0.3) is a bound, not a zero: the near spruces also occlude
+what is behind them, so hiding them gives back some depth work they were preventing.
+
+### Method caveats
+
+- The arm order is `off, on, split, split, on, off` per pose, so `off` always opens a pose. In 5 of 5
+  poses the opening `off` run reads higher than the closing one (overview 107.12 on 4 samples against
+  51.01; meadow-close 47.15 against 31.31) — a pose-entry transient, with shadow pages still redrawing
+  (overview `off`-1 shows 7.18 ms of shadow against 0.09). ABBA does not cancel it, so the opening
+  `off` number is unusable and the closing one is the pose's shipped cost. Rotate the opening arm next
+  time.
+- Player is noisy in every arm (split shade 8.09/12.57, `on` scene 17.45/12.84): no delta under
+  about 5 ms may be read from it. Overview and vista are tight (24.41/24.42, 26.07/25.96, n = 9–10).
+- The rows after a viewport-texture copy get their own depth pass, run after the copy, and that pass
+  is timed as `viewport`, not `prepass` (renderer.cpp keeps the copy's depth exactly as shipped). The
+  whole `viewport` pass is 0.15–0.45 ms at these poses, so the `prepass` column is short by that much
+  where a viewport texture exists.
+
+**Pixel identity of the split arm.** The kit exposes no clock freeze through `?capture=1`
+(`freezeClock` is not on the debug object), so foliage sway kept running between shots. Two shots per
+arm, 20 frames apart, 1600×900, at meadow-close and overview: the cross-arm delta is **below** the
+same-arm drift at both poses — overview 442 changed pixels on→split against 758 split→split and
+44 768 on→on (a pose's first shot is still settling), meadow-close 17 894 on→split against 40 098
+split→split. No arm-attributable difference is detectable, but this is not AC-A's 0-pixel claim:
+that still needs the frozen-clock protocol, which the open box above keeps.
 
 ## The next lever, ranked (advisor review, 2026-11-14)
 
-0. **Measure the split first.** Record the prepass rows (`renderer.cpp` encodeFrame) in their own
-   render pass with their own timestamp segment (`TN_PREPASS=split`; the extra MSAA depth store and
-   load costs ~0.2 ms) and re-run the bill per band. Every choice below depends on that split.
+0. **~~Measure the split first.~~ Done, 2026-11-14.** `TN_PREPASS=split` gave both halves and then the
+   per-band bill above. The answer reranks the rest: the depth half is 24–26 ms at the two poses that
+   miss 60 FPS and all of it is the horizon band and the far cards' masked fragments, while the near
+   props and the ground contribute ~0. Levers 1, 2 and 3 all belong to that half, and the far cards'
+   share of it is the look defect lever 3 describes.
 1. **Draw prepass instances near to far.** The final depth is the per-sample minimum, which does not
    depend on draw order, and the Equal pass keeps its order, so this changes 0 pixels by
    construction. Issue each prepass row as sub-draws over cell-contiguous instance ranges sorted by

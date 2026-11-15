@@ -933,7 +933,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         recorded += uint32_t(pass.rows->size() - pass.sorted);
         lastFrame_.recordMs += meterMs() - recordStarted;
     };
-    // A split arm and a one-pass arm record different bundles for the same plan, so switching arms drops them.
+    // A split arm and a one-pass arm record different bundles for the same plan, so switching arms drops them. Inside
+    // one arm the plan's own key carries the frame: a split bundle is reused while the plan holds, as a one-pass one is.
     if (splitPrepass != splitRecorded_) {
         for (WGPURenderBundle* bundle : {&mainBundle_, &prepassBundle_, &prepassTailBundle_, &viewportBundle_, &tailBundle_, &mainDelta_}) {
             if (*bundle) wgpuRenderBundleRelease(*bundle);
@@ -1005,7 +1006,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.draws = job.mainRows.draws;
         lastFrame_.triangles = job.mainRows.triangles;
         lastFrame_.mainSkinned = job.mainRows.skinned;
-    } else if (splitPrepass || !mainBundle_ || bundleKey != mainBundleKey_) {
+    } else if (!mainBundle_ || bundleKey != mainBundleKey_) {
         if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
         if (prepassBundle_) wgpuRenderBundleRelease(prepassBundle_);
         if (prepassTailBundle_) wgpuRenderBundleRelease(prepassTailBundle_);
