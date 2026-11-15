@@ -300,6 +300,11 @@ artefact: at the walking poses the same count reads **16.1 M of 17.5 M (92 %) at
 planned triangles (part of those rows' capacity is frustum-culled, so a share of the faded triangles
 is never submitted at all).
 
+Why the picture still looks right while 83 % of those triangles are thrown away: what draws the far
+trees at these poses is the **impostor cards** (2 triangles each, 5 648 horizon + 46 597 far
+instances), and the coarse meshes behind them are submitted, rasterised and gated away. The gate is
+doing its job; the cost is that the mesh rows are still drawn.
+
 So the loss is not the fragment program: it is **placement**. These instances sit in a level row far
 coarser than their distance (a level-0 spruce at 200 m), and the gate throws away every fragment they
 produce while the draw still submits and rasterises their triangles. Whatever the cause — an
