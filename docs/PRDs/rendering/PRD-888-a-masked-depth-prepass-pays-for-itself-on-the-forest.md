@@ -178,8 +178,11 @@ pixels; that is the defect to fix when the far bands get their look decision.
 1. **Draw prepass instances near to far.** The final depth is the per-sample minimum, which does not
    depend on draw order, and the Equal pass keeps its order, so this changes 0 pixels by
    construction. Issue each prepass row as sub-draws over cell-contiguous instance ranges sorted by
-   cell distance (needs `world-cell-batches.ts` to be cell-contiguous; unverified). Gain 0–6 ms,
-   depending on whether Turing's ZCULL rejects tiles for a discarding shader — the split pass shows it.
+   cell distance. Feasible as written: `world-cell-batches.ts` already narrows the draw window to the
+   visibility cells a cull names (`#cullMainPass`), so per-cell sub-draws are expressible, and an
+   admitted cell keeps its block until a regroup, so the ordering is stable frame to frame. Gain
+   0–6 ms, depending on whether Turing's ZCULL rejects tiles for a discarding shader — the split
+   pass shows it.
 2. **Collapse the vertices the LOD gate discards.** Every level's material carries a fragment level
    gate (`world-impostor-surface.ts`), so a draw rasterises instances every fragment rejects. If a
    draw only admits its own level's instances, collapsing those vertices (w = 0) is 0 pixels. Check
