@@ -120,6 +120,49 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       shaded-fragment counter surfaced as `TN_FRAME_BUDGET.counters.engine` (the IR already has
       `atomicAdd` and atomic storage buffers — `shader/ir.h:132`).
 
+## What the armed frame still spends (2026-11-14)
+
+One page load, `TN_PREPASS` armed, overview, 1600×900, 4× MSAA, RTX 2080 `nvidia/turing`, hide the
+group for 4 samples (ABBA), median `__tnGpuSegments` scene column, base 38–40 ms. Fixing the probe
+first mattered: `bill.mjs` re-saved `__v` on the second "on" step, so its restore left every group
+hidden and each delta came out at half its real value.
+
+| bill | draws | triangles | Δ scene ms |
+| --- | --- | --- | --- |
+| `strata-props:horizon` | 30 | 5.69 M | −14.2 |
+| `strata-props:far` (whole-asset impostor cards) | 20 | 0.15 M | −9.7 |
+| ground base square | 1 | — | −5.5 |
+| `strata-props:local` | 30 | 4.04 M | −1.9 |
+| sun shadow (25 shadow draws, 56 k triangles) | — | 0.06 M | −0.9 |
+| streamed tiles · water | 1 · 2 | — | −0.7 · +0.5 |
+
+The prepass pays for **every** band, so a per-draw opt-out is not the next lever: arming it saves
+18.0 ms at overview (57.3 → 39.4) and still 7.7 ms with the horizon band hidden (33.8 → 26.1), so
+the horizon band alone owns 10.3 ms of that win. Made opaque instead (mask, `alphaTestNode`,
+`alphaTest` and `alphaToCoverage` stripped from its 30 materials, restore read back and verified),
+the horizon band costs 16.3 ms less and the far band 12.0 ms less — but the shipped frame with every
+mask stripped is 10 ms, so masked coverage is three quarters of this frame.
+
+**The 60 FPS gate is a look decision, not an engine one.** At overview the two far bands are 23.9 of
+39.4 ms and 84 % of the frame's 10.95 M triangles sit in them, drawn at their authored last LOD
+because `strata-props:horizon` asks `WorldCells` for no impostor atlas (`propWorld.ts`:
+`impostors: farInstances > 0`). Impostoring that ring and repairing the card look would save the
+band (~13 ms by the far bucket's 9.7 ms for 82 k cards) and still leave the frame near 26 ms, because
+the same masked cards then pay fill rate. Reaching 16.6 ms at overview and vista needs either a ring
+that stops drawing per-tree geometry past 700 m or a cheaper accepted look for its cutouts; both
+change pixels, which "look unchanged" forbids. Measured 2026-11-14.
+
+⚠️ Standing still at a fixed pose drifts the bill upward (38 → 56 ms at overview as
+`streamingInstances` reached 500 979), so a pose number is only comparable within seconds of entering
+it. Every figure above is from one page load, early.
+
+The unnatural silhouette on the mountains at overview and meadow-close is the `strata-props:far`
+impostor atlas, not this change: in one page at overview, `TN_PREPASS` off → on changes **0 pixels**
+in the top quarter of the frame (the 22 k pixels over 8 levels all sit in the swaying near foliage,
+y 344–720), hiding `strata-props:far` removes 38 962 of them and hiding `strata-props:horizon`
+removes none. Its tiles resolve to a coarse mip whose averaged alpha reads as a solid block at a few
+pixels; that is the defect to fix when the far bands get their look decision.
+
 ## Acceptance
 
 Ship only with all of: 0 changed pixels, `gpuSegmentScene` ≥ 2 ms better at every fixed pose, no CPU
