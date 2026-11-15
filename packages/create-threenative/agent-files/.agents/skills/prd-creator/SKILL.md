@@ -29,6 +29,19 @@ and **References**. Each needs a value or explicit `none` with a reason; a blank
 section blocks approval. Required texture search/download is step 5, after plan approval;
 record planned asset needs here without claiming assets have already been selected or downloaded.
 
+List every asset under **Asset slots** in `.agent/prd/PRD.md`, one row each: name, route, status
+(`placeholder` or `final`), and scale with bounding box. Pick the route per slot:
+
+- `procedural` (default): terrain, vegetation, simple or repeated shapes, and every first version.
+- `pre-made`: a generic prop that looks the same in any game, such as a wooden chair. Record its licence.
+- `custom`: an identity asset the player remembers this game by, such as the hero or a signature
+  vehicle. It is generated, then cleaned up, rigged and baked before it is `final`.
+
+The code loads each slot from one stable path, so a swap replaces the file and leaves gameplay code
+alone. Phase 1 (first playable) uses `procedural` and `pre-made` slots only. Phase 2 (polish) replaces
+identity slots with `custom` ones, one at a time, after the user approves the gameplay or when the
+judge's top gap is a placeholder. The visual judge does not score a `placeholder` slot on its looks.
+
 Write the concise plan to `.agent/prd/PRD.md`, its short player-facing summary to
 `.agent/prd/SUMMARY.md`, and implementation tasks to `.agent/tasks.json`. Tasks must be ordered,
 bounded to about 10 minutes each, carry a concrete pass check, and start with `"passes": false`.
@@ -50,3 +63,14 @@ Start implementation only after explicit approval and a clear execution instruct
 "execute", "implement", "build it", or an equivalent phrase. One message may contain both. After
 that handoff, execute the approved tasks without silently expanding the scope; repeat capability
 discovery only when the requested mechanics or target platforms change.
+
+## Execution goal
+
+At the handoff, start a `/goal` (or the host's persistent-goal equivalent) so execution continues
+across turns. The goal text always carries both conditions:
+
+- **Done:** every task in `.agent/tasks.json` has `"passes": true`.
+- **Stop:** the first of these ends the goal: the visual judge passes its bar, three judge rounds in a
+  row show no score gain, the cost cap is reached, or the user says stop or accepts the result.
+
+Start a goal only with its Stop condition. A goal without one keeps working after the user is done.
