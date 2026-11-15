@@ -103,7 +103,13 @@ const FOREST_LAKE: readonly IWaterProbe[] = [
   { at: [-70, 25], current: { x: 0, z: 0 }, surface: 13.3 },
   { at: [30, 25], current: { x: 0, z: 0 }, surface: 13.3 },
   { at: [36, 25], current: undefined, surface: undefined },
-  { at: [-70, -60], current: { x: 0, z: 0 }, surface: 13.3 },
+  // Since e47f8cf5a the lake floods only ground its seed reaches without crossing dry land, so the
+  // river's last station, past the basin's rim, keeps the river's own surface and current.
+  {
+    at: [-70, -60],
+    current: { x: 0.5890939748487893, z: 0.6804177311011625 },
+    surface: 11.612493975665346,
+  },
 ];
 
 /**
@@ -132,7 +138,7 @@ describe("the forest river", () => {
     expect(answers(forest, FOREST_RIVER)).toEqual(FOREST_RIVER);
   });
 
-  it("floods the lake's cap over the river's last station, and stops carrying there", () => {
+  it("stands at the lake's level inside its basin, and leaves the river past the rim its own surface", () => {
     expect(answers(forest, FOREST_LAKE)).toEqual(FOREST_LAKE);
   });
 });
@@ -199,8 +205,11 @@ describe("the footprint the store reports", () => {
       level: 13.730976740569075,
     });
     expect(forestBodies.footprintAt(-70, 25)).toEqual({ kind: "lake", level: 13.3 });
-    // The river's last station: the higher lake surface wins, so the footprint is the lake's.
-    expect(forestBodies.footprintAt(-70, -60)).toEqual({ kind: "lake", level: 13.3 });
+    // The river's last station lies past the basin's rim the lake floods to, so the river covers it.
+    expect(forestBodies.footprintAt(-70, -60)).toEqual({
+      kind: "river",
+      level: 11.612493975665346,
+    });
     expect(forestBodies.footprintAt(-96.6, -175)).toBeUndefined();
     const tundraBodies = waterBodies(tundra.rivers ?? [], tundra.lakes ?? [], field(tundra));
     expect(tundraBodies.footprintAt(65, 110)).toEqual({ kind: "lake", level: 28.8 });

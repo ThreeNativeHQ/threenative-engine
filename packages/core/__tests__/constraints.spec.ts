@@ -104,6 +104,10 @@ describe("core constraints", () => {
           // distances, pushers). It constructs no material, light, colour or shader; the look is the
           // kit's `src/render/grass.ts`. The appearance checks below cover it.
           file !== "grass-field.ts" &&
+          // ScatterField3D (PRD-889) draws the baked meshes and per-part materials the game hands it,
+          // by reference, through the same tile ring. It constructs no material, light, colour or
+          // shader; the word the filter trips on is the `Material` type of a game-supplied part.
+          file !== "scatter-field.ts" &&
           // These exact seams carry the formerly allowed WorldCells code: package surface identity,
           // load flight counts and numeric contracts. The same appearance checks below cover each.
           file !== "world-cell-data.ts" &&
