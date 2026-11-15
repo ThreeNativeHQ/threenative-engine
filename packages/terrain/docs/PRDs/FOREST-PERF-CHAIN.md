@@ -36,11 +36,17 @@
   page**: `tnPublishedLodRange` read all zeros and `material.uniforms.lod` was null in this build.
   It needs an engine-side counted gate.
 - **Step 3 built, measured, box left open (2026-11-14).** `?lodCollapse=1` collapses the vertices
-  of instances the level gate provably discards. Both halves fall 0.3–0.7 ms at overview, vista and
-  meadow-close (2 paired runs). River and player stay flat. No arm-attributable pixel at any pose,
-  clock frozen. The 83–99 % count was row capacity, not submitted draws, so it overstated the waste
-  about 20×. The depth half is drawn foliage the gate keeps. Details: PRD-888 Phase 2, lever 2 box.
-- **Not started:** steps 2, 4, 5, 6, 7. No other PR was opened.
+  of instances the level gate provably discards. Both halves fall 0.22–0.71 ms at overview, vista
+  and meadow-close (2 paired runs). River and player stay flat. No arm-attributable pixel at any
+  pose, clock frozen. The 83–99 % count was row capacity, not submitted draws, so it overstated the
+  waste about 20×. Details: PRD-888 Phase 2, lever 2 box.
+- **Reviewer round 3 AUTHORIZED step 7** (measure only); refused step 4 again (the far band is
+  collar mesh, the card fix has no measured performance case) and step 5 (PRD-891 does not touch the
+  depth half).
+- **Step 7 stopped on its own condition.** `?tnOcclusion=measure` arms the test, but every prop
+  world runs `gpuScene: false`, so the GPU scene's cull kernel never runs: `samples: 0`, `share: 0`
+  at overview and vista. Written under PRD-888 lever 3. No go/no-go number exists.
+- **Not started:** steps 2, 4, 5, 6. No other PR was opened.
 
 ## Chain
 

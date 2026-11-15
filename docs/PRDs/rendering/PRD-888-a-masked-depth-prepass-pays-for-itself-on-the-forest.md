@@ -117,7 +117,8 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       overview 25.90/26.43 → 25.44/25.89 · 12.33/12.45 → 11.62/11.94;
       river 5.00/5.14 → 4.96/5.06 · 9.10/9.13 → 9.16/9.16;
       vista 23.92/26.48 → 23.65/26.15 · 10.04/10.34 → 9.59/9.73.
-      Both halves fall 0.3–0.7 ms at overview, vista and meadow-close in both runs; river and player
+      Both halves fall 0.22–0.71 ms at overview, vista and meadow-close in both runs (the run 2
+      overview prepass rows overlap: one off row, 25.70, is under every on row); river and player
       are flat within noise, so "both halves down at all five poses" is not met.
       Pixels, page clock frozen (`performance.now` and the rAF time held), shots off/on/off/on after
       20 frames, 2 runs: 0 changed pixels on every adjacent off→on pair at player, overview and
@@ -127,7 +128,9 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       under "Answered from the CPU"). Diagnostics, overview: collapse forced on every LOD instance
       (threshold 0) takes the prepass 25.56 → 1.71 ms, so the mechanism works on the owned engine;
       the same collapse ignoring the published range reads 25.05/25.71 → 24.65/24.64 ms, so the range
-      guard is not what holds the gain back. 2026-11-14.
+      guard is not what holds the gain back. Reviewer round 3 (fresh read-only Opus, high): the
+      collapse is conservative on every mask path (ramp, temporal eyes, published `.y`/`.z`/`.w`,
+      shadow floor, last level). 2026-11-14.
 - [ ] Refuse and fall back to the shipped path for: transparent/blended materials,
       `depthWrite = false`, `frag_depth` writers, fragment side effects, coplanar ties (two-sided
       cards built as two meshes).
@@ -345,10 +348,13 @@ empty.
 20×. It sums each row's instance *capacity* (`object.count` records of `instanceMatrix`) by 3D
 distance from the camera, but the engine draws only the records its CPU filter admits (10.95 M
 planned triangles against 36.9 M capacity), and most of the "fully faded" records are never
-submitted. The GPU answers it: collapsing every instance the gate provably discards saves 0.3–0.7 ms
-per half at overview, vista and meadow-close, and collapsing *every* LOD instance takes the overview
-prepass from 25.6 to 1.7 ms. So the 24 ms depth half is drawn foliage that the gate keeps, not
-placement waste. Levers that cut drawn masked coverage (the far cards, Hi-Z) are where it sits.
+submitted. The GPU answers it: collapsing every instance the gate provably discards saves
+0.22–0.71 ms per half at overview, vista and meadow-close, and collapsing *every* LOD-gated instance
+(fade-band rows and cards included) takes the overview prepass from 25.6 to 1.7 ms. So LOD-gated
+geometry owns about 24 ms of the depth half, and the fully faded part of it about 0.5 ms. How the
+rest splits between whole instances, the dithered fade band and the cards is not measured.
+The camera-based eye was not the error: at non-player views the kit's `follow` is the camera, and
+`placementReach` makes the gate 3D, as the probe assumed. The probe skips `distanceBias`.
 
 ### Method caveats
 
@@ -398,6 +404,13 @@ that still needs the frozen-clock protocol, which the open box above keeps.
    per-band triangles against the admitted levels first.
 3. **Conservative Hi-Z occlusion** for the far bands: 0 pixels, but a large build, and it pays only
    where ridges hide the ring.
+   **Go/no-go, chain step 7, 2026-11-14: not measurable on the kit as it ships.** `?tnOcclusion=measure`
+   arms the test (`stats().gpuScene.occlusion.mode` reads `measure` on all 6 prop worlds), but the
+   test runs in the GPU scene's cull kernel and the kit loads every prop world with `gpuScene: false`
+   (`propWorld.ts`), so each reads `gpuScene.on: false, reason: "option-off"`, `samples: 0`,
+   `share: 0` at overview and vista (`TN_WORLD_GPU_SCENE off reason=option-off`). PRD-489's formula
+   has no share to multiply. Measuring it needs the prop worlds on the GPU scene, which changes the
+   draw path (no published ranges) and is a kit change, not a measurement: not done.
 - ❌ **Dropped: alpha-to-coverage in the prepass rows.** There is none to drop:
   `pipeline_cache.cpp` never sets `alphaToCoverageEnabled`; this engine's "a2c" is `smoothstep` +
   `fwidth` + discard in `standard.cpp`, which cuts the same fragments as a hard cutoff. That is why
