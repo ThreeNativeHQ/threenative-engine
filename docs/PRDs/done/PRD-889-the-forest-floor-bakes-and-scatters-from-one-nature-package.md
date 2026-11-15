@@ -104,7 +104,7 @@ flowchart LR
 **Files:** `packages/core/src/scatter-field.ts` (new), the chunk ring extracted from `packages/core/src/grass-field.ts`, the core export and API surface record, `packages/core/__tests__/scatter-field.spec.ts`.
 **Implementation:** search the manifest first (`InstancedBatch`, `attachInstancedLod`, `meshSections`) and reuse what fits. `place()` returning false skips a candidate; a bad geometry throws naming the layer.
 **Verification:** AC-4 and AC-5, both met.
-- [x] `ScatterField3D` streams tiles round a follow point inside its build budget, swaps LOD by distance and keeps the shuffled-prefix share; one seed gives the same instance digest twice. proof: AC-4 (8/8).
+- [x] `ScatterField3D` streams tiles round a follow point inside its build budget, swaps LOD by distance and keeps the shuffled-prefix share; one seed gives the same instance digest twice. Its capability row carries the three queries its `situations` were written from, and `search.spec.ts` pins the rank, so a scoring change cannot quietly drop it from its own query. proof: AC-4 (8/8), `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` (114/114).
 - [x] The chunk ring, budget, seeded hash and shuffle moved out of `grass-field.ts` into `tile-ring.ts`; `GrassField3D`'s instance buffers hash identically before and after the extraction (`30e4d08d…6056`, pinned in the spec). proof: AC-4 (grass 8/8).
 - [x] The owned engine draws the scatter on the packaged desktop host with `TN_RENDER_PROJECTION` `projecting: true, reasonCode: hostProjected` and 0 `notWorthwhile` in the whole run. proof: AC-5.
 

@@ -718,6 +718,23 @@ describe("threenative-engine-mcp", () => {
     expect(searchResults(query, workspaceManifest)[0]?.symbol).toBe("bakeVegetation");
   });
 
+  /**
+   * The bake that grows the debris is half the answer; the other half is the system that scatters it.
+   * Without a pinned rank, a scoring change could quietly drop `ScatterField3D` from the very query
+   * its own situations were written for, and nothing would fail — the row would still be in the
+   * manifest and still be invisible.
+   */
+  it.each([
+    ["scatter fallen logs, twigs and leaf litter on the forest floor", 1],
+    ["stream instanced props around the player", 1],
+    ["scatter rocks and debris over terrain", 3],
+  ])("finds the runtime scatter for '%s' in the top %i", (query, within) => {
+    const symbols = searchResults(query, workspaceManifest)
+      .slice(0, within)
+      .map((row) => row.symbol);
+    expect(symbols).toContain("ScatterField3D");
+  });
+
   // PR #643 (PRD-860, 861, 867): every streaming and decoder abstraction answers its own words.
   it.each([
     ["game takes too long to download before first play", "createAssetLoader"],
