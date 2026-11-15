@@ -273,10 +273,34 @@ counts, not rasterised ones: `Σ instances × triangles of the geometry the row 
 36.9 M capacity triangles at overview against the 10.95 M the engine reports planning, so most of a
 row's instances are never drawn; the ratio is the cull, not waste.
 
-**Unanswered, and it is the number step 3 needs:** how many of a row's instances its draw's level gate
-rejects. `tnPublishedLodRange` read all zeros at every row and `material.uniforms.lod` was null, so
-the admitted level is not reachable from the page in this build; the measurement has to come from the
-engine (a counted gate), or from the renderer's own per-row plan.
+**Answered from the CPU, 2026-11-15 — and it is the whole step-3 case.** The gate is
+`world-impostor-surface.ts`'s `levelMask`: `span = min(gate, gate - previous) * width`, `mix =
+(distance - gate)/span + 0.5 + (random - 0.5) * 0.5`, and `lod == gate` draws only where `noise < mix`.
+So an instance whose distance is past `gate + 0.75 * span` has **every** fragment discarded at the
+worst random draw, while its triangles are still submitted and rasterised. With the kit's own numbers
+(`props.ts`: spruce `LOD_STEPS = [80, 105]`, `LOD_BANDS.hysteresis = 0.2`) that threshold is 92.0 m at
+level 0 and 108.8 m at level 1. Counting each row's instances from its `instanceMatrix` against that
+threshold, at the same two poses:
+
+| pose | band · level | instances | triangles | past the gate | **fully faded (all fragments discarded)** |
+| --- | --- | --- | --- | --- | --- |
+| overview | horizon · L0 | 15 897 | 9 940 732 | 15 285 | **14 597 · 8 867 380 tris** |
+| overview | horizon · L1 | 15 036 | 7 999 042 | 12 884 | **12 792 · 6 405 044 tris** |
+| overview | far · L0 | 7 529 | 165 026 | 7 529 | **7 529 · 165 026** |
+| overview | far · L1 | 7 593 | 143 586 | 7 593 | **7 593 · 143 586** |
+| overview | local · L0/L1 | 12 170 | 251 442 | 12 170 | **12 170 · 251 442** |
+| vista | horizon · L0 | 13 062 | 6 669 614 | 13 062 | **13 062 · 6 669 614** |
+| vista | horizon · L1 | 12 891 | 5 600 762 | 12 891 | **12 891 · 5 600 762** |
+| vista | far · L0/L1 | 19 022 | 659 378 | 18 919 | **18 884 · 593 788** |
+
+**At overview 15.84 M of the 19.1 M triangles those rows hold (83 %) are rasterised only to have
+every fragment thrown away; at vista 12.87 M of 12.93 M (99 %).** That is more than the engine's whole
+10.95 M planned-triangle count, at both poses, and it is exactly the fraction step 3 removes at 0
+pixels by collapsing the instance (w = 0) or by not drawing it. It also says the loss is not the
+fragment program: it is placement — these instances are in a level row far coarser than their
+distance, and the CPU refilter that should have moved them either has not run since the pose changed
+or admits the collar conservatively. That is the next question, and it is a placement question, not
+a shader one.
 
 ### Method caveats
 
