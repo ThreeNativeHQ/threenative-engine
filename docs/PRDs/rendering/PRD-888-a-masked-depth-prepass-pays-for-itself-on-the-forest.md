@@ -102,6 +102,32 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       registered as `native_engine_prepass_modes`.
       The extra depth store and load costs nothing measurable: total frame p50 at overview is
       38.81/38.89 ms split against 42.03/39.14 one-pass, and 40.01/38.59 against 38.23/38.68 at vista.
+- [ ] Lever 2 (chain step 3): a draw only rasterises the instances of its own level.
+      `?lodCollapse=1` (`TN_LOD_COLLAPSE`, live off: `globalThis.__tnLodCollapse = false`) collapses
+      to one point the vertices of an instance past `lodFadedPast` (`gate + 0.75·span`, the worst
+      random draw, +0.1 %) from every eye the masks read, unless its published range or a swap fade
+      holds it whole (`world-impostor-surface.ts`, `collapseFadedVertices`). Unset is the shipped
+      program, byte for byte. Red-green: `world-impostor-surface.spec.ts` "the LOD vertex collapse",
+      2 cases, red without the change, green with it.
+      **Open: the gain is real but about 20× under the projection, and two poses do not move.**
+      Paired, one page load, split arm, ABBA × 2 with the opening arm rotated per pose, 2 runs, RTX
+      2080 `nvidia/turing`, 1600×900, off → on (run 1 / run 2): prepass · shade ms —
+      player 5.16/5.31 → 4.92/5.42 · 7.88/8.04 → 7.82/7.88;
+      meadow-close 11.55/11.64 → 10.96/11.32 · 8.64/8.79 → 8.42/8.51;
+      overview 25.90/26.43 → 25.44/25.89 · 12.33/12.45 → 11.62/11.94;
+      river 5.00/5.14 → 4.96/5.06 · 9.10/9.13 → 9.16/9.16;
+      vista 23.92/26.48 → 23.65/26.15 · 10.04/10.34 → 9.59/9.73.
+      Both halves fall 0.3–0.7 ms at overview, vista and meadow-close in both runs; river and player
+      are flat within noise, so "both halves down at all five poses" is not met.
+      Pixels, page clock frozen (`performance.now` and the rAF time held), shots off/on/off/on after
+      20 frames, 2 runs: 0 changed pixels on every adjacent off→on pair at player, overview and
+      river; at meadow-close and vista every non-zero pair (4 732 and 42 px) equals a same-arm
+      control pair exactly, so it is a shot settling, not the arm.
+      The faded count was **not re-run**: the CPU count below cannot show it (see the correction
+      under "Answered from the CPU"). Diagnostics, overview: collapse forced on every LOD instance
+      (threshold 0) takes the prepass 25.56 → 1.71 ms, so the mechanism works on the owned engine;
+      the same collapse ignoring the published range reads 25.05/25.71 → 24.65/24.64 ms, so the range
+      guard is not what holds the gain back. 2026-11-14.
 - [ ] Refuse and fall back to the shipped path for: transparent/blended materials,
       `depthWrite = false`, `frag_depth` writers, fragment side effects, coplanar ties (two-sided
       cards built as two meshes).
@@ -314,6 +340,15 @@ stop drawing them**, and it must be worth 0 pixels because every one of their fr
 discarded. Acceptance for the change: the same five-pose bill, with the prepass and shade halves both
 down and a frozen-clock 0-pixel diff, and the count above re-run afterwards to show the faded set is
 empty.
+
+**Correction, 2026-11-14 (step 3 built and measured).** The count above overstates the waste about
+20×. It sums each row's instance *capacity* (`object.count` records of `instanceMatrix`) by 3D
+distance from the camera, but the engine draws only the records its CPU filter admits (10.95 M
+planned triangles against 36.9 M capacity), and most of the "fully faded" records are never
+submitted. The GPU answers it: collapsing every instance the gate provably discards saves 0.3–0.7 ms
+per half at overview, vista and meadow-close, and collapsing *every* LOD instance takes the overview
+prepass from 25.6 to 1.7 ms. So the 24 ms depth half is drawn foliage that the gate keeps, not
+placement waste. Levers that cut drawn masked coverage (the far cards, Hi-Z) are where it sits.
 
 ### Method caveats
 

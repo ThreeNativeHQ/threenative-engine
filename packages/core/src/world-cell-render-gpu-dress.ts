@@ -17,6 +17,7 @@ import {
 import {
   type ITemporalLod,
   advanceTemporalLod,
+  syncLodCollapse,
   worldLodMaterial,
 } from "./render/world-impostor-surface.js";
 import type { IRendererLike } from "./renderer.js";
@@ -244,6 +245,7 @@ export class CellGpuDress {
   updateLodEye(x: number, y: number, z: number): void {
     this.#lodEye.value.set(x, y, z);
     this.#lodClock.value = (performance.now() - this.#lodClockOrigin) / 1000;
+    syncLodCollapse();
     if (this.#host.lodTransition() !== "temporal") return;
     advanceTemporalLod(this.#temporalLod, this.#lodEye.value, this.#lodClock.value);
     this.#lodAlpha.value = this.#temporalLod.alpha;
