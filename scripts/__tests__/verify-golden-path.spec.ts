@@ -24,10 +24,22 @@ import {
   runGoldenPathTemplate,
   scaffold,
   scenarioCap,
+  threadReportOf,
   verifyPackedMutationControl,
   workspacePackages,
   writeScaffoldScript,
 } from "../verify-golden-path.js";
+
+describe("static host thread probe", () => {
+  it("reads the thread verdict at the first drawn frame, before any 300-tick window", () => {
+    expect(threadReportOf('TN_FIRST_FRAME:{"frameMs":412,"threads":"on (3)"}')).toBe("on (3)");
+    expect(threadReportOf('TN_FRAME_BUDGET:{"fps":2,"threads":"off (single)"}')).toBe(
+      "off (single)",
+    );
+    expect(threadReportOf('TN_FIRST_FRAME:{"frameMs":412}')).toBeUndefined();
+    expect(threadReportOf('TN_QUALITY_TIER low "threads":"on (3)"')).toBeUndefined();
+  });
+});
 
 describe("golden path matrix", () => {
   it("rejects a packed engine manifest without the networking capability", async () => {
