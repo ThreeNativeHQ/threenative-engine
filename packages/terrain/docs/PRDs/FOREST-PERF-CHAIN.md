@@ -16,7 +16,7 @@
 - Report real results only. "Unverified" is a valid result.
 - Before you end the run, send one `attention-ping` with the completion %, the boxes ticked and the ms saved per pose.
 
-## Run log — 2026-11-15 (one session, this branch)
+## Run log — 2026-11-14 (one session, this branch)
 
 - **Step 0 done.** Rebased clean onto `origin/prd-584-forest-60fps`.
 - **Step 1 done and measured.** `TN_PREPASS=split` puts the depth rows in their own timed pass; the
@@ -46,7 +46,14 @@
 - **Step 7 stopped on its own condition.** `?tnOcclusion=measure` arms the test, but every prop
   world runs `gpuScene: false`, so the GPU scene's cull kernel never runs: `samples: 0`, `share: 0`
   at overview and vista. Written under PRD-888 lever 3. No go/no-go number exists.
-- **Not started:** steps 2, 4, 5, 6. No other PR was opened.
+- **Reviewer round 4 REFUSED step 6** (PRD-890 is a look fix with only a 0.5 ms non-regression
+  budget, no frame-time case on the depth half, and it needs a visual judge). It confirmed the
+  step-7 stop: occlusion is measured only inside the GPU scene's dispatch
+  (`world-gpu-scene.ts:876`), so `share: 0` there means not measured. **The chain ends here.**
+- **Not run:** steps 2, 4, 5, 6 (refused by review). No other PR was opened.
+- **Follow-ups for a later session:** a local `gpuScene: true` arm could give the Hi-Z geometric
+  share. The occlusion report reads `share: 0, reason: ""` when it sampled nothing, and the rule
+  "a missing observation fails" says it should read "not measured".
 
 ## Chain
 
