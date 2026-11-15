@@ -1022,12 +1022,15 @@ export function valeGround(
       c.copy(soil).lerp(moss, 0.35 + 0.55 * smooth(0.35, 0.75, wave(x + 40, z - 17, 0.27)));
       c.lerp(mossBright, smooth(0.6, 0.85, wave(x - 3, z + 5, 0.45)) * 0.5);
       c.lerp(meadow, smooth(0.66, 0.82, wave(x * 0.7, z * 0.7 + 9, 0.21)) * 0.3);
+      // Leaf litter and bare soil under the old trees. The same zone thins the grass and gathers the
+      // scattered debris, so the ground the props stand on is the ground they are meant for.
       let nearTree = 0;
       for (const [tx, tz, ts] of site.trees) {
         const d = Math.hypot(x - tx, z - tz);
-        if (d < 5 * ts) nearTree = Math.max(nearTree, 1 - smooth(1.4 * ts, 4.5 * ts, d));
+        nearTree = Math.max(nearTree, 1 - smooth(1.2 * ts, 4.2 * ts, d));
       }
-      c.lerp(litter, nearTree * 0.6 * (0.6 + 0.4 * wave(x, z, 0.9)));
+      c.lerp(litter, nearTree * (0.62 + 0.34 * wave(x, z, 0.9)));
+      c.lerp(soil, nearTree * 0.3);
       // Dark soil under the path, the flagstones on top of it.
       const off = Math.abs(x - site.pathX(z)) + (wave(x, z, 1.3) - 0.5) * 0.5;
       if (z > site.clearing.north - 9 && z < site.clearing.south + 1)
@@ -1089,7 +1092,9 @@ export function floorPart(
     // The bake's own normals, never recomputed: see `mossBark`'s `keepNormals`.
     const baked = mesh.geometry.index === null ? mesh.geometry : mesh.geometry.toNonIndexed();
     return {
-      geometry: mossBark(baked, 0.55, true),
+      // A little moss on the shoulders, never enough to paint a log the colour of the ground it
+      // lies on: the debris has to read as deadwood, not as another patch of grass.
+      geometry: mossBark(baked, 0.18, true),
       material: surfaced(0xffffff, "bark", { vertexColors: true }),
     };
   }

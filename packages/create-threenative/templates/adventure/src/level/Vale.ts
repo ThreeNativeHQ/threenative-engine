@@ -60,6 +60,11 @@ export interface IVale {
   readonly clear: (x: number, z: number, width: number) => boolean;
   /** The old trees that frame the clearing, with the trunk radius nothing scatters inside. */
   readonly trees: readonly { readonly radius: number; readonly x: number; readonly z: number }[];
+  /**
+   * 0..1 leaf litter under the old trees, easing out to the open meadow. The ground paints its soil
+   * by it, the grass thins by it and the debris scatters by it, so the three cannot disagree.
+   */
+  readonly floorZone: (x: number, z: number) => number;
 }
 
 // ------------------------------------------------------------------------------------ the ground
@@ -397,10 +402,19 @@ export function buildVale(rng: () => number): IVale {
   ground.inner.userData.solid = true;
   group.add(planting.group, ground.inner, ground.outer);
 
+  const oldTrees = trees.map(([x, z, s]) => ({ radius: 0.6 * s, x, z }));
   return {
     caveExit: at(0, -17),
     clear: site.clear,
-    trees: trees.map(([x, z, s]) => ({ radius: 0.6 * s, x, z })),
+    floorZone: (x, z) => {
+      let zone = 0;
+      for (const tree of oldTrees) {
+        const d = Math.hypot(x - tree.x, z - tree.z);
+        zone = Math.max(zone, 1 - smooth(tree.radius * 2.4, tree.radius * 8, d));
+      }
+      return zone;
+    },
+    trees: oldTrees,
     caveMouth: at(0, -23),
     dummies: [at(-1.6, 4), at(1.8, 4.5)],
     group,
@@ -446,35 +460,35 @@ interface IFloorProp {
 const FLOOR_PROPS: Readonly<Record<string, IFloorProp>> = {
   // The kit's grass stands knee-high, so a prop that should read is sized to clear it.
   fern: {
-    density: 0.16,
+    density: 0.5,
     drawDistance: 24,
     files: ["floor-fern-0.glb"],
     kind: "frond",
     scale: [1.5, 2.2],
   },
   litter: {
-    density: 0.32,
+    density: 1.6,
     drawDistance: 18,
     files: ["floor-litter-0.glb"],
     kind: "litter",
     scale: [2.2, 3.2],
   },
   log: {
-    density: 0.035,
+    density: 0.08,
     drawDistance: 30,
     files: ["floor-log-0.glb", "floor-log-1.glb"],
     kind: "wood",
     scale: [1.6, 2.2],
   },
   stump: {
-    density: 0.03,
+    density: 0.07,
     drawDistance: 30,
     files: ["floor-stump-0.glb"],
     kind: "wood",
     scale: [1.5, 2.1],
   },
   twig: {
-    density: 0.16,
+    density: 0.35,
     drawDistance: 20,
     files: ["floor-twig-0.glb"],
     kind: "wood",
@@ -553,6 +567,9 @@ export async function buildWoodlandFloor(
       chunkSize: 32,
       density: prop.density,
       drawDistance: prop.drawDistance,
+      // The same zone the ground paints and the grass thins by: debris gathers at the foot of the
+      // old trees instead of sprinkling evenly over ground that is all grass.
+      getDensity: (x, z) => vale.floorZone(x, z),
       getHeight: valeHeight,
       parts: chains.map(({ geometries, material }) => ({ lods: geometries, material })),
       place: (point, out) => {

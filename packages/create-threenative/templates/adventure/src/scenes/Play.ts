@@ -181,7 +181,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       chunkSize: 16,
       density: 18,
       drawDistance: 40,
-      getDensity: grassCover,
+      // Thinned under the old trees, where the floor's litter lies: knee-high grass over a flat leaf
+      // layer hides the very thing the layer is there to show.
+      getDensity: (x: number, z: number) => grassCover(x, z) * (1 - 0.78 * vale.floorZone(x, z)),
       getHeight: valeHeight,
       lodDistances: [7, 16],
       material: grassMaterial,
