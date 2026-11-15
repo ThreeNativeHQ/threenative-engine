@@ -100,7 +100,8 @@ flowchart LR
 **Verification:** AC-4, then AC-5 after Phase 3 gives the scene.
 
 #### Phase 3: the consumer and the map
-**Status:** NOT STARTED
+**Status:** PARTIAL — AC-8 done (the nature map). The consumer scene, its playtest and the judge are open, and AC-5 needs the same scene.
 **Files:** `templates/adventure/src/level/Vale.ts`, `templates/adventure/src/render/foliage.ts`, the kit assets, `template-playtests/adventure/woodland-floor.playtest.json`, `packages/procedural-vegetation/README.md`.
 **Implementation:** bake the GLBs into the kit's assets at kit build, place them by the vale's existing tree mask, and keep them off paths and the arena.
 **Verification:** AC-6 to AC-8.
+**Open:** the adventure kit loads no assets at all — its trees, props and ground are generated source in `src/render/` — so "bake the GLBs into the kit's assets at kit build" adds the kit's first asset pipeline, next to `create-threenative`'s scaffold step. That is its own change, and AC-6's scenario has to prove it.
