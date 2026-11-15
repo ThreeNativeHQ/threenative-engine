@@ -1,10 +1,7 @@
 {
   "packages": {
     "@threenative/assets": {
-      "exports": [
-        ".",
-        "./package.json"
-      ],
+      "exports": [".", "./package.json"],
       "symbols": {
         "@threenative/assets#atlasManifest": "export function atlasManifest(result: IAtlasResult): string { … }",
         "@threenative/assets#audioPass": "export function audioPass(options: IAudioPassOptions = { … }",
@@ -38,11 +35,7 @@
       }
     },
     "@threenative/blender-bridge": {
-      "exports": [
-        ".",
-        "./bridge",
-        "./package.json"
-      ],
+      "exports": [".", "./bridge", "./package.json"],
       "symbols": {}
     },
     "@threenative/core": {
@@ -334,10 +327,7 @@
       }
     },
     "@threenative/metahuman": {
-      "exports": [
-        ".",
-        "./package.json"
-      ],
+      "exports": [".", "./package.json"],
       "symbols": {
         "@threenative/metahuman#assertAssetPath": "export function assertAssetPath(path: string): string { … }",
         "@threenative/metahuman#loadMetaHuman": "loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> => createMetaHuman( { … }",
@@ -347,11 +337,7 @@
       }
     },
     "@threenative/physics": {
-      "exports": [
-        ".",
-        "./navigation",
-        "./package.json"
-      ],
+      "exports": [".", "./navigation", "./package.json"],
       "symbols": {
         "@threenative/physics/navigation#NavigationAgent3D": "export class NavigationAgent3D { … }",
         "@threenative/physics/navigation#NavigationObstacle3D": "export class NavigationObstacle3D { … }",
@@ -376,14 +362,7 @@
       }
     },
     "@threenative/playtest": {
-      "exports": [
-        ".",
-        "./capture",
-        "./package.json",
-        "./protocol",
-        "./runner",
-        "./three"
-      ],
+      "exports": [".", "./capture", "./package.json", "./protocol", "./runner", "./three"],
       "symbols": {
         "@threenative/playtest/capture#assertCaptureNotBlank": "export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
         "@threenative/playtest/capture#assertDesktopCaptureNotBlank": "export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
@@ -496,11 +475,7 @@
       }
     },
     "@threenative/procedural-animals": {
-      "exports": [
-        ".",
-        "./build",
-        "./package.json"
-      ],
+      "exports": [".", "./build", "./package.json"],
       "symbols": {
         "@threenative/procedural-animals/build#animalBakePass": "export function animalBakePass() { … }",
         "@threenative/procedural-animals/build#bakeWolf": "export async function bakeWolf(options: IWolfBakeOptions): Promise<ArrayBuffer> { … }",
@@ -512,20 +487,14 @@
       }
     },
     "@threenative/procedural-vegetation": {
-      "exports": [
-        ".",
-        "./package.json"
-      ],
+      "exports": [".", "./package.json"],
       "symbols": {
         "@threenative/procedural-vegetation#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> { … }",
         "@threenative/procedural-vegetation#vegetationPresets": "export function vegetationPresets(): IVegetationPreset[] { … }"
       }
     },
     "@threenative/raw-unreal": {
-      "exports": [
-        ".",
-        "./package.json"
-      ],
+      "exports": [".", "./package.json"],
       "symbols": {
         "@threenative/raw-unreal#createThreeGeometry": "export function createThreeGeometry(decoded: IDecodedUAssetStaticMesh): BufferGeometry { … }",
         "@threenative/raw-unreal#createThreeObject": "export function createThreeObject( decoded: IDecodedUAssetStaticMesh, options: IThreeAdapterOptions = { … }",
@@ -646,16 +615,11 @@
       }
     },
     "@threenative/three-native": {
-      "exports": [
-        "./package.json"
-      ],
+      "exports": ["./package.json"],
       "symbols": {}
     },
     "@threenative/ueformat": {
-      "exports": [
-        ".",
-        "./package.json"
-      ],
+      "exports": [".", "./package.json"],
       "symbols": {
         "@threenative/ueformat#createThreeGeometry": "export function createThreeGeometry( lod: IUEModelLOD, adapterOptions: IThreeAdapterOptions = { … }",
         "@threenative/ueformat#createThreeObject": "export function createThreeObject( model: IUEModelData, adapterOptions: IThreeAdapterOptions = { … }",
@@ -666,10 +630,7 @@
       }
     },
     "@threenative/ui": {
-      "exports": [
-        ".",
-        "./package.json"
-      ],
+      "exports": [".", "./package.json"],
       "symbols": {
         "@threenative/ui#DebugOverlay": "export function DebugOverlay() { … }",
         "@threenative/ui#GameCanvas": "export function GameCanvas<TState extends Record<string, unknown>, TPhysics>( { … }",
@@ -681,27 +642,15 @@
       }
     },
     "create-threenative": {
-      "exports": [
-        ".",
-        "./package.json",
-        "./quality",
-        "./terrain-kit",
-        "./web-brand"
-      ],
+      "exports": [".", "./package.json", "./quality", "./terrain-kit", "./web-brand"],
       "symbols": {}
     },
     "threenative-animation-mcp": {
-      "exports": [
-        ".",
-        "./package.json"
-      ],
+      "exports": [".", "./package.json"],
       "symbols": {}
     },
     "threenative-engine-mcp": {
-      "exports": [
-        ".",
-        "./package.json"
-      ],
+      "exports": [".", "./package.json"],
       "symbols": {}
     }
   }
