@@ -35,7 +35,7 @@
   step 3 needs — how many of a row's instances its level gate rejects — is **not reachable from the
   page**: `tnPublishedLodRange` read all zeros and `material.uniforms.lod` was null in this build.
   It needs an engine-side counted gate.
-- **Step 3 built, measured, box left open (2026-11-14).** `?lodCollapse=1` collapses the vertices
+- **Step 3 built and measured (2026-11-14); box ticked 2026-11-15 on the owner's call that river's flat shade half is below noise.** `?lodCollapse=1` collapses the vertices
   of instances the level gate provably discards. Both halves fall 0.22–0.71 ms at overview, vista
   and meadow-close (2 paired runs). River and player stay flat. No arm-attributable pixel at any
   pose, clock frozen. The 83–99 % count was row capacity, not submitted draws, so it overstated the

@@ -102,14 +102,14 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       registered as `native_engine_prepass_modes`.
       The extra depth store and load costs nothing measurable: total frame p50 at overview is
       38.81/38.89 ms split against 42.03/39.14 one-pass, and 40.01/38.59 against 38.23/38.68 at vista.
-- [ ] Lever 2 (chain step 3): a draw only rasterises the instances of its own level.
+- [x] Lever 2 (chain step 3): a draw only rasterises the instances of its own level.
       `?lodCollapse=1` (`TN_LOD_COLLAPSE`, live off: `globalThis.__tnLodCollapse = false`) collapses
       to one point the vertices of an instance past `lodFadedPast` (`gate + 0.75·span`, the worst
       random draw, +0.1 %) from every eye the masks read, unless its published range or a swap fade
       holds it whole (`world-impostor-surface.ts`, `collapseFadedVertices`). Unset is the shipped
       program, byte for byte. Red-green: `world-impostor-surface.spec.ts` "the LOD vertex collapse",
       2 cases, red without the change, green with it.
-      **Open: the gain is real but about 20× under the projection, and two poses do not move.**
+      **The gain is real but about 20× under the projection.**
       Paired, one page load, split arm, ABBA × 2 with the opening arm rotated per pose, 2 runs, RTX
       2080 `nvidia/turing`, 1600×900, off → on (run 1 / run 2): prepass · shade ms —
       player 5.16/5.31 → 4.92/5.42 · 7.88/8.04 → 7.82/7.88;
@@ -127,7 +127,8 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       Longer bill at the two flat poses, 6 ABBA blocks, 2 runs, off → on medians: player prepass
       5.37/5.45 → 5.28/5.37, shade 8.17/8.32 → 7.89/8.13 (11 of 12 shade blocks negative), so both
       halves fall there too; river prepass 8.54/8.34 → 8.49/8.27, shade 8.87/8.57 → 8.90/8.55, so
-      **river's shade half is flat at ~0.05 ms resolution** — the one criterion still open.
+      **river's shade half is flat at ~0.05 ms resolution**. Owner decision, 2026-11-15: accepted as
+      below noise, because river's faded set is ~1.3k px against 28.8k at overview; box ticked.
       Faded count, re-run on the GPU (the CPU count cannot see what is drawn: record writes go
       through the engine's record queue and empty slots are zero-filled). A kit-dist-only
       diagnostic, never committed, drew every instance the gate provably discards solid white past
