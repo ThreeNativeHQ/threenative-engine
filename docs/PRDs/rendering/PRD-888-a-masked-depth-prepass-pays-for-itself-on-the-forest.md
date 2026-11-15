@@ -63,6 +63,17 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       freezing the shadow focus (no change), runtime `receiveShadow = false` (no change), collar tree
       trim (no change), `alphaAntialiasing: false` (no change), `minimumProjectedPixels: 2` (no
       change), `renderer.samples: 2` (unsupported: the engine draws 1 or 4).
+- [x] Falsify the case before building: strip the discard in place (`maskNode = null`,
+      `alphaTestNode = null`, `alphaTest = 0`, `alphaToCoverage = false` on the 68–90 masked
+      materials), paired ABBA in one page load, 2 runs, RTX 2080 `nvidia/turing`, 1600×900, 4× MSAA.
+      `gpuSegmentScene` base → no-discard: player 27.9/28.4 → 14.3/14.2, meadow-close 32.7/31.8 →
+      10.4/10.7, overview 54.0/53.5 → 15.0/14.6, river 26.5/26.6 → 11.7/11.8, vista 50.3/57.4 →
+      13.8/13.2 ms. This is an upper bound, because solid cards also hide ground. Ground drawn after
+      the trees (`renderOrder = 10`): −0.2 to −1.9 ms, under the 2 ms bar. proof: paired probe
+      `__tnGpuSegments` scene column, 2026-11-14.
+      **Correction:** the earlier "`alphaTest = 0.99` changed nothing" arm left `maskNode` and
+      `alphaTestNode` in place, so it never removed the discard. A JS-level twin-mesh emulation of the
+      prepass is not measurable: the facade cannot clone an `InstancedMesh` and the twins drew unmasked.
 ### Phase 2 — the renderer work
 
 - [ ] Add the prepass pipeline role: a masked depth-only fragment stage (alpha → discard → depth),
