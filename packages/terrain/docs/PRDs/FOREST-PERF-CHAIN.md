@@ -39,7 +39,11 @@
   of instances the level gate provably discards. Both halves fall 0.22–0.71 ms at overview, vista
   and meadow-close (2 paired runs). River and player stay flat. No arm-attributable pixel at any
   pose, clock frozen. The 83–99 % count was row capacity, not submitted draws, so it overstated the
-  waste about 20×. Details: PRD-888 Phase 2, lever 2 box.
+  waste about 20×. Follow-up on the same box: a longer bill puts player's halves down too; river's
+  shade half stays flat (~0.05 ms resolution). The faded count, re-run on the GPU, is empty with the
+  collapse on (0–2 px against a 0–2 px baseline). Records past their gate but still published whole
+  remain (67.9k px at overview): an admission lag, the next lead. Details: PRD-888 Phase 2, lever 2
+  box.
 - **Reviewer round 3 AUTHORIZED step 7** (measure only); refused step 4 again (the far band is
   collar mesh, the card fix has no measured performance case) and step 5 (PRD-891 does not touch the
   depth half).

@@ -124,8 +124,21 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       20 frames, 2 runs: 0 changed pixels on every adjacent off→on pair at player, overview and
       river; at meadow-close and vista every non-zero pair (4 732 and 42 px) equals a same-arm
       control pair exactly, so it is a shot settling, not the arm.
-      The faded count was **not re-run**: the CPU count below cannot show it (see the correction
-      under "Answered from the CPU"). Diagnostics, overview: collapse forced on every LOD instance
+      Longer bill at the two flat poses, 6 ABBA blocks, 2 runs, off → on medians: player prepass
+      5.37/5.45 → 5.28/5.37, shade 8.17/8.32 → 7.89/8.13 (11 of 12 shade blocks negative), so both
+      halves fall there too; river prepass 8.54/8.34 → 8.49/8.27, shade 8.87/8.57 → 8.90/8.55, so
+      **river's shade half is flat at ~0.05 ms resolution** — the one criterion still open.
+      Faded count, re-run on the GPU (the CPU count cannot see what is drawn: record writes go
+      through the engine's record queue and empty slots are zero-filled). A kit-dist-only
+      diagnostic, never committed, drew every instance the gate provably discards solid white past
+      its mask; near-white pixels per frame, collapse off → on, 2 shots each: player 2458/2504 →
+      0/0, meadow-close 3715/1968 → 0/1, overview 28812/28722 → 0/0, river 1267/1263 → 2/0, vista
+      38587/38593 → 0/0, against 0–2 px with no diagnostic. **The faded set is empty with the
+      collapse on.** Positive control: the same diagnostic at a 0 m threshold paints the forest
+      white. With the published-range guard dropped from the diagnostic, 67 920 px (overview) and
+      9 591 px (vista) stay lit with the collapse on: records past their level's gate that the CPU
+      admission still publishes as whole at that level. They draw whole, so they are an admission
+      lag (a coarser level would do), not discarded work. Diagnostics, overview: collapse forced on every LOD instance
       (threshold 0) takes the prepass 25.56 → 1.71 ms, so the mechanism works on the owned engine;
       the same collapse ignoring the published range reads 25.05/25.71 → 24.65/24.64 ms, so the range
       guard is not what holds the gain back. Reviewer round 3 (fresh read-only Opus, high): the
