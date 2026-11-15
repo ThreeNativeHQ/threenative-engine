@@ -1032,6 +1032,8 @@ private:
     struct MainRows;
     std::unique_ptr<MainRows> mainRows_, auxRows_, velocityRows_;
     bool pendingEncode_ = false;
+    /** PRD-888 lever 0: whether the bundles held are a split arm's, so a switch of arm re-records them. */
+    bool splitRecorded_ = false;
     std::atomic<bool> encoding_{false};
     mutable std::mutex frameMailMutex_;
     FrameStats frameMail_, published_;
@@ -1531,6 +1533,8 @@ private:
     };
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;
+    WGPURenderBundle prepassBundle_ = nullptr;  // PRD-888 lever 0: the prepass rows alone, for their own timed pass
+    WGPURenderBundle prepassTailBundle_ = nullptr;  // the same for the rows after a viewport-texture copy
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
     WGPURenderBundle tailBundle_ = nullptr;  // PRD-754: the main pass's draws after its rows (transparent), else null
     // PRD-754: each rows pass's rows first seen since its last sort, drawn after the sorted rows, else null

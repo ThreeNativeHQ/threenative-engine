@@ -100,6 +100,20 @@ void fragments() {
     CHECK(sameLayout(prepassFragment, shippedFragment));
 }
 
+void modes() {
+    // TN_PREPASS arms the one-pass arm for any value but 0; only "split" gives the depth rows their own pass.
+    setenv("TN_PREPASS", "0", 1);
+    CHECK(!prepassEnabled() && !prepassSplit());
+    unsetenv("TN_PREPASS");
+    CHECK(!prepassEnabled() && !prepassSplit());
+    setenv("TN_PREPASS", "1", 1);
+    CHECK(prepassEnabled() && !prepassSplit());
+    setenv("TN_PREPASS", "split", 1);
+    CHECK(prepassEnabled() && prepassSplit());
+    unsetenv("TN_PREPASS");
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"eligible", eligibleDraws}, {"targets", pipelineTargets}, {"fragments", fragments})
+TN_TEST_MAIN({"eligible", eligibleDraws}, {"targets", pipelineTargets}, {"fragments", fragments},
+             {"modes", modes})

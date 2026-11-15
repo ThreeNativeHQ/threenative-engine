@@ -459,12 +459,16 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
         } else {
             lastDrawn = renderer.get();
             // PRD-888's arm, read every frame so a probe flips `globalThis.__tnPrepass` in one page load; it defaults
-            // from `?tnPrepass=1`. The renderer reads TN_PREPASS per frame (flags.h).
-            setenv("TN_PREPASS", EM_ASM_INT({
-                if (globalThis.__tnPrepass === undefined)
-                    globalThis.__tnPrepass = new URLSearchParams(globalThis.location ? globalThis.location.search : "").get("tnPrepass") === "1";
-                return globalThis.__tnPrepass ? 1 : 0;
-            }) ? "1" : "0", 1);
+            // from `?tnPrepass=1`. `"split"` is lever 0: the depth rows draw in their own timed pass. The renderer
+            // reads TN_PREPASS per frame (flags.h).
+            const int prepassMode = EM_ASM_INT({
+                if (globalThis.__tnPrepass === undefined) {
+                    const asked = new URLSearchParams(globalThis.location ? globalThis.location.search : "").get("tnPrepass");
+                    globalThis.__tnPrepass = asked === "split" ? "split" : asked === "1";
+                }
+                return globalThis.__tnPrepass === "split" ? 2 : globalThis.__tnPrepass ? 1 : 0;
+            });
+            setenv("TN_PREPASS", prepassMode == 2 ? "split" : prepassMode == 1 ? "1" : "0", 1);
             renderer->setSampleCount(sampleCount);
             renderer->setRenderScale(renderScale);
             renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's

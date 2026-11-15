@@ -86,6 +86,19 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       (`tests/native-engine/prepass_test.cpp`), 2026-11-14.
 - [x] Issue both loops inside the same world render pass, front to back, so no extra MSAA depth
       store and load is paid. proof: `renderer.cpp` records the prepass rows first in the main bundle.
+- [x] Lever 0, `TN_PREPASS=split` records the prepass rows in their own render pass with their own
+      timestamp segment, so the depth half is priced apart from the shade half.
+      proof: `TN_GPU_PASSES` names a `prepass` pass at all 5 poses and the bill is in "The split,
+      measured" below. Built as its own timed pass rather than a seventh segment bucket: the trace
+      carries the pass name and its ms, and no frame-field ABI moves for an instrument arm. With it
+      armed the prepass sums into the `other` bucket, so `gpuSplit.main` is the shade half alone —
+      the one reading that changes shape. `?tnPrepass=split` or `globalThis.__tnPrepass = "split"`
+      arms it live; a draw that samples the frame as drawn before it keeps the shipped boundary (its
+      own copy, and a second depth pass after the copy), so the arm stays pixel-identical. proof: the
+      bill below, 2026-11-14. The unit test (`prepass_test.cpp`, case `modes`) is written and
+      unverified: the desktop `ctest` had not run when this box was ticked.
+      The extra depth store and load costs nothing measurable: total frame p50 at overview is
+      38.81/38.89 ms split against 42.03/39.14 one-pass, and 40.01/38.59 against 38.23/38.68 at vista.
 - [ ] Refuse and fall back to the shipped path for: transparent/blended materials,
       `depthWrite = false`, `frag_depth` writers, fragment side effects, coplanar ties (two-sided
       cards built as two meshes).
@@ -169,6 +182,39 @@ in the top quarter of the frame (the 22 k pixels over 8 levels all sit in the sw
 y 344–720), hiding `strata-props:far` removes 38 962 of them and hiding `strata-props:horizon`
 removes none. Its tiles resolve to a coarse mip whose averaged alpha reads as a solid block at a few
 pixels; that is the defect to fix when the far bands get their look decision.
+
+## The split, measured (lever 0, 2026-11-14)
+
+One page load, every arm live on the same plan (`globalThis.__tnPrepass`), ABBA × 2 runs per pose,
+median of the `TN_GPU_PASSES` per-pass sample: RTX 2080 `nvidia/turing`, 1600×900, 4× MSAA, forest
+kit played as its own game, 928 MiB of 8 GB already resident before the probe.
+
+| pose | off (shipped) | on (one pass) | split: prepass | split: shade | split: frame |
+| --- | --- | --- | --- | --- | --- |
+| player | 30.09 / 27.16 | 17.45 / 12.84 | 5.90 / 5.45 | 8.09 / 12.57 | 15.42 / 20.43 |
+| meadow-close | 47.15 / 31.31 | 18.37 / 21.42 | 10.78 / 11.60 | 9.56 / 9.92 | 21.84 / 23.07 |
+| overview | 107.12 / 51.01 | 39.69 / 36.78 | 24.41 / 24.42 | 12.00 / 12.07 | 38.81 / 38.89 |
+| river | 27.88 / 25.74 | 14.25 / 14.08 | 5.08 / 4.94 | 9.19 / 9.18 | 15.83 / 15.89 |
+| vista | 55.70 / 54.12 | 35.64 / 36.11 | 26.07 / 25.96 | 9.90 / 10.03 | 40.01 / 38.59 |
+
+`split: frame` is the whole `TN_GPU_PASSES` sum (shadow, prepass, shade, viewport copy, post,
+output), so it compares with `on` directly: the two-pass arm is not slower, which is the extra MSAA
+depth store and load being smaller than the sample noise.
+
+**What it answers.** At the two poses that miss 60 FPS the *depth half* owns the frame: 24.4 of
+38.9 ms at overview and 26.0 of 38.6 ms at vista, against 12.0 and 10.0 ms of shading. So the far
+bands cost what they cost because 10.95 M masked triangles are rasterised to depth and thrown away,
+not because the sun's five taps are sampled too often: levers that shorten the shade half have
+12 ms to win, and levers that shrink the depth half have 24–26. Ordering the prepass near to far
+(lever 1) and collapsing the vertices the fragment level gate discards (lever 2) are the only two
+that touch it.
+
+At meadow-close, river and player the split is 5.7/10.3, 5.0/9.2 and 5.7/10.3 — the near poses are
+shade-bound, which is why the one-pass arm already clears 60 FPS there.
+
+`off` read 107 ms once at overview, on 4 samples 5 s into that pose: the ring was still streaming
+in. The second `off` run at the same pose read 51.0, and every other pose agrees with PRD-888's
+earlier table, so read `off` from the closing arm of each pose, never the opening one.
 
 ## The next lever, ranked (advisor review, 2026-11-14)
 
