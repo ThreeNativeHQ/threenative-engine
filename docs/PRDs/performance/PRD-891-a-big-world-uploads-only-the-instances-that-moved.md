@@ -4,7 +4,7 @@
 **Priority:** P2 — the upload costs little at a 39 ms frame, but it caps every big-world game that aims at 60 fps.
 **Complexity:** 5 (MEDIUM)
 **Depends on:** None.
-**Chain:** step 5 of [FOREST-PERF-CHAIN.md](../../../packages/terrain/docs/PRDs/FOREST-PERF-CHAIN.md) · **PR:** #677 (owner, 2026-11-14)
+**Chain:** step 5 of [FOREST-PERF-CHAIN.md](../../../packages/terrain/docs/PRDs/done/FOREST-PERF-CHAIN.md) · **PR:** #677 (owner, 2026-11-14)
 
 ## Problem
 

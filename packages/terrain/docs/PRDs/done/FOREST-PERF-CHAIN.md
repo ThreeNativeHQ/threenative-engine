@@ -1,7 +1,7 @@
 # Forest performance — overnight chain
 
 **Written:** 2026-11-14, on branch `prd-584-forest-60fps` (PR #677).
-**Purpose:** one ordered run for the next forest frame levers. Source: the lane's own ranking in [PRD-888 "The next lever, ranked"](../../../../docs/PRDs/rendering/PRD-888-a-masked-depth-prepass-pays-for-itself-on-the-forest.md), plus two engine gaps filed today ([PRD-890](../../../../docs/PRDs/native-engine/PRD-890-cutouts-keep-alpha-to-coverage-on-the-owned-engine.md), [PRD-891](../../../../docs/PRDs/performance/PRD-891-a-big-world-uploads-only-the-instances-that-moved.md)). An agent runs it top to bottom without questions.
+**Purpose:** one ordered run for the next forest frame levers. Source: the lane's own ranking in [PRD-888 "The next lever, ranked"](../../../../../docs/PRDs/rendering/PRD-888-a-masked-depth-prepass-pays-for-itself-on-the-forest.md), plus two engine gaps filed today ([PRD-890](../../../../../docs/PRDs/native-engine/PRD-890-cutouts-keep-alpha-to-coverage-on-the-owned-engine.md), [PRD-891](../../../../../docs/PRDs/performance/PRD-891-a-big-world-uploads-only-the-instances-that-moved.md)). An agent runs it top to bottom without questions.
 
 ## Rules for the agent
 

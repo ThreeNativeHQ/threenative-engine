@@ -4,7 +4,7 @@
 **Priority:** P1 — the default engine fades the cutout alpha but never turns hardware coverage on, so foliage edges alias at 4x MSAA on web and desktop.
 **Complexity:** 4 (MEDIUM)
 **Depends on:** None.
-**Chain:** step 6 of [FOREST-PERF-CHAIN.md](../../../packages/terrain/docs/PRDs/FOREST-PERF-CHAIN.md) · **PR:** #677 (owner, 2026-11-14)
+**Chain:** step 6 of [FOREST-PERF-CHAIN.md](../../../packages/terrain/docs/PRDs/done/FOREST-PERF-CHAIN.md) · **PR:** #677 (owner, 2026-11-14)
 
 ## Problem
 
