@@ -32,8 +32,8 @@
   "schemaVersion": 1,
   "setup": {
     "aim": {
-      "pitch": 0,
-      "yaw": 0
+      "pitch": -0.1,
+      "yaw": 0.72
     }
   },
   "steps": [

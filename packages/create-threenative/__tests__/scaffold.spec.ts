@@ -121,7 +121,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   adventure: {
     shared: "b696e17c96e0e1b6583d119ed1d9248db7df806a1f5b7145e5e2193d4ce7da18",
-    kit: "126d33256eb5abe5b7ff6bd279060f959513c3681b0b6f3ca6892703fdc5c813",
+    kit: "57bc68b2aeca3c87e00a1042cbd50f9917a6880a9cbb039ad031b382486772ab",
   },
   collectathon: {
     shared: "ca1fed0952b59d4e4a95ae954c088ab1de3d24feb28f479227de41a63d7d78be",

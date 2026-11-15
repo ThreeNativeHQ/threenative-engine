@@ -1,5 +1,6 @@
 import { ScatterField3D } from "@threenative/core";
 import {
+  Box3,
   BoxGeometry,
   type BufferGeometry,
   CylinderGeometry,
@@ -449,35 +450,35 @@ const FLOOR_PROPS: Readonly<Record<string, IFloorProp>> = {
     drawDistance: 24,
     files: ["floor-fern-0.glb"],
     kind: "frond",
-    scale: [1.3, 2],
+    scale: [1.5, 2.2],
   },
   litter: {
     density: 0.32,
     drawDistance: 18,
     files: ["floor-litter-0.glb"],
     kind: "litter",
-    scale: [1.2, 1.8],
+    scale: [2.2, 3.2],
   },
   log: {
     density: 0.035,
     drawDistance: 30,
     files: ["floor-log-0.glb", "floor-log-1.glb"],
     kind: "wood",
-    scale: [1.2, 1.7],
+    scale: [1.6, 2.2],
   },
   stump: {
     density: 0.03,
     drawDistance: 30,
     files: ["floor-stump-0.glb"],
     kind: "wood",
-    scale: [1, 1.5],
+    scale: [1.5, 2.1],
   },
   twig: {
     density: 0.16,
     drawDistance: 20,
     files: ["floor-twig-0.glb"],
     kind: "wood",
-    scale: [1.4, 2.2],
+    scale: [2.2, 3.2],
   },
 };
 
@@ -530,8 +531,9 @@ export async function buildWoodlandFloor(
   let salt = 1;
   for (const [name, prop] of Object.entries(FLOOR_PROPS)) {
     const models = await Promise.all(prop.files.map((file) => assets.model(file)));
+    const near = models[0] as { scene: Object3D };
     // Each baked level replaces its part's geometry; the kit's material and the instances stay.
-    const chains = chainsOf(models[0] as { scene: Object3D }, prop.kind);
+    const chains = chainsOf(near, prop.kind);
     for (const model of models.slice(1)) {
       chainsOf(model, prop.kind).forEach((deeper, index) => {
         const chain = chains[index];
@@ -540,6 +542,11 @@ export async function buildWoodlandFloor(
     }
     const propSalt = salt;
     salt += 1;
+    // The bake leaves each prop where its own generator put it — a fern's fronds start 0.19 m under
+    // its origin, a stump's base 0.06 m over — so the prop is lifted by its own lowest point once
+    // the instance scale is known, and nothing floats or sinks.
+    const sunk = new Box3().setFromObject(near.scene).min.y;
+    const lift = Number.isFinite(sunk) ? -sunk : 0;
     const field = new ScatterField3D({
       // A tile draws once per part, so the floor takes tiles four times the default area: five
       // fields at 16 m tiles add enough lone draws to tip the scene's projection to declining.
@@ -555,11 +562,11 @@ export async function buildWoodlandFloor(
         for (const tree of vale.trees)
           if (Math.hypot(point.x - tree.x, point.z - tree.z) < tree.radius) return false;
         out.x = point.x;
-        out.y = point.y + 0.012;
         out.z = point.z;
         out.yaw = jitter(point.x, point.z, propSalt) * Math.PI * 2;
         out.scale =
           prop.scale[0] + jitter(point.x, point.z, propSalt + 7) * (prop.scale[1] - prop.scale[0]);
+        out.y = point.y + lift * out.scale + 0.002;
         return true;
       },
       farDensity: 0.45,
