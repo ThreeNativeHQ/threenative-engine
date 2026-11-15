@@ -1,6 +1,6 @@
 # PRD-888 — A masked depth prepass pays for itself on the forest
 
-**Status:** PARTIAL — the prepass ships behind `?tnPrepass=1` and saves 7–17 ms at every pose; judge, MRT identity and native proof are open.
+**Status:** PARTIAL — the prepass ships behind `?tnPrepass=1` and saves 7–17 ms at every pose; MRT identity and native proof are open.
 **Branch:** `prd-584-forest-60fps` · **PR:** #677 · **Instrument:** the forest starter kit
 (`packages/terrain/starter/forest`) played as its own game at 1600×900, WebGPU, RTX 2080.
 **Numbering note:** this PRD is not a port of an Unreal feature. It exists because the forest's
@@ -103,9 +103,12 @@ identical `depthBias` / slope scale / `cullMode` / `frontFace` / sample count / 
       prepass: player 27.6/27.7 → 13.9/13.7, meadow-close 31.0/31.3 → 23.8/21.7, overview 52.1/53.4 →
       38.4/38.1, river 26.0/26.0 → 14.9/14.3, vista 55.7/53.5 → 38.9/36.9 ms. CPU frame p50 off
       7.0/5.7 ms, on 3.8/4.6 ms; spawn presents 16.68 ms (60 fps) with it on. 2026-11-14.
-- [ ] Visual judge (fresh read-only subagent, matched poses, before/after): NEUTRAL or IMPROVEMENT.
-      First judge: NEUTRAL, low confidence — the meadow-close dark leaf blocks also show in a
-      shipped BEFORE frame; a clean fresh-page recapture is pending.
+- [x] Visual judge (fresh read-only subagent, matched poses, before/after): NEUTRAL or IMPROVEMENT.
+      proof: 5 poses × 2 runs per arm, frozen sway: NEUTRAL; one page at meadow-close, shipped (never
+      armed) → on → off: NEUTRAL, 0 pixels over 8 levels outside the swaying foliage, on-vs-off gap
+      (37.9 k) under off-vs-off sway (54.9 k). The dark leaf fragments over the mountain at
+      meadow-close are on the shipped path too: a pre-existing far-foliage defect, not this change.
+      2026-11-14.
 - [ ] Native proof on the desktop host, same pose, same sign.
       The host builds from this tree (`tn-native-engine-player-v8`), but the forest kit does not
       bundle for the desktop engine: 12 `TN_NATIVE_ENGINE_UNBOUND` (three/tsl `rotateUV`, `bumpMap`,
