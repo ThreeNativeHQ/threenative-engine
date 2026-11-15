@@ -370,6 +370,44 @@ rest splits between whole instances, the dithered fade band and the cards is not
 The camera-based eye was not the error: at non-player views the kit's `follow` is the camera, and
 `placementReach` makes the gate 3D, as the probe assumed. The probe skips `distanceBias`.
 
+### The depth half by row kind (2026-11-15)
+
+A kit-dist-only diagnostic (never committed) collapsed one kind of LOD-gated record at a time, live,
+on the split arm: `card` = the whole-asset impostor rows (`tnWholeAssetImpostor`), `copy` = records
+whose colour mask is fully off in their row (the far side of the temporal hard gate, published range
+permitting), `whole` = every other LOD mesh record, `all` = all of them. One page load per run,
+palindrome order (none, card, copy, whole, all, all, whole, copy, card, none), 2 runs, RTX 2080
+`nvidia/turing`, 1600×900. Prepass ms, base and the change when the kind is collapsed (run 1 / run 2):
+
+| pose | base | card | copy | whole | all |
+| --- | --- | --- | --- | --- | --- |
+| meadow-close | 11.28 / 12.41 | −7.86 / −8.96 | −0.31 / −0.28 | +8.78 / +8.05 | −9.13 / −10.31 |
+| overview | 24.26 / 24.58 | −21.61 / −22.05 | +0.22 / −0.35 | −0.42 / −0.45 | −22.84 / −23.19 |
+| vista | 26.00 / 25.51 | −23.96 / −23.72 | −0.43 / −0.26 | −0.32 / −0.16 | −24.67 / −24.17 |
+
+**The impostor cards are the depth half**: 22 of 24 ms at overview, 24 of 26 at vista, 8–9 of 11–12
+at meadow-close. Collapsing the near meshes raises meadow-close's prepass (+8 ms) because they hide
+cards behind them. Wrong-row copies are about 0.3 ms. Screenshots of the `card` arm show the far
+canopy gone and the near meshes kept; at meadow-close it also takes a dark leaf blob and some logs
+on the right, so the category holds a few rows outside the far canopy. This **refutes the triangle
+argument** above ("a card is 2 triangles, so 46 597 of them cannot cost 10.5 ms"): the cost is the
+card's fragment work, not its triangles.
+
+**The fragment work is the parallax ray march.** One page load per arm, same diagnostic, march and
+bisection steps overridden (`buildFragmentNodes`, shipped 32 / 10). Prepass ms, base:
+
+| march / bisection | meadow-close | overview | vista | overview shade |
+| --- | --- | --- | --- | --- |
+| 32 / 10 (shipped) | 10.86 | 24.55 | 27.75 | 12.67 |
+| 8 / 2 | 5.81 | 7.33 | 10.86 | 11.74 |
+| 1 / 0 | 4.53 | 4.51 | 5.34 | 14.87 |
+
+A flat 8 / 2 saves about 17 ms of depth at overview and vista, single run per arm, but it is a look
+regression: the near canopy at overview thins and goes grainy (39.6k px changed at 2 % fuzz at
+overview, 39.9k at vista, 29.6k at meadow-close). **The lever is a footprint-adaptive march**: full
+steps where the parallax is visible, few where it is sub-pixel (chain step 4, item 2, now with a
+measured case). It needs the look-change protocol and an IMPROVEMENT or NEUTRAL judge.
+
 ### Method caveats
 
 - The arm order is `off, on, split, split, on, off` per pose, so `off` always opens a pose. In 5 of 5
