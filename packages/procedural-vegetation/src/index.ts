@@ -128,7 +128,7 @@ function withForm(
   form: Readonly<Record<string, unknown>> | undefined,
 ): IArborPreset {
   if (form === undefined) return source;
-  const base = source as unknown as Record<string, unknown>;
+  const base: Record<string, unknown> = source;
   const rows = (key: string, own: unknown, patch: unknown): unknown[] => {
     const list = (own ?? []) as Record<string, unknown>[];
     if (!Array.isArray(patch))
@@ -156,7 +156,7 @@ function withForm(
       };
     } else merged[key] = value;
   }
-  return merged as unknown as IArborPreset;
+  return merged as IArborPreset;
 }
 
 /**
@@ -165,19 +165,15 @@ function withForm(
  * so cell 0 of a game's image is its top-left cell, as the option says.
  */
 function topDownCells(source: IArborPreset): IArborPreset {
-  const preset = source as unknown as {
-    tex?: { grid: readonly [number, number] };
-    leaves?: readonly { cells?: readonly number[] }[];
-  };
-  const [cols, rows] = preset.tex?.grid ?? [1, 1];
+  const [cols, rows] = source.tex?.grid ?? [1, 1];
   const flip = (cell: number): number =>
     (rows - 1 - Math.floor(cell / cols)) * cols + (cell % cols);
   return {
-    ...preset,
-    leaves: preset.leaves?.map((row) =>
+    ...source,
+    leaves: source.leaves?.map((row) =>
       row.cells === undefined ? row : { ...row, cells: row.cells.map(flip) },
     ),
-  } as unknown as IArborPreset;
+  };
 }
 
 /** The leaf PNG (the game's image, else Arbor's drawn card) and the file-name tag of a game's patch. */

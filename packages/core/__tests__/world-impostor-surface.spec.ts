@@ -669,7 +669,10 @@ it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold"
   vi.spyOn(assets, "texture").mockRejectedValue(new Error("optional texture absent"));
   const source = new MeshStandardMaterial({ map: new Texture(), alphaTest: 0.42 });
   vi.spyOn(assets, "model").mockImplementation(async (path) => {
-    if (path !== "temperate/spruce/0.glb") throw new Error("optional model absent");
+    // The canopy's variant 0: the broadleaf scan's near GLB by default, the spruce under `?trees=spruce`.
+    if (path !== "temperate/spruce/0.glb" && !path.endsWith("-near.glb")) {
+      throw new Error("optional model absent");
+    }
     return { scene: new Group().add(new Mesh(new BoxGeometry(), source)) } as never;
   });
   const pack = await loadPack(assets);
