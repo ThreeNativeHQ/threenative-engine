@@ -16,6 +16,27 @@
 - Report real results only. "Unverified" is a valid result.
 - Before you end the run, send one `attention-ping` with the completion %, the boxes ticked and the ms saved per pose.
 
+## Run log — 2026-11-15 (one session, this branch)
+
+- **Step 0 done.** Rebased clean onto `origin/prd-584-forest-60fps`.
+- **Step 1 done and measured.** `TN_PREPASS=split` puts the depth rows in their own timed pass; the
+  bill is in PRD-888, "The split, measured". Commits `230644752`, `d7ac14fa0`, `4e70d17f7`.
+- **Two reviewer checkpoints (fresh read-only Claude Code, Opus, high), because the gate is
+  "only proceed if it authorizes".**
+  - Round 1 **REFUSED** step 2: the bill was per pose, not per band, which is step 1's own proof
+    clause. Fixed: the per-band bill now exists, and four prose/unit errors it found are corrected.
+  - Round 2 **AUTHORIZED step 3, measurement first**; **refused step 2** (3 h on an unproven ZCULL
+    premise for 0–6 ms, and the excess is fragment work, which near-to-far order cannot reject for
+    wrong-level instances) and **refused step 4 for now** (the far band
+    `strata-props:far:*` is the collar's *mesh*, 769 826 triangles against 93 194 card triangles at
+    overview — so "the cards' whole cost" had no support, and the cards' look fix is not where the
+    depth half's 10.5 ms sits).
+- **Step 3, first sub-step: half done.** Triangles per band and row kind are in PRD-888. The number
+  step 3 needs — how many of a row's instances its level gate rejects — is **not reachable from the
+  page**: `tnPublishedLodRange` read all zeros and `material.uniforms.lod` was null in this build.
+  It needs an engine-side counted gate.
+- **Not started:** steps 2, 4, 5, 6, 7. No other PR was opened.
+
 ## Chain
 
 ```mermaid
