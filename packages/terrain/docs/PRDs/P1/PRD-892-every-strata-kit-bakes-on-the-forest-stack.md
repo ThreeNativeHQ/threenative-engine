@@ -321,6 +321,21 @@ flowchart LR
   branch proves itself green in the package (bake, decode, golden rows) while its own playtest cannot
   become ready here.
 
+  The heightmaps, measured (owner asked 2026-11-16: "are we using proper heighmaps to cook these
+  other terrains? Look at this garbage"): the **playable** ground is the forest's own recipe — 512 m
+  over a 257² grid, 2.0 m/px, both kits' `heightmap.r16` are 132,098 B. The **far ring** is not. The
+  forest's `forest-horizon.json` is 5000 m at 513² (9.8 m/px); the alpine kit's
+  `alpine-horizon.json` is 5000 m at **129² (39.1 m/px)** — four times coarser each way, sixteen
+  times fewer samples. That is what the overview capture shows: a streaked brown wall, not a
+  mountain. A control bake with `farRing.massif` removed rendered the same wall, so the massif is not
+  the cause — the collar/ring draws the 129² survey, and the alpine survey's ground rises about
+  1.2 km inside 500 m of the playable square, which the forest's 65 m overview eye points straight
+  into. Two fixes are owed: re-cook `alpine-horizon` at the forest's 513² (needs the DEM source,
+  which this repo has no generator for — the same parked item as the other kits' surveys), and pick
+  the alpine kit's own overview framing instead of the forest's — a first attempt (eye 280 m looking
+  down-valley) broke the scenario's `currentViewWindows >= 3` step, so the framing has to keep the
+  player view streaming rather than merely lift the camera.
+
   **The lane is not the wall.** `TN_PLAYTEST_HOST_DISPLAY=1` with the session's own `DISPLAY=:0`
   (Xwayland, RTX 2080) makes the runner verify and use the host display instead of a private Xvfb;
   frames retire there, so the kit proof can be run and captured on this machine. That is the command
