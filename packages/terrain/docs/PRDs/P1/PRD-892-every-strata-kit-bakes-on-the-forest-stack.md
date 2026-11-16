@@ -312,6 +312,15 @@ flowchart LR
   owner's real display, exactly like the FPS and judge rows — the lane still proves the non-visual
   rows. This is also why no captures exist yet: readiness is gated behind the hand-off.
 
+  The ground join's own console neighbours make the mechanism concrete and it is all GPU-side:
+  `TN_STARTUP_WARMUP_HELD {"pipelines":218,"candidates":218,"attempted":1,"observed":{"status":"unavailable"}}`,
+  `TN_STARTUP_HANDOFF_BOUNDED {"retiredFrames":0,"requiredFrames":3}`, and
+  `TN_STARTUP_OFFSCREEN_BYTES {"awaitedBytes":15955411}` — the 15.9 MB the ground material awaits. No
+  network error is recorded (`noNetworkErrors: true`), so nothing is missing: the material's upload and
+  the tiles' residency are both waiting on GPU work this display never retires. That is why the same
+  branch proves itself green in the package (bake, decode, golden rows) while its own playtest cannot
+  become ready here.
+
   The stuck join is named: a diagnostic run logged each member at the 100 s mark and all five prop
   streams had `data: resolved` and `prewarm: resolved` — the only unsettled member is `groundReady`
   (`{"ground":false}`), the streamed ground built from `stream.material` and `addStreamedGround`'s
