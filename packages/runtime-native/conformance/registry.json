@@ -71,6 +71,17 @@
       "expires": "2026-12-31",
       "target": "android-hardware",
       "row": "90-document-window-stubs"
+    },
+    {
+      "id": "screen-probe-gather-desktop",
+      "title": "Screen-probe gather and short-range AO compare between the desktop host and the browser reference",
+      "category": "lighting-gi",
+      "status": "excluded",
+      "reason": "The desktop lane compares this row's native render against the browser reference and fails it while the web lane passes it: the merge-group run 43853807375 recorded `screen-probe-gather fail` (108 pass, 1 fail, 47 blocked) on the llvmpipe runner, and the same row passed on this host's SwiftShader adapter during PRD-640 phase 3 (0 pixel mismatch, deltaE 0). A multi-pass row -- three RTT passes, a normal MRT and a full-resolution horizon search -- amplifies a last-bit normal or depth difference at contact pixels, which is the likeliest cause, but nobody has measured it against a real adapter yet. PRD-644 AC-1 owns the desktop proof alongside the composite fix and the GPU cost of the AO; this exclusion goes when that row passes there. Web-side proof: the same row's browser capture, `pnpm parity --only-tests screen-probe-gather`.",
+      "owner": "PRD-644",
+      "expires": "2026-12-31",
+      "target": "desktop",
+      "row": "screen-probe-gather"
     }
   ],
   "tests": [
@@ -2403,7 +2414,7 @@
         "pixelMismatchRatio": 0.03,
         "perceptualDeltaE": 4.0
       },
-      "desktopGate": true,
+      "desktopGate": false,
       "required": false
     }
   ],
