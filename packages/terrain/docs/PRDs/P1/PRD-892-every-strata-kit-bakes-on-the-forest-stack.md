@@ -138,7 +138,11 @@ flowchart LR
   `diagnostics-state.spec.ts` (4 cases: factory defaults and blank refusal, the first-GPU-frame latch,
   world-keyed view slots, a left scene stops attributing windows), terrain **661/661**, typecheck exit 0,
   publint green; the moved file's three pre-existing complexity offenders are recorded in the ratchet
-  baseline (83 -> 86) rather than hidden. Remaining: prop world and player rig, then `ForestScene`
+  baseline (83 -> 86) rather than hidden. The kit playtest ran again after this move and failed on the
+  same six assertion ids as the baseline, in the same lane (`enterMs` 61.8 ms, `afterFirstFrameTaskMs`
+  2614, `timeToReadyMs` 22.8 s, `maxViewGpuMs` 88.34, plus the two harness rows), while
+  `measuredViewCount` and `measuredGpuViewCount` both read **5**: the moved diagnostics still publishes
+  every view's closed window in the real game. Remaining: prop world and player rig, then `ForestScene`
   composes every mechanism for the forest rows.
 - [x] A kit that names a mechanism option without its data (for example cover with no cover rows) fails with a named code. proof: a `packages/terrain/__tests__` spec per option
   Result 2026-11-16: four codes, each raised where the option's data is joined: `TN_STARTER_WATER_DATA` (`water` over a bake with no `water.json`), `TN_STARTER_SKY_DATA` (`lighting.sky` resolving to no file), `TN_STARTER_COLLIDER_DATA` (a `colliders` row for an asset the world places nowhere — the silent one, the player walked through it), `TN_STARTER_EDIT_DATA` (ID edits over a bake with no placement sidecar), and `TN_STARTER_WORLD_DATA` on the world's own files. `kit-runtime.spec.ts` runs one case per option for all four kits: 16 red without the change, 112 green with it; terrain 644/644, `pnpm --filter @threenative/terrain typecheck` exit 0. The codes for the mechanisms Phase 1 box 2 moves in (cover, far forest, spawn gate, player rig) land with that move on the same shape.
