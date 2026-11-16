@@ -64,7 +64,7 @@ import {
   vec4,
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
-import { GROUND_MAPS, ROCKFACE_MAPS } from "../../world/terrainAssets.js";
+import { BROADLEAF_TREES, GROUND_MAPS, ROCKFACE_MAPS } from "../../world/terrainAssets.js";
 import { biomeSpec } from "../biomeData.js";
 import {
   BIOMES,
@@ -113,29 +113,18 @@ export function canopyComparison(
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
 /**
- * The alpine stand: Poly Haven's CC0 `fir_tree_01`, two silhouettes at five heights (metres, crown
- * top), so the ordered stream's `spruce` reads as the conifer wood this kit is for rather than the
- * forest's broadleaf canopy (`BROADLEAF_TREES`, which the Forest kit keeps). Each variant is the
- * scan's LOD1 as the near draw and LOD2 as the mid one, the pair the pack's other species rows use.
+ * The forest's canopy: Poly Haven's CC0 broadleaf scan (`BROADLEAF_TREES`), two silhouettes at five
+ * heights (metres, crown top), so a stand reads as a European broadleaf wood rather than a spruce plantation (owner,
+ * 2026-11-14: "replace this trees with scanned trees from poly haven"). Each variant is a near GLB
+ * and a mid GLB of leaf cards from `scripts/prep/prep-polyhaven-broadleaf.py`.
  */
-const FIR_METRES = [12, 15, 14, 17, 19];
+const BROADLEAF_METRES = [12, 15, 14, 17, 19];
 const species: IPackSpecies[] = [];
 for (let i = 0; i < 5; i++) {
-  const silhouette = i % 2 === 0 ? "b" : "c";
-  const metres = FIR_METRES[i] ?? 15;
-  species.push({
-    asset: "spruce",
-    variant: i,
-    path: `fir_tree_01/fir-${silhouette}-lod1.glb`,
-    metres,
-  });
-  species.push({
-    asset: "spruce",
-    variant: i,
-    path: `fir_tree_01/fir-${silhouette}-lod2.glb`,
-    metres,
-    level: 1,
-  });
+  const tree = BROADLEAF_TREES[i % BROADLEAF_TREES.length];
+  const metres = BROADLEAF_METRES[i] ?? 15;
+  species.push({ asset: "spruce", variant: i, path: `${tree}-near.glb`, metres });
+  species.push({ asset: "spruce", variant: i, path: `${tree}-mid.glb`, metres, level: 1 });
 }
 for (const [asset, heights] of Object.entries({
   sapling: [1.1, 2.1, 3.0, 1.6],
