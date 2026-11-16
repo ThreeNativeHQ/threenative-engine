@@ -1405,6 +1405,23 @@ describe("the Wasm engine's WebGPURenderer across a hot update", () => {
     }
     expect(initCalls).toHaveBeenCalledTimes(1);
   });
+
+  it("gives the page's slot back when a start fails, so the next start reports its own result (PRD-894)", async () => {
+    // A hosted game's background refusal failed the start, the page kept the slot, and the hot
+    // reload's start reported TN_WASM_RENDERER_SINGLE over the error that named the fix.
+    const refusal =
+      "TN_NATIVE_BACKGROUND_UNSUPPORTED: scene.backgroundBlurriness is 0.4; the engine draws a sharp background only, set it to 0";
+    const { Renderer, canvas, module } = host();
+    Reflect.set(module, "_tnw_web_init", () => 1);
+    Reflect.set(module, "_tnw_web_error", () => 1);
+    Reflect.set(module, "UTF8ToString", () => refusal);
+    const failed = new Renderer({ canvas }) as { init(): Promise<unknown> };
+    await expect(failed.init()).rejects.toThrow(refusal);
+    // The failed start released its claim: building the next renderer does not throw at all, and
+    // its own start reports its own result.
+    const next = new Renderer({ canvas }) as { init(): Promise<unknown> };
+    await expect(next.init()).resolves.toBeDefined();
+  });
 });
 
 describe("the clear colour", () => {

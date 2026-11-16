@@ -529,9 +529,11 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
                 emscripten_console_warn(("TN_RENDERER: " + diagnostic).c_str());
             else std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
         }
-    if (!refused.empty()) return fail(refused);
+    // A surface that gave no texture is the device's fault and fails the host. A draw the renderer refused is the
+    // game's: it fails this frame only, so the fixed frame and the page's next start answer for themselves (PRD-894).
+    if (!refused.empty()) return refused.rfind("TN_WASM_SURFACE", 0) == 0 ? fail(refused) : refuse(refused);
     const RenderDatabase& drawn = overlay ? overlayDatabase : database;
-    if (!drawn.diagnostics().empty()) return fail(drawn.diagnostics().front());
+    if (!drawn.diagnostics().empty()) return refuse(drawn.diagnostics().front());
     return 0;
 }
 
@@ -564,8 +566,11 @@ extern "C" int tnw_web_prepare_environment(const tn_handle_t* sceneHandle, const
         GpuResources::flushSubmits();
         return ready ? 1 : 0;
     } catch (const std::exception& error) {
-        fail(std::string("TN_WASM_PREPARE: ") + error.what());
-        return -1;  // fail() answers 1, which is this call's "baked"
+        // A content refusal (a background this engine cannot draw, a material it refuses) fails this call and keeps
+        // the host running: the game fixes its scene and the next prepare, and the page's next start, answer for
+        // themselves instead of repeating a message no later call can clear (PRD-894).
+        refuse(std::string("TN_WASM_PREPARE: ") + error.what());
+        return -1;  // refuse() answers 1, which is this call's "baked"
     }
 }
 

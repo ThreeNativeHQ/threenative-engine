@@ -505,7 +505,12 @@ export function defineWebRenderer(
           ) as Record<WorkCountName, number>;
         }
         return this;
-      })();
+      })().catch((error: unknown) => {
+        // A start that failed gives the page's one slot back, so the next start in this page (a hot
+        // reload) reports its own result instead of TN_WASM_RENDERER_SINGLE (PRD-894).
+        this.dispose();
+        throw error;
+      });
       return this.#initialized;
     }
 
