@@ -42,6 +42,7 @@ import {
   gridPosition,
   intersectRay,
   roadRayProbe,
+  terrainHeight,
 } from "../track/Track.js";
 import { TrackSector } from "../track/TrackSector.js";
 import { CIRCUIT, PLAYER_SLOT, gridSlot } from "../track/circuit.js";
@@ -320,6 +321,11 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const sector = new TrackSector({
       route: CIRCUIT,
       intersectRay: intersectRay(ctx.physics, fallbackProbe),
+      // The grass is drawn and never collided, so a car past the armco has nothing under it. This is
+      // the height it should be standing on, and the rescue fires the tick the car is clearly below it.
+      groundAt: terrainHeight,
+      // A metre below the drawn ground is not a crest or a berm, it is a car with nothing under it.
+      fallDepth: 1.2,
     });
     track.boostArea.on("bodyEntered", (body) => {
       if (body === car.body.body) {

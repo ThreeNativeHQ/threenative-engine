@@ -226,3 +226,39 @@ describe("the banked-score popup", () => {
     expect(drift.popup, "the popup ends on the last tick of its duration").toBe(0);
   });
 });
+
+describe("the rear grip's easing", () => {
+  const stubCar = (rearSlip: number) => {
+    const grips: number[] = [];
+    return {
+      body: {
+        setWheelFrictionSlip: (index: number, value: number) => {
+          grips[index] = value;
+        },
+        wheelContact: () => true,
+      },
+      grips,
+      groundSpeed: 20,
+      rearSlip,
+      teleports: 0,
+    };
+  };
+
+  it("falls to a lower target over several ticks, never in one", () => {
+    const dt = 1 / 60;
+    const car = stubCar(0.5);
+    const drift = new Drift();
+    const start = drift.grip;
+    // A held slide with a full lock: the target drops to `holdGrip`, about 3 m/s² of grip.
+    let previous = drift.grip;
+    let biggestStep = 0;
+    for (let index = 0; index < 40; index += 1) {
+      drift.update(car as never, false, 1, dt);
+      biggestStep = Math.max(biggestStep, Math.abs(drift.grip - previous));
+      previous = drift.grip;
+    }
+    // One tick of the fall is 13.5 * dt / 0.05 s = 4.5; the old code jumped the whole 13.5 at once.
+    expect(biggestStep, "the grip's biggest single-tick change").toBeLessThan(start * 0.5);
+    expect(drift.grip, "a held slide still lets the rear go").toBeLessThan(start * 0.2);
+  });
+});

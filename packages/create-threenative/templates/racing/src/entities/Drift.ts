@@ -79,6 +79,11 @@ export const DRIFT = {
 } as const;
 
 const GRIP_RETURN_SECONDS = 0.3;
+/** How long the rear grip takes to fall to a lower target. The rise is deliberately slower than
+ *  the fall — grip comes back over 0.3 s — but neither may happen in one tick: the tyre's side grip
+ *  is a bristle model, and a target that flips between 0.35 and 4.5 as the steering crosses centre
+ *  sawtoothed the car through a held slide. */
+const GRIP_FALL_SECONDS = 0.05;
 const REAR = [2, 3] as const;
 
 export class Drift {
@@ -195,9 +200,12 @@ export class Drift {
       );
       wanted = Math.max(wanted, wanted + (DRIFT.governGrip - wanted) * govern);
     }
-    // Down at once, back over a few ticks: a grip that snaps back to 14 mid-slide flicks the car.
-    const step = ((CAR.wheelFrictionSlip - DRIFT.handbrakeGrip) * dt) / GRIP_RETURN_SECONDS;
-    const next = wanted < this.grip ? wanted : Math.min(wanted, this.grip + step);
+    // Both directions ease, over the fall and the return time: a grip that changes in one tick is a
+    // step input to a bristle tyre, and the slide it produces reads as a snap rather than a slide.
+    const rise = ((CAR.wheelFrictionSlip - DRIFT.handbrakeGrip) * dt) / GRIP_RETURN_SECONDS;
+    const fall = ((CAR.wheelFrictionSlip - DRIFT.handbrakeGrip) * dt) / GRIP_FALL_SECONDS;
+    const next =
+      wanted < this.grip ? Math.max(wanted, this.grip - fall) : Math.min(wanted, this.grip + rise);
     if (next !== this.grip) {
       this.grip = next;
       this.lowestGrip = Math.min(this.lowestGrip, next);
