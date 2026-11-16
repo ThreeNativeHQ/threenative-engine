@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, statSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type IWorldPackage, validateWorldPackage } from "@threenative/core/world";
@@ -35,8 +35,10 @@ it("forest recipe exposes soil patches through its surface blend thresholds", ()
   }
 });
 // Per-kit assertion differences: scatter asset/count, water identities, river point count and golden files.
+// No alpine row: since 2026-11-16 the alpine kit bakes the streamed world (PRD-892 Phase 2) and its
+// `bake.mjs` reads its own TypeScript look through `tsx`, which a bare temp copy cannot resolve.
+// The streamed describe below proves that bake instead.
 const kits = [
-  { name: "alpine", asset: "boulder", count: 90, water: "none", compareWater: false },
   { name: "desert", asset: "boulder", count: 140, water: "empty", compareWater: true },
   { name: "tundra", asset: "boulder", count: 70, water: "kettles", compareWater: true },
   { name: "coastal", asset: "fir", count: 80, water: "ocean", compareWater: true },
@@ -122,5 +124,70 @@ describe.each(kits)("$name starter kit", ({ name, asset, count, water, compareWa
         true,
       );
     }
+  });
+});
+
+// The streamed kit: `bakeKit` with a `look` writes the bundle the forest scene loads, not `world.json`.
+describe("alpine streamed kit", () => {
+  const kit = join(packageRoot, "starter", "alpine");
+
+  /**
+   * Runs the kit's own bake where its look modules and `tsx` resolve (the kit's folder) and returns
+   * the folder it writes the world into: `--out <root>` puts the world in `<root>/world/`.
+   */
+  function bakeStreamed(): string {
+    const root = makeTempDirSync("terrain-alpine-streamed-");
+    execFileSync(
+      process.execPath,
+      ["bake.mjs", "--assets", starterAssets, "--out", join(root, "world")],
+      { cwd: kit, stdio: "pipe" },
+    );
+    return join(root, "world", "world");
+  }
+
+  const FILES = [
+    "alpine.json",
+    "alpine.world.json",
+    "alpine.layers.json",
+    "alpine.splat.rgba8",
+    "alpine.canopy.bin",
+    "alpine.sky.bin",
+    "alpine.props.json",
+  ];
+
+  it("writes the streamed bundle its scene loads", () => {
+    const out = bakeStreamed();
+    for (const name of FILES) expect(statSync(join(out, name)).size, name).toBeGreaterThan(0);
+
+    const baked = JSON.parse(readFileSync(join(out, "alpine.json"), "utf8")) as {
+      resolution: number;
+      heights: number[];
+      colors: number[];
+    };
+    expect(baked.heights).toHaveLength(baked.resolution ** 2);
+    expect(baked.colors).toHaveLength(baked.resolution ** 2 * 3);
+
+    const props = JSON.parse(readFileSync(join(out, "alpine.props.json"), "utf8")) as {
+      cellSize: number;
+      buckets: { bucket: string; kind: string; placements: string; ids: string }[];
+    };
+    expect(props.buckets.length).toBeGreaterThan(0);
+    let placements = 0;
+    for (const bucket of props.buckets) {
+      expect(["local", "horizon"]).toContain(bucket.kind);
+      expect(statSync(join(out, bucket.placements)).size % 32).toBe(0);
+      placements += statSync(join(out, bucket.placements)).size / 32;
+      expect(JSON.parse(readFileSync(join(out, bucket.ids), "utf8")).length).toBeGreaterThan(0);
+    }
+    expect(placements).toBeGreaterThan(50_000);
+  });
+
+  it("bakes the same bytes from the same recipe", () => {
+    const first = bakeStreamed();
+    const second = bakeStreamed();
+    for (const name of FILES)
+      expect(readFileSync(join(first, name)).equals(readFileSync(join(second, name))), name).toBe(
+        true,
+      );
   });
 });

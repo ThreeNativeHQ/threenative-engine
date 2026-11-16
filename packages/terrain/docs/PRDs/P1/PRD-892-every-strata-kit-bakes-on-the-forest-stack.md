@@ -245,11 +245,16 @@ flowchart LR
   lists, because the copied prop pack asks for the forest scans until the alpine species pack lands.
   Not done: the species pack is still the forest's (`spruce` stands drawn from broadleaf scans, no
   `tundra`/`krumhholz` rows), the look row is still the forest's values, the kit is not yet the harness's
-  `source` scene, and the playtest is unrun. Also pre-existing at HEAD, not caused by this cut: terrain
-  `669/673`, the same four reds on a stashed A/B — `kit-bake.spec.ts` twice and `starter-kit.spec.ts`
-  once (their temp copy of a kit cannot resolve `tsx`, which the streamed `bake.mjs` now imports) and
-  `kit-assets.spec.ts`'s committed manifest digest. Next: the alpine species pack and look row, the
-  harness source-scene wiring, then `KIT=alpine test:kit`.
+  `source` scene, and the playtest is unrun. The legacy cell-package pins drop alpine (it no
+  longer writes `world.json`) and `kit-bake.spec.ts` gains a streamed describe for it that runs the
+  kit's own `bake.mjs` in the kit folder: the bundle's seven files are non-empty, `heights` and
+  `colors` are one row a vertex, three buckets sum to **52682 placements**, and two bakes are
+  byte-identical. Terrain is **671/672**; the one red is `kit-assets.spec.ts`'s committed manifest
+  digest (fresh pack `62ac…`, committed `3617…`), a release step this PR still owes: the committed
+  archive predates `survey/alpine-horizon.*`, so it needs a hand-bumped `version` in
+  `starter-assets.json`, `node scripts/pack-starter-assets.mjs <out> --write-manifest`, and the tarball
+  uploaded to its new release tag. Next: the alpine species pack and look row, the harness
+  source-scene wiring, then `KIT=alpine test:kit`.
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn

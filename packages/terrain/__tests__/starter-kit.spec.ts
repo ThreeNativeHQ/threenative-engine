@@ -12,12 +12,9 @@ const starterAssets = join(packageRoot, "starter-assets");
 
 // Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
-  alpine: {
-    "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
-    "placements.bin": "5c47dd59619843bc056fbc8391ca7bccdef86c9950cd192c53a6928676865c26",
-    "splat.rgba": "fde8bf22c6841847f58ab523682f29e77a774a364cdd0e34c0025b6ad06c6f42",
-    "world.json": "48a504fb9764b279fb83646e723542e65efdf0fe5b0429113a3932029afc3b6d",
-  },
+  // No alpine row: since 2026-11-16 the alpine kit bakes the streamed world (PRD-892 Phase 2), so
+  // `world.json`, `placements.bin` and `splat.rgba` are not this kit's output any more. Its recipe
+  // stays pinned by the RAW16 hydration case below and its streamed output by `kit-bake.spec.ts`.
   coastal: {
     "heightmap.u16": "313539bae3010b949b65e55307736f6140a55255d81fbb8ab5dbae782bdc8482",
     "placements.bin": "e10721cc99dfe96345a6b090eeb834ec87890927d8272ec8a8307b31a989b098",
@@ -175,7 +172,7 @@ describe("forest starter kit", () => {
     expect(readdirSync(dir)).toEqual([]);
   });
 
-  it.each(["alpine", "coastal", "desert", "tundra"] as const)(
+  it.each(["coastal", "desert", "tundra"] as const)(
     "produces pinned golden baseline hashes for %s kit bake (PRD-592 AC-1)",
     (kitName) => {
       const out = join(makeTempDirSync(`terrain-starter-world-${kitName}-`), "world");
