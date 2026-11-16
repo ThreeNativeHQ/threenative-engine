@@ -153,7 +153,16 @@ flowchart LR
   the baseline (`enterMs` 59.3 ms, `afterFirstFrameTaskMs` 2719, `timeToReadyMs` 20.6 s, `maxViewGpuMs`
   87.28, plus the two harness rows), while the player walked 54.4 m in the travel leg, stayed grounded
   and the contact error was 6.1e-05 m — the rig the package builds is the rig the solver moves.
-  Remaining: prop world, then `ForestScene` composes every mechanism for the forest rows.
+  In progress 2026-11-16 (the prop world's first half): the pose mechanism left the kit.
+  `src/runtime/prop-pose.ts` owns `preparePose` (ground snap, burial, flat-footprint sink, crag base
+  ring), `withAuthoredPose`, `propKey`, `propRatio`, `authoredQuaternion` and the editor's prepare/write/
+  read pair; the forest's `props.ts` keeps the data that decides which assets bury, sink a footprint or
+  measure a base ring (`GROUND_RULES`) and its own variant picker. Proof: `prop-pose.spec.ts` (6 cases:
+  model key and shape suffix, authored pose, ground snap with the authored offset, grounding-off
+  clearance, fail-closed missing ground, boulder vs crag sink), terrain **667/667**, typecheck exit 0,
+  build + publint green. The moved pose's single pre-existing complexity offender is recorded in the
+  ratchet baseline (86 -> 87). Next: `streamProps` itself (the container loop, admission and loaders)
+  behind the kit's callbacks, then `ForestScene` composes every mechanism for the forest rows.
 - [x] A kit that names a mechanism option without its data (for example cover with no cover rows) fails with a named code. proof: a `packages/terrain/__tests__` spec per option
   Result 2026-11-16: four codes, each raised where the option's data is joined: `TN_STARTER_WATER_DATA` (`water` over a bake with no `water.json`), `TN_STARTER_SKY_DATA` (`lighting.sky` resolving to no file), `TN_STARTER_COLLIDER_DATA` (a `colliders` row for an asset the world places nowhere — the silent one, the player walked through it), `TN_STARTER_EDIT_DATA` (ID edits over a bake with no placement sidecar), and `TN_STARTER_WORLD_DATA` on the world's own files. `kit-runtime.spec.ts` runs one case per option for all four kits: 16 red without the change, 112 green with it; terrain 644/644, `pnpm --filter @threenative/terrain typecheck` exit 0. The codes for the mechanisms Phase 1 box 2 moves in (cover, far forest, spawn gate, player rig) land with that move on the same shape.
 

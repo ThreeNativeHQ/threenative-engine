@@ -75,6 +75,23 @@ export type {
   ISceneFacts,
   IViewWindow,
 } from "./runtime/diagnostics.js";
+export {
+  authoredQuaternion,
+  preparePose,
+  preparePropTransform,
+  propKey,
+  propRatio,
+  readPropTransform,
+  withAuthoredPose,
+  writePropTransform,
+} from "./runtime/prop-pose.js";
+export type {
+  IPropGroundRules,
+  IPropInstance,
+  IPropPose,
+  IPropPoseOverride,
+  PropGroundQuery,
+} from "./runtime/prop-pose.js";
 export { createPlayerRig } from "./runtime/player-rig.js";
 export type {
   IMannequin,
