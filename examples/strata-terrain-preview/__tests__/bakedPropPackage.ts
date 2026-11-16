@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { IPropPackage } from "@threenative/terrain";
-import { loadPropPackage } from "../src/render/propWorld.js";
+import { loadPropPackage } from "../src/render/props/propWorld.js";
 
 /**
  * Read a baked prop package from disk through the game's own loader.

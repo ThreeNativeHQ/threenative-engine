@@ -26,6 +26,7 @@ inline constexpr Flag MaterialDiagnostics{"TN_MATERIAL_DIAGNOSTICS", Read::Once}
 inline constexpr Flag GpuPasses{"TN_GPU_PASSES", Read::Live};  // per FrameGpuTimer: the web host sets it first
 inline constexpr Flag ShadowInstanceGroups{"TN_SHADOW_INSTANCE_GROUPS", Read::Live};  // per frame: paired arms
 inline constexpr Flag ShadowInstanceCull{"TN_SHADOW_INSTANCE_CULL", Read::Live};      // per frame: paired arms
+inline constexpr Flag Prepass{"TN_PREPASS", Read::Live};  // per frame: PRD-888's masked depth prepass, `1` one pass, `split` its own pass
 inline constexpr Flag ProgramProbes{"TN_PROGRAM_PROBES", Read::Once};
 inline constexpr Flag ShadowPageScan{"TN_SHADOW_PAGE_SCAN", Read::Once};
 inline constexpr Flag ProjectionWalks{"TN_PROJECTION_WALKS", Read::Once};
@@ -39,6 +40,7 @@ inline constexpr Flag PlayerHeight{"TN_PLAYER_HEIGHT", Read::Live};
 inline constexpr Flag PlayerTitle{"TN_PLAYER_TITLE", Read::Live};
 inline constexpr Flag PlayerVsync{"TN_PLAYER_VSYNC", Read::Live};
 inline constexpr Flag PlayerPriority{"TN_PLAYER_PRIORITY", Read::Live};
+inline constexpr Flag PlayerFullscreen{"TN_PLAYER_FULLSCREEN", Read::Live};
 inline constexpr Flag PlayerMetrics{"TN_PLAYER_METRICS", Read::Live};
 inline constexpr Flag PlayerGpuTiming{"TN_PLAYER_GPU_TIMING", Read::Live};
 inline constexpr Flag PlayerMainThreadCpu{"TN_PLAYER_MAIN_THREAD_CPU", Read::Live};

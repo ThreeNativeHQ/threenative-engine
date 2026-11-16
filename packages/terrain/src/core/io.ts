@@ -1,4 +1,4 @@
-import { validateBakedMesh } from "./bake.js";
+import { validateBakedMesh } from "../package/bake.js";
 import { MATERIAL_IDS } from "./masks.js";
 import { clamp } from "./math.js";
 import type {

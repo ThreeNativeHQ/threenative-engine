@@ -64,6 +64,8 @@ function requireTarget(target: ITargetFps): ITargetFps {
 
 /** Marker printed once per report window. */
 export const FRAME_BUDGET_MARKER = CONSOLE_MARKER.frameBudget;
+/** Marker printed once, at the end of the first frame: the game drew, and with which threads. */
+export const FIRST_FRAME_MARKER = CONSOLE_MARKER.firstFrame;
 /** Marker printed the moment a gap between presented frames exceeds `hitchMs`. */
 export const FRAME_HITCH_MARKER = CONSOLE_MARKER.frameHitch;
 
@@ -782,6 +784,7 @@ export class FrameBudget {
   #lastPresentCount: number | undefined;
   #presentsInWindow = 0;
   #firstFrameStart: number | undefined;
+  #firstFrameReported = false;
   #firstTaskFrameStart: number | undefined;
 
   constructor(options: IFrameBudgetOptions = {}) {
@@ -1147,6 +1150,19 @@ export class FrameBudget {
     const simulationEnd = this.#simulationEnd ?? this.#frameStart;
     const frameMs = Math.max(0, nowMs - this.#frameStart);
     this.#lastFrameEnd = nowMs;
+    // The first drawn frame after the startup cover lifts: the world the player sees. A software
+    // adapter needs minutes to fill a window, and the thread verdict is known now. A boot line like
+    // TN_QUALITY_TIER, so it goes to the console and the window sink stays per window.
+    if (!this.#firstFrameReported && !this.#covered && !this.#renderSkippedThisFrame) {
+      this.#firstFrameReported = true;
+      const threads = (globalThis as { __tnWebThreads?: unknown }).__tnWebThreads;
+      console.info(
+        `${FIRST_FRAME_MARKER}:${JSON.stringify({
+          frameMs: round(frameMs),
+          ...(typeof threads === "string" ? { threads } : {}),
+        })}`,
+      );
+    }
 
     this.#countPresents();
 

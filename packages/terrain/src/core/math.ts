@@ -277,3 +277,6 @@ export function splinePoints(
   out.push([last[0], last[1], last[2]]);
   return out;
 }
+
+/** A reply's metres and seconds: three decimals, so a written JSON file stays readable. */
+export const round = (value: number): number => Math.round(value * 1_000) / 1_000;

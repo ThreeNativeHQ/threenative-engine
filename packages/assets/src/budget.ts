@@ -99,8 +99,14 @@ type ImageExemptions = Map<string, boolean>;
 function skipKeys(images: NonNullable<IGltf["images"]>): readonly string[] {
   const repeats = new Map<string, number>();
   return images.map((image, index) => {
+    // `writeSharedGlb` names an unnamed image after its content-addressed file; that is not a name.
+    const assigned =
+      image.uri !== undefined &&
+      image.name === path.posix.basename(image.uri, path.posix.extname(image.uri));
     const base =
-      image.name === undefined || image.name === "" ? `texture#${String(index)}` : image.name;
+      image.name === undefined || image.name === "" || assigned
+        ? `texture#${String(index)}`
+        : image.name;
     const seen = repeats.get(base) ?? 0;
     repeats.set(base, seen + 1);
     return seen === 0 ? base : `${base}#${String(index)}`;

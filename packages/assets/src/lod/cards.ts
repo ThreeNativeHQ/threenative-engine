@@ -34,11 +34,22 @@
 /**
  * The largest component still treated as a card.
  *
- * A two-triangle quad is the common case and four-to-eight-triangle cards (a bent, a folded, a
- * low-poly cluster) are ordinary. Anything larger is a shell or a trunk fan, where dropping a
- * component would delete a silhouette, so the primitive is left to the triangle reducer.
+ * A two-triangle quad is the common case, and bent, folded and strip cards of up to a few dozen
+ * triangles are ordinary: the kit fir's twig sprigs are 9-13 triangle strips a few centimetres long
+ * on a 14 m tree (PRD-584 AC-4). Anything larger, or anything spanning more than
+ * {@link MAX_CARD_SPAN} of its primitive, is a shell or a trunk fan, where dropping a component
+ * would delete a silhouette, so it is preserved for the triangle reducer.
  */
-const MAX_CARD_TRIANGLES = 8;
+const MAX_CARD_TRIANGLES = 32;
+
+/**
+ * The largest share of its primitive's bounding diagonal a component of more than
+ * {@link ALWAYS_CARD_TRIANGLES} triangles may span and still be a card.
+ */
+const MAX_CARD_SPAN = 0.25;
+
+/** A component this small is a card wherever it sits, as every card was before PRD-584. */
+const ALWAYS_CARD_TRIANGLES = 8;
 
 /**
  * How much of LOD0's cards each derived level keeps.
@@ -112,6 +123,43 @@ interface ICardSet {
   readonly preserved: readonly number[];
 }
 
+/** Bounding diagonal of the vertices the index range `[from, to)` reaches. */
+function diagonalOf(
+  positions: Float32Array,
+  indices: Uint32Array,
+  from: number,
+  to: number,
+): number {
+  const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+  const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+  for (let at = from; at < to; at += 1) {
+    const vertex = (indices[at] as number) * 3;
+    for (let axis = 0; axis < 3; axis += 1) {
+      const value = positions[vertex + axis] as number;
+      if (value < (min[axis] as number)) min[axis] = value;
+      if (value > (max[axis] as number)) max[axis] = value;
+    }
+  }
+  if (!Number.isFinite(min[0] as number)) return 0;
+  return Math.hypot(
+    (max[0] as number) - (min[0] as number),
+    (max[1] as number) - (min[1] as number),
+    (max[2] as number) - (min[2] as number),
+  );
+}
+
+/** Bounding diagonal of one component, given its triangle start offsets. */
+function triangleSpan(
+  positions: Float32Array,
+  indices: Uint32Array,
+  triangles: readonly number[],
+): number {
+  const corners = new Uint32Array(triangles.length * TRIANGLE);
+  for (const [at, triangle] of triangles.entries())
+    corners.set(indices.subarray(triangle, triangle + TRIANGLE), at * TRIANGLE);
+  return diagonalOf(positions, corners, 0, corners.length);
+}
+
 /**
  * Connected components of the index buffer, or `null` when the primitive has no thinable card.
  *
@@ -158,10 +206,15 @@ function findCards(positions: Float32Array, indices: Uint32Array): ICardSet | nu
 
   const cards: ICard[] = [];
   const preserved: number[] = [];
+  const maxSpan = MAX_CARD_SPAN * diagonalOf(positions, indices, 0, indices.length);
   for (const triangles of grouped.values()) {
     if (triangles.length === 0) continue;
     // Too large to be a card: keep every triangle, in index order, in every level.
-    if (triangles.length > MAX_CARD_TRIANGLES) {
+    if (
+      triangles.length > MAX_CARD_TRIANGLES ||
+      (triangles.length > ALWAYS_CARD_TRIANGLES &&
+        triangleSpan(positions, indices, triangles) > maxSpan)
+    ) {
       for (const triangle of triangles) preserved.push(triangle);
       continue;
     }

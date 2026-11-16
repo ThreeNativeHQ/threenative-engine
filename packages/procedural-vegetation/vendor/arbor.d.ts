@@ -23,19 +23,29 @@ export interface IArborTexture {
   readonly normal: Uint8Array;
 }
 export interface IArborPreset {
+  readonly [key: string]: unknown;
   readonly id: string;
   readonly name: string;
   readonly latin?: string;
   readonly kind: string;
   readonly bark: string;
   readonly noBark?: boolean;
+  readonly tex?: {
+    readonly grid: readonly [number, number];
+    readonly cells?: readonly Record<string, unknown>[];
+  };
+  readonly leaves?: readonly {
+    readonly [key: string]: unknown;
+    readonly cells?: readonly number[];
+  }[];
+  readonly levels?: readonly Record<string, unknown>[];
 }
 declare const Arbor: {
   readonly PRESETS: Record<string, IArborPreset>;
-  generate(preset: string, opts?: { seed?: number; lod?: number }): IArborTree;
+  generate(preset: string | IArborPreset, opts?: { seed?: number; lod?: number }): IArborTree;
   barkTexture(id: string): IArborTexture;
   leafTexture(
-    preset: string,
+    preset: string | IArborPreset,
     opts?: { size?: number; createCanvas?: (w: number, h: number) => unknown },
   ): { readonly width: number; readonly height: number; readonly data: Uint8Array };
   toGLB(

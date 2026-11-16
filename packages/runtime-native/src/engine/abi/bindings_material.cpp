@@ -165,6 +165,7 @@ void registerMaterialBase(ClassBinding& b) {
         as<Material>(self)->needsUpdate();
     };
     materialBool(b, "alphaHash", &Material::alphaHash);
+    materialBool(b, "alphaToCoverage", &Material::alphaToCoverage);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };
     b.setters["side"] = [](void* self, const Value& v) {
         const double side = number(v);  // FrontSide 0, BackSide 1, DoubleSide 2; anything else is refused
@@ -349,6 +350,7 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"depthNode", &Nodes::depthNode},
              {"castShadowPositionNode", &Nodes::castShadowPositionNode},
              {"maskNode", &Nodes::maskNode},
+             {"maskShadowNode", &Nodes::maskShadowNode},
              {"alphaTestNode", &Nodes::alphaTestNode}}) {
         if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
                     std::string_view(name) == "metalnessNode"))

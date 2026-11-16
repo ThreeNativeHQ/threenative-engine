@@ -210,7 +210,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
            a.blending == b.blending && a.blendFactors() == b.blendFactors() &&
            a.side == b.side && a.visible == b.visible &&
            a.toneMapped == b.toneMapped && a.fog == b.fog &&
-           ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & (a.alphaHash == b.alphaHash) & eq(a.emissive, b.emissive) &
+           ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & (a.alphaHash == b.alphaHash) & (a.alphaToCoverage == b.alphaToCoverage) & eq(a.emissive, b.emissive) &
             (a.emissiveIntensity == b.emissiveIntensity) & (a.roughness == b.roughness) &
             (a.metalness == b.metalness) & eq(a.specular, b.specular) & (a.shininess == b.shininess) &
             (a.ior == b.ior) & (a.specularIntensity == b.specularIntensity) & eq(a.specularColor, b.specularColor) &

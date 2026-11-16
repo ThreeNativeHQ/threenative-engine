@@ -81,3 +81,13 @@ it("keeps a scaled card's geometry when POSITION is a normalized int16 accessor"
   }
   expect(Math.max(...heights)).toBeGreaterThan(1);
 });
+
+it("refuses a far level whose scaled cards cover less than the crown floor", async () => {
+  const { thinCoveringCards } = await import("../src/lod/generate.js");
+  // A sixteenth of the cards, grown at most 2x, covers a quarter of the crown: bare branches.
+  expect(() => thinCoveringCards(cardCrown(false), 0.06, 0.5)).toThrow(
+    /^thinFoliageCards cannot reduce .* keep 0.5 of its card area/,
+  );
+  // A quarter of the cards grown 2x covers the whole crown.
+  expect(thinCoveringCards(cardCrown(false), 0.25, 0.5)).toBe(1);
+});

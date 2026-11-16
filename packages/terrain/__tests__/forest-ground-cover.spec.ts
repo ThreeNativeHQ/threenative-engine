@@ -9,7 +9,7 @@ const kit = join(packageRoot, "starter", "forest");
 const read = (name: string) => JSON.parse(readFileSync(join(kit, name), "utf8"));
 const assets = read("assets.json") as Record<
   string,
-  { near: string; maxDistance?: number; bounds: unknown }
+  { arbor?: string; near?: string; maxDistance?: number; bounds?: unknown }
 >;
 const surface = read("surface.json") as { layers: { id: string; lo: number }[] };
 
@@ -35,9 +35,12 @@ describe("forest ground cover", () => {
     for (const id of [...FERNS, ...STONES]) {
       const spec = assets[id];
       expect(spec, `${id} is in assets.json`).toBeDefined();
-      expect(existsSync(join(packageRoot, "starter-assets", spec?.near ?? "missing")), id).toBe(
-        true,
-      );
+      // An Arbor row is grown at bake time, so it names a preset rather than a starter file.
+      if (spec?.arbor !== undefined) expect(spec.arbor, id).toMatch(/^[a-z]+@\d+$/u);
+      else
+        expect(existsSync(join(packageRoot, "starter-assets", spec?.near ?? "missing")), id).toBe(
+          true,
+        );
     }
     for (const id of FERNS) expect(assets[id]?.maxDistance).toBeLessThanOrEqual(60);
     for (const id of STONES) expect(assets[id]?.maxDistance).toBeLessThanOrEqual(100);

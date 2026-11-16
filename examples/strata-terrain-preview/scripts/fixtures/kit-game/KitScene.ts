@@ -364,8 +364,10 @@ function forestViews(): IStand {
   /** From the fir towards the player's start; the open side of the stand. */
   const AWAY = new Vector3(stand.spawn.x - stand.fir.x, 0, stand.spawn.z - stand.fir.z).normalize();
 
-  /** The recipe's lake centre, on the water's level: the lake view looks at it from above the terrain. */
-  const LAKE = new Vector3(-70, 13.3, 25);
+  /** The cooked lake's centre, on the water's level: the lake view looks at it from above the terrain. */
+  const LAKE = stand.lake
+    ? new Vector3(stand.lake.x, stand.lake.y, stand.lake.z)
+    : new Vector3(-70, 13.3, 25);
   /** The fixed views the scenario captures. */
   // Eye-height cameras inside a 4.5 m stand sit inside crowns, whose one-sided cards vanish from
   // behind; so the close view looks out of the clearing and the edge view stands back from the stand.
@@ -387,7 +389,7 @@ function forestViews(): IStand {
     },
     // Above the tallest ground (about 38 m) and back far enough to frame the whole basin and its shore.
     lake: {
-      at: new Vector3(20, 84, 115),
+      at: LAKE.clone().add(new Vector3(90, 70.7, 90)),
       look: LAKE,
     },
   };

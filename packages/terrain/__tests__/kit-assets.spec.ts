@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -103,20 +103,26 @@ describe("pinned starter assets", () => {
     expect((await readdir(join(cache, ".."))).filter((name) => name.includes(".tmp-"))).toEqual([]);
   }, 30_000);
 
-  it("bakes a scaffolded forest kit using the file archive with no bundled assets", async () => {
+  it("bakes a scaffolded data kit using the file archive with no bundled assets", async () => {
     const fixture = await installed();
     const game = join(fixture.dir, "game");
-    const kit = join(fixture.dir, "template-assets/terrain/forest");
-    await cp(join(root, "starter/forest"), kit, { recursive: true });
+    const kit = join(fixture.dir, "template-assets/terrain/alpine");
+    await cp(join(root, "starter/alpine"), kit, { recursive: true });
     await copyFile(join(root, "starter-assets/credits.json"), join(kit, "credits.json"));
-    await copyTerrainKit("forest", game, join(fixture.dir, "templates"));
+    await copyTerrainKit("alpine", game, join(fixture.dir, "templates"));
+    // The README's third devDependency: the bake grows the kit's Arbor trees and understory.
+    await mkdir(join(game, "node_modules", "@threenative"), { recursive: true });
+    await symlink(
+      join(root, "../procedural-vegetation"),
+      join(game, "node_modules", "@threenative", "procedural-vegetation"),
+    );
     await fixture.bake(pathToFileURL(join(game, "bake.mjs")).href, {
       sky: "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
     });
     expect(JSON.parse(await readFile(join(game, "recipe.json"), "utf8"))).toHaveProperty("recipe");
     expect(
-      (await readFile(join(game, "world/models/fir-b-lod1.glb"))).equals(
-        await readFile(join(root, "starter-assets/fir_tree_01/fir-b-lod1.glb")),
+      (await readFile(join(game, "world/models/boulder-near.glb"))).equals(
+        await readFile(join(root, "starter-assets/boulder_01/boulder-near.glb")),
       ),
     ).toBe(true);
     expect(
@@ -213,14 +219,13 @@ describe("pinned starter assets", () => {
 
 it("every starter asset directory has a kit or example reference", async () => {
   const references: string[] = [];
-  // A kit is a starter folder with an assets.json; any other (starter/arbor's copy-out wind) is source.
+  // A kit's tables (assets.json, surface.json) and its source (bake.mjs, the forest's render tree)
+  // both name art; a folder with neither (starter/arbor's copy-out wind) is source alone.
   for (const kit of await readdir(join(root, "starter"))) {
-    if (!(await readdir(join(root, "starter", kit))).includes("assets.json")) {
-      await source(join(root, "starter", kit));
-      continue;
-    }
-    for (const file of ["assets.json", "surface.json", "bake.mjs"])
+    const files = await readdir(join(root, "starter", kit));
+    for (const file of ["assets.json", "surface.json"].filter((name) => files.includes(name)))
       references.push(await readFile(join(root, "starter", kit, file), "utf8"));
+    await source(join(root, "starter", kit));
   }
   async function source(dir: string) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {

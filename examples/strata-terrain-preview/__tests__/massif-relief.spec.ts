@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { type HorizonSurroundings, setHorizonSurroundings } from "../src/render/horizon.js";
-import { buildCollarRelief } from "../src/render/terrain.js";
+import { type HorizonSurroundings, setHorizonSurroundings } from "../src/render/ground/horizon.js";
+import { buildCollarRelief } from "../src/render/ground/terrain.js";
 
 // PRD-866: the collar's relief map reads a placed massif at the tile's own 4 m cells, in the same
 // texture binding (the ground samples sixteen), and leaves every collar texel as it was.

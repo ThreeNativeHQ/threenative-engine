@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  * The mutation that reddens this file: declare `const flag = <existsSync(...)>`, throw on
  * `if (!flag)`, then write `if (flag) { ... }` or `flag ? ... : ...` below it.
  */
-const script = path.resolve(import.meta.dirname, "../scripts/verify-consumer.mjs");
+const script = path.resolve(import.meta.dirname, "../scripts/verify/verify-consumer.mjs");
 
 describe("verify-consumer forest proof", () => {
   const source = readFileSync(script, "utf8");

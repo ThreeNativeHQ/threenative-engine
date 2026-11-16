@@ -7,6 +7,7 @@ import {
 import {
   invalidateStatic,
   isStatic,
+  markEngineStatic,
   markStatic,
   refreshStaticTransforms,
   resetStaticTransforms,
@@ -242,6 +243,129 @@ describe("the per-frame cost of the convention nobody opted into", () => {
     } finally {
       island.traverse = original;
     }
+  });
+
+  it("reads each matrix's `elements` once per root, because on the owned engine it is an accessor", () => {
+    // The owned engine's `Matrix4.elements` is a getter that resolves a Wasm heap view on every
+    // read. Indexing it sixteen times per matrix made the check 0.8 ms of a 4.2 ms frame on a
+    // streamed world of 1,030 frozen batches (PRD-887 AC-3), so the count is the contract.
+    const scene = new Scene();
+    const parent = new Group();
+    scene.add(parent);
+    const roots = Array.from({ length: 8 }, (_, index) => {
+      const root = new Mesh();
+      root.position.set(index, 0, 0);
+      parent.add(root);
+      return root;
+    });
+    scene.updateMatrixWorld(true);
+    for (const root of roots) markStatic(root);
+    let reads = 0;
+    const counted = (matrix: { elements: number[] }): void => {
+      const values = matrix.elements;
+      Object.defineProperty(matrix, "elements", {
+        configurable: true,
+        get: () => {
+          reads += 1;
+          return values;
+        },
+      });
+    };
+    counted(parent.matrixWorld);
+    for (const root of roots) counted(root.matrix);
+    refreshStaticTransforms();
+    expect(staticTransformCensus().rearmed).toBe(0);
+    // One read of the root's own matrix and one of its parent's world matrix, per root.
+    expect(reads).toBeLessThanOrEqual(roots.length * 2);
+  });
+});
+
+describe("engine-owned frozen draws", () => {
+  /** A world root with `count` engine-owned draws under it, frozen before they join it. */
+  function world(count: number): { scene: Scene; root: Group; draws: Mesh[] } {
+    const scene = new Scene();
+    const root = new Group();
+    scene.add(root);
+    const draws = Array.from({ length: count }, () => {
+      const draw = new Mesh();
+      markEngineStatic(draw);
+      root.add(draw);
+      return draw;
+    });
+    scene.updateMatrixWorld(true);
+    return { draws, root, scene };
+  }
+
+  it("check their shared parent once a frame, not each draw's own transform", () => {
+    // A streamed world freezes one batch per asset part, level and cluster: 2,077 on a cooked
+    // region's overview, 721 on the starter's, and the per-root check grew with the species count
+    // (PRD-887 AC-3). The engine owns those draws' local transforms, so only the parent can move them.
+    const { draws, root } = world(64);
+    refreshStaticTransforms();
+    let parentReads = 0;
+    let ownReads = 0;
+    const values = root.matrixWorld.elements;
+    Object.defineProperty(root.matrixWorld, "elements", {
+      configurable: true,
+      get: () => {
+        parentReads += 1;
+        return values;
+      },
+    });
+    for (const draw of draws) {
+      const position = draw.position;
+      Object.defineProperty(draw, "position", {
+        configurable: true,
+        get: () => {
+          ownReads += 1;
+          return position;
+        },
+      });
+    }
+    refreshStaticTransforms();
+    expect(staticTransformCensus().rearmed).toBe(0);
+    expect(parentReads).toBe(1);
+    expect(ownReads).toBe(0);
+  });
+
+  it("follow the world root when it moves, though they froze before they joined it", () => {
+    const { draws, root, scene } = world(8);
+    refreshStaticTransforms();
+    root.position.set(0, -12, 0);
+    scene.updateMatrixWorld(false);
+    refreshStaticTransforms();
+    scene.updateMatrixWorld(false);
+    for (const draw of draws) expect(draw.matrixWorld.elements[13]).toBe(-12);
+    expect(staticTransformCensus().rearmed).toBe(8);
+  });
+
+  it("follow a world root already seated when they joined it", () => {
+    const scene = new Scene();
+    const root = new Group();
+    root.position.set(0, -11.4, 0);
+    scene.add(root);
+    scene.updateMatrixWorld(true);
+    const draw = new Mesh();
+    markEngineStatic(draw);
+    root.add(draw);
+    refreshStaticTransforms();
+    scene.updateMatrixWorld(false);
+    expect(draw.matrixWorld.elements[13]).toBeCloseTo(-11.4, 6);
+    expect(() => validateWorldMatrices(scene)).not.toThrow();
+  });
+
+  it("re-arm a draw moved under another parent", () => {
+    const { draws, scene } = world(2);
+    refreshStaticTransforms();
+    const other = new Group();
+    other.position.set(5, 0, 0);
+    scene.add(other);
+    scene.updateMatrixWorld(true);
+    other.attach(draws[0] as Mesh);
+    (draws[0] as Mesh).position.set(0, 0, 0);
+    refreshStaticTransforms();
+    scene.updateMatrixWorld(false);
+    expect((draws[0] as Mesh).matrixWorld.elements[12]).toBe(5);
   });
 });
 

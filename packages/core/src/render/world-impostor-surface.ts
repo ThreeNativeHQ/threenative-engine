@@ -41,6 +41,7 @@ import {
   modelWorldMatrix,
   normalize,
   positionGeometry,
+  renderGroup,
   screenCoordinate,
   select,
   sin,
@@ -64,6 +65,7 @@ import {
   type NodeBuilder,
   type NodeMaterial,
 } from "three/webgpu";
+import { readLaunchFlag } from "../debug.js";
 import { IMPOSTOR_VIEW_GRID, type WorldImpostorAtlas } from "./world-impostor.js";
 
 type InstanceMatrixFn = () => Node<"mat4">;
@@ -967,6 +969,82 @@ export function advanceTemporalLod(
   state.alpha = window > 0 ? Math.min(1, Math.max(0, (now - lag - state.fromTime) / window)) : 1;
 }
 
+/**
+ * The distance past which `level`'s gate discards every fragment at the worst per-instance random
+ * draw: `worldLodMaterial`'s fade-out mix reaches 1 at `gate + 0.75 * span` (0.5 of the ramp plus
+ * the 0.25 random swing). `undefined` for the last level, which has no coarser level to fade into.
+ */
+export function lodFadedPast(
+  distances: readonly number[],
+  level: number,
+  width: number,
+): number | undefined {
+  const gate = level + 1;
+  const at = distances[gate];
+  if (at === undefined) return undefined;
+  let span = Math.min(at * width, (at - (distances[gate - 1] as number)) * width);
+  const next = distances[gate + 1];
+  if (next !== undefined) span = Math.min(span, (next - at) * width);
+  return at + 0.75 * span;
+}
+
+// `?lodCollapse=1` (TN_LOD_COLLAPSE, `__tnLodCollapse`) is read once per page; while it is on,
+// `globalThis.__tnLodCollapse = false` turns the collapse off live for a paired A/B.
+let lodCollapseArmed: boolean | undefined;
+// Render group, as the LOD clock: an object-group uniform freezes on settled static batches.
+const makeLodCollapseSwitch = () => uniform(1).setGroup(renderGroup);
+let lodCollapseSwitch: ReturnType<typeof makeLodCollapseSwitch> | undefined;
+function lodCollapseNode(): ReturnType<typeof makeLodCollapseSwitch> | undefined {
+  lodCollapseArmed ??= readLaunchFlag({
+    environment: "TN_LOD_COLLAPSE",
+    query: "lodCollapse",
+    global: "__tnLodCollapse",
+  });
+  if (!lodCollapseArmed) return undefined;
+  lodCollapseSwitch ??= makeLodCollapseSwitch();
+  return lodCollapseSwitch;
+}
+
+/** Per frame: follow `globalThis.__tnLodCollapse` when the collapse was armed at boot. */
+export function syncLodCollapse(): void {
+  if (lodCollapseSwitch === undefined) return;
+  const live: unknown = Reflect.get(globalThis, "__tnLodCollapse");
+  if (typeof live === "boolean") lodCollapseSwitch.value = live ? 1 : 0;
+}
+
+/**
+ * Collapse to one point the vertices of an instance whose every fragment the LOD gate discards:
+ * past `past` from every eye the masks read, and not held whole by its published range or a swap.
+ */
+function collapseFadedVertices(
+  material: NodeMaterial,
+  on: Node<"float">,
+  gate: {
+    readonly past: Node<"float">;
+    readonly distances: readonly Node<"float">[];
+    readonly lod: Node<"float">;
+    readonly publishedRanges: boolean;
+    readonly clock: Node<"float"> | undefined;
+  },
+): void {
+  let faded = on.greaterThan(0.5);
+  for (const distance of gate.distances) faded = faded.and(distance.greaterThanEqual(gate.past));
+  if (gate.publishedRanges) {
+    // A record whole at this level (`.y <= lod`) or still holding it after a swap draws anyway.
+    const range = attribute("tnPublishedLodRange", "vec4") as Node<"vec4">;
+    faded = faded.and(range.y.greaterThan(gate.lod));
+    if (gate.clock !== undefined)
+      faded = faded.and(
+        range.z
+          .lessThan(0)
+          .or(gate.clock.sub(range.w).div(LOD_TEMPORAL_LAG).greaterThanEqual(1))
+          .or(range.z.sub(gate.lod).abs().greaterThanEqual(0.5)),
+      );
+  }
+  const position = (material.positionNode ?? positionGeometry) as Node<"vec3">;
+  material.positionNode = select(faded, vec3(0, 0, 0), position);
+}
+
 /** Complementary LOD masks over the caller's distance bands, shared by colour and shadow passes. */
 export function worldLodMaterial(
   source: Material,
@@ -995,9 +1073,11 @@ export function worldLodMaterial(
         .mul(vec4(0, 0, 0, 1)).xyz,
   )();
   // Quantise recovered roots so part-local float rounding cannot change the instance hash.
-  const origin = varying(floor(root.mul(16).add(0.5)).div(16));
-  const distanceTo = (at: Node<"vec3">) =>
-    (spatial ? length(origin.sub(at)) : length(origin.xz.sub(at.xz))).mul(distanceBias);
+  const quantised = floor(root.mul(16).add(0.5)).div(16);
+  const origin = varying(quantised);
+  const distanceFrom = (point: Node<"vec3">, at: Node<"vec3">) =>
+    (spatial ? length(point.sub(at)) : length(point.xz.sub(at.xz))).mul(distanceBias);
+  const distanceTo = (at: Node<"vec3">) => distanceFrom(origin, at);
   const distance = distanceTo(eye);
   const random = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))).mul(43758.5453));
   const noise = fract(sin(dot(floor(screenCoordinate.xy), vec2(12.9898, 78.233))).mul(43758.5453));
@@ -1079,6 +1159,21 @@ export function worldLodMaterial(
   material.maskShadowNode = material.maskShadowNode
     ? (material.maskShadowNode as Node<"bool">).and(shadow)
     : shadow;
+  // PRD-888 lever 2: an instance past `lodFadedPast` has every colour and shadow fragment of this
+  // level discarded, so its vertices collapse to one point and the rasteriser drops the triangles.
+  // Read per instance in the vertex stage with the worst random draw and a 0.1 % margin, so the
+  // varying's rounding cannot flip a fragment the gate would have drawn.
+  const collapseOn = lodCollapseNode();
+  if (collapseOn !== undefined)
+    collapseFadedVertices(material, collapseOn, {
+      past: uniform((lodFadedPast(distances, level, width) ?? 1e30) * 1.001),
+      distances: (temporal === undefined ? [eye] : [eye, temporal.from, temporal.to]).map((at) =>
+        distanceFrom(quantised, at),
+      ),
+      lod,
+      publishedRanges,
+      clock,
+    });
   if (publishedRanges) material.userData.tnPublishedLodRange = true;
   return material;
 }

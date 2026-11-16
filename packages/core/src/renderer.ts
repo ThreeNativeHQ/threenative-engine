@@ -1340,6 +1340,9 @@ function wrapRenderer(
     prepareTextures: async (textures, signal, onProgress, replacements) => {
       if (disposed) throw new Error("Renderer disposed during texture preparation.");
       if (kind !== "webgpu") return 0;
+      // The owned engine keeps compressed mip bytes in its own heap and uploads them itself: its
+      // texture facade shows no CPU mips, so there is nothing here to stage, and no work to report.
+      if ((raw.info as { engine?: unknown } | undefined)?.engine !== undefined) return 0;
       // Snapshot the caller's iterable once. An owned replacement resolves back to its original,
       // so a repeated call that hands back a published replacement keeps a stable identity instead
       // of looking like an unrelated texture and returning stale work.

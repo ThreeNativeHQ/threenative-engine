@@ -97,6 +97,8 @@ public:
      *  caster draws on every page. */
     double maxPositionOffset = 0;
     bool alphaHash = false;
+    /** three r187: the cutoff fades over one pixel of alpha (`smoothstep`) instead of a hard test; see VertexVariant. */
+    bool alphaToCoverage = false;
     bool depthTest = true;
     bool depthWrite = true;
     bool colorWrite = true;  // three's: false draws depth only, with every colour channel masked

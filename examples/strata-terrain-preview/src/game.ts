@@ -37,17 +37,21 @@ import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.j
 import { BENCHMARK, type ViewName, posesFor } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
-import { HORIZON_REACH, HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
+import { openLookTweaks } from "./render/editor/lookTweaks.js";
+import {
+  HORIZON_REACH,
+  HORIZON_WALK_BAND,
+  loadHorizonSurroundings,
+} from "./render/ground/horizon.js";
+import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/ground/terrain.js";
 import { createLoadingScreen } from "./render/loading.js";
-import { openLookTweaks } from "./render/lookTweaks.js";
-import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/ocean.js";
-import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/propWorld.js";
-import { invalidatePropShadows } from "./render/propWorld.js";
-import { buildPropVariants } from "./render/props.js";
-import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
-import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
-import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/terrain.js";
-import { sampleActiveWaterProof, waterProofEnabled } from "./render/waterProof.js";
+import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/props/propWorld.js";
+import { invalidatePropShadows } from "./render/props/propWorld.js";
+import { buildPropVariants } from "./render/props/props.js";
+import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky/sky.js";
+import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/water/ocean.js";
+import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/water/river.js";
+import { sampleActiveWaterProof, waterProofEnabled } from "./render/water/waterProof.js";
 import { type IMeadow, type Scatter, type Variants, createMeadow } from "./sceneProps.js";
 import { type TerrainCtx, type TerrainState, initialState } from "./sceneState.js";
 import { createSpawnGate } from "./spawnGate.js";
@@ -86,7 +90,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #stageLoad = 0;
     /** Bumped when a scene is left, so a band build still slicing stops instead of joining the next scene. */
     #bandLoad = 0;
-    /** PRD-790: the streamed ground past the square, on `?stream=1` until its judge passes. */
+    /** PRD-790: the streamed ground past the square; absent under the `?stream=off` override. */
     #stream: { split: ITerrainStream; material: Promise<MeshStandardNodeMaterial> } | undefined;
     #mannequin: IMannequin | undefined;
     #swimClips: readonly AnimationClip[] = [];
@@ -130,8 +134,15 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // Prepare scenery while the scene loads; enter only attaches it.
       // `?skyAo=off` is the named before arm: the ground keeps the whole sky, as it did before.
       const skyAo = new URLSearchParams(globalThis.location?.search ?? "").get("skyAo") !== "off";
+      // PRD-790: the ground streams past the playable square by default; `?stream=off` is the named
+      // override (the collar alone, walls at its 200 m walk band), and it says so.
       const streaming =
-        new URLSearchParams(globalThis.location?.search ?? "").get("stream") === "1";
+        new URLSearchParams(globalThis.location?.search ?? "").get("stream") !== "off";
+      if (!streaming)
+        console.info(
+          "TN_STREAM_OVERRIDE stream=off: no streamed ground past the playable square; the collar draws it and the walls stand at its walk band.",
+        );
+      ctx.state.set({ streamOverride: streaming ? "" : "off" });
       let tileSurface: (material: MeshStandardNodeMaterial) => void = () => undefined;
       const material = new Promise<MeshStandardNodeMaterial>((resolve) => {
         tileSurface = resolve;
@@ -360,12 +371,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // One rig owns the whole of the sky, the sun, the shadows that follow the eye, the haze the
       // far ridges fade into and the tone curve. It used to be a flat `Color` background, a
       // hand-set `FogExp2`, a sun with a five metre shadow box that missed everything, and no tone
-      // mapping at all; the numbers behind all of that now live in `src/render/sky.ts`.
+      // mapping at all; the numbers behind all of that now live in `src/render/sky/sky.ts`.
       ctx.add(sky.daylight);
       ctx.add(sky.atmosphere);
       ctx.add(sky.sun);
       this.#sky = sky;
-      // `?tweak`: range bars over the wood's look, on the running scene (`src/render/lookTweaks.ts`).
+      // `?tweak`: range bars over the wood's look, on the running scene (`src/render/editor/lookTweaks.ts`).
       if (world === "forest" && debugFlag("tweak")) openLookTweaks(sky, ctx.renderer);
       ctx.entities.add("sun", {
         object: sky.sun,
@@ -400,9 +411,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const actor = rig.actor;
       const stream = this.#stream;
       // ponytail: a ground material that never loads leaves this pending, and the spawn deadline
-      // then fails the scene by name; `?stream=1` is opt-in, so no tile-less fallback yet.
+      // then fails the scene by name; `?stream=off` is the tile-less arm, so no fallback here.
       let groundReady: Promise<void> | undefined;
-      if (stream && mesh) {
+      if (stream && mesh && collar) {
         const streamLoad = this.#bandLoad;
         groundReady = stream.material.then((surface) => {
           if (streamLoad !== this.#bandLoad) return surface.dispose();
@@ -411,6 +422,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             data,
             world,
             surface,
+            collar,
             stream.split,
             actor,
             (facts) => ctx.state.set(facts),

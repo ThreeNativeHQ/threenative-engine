@@ -252,6 +252,7 @@ struct SurfaceConfig {
     bool vsync = kSurfaceVsync;
     std::string title = "ThreeNative native engine";
     bool priority = true;  // PRD-859: TN_PLAYER_PRIORITY=normal (`display.priority: "normal"`) keeps the OS default
+    bool fullscreen = false;  // TN_PLAYER_FULLSCREEN=1 (`display.fullscreen`): borderless desktop fullscreen; unset stays windowed
     std::string problem;
 };
 
@@ -274,6 +275,11 @@ SurfaceConfig readSurfaceConfig() {
         if (std::strcmp(text, "0") == 0 || std::strcmp(text, "off") == 0) config.vsync = false;
         else if (std::strcmp(text, "1") == 0 || std::strcmp(text, "on") == 0) config.vsync = true;
         else config.problem = std::string("TN_PLAYER_VSYNC must be 0, 1, off or on, got '") + text + "'";
+    }
+    if (const char* text = flags::read<flags::PlayerFullscreen>(); text != nullptr && text[0] != '\0') {
+        if (std::strcmp(text, "0") == 0 || std::strcmp(text, "off") == 0) config.fullscreen = false;
+        else if (std::strcmp(text, "1") == 0 || std::strcmp(text, "on") == 0) config.fullscreen = true;
+        else config.problem = std::string("TN_PLAYER_FULLSCREEN must be 0, 1, off or on, got '") + text + "'";
     }
     if (const char* text = flags::read<flags::PlayerPriority>(); text != nullptr && text[0] != '\0') {
         if (std::strcmp(text, "normal") == 0) config.priority = false;
@@ -362,6 +368,7 @@ bool openWindow(Window& window) {
         return false;
     }
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
+    if (surfaceConfig().fullscreen) flags |= SDL_WINDOW_FULLSCREEN;  // SDL3: borderless, at the desktop size
 #if defined(__APPLE__)
     flags |= SDL_WINDOW_METAL;
 #elif defined(_WIN32) || defined(TN_PS4)
@@ -380,6 +387,8 @@ bool openWindow(Window& window) {
 #if defined(__linux__) && !defined(__ANDROID__)
     publishUtf8Title(window.handle, surfaceConfig().title);
 #endif
+    // The window manager resizes a fullscreen window after creation; wait for it so the first surface has the real size.
+    if (surfaceConfig().fullscreen) SDL_SyncWindow(window.handle);
     int width = 0, height = 0;
     SDL_GetWindowSize(window.handle, &width, &height);
     if (width <= 0 || height <= 0)
@@ -459,7 +468,12 @@ bool pumpEvents(Window& window, const Game& game) {
         // A person's keys, mouse and wheel become the DOM events the game's listeners read, through the
         // legacy host's translation (platform/input.cpp); a game runtime installs the callbacks.
         switch (event.type) {
-            case SDL_EVENT_KEY_DOWN: mystral::platform::processKeyboardEvent(event.key, true); continue;
+            case SDL_EVENT_KEY_DOWN:
+                // F11 leaves or re-enters fullscreen; the game still sees the key. Escape stays the game's.
+                if (event.key.key == SDLK_F11 && !event.key.repeat)
+                    SDL_SetWindowFullscreen(window.handle, !(SDL_GetWindowFlags(window.handle) & SDL_WINDOW_FULLSCREEN));
+                mystral::platform::processKeyboardEvent(event.key, true);
+                continue;
             case SDL_EVENT_KEY_UP: mystral::platform::processKeyboardEvent(event.key, false); continue;
             case SDL_EVENT_MOUSE_MOTION: mystral::platform::processMouseMotion(event.motion); continue;
             case SDL_EVENT_MOUSE_BUTTON_DOWN: mystral::platform::processMouseButton(event.button, true); continue;

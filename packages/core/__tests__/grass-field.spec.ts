@@ -159,6 +159,23 @@ describe("GrassField3D", () => {
     expect(writes).toEqual([]);
   });
 
+  it("asks for no ground height outside its bounds", () => {
+    // A resident heightfield throws outside its region; the slope ring one cell past a chunk edge
+    // reads the edge height instead.
+    const asked: number[] = [];
+    const grass = field({
+      getHeight: (x, z) => {
+        asked.push(x, z);
+        return 0;
+      },
+    });
+    grass.update(cameraAt(1, 1));
+    grass.update(cameraAt(47, 47));
+    expect(asked.length).toBeGreaterThan(0);
+    expect(Math.min(...asked)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...asked)).toBeLessThanOrEqual(48);
+  });
+
   it("fails closed on a malformed field, naming it", () => {
     expect(() => field({ chunkSize: 0 })).toThrow(/chunkSize/);
     expect(() => field({ bounds: { minX: 5, minZ: 0, maxX: 1, maxZ: 9 } })).toThrow(/bounds\.minX/);

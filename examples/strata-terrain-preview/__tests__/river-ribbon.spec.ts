@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Heightfield, WATER_RIBBON_REACH, riverRibbonGeometry } from "@threenative/core/world";
 import { describe, expect, it } from "vitest";
-import type { IBakedRiver } from "../src/render/river.js";
+import type { IBakedRiver } from "../src/render/water/river.js";
 import { waterSurfaceAt } from "../src/world/water.js";
 
 const forest = JSON.parse(

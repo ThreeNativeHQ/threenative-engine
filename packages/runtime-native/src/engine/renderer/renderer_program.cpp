@@ -276,6 +276,43 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
     }
 }
 
+const shader::StageModule* Renderer::prepassFragment(Program& program) {
+    if (program.prepassBuilt) return program.prepass.get();
+    program.prepassBuilt = true;
+    const shader::VertexVariant& variant = program.variant;
+    const shader::LightLayout layout{program.lightKinds};
+    try {
+        shader::StandardPrograms source;
+        switch (program.kind) {
+        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
+        case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
+        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Basic: source = shader::buildBasic(variant); break;
+        }
+        auto& f = source.fragment;
+        if (!f.diagnostics().empty()) return nullptr;
+        const std::size_t varyings = f.varyings().size();
+        keepDiscardsOnly(f);
+        if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
+        shader::positionalGraphTextures(*module);
+        shader::positionalSerialNames(*module);
+        const auto& own = program.fragment;
+        bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
+        for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
+            same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
+        // A fragment side effect (a storage or storage-texture write) would run twice: such a draw keeps the shipped path.
+        same = same && own.wgsl.code.find("read_write") == std::string::npos &&
+               own.wgsl.code.find("texture_storage") == std::string::npos;
+        if (same) program.prepass = std::move(module);
+    } catch (const std::exception&) {
+        // Refused: the draw keeps the shipped path.
+    }
+    return program.prepass.get();
+}
+
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, bool masked) {
     ++programKeyBuilds_;
     ++programLookups_;
@@ -290,7 +327,13 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
     kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
-    if (masked) kind.nodes.alphaTestNode = variant.nodes.alphaTestNode;  // ...and cuts where its alphaTestNode says
+    if (masked) {
+        kind.nodes.alphaTestNode = variant.nodes.alphaTestNode;  // ...and cuts where its alphaTestNode says,
+        // where its colorNode's alpha says (three's shadow alpha is map.a * colorNode.a), and where its shadow mask
+        // says: three r187 masks the shadow pass with `maskShadowNode || maskNode`, held here in the maskNode slot.
+        kind.nodes.colorNode = variant.nodes.colorNode;
+        kind.nodes.maskNode = variant.nodes.maskShadowNode ? variant.nodes.maskShadowNode : variant.nodes.maskNode;
+    }
     // ...nor a diffuse map, unless the caster is alpha-tested (three's shadow pass copies alphaTest and
     // the map, so a leaf card casts its cut, PRD-651) or hashed (alphaHash reads the map's alpha too).
     // An opaque caster keeps no fragment stage.

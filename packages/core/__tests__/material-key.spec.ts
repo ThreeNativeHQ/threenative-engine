@@ -42,4 +42,28 @@ describe("materialKey", () => {
     large.map = largeMap;
     expect(materialKey(small)).not.toBe(materialKey(large));
   });
+
+  it("keeps two unnamed maps of one size apart", () => {
+    // Two generated leaf atlases: same size, no name, no mip bytes, different pixels.
+    const daisy = new MeshStandardMaterial();
+    daisy.map = new DataTexture(new Uint8Array(4 * 4 * 4).fill(255), 4, 4);
+    const salal = new MeshStandardMaterial();
+    salal.map = new DataTexture(new Uint8Array(4 * 4 * 4), 4, 4);
+    expect(materialKey(daisy)).not.toBe(materialKey(salal));
+  });
+
+  it("keeps two unnamed maps apart when their source carries no uuid", () => {
+    // The owned engine's texture source has no `uuid`: an id read from it was the same
+    // "source:undefined" for every unnamed 1024² leaf atlas, so a fir drew the bracken's fronds.
+    const leaf = (fill: number): MeshStandardMaterial => {
+      const material = new MeshStandardMaterial();
+      material.map = new DataTexture(new Uint8Array(4 * 4 * 4).fill(fill), 4, 4);
+      Object.defineProperty(material.map, "source", { value: {} });
+      return material;
+    };
+    const fir = leaf(255);
+    const bracken = leaf(0);
+    expect(materialKey(fir)).not.toBe(materialKey(bracken));
+    expect(materialKey(fir)).toBe(materialKey(fir));
+  });
 });

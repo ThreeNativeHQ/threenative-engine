@@ -11,7 +11,11 @@
 import type { IPlacement } from "@threenative/terrain";
 import { BoxGeometry, type Matrix4, MeshBasicMaterial, Quaternion, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { type IPropPoseOverride, type PropGroundQuery, preparePose } from "../src/render/props.js";
+import {
+  type IPropPoseOverride,
+  type PropGroundQuery,
+  preparePose,
+} from "../src/render/props/props.js";
 
 /** A boulder record whose stone is centred on its own origin, as the procedural stone is. */
 const geometry = new BoxGeometry(1, 2, 1);
