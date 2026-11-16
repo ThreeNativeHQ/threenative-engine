@@ -85,14 +85,27 @@ const KITS = {
     captures: ["forest-start", "meadow-close", "overview", "river", "vista", "forest-walk"],
     views: [],
   },
+  // Alpine is a source kit on the forest's scene since PRD-892 Phase 2, so it proves itself the way
+  // the forest does: its own `AlpineScene` as the game, not the generated `KitScene`.
   alpine: {
     playtest: "alpine.playtest.json",
+    source: "alpine-game.ts",
     generatedStand: false,
     water: false,
     cooked: "cookedAlpineBytes",
-    numbers: ["boulderInstances", "closestToBoulder"],
-    captures: ["boulders", "edge", "ground", "overview"],
-    views: ["boulders", "edge", "ground", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["alpine-start", "meadow-close", "overview", "river", "vista", "alpine-walk"],
+    views: [],
   },
   desert: {
     playtest: "desert.playtest.json",
