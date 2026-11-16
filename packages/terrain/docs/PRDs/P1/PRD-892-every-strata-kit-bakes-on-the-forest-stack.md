@@ -228,8 +228,28 @@ flowchart LR
   2046 unshadowed scree), 16 art entries, 2.4 s, writing `alpine.json`, `alpine.world.json`,
   `alpine.splat.rgba8`, `alpine.canopy.bin`, `horizon.json` and both prop buckets. The surveyed
   `longs` massif is left out of the ring for now: `placeMassif` refuses it on this relief ("top under
-  its foot at 1128 m"), so the ring is survey + backdrop until that band is tuned. Next: point the
-  alpine runtime at the streamed world, then `KIT=alpine test:kit`.
+  its foot at 1128 m"), so the ring is survey + backdrop until that band is tuned.
+  In progress 2026-11-16 (the runtime, first cut): `starter/alpine/` is now a **source kit on the
+  forest's scene**, per `docs/authoring/new-environment.md` — the 32 files the kit lacked were copied
+  from `starter/forest` (`scene.ts`, `sceneProps.ts`, `sceneState.ts`, `worlds.ts`, `playerRig.ts`,
+  `render/**`, `world/walkBand.ts`, `world/water.ts`) and renamed (`WORLD` `alpine`, `AlpineScene`,
+  `ALPINE_GAME`, `alpineAssets`). The kit typechecks standalone (0 errors, `tsc` over
+  `starter/alpine/**/*.ts`), and its own `bake.mjs` now runs the streamed branch for real: **52682
+  placements** (`horizon:true 389`, `local:true 3249`, `local:false 49044`) — the horizon bucket exists
+  because the forest prop policy's 900 m reach replaced the alpine one — 36 art entries, 1.5 s, writing
+  `alpine.json`, `alpine.world.json`, `alpine.layers.json`, `alpine.splat.rgba8`, `alpine.canopy.bin`,
+  `alpine.sky.bin`, `horizon.json`, `alpine.props.json` and three buckets. Two consolidations rode
+  along: the fix to `bake.mjs`'s look import (the streamed bake takes the prop module, not a `props`
+  export) and `CANOPY_CROWN` now lives only in `render/ground/terrain.ts` (the duplicate
+  `render/ground/canopy.ts` is gone). `alpine.world.art` is the union of the alpine and forest art
+  lists, because the copied prop pack asks for the forest scans until the alpine species pack lands.
+  Not done: the species pack is still the forest's (`spruce` stands drawn from broadleaf scans, no
+  `tundra`/`krumhholz` rows), the look row is still the forest's values, the kit is not yet the harness's
+  `source` scene, and the playtest is unrun. Also pre-existing at HEAD, not caused by this cut: terrain
+  `669/673`, the same four reds on a stashed A/B — `kit-bake.spec.ts` twice and `starter-kit.spec.ts`
+  once (their temp copy of a kit cannot resolve `tsx`, which the streamed `bake.mjs` now imports) and
+  `kit-assets.spec.ts`'s committed manifest digest. Next: the alpine species pack and look row, the
+  harness source-scene wiring, then `KIT=alpine test:kit`.
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn

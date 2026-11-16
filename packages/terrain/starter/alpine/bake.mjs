@@ -6,8 +6,8 @@ import { register } from "tsx/esm/api";
 register();
 const { terrainPalette } = await import("./render/ground/palette.js");
 const { GROUND_MAPS, GROUND_TILE } = await import("./world/terrainAssets.ts");
-const { CANOPY_CROWN } = await import("./render/ground/canopy.ts");
-const { props } = await import("./render/props/props.ts");
+const { CANOPY_CROWN } = await import("./render/ground/terrain.ts");
+const props = await import("./render/props/props.ts");
 
 await bakeKit(import.meta.url, {
   look: {
