@@ -1,9 +1,13 @@
 # PRD-893 — Racing kit: drift, nitro and race feel
 
-Status: IN PROGRESS, owner approved all three phases on 2026-11-15. PR: #680 (one PR for this session's racing work).
+**Status:** BLOCKED ON THE OWNER'S TEST DRIVE — all 12 phase boxes are ticked and proven, and #680 is
+green on every required check; what remains is the owner's drive (drift, nitro, smoke, skid marks,
+HUD, sound, no shake), which no automated check can make. Filed under
+`docs/PRDs/BLOCKED/requires-owner-decision/` on 2026-11-15 under R6; #680 stays open for the
+confirmation.
 
-**Priority:** P2 — drift, nitro, tire effects, the six-car field, the gear HUD, the car's sound and the
-visual judge are in. Open: the owner's test drive.
+**Priority:** P2 — arcade-racing feature work: all three phases are in and proven; the one open item is
+the owner's test drive on #680.
 
 ## Goal
 
@@ -63,14 +67,39 @@ other competitors".
 - [x] Sound through `AudioBus`, with CC0 clips from the asset MCP recorded in `CREDITS.md`: an engine loop pitched by rpm, a tire squeal by drift angle, and a nitro burst. proof: `racing-feel.spec.ts` runs the shipped clips through `audioPass` with the config's own declarations — both beds declared `loop: { crossFadeMs: 0 }` and the burst not a loop — and requires `seamRatio` ≤ 1 on the **cooked** bytes (Vorbis round trip: engine 0.05); the cook in `pnpm build:web` prints `bytesBefore` 176444 → `bytesAfter` 15148 with `crossFadeMs: 0`. `hud.playtest.json` sees the engine rate rise with speed: 0.692 at idle, `engineRate` ≥ 1 at the end (1.98–2.05 measured, `ENGINE_SOUND` maps the needle 0.62× → 2.05× geometrically). Two findings to record rather than bury: **(a)** the asset MCP's catalogue carries no engine, tyre or boost clip (Kenney's curated packs are CC0 UI and jingles; the Sonniss bundles are multi-gigabyte archives under the Sonniss bundle licence), so the three clips are **synthesised** by `tools/make-racing-audio.mjs` and `CREDITS.md` says so with that evidence; an engine bed pitched 0.62× → 2.05× has to be tonal and exactly periodic, which a recording is not. **(b)** the native host binds a source's `playbackRate` as a *passive* parameter, so on native the bed plays at rate 1 with the same volume, squeal and burst — named in `src/audio/engine.ts`, and no native pitch is claimed here
 - [x] All racing playtests pass and the rival and autopilot laps do not change. `kit-racing.md` lists the new controls. proof: **17 of 17** scenarios pass in one run of the scaffolded template (`pnpm test`, headed WebGPU, real adapter), the two new ones included; `outcome.playtest.json` is the 3-lap autopilot race and still finishes P6 of 6 with 0 rescues, and `performance.playtest.json` still holds its 10 ms bound. `kit-racing.md` names `gauges.ts`, `audio/engine.ts`, the bake tool, the native pitch gap and the HUD; the template `AGENTS.md` mirror carries the new `src/` entries and the new scenario count from `pnpm sync:agents`; `pnpm scaffold:pin` moved racing's `kit` pin; `scaffold.spec.ts` 79/79. One red the previous commit left behind, fixed here: `racing.spec.ts` still read the two-car `GRID_DISTANCE`/`GRID` API that the six-car grid replaced, so two grid tests failed on `develop`'s tip — rewritten against `GRID_SLOTS`/`PLAYER_SLOT` (six slots, staggering, pole-to-player pitch, every slot short of the line), 17/17. **Re-run twice after the last code change**: from a fresh scaffold once the per-frame iterator fixes below landed
 (17 of 17, `hud` and `nitro` included, `pnpm test` exit 0), and again after merging `origin/develop` into the branch
-(17 of 17 again on the merged engine, and CI's own `golden-path-template (racing)` lane green on the same head)
+(17 of 17 again on the merged engine, and CI's own `golden-path-template (racing)` lane green on the same head), and a third full run on the final head `f6b778462` after the nitro plume change (`pnpm test` in the scaffolded kit, 2026-11-15, exit 0, 17 of 17, every scenario `pass:true`)
 - [x] The frames the template's own cost gate measures stay allocation-free, and the gates on this branch are green. proof: `template-runtime-cost.spec.ts` 10/10 — this branch had added ten array iterators per frame, found by that gate, all now indexed reads (two `for...of` over the field in `Race.ts`, `.entries()` over the ranking inputs, and the `gearBand`/`NITRO.refillBand` tuple destructures), and the scene's published rank reads P6 because six cars put the player on the back row and the fixture never touches the input. `pnpm lint` exit 0 (the bake tool had one template literal with no interpolation and a formatting drift — the same file still reproduces the committed clips, `--check` reports they match), `pnpm typecheck` exit 0, `pnpm quality` exit 0, `pnpm budgets` exit 0. The budgets gate had been red since phase 1: the native bindings edit moved the native coverage source digest, so `pnpm native:build` then `pnpm --filter @threenative/runtime-native native:coverage` re-measured the record (53 contract targets executed) and restamped it — `src/physics/native_bindings.cpp` is `TN_ENABLE_NATIVE_PHYSICS=OFF` in the coverage configuration, so the tables are unchanged and only the digest moves
 
 - [x] Owner-drive fixes: the natural slide is eased, and a car that leaves the surface is caught the tick it falls. proof: the owner drove it and reported two things — the no-Shift slide read as a snap (too intense, rough) and a car that got onto the grass fell out of the world. **Feel:** the rear grip changed in a single tick whenever the target flipped between `holdGrip` 0.35, `recoverGrip` 2.6 and `catchGrip` 4.5 as the steering crossed centre, which sawtooths a bristle tyre; both directions now ease, the rise over `GRIP_RETURN_SECONDS` 0.3 s as before and the fall over `GRIP_FALL_SECONDS` 0.05 s, and `racing-feel.spec.ts` measures the biggest single-tick grip change against the whole range it used to jump (**14/14**). **Void:** the grass is drawn and never collided (`Track.ts` says why: a 5 m grid under a banked 11 m ribbon is a ridge the car beaches on), so anything past the armco had nothing under its wheels. `TrackSector` now takes `groundAt` — the same `terrainHeight` the ground is drawn from — and rescues the tick the car is `fallDepth` 1.2 m below it, instead of waiting out the 0.65 s run-wide delay. Proved on headed WebGPU: `drift-natural`, `drift`, `hud`, `rescue` and the 11k-tick autopilot `outcome` all pass, so the tighter trigger does not fire on a crest, a banked corner or a berm
 
 ## Acceptance criteria
 
-- [ ] Owner test drive on the dev URL: drift, nitro, smoke, skid marks, HUD and sound all work, with no camera or car shake. proof: owner confirmation on #680. **Not claimable from here** — every automated proof above runs, and `steady-camera.playtest.json` still holds the shake meter, but the drive is the owner's. Ready to drive on the merged tree: the scaffolded kit is served at `http://127.0.0.1:5273` (`/tmp/racing-scaffold/racing`, `pnpm exec vite --host 127.0.0.1 --port 5273`), read from the same commits CI's `golden-path-template (racing)` lane ran. What to look for, one item per thing this PRD built: **drift** — Shift with the wheel turned at speed swings the tail out and a slide banks a score; full lock above 16 m/s lets it go with no handbrake; counter-steer catches it and no slide spins the car. **Nitro** — Space burns the tank, the lens widens and pulls back, the flame blooms, and drifting refills it about four times faster than cruising. **Smoke and skid marks** — two dark parallel strips under the rear wheels for the length of the slide, smoke from the rear wheels only, nothing on the grass. **HUD** — speed, gear climbing 1..6 with a rev bar, nitro BURNING/ACTIVE/READY, and `DRIFT +n` popping under the panel on a banked slide. **Sound** — an engine bed that rises in pitch with the revs, a tyre squeal in a slide, a burst on the nitro button, all silencing on pause. **Feel** — no camera or body shake while steering or after a long drive, and no shake at a rescue. Controls: WASD or arrows drive, Shift drifts and brakes, Space is nitro, P is the autopilot, R restarts
+Every automated proof above is green; the acceptance judgement itself is the owner's, and it is
+filed under Blocked on. The kit is accepted when the owner drives it on the dev URL and confirms,
+on #680, every item below:
+
+- **Drift** — Shift with the wheel turned at speed swings the tail out and a slide banks a score;
+  full lock above 16 m/s lets it go with no handbrake; counter-steer catches it and no slide spins
+  the car.
+- **Nitro** — Space burns the tank, the lens widens and pulls back, the flame blooms, and drifting
+  refills it about four times faster than cruising.
+- **Smoke and skid marks** — two dark parallel strips under the rear wheels for the length of the
+  slide, smoke from the rear wheels only, nothing on the grass.
+- **HUD** — speed, gear climbing 1..6 with a rev bar, nitro BURNING/ACTIVE/READY, and `DRIFT +n`
+  popping under the panel on a banked slide.
+- **Sound** — an engine bed that rises in pitch with the revs, a tyre squeal in a slide, a burst on
+  the nitro button, all silencing on pause.
+- **Feel** — no camera or body shake while steering or after a long drive, and no shake at a rescue.
+
+Controls: WASD or arrows drive, Shift drifts and brakes, Space is nitro, P is the autopilot, R
+restarts.
+
+## Blocked on
+
+- **The owner's test drive on the dev URL** — the scaffolded kit is served at
+  `http://127.0.0.1:5273` (`/tmp/racing-scaffold/racing`, `pnpm exec vite --host 127.0.0.1 --port
+  5273`), read from the same commits CI's `golden-path-template (racing)` lane ran, where `pnpm test` passes 17 of 17 (2026-11-15). Unblocked by the
+  owner driving it and reporting acceptance on #680; no agent can make the feel call.
 
 ## Risks
 
