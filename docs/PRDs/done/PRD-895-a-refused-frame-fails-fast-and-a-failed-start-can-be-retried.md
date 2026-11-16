@@ -1,6 +1,6 @@
 # PRD-895 — A refused frame fails fast, and a failed start can be retried
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Priority:** P1 — PRD-894 (on `develop`, inside the open Release 0.3.14 PR #676) turned a drawn-but-refused frame from a hard stop into a throw on every frame, so a warm-up that waits for `markBaked` runs to its timeout (AC-1)
 **Complexity:** 3 (LOW) — 1–5 files (1), Wasm rebuild (+2); risk override: none
 **Owner:** Claude Code / Codex
@@ -49,7 +49,9 @@ An independent review of `08ff24681` on 2026-11-16, read in the code:
 
 #### Phase 1: Fail fast, retry clean
 
-**Status:** NOT STARTED
+**Status:** DONE
+
+- [x] Both fixes land with their red-green tests (AC-1, AC-2). proof: PR #685 (`7278f412`).
 **Files:** `packages/runtime-native/src/engine/wasm/web_host.cpp`,
 `packages/three-native/src/browser-renderer.ts`, tests.
 **Verification:** AC-1 and AC-2, `pnpm wasm:build`, `pnpm typecheck && pnpm lint && pnpm test`.
