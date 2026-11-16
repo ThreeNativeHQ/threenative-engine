@@ -189,7 +189,10 @@ function squealBody() {
   const rng = mulberry32(SEED);
   const noise = new Float32Array(length);
   for (let index = 0; index < length; index += 1) noise[index] = rng() * 2 - 1;
-  const grit = filterPeriodic(filterPeriodic(noise, biquad("highpass", 800)), biquad("lowpass", 3400));
+  const grit = filterPeriodic(
+    filterPeriodic(noise, biquad("highpass", 800)),
+    biquad("lowpass", 3400),
+  );
   const out = new Float32Array(length);
   for (let index = 0; index < length; index += 1) {
     const time = index / SAMPLE_RATE;
@@ -331,7 +334,7 @@ function verify(clips) {
     `engine: no 42 Hz body (bin ${fundamental.toFixed(4)} against ${between.toFixed(4)} between the partials)`,
     fundamental > between * 8,
   );
-  assert(`engine: no third harmonic`, bin(clips.engine, 126) > between * 4);
+  assert("engine: no third harmonic", bin(clips.engine, 126) > between * 4);
 }
 
 /** The hash of a bake, taken from the samples rather than the bytes, so it is container-free. */
@@ -379,5 +382,7 @@ if (checking) {
   for (const [name, clip] of Object.entries(CLIPS))
     writeFileSync(path.join(assetsDir, clip.file), encodeWav(clips[name]));
   report(clips);
-  console.log(`baked ${Object.keys(CLIPS).length} clips into assets/ (sha256 ${digest(clips).slice(0, 16)})`);
+  console.log(
+    `baked ${Object.keys(CLIPS).length} clips into assets/ (sha256 ${digest(clips).slice(0, 16)})`,
+  );
 }

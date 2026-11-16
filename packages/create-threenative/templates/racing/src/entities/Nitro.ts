@@ -60,8 +60,10 @@ export class Nitro {
       this.#delay = Math.max(0, this.#delay - dt);
       return;
     }
-    const [low, high] = NITRO.refillBand;
-    const blend = MathUtils.clamp((speed - low) / (high - low), 0, 1);
+    // Indexed reads, not a destructure: this runs every frame while coasting.
+    const band = NITRO.refillBand;
+    const low = band[0];
+    const blend = MathUtils.clamp((speed - low) / (band[1] - low), 0, 1);
     const seconds = MathUtils.lerp(NITRO.refillSlowSeconds, NITRO.refillFastSeconds, blend);
     const gained = Math.min(1 - this.tank, dt / seconds);
     this.tank += gained;

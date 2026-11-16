@@ -304,8 +304,12 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const rankingBuffer: IRankedRacerScratch[] = [];
     const rankRace = () => {
       playerRankingInput.lap = lap.completed;
-      for (const [index, input] of rivalRankingInputs.entries())
-        input.lap = rivals[index]?.lap ?? 0;
+      // Indexed loop, not `.entries()`: this runs every frame and the runtime-cost gate holds the
+      // scene to zero per-frame iterator allocations.
+      for (let index = 0; index < rivalRankingInputs.length; index += 1) {
+        const input = rivalRankingInputs[index];
+        if (input !== undefined) input.lap = rivals[index]?.lap ?? 0;
+      }
       return rankRacers(CIRCUIT, rankingInputs, undefined, rankingBuffer);
     };
     const initialRanked = rankRace();
@@ -351,7 +355,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         dt,
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
-      for (const rival of rivals) rival.update(dt);
+      for (let index = 0; index < rivals.length; index += 1) rivals[index]?.update(dt);
       gauges.update(car.speed, dt);
       sector.update(car.body.position, car.forward, dt, car.speed, car.driving);
       if (sector.rescue(car)) {
@@ -444,7 +448,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
 
     afterPhysics(ctx, (dt) => {
       car.body.settleVisuals(car.nitro.engaged, dt);
-      for (const rival of rivals) rival.car.settleVisuals();
+      for (let index = 0; index < rivals.length; index += 1) rivals[index]?.car.settleVisuals();
       if (status === "RACING") emitEffects();
       lighting.key.target.position.copy(car.body.position);
       lighting.key.position.copy(car.body.position).addScaledVector(SUN_DIRECTION, 90);

@@ -40,8 +40,11 @@ export function rpmIn(
   top: number = FEEL.topSpeed,
   gears: number = GAUGES.gears,
 ): number {
-  const [low, high] = gearBand(gear, top, gears);
-  return MathUtils.clamp((speed - low) / (high - low), 0, 1);
+  // Indexed reads, not a destructure: this runs every frame, and destructuring a tuple allocates
+  // an array iterator (`template-runtime-cost.spec.ts` holds the scene to zero per frame).
+  const band = gearBand(gear, top, gears);
+  const low = band[0];
+  return MathUtils.clamp((speed - low) / (band[1] - low), 0, 1);
 }
 
 /**
