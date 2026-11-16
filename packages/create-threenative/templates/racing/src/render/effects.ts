@@ -196,8 +196,15 @@ export function smokeEffect(): IEffectOptions {
 }
 
 /**
- * Nitro sparks: additive blue, gone in a third of a second. The colours run well above 1 because
- * auto exposure meters a sunlit circuit: at 1.5 they vanish against the road.
+ * Nitro sparks: additive blue, and short. The colours run well above 1 because auto exposure meters
+ * a sunlit circuit: at 1.5 they vanish against the road.
+ *
+ * Its life was a third of a second, which at 80 km/h is seven metres of trail: two dotted ribbons
+ * laid down the road behind the car rather than a flame at its exhausts. A plume is what the road
+ * speed cannot stretch, so the burst is now denser and a seventh of a second long, it leaves
+ * slowly, its drag is high enough that it stops where it was born, and its size falls from a third
+ * of a metre to eight centimetres — thick at the nozzle, thin at the tip. The birth size is wider
+ * than the 0.5 m a burst is laid down per tick at 110 km/h, or the plume is a dotted line.
  */
 export function nitroEffect(): IEffectOptions {
   return emitter({
@@ -207,12 +214,12 @@ export function nitroEffect(): IEffectOptions {
       [0.5, 1.6, 6],
       [0.08, 0.3, 2.4],
     ],
-    drag: 3,
-    gravity: -1.5,
-    life: 0.32,
+    drag: 6,
+    gravity: 0,
+    life: 0.11,
     mask: "star",
     opacity: 1,
-    size: [0.42, 0.08],
+    size: [0.55, 0.08],
   });
 }
 
@@ -229,8 +236,8 @@ export const EFFECTS = {
 export const BURSTS = {
   /** A sliding or locked rear tyre, once every other tick a wheel. */
   smoke: { emitter: "smoke", count: 2, shape: [0.7, 0.9, 0.2] },
-  /** Each exhaust, every tick of a nitro burn. */
-  nitro: { emitter: "nitro", count: 2, shape: [1.4, 0.5, 0.06] },
+  /** Each exhaust, every tick of a nitro burn: three a tick keeps a short plume solid. */
+  nitro: { emitter: "nitro", count: 3, shape: [1.2, 0.35, 0.05] },
 } as const satisfies Record<
   string,
   { emitter: keyof typeof EFFECTS; count: number; shape: readonly [number, number, number] }
