@@ -321,10 +321,11 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const sector = new TrackSector({
       route: CIRCUIT,
       intersectRay: intersectRay(ctx.physics, fallbackProbe),
-      // The grass is drawn and never collided, so a car past the armco has nothing under it. This is
-      // the height it should be standing on, and the rescue fires the tick the car is clearly below it.
+      // The grass is a heightfield collider now; this stays as the last-resort net for a car that
+      // leaves the world another way (a jump over the armco, or a future gap). The rescue fires the
+      // tick the car is clearly below the surface it should be standing on.
       groundAt: terrainHeight,
-      // A metre below the drawn ground is not a crest or a berm, it is a car with nothing under it.
+      // A metre below the drawn ground is not a crest or a berm, it is a car with no world under it.
       fallDepth: 1.2,
     });
     track.boostArea.on("bodyEntered", (body) => {

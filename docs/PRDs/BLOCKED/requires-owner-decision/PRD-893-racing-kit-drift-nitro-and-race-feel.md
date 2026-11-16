@@ -1,13 +1,13 @@
 # PRD-893 — Racing kit: drift, nitro and race feel
 
-**Status:** BLOCKED ON THE OWNER'S TEST DRIVE — all 12 phase boxes are ticked and proven, and #680 is
-green on every required check; what remains is the owner's drive (drift, nitro, smoke, skid marks,
-HUD, sound, no shake), which no automated check can make. Filed under
-`docs/PRDs/BLOCKED/requires-owner-decision/` on 2026-11-15 under R6; #680 stays open for the
-confirmation.
+**Status:** BLOCKED ON THE OWNER'S TEST DRIVE — every phase box is ticked and proven, and #680 merged
+on 2026-11-16; what remains is the owner's confirmation drive (drift, nitro, smoke, skid marks, HUD,
+sound, no shake, and a circuit that holds the car). The first drive found the left armco missing and
+the grass drawn without a collider; the fix is in the follow-up PR and proved locally. Filed under
+`docs/PRDs/BLOCKED/requires-owner-decision/` on 2026-11-15 under R6; the drive is owed again.
 
 **Priority:** P2 — arcade-racing feature work: all three phases are in and proven; the one open item is
-the owner's test drive on #680.
+the owner's confirmation drive after the first drive's two fixes.
 
 ## Goal
 
@@ -72,6 +72,8 @@ other competitors".
 
 - [x] Owner-drive fixes: the natural slide is eased, and a car that leaves the surface is caught the tick it falls. proof: the owner drove it and reported two things — the no-Shift slide read as a snap (too intense, rough) and a car that got onto the grass fell out of the world. **Feel:** the rear grip changed in a single tick whenever the target flipped between `holdGrip` 0.35, `recoverGrip` 2.6 and `catchGrip` 4.5 as the steering crossed centre, which sawtooths a bristle tyre; both directions now ease, the rise over `GRIP_RETURN_SECONDS` 0.3 s as before and the fall over `GRIP_FALL_SECONDS` 0.05 s, and `racing-feel.spec.ts` measures the biggest single-tick grip change against the whole range it used to jump (**14/14**). **Void:** the grass is drawn and never collided (`Track.ts` says why: a 5 m grid under a banked 11 m ribbon is a ridge the car beaches on), so anything past the armco had nothing under its wheels. `TrackSector` now takes `groundAt` — the same `terrainHeight` the ground is drawn from — and rescues the tick the car is `fallDepth` 1.2 m below it, instead of waiting out the 0.65 s run-wide delay. Proved on headed WebGPU: `drift-natural`, `drift`, `hud`, `rescue` and the 11k-tick autopilot `outcome` all pass, so the tighter trigger does not fire on a crest, a banked corner or a berm
 
+- [x] Owner-drive fix, round 2: the armco exists on both sides and the grass is solid. proof: the first drive after #680 left the start's **left** side (the grandstand side) onto the grass and fell out of the world. `barrierOffset` returns a distance, not a signed offset, and every caller had forgotten `side *`: both rails were built on the right and the left was open, which the "impossible to leave" comment had hidden. The rails are now one strip per side (alternating the sides in one strip would stitch a deck across the circuit) and their profile closes with a fifth point, so the inner face exists; the collider is an invisible wall from below the drawn grass to the rail's top, doubled with the opposite winding, because the rail floats 40 cm up and the chassis is lower than that. The drawn grass is a `Heightfield` collider sharing its grid (`@threenative/core/world`), lowered 0.4 m under the 12 m corridor so the 5 m grid cannot ride the banked ribbon, on `LAYER.field` so `TrackSector`'s road probe still sees only road; the `groundAt`/`fallDepth` rescue stays as the net for a jump or a gap. Proved on headed WebGPU: `pnpm test` **17/17** on the scaffold (`racing-rescue-transform`, `steady-camera`, `survives` and the rest, exit 0); `racing-rescue-transform` now ends with the car stopped against the left armco on the run-off, not on the grass; and a local drive with the off-road rescue delayed put the car on the grass at **67 km/h**, upright at the drawn surface, then back at the wall with the rescue restored. The one `TN_PLAYTEST_PAGE_CLOSED` in an earlier run was the browser, not an assertion; the clean rerun is 17/17
+
 ## Acceptance criteria
 
 Every automated proof above is green; the acceptance judgement itself is the owner's, and it is
@@ -98,8 +100,8 @@ restarts.
 
 - **The owner's test drive on the dev URL** — the scaffolded kit is served at
   `http://127.0.0.1:5273` (`/tmp/racing-scaffold/racing`, `pnpm exec vite --host 127.0.0.1 --port
-  5273`), read from the same commits CI's `golden-path-template (racing)` lane ran, where `pnpm test` passes 17 of 17 (2026-11-15). Unblocked by the
-  owner driving it and reporting acceptance on #680; no agent can make the feel call.
+  5273`), built from the follow-up fix; `pnpm test` passes 17 of 17 there (2026-11-16). Unblocked by
+  the owner driving it and reporting acceptance on the follow-up PR; no agent can make the feel call.
 
 ## Risks
 

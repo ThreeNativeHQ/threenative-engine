@@ -1,4 +1,5 @@
 import { type ICtx, InstancedBatch } from "@threenative/core";
+import { Heightfield } from "@threenative/core/world";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import {
   BoxGeometry,
@@ -201,9 +202,30 @@ function fixedTrimesh(
 
 /** The ground is drawn this far below the height the road is laid to. A 5 m grid cannot follow a
  *  banked cross-section exactly, and where it errs high the grass shows through the tarmac in
- *  patches; sinking it 30 cm turns that into a road bed standing proud of the field. It is drawn,
- *  never collided, so nothing but the picture depends on it. */
+ *  patches; sinking it 30 cm turns that into a road bed standing proud of the field. */
 const TERRAIN_SINK = 0.3;
+
+/**
+ * How far the grass collider sits below the drawn grass under the road.
+ *
+ * The 5 m ground grid can interpolate a few centimetres above the banked ribbon on a tight corner
+ * even after {@link TERRAIN_SINK}; a wheel ray that finds it rides the grass and beaches the car.
+ * Under the ribbon that disagreement is hidden by the tarmac, so the collider is lowered there and
+ * the drawn grass is left alone — outside the corridor the collider is the drawn surface exactly.
+ */
+const GROUND_CLEARANCE = 0.4;
+
+/** The widest drivable ribbon plus one cell: every collider vertex that can be under the tarmac. */
+const GROUND_CORRIDOR = HALF + RUNOFF + 1;
+
+const groundProbe = new Vector3();
+const groundProjection = {
+  curvature: 0,
+  distance: 0,
+  lateral: 0,
+  point: new Vector3(),
+  tangent: new Vector3(),
+};
 
 function buildTerrain(ctx: TrackCtx, materials: ReturnType<typeof createMaterials>): void {
   // The ground is a grid over the circuit's bounding box and a long way past it, its height read
@@ -230,15 +252,20 @@ function buildTerrain(ctx: TrackCtx, materials: ReturnType<typeof createMaterial
   const rows = Math.floor((maxZ + margin - minRow) / step) + 1;
   const positions = new Float32Array(rows * width * 3);
   const uvs = new Float32Array(rows * width * 2);
+  const heights = new Float32Array(rows * width);
   const indices: number[] = [];
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < width; column += 1) {
       const x = minColumn + column * step;
       const z = minRow + row * step;
       const at = row * width + column;
+      const surface = terrainHeight(x, z) - TERRAIN_SINK;
+      const lateral = Math.abs(CIRCUIT.project(groundProbe.set(x, 0, z), groundProjection).lateral);
+      const height = lateral <= GROUND_CORRIDOR ? surface - GROUND_CLEARANCE : surface;
       positions[at * 3] = x;
-      positions[at * 3 + 1] = terrainHeight(x, z) - TERRAIN_SINK;
+      positions[at * 3 + 1] = height;
       positions[at * 3 + 2] = z;
+      heights[at] = height;
       uvs[at * 2] = x / 9;
       uvs[at * 2 + 1] = z / 9;
       if (row + 1 < rows && column + 1 < width) {
@@ -251,14 +278,38 @@ function buildTerrain(ctx: TrackCtx, materials: ReturnType<typeof createMaterial
   geometry.setAttribute("uv", new BufferAttribute(new Float32Array(uvs), 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  // **Drawn, not collided.** Everything the wheels can reach is the drivable ribbon, and the
-  // armco is what bounds it: a car cannot get further than 7.7 m from the centreline, and the
-  // ribbon is 11 m of it. A second collider under the road can only disagree with the road — a 5 m
-  // grid cannot follow a banked cross-section exactly, and the disagreement is a 10 cm ridge the
-  // car rides up and beaches on. Measured, twice, at two different corners.
+  // The grass is a surface the wheels can stand on, not just a picture: a car that gets past the
+  // armco (a jump, or the rail's old floating collider) lands on it instead of falling to the
+  // rescue. One heightfield shares the drawn grid's samples, so the collider is the visible grass
+  // outside the ribbon and a clearance below it under the tarmac, where the 5 m grid could
+  // otherwise interpolate above the banked road and beach the car. The field layer is deliberate:
+  // wheel rays scan it, and `TrackSector`'s road probe does not, so grass is not mistaken for road.
   const ground = new Mesh(geometry, materials.grass);
   ground.receiveShadow = true;
   ctx.add(ground);
+  const field = new Heightfield({
+    columns: width,
+    rows,
+    width: (width - 1) * step,
+    depth: (rows - 1) * step,
+    origin: {
+      x: minColumn + ((width - 1) * step) / 2,
+      z: minRow + ((rows - 1) * step) / 2,
+    },
+    heights,
+  });
+  new RigidBody3D({
+    collisionLayer: LAYER.field,
+    collisionMask: LAYER.car,
+    physics: ctx.physics,
+    position: { x: field.origin.x, y: 0, z: field.origin.z },
+    shape: CollisionShape3D.heightfield(field.rows, field.columns, field.toColliderHeights(), {
+      x: field.width,
+      y: 1,
+      z: field.depth,
+    }),
+    type: "fixed",
+  });
 }
 
 function buildRoad(
@@ -428,12 +479,13 @@ function buildKerbs(
 }
 
 /**
- * The barrier line: armco all the way round, at a distance that follows the corner.
+ * The barrier line's **distance** from the centreline, in metres, at one station and side.
  *
  * A constant offset does not work on a 10 m hairpin — the inside barrier would land on the
  * centreline — so the inside follows the local radius and stops 1.2 m past the white line, while
- * the outside keeps the full run-off. That is what makes the circuit impossible to leave: there is
- * a collider the whole way round, so a car that runs wide loses time instead of losing the race.
+ * the outside keeps the full run-off. The caller owns the **sign**: the returned distance is always
+ * positive, and forgetting `side *` built both barriers on the right and none on the left — which
+ * is exactly how a car left the circuit onto the grass.
  */
 function barrierOffset(station: IStation, side: 1 | -1): number {
   const curvature = station.sample.curvature;
@@ -447,41 +499,63 @@ function buildBarriers(
   materials: ReturnType<typeof createMaterials>,
 ): void {
   const coarse = all.filter((_station, index) => index % 3 === 0);
-  const rows: Vector3[][] = [];
-  for (const station of coarse) {
-    for (const side of [1, -1] as const) {
-      const offset = barrierOffset(station, side);
-      const inner = offset - 0.14;
-      const outer = offset + 0.14;
+
+  // Two rails, one per side. They cannot be one strip: a strip's rows run along the track, so
+  // alternating the sides station by station would stitch a deck across the circuit.
+  for (const side of [1, -1] as const) {
+    const rail = coarse.map((station) => {
+      const offset = side * barrierOffset(station, side);
+      const inner = offset - side * 0.14;
+      const outer = offset + side * 0.14;
       const low = 0.4;
       const high = 1.04;
-      rows.push(
-        side > 0
-          ? [
-              onGround(station, inner, low),
-              onGround(station, outer, low),
-              onGround(station, outer, high),
-              onGround(station, inner, high),
-            ]
-          : [
-              onGround(station, outer, low),
-              onGround(station, inner, low),
-              onGround(station, inner, high),
-              onGround(station, outer, high),
-            ],
-      );
-    }
-  }
-  const armco = new Mesh(
-    quadStrip(looped(rows), (row, column) => [column, row * 3.3]),
-    materials.armco,
-  );
-  armco.castShadow = true;
-  ctx.add(armco);
-  fixedTrimesh(ctx, armco, LAYER.barrier, "armco");
+      // Closed profile: the fifth point is the first again, so the inner face exists. Without it
+      // the rail is an open shell, and on the side whose winding faces away it is neither visible
+      // nor collidable from the track.
+      return side > 0
+        ? [
+            onGround(station, inner, low),
+            onGround(station, outer, low),
+            onGround(station, outer, high),
+            onGround(station, inner, high),
+            onGround(station, inner, low),
+          ]
+        : [
+            onGround(station, outer, low),
+            onGround(station, inner, low),
+            onGround(station, inner, high),
+            onGround(station, outer, high),
+            onGround(station, outer, low),
+          ];
+    });
+    const armco = new Mesh(
+      quadStrip(looped(rail), (row, column) => [column, row * 3.3]),
+      materials.armco,
+    );
+    armco.castShadow = true;
+    ctx.add(armco);
 
-  // The posts. Decoration: the rail above them is the collider, and a hundred-odd fixed bodies for
-  // the same line was the cost `buildStaticColliders` used to pay.
+    // The rail floats 40 cm above the ground and the car's chassis is lower than that: it drove
+    // under the rail. This wall starts below the drawn grass and ends at the rail's top, with both
+    // windings so a solver that culls back faces still meets it from the track. It is never drawn.
+    const wall = coarse.map((station) => {
+      const offset = side * barrierOffset(station, side);
+      const low = onGround(station, offset, -TERRAIN_SINK - 0.5);
+      const high = onGround(station, offset, 1.04);
+      // [low, high] then its mirror: the degenerate top edge between them has no area.
+      return [low, high, high, low];
+    });
+    const barrier = new Mesh(
+      quadStrip(looped(wall), (row, column) => [column, row * 3.3]),
+      materials.armco,
+    );
+    barrier.visible = false;
+    ctx.add(barrier);
+    fixedTrimesh(ctx, barrier, LAYER.barrier, `armco-${side > 0 ? "right" : "left"}`);
+  }
+
+  // The posts. Decoration: the wall is the collider, and a hundred-odd fixed bodies for the same
+  // line was the cost `buildStaticColliders` used to pay.
   const posts = new InstancedBatch({
     geometry: new BoxGeometry(0.16, 1.2, 0.16),
     material: materials.structure,
@@ -489,7 +563,7 @@ function buildBarriers(
   for (const station of all) {
     if (station.distance % 8 >= CIRCUIT.spacing) continue;
     for (const side of [1, -1] as const) {
-      const at = onGround(station, barrierOffset(station, side), 0.6);
+      const at = onGround(station, side * barrierOffset(station, side), 0.6);
       posts.place({
         position: [at.x, at.y, at.z],
         rotation: [0, Math.atan2(station.sample.right.z, station.sample.right.x), 0],
