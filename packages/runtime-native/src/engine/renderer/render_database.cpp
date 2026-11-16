@@ -1930,9 +1930,11 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         }
         items_.swap(twoPasses_);
     }
-    if (world && (world->backgroundNode || world->backgroundTexture)) {
-        if (!world->backgroundNode && (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0))
-            throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: sharp EquirectangularReflectionMapping required");
+    if (world && !world->backgroundNode && world->backgroundTexture &&
+        (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0))
+        throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: sharp EquirectangularReflectionMapping required");
+    // A background whose image has not arrived draws next frame, as an environment does (above).
+    if (world && (world->backgroundNode || (world->backgroundTexture && world->backgroundTexture->hasImage()))) {
         if (!backgroundGeometry_) backgroundGeometry_ = makeSphereGeometry(1, 32, 32);
         DrawItem sky;
         sky.background = true;
