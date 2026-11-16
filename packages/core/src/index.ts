@@ -371,9 +371,6 @@ export type {
  * @situation the light a corner sees from around the wall, which a per-pixel screen trace loses
  * @situation lumen screen probe gather
  * @situation lumen final gather
- * @alias screen probe gather
- * @alias lumen screen probes
- * @alias irradiance octahedron
  * @constraint the owned engine only: on engine: "threejs" the upstream node takes the camera as its fourth argument and has no probes, and gather() refuses
  * @constraint the gather is a delta in E / pi: multiply it by the receiver's diffuse colour (mrt({ diffuseColor })) and add it after the scene pass, and give the scene pass no other indirect diffuse or the light is counted twice
  * @constraint a viewport resize needs a new gather: the probe grid is fixed when it is built
@@ -401,9 +398,6 @@ export type {
  * @situation contact shadow at the foot of an object while dynamic GI runs
  * @situation dark line where a wall meets the floor, without a second wide AO over the gathered light
  * @situation lumen short range ao
- * @alias short range ao
- * @alias bent normal
- * @alias horizon search occlusion
  * @constraint it replaces GTAO when dynamic GI runs; a tier without GI keeps ambientOcclusion
  * @constraint the occlusion multiplies indirect light only: direct light and emission keep their own occlusion
  * @constraint multi-bounce and its albedo cap belong to the game's composite; Unreal caps the albedo at 0.5

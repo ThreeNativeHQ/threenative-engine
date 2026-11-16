@@ -3515,7 +3515,7 @@
       "symbol": "Scheduler"
     },
     {
-      "aliases": ["screen probe gather", "lumen screen probes", "irradiance octahedron"],
+      "aliases": [],
       "constraints": [
         "the owned engine only: on engine: \"threejs\" the upstream node takes the camera as its fourth argument and has no probes, and gather() refuses",
         "the gather is a delta in E / pi: multiply it by the receiver's diffuse colour (mrt({ diffuseColor })) and add it after the scene pass, and give the scene pass no other indirect diffuse or the light is counted twice",
@@ -3610,7 +3610,7 @@
       "symbol": "ShadowFilterBudget"
     },
     {
-      "aliases": ["short range ao", "bent normal", "horizon search occlusion"],
+      "aliases": [],
       "constraints": [
         "it replaces GTAO when dynamic GI runs; a tier without GI keeps ambientOcclusion",
         "the occlusion multiplies indirect light only: direct light and emission keep their own occlusion",
