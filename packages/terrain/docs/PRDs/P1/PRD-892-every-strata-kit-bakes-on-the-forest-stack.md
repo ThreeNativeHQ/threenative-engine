@@ -215,8 +215,10 @@ flowchart LR
   keeps its package. The Phase 1 golden table follows the new rows: its alpine row moves from
   `{boulder 1082, mountain 231, scree 2285}` to the new seven-species bake (`{boulder 969, grass
   37141, mountain 234, sapling 710, scree 2046, scrub 11193, spruce 389}`) and its placement digest,
-  with heights unchanged; terrain **673/673** (57 files) green afterwards. Next: the survey asset,
-  then the kit's `look`.
+  with heights unchanged; terrain **673/673** (57 files) green afterwards. The survey is unblocked:
+  the Mapterhorn tile host answers (200 on `attribution.json`) and this machine's tile cache already
+  holds zoom-16 tiles under `~/.cache/threenative/mapterhorn`, so the Longs Peak surround survey can
+  be cut and committed like `forest-horizon`. Next: that survey asset, then the kit's `look`.
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
