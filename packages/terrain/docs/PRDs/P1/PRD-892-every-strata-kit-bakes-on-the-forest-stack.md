@@ -149,7 +149,10 @@ flowchart LR
   wall probe and sight line, the clip names, the gait speeds and the camera offset. The package derives the
   figure's feet from the capsule (1 m tall, 0.35 m radius, sunk 1 cm) and `pace` from the gait row, so a
   copied kit cannot disagree with its own collider. Proof: terrain 661/661, typecheck exit 0, build +
-  publint green; the runtime proof is the kit playtest below, since a rig needs the solver to build.
+  publint green. The runtime proof is the kit playtest, run after the move: the same six failing ids as
+  the baseline (`enterMs` 59.3 ms, `afterFirstFrameTaskMs` 2719, `timeToReadyMs` 20.6 s, `maxViewGpuMs`
+  87.28, plus the two harness rows), while the player walked 54.4 m in the travel leg, stayed grounded
+  and the contact error was 6.1e-05 m — the rig the package builds is the rig the solver moves.
   Remaining: prop world, then `ForestScene` composes every mechanism for the forest rows.
 - [x] A kit that names a mechanism option without its data (for example cover with no cover rows) fails with a named code. proof: a `packages/terrain/__tests__` spec per option
   Result 2026-11-16: four codes, each raised where the option's data is joined: `TN_STARTER_WATER_DATA` (`water` over a bake with no `water.json`), `TN_STARTER_SKY_DATA` (`lighting.sky` resolving to no file), `TN_STARTER_COLLIDER_DATA` (a `colliders` row for an asset the world places nowhere — the silent one, the player walked through it), `TN_STARTER_EDIT_DATA` (ID edits over a bake with no placement sidecar), and `TN_STARTER_WORLD_DATA` on the world's own files. `kit-runtime.spec.ts` runs one case per option for all four kits: 16 red without the change, 112 green with it; terrain 644/644, `pnpm --filter @threenative/terrain typecheck` exit 0. The codes for the mechanisms Phase 1 box 2 moves in (cover, far forest, spawn gate, player rig) land with that move on the same shape.
