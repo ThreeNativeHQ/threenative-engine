@@ -129,7 +129,27 @@ try {
       const cleared = set(scene.out, "background", handleValue(plain.out));
       const drawn = module._tnw_web_render(scene.out, camera.out, 0, 0, 0, 1, 0, 0);
       const drawnError = text(module._tnw_web_error());
+      // PRD-895: a mesh whose material the engine refuses by name is skipped, and the rest of the frame draws.
+      const box = construct("BoxGeometry");
+      const sheen = construct("MeshPhysicalMaterial");
+      const mesh = construct("Mesh");
+      const meshBuilt = [
+        set(sheen.out, "sheen", numberValue(1)),
+        set(mesh.out, "geometry", handleValue(box.out)),
+        set(mesh.out, "material", handleValue(sheen.out)),
+        withString("add", (name) => module._tn_invoke(scene.out, name, handleValue(mesh.out), 1, module._malloc(56), diagnostic)),
+      ];
+      const refusedMesh = [
+        module._tnw_web_render(scene.out, camera.out, 0, 0, 0, 1, 0, 1),
+        module._tnw_web_render(scene.out, camera.out, 0, 0, 0, 1, 0, 2),
+      ];
+      const refusedMeshError = text(module._tnw_web_error());
+      const stateAfterRefusedMesh = module._tnw_web_poll();
       return {
+        meshBuilt,
+        refusedMesh,
+        refusedMeshError,
+        stateAfterRefusedMesh,
         created,
         error,
         initialised,

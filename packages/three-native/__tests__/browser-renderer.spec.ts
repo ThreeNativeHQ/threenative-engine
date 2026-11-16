@@ -277,6 +277,18 @@ describe("the Wasm engine's web host ABI", () => {
     const unnumbered = await init(undefined);
     await expect(unnumbered.done).rejects.toThrow("the engine none (older than ABI 2)");
   });
+
+  it("lets the next renderer start the host when a start threw before the host was up (PRD-895)", async () => {
+    const { Renderer, canvas, initCalls } = host();
+    initCalls.mockImplementationOnce(() => 1);
+    const failed = new Renderer({ canvas }) as { init(): Promise<unknown>; dispose(): void };
+    await expect(failed.init()).rejects.toThrow();
+    failed.dispose();
+    const next = new Renderer({ canvas: { ...canvas } }) as { init(): Promise<unknown> };
+    await next.init();
+    // Marked started before the init, the second renderer skipped its own and polled a host nobody started.
+    expect(initCalls).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("the owned engine's device features", () => {
@@ -1418,9 +1430,10 @@ describe("the Wasm engine's WebGPURenderer across a hot update", () => {
     const failed = new Renderer({ canvas }) as { init(): Promise<unknown> };
     await expect(failed.init()).rejects.toThrow(refusal);
     // The failed start released its claim: building the next renderer does not throw at all, and
-    // its own start reports its own result.
+    // its own start reports its own result. The host still refuses, so that result is the refusal again,
+    // not TN_WASM_RENDERER_SINGLE and not a poll of a host nobody started (PRD-895).
     const next = new Renderer({ canvas }) as { init(): Promise<unknown> };
-    await expect(next.init()).resolves.toBeDefined();
+    await expect(next.init()).rejects.toThrow(refusal);
   });
 });
 

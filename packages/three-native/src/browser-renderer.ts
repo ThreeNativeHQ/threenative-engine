@@ -462,9 +462,7 @@ export function defineWebRenderer(
             throw new Error(
               `TN_WASM_ABI_MISMATCH: this facade speaks web host ABI ${WEB_HOST_ABI}, the engine ${engine ?? "none (older than ABI 2)"}: install create-threenative and @threenative/runtime-native from one build`,
             );
-          started = this.domElement;
           module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
-          handles = module._malloc(36) >>> 0;
           const selector = string(CANVAS_TARGET);
           try {
             check(
@@ -473,6 +471,10 @@ export function defineWebRenderer(
           } finally {
             module._free(selector);
           }
+          // Only a host that started owns this canvas. Marked before the init, a start that threw left the
+          // next renderer polling a host nobody started, Pending for ever (PRD-895).
+          started = this.domElement;
+          handles = module._malloc(36) >>> 0;
         } else {
           // The disposed renderer's post graph must not outlive its game.
           tsl?.setPost(null);

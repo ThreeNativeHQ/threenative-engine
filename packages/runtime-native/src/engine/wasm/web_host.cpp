@@ -532,8 +532,11 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     // A surface that gave no texture is the device's fault and fails the host. A draw the renderer refused is the
     // game's: it fails this frame only, so the fixed frame and the page's next start answer for themselves (PRD-894).
     if (!refused.empty()) return refused.rfind("TN_WASM_SURFACE", 0) == 0 ? fail(refused) : refuse(refused);
+    // A frame that skipped a mesh it refuses by name (TN_NATIVE_MATERIAL_UNSUPPORTED) drew everything else: it names
+    // the refusal once, as refuse() does, and answers 0, so the page counts the frame and its bake check runs. Answering
+    // 1 threw from every frame the mesh stayed in, and a warm-up waiting on the bake waited out its timeout (PRD-895).
     const RenderDatabase& drawn = overlay ? overlayDatabase : database;
-    if (!drawn.diagnostics().empty()) return refuse(drawn.diagnostics().front());
+    if (!drawn.diagnostics().empty()) refuse(drawn.diagnostics().front());
     return 0;
 }
 
