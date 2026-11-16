@@ -321,6 +321,12 @@ flowchart LR
   branch proves itself green in the package (bake, decode, golden rows) while its own playtest cannot
   become ready here.
 
+  **The lane is not the wall.** `TN_PLAYTEST_HOST_DISPLAY=1` with the session's own `DISPLAY=:0`
+  (Xwayland, RTX 2080) makes the runner verify and use the host display instead of a private Xvfb;
+  frames retire there, so the kit proof can be run and captured on this machine. That is the command
+  every later kit proof uses: `TN_PLAYTEST_HOST_DISPLAY=1 KIT=alpine
+  pnpm --filter strata-terrain-preview test:kit`.
+
   The deadlock is fixed and the proof now passes readiness. `createGroundMaterial` hard-required every
   layer the forest's material knows; the alpine bake writes three (`rock`, `dirt`, `snow`), so the
   missing `grass` layer threw, and the surrounding `.catch` logged `TN_GROUND_MAP_MISSING` and left the
