@@ -222,7 +222,14 @@ flowchart LR
   real tiles — 5000 m square, 129², zoom 11 at 29.17 m/px, measured 3098.2..4342.0 m (Longs Peak's
   summit is 4346 m), int16 decimetres on offset 3098, sha256 `4121f434…`, Mapterhorn/USGS provenance —
   and `world.farRing` now names it (alpine backdrop, `longs` massif). `alpine-world.spec.ts` also pins
-  the pair's length and sha256 (3/3). Next: the kit's `look`.
+  the pair's length and sha256 (3/3). The look landed and the kit bakes streamed: `bake.mjs` now
+  passes the alpine palette, ground maps, canopy rows (`spruce 6`, `scotspine 5`, `blackspruce 4.5`)
+  and prop policy, so `bakeKit` takes the streamed branch — **52682 placements** (50636 shadowed,
+  2046 unshadowed scree), 16 art entries, 2.4 s, writing `alpine.json`, `alpine.world.json`,
+  `alpine.splat.rgba8`, `alpine.canopy.bin`, `horizon.json` and both prop buckets. The surveyed
+  `longs` massif is left out of the ring for now: `placeMassif` refuses it on this relief ("top under
+  its foot at 1128 m"), so the ring is survey + backdrop until that band is tuned. Next: point the
+  alpine runtime at the streamed world, then `KIT=alpine test:kit`.
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
