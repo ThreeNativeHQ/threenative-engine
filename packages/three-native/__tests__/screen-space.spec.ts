@@ -15,8 +15,12 @@ function chain(): unknown {
   return node;
 }
 
-/** The engine TSL table as the effect uses it; the scene camera's projection must come from `uniform`. */
-function stubTsl() {
+/**
+ * The engine TSL table as the effect uses it; the scene camera's projection must come from `uniform`.
+ * `branch` runs one side of every `If`, so a test can hold the two outcomes of a ray apart: the stub cannot
+ * evaluate a condition, and running both bodies at once is exactly what a hit and a miss never do.
+ */
+function stubTsl(branch: "then" | "else" | "both" = "both") {
   const updates: (() => number)[] = [];
   const initial: number[] = [];
   const read: string[] = [];
@@ -42,9 +46,19 @@ function stubTsl() {
   );
   tsl.Break = () => undefined;
   tsl.Fn = (body: () => unknown) => () => body();
+  let nested = 0;
   tsl.If = (_condition: unknown, body: () => void) => {
-    body();
-    return { Else: (other: () => void) => other() };
+    const outer = nested;
+    nested += 1;
+    // `else` keeps the guards that decide whether a pixel gathers at all (the outermost `If`) and takes the other side
+    // of the one that decides whether a ray hit, which is nested inside them.
+    if (branch !== "else" || outer === 0) body();
+    nested -= 1;
+    return {
+      Else: (other: () => void) => {
+        if (branch !== "then") other();
+      },
+    };
   };
   tsl.Loop = (_options: unknown, body: (indices: { i: unknown }) => void) => body({ i: chain() });
   tsl.uniform = (value: number) => {
@@ -313,6 +327,67 @@ describe("defineScreenSpaceGi", () => {
         expect(() =>
           defineScreenSpaceGi(tsl)(chain(), chain(), chain(), { camera, probes }),
         ).toThrow(/TN_NATIVE_SCREEN_PROBES/);
+    });
+  });
+
+  describe("a ray that leaves the screen", () => {
+    const viewport = { width: 1280, height: 720 };
+    const both = [undefined, { downsampleFactor: 16, viewport }] as const;
+
+    it("never asks the tier past the screen on a hit: the light it returns is the frame's, the cache only subtracted", () => {
+      // Lumen's screen traces return the previous frame's lit scene, and a ray that hit reads no radiance cache for its
+      // own answer (LumenScreenProbeTracing.usf). Only the tier below is asked, to take the cache out of `hit - cache`.
+      for (const probes of both) {
+        const { tsl } = stubTsl("then");
+        const here: unknown[][] = [];
+        const past: unknown[][] = [];
+        defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+          camera: {
+            near: 0.25,
+            projectionMatrix: { elements: Array.from({ length: 16 }, (_, i) => i + 1) },
+          },
+          fallback: (...args: unknown[]) => {
+            here.push(args);
+            return chain();
+          },
+          miss: (...args: unknown[]) => {
+            past.push(args);
+            return chain();
+          },
+          ...(probes === undefined ? {} : { probes }),
+        });
+        expect(here).toHaveLength(1);
+        expect(past).toEqual([]);
+        expect(here[0]).toHaveLength(3);
+      }
+    });
+
+    it("continues past the screen on a miss: the tier it asks is answered for the same ray, and no cache is subtracted", () => {
+      for (const probes of both) {
+        const { tsl } = stubTsl("else");
+        const here: unknown[][] = [];
+        const past: unknown[][] = [];
+        defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+          camera: {
+            near: 0.25,
+            projectionMatrix: { elements: Array.from({ length: 16 }, (_, i) => i + 1) },
+          },
+          fallback: (...args: unknown[]) => {
+            here.push(args);
+            return chain();
+          },
+          miss: (...args: unknown[]) => {
+            past.push(args);
+            return chain();
+          },
+          ...(probes === undefined ? {} : { probes }),
+        });
+        expect(here).toEqual([]);
+        expect(past).toHaveLength(1);
+        // The receiver's view position, the ray's unit direction and its normal: what a world-space trace needs.
+        expect(past[0]).toHaveLength(3);
+        expect(past[0]?.every((node) => node !== undefined)).toBe(true);
+      }
     });
   });
 

@@ -1115,6 +1115,7 @@ test("registry exclusion expiry is validated and surfaced as blocked evidence", 
       "desktop-multitouch-input",
       "android-canvas2d-document-window-stubs",
       "android-hardware-canvas2d-document-window-stubs",
+      "screen-probe-gather-desktop",
     ],
   );
   assert.equal(validateRegistry(registry).length, 0);
