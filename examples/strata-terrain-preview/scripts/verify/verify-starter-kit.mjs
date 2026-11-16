@@ -107,14 +107,27 @@ const KITS = {
     captures: ["alpine-start", "meadow-close", "overview", "river", "vista", "alpine-walk"],
     views: [],
   },
+  // Desert is a source kit on the forest's scene since PRD-892 Phase 2 (Valley of the Gods), so it
+  // proves itself the way alpine does: its own `DesertScene` as the game.
   desert: {
     playtest: "desert.playtest.json",
+    source: "desert-game.ts",
     generatedStand: false,
     water: false,
     cooked: "cookedDesertBytes",
-    numbers: ["boulderInstances", "closestToBoulder"],
-    captures: ["boulders", "edge", "ground", "overview"],
-    views: ["boulders", "edge", "ground", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["desert-start", "meadow-close", "overview", "river", "vista", "desert-walk"],
+    views: [],
   },
   tundra: {
     playtest: "tundra.playtest.json",

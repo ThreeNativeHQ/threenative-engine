@@ -35,11 +35,10 @@ it("forest recipe exposes soil patches through its surface blend thresholds", ()
   }
 });
 // Per-kit assertion differences: scatter asset/count, water identities, river point count and golden files.
-// No alpine or coastal row: since 2026-11-16 those kits bake the streamed world (PRD-892 Phase 2) and
+// No alpine, coastal or desert row: since 2026-11-16 those kits bake the streamed world (PRD-892 Phase 2) and
 // their `bake.mjs` reads its own TypeScript look through `tsx`, which a bare temp copy cannot resolve.
 // The streamed describe below proves that bake instead.
 const kits = [
-  { name: "desert", asset: "boulder", count: 140, water: "empty", compareWater: true },
   { name: "tundra", asset: "boulder", count: 70, water: "kettles", compareWater: true },
 ];
 describe.each(kits)("$name starter kit", ({ name, asset, count, water, compareWater }) => {
@@ -127,7 +126,13 @@ describe.each(kits)("$name starter kit", ({ name, asset, count, water, compareWa
 });
 
 // The streamed kit: `bakeKit` with a `look` writes the bundle the forest scene loads, not `world.json`.
-describe.each(["alpine", "coastal"])("%s streamed kit", (name) => {
+// Each kit names its own placement floor: a wood places tens of thousands, a desert's open flats a
+// few thousand plus the debris its scene adds at load (`render/ground/debris.ts`).
+describe.each([
+  ["alpine", 50_000],
+  ["coastal", 50_000],
+  ["desert", 5_000],
+] as const)("%s streamed kit", (name, floor) => {
   const kit = join(packageRoot, "starter", name);
 
   /**
@@ -178,7 +183,7 @@ describe.each(["alpine", "coastal"])("%s streamed kit", (name) => {
       placements += statSync(join(out, bucket.placements)).size / 32;
       expect(JSON.parse(readFileSync(join(out, bucket.ids), "utf8")).length).toBeGreaterThan(0);
     }
-    expect(placements).toBeGreaterThan(50_000);
+    expect(placements).toBeGreaterThan(floor);
   });
 
   it("bakes the same bytes from the same recipe", () => {

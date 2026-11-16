@@ -151,6 +151,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/fixtures/kit-game/KitScene.ts`: shared starter kit fixture scene parameterised by biome.
   - `scripts/fixtures/kit-game/game.ts`: standalone multi-world game harness testing starter kit scenes.
   - `scripts/fixtures/kit-game/forest-game.ts`: the forest source kit's README game (`ForestScene`, `FOREST_GAME`) plus the playtest plugin.
+  - `scripts/fixtures/kit-game/desert-game.ts`: the desert source kit's README game (`DesertScene`, `DESERT_GAME`) plus the playtest plugin.
   - `scripts/fixtures/kit-game/state.ts`: shared state for starter kit game fixture.
   - `scripts/fixtures/kit-game/playtests/alpine.playtest.json`: playtest scenario for starter kit alpine world.
   - `scripts/fixtures/kit-game/playtests/coastal.playtest.json`: playtest scenario for starter kit coastal world.

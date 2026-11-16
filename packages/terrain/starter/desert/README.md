@@ -1,42 +1,61 @@
-# Desert starter kit (placeholder scatter)
+# Desert starter kit
 
-A 512 m desert on a real survey (USGS 1 m DEM, Colorado), with hydraulic and thermal erosion, sand
-on the low ground, dirt patches, rock on the steep ground and a scatter of 140 props. It is game
-source: once copied, every file is yours to edit.
+A 512 m Colorado Plateau desert at Setting Hen Butte, Valley of the Gods, Utah (USGS 3DEP 1 m DEM),
+with hydraulic and thermal erosion: red sand flats, gravel pavement in the hollows, bedded orange
+sandstone with desert varnish on the steep faces, and the butte itself standing about 100 m over the
+flat. The far ring is the same survey out to 5 km: the valley's other buttes and the Cedar Mesa rim,
+real heights on the square's own datum. It is game source: once copied, every file is yours to edit.
 
 | File | What it decides |
 | --- | --- |
-| `recipe.json` | The terrain: the survey heightmap, erosion, the sand, dirt and rock surfaces, and the scatter. |
-| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
-| `biome.data.json` | The biome record the `terrain_generate` MCP tool cooks from. The bake does not read it. |
-| `assets.json` | The boulder model, its LOD distance and draw distance, and its bounds. |
-| `surface.json` | The ground: the sand base, the dirt and rock layers, tiles, tints and blend thresholds. |
-| `bake.mjs` | Writes the world package and `water.json` from `recipe.json`, `heightmap.r16`, `assets.json` and `surface.json`. |
-| `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the boulders near the player, and the sky as the props' light. |
-| `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
+| `recipe.json` | The terrain: the survey heightmap, erosion, the gravel and rock surfaces, the far ring and the art the bake copies. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. `scripts/cook-kit-survey.ts` in `@threenative/terrain` cuts it and the far ring from any lat/lon. |
+| `biome.data.json` | The biome record: the juniper scatter, the scrub and grass cover and their bands. The streamed bake places from it. |
+| `assets.json` | The legacy cell package's boulder model, LOD distance, draw distance and bounds. |
+| `surface.json` | The legacy cell package's ground table: sand base, dirt and rock layers, tiles, tints and thresholds. |
+| `bake.mjs` | Runs `bakeKit` with this kit's look and writes the streamed world: the baked grid, its splat, the canopy and sky bytes, `horizon.json`, the prop package and the art. |
+| `scene.ts` | The scene, `DesertScene`, and `DESERT_GAME`: the streamed ground, the far ring, the props, the sky and the player rig. |
+| `render/` | The look: the biome row, the ground material, the palette, the species pack and the sky. |
+| `world.ts`, `sky.ts` | The legacy cell-package loader and its daylight, kept until the streamed bake retires them here. |
 
-Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.json`.
+## The plants
 
-## Placeholder
+Valley of the Gods is cold desert on the Colorado Plateau, not the Sonoran or Mojave desert: no
+saguaro, joshua tree or acacia grows there. The kit draws what does, from
+`@threenative/procedural-vegetation` bakes in `starter-assets/desert_flora/`:
 
-The preview's desert scrub is drawn from generated cards, and the starter assets do not ship a CC0
-shrub model. Until one is added, this kit scatters the CC0 boulder in the scrub's place, with the
-same count, spacing and slope limits. The result does not look like the preview's desert. Replace the
-`scrub` entry in `recipe.json` and the boulder row in `assets.json` with a CC0 shrub model to fix it.
+| Plant | Drawn with (preset) | Placed as |
+| --- | --- | --- |
+| Utah juniper | `olive`, two seeds, a far level each | the sparse tree (`sapling`) |
+| Big sagebrush | `creosote` | scrub, and the occasional large bush |
+| Blackbrush | `thornbush` | scrub |
+| Utah yucca | `agave` | scrub |
+| Indian ricegrass, galleta, cheatgrass | `bunchgrass`, `drygrass` | grass |
+| Desert marigold | `marigold` | grass |
+| Dead juniper wood | `branch` | bush |
+
+The stones are the kit's CC0 Poly Haven boulder scans, drawn with the desert's bedded rock colour.
+Ground art is CC0 Poly Haven (`red_sand`, `cliff_side`, `river_small_rocks`); provenance is in
+`@threenative/terrain/starter-credits.json`.
 
 ## Status
 
-The kit bakes and streams. The kit ships no scene: the game writes one. The placeholder boulders are
-colliders like any other prop, and the scene picks its spawn from the loaded heightfield.
+The kit is a source kit on the forest's stack: `scene.ts` streams the baked world, its far ring and
+its props, and composes the player rig and diagnostics from `@threenative/terrain/starter`. The
+player spawns on the sand flat south-east of the butte.
 
 ## Steps
 
 1. Copy `node_modules/@threenative/terrain/starter/desert` to `src/terrain/desert`.
 2. Run `node src/terrain/desert/bake.mjs --out assets/terrain/desert` (needs `@threenative/terrain`
-   as a devDependency). The same recipe always writes the same bytes.
-3. In the scene, call `addDesert(ctx, follow)` for the world and `desertDaylight(follow)` for the light.
+   and `tsx` as devDependencies, because the bake reads this kit's TypeScript look). The same recipe
+   always writes the same bytes.
+3. Spread `DESERT_GAME` into `defineGame` and register `DesertScene`, as the forest kit's README shows.
 
 ## Edit at startup, without rebaking
+
+> The streamed bake retires this path for the desert kit: the ground table and the props now come
+> from `render/`, and the section below still describes the legacy cell package.
 
 The copied `world.ts` loads its own `surface.json` as the ground table on every startup.
 Edit tints, tiling and blend thresholds there, or the material graph and prop dressing in
