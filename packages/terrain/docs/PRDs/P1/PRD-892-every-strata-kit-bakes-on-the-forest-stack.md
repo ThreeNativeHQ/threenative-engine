@@ -161,7 +161,11 @@ flowchart LR
   model key and shape suffix, authored pose, ground snap with the authored offset, grounding-off
   clearance, fail-closed missing ground, boulder vs crag sink), terrain **667/667**, typecheck exit 0,
   build + publint green. The moved pose's single pre-existing complexity offender is recorded in the
-  ratchet baseline (86 -> 87). Next: `streamProps` itself (the container loop, admission and loaders)
+  ratchet baseline (86 -> 87). The kit playtest after the move kept the **exact** contact error of the
+  previous run (6.14252957689132e-05 m) and the same six failing ids (`enterMs` 58.5 ms,
+  `afterFirstFrameTaskMs` 2735, `timeToReadyMs` 21.8 s, `maxViewGpuMs` 80.87, plus the two harness
+  rows): the grounded poses are the ones the solver and the playtest already measured. Next:
+  `streamProps` itself (the container loop, admission and loaders)
   behind the kit's callbacks, then `ForestScene` composes every mechanism for the forest rows.
 - [x] A kit that names a mechanism option without its data (for example cover with no cover rows) fails with a named code. proof: a `packages/terrain/__tests__` spec per option
   Result 2026-11-16: four codes, each raised where the option's data is joined: `TN_STARTER_WATER_DATA` (`water` over a bake with no `water.json`), `TN_STARTER_SKY_DATA` (`lighting.sky` resolving to no file), `TN_STARTER_COLLIDER_DATA` (a `colliders` row for an asset the world places nowhere — the silent one, the player walked through it), `TN_STARTER_EDIT_DATA` (ID edits over a bake with no placement sidecar), and `TN_STARTER_WORLD_DATA` on the world's own files. `kit-runtime.spec.ts` runs one case per option for all four kits: 16 red without the change, 112 green with it; terrain 644/644, `pnpm --filter @threenative/terrain typecheck` exit 0. The codes for the mechanisms Phase 1 box 2 moves in (cover, far forest, spawn gate, player rig) land with that move on the same shape.

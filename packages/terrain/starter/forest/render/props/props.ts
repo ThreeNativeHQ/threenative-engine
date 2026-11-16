@@ -7,7 +7,7 @@
 //     are the picture, and the picture is the game's (AGENTS rule 3).
 //   - The pose's own steps (snap, burial, footprint, base ring) are the package's `prop-pose`; this
 //     file supplies the forest's `GROUND_RULES` rows and `propWorld.ts` delegates LOD to WorldCells.
-import { type IBaseRing, baseRingGap, footprintGap, staticLowestY } from "@threenative/core/world";
+import { staticLowestY } from "@threenative/core/world";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type IPropGroundRules,
@@ -22,9 +22,7 @@ import {
   type BufferGeometry,
   DoubleSide,
   type Material,
-  Matrix4,
   MeshStandardMaterial,
-  Quaternion,
   Vector3,
 } from "three";
 import { WILDFLOWER, boulder, fernClump, grassClump, poppyCluster } from "../ground/cover.js";
