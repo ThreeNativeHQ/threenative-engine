@@ -5,15 +5,9 @@
   "spacing": 9.765625,
   "encoding": "int16-le-decimetres-relative-to-elevationOffset",
   "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
-  "center": [
-    46.582,
-    7.97
-  ],
+  "center": [46.582, 7.97],
   "elevationOffset": 1969,
-  "relativeElevationRange": [
-    -702.4,
-    2073.2
-  ],
+  "relativeElevationRange": [-702.4, 2073.2],
   "tileZoom": 13,
   "metersPerPixel": 6.567,
   "squareTileZoom": 15,

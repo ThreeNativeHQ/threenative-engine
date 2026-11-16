@@ -3,6 +3,7 @@
 // 5 km far ring into `starter-assets/survey/<kit>-horizon.{bin,json}`, both on one datum so the
 // ring stands on the square's edge. Run from packages/terrain:
 //   npx tsx scripts/cook-kit-survey.ts <kit> <lat> <lon> "<site name>" "<attribution>"
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -67,6 +68,10 @@ const layer = recipe.recipe.layers.find((one: { type: string }) => one.type === 
 layer.params.data = { ...layer.params.data, min, max: Math.round((min + 6553.5) * 10) / 10 };
 if (recipe.world?.farRing) recipe.world.farRing.datum = datum;
 await writeFile(recipePath, `${JSON.stringify(recipe, null, 2)}\n`);
+// The repository's formatter owns JSON layout; the survey's sha256 covers the .bin, not the .json.
+execFileSync("npx", ["biome", "format", "--write", `${survey}.json`, recipePath], {
+  stdio: "ignore",
+});
 console.log(
   `${kit}: square ${square.min.toFixed(1)}..${square.max.toFixed(1)} m (zoom ${square.zoom}), ring ${ring.min.toFixed(1)}..${ring.max.toFixed(1)} m (zoom ${ring.zoom}), datum ${datum} m`,
 );

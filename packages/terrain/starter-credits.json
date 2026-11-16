@@ -852,8 +852,8 @@
       "map": "metadata",
       "file": "survey/alpine-horizon.json",
       "url": "https://mapterhorn.com/attribution",
-      "bytes": 1137,
-      "sha256": "1e23aac5c165e82da8f5d58b32e3c3a2a7fdd6c871154cc5eb61125ec9635d20",
+      "bytes": 1113,
+      "sha256": "dda99e5c45f12f6d2ab589c8c6aa970e218ff6237029886fae8a0206f7e0cf32",
       "note": "Cut from Mapterhorn tiles by packages/terrain/scripts/cook-kit-survey.ts on the alpine square's own centre and datum. swissALTI3D, Federal Office of Topography swisstopo (Open Government Data). Copernicus GLO-30 DEM, © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA; all rights reserved. Terrain tiles © Mapterhorn (https://mapterhorn.com/attribution), built from open elevation data; the producers and licences of its sources are listed there."
     },
     {
