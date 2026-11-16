@@ -9,16 +9,6 @@ import { Heightfield, warmUnculled } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { addStreamedGround, createSpawnGate } from "@threenative/terrain/starter";
 import {
-  type AnimationClip,
-  Mesh,
-  MeshStandardMaterial,
-  type PerspectiveCamera,
-  Vector2,
-  Vector3,
-} from "three";
-import { uniform } from "three/tsl";
-import type { MeshStandardNodeMaterial } from "three/webgpu";
-import {
   beginScene,
   createMeasure,
   createRevealProbe,
@@ -28,7 +18,17 @@ import {
   observeFrame,
   observeWindow,
   publish,
-} from "./diagnostics.js";
+} from "@threenative/terrain/starter";
+import {
+  type AnimationClip,
+  Mesh,
+  MeshStandardMaterial,
+  type PerspectiveCamera,
+  Vector2,
+  Vector3,
+} from "three";
+import { uniform } from "three/tsl";
+import type { MeshStandardNodeMaterial } from "three/webgpu";
 import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.js";
 import { BENCHMARK, type ViewName, posesFor } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
@@ -611,7 +611,7 @@ export class ForestScene extends Scene<TerrainState, IPhysicsContext> {
     const at = (x: number, z: number, up: number): Vector3 =>
       new Vector3(x, field.heightAt(x, z) + up, z);
     ctx.beforeRender(() => {
-      observeFrame(world, ctx);
+      observeFrame(ctx);
       const view = ctx.state.getState().view;
       rig.figure.root.visible = view === "player" && !ctx.state.getState().showcase;
       if (view === "player") {

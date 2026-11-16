@@ -10228,6 +10228,21 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "beginScene(\"forest\");",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function beginScene(world: string): void { … }",
+      "situations": ["start the run's view accounting when a scene enters"],
+      "summary": "Start a scene's view accounting: the player view it opens in, and nothing measured yet.",
+      "supersedes": [],
+      "symbol": "beginScene"
+    },
+    {
+      "aliases": [],
       "constraints": ["the curve must be the one the collar was built with"],
       "example": "const y = collarArithmeticHeight(collar, { power: 1.65, reach: 2100 }, x, z);",
       "importPath": "@threenative/terrain/starter",
@@ -10294,6 +10309,42 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the world name is the one this state measures; a blank name fails rather than reporting \"\""
+      ],
+      "example": "const state = { ...createDiagnosticsState(\"forest\"), showcase: false };",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain @threenative/physics"],
+      "signature": "export function createDiagnosticsState(world: string) { … }",
+      "situations": [
+        "start a kit's game state with the measurements every streamed starter world reports"
+      ],
+      "summary": "The state one world's measurements are reported through, with its own name in it. The game spreads this into its own state and adds the look values it also reports; the counters live here. The window groups and the drawn-frame counts are module-level on purpose: `ctx.goto` builds a new scene for the next world, and the numbers a run reports are the run's, not one scene's.",
+      "supersedes": [],
+      "symbol": "createDiagnosticsState"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the game supplies the actor, the player body and the probe fixture; it owns no look"
+      ],
+      "example": "const measure = createMeasure({ world, physics: ctx.physics, raycast, actor, player, ... });",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain @threenative/physics"],
+      "signature": "export function createMeasure(options: IMeasureOptions): IMeasure { … }",
+      "situations": ["measure one played starter world every fixed step"],
+      "summary": "The per-world measurement: contacts, travel, edge overshoot, water and the frame facts a run reports.",
+      "supersedes": [],
+      "symbol": "createMeasure"
+    },
+    {
+      "aliases": [],
       "constraints": ["mirrors `collarMorph`'s weight exactly; both read the same curve and band"],
       "example": "const height = createMorphedHeight(collar, curve, surveyHeight, x, z, 288, 64);",
       "importPath": "@threenative/terrain/starter",
@@ -10306,6 +10357,21 @@
       "summary": "The height a tile vertex stands at once `collarMorph` moved it: the survey inside the band, the collar's arithmetic height at the drawn square's edge. The seam measure reads this.",
       "supersedes": [],
       "symbol": "createMorphedHeight"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const reveal = createRevealProbe({ camera, covered, phase, released, ... });",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function createRevealProbe(options: IRevealProbeOptions): IRevealProbe { … }",
+      "situations": ["measure whether the spawn drew before the curtain released it"],
+      "summary": "What the loading reveal showed once the curtain lifts: drawn batches, pipelines and impostor readiness, measured against the reveal's own baseline.",
+      "supersedes": [],
+      "symbol": "createRevealProbe"
     },
     {
       "aliases": [],
@@ -10345,6 +10411,66 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "const { windows } = enterView(\"forest\", \"overview\");",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function enterView(world: string, view: string): { … }",
+      "situations": ["switch the measured view when the benchmark camera cycle moves"],
+      "summary": "The camera cycle moved to another view: a keyed group for it, and a fresh measurement.",
+      "supersedes": [],
+      "symbol": "enterView"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "leaveScene();",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function leaveScene(): void { … }",
+      "situations": ["stop attributing windows to a view when its scene is left"],
+      "summary": "The scene is gone: nothing is on screen, so no window can belong to a view.",
+      "supersedes": [],
+      "symbol": "leaveScene"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "ctx.beforeRender(() => observeFrame(ctx));",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function observeFrame(ctx: ICounterCtx): void { … }",
+      "situations": ["count a drawn frame and open the next GPU sample window"],
+      "summary": "One world frame was drawn: count it, and open a fresh GPU sample window if the view or the readiness changed. Called from the render hook, before the camera is placed.",
+      "supersedes": [],
+      "symbol": "observeFrame"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "frameBudget: { onWindow: observeWindow }",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function observeWindow(window: IFrameBudgetWindow): void { … }",
+      "situations": ["read the engine's own closed frame window into the run's report"],
+      "summary": "The frame-budget window closed: latch it, and update the numbers the run reports.",
+      "supersedes": [],
+      "symbol": "observeWindow"
+    },
+    {
+      "aliases": [],
       "constraints": ["Shapes and reach are supplied by the game; detach releases every body"],
       "example": "new PropColliders(ctx, follow, manifest, records, shapes, reach, name);",
       "importPath": "@threenative/terrain/starter",
@@ -10357,6 +10483,21 @@
       "summary": "Stream caller-specified fixed collision shapes around a moving follow object.",
       "supersedes": [],
       "symbol": "PropColliders"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "publish(ctx, { world, worldReady, frames, ...facts });",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function publish( ctx: { … }",
+      "situations": ["write the measured view and frame numbers into the game's state"],
+      "summary": "Publish the measurements and the scene's own facts into state, twice per second.",
+      "supersedes": [],
+      "symbol": "publish"
     },
     {
       "aliases": [],

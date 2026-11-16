@@ -5,7 +5,8 @@
  * evaluator and the editor still hold the offenders PRD-886 inherited. A warning does not fail a
  * gate, and Biome has no per-tree baseline, so this spec is the baseline: the count per file is
  * committed, and a file that gains one — or a new file with one — fails. A refactor that removes
- * one passes, and the fixture only shrinks.
+ * one passes, and the fixture only shrinks. A mechanism that moves into `src/` from a kit records
+ * the offenders it already had: the ratchet counts what a change adds, not where code already lived.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";

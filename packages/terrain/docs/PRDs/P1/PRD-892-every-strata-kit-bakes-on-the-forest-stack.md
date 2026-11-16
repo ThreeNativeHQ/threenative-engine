@@ -1,6 +1,6 @@
 # PRD-892 — Every Strata kit bakes on the forest stack
 
-**Status:** PARTIAL — Phase 1 boxes 1 and 3 landed
+**Status:** PARTIAL — Phase 1 boxes 1 and 3 landed; box 2 in progress (4 of the 8 named mechanisms moved)
 **Priority:** P1 — the forest kit has the whole world-building stack (real survey, vegetation, ground cover, far forest, 60 FPS work, a playable scene). The other four kits have one boulder asset and no scene, so they cannot be revamped to the forest's level (all phases open).
 **Complexity:** 8 (HIGH); risk override: the forest must not change while it moves onto the shared path, so the owner's visual-judge rule applies to every phase
 **Owner:** ThreeNative maintainers
@@ -125,8 +125,21 @@ flowchart LR
   600 morphed heights and the seam measures; then terrain 657/657 (5 new in `collar-geometry.spec.ts`,
   including the `TN_STARTER_GROUND_DATA` refusal), `pnpm --filter @threenative/terrain typecheck` exit 0,
   and the forest bake is **byte-identical to HEAD** (103 files, all 17 `world/` files) after a stash A/B on
-  the same tree. Remaining: player rig, prepared props, prop world, far forest, diagnostics, then
-  `ForestScene` composes every mechanism for the forest rows.
+  the same tree.
+  In progress 2026-11-16 (4 of 8 named files): diagnostics moved. `src/runtime/diagnostics.ts` and
+  `src/runtime/view-statistics.ts` now own the state factory `createDiagnosticsState(world)` (a blank
+  world fails by `TN_STARTER_DIAGNOSTICS_DATA`), the view accounting and the per-world measurement; the
+  kit's `sceneState.ts` spreads the factory with `WORLD` and adds its look values, and
+  `scene.ts`/`sceneProps.ts` import the package. Two kit leaks were fixed on the way: `publish` keys the
+  starter kit's four per-view slots to `facts.world` (it spelled `forest:river`/`forest:meadow-close`/…
+  before) and leaves the preview-only `alpine:`/`desert:`/`tundra:` slots at their initial 0 — the preview
+  keeps its own copy under `examples/strata-terrain-preview/src` — and `observeFrame` loses its world
+  argument, which answered only a per-world rendered-frame map nothing published. Proof:
+  `diagnostics-state.spec.ts` (4 cases: factory defaults and blank refusal, the first-GPU-frame latch,
+  world-keyed view slots, a left scene stops attributing windows), terrain **661/661**, typecheck exit 0,
+  publint green; the moved file's three pre-existing complexity offenders are recorded in the ratchet
+  baseline (83 -> 86) rather than hidden. Remaining: prop world and player rig, then `ForestScene`
+  composes every mechanism for the forest rows.
 - [x] A kit that names a mechanism option without its data (for example cover with no cover rows) fails with a named code. proof: a `packages/terrain/__tests__` spec per option
   Result 2026-11-16: four codes, each raised where the option's data is joined: `TN_STARTER_WATER_DATA` (`water` over a bake with no `water.json`), `TN_STARTER_SKY_DATA` (`lighting.sky` resolving to no file), `TN_STARTER_COLLIDER_DATA` (a `colliders` row for an asset the world places nowhere — the silent one, the player walked through it), `TN_STARTER_EDIT_DATA` (ID edits over a bake with no placement sidecar), and `TN_STARTER_WORLD_DATA` on the world's own files. `kit-runtime.spec.ts` runs one case per option for all four kits: 16 red without the change, 112 green with it; terrain 644/644, `pnpm --filter @threenative/terrain typecheck` exit 0. The codes for the mechanisms Phase 1 box 2 moves in (cover, far forest, spawn gate, player rig) land with that move on the same shape.
 
@@ -168,13 +181,20 @@ flowchart LR
   | collar part of `render/ground/horizon.ts` | **moved** (`src/runtime/collar.ts`) | `collarMorph`, `createMorphedHeight`, `collarSeamGap`, `collarArithmeticHeight`, `collarDrawnHeight` are geometry/measurement and moved; `createHorizonCollar`, `collarColors`, `createWorldHeight`/`cubicAt`/`collarHeight` stay — the drawn collar, its palette and the surveyed far ring are the kit's |
   | `render/props/propWorld.ts` (719) | **split, cheap** | reads only three kit modules: `FAR_FOREST_IMPOSTOR`+`FAR_FOREST_LAYER` (two constants), `standShaded` (one material function) and a progress type — so the residency/impostor/budget machinery moves with those three handed in; the species table, roles and materials it draws stay |
   | `playerRig.ts` (223) | **split** | the capsule, clip state machine and follow camera move; `orbitCamera.ts` constants and `sightLine` against the prop pack stay |
-  | `diagnostics.ts` (1021) | **nearly portable** | imports only the `WorldName` type and `WORLD` (one constant) from the kit, and owns the state shape it exports (`initialDiagnosticsState`) — it moves as a package measurement module taking the world name and the game's extra state keys; the view names and `publish` fields stay the game's |
+  | `diagnostics.ts` (1021) | **moved** (`src/runtime/diagnostics.ts` + `src/runtime/view-statistics.ts`) | it owned the state shape it exports, and its only kit imports were the `WorldName` type and `WORLD`; the world is now a factory argument and `publish` keys its view slots to `facts.world`, while the game keeps adding its own look values to the state |
   | `render/props/prepared.ts` (225) | **stays** | it maps authored material names onto **this game's** prop roles (`pine`, `bark`, `impostor`), decides triplanar-vs-UV for this game's rock surface and writes the sway attribute this game's wind reads |
   | `render/props/farForest.ts` (94) | **stays** | the rule already lives in the package (`farForestPlacements`); what is left is which worlds plant a collar, the layer name and the impostor gate — game policy |
 
-  Net after the second and third moves: 3 moved (spawn gate, streamed ground, the collar geometry), 2 stay
-  (`prepared.ts`, `farForest.ts`), 2 split (`propWorld.ts`, `playerRig.ts`), 1 nearly portable
-  (`diagnostics.ts`). The box's own proof (judge NEUTRAL, FPS within 3%) is unchanged.
+  Net after the fourth move: 4 moved (spawn gate, streamed ground, the collar geometry, diagnostics), 2 stay
+  (`prepared.ts`, `farForest.ts`), 2 split (`propWorld.ts`, `playerRig.ts`). The box's own proof (judge
+  NEUTRAL, FPS within 3%) is unchanged.
+
+- 2026-11-16 (agent): the diagnostics move surfaced two kit leaks that were fixed rather than carried into
+  the package: a hard-coded `forest:` view prefix in `publish` and a per-world rendered-frame map that only
+  the preview used. The first is now `facts.world`, so a copied kit reports its own view slots with no
+  package edit; the second is gone from the package (the preview keeps its copy under
+  `examples/strata-terrain-preview/src`, per the decision above). The state factory refuses a blank world
+  with `TN_STARTER_DIAGNOSTICS_DATA`, the same named-code shape as the other starter options.
 
 - 2026-11-16 (agent): the collar morph and the streamed ground are exported from
   `@threenative/terrain/starter`, not the headless root: the morph builds a tile material node and reads a

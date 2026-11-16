@@ -50,6 +50,31 @@ export {
 export type { ICollarRingCurve, ICollarStream } from "./runtime/collar.js";
 export { addStreamedGround } from "./runtime/streamed-ground.js";
 export type { IStreamedGroundFacts, IStreamedGroundOptions } from "./runtime/streamed-ground.js";
+export {
+  beginScene,
+  createDiagnosticsState,
+  createMeasure,
+  createRevealProbe,
+  enterView,
+  launchedAt,
+  leaveScene,
+  observeFrame,
+  observeWindow,
+  publish,
+} from "./runtime/diagnostics.js";
+export type {
+  DiagnosticsState,
+  ICounterCtx,
+  IContactProbeOptions,
+  IContactWitness,
+  IMeasure,
+  IMeasureFacts,
+  IMeasureOptions,
+  IRevealProbe,
+  IRevealProbeOptions,
+  ISceneFacts,
+  IViewWindow,
+} from "./runtime/diagnostics.js";
 
 export type StarterContext = ICtx<Record<string, unknown>, IPhysicsContext>;
 export type StarterColliders = Readonly<

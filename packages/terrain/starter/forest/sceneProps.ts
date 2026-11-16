@@ -8,6 +8,7 @@ import {
 } from "@threenative/core/world";
 import { ScatterColliders } from "@threenative/physics";
 import type { ISpawnGate, ISpawnWitness } from "@threenative/terrain/starter";
+import type { IRevealProbe } from "@threenative/terrain/starter";
 import {
   Float32BufferAttribute,
   Mesh,
@@ -16,7 +17,6 @@ import {
   PerspectiveCamera,
   Vector3,
 } from "three";
-import type { IRevealProbe } from "./diagnostics.js";
 import { posesFor } from "./render/benchmark.js";
 import type { IBiome, IWorldBiome, WorldName } from "./render/biomes.js";
 import { HORIZON_WALK_BAND } from "./render/ground/horizon.js";

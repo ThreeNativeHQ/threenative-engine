@@ -13,134 +13,143 @@ import {
   type PerspectiveCamera,
   Vector3,
 } from "three";
-import type { WorldName } from "./render/biomes.js";
-import { WORLD } from "./render/worldNames.js";
 import {
   beginViewVisit,
   medianOfGrowingSamples as median,
   retainViewWindow,
-} from "./viewStatistics.js";
+} from "./view-statistics.js";
 
 /**
- * What this example measures about its own frame, and the state it reports those measurements
- * through. `src/game.ts` wires the scene; the counters live here.
+ * The state one world's measurements are reported through, with its own name in it. The game spreads
+ * this into its own state and adds the look values it also reports; the counters live here.
  *
  * The window groups and the drawn-frame counts are module-level on purpose: `ctx.goto` builds a new
  * scene for the next world, and the numbers a run reports are the run's, not one scene's.
+ *
+ * @requires npm i -D @threenative/terrain @threenative/physics
+ * @situation start a kit's game state with the measurements every streamed starter world reports
+ * @constraint the world name is the one this state measures; a blank name fails rather than reporting ""
+ * @example const state = { ...createDiagnosticsState("forest"), showcase: false };
  */
-export const initialDiagnosticsState = {
-  elevationMin: 0,
-  elevationMax: 0,
-  snowFrom: 0,
-  snowTo: 0,
-  worldReady: false,
-  spawnReadiness: [] as Array<Record<string, string | number | boolean>>,
-  loadingError: "",
-  spawnCellsRequired: 0,
-  spawnCellsLoaded: 0,
-  streamingResidentCells: 0,
-  streamingLoadedCells: 0,
-  streamingEvictions: 0,
-  streamingInstances: 0,
-  streamingFailures: 0,
-  streamingPendingPrewarm: 0,
-  streamingLoadsInFlight: 0,
-  streamingAdmissionMs: 0,
-  streamingAdmissionBacklog: 0,
-  timeToReadyMs: -1,
-  enterMs: -1,
-  tasksAvailable: false,
-  longestLoadTaskMs: -1,
-  afterFirstFrameTaskMs: -1,
-  maxViewGpuMs: -1,
-  measuredGpuViewCount: 0,
-  viewGpu: [] as {
-    view: string;
-    gpuMs: number;
-    gpuMain: number;
-    gpuShadow: number;
-    gpuOther: number;
-    windows: number;
-    passes: Record<string, { triangles: number; draws: number }>;
-    scale: number;
-    samples: number;
-  }[],
-  world: WORLD as string,
-  groundBiome: "baked",
-  terrainTransportBound: false,
-  erosionFlowSamples: 0,
-  erosionDepositSamples: 0,
-  frames: 0,
-  travel: 0,
-  /** The farthest the player stood from where it spawned, in a straight line on the ground plane. */
-  straightTravel: 0,
-  edgeOvershoot: Number.NEGATIVE_INFINITY,
-  grounded: false,
-  /** Rock and trunk bodies resident around the player (`ScatterColliders`). */
-  propColliders: 0,
-  /** Frames the player's capsule crossed into a rock or trunk; 0 while props are solid. */
-  propOverlapFrames: 0,
-  swimming: false,
-  immersionDepth: 0,
-  swimSamples: 0,
-  swimFloatSamples: 0,
-  swimExits: 0,
-  /** Metres the river current carried the player along itself, while swimming. */
-  swimDrift: 0,
-  contactSamples: 0,
-  maxContactError: 0,
-  bilinearDifference: 0,
-  oceanSteps: 0,
-  waveSamples: 0,
-  waveRange: 0,
-  sampleSlopeRange: 0,
-  lakePlacementError: 1,
-  lakeSurfaceCount: 0,
-  riverSurfaceCount: 0,
-  lakeTriangles: 0,
-  lakeFootprintError: 1,
-  sunX: -180,
-  propDraws: 0,
-  propInstances: 0,
-  propTriangles: 0,
-  /** Drawn prop instances within 40 m of the eye in a fixed view (0 in the player view). */
-  coverNearEye: 0,
-  /** Drawn grass instances 100-200 m from the eye in a fixed view: the far slopes' cover. */
-  coverFar: 0,
-  /** Spruce planted past the square (`farForest.ts`), and those drawn inside the view's frustum. */
-  farForest: 0,
-  farForestInView: 0,
-  preparedLodBaseSpread: 0,
-  compressedTexturesPrepared: 0,
-  preparedLevelsWithoutSolid: 0,
-  view: "player",
-  revealComplete: false,
-  windowDrawCalls: 0,
-  windowFrameMs: 0,
-  currentViewWindows: 0,
-  viewFrameP50s: [] as { view: string; p50: number; presentedP95: number; windows: number }[],
-  maxViewFrameP50: 0,
-  maxViewPresentedP95: 0,
-  measuredViewCount: 0,
-  riverFrameP50: 0,
-  playerFrameP50: 0,
-  meadowFrameP50: 0,
-  meadowFrameP99: 0,
-  meadowTriangles: 0,
-  overviewFrameP50: 0,
-  overviewFrameP99: 0,
-  overviewTriangles: 0,
-  alpineRenderedFrames: 0,
-  desertRenderedFrames: 0,
-  tundraRenderedFrames: 0,
-  alpineFrameP50: 0,
-  desertFrameP50: 0,
-  tundraFrameP50: 0,
-  alpineOverviewFrameP50: 0,
-  desertOverviewFrameP50: 0,
-  tundraOverviewFrameP50: 0,
-};
-export type DiagnosticsState = typeof initialDiagnosticsState;
+export function createDiagnosticsState(world: string) {
+  if (world.trim() === "")
+    throw new Error(
+      "TN_STARTER_DIAGNOSTICS_DATA: a diagnostics state needs the world it measures.",
+    );
+  return {
+    elevationMin: 0,
+    elevationMax: 0,
+    snowFrom: 0,
+    snowTo: 0,
+    worldReady: false,
+    spawnReadiness: [] as Array<Record<string, string | number | boolean>>,
+    loadingError: "",
+    spawnCellsRequired: 0,
+    spawnCellsLoaded: 0,
+    streamingResidentCells: 0,
+    streamingLoadedCells: 0,
+    streamingEvictions: 0,
+    streamingInstances: 0,
+    streamingFailures: 0,
+    streamingPendingPrewarm: 0,
+    streamingLoadsInFlight: 0,
+    streamingAdmissionMs: 0,
+    streamingAdmissionBacklog: 0,
+    timeToReadyMs: -1,
+    enterMs: -1,
+    tasksAvailable: false,
+    longestLoadTaskMs: -1,
+    afterFirstFrameTaskMs: -1,
+    maxViewGpuMs: -1,
+    measuredGpuViewCount: 0,
+    viewGpu: [] as {
+      view: string;
+      gpuMs: number;
+      gpuMain: number;
+      gpuShadow: number;
+      gpuOther: number;
+      windows: number;
+      passes: Record<string, { triangles: number; draws: number }>;
+      scale: number;
+      samples: number;
+    }[],
+    world,
+    groundBiome: "baked",
+    terrainTransportBound: false,
+    erosionFlowSamples: 0,
+    erosionDepositSamples: 0,
+    frames: 0,
+    travel: 0,
+    /** The farthest the player stood from where it spawned, in a straight line on the ground plane. */
+    straightTravel: 0,
+    edgeOvershoot: Number.NEGATIVE_INFINITY,
+    grounded: false,
+    /** Rock and trunk bodies resident around the player (`ScatterColliders`). */
+    propColliders: 0,
+    /** Frames the player's capsule crossed into a rock or trunk; 0 while props are solid. */
+    propOverlapFrames: 0,
+    swimming: false,
+    immersionDepth: 0,
+    swimSamples: 0,
+    swimFloatSamples: 0,
+    swimExits: 0,
+    /** Metres the river current carried the player along itself, while swimming. */
+    swimDrift: 0,
+    contactSamples: 0,
+    maxContactError: 0,
+    bilinearDifference: 0,
+    oceanSteps: 0,
+    waveSamples: 0,
+    waveRange: 0,
+    sampleSlopeRange: 0,
+    lakePlacementError: 1,
+    lakeSurfaceCount: 0,
+    riverSurfaceCount: 0,
+    lakeTriangles: 0,
+    lakeFootprintError: 1,
+    sunX: -180,
+    propDraws: 0,
+    propInstances: 0,
+    propTriangles: 0,
+    /** Drawn prop instances within 40 m of the eye in a fixed view (0 in the player view). */
+    coverNearEye: 0,
+    /** Drawn grass instances 100-200 m from the eye in a fixed view: the far slopes' cover. */
+    coverFar: 0,
+    /** Spruce planted past the square (`farForest.ts`), and those drawn inside the view's frustum. */
+    farForest: 0,
+    farForestInView: 0,
+    preparedLodBaseSpread: 0,
+    compressedTexturesPrepared: 0,
+    preparedLevelsWithoutSolid: 0,
+    view: "player",
+    revealComplete: false,
+    windowDrawCalls: 0,
+    windowFrameMs: 0,
+    currentViewWindows: 0,
+    viewFrameP50s: [] as { view: string; p50: number; presentedP95: number; windows: number }[],
+    maxViewFrameP50: 0,
+    maxViewPresentedP95: 0,
+    measuredViewCount: 0,
+    riverFrameP50: 0,
+    playerFrameP50: 0,
+    meadowFrameP50: 0,
+    meadowFrameP99: 0,
+    meadowTriangles: 0,
+    overviewFrameP50: 0,
+    overviewFrameP99: 0,
+    overviewTriangles: 0,
+    alpineRenderedFrames: 0,
+    desertRenderedFrames: 0,
+    tundraRenderedFrames: 0,
+    alpineFrameP50: 0,
+    desertFrameP50: 0,
+    tundraFrameP50: 0,
+    alpineOverviewFrameP50: 0,
+    desertOverviewFrameP50: 0,
+    tundraOverviewFrameP50: 0,
+  };
+}
+export type DiagnosticsState = ReturnType<typeof createDiagnosticsState>;
 
 /** The last closed frame-budget window, published into state by the scene. */
 export const budget = {
@@ -188,10 +197,14 @@ const views = {
   firstGpuFrame: Number.POSITIVE_INFINITY,
 };
 export const viewBudgets = new Map<string, IViewWindow>();
-/** Frames this run drew in each world; a world the run did not reach reports zero. */
-const rendered = new Map<string, number>();
 
-/** A group to latch a closed window into: the same accumulator, one per world and view. */
+/**
+ * A group to latch a closed window into: the same accumulator, one per world and view.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation keep one measured view's frame windows together across scenes
+ * @example const group = viewGroup("forest:overview");
+ */
 export function viewGroup(view: string): IViewWindow {
   return {
     view,
@@ -208,7 +221,13 @@ export function viewGroup(view: string): IViewWindow {
   };
 }
 
-/** Start a scene's view accounting: the player view it opens in, and nothing measured yet. */
+/**
+ * Start a scene's view accounting: the player view it opens in, and nothing measured yet.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation start the run's view accounting when a scene enters
+ * @example beginScene("forest");
+ */
 export function beginScene(world: string): void {
   views.current = `${world}:player`;
   views.visit = beginViewVisit();
@@ -218,7 +237,13 @@ export function beginScene(world: string): void {
   viewBudgets.set(views.current, group);
 }
 
-/** The camera cycle moved to another view: a keyed group for it, and a fresh measurement. */
+/**
+ * The camera cycle moved to another view: a keyed group for it, and a fresh measurement.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation switch the measured view when the benchmark camera cycle moves
+ * @example const { windows } = enterView("forest", "overview");
+ */
 export function enterView(world: string, view: string): { current: string; windows: number } {
   views.current = `${world}:${view}`;
   views.visit = beginViewVisit();
@@ -233,7 +258,7 @@ export function enterView(world: string, view: string): { current: string; windo
 
 /** What a scene says about itself for one report: everything the counters cannot know. */
 export interface ISceneFacts {
-  readonly world: WorldName;
+  readonly world: string;
   readonly groundBiome: string;
   readonly elevation: readonly [number, number];
   readonly snowBand: readonly [number, number];
@@ -290,7 +315,13 @@ export interface ISceneFacts {
   readonly preparedLevelsWithoutSolid: number;
 }
 
-/** The frame-budget window closed: latch it, and update the numbers the run reports. */
+/**
+ * The frame-budget window closed: latch it, and update the numbers the run reports.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation read the engine's own closed frame window into the run's report
+ * @example frameBudget: { onWindow: observeWindow }
+ */
 export function observeWindow(window: IFrameBudgetWindow): void {
   budget.drawCalls = Object.values(window.passes ?? {}).reduce(
     (sum, pass) => sum + (pass.draws.mean * pass.frames) / window.frames,
@@ -356,9 +387,12 @@ export interface ICounterCtx {
 /**
  * One world frame was drawn: count it, and open a fresh GPU sample window if the view or the
  * readiness changed. Called from the render hook, before the camera is placed.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation count a drawn frame and open the next GPU sample window
+ * @example ctx.beforeRender(() => observeFrame(ctx));
  */
-export function observeFrame(world: string, ctx: ICounterCtx): void {
-  rendered.set(world, (rendered.get(world) ?? 0) + 1);
+export function observeFrame(ctx: ICounterCtx): void {
   views.visit.ready = ctx.state.getState().worldReady && ctx.startup.phase === "ready";
   if (!views.visit.ready) views.visit.discard = true;
   const ready = ctx.state.getState().worldReady && ctx.startup.phase === "ready";
@@ -413,7 +447,13 @@ const p50Of = (view: string): number => median(viewBudgets.get(view)?.p50s ?? []
 const p99Of = (view: string): number => Math.max(0, ...(viewBudgets.get(view)?.p99s ?? []));
 const trianglesOf = (view: string): number => median(viewBudgets.get(view)?.triangles ?? []);
 
-/** Publish the measurements and the scene's own facts into state, twice per second. */
+/**
+ * Publish the measurements and the scene's own facts into state, twice per second.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation write the measured view and frame numbers into the game's state
+ * @example publish(ctx, { world, worldReady, frames, ...facts });
+ */
 export function publish(
   ctx: {
     readonly state: {
@@ -496,27 +536,26 @@ export function publish(
     windowFrameMs: budget.frameMs,
     // Every camera cost, published as plain state so the run report carries the numbers rather than
     // a console ring buffer that outlives neither run.
-    riverFrameP50: p50Of("forest:river"),
-    playerFrameP50: p50Of("forest:player"),
-    meadowFrameP50: p50Of("forest:meadow-close"),
-    meadowFrameP99: p99Of("forest:meadow-close"),
-    meadowTriangles: trianglesOf("forest:meadow-close"),
-    overviewFrameP50: p50Of("forest:overview"),
-    overviewFrameP99: p99Of("forest:overview"),
-    overviewTriangles: trianglesOf("forest:overview"),
-    alpineRenderedFrames: rendered.get("alpine") ?? 0,
-    desertRenderedFrames: rendered.get("desert") ?? 0,
-    tundraRenderedFrames: rendered.get("tundra") ?? 0,
-    alpineFrameP50: p50Of("alpine:ridge"),
-    desertFrameP50: p50Of("desert:mesa"),
-    tundraFrameP50: p50Of("tundra:plain"),
-    alpineOverviewFrameP50: p50Of("alpine:overview"),
-    desertOverviewFrameP50: p50Of("desert:overview"),
-    tundraOverviewFrameP50: p50Of("tundra:overview"),
+    // The starter kit's own benchmark view names, under the world being measured. A kit that renames
+    // a view owns that row in its own state; the package never spells a world or a view out.
+    riverFrameP50: p50Of(`${facts.world}:river`),
+    playerFrameP50: p50Of(`${facts.world}:player`),
+    meadowFrameP50: p50Of(`${facts.world}:meadow-close`),
+    meadowFrameP99: p99Of(`${facts.world}:meadow-close`),
+    meadowTriangles: trianglesOf(`${facts.world}:meadow-close`),
+    overviewFrameP50: p50Of(`${facts.world}:overview`),
+    overviewFrameP99: p99Of(`${facts.world}:overview`),
+    overviewTriangles: trianglesOf(`${facts.world}:overview`),
   });
 }
 
-/** The scene is gone: nothing is on screen, so no window can belong to a view. */
+/**
+ * The scene is gone: nothing is on screen, so no window can belong to a view.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation stop attributing windows to a view when its scene is left
+ * @example leaveScene();
+ */
 export function leaveScene(): void {
   views.current = "";
   views.visit = beginViewVisit();
@@ -666,6 +705,15 @@ export function witnessAsymmetricContact(options: IContactProbeOptions): IContac
   return { bilinearDifference, contactSamples, maxContactError };
 }
 
+/**
+ * The per-world measurement: contacts, travel, edge overshoot, water and the frame facts a run
+ * reports.
+ *
+ * @requires npm i -D @threenative/terrain @threenative/physics
+ * @situation measure one played starter world every fixed step
+ * @constraint the game supplies the actor, the player body and the probe fixture; it owns no look
+ * @example const measure = createMeasure({ world, physics: ctx.physics, raycast, actor, player, ... });
+ */
 export function createMeasure(options: IMeasureOptions): IMeasure {
   const { actor, physics, player } = options;
   const previous = actor.position.clone();
@@ -937,6 +985,14 @@ export interface IRevealProbe {
   readonly readout: () => Readonly<Record<string, number | string | boolean>>;
 }
 
+/**
+ * What the loading reveal showed once the curtain lifts: drawn batches, pipelines and impostor
+ * readiness, measured against the reveal's own baseline.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation measure whether the spawn drew before the curtain released it
+ * @example const reveal = createRevealProbe({ camera, covered, phase, released, ... });
+ */
 export function createRevealProbe(options: IRevealProbeOptions): IRevealProbe {
   const reveal = {
     startedMs: -1,
