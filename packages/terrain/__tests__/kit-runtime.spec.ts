@@ -11,6 +11,7 @@ import { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, Texture
 import { vec3 } from "three/tsl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStarterWorld } from "../src/starter.js";
+import type { IStarterWorldSpec } from "../src/starter.js";
 import { PropColliders as AlpineColliders, addAlpine } from "../starter/alpine/world.js";
 import { PropColliders as CoastalColliders, addCoastal } from "../starter/coastal/world.js";
 import { PropColliders as DesertColliders, addDesert } from "../starter/desert/world.js";
@@ -347,6 +348,66 @@ describe.each(kits)("$kit runtime", ({ kit, addWorld, Collider, asset, water }) 
     expect(alpine.colliders.active).toBe(1);
     expect(alpine.ground.shape.descriptor.kind).toBe("heightfield");
     expect(ctx.scene.children).toHaveLength(3);
+  });
+
+  // One case per mechanism option: naming the option without its data is a typo an agent reads as
+  // "this mechanism is on", so each fails under its own code instead of degrading to a no-op.
+  describe("names the data a mechanism option is missing", () => {
+    const spec = (extra: Partial<IStarterWorldSpec<{ dispose(): void }>> = {}) =>
+      ({
+        name: kit,
+        url: `terrain/${kit}/world.json`,
+        colliders: { [asset]: { sphere: 0.9 } },
+        colliderReach: 60,
+        loadSurface: async () => surface,
+        lighting: { sky: "sky.hdr", lods: false, dress: () => {} },
+        streaming: { ring: 1, budgets: { residentCells: 9, instances: 100, bytes: 1_000_000 } },
+        ...extra,
+      }) as IStarterWorldSpec<{ dispose(): void }>;
+
+    it("TN_STARTER_WATER_DATA for a water option over a bake with no water.json", async () => {
+      const { ctx } = await context();
+      const original = globalThis.fetch;
+      vi.stubGlobal("fetch", async (input: string) =>
+        input.endsWith("water.json") ? new Response(null, { status: 404 }) : original(input),
+      );
+      await expect(
+        addStarterWorld(ctx, new Object3D(), spec({ water: () => ({ dispose: () => {} }) })),
+      ).rejects.toThrow(/^TN_STARTER_WATER_DATA:/u);
+      expect(ctx.scene.children).toHaveLength(0);
+    });
+
+    it("TN_STARTER_SKY_DATA for `lighting.sky` with no file behind it", async () => {
+      const { ctx } = await context();
+      const resolve = ctx.assets.resolve.bind(ctx.assets);
+      ctx.assets.resolve = async (path: string) => (path.endsWith("sky.hdr") ? [] : resolve(path));
+      await expect(addStarterWorld(ctx, new Object3D(), spec())).rejects.toThrow(
+        /^TN_STARTER_SKY_DATA:/u,
+      );
+      expect(loads.world).not.toHaveBeenCalled();
+      expect(ctx.scene.children).toHaveLength(0);
+    });
+
+    it("TN_STARTER_COLLIDER_DATA for a collider row this world places nowhere", async () => {
+      const { ctx } = await context();
+      await expect(
+        addStarterWorld(
+          ctx,
+          new Object3D(),
+          spec({ colliders: { [asset]: { sphere: 0.9 }, ghost: { sphere: 1 } } }),
+        ),
+      ).rejects.toThrow(/^TN_STARTER_COLLIDER_DATA: .*'ghost'/u);
+      expect(ctx.scene.children).toHaveLength(0);
+    });
+
+    it("TN_STARTER_EDIT_DATA for ID edits over a world with no placement IDs", async () => {
+      const { ctx } = await context();
+      await expect(
+        addStarterWorld(ctx, new Object3D(), spec({ edits: { remove: ["ghost"] } })),
+      ).rejects.toThrow(/^TN_STARTER_EDIT_DATA:/u);
+      expect(loads.surface).not.toHaveBeenCalled();
+      expect(ctx.scene.children).toHaveLength(0);
+    });
   });
 
   it("dresses the mid level its own assets.json bakes", async () => {
