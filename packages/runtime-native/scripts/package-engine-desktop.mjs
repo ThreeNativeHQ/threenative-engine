@@ -12,9 +12,10 @@ const PLAYER = "tn-native-engine-player-v8";
 
 /**
  * The launcher: the window opens with the game's title and size, the player takes the game's CPU priority
- * (`display.priority`, PRD-859), and every argument reaches the player.
+ * (`display.priority`, PRD-859), the player opens fullscreen unless the game sets `display.fullscreen: false`,
+ * and every argument reaches the player (`--windowed` and `--fullscreen` included).
  */
-export function launcher(width, height, title, priority = "game") {
+export function launcher(width, height, title, priority = "game", fullscreen = true) {
   if (priority !== "game" && priority !== "normal") throw new Error(`TN_ENGINE_PACKAGE_ARGS: --priority must be game or normal, got ${priority}`);
   return [
     "#!/bin/sh",
@@ -23,7 +24,8 @@ export function launcher(width, height, title, priority = "game") {
     `: "\${TN_PLAYER_WIDTH:=${width}}"`,
     `: "\${TN_PLAYER_HEIGHT:=${height}}"`,
     `: "\${TN_PLAYER_PRIORITY:=${priority}}"`,
-    "export TN_PLAYER_WIDTH TN_PLAYER_HEIGHT TN_PLAYER_PRIORITY",
+    `: "\${TN_PLAYER_FULLSCREEN:=${fullscreen ? 1 : 0}}"`,
+    "export TN_PLAYER_WIDTH TN_PLAYER_HEIGHT TN_PLAYER_PRIORITY TN_PLAYER_FULLSCREEN",
     `exec "$DIR/${PLAYER}" "$DIR/game.js" "$@"`,
     "",
   ].join("\n");
@@ -34,7 +36,7 @@ export function launcher(width, height, title, priority = "game") {
  * and, for a web UI, `ui/`. `bundle` and `cook` are the engine bundler's, injectable for the unit test.
  */
 export async function packageEngineDesktop(
-  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority },
+  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority, fullscreen },
   { bundle = bundleNativeEngine, cook = cookNativeEngineAssets } = {},
 ) {
   if (!player || !existsSync(player)) {
@@ -55,7 +57,7 @@ export async function packageEngineDesktop(
     cpSync(ui, join(output, "ui"), { recursive: true });
   }
   const start = join(output, basename(output));
-  writeFileSync(start, launcher(width, height, title, priority));
+  writeFileSync(start, launcher(width, height, title, priority, fullscreen));
   chmodSync(start, 0o755);
   if (buildReceipt) {
     const receipt = JSON.parse(readFileSync(buildReceipt, "utf8"));
@@ -84,7 +86,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const args = process.argv.slice(2);
   const flags = new Map();
   for (let i = 0; i < args.length; i += 2) {
-    if (!["--project", "--entry", "--player", "--ui", "--output", "--build-receipt", "--width", "--height", "--title", "--priority"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
+    if (!["--project", "--entry", "--player", "--ui", "--output", "--build-receipt", "--width", "--height", "--title", "--priority", "--fullscreen"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
       throw new Error(`TN_ENGINE_PACKAGE_ARGS: invalid or repeated option ${args[i]}`);
     flags.set(args[i], args[i + 1]);
   }
@@ -100,6 +102,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       height: flags.has("--height") ? Number(flags.get("--height")) : undefined,
       title: flags.get("--title"),
       priority: flags.get("--priority"),
+      fullscreen: flags.has("--fullscreen") ? flags.get("--fullscreen") !== "false" : undefined,
     });
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

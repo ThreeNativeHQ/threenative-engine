@@ -1637,6 +1637,8 @@ async function buildEngineDesktop(
     config.window.title,
     "--priority",
     config.display.priority,
+    "--fullscreen",
+    String(config.display.fullscreen),
     "--output",
     output,
   ]);

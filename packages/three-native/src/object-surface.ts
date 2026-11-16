@@ -41,6 +41,8 @@ interface IGeometry {
   getAttribute(name: string): unknown;
 }
 
+const undefinedOnMissing = new WeakSet<object>();
+
 function defineGeometrySurface(
   BufferGeometry: Constructor,
   geometries: readonly Constructor[],
@@ -82,6 +84,23 @@ function defineGeometrySurface(
           ).map(({ start, count, materialIndex }) => ({ start, count, materialIndex }));
         },
       });
+    // three answers a missing attribute with undefined and the engine with null, so a game's
+    // `getAttribute(name) === undefined` (a sway material picking its geometry) misread every
+    // geometry as carrying it and the draw failed TN_NATIVE_ATTRIBUTE_MISSING. The engine may define
+    // it on a shared base, so the method each class resolves is wrapped on that class.
+    const read = (prototype as { getAttribute?: unknown }).getAttribute;
+    if (typeof read === "function" && !undefinedOnMissing.has(read)) {
+      const answer = function (this: unknown, name: string): unknown {
+        return (read as (this: unknown, name: string) => unknown).call(this, name) ?? undefined;
+      };
+      undefinedOnMissing.add(answer);
+      Object.defineProperty(prototype, "getAttribute", {
+        configurable: true,
+        enumerable: false,
+        value: answer,
+        writable: true,
+      });
+    }
     // Each geometry class carries its own `attributes` accessor, so every one gets the view.
     Object.defineProperty(prototype, "attributes", {
       configurable: true,

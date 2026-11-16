@@ -58,6 +58,8 @@ std::shared_ptr<Material> materialOf(const Value& spec) {
     if (const Value* color = spec.find("color")) material->color.setHex(static_cast<uint32_t>(color->number()));
     if (const Value* roughness = spec.find("roughness")) material->roughness = roughness->number();
     if (const Value* transparent = spec.find("transparent")) material->transparent = transparent->boolean();
+    // A material with a position node (a swaying grass blade): only its presence is read.
+    if (flag(spec.find("displaced"))) material->positionNode = std::make_shared<shader::PositionNode>();
     return material;
 }
 

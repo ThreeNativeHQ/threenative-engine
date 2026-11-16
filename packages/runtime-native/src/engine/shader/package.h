@@ -75,6 +75,27 @@ struct VertexAttribute {
     Type type;
 };
 
+/** One of the four columns of an instanced mesh's mat4 (instanceMatrix0..3). */
+inline bool isMatrixColumn(const VertexAttribute& a) { return a.name.rfind("instanceMatrix", 0) == 0; }
+
+/**
+ * Whether attribute i rides an earlier attribute's vertex buffer slot. The four instance-matrix columns
+ * are one mat4 per instance in one buffer, so the first one read takes a slot and the rest share it:
+ * WebGPU allows 8 vertex buffers, and a slot per column left an instanced material only four of its
+ * own (an Arbor tree's position, normal, uv, color and wind failed pipeline creation at 9).
+ */
+inline bool sharesMatrixSlot(const std::vector<VertexAttribute>& attributes, size_t i) {
+    if (!isMatrixColumn(attributes[i])) return false;
+    for (size_t j = 0; j < i; ++j)
+        if (isMatrixColumn(attributes[j])) return true;
+    return false;
+}
+
+/** The byte offset of a matrix column inside its mat4: column k at 16 k. */
+inline uint64_t matrixColumnOffset(const VertexAttribute& a) {
+    return isMatrixColumn(a) ? uint64_t(a.name.back() - '0') * 16 : 0;
+}
+
 /** One stage of one variant: its WGSL and everything needed to bind and feed it. */
 struct StageModule {
     Stage stage;

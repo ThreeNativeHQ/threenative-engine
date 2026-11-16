@@ -84,7 +84,7 @@ The sandbox game `grove` (published `create-threenative@0.2.6` minimal, source c
 
 ## References
 
-- [Implementation and commands](../../../examples/integrations/vegetation/README.md)
+- Implementation and commands: `examples/integrations/vegetation/README.md` (deleted by PRD-884; the Arbor bake in `packages/procedural-vegetation/` replaced it)
 - [EZ Tree](https://github.com/dgreenheck/ez-tree)
 - [Original planning revision](https://github.com/ThreeNativeHQ/threenative/blob/31fee67315a7b134c360d04990db81fb54f2c041/docs/PRDs/threejs-integrations/PRD-threejs-procedural-vegetation.md)
 - [Charter](../../architecture/CHARTER.md)

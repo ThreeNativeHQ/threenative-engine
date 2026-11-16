@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — Phase 1 is an unbuilt coverage gate. Far trees draw as octahedral impostors today, and a fresh Unreal project leaves voxels off.
 **Complexity:** 7 (HIGH) — 1–5 implementation files (+1), a voxel step inside the cluster bake changes the bake output and its cache version (+2), a brick draw that marches a bit mask is a new GPU path (+2), a visual judge (+1), native proof on the owned host (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Builds on the cluster DAG bake (`packages/assets/src/virtual/dag.ts`) and `ClusteredMesh`. Uses [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md)'s view-pruned walk when it has shipped (optional). Coordinates with `docs/PRDs/Unreal/shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md` (on `origin/feat/unreal-look-epic`), which owns how leaf cards cast.
+**Depends on:** None. Builds on the cluster DAG bake (`packages/assets/src/virtual/dag.ts`) and `ClusteredMesh`. Uses [PRD-600](../../done/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md)'s view-pruned walk when it has shipped (optional). Coordinates with `docs/PRDs/Unreal/shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md` (on `origin/feat/unreal-look-epic`), which owns how leaf cards cast.
 
 ## Context
 

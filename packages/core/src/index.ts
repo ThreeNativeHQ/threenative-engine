@@ -1547,6 +1547,55 @@ export type {
 export { GPUReadback } from "./gpu-readback.js";
 export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js";
 /**
+ * Stream instanced grass in chunks around the camera; the game owns the blade and its TSL material.
+ * @situation grass that sways and parts around the player
+ * @situation a meadow, lawn or grassy field over terrain that streams around the camera
+ * @situation ground cover grass blades with distance thinning and LOD that does not pop
+ * @situation grass flattened or pushed aside where the player, a creature or a vehicle walks
+ * @situation grow grass on a terrain biome's grass rows with grassFieldFromBiome
+ * @constraint call `update(camera)` once per rendered frame from `ctx.beforeRender`; chunks build nearest first inside `buildBudgetMs`
+ * @constraint the material reads `GRASS_FIELD_ATTRIBUTES` and the field's `nodes` uniforms, so its thinning matches the CPU trim
+ * @constraint a chunk is built inside 1.3 × the draw distance and discarded past 1.4 ×, so a camera on the edge rebuilds nothing
+ * @override densityScale and cullDistanceScale scale every density and distance at once; prewarm() builds all in range on the next update
+ * @example // the look lives in the kit's src/render/grass.ts
+ * const grass = new GrassField3D({ blade: grassBlade(), material: grassMaterial, getHeight: height });
+ * ctx.add(grass);
+ * ctx.beforeRender(() => { grass.pushers[0]?.set(hero.x, hero.y, hero.z, 1.2); grass.update(ctx.camera); });
+ */
+export { GRASS_FIELD_ATTRIBUTES, GrassField3D } from "./grass-field.js";
+export type {
+  IGrassField3DOptions,
+  IGrassFieldBlade,
+  IGrassFieldBounds,
+  IGrassFieldNodes,
+  IGrassFieldStats,
+} from "./grass-field.js";
+
+/**
+ * Stream instanced copies of any baked mesh around a follow point, with distance thinning and levels
+ * of detail, from the game's own placement rule.
+ * @situation scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor
+ * @situation stream instanced props of any baked mesh round the player without one draw per prop
+ * @situation place rocks, debris or plants on a heightfield with distance thinning and level of detail
+ * @constraint call `update(follow)` once per rendered frame
+ * @constraint `place` runs once per candidate per tile build: return false for paths and clearings
+ * @constraint rotating or scaling the field is not supported; translating it is
+ * @requires npm i -D @threenative/procedural-vegetation for the bake these instances come from
+ * @example
+ * const floor = new ScatterField3D({ parts: [{ lods, material }], getHeight, density: 0.05, place });
+ * ctx.add(floor);
+ * ctx.beforeRender(() => floor.update(hero.position));
+ */
+export { ScatterField3D } from "./scatter-field.js";
+export type {
+  IScatterField3DOptions,
+  IScatterFieldBounds,
+  IScatterFieldStats,
+  IScatterPart,
+  IScatterPlacement,
+  IScatterPoint,
+} from "./scatter-field.js";
+/**
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects
  * @situation update many small visual particles

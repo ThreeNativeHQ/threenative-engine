@@ -43,6 +43,8 @@
       "examples/native-css-hud/src/ui/tailwind-parity.scene.json",
       "packages/three-native/generated/**",
       "packages/assets/vendor/basis-encoder/basis_encoder.js",
+      "packages/procedural-vegetation/vendor/arbor.js",
+      "packages/procedural-vegetation/vendor/forest-kit/**",
       "packages/runtime-native/**/*.json",
       "packages/terrain/starter/*/recipe.json",
       "test-results/**",

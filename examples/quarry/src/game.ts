@@ -19,6 +19,8 @@ import {
   armFromLocation,
   bodiesModelPath,
   modeFromLocation,
+  poseFrameFromLocation,
+  viewCullFromLocation,
 } from "./quarry/arm.js";
 import { BOULDER_SUBDIVISIONS, boulderPlacements } from "./quarry/bodies.js";
 import { EYE_HEIGHT, ROUTE_FRAMES, ROUTE_MARKS, routePose } from "./quarry/route.js";
@@ -28,6 +30,13 @@ import { createQuarryLook } from "./render/look.js";
 const FLOOR_MODEL = "assets/quarry-floor.glb";
 /** Metres per second in `free` mode. Route mode ignores this entirely. */
 const WALK_SPEED = 7;
+/**
+ * Whether the route draws only what the view holds. `?viewCull=off` is PRD-600's measurement arm and
+ * is the only difference between the two runs it compares.
+ */
+const VIEW_CULL = viewCullFromLocation();
+/** The route frame `?mode=pose` stands on; the same pose in every run, so a pair is comparable. */
+const POSE_FRAME = poseFrameFromLocation();
 const LOOK_SPEED = 0.0022;
 
 export interface IQuarryState extends Record<string, unknown> {
@@ -147,6 +156,10 @@ function createQuarryScene(options: IQuarryOptions): new () => Scene<IQuarryStat
       grating.material = look.grating;
       ctx.add(grating);
 
+      if (!VIEW_CULL)
+        for (const body of [cliff, gantry, grating])
+          if (body instanceof ClusteredMesh) body.viewCull = false;
+
       // Six sources, ~400 instances: many copies of few bodies, which is the case that tests
       // per-instance and per-cluster rejection together.
       const placements = boulderPlacements();
@@ -165,6 +178,7 @@ function createQuarryScene(options: IQuarryOptions): new () => Scene<IQuarryStat
                 geometry: clustered.geometry,
                 material: look.boulder,
                 table: clustered.table,
+                viewCull: VIEW_CULL,
               });
         for (const placement of placements) {
           if (placement.source !== source) continue;
@@ -182,10 +196,12 @@ function createQuarryScene(options: IQuarryOptions): new () => Scene<IQuarryStat
 
       const eye = new Vector3();
       const gaze = new Vector3();
+      /** The re-cut each clustered mesh had last reported, so one cut is counted once. */
+      const recutSeen = new Map<ClusteredMesh, number>();
       // The route starts on a press, not on the first frame. Loading a 12.5 MB body takes hundreds
       // of frames longer than loading a 1.2 MB one, and a walk that began during the load would
       // have each arm measured on a different stretch of the same route.
-      let started = options.mode === "free";
+      let started = options.mode === "free" || options.mode === "pose";
       let frame = 0;
       let yaw = Math.PI;
       let pitch = 0;
@@ -204,6 +220,12 @@ function createQuarryScene(options: IQuarryOptions): new () => Scene<IQuarryStat
             floorHeight(CONTROL_TARGET[0], CONTROL_TARGET[2]),
             CONTROL_TARGET[2],
           );
+        } else if (options.mode === "pose") {
+          const pose = routePose(Math.min(POSE_FRAME, ROUTE_FRAMES));
+          eye.set(pose.position[0], pose.position[1], pose.position[2]);
+          gaze.set(pose.target[0], pose.target[1], pose.target[2]);
+          frameCtx.camera.position.copy(eye);
+          frameCtx.camera.lookAt(gaze);
         } else if (options.mode === "route") {
           const pose = routePose(Math.min(frame, ROUTE_FRAMES));
           eye.set(pose.position[0], pose.position[1], pose.position[2]);
@@ -250,7 +272,61 @@ function createQuarryScene(options: IQuarryOptions): new () => Scene<IQuarryStat
           );
         }
 
-        const mark = ROUTE_MARKS.find((candidate) => candidate.frame === frame);
+        // What the view does not hold, read off the standing cut. PRD-600's gate is the share of the
+        // submitted triangles that lie wholly outside the camera's frustum, so it is printed on the
+        // same 30-frame cadence as the frame budget's windows and `measure` takes the median over the
+        // same steady ones. Nothing is culled by this: it only says how much there is to cull.
+        if (frame > 0 && frame % 30 === 0) {
+          let triangles = 0;
+          let outsideTriangles = 0;
+          let clusters = 0;
+          let outsideClusters = 0;
+          let copies = 0;
+          let outsideCopies = 0;
+          let recutSamples = 0;
+          let recutMs = 0;
+          let recutBytes = 0;
+          frameCtx.scene.traverse((object) => {
+            if (object instanceof ClusteredMesh) {
+              triangles += object.drawnTriangles;
+              outsideTriangles += object.drawnTrianglesOutsideView;
+              clusters += object.drawnClusters;
+              outsideClusters += object.drawnClustersOutsideView;
+              const seen = recutSeen.get(object) ?? 0;
+              if (object.recutCount > seen) {
+                recutSeen.set(object, object.recutCount);
+                recutSamples += 1;
+                recutMs += object.recutMs;
+                recutBytes += object.recutBytes;
+              }
+              return;
+            }
+            const batch = (object as { batch?: ClusteredBatch }).batch;
+            if (!(batch instanceof ClusteredBatch)) return;
+            triangles += batch.drawnTriangles;
+            outsideTriangles += batch.drawnTrianglesOutsideView;
+            copies += batch.count;
+            outsideCopies += batch.drawnCopiesOutsideView;
+          });
+          console.log(
+            `TN_CLUSTER_VIEW:${JSON.stringify({
+              copies,
+              frame,
+              outsideClusters,
+              outsideCopies,
+              outsideTriangles,
+              recutBytes,
+              recutMs,
+              recutSamples,
+              triangles,
+            })}`,
+          );
+        }
+
+        const mark =
+          options.mode === "pose"
+            ? { frame, label: "pose" }
+            : ROUTE_MARKS.find((candidate) => candidate.frame === frame);
         frameCtx.state.set({
           cameraX: round(frameCtx.camera.position.x),
           cameraY: round(frameCtx.camera.position.y),

@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry } from "three";
-import { validateBakedMesh } from "./core/bake.js";
 import type { IBakedMesh } from "./core/types.js";
+import { validateBakedMesh } from "./package/bake.js";
 
 /**
  * Converts baked arrays to ordinary geometry using the consumer's installed Three.js.

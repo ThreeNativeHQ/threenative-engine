@@ -107,7 +107,7 @@ quadrantChart
 | 5 | PRD-643 | Glass, fog and leaves take the bounce light | L7 | 5 | 2 | 6/11 | PRD-603, 604 | Small share of the frame |
 | 5 | PRD-605 | Radiance cache clipmaps follow the camera | L7 | 6 | 3 | 0/8 | PRD-603, 604 | Open worlds |
 | 5 | PRD-457 | Virtual shadow pages only where cheaper | Perf | 5 est. | 2 | 0/5 | — | Only where measured |
-| 5 | PRD-600 | Nanite: submit only visible clusters | Perf | 6 | 3 | 0/8 | — | Dense scenes |
+| 5 | PRD-600 | Nanite: submit only visible clusters | Perf | 6 | 3 | 8/8 | — | Dense scenes |
 | 5 | PRD-601 | Far clusters keep source shading | Perf | 4 | 2 | 0/7 | PRD-600 | Follows PRD-600 |
 | 5 | PRD-602 | Cluster shadow casters at shadow-texel detail | Perf | 5 | 2 | 0/8 | PRD-600 | Follows PRD-600 |
 | 5 | PRD-570 | Characters cost what the camera sees | Perf | 5 | 3 | 9/9 | — | Crowds; a lane is measuring it |
@@ -138,7 +138,7 @@ filed for the gaps this map found (PRD-660 to PRD-683).
 | 5 | PRD-664 | Smoke and explosions as lit volumes | VFX | 6 | 1 | 0/10 | — | Off at Unreal low and medium tiers |
 | 5 | PRD-660 | Many shadowed lamps, one fixed budget (MegaLights) | Perf | 8 | 1 | 0/10 | PRD-650 | Off in a fresh Unreal project |
 | 5 | PRD-661 | ReSTIR: fewer GI rays, same quality | Perf | 7 | 1 | 0/9 | PRD-640, PRD-641 | No Unreal tier turns it on |
-| 5 | PRD-668 | Displacement changes the silhouette | Look | 7 | 1 | 0/9 | PRD-600 | Per-material opt-in in Unreal |
+| 5 | PRD-668 | Displacement changes the silhouette | Look | 7 | 1 | 2/9 | PRD-600 | Per-material opt-in in Unreal |
 | 5 | PRD-669 | Far foliage as voxels | Perf | 7 | 1 | 0/9 | — | Off in a fresh Unreal project |
 | 5 | PRD-671 | Strand hair | Look | 7 | 1 | 0/9 | PRD-VQ-15 | Off in a fresh Unreal project |
 | 5 | PRD-672 | Terrain layers cached in virtual pages | Perf | 8 | 1 | 0/9 | PRD-VQ-10 | Saves shading time on many-layer terrain |

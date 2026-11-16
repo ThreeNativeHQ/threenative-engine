@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { skyVisibility } from "../src/render/skyVisibility.js";
+import { skyVisibility } from "../src/render/sky/skyVisibility.js";
 
 const RESOLUTION = 129;
 const SIZE = 256;

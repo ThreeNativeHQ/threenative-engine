@@ -13,6 +13,40 @@ import { FixedStepLoop } from "../src/loop.js";
 import type { IRenderPassSample } from "../src/render-pass-budget.js";
 
 describe("frame budget simulation clock", () => {
+  it("reports the first drawn world frame once, with the engine's thread verdict", () => {
+    // The golden path's static-host probe reads this line: a slow software adapter needs minutes to
+    // fill a 300-tick window, and the thread verdict is known at the first frame.
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const globals = globalThis as { __tnWebThreads?: string };
+    globals.__tnWebThreads = "on (8)";
+    let lines: string[];
+    try {
+      const budget = new FrameBudget({ report: () => undefined });
+      // A covered startup frame and a frame that drew nothing are not the world yet.
+      budget.markCovered();
+      budget.beginFrame(0, 0);
+      budget.endFrame(40);
+      budget.markRevealed();
+      budget.beginFrame(48, 48);
+      budget.addRenderSkip();
+      budget.endFrame(50);
+      for (let frame = 4; frame < 7; frame += 1) {
+        budget.beginFrame(frame * 16, frame * 16);
+        budget.endFrame(frame * 16 + 5);
+      }
+      lines = info.mock.calls.map(([line]) => String(line));
+    } finally {
+      globals.__tnWebThreads = undefined;
+      info.mockRestore();
+    }
+    const first = lines.filter((line) => line.startsWith("TN_FIRST_FRAME:"));
+    expect(first).toHaveLength(1);
+    expect(JSON.parse(first[0]?.slice("TN_FIRST_FRAME:".length) ?? "")).toEqual({
+      frameMs: 5,
+      threads: "on (8)",
+    });
+  });
+
   it("waits for the requested rendered sample count after the simulation boundary", () => {
     let tick = 0;
     const windows: IFrameBudgetWindow[] = [];

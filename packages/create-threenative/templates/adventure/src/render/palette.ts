@@ -24,6 +24,9 @@ export const palette = {
 export const C = {
   grassDark: 0x4e7a2a,
   grassTip: 0x7f9e44,
+  /** The streamed grass: the dark root shade and the colour dry patches drift toward. */
+  grassRoot: 0x3b5a1d,
+  grassDry: 0xa89a4c,
   dirt: 0x8b6a48,
   path: 0xb39a72,
   stoneDark: 0x5d5a52,

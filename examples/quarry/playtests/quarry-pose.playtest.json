@@ -1,0 +1,32 @@
+{
+  "name": "quarry-pose",
+  "schemaVersion": 1,
+  "subject": "one frozen route frame, for a before/after capture of the same pose",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 40,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "pose",
+      "waitTicks": 60,
+      "release": true,
+      "screenshot": "pose"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "frame",
+        "changed": true
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@
 **Priority:** P3 — Nothing drops clusters on the shipped routes today, and no scene is known to hit a capacity. The work makes the next silent drop loud and closes the last open debug rows of the Nanite port.
 **Complexity:** 4 (LOW) — 1–5 implementation files (+1), two guards gain a counter and a report (+1), a playtest evaluator already reads the warning channel (+0), native proof on the owned host (+1), no visual change (+0); risk override: none
 **Owner:** unassigned
-**Depends on:** None for Phase 1. Phase 2 extends the `ClusteredMesh` row of [PRD-676](../performance/PRD-676-a-playtest-capture-tells-an-agent-whether-a-frame-pays-for-pixels-clusters-shadow-levels-or-effects.md) Phase 2 and starts after that row exists. Respects [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md) (view-pruned cut) and the root rule "make performance mistakes painful to write".
+**Depends on:** None for Phase 1. Phase 2 extends the `ClusteredMesh` row of [PRD-676](../performance/PRD-676-a-playtest-capture-tells-an-agent-whether-a-frame-pays-for-pixels-clusters-shadow-levels-or-effects.md) Phase 2 and starts after that row exists. Respects [PRD-600](../../done/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md) (view-pruned cut) and the root rule "make performance mistakes painful to write".
 
 ## Context
 

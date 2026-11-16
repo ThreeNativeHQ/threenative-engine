@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { parseStandalonePlaytestArgs } from "../src/runner/config.js";
 import { preflightDisplay } from "../src/runner/runner.js";
 
 const noDisplay = { DISPLAY: undefined, WAYLAND_DISPLAY: undefined };
@@ -59,4 +63,15 @@ test("fails loudly before framebuffer readback on headless Linux without a displ
     severity: "error",
   });
   expect(diagnostic?.message).toContain("use sh scripts/xvfb.sh <cmd>.");
+});
+
+test("a WebGPU recipe run launches headed, because headless Chromium loses every WebGPU canvas on SwiftShader", () => {
+  // Headless Chromium on a GPU-less Linux host serves WebGPU from SwiftShader and cannot create the
+  // canvas swap-chain image ("Could not find SharedImageBackingFactory ... WebgpuSwapChainTexture"),
+  // so the first present destroys the device on the owned engine and on upstream three alike.
+  const root = makeTempDirSync("tn-headed-");
+  writeFileSync(join(root, "s.playtest.json"), "{}");
+  expect(parseStandalonePlaytestArgs(["s.playtest.json", "--project", root, "--browser-recipe", "webgpu"]).headless).toBe(false);
+  expect(parseStandalonePlaytestArgs(["s.playtest.json", "--project", root]).headless).toBe(true);
+  expect(parseStandalonePlaytestArgs(["s.playtest.json", "--project", root, "--headed"]).headless).toBe(false);
 });

@@ -10,8 +10,8 @@ import {
   Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { boulder } from "../src/render/cover.js";
-import { buildPropVariants, lowestY, preparePose, variantFor } from "../src/render/props.js";
+import { boulder } from "../src/render/ground/cover.js";
+import { buildPropVariants, lowestY, preparePose, variantFor } from "../src/render/props/props.js";
 
 describe("weathered rock geometry", () => {
   it("retains the committed river-stone and boulder variant selection", () => {

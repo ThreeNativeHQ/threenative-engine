@@ -81,6 +81,11 @@ async function write(
   bodies: readonly IGeneratedBody[],
   arm: ArmPass = { kind: "dense" },
 ) {
+  // The compaction pass is on by default in this tree, and it flattens the scene and joins meshes
+  // that share a material: this instrument looks each body up by name, so every body is protected by
+  // name. Without it the whole file collapsed into one mesh named after the first body and the route
+  // died in `TN_QUARRY_BODY_MISSING` before it drew a frame.
+  const protectedNames = bodies.map((body) => body.name);
   const started = Date.now();
   const raw = Buffer.from(await new NodeIO().writeBinary(toDocument(bodies)));
   // `virtual: "none"` on the control arms is load-bearing now that the bake ships on by default:
@@ -88,10 +93,10 @@ async function write(
   // comparing three virtual arms. The gantry and grating fall under the threshold either way.
   const pass = modelPass(
     arm.kind === "decimated"
-      ? { simplify: { ratio: arm.ratio }, virtual: "none" as const }
+      ? { compact: { protectedNames }, simplify: { ratio: arm.ratio }, virtual: "none" as const }
       : arm.kind === "virtual"
-        ? { virtual: { minSourceTriangles: 4096 } }
-        : { virtual: "none" as const },
+        ? { compact: { protectedNames }, virtual: { minSourceTriangles: 4096 } }
+        : { compact: { protectedNames }, virtual: "none" as const },
   );
   const result = await pass.apply(raw, `${name}.glb`);
   const bytes = Buffer.isBuffer(result) ? result : result.buffer;

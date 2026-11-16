@@ -10,10 +10,10 @@ import { describe, expect, it } from "vitest";
 import { BENCHMARK, posesFor } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";
 import { BIOMES, type IVistaAim, type WorldName, measureBiome } from "../src/render/biomes.js";
-import { FAR_FOREST_IMPOSTOR, FAR_FOREST_WORLDS } from "../src/render/farForest.js";
-import { speciesFor } from "../src/render/pack.js";
-import { buildPropVariants } from "../src/render/props.js";
-import type { IBakedWorld } from "../src/render/terrain.js";
+import type { IBakedWorld } from "../src/render/ground/terrain.js";
+import { FAR_FOREST_IMPOSTOR, FAR_FOREST_WORLDS } from "../src/render/props/farForest.js";
+import { speciesFor } from "../src/render/props/pack.js";
+import { buildPropVariants } from "../src/render/props/props.js";
 
 /**
  * Everything a biome decides, pinned for all five worlds.

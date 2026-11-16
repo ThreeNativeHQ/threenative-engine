@@ -702,17 +702,21 @@ void Renderer::encodeFrame(FrameJob& job) {
             std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
             boundIndex = nullptr;
         }
-        for (const shader::VertexAttribute& a : p.program->vertex.attributes) {
-            // instanceMatrix0..3 are the columns of one buffer of mat4s, bound at 16-byte steps.
-            const bool column = a.name.rfind("instanceMatrix", 0) == 0;
+        // One slot per attribute, except instanceMatrix0..3: one buffer of mat4s in one slot (see
+        // shader::sharesMatrixSlot), which the pipeline reads at 16-byte steps.
+        uint32_t slot = 0;
+        const auto& vertexAttributes = p.program->vertex.attributes;
+        for (size_t i = 0; i < vertexAttributes.size(); ++i) {
+            const shader::VertexAttribute& a = vertexAttributes[i];
+            if (shader::sharesMatrixSlot(vertexAttributes, i)) continue;
             BufferStore* source = vertexSourceOf(item, a);
             if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
             const BufferStore& store = *source;
-            const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
-            if (a.location < std::size(boundVertex) && boundVertex[a.location] == &store) continue;
+            const uint32_t at = slot++;
+            if (at < std::size(boundVertex) && boundVertex[at] == &store) continue;
             const auto resolved = geometry_->cache.resolved(store);
-            TN_ENCODE(SetVertexBuffer, a.location, geometry_->gpu.buffer(resolved.buffer), offset, resolved.bytes - offset);
-            if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
+            TN_ENCODE(SetVertexBuffer, at, geometry_->gpu.buffer(resolved.buffer), 0, resolved.bytes);
+            if (at < std::size(boundVertex)) boundVertex[at] = &store;
         }
         // A required group that resolved to null means the draw's storage source is gone. A cached
         // program whose providing scene was torn down may keep a null group, but an active draw must
@@ -862,7 +866,6 @@ void Renderer::encodeFrame(FrameJob& job) {
     // Like core's CPU measurement when timestamp queries are unavailable; never mix CPU and GPU samples.
     if (!passTimer_->queries)
         for (const auto& [key, ms] : shadowCosts) virtualShadows_.at(key.first).atlas.recordCost(key.second, ms, frameDelta_);
-    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2, {"scene", inputWidth_, inputHeight_});
     bound = nullptr;
     boundIndex = nullptr;
     // three's viewport textures copy the frame at the first draw that reads one: the main pass splits
@@ -870,6 +873,12 @@ void Renderer::encodeFrame(FrameJob& job) {
     const std::size_t viewportSplit = static_cast<std::size_t>(
         std::find_if(plan.begin(), plan.end(), [&](const Planned& p) { return probesOf(*p.program).viewport; }) -
         plan.begin());
+    // PRD-888 lever 0 (TN_PREPASS=split): the prepass rows draw in their own pass, so the trace prices the depth half
+    // apart from the shade half. A draw that samples the frame as drawn before it still sees the shipped boundary:
+    // the rows after the copy get a second prepass pass, run once the copy is taken. The scene pass begins after the
+    // bundles are recorded, further down.
+    const bool splitPrepass =
+        prepassSplit() && std::any_of(plan.begin(), plan.end(), [](const Planned& p) { return p.prepass; });
     const std::vector<uint64_t>& bundleKey = job.bundleKey;
     // A pass's retained rows, recorded with each draw's counts read from its indirect record (firstInstance 0).
     // Rows [from, to): the sorted ones, or (delta) the ones first seen since the sort.
@@ -924,6 +933,15 @@ void Renderer::encodeFrame(FrameJob& job) {
         recorded += uint32_t(pass.rows->size() - pass.sorted);
         lastFrame_.recordMs += meterMs() - recordStarted;
     };
+    // A split arm and a one-pass arm record different bundles for the same plan, so switching arms drops them. Inside
+    // one arm the plan's own key carries the frame: a split bundle is reused while the plan holds, as a one-pass one is.
+    if (splitPrepass != splitRecorded_) {
+        for (WGPURenderBundle* bundle : {&mainBundle_, &prepassBundle_, &prepassTailBundle_, &viewportBundle_, &tailBundle_, &mainDelta_}) {
+            if (*bundle) wgpuRenderBundleRelease(*bundle);
+            *bundle = nullptr;
+        }
+        splitRecorded_ = splitPrepass;
+    }
     if (features().stableRows && job.mainRows.on) {
         WGPURenderBundleEncoderDescriptor descriptor{};
         const WGPUTextureFormat color = sceneFormat_;
@@ -990,10 +1008,12 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.mainSkinned = job.mainRows.skinned;
     } else if (!mainBundle_ || bundleKey != mainBundleKey_) {
         if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+        if (prepassBundle_) wgpuRenderBundleRelease(prepassBundle_);
+        if (prepassTailBundle_) wgpuRenderBundleRelease(prepassTailBundle_);
         if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
         if (tailBundle_) wgpuRenderBundleRelease(tailBundle_);
         if (mainDelta_) wgpuRenderBundleRelease(mainDelta_);
-        mainBundle_ = viewportBundle_ = tailBundle_ = mainDelta_ = nullptr;
+        mainBundle_ = viewportBundle_ = tailBundle_ = mainDelta_ = prepassBundle_ = prepassTailBundle_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
         const WGPUTextureFormat color = sceneFormat_;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
@@ -1007,19 +1027,36 @@ void Renderer::encodeFrame(FrameJob& job) {
         const auto cause = recordCause(mainBundleKey_, mainBundleRows_, bundleKey, job.bundleRows, features().recordCauseHashes);
         const double recordStarted = meterMs();
         lastFrame_ = FrameStats{};
-        const auto record = [&](std::size_t from, std::size_t to) {
+        // PRD-888: the range's masked depth-only draws first, in plan order (front to back), then every draw. `rows`
+        // picks which: 0 both, 1 the depth draws alone (for the pass TN_PREPASS=split puts before this one), 2 the
+        // shipped draws alone.
+        const auto record = [&](std::size_t from, std::size_t to, int rows) {
             const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
             bound = nullptr;
             boundIndex = nullptr;
             std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
-            for (std::size_t k = from; k < to; ++k) encode(bundle, plan[k], Tally::Main);
+            if (rows != 2)
+                for (std::size_t k = from; k < to; ++k) {
+                    if (!plan[k].prepass) continue;
+                    Planned depthOnly = plan[k];
+                    depthOnly.pipeline = plan[k].prepass;
+                    encode(bundle, depthOnly, Tally::Extra);
+                    ++lastFrame_.prepassDraws;
+                }
+            if (rows != 1)
+                for (std::size_t k = from; k < to; ++k) encode(bundle, plan[k], Tally::Main);
             WGPURenderBundleDescriptor finish{};
             const WGPURenderBundle recorded = wgpuRenderBundleEncoderFinish(bundle, &finish);
             wgpuRenderBundleEncoderRelease(bundle);
             return recorded;
         };
-        mainBundle_ = record(0, viewportSplit);
-        if (viewportSplit < plan.size()) viewportBundle_ = record(viewportSplit, plan.size());
+        if (splitPrepass) prepassBundle_ = record(0, viewportSplit, 1);
+        mainBundle_ = record(0, viewportSplit, splitPrepass ? 2 : 0);
+        if (viewportSplit < plan.size()) {
+            // The rows after the copy keep their own depth pass, so a viewport-texture draw sees the shipped depth.
+            if (splitPrepass) prepassTailBundle_ = record(viewportSplit, plan.size(), 1);
+            viewportBundle_ = record(viewportSplit, plan.size(), splitPrepass ? 2 : 0);
+        }
         viewportKey_.clear();
         mainBundleStats_ = lastFrame_;
         lastFrame_.shadowSkinned = shadowStats;
@@ -1037,7 +1074,30 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.draws = mainBundleStats_.draws;
         lastFrame_.triangles = mainBundleStats_.triangles;
         lastFrame_.mainSkinned = mainBundleStats_.mainSkinned;
+        lastFrame_.prepassDraws = mainBundleStats_.prepassDraws;
     }
+    if (splitPrepass && prepassBundle_) {
+        // Nothing writes the colour target (the depth pipelines mask every channel), so it is neither loaded nor stored
+        // on the shipped path; the depth the prepass writes is what this pass is for.
+        WGPURenderPassColorAttachment unread = color;
+        unread.loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
+        unread.storeOp = keepColor_ ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
+        unread.resolveTarget = nullptr;
+        WGPURenderPassDepthStencilAttachment prepassDepth = depth;
+        prepassDepth.depthLoadOp = keepDepth_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
+        prepassDepth.depthStoreOp = WGPUStoreOp_Store;
+        WGPURenderPassDescriptor prepassDesc = {};
+        prepassDesc.colorAttachmentCount = 1;
+        prepassDesc.colorAttachments = &unread;
+        prepassDesc.depthStencilAttachment = &prepassDepth;
+        WGPURenderPassEncoder prepassPass =
+            beginTimedRenderPass(encoder, &prepassDesc, 2, {"prepass", inputWidth_, inputHeight_});
+        wgpuRenderPassEncoderExecuteBundles(prepassPass, 1, &prepassBundle_);
+        wgpuRenderPassEncoderEnd(prepassPass);
+        wgpuRenderPassEncoderRelease(prepassPass);
+        depth.depthLoadOp = WGPULoadOp_Load;
+    }
+    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2, {"scene", inputWidth_, inputHeight_});
     WGPURenderBundle mainBundles[3] = {mainBundle_};
     std::size_t mainCount = 1;
     for (const WGPURenderBundle more : {mainDelta_, tailBundle_})
@@ -1064,6 +1124,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         viewportDesc.colorAttachments = &loadColor;
         viewportDesc.depthStencilAttachment = &loadDepth;
         WGPURenderPassEncoder rest = beginTimedRenderPass(encoder, &viewportDesc, 2, {"viewport", inputWidth_, inputHeight_});
+        if (prepassTailBundle_) wgpuRenderPassEncoderExecuteBundles(rest, 1, &prepassTailBundle_);
         wgpuRenderPassEncoderExecuteBundles(rest, 1, &viewportBundle_);
         wgpuRenderPassEncoderEnd(rest);
         wgpuRenderPassEncoderRelease(rest);
@@ -1342,6 +1403,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.instanceCopies = job.instanceCopies;
         waste::debugAdd(waste::counters().renderFrames);
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
+        waste::debugAdd(waste::counters().prepassDraws, lastFrame_.prepassDraws);
         waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);
         waste::debugAdd(waste::counters().auxPasses, lastFrame_.auxPasses);
         frameMail_ = lastFrame_;

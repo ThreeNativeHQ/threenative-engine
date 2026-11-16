@@ -7,6 +7,14 @@ const tempCreatorPattern = /\bmkdtemp(?:Sync)?\s*\(/u;
 
 const allowedProductionCreators = new Map<string, string>([
   [
+    "packages/terrain/src/cook/cook.ts",
+    "A cook bakes its Arbor tree GLBs into one scratch folder, which the cooked world copies and the cook removes in finally.",
+  ],
+  [
+    "packages/terrain/src/kit.ts",
+    "A kit bake stages the Arbor GLBs one kit row names in one scratch folder and removes it when the bake ends.",
+  ],
+  [
     "packages/terrain/src/kit-assets.ts",
     "The starter-asset archive extracts into a sibling scratch directory renamed into the cache and removed in finally.",
   ],
@@ -63,6 +71,7 @@ const allowedProductionCreators = new Map<string, string>([
     "CPU capture and comparison artifacts are deliberately retained outputs; the isolated comparison scratch is removed in finally.",
   ],
   ["scripts/template-baseline.ts", "The production baseline gate removes its root in finally."],
+  ["scripts/bake-floor-assets.ts", "The forest-floor bake removes its scratch in finally."],
   ["scripts/verify-forest-playtest.ts", "The forest proof gate removes its root in finally."],
   ["scripts/verify-golden-path.ts", "The production golden-path gate removes roots in finally."],
   ["scripts/verify-one-template.ts", "The production template gate owns its cleanup."],

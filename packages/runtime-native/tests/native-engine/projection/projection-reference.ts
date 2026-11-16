@@ -39,6 +39,8 @@ export interface IMaterialSpec {
   color?: number;
   roughness?: number;
   transparent?: boolean;
+  /** A `positionNode` on the material: it moves its own vertices. */
+  displaced?: boolean;
 }
 export interface IObjectSpec {
   kind: "mesh" | "skinned" | "instanced" | "light" | "group";
@@ -97,6 +99,7 @@ function materialOf(spec: IMaterialSpec): three.Material {
   if (spec.roughness !== undefined)
     (material as three.MeshStandardMaterial).roughness = spec.roughness;
   if (spec.transparent !== undefined) material.transparent = spec.transparent;
+  if (spec.displaced === true) Object.assign(material, { positionNode: { isNode: true } });
   return material;
 }
 
@@ -252,6 +255,14 @@ export const SCENES: ISceneSpec[] = [
     geometries: [box()],
     materials: [std(), std("glass", { transparent: true })],
     objects: [props(290), props(10, { material: "glass" })],
+  },
+  // Grass chunks: each its own instanced geometry, with a material that sways its vertices. They keep
+  // their own draws and their own matrices, and do not count against the batchable props.
+  {
+    name: "props-vertex-displaced",
+    geometries: [box()],
+    materials: [std(), std("sway", { displaced: true })],
+    objects: [props(300), props(240, { material: "sway", ownGeometry: "varied" })],
   },
   {
     name: "props-morph",
