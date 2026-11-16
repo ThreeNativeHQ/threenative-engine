@@ -18,6 +18,8 @@ const game = defineGame<GameState, IPhysicsContext>({
       up: ["ArrowUp", "KeyW"],
     },
     brake: { buttons: [1], keys: ["ShiftLeft", "ShiftRight"] },
+    // The handbrake: a hard brake, and with the wheel turned at speed it kicks the tail out.
+    // Nitro is held to burn.
     boost: { buttons: [0], keys: ["Space"] },
     restart: { keys: ["KeyR"] },
     // The demo driver: the same closed-loop controller the rival uses, on the player's car. It is

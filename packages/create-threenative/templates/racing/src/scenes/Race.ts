@@ -1,4 +1,5 @@
 import {
+  GPUParticles3D,
   Scene,
   type SceneFrame,
   afterPhysics,
@@ -11,10 +12,11 @@ import type { IPhysicsContext } from "@threenative/physics";
 import { MathUtils, type Object3D, type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { type CarCtx, FEEL } from "../entities/CarBody.js";
 import { RacingCar } from "../entities/RacingCar.js";
-import { Rival } from "../entities/Rival.js";
+import { RIVALS, Rival } from "../entities/Rival.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { cameraBank, chaseCamera, setupCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
+import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
@@ -24,6 +26,8 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
+import { EXHAUST } from "../render/shapes.js";
+import { SkidMarks } from "../render/skids.js";
 import { SKY_OPTIONS, SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, type RaceStatus, resolveRaceStatus } from "../state.js";
@@ -38,13 +42,13 @@ import {
   roadRayProbe,
 } from "../track/Track.js";
 import { TrackSector } from "../track/TrackSector.js";
-import { CIRCUIT, GRID_DISTANCE } from "../track/circuit.js";
+import { CIRCUIT, PLAYER_SLOT, gridSlot } from "../track/circuit.js";
 
 export type GameCtx = CarCtx;
 
 /** The player starts on the second grid slot, one ride height above the tarmac. */
-const SPAWN = gridPosition("player", new Vector3());
-SPAWN.y = CIRCUIT.at(GRID_DISTANCE.player, CIRCUIT.createSample()).point.y + 0.22;
+const SPAWN = gridPosition(PLAYER_SLOT, new Vector3());
+SPAWN.y = CIRCUIT.at(gridSlot(PLAYER_SLOT).distance, CIRCUIT.createSample()).point.y + 0.22;
 /**
  * The race is three laps of 55-60 s, so a time limit under four minutes is a limit nobody reaches
  * and one that only fires on a car that has already been rescued four times.
@@ -120,10 +124,18 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     boostActive: false,
     boostPeakSpeed: 0,
     boostUses: 0,
+    drifting: false,
+    driftAngle: 0,
+    driftScore: 0,
+    driftsBanked: 0,
+    driftSpins: 0,
+    nitro: 1,
+    nitroActive: false,
     completedLaps: 0,
     elapsed: 0,
     lastOnRoad: [SPAWN.x, SPAWN.y, SPAWN.z],
     place: 1,
+    racers: RIVALS.length + 1,
     position: "P1",
     raceStatus: "RACING",
     rescueHeading: 0,
@@ -243,14 +255,13 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       ? ctx.entities.add("touch-controls", new TouchControls(camera))
       : undefined;
     const track = buildTrack(ctx);
-    const car = new RacingCar(ctx, SPAWN, gridHeading("player"));
-    // The rival's own grid slot, projected onto the circuit it drives: on pole, four metres up the
-    // road and 4.4 m to the other side, facing the same way. It used to be placed a whole lap
-    // ahead and then copied onto the player's position, so the two cars were the same point in
-    // space and the player drove through a rival that had no body.
-    const rival = new Rival(ctx, GRID_DISTANCE.rival);
+    const car = new RacingCar(ctx, SPAWN, gridHeading(PLAYER_SLOT));
+    // The field, each car on its own grid slot projected onto the circuit it drives. The pole car
+    // is the entity `rival`, the car to beat; the others are `rival-2` to `rival-5`.
+    const rivals = RIVALS.map((_, index) => new Rival(ctx, index));
     ctx.entities.add("player", car);
-    ctx.entities.add("rival", rival);
+    for (const [index, rival] of rivals.entries())
+      ctx.entities.add(index === 0 ? "rival" : `rival-${index + 1}`, rival);
     // The sun's aim as three reads it: the target's world matrix, which only a scene traversal refreshes.
     ctx.entities.add("sun", {
       get targetGap(): number {
@@ -270,12 +281,17 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       (completed) => emitPlaytestEvent({ entity: "player", lap: completed, name: "lap-completed" }),
     );
     const playerRankingInput = { id: "player", lap: lap.completed, position: car.body.position };
-    const rivalRankingInput = { id: "rival", lap: rival.lap, position: rival.mesh.position };
-    const rankingInputs = [playerRankingInput, rivalRankingInput];
+    const rivalRankingInputs = rivals.map((rival, index) => ({
+      id: index === 0 ? "rival" : `rival-${index + 1}`,
+      lap: rival.lap,
+      position: rival.mesh.position,
+    }));
+    const rankingInputs = [playerRankingInput, ...rivalRankingInputs];
     const rankingBuffer: IRankedRacerScratch[] = [];
     const rankRace = () => {
       playerRankingInput.lap = lap.completed;
-      rivalRankingInput.lap = rival.lap;
+      for (const [index, input] of rivalRankingInputs.entries())
+        input.lap = rivals[index]?.lap ?? 0;
       return rankRacers(CIRCUIT, rankingInputs, undefined, rankingBuffer);
     };
     const initialRanked = rankRace();
@@ -321,7 +337,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         dt,
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
-      rival.update(dt);
+      for (const rival of rivals) rival.update(dt);
       sector.update(car.body.position, car.forward, dt, car.speed, car.driving);
       if (sector.rescue(car)) {
         rescues += 1;
@@ -338,6 +354,67 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const statePatch: Partial<GameState> = {};
     const shake = ctx.entities.add("camera-rig", createShakeMeter());
 
+    // Effects: two pooled emitters and one instanced ring of skid marks, every look parameter in
+    // `render/effects.ts` and `render/skids.ts`.
+    const make = (name: keyof typeof EFFECTS): GPUParticles3D => {
+      const emitter = ctx.add(new GPUParticles3D(EFFECTS[name]()));
+      emitter.name = `effects-${name}`;
+      return emitter;
+    };
+    const emitters = { nitro: make("nitro"), smoke: make("smoke") };
+    const burstOrigin = { x: 0, y: 0, z: 0 };
+    const burstShape = { x: 0, y: 0, z: 0 };
+    const burst = (kind: keyof typeof BURSTS, at: Vector3): void => {
+      const { count, emitter, shape } = BURSTS[kind];
+      burstOrigin.x = at.x;
+      burstOrigin.y = at.y;
+      burstOrigin.z = at.z;
+      burstShape.x = shape[0];
+      burstShape.y = shape[1];
+      burstShape.z = shape[2];
+      emitters[emitter].emitParticle({ count, direction: burstShape, origin: burstOrigin });
+    };
+    const skids = new SkidMarks(ctx.scene);
+    // What the effects did, for a scenario: ticks a tyre smoked, ticks the flame burned.
+    const effects = ctx.entities.add("effects", {
+      flameTicks: 0,
+      skidMarks: 0,
+      smokeTicks: 0,
+    });
+    const REAR_WHEELS = [2, 3] as const;
+    const rearRadius = car.body.body.wheels[2]?.wheelRadius ?? 0.37;
+    const contact = new Vector3();
+    let effectTick = 0;
+    const emitEffects = (): void => {
+      effectTick += 1;
+      if (car.skidding) {
+        let smoked = false;
+        for (const index of REAR_WHEELS) {
+          const wheel = car.body.wheels[index];
+          if (wheel === undefined || !car.body.body.wheelContact(index)) continue;
+          wheel.getWorldPosition(contact);
+          contact.y -= rearRadius;
+          skids.lay(index === 2 ? "rear-a" : "rear-b", contact.x, contact.y, contact.z);
+          // Alternate tyres, one burst a tick: a puff a tick a wheel is a wall, not smoke.
+          if ((effectTick + index) % 2 === 0) {
+            contact.y += 0.12;
+            burst("smoke", contact);
+            smoked = true;
+          }
+        }
+        if (smoked) effects.smokeTicks += 1;
+        effects.skidMarks = skids.laid;
+      }
+      if (car.nitro.engaged) {
+        effects.flameTicks += 1;
+        for (const side of [-1, 1]) {
+          contact.set(EXHAUST.x - 0.5, EXHAUST.y, side * EXHAUST.z);
+          car.body.lean.localToWorld(contact);
+          burst("nitro", contact);
+        }
+      }
+    };
+
     // The suspension and the camera both read the **solved** chassis, so they run in the
     // afterPhysics phase rather than in the scene frame: a wheel's spin angle and a car's velocity
     // are last step's numbers until the step after this one.
@@ -346,14 +423,22 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     // which on an 830 m circuit put every shadow on the grass and left the car's own shadow — the
     // speed cue a driver actually reads — somewhere else entirely.
     afterPhysics(ctx, (dt) => {
-      car.body.settleVisuals();
-      rival.car.settleVisuals();
+      car.body.settleVisuals(car.nitro.engaged, dt);
+      for (const rival of rivals) rival.car.settleVisuals();
+      if (status === "RACING") emitEffects();
       lighting.key.target.position.copy(car.body.position);
       lighting.key.position.copy(car.body.position).addScaledVector(SUN_DIRECTION, 90);
       const solved = car.body.body.linearVelocity;
       const cut = car.body.teleports !== teleports;
       teleports = car.body.teleports;
-      chaseCamera(camera, car.body.position, car.travelDirection, cut ? 1 : dt, solved);
+      chaseCamera(
+        camera,
+        car.body.position,
+        car.travelDirection,
+        cut ? 1 : dt,
+        solved,
+        car.boosting,
+      );
       camera.rotateZ(cameraBank(car.lateralLoad, FEEL.lateral));
       if (cut) {
         ctx.resetInterpolation(camera);
@@ -394,7 +479,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       const ranked = rankRace();
       const player = playerRanking(ranked);
       if (player === undefined) throw new Error("Race ranking lost the player.");
-      sameDistanceRanking = ranked[0]?.id === "rival" ? "lap-ahead" : "lap-behind";
+      sameDistanceRanking = ranked[0]?.id === "player" ? "lap-behind" : "lap-ahead";
       status = resolveRaceStatus(status, lap.completed, TOTAL_LAPS, player.place);
       if (player.place !== place) {
         place = player.place;
@@ -408,7 +493,14 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       statePatch.autopilot = car.autopilotEngaged;
       statePatch.boostActive = car.boosting;
       statePatch.boostPeakSpeed = boostPeakSpeed;
-      statePatch.boostUses = car.boost.uses;
+      statePatch.boostUses = car.boost.uses + car.nitro.uses;
+      statePatch.drifting = car.drift.drifting;
+      statePatch.driftAngle = quantize(car.drift.angle, 1000);
+      statePatch.driftScore = Math.round(car.drift.score);
+      statePatch.driftsBanked = car.drift.banked;
+      statePatch.driftSpins = car.drift.spins;
+      statePatch.nitro = quantize(car.nitro.tank, 1000);
+      statePatch.nitroActive = car.nitro.engaged;
       statePatch.completedLaps = lap.completed;
       statePatch.elapsed = elapsed;
       statePatch.lastOnRoad = lastOnRoad;

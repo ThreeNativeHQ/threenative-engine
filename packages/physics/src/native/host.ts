@@ -32,6 +32,7 @@ import {
   requirePhysicsSleepStateBuffer,
   requirePhysicsStepInput,
   requirePhysicsVehicleCreateOptions,
+  requireWheelFriction,
 } from "../simulation.js";
 
 export interface INativeShapeDescriptor {
@@ -149,6 +150,7 @@ export interface INativeSimulation {
   /** Optional so a runtime built before vehicles still fails loudly through the adapter. */
   createVehicle?(options: INativeVehicleOptions): number;
   setVehicleInput?(id: number, input: IPhysicsVehicleInput): void;
+  setVehicleWheelFriction?(id: number, wheel: number, frictionSlip: number): void;
   readVehicleState?(id: number, output: Float32Array): number;
   resetVehicle?(id: number, position: IPhysicsVector3, yaw: number): void;
   readAreaIntersections(buffer: Uint32Array): number;
@@ -878,6 +880,18 @@ export function createNativePhysicsSimulation(
         );
       requireVehicle(id, "setVehicleInput");
       raw.setVehicleInput(id, input);
+    },
+    setVehicleWheelFriction: (id, wheel, frictionSlip) => {
+      requireLive();
+      if (raw.setVehicleWheelFriction === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_VEHICLE_MISSING: runtime ABI is too old");
+      const record = requireVehicle(id, "setVehicleWheelFriction");
+      requireWheelFriction(
+        wheel,
+        frictionSlip,
+        (record.buffer.length - 1) / PHYSICS_VEHICLE_WHEEL_STRIDE,
+      );
+      raw.setVehicleWheelFriction(id, wheel, frictionSlip);
     },
     readVehicleState: (id) => {
       requireLive();

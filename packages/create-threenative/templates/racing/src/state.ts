@@ -21,10 +21,21 @@ export type GameState = {
   boostPeakSpeed: number;
   speedAfterBoost: number;
   boostUses: number;
+  /** The handbrake drift: in a scored slide, its slip angle in radians, and the banked score. */
+  drifting: boolean;
+  driftAngle: number;
+  driftScore: number;
+  driftsBanked: number;
+  driftSpins: number;
+  /** The nitro tank, 0 to 1, and whether it is burning. */
+  nitro: number;
+  nitroActive: boolean;
   completedLaps: number;
   elapsed: number;
   lastOnRoad: [number, number, number];
   place: number;
+  /** Cars in the race, the player included: the HUD's "P3 / 6". */
+  racers: number;
   position: string;
   raceStatus: RaceStatus;
   rescueHeading: number;

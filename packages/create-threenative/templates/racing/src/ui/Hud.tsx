@@ -35,6 +35,7 @@ export function Hud() {
           <div className="text-[10px] text-muted">position</div>
           <div className="mt-2 text-[22px] text-white" id="position">
             P{state.place}
+            <span className="text-[13px] text-muted"> / {state.racers}</span>
           </div>
         </div>
       </div>

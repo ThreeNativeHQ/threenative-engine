@@ -13,11 +13,16 @@ const LEAD_PER_MPS = 0.42;
 /** How fast the chase heading turns toward the travel direction, per second (12% a 60 Hz tick). */
 const TURN_RATE = 7.7;
 
+/** A nitro burn widens the lens and pulls the camera back: the oldest speed cue there is. */
+const BASE_FOV = 56;
+const BOOST_FOV = 10;
+const BOOST_BACK = 0.8;
+
 /** The most the camera will bank, in radians. Past this a corner reads as a barrel roll. */
 const MAX_BANK = 0.055;
 
 export function setupCamera(camera: PerspectiveCamera): void {
-  camera.fov = 56;
+  camera.fov = BASE_FOV;
   camera.near = 0.1;
   camera.far = 340;
   camera.updateProjectionMatrix();
@@ -29,6 +34,8 @@ const behind = new Vector3();
 const desired = new Vector3();
 /** The heading the camera chases, eased toward the travel direction rather than snapped to it. */
 let chaseYaw = 0;
+/** 0 at rest, 1 in a nitro burn: eased in faster than it eases out. */
+let surge = 0;
 const look = new Vector3();
 const velocity = new Vector3();
 
@@ -46,6 +53,7 @@ export function chaseCamera(
   heading: Vector3,
   dt: number,
   carVelocity?: { readonly x: number; y: number; z: number },
+  boosting = false,
 ): void {
   // The direction the car is travelling, flattened. Under half a metre per second there is no
   // direction to speak of and the nose is the best available answer.
@@ -62,7 +70,13 @@ export function chaseCamera(
   const gap = MathUtils.euclideanModulo(wanted - chaseYaw + Math.PI, Math.PI * 2) - Math.PI;
   chaseYaw = dt >= 1 ? wanted : chaseYaw + gap * MathUtils.damp(0, 1, TURN_RATE, dt);
   behind.set(Math.cos(chaseYaw), 0, Math.sin(chaseYaw));
-  desired.copy(target).addScaledVector(behind, -EYE_BACK);
+  surge = dt >= 1 ? 0 : MathUtils.damp(surge, boosting ? 1 : 0, boosting ? 5 : 2.2, dt);
+  const fov = BASE_FOV + BOOST_FOV * surge;
+  if (Math.abs(camera.fov - fov) > 0.01) {
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
+  desired.copy(target).addScaledVector(behind, -EYE_BACK - BOOST_BACK * surge);
   desired.y += EYE_UP;
   if (dt >= 1) camera.position.copy(desired);
   else camera.position.lerp(desired, MathUtils.damp(0, 1, 5, dt));

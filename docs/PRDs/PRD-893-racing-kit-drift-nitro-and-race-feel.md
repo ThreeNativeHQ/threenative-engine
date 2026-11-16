@@ -1,8 +1,8 @@
 # PRD-893 — Racing kit: drift, nitro and race feel
 
-Status: NOT STARTED, waiting for owner approval. PR: #680 (one PR for this session's racing work).
+Status: IN PROGRESS, owner approved all three phases on 2026-11-15. PR: #680 (one PR for this session's racing work).
 
-**Priority:** P2 — the kit has no drift, nitro, tire effects, gear HUD or sound yet (all phases open).
+**Priority:** P2 — drift, nitro, tire effects and the six-car field are in; the gear HUD, sound and the visual judge are open.
 
 ## Goal
 
@@ -12,7 +12,10 @@ and engine sound. Each feature is shared by the player car and keeps the rival a
 working.
 
 Owner, 2026-11-15: "add effects like dift etc, check reverse engineering MCP. nitro etc. all major
-racing game features".
+racing game features". Later the same day: "space to nitro pleaes", "should be realistic like drift
+leave marks on the ground", "i feel car still a bit slow", "sometimes it should skid by itself on
+sharp curves (not necessarely pressing Shft)" and "make sure we're balanced with competitors, add
+other competitors".
 
 ## References (mechanics only, no code)
 
@@ -43,13 +46,15 @@ racing game features".
 ## Phases
 
 ### Phase 1 — Handbrake drift
-- [ ] Engine: `VehicleBody3D.setWheelFrictionSlip(index, value)`, because no setter exists for wheel grip. It throws on an index out of range or a value that is not finite. proof: `pnpm --filter @threenative/physics exec vitest run __tests__/VehicleBody3D.spec.ts`
-- [ ] Space (and a gamepad button) is the handbrake. It lowers the rear grip and brakes the rear wheels, and on release the grip comes back over about 0.3 s. The VDrift hysteresis and score go into the player state as `drifting`, `driftAngle` and `driftScore`. proof: `drift.playtest.json` asserts a banked drift with no spin and no rescue, and the shake meter stays green
+- [x] Engine: `VehicleBody3D.setWheelFrictionSlip(index, value)`, because no setter exists for wheel grip. It throws on an index out of range or a value that is not finite. proof: `vehicle-body.spec.ts` + `native-contract.spec.ts` 41/41, `cargo test --lib` 25 passed (`a_rear_grip_drop_lets_the_tail_slide_and_bad_grip_is_refused`), `native_bindings.cpp` `-fsyntax-only` exit 0
+- [x] Shift (the brake key, gamepad button 1, the touch brake) with the wheel turned at speed is the handbrake drift. It lowers the rear grip, the grip comes back over 0.3 s, and counter-steer catches the slide. The VDrift hysteresis and score are in the state as `drifting`, `driftAngle` and `driftScore`. proof: `drift.playtest.json` passes on WebGPU: 1 banked drift, 0 spins, `drifting` true during the hold; headless sweep at 15 and 24 m/s: 29-30° held slide, 0 spins
+
+- [x] Owner additions: top speed 26 m/s (nitro 34) on a flat-then-fading torque curve; full lock above 16 m/s lets the tail go with no handbrake; five rivals on a staggered six-car grid at fixed paces 25 to 21.8 m/s, the player last. proof: `drift-natural.playtest.json` (banked drift, no Shift, 0 spins) and `outcome.playtest.json` (3 autopilot laps, P6 of 6, 0 rescues) pass on WebGPU; `performance.playtest.json` passes at 10 ms frames, triangle cap 105,000 -> 135,000 for the four extra cars (measured 126,202)
 
 ### Phase 2 — Nitro and effects
-- [ ] Nitro tank 0..1 on N (and a gamepad button), with the NFS Most Wanted engage, drain, delay and refill rules. Drifting refills it faster. The thrust is the existing boost. proof: `nitro.playtest.json` asserts that a drift fills the tank, nitro drains it, and the top speed goes past `FEEL.topSpeed`
-- [ ] Nitro FOV +8° that eases back, and an exhaust flame. proof: `nitro.playtest.json` asserts that the FOV rises, then returns
-- [ ] Tire smoke and skid marks from the rear wheels only, and only while they slide on the road. Cloned from the kart kit's `SkidMarks` and dust emitter. proof: `drift.playtest.json` asserts skid and smoke counts above 0, and a straight run at full grip counts 0
+- [ ] Nitro tank 0..1 held on Space (and gamepad button 0), with the NFS Most Wanted engage, drain, delay and refill rules. Drifting refills it faster. The thrust is the existing boost. proof: `nitro.playtest.json` asserts that a drift fills the tank, nitro drains it, and the top speed goes past `FEEL.topSpeed`. Open: the drain and the top speed pass on WebGPU; the drift refill is not asserted yet
+- [ ] Nitro FOV +10° and a 0.8 m pull-back that ease back, and an exhaust flame. proof: `nitro.playtest.json` asserts that the FOV rises, then returns. Open: the flame is asserted (`flameTicks` ≥ 60), the FOV is not yet
+- [x] Tire smoke and skid marks from the rear wheels only, and only while they slide on the road. Cloned from the kart kit's `SkidMarks` and dust emitter. proof: `drift.playtest.json` passes on WebGPU: 0 skid marks after the straight, 42 after the drift, smoke on 33 ticks
 - [ ] Visual judge on the drift and nitro pose. proof: a fresh judge returns IMPROVEMENT on headed WebGPU, two runs per arm
 
 ### Phase 3 — HUD, sound, integration

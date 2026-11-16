@@ -211,6 +211,10 @@ int32_t tn_physics_create_vehicle(TnPhysicsSimulation *simulation,
                                   const float *wheels);
 bool tn_physics_set_vehicle_input(TnPhysicsSimulation *simulation, uint32_t id,
                                   float engine_force, float brake, float steering);
+/** One wheel's grip cap (`wheel_friction_slip`) at runtime. False for an unknown vehicle or
+ *  wheel, or a grip that is not finite and non-negative. */
+bool tn_physics_set_vehicle_wheel_friction(TnPhysicsSimulation *simulation, uint32_t id,
+                                           uint32_t wheel, float friction_slip);
 /** Writes the signed forward speed followed by contact, suspension length and rotation per
  *  wheel. Returns the number of floats written, or -1 for an unknown vehicle or a short
  *  buffer. */
