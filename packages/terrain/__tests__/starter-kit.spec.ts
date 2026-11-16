@@ -42,8 +42,8 @@ const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = 
     evaluated: "57751c30d9ea1a74dc6fadd445bd17a59fcf03ef4cb58925faac66770d737b26",
   },
   alpine: {
-    values: "72995391d8244365e32f8d8c38f80c04e6ec948b819918876d1f5d6eeed66c81",
-    evaluated: "5000eea008516889508c4efc0074bb8a36c41a0c5e0f1484c3c667d60644fc1c",
+    values: "7c7fa4490588672e0f17b328ff02d5529843c618edee82c47fb650c324effbcc",
+    evaluated: "6d7ee5858a2d4d257bb6210a63b45d6effc8761b1e5ade6e634299927ec6a7dc",
   },
   coastal: {
     values: "726595506d7dda30da88401b74c878375bcb40d88cef0debb4a10f27f47a2d17",

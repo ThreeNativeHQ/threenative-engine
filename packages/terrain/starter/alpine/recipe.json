@@ -59,20 +59,24 @@
         "params": {
           "rules": [
             {
-              "material": "rock",
-              "mask": {
-                "type": "all"
-              }
-            },
-            {
               "material": "dirt",
               "mask": {
-                "type": "slope",
-                "min": 20,
-                "max": 38,
-                "fade": 6
+                "type": "noise",
+                "scale": 78,
+                "threshold": 0.55,
+                "seed": 41,
+                "fade": 0.32
               },
               "strength": 0.4
+            },
+            {
+              "material": "rock",
+              "mask": {
+                "type": "slope",
+                "min": 32,
+                "max": 90,
+                "fade": 8
+              }
             },
             {
               "material": "snow",
@@ -116,8 +120,8 @@
   "world": {
     "name": "alpine",
     "ground": {
-      "base": "rock",
-      "layers": ["dirt", "snow"],
+      "base": "grass",
+      "layers": ["dirt", "moss", "sand", "rock", "snow"],
       "roughness": 0.95
     },
     "art": [

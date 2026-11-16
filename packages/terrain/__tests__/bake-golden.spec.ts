@@ -91,8 +91,8 @@ const PHASE_1: Record<
     placements: "aeb61fac3fd8fe3a792208d4fd0849dcd9289ef4f1c0b11bdd788993c54ef386",
   },
   alpine: {
-    counts: { boulder: 969, grass: 37141, mountain: 234, sapling: 710, scree: 2046, scrub: 11193, spruce: 389 },
-    heights: "f2ca8381d0b7fc707a8225b2c078af699ee723ef1b681fb87274ea95899f313f",
+    counts: { boulder: 1655, grass: 100116, sapling: 1000, scree: 2691, scrub: 30101, spruce: 599 },
+    heights: "89e13826c45233315109544acaf302266dbe1c47acfe70b9c1281b4dd2f1fcc2",
     manifest: "927b5daf593923d63bb216968baf66d2a735269801915c6395aa84e60c1b4f86",
     placements: "3352e12dde3a034926b9ca271786a665084264458802f11122179b8d83e68503",
   },
@@ -123,7 +123,7 @@ const PHASE_1: Record<
 const PHASE_1_CANONICAL: Record<World, string> = {
   forest: "f9ec1259f6e14aa51fc24f86d40df980c1e856a3335fa30236dc16ab8d0694c1",
   coastal: "5ca73a9acf36f84c536e70b5fe86fd51f88554d871a453eb024d5dc34d304d4e",
-  alpine: "b881914bc818708789765cea463e91c264c27a500473ad39a216191b9d4be2b1",
+  alpine: "238de6aec33cc032dc67392f3ccd676272f25b1ca459a138829e57ddae94db76",
   desert: "fa52459ddcda51b336764219ce033add8ccd90f3fd299cd95d43878cf38813b3",
   tundra: "16c97133058d9ab0b9585a62befbf859313c55d6f6d1dc13d55033e5fc76a04f",
 };
