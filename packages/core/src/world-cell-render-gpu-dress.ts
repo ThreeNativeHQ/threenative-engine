@@ -17,10 +17,11 @@ import {
 import {
   type ITemporalLod,
   advanceTemporalLod,
+  syncLodCollapse,
   worldLodMaterial,
 } from "./render/world-impostor-surface.js";
 import type { IRendererLike } from "./renderer.js";
-import { markStatic } from "./static-transform.js";
+import { markEngineStatic } from "./static-transform.js";
 import type { ICasterScaleMesh, SharedBatch } from "./world-cell-batches.js";
 import { levelTriangles } from "./world-cell-chunks.js";
 import type { IAssetPart, IBatchShape, ICellBatch, IKeyDescriptor } from "./world-cell-data.js";
@@ -244,6 +245,7 @@ export class CellGpuDress {
   updateLodEye(x: number, y: number, z: number): void {
     this.#lodEye.value.set(x, y, z);
     this.#lodClock.value = (performance.now() - this.#lodClockOrigin) / 1000;
+    syncLodCollapse();
     if (this.#host.lodTransition() !== "temporal") return;
     advanceTemporalLod(this.#temporalLod, this.#lodEye.value, this.#lodClock.value);
     this.#lodAlpha.value = this.#temporalLod.alpha;
@@ -302,7 +304,7 @@ export class CellGpuDress {
     // rebound one and the three roles. Static here is only safe because every write announces
     // itself: `instanceMatrix.needsUpdate` bumps the attribute's version, which is what a settled
     // draw watches to know it still has to scan.
-    markStatic(mesh);
+    markEngineStatic(mesh);
     if (role !== "main") {
       mesh.layers.set(
         role === "cluster"

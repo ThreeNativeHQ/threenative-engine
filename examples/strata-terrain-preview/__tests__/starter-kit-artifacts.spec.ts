@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
-const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
+const verifierUrl = new URL("../scripts/verify/verify-starter-kit.mjs", import.meta.url).href;
 
 it("empties a reused artifact directory so the summary reads this run's capture", async () => {
   const { prepareArtifacts } = await import(verifierUrl);

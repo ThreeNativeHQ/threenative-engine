@@ -16,7 +16,10 @@
   --color-danger: #ff6c6c;
   --color-text: #c2d6df;
   --color-muted: #6b8c9b;
+  --color-cyan: #38d7e7;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-racing: "Arial Narrow", "Roboto Condensed", "Liberation Sans Narrow", "Helvetica Neue",
+    sans-serif;
 }
 
 html,

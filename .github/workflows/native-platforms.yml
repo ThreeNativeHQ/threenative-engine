@@ -73,7 +73,12 @@ jobs:
     # expression reads the same `pull_request` fork flag ci.yml did when it called this file: a fork
     # PR falls through to hosted runners and never reaches the owner's machine.
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
-    timeout-minutes: 5
+    # The job's own work is about a second; the checkout of a fresh merge-group ref is not. This
+    # runs on the shared light runner, so `timeout-minutes: 5` cancelled it mid-checkout at 5m04s
+    # while a developer machine was busy, which emptied every `needs.scope.outputs` value and took
+    # the whole merge queue down with it (run 43342207855). Fifteen minutes keeps a wedged runner
+    # detectable without letting a slow clone disable the native lane.
+    timeout-minutes: 15
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
       selection: ${{ steps.classify.outputs.selection }}

@@ -62,19 +62,27 @@ export const CAR = {
  * both cars on the circuit: the rival drives the same chassis with the same tyres, so it is a
  * driver, not a faster class of car.
  *
- * `topSpeed` is **reached, not clamped**. The engine force falls linearly to zero there, which is
- * a torque curve rather than a speed limit: the tyres, the suspension and the barriers all still
- * decide what happens, and a car that hits a wall at 17 m/s stops at the wall.
+ * `topSpeed` is **reached, not clamped**. The engine force holds flat, then falls to zero across
+ * the last {@link FEEL.torqueFade} of it ({@link driveForce}), which is a torque curve rather than
+ * a speed limit: the tyres, the suspension and the barriers all still decide what happens. A
+ * straight line to zero from a standstill made the car stop pulling at about 50 km/h.
  */
+/** The engine force share at `speed` for a curve that reaches zero at `top`: 1, then down to 0. */
+export function driveForce(speed: number, top: number): number {
+  return MathUtils.clamp((top - speed) / (top * FEEL.torqueFade), 0, 1);
+}
+
 export const FEEL = {
   /** Newton's per driven wheel at zero speed. Two rear wheels, so this is half the push. */
   engineForce: 3400,
   /** Godot's `brake`: a braking impulse on every wheel, not a force. */
   brake: 60,
   /** Where the torque curve reaches zero, in m/s. */
-  topSpeed: 17,
+  topSpeed: 26,
   /** The boost lifts the curve's zero point, so a boost genuinely raises the top speed. */
-  boostTopSpeed: 23,
+  boostTopSpeed: 34,
+  /** The share of the top speed over which the engine force falls from full to zero. */
+  torqueFade: 0.35,
   /** And lifts the force behind it, so it arrives sooner as well as going further. */
   boostForce: 1.9,
   /** Holding back above this brakes; at or below it, reverse engages. */
@@ -129,6 +137,9 @@ export function noseRotation(yaw: number): number {
 }
 
 const DEG = Math.PI / 180;
+
+/** How fast the measured load follows the tyres, per second: about a 0.17 s time constant. */
+const LOAD_SMOOTHING = 6;
 const _box = new Box3();
 const _size = new Vector3();
 const _point = new Vector3();
@@ -180,6 +191,8 @@ export class CarBody {
   readonly chassis: Group;
   /** The leanable shell inside `chassis`, named `body` by `shapes.ts`. */
   readonly lean: Object3D;
+  /** The nitro flame behind the exhausts, named `nitro-flame` by `shapes.ts`. */
+  readonly flame: Object3D;
   /** The four wheel groups, in the same order as `body.wheels`. */
   readonly wheels: readonly Object3D[];
   /** The retained `normaliseToMetres` factor, which the playtest asserts is below one. */
@@ -192,10 +205,26 @@ export class CarBody {
   lateralLoad = 0;
   /** Forward acceleration in m/s²: positive under power, negative under braking. */
   longLoad = 0;
+  /** Bumped by every `teleport`, so a chase camera can cut instead of flying after the car. */
+  teleports = 0;
+  /** Speed over the ground in m/s. In a slide this is more than the forward `speed`. */
+  groundSpeed = 0;
+  /**
+   * The rear axle's slip angle in radians: + when the nose points right of where the tail is
+   * going, which is a right-hand slide. It is zero in a tight turn on full grip, where the whole
+   * car's heading still leads its velocity by the steering geometry alone, so it is the reading
+   * a drift is detected on.
+   */
+  rearSlip = 0;
+  #yaw = 0;
   #velocity = new Vector3();
   #last = new Vector3();
   #right = new Vector3();
   #delta = new Vector3();
+  #burn = 0;
+  #flicker = 0;
+  /** The rear axle's x in the chassis frame, in metres: negative, behind the centre of mass. */
+  #rearAxle = -WHEELBASE / 2;
 
   constructor(
     ctx: CarCtx,
@@ -215,6 +244,7 @@ export class CarBody {
     this.chassis = chassis;
     this.wheels = WHEEL_NAMES.map((name) => requireNamed(chassis, name));
     this.lean = requireNamed(chassis, "body");
+    this.flame = requireNamed(chassis, "nitro-flame");
     this.body = new VehicleBody3D({
       collisionLayer: CAR.collisionLayer,
       collisionMask: CAR.collisionMask,
@@ -240,6 +270,8 @@ export class CarBody {
         };
       }),
     });
+    this.#rearAxle = (this.body.wheels[2] as IVehicleWheel3D).position.x;
+    this.#yaw = options.yaw;
   }
 
   /** Godot's signed forward speed: positive while accelerating forward. */
@@ -286,8 +318,33 @@ export class CarBody {
     this.#delta.copy(this.#velocity).sub(this.#last);
     this.#last.copy(this.#velocity);
     const perSecond = dt > 0 ? 1 / dt : 60;
-    this.lateralLoad = this.#delta.dot(this.#right) * perSecond;
-    this.longLoad = this.#delta.dot(this.forward) * perSecond;
+    // The rear axle's own sideways speed: the chassis's, less what the yaw swings the tail by.
+    const yaw = Math.atan2(this.forward.z, this.forward.x);
+    const yawRate =
+      (MathUtils.euclideanModulo(yaw - this.#yaw + Math.PI, Math.PI * 2) - Math.PI) * perSecond;
+    this.#yaw = yaw;
+    this.groundSpeed = this.#velocity.length();
+    const along = this.#velocity.dot(this.forward);
+    const rearSide = this.#velocity.dot(this.#right) + yawRate * this.#rearAxle;
+    this.rearSlip = this.groundSpeed > 1 ? -Math.atan2(rearSide, Math.abs(along)) : 0;
+    // One tick's velocity change is the tyres' impulse for that tick, and the ray-cast vehicle's
+    // friction alternates from tick to tick: measured, the raw reading swung the full ±30 m/s² in
+    // one tick mid-corner, which flipped the lean ±5° and the camera bank ±3° every tick — the
+    // shake. The load a driver feels is the average over a few ticks, so it is low-passed here.
+    // A barrier hit is hundreds of m/s² for one tick; past the tyres' limit the lean is already
+    // full, so the reading is clamped there before it is averaged.
+    const lateral = MathUtils.clamp(
+      this.#delta.dot(this.#right) * perSecond,
+      -FEEL.lateral,
+      FEEL.lateral,
+    );
+    const long = MathUtils.clamp(
+      this.#delta.dot(this.forward) * perSecond,
+      -FEEL.lateral,
+      FEEL.lateral,
+    );
+    this.lateralLoad = MathUtils.damp(this.lateralLoad, lateral, LOAD_SMOOTHING, dt);
+    this.longLoad = MathUtils.damp(this.longLoad, long, LOAD_SMOOTHING, dt);
   }
 
   /**
@@ -300,24 +357,40 @@ export class CarBody {
    * across the struts at 1.2 g lateral) and there is no real body roll to read. Roll and dive are
    * functions of lateral and forward load; this is that function, with the car's own load as input.
    */
-  settleVisuals(): void {
+  settleVisuals(nitro = false, dt = 1 / 60): void {
+    // The flame: on within a few ticks, off over a quarter of a second, and never the same
+    // length two ticks running.
+    this.#burn = MathUtils.damp(this.#burn, nitro ? 1 : 0, nitro ? 22 : 9, dt);
+    this.flame.visible = this.#burn > 0.02;
+    if (this.flame.visible) {
+      this.#flicker += dt * 47;
+      const pulse = 0.82 + 0.18 * Math.sin(this.#flicker) + 0.12 * Math.sin(this.#flicker * 2.7);
+      this.flame.scale.set(this.#burn * pulse, 0.85 + 0.15 * this.#burn, 0.85 + 0.15 * this.#burn);
+    }
     for (const [index, wheel] of this.wheels.entries()) {
       // Rolling forward turns the wheel about its own -z and Rapier's rotation runs the other way,
       // so the sign is inverted here; the front pair also takes the steer angle it was given.
       wheel.rotation.z = -this.body.wheelRotation(index);
       if (index < 2) wheel.rotation.y = this.body.steering;
     }
-    this.lean.rotation.z =
-      MathUtils.clamp(this.lateralLoad / FEEL.lateral, -1, 1) * FEEL.leanRoll * DEG;
+    // The nose is +x and the right side is +z, so roll turns about x and pitch about z. The body
+    // rolls away from the corner (load to the right tips the roof left) and squats under throttle.
     this.lean.rotation.x =
+      -MathUtils.clamp(this.lateralLoad / FEEL.lateral, -1, 1) * FEEL.leanRoll * DEG;
+    this.lean.rotation.z =
       MathUtils.clamp(this.longLoad / FEEL.lateral, -1, 1) * FEEL.leanPitch * DEG;
   }
 
   /** Godot's `VehicleBody3D.teleport`: move the chassis and face the heading `yaw`. */
   teleport(position: Pick<Vector3, "x" | "y" | "z">, yaw: number): void {
     this.body.teleport(position, noseRotation(yaw));
+    this.teleports += 1;
     this.#last.set(0, 0, 0);
+    this.lateralLoad = 0;
+    this.longLoad = 0;
+    this.#yaw = yaw;
     this.measure(1 / 60);
+    this.rearSlip = 0;
   }
 
   dispose(): void {

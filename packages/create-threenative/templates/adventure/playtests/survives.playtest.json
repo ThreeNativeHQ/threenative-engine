@@ -157,8 +157,8 @@
       {
         "id": "state",
         "path": "assetLoads",
-        "equals": 5,
-        "allowTrivial": "Every model and the sky are built in code; the loader is asked only for the five shared tiling photos in src/render/surface.ts."
+        "equals": 11,
+        "allowTrivial": "Every model and the sky are built in code; the loader is asked for the five shared tiling photos in src/render/surface.ts and the six baked forest-floor props in assets/floor-*.glb (PRD-889)."
       },
       {
         "id": "state",

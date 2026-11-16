@@ -55,13 +55,17 @@ describe("Rain initial quality ownership", () => {
       qualityExplicit: false,
       loading: { ready: false, progress: 0 },
     };
+    // A browser's `window.location` is the same object as `globalThis.location`, and the engine's
+    // debug seam reads the latter; the stub shares one object so `?quality=` reaches both.
+    const location = { search: "" };
     vi.stubGlobal("window", {
       innerWidth: 1440,
-      location: { search: "" },
+      location,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       matchMedia: () => ({ matches: hooks.media }),
     });
+    vi.stubGlobal("location", location);
     vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
     hooks.media = false;
   });

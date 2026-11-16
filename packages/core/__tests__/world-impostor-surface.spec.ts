@@ -602,15 +602,77 @@ it("fades a published level change in the colour pass only", () => {
   source.dispose();
 });
 
+describe("the LOD vertex collapse (PRD-888 lever 2)", () => {
+  // The shader's fade-out mix for one instance: `(d - gate) / span + 0.5 + (random - 0.5) * 0.5`.
+  const fadeOutMix = (d: number, gate: number, span: number, random: number) =>
+    Math.min(1, Math.max(0, (d - gate) / span + 0.5 + (random - 0.5) * 0.5));
+
+  it("puts the threshold where the worst random draw discards every fragment", async () => {
+    const { lodFadedPast } = await import("../src/render/world-impostor-surface.js");
+    // The forest kit's spruce: gates 80 and 105, hysteresis 0.2. Level 0's span is capped by the
+    // 25 m to the next gate (5 m), not by its own 16 m.
+    expect(lodFadedPast([0, 80, 105], 0, 0.2)).toBeCloseTo(83.75, 9);
+    expect(lodFadedPast([0, 80, 105], 1, 0.2)).toBeCloseTo(108.75, 9);
+    expect(lodFadedPast([0, 80, 105], 2, 0.2)).toBeUndefined();
+    const past = lodFadedPast([0, 80, 105], 0, 0.2) as number;
+    for (let i = 0; i <= 64; i++) expect(fadeOutMix(past, 80, 5, i / 64)).toBe(1);
+    // Tight: just inside it, the lowest random draw still leaves fragments to draw.
+    expect(fadeOutMix(past - 0.01, 80, 5, 0)).toBeLessThan(1);
+  });
+
+  it("is off unless `lodCollapse` is armed, and gates on the published range when armed", async () => {
+    const build = async () => {
+      const { worldLodMaterial } = await import("../src/render/world-impostor-surface.js");
+      return worldLodMaterial(
+        new MeshStandardMaterial(),
+        new Matrix4(),
+        [0, 80, 105],
+        0,
+        0.2,
+        uniform(new Vector3()),
+        uniform(1),
+        false,
+        true,
+        uniform(0),
+      );
+    };
+    vi.resetModules();
+    expect((await build()).positionNode, "the shipped path keeps its vertex program").toBeNull();
+    vi.resetModules();
+    vi.stubGlobal("__tnLodCollapse", true);
+    try {
+      const armed = (await build()).positionNode;
+      expect(armed).not.toBeNull();
+      const values: unknown[] = [];
+      const attributes: unknown[] = [];
+      armed?.traverse((node) => {
+        if (Reflect.get(node, "isUniformNode") === true) values.push(Reflect.get(node, "value"));
+        const name = Reflect.get(node, "getAttributeName");
+        if (typeof name === "function") attributes.push(name.call(node));
+      });
+      expect(values).toContain(83.75 * 1.001);
+      expect(attributes).toContain("tnPublishedLodRange");
+    } finally {
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+});
+
 it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold", async () => {
-  const { loadPack } = await import("../../../examples/strata-terrain-preview/src/render/pack.js");
+  const { loadPack } = await import(
+    "../../../examples/strata-terrain-preview/src/render/props/pack.js"
+  );
   const { createAssetLoader } = await import("../src/assets.js");
   const assets = createAssetLoader();
   vi.spyOn(assets, "resolve").mockResolvedValue([]);
   vi.spyOn(assets, "texture").mockRejectedValue(new Error("optional texture absent"));
   const source = new MeshStandardMaterial({ map: new Texture(), alphaTest: 0.42 });
   vi.spyOn(assets, "model").mockImplementation(async (path) => {
-    if (path !== "temperate/spruce/0.glb") throw new Error("optional model absent");
+    // The canopy's variant 0: the broadleaf scan's near GLB by default, the spruce under `?trees=spruce`.
+    if (path !== "temperate/spruce/0.glb" && !path.endsWith("-near.glb")) {
+      throw new Error("optional model absent");
+    }
     return { scene: new Group().add(new Mesh(new BoxGeometry(), source)) } as never;
   });
   const pack = await loadPack(assets);

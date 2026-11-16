@@ -70,6 +70,28 @@ describe("defineObjectSurface", () => {
     ]);
   });
 
+  it("answers a missing attribute with undefined, as three does, where the engine says null", () => {
+    class NullGeometry extends BufferGeometry {
+      override getAttribute(name: string) {
+        return super.getAttribute(name) ?? null;
+      }
+    }
+    defineObjectSurface({ bufferGeometry: NullGeometry, geometries: [], materials: [] });
+    defineObjectSurface({ bufferGeometry: NullGeometry, geometries: [], materials: [] });
+    const geometry = new NullGeometry().setAttribute("position", "p") as NullGeometry;
+    expect(geometry.getAttribute("_wind")).toBeUndefined();
+    expect(geometry.getAttribute("position")).toBe("p");
+    // A class whose engine method lives on a shared base gets it too.
+    class Base {
+      getAttribute(_name: string) {
+        return null;
+      }
+    }
+    class Inherited extends Base {}
+    defineObjectSurface({ bufferGeometry: Inherited as never, geometries: [], materials: [] });
+    expect(new Inherited().getAttribute("_wind")).toBeUndefined();
+  });
+
   it("reads geometry.attributes.position with one engine call", () => {
     class CountedGeometry extends BufferGeometry {
       calls = 0;

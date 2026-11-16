@@ -72,6 +72,8 @@ export const initialDiagnosticsState = {
   erosionDepositSamples: 0,
   frames: 0,
   travel: 0,
+  /** The farthest the player stood from where it spawned, in a straight line on the ground plane. */
+  straightTravel: 0,
   edgeOvershoot: Number.NEGATIVE_INFINITY,
   grounded: false,
   /** Rock and trunk bodies resident around the player (`ScatterColliders`). */
@@ -256,6 +258,7 @@ export interface ISceneFacts {
   readonly sunX: number;
   readonly frames: number;
   readonly travel: number;
+  readonly straightTravel: number;
   readonly edgeOvershoot: number;
   readonly grounded: boolean;
   readonly propColliders: number;
@@ -461,6 +464,7 @@ export function publish(
     sunX: facts.sunX,
     frames: facts.frames,
     travel: facts.travel,
+    straightTravel: facts.straightTravel,
     edgeOvershoot: facts.edgeOvershoot,
     grounded: facts.grounded,
     propColliders: facts.propColliders,
@@ -569,6 +573,7 @@ interface IOceanSample {
 /** The measurements a scene publishes each time `publish` runs. */
 export interface IMeasureFacts {
   readonly travel: number;
+  readonly straightTravel: number;
   readonly edgeOvershoot: number;
   readonly grounded: boolean;
   readonly propOverlapFrames: number;
@@ -664,6 +669,7 @@ export function witnessAsymmetricContact(options: IContactProbeOptions): IContac
 export function createMeasure(options: IMeasureOptions): IMeasure {
   const { actor, physics, player } = options;
   const previous = actor.position.clone();
+  const origin = actor.position.clone();
   // The owner's report, measured the same with or without prop collision: frames in which the
   // player's capsule, less a 5 cm skin, crosses into a rock or trunk body.
   const propProbe = CollisionShape3D.capsule(0.5, 0.3);
@@ -671,6 +677,7 @@ export function createMeasure(options: IMeasureOptions): IMeasure {
   const farMatrix = new Matrix4();
   const farPoint = new Vector3();
   let travel = 0;
+  let straightTravel = 0;
   let propOverlapFrames = 0;
   // Metres past the playable square's edge the player reached: onto the surroundings' hills.
   let edgeOvershoot = Number.NEGATIVE_INFINITY;
@@ -700,6 +707,10 @@ export function createMeasure(options: IMeasureOptions): IMeasure {
     const dz = actor.position.z - previous.z;
     travel += Math.hypot(dx, dz);
     previous.copy(actor.position);
+    straightTravel = Math.max(
+      straightTravel,
+      Math.hypot(actor.position.x - origin.x, actor.position.z - origin.z),
+    );
     // What the water moved, not what the keys moved: the share of this step's travel along the
     // current, counted only while swimming with no input of the player's own. 0 with
     // `?current=off`, which is its before arm.
@@ -867,6 +878,7 @@ export function createMeasure(options: IMeasureOptions): IMeasure {
     countProps,
     facts: () => ({
       travel,
+      straightTravel,
       edgeOvershoot,
       grounded: player.grounded,
       propOverlapFrames,

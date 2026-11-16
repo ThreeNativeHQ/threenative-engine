@@ -3,7 +3,7 @@
 // The island's ground: one terrain mesh whose vertex attributes say where grass, worn grass, the
 // sandy dirt path, beach sand and rock lie, by height, slope and distance to the path. The textures
 // and the blend are `groundMaterial` in surface.ts.
-import { BufferAttribute, BufferGeometry, Color, Mesh } from "three";
+import { BufferAttribute, BufferGeometry, Color, MathUtils, Mesh } from "three";
 import { lit, seeded } from "./materials.js";
 import { C } from "./palette.js";
 
@@ -29,8 +29,8 @@ export function valueNoise(cells: number, seed: number): (u: number, v: number) 
     const y = v * cells;
     const i = Math.floor(x);
     const j = Math.floor(y);
-    const fx = (x - i) * (x - i) * (3 - 2 * (x - i));
-    const fy = (y - j) * (y - j) * (3 - 2 * (y - j));
+    const fx = MathUtils.smoothstep(x - i, 0, 1);
+    const fy = MathUtils.smoothstep(y - j, 0, 1);
     const top = at(i, j) + (at(i + 1, j) - at(i, j)) * fx;
     const bottom = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * fx;
     return top + (bottom - top) * fy;
@@ -39,7 +39,7 @@ export function valueNoise(cells: number, seed: number): (u: number, v: number) 
 
 const smooth = (from: number, to: number, value: number): number => {
   const t = Math.min(1, Math.max(0, (value - from) / (to - from)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 };
 
 /**

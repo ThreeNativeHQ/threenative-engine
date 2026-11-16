@@ -8,13 +8,18 @@
 // built from bytes rather than shipped as files, so they cost nothing to load and run the same in
 // the browser and in the native host.
 import {
+  AdditiveBlending,
   type BufferGeometry,
+  Color,
   DataTexture,
   Float32BufferAttribute,
   LinearMipmapLinearFilter,
+  MathUtils,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   RepeatWrapping,
   SRGBColorSpace,
+  type Texture,
   Vector2,
   Vector3,
 } from "three";
@@ -31,7 +36,7 @@ function noise(x: number, y: number, seed: number): number {
 /** Smoothstep, so the rubber band has a soft edge instead of a stripe painted across the road. */
 function falloff(value: number, edge: number): number {
   const t = Math.min(Math.max((Math.abs(value) - edge) / 0.28, 0), 1);
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 }
 
 function rgbaTexture(
@@ -121,8 +126,8 @@ function grainNormalTexture(size = 128): DataTexture {
       const y0 = Math.floor(v);
       const fx = u - x0;
       const fy = v - y0;
-      const sx = fx * fx * (3 - 2 * fx);
-      const sy = fy * fy * (3 - 2 * fy);
+      const sx = MathUtils.smoothstep(fx, 0, 1);
+      const sy = MathUtils.smoothstep(fy, 0, 1);
       const at = (i: number, j: number): number =>
         values[(((j % count) + count) % count) * count + (((i % count) + count) % count)] ?? 0;
       const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * sx;
@@ -181,7 +186,14 @@ export function worldGridUVs<T extends BufferGeometry>(geometry: T): T {
   return geometry;
 }
 
-export function createMaterials() {
+/** The PBR maps a game supplies for the ground; the generated turf is the fallback. */
+export interface IGrassMaps {
+  readonly color: Texture;
+  readonly normal: Texture;
+  readonly roughness: Texture;
+}
+
+export function createMaterials(grass?: IGrassMaps) {
   return {
     /** Boost chevrons and the start lights' housing. */
     boost: toon(palette.accent, 0.4),
@@ -203,10 +215,11 @@ export function createMaterials() {
     }),
     /** The infield and everything beyond the run-off. */
     grass: new MeshStandardMaterial({
-      map: turf,
-      normalMap: grain,
-      normalScale: new Vector2(0.35, 0.35),
-      roughness: 0.95,
+      map: grass?.color ?? turf,
+      normalMap: grass?.normal ?? grain,
+      normalScale: grass === undefined ? new Vector2(0.35, 0.35) : new Vector2(0.6, 0.6),
+      roughnessMap: grass?.roughness,
+      roughness: grass === undefined ? 0.95 : 1,
       metalness: 0,
     }),
     /** The paved run-off past the white line, and the pit lane. */
@@ -245,6 +258,13 @@ export function createMaterials() {
     /** Kept as an alias so a game that already referred to the old slot still compiles. */
     vehicle: new MeshStandardMaterial({ color: 0xd93a3a, metalness: 0.18, roughness: 0.3 }),
     rivalBody: new MeshStandardMaterial({ color: palette.accent, metalness: 0.18, roughness: 0.3 }),
+    /**
+     * The field's liveries, pole first. The pole car keeps the accent, because it is the car to
+     * beat; the rest are paint a driver tells apart at a glance, none of them the player's red.
+     */
+    rivalLiveries: [palette.accent, 0xf0b429, 0xeceae2, 0x2f8f5b, 0x23262c].map(
+      (color) => new MeshStandardMaterial({ color, metalness: 0.18, roughness: 0.3 }),
+    ),
     glass: new MeshStandardMaterial({
       color: 0x3f5a70,
       metalness: 0.55,
@@ -273,6 +293,21 @@ export function createMaterials() {
       emissive: 0xff2a1c,
       emissiveIntensity: 0.75,
       roughness: 0.34,
+    }),
+
+    // The nitro flame: additive and far above 1, so it stays blue-white against a sunlit road
+    // and the bloom stage has something to catch. The core is the hotter, shorter cone inside.
+    flame: new MeshBasicMaterial({
+      blending: AdditiveBlending,
+      color: new Color(0.35, 1.5, 7),
+      depthWrite: false,
+      transparent: true,
+    }),
+    flameCore: new MeshBasicMaterial({
+      blending: AdditiveBlending,
+      color: new Color(5, 6, 8),
+      depthWrite: false,
+      transparent: true,
     }),
 
     /** Trackside furniture that is instanced, so it takes a flat value rather than a mapped grid. */

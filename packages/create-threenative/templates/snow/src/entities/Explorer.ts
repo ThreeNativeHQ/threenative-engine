@@ -1,6 +1,6 @@
 import type { SnowField } from "@threenative/core/world";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { Object3D } from "three";
+import { MathUtils, Object3D } from "three";
 import { BOOT_AREA, bootPrint } from "../render/bootPrint.js";
 import { ExplorerModel, type IFootPose } from "../render/explorer.js";
 import type { SnowMaterials } from "../render/materials.js";
@@ -45,12 +45,6 @@ export const STANCE = 0.2;
 
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const damp = (a: number, b: number, rate: number, dt: number) =>
-  lerp(a, b, 1 - Math.exp(-rate * Math.max(0, dt)));
-const smoothstep = (edge0: number, edge1: number, value: number) => {
-  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
-};
 
 /** Walking pace through powder: deeper, softer snow is slower; packed snow is faster. */
 function paceThrough(depth: number, compaction: number, running: boolean): number {
@@ -146,8 +140,8 @@ export class Explorer {
     const length = Math.hypot(move.x, move.z);
     const scale = length > 1 ? 1 / length : 1;
     const moving = length > 0.01;
-    this.#velocity.x = damp(this.#velocity.x, move.x * scale * pace, moving ? 5 : 8, dt);
-    this.#velocity.z = damp(this.#velocity.z, move.z * scale * pace, moving ? 5 : 8, dt);
+    this.#velocity.x = MathUtils.damp(this.#velocity.x, move.x * scale * pace, moving ? 5 : 8, dt);
+    this.#velocity.z = MathUtils.damp(this.#velocity.z, move.z * scale * pace, moving ? 5 : 8, dt);
     if (!moving && Math.hypot(this.#velocity.x, this.#velocity.z) < 0.025) {
       this.#velocity.x = 0;
       this.#velocity.z = 0;
@@ -159,7 +153,7 @@ export class Explorer {
     if (this.speed > 0.05) {
       const desired = Math.atan2(this.#velocity.x, this.#velocity.z);
       const turn = Math.atan2(Math.sin(desired - this.heading), Math.cos(desired - this.heading));
-      this.heading += turn * (1 - Math.exp(-7 * dt));
+      this.heading = MathUtils.damp(this.heading, this.heading + turn, 7, dt);
     }
     this.#cycle += travelled / (running ? 1.22 : 1.04);
     this.#stepFeet(dt, running, hardness);
@@ -169,7 +163,7 @@ export class Explorer {
       this.speed > 0.02
         ? Math.cos(this.#cycle * Math.PI * 4) * 0.016
         : Math.sin(this.#elapsed * 1.8) * 0.003;
-    this.position.y = damp(
+    this.position.y = MathUtils.damp(
       this.position.y,
       terrainHeight(anchor.x, anchor.z) + snow.depth - sink + bob,
       14,
@@ -221,7 +215,7 @@ export class Explorer {
           progress = Math.max(foot.progress, clamp(foot.progress + foot.stop, 0, 1));
         }
         foot.progress = progress;
-        const eased = smoothstep(0, 1, progress);
+        const eased = MathUtils.smoothstep(progress, 0, 1);
         foot.x = lerp(foot.from.x, foot.to.x, eased);
         foot.z = lerp(foot.from.z, foot.to.z, eased);
         const lift =

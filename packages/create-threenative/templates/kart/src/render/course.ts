@@ -15,6 +15,7 @@ import {
   Group,
   IcosahedronGeometry,
   InstancedMesh,
+  MathUtils,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
@@ -521,7 +522,7 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
 
 function smooth(edge0: number, edge1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 }
 
 /** True when x/z is at least `clearance` metres from every sample of the line. */

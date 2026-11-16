@@ -24,6 +24,7 @@
   "type": "module",
   "files": [
     "dist",
+    "docs",
     "README.md"
   ],
   "main": "./dist/index.js",

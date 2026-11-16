@@ -3,6 +3,7 @@
   "version": 1,
   "markers": [
     { "name": "bridgeCensus", "marker": "TN_BRIDGE_CENSUS" },
+    { "name": "firstFrame", "marker": "TN_FIRST_FRAME" },
     { "name": "frameBudget", "marker": "TN_FRAME_BUDGET" },
     { "name": "frameHitch", "marker": "TN_FRAME_HITCH" },
     { "name": "hostGap", "marker": "TN_HOST_GAP" },

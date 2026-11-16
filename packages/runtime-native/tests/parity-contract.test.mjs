@@ -84,6 +84,10 @@ test("the parity registry implements Tier 1 and Tier 2 rows and documents exclus
     ["desktop-multitouch-input", "PRD-077"],
     ["android-canvas2d-document-window-stubs", "runtime-native"],
     ["android-hardware-canvas2d-document-window-stubs", "runtime-native"],
+    // The gather's desktop comparison failed on the merge queue's llvmpipe runner while the web
+    // lane passed the same row; PRD-644 AC-1 owns the desktop proof and removes the exclusion when
+    // the row passes there.
+    ["screen-probe-gather-desktop", "PRD-644"],
   ]);
 });
 

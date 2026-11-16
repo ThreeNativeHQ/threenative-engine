@@ -15,7 +15,7 @@ const out = mkdtempSync(join(tmpdir(), "strata-bake-"));
 // The cooked world's folder: both temporary folders go, or the suite's leak guard fails the run.
 const cook = mkdtempSync(join(tmpdir(), "strata-cooked-"));
 const bake = (env: NodeJS.ProcessEnv) =>
-  execFileSync(process.execPath, ["scripts/bake.mjs", "--force"], {
+  execFileSync(process.execPath, ["scripts/bake/bake.mjs", "--force"], {
     cwd: example,
     env: { ...env, STRATA_BAKE_OUT: out },
     stdio: ["ignore", "pipe", "pipe"],
@@ -30,7 +30,7 @@ afterAll(() => {
 
 it("bakes the forest from a cooked world's ground and ring, and the pinned bake when unset", async () => {
   // This process has no STRATA_WORLD, so its stamp is the pinned bake's.
-  const { isFresh } = await import("../scripts/stamp.mjs");
+  const { isFresh } = await import("../scripts/bake/stamp.mjs");
   // The cook's own layer order (`terrain_generate` writes ground, hydraulic and thermal erosion,
   // smoothing), on a seeded ground that needs no survey tile.
   const recipe = new Terrain({ size: 512, resolution: 257, seed: 9 })

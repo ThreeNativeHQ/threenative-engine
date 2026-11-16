@@ -26,7 +26,7 @@ struct MrtOutput {
 };
 
 /** One graph root per MaterialNodes::pointers(), for the arrays that hold them (the draw's source cache). */
-inline constexpr std::size_t kMaterialGraphRoots = 18;
+inline constexpr std::size_t kMaterialGraphRoots = 19;
 
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
@@ -48,8 +48,12 @@ struct MaterialNodes {
      *  refresh draws again: a swaying tree's shadow cannot snap when its page re-renders. */
     graph::Node castShadowPositionNode;
     /** NodeMaterial.maskNode: a bool; a colour-pass fragment where it is false is discarded before its colour is read
-     *  (three's setupDiffuseColor). The shadow depth pass draws without it, as it draws without the colour slots. */
+     *  (three's setupDiffuseColor). The shadow depth pass masks with it only when no maskShadowNode is set. */
     graph::Node maskNode;
+    /** NodeMaterial.maskShadowNode: a bool; a shadow-depth fragment where it is false is discarded. three r187's
+     *  shadow pass masks with `maskShadowNode || maskNode` (Renderer._getShadowNodes): an impostor's quad casts only
+     *  its baked coverage through it, and without it each quad cast a solid square. */
+    graph::Node maskShadowNode;
     /** NodeMaterial.alphaTestNode: a float that replaces material.alphaTest as the cutoff, in the colour pass and the
      *  shadow depth pass (three's setupDiffuseColor and shadow override). A set node tests even when alphaTest is 0. */
     graph::Node alphaTestNode;
@@ -72,7 +76,7 @@ struct MaterialNodes {
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
                           aoNode.get(),       irradianceNode.get(), castShadowPositionNode.get(),
                           maskNode.get(),     envNode.get(),
-                          alphaTestNode.get()};
+                          alphaTestNode.get(), maskShadowNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
@@ -80,7 +84,7 @@ struct MaterialNodes {
                           scaleNode,     rotationNode, depthNode,
                           aoNode,        irradianceNode, fogNode, castShadowPositionNode,
                           maskNode,      envNode,
-                          alphaTestNode};
+                          alphaTestNode, maskShadowNode};
     }
     /** Every graph a material owns: the fixed slots, then the custom MRT slots, in one walk. */
     template <typename Fn>

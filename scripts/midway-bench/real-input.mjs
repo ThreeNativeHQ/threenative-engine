@@ -74,6 +74,7 @@ const player = spawn(launcher, [], {
     ["TN_PLAYTEST_MAILBOX_ROOT", mailbox],
     ["TN_PLAYER_WIDTH", "1280"],
     ["TN_PLAYER_HEIGHT", "720"],
+    ["TN_PLAYER_FULLSCREEN", "0"],
   ]),
   stdio: ["ignore", "pipe", "pipe"],
 });

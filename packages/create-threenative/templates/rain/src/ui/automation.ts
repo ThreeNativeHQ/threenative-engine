@@ -7,10 +7,11 @@
  * whole mapping. A name in neither list throws: a typo must not silently pick a tier and report
  * success.
  *
- * Query reading takes a search string rather than reaching for `location`, so the rules are the
- * same on every target and a test can hold one.
+ * Query reading goes through the engine's debug seam when no search string is given, so the same
+ * rule reads the URL on the web and `TN_DEBUG_*` on a native launch; a test can still hold one.
  */
 
+import { debugFlag, debugValue } from "@threenative/core";
 import type { QualityName } from "../state.js";
 
 /** The four engine tiers, plus the four names the source study published for them. */
@@ -48,13 +49,14 @@ export interface IAutomationRequest {
  * What the query asks for. An unreadable tier is named in `rejectedQuality` instead of thrown: a
  * URL is a place somebody typed, and the page still has to open.
  */
-export function automationRequest(search: string): IAutomationRequest {
-  const query = new URLSearchParams(search);
-  const asked = query.get("quality");
-  if (asked === null) return { still: query.has("still") };
+export function automationRequest(search?: string): IAutomationRequest {
+  const query = search === undefined ? undefined : new URLSearchParams(search);
+  const asked = query === undefined ? debugValue("quality") : query.get("quality");
+  const still = query === undefined ? debugFlag("still") : query.has("still");
+  if (asked === null || asked === undefined) return { still };
   try {
-    return { still: query.has("still"), quality: qualityTier(asked) };
+    return { still, quality: qualityTier(asked) };
   } catch {
-    return { still: query.has("still"), rejectedQuality: asked };
+    return { still, rejectedQuality: asked };
   }
 }

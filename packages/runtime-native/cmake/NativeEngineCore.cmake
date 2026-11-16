@@ -472,6 +472,17 @@ if(NOT EMSCRIPTEN AND NOT TN_ENGINE_CORE_ONLY)
     target_link_libraries(tn-native-engine-texture-copy-test PRIVATE tn_engine_renderer)
 endif()
 
+# PRD-888's masked depth prepass (prepass.h): the draws it takes, its two pipeline targets and its two fragments. It
+# links the renderer for materialBlend, so it builds wherever the renderer does.
+if(EMSCRIPTEN OR NOT TN_ENGINE_CORE_ONLY)
+    tn_native_engine_test(tn-native-engine-prepass-test tests/native-engine/prepass_test.cpp
+        native_engine_prepass_eligible=eligible
+        native_engine_prepass_targets=targets
+        native_engine_prepass_fragments=fragments
+        native_engine_prepass_modes=modes)
+    target_link_libraries(tn-native-engine-prepass-test PRIVATE tn_engine_renderer)
+endif()
+
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
     native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order
@@ -535,6 +546,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_version=version
     native_engine_abi_handles=handles
     native_engine_abi_generic=generic
+    native_engine_abi_argument_position=argument_position
     native_engine_abi_scene=scene
     native_engine_abi_lifetime=lifetime
     native_engine_unsupported_member=unsupported_member

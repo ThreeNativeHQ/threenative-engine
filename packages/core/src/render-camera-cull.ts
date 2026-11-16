@@ -269,10 +269,10 @@ function hierarchyRevision(object: Object3D): number | undefined {
  * Counts one costly step by name in `globalThis.__tnEngineCost`, the bag a playtest reads per frame
  * (core reports it per frame in TN_FRAME_BUDGET.counters.engine), so a kit that brings back a per-frame walk fails its bound.
  */
-function countEngineCost(name: string): void {
+function countEngineCost(name: string, count = 1): void {
   const host = globalThis as { __tnEngineCost?: Record<string, number> };
   host.__tnEngineCost ??= {};
-  host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + 1;
+  host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + count;
 }
 
 /**
@@ -473,7 +473,13 @@ export class RenderCameraCull {
     this.#animationFrame += 1;
     this.#animationPrepared = true;
     this.#prepareCamera(camera, viewportHeight);
-    if (this.#bandOnEngine(root, camera) || !this.#prepareAnimated()) return;
+    if (this.#bandOnEngine(root, camera)) {
+      // The engine bands every rig, so the JS rig cache rebuilds nothing: a measured 0, which the kit
+      // contract's per-window bound needs, never a missing counter.
+      countEngineCost("cullRigRebuilds", 0);
+      return;
+    }
+    if (!this.#prepareAnimated()) return;
     // Start at each rig and each stand-in that observes one, never at the scene: the walk then visits
     // the same objects a scene walk would have acted on, and nothing else.
     const rootShown = this.#isVisibleInWorld(root as Object3D);

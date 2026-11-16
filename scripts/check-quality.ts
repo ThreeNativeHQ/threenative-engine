@@ -484,6 +484,14 @@ export function fatalQualityFindings(
     if (item.signal === "waiver-without-reason" || item.signal === "stale-waiver") return true;
     // A god file regrows the moment the gate lets it: the cap is fatal, the length notices stay advisory.
     if (item.signal === "file-cap") return item.state === "new" || item.state === "grew";
+    // A terrain stage file over the loud threshold is a god file in the making: PRD-886 split one
+    // folder per stage so the next one fails here instead of joining the baseline.
+    if (item.signal === "file-length" && item.file.startsWith("packages/terrain/src/"))
+      return (
+        typeof item.value === "number" &&
+        item.value > LIMITS.fileLoud &&
+        (item.state === "new" || item.state === "grew")
+      );
     const suppressionClass =
       item.signal.startsWith("suppression/") || item.signal === "lint-coverage-hole";
     return suppressionClass && (item.state === "new" || item.state === "grew");

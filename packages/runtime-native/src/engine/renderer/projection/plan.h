@@ -146,6 +146,12 @@ inline int itemSize(const BufferGeometry& g, const char* name) {
     return found == g.attributes.end() ? 0 : found->second->itemSize;
 }
 
+// displacesVertices: a material that moves its own vertices draws against its own model matrix, so a batch
+// (one object, one matrix) would draw it wrong. Core keeps it on its own draw as "vertexDisplaced".
+inline bool displacesVertices(const Material& material) {
+    return material.positionNode || material.nodes.positionNode;
+}
+
 // laneReasonOf for a mesh that is not skinned.
 inline const char* meshLaneReason(const Mesh& mesh) {
     if (dynamic_cast<const InstancedMesh*>(&mesh)) return "instanced";
@@ -155,6 +161,7 @@ inline const char* meshLaneReason(const Mesh& mesh) {
     if (!mesh.materials.empty()) return "multiMaterial";
     if (!mesh.material) return "unsupportedGeometry";
     if (mesh.material->transparent) return "transparent";
+    if (displacesVertices(*mesh.material)) return "vertexDisplaced";
     return nullptr;
 }
 
@@ -203,7 +210,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
            a.blending == b.blending && a.blendFactors() == b.blendFactors() &&
            a.side == b.side && a.visible == b.visible &&
            a.toneMapped == b.toneMapped && a.fog == b.fog &&
-           ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & (a.alphaHash == b.alphaHash) & eq(a.emissive, b.emissive) &
+           ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & (a.alphaHash == b.alphaHash) & (a.alphaToCoverage == b.alphaToCoverage) & eq(a.emissive, b.emissive) &
             (a.emissiveIntensity == b.emissiveIntensity) & (a.roughness == b.roughness) &
             (a.metalness == b.metalness) & eq(a.specular, b.specular) & (a.shininess == b.shininess) &
             (a.ior == b.ior) & (a.specularIntensity == b.specularIntensity) & eq(a.specularColor, b.specularColor) &
@@ -548,7 +555,8 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
         if (m.renderOrder() != 0) return "renderOrder";
         if (!m.materials.empty()) return "multiMaterial";
         if (!m.material) return "unsupportedGeometry";
-        return m.material->transparent ? "transparent" : nullptr;
+        if (m.material->transparent) return "transparent";
+        return displacesVertices(*m.material) ? "vertexDisplaced" : nullptr;
     };
     // walkProjection: depth first, children in order; a light's children are not visited.
     std::vector<Object3D*> stack(scene.children.rbegin(), scene.children.rend());

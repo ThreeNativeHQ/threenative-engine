@@ -1,0 +1,61 @@
+{
+  "name": "adventure-grass",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "walk off the path into the grass",
+      "press": "KeyA",
+      "holdTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stand in the grass",
+      "waitTicks": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "grass",
+        "component": "visibleChunks",
+        "gte": 1,
+        "allowTrivial": "Streamed grass chunks draw round the camera at the spawn."
+      },
+      {
+        "entity": "grass",
+        "component": "standNear",
+        "lte": 0.6,
+        "allowTrivial": "A blade half a metre from Wren is pushed over: its standing height is at most 0.6 of rest."
+      },
+      {
+        "entity": "grass",
+        "component": "standFar",
+        "gte": 0.9,
+        "allowTrivial": "A blade 3 m from Wren stands at its resting lean, out of her reach."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 1.5
+    }
+  }
+}

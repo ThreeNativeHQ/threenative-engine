@@ -99,6 +99,13 @@ Unreal's MegaLights at 32 lamps or more, at 1920 × 1080. Otherwise record the r
 **Revisit condition if the gate defers the build:** a game or template ships 16 or more shadowed
 local lights, or the PRD-650 lamp atlas exceeds its tier budget on a measured scene.
 
+**Secondary reference: ThreeRT.** ThreeRT (MIT, `meshy-dev/ThreeRT@8964dc4`, checked 2026-11-13) is a Rust + wgpu path tracer with a three.js-style API. Unreal stays the source for the algorithm and the defaults. Read ThreeRT for a small working WGSL version of two parts:
+
+- **Light tree over emissive triangles** ([`renderer/src/ltree.rs`](https://github.com/meshy-dev/ThreeRT/blob/8964dc407c4412a6f717c3ac7805ed791becdd9d/renderer/src/ltree.rs), Conty Estevez & Kulla 2018 without orientation cones). A shading point descends a binary tree by power over distance squared, so the near lamps get the samples (Bistro: 20,638 emitter triangles). Moving emitters sit in their own subtree, refit each frame with the topology kept. A BSDF ray that hits an emitter weighs its MIS by the same probability as the tree.
+- **RIS many-light sampling** in [`renderer/shaders/pathtrace.wgsl`](https://github.com/meshy-dev/ThreeRT/blob/8964dc407c4412a6f717c3ac7805ed791becdd9d/renderer/shaders/pathtrace.wgsl). It has no reservoir reuse across pixels or frames.
+
+Use it only if Phase 1 keeps Phases 2 and 3. It does not change the gate.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: At 128 shadowed lamps on `lamp-street`, `StochasticLighting` costs no more GPU time at 1920 × 1080 on the RTX 2080 than Unreal's measured MegaLights, and less than the per-light path. proof: `node packages/playtest/dist/runner/cli.js perf` on the fixture, path on against off, beside the Phase 1 Unreal number — Evidence: pending.

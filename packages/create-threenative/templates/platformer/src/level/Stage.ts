@@ -1,3 +1,4 @@
+import { createRandom } from "@threenative/core";
 import {
   BoxGeometry,
   ConeGeometry,
@@ -18,13 +19,8 @@ import { waterfall } from "../render/waterfall.js";
 
 /** Deterministic, so the route is the same course every run. */
 export function makeRng(seed = 90210): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
+  return createRandom(seed);
 }
-
 export interface IStage {
   /** The one root to add to the scene and hand to `buildStaticColliders`. */
   readonly group: Group;

@@ -399,11 +399,10 @@ export function reactor(): Group {
 export function lcg(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    state = (state * 1664525 + 1013904223) >>> 0;
     return state / 4294967296;
   };
 }
-
 function scatter(
   geometry: BufferGeometry,
   material: Material,

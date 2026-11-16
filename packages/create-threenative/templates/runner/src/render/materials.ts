@@ -9,6 +9,7 @@ import {
   DataTexture,
   Float32BufferAttribute,
   LinearMipmapLinearFilter,
+  MathUtils,
   MeshStandardMaterial,
   RepeatWrapping,
   SRGBColorSpace,
@@ -82,8 +83,8 @@ function grainNormalTexture(size = 128): DataTexture {
       const y0 = Math.floor(v);
       const fx = u - x0;
       const fy = v - y0;
-      const sx = fx * fx * (3 - 2 * fx);
-      const sy = fy * fy * (3 - 2 * fy);
+      const sx = MathUtils.smoothstep(fx, 0, 1);
+      const sy = MathUtils.smoothstep(fy, 0, 1);
       const at = (i: number, j: number): number =>
         values[(((j % count) + count) % count) * count + (((i % count) + count) % count)] ?? 0;
       const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * sx;

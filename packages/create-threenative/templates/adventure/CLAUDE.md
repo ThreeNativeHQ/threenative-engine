@@ -40,12 +40,12 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `entities/`, `game.ts`, `interact.ts`, `level/`, `main.ts`, `render/`, `scenes/`, `state.ts`, `ui/`.
-15 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+17 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-adventure.md`.
 <!-- /shared -->
 
-`ADVENTURE_FEEL` in `src/entities/Hero.ts` is Wren's one table of feel constants; `playtests/move.playtest.json` proves it. `src/interact.ts` is the one interact prompt picker. Every model is procedural.
-`pnpm test` proves the web target. Desktop is claimed only where `native-playtests/survives.playtest.json` ran with `--target desktop`; Android and iOS have not run for this kit.
+`ADVENTURE_FEEL` in `src/entities/Hero.ts` is Wren's one table of feel constants; `playtests/move.playtest.json` proves it. `src/interact.ts` is the one interact prompt picker. Every model is procedural except the baked forest-floor props, `assets/floor-*.glb` (PRD-889).
+`pnpm test` proves the web target. Desktop is claimed only where `native-playtests/survives.playtest.json` and `native-playtests/woodland-floor.playtest.json` ran with `--target desktop`; Android and iOS have not run for this kit.
 
 <!-- shared: kit-commands -->
 ## Commands

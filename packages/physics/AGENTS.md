@@ -59,9 +59,10 @@ engine changed.
 - `Area3D.on('bodyEntered', ...)` returns an unsubscribe function. Callers store it.
 - `VehicleBody3D` extends `RigidBody3D` and adds ray-cast wheels, so a vehicle's lifetime is its
   chassis's: there is no vehicle removal call. `createVehicle`, `setVehicleInput`,
-  `readVehicleState` and `resetVehicle` on `IPhysicsSimulation` are **optional** and carry plain
-  numbers only; both backends implement all four, and a backend that does not still fails loudly
-  at construction with `TN_VEHICLE_NATIVE_UNAVAILABLE`. Three Rapier facts the node's unit tests
+  `readVehicleState`, `resetVehicle` and `setVehicleWheelFriction` on `IPhysicsSimulation` are
+  **optional** and carry plain numbers only. Both backends implement all five. A backend without
+  the first four fails at construction, and one without the grip setter fails at the call, both
+  with `TN_VEHICLE_NATIVE_UNAVAILABLE`. Three Rapier facts the node's unit tests
   pin, because all three are invisible in the API and wrong when assumed: the
   `suspensionStiffness` of `@dimforge/rapier3d-compat@0.19.3` is mass-normalised (a frequency
   squared, so sag is about `9.81 / (4 * stiffness)`), `currentVehicleSpeed()` is not the

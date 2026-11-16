@@ -1,0 +1,68 @@
+{
+  "name": "drift-natural",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "straight",
+      "press": ["ArrowUp"],
+      "holdTicks": 240,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "full-lock",
+      "press": ["ArrowUp", "ArrowRight"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "catch",
+      "press": ["ArrowUp", "ArrowLeft"],
+      "holdTicks": 14,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "straighten",
+      "press": ["ArrowUp"],
+      "holdTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "driftsBanked",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "driftSpins",
+        "equals": 0,
+        "allowTrivial": "A spin is the failure this scenario looks for; zero is the held invariant while the banked drift above proves the tail let go with no handbrake."
+      }
+    ],
+    "components": [
+      {
+        "entity": "effects",
+        "component": "skidMarks",
+        "gte": 5
+      }
+    ]
+  }
+}

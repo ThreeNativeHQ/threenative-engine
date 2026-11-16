@@ -1924,7 +1924,7 @@ int main(int argc, char** argv) {
         else if (argument == "--check-game")
             checkGame = true;
         // The playtest runner sizes the window with the legacy host's flags. The player reads its surface
-        // from TN_PLAYER_WIDTH and TN_PLAYER_HEIGHT (run.cpp validates them), and it always opens windowed.
+        // from TN_PLAYER_WIDTH and TN_PLAYER_HEIGHT (run.cpp validates them), and TN_PLAYER_FULLSCREEN (set by --fullscreen or --windowed) picks borderless fullscreen; unset opens windowed.
         else if ((argument == "--width" || argument == "--height") && i + 1 < argc) {
             const char* name = argument == "--width" ? "TN_PLAYER_WIDTH" : "TN_PLAYER_HEIGHT";
 #if defined(_WIN32)
@@ -1933,7 +1933,13 @@ int main(int argc, char** argv) {
             setenv(name, argv[++i], 1);
 #endif
         }
-        else if (argument == "--windowed") {
+        else if (argument == "--fullscreen" || argument == "--windowed") {
+            const char* value = argument == "--fullscreen" ? "1" : "0";
+#if defined(_WIN32)
+            _putenv_s("TN_PLAYER_FULLSCREEN", value);
+#else
+            setenv("TN_PLAYER_FULLSCREEN", value, 1);
+#endif
         }
         else if (argument == "--check-request" && i + 1 < argc)
             checkRequest = argv[++i];

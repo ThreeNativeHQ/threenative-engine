@@ -3,6 +3,7 @@
 // The `TN_*` console markers the perf tooling parses. Add the colon where a line is matched.
 export const CONSOLE_MARKER = {
   bridgeCensus: "TN_BRIDGE_CENSUS",
+  firstFrame: "TN_FIRST_FRAME",
   frameBudget: "TN_FRAME_BUDGET",
   frameHitch: "TN_FRAME_HITCH",
   hostGap: "TN_HOST_GAP",

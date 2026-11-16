@@ -72,7 +72,6 @@ jobs:
       temporal: ${{ steps.filter.outputs.temporal }}
       native-assets: ${{ steps.filter.outputs.native-assets }}
       tone: ${{ steps.filter.outputs.tone }}
-      vegetation: ${{ steps.filter.outputs.vegetation }}
       playstation: ${{ steps.filter.outputs.playstation }}
       velocity: ${{ steps.filter.outputs.velocity }}
       world-capture: ${{ steps.filter.outputs.world-capture }}
@@ -109,7 +108,6 @@ jobs:
             temporal ^packages/core/src/render/chain\.ts$|^packages/core/src/render/velocity\.ts$|^packages/core/__tests__/temporal-chain\.spec\.ts$|^packages/create-threenative/templates/starter/src/render/temporalAA[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalResolve[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalCurrent[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalRejectionCounter\.ts$|^packages/create-threenative/__tests__/temporal[^/]*\.spec\.ts$|^packages/runtime-native/conformance/scenes/shared/temporal-aa[^/]*\.js$|^packages/runtime-native/conformance/scenes/shared/temporal-velocity-probe\.ts$|^packages/runtime-native/conformance/scenes/shared/temporal-resolve-probe\.ts$|^packages/runtime-native/__tests__/temporal-velocity-probe\.spec\.ts$|^examples/abyss-framework/temporal[^/]*$|^examples/abyss-framework/playtests/temporal-[^/]*\.playtest\.json$|^scripts/verify-temporal-[^/]*\.ts$|^scripts/temporal-aa-[^/]*\.ts$|^scripts/__tests__/temporal-aa-[^/]*\.spec\.ts$
             velocity ^packages/core/src/renderProjection\.ts$|^packages/core/src/render/velocity\.ts$|^packages/core/src/render/batched-velocity\.ts$|^packages/core/__tests__/render-velocity\.spec\.ts$|^packages/core/__tests__/instance-velocity-upload\.spec\.ts$|^packages/core/__tests__/velocity-coverage-proof\.spec\.ts$|^packages/core/__tests__/skinned-velocity-bind-history\.spec\.ts$|^packages/core/patches/three@0\.185\.1\.patch$|^packages/playtest/.*$|^examples/abyss-framework/velocity-main\.ts$|^examples/abyss-framework/velocity-cost-main\.ts$|^examples/abyss-framework/velocity-cost\.html$|^examples/abyss-framework/src/render/velocityCost\.ts$|^examples/abyss-framework/playtests/velocity-cost\.playtest\.json$|^scripts/__tests__/velocity-cost-proof\.spec\.ts$|^examples/abyss-framework/src/render/velocityReadback\.ts$|^examples/abyss-framework/src/render/velocityCoverage\.ts$|^examples/abyss-framework/velocity\.html$|^examples/abyss-framework/velocity\.vite\.config\.ts$|^examples/abyss-framework/velocity\.tsconfig\.json$|^examples/abyss-framework/playtests/velocity-history\.playtest\.json$|^scripts/verify-velocity-history\.ts$|^scripts/velocity-capture-proof\.ts$|^scripts/__tests__/velocity-capture-proof\.spec\.ts$|^pnpm-lock\.yaml$
             tone ^scripts/xvfb\.sh$|^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|exposureSettings|worldEnvironment)\.ts$
-            vegetation ^examples/integrations/vegetation/.*$
             playstation ^packages/runtime-native/scripts/ps4/.*$|^packages/runtime-native/tests/ps4-[^/]*\.test\.mjs$|^packages/runtime-native/tests/fixtures/ps4-frames/.*$|^packages/runtime-native/cmake/ps4\.toolchain\.cmake$|^packages/runtime-native/src/platform/ps4_main\.cpp$
             world-capture ^packages/core/src/world[^/]*\.ts$|^packages/core/__tests__/world-capture-fixture\.spec\.ts$|^packages/playtest/.*$|^packages/assets/.*$|^examples/abyss-framework/src/scenes/WorldProbe\.ts$|^examples/abyss-framework/src/world-main\.ts$|^examples/abyss-framework/src/style\.css$|^examples/abyss-framework/assets/world/.*$|^examples/abyss-framework/index\.html$|^examples/abyss-framework/vite\.config\.ts$|^examples/abyss-framework/threenative\.config\.ts$|^examples/abyss-framework/playtests/phase477-world-capture\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-world-capture\.ts$|^scripts/world-capture-manifest\.ts$|^scripts/world-visual-gate\.ts$|^scripts/capture-guard\.ts$|^scripts/__tests__/verify-world-capture\.spec\.ts$|^scripts/__tests__/world-capture-manifest\.spec\.ts$|^scripts/__tests__/world-visual-gate\.spec\.ts$|^package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$
         run: |
@@ -162,38 +160,6 @@ jobs:
     defaults:
       run:
         working-directory: examples/integrations/ik
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.candidate_sha }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '22'
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm test
-      - name: Record exact current-attempt integration receipt
-        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TN_CI_JOB_RESULT: ${{ job.status }}
-        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
-      - uses: actions/upload-artifact@v7
-        if: ${{ always() }}
-        with:
-          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
-          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
-          if-no-files-found: error
-
-  vegetation:
-    name: vegetation
-    if: ${{ needs.paths.outputs.vegetation == 'true' && !github.event.pull_request.draft }}
-    needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:vegetation')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: examples/integrations/vegetation
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -1134,7 +1100,7 @@ jobs:
 
   completion:
     name: Verify required integration receipts
-    needs: [paths, csg, ik, vegetation, playstation, decals, decals-native, tone, animation, animation-native, fog, fog-native, capture, fluid-collision, fluid-collision-native, packaged-quickjs, exposure, cold-boot, temporal, velocity]
+    needs: [paths, csg, ik, playstation, decals, decals-native, tone, animation, animation-native, fog, fog-native, capture, fluid-collision, fluid-collision-native, packaged-quickjs, exposure, cold-boot, temporal, velocity]
     if: ${{ always() }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     # 5 was read off a quiet runner: 40534772948 (develop) collected in 3m35s. It has no headroom —

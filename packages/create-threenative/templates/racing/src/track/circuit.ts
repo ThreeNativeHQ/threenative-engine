@@ -1,4 +1,4 @@
-import { CatmullRomCurve3, Vector3 } from "three";
+import { CatmullRomCurve3, MathUtils, Vector3 } from "three";
 
 /**
  * The circuit, once.
@@ -126,7 +126,7 @@ function bankFade(radius: number): number {
   if (!Number.isFinite(radius) || radius >= BANK_FULL_RADIUS) return 1;
   if (radius <= BANK_NONE_RADIUS) return 0;
   const fade = (radius - BANK_NONE_RADIUS) / (BANK_FULL_RADIUS - BANK_NONE_RADIUS);
-  return fade * fade * (3 - 2 * fade);
+  return MathUtils.smoothstep(fade, 0, 1);
 }
 
 /**
@@ -435,33 +435,39 @@ export function terrainHeight(x: number, z: number): number {
   const plane = centre.point.y - ROAD_LIFT - projection.lateral * centre.bank;
   if (lateral <= CORRIDOR) return plane;
   const blend = (lateral - CORRIDOR) / (BLEND_END - CORRIDOR);
-  return plane + (open - plane) * blend * blend * (3 - 2 * blend);
+  return plane + (open - plane) * MathUtils.smoothstep(blend, 0, 1);
 }
 
 /** Where the start/finish line, the sectors and the grid are, as a fraction of the lap. */
 export const LINE_AT = {
   finish: 0.06,
   gridFar: 0.052,
-  gridNear: 0.042,
   sector1: 0.28,
   sector2: 0.55,
 } as const;
 
 /**
- * The starting grid: the player second, the rival on pole, both on the main straight and both
- * short of the line, so the first gate either car meets is the one the lap is counted on.
+ * The starting grid: six cars on the main straight, staggered, pole first, all short of the line
+ * so the first gate any car meets is the one the lap is counted on.
  *
- * `player` sits 2.2 m to the left of the centreline and `rival` 2.2 m to the right, and the rival
- * is the further down the straight. Two metres aside on a 9 m road is two cars side by side and a
- * clear line between them — the old grid put both cars on the racing line, which is a rear-end at
- * the first corner.
+ * Slots alternate 2.2 m right and left of the centreline, {@link GRID_PITCH} apart, so two
+ * neighbours are side by side with a clear line between them — a grid on the racing line is a
+ * rear-end at the first corner. The player starts last and races through the field.
  */
-export const GRID = { player: -2.2, rival: 2.2 } as const;
+const GRID_PITCH = 5;
+export const GRID_SLOTS: ReadonlyArray<{ readonly distance: number; readonly side: number }> =
+  Array.from({ length: 6 }, (_, slot) => ({
+    distance: lineDistance(LINE_AT.gridFar) - slot * GRID_PITCH,
+    side: slot % 2 === 0 ? 2.2 : -2.2,
+  }));
+export const PLAYER_SLOT = GRID_SLOTS.length - 1;
 
-export const GRID_DISTANCE = {
-  player: lineDistance(LINE_AT.gridNear),
-  rival: lineDistance(LINE_AT.gridFar),
-} as const;
+/** A slot's own entry, which fails at the call rather than placing a car at `NaN`. */
+export function gridSlot(slot: number): { readonly distance: number; readonly side: number } {
+  const entry = GRID_SLOTS[slot];
+  if (entry === undefined) throw new Error(`Grid slot ${slot} does not exist.`);
+  return entry;
+}
 
 export function lineDistance(fraction: number): number {
   return fraction * CIRCUIT.totalLength;

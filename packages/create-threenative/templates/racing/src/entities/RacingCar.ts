@@ -1,19 +1,21 @@
-import type { Vector3 } from "three";
+import { MathUtils, Vector3 } from "three";
 import { Boost } from "../kart/boost.js";
 import { createMaterials } from "../render/materials.js";
 import type { ITouchInput } from "../render/touch-controls.js";
-import { CarBody, type CarCtx, FEEL } from "./CarBody.js";
+import { CarBody, type CarCtx, FEEL, driveForce } from "./CarBody.js";
+import { DRIFT, Drift } from "./Drift.js";
 import { LineDriver } from "./LineDriver.js";
+import { Nitro } from "./Nitro.js";
 
 /**
  * The demo driver's pace, in m/s, and the side of the road it keeps.
  *
- * Just under the rival's, on purpose: the demo driver is here to show the circuit and to let a
- * playtest ask a car to follow it, not to win the race. A demo driver that beat the rival would
- * make "finishing behind the rival is a DNF" untestable from the grid, and that rule is one of the
- * things this template has to prove.
+ * Under the slowest rival's, on purpose: the demo driver is here to show the circuit and to let a
+ * playtest ask a car to follow it, not to win the race. A demo driver that beat the field would
+ * make "finishing behind a rival is a DNF" untestable from the grid, and that rule is one of the
+ * things this template has to prove. Slower than every car ahead, it also never runs into one.
  */
-export const AUTOPILOT_PACE = 15.5;
+export const AUTOPILOT_PACE = 20.5;
 const AUTOPILOT_OFFSET = -1.5;
 
 /**
@@ -28,13 +30,19 @@ const AUTOPILOT_OFFSET = -1.5;
  */
 export class RacingCar {
   readonly car: CarBody;
+  /** The boost pad's timed shove. */
   readonly boost = new Boost();
+  /** The driver's own tank, held to burn; drifting refills it. */
+  readonly nitro = new Nitro();
+  readonly drift = new Drift();
   /** The demo driver. Present whether or not it is engaged, so engaging is not an allocation. */
   readonly autopilot = new LineDriver({ offset: AUTOPILOT_OFFSET, pace: AUTOPILOT_PACE });
   #autopilotOn = false;
   #speedAfterBoost = 0;
   #topSpeed = 0;
   #boostWasActive = false;
+  #skidding = false;
+  readonly #push = new Vector3();
 
   constructor(ctx: CarCtx, spawn: Vector3, yaw = 0) {
     this.car = new CarBody(ctx, { materials: createMaterials(), spawn, yaw });
@@ -79,8 +87,17 @@ export class RacingCar {
     return this.#topSpeed;
   }
 
+  /** A boost pad or the nitro: either one drives the boosted torque curve. */
   get boosting(): boolean {
-    return this.boost.active;
+    return this.boost.active || this.nitro.engaged;
+  }
+
+  /**
+   * Whether a rear tyre is leaving rubber this tick: sideways in a slide, or locked under the
+   * handbrake at speed. The smoke and the skid marks read this.
+   */
+  get skidding(): boolean {
+    return this.#skidding;
   }
 
   /** Whether the closed-loop driver has the wheel. Published, so a scenario can prove it drove. */
@@ -102,7 +119,6 @@ export class RacingCar {
    */
   update(ctx: CarCtx, dt: number, touch?: ITouchInput): void {
     this.boost.update(dt);
-    if (ctx.input.justPressed("boost") || touch?.boostPressed === true) this.boost.activate();
     const move = ctx.input.vector("move");
     if (touch !== undefined) {
       move.x += touch.move.x;
@@ -113,13 +129,25 @@ export class RacingCar {
     // Touching the wheel takes it back, the way a driving game's demo lap does. A scenario that
     // wants to hand the car over presses a key; a player who grabs the stick gets their car.
     if (this.#autopilotOn && move.lengthSq() > 0.02) this.#autopilotOn = false;
+    const driver = !this.#autopilotOn;
+    const nitroHeld = driver && (ctx.input.pressed("boost") || touch?.boostPressed === true);
+    this.nitro.update(nitroHeld, this.car.groundSpeed, this.drift.drifting, dt);
+    // The handbrake (shift, the touch brake button): with the wheel turned at speed it kicks the
+    // tail out, and otherwise it is the hard brake that also holds a stopped car.
+    const handbrake = driver && (ctx.input.pressed("brake") || touch?.brakePressed === true);
+    const kick = this.drift.kicks(this.car, handbrake, move.x);
     if (this.#autopilotOn) {
       this.autopilot.update(this.car, dt);
     } else {
-      this.drive(move, ctx.input.pressed("brake") || touch?.brakePressed === true);
+      this.drive(move, handbrake, kick);
       this.car.measure(dt);
     }
-    if (this.boost.active) {
+    this.drift.update(this.car, kick, driver ? move.x : 0, dt);
+    this.#skidding =
+      this.car.groundSpeed > 3 &&
+      ((this.drift.slide > 0 && Math.abs(this.car.rearSlip) > 0.12) ||
+        (handbrake && this.car.groundSpeed > DRIFT.minSpeed));
+    if (this.boosting) {
       this.#boostWasActive = true;
     } else if (this.#boostWasActive) {
       this.#boostWasActive = false;
@@ -128,24 +156,46 @@ export class RacingCar {
     this.#topSpeed = Math.max(this.#topSpeed, this.speed);
   }
 
-  private drive(move: { x: number; y: number }, braking: boolean): void {
+  private drive(move: { x: number; y: number }, braking: boolean, kick: boolean): void {
     const body = this.car.body;
     const speed = body.speed;
     // The sign: `move.x` is +1 to the right, and a positive Rapier steering angle turns toward the
     // chassis's -z, which is the driver's left. Flipping here keeps "right means right" for the
     // physics and for the visual front wheels, which take the same angle.
-    body.steering = -move.x * this.car.lockAt(speed);
+    // In a slide the front wheels follow the direction of travel, which is opposite lock, and
+    // the driver's wheel steers around that: full grip on a wheel held 50° off its own velocity
+    // is a brake, measured at 15 → 4.6 m/s in half a second. `slide` fades it in and out with the
+    // rear grip, so the catch is continuous.
+    const slide = this.drift.slide;
+    body.steering =
+      -(kick ? Math.sign(move.x) : move.x * MathUtils.lerp(1, DRIFT.lockScale, slide)) *
+        this.car.lockAt(speed) +
+      MathUtils.clamp(this.drift.angle * DRIFT.counterSteer, -DRIFT.maxCounter, DRIFT.maxCounter) *
+        slide;
     // The brake key (shift, the touch brake button) wins over the throttle, and holds a stopped car.
-    if (braking) {
+    if (slide > 0 && move.y > 0 && !braking) {
+      const top = (this.boosting ? FEEL.boostTopSpeed : FEEL.topSpeed) * DRIFT.thrustTopShare;
+      const push =
+        move.y * DRIFT.thrust * slide * MathUtils.clamp((top - this.car.groundSpeed) / 2, 0, 1);
+      this.#push.copy(this.car.forward).multiplyScalar(push);
+      body.applyForce(this.#push);
+    }
+    if (kick) {
+      // Rapier ignores the brake on a wheel that is driven, so the engine is cut for the kick.
+      body.engineForce = 0;
+      body.brake = DRIFT.handbrake;
+    } else if (braking) {
       body.engineForce = 0;
       body.brake = FEEL.brake;
-    } else if (move.y > 0) {
-      const top = this.boost.active ? FEEL.boostTopSpeed : FEEL.topSpeed;
+    } else if (move.y > 0 || this.nitro.engaged) {
+      // Nitro pushes on its own: holding the button is full throttle, as in most arcade racers.
+      const throttle = this.nitro.engaged ? 1 : move.y;
+      const top = this.boosting ? FEEL.boostTopSpeed : FEEL.topSpeed;
       body.engineForce =
-        move.y *
+        throttle *
         FEEL.engineForce *
-        (this.boost.active ? FEEL.boostForce : 1) *
-        Math.max(0, 1 - speed / top);
+        (this.boosting ? FEEL.boostForce : 1) *
+        driveForce(speed, top);
       body.brake = 0;
     } else if (speed > FEEL.reverseEnterSpeed) {
       body.engineForce = 0;
@@ -178,8 +228,23 @@ export class RacingCar {
   debug(): Record<string, unknown> {
     return {
       autopilot: this.#autopilotOn,
-      boostActive: this.boost.active,
-      boostUses: this.boost.uses,
+      boostActive: this.boosting,
+      boostUses: this.boost.uses + this.nitro.uses,
+      drift: {
+        angle: Math.round(this.drift.angle * 1000) / 1000,
+        banked: this.drift.banked,
+        drifting: this.drift.drifting,
+        grip: this.drift.grip,
+        lowestGrip: this.drift.lowestGrip,
+        peakSlip: Math.round(this.drift.peakSlip * 1000) / 1000,
+        score: Math.round(this.drift.score),
+        spins: this.drift.spins,
+      },
+      nitro: {
+        engaged: this.nitro.engaged,
+        tank: Math.round(this.nitro.tank * 1000) / 1000,
+        uses: this.nitro.uses,
+      },
       lateralLoad: Math.round(this.lateralLoad * 100) / 100,
       normaliseFactor: this.car.normaliseFactor,
       position: this.car.position.toArray(),

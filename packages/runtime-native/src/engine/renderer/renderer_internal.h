@@ -14,6 +14,7 @@
 #include "engine/renderer/aux_bundle_key.h"
 #include "engine/renderer/texture_copy.h"
 #include "engine/renderer/aux_depth.h"
+#include "engine/renderer/prepass.h"
 #include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
@@ -186,6 +187,11 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 // A caster or draw whose alpha test runs: the flat alphaTest above 0, or an alphaTestNode (three tests a set node always).
 static inline bool alphaTested(const shader::StandardMaterial& material, const shader::MaterialNodes& nodes) {
     return material.alphaTest > 0 || bool(nodes.alphaTestNode);
+}
+// A shadow caster whose depth fragment cuts: alpha-tested, or masked as three r187's shadow pass masks
+// (`maskShadowNode || maskNode`, Renderer._getShadowNodes). An impostor quad is only its mask: unmasked it casts a square.
+static inline bool shadowMasked(const shader::StandardMaterial& material, const shader::MaterialNodes& nodes) {
+    return alphaTested(material, nodes) || bool(nodes.maskShadowNode) || bool(nodes.maskNode);
 }
 
 // Authored uniform data accompanies the graph, not the cached program. Both colour and shadow
@@ -458,6 +464,9 @@ struct Renderer::Planned {
     WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
     uint64_t slot = 0;  // a main draw's uniform slot (PRD-754), 0 when its blocks were appended
+    // PRD-888: a main draw shaded depth-Equal: its masked depth-only pipeline, drawn first in the same pass with the same
+    // groups and offsets. It moves only with `pipeline` (both follow the program), so the bundle key needs no word of it.
+    WGPURenderPipeline prepass = nullptr;
     // A shadow row that draws several casters in one instanced draw names them, in instance order (FM8);
     // empty for a row that draws the one caster it points at.
     const DrawItem* const* members = nullptr;

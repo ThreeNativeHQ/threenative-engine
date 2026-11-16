@@ -116,6 +116,8 @@ describe("template playtest matrix", () => {
         "--browser-recipe",
         "webgpu",
         "--headed",
+        "--server-timeout",
+        "120000",
         "--server-command",
         "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
       ]);

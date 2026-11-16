@@ -205,7 +205,9 @@ export class Run extends Scene<GameState, RunnerPhysics> {
       const previous = frameCtx.state.getState();
       const next: GameState = {
         chunks: track.built,
-        distance,
+        // Whole metres: the HUD shows the floor, and a fractional distance would republish every
+        // frame. The store skips a key it already holds, so this is the only stillness it needs.
+        distance: Math.floor(distance),
         lane: runner.lane,
         nearMisses,
         paused: previous.paused,
@@ -213,14 +215,7 @@ export class Run extends Scene<GameState, RunnerPhysics> {
         status,
         uiReady: previous.uiReady,
       };
-      if (
-        next.chunks !== previous.chunks ||
-        next.lane !== previous.lane ||
-        next.nearMisses !== previous.nearMisses ||
-        next.status !== previous.status ||
-        Math.floor(next.distance) !== Math.floor(previous.distance)
-      )
-        frameCtx.state.set(next);
+      frameCtx.state.set(next);
     };
   }
 

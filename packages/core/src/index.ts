@@ -361,6 +361,60 @@ export type {
   ITracedReflectionsOptions,
 } from "./render/traced-reflections.js";
 /**
+ * Lumen's Screen Probe Gather: one probe per 16 x 16 pixels traces an 8 x 8 octahedron of rays, the probes are filtered
+ * into an irradiance octahedron each, and a pixel blends the four nearest probes it can see, instead of every pixel
+ * tracing its own rays. A ray that hits on screen returns the lit frame minus the cache along it; a ray that leaves the
+ * screen continues through the packed scene up to the radiance cache's cell and reads the cache where it ended, so the
+ * light that arrives from off screen is that direction's and not the pixel's mean.
+ * @situation bounce light that reads the room off screen instead of a flat ambient term
+ * @situation global illumination that costs a fraction of one ray per pixel
+ * @situation the light a corner sees from around the wall, which a per-pixel screen trace loses
+ * @situation lumen screen probe gather
+ * @situation lumen final gather
+ * @constraint the owned engine only: on engine: "threejs" the upstream node takes the camera as its fourth argument and has no probes, and gather() refuses
+ * @constraint the gather is a delta in E / pi: multiply it by the receiver's diffuse colour (mrt({ diffuseColor })) and add it after the scene pass, and give the scene pass no other indirect diffuse or the light is counted twice
+ * @constraint a viewport resize needs a new gather: the probe grid is fixed when it is built
+ * @constraint the grid is the cost: downsampleFactor 16 and an 8 x 8 octahedron are Unreal's Epic, 32 and 8 its High
+ * @constraint radiance answers in the frame's units (the cache read times the frame's gain), and a trace reads it only where the screen has nothing
+ * @override downsampleFactor, tracingOctahedronResolution, cacheCellSize, timedPass and the strength of the composite are game-owned choices
+ * @example
+ * const gather = new ScreenProbeGather({ camera, viewport, radiance, trace });
+ * const gi = gather.gather(convertToTexture(input), depth(), normalView());
+ * const bounce = gather.getGINode().rgb.mul(diffuseColor.rgb);
+ */
+export { ScreenProbeGather } from "./render/screen-probe-gather.js";
+export type {
+  IScreenProbeCamera,
+  IScreenProbeGatherOptions,
+  IScreenProbeGatherReport,
+  ScreenProbePass,
+} from "./render/screen-probe-gather.js";
+/**
+ * Unreal's Short Range AO: a horizon search of 2 sweeps around the view normal, 3 samples each at the squared fraction
+ * of a 32 px screen reach, at full resolution, with a bent normal at Epic. It is the occlusion that runs *with* dynamic
+ * global illumination — the contact detail Lumen keeps after the screen probe gather has already answered the wide
+ * occlusion — so a gathered frame is not darkened twice by two wide treatments. The result is one texture: `rgb` the
+ * bent normal in view space, `a` the share of the hemisphere left open, which multiplies indirect light only.
+ * @situation contact shadow at the foot of an object while dynamic GI runs
+ * @situation dark line where a wall meets the floor, without a second wide AO over the gathered light
+ * @situation lumen short range ao
+ * @constraint it replaces GTAO when dynamic GI runs; a tier without GI keeps ambientOcclusion
+ * @constraint the occlusion multiplies indirect light only: direct light and emission keep their own occlusion
+ * @constraint multi-bounce and its albedo cap belong to the game's composite; Unreal caps the albedo at 0.5
+ * @constraint an authored stage that carries its name must anchor itself (`before: "ssgi"`), because the chain's built-in order names no shortRangeAO
+ * @override horizonSearchSliceCount, horizonSearchStepCount, reachPx, bentNormal and intensity are game-owned choices
+ * @example
+ * const shortRange = new ShortRangeAO({ camera, viewport: renderer.drawingBufferSize });
+ * const contact = shortRange.occlusion(depth(), normalView());
+ * const indirect = input.rgb.mul(contact.a);
+ */
+export { ShortRangeAO } from "./render/short-range-ao.js";
+export type {
+  IShortRangeAOCamera,
+  IShortRangeAOOptions,
+  IShortRangeAOReport,
+} from "./render/short-range-ao.js";
+/**
  * Collapse many copies of one game-authored shape into a single draw, without counting them first.
  *
  * `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a
@@ -456,6 +510,15 @@ export type { IMergeByMaterialOptions } from "./merge-parts.js";
  * if (debugFlag("freeCam")) camera.flyMode = true;
  */
 export { debugFlag } from "./debug.js";
+/**
+ * Read the text a debug switch was given by the launch, on the same rule as `debugFlag`.
+ * @situation read a debug override whose value is not a boolean
+ * @situation override a quality tier or a mode for one run without changing the code
+ * @constraint the same name rule as `debugFlag`: `?quality=` on the web, `TN_DEBUG_QUALITY` on a native launch
+ * @example import { debugValue } from "@threenative/core";
+ * const tier = debugValue("quality");
+ */
+export { debugValue } from "./debug.js";
 /**
  * Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
  * @situation expose a game object to a capture script or the console in dev builds
@@ -1477,6 +1540,55 @@ export type {
  */
 export { GPUReadback } from "./gpu-readback.js";
 export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js";
+/**
+ * Stream instanced grass in chunks around the camera; the game owns the blade and its TSL material.
+ * @situation grass that sways and parts around the player
+ * @situation a meadow, lawn or grassy field over terrain that streams around the camera
+ * @situation ground cover grass blades with distance thinning and LOD that does not pop
+ * @situation grass flattened or pushed aside where the player, a creature or a vehicle walks
+ * @situation grow grass on a terrain biome's grass rows with grassFieldFromBiome
+ * @constraint call `update(camera)` once per rendered frame from `ctx.beforeRender`; chunks build nearest first inside `buildBudgetMs`
+ * @constraint the material reads `GRASS_FIELD_ATTRIBUTES` and the field's `nodes` uniforms, so its thinning matches the CPU trim
+ * @constraint a chunk is built inside 1.3 × the draw distance and discarded past 1.4 ×, so a camera on the edge rebuilds nothing
+ * @override densityScale and cullDistanceScale scale every density and distance at once; prewarm() builds all in range on the next update
+ * @example // the look lives in the kit's src/render/grass.ts
+ * const grass = new GrassField3D({ blade: grassBlade(), material: grassMaterial, getHeight: height });
+ * ctx.add(grass);
+ * ctx.beforeRender(() => { grass.pushers[0]?.set(hero.x, hero.y, hero.z, 1.2); grass.update(ctx.camera); });
+ */
+export { GRASS_FIELD_ATTRIBUTES, GrassField3D } from "./grass-field.js";
+export type {
+  IGrassField3DOptions,
+  IGrassFieldBlade,
+  IGrassFieldBounds,
+  IGrassFieldNodes,
+  IGrassFieldStats,
+} from "./grass-field.js";
+
+/**
+ * Stream instanced copies of any baked mesh around a follow point, with distance thinning and levels
+ * of detail, from the game's own placement rule.
+ * @situation scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor
+ * @situation stream instanced props of any baked mesh round the player without one draw per prop
+ * @situation place rocks, debris or plants on a heightfield with distance thinning and level of detail
+ * @constraint call `update(follow)` once per rendered frame
+ * @constraint `place` runs once per candidate per tile build: return false for paths and clearings
+ * @constraint rotating or scaling the field is not supported; translating it is
+ * @requires npm i -D @threenative/procedural-vegetation for the bake these instances come from
+ * @example
+ * const floor = new ScatterField3D({ parts: [{ lods, material }], getHeight, density: 0.05, place });
+ * ctx.add(floor);
+ * ctx.beforeRender(() => floor.update(hero.position));
+ */
+export { ScatterField3D } from "./scatter-field.js";
+export type {
+  IScatterField3DOptions,
+  IScatterFieldBounds,
+  IScatterFieldStats,
+  IScatterPart,
+  IScatterPlacement,
+  IScatterPoint,
+} from "./scatter-field.js";
 /**
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects

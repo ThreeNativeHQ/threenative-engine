@@ -1007,6 +1007,11 @@ describe("template contracts", () => {
     expect(plan).toContain("subagents");
     expect(plan).toContain("file ownership");
     expect(plan).toContain("coordinator");
+    for (const requirement of ["Asset slots", "placeholder", "procedural", "pre-made", "custom"])
+      expect(plan, `asset plan/${requirement}`).toContain(requirement);
+    const goal = plan.split("## Execution goal")[1] ?? "";
+    for (const requirement of ["/goal", '"passes": true', "Stop", "no score gain", "cost cap"])
+      expect(goal, `execution goal/${requirement}`).toContain(requirement);
   });
 
   it("keeps all kit entry points and the injected hook on the same new/existing routes", async () => {

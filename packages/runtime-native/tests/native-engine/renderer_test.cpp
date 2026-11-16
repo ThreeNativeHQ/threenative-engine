@@ -543,6 +543,17 @@ void traaValidation() {
         scene.backgroundTexture.reset();
         CHECK(database.render(renderer, scene, camera, {0, 0, 0, 0}) != 0);
         CHECK(renderer.lastFrame().draws == 2); // sphere and output
+        // A sky narrower than 64 texels bakes and draws, as in three (PMREMGenerator floors the cube size).
+        // The engine used to refuse it with TN_NATIVE_ENVIRONMENT_INVALID, which stopped the whole renderer.
+        auto small = std::make_shared<DataTexture>();
+        small->width = 32; small->height = 16; small->mapping = 303;
+        small->data.resize(32 * 16 * 4, 200); small->needsUpdate();
+        scene.backgroundTexture = scene.environment = small;
+        CHECK(pumpUntilDrawn());
+        CHECK(database.diagnostics().empty());
+        CHECK(renderer.lastFrame().draws == 3); // sky, sphere, output
+        scene.backgroundTexture.reset(); scene.environment = sky;
+        CHECK(pumpUntilDrawn());
         // A post graph's fullscreen effect passes are draws too: three's Info counts each as one draw of
         // one triangle, so a bloom chain is not invisible to the draw and triangle counters.
         const auto plain = renderer.lastFrame();

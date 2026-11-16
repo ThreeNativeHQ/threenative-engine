@@ -330,6 +330,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_content_identical_geometry_batches=content_identical_geometry_batches
         native_engine_multi_material_groups=multi_material_groups
         native_engine_renderer_scene_lit=lit_scene
+        native_engine_background_refusal=background_refusal
         native_engine_scene_stage_is_metered=scene_stage_is_metered
         native_engine_overlay_leaves_stage_totals=overlay_leaves_stage_totals
         native_engine_renderer_present_direct=present_direct

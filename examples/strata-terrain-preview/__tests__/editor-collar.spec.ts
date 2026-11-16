@@ -4,8 +4,8 @@ import {
   type HorizonSurroundings,
   createHorizonCollar,
   setHorizonSurroundings,
-} from "../src/render/horizon.js";
-import { type IBakedWorld, createTerrain } from "../src/render/terrain.js";
+} from "../src/render/ground/horizon.js";
+import { type IBakedWorld, createTerrain } from "../src/render/ground/terrain.js";
 
 const read = (name: string) =>
   JSON.parse(readFileSync(new URL(`../src/world/${name}`, import.meta.url), "utf8"));

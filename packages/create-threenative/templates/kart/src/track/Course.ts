@@ -10,6 +10,8 @@
  */
 
 /** Metres between samples of the centre line. */
+import { MathUtils } from "three";
+
 export const STEP = 1;
 
 /** The lateral profile, in metres from the centre line. */
@@ -69,7 +71,7 @@ function plateau(s: number, at: number, length: number, flat: number, ramp: numb
 
 function smooth(edge0: number, edge1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 }
 
 export interface ICourse {

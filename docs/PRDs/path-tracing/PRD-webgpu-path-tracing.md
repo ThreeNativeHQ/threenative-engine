@@ -28,6 +28,11 @@ and no emissive MIS. Verify the exact selected revision and installed package co
 The motivating Castellano clip is a visual target category, not a specification of his source,
 sample count, model, backend, frame time or quality. No claim of exact reproduction is made.
 
+**Secondary reference: ThreeRT.** ThreeRT (MIT, `meshy-dev/ThreeRT@8964dc4`, checked 2026-11-13) is a Rust + wgpu path tracer with a three.js-style API. It runs only on its native macOS and iOS clients; its browser fallback is plain three.js with no tracing. Two parts fill gaps that the donor above leaves:
+
+- **Emissive surfaces as lights.** The donor has no emissive MIS. ThreeRT samples emitter triangles through a light tree ([`renderer/src/ltree.rs`](https://github.com/meshy-dev/ThreeRT/blob/8964dc407c4412a6f717c3ac7805ed791becdd9d/renderer/src/ltree.rs)) and weighs a BSDF hit on an emitter by the same probability.
+- **Measured cost.** Bistro night at 1280 × 720 costs 15.5 ms of GPU time at 0.55 render scale on an Apple M5 laptop ([`docs/COMPARE.md`](https://github.com/meshy-dev/ThreeRT/blob/8964dc407c4412a6f717c3ac7805ed791becdd9d/docs/COMPARE.md)). That is a full 60 fps frame on a laptop GPU, so path tracing stays opt-in here.
+
 ## Goal and non-goals
 
 A developer follows one opt-in recipe, opens an ordinary ThreeNative game and sees a genuine

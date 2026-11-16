@@ -10,8 +10,8 @@
 import { type IPlacement, type IPropBucketEntry, compilePropBuckets } from "@threenative/terrain";
 import { InstancedMesh, Vector3 } from "three";
 import { expect, it } from "vitest";
-import { streamProps } from "../src/render/propWorld.js";
-import { buildPropVariants, flatPropMaterials, variantFor } from "../src/render/props.js";
+import { streamProps } from "../src/render/props/propWorld.js";
+import { buildPropVariants, flatPropMaterials, variantFor } from "../src/render/props/props.js";
 
 /** The streamed worlds the game's prop load hands back, as its callers see it. */
 type IPropStreamed = NonNullable<Awaited<ReturnType<typeof streamProps>>>;

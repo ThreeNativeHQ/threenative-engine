@@ -3,7 +3,7 @@ import {
   type HorizonSurroundings,
   horizonSurroundings,
   setHorizonSurroundings,
-} from "../src/render/horizon.js";
+} from "../src/render/ground/horizon.js";
 
 /**
  * PRD-806 E19: `setHorizonSurroundings` read `?massif=before` off the page URL and installed the

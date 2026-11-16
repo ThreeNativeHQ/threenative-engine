@@ -48,6 +48,12 @@ describe("threenative-engine-mcp", () => {
       searchResults("lamp that switches off and the bounce light follows").map((r) => r.symbol),
     ).toContain("RadianceCache");
   });
+  it("finds the screen probe gather by Unreal's name (PRD-640)", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("lumen screen probe gather")[0]).toBe("ScreenProbeGather");
+    expect(symbols("lumen final gather")).toContain("ScreenProbeGather");
+    expect(symbols("bounce light that reads the room off screen")).toContain("ScreenProbeGather");
+  });
   it("finds the global illumination and shadow quality tier watchers by Unreal's names", () => {
     const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
     expect(symbols("global illumination quality")).toContain("GIBudget");
@@ -195,6 +201,23 @@ describe("threenative-engine-mcp", () => {
   it("finds platformer traversal from double-jump vocabulary", () => {
     const results = searchResults("make a platformer with double jump", workspaceManifest);
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("CharacterBody3D");
+  });
+
+  it("finds the ctx members an author searches for by name (PRD-872)", () => {
+    const cases = [
+      ["cache generated geometry between page loads", "ctx.assets.memo"],
+      ["boot progress bar", "ctx.startup.progress"],
+      ["run a callback after a delay", "ctx.after"],
+      ["run a callback before the frame renders", "ctx.beforeRender"],
+    ] as const;
+    for (const [situation, symbol] of cases) {
+      expect(
+        searchResults(situation)
+          .slice(0, 3)
+          .map((result) => result.symbol),
+        situation,
+      ).toContain(symbol);
+    }
   });
 
   it("finds measured miss-list vocabulary across the owning packages", () => {
@@ -689,6 +712,35 @@ describe("threenative-engine-mcp", () => {
    * "use mergeParts". Every one of those answered `verdict: none` because the index read only the
    * situations and aliases, so a symbol the manifest exports by that exact name was invisible.
    */
+  /**
+   * The forest floor had no row at all before PRD-889: `engine_search_capabilities` returned nothing
+   * for deadwood, litter or reeds, so an agent asking for a realistic forest floor hand-wrote what
+   * the bake already grows.
+   */
+  it.each([
+    "a fallen mossy log and leaf litter on the forest floor",
+    "reeds and cattails at a pond edge",
+  ])("finds the forest-floor bake for '%s' first", (query) => {
+    expect(searchResults(query, workspaceManifest)[0]?.symbol).toBe("bakeVegetation");
+  });
+
+  /**
+   * The bake that grows the debris is half the answer; the other half is the system that scatters it.
+   * Without a pinned rank, a scoring change could quietly drop `ScatterField3D` from the very query
+   * its own situations were written for, and nothing would fail — the row would still be in the
+   * manifest and still be invisible.
+   */
+  it.each([
+    ["scatter fallen logs, twigs and leaf litter on the forest floor", 1],
+    ["stream instanced props around the player", 1],
+    ["scatter rocks and debris over terrain", 3],
+  ])("finds the runtime scatter for '%s' in the top %i", (query, within) => {
+    const symbols = searchResults(query, workspaceManifest)
+      .slice(0, within)
+      .map((row) => row.symbol);
+    expect(symbols).toContain("ScatterField3D");
+  });
+
   // PR #643 (PRD-860, 861, 867): every streaming and decoder abstraction answers its own words.
   it.each([
     ["game takes too long to download before first play", "createAssetLoader"],

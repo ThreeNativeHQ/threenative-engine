@@ -6,6 +6,8 @@
 // Independent CPU implementation. The material samples four Unreal textures that this repository
 // must not carry, so each one is regenerated here from a seeded noise whose per-channel value
 // quantiles and correlation lengths match the Unreal texture (measured, see the spec).
+import { MathUtils } from "three";
+
 import {
   BOTTOM_KM,
   CAMERA_KM,
@@ -110,7 +112,7 @@ const PROFILE_COEFFICIENTS = [
 const clamp = (v: number): number => Math.max(0, Math.min(1, v));
 const smooth = (v: number): number => {
   const t = clamp(v);
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 };
 const mod = (a: number, n: number): number => ((a % n) + n) % n;
 

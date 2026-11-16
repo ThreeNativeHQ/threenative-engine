@@ -68,11 +68,6 @@ const STRIKE_BOUNDS = { x: 19, z: 12 } as const;
 const LEFT_SHIFT = "ShiftLeft";
 const RIGHT_SHIFT = "ShiftRight";
 
-function sameState(a: GameState, b: GameState): boolean {
-  for (const key of Object.keys(a) as (keyof GameState)[]) if (a[key] !== b[key]) return false;
-  return true;
-}
-
 export class Battle extends Scene<GameState, IPhysicsContext> {
   #environmentSample: IEnvironmentSample | undefined;
   #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
@@ -514,8 +509,8 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
       ghost.visible = true;
     };
 
-    // Publish only what changed: the HUD is another process on native, and a frame that changed
-    // nothing should cost it nothing.
+    // The store publishes only what changed: the HUD is another process on native, and a frame
+    // that changed nothing costs it nothing.
     const next: GameState = { ...INITIAL_STATE };
     const publish = (frameCtx: FrameCtx, speed: number): void => {
       const previous = frameCtx.state.getState();
@@ -556,7 +551,7 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
       next.towers = towers.size;
       next.uiReady = previous.uiReady;
       next.wave = waves.wave;
-      if (!sameState(next, previous)) frameCtx.state.set(next);
+      frameCtx.state.set(next);
     };
 
     this.#materialLighting = ctx.entities.add(

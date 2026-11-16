@@ -1340,6 +1340,9 @@ function wrapRenderer(
     prepareTextures: async (textures, signal, onProgress, replacements) => {
       if (disposed) throw new Error("Renderer disposed during texture preparation.");
       if (kind !== "webgpu") return 0;
+      // The owned engine keeps compressed mip bytes in its own heap and uploads them itself: its
+      // texture facade shows no CPU mips, so there is nothing here to stage, and no work to report.
+      if ((raw.info as { engine?: unknown } | undefined)?.engine !== undefined) return 0;
       // Snapshot the caller's iterable once. An owned replacement resolves back to its original,
       // so a repeated call that hands back a published replacement keeps a stable identity instead
       // of looking like an unrelated texture and returning stale work.
@@ -2110,6 +2113,9 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   // Why WebGPU did not start, when it was tried: the boot failure must name it, or a fault in the
   // WebGPU path (PRD-752: a DOM-only canvas call in a worker) reads as a device without WebGPU.
   let webgpuFailure: string | undefined;
+  // The instance the WebGPU attempt built, held outside the try: a start that failed in `init()`
+  // keeps it, and a facade that failed still holds the page's one renderer slot until it is released.
+  let opening: RendererInstance | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
     try {
@@ -2125,6 +2131,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
             });
           });
       const instance = raw as RendererInstance;
+      opening = instance;
       await instance.init?.();
       // A game that sets `toneMapping` on the renderer later (WorldEnvironment, Daylight) replaces this.
       applyRendererToneMapping(instance, options.toneMapping ?? "filmic", report);
@@ -2149,10 +2156,25 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       if (adapter.gpuClass !== undefined)
         report(`${GPU_CLASS_MARKER}:${JSON.stringify(adapter.gpuClass)}`);
     } catch (error) {
-      // A facade and Wasm engine from two builds is an install fault, not a device without
-      // WebGPU: falling back would report TN_NO_RENDERER and hide the fix.
-      if (error instanceof Error && error.message.startsWith("TN_WASM_ABI_MISMATCH")) throw error;
-      webgpuFailure = error instanceof Error ? error.message : String(error);
+      // Release the page's one slot before anything else: a renderer that failed to start still
+      // holds it, so the next start in this page (a hot reload) threw TN_WASM_RENDERER_SINGLE and
+      // hid this failure.
+      try {
+        opening?.dispose?.();
+      } catch {
+        // A half-started renderer may refuse to release; the fallback still has to be built.
+      }
+      // The engine names its own refusals: a TN_WASM_, TN_NATIVE_ or TN_ABI_ code is a fault in the
+      // game's own code or its install (a background it cannot draw, a facade and Wasm engine from
+      // two builds), and reporting it as a device without WebGPU hides the fix. A device that cannot
+      // start is the one case TN_NO_RENDERER is for, and its reason already rides along in that
+      // message, so the adapter, device, lost device, surface and init codes keep the fallback. The
+      // code ends where its message does, so TN_WASM_INIT_TEXTURE and TN_WASM_DEVICE_ERROR stay the
+      // content faults they are.
+      const message = error instanceof Error ? error.message : String(error);
+      const deviceFault = /^TN_WASM_(?:DEVICE_LOST|DEVICE|ADAPTER|SURFACE|INIT):/u;
+      if (/^TN_(?:WASM|NATIVE|ABI)_/u.test(message) && !deviceFault.test(message)) throw error;
+      webgpuFailure = message;
       renderer = undefined;
     }
   }

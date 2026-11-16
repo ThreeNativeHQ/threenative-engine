@@ -458,6 +458,17 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
             overlayDatabase.render(target, *scene, *camera, {0, 0, 0, 0});
         } else {
             lastDrawn = renderer.get();
+            // PRD-888's arm, read every frame so a probe flips `globalThis.__tnPrepass` in one page load; it defaults
+            // from `?tnPrepass=1`. `"split"` is lever 0: the depth rows draw in their own timed pass. The renderer
+            // reads TN_PREPASS per frame (flags.h).
+            const int prepassMode = EM_ASM_INT({
+                if (globalThis.__tnPrepass === undefined) {
+                    const asked = new URLSearchParams(globalThis.location ? globalThis.location.search : "").get("tnPrepass");
+                    globalThis.__tnPrepass = asked === "split" ? "split" : asked === "1";
+                }
+                return globalThis.__tnPrepass === "split" ? 2 : globalThis.__tnPrepass ? 1 : 0;
+            });
+            setenv("TN_PREPASS", prepassMode == 2 ? "split" : prepassMode == 1 ? "1" : "0", 1);
             renderer->setSampleCount(sampleCount);
             renderer->setRenderScale(renderScale);
             renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
@@ -518,9 +529,14 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
                 emscripten_console_warn(("TN_RENDERER: " + diagnostic).c_str());
             else std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
         }
-    if (!refused.empty()) return fail(refused);
+    // A surface that gave no texture is the device's fault and fails the host. A draw the renderer refused is the
+    // game's: it fails this frame only, so the fixed frame and the page's next start answer for themselves (PRD-894).
+    if (!refused.empty()) return refused.rfind("TN_WASM_SURFACE", 0) == 0 ? fail(refused) : refuse(refused);
+    // A frame that skipped a mesh it refuses by name (TN_NATIVE_MATERIAL_UNSUPPORTED) drew everything else: it names
+    // the refusal once, as refuse() does, and answers 0, so the page counts the frame and its bake check runs. Answering
+    // 1 threw from every frame the mesh stayed in, and a warm-up waiting on the bake waited out its timeout (PRD-895).
     const RenderDatabase& drawn = overlay ? overlayDatabase : database;
-    if (!drawn.diagnostics().empty()) return fail(drawn.diagnostics().front());
+    if (!drawn.diagnostics().empty()) refuse(drawn.diagnostics().front());
     return 0;
 }
 
@@ -553,8 +569,11 @@ extern "C" int tnw_web_prepare_environment(const tn_handle_t* sceneHandle, const
         GpuResources::flushSubmits();
         return ready ? 1 : 0;
     } catch (const std::exception& error) {
-        fail(std::string("TN_WASM_PREPARE: ") + error.what());
-        return -1;  // fail() answers 1, which is this call's "baked"
+        // A content refusal (a background this engine cannot draw, a material it refuses) fails this call and keeps
+        // the host running: the game fixes its scene and the next prepare, and the page's next start, answer for
+        // themselves instead of repeating a message no later call can clear (PRD-894).
+        refuse(std::string("TN_WASM_PREPARE: ") + error.what());
+        return -1;  // refuse() answers 1, which is this call's "baked"
     }
 }
 
@@ -1321,6 +1340,7 @@ extern "C" double tnw_web_frame(int field) {
         // 85 (PRD-770): the shadow passes' triangles, which field 1 adds in. With 27 (every shadow draw) it splits fields
         // 0 and 1 into the main pass and the shadow passes, as three counts a nested shadow render apart from the main one.
         case TN_WEB_FRAME_SHADOW_TRIANGLES: return double(lastDrawn->lastFrame().shadowTriangles);
+        case TN_WEB_FRAME_PREPASS_DRAWS: return double(lastDrawn->lastFrame().prepassDraws);
         case TN_WEB_FRAME_KEPT_SHADOW_MAPS: return double(renderer->lastFrame().keptShadowMaps);
         case TN_WEB_FRAME_UNIFORM_BYTES: return double(renderer->lastFrame().uniformBytes);
         // PRD-771, 73 to 77: running ms, every render summed, like 66 to 70. 73 the post effects' and output pass's share of

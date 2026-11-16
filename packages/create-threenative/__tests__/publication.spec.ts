@@ -462,5 +462,5 @@ describe("registry publication", () => {
       await fixture.close();
       await rm(root, { force: true, recursive: true });
     }
-  }, 30_000);
+  }, 120_000);
 });

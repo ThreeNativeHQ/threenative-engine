@@ -47,7 +47,6 @@ const INVENTORY = Object.freeze({
       [
         "csg",
         "ik",
-        "vegetation",
         "playstation",
         "decals",
         "tone",

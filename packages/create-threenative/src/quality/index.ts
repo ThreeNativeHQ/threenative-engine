@@ -6,6 +6,7 @@ import tsParser from "@typescript-eslint/parser";
 import type { Linter } from "eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 import { threenativePlugin } from "./plugin.js";
+import { reinventionConfigs } from "./reinventions.js";
 
 export interface IQualityOptions {
   /** The project root: where `tsconfig.json` lives and the typed rules resolve from. */
@@ -65,6 +66,7 @@ export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
       },
     },
   ];
+  config.push(...reinventionConfigs(SOURCE));
   if (hasReact(root)) {
     config.push({
       files: ["src/**/*.tsx"],

@@ -274,6 +274,51 @@ describe("VehicleBody3D", () => {
     }).toThrow(/TN_VEHICLE_INVALID: brake must be a finite number/);
   });
 
+  it("slides its tail when the rear grip drops, and holds the line on full grip", async () => {
+    // The handbrake: a turn at speed on full grip follows the nose; the same turn with the rear
+    // pair's grip cap cut lets the tail step out, so the heading leads the velocity.
+    async function slipAfterTurn(rearGrip: number): Promise<number> {
+      const { ctx, frameCtx, plugin } = await setup();
+      floor(ctx, 400);
+      const vehicle = car(ctx, 0, RIDE, 0);
+      vehicle.engineForce = 4000;
+      step(plugin, frameCtx, 150);
+      vehicle.setWheelFrictionSlip(2, rearGrip);
+      vehicle.setWheelFrictionSlip(3, rearGrip);
+      vehicle.steering = 0.4;
+      step(plugin, frameCtx, 30);
+      const v = vehicle.linearVelocity;
+      const heading = new Vector3(0, 0, -1).applyQuaternion(vehicle.object.quaternion);
+      return Math.acos(
+        Math.min(
+          1,
+          (heading.x * v.x + heading.z * v.z) /
+            Math.hypot(v.x, v.z) /
+            Math.hypot(heading.x, heading.z),
+        ),
+      );
+    }
+
+    const grip = await slipAfterTurn(10.5);
+    const slide = await slipAfterTurn(0.6);
+
+    expect(slide).toBeGreaterThan(0.2);
+    expect(slide).toBeGreaterThan(grip * 2);
+  });
+
+  it("names a bad wheel index or grip, and reports the grip it holds", async () => {
+    const { ctx } = await setup();
+    floor(ctx, 20);
+    const vehicle = car(ctx, 0, RIDE, 0);
+
+    expect(vehicle.wheelFrictionSlip(2)).toBe(10.5);
+    vehicle.setWheelFrictionSlip(2, 1.5);
+    expect(vehicle.wheelFrictionSlip(2)).toBe(1.5);
+    expect(() => vehicle.setWheelFrictionSlip(4, 1)).toThrow(/TN_VEHICLE_INVALID/);
+    expect(() => vehicle.setWheelFrictionSlip(0, Number.NaN)).toThrow(/TN_PHYSICS_NON_FINITE/);
+    expect(() => vehicle.setWheelFrictionSlip(0, -1)).toThrow(/TN_PHYSICS_NON_FINITE/);
+  });
+
   it("refuses to build on a backend with no vehicle controller", () => {
     // The node asks for the four vehicle members before it builds anything, so a backend that
     // cannot drive a car says so by name instead of leaving a motionless chassis behind. Both
@@ -292,6 +337,7 @@ describe("VehicleBody3D", () => {
   });
 
   it("drives a car through the native adapter seam", () => {
+    const frictions: Array<[number, number]> = [];
     // The native adapter is the same shared node, so it must build a vehicle rather than throw;
     // the adapter's own guards are in native-contract.spec.ts.
     const native = createNativePhysicsSimulation(
@@ -304,6 +350,9 @@ describe("VehicleBody3D", () => {
         },
         resetVehicle: () => {},
         setVehicleInput: () => {},
+        setVehicleWheelFriction: (_id: number, wheel: number, grip: number) => {
+          frictions.push([wheel, grip]);
+        },
       } as never,
       "0.30.0",
     );
@@ -318,7 +367,10 @@ describe("VehicleBody3D", () => {
     vehicle.engineForce = 4000;
     vehicle.brake = 60;
     vehicle.steering = 0.25;
+    vehicle.setWheelFrictionSlip(3, 2);
     expect(vehicle.engineForce).toBe(4000);
+    expect(frictions).toEqual([[3, 2]]);
+    expect(() => vehicle.setWheelFrictionSlip(9, 2)).toThrow(/TN_VEHICLE_INVALID/);
   });
 
   it("drops the vehicle with its body and stops answering after dispose", async () => {

@@ -18,13 +18,26 @@ sky, props and colliders. `@threenative/terrain` ships them under `starter/<worl
 
 ```sh
 cp -r node_modules/@threenative/terrain/starter/forest src/terrain/forest
-node src/terrain/forest/bake.mjs --out assets/terrain/forest
+npm install --save-dev tsx
+node src/terrain/forest/bake.mjs
 ```
 
-Then `await addForest(ctx, player)` in `Scene.load` and `ctx.add(forestDaylight(ctx.camera))` in
-`Scene.enter`; the kit's `README.md` says what each file decides. Edit `recipe.json` for layout,
-`COLLIDERS` in `world.ts` for what stops the player, `surface.json` and `sky.ts` for the look, and
-re-run the bake. The bake writes the engine's `WorldCells` package (`bakeWorldPackage`).
+Then start the game on its scene: `defineGame({ ...FOREST_GAME, plugins: [rapier()], scenes:
+{ forest: ForestScene }, start: "forest" })`, both from `./terrain/forest/scene.js`. The kit's
+`README.md` says what each file decides: the landform in `bake.mjs`, what grows where in
+`biome.data.json`, every art path in `world/terrainAssets.ts`, and the look in `render/biomes.ts`.
+
+## Name a region, not just a biome
+
+The terrain MCP's `terrain_generate` reads a region word and cooks that region's own world: its real
+ground from a survey, and its plant community — several species, each baked at more than one seed —
+on the starter's own surface, understorey, road and water. The words today are `european` and
+`europe` (a Central European beech wood), `boreal`, `taiga`, `nordic` and `scandinavian`,
+`mediterranean` and `tuscan`, and `pacific northwest` and `cascadia`. The reply's `decided.region`
+names the row behind it, `decided.ground` the survey it stands on with the attribution its source
+requires, and `unused` the words nothing answered to. A tree word in a region request moves that
+species to the front of the canopy and leaves the rest; `kit`, `biome` and `ground` still win over
+the row.
 
 ## Generate once, play the bake
 
@@ -127,8 +140,9 @@ patches. Editor imports, workers, watchers and the document stay out of the game
 runtime. Bake committed data before handing it to the game. The editor's GLB action and
 `prepareWorldGLTF` from `@threenative/terrain/export` prepares the resolved world for
 Node `cookTerrainWorld({ preparedWorld: prepared.json })` from `@threenative/assets` (terrain,
-props, final transforms, embedded PBR maps); the root `encodeGLB` stays terrain-only. The full
-operation list, units and patch rules ship in `node_modules/@threenative/terrain/AGENT_GUIDE.md`.
+props, final transforms, embedded PBR maps); the root `encodeGLB` stays terrain-only. Start at
+`node_modules/@threenative/terrain/README.md`; the full operation list, units and patch rules ship in
+`node_modules/@threenative/terrain/docs/authoring/recipes.md`.
 
 For individual props, save `placementOverrides` in the authoring document, keyed
 by evaluated placement `id`. Each entry contains `position: [x,y,z]`, a unit

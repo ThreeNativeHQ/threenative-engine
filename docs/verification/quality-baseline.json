@@ -2,7 +2,7 @@
   "version": 1,
   "generatedAt": "2026-08-24T14:44:20.985Z",
   "counts": {
-    "file-length": 42,
+    "file-length": 44,
     "suppression/unknown-cast": 134,
     "interface-in-disguise": 13,
     "suppression/biome-ignore": 46,
@@ -472,62 +472,6 @@
       "threshold": 1
     },
     {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 1,
-      "signal": "file-length",
-      "value": 1195,
-      "threshold": 800
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 248,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 251,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 532,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 538,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 976,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 1151,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 1179,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
       "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
       "line": 1,
       "signal": "file-length",
@@ -911,27 +855,6 @@
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
-      "line": 1,
-      "signal": "file-length",
-      "value": 441,
-      "threshold": 400
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
-      "line": 199,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
-      "line": 210,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
     },
     {
       "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
@@ -1340,6 +1263,83 @@
       "threshold": 1
     },
     {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1195,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 248,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 251,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 532,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 538,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 976,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1151,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1179,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 441,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 199,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 210,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
       "file": "packages/core/src/viewport.ts",
       "line": 184,
       "signal": "suppression/biome-ignore",
@@ -1653,6 +1653,20 @@
       "signal": "lint-coverage-hole",
       "value": "ignored",
       "threshold": "linted"
+    },
+    {
+      "file": "packages/terrain/src/core/operations.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 866,
+      "threshold": 800
+    },
+    {
+      "file": "packages/terrain/src/population/scatter-ordered.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 963,
+      "threshold": 800
     },
     {
       "file": "packages/ui/src/useGameState.ts",

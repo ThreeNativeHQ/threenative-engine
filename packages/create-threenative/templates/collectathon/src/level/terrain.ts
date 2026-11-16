@@ -1,4 +1,5 @@
 import { Heightfield } from "@threenative/core/world";
+import { MathUtils } from "three";
 
 /** A rectangle [x min, x max, z min, z max] or a disc [x, z, radius] of level ground at y = 0. */
 export type LevelZone =
@@ -35,7 +36,7 @@ const HEADLAND = { x: 2, z: -60, rx: 30, rz: 26 } as const;
 const clamp01 = (t: number): number => Math.min(1, Math.max(0, t));
 const smooth = (from: number, to: number, value: number): number => {
   const t = clamp01((value - from) / (to - from));
-  return t * t * (3 - 2 * t);
+  return MathUtils.smoothstep(t, 0, 1);
 };
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
