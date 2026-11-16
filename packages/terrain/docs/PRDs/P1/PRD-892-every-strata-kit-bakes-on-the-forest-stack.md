@@ -287,7 +287,26 @@ flowchart LR
   entries, 1.2 s — so the pack covers every id the seeded bake places. The flip is reverted anyway:
   the seeded path grows only `foliage` rules, so a seeded alpine loses the 37k grass, 11k scrub and
   scree the ordered stream supplies, and `cover`/understorey rows still need the bridge (a grass-field
-  placement or a cover scatter rule). The kit therefore keeps the ordered stream until that lands. The docs moved with the code: the
+  placement or a cover scatter rule). The kit therefore keeps the ordered stream until that lands.
+  In progress 2026-11-16 (the kit's own proof is wired; its readiness is display-bound): `KIT=alpine`
+  now scaffolds the kit's own scene (`alpine-game.ts` spreads `ALPINE_GAME`, `alpine.playtest.json` is
+  the forest scenario retargeted, and the kit table no longer generates a `KitScene` for it), and
+  `starter-assets.json` moved to **0.1.4** (`62acfeff…`, 60,496,171 B) because the committed archive
+  predated `survey/alpine-horizon.*` — a scaffolded alpine game could not read its far ring at all
+  (`kit-assets.spec.ts` 13/13 after the repack; the release asset still needs uploading). The run
+  itself: scaffold, install, bake (52,682 placements, 36 art entries, 1.6 s), build and launch on the
+  RTX 2080 (turing, WebGPU) all pass; the playtest then expires at `worldReady` after 60 s. That was
+  chased to its cause over three runs, each ruling out a hypothesis the run itself disproved: the prop
+  meadow admits **all 75,115 instances by 5.1 s** (`stage complete`, `added == total`), so admission is
+  not slow; a 4 s grace on each world's `prewarmed` draw gate changed nothing and logged nothing, so
+  the draw gate is not the blocker (patch reverted, not shipped); a debug scenario without the
+  `worldReady` wait still never got a frame and printed the tell —
+  `TN_STARTUP_HANDOFF_BOUNDED {"retiredFrames":0,"requiredFrames":3,…,"the GPU retired fewer frames
+  than the hand-off needs"}`. The **private-Xvfb lane retires 0 of the 3 frames** the startup hand-off
+  needs, and alpine's heavier world (75,115 instances over 36 art scans) is where that surfaces; the
+  forest's own runs on the same lane do retire frames. So the alpine box's own proof now needs the
+  owner's real display, exactly like the FPS and judge rows — the lane still proves the non-visual
+  rows. This is also why no captures exist yet: readiness is gated behind the hand-off. The docs moved with the code: the
   alpine `README.md` now names `scene.ts`/`render/` as the runtime and the look, calls out `tsx` for
   the bake and marks `world.ts`/`sky.ts` as the legacy cell-package pair, and the architecture map has
   the `src/runtime/` row the six Phase 1 moves needed (that census red is now green: `test:map`
