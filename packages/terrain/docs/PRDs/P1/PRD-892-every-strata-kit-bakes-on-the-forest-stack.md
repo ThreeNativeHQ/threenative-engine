@@ -218,7 +218,11 @@ flowchart LR
   with heights unchanged; terrain **673/673** (57 files) green afterwards. The survey is unblocked:
   the Mapterhorn tile host answers (200 on `attribution.json`) and this machine's tile cache already
   holds zoom-16 tiles under `~/.cache/threenative/mapterhorn`, so the Longs Peak surround survey can
-  be cut and committed like `forest-horizon`. Next: that survey asset, then the kit's `look`.
+  be cut and committed like `forest-horizon`. Done: `survey/alpine-horizon.{json,bin}` is cut from the
+  real tiles — 5000 m square, 129², zoom 11 at 29.17 m/px, measured 3098.2..4342.0 m (Longs Peak's
+  summit is 4346 m), int16 decimetres on offset 3098, sha256 `4121f434…`, Mapterhorn/USGS provenance —
+  and `world.farRing` now names it (alpine backdrop, `longs` massif). `alpine-world.spec.ts` also pins
+  the pair's length and sha256 (3/3). Next: the kit's `look`.
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
