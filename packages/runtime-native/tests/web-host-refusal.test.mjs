@@ -65,4 +65,10 @@ hostTest('a frame pass that writes no MRT slot refuses its read and the host kee
   assert.equal(host.recovered, 1, `the fixed scene must prepare: ${host.prepareError}`);
   assert.equal(host.cleared, 0, 'the probe could not clear the sky');
   assert.equal(host.drawn, 0, `the frame after the refusal must draw: ${host.drawnError}`);
+  assert.deepEqual(host.meshBuilt, [0, 0, 0, 0], 'the probe could not build the refused mesh');
+  // PRD-895: the frame drew everything but the refused mesh, so it counts. Answering 1 made the page throw
+  // from every frame the mesh stayed in, and a warm-up waiting on the bake waited out its timeout.
+  assert.deepEqual(host.refusedMesh, [0, 0], 'a frame that skipped a refused mesh must still answer drawn');
+  assert.match(host.refusedMeshError, /TN_NATIVE_MATERIAL_UNSUPPORTED MeshPhysicalMaterial: TN_MATERIAL_UNSUPPORTED sheen/u);
+  assert.equal(host.stateAfterRefusedMesh, ready, 'a refused mesh must not fail the host');
 });
