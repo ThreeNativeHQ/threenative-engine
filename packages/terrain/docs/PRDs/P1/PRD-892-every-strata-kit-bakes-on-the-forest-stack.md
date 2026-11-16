@@ -205,6 +205,14 @@ flowchart LR
   needs a Longs Peak surround survey committed like it, not a fabricated continuation. Next: that
   survey asset, the kit's `world` row and `look` (palette/ground maps/canopy/props) and the streamed
   bake, then the scene the kit playtest runs.
+  In progress 2026-11-16 (the world row): `recipe.json` now carries the streamed bake's top-level
+  `world` row — name `alpine`, a rock base with the kit's own `dirt` and `snow` layers and its
+  roughness, and 16 art paths. The far ring is deliberately absent until its survey asset exists
+  (the row's `farRing.survey` is required by `kit-world`). Proof: new `alpine-world.spec.ts` (3
+  cases: the name and ground table, every art entry present in `starter-assets`, and — when the row
+  grows a ring — that ring's survey `.json` and `.bin` resolve), 3/3 green. The legacy bake is
+  untouched: `bakeKit` without a `look` never reads `recipe.world`, so the current alpine playtest
+  keeps its package. Next: the survey asset, then the kit's `look`.
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn

@@ -115,5 +115,34 @@
         }
       }
     ]
+  },
+  "world": {
+    "name": "alpine",
+    "ground": {
+      "base": "rock",
+      "layers": [
+        "dirt",
+        "snow"
+      ],
+      "roughness": 0.95
+    },
+    "art": [
+      "boulder_01",
+      "rock_face",
+      "rock_boulder_dry",
+      "rocks",
+      "river_small_rocks",
+      "cliff_side",
+      "snow_02",
+      "grass_medium",
+      "leafy_grass",
+      "lichen_rock",
+      "mossy_rock",
+      "shrub_02",
+      "tree_small_02",
+      "fir_tree_01",
+      "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
+      "mannequin-swim.glb"
+    ]
   }
 }
