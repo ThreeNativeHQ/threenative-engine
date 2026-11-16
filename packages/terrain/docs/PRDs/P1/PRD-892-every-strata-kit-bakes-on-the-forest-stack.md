@@ -255,6 +255,18 @@ flowchart LR
   `starter-assets.json`, `node scripts/pack-starter-assets.mjs <out> --write-manifest`, and the tarball
   uploaded to its new release tag. Next: the alpine species pack and look row, the harness
   source-scene wiring, then `KIT=alpine test:kit`.
+  In progress 2026-11-16 (why the rows do not reach the bake yet): `biome.data.json`'s `stream` decides
+  where its rows go, and the streamed bake reads only the ordered stream's placements — `bakeBiome`
+  returns `scatter: null` for the seeded stream by design (`src/kit-world.ts:312`). Flipping alpine to
+  `"seeded"` therefore failed closed with `the biome file places nothing` (verified, then reverted), and
+  the baked ids stay the Phase-1 ordered stream's own (`boulder`, `grass`, `mountain`, `sapling`,
+  `scree`, `scrub`, `spruce`), not the box's `tundragrass`/`tussock`/`fireweed`/`blueberry`/
+  `scotspine`/`blackspruce`. Two ways out, both engine work: teach the ordered stream the rows, or let
+  the streamed writer bucket the seeded package's placements (its cell runs name the asset and its
+  eight-float records + id sidecar carry the pose, so a decode is enough; the open input is the asset
+  table the seeded bake requires). The failure is now named rather than a bare assertion:
+  `TN_STARTER_STREAM_DATA` says which stream the file declares and both ways forward. Typecheck 0,
+  terrain 671/672 (the starter-assets release step is the only red).
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn

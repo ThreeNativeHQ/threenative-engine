@@ -310,7 +310,12 @@ export async function bakeStreamedWorld(options: {
     row.name,
   );
   const { scatter } = bakeBiome({ state, spec });
-  assert(scatter !== null, "the biome file places nothing");
+  // The streamed containers carry the ordered stream's own placements; a biome file on the seeded
+  // stream writes a cell package instead and hands back no scatter, so there is nothing to bucket.
+  if (scatter === null)
+    throw new Error(
+      `TN_STARTER_STREAM_DATA: the '${row.name}' kit's biome file places nothing on the streamed path. Its 'stream' is '${spec.stream}', and only the ordered stream writes the placements this bake buckets. Put the rows on the ordered stream, or bake the seeded package with the cell writer.`,
+    );
   const colors = bakeMesh(state, { palette: look.palette }).colors;
   assert(colors !== undefined, "the kit's palette baked no ground colours");
   const baked = {
