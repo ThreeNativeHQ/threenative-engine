@@ -227,8 +227,12 @@ flowchart LR
   and prop policy, so `bakeKit` takes the streamed branch — **52682 placements** (50636 shadowed,
   2046 unshadowed scree), 16 art entries, 2.4 s, writing `alpine.json`, `alpine.world.json`,
   `alpine.splat.rgba8`, `alpine.canopy.bin`, `horizon.json` and both prop buckets. The surveyed
-  `longs` massif is left out of the ring for now: `placeMassif` refuses it on this relief ("top under
-  its foot at 1128 m"), so the ring is survey + backdrop until that band is tuned.
+  `longs` massif is in the ring: `top: [2500, 3000]` clears this relief's host base — the earlier
+  `[1500, 2100]` band sat under it, because the backdrop's 900 m relief lifts the far ring's base well
+  above the survey's own 1244 m relative range, and `placeMassif` refused it ("top under its foot at
+  1128 m"). With the band fixed the bake writes the mountain's grid into `horizon.json`
+  (`{"origin","spacing","columns","rows","offset","heights"}`, 2,145,048 heights), and
+  `alpine-world.spec.ts` + `kit-bake.spec.ts` are 12/12.
   In progress 2026-11-16 (the runtime, first cut): `starter/alpine/` is now a **source kit on the
   forest's scene**, per `docs/authoring/new-environment.md` — the 32 files the kit lacked were copied
   from `starter/forest` (`scene.ts`, `sceneProps.ts`, `sceneState.ts`, `worlds.ts`, `playerRig.ts`,
