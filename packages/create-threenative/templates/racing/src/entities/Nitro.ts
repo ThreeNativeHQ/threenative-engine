@@ -30,6 +30,14 @@ export class Nitro {
   engaged = false;
   /** How many times nitro engaged, which is what the HUD and the boost scenario count. */
   uses = 0;
+  /**
+   * Tank the **drift** path added this race, and the tank the passive path added.
+   *
+   * Two counters rather than one, because "a drifting car refills faster" is a claim about a
+   * rate difference, and a single tank reading cannot separate the two paths that fill it.
+   */
+  driftGain = 0;
+  refillGain = 0;
   #delay = 0;
 
   update(held: boolean, speed: number, drifting: boolean, dt: number): void {
@@ -43,7 +51,11 @@ export class Nitro {
       this.#delay = NITRO.disengageDelay;
       return;
     }
-    if (drifting) this.tank = Math.min(1, this.tank + NITRO.driftRefillPerSecond * dt);
+    if (drifting) {
+      const gained = Math.min(1 - this.tank, NITRO.driftRefillPerSecond * dt);
+      this.tank += gained;
+      this.driftGain += gained;
+    }
     if (this.#delay > 0) {
       this.#delay = Math.max(0, this.#delay - dt);
       return;
@@ -51,6 +63,8 @@ export class Nitro {
     const [low, high] = NITRO.refillBand;
     const blend = MathUtils.clamp((speed - low) / (high - low), 0, 1);
     const seconds = MathUtils.lerp(NITRO.refillSlowSeconds, NITRO.refillFastSeconds, blend);
-    this.tank = Math.min(1, this.tank + dt / seconds);
+    const gained = Math.min(1 - this.tank, dt / seconds);
+    this.tank += gained;
+    this.refillGain += gained;
   }
 }

@@ -14,7 +14,7 @@ const LEAD_PER_MPS = 0.42;
 const TURN_RATE = 7.7;
 
 /** A nitro burn widens the lens and pulls the camera back: the oldest speed cue there is. */
-const BASE_FOV = 56;
+export const BASE_FOV = 56;
 const BOOST_FOV = 10;
 const BOOST_BACK = 0.8;
 

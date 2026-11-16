@@ -187,8 +187,11 @@ export function smokeEffect(): IEffectOptions {
     gravity: 1.1,
     life: 1.25,
     mask: "puff",
-    opacity: 0.4,
-    size: [0.55, 2.6],
+    // The chase camera flies through this cloud, so a puff that grows to 2.6 m and sits at 0.4
+    // alpha covered the road — and the skid marks it was laid over — from a metre away. Thinner
+    // and smaller, the trail reads as a cloud behind the car rather than as a smear on the lens.
+    opacity: 0.3,
+    size: [0.5, 2.0],
   });
 }
 

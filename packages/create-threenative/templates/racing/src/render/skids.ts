@@ -30,9 +30,11 @@ export class SkidMarks {
       polygonOffsetFactor: -2,
       roughness: 0.9,
     });
-    // One metre long, scaled to each segment, so a trail's segments meet end to end.
+    // One metre long, scaled to each segment, so a trail's segments meet end to end. 0.34 m wide:
+    // a racing tyre's tread is a third of a metre, and at 0.26 the strip read as a seam in the
+    // tarmac from the chase camera rather than as rubber.
     this.#mesh = new InstancedMesh(
-      new PlaneGeometry(0.26, 1).rotateX(-Math.PI / 2),
+      new PlaneGeometry(0.34, 1).rotateX(-Math.PI / 2),
       material,
       capacity,
     );

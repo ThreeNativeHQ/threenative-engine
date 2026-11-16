@@ -13,11 +13,12 @@ import { TOTAL_LAPS, gridPosition, intersectRay } from "../templates/racing/src/
 import { TrackSector } from "../templates/racing/src/track/TrackSector.js";
 import {
   CIRCUIT,
-  GRID,
-  GRID_DISTANCE,
+  GRID_SLOTS,
   KERB_HEIGHT,
   LINE_AT,
+  PLAYER_SLOT,
   TRACK_WIDTH,
+  gridSlot,
   groundHeight,
   lineDistance,
 } from "../templates/racing/src/track/circuit.js";
@@ -106,23 +107,38 @@ describe("the circuit", () => {
     expect(steepest).toBeLessThanOrEqual(0.12);
   });
 
-  it("puts the grid on the main straight, both cars behind the line, the rival on pole", () => {
-    expect(GRID_DISTANCE.rival).toBeGreaterThan(GRID_DISTANCE.player);
-    // The player is second: the rival's slot is further down the straight and on the other side.
-    expect(GRID.player).toBeLessThan(0);
-    expect(GRID.rival).toBeGreaterThan(0);
-    expect(GRID.rival).toBeGreaterThan(GRID.player);
-    // Both short of the start/finish line, so the first gate either car meets is the lap.
-    const finish = LINE_AT.finish * CIRCUIT.totalLength;
-    expect(GRID_DISTANCE.rival).toBeLessThan(finish);
-    // And the sectors come after it, in driving order, or no lap could ever complete.
+  it("puts six staggered cars behind the line, the player last, like a real grid", () => {
+    // Six cars, five metres apart down the straight and alternating 2.2 m either side of the
+    // centreline: a grid on the racing line is a rear-end at the first corner. The player starts
+    // last and races through the field, which is what makes "finishing behind a rival is a DNF"
+    // reachable from the grid.
+    expect(GRID_SLOTS).toHaveLength(6);
+    expect(PLAYER_SLOT).toBe(5);
+    const finish = lineDistance(LINE_AT.finish);
+    let previousDistance = Number.POSITIVE_INFINITY;
+    let previousSide = 0;
+    for (const [index, slot] of GRID_SLOTS.entries()) {
+      // Every slot is short of the start/finish line, so the first gate any car meets is the lap.
+      expect(slot.distance).toBeLessThan(finish);
+      expect(slot.distance).toBeGreaterThan(0);
+      // Further from the line than the slot ahead of it: a grid runs away from the line, not at it.
+      expect(slot.distance).toBeLessThan(previousDistance);
+      previousDistance = slot.distance;
+      expect(Math.abs(slot.side)).toBeCloseTo(2.2, 6);
+      if (index > 0) expect(slot.side).toBe(-previousSide);
+      previousSide = slot.side;
+    }
+    // Neighbours are five metres apart, so the grid is 25 m long from pole to the player.
+    expect(gridSlot(0).distance - gridSlot(PLAYER_SLOT).distance).toBeCloseTo(25, 6);
+
+    // And the sectors come after the line, in driving order, or no lap could ever complete.
     expect(LINE_AT.sector1).toBeGreaterThan(LINE_AT.finish);
     expect(LINE_AT.sector2).toBeGreaterThan(LINE_AT.sector1);
     expect(TOTAL_LAPS).toBe(3);
 
-    const player = gridPosition("player", new Vector3());
-    const rival = gridPosition("rival", new Vector3());
-    expect(player.distanceTo(rival)).toBeGreaterThan(4);
+    const player = gridPosition(PLAYER_SLOT, new Vector3());
+    const pole = gridPosition(0, new Vector3());
+    expect(player.distanceTo(pole)).toBeGreaterThan(4);
     // Both sit on the tarmac, not on the grass beside it.
     expect(Math.abs(player.y - groundHeight(player.x, player.z))).toBeLessThan(0.2);
   });
@@ -264,7 +280,7 @@ describe("racing route promotion", () => {
     // a player leading by a car length ranked second, then first again past the line.
     const lap = CIRCUIT.totalLength;
     const line = lineDistance(LINE_AT.finish);
-    expect(rivalLap(GRID_DISTANCE.rival)).toBe(0);
+    expect(rivalLap(gridSlot(0).distance)).toBe(0);
     expect(rivalLap(lap + line / 2)).toBe(0);
     expect(rivalLap(lap + line)).toBe(1);
     expect(rivalLap(2 * lap + line + 1)).toBe(2);

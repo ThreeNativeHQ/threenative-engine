@@ -27,7 +27,35 @@
       "kind": "input",
       "label": "coast",
       "press": ["ArrowUp"],
-      "holdTicks": 60,
+      "holdTicks": 90,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "kick",
+      "press": ["ArrowUp", "ArrowRight", "ShiftLeft"],
+      "holdTicks": 8,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "hold",
+      "press": ["ArrowUp", "ArrowRight"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "catch",
+      "press": ["ArrowUp", "ArrowLeft"],
+      "holdTicks": 14,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "straighten",
+      "press": ["ArrowUp"],
+      "holdTicks": 40,
       "release": true
     }
   ],
@@ -40,7 +68,7 @@
       {
         "id": "state",
         "path": "nitro",
-        "lte": 0.8,
+        "lte": 0.7,
         "changed": true
       },
       {
@@ -65,6 +93,58 @@
         "id": "state",
         "path": "topSpeed",
         "gte": 26.5
+      },
+      {
+        "id": "state",
+        "path": "nitro",
+        "atSteps": [
+          {
+            "label": "coast",
+            "lte": 0.35
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "nitroDriftGain",
+        "gte": 0.1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "drifting",
+        "atSteps": [
+          {
+            "label": "coast",
+            "equals": false
+          },
+          {
+            "label": "hold",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "driftSpins",
+        "equals": 0,
+        "allowTrivial": "A spin is the failure this scenario looks for; zero is the held invariant while the drift-refill gain above proves the slide happened."
+      },
+      {
+        "id": "state",
+        "path": "fovPeak",
+        "gte": 64,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "fov",
+        "atSteps": [
+          {
+            "label": "coast",
+            "lte": 57
+          }
+        ]
       }
     ],
     "components": [

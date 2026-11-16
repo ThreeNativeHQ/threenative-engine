@@ -30,6 +30,18 @@ export type GameState = {
   /** The nitro tank, 0 to 1, and whether it is burning. */
   nitro: number;
   nitroActive: boolean;
+  /** Tank the drift path filled this race, which is what "drifting refills faster" is measured on. */
+  nitroDriftGain: number;
+  /** The gearbox: the gear engaged and the needle, 0 to 1 of that gear's band. Display only. */
+  gear: number;
+  rpm: number;
+  /** The last banked drift's score, which the HUD pops up for a moment after each one. */
+  driftLast: number;
+  /** The camera's lens: its reading now, and the widest it has been — the nitro kick, measured. */
+  fov: number;
+  fovPeak: number;
+  /** The engine loop's playback rate: the sound follows the revs where the runtime allows it. */
+  engineRate: number;
   completedLaps: number;
   elapsed: number;
   lastOnRoad: [number, number, number];

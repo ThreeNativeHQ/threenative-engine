@@ -10,11 +10,13 @@ import {
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { IPhysicsContext } from "@threenative/physics";
 import { MathUtils, type Object3D, type PerspectiveCamera, type Texture, Vector3 } from "three";
+import { EngineAudio } from "../audio/engine.js";
 import { type CarCtx, FEEL } from "../entities/CarBody.js";
 import { RacingCar } from "../entities/RacingCar.js";
 import { RIVALS, Rival } from "../entities/Rival.js";
+import { Gauges } from "../gauges.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
-import { cameraBank, chaseCamera, setupCamera } from "../render/camera.js";
+import { BASE_FOV, cameraBank, chaseCamera, setupCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupLighting } from "../render/lighting.js";
@@ -131,6 +133,13 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     driftSpins: 0,
     nitro: 1,
     nitroActive: false,
+    nitroDriftGain: 0,
+    gear: 1,
+    rpm: 0,
+    driftLast: 0,
+    fov: BASE_FOV,
+    fovPeak: BASE_FOV,
+    engineRate: 0,
     completedLaps: 0,
     elapsed: 0,
     lastOnRoad: [SPAWN.x, SPAWN.y, SPAWN.z],
@@ -172,6 +181,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
   #environmentSample: IEnvironmentSample | undefined;
   #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
   #lightingGeneration = 0;
+  #audio: EngineAudio | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
     const generation = ++this.#lightingGeneration;
@@ -256,6 +266,10 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       : undefined;
     const track = buildTrack(ctx);
     const car = new RacingCar(ctx, SPAWN, gridHeading(PLAYER_SLOT));
+    // Display only, both of them: the rev counter's needle and the engine note it pitches. Neither
+    // touches the chassis, so a wrong needle is a wrong gauge and never a wrong lap.
+    const gauges = new Gauges();
+    this.#audio = new EngineAudio(camera, (name) => ctx.assets.audio(name));
     // The field, each car on its own grid slot projected onto the circuit it drives. The pole car
     // is the entity `rival`, the car to beat; the others are `rival-2` to `rival-5`.
     const rivals = RIVALS.map((_, index) => new Rival(ctx, index));
@@ -338,6 +352,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
       for (const rival of rivals) rival.update(dt);
+      gauges.update(car.speed, dt);
       sector.update(car.body.position, car.forward, dt, car.speed, car.driving);
       if (sector.rescue(car)) {
         rescues += 1;
@@ -422,6 +437,11 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     // The sun's shadow camera follows the car. It used to be a fixed 30 m box around the origin,
     // which on an 830 m circuit put every shadow on the grass and left the car's own shadow — the
     // speed cue a driver actually reads — somewhere else entirely.
+    // The lens's own reading: the nitro kick is measured on the camera, not restated from a
+    // constant, so a camera that stops widening fails the scenario that promises it does.
+    let fov = BASE_FOV;
+    let fovPeak = BASE_FOV;
+
     afterPhysics(ctx, (dt) => {
       car.body.settleVisuals(car.nitro.engaged, dt);
       for (const rival of rivals) rival.car.settleVisuals();
@@ -440,6 +460,15 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         car.boosting,
       );
       camera.rotateZ(cameraBank(car.lateralLoad, FEEL.lateral));
+      fov = camera.fov;
+      fovPeak = Math.max(fovPeak, fov);
+      this.#audio?.update({
+        running: status === "RACING",
+        rpm: gauges.rpm,
+        driftAngle: car.drift.angle,
+        sliding: car.skidding,
+        nitroActive: car.nitro.engaged,
+      });
       if (cut) {
         ctx.resetInterpolation(camera);
         shake.reset();
@@ -501,6 +530,13 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       statePatch.driftSpins = car.drift.spins;
       statePatch.nitro = quantize(car.nitro.tank, 1000);
       statePatch.nitroActive = car.nitro.engaged;
+      statePatch.nitroDriftGain = quantize(car.nitro.driftGain, 1000);
+      statePatch.gear = gauges.gear;
+      statePatch.rpm = quantize(gauges.rpm, 1000);
+      statePatch.driftLast = Math.round(car.drift.lastBanked);
+      statePatch.fov = quantize(fov, 100);
+      statePatch.fovPeak = quantize(fovPeak, 100);
+      statePatch.engineRate = quantize(this.#audio?.rate ?? 0, 1000);
       statePatch.completedLaps = lap.completed;
       statePatch.elapsed = elapsed;
       statePatch.lastOnRoad = lastOnRoad;
@@ -523,6 +559,8 @@ export class Race extends Scene<GameState, IPhysicsContext> {
   }
 
   override exit(ctx: GameCtx): void {
+    this.#audio?.dispose();
+    this.#audio = undefined;
     this.#materialLighting?.dispose();
     this.#materialLighting = undefined;
     this.#post?.dispose();

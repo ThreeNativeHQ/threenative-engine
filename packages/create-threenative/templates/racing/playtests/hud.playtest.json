@@ -1,0 +1,106 @@
+{
+  "name": "hud",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "idle",
+      "waitTicks": 30
+    },
+    {
+      "kind": "input",
+      "label": "drive",
+      "press": ["ArrowUp"],
+      "holdTicks": 240,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "kick",
+      "press": ["ArrowUp", "ArrowRight", "ShiftLeft"],
+      "holdTicks": 8,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "hold",
+      "press": ["ArrowUp", "ArrowRight"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "catch",
+      "press": ["ArrowUp", "ArrowLeft"],
+      "holdTicks": 14,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "straighten",
+      "press": ["ArrowUp"],
+      "holdTicks": 40,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "gear",
+        "gte": 3,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "rpm",
+        "gte": 0.3,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "topSpeed",
+        "gte": 15
+      },
+      {
+        "id": "state",
+        "path": "driftsBanked",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "driftLast",
+        "gte": 5,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "engineRate",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "engineRate",
+        "atSteps": [
+          {
+            "label": "idle",
+            "lte": 0.8
+          }
+        ]
+      }
+    ]
+  }
+}
