@@ -9,6 +9,12 @@ import {
 import { waterlineRadius } from "@threenative/core/world";
 import { createSegmentIndex, paintCanopyCover } from "@threenative/terrain";
 import {
+  COLLAR_UNDER_TILE,
+  STREAM_TILE,
+  TILE_INSIDE_SQUARE,
+  collarMorph,
+} from "@threenative/terrain/starter";
+import {
   ClampToEdgeWrapping,
   DataTexture,
   DataUtils,
@@ -86,12 +92,9 @@ import {
 } from "../water/river.js";
 import { WORLD } from "../worldNames.js";
 import {
-  COLLAR_UNDER_TILE,
+  COLLAR_CURVE,
   type IPackedMassif,
-  STREAM_TILE,
-  TILE_INSIDE_SQUARE,
   collarColors,
-  collarMorph,
   createHorizonCollar,
   horizonSurroundings,
 } from "./horizon.js";
@@ -1456,7 +1459,7 @@ export function createTerrain(
           far.maskNode = fromCentre.greaterThanEqual(stream.half.sub(COLLAR_UNDER_TILE));
           horizon.material = far;
           // The outermost streamed tile slides onto the collar's drawn height (PRD-790 box 2).
-          tile.positionNode = collarMorph(collar, stream, STREAM_TILE);
+          tile.positionNode = collarMorph(collar, COLLAR_CURVE, stream, STREAM_TILE);
           tile.maskNode = fromCentre
             .lessThan(stream.half)
             // The skirt each tile hangs on the square's edge draws too, under the square's cracks.

@@ -37,6 +37,19 @@ export type {
   ISpawnRegion,
   ISpawnWitness,
 } from "./runtime/spawn-gate.js";
+export {
+  COLLAR_UNDER_TILE,
+  STREAM_TILE,
+  TILE_INSIDE_SQUARE,
+  collarArithmeticHeight,
+  collarDrawnHeight,
+  collarMorph,
+  collarSeamGap,
+  createMorphedHeight,
+} from "./runtime/collar.js";
+export type { ICollarRingCurve, ICollarStream } from "./runtime/collar.js";
+export { addStreamedGround } from "./runtime/streamed-ground.js";
+export type { IStreamedGroundFacts, IStreamedGroundOptions } from "./runtime/streamed-ground.js";
 
 export type StarterContext = ICtx<Record<string, unknown>, IPhysicsContext>;
 export type StarterColliders = Readonly<

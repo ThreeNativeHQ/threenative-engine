@@ -51,7 +51,7 @@ the renderer. Spread it first and override any field after it.
 | `scene.ts` | `ForestScene` and `FOREST_GAME`: load, spawn, the player, the views and the frame facts it reports. |
 | `world/terrainAssets.ts` | Every art path the forest asks for. Replace the art by editing this table. |
 | `render/biomes.ts` | The forest's look row: sun, sky, haze, exposure, tints and ground cover. |
-| `render/ground/` | The ground material, the streamed tiles, ground cover and the far collar. |
+| `render/ground/` | The ground material, ground cover and the far collar; the streamed tiles and their collar morph come from `@threenative/terrain/starter`. |
 | `render/props/` | The prop pack (`pack.ts` names each species' scan and size), materials, wind and far trees. |
 | `render/sky/`, `render/water/` | The sky, atmosphere and post chain; the lake and creek surfaces. |
 

@@ -104,9 +104,29 @@ flowchart LR
   ⚠️ The kit playtest's own assertions are red on this machine **with and without** the move, so this box's
   judge and FPS proof are still unrun: `KIT=forest test:kit` reports `timeToReadyMs` 23.7 s after the change
   and 20.6 s on the pre-change baseline, `maxViewGpuMs` 101 ms vs 71 ms, against a 15 s / 12 ms expectation,
-  with an identical failure set otherwise — a cold, unsteady lane, not the change. Remaining: player rig,
-  prepared props, prop world, far forest, collar, streamed ground, diagnostics, then `ForestScene` calls
-  `addStarterWorld`.
+  with an identical failure set otherwise — a cold, unsteady lane, not the change. The same playtest ran
+  again after the collar/streamed-ground move and failed on the **same six assertion ids** as the
+  pre-change baseline report (`/tmp/kit-playtest-base.json`, the before arm of that A/B): `enterMs`
+  58.2 ms vs 52.3/53.2, `afterFirstFrameTaskMs` 2767 vs 2715/2769, `timeToReadyMs` 25.2 s vs
+  20.6–23.7 s, `maxViewGpuMs` 89.97 vs 71.3–101.0, and the two harness rows that fail identically in
+  both arms (`world` and `player.visible`); diagnostics 0 console/network errors, six captures written,
+  `capture.json` nvidia/turing. Still no judge or FPS verdict: the outer two rows are the virtual-display
+  lane the PRD refuses to call a frame-rate claim.
+  In progress 2026-11-16 (3 of 8 named files, and the collar half of a fourth): the collar geometry and the
+  streamed ground left the kit. `src/runtime/collar.ts` holds `collarMorph`, `createMorphedHeight`,
+  `collarSeamGap`, `collarArithmeticHeight`, `collarDrawnHeight` and the three seam constants; its ring
+  curve is an argument, so the kit's own `HORIZON_POWER`/`HORIZON_REACH` stay the kit's.
+  `src/runtime/streamed-ground.ts` holds `addStreamedGround` as one options object (size, resolution, height,
+  collar, curve, reach, stream, surface, follow, report), and refuses a world with no streamable grid by
+  `TN_STARTER_GROUND_DATA`. `horizon.ts` keeps the surveyed collar, its colours and `createWorldHeight`;
+  the kit's `world/streamedGround.ts` is gone and `scene.ts`/`terrain.ts` import the two package modules.
+  Proof: the moved functions were compared against the kit's originals **before** deletion on a
+  forest-shaped collar (2.1 km, 384 rings, 1.65 spread): 3/3 cases exact for 4000 drawn/arithmetic heights,
+  600 morphed heights and the seam measures; then terrain 657/657 (5 new in `collar-geometry.spec.ts`,
+  including the `TN_STARTER_GROUND_DATA` refusal), `pnpm --filter @threenative/terrain typecheck` exit 0,
+  and the forest bake is **byte-identical to HEAD** (103 files, all 17 `world/` files) after a stash A/B on
+  the same tree. Remaining: player rig, prepared props, prop world, far forest, diagnostics, then
+  `ForestScene` composes every mechanism for the forest rows.
 - [x] A kit that names a mechanism option without its data (for example cover with no cover rows) fails with a named code. proof: a `packages/terrain/__tests__` spec per option
   Result 2026-11-16: four codes, each raised where the option's data is joined: `TN_STARTER_WATER_DATA` (`water` over a bake with no `water.json`), `TN_STARTER_SKY_DATA` (`lighting.sky` resolving to no file), `TN_STARTER_COLLIDER_DATA` (a `colliders` row for an asset the world places nowhere — the silent one, the player walked through it), `TN_STARTER_EDIT_DATA` (ID edits over a bake with no placement sidecar), and `TN_STARTER_WORLD_DATA` on the world's own files. `kit-runtime.spec.ts` runs one case per option for all four kits: 16 red without the change, 112 green with it; terrain 644/644, `pnpm --filter @threenative/terrain typecheck` exit 0. The codes for the mechanisms Phase 1 box 2 moves in (cover, far forest, spawn gate, player rig) land with that move on the same shape.
 
@@ -144,14 +164,23 @@ flowchart LR
   | file | verdict | why |
   | --- | --- | --- |
   | `spawnGate.ts` | **moved** (`src/runtime/spawn-gate.ts`) | no appearance, no data of its own; takes progress/witness/released from the game |
-  | `world/streamedGround.ts` (139) | mechanism, **portable** | `TerrainTiles`, admission budget, `warmUnculled`, seam measurement; its inputs are a height function, the collar, the surface material and uniforms |
-  | collar part of `render/ground/horizon.ts` | **split** | `collarMorph`, `createMorphedHeight`, `collarSeamGap`, `collarArithmeticHeight`, `collarDrawnHeight` are geometry/measurement and move; `createHorizonCollar`, `collarColors`, `createWorldHeight`/`cubicAt`/`collarHeight` stay — the drawn collar, its palette and the surveyed far ring are the kit's |
+  | `world/streamedGround.ts` (139) | **moved** (`src/runtime/streamed-ground.ts`) | `TerrainTiles`, admission budget, `warmUnculled`, seam measurement; its inputs are a height function, the collar, the surface material and uniforms |
+  | collar part of `render/ground/horizon.ts` | **moved** (`src/runtime/collar.ts`) | `collarMorph`, `createMorphedHeight`, `collarSeamGap`, `collarArithmeticHeight`, `collarDrawnHeight` are geometry/measurement and moved; `createHorizonCollar`, `collarColors`, `createWorldHeight`/`cubicAt`/`collarHeight` stay — the drawn collar, its palette and the surveyed far ring are the kit's |
   | `render/props/propWorld.ts` (719) | **split, cheap** | reads only three kit modules: `FAR_FOREST_IMPOSTOR`+`FAR_FOREST_LAYER` (two constants), `standShaded` (one material function) and a progress type — so the residency/impostor/budget machinery moves with those three handed in; the species table, roles and materials it draws stay |
   | `playerRig.ts` (223) | **split** | the capsule, clip state machine and follow camera move; `orbitCamera.ts` constants and `sightLine` against the prop pack stay |
   | `diagnostics.ts` (1021) | **nearly portable** | imports only the `WorldName` type and `WORLD` (one constant) from the kit, and owns the state shape it exports (`initialDiagnosticsState`) — it moves as a package measurement module taking the world name and the game's extra state keys; the view names and `publish` fields stay the game's |
   | `render/props/prepared.ts` (225) | **stays** | it maps authored material names onto **this game's** prop roles (`pine`, `bark`, `impostor`), decides triplanar-vs-UV for this game's rock surface and writes the sway attribute this game's wind reads |
   | `render/props/farForest.ts` (94) | **stays** | the rule already lives in the package (`farForestPlacements`); what is left is which worlds plant a collar, the layer name and the impostor gate — game policy |
 
-  Net: 1 moved, 2 stay, 4 split (two of them nearly portable), 1 portable pair (streamed ground + collar geometry). The box's own proof (judge NEUTRAL, FPS within 3%) is unchanged.
+  Net after the second and third moves: 3 moved (spawn gate, streamed ground, the collar geometry), 2 stay
+  (`prepared.ts`, `farForest.ts`), 2 split (`propWorld.ts`, `playerRig.ts`), 1 nearly portable
+  (`diagnostics.ts`). The box's own proof (judge NEUTRAL, FPS within 3%) is unchanged.
+
+- 2026-11-16 (agent): the collar morph and the streamed ground are exported from
+  `@threenative/terrain/starter`, not the headless root: the morph builds a tile material node and reads a
+  `UniformNode`, which the package's own rule keeps out of the root. The ring curve is an argument
+  (`{ power, reach }`) rather than a package constant, because the kit builds the collar and its survey
+  decides how far the rings reach; a hard-coded curve made the moved functions disagree with the kit's
+  originals on a second collar (caught by the pre-deletion equivalence run).
 
 - 2026-11-16 (agent): **Phase 2's own proof command was red on `develop`.** `KIT=alpine pnpm --filter strata-terrain-preview test:kit` wrote `src/terrain/composition.ts` but injected `import { edits } from "../../composition.js"` into `src/terrain/alpine/world.ts`, which resolves to `src/composition.ts`; the scaffolded game failed with `TS2307: Cannot find module '../../composition.js'` before it drew a frame. One directory off, since PR #677 wrote both lines. Fixed to `"../composition.js"`; `KIT=alpine` now typechecks, bakes, builds and renders to the playtest on this machine. Nothing had been checking the four data kits' proof. `KIT=forest … test:kit` measured `timeToReadyMs` 22.3 s and `maxViewGpuMs` 76.8 ms on a second, warm run (cold: 20.6 s / 71.3 ms; against 15 s / 12 ms expectations), on the private-Xvfb capture display the runner uses, with the same failure set before and after the spawn-gate move. The playtest runner refuses a frame-rate claim from a virtual display by design (`--allow-virtual-display` is the explicit opt-in), so the box-2 FPS and judge lanes need a real, foreground display — the owner's screen — not a warmer cache.

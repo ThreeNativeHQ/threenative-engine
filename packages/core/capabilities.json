@@ -10213,6 +10213,102 @@
     },
     {
       "aliases": [],
+      "constraints": ["the game supplies the height, the collar, its curve and the tile material"],
+      "example": "const ground = addStreamedGround({ ctx, name, size, resolution, height, collar, curve, reach, stream, surface, follow, report });",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain @threenative/physics"],
+      "signature": "export function addStreamedGround(options: IStreamedGroundOptions): { … }",
+      "situations": ["stream an authored square's ground past its edge, out to a drawn collar"],
+      "summary": "PRD-790: the ground past the playable square, streamed around the player by `TerrainTiles` out to the collar's reach. Tiles sample the kit's own height function, the surface the square and the collar's vertices stand on, so a tile meets the square and its neighbours with no step. The tile material slides the outermost tile onto the collar's drawn height (`collarMorph`), so at the collar every tile vertex stands on it; `?tnTerrainValidate=1` reports `streamCollarGap`. The largest block of resident tiles around the player is written to the stream each frame: the tiles draw inside it, the collar everywhere else, so a tile that is still building leaves the collar showing, never a hole.",
+      "supersedes": [],
+      "symbol": "addStreamedGround"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the curve must be the one the collar was built with"],
+      "example": "const y = collarArithmeticHeight(collar, { power: 1.65, reach: 2100 }, x, z);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function collarArithmeticHeight( collar: HeightfieldCollar, curve: ICollarRingCurve, x: number, z: number, ): number { … }",
+      "situations": ["answer a collar height on the CPU exactly as its tile shader computes it"],
+      "summary": "The collar triangle under `(x, z)` found by arithmetic alone, as the tile shader finds it: the ring from the ring spacing, the perimeter step from the face the point projects onto, and the triangle from the point's place in the quad. On one face the world point is an affine map of `(scale, share * scale)`, so weights read there are the drawn triangle's own.",
+      "supersedes": [],
+      "symbol": "collarArithmeticHeight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "reads the collar it is given; never resamples the square or builds a surface"
+      ],
+      "example": "const y = collarDrawnHeight(collar, x, z);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function collarDrawnHeight(collar: HeightfieldCollar, x: number, z: number): number | null { … }",
+      "situations": ["measure or collide against the triangles a collar actually draws"],
+      "summary": "The collar's drawn height under `(x, z)`; null where there is no collar.",
+      "supersedes": [],
+      "symbol": "collarDrawnHeight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the curve must be the one the collar was built with; the band is one tile wide"
+      ],
+      "example": "tile.positionNode = collarMorph(collar, { power: 1.65, reach: 2100 }, stream, 64);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function collarMorph( collar: HeightfieldCollar, curve: ICollarRingCurve, stream: ICollarStream, band: number, ): Node<\"vec3\"> { … }",
+      "situations": ["slide the streamed ground's outer tile onto a drawn collar without a seam"],
+      "summary": "PRD-790 box 2: the streamed tiles' vertex shift. Only the outermost tile of the square the tiles draw slides onto the collar's drawn height, smoothly over that tile, so at the square's edge every tile vertex stands on the collar; the ground inside keeps the survey's smooth surface. The collar's heights go to the GPU once, as a float texture of rings by perimeter steps.",
+      "supersedes": [],
+      "symbol": "collarMorph"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the caller supplies the height the tiles draw; a coarser `step` samples faster"
+      ],
+      "example": "const { gap, fold } = collarSeamGap(collar, tilesHeight, x, z, 288, 2);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function collarSeamGap( collar: HeightfieldCollar, height: (x: number, z: number) => number, centreX: number, centreZ: number, half: number, spacing: number, step = 0.1, ): { … }",
+      "situations": ["prove a streamed ground and its collar meet without a step"],
+      "summary": "PRD-790: where streamed tiles meet the collar. The tiles draw inside the square `(centreX, centreZ, half)` and the collar outside it, so the seam is that square's edge, past the playable square. `gap` is the largest step at the tiles' edge vertices (`spacing` apart), as core measures a tile-to-tile seam; `fold` is the largest step between them, where a fold of the collar's coarser triangles crosses a tile's straight edge.",
+      "supersedes": [],
+      "symbol": "collarSeamGap"
+    },
+    {
+      "aliases": [],
+      "constraints": ["mirrors `collarMorph`'s weight exactly; both read the same curve and band"],
+      "example": "const height = createMorphedHeight(collar, curve, surveyHeight, x, z, 288, 64);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function createMorphedHeight( collar: HeightfieldCollar, curve: ICollarRingCurve, height: (x: number, z: number) => number, centreX: number, centreZ: number, half: number, band: number, ): (x: number, z: number) => number { … }",
+      "situations": ["check on the CPU the surface the tile shader draws after its morph"],
+      "summary": "The height a tile vertex stands at once `collarMorph` moved it: the survey inside the band, the collar's arithmetic height at the drawn square's edge. The seam measure reads this.",
+      "supersedes": [],
+      "symbol": "createMorphedHeight"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "Every value it reports is supplied by the game; a failure writes one `TN_` line"
       ],
