@@ -10459,6 +10459,23 @@
     {
       "aliases": [],
       "constraints": [],
+      "example": "invalidatePropShadows(ctx.shadows, region);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function invalidatePropShadows( shadow: { … }",
+      "situations": [
+        "forward a streamed world's changed caster bounds to the game's shadow renderer"
+      ],
+      "summary": "Keep WorldCells' changed caster bounds when forwarding to the existing shadow renderer.",
+      "supersedes": [],
+      "symbol": "invalidatePropShadows"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
       "example": "leaveScene();",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
@@ -10470,6 +10487,51 @@
       "summary": "The scene is gone: nothing is on screen, so no window can belong to a view.",
       "supersedes": [],
       "symbol": "leaveScene"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const canopy = await loadCanopy(assets, \"forest\");",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function loadCanopy( assets: Pick<IAssetLoader, \"resolve\">, world: string, ): Promise<Float32Array> { … }",
+      "situations": ["load the canopy map a streamed world's ground shades with"],
+      "summary": "The canopy weight the ground shader reads, painted from the placements the bake drew.",
+      "supersedes": [],
+      "symbol": "loadCanopy"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const props = await loadPropPackage(assets, \"forest\");",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function loadPropPackage( assets: Pick<IAssetLoader, \"resolve\">, world: string, ): Promise<IPropPackage> { … }",
+      "situations": ["load the prop containers a bake wrote for one world"],
+      "summary": "The baked prop package of one world, fetched as the bake wrote it. The files are the bake's output, not the game's: the manifest names one container, one reach array and one placement-ID list per streamed world, and nothing here derives a placement.",
+      "supersedes": [],
+      "symbol": "loadPropPackage"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const sky = await loadSky(assets, \"forest\");",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function loadSky( assets: Pick<IAssetLoader, \"resolve\">, world: string, ): Promise<Float32Array> { … }",
+      "situations": ["load the sky-visibility map a streamed world's ground shades with"],
+      "summary": "The share of the sky each terrain vertex sees past the relief, as `skyVisibility` baked it.",
+      "supersedes": [],
+      "symbol": "loadSky"
     },
     {
       "aliases": [],
@@ -10551,6 +10613,21 @@
     {
       "aliases": [],
       "constraints": [],
+      "example": "const counts = propCounts(pkg, [\"spruce\", \"boulder\"]);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function propCounts( pkg: IPropPackage, assetNames: readonly string[], ): Record<string, number> { … }",
+      "situations": ["report how many records each asset drew, zero included"],
+      "summary": "Records per asset across the package's buckets: what the run report calls the scatter's counts.",
+      "supersedes": [],
+      "symbol": "propCounts"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
       "example": "const key = propKey(placement, 2);\n`WorldCells` names the model through the run the record sits in, so this key is what the container\nstores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement\nthe editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays\none uniform scale and the picture keeps the edit.",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
@@ -10607,6 +10684,25 @@
       "summary": "The transform an instance's current pose describes.",
       "supersedes": [],
       "symbol": "readPropTransform"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the variant, reach, bucket, LOD and gate rows are the game's; the package only applies"
+      ],
+      "example": "const props = await streamProps({ package, groundAt, parts, materials, surface,\n  follow, size, whileCurrent, variantOf, reachOf, bucketOf, lodOf, ... });",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function streamProps(options: IPropWorldOptions) { … }",
+      "situations": [
+        "stream a world's baked prop containers and its live placements through WorldCells"
+      ],
+      "summary": "Load the prop worlds, pose every record on the ground, and hand each bucket to `WorldCells`. The passes are short and yield between slices, because the whole point of streaming is that the first frame does not wait for 200 000 records: the records are decoded and grounded in slices, and each bucket loads as its own world.",
+      "supersedes": [],
+      "symbol": "streamProps"
     },
     {
       "aliases": [],

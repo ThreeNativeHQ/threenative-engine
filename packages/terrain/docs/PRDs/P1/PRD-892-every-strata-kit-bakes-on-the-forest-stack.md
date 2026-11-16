@@ -1,6 +1,6 @@
 # PRD-892 — Every Strata kit bakes on the forest stack
 
-**Status:** PARTIAL — Phase 1 boxes 1 and 3 landed; box 2 in progress (5 of the 8 named mechanisms moved)
+**Status:** PARTIAL — Phase 1 boxes 1 and 3 landed; box 2 in progress (6 of the 8 named mechanisms moved, the other 2 stay as game look)
 **Priority:** P1 — the forest kit has the whole world-building stack (real survey, vegetation, ground cover, far forest, 60 FPS work, a playable scene). The other four kits have one boulder asset and no scene, so they cannot be revamped to the forest's level (all phases open).
 **Complexity:** 8 (HIGH); risk override: the forest must not change while it moves onto the shared path, so the owner's visual-judge rule applies to every phase
 **Owner:** ThreeNative maintainers
@@ -164,9 +164,25 @@ flowchart LR
   ratchet baseline (86 -> 87). The kit playtest after the move kept the **exact** contact error of the
   previous run (6.14252957689132e-05 m) and the same six failing ids (`enterMs` 58.5 ms,
   `afterFirstFrameTaskMs` 2735, `timeToReadyMs` 21.8 s, `maxViewGpuMs` 80.87, plus the two harness
-  rows): the grounded poses are the ones the solver and the playtest already measured. Next:
-  `streamProps` itself (the container loop, admission and loaders)
-  behind the kit's callbacks, then `ForestScene` composes every mechanism for the forest rows.
+  rows): the grounded poses are the ones the solver and the playtest already measured.
+  In progress 2026-11-16 (6 of 8 named files; the prop world is whole): `streamProps` and its loaders
+  left the kit. `src/runtime/prop-world.ts` owns the container loop (decode the bake's buckets, ground
+  every record, compile live placements, build one asset table per bucket), the `WorldCells` wiring
+  (admission budgets, reach rings, shadows, terminal impostors), `loadPropPackage`/`loadCanopy`/
+  `loadSky`, `propCounts` and `invalidatePropShadows`; the pose steps stay in `prop-pose.ts`. The forest
+  keeps the rows: `variantFor`, `streamedReach`, `streamedBucket`, `NO_SHADOW_ASSETS`, `LOD_BANDS`/
+  `LOD_STEPS`, `GROUND_RULES`, the spruce gate and `standShaded`, handed in as `variantOf`, `reachOf`,
+  `bucketOf`, `lodOf`, `gateAsset`/`gateFarDistance`, `shadeStand` and `shadowsOf`, so a new biome
+  changes rows, not the package. `propWorld.ts` is a wrapper and `propProgress.ts` re-exports the
+  package type. Proof: terrain **667/667**, typecheck exit 0, build + publint green; the moved container
+  loop's two pre-existing complexity offenders are recorded in the ratchet baseline (87 -> 89). The kit
+  playtest after the move kept the **identical** travel (54.43283981389183 m), contact error
+  (6.14252957689132e-05 m) and view measurements (5/5), failing on the same six ids as the baseline
+  (`enterMs` 58.3 ms, `afterFirstFrameTaskMs` 2735, `timeToReadyMs` 23.1 s, `maxViewGpuMs` 72.25, plus
+  the two harness rows). With `prepared.ts` (the prepared CC0 art) and `farForest.ts` (the far-forest
+  look) staying as game source, every mechanism this box names is package code and `ForestScene`
+  composes them; what remains for the box is its own proof — judge NEUTRAL and FPS within 3% of the
+  PR #677 frame, which needs a real display this lane does not have.
 - [x] A kit that names a mechanism option without its data (for example cover with no cover rows) fails with a named code. proof: a `packages/terrain/__tests__` spec per option
   Result 2026-11-16: four codes, each raised where the option's data is joined: `TN_STARTER_WATER_DATA` (`water` over a bake with no `water.json`), `TN_STARTER_SKY_DATA` (`lighting.sky` resolving to no file), `TN_STARTER_COLLIDER_DATA` (a `colliders` row for an asset the world places nowhere — the silent one, the player walked through it), `TN_STARTER_EDIT_DATA` (ID edits over a bake with no placement sidecar), and `TN_STARTER_WORLD_DATA` on the world's own files. `kit-runtime.spec.ts` runs one case per option for all four kits: 16 red without the change, 112 green with it; terrain 644/644, `pnpm --filter @threenative/terrain typecheck` exit 0. The codes for the mechanisms Phase 1 box 2 moves in (cover, far forest, spawn gate, player rig) land with that move on the same shape.
 
@@ -206,15 +222,16 @@ flowchart LR
   | `spawnGate.ts` | **moved** (`src/runtime/spawn-gate.ts`) | no appearance, no data of its own; takes progress/witness/released from the game |
   | `world/streamedGround.ts` (139) | **moved** (`src/runtime/streamed-ground.ts`) | `TerrainTiles`, admission budget, `warmUnculled`, seam measurement; its inputs are a height function, the collar, the surface material and uniforms |
   | collar part of `render/ground/horizon.ts` | **moved** (`src/runtime/collar.ts`) | `collarMorph`, `createMorphedHeight`, `collarSeamGap`, `collarArithmeticHeight`, `collarDrawnHeight` are geometry/measurement and moved; `createHorizonCollar`, `collarColors`, `createWorldHeight`/`cubicAt`/`collarHeight` stay — the drawn collar, its palette and the surveyed far ring are the kit's |
-  | `render/props/propWorld.ts` (719) | **split, cheap** | reads only three kit modules: `FAR_FOREST_IMPOSTOR`+`FAR_FOREST_LAYER` (two constants), `standShaded` (one material function) and a progress type — so the residency/impostor/budget machinery moves with those three handed in; the species table, roles and materials it draws stay |
+  | `render/props/propWorld.ts` (719) | **moved** (`src/runtime/prop-world.ts` + a thin kit wrapper) | the container loop, admission wiring, loaders and pose application moved, with the variant, reach, bucket, LOD, gate and shadow rows handed in as callbacks twice per placement; the far tree, the stand shade and the asset lists stayed in the kit |
   | `playerRig.ts` (223) | **moved** (`src/runtime/player-rig.ts` + a thin kit wrapper) | the capsule, clip state machine and follow-camera wiring moved; `orbitCamera.ts` and its framing constants, the wall probe and `sightLine` against the prop pack stay, because framing is look and the package may not own it |
   | `diagnostics.ts` (1021) | **moved** (`src/runtime/diagnostics.ts` + `src/runtime/view-statistics.ts`) | it owned the state shape it exports, and its only kit imports were the `WorldName` type and `WORLD`; the world is now a factory argument and `publish` keys its view slots to `facts.world`, while the game keeps adding its own look values to the state |
   | `render/props/prepared.ts` (225) | **stays** | it maps authored material names onto **this game's** prop roles (`pine`, `bark`, `impostor`), decides triplanar-vs-UV for this game's rock surface and writes the sway attribute this game's wind reads |
   | `render/props/farForest.ts` (94) | **stays** | the rule already lives in the package (`farForestPlacements`); what is left is which worlds plant a collar, the layer name and the impostor gate — game policy |
 
-  Net after the fifth move: 5 moved (spawn gate, streamed ground, the collar geometry, diagnostics, player
-  rig), 2 stay (`prepared.ts`, `farForest.ts`), 1 split (`propWorld.ts`). The box's own proof (judge
-  NEUTRAL, FPS within 3%) is unchanged.
+  Net after the sixth move: 6 moved (spawn gate, streamed ground, the collar geometry, diagnostics, player
+  rig, prop world), 2 stay (`prepared.ts` prepared art, `farForest.ts` far-field look). Every named
+  mechanism is now package code; the box's own proof (judge NEUTRAL, FPS within 3%) is unchanged and
+  still needs a real display.
 
 - 2026-11-16 (agent): the diagnostics move surfaced two kit leaks that were fixed rather than carried into
   the package: a hard-coded `forest:` view prefix in `publish` and a per-world rendered-frame map that only
@@ -222,6 +239,13 @@ flowchart LR
   package edit; the second is gone from the package (the preview keeps its copy under
   `examples/strata-terrain-preview/src`, per the decision above). The state factory refuses a blank world
   with `TN_STARTER_DIAGNOSTICS_DATA`, the same named-code shape as the other starter options.
+
+- 2026-11-16 (agent): the prop world takes its **rows as callbacks** (`variantOf`, `reachOf`,
+  `bucketOf`, `lodOf`, `gateAsset`/`gateFarDistance`, `shadeStand`, `shadowsOf`) instead of constants,
+  so a biome answers "which variant, how far, which container, where do its levels step" from its own
+  tables and the package never learns an asset name. The far/local split rides on the bake's
+  `IPropBucketKind` rather than a bucket-name prefix, and the stand shade is applied only to the gate
+  asset the game names — the container loop itself has no species in it.
 
 - 2026-11-16 (agent): the player rig's follow camera is **injected**, not built by the package. The root
   table puts anything that decides framing in the game's `src/render/`, so `createPlayerRig` takes an

@@ -1,5 +1,5 @@
 {
-  "total": 87,
+  "total": 89,
   "files": {
     "packages/terrain/src/biome/bake-biome.ts": 1,
     "packages/terrain/src/cook/cook.ts": 1,
@@ -46,6 +46,7 @@
     "packages/terrain/src/request/generate-request.ts": 1,
     "packages/terrain/src/runtime/diagnostics.ts": 3,
     "packages/terrain/src/runtime/prop-pose.ts": 1,
+    "packages/terrain/src/runtime/prop-world.ts": 2,
     "packages/terrain/src/water/stages.ts": 2,
     "packages/terrain/src/water/water.ts": 1
   }

@@ -92,6 +92,19 @@ export type {
   IPropPoseOverride,
   PropGroundQuery,
 } from "./runtime/prop-pose.js";
+export type { IScatter } from "./runtime/prop-world.js";
+export {
+  type IPropBucketRow,
+  type IPropPart,
+  type IPropPreparationProgress,
+  type IPropWorldOptions,
+  invalidatePropShadows,
+  loadCanopy,
+  loadPropPackage,
+  loadSky,
+  propCounts,
+  streamProps,
+} from "./runtime/prop-world.js";
 export { createPlayerRig } from "./runtime/player-rig.js";
 export type {
   IMannequin,
