@@ -312,6 +312,17 @@ flowchart LR
   owner's real display, exactly like the FPS and judge rows — the lane still proves the non-visual
   rows. This is also why no captures exist yet: readiness is gated behind the hand-off.
 
+  The stuck join is named: a diagnostic run logged each member at the 100 s mark and all five prop
+  streams had `data: resolved` and `prewarm: resolved` — the only unsettled member is `groundReady`
+  (`{"ground":false}`), the streamed ground built from `stream.material` and `addStreamedGround`'s
+  `ready`. That `ready` is `warmUnculled(..., { when: () => stream.half.value === full })`: a
+  per-draw ramp compared for equality. With `retiredFrames: 0` on this lane the game drew almost
+  nothing, so the ramp had no draws to advance on and the ground never warmed — the equilibrium of
+  the two findings above, now measured instead of guessed. The equality is fragile in its own right
+  (a time-driven ramp can skip a value, and a world whose half is below `size / 2` can never equal
+  it), but changing it did not move the alpine run, so it is recorded here rather than shipped
+  unproven.
+
   The look row is the last data piece and it is measured, not guessed: `render/biomes.ts` maps
   `[WORLD]` to the `forest` row, and the alpine kit's own authored daylight still sits in its legacy
   `sky.ts` (`sunDirection` (0.55, 0.62, 0.56), `sunColor` 0xfff1dc at 3.2, `fill` 0xa8c8e8/0x464937 at
