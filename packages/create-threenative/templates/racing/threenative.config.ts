@@ -46,6 +46,21 @@ const config: IThreeNativeConfig = {
   // Switch to "native" for a UI drawn as part of the rendered frame, with no web view and no
   // extra process — and own the appearance difference that comes with it.
   ui: { renderer: "web" },
+  assets: {
+    audio: {
+      // The engine bed and the tyre squeal are loops this kit pitches and opens live, so the two
+      // claims that matter are their joins: declaring `loop` makes the audio pass measure the seam
+      // and fail the build on a click. `crossFadeMs: 0` because the bake already makes the join
+      // exact — every frequency in the bed is a whole number of cycles per loop — and a 250 ms
+      // cross-fade over a clean seam would smear a quarter of a second of the engine into itself
+      // on every lap. The nitro burst is a one-shot and is declared not to loop.
+      overrides: [
+        { glob: "engine-loop.wav", loop: { crossFadeMs: 0 } },
+        { glob: "tyre-squeal.wav", loop: { crossFadeMs: 0 } },
+        { glob: "nitro-burst.wav", loop: false },
+      ],
+    },
+  },
   // One asset tree, one compiler, one representation per artifact. Uncomment, then cook:
   //   threenative build --target android   # cooks defaults.android; --profile <name> beats it
   // buildProfiles: {

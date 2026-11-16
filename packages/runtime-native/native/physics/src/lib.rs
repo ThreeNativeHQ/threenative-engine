@@ -768,6 +768,20 @@ impl Simulation {
     }
 
     /// Respawn: move the chassis, face `yaw` radians about up, and drop both velocities.
+    fn set_vehicle_wheel_friction(&mut self, id: u32, wheel: u32, friction_slip: f32) -> bool {
+        if !friction_slip.is_finite() || friction_slip < 0.0 {
+            return false;
+        }
+        let Some(vehicle) = self.vehicles.get_mut(&id) else {
+            return false;
+        };
+        let Some(wheel) = vehicle.controller.wheels_mut().get_mut(wheel as usize) else {
+            return false;
+        };
+        wheel.friction_slip = friction_slip;
+        true
+    }
+
     fn reset_vehicle(&mut self, id: u32, x: f32, y: f32, z: f32, yaw: f32) -> bool {
         if ![x, y, z, yaw].into_iter().all(f32::is_finite) {
             return false;
@@ -1854,6 +1868,19 @@ pub extern "C" fn tn_physics_set_vehicle_input(
 
 /// Writes the signed speed followed by contact, suspension length and rotation per wheel.
 /// Returns the number of floats written, or -1 for an unknown vehicle or a short buffer.
+/// One wheel's grip cap at runtime. False for an unknown vehicle or wheel, or a grip that is not
+/// finite and non-negative.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_set_vehicle_wheel_friction(
+    simulation: *mut Simulation,
+    id: u32,
+    wheel: u32,
+    friction_slip: f32,
+) -> bool {
+    unsafe { simulation.as_mut() }
+        .is_some_and(|simulation| simulation.set_vehicle_wheel_friction(id, wheel, friction_slip))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_read_vehicle_state(
     simulation: *const Simulation,
@@ -3591,6 +3618,43 @@ mod tests {
         assert!(simulation.remove_body(1));
         assert!(simulation.write_vehicle_state(0, &mut [0.0; 4]).is_none());
         assert!(simulation.step(1.0 / 60.0, &[]));
+    }
+
+    #[test]
+    fn a_rear_grip_drop_lets_the_tail_slide_and_bad_grip_is_refused() {
+        // The handbrake: the same turn at speed follows the nose on full grip, and with the rear
+        // pair's cap cut the tail steps out, so the heading leads the velocity.
+        fn slip_after_turn(rear_grip: f32) -> f32 {
+            let mut simulation = car_on_a_floor();
+            assert!(simulation.set_vehicle_input(0, 4000.0, 0.0, 0.0));
+            for _ in 0..150 {
+                assert!(simulation.step(1.0 / 60.0, &[]));
+            }
+            assert!(simulation.set_vehicle_wheel_friction(0, 2, rear_grip));
+            assert!(simulation.set_vehicle_wheel_friction(0, 3, rear_grip));
+            assert!(simulation.set_vehicle_input(0, 4000.0, 0.0, 0.4));
+            for _ in 0..30 {
+                assert!(simulation.step(1.0 / 60.0, &[]));
+            }
+            let body = &simulation.bodies[simulation.entries[&1].body];
+            let heading = body.rotation() * vector![0.0, 0.0, -1.0];
+            let velocity = *body.linvel();
+            let dot = heading.x * velocity.x + heading.z * velocity.z;
+            let lengths = heading.x.hypot(heading.z) * velocity.x.hypot(velocity.z);
+            (dot / lengths).clamp(-1.0, 1.0).acos()
+        }
+        let grip = slip_after_turn(10.5);
+        let slide = slip_after_turn(0.6);
+        assert!(
+            slide > 0.2 && slide > grip * 2.0,
+            "slide {slide} vs grip {grip}"
+        );
+
+        let mut simulation = car_on_a_floor();
+        assert!(!simulation.set_vehicle_wheel_friction(0, 4, 1.0));
+        assert!(!simulation.set_vehicle_wheel_friction(0, 0, f32::NAN));
+        assert!(!simulation.set_vehicle_wheel_friction(0, 0, -1.0));
+        assert!(!simulation.set_vehicle_wheel_friction(7, 0, 1.0));
     }
 
     #[test]

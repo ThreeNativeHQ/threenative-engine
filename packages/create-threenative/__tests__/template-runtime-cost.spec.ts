@@ -1055,7 +1055,10 @@ describe("generated template ordinary-frame runtime cost", () => {
       expect(context.patchIdentities.size, "racing Race state-patch high-water sentinel").toBe(
         patchHighWater,
       );
-      expect(context.state.getState().position, "racing Race player ranking state").toBe("P2");
+      // Six cars on the grid put the player on the back row, and nothing in this fixture touches
+      // the input, so the five rivals drive away and the published rank stays last. What the box
+      // proves is that the scene publishes a rank at all, from the ranking the physics ran.
+      expect(context.state.getState().position, "racing Race player ranking state").toBe("P6");
     } finally {
       racingPhysics.dispose();
     }
@@ -1141,7 +1144,7 @@ describe("generated template ordinary-frame runtime cost", () => {
       }
       expect(iteratorCalls, "racing Race player scan iterator sentinel").toBe(0);
       expect(context.patchIdentities.size, "racing Race frame execution sentinel").toBe(1);
-      expect(context.state.getState().position, "racing Race player ranking state").toBe("P2");
+      expect(context.state.getState().position, "racing Race player ranking state").toBe("P6");
     } finally {
       racingPhysics.dispose();
     }

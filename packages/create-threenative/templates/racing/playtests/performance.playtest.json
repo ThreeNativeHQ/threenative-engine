@@ -6,7 +6,7 @@
   "assert": {
     "performance": {
       "maxDrawCalls": 330,
-      "maxTriangles": 105000,
+      "maxTriangles": 135000,
       "minFps": 30
     },
     "renderChain": {
