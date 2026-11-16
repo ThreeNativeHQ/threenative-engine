@@ -336,6 +336,18 @@ flowchart LR
   own ground (real cirque, and the designed meadow and its scatter go away) — a decision for the
   owner, recorded here rather than guessed.
 
+  **Resolved (owner, 2026-11-16: "use realistic heightmaps").** The ring was not only on the wrong
+  datum: the bake threw the survey away and drew a generated landform on its centre height, then
+  stretched the Longs tile to a 2.5–3 km top. A `farRing` with no `backdrop` is now the survey itself,
+  re-based by `datum` to the square's metres, and the bake fails closed with `TN_STARTER_RING_SEAM`
+  past a 60 m mean edge step (spec red at 969.1 m on the old row, green after). The Longs Peak Diamond
+  square was also the wrong site: 12 % of it is under 25°. `scripts/cook-kit-survey.ts` cuts a kit's
+  square and 5 km ring from Mapterhorn on one centre and one datum; alpine now stands on swissALTI3D at
+  Kleine Scheidegg under the Eiger (46.582, 7.970): square 1970–2157 m, 78 % under 25°, ring
+  1267–4042 m, seam 0.6 m mean. Desert, tundra and coastal keep their real USGS squares (81, 98 and
+  94 % walkable) and gain their co-registered USGS rings (seams 0.7, 3.9 and 0.4 m). Starter assets
+  0.1.8.
+
   The heightmaps, measured (owner asked 2026-11-16: "are we using proper heighmaps to cook these
   other terrains? Look at this garbage"): the **playable** ground is the forest's own recipe — 512 m
   over a 257² grid, 2.0 m/px, both kits' `heightmap.r16` are 132,098 B. The **far ring** is not. The
