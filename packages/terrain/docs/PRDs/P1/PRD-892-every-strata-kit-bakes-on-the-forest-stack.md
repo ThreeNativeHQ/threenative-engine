@@ -189,6 +189,22 @@ flowchart LR
 ### Phase 2 — four biomes as data
 
 - [ ] Alpine: Longs Peak survey and far ring; `spruce`, `scotspine` and `blackspruce` stands with a krummholz form patch at the tree line, `tundragrass`, `tussock`, `fireweed`, `blueberry`, `rock` scree. proof: `KIT=alpine pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
+  In progress 2026-11-16 (vegetation rows): `starter/alpine/biome.data.json` now carries the box's
+  rows — `spruce`, `scotspine` and `blackspruce` stands (slope/height bands, stand shares, far rings at
+  1.5–1.9 km) and `tundragrass`, `tussock`, `fireweed` and `blueberry` cover below the treeline, with
+  `rock` added to the species list. Every named species is an installed
+  `@threenative/procedural-vegetation` preset (`scotspine`, `blackspruce`, `tundragrass`, `fireweed`,
+  `blueberry`), so the cook grows them instead of filtering them. Proof: new
+  `alpine-biome.spec.ts` (3 cases: the box's species list against the installed presets, bands and
+  reaches, and a closed-schema refusal on an unknown `krummholz` field), `terrain-mcp.spec.ts` +
+  `arbor-species.spec.ts` 166/166 after the rows landed. Two gaps are now explicit: **krummholz is a
+  preset form, not a biome field** (the schema has no form row; it needs the props module's species
+  mapping, and the box's "form patch at the tree line" is not reachable from `biome.data.json` alone),
+  and the **far ring needs a real alpine survey asset**: `kit-world` requires `farRing.survey`, and
+  the starter assets hold only `forest` and `forest-horizon` (USGS 3DEP Sprague Lake); an alpine ring
+  needs a Longs Peak surround survey committed like it, not a fabricated continuation. Next: that
+  survey asset, the kit's `world` row and `look` (palette/ground maps/canopy/props) and the streamed
+  bake, then the scene the kit playtest runs.
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
