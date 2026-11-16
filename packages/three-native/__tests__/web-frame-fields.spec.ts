@@ -112,6 +112,7 @@ const FROZEN_FIELDS: Readonly<Record<string, number>> = {
   textureCompressionBc: 87,
   virtualShadowPendingLevels: 88,
   frameSnapshot: 89,
+  prepassDraws: 90,
 };
 
 describe("the web frame field table", () => {

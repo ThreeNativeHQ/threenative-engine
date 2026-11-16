@@ -601,6 +601,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo") ||
         postEffects_->reads("emissive") || postEffects_->reads("indirectDiffuse") || postEffects_->reads("metalness") ||
         postEffects_->reads("roughness"))) || traa_;
+    // PRD-888 (prepass.h): TN_PREPASS draws each masked opaque draw depth-only first, then shades it at depth Equal. The
+    // retained-rows path records no prepass, so it keeps the shipped draws.
+    const bool prepass = !features().stableRows && prepassEnabled();
     // variantOf's inputs that refresh()'s material half does not own (see DepthRowKey).
     const auto depthRowKey = [invariantPosition](const DrawItem& item) {
         DepthRowKey k;
@@ -622,6 +625,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
         v.alphaHash = item.material && item.material->alphaHash;
+        v.alphaToCoverage = item.material && item.material->alphaToCoverage;
         v.alphaTest = item.material && item.material->alphaTest > 0;
         v.background = item.background;
         v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
@@ -899,15 +903,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals && !item.flatShading) || !item.material) continue;
-        const PipelineTarget target = colourTarget(item, program);
+        PipelineTarget target = colourTarget(item, program);
+        // PRD-888: the depth-only prepass pipeline (every colour channel masked, the same cull, bias, face and samples),
+        // then the shipped program at Equal with no depth write. Its discards stay: they cost nothing once early depth
+        // rejects the hidden fragments, and a fragment without them, or an @invariant position the shipped draw lacks,
+        // changed up to 41 k pixels of the forest's overview where this pair changed none. Both pipelines run the one
+        // vertex stage, so the Equal test meets the depth the prepass wrote.
+        const bool equalDraw = prepass && prepassEligible(item) && prepassFragment(program) != nullptr;
+        const PipelineTarget depthOnly = equalDraw ? prepassTargets(target) : PipelineTarget{};
         if (compilation) {
             compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));
+            if (equalDraw) compilation->push_back(pipelines_->getAsync(program.vertex, prepassFragment(program), depthOnly));
             plan.push_back({&item, &program, nullptr, 0, 0});
             continue;
         }
         const uint64_t targetKey = drawTargetKey(item, program.vertex);
         WGPURenderPipeline pipeline;
-        if (cache && cache->pipeline && cache->targetKey == targetKey) {
+        if (cache && cache->pipeline && cache->targetKey == targetKey && cache->prepass == equalDraw) {
             pipeline = static_cast<WGPURenderPipeline>(cache->pipeline);
         } else {
             bool deferred = false;
@@ -915,7 +927,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                         : pipelines_->get(program.vertex, &program.fragment, target);
             if (deferred) continue;  // drawn, with its post targets, the frame its pipeline lands
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
-            if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; }
+            if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; cache->prepass = equalDraw; cache->prepassPipeline = nullptr; }
+        }
+        WGPURenderPipeline prepassPipeline = nullptr;
+        if (equalDraw) {
+            if (cache && cache->prepassPipeline) {
+                prepassPipeline = static_cast<WGPURenderPipeline>(cache->prepassPipeline);
+            } else {
+                bool deferred = false;
+                const shader::StageModule* depthFragment = prepassFragment(program);
+                prepassPipeline = deferUncompiled_ ? pipelines_->getOrDefer(program.vertex, depthFragment, depthOnly, deferred)
+                                                   : pipelines_->get(program.vertex, depthFragment, depthOnly);
+                if (deferred) continue;  // an Equal draw without its prepass would draw nothing
+                if (!prepassPipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: masked depth prepass");
+                if (cache) cache->prepassPipeline = prepassPipeline;
+            }
         }
         // A transparent draw records in the tail bundle, which re-records on change anyway: its blocks are appended, so the
         // slots of draws out of view (a batch and its unbatched members) do not grow every frame's upload.
@@ -1007,6 +1033,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         putNodes(frameUniforms_, f, program.fragment, *item.nodes, frameTime_, frameDelta_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
         plan.back().slot = slotKey;
+        plan.back().prepass = prepassPipeline;
     }
 
     if (features().stablePasses && !compilation)
@@ -1345,7 +1372,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
                 if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
                     throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
-                masked = alphaTested(*item.material, *item.nodes);
+                masked = shadowMasked(*item.material, *item.nodes);
                 alphaHash = variant.alphaHash;
                 if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
                     cachedDepth = static_cast<Program*>(cache->depthProgram);
@@ -1544,7 +1571,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 for (double e : member->matrixWorld) instances.push_back(float(e));
                 instances.insert(instances.end(), {1.0f, 1.0f, 1.0f, 0.0f});  // no instance colour: a depth pass reads none
             }
-            const bool masked = alphaTested(*row.material, *row.nodes);
+            const bool masked = shadowMasked(*row.material, *row.nodes);
             const shader::VertexVariant variant = variantOf(row);
             Program& program = depthProgram(variant, masked);
             const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &program.fragment : nullptr;
@@ -1621,7 +1648,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             for (Planned& planned : kept.draws) {
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
-                const bool masked = alphaTested(*item.material, *item.nodes);
+                const bool masked = shadowMasked(*item.material, *item.nodes);
                 const bool fragmentBlock = masked || variantOf(item).alphaHash;
                 const uint64_t v = frameUniforms_.size();
                 const uint64_t f = v + aligned(program.vertex.uniformBlockSize);

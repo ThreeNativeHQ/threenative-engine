@@ -39,7 +39,7 @@ namespace tn::engine::waste {
     X(pipelineSyncCreates) X(programBuilds) \
     X(queueCallbackMicros) X(queueDeliveryMicros) X(queueCallbacks) \
     X(handleCreates) X(handleReleases) X(attributeUploadBytes) X(uniformUploadBytes) \
-    X(renderFrames) X(renderDraws) X(shadowDraws) X(auxPasses) X(auxFragments) X(cullCandidates) X(culledObjects) \
+    X(renderFrames) X(renderDraws) X(prepassDraws) X(shadowDraws) X(auxPasses) X(auxFragments) X(cullCandidates) X(culledObjects) \
     X(shadowRefreshes) X(shadowRefreshPan) X(shadowRefreshRebuild) X(shadowRefreshInvalidation) \
     X(shadowPagesRefreshed) X(shadowPageEvictions) X(shadowPageRows) X(shadowPageInstances) X(shadowCasterChurn) \
     X(computePasses) X(computeDispatches)

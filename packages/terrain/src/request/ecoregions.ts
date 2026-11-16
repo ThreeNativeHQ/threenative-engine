@@ -1,0 +1,233 @@
+import type { IBiomeSpec, IFoliageType } from "../biome/biome.js";
+import type { TerrainKit } from "../biome/kits.js";
+import type { IMask } from "../core/types.js";
+import { COPERNICUS, type ISurveyRow, TILES, USGS_3DEP } from "../ground/surveys.js";
+
+/**
+ * The regions a request may name: a row per ecoregion, holding the real ground it stands on and the
+ * plant community that grows there.
+ *
+ * A region is data, like the other request tables: the parser resolves a word to a row, and the row
+ * fills arguments a caller could pass by hand — a survey site for `ground`, a starter for the
+ * surface, and `IBiomeSpec` overrides for the canopy (the object `terrain_biome_new` takes). A
+ * request with no region word keeps the starter as shipped, and a tree word alone still swaps the
+ * kit's one tree, so the quick path stays quick.
+ *
+ * Each site is a few kilometres of that region, and its comment records the decoded range of that
+ * crop and of the world's own 512 m patch inside it, both measured with `isForestFloor`
+ * (`ground/ground.ts`): a site whose floor is not a forest floor is replaced, as `SURVEYS` rows are.
+ * `terrain-survey.spec.ts` decodes every row from a checked-in tile, so the range is checked, not a
+ * claim.
+ */
+export interface IEcoregionRow {
+  /** The row's name, reported as `decided.region` and as the cooked world's biome. */
+  readonly id: string;
+  /** The request words that select it; a word with a space is matched as a phrase. */
+  readonly words: readonly string[];
+  /** The starter whose surface, ground cover and assets suit the region. */
+  readonly kit: TerrainKit;
+  /** The real place the world is cut from: its crop, its source and its attribution. */
+  readonly site: ISurveyRow;
+  /**
+   * The kit's own canopy, by asset id: a region's rows are that region's stand, so the kit's authored
+   * tree scatter is replaced by them. Its understorey, stones, road and water stay.
+   */
+  readonly canopy: readonly string[];
+  /** `IBiomeSpec` fields the region replaces on the kit's file: here, the canopy's species rows. */
+  readonly overrides: IBiomeOverrides;
+}
+
+/** The `IBiomeSpec` fields a region may replace: the same overrides `terrain_biome_new` applies. */
+export type IBiomeOverrides = { readonly [K in keyof IBiomeSpec]?: IBiomeSpec[K] };
+
+/**
+ * The far field every region's trees share, in the forest kit's own numbers: a region borrows the
+ * kit's surface, so its stand fades out over the same distance and slopes.
+ */
+const FAR = {
+  cell: 6,
+  spacing: [6.5, 13],
+  spacingAt: [150, 1500],
+  slope: [36, 46],
+  meadowSlope: [12, 24],
+  reach: 2300,
+  treelineJitter: 30,
+  stand: [0.26, 0.4],
+  impostor: 110,
+} as const;
+
+/**
+ * The canopy gaps every species of a region leaves open: one field, so the clearings line up across
+ * species instead of one species filling another's gap. About a quarter of the floor is open.
+ */
+const CLEARINGS: IMask = { type: "noise", scale: 90, threshold: 0.4, seed: 466600, fade: 0.06 };
+
+/**
+ * One canopy species of a region: an `arbor:<preset>@<seed>` id, its own count and spacing, and a
+ * far-field seed of its own. Two rows per species give a stand two tree shapes instead of one cloned
+ * one, which is what `arbor:<preset>@<seed>` names.
+ *
+ * `scale` is the kit's own canopy range: an Arbor tree is baked at its full height (a beech at
+ * 28.6 m), and the scatter's default `[0.8, 1.3]` stood the canopy at 23-37 m, crowns starting
+ * above the eye-level frame and the far impostor pushed out to about 285 m. Each species grows in its
+ * own `noise` patches, as the kit recipe's tree layers do, inside one `CLEARINGS` field every species
+ * shares: a wood is beech stands with oak and birch groups and open gaps between them, not one even
+ * carpet (the judge's overview, 2026-11-14).
+ */
+function canopyRow(
+  species: string,
+  density: number,
+  farSeed: number,
+  scale: readonly [number, number] = [0.55, 1],
+  mask: IMask = {
+    type: "and",
+    masks: [CLEARINGS, { type: "noise", scale: 120, threshold: 0.44, seed: farSeed, fade: 0.24 }],
+  },
+): IFoliageType {
+  return {
+    species,
+    density,
+    slope: [0, 32],
+    height: null,
+    spacing: [3.2, 6.4],
+    collision: "trunk",
+    stands: true,
+    grassThreshold: 0.3,
+    standThreshold: 0.16,
+    far: { ...FAR, seed: farSeed },
+    scale,
+    mask,
+  };
+}
+
+/**
+ * The regions, in table order: a request that names two cooks the first.
+ *
+ * A row's canopy names only presets `vegetationPresets()` returns; `arbor-species.spec.ts` checks
+ * every one, and that the merged biome validates, so a misspelt species fails there and not at a
+ * cook.
+ */
+export const ECOREGION_ROWS: readonly IEcoregionRow[] = [
+  {
+    id: "european-broadleaf",
+    // "beech" alone stays a tree word (`TREE_WORD_ROWS`): only a region word selects this row.
+    words: ["european", "europe"],
+    kit: "forest",
+    site: {
+      name: "Hainich National Park, Thuringia, Germany",
+      lat: 51.0833,
+      lon: 10.4667,
+      extentMeters: 3_000,
+      attribution: `${COPERNICUS} ${TILES}`,
+      // measured: 305..483 m over its 3 km, and 380..423 m at the world's own 512 m (a beech wood's
+      // floor: 5.8 degrees at the 90th percentile, no hydro-flattened water)
+    },
+    canopy: ["fir", "fir-c"],
+    overrides: {
+      // The European beech forest's own mix: beech dominant, sessile oak and silver birch among it,
+      // each at two seeds so no two trees of a species are the same bake.
+      foliage: [
+        canopyRow("arbor:beech@11", 900, 466611),
+        canopyRow("arbor:beech@12", 900, 466612),
+        canopyRow("arbor:oak@13", 650, 466613),
+        canopyRow("arbor:oak@14", 650, 466614),
+        canopyRow("arbor:birch@15", 450, 466615),
+        canopyRow("arbor:birch@16", 450, 466616),
+        // Beech regeneration: the young beech a closed beech wood grows in its own light gaps, so the
+        // clearings fill with saplings (the kit's `firs-young` band, at the same scale).
+        canopyRow("arbor:beech@20", 700, 466620, [0.2, 0.45], { type: "not", mask: CLEARINGS }),
+      ],
+    },
+  },
+  {
+    id: "boreal",
+    words: ["boreal", "taiga", "nordic", "scandinavian"],
+    kit: "forest",
+    site: {
+      name: "Oulanka National Park, Kuusamo, Finland",
+      lat: 66.36221,
+      lon: 29.3167,
+      extentMeters: 3_000,
+      attribution: `${COPERNICUS} ${TILES}`,
+      // measured: 144..325 m over its 3 km, and 177..253 m at 512 m (a spruce stand: 15.4 degrees at
+      // the 90th percentile, 0.6 % hydro-flattened water). Moved 500 m south of the old centre
+      // (66.3667, 29.3167), whose 512 m crop was 8.5 % flattened river and lake water on Mapterhorn data.
+    },
+    canopy: ["fir", "fir-c"],
+    overrides: {
+      // The boreal mix of the kit's own stand: Norway spruce with downy birch and aspen, two bakes each.
+      foliage: [
+        canopyRow("arbor:spruce@21", 1000, 466621),
+        canopyRow("arbor:spruce@22", 1000, 466622),
+        canopyRow("arbor:birch@23", 600, 466623),
+        canopyRow("arbor:birch@24", 600, 466624),
+        canopyRow("arbor:aspen@25", 400, 466625),
+        canopyRow("arbor:aspen@26", 400, 466626),
+      ],
+    },
+  },
+  {
+    id: "mediterranean",
+    words: ["mediterranean", "tuscan"],
+    kit: "desert",
+    site: {
+      name: "Val d'Orcia, Tuscany, Italy",
+      lat: 43.0667,
+      lon: 11.6167,
+      extentMeters: 3_000,
+      attribution: `${COPERNICUS} ${TILES}`,
+      // measured: 276..436 m over its 3 km, and 328..403 m at 512 m (a clay hillside with its olive
+      // and cypress: 17.6 degrees at the 90th percentile)
+    },
+    // The desert kit ships no tree art of its own, so there is no authored canopy to replace.
+    canopy: [],
+    overrides: {
+      // The Mediterranean hill's own three: olive, Italian cypress and downy oak, two bakes each.
+      foliage: [
+        canopyRow("arbor:olive@31", 500, 466631),
+        canopyRow("arbor:olive@32", 500, 466632),
+        canopyRow("arbor:cypress@33", 350, 466633),
+        canopyRow("arbor:cypress@34", 350, 466634),
+        canopyRow("arbor:oak@35", 300, 466635),
+        canopyRow("arbor:oak@36", 300, 466636),
+      ],
+    },
+  },
+  {
+    id: "pacific-northwest",
+    // Two words, matched as the phrase a request writes them in; "pacific" and "northwest" alone
+    // name nothing, so "a pacific island" stays the coastal world it is.
+    words: ["pacific northwest", "cascadia"],
+    kit: "forest",
+    site: {
+      name: "Humptulips valley, Olympic National Forest, Washington",
+      lat: 47.19775,
+      lon: -123.88678,
+      extentMeters: 3_000,
+      attribution: `${USGS_3DEP} ${TILES}`,
+      // measured: 52..212 m over its 3 km, and 96..163 m at 512 m (a Douglas-fir valley floor: 25.9
+      // degrees at the 90th percentile, under the 28 the floor accepts). Moved 1 km north-east of the
+      // old centre (47.2, -123.9), whose 512 m crop read 31.0 degrees on Mapterhorn's lidar.
+    },
+    canopy: ["fir", "fir-c"],
+    overrides: {
+      // The coastal rainforest's own three: Douglas-fir, western redcedar and bigleaf maple.
+      foliage: [
+        canopyRow("arbor:douglasfir@41", 900, 466641),
+        canopyRow("arbor:douglasfir@42", 900, 466642),
+        canopyRow("arbor:redcedar@43", 550, 466643),
+        canopyRow("arbor:redcedar@44", 550, 466644),
+        canopyRow("arbor:bigleafmaple@45", 350, 466645),
+        canopyRow("arbor:bigleafmaple@46", 350, 466646),
+      ],
+    },
+  },
+];
+
+/**
+ * Every word the rows answer to, a phrase split into the words a request is written with: what the
+ * tool reports as read, so "pacific northwest" never comes back as two words nothing answered to.
+ */
+export const ECOREGION_WORDS: readonly string[] = ECOREGION_ROWS.flatMap((row) =>
+  row.words.flatMap((word) => word.split(" ")),
+);

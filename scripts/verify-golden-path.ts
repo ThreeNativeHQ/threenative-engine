@@ -1011,6 +1011,15 @@ const STATIC_TYPES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The engine's thread verdict from a console line: core prints it once at the first finished frame
+ * (TN_FIRST_FRAME), so a software adapter that needs minutes to fill a 300-tick TN_FRAME_BUDGET
+ * window still answers inside the probe's cap. A window line carries it too.
+ */
+export function threadReportOf(text: string): string | undefined {
+  return /^TN_(?:FIRST_FRAME|FRAME_BUDGET):.*"threads":"([^"]*)"/u.exec(text)?.[1];
+}
+
+/**
  * A shipped game must start the engine with its worker threads on a host that sends no COOP/COEP
  * headers (GitHub Pages, a plain static server), and still load, single-threaded and warned, where
  * nothing can isolate it. `vite preview` sends the headers, so the `test` layer cannot see this:
@@ -1053,12 +1062,14 @@ export async function assertStaticHostThreads(dist: string, timeoutMs = 180_000)
       page.on("console", (message) => {
         const text = message.text();
         if (text.includes("TN_WEB_THREADS_OFF")) warned = true;
-        const threads = /^TN_FRAME_BUDGET:.*"threads":"([^"]*)"/u.exec(text)?.[1];
+        const threads = threadReportOf(text);
         if (threads !== undefined) resolve(threads);
       });
       setTimeout(
         () =>
-          reject(new Error(`no TN_FRAME_BUDGET window with a thread report in ${timeoutMs} ms`)),
+          reject(
+            new Error(`no drawn frame (TN_FIRST_FRAME) with a thread report in ${timeoutMs} ms`),
+          ),
         timeoutMs,
       ).unref();
       page.goto(url).catch(reject);

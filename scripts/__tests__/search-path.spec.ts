@@ -157,6 +157,8 @@ describe("the tracked .ignore (PRD-357 F2/F5)", () => {
         "packages",
         ".github",
         "package.json",
+        // Markdown is prose: a PRD that quotes an `rg` command runs nothing.
+        ":(exclude)*.md",
       ],
       { cwd: repoRoot, encoding: "utf8", maxBuffer: 1024 * 1024 * 32 },
     );

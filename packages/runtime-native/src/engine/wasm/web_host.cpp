@@ -458,6 +458,17 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
             overlayDatabase.render(target, *scene, *camera, {0, 0, 0, 0});
         } else {
             lastDrawn = renderer.get();
+            // PRD-888's arm, read every frame so a probe flips `globalThis.__tnPrepass` in one page load; it defaults
+            // from `?tnPrepass=1`. `"split"` is lever 0: the depth rows draw in their own timed pass. The renderer
+            // reads TN_PREPASS per frame (flags.h).
+            const int prepassMode = EM_ASM_INT({
+                if (globalThis.__tnPrepass === undefined) {
+                    const asked = new URLSearchParams(globalThis.location ? globalThis.location.search : "").get("tnPrepass");
+                    globalThis.__tnPrepass = asked === "split" ? "split" : asked === "1";
+                }
+                return globalThis.__tnPrepass === "split" ? 2 : globalThis.__tnPrepass ? 1 : 0;
+            });
+            setenv("TN_PREPASS", prepassMode == 2 ? "split" : prepassMode == 1 ? "1" : "0", 1);
             renderer->setSampleCount(sampleCount);
             renderer->setRenderScale(renderScale);
             renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
@@ -1321,6 +1332,7 @@ extern "C" double tnw_web_frame(int field) {
         // 85 (PRD-770): the shadow passes' triangles, which field 1 adds in. With 27 (every shadow draw) it splits fields
         // 0 and 1 into the main pass and the shadow passes, as three counts a nested shadow render apart from the main one.
         case TN_WEB_FRAME_SHADOW_TRIANGLES: return double(lastDrawn->lastFrame().shadowTriangles);
+        case TN_WEB_FRAME_PREPASS_DRAWS: return double(lastDrawn->lastFrame().prepassDraws);
         case TN_WEB_FRAME_KEPT_SHADOW_MAPS: return double(renderer->lastFrame().keptShadowMaps);
         case TN_WEB_FRAME_UNIFORM_BYTES: return double(renderer->lastFrame().uniformBytes);
         // PRD-771, 73 to 77: running ms, every render summed, like 66 to 70. 73 the post effects' and output pass's share of

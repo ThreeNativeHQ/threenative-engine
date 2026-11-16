@@ -5,7 +5,7 @@ import { terrainEditor } from "@threenative/terrain/editor/server";
 import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createWebBrandPlugin } from "create-threenative";
 import { type Plugin, defineConfig } from "vite";
-import { worldFiles } from "./scripts/world-files.mjs";
+import { worldFiles } from "./scripts/bake/world-files.mjs";
 
 /**
  * The game's own licensed art, served beside the starter's.
@@ -13,13 +13,13 @@ import { worldFiles } from "./scripts/world-files.mjs";
  * `publicDir` is one directory, and it is already the terrain package's CC0
  * starter sets. The prepared Fab pines are this example's own art, they are
  * licensed and cannot be committed, and they live in a gitignored folder that
- * only exists on the machine that ran `scripts/prep-fab-pines.py` — so they are
+ * only exists on the machine that ran `scripts/prep/prep-fab-pines.py` — so they are
  * a second static root rather than a copy of the first. The Landscape Pro
- * vegetation `scripts/prep-landscape-pro.mjs` copies is a third, for the same
+ * vegetation `scripts/prep/prep-landscape-pro.mjs` copies is a third, for the same
  * reason and with the same failure behaviour.
  *
- * A missing directory is not an error: the loaders in `src/render/prepared.ts`
- * and `src/render/pack.ts` treat a refused model as "this game has no prepared
+ * A missing directory is not an error: the loaders in `src/render/props/prepared.ts`
+ * and `src/render/props/pack.ts` treat a refused model as "this game has no prepared
  * art" and draw the procedural spruce instead, which is what CI gets.
  *
  * The Landscape Pro root serves a *path*, not a flat namespace, because a
@@ -101,7 +101,7 @@ function preparedAssets(): Plugin {
     generateBundle() {
       // The baked terrain JSON is fetched, never imported: a 7–12 MB JSON module cost about 3 s to
       // compile in dev, where fetch and JSON.parse take a sixth of that. Which world files a build
-      // carries is the bake's own manifest (`scripts/world-files.mjs`), so a bake change cannot
+      // carries is the bake's own manifest (`scripts/bake/world-files.mjs`), so a bake change cannot
       // leave the build short of a prop package the game fetches.
       this.emitFile({
         type: "asset",

@@ -1,5 +1,6 @@
 import { Box3, BoxGeometry, InstancedBufferAttribute, MeshBasicMaterial, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { GEOMETRY_ASSET_KEY } from "../src/geometry-capture.js";
 import type { InstancedBatch } from "../src/instanced-batch.js";
 import { LOD_RANGE_STRIDE, SharedBatch } from "../src/world-cell-batches.js";
 import { batchRecords } from "../src/world-cell-records.js";
@@ -92,5 +93,18 @@ describe("SharedBatch's range column", () => {
     material.userData.tnPublishedLodRange = true;
     batch.surface(material);
     expectAligned(batch);
+  });
+});
+
+describe("SharedBatch's range-aware view", () => {
+  it("keeps the source geometry's asset stamp, so TN_ASSET_UNUSED sees the model drawn", () => {
+    const material = new MeshBasicMaterial();
+    material.userData.tnPublishedLodRange = true;
+    const source = new BoxGeometry(1, 1, 1);
+    source.userData[GEOMETRY_ASSET_KEY] = "trees/oak-near.glb";
+    const bounds = new Box3(new Vector3(-1, -1, -1), new Vector3(1, 1, 1));
+    const batch = new SharedBatch(source, material, 4, 4, "stamp-probe", bounds, "cluster");
+    expect(batch.mesh.geometry).not.toBe(source);
+    expect(batch.mesh.geometry.userData[GEOMETRY_ASSET_KEY]).toBe("trees/oak-near.glb");
   });
 });

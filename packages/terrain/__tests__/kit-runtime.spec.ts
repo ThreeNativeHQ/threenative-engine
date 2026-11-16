@@ -14,7 +14,6 @@ import { addStarterWorld } from "../src/starter.js";
 import { PropColliders as AlpineColliders, addAlpine } from "../starter/alpine/world.js";
 import { PropColliders as CoastalColliders, addCoastal } from "../starter/coastal/world.js";
 import { PropColliders as DesertColliders, addDesert } from "../starter/desert/world.js";
-import { PropColliders as ForestColliders, addForest } from "../starter/forest/world.js";
 import { PropColliders as TundraColliders, addTundra } from "../starter/tundra/world.js";
 
 vi.mock("@threenative/terrain/starter", () => import("../src/starter.js"));
@@ -35,13 +34,6 @@ vi.mock("../starter/coastal/sea.js", () => ({
 }));
 // Only these columns differed: asset, water response/request and missing-model filename.
 const kits = [
-  {
-    kit: "forest",
-    addWorld: addForest,
-    Collider: ForestColliders,
-    asset: "fir",
-    water: { lakes: [], rivers: [] },
-  },
   {
     kit: "alpine",
     addWorld: addAlpine,

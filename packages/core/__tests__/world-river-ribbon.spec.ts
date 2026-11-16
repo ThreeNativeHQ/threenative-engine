@@ -161,6 +161,32 @@ describe("lakeSurfaceGeometry", () => {
     expect(checked).toBeGreaterThan(100);
   });
 
+  it("leaves a hollow past the basin's rim dry, where the drawn water and the swimmer's both stop", () => {
+    // A basin at 6 m with an arm running 50 m west, so the reach is 56 m, and a hollow at 6 m 25-40 m
+    // east behind 10 m ground: under the 8 m level and inside the reach, but no water gets there.
+    const field = Heightfield.fromSampler({
+      columns: 161,
+      depth: 200,
+      origin: { x: 0, z: 0 },
+      rows: 161,
+      sampleHeight: (x: number, z: number) =>
+        Math.hypot(x, z) < 12 ||
+        (x < 0 && x > -50 && Math.abs(z) < 6) ||
+        (x > 25 && x < 40 && Math.abs(z) < 6)
+          ? 6
+          : 10,
+      width: 200,
+    });
+    const lake = { at: [0, 0], level: 8, margin: 1.12, radius: 60 };
+    const geometry = lakeSurfaceGeometry(lake, field);
+    if (geometry === undefined) throw new Error("no lake");
+    const water = new WaterBodies({ field, lakes: [lake] });
+    expect(drawnAt(geometry, -40, 0)).toBe(true);
+    expect(water.footprintAt(-40, 0)?.kind).toBe("lake");
+    expect(drawnAt(geometry, 32, 0)).toBe(false);
+    expect(water.footprintAt(32, 0)).toBeUndefined();
+  });
+
   it("records each vertex's depth and stands every vertex at the level", () => {
     const field = bowl();
     const geometry = lakeSurfaceGeometry(LAKE, field, { maxDepth: 1.6, rings: 8, spokes: 12 });

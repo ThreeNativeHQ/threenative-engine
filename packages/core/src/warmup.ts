@@ -1244,6 +1244,9 @@ export async function warmUpScene(
   };
 
   let gpuDrainSettled = true;
+  // The last compile the deadline outran (still pending, not rejected). The expiry timer can fire a
+  // fraction of a millisecond before `now()` reaches the deadline, so the clock alone misses it.
+  let compileOutran = false;
   const compileWithinDeadline = async (
     deadline: number,
     work: Promise<void>,
@@ -1259,7 +1262,8 @@ export async function warmUpScene(
     };
     void work.then(track, track);
     const finished = await withinDeadline(deadline, work, yieldFrame, now);
-    if (!finished && !settled) pendingCompiles.push(work);
+    compileOutran = !finished && !settled;
+    if (compileOutran) pendingCompiles.push(work);
     return finished;
   };
   const finish = (report: IWarmUpReport): IWarmUpReport => {
@@ -1378,7 +1382,7 @@ export async function warmUpScene(
           elapsedMs: now() - startedAt,
           unsupported: false,
           abandoned: finished ? 0 : 1,
-          timedOut: !finished && (passError === undefined || now() >= deadline),
+          timedOut: !finished && (passError === undefined || compileOutran || now() >= deadline),
         }),
       );
     }

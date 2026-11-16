@@ -1596,6 +1596,10 @@ importers:
         version: 4.1.10(@types/node@20.19.43)(@vitest/coverage-v8@4.1.10)(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.0)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))
 
   packages/terrain:
+    dependencies:
+      sharp:
+        specifier: '>=0.35.4'
+        version: 0.35.4(@types/node@20.19.43)
     devDependencies:
       '@threenative/core':
         specifier: workspace:*

@@ -6,12 +6,12 @@ import { createRequire } from "node:module";
 import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { IsolatedKillError, childExecArgv, runIsolated } from "./child.js";
+import { IsolatedKillError, childExecArgv, runIsolated } from "../cook/child.js";
+import { parseGenerateRequest } from "../request/generate-request.js";
 import {
   TERRAIN_TOOLS,
   newBiomeSpec,
   parseBiomeNewInput,
-  parseGenerateRequest,
   parsePatchInput,
   patchRecipe,
   resolveAssetSource,

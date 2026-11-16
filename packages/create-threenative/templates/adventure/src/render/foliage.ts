@@ -20,12 +20,14 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
+  FrontSide,
   Group,
   IcosahedronGeometry,
   InstancedMesh,
   type Material,
   MathUtils,
   Mesh,
+  MeshStandardMaterial,
   Object3D,
   OctahedronGeometry,
   SphereGeometry,
@@ -334,10 +336,19 @@ function limb(
   return tube;
 }
 
-/** Colours bark by its normal: moss on every face that looks up, bark below, darker at the foot. */
-export function mossBark(geometry: BufferGeometry, moss: number): BufferGeometry {
+/**
+ * Colours bark by its normal: moss on every face that looks up, bark below, darker at the foot.
+ * `keepNormals` trusts the normals the geometry already carries instead of recomputing them, for a
+ * baked mesh: a recomputed normal on a two-centimetre triangle collapses to NaN, and the NaN lands
+ * in the vertex colours this function writes, where bloom carries it across the whole frame.
+ */
+export function mossBark(
+  geometry: BufferGeometry,
+  moss: number,
+  keepNormals = false,
+): BufferGeometry {
   const g = geometry.index === null ? geometry : geometry.toNonIndexed();
-  g.computeVertexNormals();
+  if (!keepNormals || g.attributes.normal === undefined) g.computeVertexNormals();
   const normal = g.attributes.normal;
   const position = g.attributes.position;
   if (normal === undefined || position === undefined) return g;
@@ -1011,12 +1022,15 @@ export function valeGround(
       c.copy(soil).lerp(moss, 0.35 + 0.55 * smooth(0.35, 0.75, wave(x + 40, z - 17, 0.27)));
       c.lerp(mossBright, smooth(0.6, 0.85, wave(x - 3, z + 5, 0.45)) * 0.5);
       c.lerp(meadow, smooth(0.66, 0.82, wave(x * 0.7, z * 0.7 + 9, 0.21)) * 0.3);
+      // Leaf litter and bare soil under the old trees. The same zone thins the grass and gathers the
+      // scattered debris, so the ground the props stand on is the ground they are meant for.
       let nearTree = 0;
       for (const [tx, tz, ts] of site.trees) {
         const d = Math.hypot(x - tx, z - tz);
-        if (d < 5 * ts) nearTree = Math.max(nearTree, 1 - smooth(1.4 * ts, 4.5 * ts, d));
+        nearTree = Math.max(nearTree, 1 - smooth(1.2 * ts, 4.2 * ts, d));
       }
-      c.lerp(litter, nearTree * 0.6 * (0.6 + 0.4 * wave(x, z, 0.9)));
+      c.lerp(litter, nearTree * (0.62 + 0.34 * wave(x, z, 0.9)));
+      c.lerp(soil, nearTree * 0.3);
       // Dark soil under the path, the flagstones on top of it.
       const off = Math.abs(x - site.pathX(z)) + (wave(x, z, 1.3) - 0.5) * 0.5;
       if (z > site.clearing.north - 9 && z < site.clearing.south + 1)
@@ -1059,4 +1073,44 @@ export function valeGround(
   meshes.outer.receiveShadow = true;
   meshes.inner.name = "vale-floor";
   return meshes;
+}
+
+/** What a baked forest-floor part is, so it takes the matching look of the kit. */
+export type FloorKind = "frond" | "litter" | "wood";
+
+/**
+ * The forest floor in the kit's own look, tuned here and nowhere else. Wood (logs, stumps, twigs)
+ * takes the old trees' mossy ridged bark, so a fallen log reads as one of them. Litter keeps the
+ * bake's COLOR_0 times its base colour. A frond keeps Arbor's leaf atlas, cut out rather than
+ * blended, exactly as the tree crowns are.
+ */
+export function floorPart(
+  mesh: Mesh,
+  kind: FloorKind,
+): { geometry: BufferGeometry; material: Material } {
+  if (kind === "wood") {
+    // The bake's own normals, never recomputed: see `mossBark`'s `keepNormals`.
+    const baked = mesh.geometry.index === null ? mesh.geometry : mesh.geometry.toNonIndexed();
+    return {
+      // A little moss on the shoulders, never enough to paint a log the colour of the ground it
+      // lies on: the debris has to read as deadwood, not as another patch of grass.
+      geometry: mossBark(baked, 0.18, true),
+      material: surfaced(0xffffff, "bark", { vertexColors: true }),
+    };
+  }
+  const baked = mesh.material as MeshStandardMaterial;
+  const frond = kind === "frond";
+  return {
+    geometry: mesh.geometry,
+    material: new MeshStandardMaterial({
+      // COLOR_0 is the bake's variation; the base colour is its tone, so both multiply.
+      color: frond ? 0xffffff : baked.color,
+      map: frond ? baked.map : null,
+      metalness: 0,
+      roughness: 0.9,
+      side: frond ? DoubleSide : FrontSide,
+      vertexColors: true,
+      ...(frond ? { alphaTest: 0.45 } : {}),
+    }),
+  };
 }

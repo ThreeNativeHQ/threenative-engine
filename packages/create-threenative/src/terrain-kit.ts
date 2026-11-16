@@ -2,8 +2,9 @@ import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// The five starter kits. The allowlist also blocks path escape: a name reaches the disk only when it matches.
-const KITS = ["alpine", "coastal", "desert", "forest", "tundra"];
+// The four data kits. The allowlist also blocks path escape: a name reaches the disk only when it matches.
+// The forest is a source kit: a game copies its whole folder from @threenative/terrain/starter/forest.
+const KITS = ["alpine", "coastal", "desert", "tundra"];
 // These six files are game source. bake.mjs uses @threenative/terrain/kit to resolve pinned assets on demand.
 const COPIED = [
   "assets.json",

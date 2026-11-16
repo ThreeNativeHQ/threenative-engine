@@ -2,7 +2,7 @@ import { exposeDebug } from "@threenative/core";
 import game from "./game.js";
 import { showLaunchFailures } from "./launchFailure.js";
 import { BIOMES, type WorldName } from "./render/biomes.js";
-import { canopyComparison } from "./render/pack.js";
+import { canopyComparison } from "./render/props/pack.js";
 
 const failures = showLaunchFailures();
 const query = new URLSearchParams(location.search);

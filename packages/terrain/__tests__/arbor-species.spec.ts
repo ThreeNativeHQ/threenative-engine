@@ -3,10 +3,15 @@ import { join } from "node:path";
 import { vegetationPresets } from "@threenative/procedural-vegetation";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { TREE_WORD_ROWS } from "../src/core/request-words.js";
-import { ARBOR_TREE_IDS, parseArborSpecies } from "../src/mcp/arbor-species.js";
-import { cookKit } from "../src/mcp/cook.js";
+import { cookKit } from "../src/cook/cook.js";
 import { TERRAIN_TOOLS, newBiomeSpec, parseGenerateRequest } from "../src/mcp/tools.js";
+import {
+  ARBOR_TREE_IDS,
+  growArborRows,
+  parseArborSpecies,
+} from "../src/population/arbor-species.js";
+import { ECOREGION_ROWS } from "../src/request/ecoregions.js";
+import { TREE_WORD_ROWS } from "../src/request/request-words.js";
 
 async function project(options: { vegetation: boolean }) {
   const root = await realpath(await makeTempDir("tn-terrain-arbor-"));
@@ -63,6 +68,32 @@ async function grove(species: readonly string[]) {
 }
 
 describe("Arbor species in a terrain cook", () => {
+  it("grows a kit row's form patch into its own bake, and keeps the patch out of the asset row", async () => {
+    const fixture = await project({ vegetation: true });
+    try {
+      const table: Record<string, object> = {
+        fir: { arbor: "spruce@7", form: { leaves: [{ count: 40 }] }, tree: true },
+        plain: { arbor: "spruce@7" },
+        needles: { arbor: "spruce@7", leafImage: "needles.png" },
+      };
+      const pixel =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+      await writeFile(join(fixture.root, "needles.png"), Buffer.from(pixel, "base64"));
+      await growArborRows(table, fixture.root, join(fixture.root, "scratch"), fixture.root);
+      expect((table.needles as { near: string }).near).toMatch(
+        /spruce-7-f[0-9a-f]{8}-lod\d\.glb$/u,
+      );
+      expect(table.needles).not.toHaveProperty("leafImage");
+      const fir = table.fir as { near: string; tree?: boolean };
+      expect(fir.near).toMatch(/spruce-7-f[0-9a-f]{8}-lod\d\.glb$/u);
+      expect((table.plain as { near: string }).near).toMatch(/spruce-7-lod\d\.glb$/u);
+      expect(fir).not.toHaveProperty("form");
+      expect(fir.tree).toBe(true);
+    } finally {
+      await fixture.remove();
+    }
+  });
+
   it("parses arbor:<preset>[@seed] and fails closed on a malformed name", () => {
     expect(parseArborSpecies("arbor:oak@7")).toEqual({ preset: "oak", seed: 7 });
     expect(parseArborSpecies("arbor:spruce")).toEqual({ preset: "spruce", seed: 1 });
@@ -156,6 +187,53 @@ describe("Arbor species in a terrain cook", () => {
       await remove();
     }
   }, 240_000);
+
+  it("plants each region a mix of presets, from the kit's own canopy", async () => {
+    const trees = vegetationPresets()
+      .filter((preset) => preset.kind === "tree")
+      .map((preset) => preset.id);
+    for (const row of ECOREGION_ROWS) {
+      const foliage = row.overrides.foliage ?? [];
+      // More than one species, each at more than one seed: a community, not one cloned tree.
+      const presets = new Map<string, number>();
+      for (const canopy of foliage) {
+        const species = parseArborSpecies(canopy.species);
+        expect(species, `${row.id}: ${canopy.species}`).toBeDefined();
+        expect(trees, `${row.id}: ${canopy.species}`).toContain(species?.preset);
+        const preset = species?.preset as string;
+        presets.set(preset, (presets.get(preset) ?? 0) + 1);
+      }
+      expect(presets.size, row.id).toBeGreaterThanOrEqual(3);
+      for (const [preset, seeds] of presets)
+        expect(seeds, `${row.id}: ${preset}`).toBeGreaterThan(1);
+      // Each bake is its own set of draws at every LOD level and shadow cluster, so a seed past the
+      // second buys variety at a frame cost: nine bakes held the European forest's CPU frame above
+      // the starter's (PRD-887 AC-3). Two full-size seeds per species, and at most one sapling band.
+      const full = new Map<string, number>();
+      for (const canopy of foliage) {
+        if ((canopy.scale?.[1] ?? 1) <= 0.5) continue;
+        const preset = parseArborSpecies(canopy.species)?.preset as string;
+        full.set(preset, (full.get(preset) ?? 0) + 1);
+      }
+      for (const [preset, seeds] of full)
+        expect(seeds, `${row.id}: full-size ${preset} seeds`).toBeLessThanOrEqual(2);
+      expect(
+        foliage.length - [...full.values()].reduce((a, b) => a + b, 0),
+        row.id,
+      ).toBeLessThanOrEqual(1);
+      // The rows it replaces are the kit's own art, and the merged biome is a valid one.
+      const assets = JSON.parse(
+        await readFile(new URL(`../starter/${row.kit}/assets.json`, import.meta.url), "utf8"),
+      ) as Record<string, unknown>;
+      for (const id of row.canopy) expect(Object.keys(assets), `${row.id}: ${id}`).toContain(id);
+      const base = JSON.parse(
+        await readFile(new URL(`../starter/${row.kit}/biome.data.json`, import.meta.url), "utf8"),
+      ) as Record<string, unknown>;
+      expect(() =>
+        newBiomeSpec(base, row.id, row.overrides as Record<string, unknown>),
+      ).not.toThrow();
+    }
+  });
 
   it("keeps the request words, the schema text and the package's presets in step", () => {
     const trees = vegetationPresets()

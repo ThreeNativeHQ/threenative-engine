@@ -639,7 +639,7 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
 
 void Renderer::dropBundles() {
     for (WGPURenderBundle* bundle :
-         {&mainBundle_, &tailBundle_, &viewportBundle_, &auxBundle_, &velocityBundle_, &mainDelta_, &auxDelta_, &velocityDelta_,
+         {&mainBundle_, &prepassBundle_, &prepassTailBundle_, &tailBundle_, &viewportBundle_, &auxBundle_, &velocityBundle_, &mainDelta_, &auxDelta_, &velocityDelta_,
           &auxTail_, &velocityTail_}) {
         if (*bundle) wgpuRenderBundleRelease(*bundle);
         *bundle = nullptr;

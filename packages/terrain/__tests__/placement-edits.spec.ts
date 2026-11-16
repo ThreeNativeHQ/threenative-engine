@@ -4,9 +4,9 @@ import {
   cellPlacements,
   validateWorldPackage,
 } from "../../core/src/world-package.js";
-import { editWorldPlacements } from "../src/core/placement-edits.js";
 import type { IPlacementOverride } from "../src/core/types.js";
 import { Terrain, applyPlacementOverrides, bakeWorldPackage } from "../src/index.js";
+import { editWorldPlacements } from "../src/population/placement-edits.js";
 
 const ASSETS = {
   rock: { bounds: { min: [-1, 0, -1], max: [1, 2, 1] }, glb: "models/rock.glb" },

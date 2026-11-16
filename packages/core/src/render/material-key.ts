@@ -16,11 +16,31 @@ const TEXTURE_SLOTS = [
   "alphaMap",
 ] as const;
 
+/** Ids for unnamed textures whose source carries no `uuid` (the owned engine's), one per texture. */
+const unnamedIds = new WeakMap<Texture, number>();
+let nextUnnamedId = 0;
+
+/** The texture's own source identity: three's source `uuid`, else a per-texture id from this module. */
+function sourceId(texture: Texture): string {
+  const uuid = (texture.source as { uuid?: string } | undefined)?.uuid;
+  if (uuid !== undefined) return uuid;
+  let id = unnamedIds.get(texture);
+  if (id === undefined) {
+    id = nextUnnamedId++;
+    unnamedIds.set(texture, id);
+  }
+  return `#${String(id)}`;
+}
+
 function textureKey(texture: Texture | null | undefined): string {
   if (texture === null || texture === undefined) return "-";
   const image = texture.image as { width?: number; height?: number } | undefined;
   const mips = (texture as { mipmaps?: readonly { data?: { byteLength?: number } }[] }).mipmaps;
-  return `${texture.name}:${String(image?.width ?? 0)}x${String(image?.height ?? 0)}:${String(mips?.[0]?.data?.byteLength ?? 0)}:${texture.flipY ? 1 : 0}`;
+  // A name is what lets two loads of one image match. Without one, nothing here tells two images of
+  // one size apart (generated leaf atlases are all 1024², unnamed, with no mip bytes), so the
+  // texture's own source is its identity: it never shares, and never draws another's pixels.
+  const id = texture.name !== "" ? texture.name : `source:${sourceId(texture)}`;
+  return `${id}:${String(image?.width ?? 0)}x${String(image?.height ?? 0)}:${String(mips?.[0]?.data?.byteLength ?? 0)}:${texture.flipY ? 1 : 0}`;
 }
 
 /**

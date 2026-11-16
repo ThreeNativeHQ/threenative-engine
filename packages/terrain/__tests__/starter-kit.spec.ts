@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type IWorldPackage, validateWorldPackage } from "@threenative/core/world";
 import { Terrain, decodeRAW16 } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
@@ -13,13 +12,6 @@ const starterAssets = join(packageRoot, "starter-assets");
 
 // Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
-  forest: {
-    "world.glb": "0a05950b3eda8c42a31375c97897407e8688b0fc814aa44aba9aec095eb5f5a2",
-    "heightmap.u16": "800715834e5db9a414ef7207495948bae231923fdfd82bc36b44e51131f06968",
-    "placements.bin": "0853ed2486043db7287b5e98676bc9894f057ea43fb09258cc26d8416518fc8a",
-    "splat.rgba": "46b2dee04b232ed6ab36a64402463cb15b0288318f694206acaf3d2f8068da7e",
-    "world.json": "50cdf9757554372259cfe20b00ad65faea71c07a9900cef0589ad249f1c84d16",
-  },
   alpine: {
     "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
     "placements.bin": "5c47dd59619843bc056fbc8391ca7bccdef86c9950cd192c53a6928676865c26",
@@ -70,37 +62,36 @@ const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = 
   },
 };
 
-interface ITable {
-  readonly base: { id: string };
-  readonly layers: readonly { id: string }[];
-  readonly splat: { masks: Record<string, [number, string]> };
-  readonly textures: string;
-}
-
-/** The lake and river the bake writes beside the world, for the game to draw. */
-interface IKitWater {
-  readonly lakes: readonly { id: string; at: number[]; radius: number; level: number }[];
-  readonly rivers: readonly { id: string; width: number; points: number[][] }[];
+/** One layer of the forest's ground table: its maps, relative to the `world/` folder. */
+interface IForestLayer {
+  readonly id: string;
+  readonly maps: { diffuse: string; normal?: string };
 }
 
 /** Copies the named kit into a temp directory whose node_modules resolves the workspace packages. */
-function kitInTempDir(kitName = "forest"): string {
+function kitInTempDir(kitName: string): string {
   const dir = makeTempDirSync(`terrain-starter-kit-${kitName}-`);
   const kit = join(packageRoot, "starter", kitName);
   for (const name of ["bake.mjs", "recipe.json", "assets.json", "surface.json", "heightmap.r16"])
     copyFileSync(join(kit, name), join(dir, name));
   mkdirSync(join(dir, "node_modules", "@threenative"), { recursive: true });
   symlinkSync(packageRoot, join(dir, "node_modules", "@threenative", "terrain"), "dir");
-  // forest/bake.mjs imports the cook from @threenative/assets, so the fixture links this checkout's.
+  // A kit's bake.mjs imports the cook from @threenative/assets, so the fixture links this checkout's.
   symlinkSync(
     join(packageRoot, "..", "assets"),
     join(dir, "node_modules", "@threenative", "assets"),
     "dir",
   );
+  // The kit's `arbor` rows grow with this package, the README's third devDependency.
+  symlinkSync(
+    join(packageRoot, "..", "procedural-vegetation"),
+    join(dir, "node_modules", "@threenative", "procedural-vegetation"),
+    "dir",
+  );
   return dir;
 }
 
-function bake(out: string, kitName = "forest"): { files: Map<string, string>; total: number } {
+function bake(out: string, kitName: string): { files: Map<string, string>; total: number } {
   const dir = kitInTempDir(kitName);
   execFileSync(process.execPath, ["bake.mjs", "--assets", starterAssets, "--out", out], {
     cwd: dir,
@@ -120,57 +111,71 @@ function bake(out: string, kitName = "forest"): { files: Map<string, string>; to
 }
 
 describe("forest starter kit", () => {
-  it("bakes a world package the engine's validator accepts, deterministically", () => {
-    const out = join(makeTempDirSync("terrain-starter-world-"), "world");
-    const { files, total } = bake(out);
-    const manifest = JSON.parse(readFileSync(join(out, "world.json"), "utf8")) as IWorldPackage;
-    const result = validateWorldPackage(manifest, {
-      heightmapByteLength: readFileSync(join(out, manifest.terrain.heightmap)).byteLength,
-      placementsByteLength: readFileSync(join(out, manifest.placements)).byteLength,
+  /** The forest kit's own bake, run in place: it imports the kit's TypeScript under tsx. */
+  function bakeForest(out: string): Map<string, string> {
+    execFileSync(process.execPath, [join(packageRoot, "starter/forest/bake.mjs"), "--out", out], {
+      stdio: "pipe",
     });
-    expect(result.errors).toEqual([]);
+    const files = new Map<string, string>();
+    for (const path of readdirSync(out, { recursive: true })) {
+      const full = join(out, String(path));
+      if (statSync(full).isFile())
+        files.set(String(path), createHash("sha256").update(readFileSync(full)).digest("hex"));
+    }
+    return files;
+  }
 
-    expect(manifest.terrain.columns).toBe(257);
-    expect(manifest.extent.sizeX).toBe(512);
-    const perAsset: Record<string, number> = {};
-    for (const cell of manifest.cells)
-      for (const run of cell.runs) perAsset[run.asset] = (perAsset[run.asset] ?? 0) + run.count;
-    expect(perAsset.fir).toBeGreaterThanOrEqual(2000);
-    expect(perAsset.boulder).toBe(320);
-    expect(Object.keys(perAsset).sort()).toEqual([
-      "boulder",
-      "boulder-small-a",
-      "boulder-small-b",
-      "fern-a",
-      "fern-b",
-      "fir",
-      "fir-c",
-    ]);
-    // The combined and streamed representations are alternatives, not additive.
-    const combinedBytes = statSync(join(out, "world.glb")).size;
-    expect(combinedBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
-    expect(total - combinedBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+  it("bakes every file its scene fetches, and the art they name, deterministically", () => {
+    const out = makeTempDirSync("terrain-starter-forest-");
+    const files = bakeForest(out);
+    const props = JSON.parse(readFileSync(join(out, "world/forest.props.json"), "utf8")) as {
+      buckets: { placements: string; reach: string; ids: string }[];
+    };
+    const fetched = [
+      "forest.json",
+      "horizon.json",
+      "forest.props.json",
+      "forest.canopy.bin",
+      "forest.sky.bin",
+      "forest.world.json",
+      "forest.layers.json",
+      "forest.splat.rgba8",
+      ...props.buckets.flatMap((bucket) => [bucket.placements, bucket.reach, bucket.ids]),
+    ];
+    for (const file of fetched) expect(files.has(`world/${file}`), file).toBe(true);
+    const table = JSON.parse(readFileSync(join(out, "world/forest.layers.json"), "utf8")) as {
+      base: IForestLayer;
+      layers: IForestLayer[];
+    };
+    for (const layer of [table.base, ...table.layers])
+      for (const map of Object.values(layer.maps))
+        expect(files.has(join("world", map)), `${layer.id} ${map}`).toBe(true);
+    for (const art of ["hdri/kloofendal_48d_partly_cloudy_2k.hdr", "mannequin-swim.glb"])
+      expect(files.has(art), art).toBe(true);
+    // The pinned survey bakes the pinned lake and creek the scene floods.
+    const world = JSON.parse(readFileSync(join(out, "world/forest.json"), "utf8"));
+    expect(world.lakes).toEqual([{ id: "lake", at: [-70, 25], radius: 105, level: 13.3 }]);
+    expect(world.rivers).toHaveLength(1);
+    // One kit, one world: a second bake is byte-identical.
+    expect([...bakeForest(makeTempDirSync("terrain-starter-forest-"))].sort()).toEqual(
+      [...files].sort(),
+    );
+  }, 240_000);
 
-    // Pinned golden hashes for starter-kit forest bake (PRD-592 AC-1)
-    expect(files.get("heightmap.u16")).toBe(
-      "800715834e5db9a414ef7207495948bae231923fdfd82bc36b44e51131f06968",
-    );
-    expect(files.get("placements.bin")).toBe(
-      "0853ed2486043db7287b5e98676bc9894f057ea43fb09258cc26d8416518fc8a",
-    );
-    expect(files.get("splat.rgba")).toBe(
-      "46b2dee04b232ed6ab36a64402463cb15b0288318f694206acaf3d2f8068da7e",
-    );
-    expect(files.get("world.json")).toBe(
-      "50cdf9757554372259cfe20b00ad65faea71c07a9900cef0589ad249f1c84d16",
-    );
-
-    // One recipe and seed, one package: a second bake is byte-identical.
-    const second = bake(join(makeTempDirSync("terrain-starter-world-"), "world"));
-    expect([...second.files].sort()).toEqual([...files].sort());
+  it("refuses a bare, empty or flag-valued --out before writing", () => {
+    const dir = makeTempDirSync("terrain-starter-flags-forest-");
+    const bakeWith = (...args: string[]) =>
+      execFileSync(process.execPath, [join(packageRoot, "starter/forest/bake.mjs"), ...args], {
+        cwd: dir,
+        stdio: "pipe",
+      });
+    expect(() => bakeWith("--out")).toThrow(/--out needs a nonempty/);
+    expect(() => bakeWith("--out", "")).toThrow(/--out needs a nonempty/);
+    expect(() => bakeWith("--out", "--force")).toThrow(/--out needs a nonempty/);
+    expect(readdirSync(dir)).toEqual([]);
   });
 
-  it.each(["forest", "alpine", "coastal", "desert", "tundra"] as const)(
+  it.each(["alpine", "coastal", "desert", "tundra"] as const)(
     "produces pinned golden baseline hashes for %s kit bake (PRD-592 AC-1)",
     (kitName) => {
       const out = join(makeTempDirSync(`terrain-starter-world-${kitName}-`), "world");
@@ -210,58 +215,6 @@ describe("forest starter kit", () => {
     },
   );
 
-  it("writes every model and texture its manifest and table name", () => {
-    const out = join(makeTempDirSync("terrain-starter-world-"), "world");
-    bake(out);
-    const manifest = JSON.parse(readFileSync(join(out, "world.json"), "utf8")) as IWorldPackage;
-    const tablePath = manifest.terrain.layers?.table;
-    if (tablePath === undefined) throw new Error("The manifest names no terrain table");
-    const table = JSON.parse(readFileSync(join(out, tablePath), "utf8")) as ITable;
-
-    const named = [
-      manifest.terrain.heightmap,
-      manifest.placements,
-      ...(manifest.terrain.layers === undefined ? [] : Object.values(manifest.terrain.layers)),
-      ...Object.values(manifest.assets).flatMap((asset) => [
-        asset.glb,
-        ...(asset.lods ?? []).map((lod) => lod.glb),
-      ]),
-    ];
-    for (const layer of [table.base, ...table.layers]) {
-      expect(Object.keys(table.splat.masks)).toContain(layer.id);
-      named.push(`${table.textures}/${layer.id}_diff.jpg`, `${table.textures}/${layer.id}_nrm.jpg`);
-    }
-    named.push("sky.hdr");
-    for (const name of named) {
-      // Local by construction: a package-relative path, never a scheme or a root.
-      expect(name, `${name} is not package-relative`).not.toMatch(/^(\/|[a-z][a-z0-9+.-]*:)/iu);
-      const path = join(out, name);
-      expect(() => readFileSync(path), `${name} is missing from the baked package`).not.toThrow();
-    }
-    // Every model carries its own images: a GLB's JSON chunk names no external uri.
-    for (const name of named.filter((file) => file.endsWith(".glb"))) {
-      const glb = readFileSync(join(out, name));
-      const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString("utf8")) as {
-        images?: { uri?: string }[];
-        buffers?: { uri?: string }[];
-      };
-      const uris = [...(json.images ?? []), ...(json.buffers ?? [])].flatMap((entry) =>
-        entry.uri === undefined ? [] : [entry.uri],
-      );
-      expect(uris, `${name} references files outside itself`).toEqual([]);
-    }
-  });
-
-  it("bakes the lake and river the game draws, at the generator's own level and course", () => {
-    const out = join(makeTempDirSync("terrain-starter-water-"), "world");
-    bake(out);
-    const water = JSON.parse(readFileSync(join(out, "water.json"), "utf8")) as IKitWater;
-    expect(water.lakes).toEqual([{ id: "lake", at: [-70, 25], radius: 105, level: 13.3 }]);
-    expect(water.rivers).toHaveLength(1);
-    expect(water.rivers[0]?.points.length).toBeGreaterThan(10);
-    expect(water.rivers[0]?.width).toBeGreaterThan(0);
-  });
-
   it("ships kit source and pinned asset metadata without binaries or generated worlds", () => {
     const packed = JSON.parse(
       execFileSync("npm", ["pack", "--dry-run", "--json"], {
@@ -277,9 +230,11 @@ describe("forest starter kit", () => {
       "starter/forest/assets.json",
       "starter/forest/surface.json",
       "starter/forest/bake.mjs",
-      "starter/forest/world.ts",
-      "starter/forest/water.ts",
-      "starter/forest/sky.ts",
+      "starter/forest/README.md",
+      "starter/forest/scene.ts",
+      "starter/forest/render/props/pack.ts",
+      "starter/forest/render/ground/palette.js",
+      "starter/forest/world/terrainAssets.ts",
       "starter/alpine/recipe.json",
       "starter/alpine/assets.json",
       "starter/alpine/surface.json",
@@ -316,7 +271,12 @@ describe("forest starter kit", () => {
     ])
       expect(files.has(path), `packed tarball is missing ${path}`).toBe(true);
     expect(packedFiles.some((file) => file.path.startsWith("starter-assets/"))).toBe(false);
-    expect(packedFiles.some((file) => /^starter\/[^/]+\/world\//u.test(file.path))).toBe(false);
+    // No baked world ships: the forest's `world/` folder holds only its source.
+    expect(
+      packedFiles.some(
+        (file) => /^starter\/[^/]+\/world\//u.test(file.path) && !file.path.endsWith(".ts"),
+      ),
+    ).toBe(false);
     expect(packed[0]?.size).toBeLessThan(2_000_000);
     const archive = JSON.parse(readFileSync(join(packageRoot, "starter-assets.json"), "utf8"));
     expect(archive.bytes).toBeGreaterThan(0);
@@ -327,7 +287,7 @@ describe("forest starter kit", () => {
     );
   });
 
-  it.each(["forest", "alpine", "coastal", "desert", "tundra"] as const)(
+  it.each(["alpine", "coastal", "desert", "tundra"] as const)(
     "refuses a bare, empty or flag-valued --out/--assets before writing (%s)",
     (kitName) => {
       const dir = makeTempDirSync(`terrain-starter-flags-${kitName}-`);
