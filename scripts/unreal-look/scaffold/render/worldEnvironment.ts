@@ -198,6 +198,11 @@ export interface IWorldEnvironmentOptions {
   /** Screen probes only: rays on a side of each probe's octahedron. Omit for 8 (Unreal's real-time Epic; its cinematic setting is 16). */
   readonly ssgiProbeRays?: number;
   /**
+   * Whether the contact term is Unreal's short-range horizon search instead of GTAO (PRD-640 Phase 3): only the
+   * `high` tier names it, and `?shortRangeAO=1` asks for it. Off by default while its judge round is open.
+   */
+  readonly shortRangeAO?: boolean;
+  /**
    * Screen probes only, owned engine only: a ray that leaves the frame continues through the scene's packed triangles
    * (up to the radiance cache's cell) and reads the cache where it ended, so a miss carries a direction's light instead
    * of the pixel's mean (PRD-640 Phase 2). Off by default: it changes what reaches the screen, and the two arms are
