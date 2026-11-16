@@ -54,7 +54,13 @@ export interface IKitWorldRecipe {
   /** The far ring around the playable square; omitted bakes none. */
   readonly farRing?: {
     readonly survey: string;
-    readonly backdrop: {
+    /**
+     * The playable heightmap's elevation offset in the survey's vertical datum. Without a
+     * `backdrop` the ring is the survey itself, re-based by this to the square's metres.
+     */
+    readonly datum?: number;
+    /** A generated landform on the survey's centre height; omitted, the ring is the real survey. */
+    readonly backdrop?: {
       readonly id: string;
       readonly landform: LandformKind;
       readonly seed: number;
@@ -102,18 +108,73 @@ function decimetres({ meta, bytes }: ISurvey) {
   };
 }
 
+/**
+ * The mean height step, in metres, between the playable square's boundary and the far ring under
+ * it. The collar fades this step over its first 40 m, so a ring on another datum draws a wall.
+ */
+export function ringSeam(
+  square: { resolution: number; size: number; heights: ArrayLike<number> },
+  ring: { resolution: number; size: number; height: ArrayLike<number> },
+): number {
+  const m = ring.resolution;
+  const spacing = ring.size / (m - 1);
+  const at = (x: number, z: number): number => {
+    const c = Math.min(m - 2, Math.max(0, (x + ring.size / 2) / spacing));
+    const r = Math.min(m - 2, Math.max(0, (z + ring.size / 2) / spacing));
+    const c0 = Math.floor(c);
+    const r0 = Math.floor(r);
+    const g = (row: number, column: number) => ring.height[row * m + column] as number;
+    const top = g(r0, c0) + (g(r0, c0 + 1) - g(r0, c0)) * (c - c0);
+    const bottom = g(r0 + 1, c0) + (g(r0 + 1, c0 + 1) - g(r0 + 1, c0)) * (c - c0);
+    return top + (bottom - top) * (r - r0);
+  };
+  const n = square.resolution;
+  const step = square.size / (n - 1);
+  let sum = 0;
+  for (let i = 0; i < n; i += 1)
+    for (const [row, column] of [
+      [0, i],
+      [n - 1, i],
+      [i, 0],
+      [i, n - 1],
+    ] as const)
+      sum += Math.abs(
+        (square.heights[row * n + column] as number) -
+          at(column * step - square.size / 2, row * step - square.size / 2),
+      );
+  return sum / (4 * n);
+}
+
+/** A seam past this many metres is a ring on the wrong datum, not relief the collar can blend. */
+const RING_SEAM_LIMIT = 60;
+
 /** The far ring: a generated backdrop on the surveyed ring's relief, then the kit's massif. */
 async function farRing(assetsDir: string, ring: NonNullable<IKitWorldRecipe["farRing"]>) {
   const surveyed = await survey(assetsDir, ring.survey);
   const { meta } = surveyed;
   const values = decimetres(surveyed).values;
-  const backdrop = landformBackdrop(ring.backdrop.landform, {
-    size: meta.size,
-    resolution: meta.resolution,
-    seed: ring.backdrop.seed,
-    relief: ring.backdrop.relief,
-    centerHeight: values[((meta.resolution - 1) / 2) * (meta.resolution + 1)] as number,
-  });
+  let heights: number[];
+  let id: string;
+  if (ring.backdrop === undefined) {
+    if (ring.datum === undefined)
+      throw new Error(
+        `TN_STARTER_RING_DATUM: the far ring on '${ring.survey}' has no backdrop, so it needs the playable heightmap's 'datum' to stand the survey on the square's metres.`,
+      );
+    const shift = meta.elevationOffset - ring.datum;
+    heights = values.map((value) => value + shift);
+    id = ring.survey;
+  } else {
+    heights = Array.from(
+      landformBackdrop(ring.backdrop.landform, {
+        size: meta.size,
+        resolution: meta.resolution,
+        seed: ring.backdrop.seed,
+        relief: ring.backdrop.relief,
+        centerHeight: values[((meta.resolution - 1) / 2) * (meta.resolution + 1)] as number,
+      }).heights,
+    );
+    id = ring.backdrop.id;
+  }
   const doc: ITerrainDocument = {
     version: 1,
     config: { size: meta.size, resolution: meta.resolution, seed: ring.seed },
@@ -121,13 +182,13 @@ async function farRing(assetsDir: string, ring: NonNullable<IKitWorldRecipe["far
       {
         enabled: true,
         opacity: 1,
-        id: ring.backdrop.id,
+        id,
         type: "heightmap",
         params: {
           data: {
             width: meta.resolution,
             height: meta.resolution,
-            values: Array.from(backdrop.heights),
+            values: heights,
           },
         },
       } as Layer,
@@ -420,6 +481,11 @@ export async function bakeStreamedWorld(options: {
 
   if (row.farRing !== undefined) {
     const ring = await farRing(assetsDir, row.farRing);
+    const seam = ringSeam(baked, ring.state);
+    if (!(seam <= RING_SEAM_LIMIT))
+      throw new Error(
+        `TN_STARTER_RING_SEAM: the '${row.name}' far ring stands ${seam.toFixed(1)} m off the playable square's edge (limit ${RING_SEAM_LIMIT} m); the collar would draw that step as a wall. Give the ring the square's 'datum', or a backdrop on the square's metres.`,
+      );
     await writeFile(
       join(worldDir, "horizon.json"),
       JSON.stringify({

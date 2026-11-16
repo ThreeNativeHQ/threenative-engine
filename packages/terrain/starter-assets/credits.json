@@ -834,6 +834,30 @@
     },
     {
       "set": "survey",
+      "asset": "Longs Peak — Diamond / Chasm Lake headwall, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "heights",
+      "file": "survey/alpine-horizon.bin",
+      "url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/historical/n41w106/USGS_13_n41w106_20221118.tif",
+      "bytes": 526338,
+      "sha256": "636cbfb2f3ca078458d61b3474d12daece7dece679cdd0eb2293616f9d103e66",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the alpine kit's far ring is this survey, on the playable square's datum."
+    },
+    {
+      "set": "survey",
+      "asset": "Longs Peak — Diamond / Chasm Lake headwall, Colorado",
+      "author": "U.S. Geological Survey, 3D Elevation Program",
+      "license": "U.S. Government public domain",
+      "map": "metadata",
+      "file": "survey/alpine-horizon.json",
+      "url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/historical/n41w106/USGS_13_n41w106_20221118.tif",
+      "bytes": 1542,
+      "sha256": "6f7c8b91ffc461dd3ac2193dcf99e594e95f03cfe2ca7e15b6499bcd41b1b8dc",
+      "note": "Cropped, filtered and quantized by examples/strata-terrain-preview/scripts/dem; the alpine kit's far ring is this survey, on the playable square's datum."
+    },
+    {
+      "set": "survey",
       "asset": "Longs Peak and Mount Meeker from Chasm Lake to Glacier Gorge, Colorado",
       "author": "U.S. Geological Survey, 3D Elevation Program",
       "license": "U.S. Government public domain",

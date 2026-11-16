@@ -108,10 +108,7 @@
           "minDistance": 6,
           "minSlope": 15,
           "maxSlope": 45,
-          "scale": [
-            0.6,
-            1.6
-          ]
+          "scale": [0.6, 1.6]
         }
       }
     ]
@@ -120,10 +117,7 @@
     "name": "alpine",
     "ground": {
       "base": "rock",
-      "layers": [
-        "dirt",
-        "snow"
-      ],
+      "layers": ["dirt", "snow"],
       "roughness": 0.95
     },
     "art": [
@@ -166,85 +160,9 @@
     ],
     "farRing": {
       "survey": "alpine-horizon",
-      "backdrop": {
-        "id": "mapterhorn-surroundings",
-        "landform": "alpine",
-        "seed": 23,
-        "relief": 900
-      },
+      "datum": 3690,
       "seed": 1,
-      "layers": [
-        {
-          "enabled": true,
-          "opacity": 1,
-          "id": "crests",
-          "type": "noise",
-          "params": {
-            "mode": "ridged",
-            "amplitude": 190,
-            "scale": 1100,
-            "octaves": 3,
-            "warp": 300
-          },
-          "mask": {
-            "type": "height",
-            "min": 320,
-            "max": 1000000000,
-            "fade": 200
-          }
-        },
-        {
-          "enabled": true,
-          "opacity": 1,
-          "id": "spurs",
-          "type": "noise",
-          "params": {
-            "mode": "fbm",
-            "amplitude": 50,
-            "scale": 320,
-            "octaves": 3,
-            "warp": 150
-          },
-          "mask": {
-            "type": "height",
-            "min": 200,
-            "max": 1000000000,
-            "fade": 80
-          }
-        },
-        {
-          "enabled": true,
-          "opacity": 1,
-          "id": "gullies",
-          "type": "erode",
-          "params": {
-            "method": "hydraulic",
-            "droplets": 40000
-          },
-          "mask": {
-            "type": "height",
-            "min": 380,
-            "max": 1000000000,
-            "fade": 160
-          }
-        }
-      ],
-      "massif": {
-        "tiles": [
-          "longs"
-        ],
-        "seed": 1,
-        "at": [
-          -2050,
-          -150
-        ],
-        "face": 90,
-        "keepOut": 650,
-        "top": [
-          2500,
-          3000
-        ]
-      }
+      "layers": []
     }
   }
 }
