@@ -18,16 +18,17 @@ import type { IRayHit, IntersectRay } from "./TrackSector.js";
 import {
   BARRIER_OFFSET,
   CIRCUIT,
-  GRID,
-  GRID_DISTANCE,
+  GRID_SLOTS,
   HALF,
   type ICircuitSample,
   KERB_HEIGHT,
   KERB_WIDTH,
   LINE_AT,
+  PLAYER_SLOT,
   ROAD_LIFT,
   RUNOFF,
   TRACK_WIDTH,
+  gridSlot,
   groundHeight,
   lineDistance,
   terrainHeight,
@@ -582,7 +583,8 @@ function boostPad(
  *
  * Delete a line here and that piece of furniture is gone; nothing else depends on it. Every
  * repeated prop goes into an `InstancedBatch` and every static run into one merged mesh, because
- * the performance playtest bounds this circuit at 330 draw calls and 105,000 triangles.
+ * the performance playtest bounds the race at 330 draw calls and 135,000 triangles: the circuit
+ * and six cars, about 5,300 triangles each (measured 126,202 with the full field).
  */
 function dressCircuit(
   ctx: TrackCtx,
@@ -812,16 +814,14 @@ function dressCircuit(
   }
 }
 
-export function gridPosition(which: "player" | "rival", target: Vector3): Vector3 {
-  const distance = GRID_DISTANCE[which];
-  const station = stationAt(distance);
-  const at = onTrack(station, GRID[which], 0.05, target);
-  return at;
+export function gridPosition(slot: number, target: Vector3): Vector3 {
+  const { distance, side } = gridSlot(slot);
+  return onTrack(stationAt(distance), side, 0.05, target);
 }
 
 /** The direction a car on the grid is pointing: down the main straight. */
-export function gridHeading(which: "player" | "rival"): number {
-  const sample = CIRCUIT.at(GRID_DISTANCE[which], CIRCUIT.createSample());
+export function gridHeading(slot: number): number {
+  const sample = CIRCUIT.at(gridSlot(slot).distance, CIRCUIT.createSample());
   return Math.atan2(sample.tangent.z, sample.tangent.x);
 }
 
@@ -914,8 +914,8 @@ export function buildTrack(ctx: TrackCtx): ITrackBuild {
 
 export {
   CIRCUIT,
-  GRID,
-  GRID_DISTANCE,
+  GRID_SLOTS,
+  PLAYER_SLOT,
   HALF,
   KERB_HEIGHT,
   KERB_WIDTH,

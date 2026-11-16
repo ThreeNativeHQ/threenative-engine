@@ -8,11 +8,14 @@
 // built from bytes rather than shipped as files, so they cost nothing to load and run the same in
 // the browser and in the native host.
 import {
+  AdditiveBlending,
   type BufferGeometry,
+  Color,
   DataTexture,
   Float32BufferAttribute,
   LinearMipmapLinearFilter,
   MathUtils,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   RepeatWrapping,
   SRGBColorSpace,
@@ -246,6 +249,13 @@ export function createMaterials() {
     /** Kept as an alias so a game that already referred to the old slot still compiles. */
     vehicle: new MeshStandardMaterial({ color: 0xd93a3a, metalness: 0.18, roughness: 0.3 }),
     rivalBody: new MeshStandardMaterial({ color: palette.accent, metalness: 0.18, roughness: 0.3 }),
+    /**
+     * The field's liveries, pole first. The pole car keeps the accent, because it is the car to
+     * beat; the rest are paint a driver tells apart at a glance, none of them the player's red.
+     */
+    rivalLiveries: [palette.accent, 0xf0b429, 0xeceae2, 0x2f8f5b, 0x23262c].map(
+      (color) => new MeshStandardMaterial({ color, metalness: 0.18, roughness: 0.3 }),
+    ),
     glass: new MeshStandardMaterial({
       color: 0x3f5a70,
       metalness: 0.55,
@@ -274,6 +284,21 @@ export function createMaterials() {
       emissive: 0xff2a1c,
       emissiveIntensity: 0.75,
       roughness: 0.34,
+    }),
+
+    // The nitro flame: additive and far above 1, so it stays blue-white against a sunlit road
+    // and the bloom stage has something to catch. The core is the hotter, shorter cone inside.
+    flame: new MeshBasicMaterial({
+      blending: AdditiveBlending,
+      color: new Color(0.35, 1.5, 7),
+      depthWrite: false,
+      transparent: true,
+    }),
+    flameCore: new MeshBasicMaterial({
+      blending: AdditiveBlending,
+      color: new Color(5, 6, 8),
+      depthWrite: false,
+      transparent: true,
     }),
 
     /** Trackside furniture that is instanced, so it takes a flat value rather than a mapped grid. */

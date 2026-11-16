@@ -2,6 +2,7 @@ import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { type IPhysicsContext, rapier } from "@threenative/physics";
 import config from "../threenative.config.js";
+import { setRaceAudioMuted } from "./audio/engine.js";
 import { drainPlaytestEvents as events } from "./playtest-events.js";
 import { Boot } from "./scenes/Boot.js";
 import { Race } from "./scenes/Race.js";
@@ -18,6 +19,8 @@ const game = defineGame<GameState, IPhysicsContext>({
       up: ["ArrowUp", "KeyW"],
     },
     brake: { buttons: [1], keys: ["ShiftLeft", "ShiftRight"] },
+    // The handbrake: a hard brake, and with the wheel turned at speed it kicks the tail out.
+    // Nitro is held to burn.
     boost: { buttons: [0], keys: ["Space"] },
     restart: { keys: ["KeyR"] },
     // The demo driver: the same closed-loop controller the rival uses, on the player's car. It is
@@ -47,6 +50,9 @@ game.ui.onIntent((intent) => {
   if (intent === "restart") void game.goto("race");
   if (intent === "pause") game.pause();
   if (intent === "resume") game.resume();
+  // The frame loop does not tick while paused, so nothing inside the scene could silence the
+  // engine: the bus is muted here, where the pause intent already is.
+  if (intent === "pause" || intent === "resume") setRaceAudioMuted(intent === "pause");
   game.state.set({
     // `game.ui.connected` is true only once the UI announced itself, which is what tells an
     // overlay that never came up apart from a game whose HUD is simply empty.

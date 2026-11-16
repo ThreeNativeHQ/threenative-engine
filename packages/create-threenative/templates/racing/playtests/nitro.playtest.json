@@ -1,0 +1,158 @@
+{
+  "name": "nitro",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "cruise",
+      "press": ["ArrowUp"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "nitro",
+      "press": ["ArrowUp", "Space"],
+      "holdTicks": 120,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "coast",
+      "press": ["ArrowUp"],
+      "holdTicks": 90,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "kick",
+      "press": ["ArrowUp", "ArrowRight", "ShiftLeft"],
+      "holdTicks": 8,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "hold",
+      "press": ["ArrowUp", "ArrowRight"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "catch",
+      "press": ["ArrowUp", "ArrowLeft"],
+      "holdTicks": 14,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "straighten",
+      "press": ["ArrowUp"],
+      "holdTicks": 40,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "nitro",
+        "lte": 0.7,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "nitroActive",
+        "atSteps": [
+          {
+            "label": "cruise",
+            "equals": false
+          },
+          {
+            "label": "nitro",
+            "equals": true
+          },
+          {
+            "label": "coast",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "topSpeed",
+        "gte": 26.5
+      },
+      {
+        "id": "state",
+        "path": "nitro",
+        "atSteps": [
+          {
+            "label": "coast",
+            "lte": 0.35
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "nitroDriftGain",
+        "gte": 0.1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "drifting",
+        "atSteps": [
+          {
+            "label": "coast",
+            "equals": false
+          },
+          {
+            "label": "hold",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "driftSpins",
+        "equals": 0,
+        "allowTrivial": "A spin is the failure this scenario looks for; zero is the held invariant while the drift-refill gain above proves the slide happened."
+      },
+      {
+        "id": "state",
+        "path": "fovPeak",
+        "gte": 64,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "fov",
+        "atSteps": [
+          {
+            "label": "coast",
+            "lte": 57
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "effects",
+        "component": "flameTicks",
+        "gte": 60
+      }
+    ]
+  }
+}

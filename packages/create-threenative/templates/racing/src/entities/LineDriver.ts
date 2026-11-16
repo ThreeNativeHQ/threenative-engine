@@ -1,7 +1,7 @@
 import { MathUtils, Vector3 } from "three";
 import { CIRCUIT, type CircuitLine } from "../track/circuit.js";
 import type { CarBody } from "./CarBody.js";
-import { FEEL } from "./CarBody.js";
+import { FEEL, driveForce } from "./CarBody.js";
 
 /**
  * The closed-loop driver: aim at a point ahead on the circuit, brake for what is coming.
@@ -177,7 +177,7 @@ export class LineDriver {
     const target = this.targetSpeed(this.#progress);
     if (speed < target) {
       const want = MathUtils.clamp((target - speed) / 2.5, 0, 1);
-      body.engineForce = FEEL.engineForce * want * Math.max(0, 1 - speed / target);
+      body.engineForce = FEEL.engineForce * want * driveForce(speed, FEEL.topSpeed);
       body.brake = 0;
     } else {
       body.engineForce = 0;

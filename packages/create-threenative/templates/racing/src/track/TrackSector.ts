@@ -23,6 +23,10 @@ export interface ITrackSectorOptions {
   /** Seconds below {@link ITrackSectorOptions.stallSpeed} before a beached car is recovered. */
   readonly stallRescueDelay?: number;
   readonly stallSpeed?: number;
+  /** The ground's height here, so a car that leaves the surface can be caught before it falls. */
+  readonly groundAt?: (x: number, z: number) => number;
+  /** Metres below the ground at which a car is falling, not driving. */
+  readonly fallDepth?: number;
 }
 
 /** Records a grounded transform and returns a racer to it after leaving the road. */
@@ -35,12 +39,15 @@ export class TrackSector {
   #stalledTime = 0;
   #hasOnRoadSample = false;
   #hasMoved = false;
+  #falling = false;
   readonly #route: CircuitLine;
   readonly #intersectRay: IntersectRay;
   readonly #rescueDelay: number;
   readonly #rayHeight: number;
   readonly #stallRescueDelay: number;
   readonly #stallSpeed: number;
+  readonly #groundAt: ((x: number, z: number) => number) | undefined;
+  readonly #fallDepth: number;
   readonly #origin = new Vector3();
   readonly #direction = new Vector3(0, -1, 0);
   readonly #projection = {
@@ -58,7 +65,10 @@ export class TrackSector {
     this.#rayHeight = options.rayHeight ?? 3;
     this.#stallRescueDelay = options.stallRescueDelay ?? 1.2;
     this.#stallSpeed = options.stallSpeed ?? 0.6;
+    this.#groundAt = options.groundAt;
+    this.#fallDepth = options.fallDepth ?? 1.2;
     if (!(this.#rescueDelay > 0)) throw new Error("TrackSector rescueDelay must be positive.");
+    if (!(this.#fallDepth > 0)) throw new Error("TrackSector fallDepth must be positive.");
     if (!(this.#stallRescueDelay > 0))
       throw new Error("TrackSector stallRescueDelay must be positive.");
   }
@@ -90,6 +100,12 @@ export class TrackSector {
       this.#offRoadTime = 0;
       return true;
     }
+    // Off the surface is a run wide; **below** it is the missing ground collider: the grass is drawn
+    // and never collided, so a car that gets past the armco has nothing under its wheels and falls
+    // out of the world. Catch that the tick it happens rather than after the run-wide delay, which
+    // by then is several seconds of falling.
+    const ground = this.#groundAt?.(position.x, position.z);
+    this.#falling = ground !== undefined && position.y < ground - this.#fallDepth;
     this.#offRoadTime += dt;
     return false;
   }
@@ -105,7 +121,9 @@ export class TrackSector {
   get shouldRescue(): boolean {
     return (
       this.#hasOnRoadSample &&
-      (this.#offRoadTime >= this.#rescueDelay || this.#stalledTime >= this.#stallRescueDelay)
+      (this.#falling ||
+        this.#offRoadTime >= this.#rescueDelay ||
+        this.#stalledTime >= this.#stallRescueDelay)
     );
   }
 
@@ -114,6 +132,7 @@ export class TrackSector {
     rescueToLastValid(target, this.lastOnRoadPosition, this.lastOnRoadHeading);
     this.#offRoadTime = 0;
     this.#stalledTime = 0;
+    this.#falling = false;
     return true;
   }
 }
