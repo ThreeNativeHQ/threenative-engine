@@ -560,7 +560,7 @@ function writeKitScene(game, world) {
     const worldSource = join(game, "src/terrain/alpine/world.ts");
     let source = readFileSync(worldSource, "utf8");
     if (!source.includes("import { edits }"))
-      source = `import { edits } from "../../composition.js";\n${source.replace('  name: "Alpine",', '  name: "Alpine",\n  edits,')}`;
+      source = `import { edits } from "../composition.js";\n${source.replace('  name: "Alpine",', '  name: "Alpine",\n  edits,')}`;
     writeFileSync(worldSource, source);
     const surfacePath = join(game, "src/terrain/alpine/surface.json");
     const originalPath = join(game, "src/terrain/alpine/surface.original.json");
