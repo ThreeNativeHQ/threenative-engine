@@ -11,6 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `@threenative/terrain` exports `paintCanopyCover` and `skyVisibility`, the bake-time canopy and
+  sky-occlusion grids a streamed starter world reads.
 - `@threenative/core/render/environment` is the one home of the environment measure-and-sample
   mechanism that twelve templates used to copy byte-for-byte: `measureEnvironment`,
   `sampleEnvironment` and its cache, `captureEnvironmentSnapshot`, `reportEnvironmentContribution`,
@@ -19,6 +21,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/terrain/kit`'s `bakeKit` also takes `{ look }`: a kit whose `recipe.json` has a
+  `world` row bakes a streamed world (`<out>/world/`) with its own look and prop policy. Existing
+  `{ sky, cookTerrainWorld }` calls are unchanged; only the declared option type widened.
 - `@threenative/core`'s `devGlobal` and `publishDevGlobal` take their `scope` argument explicitly
   rather than defaulting to `globalThis`: a default made an explicit `undefined` read the page's
   global, which is exactly the worker case a caller asks about. Both were new in this branch.

@@ -9,7 +9,8 @@ import { TerrainEvaluator, decodeRAW16 } from "../src/index.js";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const starterAssets = join(packageRoot, "starter-assets");
-it("forest recipe exposes soil and moss patches through its surface blend thresholds", () => {
+// The forest recipe paints dirt; its moss is the ground shader's own, so no splat channel holds it.
+it("forest recipe exposes soil patches through its surface blend thresholds", () => {
   const kit = join(packageRoot, "starter", "forest");
   const { recipe } = JSON.parse(readFileSync(join(kit, "recipe.json"), "utf8"));
   for (const layer of recipe.layers) {
@@ -22,10 +23,7 @@ it("forest recipe exposes soil and moss patches through its surface blend thresh
   }
   const state = new TerrainEvaluator({ cacheMB: 0 }).evaluate(recipe);
   const surface = JSON.parse(readFileSync(join(kit, "surface.json"), "utf8"));
-  for (const [id, channel] of [
-    ["dirt", 1],
-    ["moss", 7],
-  ] as const) {
+  for (const [id, channel] of [["dirt", 1]] as const) {
     const layer = surface.layers.find((layer: { id: string }) => layer.id === id);
     const midpoint = (layer.lo + layer.hi) / 2;
     let visible = 0;

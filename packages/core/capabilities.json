@@ -9328,6 +9328,25 @@
     {
       "aliases": [],
       "constraints": [
+        "`crowns` is metres of crown radius per unit of placement scale, keyed by asset; other assets paint nothing"
+      ],
+      "example": "paintCanopyCover(values, { size: 512, resolution: 257 }, placements, { spruce: 7 });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function paintCanopyCover( values: Float32Array, world: { … }",
+      "situations": [
+        "shade the ground under a baked stand, at bake time or after a placement edit"
+      ],
+      "summary": "Paint each placed tree's crown into a per-vertex canopy grid, so the ground under a stand reads as forest floor rather than open turf. `values` is row-major Z then X, centred on the origin, at the heightfield's own spacing; each vertex keeps the strongest crown that reaches it (0 to 1).",
+      "supersedes": [],
+      "symbol": "paintCanopyCover"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the tile must be a whole mountain whose border is valley floor; erosion after it carves the survey"
       ],
       "example": "const { terrain, placement } = placeMassif(new Terrain({ size: 5000, resolution: 129 }), { seed: 3, tile: { id: \"cone\", size: 2000, resolution: 3, heights: [0, 0, 0, 0, 900, 0, 0, 0, 0] } });",
@@ -9426,6 +9445,23 @@
       "summary": "Every placement, for one world, from one seed: the game's own rule set, in its own draw order.",
       "supersedes": [],
       "symbol": "scatterProps"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "offline: about 0.4 s of CPU for a 257² field; bake it, do not run it per frame"
+      ],
+      "example": "const sky = skyVisibility(heights, 257, 512);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function skyVisibility( heights: ArrayLike<number>, resolution: number, size: number, { … }",
+      "situations": ["bake a heightfield's sky occlusion for the ground's ambient light"],
+      "summary": "The share of the sky each heightfield vertex sees past the terrain around it: 1 on open ground, lower on a valley floor, at a cliff foot or in a crater. The logic follows TerraForge3D's horizon ambient pass (MIT, `heightfield/ambient/compute.glsl`): march outward along evenly spaced azimuths, keep the highest horizon each one meets, and integrate the cosine-weighted sky above it, which is `cos²` of the horizon angle per azimuth. Only ground that rises over both the vertex's tangent plane and the horizontal occludes, so a straight slope and a steep face over a flat floor stay open: the lighting already counts the slope's own tilt. Heights are row-major Z then X, centred on the origin, as the baked world stores them. Every node marches: a strided march filled bilinearly erred by 0.13 at p99 on the alpine survey's creases. About 0.4 s of CPU a world, so `bakeKit` runs it and the game loads `<world>.sky.bin`.",
+      "supersedes": [],
+      "symbol": "skyVisibility"
     },
     {
       "aliases": [],
@@ -10135,7 +10171,7 @@
       "overrides": [],
       "package": "@threenative/terrain",
       "requires": ["npm i -D @threenative/terrain"],
-      "signature": "export async function bakeKit( url: string, { … }",
+      "signature": "export async function bakeKit( url: string, options: IBakeKitOptions | IBakeKitWorldOptions, ): Promise<void> { … }",
       "situations": ["bake a copied terrain starter kit into its offline world package"],
       "summary": "Bake a copied kit, optionally using the caller's installed world cook.",
       "supersedes": [],

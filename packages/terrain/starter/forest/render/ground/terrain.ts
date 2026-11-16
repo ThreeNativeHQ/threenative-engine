@@ -7,7 +7,7 @@ import {
   loadTerrainSplat,
 } from "@threenative/core/world";
 import { waterlineRadius } from "@threenative/core/world";
-import { createSegmentIndex } from "@threenative/terrain";
+import { createSegmentIndex, paintCanopyCover } from "@threenative/terrain";
 import {
   ClampToEdgeWrapping,
   DataTexture,
@@ -511,7 +511,7 @@ function microGrain(): Node<"vec3"> {
 }
 
 /** Crown radius in metres per unit of placement scale, for the trees that drop needle litter. */
-const CANOPY_CROWN: Readonly<Record<string, number>> = { spruce: 7, sapling: 2.5 };
+export const CANOPY_CROWN: Readonly<Record<string, number>> = { spruce: 7, sapling: 2.5 };
 
 /**
  * Paint each placed tree's crown into the terrain's `canopy` vertex attribute, so the ground under a
@@ -529,29 +529,7 @@ export function paintCanopy(
 ): void {
   const cover = mesh.geometry.getAttribute("canopy");
   if (!(cover instanceof Float32BufferAttribute) || data.resolution < 2) return;
-  const values = cover.array as Float32Array;
-  const spacing = data.size / (data.resolution - 1);
-  const half = data.size / 2;
-  for (const placement of placements) {
-    const crown = CANOPY_CROWN[placement.asset];
-    if (crown === undefined) continue;
-    const radius = Math.max(spacing, crown * placement.scale);
-    const x = placement.position[0] ?? 0;
-    const z = placement.position[2] ?? 0;
-    const fromColumn = Math.max(0, Math.ceil((x - radius + half) / spacing));
-    const toColumn = Math.min(data.resolution - 1, Math.floor((x + radius + half) / spacing));
-    const fromRow = Math.max(0, Math.ceil((z - radius + half) / spacing));
-    const toRow = Math.min(data.resolution - 1, Math.floor((z + radius + half) / spacing));
-    for (let row = fromRow; row <= toRow; row++)
-      for (let column = fromColumn; column <= toColumn; column++) {
-        const dx = column * spacing - half - x;
-        const dz = row * spacing - half - z;
-        const reach = 1 - (dx * dx + dz * dz) / (radius * radius);
-        if (reach <= 0) continue;
-        const index = row * data.resolution + column;
-        values[index] = Math.max(values[index] as number, reach);
-      }
-  }
+  paintCanopyCover(cover.array as Float32Array, data, placements, CANOPY_CROWN);
   cover.needsUpdate = true;
 }
 

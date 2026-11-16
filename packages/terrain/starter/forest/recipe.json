@@ -61,13 +61,13 @@
             {
               "material": "dirt",
               "mask": {
-                "type": "or",
-                "masks": [
-                  { "type": "noise", "scale": 140, "threshold": 0.4, "seed": 11, "fade": 0.2 },
-                  { "type": "noise", "scale": 110, "threshold": 0.44, "seed": 23, "fade": 0.22 }
-                ]
+                "type": "noise",
+                "scale": 78,
+                "threshold": 0.52,
+                "seed": 73,
+                "fade": 0.32
               },
-              "strength": 0.9
+              "strength": 0.5
             },
             {
               "material": "rock",
@@ -77,28 +77,6 @@
                 "max": 90,
                 "fade": 9
               }
-            },
-            {
-              "material": "moss",
-              "mask": {
-                "type": "and",
-                "masks": [
-                  {
-                    "type": "noise",
-                    "scale": 32,
-                    "threshold": 0.6,
-                    "seed": 89,
-                    "fade": 0.22
-                  },
-                  {
-                    "type": "slope",
-                    "min": 10,
-                    "max": 90,
-                    "fade": 5
-                  }
-                ]
-              },
-              "strength": 0.85
             }
           ]
         }
@@ -111,9 +89,21 @@
         "params": {
           "followTerrain": true,
           "points": [
-            [-240, null, -185],
-            [-150, null, -185],
-            [-125, null, -185]
+            [
+              -240,
+              null,
+              -185
+            ],
+            [
+              -150,
+              null,
+              -185
+            ],
+            [
+              -125,
+              null,
+              -185
+            ]
           ],
           "width": 6,
           "shoulder": 4
@@ -125,9 +115,26 @@
         "id": "building-pad",
         "type": "flatten",
         "params": {
-          "at": [-160, -180],
+          "at": [
+            -160,
+            -180
+          ],
           "radius": 12,
           "falloff": 0.75
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "pad-surface",
+        "type": "paint",
+        "params": {
+          "at": [
+            -160,
+            -180
+          ],
+          "radius": 12,
+          "material": "dirt"
         }
       },
       {
@@ -136,7 +143,10 @@
         "id": "lake-bed",
         "type": "flatten",
         "params": {
-          "at": [-70, 25],
+          "at": [
+            -70,
+            25
+          ],
           "radius": 105,
           "height": 11.4,
           "falloff": 0.1
@@ -156,11 +166,31 @@
         "params": {
           "followTerrain": true,
           "points": [
-            [-120, null, -220],
-            [-110, null, -175],
-            [-120, null, -130],
-            [-100, null, -95],
-            [-70, null, -60]
+            [
+              -120,
+              null,
+              -220
+            ],
+            [
+              -110,
+              null,
+              -175
+            ],
+            [
+              -120,
+              null,
+              -130
+            ],
+            [
+              -100,
+              null,
+              -95
+            ],
+            [
+              -70,
+              null,
+              -60
+            ]
           ],
           "width": 7,
           "depth": 1.8,
@@ -175,7 +205,10 @@
         "type": "water",
         "params": {
           "kind": "lake",
-          "at": [-70, 25],
+          "at": [
+            -70,
+            25
+          ],
           "radius": 105,
           "level": 13.3
         }
@@ -191,7 +224,10 @@
           "minDistance": 3.8,
           "maxSlope": 32,
           "avoidWater": true,
-          "scale": [0.55, 1.0]
+          "scale": [
+            0.55,
+            1
+          ]
         },
         "mask": {
           "type": "noise",
@@ -210,7 +246,10 @@
           "minDistance": 4.2,
           "maxSlope": 32,
           "avoidWater": true,
-          "scale": [0.55, 1.0]
+          "scale": [
+            0.55,
+            1
+          ]
         },
         "mask": {
           "type": "noise",
@@ -229,7 +268,10 @@
           "minDistance": 3,
           "maxSlope": 32,
           "avoidWater": true,
-          "scale": [0.2, 0.45]
+          "scale": [
+            0.2,
+            0.45
+          ]
         },
         "mask": {
           "type": "noise",
@@ -251,7 +293,10 @@
           "minSlope": 4,
           "maxSlope": 60,
           "avoidWater": true,
-          "scale": [0.5, 2.2]
+          "scale": [
+            0.5,
+            2.2
+          ]
         },
         "mask": {
           "type": "noise",
@@ -272,7 +317,10 @@
           "minDistance": 1.4,
           "maxSlope": 28,
           "avoidWater": true,
-          "scale": [0.9, 1.6]
+          "scale": [
+            0.9,
+            1.6
+          ]
         },
         "mask": {
           "type": "noise",
@@ -293,7 +341,10 @@
           "minDistance": 1.4,
           "maxSlope": 28,
           "avoidWater": true,
-          "scale": [0.8, 1.5]
+          "scale": [
+            0.8,
+            1.5
+          ]
         },
         "mask": {
           "type": "noise",
@@ -314,7 +365,10 @@
           "minDistance": 2.5,
           "maxSlope": 50,
           "avoidWater": true,
-          "scale": [0.12, 0.3]
+          "scale": [
+            0.12,
+            0.3
+          ]
         },
         "mask": {
           "type": "noise",
@@ -335,7 +389,10 @@
           "minDistance": 2.5,
           "maxSlope": 50,
           "avoidWater": true,
-          "scale": [0.12, 0.3]
+          "scale": [
+            0.12,
+            0.3
+          ]
         },
         "mask": {
           "type": "noise",
@@ -345,6 +402,139 @@
           "fade": 0.25
         }
       }
+    ]
+  },
+  "world": {
+    "name": "forest",
+    "ground": {
+      "base": "grass",
+      "layers": [
+        "dirt",
+        "moss",
+        "sand",
+        "rock",
+        "snow"
+      ],
+      "roughness": 0.95
+    },
+    "farRing": {
+      "survey": "forest-horizon",
+      "backdrop": {
+        "id": "usgs-surroundings",
+        "landform": "temperateMountains",
+        "seed": 23,
+        "relief": 865
+      },
+      "seed": 1,
+      "layers": [
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "crests",
+          "type": "noise",
+          "params": {
+            "mode": "ridged",
+            "amplitude": 170,
+            "scale": 1100,
+            "octaves": 3,
+            "warp": 300
+          },
+          "mask": {
+            "type": "height",
+            "min": 320,
+            "max": 1000000000,
+            "fade": 200
+          }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "spurs",
+          "type": "noise",
+          "params": {
+            "mode": "fbm",
+            "amplitude": 45,
+            "scale": 320,
+            "octaves": 3,
+            "warp": 150
+          },
+          "mask": {
+            "type": "height",
+            "min": 200,
+            "max": 1000000000,
+            "fade": 80
+          }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "gullies",
+          "type": "erode",
+          "params": {
+            "method": "hydraulic",
+            "droplets": 40000
+          },
+          "mask": {
+            "type": "height",
+            "min": 380,
+            "max": 1000000000,
+            "fade": 160
+          }
+        }
+      ],
+      "massif": {
+        "tiles": [
+          "longs",
+          "teton",
+          "maroon"
+        ],
+        "seed": 6,
+        "at": [
+          -2050,
+          -150
+        ],
+        "face": 90,
+        "keepOut": 650,
+        "top": [
+          1100,
+          1160
+        ]
+      }
+    },
+    "art": [
+      "bark_brown_02",
+      "boulder_01",
+      "celandine_01",
+      "dandelion_01",
+      "dead_tree_trunk",
+      "dry_branches_medium_01",
+      "fern_02",
+      "forest_ground_04",
+      "grass_medium",
+      "leafy_grass",
+      "lichen_rock",
+      "moss_01",
+      "mossy_rock",
+      "nettle_plant",
+      "periwinkle_plant",
+      "river_small_rocks",
+      "rock_boulder_dry",
+      "rock_face",
+      "rocks",
+      "sand_01",
+      "shrub_02",
+      "shrub_04",
+      "snow_02",
+      "tree_small_02",
+      "tree_stump_01",
+      "weed_plant_02",
+      "needle-atlas.png",
+      "needle-surface.png",
+      "fir_tree_01/fir_tree_01_twig_arm_1k.jpg",
+      "fir_tree_01/fir_tree_01_twig_diff_1k.jpg",
+      "fir_tree_01/fir_tree_01_twig_nor_gl_1k.jpg",
+      "hdri/kloofendal_48d_partly_cloudy_2k.hdr",
+      "mannequin-swim.glb"
     ]
   }
 }

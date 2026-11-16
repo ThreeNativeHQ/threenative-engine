@@ -10,7 +10,11 @@
  *
  * Heights are row-major Z then X, centred on the origin, as the baked world stores them. Every node
  * marches: a strided march filled bilinearly erred by 0.13 at p99 on the alpine survey's creases.
- * About 0.4 s of CPU a world, so `scripts/bake/bake.mjs` runs it and the game loads `<world>.sky.bin`.
+ * About 0.4 s of CPU a world, so `bakeKit` runs it and the game loads `<world>.sky.bin`.
+ * @situation bake a heightfield's sky occlusion for the ground's ambient light
+ * @constraint offline: about 0.4 s of CPU for a 257² field; bake it, do not run it per frame
+ * @requires npm i -D @threenative/terrain
+ * @example const sky = skyVisibility(heights, 257, 512);
  */
 export function skyVisibility(
   heights: ArrayLike<number>,
