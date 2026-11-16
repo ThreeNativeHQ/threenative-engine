@@ -48,6 +48,7 @@ import { addStreamedGround } from "./world/streamedGround.js";
 import { walkBandSlices } from "./world/walkBand.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
 import { loadBakedWorld } from "./worlds.js";
+import { WORLD } from "./render/worldNames.js";
 
 /**
  * The mannequin's two swim clips (Universal Animation Library 1, CC0), copied by the bake. They are
@@ -57,7 +58,7 @@ const SWIM_CLIPS = "mannequin-swim.glb";
 /** The player's model, from the game's own asset root (the scaffold ships it). */
 const MANNEQUIN = "mannequin.glb";
 
-const world = "forest";
+const world = WORLD;
 // What the game resolves this world from: its rules, and the look it is graded under.
 const spec = biomeSpec(world);
 const look = BIOMES[world];

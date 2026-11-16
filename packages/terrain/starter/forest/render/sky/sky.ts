@@ -31,6 +31,7 @@ import type { Node } from "three/webgpu";
 import { BIOMES, type IBiome } from "../biomes.js";
 import { setCanopySun } from "../props/propMaterials.js";
 import { aerialPerspective, cloudDome, createAtmosphere, skyColour } from "./atmosphere.js";
+import { WORLD } from "../worldNames.js";
 
 /**
  * The sun, in the same units the `L` key swings it: a position, not a direction, so the toggle and
@@ -130,7 +131,7 @@ export function createOutdoorSky(
   const sun = new DirectionalLight(sunColor, biome?.sun.intensity ?? SUN.intensity);
   sun.name = "temperate-sun";
   sun.castShadow = true;
-  sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
+  sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES[WORLD].sun.shadowRadius;
   // The owned engine (the default) filters its own virtual shadow maps with PCF; upstream three's
   // `PCFShadowFilter` node is refused by name there (`TN_NATIVE_UNCATALOGUED_PCFSHADOWFILTER`), so the
   // kit names no filter node.

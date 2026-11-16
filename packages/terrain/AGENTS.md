@@ -45,4 +45,5 @@ work in the engine repository and does not ship. The package's users start at [R
 | [The terrain map](docs/architecture/architecture.md) | You change what a terrain produces: stages, the three producers, edit-to-pixel |
 | [The cook stages](docs/architecture/cook.md) | You change `terrain_generate` |
 | [The world package](docs/architecture/world-package.md) | You change a baked file or its reader |
+| [A new environment](docs/authoring/new-environment.md) | You add a biome, a place or a starter kit: copy the forest kit and change its data, not a new bake or scene |
 | [Strata PRDs](docs/PRDs/README.md) | You pick up or file Strata terrain work |

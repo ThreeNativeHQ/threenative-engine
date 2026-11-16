@@ -86,6 +86,7 @@ import {
   skyEnvironment,
 } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
+import { WORLD } from "../worldNames.js";
 
 export interface IPackSpecies {
   readonly asset: string;
@@ -911,7 +912,7 @@ export interface IPackProps {
 }
 export async function loadPack(
   assets?: IAssetLoader,
-  world: WorldName = "forest",
+  world: WorldName = WORLD,
   ground?: IPropGround,
   comparison?: ICanopyComparison,
   biome?: IWorldBiome,

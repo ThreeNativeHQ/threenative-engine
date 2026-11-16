@@ -1,2 +1,6 @@
-/** The one world this kit draws; `WorldName` and the bake read it. */
-export const WORLD_NAMES = ["forest"] as const;
+/**
+ * The one world this kit draws. Every baked file is `world/<WORLD>.*`, so it equals `recipe.json`'s
+ * `world.name`; rename both to make a new environment, and the `WorldName` rows follow it.
+ */
+export const WORLD = "forest";
+export const WORLD_NAMES = [WORLD] as const;

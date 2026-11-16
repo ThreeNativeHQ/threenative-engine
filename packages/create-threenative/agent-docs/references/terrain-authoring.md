@@ -27,6 +27,10 @@ Then start the game on its scene: `defineGame({ ...FOREST_GAME, plugins: [rapier
 `README.md` says what each file decides: the landform in `bake.mjs`, what grows where in
 `biome.data.json`, every art path in `world/terrainAssets.ts`, and the look in `render/biomes.ts`.
 
+Asked for another environment (a desert, a taiga, a coast, a real place)? Copy the forest kit
+under the new name and change its data and look, not its bake or scene:
+`node_modules/@threenative/terrain/docs/authoring/new-environment.md` is the step-by-step guide.
+
 ## Name a region, not just a biome
 
 The terrain MCP's `terrain_generate` reads a region word and cooks that region's own world: its real

@@ -21,6 +21,7 @@ import {
 import type { Node } from "three/webgpu";
 import { GROUND_MAPS, type IGroundMaps, type LayerKey } from "../world/terrainAssets.js";
 import type { WORLD_NAMES } from "./worldNames.js";
+import { WORLD } from "./worldNames.js";
 
 export type WorldName = (typeof WORLD_NAMES)[number];
 type RGB = readonly [number, number, number];
@@ -458,7 +459,7 @@ const forest: IBiome = {
 };
 
 export const BIOMES: Record<WorldName, IBiome> = {
-  forest,
+  [WORLD]: forest,
 };
 
 export interface IWorldBiome extends IBiome {

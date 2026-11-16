@@ -94,6 +94,7 @@ import {
   createHorizonCollar,
   horizonSurroundings,
 } from "./horizon.js";
+import { WORLD } from "../worldNames.js";
 
 export interface IBakedWorld {
   size: number;
@@ -892,7 +893,7 @@ export async function createGroundMaterial(
     }
     return (await loadTerrainSplat({
       assets,
-      url: `world/${biome?.world ?? "forest"}.world.json`,
+      url: `world/${biome?.world ?? WORLD}.world.json`,
       layerSample: ({ layer: descriptor, diffuse, normal: normalMap }) => {
         const key = descriptor.id as LayerKey;
         maps[key] ??= { diffuse, normal: normalMap };
@@ -1354,7 +1355,7 @@ export function createTerrain(
   mesh.layers.enable(REFLECTED_LAYER);
   mesh.receiveShadow = true;
   mesh.castShadow = biome?.terrainCastsShadow ?? false;
-  const collar = createHorizonCollar(data, "forest");
+  const collar = createHorizonCollar(data, WORLD);
   const horizonGeometry = collar.geometry;
   horizonGeometry.setAttribute("color", new Float32BufferAttribute(collarColors(collar, data), 3));
   horizonGeometry.computeVertexNormals();

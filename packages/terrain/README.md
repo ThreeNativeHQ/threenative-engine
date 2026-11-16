@@ -48,5 +48,6 @@ Five starter worlds ship as copy-out game source in `starter/<world>/` (`forest`
 | --- | --- |
 | [Authoring a recipe](docs/authoring/recipes.md) | You write or patch a recipe: operations, masks, materials, water, export formats, limits |
 | [The live editor](docs/authoring/editor.md) | You run the editor, change its environment or assets, or save placement overrides |
+| [A new environment](docs/authoring/new-environment.md) | You make a new biome or place on the forest kit's stack: ground, plants, look, bake |
 | [Exporting a static world](docs/authoring/world-export.md) | You export terrain, models and water as one GLB for another project |
 | [Source provenance](THIRD_PARTY_NOTICES.md) | You need the origin and license of the recovered Strata code |
