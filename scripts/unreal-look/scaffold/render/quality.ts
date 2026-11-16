@@ -143,8 +143,10 @@ const high: IWorldEnvironmentOptions = {
   gtaoDistanceFalloff: 0,
   // Epic: Unreal's screen probe gather (`sg.GlobalIlluminationQuality` 3). See `giPreset`.
   finalGatherMethod: "screenProbeGather",
-  // Lumen's short-range AO runs with the gather, never beside GTAO: the horizon search at Epic (PRD-640 Phase 3).
-  shortRangeAO: true,
+  // Lumen's short-range AO (the horizon search at Epic, PRD-640 Phase 3) replaces GTAO when the gather runs. Off by
+  // default: switching it on broke four tight L7 parity locks against GTAO, and the paired captures are visually
+  // indistinguishable, so the default look waits for the calibration round (PRD-644 AC-1). `?shortRangeAO=1` runs it.
+  shortRangeAO: false,
   renderChainTier: "high",
   // Unreal turns motion blur on for a high end PC only (HardwareTargetingModule.cpp), so the desktop tier has it
   // and `medium` and `low` do not. It needs the chain's velocity, which costs one more scene pass target.
