@@ -310,7 +310,16 @@ flowchart LR
   needs, and alpine's heavier world (75,115 instances over 36 art scans) is where that surfaces; the
   forest's own runs on the same lane do retire frames. So the alpine box's own proof now needs the
   owner's real display, exactly like the FPS and judge rows — the lane still proves the non-visual
-  rows. This is also why no captures exist yet: readiness is gated behind the hand-off. The docs moved with the code: the
+  rows. This is also why no captures exist yet: readiness is gated behind the hand-off.
+
+  The look row is the last data piece and it is measured, not guessed: `render/biomes.ts` maps
+  `[WORLD]` to the `forest` row, and the alpine kit's own authored daylight still sits in its legacy
+  `sky.ts` (`sunDirection` (0.55, 0.62, 0.56), `sunColor` 0xfff1dc at 3.2, `fill` 0xa8c8e8/0x464937 at
+  0.62, `haze` 0x9fb4c2 at 0.0016, `exposure` 2^-0.38). Half of it already matches the row's sky
+  (`turbidity` 2, `rayleigh` 3, `mieCoefficient` 0.003, `mieDirectionalG` 0.82), so the port is small —
+  but the row's `sun.direction` is a scaled vector in the forest's row and its `exposure` (2^0.87) is a
+  mood decision, and porting either blind would move the sun and the stop without a capture to judge
+  it. It waits for the same display run as the box's proof. The docs moved with the code: the
   alpine `README.md` now names `scene.ts`/`render/` as the runtime and the look, calls out `tsx` for
   the bake and marks `world.ts`/`sky.ts` as the legacy cell-package pair, and the architecture map has
   the `src/runtime/` row the six Phase 1 moves needed (that census red is now green: `test:map`
