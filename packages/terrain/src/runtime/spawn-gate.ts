@@ -1,4 +1,14 @@
-import type { TerrainCtx } from "./sceneState.js";
+import type { ICtx } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
+
+/** What the gate writes into the scene's own state store, so any kit's store fits it. */
+export interface ISpawnGateState {
+  readonly worldReady: boolean;
+  readonly loadingError: string;
+}
+
+/** The scene whose spawn this gates: a starter context, whose own state is the kit's. */
+type SpawnGateHost = ICtx<Record<string, unknown> & ISpawnGateState, IPhysicsContext>;
 
 /** How much of the spawn's own region landed: the two counts the run report publishes. */
 export interface ISpawnRegion {
@@ -70,8 +80,13 @@ export interface ISpawnGate {
  * `WorldCells.whenSpawnReady` is the data authority and each streamed world's `prewarmed` is the
  * draw gate; this gate turns their landing into the loading screen's release, and writes the one
  * console line a failed spawn leaves behind.
+ *
+ * @situation hold a streamed starter world's loading screen until its spawn has landed
+ * @constraint Every value it reports is supplied by the game; a failure writes one `TN_` line
+ * @requires npm i -D @threenative/terrain
+ * @example const gate = createSpawnGate(ctx, { world, progress, witness, released });
  */
-export function createSpawnGate(ctx: TerrainCtx, options: ISpawnGateOptions): ISpawnGate {
+export function createSpawnGate(ctx: SpawnGateHost, options: ISpawnGateOptions): ISpawnGate {
   const { progress, released, witness, world } = options;
   const deadlineAt = performance.now() + SPAWN_BUDGET_MS;
   let spawnCells: ISpawnRegion = { loaded: 0, required: 0 };

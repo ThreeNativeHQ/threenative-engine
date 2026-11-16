@@ -10213,6 +10213,23 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "Every value it reports is supplied by the game; a failure writes one `TN_` line"
+      ],
+      "example": "const gate = createSpawnGate(ctx, { world, progress, witness, released });",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function createSpawnGate(ctx: SpawnGateHost, options: ISpawnGateOptions): ISpawnGate { … }",
+      "situations": ["hold a streamed starter world's loading screen until its spawn has landed"],
+      "summary": "The spawn gate: one deadline, one settlement, one failure report. `WorldCells.whenSpawnReady` is the data authority and each streamed world's `prewarmed` is the draw gate; this gate turns their landing into the loading screen's release, and writes the one console line a failed spawn leaves behind.",
+      "supersedes": [],
+      "symbol": "createSpawnGate"
+    },
+    {
+      "aliases": [],
       "constraints": [],
       "example": "const edited = editWorldPlacements(data, { remove: [\"scree:candidate:7:41\"] }, (x, z) => field.heightAt(x, z));",
       "importPath": "@threenative/terrain/starter",

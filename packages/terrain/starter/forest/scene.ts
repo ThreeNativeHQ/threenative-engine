@@ -7,6 +7,7 @@ import {
 } from "@threenative/core";
 import { Heightfield, warmUnculled } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
+import { createSpawnGate } from "@threenative/terrain/starter";
 import {
   type AnimationClip,
   Mesh,
@@ -44,7 +45,6 @@ import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./rend
 import { WORLD } from "./render/worldNames.js";
 import { type IMeadow, type Scatter, type Variants, createMeadow } from "./sceneProps.js";
 import { type TerrainCtx, type TerrainState, initialState } from "./sceneState.js";
-import { createSpawnGate } from "./spawnGate.js";
 import { addStreamedGround } from "./world/streamedGround.js";
 import { walkBandSlices } from "./world/walkBand.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
@@ -187,7 +187,7 @@ export class ForestScene extends Scene<TerrainState, IPhysicsContext> {
       revealed: () => ctx.state.set({ revealComplete: true }),
     });
     // One scene-local spawn gate: a single deadline, settled once by the world readiness join, a
-    // failure or teardown. `src/spawnGate.ts` owns it and reports the one line a failed spawn leaves.
+    // failure or teardown. `@threenative/terrain/starter` owns it and reports the one line a failed spawn leaves.
     const gate = createSpawnGate(ctx, {
       world,
       progress: () => (meadow?.progress() ?? 0) + ctx.state.getState().spawnCellsLoaded,

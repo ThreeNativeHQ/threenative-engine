@@ -29,6 +29,14 @@ import {
 
 export { editWorldPlacements } from "./population/placement-edits.js";
 export type { IRemovedPlacement, IWorldPlacementEdits } from "./population/placement-edits.js";
+export { createSpawnGate } from "./runtime/spawn-gate.js";
+export type {
+  ISpawnGate,
+  ISpawnGateOptions,
+  ISpawnGateState,
+  ISpawnRegion,
+  ISpawnWitness,
+} from "./runtime/spawn-gate.js";
 
 export type StarterContext = ICtx<Record<string, unknown>, IPhysicsContext>;
 export type StarterColliders = Readonly<
