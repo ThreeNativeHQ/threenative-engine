@@ -1,3 +1,5 @@
+import type { IRankedRacer } from "./track/Ranking.js";
+
 export type RaceStatus = "DNF" | "RACING" | "WON";
 
 export function resolveRaceStatus(
@@ -49,6 +51,11 @@ export type GameState = {
   engineRate: number;
   completedLaps: number;
   elapsed: number;
+  /** Best and last completed lap, in seconds; 0 until the first lap is banked. */
+  bestLap: number;
+  lastLap: number;
+  /** The field as ranked this frame, player included: the HUD's live leaderboard. */
+  rankings: readonly IRankedRacer[];
   lastOnRoad: [number, number, number];
   place: number;
   /** Cars in the race, the player included: the HUD's "P3 / 6". */

@@ -19,6 +19,7 @@ import {
   MeshStandardMaterial,
   RepeatWrapping,
   SRGBColorSpace,
+  type Texture,
   Vector2,
   Vector3,
 } from "three";
@@ -185,7 +186,14 @@ export function worldGridUVs<T extends BufferGeometry>(geometry: T): T {
   return geometry;
 }
 
-export function createMaterials() {
+/** The PBR maps a game supplies for the ground; the generated turf is the fallback. */
+export interface IGrassMaps {
+  readonly color: Texture;
+  readonly normal: Texture;
+  readonly roughness: Texture;
+}
+
+export function createMaterials(grass?: IGrassMaps) {
   return {
     /** Boost chevrons and the start lights' housing. */
     boost: toon(palette.accent, 0.4),
@@ -207,10 +215,11 @@ export function createMaterials() {
     }),
     /** The infield and everything beyond the run-off. */
     grass: new MeshStandardMaterial({
-      map: turf,
-      normalMap: grain,
-      normalScale: new Vector2(0.35, 0.35),
-      roughness: 0.95,
+      map: grass?.color ?? turf,
+      normalMap: grass?.normal ?? grain,
+      normalScale: grass === undefined ? new Vector2(0.35, 0.35) : new Vector2(0.6, 0.6),
+      roughnessMap: grass?.roughness,
+      roughness: grass === undefined ? 0.95 : 1,
       metalness: 0,
     }),
     /** The paved run-off past the white line, and the pit lane. */

@@ -100,10 +100,9 @@ export class TrackSector {
       this.#offRoadTime = 0;
       return true;
     }
-    // Off the surface is a run wide; **below** it is the missing ground collider: the grass is drawn
-    // and never collided, so a car that gets past the armco has nothing under its wheels and falls
-    // out of the world. Catch that the tick it happens rather than after the run-wide delay, which
-    // by then is several seconds of falling.
+    // Off the surface is a run wide; **below** it is a car with no world under its wheels. The grass
+    // is a collider now, so this is the last-resort net for a jump or a future gap, caught the tick
+    // it happens rather than after the run-wide delay, which by then is seconds of falling.
     const ground = this.#groundAt?.(position.x, position.z);
     this.#falling = ground !== undefined && position.y < ground - this.#fallDepth;
     this.#offRoadTime += dt;
