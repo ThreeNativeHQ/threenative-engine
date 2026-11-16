@@ -158,9 +158,14 @@ describe("the circuit", () => {
     expect(load.indexOf("await")).toBeLessThan(load.indexOf("setupSky(scene, texture"));
     // The environment measurement reads the GPU back; it starts here and is not awaited.
     expect(load).toContain("void this.#sampleSky(");
-    // Two: the photograph when the arm reads it, and the cloud noise the run keeps between visits
-    // (PRD-860) — both settle before the first frame, and neither is the GPU sample.
-    expect(load.match(/\bawait\b/gu)).toHaveLength(2);
+    // Three: the photograph when the arm reads it, the grass textures the rendered grid and its
+    // Heightfield collider share (PRD-893), and the cloud noise the run keeps between visits
+    // (PRD-860) — all settle before the first frame, and none is the GPU sample. Each is named, so
+    // a fourth await fails here by name rather than by count alone.
+    expect(load).toContain('await ctx.assets.texture("sky.jpg")');
+    expect(load).toContain("await loadGrassTextures(ctx)");
+    expect(load).toContain('await ctx.assets.memo("clouds"');
+    expect(load.match(/\bawait\b/gu)).toHaveLength(3);
   });
 });
 
