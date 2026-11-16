@@ -321,6 +321,21 @@ flowchart LR
   branch proves itself green in the package (bake, decode, golden rows) while its own playtest cannot
   become ready here.
 
+  **The ring is re-cooked finer.** `surveyHeights` (the repo's Mapterhorn pipeline) had stepped
+  down to zoom 11 because a tile was missing when the survey was cut; the service now serves
+  zoom 13 over Longs Peak, so `alpine-horizon` is regenerated at **513², 7.29 m/px, zoom 13**
+  (from 129² at 29.17 m/px), real summit 4343.9 m, sha256 `c350573f…`, and the starter assets are
+  repacked as **0.1.5** (`babe74ad…`, 60,909,596 B). `bake:alpine` now writes a 513² ring
+  (`horizon.json`) in 9.0 s with the same 52,682 placements, and `kit-assets`/`alpine-world` are
+  16/16. **What is still wrong and why:** the baked ring's heights run 1137.6..2534.9 m while the
+  playable square runs 1.2..654.5 m — the alpine kit's `heightmap.r16` is *relative* (a designed
+  meadow) and the ring is *real elevation*, so the ring starts about 480 m above the square's edge
+  and the collar draws that step as the wall the owner saw. The forest does not show it because both
+  of its datasets are real metres. Fixing it means either re-basing the ring onto the square's edge
+  in the bake (a data rule with a look consequence) or cooking the playable square from the survey's
+  own ground (real cirque, and the designed meadow and its scatter go away) — a decision for the
+  owner, recorded here rather than guessed.
+
   The heightmaps, measured (owner asked 2026-11-16: "are we using proper heighmaps to cook these
   other terrains? Look at this garbage"): the **playable** ground is the forest's own recipe — 512 m
   over a 257² grid, 2.0 m/px, both kits' `heightmap.r16` are 132,098 B. The **far ring** is not. The
