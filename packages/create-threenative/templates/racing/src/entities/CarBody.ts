@@ -328,9 +328,11 @@ export class CarBody {
       wheel.rotation.z = -this.body.wheelRotation(index);
       if (index < 2) wheel.rotation.y = this.body.steering;
     }
-    this.lean.rotation.z =
-      MathUtils.clamp(this.lateralLoad / FEEL.lateral, -1, 1) * FEEL.leanRoll * DEG;
+    // The nose is +x and the right side is +z, so roll turns about x and pitch about z. The body
+    // rolls away from the corner (load to the right tips the roof left) and squats under throttle.
     this.lean.rotation.x =
+      -MathUtils.clamp(this.lateralLoad / FEEL.lateral, -1, 1) * FEEL.leanRoll * DEG;
+    this.lean.rotation.z =
       MathUtils.clamp(this.longLoad / FEEL.lateral, -1, 1) * FEEL.leanPitch * DEG;
   }
 

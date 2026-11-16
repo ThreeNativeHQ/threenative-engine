@@ -78,6 +78,9 @@ function createShakeMeter() {
     cameraRollStep: 0,
     cameraYawJerk: 0,
     leanRollStep: 0,
+    /** The body's roll and pitch this tick, in degrees: + rolls toward the right, + lifts the nose. */
+    leanRoll: 0,
+    leanPitch: 0,
     /** A camera cut is not a shake: the next two samples rebuild the history. */
     reset(): void {
       samples = 0;
@@ -91,13 +94,15 @@ function createShakeMeter() {
       if (samples >= 2) {
         meter.cameraRollStep = Math.max(meter.cameraRollStep, Math.abs(nextRoll - roll) * DEG);
         meter.cameraYawJerk = Math.max(meter.cameraYawJerk, Math.abs(rate - yawRate) * DEG);
-        meter.leanRollStep = Math.max(meter.leanRollStep, Math.abs(body.rotation.z - lean) * DEG);
+        meter.leanRollStep = Math.max(meter.leanRollStep, Math.abs(body.rotation.x - lean) * DEG);
       }
       samples += 1;
       roll = nextRoll;
       yaw = nextYaw;
       yawRate = rate;
-      lean = body.rotation.z;
+      lean = body.rotation.x;
+      meter.leanRoll = body.rotation.x * DEG;
+      meter.leanPitch = body.rotation.z * DEG;
     },
   };
   return meter;
