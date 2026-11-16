@@ -149,6 +149,21 @@ for (const [asset, heights] of Object.entries({
     species.push({ asset, variant, metres, path: `${asset}/${variant}` }),
   );
 }
+// The alpine species the forest pack does not know: fir scans for the two conifers the box names,
+// field grass for its tundra cover, shrubs for fireweed and blueberry, and scanned boulders for its
+// erratics. Metres are each scan's own size, as the pack's other rows are.
+for (const row of [
+  { asset: "scotspine", metres: 11, paths: ["fir_tree_01/fir-b-lod1.glb", "fir_tree_01/fir-c-lod1.glb"] },
+  { asset: "blackspruce", metres: 8, paths: ["fir_tree_01/fir-b-lod2.glb", "fir_tree_01/fir-c-lod2.glb"] },
+  { asset: "tundragrass", metres: 0.35, paths: ["grass_medium/tuft.glb", "grass_medium/mat.glb"] },
+  { asset: "tussock", metres: 0.5, paths: ["grass_medium/field.glb", "grass_medium/reed.glb"] },
+  { asset: "fireweed", metres: 0.6, paths: ["shrub_02/shrub_02_c.glb", "shrub_02/shrub_02_d.glb"] },
+  { asset: "blueberry", metres: 0.35, paths: ["shrub_02/shrub_02_b.glb", "shrub_02/shrub_02_a.glb"] },
+  { asset: "rock", metres: 1.5, paths: ["rocks/rock01-near.glb", "rocks/rock04-near.glb"] },
+] as const)
+  row.paths.forEach((path, variant) =>
+    species.push({ asset: row.asset, variant, path, metres: row.metres }),
+  );
 /**
  * The forest floor's Poly Haven CC0 scans (`packages/terrain/starter-assets`), as [GLB, metres] per
  * variant: dead trunks, a stump and an upturned root plate for the deadfall, dry branches for the

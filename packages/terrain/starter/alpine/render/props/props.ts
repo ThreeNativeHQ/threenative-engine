@@ -465,6 +465,15 @@ const PROP_COUNTS = {
   reveal: 2,
   /** Three fallen bough groups and one log. */
   deadfall: 4,
+  // The alpine species the forest pack does not draw. Two variants each until the box's own art
+  // spread lands; the geometry comes from `pack.ts`'s alpine rows.
+  scotspine: 2,
+  blackspruce: 2,
+  tundragrass: 2,
+  tussock: 2,
+  fireweed: 2,
+  blueberry: 2,
+  rock: 2,
 };
 
 export const PROP_ASSETS: Record<string, number> = Object.fromEntries(

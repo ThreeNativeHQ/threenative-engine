@@ -277,7 +277,17 @@ flowchart LR
   `Unregistered prop asset 'blackspruce'` — the decode is right and the alpine species pack is the next
   cut. The flip is reverted so the kit keeps its ordered stream until that pack lands; the ordered path
   is unchanged. Typecheck 0, terrain 671/672 (the same release-step red), and the complexity ratchet is
-  green after the decode was split out of the container loop. The docs moved with the code: the
+  green after the decode was split out of the container loop.
+  In progress 2026-11-16 (the alpine species pack, first rows): `render/props/props.ts` registers the
+  seven ids the box names (`scotspine`, `blackspruce`, `tundragrass`, `tussock`, `fireweed`,
+  `blueberry`, `rock`, two variants each) and `render/props/pack.ts` draws them from the kit's own
+  scans (fir LOD scans for the two conifers, `grass_medium` field/tuft/mat/reed for the tundra cover,
+  `shrub_02` for fireweed and blueberry, `rocks` for the erratics). With the stream flipped to
+  `"seeded"` the bake now runs to completion — **1791 placements** (90 local, 1701 horizon), 36 art
+  entries, 1.2 s — so the pack covers every id the seeded bake places. The flip is reverted anyway:
+  the seeded path grows only `foliage` rules, so a seeded alpine loses the 37k grass, 11k scrub and
+  scree the ordered stream supplies, and `cover`/understorey rows still need the bridge (a grass-field
+  placement or a cover scatter rule). The kit therefore keeps the ordered stream until that lands. The docs moved with the code: the
   alpine `README.md` now names `scene.ts`/`render/` as the runtime and the look, calls out `tsx` for
   the bake and marks `world.ts`/`sky.ts` as the legacy cell-package pair, and the architecture map has
   the `src/runtime/` row the six Phase 1 moves needed (that census red is now green: `test:map`
