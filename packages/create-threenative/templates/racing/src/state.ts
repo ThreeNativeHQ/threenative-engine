@@ -37,6 +37,11 @@ export type GameState = {
   rpm: number;
   /** The last banked drift's score, which the HUD pops up for a moment after each one. */
   driftLast: number;
+  /**
+   * Seconds that popup still shows, in game time: the drift owns the clock, so a pause freezes the
+   * popup instead of ageing it while the car is standing still.
+   */
+  driftPopup: number;
   /** The camera's lens: its reading now, and the widest it has been — the nitro kick, measured. */
   fov: number;
   fovPeak: number;

@@ -6,6 +6,7 @@ import type { IAudioConfig } from "@threenative/assets";
 import { describe, expect, it } from "vitest";
 import { ENGINE_SOUND, engineRate } from "../templates/racing/src/audio/engine.js";
 import { FEEL } from "../templates/racing/src/entities/CarBody.js";
+import { DRIFT, Drift } from "../templates/racing/src/entities/Drift.js";
 import { NITRO, Nitro } from "../templates/racing/src/entities/Nitro.js";
 import { GAUGES, Gauges, gearBand, rpmIn } from "../templates/racing/src/gauges.js";
 import config from "../templates/racing/threenative.config.js";
@@ -183,5 +184,45 @@ describe("the racing clips through the shared audio pass", () => {
         stdio: "pipe",
       }),
     ).not.toThrow();
+  });
+});
+
+describe("the banked-score popup", () => {
+  /** The parts of the car a drift reads, so the clock can be driven without a Rapier body. */
+  const stubCar = (rearSlip: number) => {
+    const grips: number[] = [];
+    return {
+      body: {
+        setWheelFrictionSlip: (index: number, value: number) => {
+          grips[index] = value;
+        },
+        wheelContact: () => true,
+      },
+      grips,
+      groundSpeed: 20,
+      rearSlip,
+      teleports: 0,
+    };
+  };
+
+  it("is the drift's clock in game seconds, so a pause freezes it rather than ageing it", () => {
+    const dt = 1 / 60;
+    const car = stubCar(0.5);
+    const drift = new Drift();
+    // Hold the slide past the bank threshold, then straighten: the score banks on that tick.
+    for (let index = 0; index < 30; index += 1) drift.update(car as never, false, 0, dt);
+    expect(drift.popup, "the popup stays shut until a drift banks").toBe(0);
+    car.rearSlip = 0;
+    drift.update(car as never, false, 0, dt);
+    expect(drift.banked).toBe(1);
+    expect(drift.popup, "a banked score arms the popup").toBe(DRIFT.popupSeconds);
+    // The clock is only advanced by `update`, which is what a pause stops: reading it again, or
+    // waiting in wall clock, must not age it.
+    expect(drift.popup, "an unticked frame does not age the popup").toBe(DRIFT.popupSeconds);
+    const ticks = Math.ceil(DRIFT.popupSeconds / dt);
+    for (let index = 0; index < ticks - 1; index += 1) drift.update(car as never, false, 0, dt);
+    expect(drift.popup, "a tick short of the duration still shows").toBeGreaterThan(0);
+    drift.update(car as never, false, 0, dt);
+    expect(drift.popup, "the popup ends on the last tick of its duration").toBe(0);
   });
 });

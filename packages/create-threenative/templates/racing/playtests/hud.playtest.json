@@ -100,6 +100,17 @@
             "lte": 0.8
           }
         ]
+      },
+      {
+        "id": "state",
+        "path": "driftPopup",
+        "gte": 0.3,
+        "atSteps": [
+          {
+            "label": "idle",
+            "lte": 0
+          }
+        ]
       }
     ]
   }

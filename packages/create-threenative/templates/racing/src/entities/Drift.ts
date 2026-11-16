@@ -70,6 +70,12 @@ export const DRIFT = {
   speedBonus: 0.5,
   angleBonus: 40,
   bankThreshold: 5,
+  /**
+   * How long a banked score stays on screen, in **game** seconds. It was wall clock in the HUD, which
+   * meant a pause ate the popup and a harness that advances ticks faster than real time outlived it;
+   * the clock lives here so it stops when the race does.
+   */
+  popupSeconds: 1.6,
 } as const;
 
 const GRIP_RETURN_SECONDS = 0.3;
@@ -86,6 +92,8 @@ export class Drift {
   score = 0;
   /** The last drift that was banked, for the HUD popup. 0 until one is. */
   lastBanked = 0;
+  /** Seconds the last banked score still shows, counted in game time so a pause freezes it. */
+  popup = 0;
   banked = 0;
   spins = 0;
   /** The rear grip cap written this tick. */
@@ -128,6 +136,10 @@ export class Drift {
 
   /** One tick, after `car.measure`. `steer` is the wheel, + to the right. */
   update(car: CarBody, kick: boolean, steer: number, dt: number): void {
+    // A tick's subtraction leaves float noise (~1e-16). Snap it: the popup has to end at exactly
+    // zero, or `quantize` publishes a live popup one tick longer than it should.
+    const left = this.popup - dt;
+    this.popup = left > 1e-6 ? left : 0;
     // A rescue or the autopilot's rejoin teleports the car: that is not a drift, and not a spin.
     if (car.teleports !== this.#teleports) {
       this.#teleports = car.teleports;
@@ -216,6 +228,7 @@ export class Drift {
       this.score += total;
       this.lastBanked = total;
       this.banked += 1;
+      this.popup = DRIFT.popupSeconds;
     }
     this.chain = 0;
   }

@@ -1,5 +1,4 @@
 import { useUiState } from "@threenative/ui";
-import { useEffect, useState } from "react";
 import { GAUGES } from "../gauges.js";
 import type { GameState } from "../state.js";
 
@@ -7,24 +6,17 @@ function clock(seconds: number): string {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}.${String(Math.floor((seconds % 1) * 10))}`;
 }
 
-/** How long a banked drift's score stays on screen, in milliseconds. */
-const DRIFT_POPUP_MS = 1600;
-
 /**
  * The banked score, for a moment after each drift.
  *
- * Keyed on `driftsBanked`, which only ever counts up: a popup timed off the score itself would
- * either miss two identical drifts in a row or re-arm on every frame the state bridge flushed.
+ * The clock is the drift's (`DRIFT.popupSeconds`, counted down by the frame's own `dt`), not this
+ * component's: a `setTimeout` here aged the popup while the race was paused and outlived its 1.6
+ * game seconds under a harness that advances ticks faster than real time. Keyed on
+ * `driftsBanked` by the scene, so two identical scores in a row still pop twice.
  */
-function useDriftPopup(banked: number, score: number): number | undefined {
-  const [shown, setShown] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    if (banked <= 0) return;
-    setShown(score);
-    const timer = setTimeout(() => setShown(undefined), DRIFT_POPUP_MS);
-    return () => clearTimeout(timer);
-  }, [banked, score]);
-  return shown;
+function driftPopup(state: GameState | undefined): number | undefined {
+  if (state === undefined || state.driftPopup <= 0) return undefined;
+  return state.driftLast;
 }
 
 function Bar({ value, accent }: { value: number; accent: boolean }) {
@@ -40,7 +32,7 @@ function Bar({ value, accent }: { value: number; accent: boolean }) {
 
 export function Hud() {
   const state = useUiState<GameState>();
-  const drift = useDriftPopup(state?.driftsBanked ?? 0, state?.driftLast ?? 0);
+  const drift = driftPopup(state);
   // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
   // Rendering zeroes instead would put wrong numbers on screen and then correct them.
   if (state === undefined) return null;

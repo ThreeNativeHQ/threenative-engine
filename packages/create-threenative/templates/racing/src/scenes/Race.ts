@@ -137,6 +137,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     gear: 1,
     rpm: 0,
     driftLast: 0,
+    driftPopup: 0,
     fov: BASE_FOV,
     fovPeak: BASE_FOV,
     engineRate: 0,
@@ -538,6 +539,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       statePatch.gear = gauges.gear;
       statePatch.rpm = quantize(gauges.rpm, 1000);
       statePatch.driftLast = Math.round(car.drift.lastBanked);
+      statePatch.driftPopup = quantize(car.drift.popup, 100);
       statePatch.fov = quantize(fov, 100);
       statePatch.fovPeak = quantize(fovPeak, 100);
       statePatch.engineRate = quantize(this.#audio?.rate ?? 0, 1000);
