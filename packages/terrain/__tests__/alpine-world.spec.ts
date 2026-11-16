@@ -6,6 +6,7 @@
  * still blocked on a real Longs Peak surround survey, so this case checks the row that exists and
  * keeps a ring, once authored, honest about its survey.
  */
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -41,7 +42,16 @@ describe("the alpine world row", () => {
   it("keeps a ring's survey resolvable the day the row grows one", () => {
     const survey = world?.farRing?.survey;
     if (survey === undefined) return; // No long-surround survey exists yet; the PRD records the gap.
-    expect(existsSync(path.join(assets, "survey", `${survey}.json`))).toBe(true);
-    expect(existsSync(path.join(assets, "survey", `${survey}.bin`))).toBe(true);
+    const metaPath = path.join(assets, "survey", `${survey}.json`);
+    const binPath = path.join(assets, "survey", `${survey}.bin`);
+    expect(existsSync(metaPath)).toBe(true);
+    expect(existsSync(binPath)).toBe(true);
+    const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
+      resolution: number;
+      sha256: string;
+    };
+    const bytes = readFileSync(binPath);
+    expect(bytes.length).toBe(meta.resolution ** 2 * 2);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(meta.sha256);
   });
 });

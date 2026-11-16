@@ -1,0 +1,32 @@
+{
+  "site": "Longs Peak and the Keyhole, Rocky Mountain National Park, Colorado (Mapterhorn tiles, zoom 11)",
+  "size": 5000,
+  "resolution": 129,
+  "spacing": 39.0625,
+  "encoding": "int16-le-decimetres-relative-to-elevationOffset",
+  "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
+  "crs": "EPSG:4326 WGS84, resampled from Web Mercator tiles",
+  "verticalCRS": "EGM2008 metres (Mapterhorn)",
+  "sourceCRS": "EPSG:3857",
+  "center": [
+    40.2549,
+    -105.616
+  ],
+  "bboxWGS84": [
+    -105.645427,
+    40.232291,
+    -105.586573,
+    40.277509
+  ],
+  "elevationOffset": 3098,
+  "relativeElevationRange": [
+    0.2,
+    1244.0
+  ],
+  "tileZoom": 11,
+  "metersPerPixel": 29.167,
+  "citation": "Terrain tiles \u00a9 Mapterhorn (https://mapterhorn.com/attribution), built from open elevation data (USGS 3DEP in the United States); resampled, translated vertically and quantized by this example; not endorsed by the producers.",
+  "license": "Open data; each source's licence is listed at https://download.mapterhorn.com/attribution.json (USGS 3DEP is public domain).",
+  "licenseURL": "https://mapterhorn.com/attribution",
+  "sha256": "4121f434b134c2586b62547d8bad375b37586e81dae00b12993e9408fae5922c"
+}
