@@ -48,6 +48,12 @@ struct Value {
 
     std::vector<Value> items;
     std::vector<std::pair<std::string, Value>> fields;
+    /**
+     * This value's 1-based place in the call's argument list, set where the arguments cross (the ABI
+     * numbers a constructor's and a method's), 0 when it is not an argument: a refusal names it, so
+     * `new DataTexture(…, undefined)` says which argument to fix (PRD-894).
+     */
+    uint32_t position = 0;
     static Value array(std::vector<Value> items) { Value v; v.kind = Kind::Array; v.items = std::move(items); return v; }
     static Value record(std::vector<std::pair<std::string, Value>> fields) { Value v; v.kind = Kind::Record; v.fields = std::move(fields); return v; }
 
@@ -395,9 +401,39 @@ Value memberAlias(Store& store, void* self, T& member, const char* cls) {
     return store.adoptAlias(cls, &member, self);
 }
 
-inline double number(const Value& v) {
-    if (v.kind != Value::Kind::Number) throw Unsupported{"expected a number"};
-    return v.number;
+/** A value's kind named as the JS caller sees it, for a refusal that says what arrived. */
+inline const char* kindName(Value::Kind kind) {
+    switch (kind) {
+        case Value::Kind::Null: return "null";
+        case Value::Kind::Number: return "a number";
+        case Value::Kind::String: return "a string";
+        case Value::Kind::Bool: return "a boolean";
+        case Value::Kind::Ref: return "an object";
+        case Value::Kind::Numbers: return "a numeric array";
+        case Value::Kind::Refs: return "an object array";
+        case Value::Kind::Array: return "an array";
+        case Value::Kind::Record: return "an object";
+        case Value::Kind::Undefined: return "undefined";
+        case Value::Kind::ShaderNode: return "a shader node";
+    }
+    return "an unknown value";
+}
+
+/**
+ * A number argument, or the refusal that names it: `name` is its three.js parameter name where the
+ * binding writes one, and the position comes from the call's argument list, so a game reads
+ * `argument 3 (height) expected a number, got a string` instead of `expected a number` (PRD-894).
+ * The ABI sends `null` and `undefined` as one kind, so both read as "null" here.
+ */
+inline double number(const Value& v, const char* name = nullptr) {
+    if (v.kind == Value::Kind::Number) return v.number;
+    std::string what = "expected a number";
+    if (v.position != 0) {
+        what = "argument " + std::to_string(v.position);
+        if (name != nullptr) what += std::string(" (") + name + ")";
+        what += " expected a number";
+    }
+    throw Unsupported{what + ", got " + kindName(v.kind)};
 }
 
 }  // namespace tn::binding

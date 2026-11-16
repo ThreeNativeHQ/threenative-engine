@@ -890,10 +890,13 @@ void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
         if (!data) return std::static_pointer_cast<void>(std::make_shared<Texture>());
         auto texture = std::make_shared<DataTexture>();
         if (!a.empty() && a[0].kind == Value::Kind::Numbers) {
-            const uint32_t width = a.size() > 1 ? static_cast<uint32_t>(number(a[1])) : 1;
-            const uint32_t height = a.size() > 2 ? static_cast<uint32_t>(number(a[2])) : 1;
-            const uint16_t format = a.size() > 3 ? static_cast<uint16_t>(number(a[3])) : kTextureRGBAFormat;
-            const uint16_t type = a.size() > 4 ? static_cast<uint16_t>(number(a[4])) : kTextureUnsignedByteType;
+            // Named as three's own signature names them, so the refusal says which argument is wrong.
+            const uint32_t width = a.size() > 1 ? static_cast<uint32_t>(number(a[1], "width")) : 1;
+            const uint32_t height = a.size() > 2 ? static_cast<uint32_t>(number(a[2], "height")) : 1;
+            const uint16_t format =
+                a.size() > 3 ? static_cast<uint16_t>(number(a[3], "format")) : kTextureRGBAFormat;
+            const uint16_t type =
+                a.size() > 4 ? static_cast<uint16_t>(number(a[4], "type")) : kTextureUnsignedByteType;
             if (format != kTextureRGBAFormat && format != kTextureRedFormat)
                 throw Unsupported{"DataTexture format must be RGBAFormat or RedFormat"};
             if (type != kTextureUnsignedByteType && type != kTextureFloatType && type != kTextureHalfFloatType)

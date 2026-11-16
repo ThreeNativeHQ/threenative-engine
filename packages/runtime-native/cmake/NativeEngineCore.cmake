@@ -546,6 +546,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_version=version
     native_engine_abi_handles=handles
     native_engine_abi_generic=generic
+    native_engine_abi_argument_position=argument_position
     native_engine_abi_scene=scene
     native_engine_abi_lifetime=lifetime
     native_engine_unsupported_member=unsupported_member

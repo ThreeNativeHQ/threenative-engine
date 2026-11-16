@@ -1214,6 +1214,92 @@ describe("createRenderer", () => {
     }
   });
 
+  it("reports the engine's own refusal, and releases the renderer it built, instead of a device without WebGPU (PRD-894)", async () => {
+    // A hosted game's `scene.backgroundBlurriness = 0.4` read as "WebGPU is not available on this
+    // device": the fallback (which the Wasm engine refuses) replaced the refusal that named the fix.
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const refusal =
+      "TN_NATIVE_BACKGROUND_UNSUPPORTED: scene.backgroundBlurriness is 0.4; the engine draws a sharp background only, set it to 0";
+    const disposed = vi.fn();
+    const fallback = vi.fn();
+    try {
+      const failure = await createRenderer({
+        canvas: testCanvas(),
+        preferWebGPU: true,
+        webgl2Factory: fallback,
+        webgpuFactory: () => ({
+          dispose: disposed,
+          init: () => Promise.reject(new Error(refusal)),
+        }),
+      }).catch((thrown: unknown) => thrown as Error);
+      // A start that resolved is itself a failure: the refusal had to reach the caller.
+      expect(failure).toBeInstanceOf(Error);
+      const message = failure instanceof Error ? failure.message : "";
+      expect(message.startsWith("TN_NATIVE_BACKGROUND_UNSUPPORTED:")).toBe(true);
+      expect(message).toContain("scene.backgroundBlurriness is 0.4");
+      expect(message).not.toContain("TN_NO_RENDERER");
+      // The failed start's own renderer is released, and no fallback was built over it.
+      expect(disposed).toHaveBeenCalledTimes(1);
+      expect(fallback).not.toHaveBeenCalled();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("keeps the named boot failure for a device that cannot start WebGPU (PRD-894)", async () => {
+    // A blocklisted GPU is what TN_NO_RENDERER names, and the engine's reason rides along in it: a
+    // raw TN_WASM_ADAPTER in front of a player would name the wrong fault.
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const fallback = vi.fn(() => {
+      throw new Error("TN_NATIVE_UNCATALOGUED_WEBGLRENDERER");
+    });
+    try {
+      await expect(
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory: fallback,
+          webgpuFactory: () => ({
+            init: () => Promise.reject(new Error("TN_WASM_ADAPTER: the GPU is blocklisted")),
+          }),
+        }),
+      ).rejects.toThrow(
+        /^TN_NO_RENDERER: .* WebGPU failed: TN_WASM_ADAPTER: the GPU is blocklisted$/u,
+      );
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("does not read a validation error as a device without WebGPU (PRD-894)", async () => {
+    // TN_WASM_DEVICE_ERROR is an uncaptured validation error, not a device that cannot start: it
+    // names a fault the author has to fix, so the fallback must not replace it.
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    try {
+      await expect(
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory: () => {
+            throw new Error("TN_NATIVE_UNCATALOGUED_WEBGLRENDERER");
+          },
+          webgpuFactory: () => ({
+            init: () =>
+              Promise.reject(new Error("TN_WASM_DEVICE_ERROR: uncaptured validation error")),
+          }),
+        }),
+      ).rejects.toThrow(/^TN_WASM_DEVICE_ERROR: uncaptured validation error$/u);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should use an explicit resolution scale while keeping CSS size unchanged", async () => {
     const canvas = testCanvas();
     const sizes: Array<[number, number]> = [];
