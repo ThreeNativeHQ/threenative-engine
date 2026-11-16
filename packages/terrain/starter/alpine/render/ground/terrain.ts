@@ -144,6 +144,13 @@ interface ILayerMaps {
   normal?: Texture;
 }
 
+/**
+ * The stand-in for a ground layer the biome does not paint. White, because every consumer multiplies
+ * it by that layer's mask weight, and a layer with no mask row has zero weight everywhere.
+ */
+const NEUTRAL_GROUND = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+NEUTRAL_GROUND.needsUpdate = true;
+
 /** Props draw at render order 0 and the water at 2: the ground draws between them. */
 const GROUND_RENDER_ORDER = 1;
 /**
@@ -579,10 +586,20 @@ export async function createGroundMaterial(
   // tops textures and heightmaps suck"); the sixteenth binding, so only this world takes it.
   const collar = look.surveyCollar ? buildCollarRelief(look.world) : undefined;
   if (collar) held.add(collar.texture);
+  // A biome carries the layers it paints, and this material knows the forest's eight. A world with
+  // fewer (the alpine kit writes rock, dirt and snow) has no mask weight anywhere for the rest, so a
+  // shared white tap stands in: one texture, no colour, and the world still draws.
+  const warned = new Set<LayerKey>();
   const layer = (key: LayerKey): ILayerMaps => {
     const found = maps[key];
-    if (!found?.diffuse) throw new RangeError(`Ground layer '${key}' has no diffuse texture`);
-    return found;
+    if (found?.diffuse) return found;
+    if (!warned.has(key)) {
+      warned.add(key);
+      console.warn(
+        `TN_GROUND_MAP_MISSING Ground layer '${key}' has no diffuse texture; its mask weights are zero, so it draws as white`,
+      );
+    }
+    return { diffuse: NEUTRAL_GROUND };
   };
 
   const otherBiome = biome !== undefined && !biome.lawnGround;
@@ -1499,9 +1516,14 @@ export function createTerrain(
       })
       // A map that never arrives, or a set this material cannot bind, leaves the ground on its
       // baked vertex colours. It must still collide and still draw, and the console says why.
-      .catch((error) =>
-        console.warn(`TN_GROUND_MAP_MISSING ${error instanceof Error ? error.message : error}`),
-      );
+      .catch((error) => {
+        console.warn(`TN_GROUND_MAP_MISSING ${error instanceof Error ? error.message : error}`);
+        // The ground itself is fine — it keeps its baked vertex colours — but the streamed block's
+        // handshake must still land: the spawn gate waits on it, so a missing map would hold a player
+        // behind the cover for the whole deadline. The placeholder draws the tiles until the map does.
+        // The placeholder is a plain material, not a node surface; it is only here to land the join.
+        stream?.tiles(material as unknown as MeshStandardNodeMaterial);
+      });
   return { collar, field, mesh };
 }
 

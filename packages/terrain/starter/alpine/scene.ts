@@ -349,8 +349,6 @@ export class AlpineScene extends Scene<TerrainState, IPhysicsContext> {
     // ponytail: a ground material that never loads leaves this pending, and the spawn deadline
     // then fails the scene by name.
     let groundReady: Promise<void> | undefined;
-    if (stream && mesh && collar) {
-      const streamLoad = this.#bandLoad;
       groundReady = stream.material.then((surface) => {
         if (streamLoad !== this.#bandLoad) return surface.dispose();
         const ground = addStreamedGround({

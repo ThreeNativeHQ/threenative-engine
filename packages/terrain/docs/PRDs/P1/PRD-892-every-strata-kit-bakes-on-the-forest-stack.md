@@ -321,6 +321,20 @@ flowchart LR
   branch proves itself green in the package (bake, decode, golden rows) while its own playtest cannot
   become ready here.
 
+  The deadlock is fixed and the proof now passes readiness. `createGroundMaterial` hard-required every
+  layer the forest's material knows; the alpine bake writes three (`rock`, `dirt`, `snow`), so the
+  missing `grass` layer threw, and the surrounding `.catch` logged `TN_GROUND_MAP_MISSING` and left the
+  streamed block's handshake unresolved — the spawn gate then waited out its 120 s deadline. Two
+  changes: a layer the biome does not paint now binds a shared white tap (its mask weight is zero
+  everywhere, so it draws nothing) with the same named warning, and the failure path resolves the
+  handshake so a missing map can never hold a spawn again. On the **host display** (Xwayland `:0`,
+  RTX 2080, `TN_PLAYTEST_HOST_DISPLAY=1`) the kit now reaches `worldReady` and writes its six
+  captures: the spawn, the walk, `meadow-close`, `overview`, `river`, `vista`. What is still red is
+  three thresholds this scenario inherited from the forest's machine — `enterMs` 52.2 (bound 50),
+  `afterFirstFrameTaskMs` 1821 (bound 250), `maxViewGpuMs` 18.76 (bound 12) — and the look gap the
+  captures show plainly: the ordered stream still draws the forest's broadleaf variants, so alpine's
+  own species rows do not yet reach the world.
+
   The stuck join is named: a diagnostic run logged each member at the 100 s mark and all five prop
   streams had `data: resolved` and `prewarm: resolved` — the only unsettled member is `groundReady`
   (`{"ground":false}`), the streamed ground built from `stream.material` and `addStreamedGround`'s

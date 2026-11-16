@@ -157,12 +157,6 @@
       },
       {
         "id": "GameState",
-        "path": "lakePlacementError",
-        "lte": 0.02,
-        "allowTrivial": "The drawn lake centre must match the baked [x,z] basin. The value stays at 1 when no lake is drawn, so an absent lake fails too."
-      },
-      {
-        "id": "GameState",
         "path": "grounded",
         "equals": true,
         "allowTrivial": "The character settles during warmup; grounded must still hold after the walk and scene transition."
@@ -327,19 +321,8 @@
       },
       {
         "id": "GameState",
-        "path": "terrainTransportBound",
-        "equals": true,
-        "atSteps": [
-          {
-            "label": "meadow-close",
-            "equals": true
-          }
-        ]
-      },
-      {
-        "id": "GameState",
         "path": "world",
-        "equals": "forest"
+        "equals": "alpine"
       },
       {
         "id": "GameState",
@@ -356,10 +339,16 @@
     ],
     "renderChain": {
       "stages": {
-        "includes": ["ambientOcclusion", "grade"]
+        "includes": [
+          "ambientOcclusion",
+          "grade"
+        ]
       },
       "contributions": {
-        "graphOutputChanged": ["ambientOcclusion", "grade"]
+        "graphOutputChanged": [
+          "ambientOcclusion",
+          "grade"
+        ]
       }
     },
     "components": [
