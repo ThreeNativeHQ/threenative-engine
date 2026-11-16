@@ -67,10 +67,15 @@ describe("the alpine world row", () => {
       const square = JSON.parse(readFileSync(path.join(out, "world", "alpine.json"), "utf8"));
       const horizon = JSON.parse(readFileSync(path.join(out, "world", "horizon.json"), "utf8"));
       const ring = { ...horizon.alpine, height: horizon.alpine.heights };
-      // The USGS ring shares the square's centre and datum: the step is resolution, not a cliff.
+      // The Mapterhorn ring is cut on the square's own centre and datum: the step is resolution.
       expect(ringSeam(square, ring)).toBeLessThan(8);
-      // Longs Peak's real summit (4,345 m) is 655 m above the 3,690 m datum, not a stretched tile.
-      expect(ring.height.reduce((a: number, b: number) => Math.max(a, b))).toBeLessThan(700);
+      // The ring is the survey itself, not noise or a stretched tile: its top is the survey's top
+      // (the Eiger and the Monch, 2,073 m above the 1,969 m datum).
+      const meta = JSON.parse(
+        readFileSync(path.join(assets, "survey", "alpine-horizon.json"), "utf8"),
+      ) as { relativeElevationRange: [number, number] };
+      const top = ring.height.reduce((a: number, b: number) => Math.max(a, b));
+      expect(Math.abs(top - meta.relativeElevationRange[1])).toBeLessThan(0.2);
       expect(horizon.alpine.massif).toBeUndefined();
     } finally {
       rmSync(out, { recursive: true, force: true });

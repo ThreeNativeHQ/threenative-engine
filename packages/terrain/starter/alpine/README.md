@@ -1,13 +1,15 @@
 # Alpine starter kit
 
-A 512 m alpine headwall on a real survey (USGS 1 m DEM, Longs Peak, Colorado), with hydraulic and
-thermal erosion, rock base, dirt on slopes, snow on the high steep ground and boulder scree. It is
+A 512 m alpine pasture at Kleine Scheidegg, under the Eiger north face (swissALTI3D through
+Mapterhorn), with hydraulic and thermal erosion, rock base, dirt on slopes, snow on the high ground
+and boulder scree. The far ring is the same survey out to 5 km: the Eiger and the Mönch, real
+heights on the square's own datum. It is
 game source: once copied, every file is yours to edit.
 
 | File | What it decides |
 | --- | --- |
 | `recipe.json` | The terrain: the survey heightmap, erosion, the rock, dirt and snow surfaces, and the scree. |
-| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. `scripts/cook-kit-survey.ts` in `@threenative/terrain` cuts it and the far ring from any lat/lon. |
 | `biome.data.json` | The biome record: tree stands, understorey, ground cover and their bands. The streamed bake places from it. |
 | `assets.json` | The legacy cell package's boulder model, LOD distance, draw distance and bounds. |
 | `surface.json` | The legacy cell package's ground table: rock base, dirt and snow layers, tiles, tints and thresholds. |

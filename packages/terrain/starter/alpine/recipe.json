@@ -81,9 +81,9 @@
                 "masks": [
                   {
                     "type": "height",
-                    "min": 80,
+                    "min": 800,
                     "max": 1000000000,
-                    "fade": 60
+                    "fade": 120
                   },
                   {
                     "type": "slope",
@@ -160,7 +160,7 @@
     ],
     "farRing": {
       "survey": "alpine-horizon",
-      "datum": 3690,
+      "datum": 1969,
       "seed": 1,
       "layers": []
     }
