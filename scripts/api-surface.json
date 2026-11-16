@@ -577,6 +577,7 @@
         "@threenative/terrain/starter#createDiagnosticsState": "export function createDiagnosticsState(world: string) { … }",
         "@threenative/terrain/starter#createMeasure": "export function createMeasure(options: IMeasureOptions): IMeasure { … }",
         "@threenative/terrain/starter#createMorphedHeight": "export function createMorphedHeight( collar: HeightfieldCollar, curve: ICollarRingCurve, height: (x: number, z: number) => number, centreX: number, centreZ: number, half: number, band: number, ): (x: number, z: number) => number { … }",
+        "@threenative/terrain/starter#createPlayerRig": "export function createPlayerRig(options: IPlayerRigOptions): IPlayerRig { … }",
         "@threenative/terrain/starter#createRevealProbe": "export function createRevealProbe(options: IRevealProbeOptions): IRevealProbe { … }",
         "@threenative/terrain/starter#createSpawnGate": "export function createSpawnGate(ctx: SpawnGateHost, options: ISpawnGateOptions): ISpawnGate { … }",
         "@threenative/terrain/starter#editWorldPlacements": "export function editWorldPlacements( data: { … }",

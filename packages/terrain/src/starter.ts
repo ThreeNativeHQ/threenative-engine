@@ -75,6 +75,17 @@ export type {
   ISceneFacts,
   IViewWindow,
 } from "./runtime/diagnostics.js";
+export { createPlayerRig } from "./runtime/player-rig.js";
+export type {
+  IMannequin,
+  IPlayerRig,
+  IPlayerRigCamera,
+  IPlayerRigClips,
+  IPlayerRigGait,
+  IPlayerRigOptions,
+  IPlayerRigSight,
+  PlayerWallProbe,
+} from "./runtime/player-rig.js";
 
 export type StarterContext = ICtx<Record<string, unknown>, IPhysicsContext>;
 export type StarterColliders = Readonly<

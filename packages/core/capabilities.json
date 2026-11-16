@@ -10360,6 +10360,23 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the game builds the camera and the wall probe; the package owns only their wiring"
+      ],
+      "example": "const rig = createPlayerRig(ctx, { at, field, mannequin, clips, gait, camera, probe, ... });",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain @threenative/physics"],
+      "signature": "export function createPlayerRig(options: IPlayerRigOptions): IPlayerRig { … }",
+      "situations": ["give a copied starter kit its player capsule, mannequin and follow camera"],
+      "summary": "The player: the capsule the solver moves, the mannequin that rides it, and the third-person camera that follows with the terrain as its walls. The stepped world is the authority for both the ground the player stands on and the wall the orbit camera cannot pass, which is why both queries mask to the game's ground layer: what the player can walk on. Every appearance value — the mannequin, its clips, the gait speeds, the capsule and the camera framing — comes from the game.",
+      "supersedes": [],
+      "symbol": "createPlayerRig"
+    },
+    {
+      "aliases": [],
       "constraints": [],
       "example": "const reveal = createRevealProbe({ camera, covered, phase, released, ... });",
       "importPath": "@threenative/terrain/starter",

@@ -1,6 +1,6 @@
 # PRD-892 — Every Strata kit bakes on the forest stack
 
-**Status:** PARTIAL — Phase 1 boxes 1 and 3 landed; box 2 in progress (4 of the 8 named mechanisms moved)
+**Status:** PARTIAL — Phase 1 boxes 1 and 3 landed; box 2 in progress (5 of the 8 named mechanisms moved)
 **Priority:** P1 — the forest kit has the whole world-building stack (real survey, vegetation, ground cover, far forest, 60 FPS work, a playable scene). The other four kits have one boulder asset and no scene, so they cannot be revamped to the forest's level (all phases open).
 **Complexity:** 8 (HIGH); risk override: the forest must not change while it moves onto the shared path, so the owner's visual-judge rule applies to every phase
 **Owner:** ThreeNative maintainers
@@ -142,8 +142,15 @@ flowchart LR
   same six assertion ids as the baseline, in the same lane (`enterMs` 61.8 ms, `afterFirstFrameTaskMs`
   2614, `timeToReadyMs` 22.8 s, `maxViewGpuMs` 88.34, plus the two harness rows), while
   `measuredViewCount` and `measuredGpuViewCount` both read **5**: the moved diagnostics still publishes
-  every view's closed window in the real game. Remaining: prop world and player rig, then `ForestScene`
-  composes every mechanism for the forest rows.
+  every view's closed window in the real game.
+  In progress 2026-11-16 (5 of 8 named files): the player rig moved. `src/runtime/player-rig.ts` owns the
+  capsule, the mannequin mount, the clip state machine, the pointer look and the follow-camera wiring; the
+  kit keeps what decides how it looks and how this game plays: its orbit camera and framing constants, its
+  wall probe and sight line, the clip names, the gait speeds and the camera offset. The package derives the
+  figure's feet from the capsule (1 m tall, 0.35 m radius, sunk 1 cm) and `pace` from the gait row, so a
+  copied kit cannot disagree with its own collider. Proof: terrain 661/661, typecheck exit 0, build +
+  publint green; the runtime proof is the kit playtest below, since a rig needs the solver to build.
+  Remaining: prop world, then `ForestScene` composes every mechanism for the forest rows.
 - [x] A kit that names a mechanism option without its data (for example cover with no cover rows) fails with a named code. proof: a `packages/terrain/__tests__` spec per option
   Result 2026-11-16: four codes, each raised where the option's data is joined: `TN_STARTER_WATER_DATA` (`water` over a bake with no `water.json`), `TN_STARTER_SKY_DATA` (`lighting.sky` resolving to no file), `TN_STARTER_COLLIDER_DATA` (a `colliders` row for an asset the world places nowhere — the silent one, the player walked through it), `TN_STARTER_EDIT_DATA` (ID edits over a bake with no placement sidecar), and `TN_STARTER_WORLD_DATA` on the world's own files. `kit-runtime.spec.ts` runs one case per option for all four kits: 16 red without the change, 112 green with it; terrain 644/644, `pnpm --filter @threenative/terrain typecheck` exit 0. The codes for the mechanisms Phase 1 box 2 moves in (cover, far forest, spawn gate, player rig) land with that move on the same shape.
 
@@ -184,13 +191,13 @@ flowchart LR
   | `world/streamedGround.ts` (139) | **moved** (`src/runtime/streamed-ground.ts`) | `TerrainTiles`, admission budget, `warmUnculled`, seam measurement; its inputs are a height function, the collar, the surface material and uniforms |
   | collar part of `render/ground/horizon.ts` | **moved** (`src/runtime/collar.ts`) | `collarMorph`, `createMorphedHeight`, `collarSeamGap`, `collarArithmeticHeight`, `collarDrawnHeight` are geometry/measurement and moved; `createHorizonCollar`, `collarColors`, `createWorldHeight`/`cubicAt`/`collarHeight` stay — the drawn collar, its palette and the surveyed far ring are the kit's |
   | `render/props/propWorld.ts` (719) | **split, cheap** | reads only three kit modules: `FAR_FOREST_IMPOSTOR`+`FAR_FOREST_LAYER` (two constants), `standShaded` (one material function) and a progress type — so the residency/impostor/budget machinery moves with those three handed in; the species table, roles and materials it draws stay |
-  | `playerRig.ts` (223) | **split** | the capsule, clip state machine and follow camera move; `orbitCamera.ts` constants and `sightLine` against the prop pack stay |
+  | `playerRig.ts` (223) | **moved** (`src/runtime/player-rig.ts` + a thin kit wrapper) | the capsule, clip state machine and follow-camera wiring moved; `orbitCamera.ts` and its framing constants, the wall probe and `sightLine` against the prop pack stay, because framing is look and the package may not own it |
   | `diagnostics.ts` (1021) | **moved** (`src/runtime/diagnostics.ts` + `src/runtime/view-statistics.ts`) | it owned the state shape it exports, and its only kit imports were the `WorldName` type and `WORLD`; the world is now a factory argument and `publish` keys its view slots to `facts.world`, while the game keeps adding its own look values to the state |
   | `render/props/prepared.ts` (225) | **stays** | it maps authored material names onto **this game's** prop roles (`pine`, `bark`, `impostor`), decides triplanar-vs-UV for this game's rock surface and writes the sway attribute this game's wind reads |
   | `render/props/farForest.ts` (94) | **stays** | the rule already lives in the package (`farForestPlacements`); what is left is which worlds plant a collar, the layer name and the impostor gate — game policy |
 
-  Net after the fourth move: 4 moved (spawn gate, streamed ground, the collar geometry, diagnostics), 2 stay
-  (`prepared.ts`, `farForest.ts`), 2 split (`propWorld.ts`, `playerRig.ts`). The box's own proof (judge
+  Net after the fifth move: 5 moved (spawn gate, streamed ground, the collar geometry, diagnostics, player
+  rig), 2 stay (`prepared.ts`, `farForest.ts`), 1 split (`propWorld.ts`). The box's own proof (judge
   NEUTRAL, FPS within 3%) is unchanged.
 
 - 2026-11-16 (agent): the diagnostics move surfaced two kit leaks that were fixed rather than carried into
@@ -199,6 +206,13 @@ flowchart LR
   package edit; the second is gone from the package (the preview keeps its copy under
   `examples/strata-terrain-preview/src`, per the decision above). The state factory refuses a blank world
   with `TN_STARTER_DIAGNOSTICS_DATA`, the same named-code shape as the other starter options.
+
+- 2026-11-16 (agent): the player rig's follow camera is **injected**, not built by the package. The root
+  table puts anything that decides framing in the game's `src/render/`, so `createPlayerRig` takes an
+  `IPlayerRigCamera` (the kit's orbit camera), its `PlayerWallProbe` and an optional sight line; the package
+  owns only when to look, when to update and where the aim point sits. The capsule and gait are data with
+  derived defaults: the figure's feet come from the capsule's height and radius, and `pace` from the gait
+  row, so the mannequin cannot float above or sink into the body the solver moves.
 
 - 2026-11-16 (agent): the collar morph and the streamed ground are exported from
   `@threenative/terrain/starter`, not the headless root: the morph builds a tile material node and reads a
