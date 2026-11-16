@@ -11,7 +11,7 @@ import {
   Vector3,
 } from "three";
 import { Boost } from "../kart/boost.js";
-import { createMaterials } from "../render/materials.js";
+import { type IGrassMaps, createMaterials } from "../render/materials.js";
 import { grandstand, treeGeometry, tyreStackGeometry } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 import { Checkline, type ChecklineId } from "./Checkline.js";
@@ -962,8 +962,8 @@ export interface ITrackBuild {
   readonly roadMeshes: readonly Mesh[];
 }
 
-export function buildTrack(ctx: TrackCtx): ITrackBuild {
-  const materials = createMaterials();
+export function buildTrack(ctx: TrackCtx, grass?: IGrassMaps): ITrackBuild {
+  const materials = createMaterials(grass);
   buildTerrain(ctx, materials);
   const all = buildRoad(ctx, materials);
   buildKerbs(ctx, all, materials);

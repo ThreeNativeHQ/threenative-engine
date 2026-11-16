@@ -9,7 +9,14 @@ import {
 } from "@threenative/core";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { IPhysicsContext } from "@threenative/physics";
-import { MathUtils, type Object3D, type PerspectiveCamera, type Texture, Vector3 } from "three";
+import {
+  MathUtils,
+  type Object3D,
+  type PerspectiveCamera,
+  RepeatWrapping,
+  type Texture,
+  Vector3,
+} from "three";
 import { EngineAudio } from "../audio/engine.js";
 import { type CarCtx, FEEL } from "../entities/CarBody.js";
 import { RacingCar } from "../entities/RacingCar.js";
@@ -22,6 +29,7 @@ import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
+import type { IGrassMaps } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import {
   type QualityTier,
@@ -148,6 +156,9 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     place: 1,
     racers: RIVALS.length + 1,
     position: "P1",
+    bestLap: 0,
+    lastLap: 0,
+    rankings: [],
     raceStatus: "RACING",
     rescueHeading: 0,
     // Before any rescue, both errors are the worst they could be: the car is facing the wrong way
@@ -167,6 +178,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
   };
 
   #sky: Texture | undefined;
+  #grass: IGrassMaps | undefined;
 
   /**
    * The sky photograph, **awaited** before the scene enters.
@@ -189,6 +201,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const generation = ++this.#lightingGeneration;
     // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
     const texture = SKY_OPTIONS.sky === "photo" ? await ctx.assets.texture("sky.jpg") : undefined;
+    this.#grass = await loadGrassTextures(ctx);
     if (generation !== this.#lightingGeneration) return;
     this.#sky = texture;
     const scene = ctx.scene;
@@ -266,7 +279,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const touchControls = showTouchControls
       ? ctx.entities.add("touch-controls", new TouchControls(camera))
       : undefined;
-    const track = buildTrack(ctx);
+    const track = buildTrack(ctx, this.#grass);
     const car = new RacingCar(ctx, SPAWN, gridHeading(PLAYER_SLOT));
     // Display only, both of them: the rev counter's needle and the engine note it pitches. Neither
     // touches the chassis, so a wrong needle is a wrong gauge and never a wrong lap.
@@ -290,11 +303,21 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     // `travelDirection` is the car's **measured** velocity, not the heading it was asked for: a
     // car that is sliding through a corner is travelling somewhere other than where it points, and
     // a lap counted on the intent is a lap counted on a wish.
+    // Lap times read the same race clock the HUD's timer publishes.
+    let elapsed = 0;
+    let bestLap = 0;
+    let lastLap = 0;
+    let lapStartedAt = 0;
     const lap = new Lap(
       { body: car.body.body, forward: car.travelDirection },
       track.gates,
       TOTAL_LAPS,
-      (completed) => emitPlaytestEvent({ entity: "player", lap: completed, name: "lap-completed" }),
+      (completed) => {
+        lastLap = elapsed - lapStartedAt;
+        lapStartedAt = elapsed;
+        if (bestLap === 0 || lastLap < bestLap) bestLap = lastLap;
+        emitPlaytestEvent({ entity: "player", lap: completed, name: "lap-completed" });
+      },
     );
     const playerRankingInput = { id: "player", lap: lap.completed, position: car.body.position };
     const rivalRankingInputs = rivals.map((rival, index) => ({
@@ -335,7 +358,6 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       }
     });
     car.boost.update(0);
-    let elapsed = 0;
     let status: RaceStatus = "RACING";
     let rescues = 0;
     // Before any rescue, both are the worst they can be: a car facing the wrong way, a whole lap
@@ -552,6 +574,9 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       statePatch.engineRate = quantize(this.#audio?.rate ?? 0, 1000);
       statePatch.completedLaps = lap.completed;
       statePatch.elapsed = elapsed;
+      statePatch.bestLap = bestLap;
+      statePatch.lastLap = lastLap;
+      statePatch.rankings = ranked;
       statePatch.lastOnRoad = lastOnRoad;
       statePatch.place = player.place;
       statePatch.position = positionLabel;
@@ -582,4 +607,28 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     this.#lightingGeneration += 1;
     super.exit(ctx);
   }
+}
+
+/** The real ground PBR set (Poly Haven/ambientCG Grass004, CC0), configured for the 9 m ground UVs. */
+async function loadGrassTextures(ctx: GameCtx): Promise<IGrassMaps> {
+  const [color, normal, roughness] = await Promise.all([
+    ctx.assets.texture("grass/Grass004_color.jpg", {
+      anisotropy: 8,
+      repeat: 6.43,
+      wrap: RepeatWrapping,
+    }),
+    ctx.assets.texture("grass/Grass004_normal.jpg", {
+      anisotropy: 8,
+      data: true,
+      repeat: 6.43,
+      wrap: RepeatWrapping,
+    }),
+    ctx.assets.texture("grass/Grass004_roughness.jpg", {
+      anisotropy: 8,
+      data: true,
+      repeat: 6.43,
+      wrap: RepeatWrapping,
+    }),
+  ]);
+  return { color, normal, roughness };
 }
