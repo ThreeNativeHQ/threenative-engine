@@ -116,7 +116,11 @@
   "water": [
     {
       "kind": "ocean",
-      "level": 1.5
+      "level": 0
+    },
+    {
+      "kind": "lake",
+      "radius": 150
     }
   ],
   "spawn": {

@@ -125,14 +125,27 @@ const KITS = {
     captures: ["boulders", "edge", "ground", "overview"],
     views: ["boulders", "edge", "ground", "overview"],
   },
+  // Coastal is a source kit on the forest's scene since PRD-892 Phase 2 (Sand Beach, Acadia), with
+  // the forest's number and capture rows; it draws the sea and its lagoon, so it has water.
   coastal: {
     playtest: "coastal.playtest.json",
+    source: "coastal-game.ts",
     generatedStand: false,
     water: true,
     cooked: "cookedCoastalBytes",
-    numbers: ["treeInstances", "closestToTree", "waterLakes"],
-    captures: ["boulders", "edge", "ground", "overview"],
-    views: ["boulders", "edge", "ground", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["coastal-start", "meadow-close", "overview", "river", "vista", "coastal-walk"],
+    views: [],
   },
 };
 /** The kit this run proves: `forest` by default, or `KIT=alpine`. Any other name fails closed. */

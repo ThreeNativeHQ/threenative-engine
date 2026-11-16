@@ -35,13 +35,12 @@ it("forest recipe exposes soil patches through its surface blend thresholds", ()
   }
 });
 // Per-kit assertion differences: scatter asset/count, water identities, river point count and golden files.
-// No alpine row: since 2026-11-16 the alpine kit bakes the streamed world (PRD-892 Phase 2) and its
-// `bake.mjs` reads its own TypeScript look through `tsx`, which a bare temp copy cannot resolve.
+// No alpine or coastal row: since 2026-11-16 those kits bake the streamed world (PRD-892 Phase 2) and
+// their `bake.mjs` reads its own TypeScript look through `tsx`, which a bare temp copy cannot resolve.
 // The streamed describe below proves that bake instead.
 const kits = [
   { name: "desert", asset: "boulder", count: 140, water: "empty", compareWater: true },
   { name: "tundra", asset: "boulder", count: 70, water: "kettles", compareWater: true },
-  { name: "coastal", asset: "fir", count: 80, water: "ocean", compareWater: true },
 ];
 describe.each(kits)("$name starter kit", ({ name, asset, count, water, compareWater }) => {
   const kit = join(packageRoot, "starter", name);
@@ -128,15 +127,15 @@ describe.each(kits)("$name starter kit", ({ name, asset, count, water, compareWa
 });
 
 // The streamed kit: `bakeKit` with a `look` writes the bundle the forest scene loads, not `world.json`.
-describe("alpine streamed kit", () => {
-  const kit = join(packageRoot, "starter", "alpine");
+describe.each(["alpine", "coastal"])("%s streamed kit", (name) => {
+  const kit = join(packageRoot, "starter", name);
 
   /**
    * Runs the kit's own bake where its look modules and `tsx` resolve (the kit's folder) and returns
    * the folder it writes the world into: `--out <root>` puts the world in `<root>/world/`.
    */
   function bakeStreamed(): string {
-    const root = makeTempDirSync("terrain-alpine-streamed-");
+    const root = makeTempDirSync(`terrain-${name}-streamed-`);
     execFileSync(
       process.execPath,
       ["bake.mjs", "--assets", starterAssets, "--out", join(root, "world")],
@@ -146,20 +145,20 @@ describe("alpine streamed kit", () => {
   }
 
   const FILES = [
-    "alpine.json",
-    "alpine.world.json",
-    "alpine.layers.json",
-    "alpine.splat.rgba8",
-    "alpine.canopy.bin",
-    "alpine.sky.bin",
-    "alpine.props.json",
+    `${name}.json`,
+    `${name}.world.json`,
+    `${name}.layers.json`,
+    `${name}.splat.rgba8`,
+    `${name}.canopy.bin`,
+    `${name}.sky.bin`,
+    `${name}.props.json`,
   ];
 
   it("writes the streamed bundle its scene loads", () => {
     const out = bakeStreamed();
     for (const name of FILES) expect(statSync(join(out, name)).size, name).toBeGreaterThan(0);
 
-    const baked = JSON.parse(readFileSync(join(out, "alpine.json"), "utf8")) as {
+    const baked = JSON.parse(readFileSync(join(out, `${name}.json`), "utf8")) as {
       resolution: number;
       heights: number[];
       colors: number[];
@@ -167,7 +166,7 @@ describe("alpine streamed kit", () => {
     expect(baked.heights).toHaveLength(baked.resolution ** 2);
     expect(baked.colors).toHaveLength(baked.resolution ** 2 * 3);
 
-    const props = JSON.parse(readFileSync(join(out, "alpine.props.json"), "utf8")) as {
+    const props = JSON.parse(readFileSync(join(out, `${name}.props.json`), "utf8")) as {
       cellSize: number;
       buckets: { bucket: string; kind: string; placements: string; ids: string }[];
     };
@@ -189,5 +188,37 @@ describe("alpine streamed kit", () => {
       expect(readFileSync(join(first, name)).equals(readFileSync(join(second, name))), name).toBe(
         true,
       );
+  });
+});
+
+// The coast stands at real sea level (NAVD88 0 m, Sand Beach, Acadia) and the survey's flattened
+// lagoon behind the beach is a lake with a bed under it, so the scene draws both.
+describe("coastal streamed water", () => {
+  it("bakes the sea at 0 m and the lagoon as a lake over a lowered bed", () => {
+    const root = makeTempDirSync("terrain-coastal-water-");
+    execFileSync(
+      process.execPath,
+      ["bake.mjs", "--assets", starterAssets, "--out", join(root, "world")],
+      { cwd: join(packageRoot, "starter", "coastal"), stdio: "pipe" },
+    );
+    const baked = JSON.parse(
+      readFileSync(join(root, "world", "world", "coastal.json"), "utf8"),
+    ) as {
+      size: number;
+      resolution: number;
+      heights: number[];
+      waterLevel: number | null;
+      lakes: { id: string; at: [number, number]; level: number }[];
+    };
+    expect(baked.waterLevel).toBe(0);
+    expect(baked.lakes.map((lake) => lake.id)).toEqual(["lagoon"]);
+    const lagoon = baked.lakes[0] as { at: [number, number]; level: number };
+    const cell = baked.size / (baked.resolution - 1);
+    const col = Math.round((lagoon.at[0] + baked.size / 2) / cell);
+    const row = Math.round((lagoon.at[1] + baked.size / 2) / cell);
+    const bed = baked.heights[row * baked.resolution + col] as number;
+    // Above the sea, so the ocean plane never shows through it, and under the lagoon's surface.
+    expect(bed).toBeGreaterThan(0);
+    expect(bed).toBeLessThan(lagoon.level - 0.5);
   });
 });
