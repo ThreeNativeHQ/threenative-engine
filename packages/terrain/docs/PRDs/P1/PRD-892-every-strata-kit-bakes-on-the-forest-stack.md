@@ -266,7 +266,18 @@ flowchart LR
   eight-float records + id sidecar carry the pose, so a decode is enough; the open input is the asset
   table the seeded bake requires). The failure is now named rather than a bare assertion:
   `TN_STARTER_STREAM_DATA` says which stream the file declares and both ways forward. Typecheck 0,
-  terrain 671/672 (the starter-assets release step is the only red). The docs moved with the code: the
+  terrain 671/672 (the starter-assets release step is the only red).
+  In progress 2026-11-16 (the seeded stream now reaches the streamed containers): `bakeStreamedWorld`
+  grows a seeded state through the same bridge a preset cook uses (`foliageScatterRules` +
+  `finalizeState`), passes the bake an asset record per placed species, and decodes the cell package it
+  writes back into `IPlacement`s (eight float32 a record — position, quaternion, uniform scale — with
+  the run's asset and the id sidecar), carrying the quaternion as an authored `transform` with
+  grounding off so the seeded pose survives. Proven by flipping alpine to `"seeded"` and baking: the
+  bake placed the box's own species and stopped only at the prop pack, with
+  `Unregistered prop asset 'blackspruce'` — the decode is right and the alpine species pack is the next
+  cut. The flip is reverted so the kit keeps its ordered stream until that pack lands; the ordered path
+  is unchanged. Typecheck 0, terrain 671/672 (the same release-step red), and the complexity ratchet is
+  green after the decode was split out of the container loop. The docs moved with the code: the
   alpine `README.md` now names `scene.ts`/`render/` as the runtime and the look, calls out `tsx` for
   the bake and marks `world.ts`/`sky.ts` as the legacy cell-package pair, and the architecture map has
   the `src/runtime/` row the six Phase 1 moves needed (that census red is now green: `test:map`

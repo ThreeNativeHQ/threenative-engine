@@ -4,9 +4,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { bakeBiome } from "./biome/bake-biome.js";
+import { bakeBiome, foliageScatterRules } from "./biome/bake-biome.js";
 import { validateBiome } from "./biome/biome.js";
 import { MATERIAL_IDS } from "./core/masks.js";
+import { finalizeState } from "./core/operations.js";
 import { Terrain } from "./core/terrain.js";
 import type { IPlacement, ITerrainDocument, ITerrainState, Layer } from "./core/types.js";
 import { paintCanopyCover } from "./ground/canopy.js";
@@ -15,6 +16,7 @@ import { type LandformKind, landformBackdrop } from "./ground/presets.js";
 import { skyVisibility } from "./ground/sky-visibility.js";
 import { bakeMesh } from "./package/bake.js";
 import { compilePropBuckets, propPackageFiles } from "./package/prop-package.js";
+import type { IBakedWorldPackage, IWorldPackageAsset } from "./package/world-package.js";
 
 type Palette = NonNullable<NonNullable<Parameters<typeof bakeMesh>[1]>["palette"]>;
 
@@ -251,6 +253,71 @@ function surfacePackage(state: ITerrainState, world: IKitWorldRecipe, look: IKit
   };
 }
 
+/** The asset record a seeded run indexes: the streamed prop pack draws its own geometry, so the id
+ *  and bounds a cell package would carry are not read here. Any species the file names resolves. */
+/** Eight float32 a placement record: position xyz, quaternion xyzw, uniform scale. */
+const RECORD_FLOATS = 8;
+
+const SEEDED_ASSET: IWorldPackageAsset = {
+  glb: "",
+  bounds: { min: [0, 0, 0], max: [0, 0, 0] },
+};
+
+function seededAssetTable(
+  placements: readonly IPlacement[],
+): Readonly<Record<string, IWorldPackageAsset>> {
+  return Object.fromEntries(
+    [...new Set(placements.map((placement) => placement.asset))].map((asset) => [
+      asset,
+      SEEDED_ASSET,
+    ]),
+  );
+}
+
+/** One seeded cell record as the placement the prop writer buckets. */
+function seededPlacement(
+  records: Float32Array,
+  ids: readonly string[],
+  index: number,
+  asset: string,
+): IPlacement {
+  const offset = index * RECORD_FLOATS;
+  const value = (at: number): number => records[offset + at] as number;
+  const position: [number, number, number] = [value(0), value(1), value(2)];
+  const scale = value(7);
+  return {
+    id: ids[index] as string,
+    layer: "seeded",
+    asset,
+    position,
+    rotation: 0,
+    scale,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+    transform: {
+      position,
+      quaternion: [value(3), value(4), value(5), value(6)],
+      scale: [scale, scale, scale],
+      grounding: false,
+    },
+  };
+}
+
+/** The cell package a seeded bake writes, decoded into the placements the prop writer buckets. */
+function packagePlacements(pkg: IBakedWorldPackage): readonly IPlacement[] {
+  const bytes = pkg.files[pkg.manifest.placements];
+  const idBytes = pkg.files[pkg.manifest.placementIds ?? "placement-ids.json"];
+  assert(bytes !== undefined && idBytes !== undefined, "the seeded package wrote no placements");
+  const records = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+  const ids = JSON.parse(new TextDecoder().decode(idBytes)) as string[];
+  const placements: IPlacement[] = [];
+  for (const cell of pkg.manifest.cells)
+    for (const run of cell.runs)
+      for (let at = 0; at < run.count; at += 1)
+        placements.push(seededPlacement(records, ids, run.offset + at, run.asset));
+  return placements;
+}
+
 /** The streamed prop package: one manifest and one container per streamed world. */
 async function writeProps(
   worldDir: string,
@@ -309,12 +376,26 @@ export async function bakeStreamedWorld(options: {
     JSON.parse(await readFile(join(kitDir, "biome.data.json"), "utf8")),
     row.name,
   );
-  const { scatter } = bakeBiome({ state, spec });
-  // The streamed containers carry the ordered stream's own placements; a biome file on the seeded
-  // stream writes a cell package instead and hands back no scatter, so there is nothing to bucket.
-  if (scatter === null)
+  // A seeded biome file states its stand itself, so its rows become the scatter rules the four
+  // stages run; the ordered stream already emits the game's own placements and needs no bridge.
+  const seeded = spec.stream === "seeded";
+  const placed = seeded
+    ? finalizeState({
+        ...state,
+        scatterRules: [...state.scatterRules, ...foliageScatterRules(spec.foliage, state.height)],
+      })
+    : state;
+  const biome = bakeBiome({
+    state: placed,
+    spec,
+    ...(seeded ? { assets: seededAssetTable(placed.instances), stream: "seeded" as const } : {}),
+  });
+  const placements =
+    biome.scatter?.placements ??
+    (biome.package === null ? undefined : packagePlacements(biome.package));
+  if (placements === undefined)
     throw new Error(
-      `TN_STARTER_STREAM_DATA: the '${row.name}' kit's biome file places nothing on the streamed path. Its 'stream' is '${spec.stream}', and only the ordered stream writes the placements this bake buckets. Put the rows on the ordered stream, or bake the seeded package with the cell writer.`,
+      `TN_STARTER_STREAM_DATA: the '${row.name}' kit's biome file places nothing on the streamed path (stream '${spec.stream}'). Give its rows a stand the stages accept, or check the ordered generators.`,
     );
   const colors = bakeMesh(state, { palette: look.palette }).colors;
   assert(colors !== undefined, "the kit's palette baked no ground colours");
@@ -353,7 +434,7 @@ export async function bakeStreamedWorld(options: {
   }
 
   const canopy = new Float32Array(baked.resolution ** 2);
-  paintCanopyCover(canopy, baked, scatter.placements, look.canopy);
+  paintCanopyCover(canopy, baked, placements, look.canopy);
   await writeFile(
     join(worldDir, `${row.name}.canopy.bin`),
     new Uint8Array(canopy.buffer, canopy.byteOffset, canopy.byteLength),
@@ -364,10 +445,10 @@ export async function bakeStreamedWorld(options: {
     join(worldDir, `${row.name}.sky.bin`),
     Uint8Array.from(sky, (v) => Math.round(v * 255)),
   );
-  const buckets = await writeProps(worldDir, row.name, scatter.placements, baked.size, look.props);
+  const buckets = await writeProps(worldDir, row.name, placements, baked.size, look.props);
 
   for (const path of row.art) await cp(join(assetsDir, path), join(out, path), { recursive: true });
   console.log(
-    `${row.name}: ${scatter.placements.length} placements (${buckets}); ${row.art.length} art entries; ${((performance.now() - started) / 1000).toFixed(1)} s -> ${out}`,
+    `${row.name}: ${placements.length} placements (${buckets}); ${row.art.length} art entries; ${((performance.now() - started) / 1000).toFixed(1)} s -> ${out}`,
   );
 }
