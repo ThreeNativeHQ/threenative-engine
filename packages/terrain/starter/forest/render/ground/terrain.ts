@@ -84,6 +84,7 @@ import {
   REFLECTED_LAYER,
   surfaceHeights,
 } from "../water/river.js";
+import { WORLD } from "../worldNames.js";
 import {
   COLLAR_UNDER_TILE,
   type IPackedMassif,
@@ -94,7 +95,6 @@ import {
   createHorizonCollar,
   horizonSurroundings,
 } from "./horizon.js";
-import { WORLD } from "../worldNames.js";
 
 export interface IBakedWorld {
   size: number;

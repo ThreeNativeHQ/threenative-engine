@@ -41,6 +41,7 @@ import { invalidatePropShadows } from "./render/props/propWorld.js";
 import { buildPropVariants } from "./render/props/props.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky/sky.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/water/river.js";
+import { WORLD } from "./render/worldNames.js";
 import { type IMeadow, type Scatter, type Variants, createMeadow } from "./sceneProps.js";
 import { type TerrainCtx, type TerrainState, initialState } from "./sceneState.js";
 import { createSpawnGate } from "./spawnGate.js";
@@ -48,7 +49,6 @@ import { addStreamedGround } from "./world/streamedGround.js";
 import { walkBandSlices } from "./world/walkBand.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
 import { loadBakedWorld } from "./worlds.js";
-import { WORLD } from "./render/worldNames.js";
 
 /**
  * The mannequin's two swim clips (Universal Animation Library 1, CC0), copied by the bake. They are

@@ -30,8 +30,8 @@ import {
 import type { Node } from "three/webgpu";
 import { BIOMES, type IBiome } from "../biomes.js";
 import { setCanopySun } from "../props/propMaterials.js";
-import { aerialPerspective, cloudDome, createAtmosphere, skyColour } from "./atmosphere.js";
 import { WORLD } from "../worldNames.js";
+import { aerialPerspective, cloudDome, createAtmosphere, skyColour } from "./atmosphere.js";
 
 /**
  * The sun, in the same units the `L` key swings it: a position, not a direction, so the toggle and

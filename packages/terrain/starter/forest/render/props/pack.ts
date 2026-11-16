@@ -79,6 +79,7 @@ import {
   measureBiome,
 } from "../biomes.js";
 import { LOOK } from "../lookKnobs.js";
+import { WORLD } from "../worldNames.js";
 import {
   type IPropGround,
   createRockGround,
@@ -86,7 +87,6 @@ import {
   skyEnvironment,
 } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
-import { WORLD } from "../worldNames.js";
 
 export interface IPackSpecies {
   readonly asset: string;

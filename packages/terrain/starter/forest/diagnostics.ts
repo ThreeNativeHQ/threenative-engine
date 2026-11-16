@@ -14,12 +14,12 @@ import {
   Vector3,
 } from "three";
 import type { WorldName } from "./render/biomes.js";
+import { WORLD } from "./render/worldNames.js";
 import {
   beginViewVisit,
   medianOfGrowingSamples as median,
   retainViewWindow,
 } from "./viewStatistics.js";
-import { WORLD } from "./render/worldNames.js";
 
 /**
  * What this example measures about its own frame, and the state it reports those measurements
