@@ -266,7 +266,11 @@ flowchart LR
   eight-float records + id sidecar carry the pose, so a decode is enough; the open input is the asset
   table the seeded bake requires). The failure is now named rather than a bare assertion:
   `TN_STARTER_STREAM_DATA` says which stream the file declares and both ways forward. Typecheck 0,
-  terrain 671/672 (the starter-assets release step is the only red).
+  terrain 671/672 (the starter-assets release step is the only red). The docs moved with the code: the
+  alpine `README.md` now names `scene.ts`/`render/` as the runtime and the look, calls out `tsx` for
+  the bake and marks `world.ts`/`sky.ts` as the legacy cell-package pair, and the architecture map has
+  the `src/runtime/` row the six Phase 1 moves needed (that census red is now green: `test:map`
+  11/11).
 - [ ] Desert: a real desert survey replaces the Colorado crop; `saguaro`, `joshua` and `acacia` stands, `creosote`, `agave`, `thornbush`, `bunchgrass`, `drygrass`, `marigold` cover, `branch`, `twig` and `rock` debris with a dry material. proof: `KIT=desert pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Tundra: a real tundra survey replaces the Colorado crop; `blackspruce` at the taiga edge, `birch` with a dwarf form patch, `tundragrass`, `tussock`, `blueberry`, `reeds`, `rock` erratics, kettle ponds; a new dwarf-willow preset. proof: `KIT=tundra pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
 - [ ] Coastal: a real coast survey replaces the Colorado crop; `scotspine` or `stonepine` stands (or `douglasfir`, `redcedar`, `salal`, `swordfern` on a Pacific coast), `drygrass` dune cover, `reeds`, `log` driftwood, `rock`; a new marram-grass preset. proof: `KIT=coastal pnpm --filter strata-terrain-preview test:kit`, kit playtest from spawn
