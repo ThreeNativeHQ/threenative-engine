@@ -1,6 +1,6 @@
 import { useUiState } from "@threenative/ui";
-import { CIRCUIT } from "../track/circuit.js";
 import type { GameState } from "../state.js";
+import { CIRCUIT } from "../track/circuit.js";
 
 /**
  * The race HUD, authored from the owner's reference frame: position and the live field down the
@@ -125,8 +125,10 @@ function Minimap({ state }: { state: GameState }) {
   const playerAt = mapAt(player?.routeProgress ?? state.trackProgress);
   return (
     <svg
+      aria-label="circuit map"
       viewBox="0 0 200 200"
       className="h-[168px] w-[168px] drop-shadow-[0_2px_10px_rgb(0_0_0/0.65)]"
+      role="img"
     >
       <circle
         cx="100"
@@ -236,6 +238,7 @@ function Tach({ state }: { state: GameState }) {
   return (
     <div className="relative h-[204px] w-[204px]">
       <svg
+        aria-hidden="true"
         viewBox="0 0 200 200"
         className="absolute inset-0 drop-shadow-[0_2px_12px_rgb(0_0_0/0.7)]"
       >
@@ -351,11 +354,11 @@ function Nitro({ state }: { state: GameState }) {
         </span>
       </div>
       <div className="flex h-[10px] gap-[3px]">
-        {Array.from({ length: NITRO_SEGMENTS }, (_, index) => (
+        {Array.from({ length: NITRO_SEGMENTS }, (_, index) => index + 1).map((segment) => (
           <span
-            key={index}
+            key={segment}
             className={`h-full flex-1 -skew-x-12 ${
-              index < filled ? (active ? "bg-cyan" : "bg-cyan/80") : "bg-white/12"
+              segment <= filled ? (active ? "bg-cyan" : "bg-cyan/80") : "bg-white/12"
             }`}
           />
         ))}
