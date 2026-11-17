@@ -112,7 +112,7 @@ function world(over: Partial<Record<string, unknown>> = {}) {
       { name: "@threenative/runtime-native", version: VERSION },
     ],
     npmVersions: (name) => (name === "@threenative/core" ? (state.core ?? state.npm) : state.npm),
-    publish: ({ override }) => calls.push(override ? "publish --override" : "publish"),
+    publish: (override) => calls.push(override ? "publish --override" : "publish"),
     prove: () => calls.push("prove"),
     repository: REPOSITORY,
     sleep: async () => undefined,
@@ -311,8 +311,13 @@ describe("pnpm release:ship resumes", () => {
       release: null,
       tagCommit: undefined,
     });
+    // No release exists, so the refusal never says "that release": the packages hold the name, and
+    // deleting anything is not a move.
     await expect(ship(deps, { dryRun: false, sha: SHA })).rejects.toThrow(
-      /TN_SHIP_VERSION_BURNED/u,
+      new RegExp(
+        `${TAG} has no release yet\\. 1 of 2 cohort packages are on npm at ${VERSION}.*Those packages hold the version name`,
+        "u",
+      ),
     );
     expect(calls).toEqual([]);
   });
@@ -491,6 +496,21 @@ describe("pnpm release:check-version", () => {
       tagCommit: OTHER,
     });
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
+  });
+
+  // Deleting the draft would only re-enter the same refusal with no release at all: a bump is the
+  // move when npm already serves part of the cohort.
+  it("does not advise deleting a draft when part of the cohort is on npm", () => {
+    const { deps } = world({
+      core: [VERSION],
+      release: { isDraft: true, isPrerelease: false },
+      tagCommit: OTHER,
+    });
+    expect(() => checkReleaseVersion(deps, SHA)).not.toThrow(/delete the draft/u);
+    // The tag already points at a commit, so the cohort is finished from there.
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(
+      new RegExp(`pnpm release:ship --sha ${OTHER}`, "u"),
+    );
   });
 
   it("passes a release that sits on this very commit: that is a resume, not a burn", () => {

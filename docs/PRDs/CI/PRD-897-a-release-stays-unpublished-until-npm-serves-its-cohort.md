@@ -11,7 +11,7 @@
 PRD-896 moved the upgrade proof in front of the tag, which closes the shape that burned 0.3.14: a
 first-pass release now proves before any release exists. It deliberately did **not** add a way for the
 publish to skip its own proof — a receipt-backed reuse was built and deleted in review, because the
-publish's proof is the only run that sees the real prebuilt release. Three shapes survive it:
+publish's proof is the only run that sees the real prebuilt release. Four shapes survive it:
 
 1. **Every publish.** `release:ship` waits for a public release and then publishes
    (`pnpm release --yes --skip-gates --resume`), and that call proves again — necessarily, since it is
@@ -59,7 +59,7 @@ upgrade regression is red before a merge instead of after it.
 
 ## Acceptance criteria
 
-- [ ] No step of a release can fail after something about the version is public. proof: the phase 1 spec, then one real release: the Actions log shows every gate green before the release exists.
+- [ ] A red step after the release is public leaves the version shippable without a bump. proof: the phase 1 spec, then one real release where the publish proof goes red: the next run finishes that version instead of refusing it.
 
 ## Decisions
 
@@ -75,6 +75,9 @@ upgrade regression is red before a merge instead of after it.
 - The owner's call on the draft-first shape (recorded under Decisions) before it replaces anything,
   and one real release to prove both phases. Deleting a public prerelease on a red publish touches
   release state, which the owner decides.
+- The new gate reads the version from `--sha` but the cohort from the checkout, so a plan taken from a
+  bumped tree for an older commit counts the wrong versions (unverified here; `readShipState` shares
+  the flaw). A census keyed on the commit is part of phase 2's work.
 - Phase 2's lane is reported red for two reasons owned by the release branch (`release-0315`), neither
   of them visible in this repository at the time of filing and both **unverified here**: the clean
   room's 15 s `--server-timeout` against a ~21 s cold asset cook, and the reinvention lint rows of

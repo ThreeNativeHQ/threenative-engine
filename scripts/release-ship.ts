@@ -48,7 +48,7 @@ export interface IShipDeps {
   /** Every package of the npm cohort. A crash between levels leaves only part of it published. */
   readonly cohort: () => readonly { readonly name: string; readonly version: string }[];
   /** `pnpm release --yes --skip-gates --resume`, then the clean-room verification. */
-  readonly publish: (options: { readonly override: boolean }) => void;
+  readonly publish: (override: boolean) => void;
   /** `pnpm release --prove-upgrade --skip-gates`: pack, prove, publish nothing. */
   readonly prove: () => void;
   readonly repository: string;
@@ -149,14 +149,18 @@ function errorText(error: unknown): string {
  *
  * Only a real miss is "none": a failed read here could move the tag of a public release.
  */
-function ghReleaseState(
-  gh: (args: readonly string[]) => string,
-  repository: string,
-  tag: string,
-): ReleaseState {
+function ghReleaseState(deps: IShipDeps, tag: string): ReleaseState {
   let out: string;
   try {
-    out = gh(["release", "view", tag, "--repo", repository, "--json", "isDraft,isPrerelease"]);
+    out = deps.gh([
+      "release",
+      "view",
+      tag,
+      "--repo",
+      deps.repository,
+      "--json",
+      "isDraft,isPrerelease",
+    ]);
   } catch (error) {
     if (/release not found/iu.test(errorText(error))) return "none";
     throw error;
@@ -167,12 +171,9 @@ function ghReleaseState(
 }
 
 /** The commit `origin` carries for a tag, peeled when it points at one. */
-function remoteTagCommit(
-  git: (args: readonly string[]) => string,
-  tag: string,
-): string | undefined {
+function remoteTagCommit(deps: IShipDeps, tag: string): string | undefined {
   for (const ref of [`refs/tags/${tag}^{}`, `refs/tags/${tag}`]) {
-    const commit = git(["ls-remote", "origin", ref]).trim().split(/\s+/u)[0];
+    const commit = deps.git(["ls-remote", "origin", ref]).trim().split(/\s+/u)[0];
     if (commit) return commit;
   }
   return undefined;
@@ -213,8 +214,8 @@ export function readShipState(deps: IShipDeps, sha: string, tag: string): IShipS
     npmPublished: deps
       .cohort()
       .every(({ name, version }) => deps.npmVersions(name).includes(version)),
-    release: ghReleaseState(deps.gh, deps.repository, tag),
-    tag: { commit: remoteTagCommit(deps.git, tag) },
+    release: ghReleaseState(deps, tag),
+    tag: { commit: remoteTagCommit(deps, tag) },
     tagRun,
   };
 }
@@ -286,27 +287,35 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
   if (census.release === "none" && census.onNpm === 0) return;
   if (census.tag.commit === target.sha) return;
   // A draft carries no tag until it is published: deleting it loses nothing, and the same version
-  // can still ship. Every other state leaves the version name spent — and a *partial* cohort is not
-  // even that, so the advice there is to finish it from the commit the tag already points at.
-  // Deleting a public release is the owner's call, so this never advises it.
+  // can still ship — unless npm already serves part of the cohort, which a bump is the only fix for.
+  // Every other state leaves the version name spent, and a partial cohort is finished from the commit
+  // the tag already points at. Deleting a public release is the owner's call, so this never advises it.
   const kind = census.release === "prerelease" ? "a prerelease" : `a ${census.release} release`;
-  const where =
-    census.tag.commit === undefined
-      ? `${target.tag} already has ${kind} and no tag yet`
-      : `${target.tag} already has ${kind} at ${census.tag.commit}`;
+  const state =
+    census.release === "none"
+      ? `${target.tag} has no release yet`
+      : census.tag.commit === undefined
+        ? `${target.tag} already has ${kind} and no tag yet`
+        : `${target.tag} already has ${kind} at ${census.tag.commit}`;
   const served =
     census.onNpm === 0
       ? `npm serves nothing of ${target.version}`
       : `${census.onNpm} of ${census.total} cohort packages are on npm at ${target.version} and the rest are not`;
+  const lead =
+    census.onNpm > 0 && census.release === "none"
+      ? "Those packages hold the version name and a bump is the only fix"
+      : census.release === "draft" && census.onNpm === 0
+        ? "That draft holds the version name"
+        : census.tag.commit === undefined
+          ? "That release still owns the version name"
+          : "The tag cannot move, so this commit cannot ship";
   const advice =
-    census.release === "draft"
+    census.onNpm === 0 && census.release === "draft"
       ? "delete the draft (nothing is public yet), then ship this version"
       : census.onNpm > 0 && census.tag.commit !== undefined
         ? `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit}\`)`
         : "run `pnpm release:prepare --bump`, then ship the new version";
-  throw new Error(
-    `TN_SHIP_VERSION_BURNED: ${where}, and ${served}. ${census.release === "draft" ? "That draft holds the version name" : census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move, so this commit cannot ship"}: ${advice}.`,
-  );
+  throw new Error(`TN_SHIP_VERSION_BURNED: ${state}. ${served}. ${lead}: ${advice}.`);
 }
 
 /**
@@ -318,8 +327,8 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
 export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
   const version = manifestVersion(deps, sha);
   const tag = `${TAG_PREFIX}${version}`;
-  const release = ghReleaseState(deps.gh, deps.repository, tag);
-  const commit = remoteTagCommit(deps.git, tag);
+  const release = ghReleaseState(deps, tag);
+  const commit = remoteTagCommit(deps, tag);
   // A settled release — none yet, or the one on the commit being shipped, which is a resume — has
   // nothing to decide about npm, so the registry is not read at all. Everything else counts the whole
   // cohort: a version whose core landed while four of its packages did not is not a spent version,
@@ -604,7 +613,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       );
     } else if (step === "publish") {
       // `pnpm release --yes` ends with the clean-room registry install, so nothing follows it.
-      deps.publish({ override: options.override !== undefined });
+      deps.publish(options.override !== undefined);
       return acted;
     } else {
       deps.verify();
@@ -642,7 +651,7 @@ function systemDeps(): IShipDeps {
         throw error;
       }
     },
-    publish: ({ override }) =>
+    publish: (override) =>
       void execFileSync(
         "pnpm",
         ["release", "--yes", "--skip-gates", "--resume", ...(override ? ["--override"] : [])],

@@ -735,6 +735,12 @@ async function main(args: readonly string[]): Promise<void> {
     // prove. Every other run proves — twice on tag day, because the publish's proof is the only one
     // that sees the real prebuilt release, and only `--override` reaches the first upload without it.
     const proving = !override && publishPackages.length === packages.length;
+    // A proof-only run must never reach the line below without having proved. Today's flag refusals
+    // guarantee it; this keeps a later edit from printing a proof that did not run.
+    if (proveUpgrade && !proving)
+      throw new Error(
+        "TN_RELEASE_PROOF_SKIPPED: --prove-upgrade was asked for, but this run would not prove. Nothing was published.",
+      );
     const upgrades = proving ? await proveUpgradeFromLatest(packages, tarballs) : [];
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;
