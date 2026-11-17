@@ -478,4 +478,25 @@ flowchart LR
   decides how far the rings reach; a hard-coded curve made the moved functions disagree with the kit's
   originals on a second collar (caught by the pre-deletion equivalence run).
 
+- 2026-11-17 (agent): the desert's vegetation surfaces are the **procedural package's** own, so the fix
+  went there, not into the kit: `bakeVegetation` takes `barkImage`/`barkNormalImage` beside `leafImage`
+  and the doc tag, manifest entry and README moved with it. The saguaro is why — a column is all
+  silhouette and Arbor's drawn `cactus` bark is a 256x512 pinstripe, which at five metres reads as a
+  striped stick. Its photographed skin is Poly Haven's CC0 `crystalline_iceplant` flesh under ribs and
+  areoles drawn by `packages/terrain/scripts/make-cactus-skin.mjs` (256x512, 69 KB + 33 KB, committed
+  with deterministic output), because Poly Haven has no saguaro scan: its succulent models are Karoo
+  groundcovers. **The spawn capture says the bigger offenders are elsewhere and still open:** the
+  `agave`/`yucca` rosettes draw as cyan-blue toys in iron-red sand (Arbor's rosette colours are
+  blue-green, and the desert's warm `cutoutTint` does not reach a `scrub` card), and the ground reads
+  uniformly saturated orange. Both are the same `leafImage`/`form` mechanism this commit added, or a
+  tint row in `render/biomes.ts`, and neither is measured yet.
+  The desert's three golden pins are re-measured from the sandstone commit (`scrub` 909 -> 1290, `bush`
+  27 -> 36, `grass` 6559 -> 6539, `boulder` 248 -> 247, `reveal` 158 -> 162, `volcanic` 229 -> 231,
+  canonical `e5d2b979`); `starter-credits.json` is re-synced (it still credited the deleted `red_sand`);
+  and the pinned art archive 0.1.8 predated the desert commit, so **any fresh kit bake failed** on a
+  missing `aerial_beach_01` — 0.1.9 is packed, uploaded (82,230,319 B, sha256 `5c040683`) and pinned.
+  The desert kit proof scaffolds, bakes, builds and plays, and fails only `timeToReadyMs` and
+  `maxViewGpuMs` on the private-Xvfb software renderer (12 FPS, 13.4 M triangles); the art pack is
+  107.05 MB against the 100 MB ceiling, 6.8 MB of which predates this commit.
+
 - 2026-11-16 (agent): **Phase 2's own proof command was red on `develop`.** `KIT=alpine pnpm --filter strata-terrain-preview test:kit` wrote `src/terrain/composition.ts` but injected `import { edits } from "../../composition.js"` into `src/terrain/alpine/world.ts`, which resolves to `src/composition.ts`; the scaffolded game failed with `TS2307: Cannot find module '../../composition.js'` before it drew a frame. One directory off, since PR #677 wrote both lines. Fixed to `"../composition.js"`; `KIT=alpine` now typechecks, bakes, builds and renders to the playtest on this machine. Nothing had been checking the four data kits' proof. `KIT=forest … test:kit` measured `timeToReadyMs` 22.3 s and `maxViewGpuMs` 76.8 ms on a second, warm run (cold: 20.6 s / 71.3 ms; against 15 s / 12 ms expectations), on the private-Xvfb capture display the runner uses, with the same failure set before and after the spawn-gate move. The playtest runner refuses a frame-rate claim from a virtual display by design (`--allow-virtual-display` is the explicit opt-in), so the box-2 FPS and judge lanes need a real, foreground display — the owner's screen — not a warmer cache.
