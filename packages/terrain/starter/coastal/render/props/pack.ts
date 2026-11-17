@@ -113,8 +113,8 @@ export function canopyComparison(
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
 /**
- * The coast's stand: Arbor black spruce and Norway spruce, baked once by the alpine kit's
- * `bake-flora.mjs` into `alpine_flora/`. Mount Desert Island's shore wood is red and black spruce with
+ * The coast's stand: Arbor black spruce and Norway spruce, grown by the bake's `world.arbor` rows
+ * into `alpine_flora/`. Mount Desert Island's shore wood is red and black spruce with
  * balsam fir, 10-20 m; black spruce is native, and the Norway spruce card stands in for red spruce
  * (the same dark, narrow crown). Each variant is a near GLB (lod 1) and a mid GLB (lod 2).
  */
