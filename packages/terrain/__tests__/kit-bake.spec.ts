@@ -1,8 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, statSync, symlinkSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type IWorldPackage, validateWorldPackage } from "@threenative/core/world";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { TerrainEvaluator, decodeRAW16 } from "../src/index.js";
@@ -34,97 +33,6 @@ it("forest recipe exposes soil patches through its surface blend thresholds", ()
     );
   }
 });
-// Per-kit assertion differences: scatter asset/count, water identities, river point count and golden files.
-// No alpine, coastal or desert row: since 2026-11-16 those kits bake the streamed world (PRD-892 Phase 2) and
-// their `bake.mjs` reads its own TypeScript look through `tsx`, which a bare temp copy cannot resolve.
-// The streamed describe below proves that bake instead.
-const kits = [
-  { name: "tundra", asset: "boulder", count: 70, water: "kettles", compareWater: true },
-];
-describe.each(kits)("$name starter kit", ({ name, asset, count, water, compareWater }) => {
-  const kit = join(packageRoot, "starter", name);
-  /** Copies the alpine kit into a temp directory whose node_modules resolves the workspace package. */
-  function kitInTempDir(): string {
-    const dir = makeTempDirSync(`terrain-${name}-kit-`);
-    for (const name of ["bake.mjs", "recipe.json", "assets.json", "surface.json", "heightmap.r16"])
-      copyFileSync(join(kit, name), join(dir, name));
-    mkdirSync(join(dir, "node_modules", "@threenative"), { recursive: true });
-    symlinkSync(packageRoot, join(dir, "node_modules", "@threenative", "terrain"), "dir");
-    return dir;
-  }
-
-  function bake(out: string): void {
-    execFileSync(process.execPath, ["bake.mjs", "--assets", starterAssets, "--out", out], {
-      cwd: kitInTempDir(),
-      stdio: "pipe",
-    });
-  }
-
-  it("bakes a world package the engine's validator accepts", () => {
-    const out = join(makeTempDirSync(`terrain-${name}-world-`), "world");
-    bake(out);
-    const manifest = JSON.parse(readFileSync(join(out, "world.json"), "utf8")) as IWorldPackage;
-    const result = validateWorldPackage(manifest, {
-      heightmapByteLength: readFileSync(join(out, manifest.terrain.heightmap)).byteLength,
-      placementsByteLength: readFileSync(join(out, manifest.placements)).byteLength,
-    });
-    expect(result.errors).toEqual([]);
-    expect(manifest.terrain.columns).toBe(257);
-    expect(manifest.extent.sizeX).toBe(512);
-    const placementIdsName = (manifest as IWorldPackage & { placementIds?: string }).placementIds;
-    expect(placementIdsName).toBe("placement-ids.json");
-    const placementIds = JSON.parse(
-      readFileSync(join(out, placementIdsName as string), "utf8"),
-    ) as string[];
-    expect(placementIds).toHaveLength(count);
-    expect(new Set(placementIds).size).toBe(count);
-    console.log(
-      `${name} placement sidecar ${String(readFileSync(join(out, placementIdsName as string)).byteLength)} B; placements.bin ${String(readFileSync(join(out, manifest.placements)).byteLength)} B`,
-    );
-
-    const perAsset: Record<string, number> = {};
-    for (const cell of manifest.cells)
-      for (const run of cell.runs) perAsset[run.asset] = (perAsset[run.asset] ?? 0) + run.count;
-    expect(Object.keys(perAsset).sort()).toEqual([asset]);
-    expect(perAsset[asset]).toBe(count);
-    if (water !== "none") {
-      const data = JSON.parse(readFileSync(join(out, "water.json"), "utf8")) as {
-        lakes: { id: string; level: number }[];
-        rivers: { id: string; points: unknown[] }[];
-      };
-      if (water === "empty") {
-        expect(data.lakes).toEqual([]);
-        expect(data.rivers).toEqual([]);
-      } else if (water === "kettles") {
-        expect(data.lakes.map((lake) => lake.id).sort()).toEqual(["far-kettle", "near-kettle"]);
-        expect(data.rivers.map((river) => river.id).sort()).toEqual(["braid", "meltwater"]);
-        expect(data.rivers.every((river) => river.points.length > 2)).toBe(true);
-      } else {
-        expect(data.lakes).toEqual([expect.objectContaining({ id: "ocean", level: 1.5 })]);
-      }
-    }
-  });
-
-  it("bakes the same bytes from the same recipe", () => {
-    const first = join(makeTempDirSync(`terrain-${name}-a-`), "world");
-    const second = join(makeTempDirSync(`terrain-${name}-b-`), "world");
-    bake(first);
-    bake(second);
-    for (const name of [
-      "world.json",
-      "heightmap.u16",
-      "placements.bin",
-      "placement-ids.json",
-      "splat.rgba",
-      ...(compareWater ? ["water.json"] : []),
-    ]) {
-      expect(readFileSync(join(first, name)).equals(readFileSync(join(second, name))), name).toBe(
-        true,
-      );
-    }
-  });
-});
-
 // The streamed kit: `bakeKit` with a `look` writes the bundle the forest scene loads, not `world.json`.
 // Each kit names its own placement floor: a wood places tens of thousands, a desert's open flats a
 // few thousand plus the debris its scene adds at load (`render/ground/debris.ts`).
@@ -132,6 +40,7 @@ describe.each([
   ["alpine", 50_000],
   ["coastal", 50_000],
   ["desert", 5_000],
+  ["tundra", 50_000],
 ] as const)("%s streamed kit", (name, floor) => {
   const kit = join(packageRoot, "starter", name);
 
@@ -225,5 +134,24 @@ describe("coastal streamed water", () => {
     // Above the sea, so the ocean plane never shows through it, and under the lagoon's surface.
     expect(bed).toBeGreaterThan(0);
     expect(bed).toBeLessThan(lagoon.level - 0.5);
+  });
+});
+
+// Trail Ridge keeps the legacy kit's meltwater: two kettle ponds and the two streams between them.
+describe("tundra streamed water", () => {
+  it("bakes both kettle ponds and both streams", () => {
+    const root = makeTempDirSync("terrain-tundra-water-");
+    execFileSync(
+      process.execPath,
+      ["bake.mjs", "--assets", starterAssets, "--out", join(root, "world")],
+      { cwd: join(packageRoot, "starter", "tundra"), stdio: "pipe" },
+    );
+    const baked = JSON.parse(readFileSync(join(root, "world", "world", "tundra.json"), "utf8")) as {
+      lakes: { id: string }[];
+      rivers: { points: unknown[] }[];
+    };
+    expect(baked.lakes.map((lake) => lake.id).sort()).toEqual(["far-kettle", "near-kettle"]);
+    expect(baked.rivers).toHaveLength(2);
+    expect(baked.rivers.every((river) => river.points.length > 2)).toBe(true);
   });
 });

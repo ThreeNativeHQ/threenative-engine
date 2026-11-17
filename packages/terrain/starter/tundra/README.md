@@ -1,36 +1,55 @@
 # Tundra starter kit
 
-A 512 m low-relief tundra on a real survey (USGS 1 m DEM, Colorado), with hydraulic and thermal
-erosion, two meltwater rivers, two kettle lakes, moss ground with snow and rock, and boulder
-erratics. It is game source: once copied, every file is yours to edit.
+A 512 m alpine tundra on Trail Ridge, Rocky Mountain National Park, 3430-3480 m (USGS 1 m DEM),
+above the tree line: short sedge and grass turf, fellfield gravel and grey lichen, late snow patches,
+two meltwater streams and two kettle ponds, krummholz at the low edge, dwarf willow in the swales and
+lichen-crusted erratics. The far ring is the same survey out to 5 km on the square's own datum: Trail
+Ridge's 3.7-3.8 km peaks and the forested valleys under them. It is game source: once copied, every
+file is yours to edit.
 
 | File | What it decides |
 | --- | --- |
-| `recipe.json` | The terrain: the survey heightmap, erosion, the kettle beds, the two rivers, the two lakes, the surfaces and the erratics. |
-| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
-| `biome.data.json` | The biome record the `terrain_generate` MCP tool cooks from. The bake does not read it. |
-| `assets.json` | The boulder model, its LOD distance and draw distance, and its bounds. |
-| `surface.json` | The ground: the moss base, the snow and rock layers, tiles, tints and blend thresholds. |
-| `bake.mjs` | Writes the world package and `water.json` (the rivers and lakes) from `recipe.json`, `heightmap.r16`, `assets.json` and `surface.json`. |
-| `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the boulders near the player, and the sky as the props' light. |
-| `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. It also lights the lakes' mirror. |
-| `water.ts` | The kettle lakes and meltwater rivers, drawn with a pale ice tint on the lakes. |
+| `recipe.json` | The terrain: the survey heightmap, erosion, the kettle beds, the two streams, the two ponds, the surfaces and the erratics; its `world` row names the ground layers, the art and the far ring. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. `scripts/cook-kit-survey.ts` in `@threenative/terrain` cuts it and the far ring from any lat/lon. |
+| `biome.data.json` | The biome record: the krummholz, the turf, the cushion plants, the willow, the stones and their bands. The streamed bake places from it. |
+| `assets.json` | The legacy cell package's boulder model, LOD distance, draw distance and bounds. |
+| `surface.json` | The legacy cell package's ground table: moss base, snow and rock layers, tiles, tints and thresholds. |
+| `bake.mjs` | Runs `bakeKit` with this kit's look and writes the streamed world: the baked grid, its splat, the canopy and sky bytes, `horizon.json`, the prop package and the art. |
+| `scene.ts` | The scene, `TundraScene`, and `TUNDRA_GAME`: the streamed ground, the far ring, the props, the sky, the ponds and streams, and the player rig. |
+| `render/` | The look: the biome row (`render/biomes.ts`), the ground material, the palette, the species pack (`render/props/pack.ts`), the sky and the water. |
+| `world.ts`, `sky.ts`, `water.ts` | The legacy cell-package loader, its daylight and its water, kept until the streamed bake retires them here. |
 
 Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.json`.
 
+## What draws each species
+
+The bake's ordered tundra stream places six kinds; `render/props/pack.ts` decides the art for each:
+
+| Placed kind | Drawn as |
+| --- | --- |
+| `sapling` | Krummholz spruce and fir: the fir scan, squashed to a wind-pruned mat |
+| `bush` | Dwarf willow and blueberry shrubs |
+| `grass` | Short alpine sedge and grass tufts |
+| `scrub` | Cushion plants and moss mats |
+| `boulder`, `riverrock` | Lichen-crusted erratics and stream stones |
+
 ## Status
 
-The kit bakes, streams and draws its water. The kit ships no scene: the game writes one. The terrain is
-gentle, so the scene picks its spawn from the loaded heightfield and keeps it off the lake shores.
+The kit is a source kit on the forest's stack: `scene.ts` streams the baked world, its far ring and
+its props, and composes the player rig and diagnostics from `@threenative/terrain/starter`.
 
 ## Steps
 
 1. Copy `node_modules/@threenative/terrain/starter/tundra` to `src/terrain/tundra`.
 2. Run `node src/terrain/tundra/bake.mjs --out assets/terrain/tundra` (needs `@threenative/terrain`
-   as a devDependency). The same recipe always writes the same bytes.
-3. In the scene, call `addTundra(ctx, follow)` for the world and `tundraDaylight(follow)` for the light.
+   and `tsx` as devDependencies, because the bake reads this kit's TypeScript look). The same recipe
+   always writes the same bytes.
+3. Spread `TUNDRA_GAME` into `defineGame` and register `TundraScene`, as the forest kit's README shows.
 
 ## Edit at startup, without rebaking
+
+> The streamed bake retires this path for the tundra kit: the ground table and the props now come
+> from `render/`, and the section below still describes the legacy cell package.
 
 The copied `world.ts` loads its own `surface.json` as the ground table on every startup.
 Edit tints, tiling and blend thresholds there, or the material graph and prop dressing in

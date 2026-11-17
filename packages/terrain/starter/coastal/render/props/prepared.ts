@@ -167,7 +167,7 @@ export async function loadPreparedProps(assets?: IAssetLoader): Promise<IPrepare
   const loaded = await Promise.all(
     PREPARED.map(async (file) => {
       try {
-        return { file, gltf: await assets.model<{ scene?: Group }>(file.path) };
+        return { file, gltf: await assets.model<{ scene?: Group }>(file.path, { whole: true }) };
       } catch {
         return { file, gltf: undefined };
       }

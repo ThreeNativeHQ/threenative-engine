@@ -129,14 +129,27 @@ const KITS = {
     captures: ["desert-start", "meadow-close", "overview", "river", "vista", "desert-walk"],
     views: [],
   },
+  // Tundra is a source kit on the forest's scene since PRD-892 Phase 2 (Trail Ridge), with the
+  // forest's number and capture rows; it draws two kettle ponds and two streams, so it has water.
   tundra: {
     playtest: "tundra.playtest.json",
+    source: "tundra-game.ts",
     generatedStand: false,
     water: true,
     cooked: "cookedTundraBytes",
-    numbers: ["boulderInstances", "closestToBoulder", "waterLakes", "waterRivers"],
-    captures: ["boulders", "edge", "ground", "overview"],
-    views: ["boulders", "edge", "ground", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["tundra-start", "meadow-close", "overview", "river", "vista", "tundra-walk"],
+    views: [],
   },
   // Coastal is a source kit on the forest's scene since PRD-892 Phase 2 (Sand Beach, Acadia), with
   // the forest's number and capture rows; it draws the sea and its lagoon, so it has water.

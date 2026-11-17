@@ -13,7 +13,7 @@
     "seed": 466468,
     "attempts": 80000,
     "stoneRadius": 1.9,
-    "clearings": [[166, 180, 10]],
+    "clearings": [[150, 205, 10]],
     "understorey": {
       "attempts": 14000,
       "litter": 1,
@@ -28,7 +28,7 @@
   "foliage": [
     {
       "species": "sapling",
-      "density": 55,
+      "density": 140,
       "slope": [0, 32],
       "height": null,
       "spacing": [3.4, 3.4],
@@ -45,7 +45,7 @@
       "density": 1,
       "slope": [0, 30],
       "height": null,
-      "spacing": 1.8,
+      "spacing": 1.1,
       "slopeFalloff": 22,
       "heightFalloff": 28,
       "mats": [0.47, 0.3],
@@ -132,10 +132,10 @@
     }
   ],
   "spawn": {
-    "at": [180, 160],
+    "at": [150, 205],
     "cameraOffset": [28, 24, 42],
-    "focus": [150, 160]
+    "focus": [150, 205]
   },
-  "species": ["boulder", "bush", "riverrock", "sapling", "scree", "scrub"],
+  "species": ["boulder", "bush", "grass", "riverrock", "sapling", "scree", "scrub"],
   "aliases": ["tundra", "arctic", "ice", "frozen", "permafrost", "glacial"]
 }

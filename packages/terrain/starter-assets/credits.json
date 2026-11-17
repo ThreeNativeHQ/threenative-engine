@@ -96,6 +96,14 @@
       "metresPerTile": null,
       "note": "The pebble set for river banks. Seam 12.6 against an interior 11.2: tileable. metresPerTile is deliberately null, as above."
     },
+    "grass_ground": {
+      "asset": "Grass Ground",
+      "author": "Charlotte Baglioni (All)",
+      "license": "CC0",
+      "groundLayer": "grass",
+      "metresPerTile": 2.5,
+      "note": "The tundra kit's turf: worn tan-green grass on soil, the short sedge and grass sward of the Trail Ridge alpine tundra (PRD-892). Drawn by the tundra kit's grass layer only."
+    },
     "fern_02": {
       "asset": "Fern 02",
       "author": "Rob Tuytel, Rico Cilliers",
@@ -641,6 +649,38 @@
       "groundLayer": null,
       "sampledByTemperateGround": false,
       "sha256": "cccadfc7b806a15bd396cc433175c80fdb386009674726a8a17e48ba50ce50cb"
+    },
+    {
+      "set": "grass_ground",
+      "asset": "Grass Ground",
+      "author": "Charlotte Baglioni (All)",
+      "license": "CC0",
+      "map": "diff",
+      "file": "grass_ground/grass_ground_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grass_ground/grass_ground_diff_1k.jpg",
+      "bytes": 876584,
+      "dimensions": "1024x1024",
+      "colourSpace": "srgb",
+      "metresPerTile": 2.5,
+      "groundLayer": "grass",
+      "sampledByTemperateGround": false,
+      "sha256": "a79cc5ed65af0f80261b39a383b64a8c5272c5144d724deb43dbc29f0e4cd19b"
+    },
+    {
+      "set": "grass_ground",
+      "asset": "Grass Ground",
+      "author": "Charlotte Baglioni (All)",
+      "license": "CC0",
+      "map": "nor_gl",
+      "file": "grass_ground/grass_ground_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grass_ground/grass_ground_nor_gl_1k.jpg",
+      "bytes": 1310516,
+      "dimensions": "1024x1024",
+      "colourSpace": "linear",
+      "metresPerTile": 2.5,
+      "groundLayer": "grass",
+      "sampledByTemperateGround": false,
+      "sha256": "7000e2ccd479bb7b66dcdf4faef7b47554324566886314ca620cbf03e274e826"
     },
     {
       "set": "river_small_rocks",

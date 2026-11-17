@@ -131,7 +131,10 @@ const PHASE_1: Record<
     placements: "64ce8648b98a1f8248b60dd9b90d841b979fa10a7492657838a2fb3185793201",
   },
   tundra: {
-    counts: { boulder: 2028, bush: 588, grass: 30490, riverrock: 612, sapling: 55, scrub: 6680 },
+    // PRD-892 Phase 2: the tundra's spawn and clearing moved south of the stream to [150, 205], and its
+    // turf, fellfield, lichen, rock and snow rules replaced the moss ground, and its turf tufts stand
+    // 1.1 m apart (was 1.8) and 140 krummholz stand at its low edge (was 55), so every count moves.
+    counts: { boulder: 2098, bush: 1247, grass: 61160, riverrock: 612, sapling: 140, scrub: 13415 },
     heights: "dc182307fa2789f7297d53e96c77720b7fac97119489f725d8ebbb44e1d60533",
     manifest: "72c72e6f86b2a800aeae246b4800390b6c57fe6b95dc87510193549f9106c943",
     placements: "2c0123035d9a528128da5053880256b56c9a6003002a25441394dcd4631d4867",
@@ -153,7 +156,7 @@ const PHASE_1_CANONICAL: Record<World, string> = {
   coastal: "939d66b7e98cb7b76c10824c3507db3979c70597d9d32b9bc67724751cb1b81b",
   alpine: "187ca9120d1697fb358f7bc702690dec77c3f05231002fbdfd115bc2ff14b7fc",
   desert: "9fbc0ac9b10432c407ee2d433643fa5335751ab6b7c5b71caa4fe94a3ad9f76f",
-  tundra: "16c97133058d9ab0b9585a62befbf859313c55d6f6d1dc13d55033e5fc76a04f",
+  tundra: "5159ea075b0205a0d98415368586572c760957371ed87f1155cedd7e2c1af905",
 };
 
 /** Which Phase 1 line the ordered bake reproduces today, and which it cannot. */

@@ -57,10 +57,7 @@
         "id": "near-kettle-bed",
         "type": "flatten",
         "params": {
-          "at": [
-            65,
-            80
-          ],
+          "at": [65, 80],
           "radius": 30,
           "height": 27,
           "falloff": 0.65
@@ -72,10 +69,7 @@
         "id": "far-kettle-bed",
         "type": "flatten",
         "params": {
-          "at": [
-            -65,
-            -50
-          ],
+          "at": [-65, -50],
           "radius": 42,
           "height": 28,
           "falloff": 0.65
@@ -88,61 +82,17 @@
         "type": "river",
         "params": {
           "points": [
-            [
-              -210,
-              36,
-              -135
-            ],
-            [
-              -125,
-              33,
-              -80
-            ],
-            [
-              -100,
-              30,
-              -90
-            ],
-            [
-              -65,
-              30,
-              -50
-            ],
-            [
-              -30,
-              30,
-              -15
-            ],
-            [
-              0,
-              29.3,
-              5
-            ],
-            [
-              38,
-              28.8,
-              47
-            ],
-            [
-              65,
-              28.8,
-              80
-            ],
-            [
-              100,
-              28.8,
-              100
-            ],
-            [
-              160,
-              27,
-              140
-            ],
-            [
-              250,
-              26,
-              150
-            ]
+            [-210, 36, -135],
+            [-125, 33, -80],
+            [-100, 30, -90],
+            [-65, 30, -50],
+            [-30, 30, -15],
+            [0, 29.3, 5],
+            [38, 28.8, 47],
+            [65, 28.8, 80],
+            [100, 28.8, 100],
+            [160, 27, 140],
+            [250, 26, 150]
           ],
           "width": 7,
           "depth": 1.5,
@@ -157,31 +107,11 @@
         "type": "river",
         "params": {
           "points": [
-            [
-              -65,
-              30,
-              -50
-            ],
-            [
-              -40,
-              30,
-              -18
-            ],
-            [
-              -30,
-              29.4,
-              40
-            ],
-            [
-              15,
-              28.8,
-              105
-            ],
-            [
-              65,
-              28.8,
-              80
-            ]
+            [-65, 30, -50],
+            [-40, 30, -18],
+            [-30, 29.4, 40],
+            [15, 28.8, 105],
+            [65, 28.8, 80]
           ],
           "width": 4,
           "depth": 1.2,
@@ -196,10 +126,7 @@
         "type": "water",
         "params": {
           "kind": "lake",
-          "at": [
-            65,
-            80
-          ],
+          "at": [65, 80],
           "radius": 34,
           "level": 28.8
         }
@@ -211,10 +138,7 @@
         "type": "water",
         "params": {
           "kind": "lake",
-          "at": [
-            -65,
-            -50
-          ],
+          "at": [-65, -50],
           "radius": 46,
           "level": 30
         }
@@ -227,30 +151,57 @@
         "params": {
           "rules": [
             {
-              "material": "moss",
-              "mask": {
-                "type": "all"
-              }
-            },
-            {
-              "material": "snow",
+              "material": "dirt",
               "mask": {
                 "type": "noise",
-                "scale": 85,
-                "threshold": 0.68,
+                "scale": 55,
+                "threshold": 0.6,
                 "seed": 131,
-                "fade": 0.3
+                "fade": 0.22
               },
-              "strength": 0.6
+              "strength": 0.55
+            },
+            {
+              "material": "moss",
+              "mask": {
+                "type": "noise",
+                "scale": 28,
+                "threshold": 0.6,
+                "seed": 137,
+                "fade": 0.25
+              },
+              "strength": 0.5
             },
             {
               "material": "rock",
               "mask": {
                 "type": "slope",
-                "min": 23,
+                "min": 28,
                 "max": 90,
                 "fade": 8
               }
+            },
+            {
+              "material": "snow",
+              "mask": {
+                "type": "and",
+                "masks": [
+                  {
+                    "type": "noise",
+                    "scale": 70,
+                    "threshold": 0.72,
+                    "seed": 139,
+                    "fade": 0.1
+                  },
+                  {
+                    "type": "slope",
+                    "min": 0,
+                    "max": 30,
+                    "fade": 6
+                  }
+                ]
+              },
+              "strength": 1
             }
           ]
         }
@@ -266,12 +217,62 @@
           "minDistance": 8,
           "maxSlope": 30,
           "avoidWater": true,
-          "scale": [
-            0.6,
-            1.8
-          ]
+          "scale": [0.6, 1.8]
         }
       }
     ]
+  },
+  "world": {
+    "name": "tundra",
+    "ground": {
+      "base": "grass",
+      "layers": ["dirt", "moss", "sand", "rock", "snow"],
+      "roughness": 0.95
+    },
+    "art": [
+      "boulder_01",
+      "rock_face",
+      "rock_boulder_dry",
+      "rocks",
+      "river_small_rocks",
+      "cliff_side",
+      "snow_02",
+      "grass_medium",
+      "leafy_grass",
+      "lichen_rock",
+      "mossy_rock",
+      "shrub_02",
+      "tree_small_02",
+      "fir_tree_01",
+      "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
+      "mannequin-swim.glb",
+      "bark_brown_02",
+      "celandine_01",
+      "dandelion_01",
+      "dead_tree_trunk",
+      "dry_branches_medium_01",
+      "fern_02",
+      "forest_ground_04",
+      "moss_01",
+      "nettle_plant",
+      "periwinkle_plant",
+      "sand_01",
+      "shrub_04",
+      "tree_stump_01",
+      "weed_plant_02",
+      "needle-atlas.png",
+      "needle-surface.png",
+      "fir_tree_01/fir_tree_01_twig_arm_1k.jpg",
+      "fir_tree_01/fir_tree_01_twig_diff_1k.jpg",
+      "fir_tree_01/fir_tree_01_twig_nor_gl_1k.jpg",
+      "hdri/kloofendal_48d_partly_cloudy_2k.hdr",
+      "grass_ground"
+    ],
+    "farRing": {
+      "survey": "tundra-horizon",
+      "datum": 3420,
+      "seed": 1,
+      "layers": []
+    }
   }
 }

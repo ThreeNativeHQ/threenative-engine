@@ -472,7 +472,11 @@ const coastal: IBiome = {
   heightFractions: { ...forest.heightFractions, treeline: [6.5, 8.5], cap: [40, 45] },
   // Cadillac granite: weathered pink-grey, warmer than the forest's grey rock.
   stoneTint: [0.62, 0.5, 0.45],
-  propStoneTint: [1.08, 0.9, 0.84],
+  // The boulder scan is a rust-brown stone (linear 1 : 0.66 : 0.41); this turns it to the same pink
+  // grey (about 1 : 0.8 : 0.72), not a warmer brown.
+  propStoneTint: [1.15, 1.39, 2.02],
+  // Late-season American beach grass on the berm is a dry grey-green, not the wood's fern green.
+  swardTint: [0.74, 0.72, 0.56],
   distantStone: [0.15, 0.12, 0.11],
   groundDistantStone: [0.2, 0.165, 0.15],
   shoreGround: true,
@@ -484,9 +488,8 @@ const coastal: IBiome = {
   stoneGroundBand: false,
   stoneFrontFace: true,
   stoneMoss: 0.12,
-  // Fir twigs are photographed near-black (linear 0.01); a red spruce crown reads a dark blue-green
-  // in sun, as the alpine kit grades the same scan.
-  canopyTint: [3.5, 6.8, 6],
+  // Arbor's spruce card is already a dark blue-green; the forest's yellowing tint is for broadleaf.
+  canopyTint: [0.85, 0.95, 1],
   // A clear afternoon on the coast: the sun is high in the west-north-west, behind an eye that looks out to sea.
   sun: { ...forest.sun, color: 0xffe6c4, intensity: 6.2, direction: [-180, 150, -120] },
   fill: { ...temperate.fill, intensity: 0.66 },

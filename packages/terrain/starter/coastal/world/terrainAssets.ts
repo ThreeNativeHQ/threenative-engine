@@ -102,13 +102,6 @@ export const SOIL_MAP = "forest_ground_04/forest_ground_04_diff_1k.jpg";
 export const NEEDLE_ATLAS = "needle-atlas.png";
 export const NEEDLE_SURFACE = "needle-surface.png";
 
-/** The prepared fir's twig atlas: colour, tangent-space normal, and the packed arms map. */
-export const FIR_MAPS = {
-  arms: "fir_tree_01/fir_tree_01_twig_arm_1k.jpg",
-  normal: "fir_tree_01/fir_tree_01_twig_nor_gl_1k.jpg",
-  surface: "fir_tree_01/fir_tree_01_twig_diff_1k.jpg",
-} as const;
-
 /**
  * Poly Haven's `tree_small_02` (CC0), grown to forest height as leaf cards: two silhouettes, each a
  * `-near.glb` and a `-mid.glb` (`scripts/prep/prep-polyhaven-broadleaf.py`).
