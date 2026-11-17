@@ -74,19 +74,20 @@ const PHASE_1: Record<
   },
   // PRD-892 Phase 2: the coast stands at real sea level (0 m, not 1.5 m) and the survey's flattened
   // lagoon behind Sand Beach is a lake over a lowered bed, so its heights and the placements that
-  // follow them moved; the container digests below stay the example's own.
+  // follow them moved, and the camera clearings follow the coastal poses; the container digests below
+  // stay the example's own.
   coastal: {
     counts: {
-      boulder: 235,
-      bush: 1301,
-      fern: 7595,
-      grass: 119638,
-      litter: 2328,
+      boulder: 263,
+      bush: 1293,
+      fern: 7577,
+      grass: 154559,
+      litter: 2303,
       mountain: 60,
-      poppy: 1087,
-      riverrock: 144,
-      sapling: 5559,
-      scrub: 35881,
+      poppy: 1856,
+      riverrock: 146,
+      sapling: 5549,
+      scrub: 46207,
       spruce: 3200,
     },
     heights: "a4a459cc656744b7db734a022f9fbf26bf156701c12647e6e59bc589b001c5d1",
@@ -135,7 +136,7 @@ const PHASE_1: Record<
  */
 const PHASE_1_CANONICAL: Record<World, string> = {
   forest: "f9ec1259f6e14aa51fc24f86d40df980c1e856a3335fa30236dc16ab8d0694c1",
-  coastal: "842d1fdb49cf6e888920c812a4c3b287774c923b8b276bb8af883108e90fcd7c",
+  coastal: "939d66b7e98cb7b76c10824c3507db3979c70597d9d32b9bc67724751cb1b81b",
   alpine: "238de6aec33cc032dc67392f3ccd676272f25b1ca459a138829e57ddae94db76",
   desert: "9fbc0ac9b10432c407ee2d433643fa5335751ab6b7c5b71caa4fe94a3ad9f76f",
   tundra: "16c97133058d9ab0b9585a62befbf859313c55d6f6d1dc13d55033e5fc76a04f",

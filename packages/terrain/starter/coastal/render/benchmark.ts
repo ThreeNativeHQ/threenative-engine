@@ -55,8 +55,9 @@ export const BENCHMARK: Record<WorldName, IBenchmark> = {
       "meadow-close": { at: [30, 100], eye: 1.7, look: [100, 150], lookUp: 1.2 },
       // From the high north-west corner, over the spruce, the lagoon and the beach to Great Head.
       overview: { at: [-180, -180], eye: 65, look: [200, 200], lookUp: 0 },
-      // On the beach berm, across the cove to the Great Head granite (about 600 m east).
-      river: { at: [60, 140], eye: 1.7, look: [500, 300], lookUp: 0, lookY: 4 },
+      // On the wet sand below the berm's beach grass, across the cove to the Great Head granite
+      // (about 600 m east).
+      river: { at: [80, 155], eye: 1.7, look: [500, 300], lookUp: 0, lookY: 4 },
       // From the open water south of the cove (Great Head off the right edge), back over the beach and
       // the lagoon to the Champlain and Dorr ridges of the real ring.
       vista: { at: [250, 600], eye: 0, eyeY: 60, look: [-1000, -1500], lookUp: 0, lookY: 120 },

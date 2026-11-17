@@ -13,7 +13,7 @@
     "seed": 466468,
     "attempts": 80000,
     "stoneRadius": 1.9,
-    "clearings": [[30, 100, 10], [60, 140, 10], [250, 600, 10]],
+    "clearings": [[30, 100, 10], [80, 155, 10], [250, 600, 10]],
     "understorey": {
       "attempts": 14000,
       "litter": 1,
