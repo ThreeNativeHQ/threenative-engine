@@ -3963,7 +3963,14 @@ void starter_post_bindings() {
             CHECK(stage.wgsl.code.find("texture_2d_array<f32>") != std::string::npos);
             CHECK(stage.wgsl.code.find("textureSample(t_" + layered->name + ", smp_" + layered->name) != std::string::npos);
             CHECK(stage.wgsl.code.find("i32(floor(") != std::string::npos);
+            // three's depth(layer).sample(uv) keeps the layer (PRD-858: the impostor surface reads its views so).
+            const auto layeredReceiver = TslArg::of(layered);
+            const auto resampled = tn::abi::tslCall("sample", &layeredReceiver, {TslArg::of(g::uv())}, serial);
+            CHECK(resampled != nullptr && resampled->args[0]->type == Type::vec(3));
+            if (resampled)
+                CHECK(compile(g::vec4({g::swizzle(resampled, "xyz"), g::float_(1)})).wgsl.code.find("i32(floor(") != std::string::npos);
             const auto flat = compile(g::vec4({g::swizzle(sampled, "xyz"), g::float_(1)}));
+            CHECK(flat.wgsl.code.find("i32(floor(") == std::string::npos);
             CHECK(flat.wgsl.code.find("texture_2d_array<f32>") != std::string::npos);
             const auto leveledLayer = tn::abi::tslCall("level", &sampledReceiver, {TslArg::of(g::float_(1))}, serial);
             CHECK(leveledLayer != nullptr);

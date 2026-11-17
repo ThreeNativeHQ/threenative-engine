@@ -1251,6 +1251,20 @@
       "required": true
     },
     {
+      "id": "world-impostor-draw",
+      "title": "a baked whole-asset impostor draws its atlas colour beside its source (PRD-858)",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-impostor-draw.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "72-tsl-time-node",
       "title": "tsl time node",
       "category": "webgpu-tsl",
