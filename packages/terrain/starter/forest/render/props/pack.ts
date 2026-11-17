@@ -947,7 +947,8 @@ export async function loadPack(
       // A species with no scan keeps its procedural part (`buildPropVariants`).
       if (!assets || !one.path.endsWith(".glb")) return undefined;
       try {
-        return await assets.model<{ scene?: Group }>(one.path);
+        // The pack copies vertices, so the streamed coarse companion would never upgrade.
+        return await assets.model<{ scene?: Group }>(one.path, { whole: true });
       } catch {
         return undefined;
       }
