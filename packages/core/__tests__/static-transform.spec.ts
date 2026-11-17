@@ -1,5 +1,5 @@
-import { Group, Mesh, type Object3D, Scene } from "three";
-import { afterEach, describe, expect, it } from "vitest";
+import { Group, Mesh, Object3D, Scene } from "three";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RenderListValidator,
   validateWorldMatrices,
@@ -458,5 +458,55 @@ describe("the oracle checks what was frozen, not only what is drawn", () => {
     validator.frame(scene, scene);
     const once = validator.report().checked;
     expect(once).toBe(2);
+  });
+});
+
+describe("frozen roots on the owned engine (PRD-898 J1)", () => {
+  it("makes one engine call for every root, visits none that stayed put, and re-arms a moved one", () => {
+    const proto = Object3D.prototype as Object3D & Record<string, unknown>;
+    const watch = vi.fn();
+    let moved: number[] = [];
+    const changed = vi.fn(() => moved);
+    proto.__tnStaticWatch = watch;
+    proto.__tnStaticChanged = changed;
+    try {
+      const scene = new Scene();
+      const roots = [0, 1, 2].map((index) => {
+        const root = new Group();
+        root.position.x = index;
+        root.add(new Mesh());
+        scene.add(root);
+        return root;
+      });
+      scene.updateMatrixWorld(true);
+      for (const root of roots) markStatic(root);
+      expect(watch).toHaveBeenCalledTimes(3);
+      // Count every read of a root's own transform the JavaScript check would make.
+      let reads = 0;
+      const matrix = (roots[1] as Group).matrix;
+      Object.defineProperty(roots[1], "matrix", {
+        configurable: true,
+        get: () => {
+          reads += 1;
+          return matrix;
+        },
+      });
+      refreshStaticTransforms();
+      refreshStaticTransforms();
+      expect(changed).toHaveBeenCalledTimes(2);
+      expect(changed.mock.calls[0]).toEqual([roots]);
+      expect(reads).toBe(0);
+      expect(staticTransformCensus().rearmed).toBe(0);
+
+      (roots[1] as Group).position.x = 9;
+      moved = [1];
+      refreshStaticTransforms();
+      expect(staticTransformCensus().rearmed).toBe(1);
+      expect(watch).toHaveBeenCalledTimes(4);
+      expect(isStatic(roots[1] as Group)).toBe(true);
+    } finally {
+      Reflect.deleteProperty(proto, "__tnStaticWatch");
+      Reflect.deleteProperty(proto, "__tnStaticChanged");
+    }
   });
 });

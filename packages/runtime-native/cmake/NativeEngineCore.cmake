@@ -604,6 +604,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_material_uuid=material_uuid
     native_engine_abi_matrix_walk_count=matrix_walk_count
     native_engine_abi_sphere_bounds=sphere_bounds
+    native_engine_abi_static_watch=static_watch
     native_engine_abi_geometry_index_null=geometry_index_null
     native_engine_abi_world_space_conversions=world_space_conversions
     native_engine_abi_projected_cull_list=projected_cull_list

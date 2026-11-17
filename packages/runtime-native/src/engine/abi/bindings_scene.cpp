@@ -234,6 +234,42 @@ struct SourceGuard {
     }
 };
 
+// PRD-898 J1: a frozen root's transform as static-transform.ts `writeSnapshot` records it: position,
+// quaternion, scale, local matrix, then the parent's world matrix (identity with none).
+constexpr std::size_t kStaticSnapshot = 3 + 4 + 3 + 16 + 16;
+struct StaticWatch {
+    std::array<double, kStaticSnapshot> snapshot{};
+    bool watched = false;
+};
+
+void writeStaticSnapshot(Object3D& root, std::array<double, kStaticSnapshot>& into) {
+    into[0] = root.position.x;
+    into[1] = root.position.y;
+    into[2] = root.position.z;
+    into[3] = root.quaternion.x;
+    into[4] = root.quaternion.y;
+    into[5] = root.quaternion.z;
+    into[6] = root.quaternion.w;
+    into[7] = root.scale.x;
+    into[8] = root.scale.y;
+    into[9] = root.scale.z;
+    for (int i = 0; i < 16; ++i) into[10 + i] = root.matrix.elements[i];
+    Object3D* parent = root.parent;
+    if (parent != nullptr) parent->joinDeferredWorldTransform();
+    for (int i = 0; i < 16; ++i) into[26 + i] = parent != nullptr ? double(parent->matrixWorld.elements[i]) : (i % 5 == 0 ? 1.0 : 0.0);
+}
+
+StaticWatch& staticWatchOf(Object3D& root) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, StaticWatch>> watches;
+    auto& entry = watches[&root];
+    if (entry.first.expired()) {
+        for (auto it = watches.begin(); it != watches.end();)
+            it = (it->first != &root && it->second.first.expired()) ? watches.erase(it) : std::next(it);
+        entry = {root.weak_from_this(), StaticWatch{}};
+    }
+    return entry.second;
+}
+
 // PRD-898 J2: one ModelLod's selection inputs and kept level, as model-lod.ts `ModelLod` holds them.
 struct ModelLodState {
     std::vector<double> errors;
@@ -1076,7 +1112,7 @@ void registerObject3D(ClassBinding& b) {
     };
     // PRD-898 J2: core's ModelLod selection in one call a frame. `mesh.__tnModelLodAttach(errors, local,
     // maxPixelError, hysteresis, current)` keeps a mesh's chain once; `camera.__tnModelLodSelect(meshes,
-    // viewportHeight)` runs model-lod.ts `ModelLod.update` for each and answers [index, level] pairs for
+    // viewportHeight, bias)` runs model-lod.ts `ModelLod.update` for each and answers [index, level] pairs for
     // the meshes whose level changed only, so the game's side swaps geometry for those alone.
     b.methods["__tnModelLodAttach"] = [](void* self, const Args& a, Store&) {
         ModelLodState state;
@@ -1097,6 +1133,7 @@ void registerObject3D(ClassBinding& b) {
         if (camera == nullptr) throw Unsupported{"__tnModelLodSelect runs on a camera"};
         const std::vector<Value> meshes = refsOf(a.at(0));
         const double viewportHeight = number(a.at(1));
+        const double bias = number(a.at(2)); // core's adaptive bias, which the engine's lodBias() does not see
         std::vector<double> changed;
         std::string error;
         for (std::size_t i = 0; i < meshes.size(); ++i) {
@@ -1108,7 +1145,7 @@ void registerObject3D(ClassBinding& b) {
             double depth = 0;
             bool degenerate = false;
             lod::conservativeViewDepth(*camera, world.center, world.radius, lod::cameraNear(*camera), depth, degenerate);
-            const lod::LodView view{camera, degenerate, lod::biasedLodDistance(depth), viewportHeight, false};
+            const lod::LodView view{camera, degenerate, depth * bias, viewportHeight, false};
             int level = 0;
             if (!lod::selectLodLevel(state.errors, state.current,
                                      state.maxPixelError /
@@ -1119,6 +1156,30 @@ void registerObject3D(ClassBinding& b) {
             state.current = level;
             changed.push_back(double(i));
             changed.push_back(double(level));
+        }
+        return Value::list(std::move(changed));
+    };
+    // PRD-898 J1: core's frozen-root check in one call a frame. `root.__tnStaticWatch()` records a root's
+    // own transform and its parent's world matrix as static-transform.ts freezes it;
+    // `any.__tnStaticChanged(roots)` compares every root with its record and answers the indices whose
+    // transform or parent pose changed, so JavaScript visits no root that stayed put.
+    b.methods["__tnStaticWatch"] = [](void* self, const Args&, Store&) {
+        Object3D& root = *as<Object3D>(self);
+        StaticWatch& watch = staticWatchOf(root);
+        watch.watched = true;
+        writeStaticSnapshot(root, watch.snapshot);
+        return Value::undefined();
+    };
+    b.methods["__tnStaticChanged"] = [](void*, const Args& a, Store& store) {
+        const std::vector<Value> roots = refsOf(a.at(0));
+        std::vector<double> changed;
+        std::array<double, kStaticSnapshot> now{};
+        for (std::size_t i = 0; i < roots.size(); ++i) {
+            Object3D& root = objectArg(store, roots[i]);
+            StaticWatch& watch = staticWatchOf(root);
+            writeStaticSnapshot(root, now);
+            // A draw re-parented at the pose its new parent still has stays frozen, as the JavaScript check keeps it.
+            if (now != watch.snapshot || !watch.watched) changed.push_back(double(i));
         }
         return Value::list(std::move(changed));
     };
@@ -2314,7 +2375,7 @@ void registerInstancedMesh(ClassBinding& b) {
     // PRD-898 J3: core's attachInstancedLod in one call a frame. `__tnInstancedLodAttach(children,
     // partitionOf, distances, local, chainErrors, budget, hysteresis)` hands the engine the partitions core
     // minted (partition * levels + level), the authored switch distances (first 0) or, with `distances`
-    // empty, the baked chain's errors; `__tnInstancedLodUpdate(camera, viewportHeight)` then sorts every
+    // empty, the baked chain's errors; `__tnInstancedLodUpdate(camera, viewportHeight, bias)` then sorts every
     // instance into its partition (lod::selectInstancedLods) and answers the triangles the partitions draw.
     b.methods["__tnInstancedLodAttach"] = [](void* self, const Args& a, Store& store) {
         InstancedMesh& mesh = *as<InstancedMesh>(self);
@@ -2348,7 +2409,7 @@ void registerInstancedMesh(ClassBinding& b) {
         if (state.children.empty()) throw Unsupported{"__tnInstancedLodUpdate before __tnInstancedLodAttach"};
         if (state.partitionOf.size() < mesh.count) throw Unsupported{"__tnInstancedLodUpdate: more instances than partitions"};
         double triangles = 0;
-        if (!lod::selectInstancedLods(mesh, state, *camera, number(a.at(1)), triangles))
+        if (!lod::selectInstancedLods(mesh, state, *camera, number(a.at(1)), number(a.at(2)), triangles))
             throw Unsupported{"TN_LOD selection refused for an instanced batch"};
         return Value::of(triangles);
     };

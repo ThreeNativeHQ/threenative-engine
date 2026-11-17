@@ -50,9 +50,10 @@ struct InstancedLodState {
 /**
  * Sorts every drawn instance of `mesh` into its partition's child at this frame's level and answers
  * the triangles the children will submit. Returns false, leaving every count as it was, when the
- * chain's selection refuses (the reference throws there).
+ * chain's selection refuses (the reference throws there). `bias` scales every switch distance, as
+ * `biasedLodDistance` does: the engine's own `lodBias()`, or core's when core calls.
  */
 bool selectInstancedLods(InstancedMesh& mesh, InstancedLodState& state, Camera& camera, double viewportHeight,
-                         double& triangles);
+                         double bias, double& triangles);
 
 } // namespace tn::engine::lod

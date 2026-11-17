@@ -37,7 +37,7 @@ bool sameBytes(const std::shared_ptr<BufferAttribute>& attribute, std::vector<st
 } // namespace
 
 bool selectInstancedLods(InstancedMesh& mesh, InstancedLodState& state, Camera& camera, double viewportHeight,
-                         double& triangles) {
+                         double bias, double& triangles) {
     triangles = 0;
     if (state.children.empty())
         return true;
@@ -67,7 +67,7 @@ bool selectInstancedLods(InstancedMesh& mesh, InstancedLodState& state, Camera& 
         conservativeViewDepth(camera, sphere.center, sphere.radius, cameraNear(camera), depth, degenerate);
         int level = 0;
         if (authored) {
-            const double distance = biasedLodDistance(cameraPosition.distanceTo(sphere.center));
+            const double distance = cameraPosition.distanceTo(sphere.center) * bias;
             while (static_cast<std::size_t>(level + 1) < state.distances.size() &&
                    distance >= state.distances[static_cast<std::size_t>(level + 1)])
                 level += 1;
@@ -77,7 +77,7 @@ bool selectInstancedLods(InstancedMesh& mesh, InstancedLodState& state, Camera& 
             LodView view;
             view.camera = &camera;
             view.viewportHeight = viewportHeight;
-            view.depth = biasedLodDistance(depth);
+            view.depth = depth * bias;
             view.degenerate = degenerate;
             std::string error;
             if (!selectLodLevel(*state.chainErrors, state.states[index],

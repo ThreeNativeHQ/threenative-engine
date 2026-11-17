@@ -11,6 +11,7 @@ import {
   DISCRETE_LOD_DEFAULT_HYSTERESIS,
   type IModelLodController,
   biasedLodDistance,
+  lodBias,
   lodChainOf,
   registerModelLodController,
   selectLodFor,
@@ -206,7 +207,7 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
       ensureChildren();
       if (engine !== undefined) {
         if (!attached) attachEngine(engine);
-        triangles = engine.update.call(mesh, camera, viewportHeight);
+        triangles = engine.update.call(mesh, camera, viewportHeight, lodBias());
         return;
       }
       triangles = 0;
@@ -311,7 +312,7 @@ interface IInstancedLodHooks {
     budget: number,
     hysteresis: number,
   ) => void;
-  readonly update: (camera: Camera, viewportHeight: number) => number;
+  readonly update: (camera: Camera, viewportHeight: number, bias: number) => number;
 }
 
 /** The owned engine's instanced LOD calls (abi/bindings_scene.cpp), or undefined on plain three.js. */

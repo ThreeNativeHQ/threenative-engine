@@ -346,7 +346,7 @@ LodUpdate InstancedBatch::selectLods(Camera& camera, double viewportHeight) {
     LodUpdate update;
     if (children_.empty()) return update;
     double triangles = 0;
-    if (lod::selectInstancedLods(*mesh_, lod_, camera, viewportHeight, triangles)) update.triangles = triangles;
+    if (lod::selectInstancedLods(*mesh_, lod_, camera, viewportHeight, lod::lodBias(), triangles)) update.triangles = triangles;
     return update;
 }
 

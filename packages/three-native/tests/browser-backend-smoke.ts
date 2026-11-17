@@ -2039,15 +2039,15 @@ if (runtime.tsl !== undefined) {
   camera.updateMatrixWorld();
   const lod = mesh as unknown as {
     __tnInstancedLodAttach?: (...args: unknown[]) => void;
-    __tnInstancedLodUpdate?: (camera: unknown, viewportHeight: number) => number;
+    __tnInstancedLodUpdate?: (camera: unknown, viewportHeight: number, bias: number) => number;
   };
   check(
     typeof lod.__tnInstancedLodAttach === "function",
     "InstancedMesh carries __tnInstancedLodAttach",
   );
   lod.__tnInstancedLodAttach?.call(mesh, children, [0, 0], [0, 50], [0, 0, 0, 0.87], null, 4, 0.15);
-  const first = lod.__tnInstancedLodUpdate?.call(mesh, camera, 1080);
-  const second = lod.__tnInstancedLodUpdate?.call(mesh, camera, 1080);
+  const first = lod.__tnInstancedLodUpdate?.call(mesh, camera, 1080, 1);
+  const second = lod.__tnInstancedLodUpdate?.call(mesh, camera, 1080, 1);
   check(
     first === 24 && second === 24 && children[0]?.count === 1 && children[1]?.count === 1,
     `__tnInstancedLodUpdate sorts near and far: ${first}, ${second}, ${children.map((c) => c.count)}`,
@@ -2066,8 +2066,10 @@ if (runtime.tsl !== undefined) {
     camera.position.set(0, 0, z);
     camera.updateMatrixWorld();
     return (
-      camera as unknown as { __tnModelLodSelect: (meshes: unknown[], height: number) => number[] }
-    ).__tnModelLodSelect([target], 1080);
+      camera as unknown as {
+        __tnModelLodSelect: (meshes: unknown[], height: number, bias: number) => number[];
+      }
+    ).__tnModelLodSelect([target], 1080, 1);
   };
   const picks = [select(100), select(100), select(3), select(100)];
   check(

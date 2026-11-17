@@ -518,7 +518,7 @@ describe("ModelLod on the owned engine (PRD-898 J2)", () => {
     const attach = vi.fn();
     (target as Mesh & Record<string, unknown>).__tnModelLodAttach = attach;
     const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
-    const select = vi.fn().mockReturnValueOnce([0, 1]).mockReturnValueOnce([]);
+    const select = vi.fn().mockReturnValue([]).mockReturnValueOnce([0, 1]);
     (camera as PerspectiveCamera & Record<string, unknown>).__tnModelLodSelect = select;
     const reads = vi.spyOn(target.matrixWorld, "getMaxScaleOnAxis");
 
@@ -534,7 +534,11 @@ describe("ModelLod on the owned engine (PRD-898 J2)", () => {
     expect(local).toHaveLength(4);
     expect([maxPixelError, hysteresis, current]).toEqual([1, 0.15, 0]);
     expect(select).toHaveBeenCalledTimes(2);
-    expect(select.mock.calls[0]).toEqual([[target], 1080]);
+    expect(select.mock.calls[0]).toEqual([[target], 1080, 1]);
+    // Core's adaptive bias reaches the engine, which keeps no copy of it.
+    setLodBias(2);
+    updateModelLods(scene, camera, 1080);
+    expect(select.mock.calls[2]?.[2]).toBe(2);
     expect(reads).not.toHaveBeenCalled();
   });
 });

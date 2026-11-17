@@ -541,7 +541,11 @@ interface IModelLodEngineMesh {
   ): void;
 }
 
-type ModelLodSelect = (meshes: readonly Mesh[], viewportHeight: number) => readonly number[];
+type ModelLodSelect = (
+  meshes: readonly Mesh[],
+  viewportHeight: number,
+  bias: number,
+) => readonly number[];
 
 /** Resolved runtime policy the loader stamps onto a controller, from the manifest. */
 export interface IModelLodPolicy {
@@ -1469,6 +1473,7 @@ function selectBatched(
     camera,
     batched.map((entry) => entry.engineMesh()),
     viewportHeight,
+    lodBias(),
   );
   for (let i = 0; i < changed.length; i += 2)
     (batched[changed[i] as number] as ModelLod).applyLevel(changed[i + 1] as number);

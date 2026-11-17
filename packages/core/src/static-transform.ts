@@ -198,6 +198,10 @@ function freezeRoot(root: Object3D, engine: boolean): number {
   const snapshot = existing?.snapshot ?? new Float64Array(SNAPSHOT_LENGTH);
   writeSnapshot(root, snapshot);
   const version = (existing?.version ?? 0) + 1;
+  // PRD-898 J1: on the owned engine the engine keeps its own record for the one-call check.
+  const watch = (root as Object3D & Partial<IStaticEngineRoot>).__tnStaticWatch;
+  if (typeof watch === "function") watch.call(root);
+  if (existing === undefined) engineRoots = undefined;
   frozen.set(
     root,
     engine
@@ -216,6 +220,7 @@ function freezeRoot(root: Object3D, engine: boolean): number {
  */
 export function unmarkStatic(root: Object3D): void {
   if (!frozen.delete(root)) return;
+  engineRoots = undefined;
   if (worldSilenced.delete(root)) root.matrixWorldAutoUpdate = true;
   root.traverse((object) => {
     if (composeSilenced.delete(object)) object.matrixAutoUpdate = true;
@@ -271,6 +276,15 @@ export interface IStaticTransformCensus {
 
 let rearmedSinceCensus = 0;
 
+/** The owned engine's frozen-root calls (abi/bindings_scene.cpp), absent on plain three.js. */
+interface IStaticEngineRoot {
+  __tnStaticWatch(): void;
+  __tnStaticChanged(roots: readonly Object3D[]): readonly number[];
+}
+
+/** Frozen roots in map order for the engine check, rebuilt only when a root is added or removed. */
+let engineRoots: Object3D[] | undefined;
+
 /**
  * Re-arms any frozen root whose authored transform has changed since it was frozen.
  *
@@ -281,6 +295,20 @@ let rearmedSinceCensus = 0;
  */
 export function refreshStaticTransforms(): void {
   if (frozen.size === 0) return;
+  const first = frozen.keys().next().value as Object3D & Partial<IStaticEngineRoot>;
+  const changed = first.__tnStaticChanged;
+  if (typeof changed === "function") {
+    // PRD-898 J1: one engine call compares every root with the record it took at freeze; JavaScript
+    // visits only the roots that moved.
+    engineRoots ??= [...frozen.keys()];
+    const roots = engineRoots;
+    for (const index of changed.call(first, roots)) {
+      const root = roots[index] as Object3D;
+      freezeRoot(root, frozen.get(root)?.parent !== undefined);
+      rearmedSinceCensus += 1;
+    }
+    return;
+  }
   parentMovedThisFrame.clear();
   for (const entry of frozen.values()) {
     const engine = entry.parent !== undefined;
@@ -344,6 +372,7 @@ export function staticTransformCensus(): IStaticTransformCensus {
 /** Drops every registration. A game that tore down its scene must not keep its roots alive. */
 export function resetStaticTransforms(): void {
   frozen.clear();
+  engineRoots = undefined;
   parentMovedThisFrame.clear();
   rearmedSinceCensus = 0;
 }

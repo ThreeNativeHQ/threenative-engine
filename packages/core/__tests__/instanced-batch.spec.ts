@@ -432,7 +432,7 @@ describe("InstancedBatch LOD on the owned engine (PRD-898 J3)", () => {
       expect(errors).toEqual([...(chain?.errors ?? [])]);
       expect([budget, hysteresis].every(Number.isFinite)).toBe(true);
       expect(update).toHaveBeenCalledTimes(2);
-      expect(update.mock.calls[0]).toEqual([camera, 1080]);
+      expect(update.mock.calls[0]).toEqual([camera, 1080, 1]);
       expect(reads).not.toHaveBeenCalled();
     } finally {
       Reflect.deleteProperty(proto, "__tnInstancedLodAttach");
