@@ -622,8 +622,7 @@ async function main(args: readonly string[]): Promise<void> {
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
   // `publish:check` then reports the package as needing a bump, because its source "moved"
   // after the publish. There is no way to tell, later, which source a published tarball was.
-  // A proof is a claim about HEAD's bytes, and so is the receipt it writes: prove from a committed
-  // tree, exactly as a publish does.
+  // A proof is a claim about HEAD's bytes: prove from a committed tree, exactly as a publish does.
   if (publish || proveUpgrade) assertCleanPackageTree(REPO);
   await provisionReleaseArtifacts(REPO);
 
@@ -735,10 +734,8 @@ async function main(args: readonly string[]): Promise<void> {
     }
     // An override skips the gates it names, and a resumed publish has no whole candidate left to
     // prove. Every other run proves — twice on tag day, because the publish's proof is the only one
-    // that sees the real prebuilt release.
+    // that sees the real prebuilt release, and only `--override` reaches the first upload without it.
     const proving = !override && publishPackages.length === packages.length;
-    // Proven here and again at the publish: the second run is the one that sees the real prebuilt
-    // release, and no flag lets a caller reach the first npm upload without that one.
     const upgrades = proving ? await proveUpgradeFromLatest(packages, tarballs) : [];
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;

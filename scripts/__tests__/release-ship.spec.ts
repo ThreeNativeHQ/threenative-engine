@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { expectedReleaseReportReference } from "../release-candidate-gate.js";
 import {
   type IShipDeps,
-  PROVE_ARGV,
   assertCandidateDispatchable,
   assertTagMovable,
   assertVersionNotBurned,
@@ -282,6 +281,25 @@ describe("pnpm release:ship resumes", () => {
 
   // A resumed cohort has no whole candidate left to prove: `unpublishedReleasePackages` refuses a
   // partial one without `--resume`, so proving at the tag step would block a legitimate resume.
+  // The proof takes minutes. If a release appears during it, the tag step must see it — the state is
+  // read again before the ref moves, and `assertTagMovable` runs on that read.
+  it("refuses to move a tag when a release appears while the proof runs", async () => {
+    const { calls, deps, state } = world({
+      candidate: [run(10, "workflow_dispatch")],
+      tagCommit: OTHER,
+    });
+    const racing: typeof deps = {
+      ...deps,
+      prove: () => {
+        state.release = { isDraft: false, isPrerelease: true };
+      },
+    };
+    await expect(ship(racing, { dryRun: false, sha: SHA })).rejects.toThrow(
+      /TN_SHIP_TAG_HAS_RELEASE/u,
+    );
+    expect(calls.some((call) => call.includes("--method"))).toBe(false);
+  });
+
   it("skips the pre-tag proof when part of the cohort is already on npm", async () => {
     const { calls, deps } = world({
       candidate: [run(10, "workflow_dispatch")],
@@ -519,13 +537,6 @@ describe("pnpm release:check-version", () => {
     // release is the owner's call, and the error does not advise it.
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/has a prerelease at/u);
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/pnpm release:prepare --bump/u);
-  });
-});
-
-describe("the proof-only command", () => {
-  it("is the flags release.ts accepts, so a rename cannot stop a release at the tag step", () => {
-    // release.ts validates its own flags; this is the argv release:ship actually runs.
-    expect([...PROVE_ARGV]).toEqual(["release", "--prove-upgrade", "--skip-gates"]);
   });
 });
 

@@ -32,8 +32,8 @@ Two releases burned on this, verified through the Actions API and the repository
 
 Three parts, one rule each:
 
-1. Read the burn's three facts — the release on the tag, the commit the tag points at, and whether
-   npm serves `@threenative/core` at the version — and refuse in `release:ship`'s first minute with
+1. Read the burn's three facts — the release on the tag, the commit the tag points at, and how much of
+   the cohort npm serves at the version — and refuse in `release:ship`'s first minute with
    the fix named. One shared `assertVersionNotBurned`, so the two call sites cannot disagree.
 2. Run the same decision on the release pull request's own early board job, so a burned version is
    red before the merge instead of after it.
@@ -53,7 +53,7 @@ Three parts, one rule each:
 ### Phase 3 — the upgrade proof runs before anything about the version is public
 
 - [x] `pnpm release --prove-upgrade` is a real flag of the publish command: it refuses an uncommitted tree (a proof is a claim about HEAD's bytes) and every flag that would make it report a proof that never ran, and the argv `release:ship` runs is one shared constant with a spec. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 44 passed (the flag refusals, and the argv case). What the run does end to end is the box below, still open.
-- [ ] A real candidate proves end to end through `pnpm release --prove-upgrade` with no release yet: it packs, proves and exits 0 having published nothing. proof: the tag step of the first release after this lands — unrun, so this box stays open.
+- [ ] A real candidate proves end to end through `pnpm release --prove-upgrade` with no release yet: it packs, proves and exits 0 having published nothing, and its wall time is recorded here (the tag step now pays a second `pnpm build` and one proof inside `npm-release.yml`'s 360-minute `ship` job, whose waits alone can reach 190 minutes). proof: the tag step of the first release after this lands — unrun, so this box stays open.
 - [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, a cohort that is already partly on npm is left to its `--resume` publish, and a movable tag stays where it is when the proof is red. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 38 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `leaves a movable tag untouched when the upgrade proof is red`, `skips the pre-tag proof when part of the cohort is already on npm`, the override case).
 
 ## Acceptance criteria

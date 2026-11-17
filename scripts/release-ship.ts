@@ -477,7 +477,10 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       deps.log(`${version} is already on npm. Nothing to ship.`);
       return acted;
     }
-    deps.log(`next: ${describeStep(step, state, sha, tag, options.override === undefined)}`);
+    // The plan line says "after the upgrade proof" only when this pass will actually prove.
+    const proves =
+      step === "tag" && !proved && options.override === undefined && !cohortPartlyPublished(deps);
+    deps.log(`next: ${describeStep(step, state, sha, tag, proves)}`);
     if (typeof state.ci === "number") {
       const request = buildCandidateRequest(deps.repository, sha, version, state.ci);
       // The gate's own parser: a request it would reject never reaches a dispatch.
@@ -487,9 +490,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
     if (options.override !== undefined) deps.log(`OVERRIDE: ${options.override}`);
     if (options.dryRun || step === "evidence") {
       if (!options.dryRun)
-        throw new Error(
-          `TN_SHIP_EVIDENCE: ${describeStep(step, state, sha, tag, options.override === undefined)}`,
-        );
+        throw new Error(`TN_SHIP_EVIDENCE: ${describeStep(step, state, sha, tag, proves)}`);
       return acted;
     }
     acted.push(step);

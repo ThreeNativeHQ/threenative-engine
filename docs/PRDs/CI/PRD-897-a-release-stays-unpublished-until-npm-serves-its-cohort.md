@@ -22,10 +22,10 @@ publish's proof is the only run that sees the real prebuilt release. Four shapes
    `--prerelease`, which is public, before the consumer proofs run; `cleanup-failed-release` deletes
    it when a consumer proof fails, but a cancelled run, or a cleanup job that never runs, leaves the
    public prerelease and no npm cohort.
-3. **A registry `latest` that moves mid-release.** The proof is about the `latest` of the moment it
-   ran. A release's waits total up to about 190 minutes, so a run that proves and then waits can find
-   its receipt stale, and the publish proves again — behind the public release (PRD-896's receipt
-   records `latest` for exactly this reason, and a mismatch means prove again).
+3. **A registry `latest` that moves mid-release.** The publish proves against whatever `latest` is at
+   publish time. A release's waits total up to about 190 minutes, so an N-1 that moved during them is
+   proved against a different starting point than the pre-tag proof — and the publish's red is the
+   expensive one, because it lands behind the public release.
 4. **Nothing public follows npm.** The repository still treats a public release as the version's
    announcement while npm may be minutes or hours behind it.
 
@@ -47,7 +47,7 @@ Close the resume shape first, because it needs no new release state. Phase 2 is 
 "do not waste an hour": the same proof, run on the release pull request before the merge, so an
 upgrade regression is red before a merge instead of after it.
 
-### Phase 1 — a resumed publish refuses to prove after the fact
+### Phase 1 — a red publish proof leaves the version shippable
 
 - [ ] A red publish proof leaves the version shippable: the prerelease `native-release` created is deleted (or stays a draft), so the next ship can prove again on the same version instead of a bump. proof: `scripts/__tests__/release-ship.spec.ts` — a publish that throws leaves nothing public, plus one release whose publish was red and whose version shipped afterwards.
 - [ ] The tag run's own cleanup covers it: `cleanup-failed-release` deletes a release whose consumer proof failed, and it must also run when the *publish* is the red step. proof: `native-release.yml`'s cleanup `if:` gains that case, and one run shows the release gone after a red publish.

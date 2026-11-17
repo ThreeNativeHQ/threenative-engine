@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-publish-state.js";
+import { PROVE_ARGV } from "../release-ship.js";
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
@@ -604,9 +605,9 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
     // A resumed run has a partial cohort, so the proof would silently not run.
     [["--prove-upgrade", "--resume"], /TN_RELEASE_FLAGS_CONFLICT/u],
     [["--prove-upgrade", "--prepare"], /TN_RELEASE_FLAGS_CONFLICT/u],
-    // `release:ship` runs exactly these flags (PROVE_ARGV). A drift between the two files would
-    // stop the tag step, so the names are pinned here as well as there.
-    [["--prove-upgrade", "--skip-gates", "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
+    // `release:ship` runs exactly PROVE_ARGV. A drift between the two files would stop the tag step,
+    // so the argv it will run is spelled here from the constant itself.
+    [[...PROVE_ARGV.slice(1), "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
   ])("refuses %j before touching the network", (args, message) => {
     let stderr = "";
     try {
