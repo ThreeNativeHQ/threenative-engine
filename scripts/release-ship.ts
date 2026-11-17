@@ -47,11 +47,8 @@ export interface IShipDeps {
   readonly npmVersions: (name: string) => readonly string[];
   /** Every package of the npm cohort. A crash between levels leaves only part of it published. */
   readonly cohort: () => readonly { readonly name: string; readonly version: string }[];
-  /**
-   * `pnpm release --yes --skip-gates --resume`, then the clean-room verification. `proved` says this
-   * invocation already ran the upgrade proof before it created anything public.
-   */
-  readonly publish: (options: { readonly override: boolean; readonly proved: boolean }) => void;
+  /** `pnpm release --yes --skip-gates --resume`, then the clean-room verification. */
+  readonly publish: (options: { readonly override: boolean }) => void;
   /** `pnpm release --prove-upgrade --skip-gates`: pack, prove, publish nothing. */
   readonly prove: () => void;
   readonly repository: string;
@@ -71,7 +68,7 @@ interface IRun {
 type ReleaseState = "none" | "draft" | "prerelease" | "public";
 
 /** The package whose registry presence decides whether a version is spent. */
-export const CORE = "@threenative/core";
+const CORE = "@threenative/core";
 /** The tag every runtime release hangs on. */
 const TAG_PREFIX = "runtime-native-v";
 
@@ -246,6 +243,16 @@ export function buildCandidateRequest(
   };
 }
 
+/**
+ * Some, but not all, of the cohort is on npm: a crash left a release half published.
+ *
+ * Asked only where it matters — the tag step — so a first push pays nothing for it: `.some`
+ * short-circuits on the first package npm already serves.
+ */
+function cohortPartlyPublished(deps: IShipDeps): boolean {
+  return deps.cohort().some(({ name, version }) => deps.npmVersions(name).includes(version));
+}
+
 /** The version this tree ships, read from the commit being shipped rather than the checkout. */
 function manifestVersion(deps: IShipDeps, sha: string): string {
   const manifest = JSON.parse(
@@ -301,8 +308,8 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
     census.release === "draft"
       ? "delete the draft (nothing is public yet), then ship this version"
       : census.onNpm > 0
-        ? `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit ?? "<tag commit>"}\`), or bump packages/runtime-native/package.json and the cohort that pins it`
-        : "bump packages/runtime-native/package.json and the cohort that pins it, then ship the new version";
+        ? `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit ?? "<tag commit>"}\`), or run \`pnpm release:prepare --bump\` and ship the new version`
+        : "run `pnpm release:prepare --bump`, then ship the new version";
   throw new Error(
     `TN_SHIP_VERSION_BURNED: ${where}, and ${served}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move"}: ${advice}.`,
   );
@@ -333,11 +340,11 @@ export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
   assertVersionNotBurned(census, { sha, tag, version });
   if (onNpm >= census.total)
     return `every package of ${version} is on npm: nothing to ship for ${tag}.`;
-  const why =
+  return `${tag} is shippable: ${
     release === "none"
       ? "no release exists for it"
-      : `its ${release} release sits at the shipped commit`;
-  return `${tag} is shippable: ${why}.`;
+      : `its ${release} release sits at the shipped commit`
+  }.`;
 }
 
 /** The first step that is not done. A second invocation resumes here. */
@@ -457,9 +464,6 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
   // same call the release pull request's own board job makes, on the same commit.
   checkReleaseVersion(deps, sha);
   const acted: ShipStep[] = [];
-  // Only a proof this invocation ran before the tag may let the publish skip its own: a resumed run
-  // lands on `publish` without one, so it proves there as it always has.
-  let proved = false;
   for (let guard = 0; guard < 8; guard += 1) {
     const state = readShipState(deps, sha, tag);
     const step = nextStep(state, sha, options.override !== undefined);
@@ -515,10 +519,11 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       // Nothing about this version is public yet, and the upgrade proof is the last gate before the
       // first npm upload. Prove it here: the tag creates a release that is public the moment it
       // exists, so a red proof after the tag has already burned the version (0.3.14, 2026-11-12).
-      if (options.override === undefined) {
+      // A resumed cohort — some of it already on npm — has no whole candidate left to prove, and its
+      // publish (`--resume`) is the run that proves. The first-push path proves here.
+      if (options.override === undefined && !cohortPartlyPublished(deps)) {
         deps.log("proving the previous latest upgrades before anything is public…");
         deps.prove();
-        proved = true;
       }
       // Through the API: a push would run this checkout's pre-push hook, which needs a built tree.
       deps.gh(
@@ -579,7 +584,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       );
     } else if (step === "publish") {
       // `pnpm release --yes` ends with the clean-room registry install, so nothing follows it.
-      deps.publish({ override: options.override !== undefined, proved });
+      deps.publish({ override: options.override !== undefined });
       return acted;
     } else {
       deps.verify();
@@ -618,17 +623,10 @@ function systemDeps(): IShipDeps {
         throw error;
       }
     },
-    publish: ({ override, proved }) =>
+    publish: ({ override }) =>
       void execFileSync(
         "pnpm",
-        [
-          "release",
-          "--yes",
-          "--skip-gates",
-          "--resume",
-          ...(override ? ["--override"] : []),
-          ...(proved ? ["--upgrade-proved"] : []),
-        ],
+        ["release", "--yes", "--skip-gates", "--resume", ...(override ? ["--override"] : [])],
         { cwd: REPO, stdio: "inherit" },
       ),
     prove: () =>

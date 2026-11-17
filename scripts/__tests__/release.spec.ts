@@ -8,26 +8,20 @@ import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
-  clearUpgradeProofReceipt,
   installableOnRegistry,
   packReleaseSet,
   packedTarballName,
   prepareReleaseCohort,
-  proveUpgradeAndRecord,
   proveUpgradeFromLatest,
   provisionReleaseArtifacts,
   publishCohort,
-  readUpgradeProofReceipt,
   releaseLevels,
   releaseOrder,
-  resolveUpgradeReuse,
   unpublishedReleasePackages,
   upgradeProofApplies,
   validateReleaseCohort,
   validateTemplatePins,
-  writeUpgradeProofReceipt,
 } from "../release.js";
-import type { IRegistryInstallReport } from "../verify-registry-install.js";
 
 const roots: string[] = [];
 
@@ -327,102 +321,13 @@ describe("pnpm release publishing", () => {
 });
 
 describe("pnpm release proof-only run", () => {
-  // The publish that follows the tag reuses the proof through `--upgrade-proved`. A bare flag would
-  // let any caller skip the last gate before the first npm upload, so the skip needs a receipt for
-  // the exact commit that proved it.
-  it("records a proof for its commit and registry latest, and reuses nothing else", async () => {
-    const root = await makeTempDir("threenative-upgrade-proof-");
-    roots.push(root);
-    const sha = "a".repeat(40);
-    expect(readUpgradeProofReceipt(root, sha, "0.3.13")).toBeUndefined();
-    writeUpgradeProofReceipt(root, { latest: "0.3.13", provedAt: "2026-11-16T00:00:00.000Z", sha });
-    expect(readUpgradeProofReceipt(root, sha, "0.3.13")).toEqual({
-      latest: "0.3.13",
-      provedAt: "2026-11-16T00:00:00.000Z",
-      sha,
-    });
-    // Another commit, and the same commit after `latest` moved: both are no proof at all.
-    expect(readUpgradeProofReceipt(root, "b".repeat(40), "0.3.13")).toBeUndefined();
-    expect(readUpgradeProofReceipt(root, sha, "0.3.14")).toBeUndefined();
-  });
-
-  it("records a receipt only after every template proved, and drops the old one first", async () => {
-    const root = await makeTempDir("threenative-upgrade-proof-");
-    roots.push(root);
-    const sha = "a".repeat(40);
-    writeUpgradeProofReceipt(root, { latest: "0.3.12", provedAt: "2026-11-15T00:00:00.000Z", sha });
-    const report = (exitCode: 0 | 1) =>
-      ({
-        consumerTargets: [],
-        exitCode,
-        managers: [],
-        steps: [{ detail: "x", name: "install", ok: exitCode === 0 }],
-      }) satisfies IRegistryInstallReport;
-    // A red proof must leave nothing behind: the receipt it replaced is gone too.
-    const red = await proveUpgradeAndRecord({
-      latest: "0.3.13",
-      prove: async () => [report(1)],
-      repo: root,
-      sha,
-    });
-    expect(red[0]?.exitCode).toBe(1);
-    expect(readUpgradeProofReceipt(root, sha, "0.3.13")).toBeUndefined();
-
-    const green = await proveUpgradeAndRecord({
-      latest: "0.3.13",
-      prove: async () => [report(0)],
-      repo: root,
-      sha,
-    });
-    expect(green[0]?.exitCode).toBe(0);
-    expect(readUpgradeProofReceipt(root, sha, "0.3.13")?.sha).toBe(sha);
-  });
-
-  it("reuses a proof only for its own commit and registry latest, and only once", async () => {
-    const root = await makeTempDir("threenative-upgrade-proof-");
-    roots.push(root);
-    const sha = "a".repeat(40);
-    writeUpgradeProofReceipt(root, { latest: "0.3.13", provedAt: "2026-11-16T00:00:00.000Z", sha });
-    const at = (latest: string) => () => latest;
-    // The only path that may skip the last gate before npm: no match, no skip.
-    expect(
-      resolveUpgradeReuse({ readLatest: at("0.3.13"), repo: root, sha: "b".repeat(40) }),
-    ).toBeUndefined();
-    expect(resolveUpgradeReuse({ readLatest: at("0.3.14"), repo: root, sha })).toBeUndefined();
-    // A registry read that fails is not a proof either, and it must never fail a publish.
-    expect(
-      resolveUpgradeReuse({
-        readLatest: () => {
-          throw new Error("npm ERR! network");
-        },
-        repo: root,
-        sha,
-      }),
-    ).toBeUndefined();
-    expect(resolveUpgradeReuse({ readLatest: at("0.3.13"), repo: root, sha })?.provedAt).toBe(
-      "2026-11-16T00:00:00.000Z",
-    );
-    // Consumed: a second publish is a claim about a newer registry, and it proves anew.
-    expect(resolveUpgradeReuse({ readLatest: at("0.3.13"), repo: root, sha })).toBeUndefined();
-  });
-
-  it("drops yesterday's proof for a commit before proving it again", async () => {
-    const root = await makeTempDir("threenative-upgrade-proof-");
-    roots.push(root);
-    const sha = "a".repeat(40);
-    writeUpgradeProofReceipt(root, { latest: "0.3.13", provedAt: "2026-11-16T00:00:00.000Z", sha });
-    clearUpgradeProofReceipt(root);
-    // A proof that goes red must leave nothing for `--upgrade-proved` to reuse.
-    expect(readUpgradeProofReceipt(root, sha, "0.3.13")).toBeUndefined();
-  });
-
-  // PRD-896: `release:ship` proves the upgrade before it creates the tag, so the publish that
-  // follows must not spend the browser lanes again — and a run that never proved must not skip them.
-  it("proves the upgrade unless an override, a prior proof or a partial cohort speaks for it", () => {
-    const scope = { cohort: 17, override: false, proved: false, publishable: 17 };
+  // PRD-896: `release:ship` proves the upgrade before it creates the tag. The publish proves again
+  // regardless — it is the run that sees the real prebuilt release — so only an override or a
+  // resumed cohort may skip it.
+  it("proves the upgrade unless an override or a partial cohort speaks for it", () => {
+    const scope = { cohort: 17, override: false, publishable: 17 };
     expect(upgradeProofApplies(scope)).toBe(true);
     expect(upgradeProofApplies({ ...scope, override: true })).toBe(false);
-    expect(upgradeProofApplies({ ...scope, proved: true })).toBe(false);
     expect(upgradeProofApplies({ ...scope, publishable: 3 })).toBe(false);
   });
 });
@@ -712,10 +617,9 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
     // A resumed run has a partial cohort, so the proof would silently not run.
     [["--prove-upgrade", "--resume"], /TN_RELEASE_FLAGS_CONFLICT/u],
     [["--prove-upgrade", "--prepare"], /TN_RELEASE_FLAGS_CONFLICT/u],
-    [["--prove-upgrade", "--upgrade-proved"], /TN_RELEASE_FLAGS_CONFLICT/u],
-    // `release:ship` passes these two flag names; a drift between the two files would throw
+    // `release:ship` passes these flag names; a drift between the two files would throw
     // TN_RELEASE_UNKNOWN_FLAG after the release was already public.
-    [["--prove-upgrade", "--upgrade-proved", "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
+    [["--prove-upgrade", "--skip-gates", "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
   ])("refuses %j before touching the network", (args, message) => {
     let stderr = "";
     try {

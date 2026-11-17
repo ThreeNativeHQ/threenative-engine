@@ -1,7 +1,7 @@
 # PRD-897 — A release stays unpublished until npm serves its cohort
 
 **Status:** NOT STARTED
-**Priority:** P2 — the remaining exposure is narrow: PRD-896 runs the upgrade proof before the tag, so only a publish that never proved in its own invocation can still prove behind a public release — a *resumed* run, or one whose receipt no longer matches a registry `latest` that moved during the release's waits.
+**Priority:** P2 — the remaining exposure is narrow: PRD-896 runs the upgrade proof before the tag, so only a publish that never proved in its own invocation can still prove behind a public release — a *resumed* run, or one whose registry `latest` moved during the release's waits. Phase 2 is the other half of the same complaint: today the proof still runs only after the merge.
 **Complexity:** 6 (MEDIUM)
 **Owner:** CI tooling
 **Depends on:** PRD-896, PRD-630
@@ -42,17 +42,19 @@ small change:
 
 ## Solution
 
-Close the resume shape first, because it needs no new release state. PRD-898 carries the other
-half of "do not waste an hour": the same proof, run on the release pull request before the merge.
+Close the resume shape first, because it needs no new release state. Phase 2 is the other half of
+"do not waste an hour": the same proof, run on the release pull request before the merge, so an
+upgrade regression is red before a merge instead of after it.
 
 ### Phase 1 — a resumed publish refuses to prove after the fact
 
 - [ ] A resume on a **fresh runner** has no receipt to read: the proof PRD-896 records lives in the worktree that proved, and `ship` passes `--upgrade-proved` only from its own memory. Persist the proof where a later invocation can read it (an artifact, or release metadata) or make the resume refuse. proof: `scripts/__tests__/release.spec.ts` — a receipt read in a second checkout, and `scripts/__tests__/release-ship.spec.ts` for the plan that refuses when there is none.
 - [ ] A plan that reaches `publish` with no proof for its commit stops and says which invocation must prove. proof: `scripts/__tests__/release-ship.spec.ts` — a resume case that refuses, beside the existing green resume. This box depends on the one above it: refusing before the receipt can be read would turn every post-wait rerun into a hard stop.
 
-### Phase 2 — the release becomes an announcement, not a lock
+### Phase 2 — the proof runs on the release pull request, before the merge
 
-- [ ] A landable sketch of the draft-first order — which reads move to the API, which tokens need `contents: write`, what `finalize` becomes — sized in files and jobs before any of it is written. proof: this PRD gains the sketch, reviewed on its own.
+- [ ] `ci.yml` gains one job, gated on `github.base_ref == 'main'`, that builds the workspace, prepares the native runtime dependencies and runs `pnpm release --prove-upgrade --skip-gates` against the pull request's tree, publishing nothing; its wall time is measured, with the shared build restored rather than repeated. proof: a green run of that job on a develop -> main pull request, with its timing beside the run.
+- [ ] `scripts/ci-change-scope.mjs` marks it required for a pull request into `main`, and a red proof turns the pull request red carrying the proof's own report as an artifact. proof: `scripts/__tests__/ci-needs.spec.ts`, plus one scratch branch whose run is red and carries the report.
 
 ## Acceptance criteria
 
@@ -62,9 +64,15 @@ half of "do not waste an hour": the same proof, run on the release pull request 
 
 - 2026-11-16 (agent, filing): the draft-first shape is deliberately deferred rather than half-done —
   it moves the prebuilt census, the consumer lanes and promotion at once, and PRD-896 removes the
-  first-pass burn without it.
+  first-pass burn without it. A landable sketch of it is the first thing to write if the owner prefers
+  that shape to phase 2.
 
 ## Blocked on
 
-- The owner's choice between the shapes above before phase 2 (draft-first versus a release that
-  simply never gates npm), and one real release to prove either.
+- The owner's call on the draft-first shape (recorded under Decisions) before it replaces anything,
+  and one real release to prove both phases.
+- Phase 2's lane is currently red for two reasons owned by the release branch, not by this file: the
+  clean room's 15 s `--server-timeout` against a ~21 s cold asset cook
+  (`scripts/verify-registry-install.ts` is getting `--server-timeout 120000`), and the reinvention
+  lint rows of 2026-11-13 rejecting 0.3.13-generated code (`create-threenative`'s `qualityConfig` is
+  getting an opt-in `reinventions` flag).

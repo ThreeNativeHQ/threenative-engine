@@ -111,8 +111,7 @@ function world(over: Partial<Record<string, unknown>> = {}) {
       { name: "@threenative/runtime-native", version: VERSION },
     ],
     npmVersions: (name) => (name === "@threenative/core" ? (state.core ?? state.npm) : state.npm),
-    publish: ({ override, proved }) =>
-      calls.push(`publish${override ? " --override" : ""}${proved ? " --upgrade-proved" : ""}`),
+    publish: ({ override }) => calls.push(override ? "publish --override" : "publish"),
     prove: () => calls.push("prove"),
     repository: REPOSITORY,
     sleep: async () => undefined,
@@ -262,7 +261,7 @@ describe("pnpm release:ship resumes", () => {
       "prove",
       "gh api --method POST",
       "gh workflow run native-release.yml",
-      "publish --upgrade-proved",
+      "publish",
     ]);
   });
 
@@ -280,15 +279,18 @@ describe("pnpm release:ship resumes", () => {
     expect(calls).toEqual([]);
   });
 
-  it("a resumed plan that never proved does not tell the publish it did", async () => {
+  // A resumed cohort has no whole candidate left to prove: `unpublishedReleasePackages` refuses a
+  // partial one without `--resume`, so proving at the tag step would block a legitimate resume.
+  it("skips the pre-tag proof when part of the cohort is already on npm", async () => {
     const { calls, deps } = world({
       candidate: [run(10, "workflow_dispatch")],
-      release: { isDraft: false, isPrerelease: false },
-      tagCommit: SHA,
-      tagRuns: [run(20, "workflow_dispatch", { headBranch: TAG })],
+      core: [VERSION],
+      release: null,
+      tagCommit: undefined,
     });
-    expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["publish"]);
-    expect(calls).toEqual(["publish"]);
+    const acted = await ship(deps, { dryRun: false, sha: SHA });
+    expect(acted).toContain("tag");
+    expect(calls).not.toContain("prove");
   });
 
   it("dispatches a tag run once, while the run list lags", async () => {
@@ -515,7 +517,7 @@ describe("pnpm release:check-version", () => {
     // A public prerelease's tag belongs to another commit, so the move is a bump; deleting a public
     // release is the owner's call, and the error does not advise it.
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/has a prerelease at/u);
-    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/bump packages\/runtime-native/u);
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/pnpm release:prepare --bump/u);
   });
 });
 

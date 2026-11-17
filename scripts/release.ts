@@ -42,7 +42,6 @@ import {
   stageNativeRelease,
   uploadNativeRelease,
 } from "./release-native-local.js";
-import { CORE } from "./release-ship.js";
 import {
   type IRegistryInstallReport,
   type IVerifyRegistryInstallOptions,
@@ -560,8 +559,6 @@ function lockArgument(argv: readonly string[]): { lockPath?: string; rest: reado
 export interface IUpgradeProofScope {
   /** An admin `--override` skips every gate it names, the upgrade proof included. */
   readonly override: boolean;
-  /** This invocation already proved it, before anything about the version became public. */
-  readonly proved: boolean;
   /** The packages this run would publish. */
   readonly publishable: number;
   /** Every package of the cohort. */
@@ -571,139 +568,14 @@ export interface IUpgradeProofScope {
 /**
  * Whether this run proves the previous `latest` upgrades onto the candidate.
  *
- * Three reasons skip it, and each is a state the proof cannot speak about: an `--override` skips the
- * gates it names by definition, `proved` means this invocation already proved before the tag, and a
- * partially or wholly published cohort has no single candidate left to prove.
+ * Two reasons skip it, and each is a state the proof cannot speak about: an `--override` skips the
+ * gates it names by definition, and a partially published cohort (a resumed publish) has no single
+ * candidate left to prove. Nothing else may skip it — the publish proves again even though
+ * `release:ship` proved before the tag, because the publish is the run that sees the real prebuilt
+ * release.
  */
 export function upgradeProofApplies(scope: IUpgradeProofScope): boolean {
-  return !scope.override && !scope.proved && scope.publishable === scope.cohort;
-}
-
-/**
- * Where a proof-only run records that this commit's candidate proved green.
- *
- * Git-ignored, like every other run artifact, and read back by `--upgrade-proved` from the same
- * checkout: `release:ship` proves before the tag and publishes from the same worktree minutes later.
- */
-const UPGRADE_PROOF_RECEIPT = "artifacts/release/upgrade-proof.json";
-
-export interface IUpgradeProofReceipt {
-  /** The registry `latest` the proof upgraded from. It moves, and the proof is about that name. */
-  readonly latest: string;
-  readonly provedAt: string;
-  readonly sha: string;
-}
-
-/**
- * The green proof recorded for this exact commit and this registry `latest`, or `undefined`.
- *
- * `--upgrade-proved` lets the publish that follows the tag reuse the proof instead of spending the
- * browser lanes twice. A bare flag would let any caller skip the last gate before the first npm
- * upload, so the skip needs a receipt naming both what it proved and what it proved against.
- */
-export function readUpgradeProofReceipt(
-  repo: string,
-  sha: string,
-  latest: string,
-): IUpgradeProofReceipt | undefined {
-  try {
-    const receipt = JSON.parse(fs.readFileSync(path.join(repo, UPGRADE_PROOF_RECEIPT), "utf8")) as {
-      latest?: unknown;
-      provedAt?: unknown;
-      sha?: unknown;
-    };
-    if (receipt.sha !== sha || receipt.latest !== latest) return undefined;
-    return {
-      latest,
-      provedAt: typeof receipt.provedAt === "string" ? receipt.provedAt : "",
-      sha,
-    };
-  } catch {
-    // A missing or unreadable receipt is no receipt. Both answer the same way: prove it here.
-    return undefined;
-  }
-}
-
-/**
- * The proof this run may reuse, or `undefined` when it must prove here instead.
- *
- * One use per proof: the receipt describes the registry `latest` of the moment it was written, and
- * the next publish is a claim about a newer one. Consuming it here is what makes that true.
- */
-export function resolveUpgradeReuse(options: {
-  /** The registry read. A read that fails is not a proof, and must never fail a publish. */
-  readonly readLatest: () => string;
-  readonly repo: string;
-  readonly sha: string;
-}): IUpgradeProofReceipt | undefined {
-  let latest: string;
-  try {
-    latest = options.readLatest();
-  } catch {
-    return undefined;
-  }
-  const receipt = readUpgradeProofReceipt(options.repo, options.sha, latest);
-  if (receipt !== undefined) clearUpgradeProofReceipt(options.repo);
-  return receipt;
-}
-
-/** The registry `latest` of the runtime's core package: what an upgrade proof starts from. */
-export function registryLatest(repo: string): string {
-  return execFileSync("npm", ["view", `${CORE}@latest`, "version"], {
-    cwd: repo,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 30_000,
-  }).trim();
-}
-
-/**
- * Prove the upgrade and record it, in that order.
- *
- * The receipt is dropped first, so a proof that goes red leaves nothing for `--upgrade-proved` to
- * reuse, and written only when every template came back green — against the registry `latest` the
- * proof actually started from.
- */
-export async function proveUpgradeAndRecord(options: {
-  readonly latest: string;
-  readonly log?: (line: string) => void;
-  readonly prove: () => Promise<readonly IRegistryInstallReport[]>;
-  readonly repo: string;
-  readonly sha: string;
-}): Promise<readonly IRegistryInstallReport[]> {
-  clearUpgradeProofReceipt(options.repo);
-  const reports = await options.prove();
-  if (reports.every((report) => report.exitCode === 0)) {
-    const file = writeUpgradeProofReceipt(options.repo, {
-      latest: options.latest,
-      sha: options.sha,
-    });
-    options.log?.(`Upgrade proof receipt: ${file}`);
-  }
-  return reports;
-}
-
-/**
- * Drop any older receipt before a proof-only run proves again: only the latest outcome for a commit
- * may stay on disk, so a proof that goes red after `latest` moved cannot leave yesterday's green
- * receipt behind for `--upgrade-proved` to reuse.
- */
-export function clearUpgradeProofReceipt(repo: string): void {
-  fs.rmSync(path.join(repo, UPGRADE_PROOF_RECEIPT), { force: true });
-}
-
-/** Record a green proof for `sha` against `latest`, and answer the file it wrote. */
-export function writeUpgradeProofReceipt(
-  repo: string,
-  proof: { readonly latest: string; readonly provedAt?: string; readonly sha: string },
-): string {
-  const file = path.join(repo, UPGRADE_PROOF_RECEIPT);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(
-    file,
-    `${JSON.stringify({ latest: proof.latest, provedAt: proof.provedAt ?? new Date().toISOString(), schemaVersion: 1, sha: proof.sha }, null, 2)}\n`,
-  );
-  return file;
+  return !scope.override && scope.publishable === scope.cohort;
 }
 
 /**
@@ -728,9 +600,6 @@ async function main(args: readonly string[]): Promise<void> {
   // upgrade proof is the last gate before the first upload: the 0.3.14 release (2026-11-12) went
   // public and only then failed this proof, burning the version.
   const proveUpgrade = argv.includes("--prove-upgrade");
-  // This invocation already proved it (PRD-896): `release:ship` proves before the tag, so the
-  // publish that follows must not run the same browser lanes a second time.
-  const upgradeProved = argv.includes("--upgrade-proved");
   if (publish && dryRun)
     throw new Error("TN_RELEASE_FLAGS_CONFLICT: --dry-run and --yes cannot be combined.");
   const lockOptions = lockPath === undefined ? {} : prebuiltFromLock(lockPath);
@@ -748,46 +617,17 @@ async function main(args: readonly string[]): Promise<void> {
         "--resume",
         "--override",
         "--prove-upgrade",
-        "--upgrade-proved",
       ].includes(arg),
   );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
   // A proof-only run reports a proof, so every flag that would make it prove nothing — or publish
   // beside it — refuses instead of printing a green line for work that did not happen.
   if (proveUpgrade) {
-    for (const other of [
-      "--yes",
-      "--dry-run",
-      "--prepare",
-      "--override",
-      "--resume",
-      "--upgrade-proved",
-    ])
+    for (const other of ["--yes", "--dry-run", "--prepare", "--override", "--resume"])
       if (argv.includes(other))
         throw new Error(
           `TN_RELEASE_FLAGS_CONFLICT: --prove-upgrade proves one whole candidate and publishes nothing, so it cannot be combined with ${other}.`,
         );
-  }
-  const headSha = (): string =>
-    execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
-  // `--upgrade-proved` is a claim about a proof this checkout recorded for HEAD, against a registry
-  // `latest` that has not moved since. Anything else proves here again: slower, never wrong, and it
-  // cannot turn red after the version is already public.
-  let reuseProof = false;
-  if (upgradeProved) {
-    // No usable receipt — none, another commit, a `latest` that moved, or a registry read that
-    // failed — means proving here: slower, never wrong, and never fatal after a public release.
-    const receipt = resolveUpgradeReuse({
-      readLatest: () => registryLatest(REPO),
-      repo: REPO,
-      sha: headSha(),
-    });
-    reuseProof = receipt !== undefined;
-    process.stdout.write(
-      receipt === undefined
-        ? "\nNo usable upgrade proof for HEAD: proving here.\n"
-        : `\nReusing the upgrade proof ${receipt.provedAt} recorded for ${receipt.sha} against ${receipt.latest}.\n`,
-    );
   }
   // A `--yes` release produces its prebuilt payload itself, so the preflight may acknowledge its
   // absence and the run finishes the job. A local run that publishes nothing has no payload to
@@ -919,20 +759,11 @@ async function main(args: readonly string[]): Promise<void> {
     const proving = upgradeProofApplies({
       cohort: packages.length,
       override,
-      proved: reuseProof,
       publishable: publishPackages.length,
     });
-    const upgrades = proving
-      ? proveUpgrade
-        ? await proveUpgradeAndRecord({
-            latest: registryLatest(REPO),
-            log: (line) => process.stdout.write(`${line}\n`),
-            prove: () => proveUpgradeFromLatest(packages, tarballs),
-            repo: REPO,
-            sha: headSha(),
-          })
-        : await proveUpgradeFromLatest(packages, tarballs)
-      : [];
+    // Proven here and again at the publish: the second run is the one that sees the real prebuilt
+    // release, and no flag lets a caller reach the first npm upload without that one.
+    const upgrades = proving ? await proveUpgradeFromLatest(packages, tarballs) : [];
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;
       process.stdout.write(`\nUpgrade proof — ${template} (registry latest -> candidate):\n`);
