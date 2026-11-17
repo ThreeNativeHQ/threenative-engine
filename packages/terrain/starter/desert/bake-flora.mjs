@@ -43,6 +43,27 @@ const ROSETTE = (count, length, width, fold, droop, angle, extra = {}) => ({
   ],
 });
 
+/**
+ * A grass tuft is judged on its blades, and Arbor's rows draw 11-18 flat straps that stop short of
+ * a point (`taper: 0.93`) and barely arch (`droop: 0.5`): at 0.4 m that is a wire star. The desert's
+ * three tufts patch the leaf row instead — twice the blades, thinner, `taper: 1` so each closes to a
+ * point, and enough droop and segments that the tips arch over instead of standing out straight.
+ */
+const GRASS = (blades, length, width, droop, splay) => ({
+  leaves: [
+    {
+      count: blades,
+      size: [length, width],
+      taper: 1,
+      segs: 6,
+      droop,
+      angle: [4, splay],
+      angleVar: 12,
+      sizeVar: 0.5,
+    },
+  ],
+});
+
 const CACTUS = {
   barkImage: join(assets, "saguaro-skin.png"),
   barkNormalImage: join(assets, "saguaro-skin-nor.png"),
@@ -83,9 +104,21 @@ const ROWS = [
     { 0: "" },
     { leafSize: 512, form: ROSETTE(36, 0.58, 0.03, 0, 0.12, [10, 56]) },
   ],
-  ["bunchgrass-a", "bunchgrass", 1, { 0: "" }, { leafSize: 512 }],
-  ["bunchgrass-b", "bunchgrass", 2, { 0: "" }, { leafSize: 512 }],
-  ["drygrass", "drygrass", 1, { 0: "" }, { leafSize: 512 }],
+  [
+    "bunchgrass-a",
+    "bunchgrass",
+    1,
+    { 0: "" },
+    { leafSize: 512, form: GRASS(34, 0.46, 0.012, 0.95, 62) },
+  ],
+  [
+    "bunchgrass-b",
+    "bunchgrass",
+    2,
+    { 0: "" },
+    { leafSize: 512, form: GRASS(30, 0.4, 0.011, 1.05, 58) },
+  ],
+  ["drygrass", "drygrass", 1, { 0: "" }, { leafSize: 512, form: GRASS(28, 0.42, 0.01, 1.15, 54) }],
   ["marigold", "marigold", 1, { 0: "" }, { leafSize: 512 }],
   ["branch", "branch", 1, { 0: "" }],
   ["branch-b", "branch", 2, { 0: "" }],
