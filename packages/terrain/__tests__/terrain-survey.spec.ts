@@ -44,8 +44,8 @@ async function gameProject(): Promise<string> {
     join(root, "node_modules", "@threenative", "assets"),
   );
   await symlink(
-    new URL("../../procedural-vegetation/", import.meta.url).pathname,
-    join(root, "node_modules", "@threenative", "procedural-vegetation"),
+    new URL("../../procedural-environment/", import.meta.url).pathname,
+    join(root, "node_modules", "@threenative", "procedural-environment"),
   );
   await writeFile(
     join(root, "threenative.config.ts"),

@@ -45,22 +45,25 @@ the renderer. Spread it first and override any field after it.
 
 | Path | What it decides |
 | --- | --- |
-| `bake.mjs` | The landform: survey, erosion, lake bed, creek, road and pad; the far ring and its massif; the art copied. |
+| `recipe.json` | The landform: survey, erosion, lake bed, creek, road and pad; its `world` row names the far ring and its massif, the ground layers and the art copied. |
+| `bake.mjs` | One `bakeKit` call that passes this kit's look (palette, ground maps, canopy) and prop policy. |
 | `biome.data.json` | Where the stands, understorey, rocks and ground cover grow (`bakeBiome`). |
 | `scene.ts` | `ForestScene` and `FOREST_GAME`: load, spawn, the player, the views and the frame facts it reports. |
 | `world/terrainAssets.ts` | Every art path the forest asks for. Replace the art by editing this table. |
 | `render/biomes.ts` | The forest's look row: sun, sky, haze, exposure, tints and ground cover. |
-| `render/ground/` | The ground material, the streamed tiles, ground cover and the far collar. |
+| `render/ground/` | The ground material, ground cover and the far collar; the streamed tiles and their collar morph come from `@threenative/terrain/starter`. |
 | `render/props/` | The prop pack (`pack.ts` names each species' scan and size), materials, wind and far trees. |
 | `render/sky/`, `render/water/` | The sky, atmosphere and post chain; the lake and creek surfaces. |
 
-`recipe.json`, `assets.json`, `surface.json` and `heightmap.r16` are the inputs the `terrain_generate`
-MCP tool cooks a new landform from. The forest bake does not read them.
+`assets.json` and `surface.json` are the inputs the `terrain_generate` MCP tool cooks a world.glb
+from, with `recipe.json` and `heightmap.r16`. The forest bake does not read those two.
 
 ## Changing it
 
-- **The landform:** edit the recipe chain in `bake.mjs`, then bake again.
+- **The landform:** edit `recipe.json`, then bake again.
 - **What grows where:** edit `biome.data.json`, then bake again.
 - **A model or map:** edit its path in `world/terrainAssets.ts` or `render/props/pack.ts`, add the
   file under `assets/terrain/forest/`, and reload.
 - **The look:** edit `render/biomes.ts` (the forest row), then reload.
+- **A new environment:** copy this kit under a new name and follow
+  `node_modules/@threenative/terrain/docs/authoring/new-environment.md`.

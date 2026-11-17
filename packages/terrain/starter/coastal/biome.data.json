@@ -13,7 +13,7 @@
     "seed": 466468,
     "attempts": 80000,
     "stoneRadius": 1.9,
-    "clearings": [[110, -35, 10], [185, 145, 10]],
+    "clearings": [[30, 100, 10], [80, 155, 10], [250, 600, 10]],
     "understorey": {
       "attempts": 14000,
       "litter": 1,
@@ -36,7 +36,18 @@
       "stands": true,
       "grassThreshold": 0.3,
       "standThreshold": 0.3,
-      "far": null
+      "far": {
+        "cell": 6,
+        "spacing": [6.5, 13],
+        "spacingAt": [150, 1500],
+        "slope": [36, 46],
+        "meadowSlope": [12, 24],
+        "reach": 2300,
+        "treelineJitter": 30,
+        "stand": [0.26, 0.4],
+        "seed": 466559,
+        "impostor": 110
+      }
     }
   ],
   "grass": [
@@ -116,7 +127,11 @@
   "water": [
     {
       "kind": "ocean",
-      "level": 1.5
+      "level": 0
+    },
+    {
+      "kind": "lake",
+      "radius": 150
     }
   ],
   "spawn": {

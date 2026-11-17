@@ -138,8 +138,8 @@ describe("terrain_generate catalog and cook cache", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       const ask = async (args: Record<string, unknown>) => {
         const started = performance.now();
@@ -783,8 +783,8 @@ describe("terrain_generate result", () => {
           join(project, "node_modules", "@threenative", "assets"),
         );
         await symlink(
-          new URL("../../procedural-vegetation/", import.meta.url).pathname,
-          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+          new URL("../../procedural-environment/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-environment"),
         );
         await writeFile(
           join(project, "threenative.config.ts"),
@@ -919,8 +919,8 @@ describe("terrain_generate cold GLB handoff", () => {
       join(project, "node_modules", "@threenative", "assets"),
     );
     await symlink(
-      new URL("../../procedural-vegetation/", import.meta.url).pathname,
-      join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      new URL("../../procedural-environment/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-environment"),
     );
     const start = performance.now();
     const child = spawn(
@@ -997,8 +997,8 @@ describe("every shipped kit cooks", () => {
           join(project, "node_modules", "@threenative", "assets"),
         );
         await symlink(
-          new URL("../../procedural-vegetation/", import.meta.url).pathname,
-          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+          new URL("../../procedural-environment/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-environment"),
         );
         await writeFile(
           join(project, "threenative.config.ts"),
@@ -1078,8 +1078,8 @@ describe("terrain_generate overrides", () => {
       join(project, "node_modules", "@threenative", "assets"),
     );
     await symlink(
-      new URL("../../procedural-vegetation/", import.meta.url).pathname,
-      join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      new URL("../../procedural-environment/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-environment"),
     );
     await writeFile(
       join(project, "threenative.config.ts"),
@@ -1189,8 +1189,8 @@ describe("terrain_generate biome cooks", () => {
       join(project, "node_modules", "@threenative", "assets"),
     );
     await symlink(
-      new URL("../../procedural-vegetation/", import.meta.url).pathname,
-      join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      new URL("../../procedural-environment/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-environment"),
     );
     await writeFile(
       join(project, "threenative.config.ts"),
@@ -1608,8 +1608,8 @@ describe("terrain_generate request words", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),
@@ -1681,8 +1681,8 @@ describe("every landform under every biome", () => {
           join(project, "node_modules", "@threenative", "assets"),
         );
         await symlink(
-          new URL("../../procedural-vegetation/", import.meta.url).pathname,
-          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+          new URL("../../procedural-environment/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-environment"),
         );
         await writeFile(
           join(project, "threenative.config.ts"),
@@ -1809,8 +1809,8 @@ describe("terrain_generate regions", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),
@@ -1930,8 +1930,8 @@ describe("terrain_biome_new", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       const retry = await askServer(project, "terrain_biome_new", {
         from: "forest",
@@ -1954,8 +1954,8 @@ describe("terrain_biome_new", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),

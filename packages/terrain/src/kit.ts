@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import { round } from "./core/math.js";
 import { assertDistFresh } from "./dist-fresh.js";
 import { starterAssetsDir } from "./kit-assets.js";
+import type { IKitWorldLook } from "./kit-world.js";
 import { growArborRows } from "./population/arbor-species.js";
 export { starterAssetsDir } from "./kit-assets.js";
+export type { IKitWorldLook, IKitWorldRecipe } from "./kit-world.js";
 import type { ITerrainState } from "./core/types.js";
 import {
   TerrainEvaluator,
@@ -55,6 +57,7 @@ interface IKitCookInput {
 
 export interface IBakeKitOptions {
   readonly sky: string;
+  readonly look?: undefined;
   /** Supplied by the kit; terrain does not depend on the optional asset cook. */
   readonly cookTerrainWorld?: (input: IKitCookInput) => Promise<{
     manifest: IWorldPackageManifest;
@@ -62,6 +65,14 @@ export interface IBakeKitOptions {
     worldGlb: Uint8Array;
     worldPackage?: ReturnType<typeof bakeWorldPackage>;
   }>;
+}
+
+/**
+ * A streamed world: `recipe.json`'s `world` row names what bakes beyond the terrain, and the kit's
+ * look and prop policy come from its own source. `--out` defaults to `assets/terrain/<name>`.
+ */
+export interface IBakeKitWorldOptions {
+  readonly look: IKitWorldLook;
 }
 
 /** `--key value` after the script; `--assets` and `--out` default as noted below. */
@@ -84,14 +95,13 @@ function flag(name: string, fallback: string) {
  */
 export async function bakeKit(
   url: string,
-  { sky, cookTerrainWorld }: IBakeKitOptions,
+  options: IBakeKitOptions | IBakeKitWorldOptions,
 ): Promise<void> {
   assertDistFresh();
   const here = dirname(fileURLToPath(url));
   const assetsDir = process.argv.includes("--assets")
     ? flag("assets", "")
     : await starterAssetsDir();
-  const outDir = flag("out", join(here, "world"));
 
   const recipe = JSON.parse(await readFile(join(here, "recipe.json"), "utf8"));
   // shortcut: starter heights use a 0.1 m lattice; revise decoding if their precision changes.
@@ -101,12 +111,31 @@ export async function bakeKit(
     const raw = await readFile(join(here, data.raw16));
     data.values = Array.from(decodeRAW16(raw, data).values, (value) => Math.round(value * 10) / 10);
   }
+  if (options.look !== undefined) {
+    if (typeof recipe.world?.name !== "string")
+      throw new Error("bake: a kit that passes `look` needs a `world` row in recipe.json");
+    // Loaded on use from its own bundle: the streamed bake needs `@threenative/core`, which a
+    // data-only kit lacks, and a static import would inline it into this entry.
+    const { bakeStreamedWorld } = (await import(
+      new URL("./kit-world.js", import.meta.url).href
+    )) as typeof import("./kit-world.js");
+    await bakeStreamedWorld({
+      kitDir: here,
+      assetsDir,
+      out: flag("out", resolve("assets/terrain", recipe.world.name)),
+      recipe,
+      look: options.look,
+    });
+    return;
+  }
+  const { sky, cookTerrainWorld } = options;
+  const outDir = flag("out", join(here, "world"));
   const assetTable = JSON.parse(await readFile(join(here, "assets.json"), "utf8")) as Record<
     string,
     KitAsset
   >;
   // A row `{ "arbor": "douglasfir@3" }` is an Arbor species baked here, from the game's own
-  // `@threenative/procedural-vegetation`; the row's other fields override the baked ones.
+  // `@threenative/procedural-environment`; the row's other fields override the baked ones.
   const arborScratch = await mkdtemp(join(tmpdir(), "tn-kit-arbor-"));
   await growArborRows(assetTable, here, arborScratch, assetsDir);
   const surface = JSON.parse(await readFile(join(here, "surface.json"), "utf8"));

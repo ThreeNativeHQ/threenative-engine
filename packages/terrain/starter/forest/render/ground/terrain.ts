@@ -7,7 +7,13 @@ import {
   loadTerrainSplat,
 } from "@threenative/core/world";
 import { waterlineRadius } from "@threenative/core/world";
-import { createSegmentIndex } from "@threenative/terrain";
+import { createSegmentIndex, paintCanopyCover } from "@threenative/terrain";
+import {
+  COLLAR_UNDER_TILE,
+  STREAM_TILE,
+  TILE_INSIDE_SQUARE,
+  collarMorph,
+} from "@threenative/terrain/starter";
 import {
   ClampToEdgeWrapping,
   DataTexture,
@@ -84,13 +90,11 @@ import {
   REFLECTED_LAYER,
   surfaceHeights,
 } from "../water/river.js";
+import { WORLD } from "../worldNames.js";
 import {
-  COLLAR_UNDER_TILE,
+  COLLAR_CURVE,
   type IPackedMassif,
-  STREAM_TILE,
-  TILE_INSIDE_SQUARE,
   collarColors,
-  collarMorph,
   createHorizonCollar,
   horizonSurroundings,
 } from "./horizon.js";
@@ -511,7 +515,7 @@ function microGrain(): Node<"vec3"> {
 }
 
 /** Crown radius in metres per unit of placement scale, for the trees that drop needle litter. */
-const CANOPY_CROWN: Readonly<Record<string, number>> = { spruce: 7, sapling: 2.5 };
+export const CANOPY_CROWN: Readonly<Record<string, number>> = { spruce: 7, sapling: 2.5 };
 
 /**
  * Paint each placed tree's crown into the terrain's `canopy` vertex attribute, so the ground under a
@@ -529,29 +533,7 @@ export function paintCanopy(
 ): void {
   const cover = mesh.geometry.getAttribute("canopy");
   if (!(cover instanceof Float32BufferAttribute) || data.resolution < 2) return;
-  const values = cover.array as Float32Array;
-  const spacing = data.size / (data.resolution - 1);
-  const half = data.size / 2;
-  for (const placement of placements) {
-    const crown = CANOPY_CROWN[placement.asset];
-    if (crown === undefined) continue;
-    const radius = Math.max(spacing, crown * placement.scale);
-    const x = placement.position[0] ?? 0;
-    const z = placement.position[2] ?? 0;
-    const fromColumn = Math.max(0, Math.ceil((x - radius + half) / spacing));
-    const toColumn = Math.min(data.resolution - 1, Math.floor((x + radius + half) / spacing));
-    const fromRow = Math.max(0, Math.ceil((z - radius + half) / spacing));
-    const toRow = Math.min(data.resolution - 1, Math.floor((z + radius + half) / spacing));
-    for (let row = fromRow; row <= toRow; row++)
-      for (let column = fromColumn; column <= toColumn; column++) {
-        const dx = column * spacing - half - x;
-        const dz = row * spacing - half - z;
-        const reach = 1 - (dx * dx + dz * dz) / (radius * radius);
-        if (reach <= 0) continue;
-        const index = row * data.resolution + column;
-        values[index] = Math.max(values[index] as number, reach);
-      }
-  }
+  paintCanopyCover(cover.array as Float32Array, data, placements, CANOPY_CROWN);
   cover.needsUpdate = true;
 }
 
@@ -914,7 +896,7 @@ export async function createGroundMaterial(
     }
     return (await loadTerrainSplat({
       assets,
-      url: `world/${biome?.world ?? "forest"}.world.json`,
+      url: `world/${biome?.world ?? WORLD}.world.json`,
       layerSample: ({ layer: descriptor, diffuse, normal: normalMap }) => {
         const key = descriptor.id as LayerKey;
         maps[key] ??= { diffuse, normal: normalMap };
@@ -1376,7 +1358,7 @@ export function createTerrain(
   mesh.layers.enable(REFLECTED_LAYER);
   mesh.receiveShadow = true;
   mesh.castShadow = biome?.terrainCastsShadow ?? false;
-  const collar = createHorizonCollar(data, "forest");
+  const collar = createHorizonCollar(data, WORLD);
   const horizonGeometry = collar.geometry;
   horizonGeometry.setAttribute("color", new Float32BufferAttribute(collarColors(collar, data), 3));
   horizonGeometry.computeVertexNormals();
@@ -1477,7 +1459,7 @@ export function createTerrain(
           far.maskNode = fromCentre.greaterThanEqual(stream.half.sub(COLLAR_UNDER_TILE));
           horizon.material = far;
           // The outermost streamed tile slides onto the collar's drawn height (PRD-790 box 2).
-          tile.positionNode = collarMorph(collar, stream, STREAM_TILE);
+          tile.positionNode = collarMorph(collar, COLLAR_CURVE, stream, STREAM_TILE);
           tile.maskNode = fromCentre
             .lessThan(stream.half)
             // The skirt each tile hangs on the square's edge draws too, under the square's cracks.

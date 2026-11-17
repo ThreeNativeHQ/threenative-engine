@@ -72,11 +72,67 @@
               "mask": {
                 "type": "height",
                 "min": -1000,
-                "max": 6,
-                "fade": 4
+                "max": 3.5,
+                "fade": 1.5
+              }
+            },
+            {
+              "material": "rock",
+              "mask": {
+                "type": "and",
+                "masks": [
+                  {
+                    "type": "height",
+                    "min": -1000,
+                    "max": 9,
+                    "fade": 2
+                  },
+                  {
+                    "type": "slope",
+                    "min": 8,
+                    "max": 90,
+                    "fade": 4
+                  }
+                ]
               }
             }
           ]
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "lagoon-bed",
+        "type": "flatten",
+        "params": {
+          "at": [
+            110,
+            -60
+          ],
+          "radius": 150,
+          "height": 1,
+          "falloff": 0.1
+        },
+        "mask": {
+          "type": "height",
+          "min": 2.0,
+          "max": 2.25,
+          "fade": 0.1
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "lagoon",
+        "type": "water",
+        "params": {
+          "kind": "lake",
+          "at": [
+            110,
+            -60
+          ],
+          "radius": 150,
+          "level": 2.25
         }
       },
       {
@@ -86,28 +142,64 @@
         "type": "water",
         "params": {
           "kind": "ocean",
-          "level": 1.5,
+          "level": 0,
           "radius": 512
-        }
-      },
-      {
-        "enabled": true,
-        "opacity": 1,
-        "id": "stand",
-        "type": "scatter",
-        "params": {
-          "asset": "fir",
-          "count": 80,
-          "minDistance": 8,
-          "minHeight": 4,
-          "maxSlope": 35,
-          "avoidWater": true,
-          "scale": [
-            0.9,
-            1.4
-          ]
         }
       }
     ]
+  },
+  "world": {
+    "name": "coastal",
+    "ground": {
+      "base": "grass",
+      "layers": [
+        "dirt",
+        "moss",
+        "sand",
+        "rock",
+        "snow"
+      ],
+      "roughness": 0.95
+    },
+    "art": [
+      "boulder_01",
+      "rock_face",
+      "rock_boulder_dry",
+      "rocks",
+      "river_small_rocks",
+      "cliff_side",
+      "snow_02",
+      "grass_medium",
+      "leafy_grass",
+      "lichen_rock",
+      "mossy_rock",
+      "shrub_02",
+      "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
+      "mannequin-swim.glb",
+      "bark_brown_02",
+      "celandine_01",
+      "dandelion_01",
+      "dead_tree_trunk",
+      "dry_branches_medium_01",
+      "fern_02",
+      "forest_ground_04",
+      "moss_01",
+      "nettle_plant",
+      "periwinkle_plant",
+      "sand_01",
+      "shrub_04",
+      "tree_stump_01",
+      "weed_plant_02",
+      "alpine_flora",
+      "needle-atlas.png",
+      "needle-surface.png",
+      "hdri/kloofendal_48d_partly_cloudy_2k.hdr"
+    ],
+    "farRing": {
+      "survey": "coastal-horizon",
+      "datum": 0,
+      "seed": 1,
+      "layers": []
+    }
   }
 }

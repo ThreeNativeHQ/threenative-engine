@@ -1,7 +1,8 @@
 import type { IAssetLoader } from "@threenative/core";
+import { WORLD } from "./worldNames.js";
 
-/** Where `bake.mjs --out assets/terrain/forest` writes the forest inside the game's asset tree. */
-export const FOREST_ROOT = "terrain/forest/";
+/** Where `bake.mjs` (default `--out assets/terrain/<WORLD>`) writes the world in the game's asset tree. */
+export const FOREST_ROOT = `terrain/${WORLD}/`;
 
 /**
  * The game's asset loader, with every relative path read under {@link FOREST_ROOT}: the forest's

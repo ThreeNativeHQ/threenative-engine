@@ -11,7 +11,7 @@ import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { bakeVegetation } from "../packages/procedural-vegetation/src/index.js";
+import { bakeVegetation } from "../packages/procedural-environment/src/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const assets = path.resolve(here, "../packages/create-threenative/template-assets/assets");

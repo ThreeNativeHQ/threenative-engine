@@ -169,7 +169,7 @@ export function syncTemplatePins(versions: ReadonlyMap<string, string>): number 
 function syncDependencyRange(file: string, dependency: string, version: string): boolean {
   const source = readFileSync(file, "utf8");
   // Keep the peer's own ceiling: the shipped engine packages read `<0.4.0`, while a 0.1 cohort
-  // package such as `@threenative/procedural-vegetation` reads `<0.2.0`. Only the floor moves.
+  // package such as `@threenative/procedural-environment` reads `<0.2.0`. Only the floor moves.
   const pattern = new RegExp(
     `("${escapeRegExp(dependency)}"\\s*:\\s*")>=\\d+\\.\\d+\\.\\d+ <([^"]+)("\\s*,?)`,
     "u",
@@ -231,7 +231,7 @@ export function syncPeerRanges(repo: string, versions: ReadonlyMap<string, strin
     if (syncDependencyRange(file, dependency, version)) changed += 1;
   }
   // A terrain peer is shipped (@threenative/core, @threenative/physics,
-  // @threenative/procedural-vegetation) or external, such as three and vite; sync either kind only
+  // @threenative/procedural-environment) or external, such as three and vite; sync either kind only
   // when the release cohort names it.
   const terrain = path.join(repo, "packages/terrain/package.json");
   const { peerDependencies = {} } = JSON.parse(readFileSync(terrain, "utf8")) as {

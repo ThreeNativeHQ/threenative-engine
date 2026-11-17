@@ -72,38 +72,69 @@ const PHASE_1: Record<
     manifest: "df9936f9e3a31532426972a19c47c168262efc6117040d5a577863500307dd2c",
     placements: "d108ef0946632404625e7cd82ec56f0cf22641140d0f627ce782b27476b47c0e",
   },
+  // PRD-892 Phase 2: the coast stands at real sea level (0 m, not 1.5 m) and the survey's flattened
+  // lagoon behind Sand Beach is a lake over a lowered bed, so its heights and the placements that
+  // follow them moved, and the camera clearings follow the coastal poses; the container digests below
+  // stay the example's own.
   coastal: {
     counts: {
-      boulder: 235,
-      bush: 1225,
-      fern: 7466,
-      grass: 95231,
-      litter: 2097,
-      mountain: 75,
-      poppy: 440,
-      riverrock: 170,
-      sapling: 5536,
-      scrub: 28517,
+      boulder: 263,
+      bush: 1293,
+      fern: 7577,
+      grass: 154559,
+      litter: 2303,
+      mountain: 60,
+      poppy: 1856,
+      riverrock: 146,
+      sapling: 5549,
+      scrub: 46207,
       spruce: 3200,
     },
-    heights: "0c374becf41357b1db5526209ff7acbeb44a3a047e67cb88a0515a7c0660688c",
+    heights: "a4a459cc656744b7db734a022f9fbf26bf156701c12647e6e59bc589b001c5d1",
     manifest: "5bb08aeccc829c5dd5fc36954cfcd883f53b0b7c83b06233f9fdec7c833528a8",
     placements: "aeb61fac3fd8fe3a792208d4fd0849dcd9289ef4f1c0b11bdd788993c54ef386",
   },
   alpine: {
-    counts: { boulder: 1082, mountain: 231, scree: 2285 },
-    heights: "f2ca8381d0b7fc707a8225b2c078af699ee723ef1b681fb87274ea95899f313f",
+    // PRD-892: the alpine pasture's stands lie on the wood's own floor — the understorey row grows
+    // needle litter, deadfall, fern, shrubs and alpine flowers under and around them.
+    counts: {
+      boulder: 724,
+      bush: 9035,
+      deadfall: 780,
+      fern: 12989,
+      grass: 103243,
+      litter: 42529,
+      mountain: 128,
+      poppy: 5337,
+      sapling: 1007,
+      scrub: 31044,
+      spruce: 599,
+    },
+    heights: "89e13826c45233315109544acaf302266dbe1c47acfe70b9c1281b4dd2f1fcc2",
     manifest: "927b5daf593923d63bb216968baf66d2a735269801915c6395aa84e60c1b4f86",
     placements: "3352e12dde3a034926b9ca271786a665084264458802f11122179b8d83e68503",
   },
   desert: {
-    counts: { boulder: 248, grass: 2506, reveal: 170, scrub: 393, volcanic: 237 },
-    heights: "aa401a0bd80952f20f20e3f2fe5f7b81820d4b2ce2b1b6bc4116620b28188f02",
+    // PRD-892 Phase 2: the desert grows Utah juniper (the ordered stream's sapling row), a denser
+    // scrub and grass cover, and spawns on the sand flat at [140, 120] south-east of the butte.
+    counts: {
+      boulder: 248,
+      bush: 27,
+      grass: 6559,
+      reveal: 158,
+      sapling: 161,
+      scrub: 909,
+      volcanic: 229,
+    },
+    heights: "8f8109a1e234e65182c3af496dd7c15b65eb05069a0a5e35af099d17b78927c5",
     manifest: "8d979f26cf4a02dd6c46d2a5c67e7aae7c50cab0920c1c9673039b7d43472872",
     placements: "64ce8648b98a1f8248b60dd9b90d841b979fa10a7492657838a2fb3185793201",
   },
   tundra: {
-    counts: { boulder: 2028, bush: 588, grass: 30490, riverrock: 612, sapling: 55, scrub: 6680 },
+    // PRD-892 Phase 2: the tundra's spawn and clearing moved south of the stream to [150, 205], and its
+    // turf, fellfield, lichen, rock and snow rules replaced the moss ground, and its turf tufts stand
+    // 1.1 m apart (was 1.8) and 140 krummholz stand at its low edge (was 55), so every count moves.
+    counts: { boulder: 2098, bush: 1247, grass: 61160, riverrock: 612, sapling: 140, scrub: 13415 },
     heights: "dc182307fa2789f7297d53e96c77720b7fac97119489f725d8ebbb44e1d60533",
     manifest: "72c72e6f86b2a800aeae246b4800390b6c57fe6b95dc87510193549f9106c943",
     placements: "2c0123035d9a528128da5053880256b56c9a6003002a25441394dcd4631d4867",
@@ -122,10 +153,10 @@ const PHASE_1: Record<
  */
 const PHASE_1_CANONICAL: Record<World, string> = {
   forest: "f9ec1259f6e14aa51fc24f86d40df980c1e856a3335fa30236dc16ab8d0694c1",
-  coastal: "5ca73a9acf36f84c536e70b5fe86fd51f88554d871a453eb024d5dc34d304d4e",
-  alpine: "10c755d4856a51fabe05f38fe59d9550bc5236edd4a1cb11e1f7f6ced1c9e7f8",
-  desert: "fa52459ddcda51b336764219ce033add8ccd90f3fd299cd95d43878cf38813b3",
-  tundra: "16c97133058d9ab0b9585a62befbf859313c55d6f6d1dc13d55033e5fc76a04f",
+  coastal: "939d66b7e98cb7b76c10824c3507db3979c70597d9d32b9bc67724751cb1b81b",
+  alpine: "187ca9120d1697fb358f7bc702690dec77c3f05231002fbdfd115bc2ff14b7fc",
+  desert: "9fbc0ac9b10432c407ee2d433643fa5335751ab6b7c5b71caa4fe94a3ad9f76f",
+  tundra: "5159ea075b0205a0d98415368586572c760957371ed87f1155cedd7e2c1af905",
 };
 
 /** Which Phase 1 line the ordered bake reproduces today, and which it cannot. */

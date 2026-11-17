@@ -23,7 +23,7 @@ export {
   type IRequestSource,
 } from "../request/generate-request.js";
 
-const ARBOR_SPECIES_NOTE = `A species named \`arbor:<preset>[@seed]\` (for example arbor:oak@7) is a procedural Arbor tree the cook bakes and scatters; needs npm i -D @threenative/procedural-vegetation; set the row's far.impostor beyond 190 m, past the tree's last LOD. Presets: ${ARBOR_TREE_IDS.join(", ")}.`;
+const ARBOR_SPECIES_NOTE = `A species named \`arbor:<preset>[@seed]\` (for example arbor:oak@7) is a procedural Arbor tree the cook bakes and scatters; needs npm i -D @threenative/procedural-environment; set the row's far.impostor beyond 190 m, past the tree's last LOD. Presets: ${ARBOR_TREE_IDS.join(", ")}.`;
 
 /** What naming a region decides, stated once for both tool texts. */
 const ECOREGION_NOTE = `A region word (${ECOREGION_ROWS.map((row) => row.words[0]).join(", ")}) cooks that region's own world: the row's real survey as the ground, its plant community as the canopy (several species, each baked at more than one seed), and the starter's own surface, understorey and water, reported as \`decided.region\`.`;

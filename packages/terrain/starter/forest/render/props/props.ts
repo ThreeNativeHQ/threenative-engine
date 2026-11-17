@@ -5,16 +5,24 @@
 //
 //   - The shapes, their variants, their materials and their placement rule are all this file's. They
 //     are the picture, and the picture is the game's (AGENTS rule 3).
-//   - preparePose grounds each pose on plain math; propWorld.ts delegates instancing and LOD to WorldCells.
-import { type IBaseRing, baseRingGap, footprintGap, staticLowestY } from "@threenative/core/world";
+//   - The pose's own steps (snap, burial, footprint, base ring) are the package's `prop-pose`; this
+//     file supplies the forest's `GROUND_RULES` rows and `propWorld.ts` delegates LOD to WorldCells.
+import { staticLowestY } from "@threenative/core/world";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
+import {
+  type IPropGroundRules,
+  type IPropInstance,
+  type IPropPoseOverride,
+  type PropGroundQuery,
+  preparePose as preparePoseIn,
+  preparePropTransform as preparePropTransformIn,
+  propKey as propKeyIn,
+} from "@threenative/terrain/starter";
 import {
   type BufferGeometry,
   DoubleSide,
   type Material,
-  Matrix4,
   MeshStandardMaterial,
-  Quaternion,
   Vector3,
 } from "three";
 import { WILDFLOWER, boulder, fernClump, grassClump, poppyCluster } from "../ground/cover.js";
@@ -463,271 +471,79 @@ export const PROP_ASSETS: Record<string, number> = Object.fromEntries(
   Object.entries(PROP_COUNTS).filter(([name]) => name !== "seed"),
 );
 
-export type PropGroundQuery = (
-  placement: IPlacement,
-  position: [number, number, number],
-) => { height: number | null; offset: number };
-export interface IPropInstance {
-  material: Material;
-  onTransform?: (transform: IPlacementOverride | undefined) => void;
-  placement: IPlacement;
-  pose: Matrix4;
-  geometry: BufferGeometry;
-  grounding: boolean;
-  clearance: number | null;
-  cragBaseClearance?: number;
-  cragRingSamples?: number;
-}
 /** Exact lowest world Y of a static geometry under `matrix`: core `staticLowestY`. */
 export const lowestY = staticLowestY;
 
 /**
- * The quaternion a placement's own scatter numbers describe: the normal tilt, then the yaw.
- *
- * The bake writes it into the record, and the load path hands it back to `preparePose` as the pose
- * override, so one rule composes the rotation and the record carries the result.
+ * The forest's own ground rules: which assets bury, which flat footprints sink, which crag rims are
+ * measured. The pose steps are the package's; these rows are the picture's.
  */
-export function authoredQuaternion(
-  placement: IPlacement,
-): readonly [number, number, number, number] {
-  const up = new Vector3(0, 1, 0);
-  const quaternion = new Quaternion();
-  if (placement.alignToNormal)
-    quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
-  quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
-  return quaternion.toArray();
-}
+export const GROUND_RULES: IPropGroundRules = {
+  burial: (placement) => {
+    if (
+      ![
+        "boulder",
+        "riverrock",
+        "pebble",
+        "scree",
+        "cliff",
+        "mountain",
+        "volcanic",
+        "reveal",
+      ].includes(placement.asset)
+    )
+      return undefined;
+    const crag = ["mountain", "volcanic", "reveal"].includes(placement.asset);
+    return {
+      share: placement.id.endsWith(":outcrop")
+        ? 0.35
+        : placement.asset === "mountain"
+          ? 0.82
+          : crag
+            ? 0.55
+            : BOULDER_BURIAL,
+      crag,
+    };
+  },
+  footprint: (placement) => ["boulder", "riverrock", "scree"].includes(placement.asset),
+  footprintThreshold: 0.08,
+  baseRing: (placement) => placement.asset === "mountain" && !placement.id.endsWith(":outcrop"),
+  baseRingClearance: 0.5,
+};
 
-/**
- * A placement as a package record stores it: the authored pose becomes its transform, at one scale.
- *
- * A record holds position, quaternion and one uniform scale, so an edited placement's own transform
- * is folded down to the scale its record carries. The shape that scale removed is `propKey`'s ratio,
- * and the drawable model that ratio names carries it instead.
- */
-export function withAuthoredPose(placement: IPlacement): IPlacement {
-  const scale = placement.transform?.scale ?? [placement.scale, placement.scale, placement.scale];
-  const scalar = scale[0] === 0 ? 1 : scale[0];
-  return {
-    ...placement,
-    transform: {
-      grounding: placement.transform?.grounding ?? true,
-      position: placement.transform?.position ?? placement.position,
-      quaternion: (placement.transform?.quaternion ?? authoredQuaternion(placement)) as [
-        number,
-        number,
-        number,
-        number,
-      ],
-      scale: [scalar, scalar, scalar],
-    },
-  };
-}
-
-/**
- * The model a record draws: its asset, its variant, and the shape a non-uniform edit gave it.
- *
- * `WorldCells` names the model through the run the record sits in, so this key is what the container
- * stores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement
- * the editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays
- * one uniform scale and the picture keeps the edit.
- */
-export function propKey(placement: IPlacement): string {
-  const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
-  const scale = placement.transform?.scale ?? [placement.scale, placement.scale, placement.scale];
-  const scalar = scale[0] === 0 ? 1 : scale[0];
-  const ratio = scale.map((value) => value / scalar);
-  const off = ratio.reduce((sum, value) => sum + (value - 1) ** 2, 0);
-  return off < 1e-16 ? variant : `${variant}@${ratio.join(",")}`;
-}
-
-/** The shape `propKey` wrote, so the loader scales the model the record's one scale cannot carry. */
-export function propRatio(key: string): [number, number, number] {
-  const at = key.indexOf("@");
-  if (at < 0) return [1, 1, 1];
-  const ratio = key
-    .slice(at + 1)
-    .split(",")
-    .map(Number);
-  // A negative component is a mirror, which the renderer composes like any other shape.
-  if (ratio.length !== 3 || ratio.some((value) => !Number.isFinite(value) || value === 0))
-    throw new Error(`Prop key '${key}' does not name a usable shape.`);
-  return [ratio[0] as number, ratio[1] as number, ratio[2] as number];
-}
-
-/**
- * The pose a baked package record carries: the quaternion the bake authored for the placement.
- *
- * A world-v1 record holds position, quaternion and scale, and nothing about `alignToNormal` or the
- * scatter yaw, so the load path hands the record's quaternion here. It replaces the rotation the
- * placement would compose, and every step below it — the ground snap, the boulder burial, the
- * four-footprint sink and the mountain base ring — still runs, because the record is a pose and not
- * an override of the pose.
- */
-export interface IPropPoseOverride {
-  readonly quaternion: readonly [number, number, number, number];
-}
-
+/** The package's pose, grounded by this world's rules and the placement's variant. */
 export function preparePose(
   geometry: BufferGeometry,
-  _material: Material,
+  material: Material,
   placement: IPlacement,
   transform: IPlacementOverride | undefined,
   groundAt: PropGroundQuery,
   pose?: IPropPoseOverride,
 ) {
-  // Plain math, not a Mesh: on the owned engine every Object3D is an engine object, and a detached
-  // Mesh per placement cost 30 s of the forest's load (218,816 placements, 0.14 ms each).
-  const model = {
-    position: new Vector3(),
-    quaternion: new Quaternion(),
-    scale: new Vector3(1, 1, 1),
-    matrix: new Matrix4(),
-    updateMatrix() {
-      this.matrix.compose(this.position, this.quaternion, this.scale);
-    },
-  };
-  model.position.fromArray(transform?.position ?? placement.position);
-  if (transform) {
-    model.quaternion.fromArray(transform.quaternion);
-    model.scale.fromArray(transform.scale);
-  } else {
-    model.quaternion.fromArray(pose?.quaternion ?? authoredQuaternion(placement));
-    model.scale.setScalar(placement.scale);
-  }
-  const grounding = transform?.grounding ?? true;
-  const ground = groundAt(placement, model.position.toArray());
-  // GroundSnap's rule: the lowest posed point meets the surface, then the authored offset applies.
-  let clearance: number | null = null;
-  if (ground.height === null) {
-    if (grounding)
-      throw new Error(
-        `Missing terrain ground for '${placement.id}' at ${JSON.stringify(model.position.toArray())}`,
-      );
-  } else {
-    model.updateMatrix();
-    clearance = lowestY(geometry, model.matrix) - ground.height;
-    if (grounding) {
-      model.position.y += ground.offset - clearance;
-      clearance = ground.offset;
-    }
-  }
-  // A boulder is a rock that is part buried: GroundSnap puts its lowest point on the surface, and on a
-  // slope the downhill side then hangs in the air. Sinking it by a share of its own height closes that.
-  if (
-    grounding &&
-    !transform &&
-    ["boulder", "riverrock", "pebble", "scree", "cliff", "mountain", "volcanic", "reveal"].includes(
-      placement.asset,
-    ) &&
-    ground.height !== null
-  ) {
-    geometry.computeBoundingBox();
-    const box = geometry.boundingBox;
-    if (box) {
-      model.updateMatrix();
-      const crag = ["mountain", "volcanic", "reveal"].includes(placement.asset);
-      const height = crag
-        ? box.clone().applyMatrix4(model.matrix).getSize(new Vector3()).y
-        : (box.max.y - box.min.y) * model.scale.y;
-      model.position.y -=
-        (placement.id.endsWith(":outcrop")
-          ? 0.35
-          : placement.asset === "mountain"
-            ? 0.82
-            : crag
-              ? 0.55
-              : BOULDER_BURIAL) * height;
-    }
-  }
-  // Bury the flat footprint on the downhill side too; a centre-only snap leaves a visible lip.
-  if (grounding && !transform && ["boulder", "riverrock", "scree"].includes(placement.asset)) {
-    model.updateMatrix();
-    let gap: number;
-    try {
-      gap = footprintGap(
-        geometry,
-        model.matrix,
-        (x, z) => groundAt(placement, [x, 0, z]).height,
-        0.08,
-      );
-    } catch (error) {
-      throw new Error(`Missing ground under rock '${placement.id}'`, { cause: error });
-    }
-    model.position.y -= gap;
-  }
-  let cragBaseClearance: number | undefined;
-  let cragRingSamples: number | undefined;
-  if (
-    grounding &&
-    !transform &&
-    placement.asset === "mountain" &&
-    !placement.id.endsWith(":outcrop")
-  ) {
-    // Lowest rim vertex per angular sector: a narrow buried stem must not support a wide scan
-    // collar hanging above the downhill ground.
-    if (!geometry.boundingBox) throw new Error(`Crag '${placement.id}' has no bounds`);
-    model.updateMatrix();
-    let ring: IBaseRing;
-    try {
-      ring = baseRingGap(geometry, model.matrix, (x, z) => groundAt(placement, [x, 0, z]).height);
-    } catch (error) {
-      throw new Error(`Missing ground under crag ring '${placement.id}'`, { cause: error });
-    }
-    const highestGap = ring.gap;
-    cragRingSamples = ring.samples;
-    if (cragRingSamples < 4) throw new Error(`Incomplete base ring for crag '${placement.id}'`);
-    const sink = Math.max(0, highestGap + 0.5);
-    model.position.y -= sink;
-    cragBaseClearance = highestGap - sink;
-  }
-  model.updateMatrix();
-  if (!new Float32Array(model.matrix.elements).every(Number.isFinite))
-    throw new Error(`Transform exceeds the renderer range for '${placement.id}'`);
-  return {
-    matrix: model.matrix.clone(),
-    grounding,
-    clearance,
-    cragBaseClearance,
-    cragRingSamples,
-  };
+  return preparePoseIn(geometry, material, placement, transform, groundAt, GROUND_RULES, pose);
 }
+
 export function preparePropTransform(
   instance: IPropInstance,
   transform: IPlacementOverride | undefined,
   groundAt: PropGroundQuery,
 ) {
-  return {
-    ...preparePose(instance.geometry, instance.material, instance.placement, transform, groundAt),
-    transform,
-  };
+  return preparePropTransformIn(instance, transform, groundAt, GROUND_RULES);
 }
-export function writePropTransform(
-  instance: IPropInstance,
-  prepared: ReturnType<typeof preparePropTransform>,
-): void {
-  const changed =
-    !instance.pose.equals(prepared.matrix) || instance.grounding !== prepared.grounding;
-  instance.pose.copy(prepared.matrix);
-  instance.grounding = prepared.grounding;
-  instance.clearance = prepared.clearance;
-  instance.cragBaseClearance = prepared.cragBaseClearance;
-  instance.cragRingSamples = prepared.cragRingSamples;
-  if (changed) instance.onTransform?.(prepared.transform);
+
+/** The model a record draws, with the variant this kit's `variantFor` picks for it. */
+export function propKey(placement: IPlacement): string {
+  return propKeyIn(placement, variantFor(placement, placement.asset));
 }
-export function readPropTransform(instance: IPropInstance): IPlacementOverride {
-  const matrix = instance.pose;
-  const position = new Vector3();
-  const quaternion = new Quaternion();
-  const scale = new Vector3();
-  matrix.decompose(position, quaternion, scale);
-  return {
-    position: position.toArray(),
-    quaternion: quaternion.normalize().toArray(),
-    scale: scale.toArray(),
-    grounding: instance.grounding,
-  };
-}
+
+export {
+  authoredQuaternion,
+  propRatio,
+  readPropTransform,
+  withAuthoredPose,
+  writePropTransform,
+} from "@threenative/terrain/starter";
+export type { IPropInstance, IPropPoseOverride, PropGroundQuery };
 
 /**
  * Assign every placement a variant, deterministically from its own id.

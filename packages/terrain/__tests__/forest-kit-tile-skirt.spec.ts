@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { TILE_INSIDE_SQUARE } from "../starter/forest/render/ground/horizon.js";
+import { TILE_INSIDE_SQUARE } from "../src/starter.js";
 
 /**
  * PRD-790: the forest kit's streamed tiles keep the skirt each one hangs on the square's edge. A mask
