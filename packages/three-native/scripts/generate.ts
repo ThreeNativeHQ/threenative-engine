@@ -410,6 +410,10 @@ TN_EXPORT tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t *dia
  * the state on it, while the count is above zero. One call for a batch, so a safe point costs one
  * crossing. */
 TN_EXPORT void tn_object_engine_references(const tn_handle_t *objects, uint32_t count, uint32_t *out_counts);
+/* The low 32 bits of a counter that moves whenever the engine may have started or stopped holding an
+ * object (a hierarchy change, a slot assignment, a release). While it stands still, no count above
+ * changed, so a language that polled them can skip its settled wrappers (PRD-898 J5). */
+TN_EXPORT uint32_t tn_ownership_epoch(void);
 
 /* A value crossing the generic binding calls. One flat struct, no union: only the fields its
  * kind names are read. Strings and number arrays a call returns are owned by the context and stay

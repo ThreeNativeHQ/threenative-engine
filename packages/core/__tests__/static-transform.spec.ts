@@ -467,8 +467,10 @@ describe("frozen roots on the owned engine (PRD-898 J1)", () => {
     const watch = vi.fn();
     let moved: number[] = [];
     const changed = vi.fn(() => moved);
+    const sets = vi.fn();
     proto.__tnStaticWatch = watch;
     proto.__tnStaticChanged = changed;
+    proto.__tnStaticRoots = sets;
     try {
       const scene = new Scene();
       const roots = [0, 1, 2].map((index) => {
@@ -494,7 +496,9 @@ describe("frozen roots on the owned engine (PRD-898 J1)", () => {
       refreshStaticTransforms();
       refreshStaticTransforms();
       expect(changed).toHaveBeenCalledTimes(2);
-      expect(changed.mock.calls[0]).toEqual([roots]);
+      expect(changed.mock.calls[0]).toEqual([]);
+      expect(sets).toHaveBeenCalledTimes(1); // the frozen set crossed once, not every frame
+      expect(sets.mock.calls[0]).toEqual([roots]);
       expect(reads).toBe(0);
       expect(staticTransformCensus().rearmed).toBe(0);
 
@@ -507,6 +511,7 @@ describe("frozen roots on the owned engine (PRD-898 J1)", () => {
     } finally {
       Reflect.deleteProperty(proto, "__tnStaticWatch");
       Reflect.deleteProperty(proto, "__tnStaticChanged");
+      Reflect.deleteProperty(proto, "__tnStaticRoots");
     }
   });
 });

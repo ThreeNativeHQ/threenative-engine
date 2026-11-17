@@ -2007,13 +2007,16 @@ if (runtime.tsl !== undefined) {
   root.position.y = 2;
   foot.position.x = 1;
   head.position.y = 1.5;
-  const hook = (root as unknown as { __tnSphereBounds?: unknown }).__tnSphereBounds;
-  check(typeof hook === "function", "Object3D carries the engine's __tnSphereBounds");
-  const box = (hook as (objects: unknown[], radii: number[]) => number[]).call(
-    root,
-    [foot, head],
-    [0.25, 0.5],
+  const hooks = root as unknown as {
+    __tnSphereBoundsAttach?: (objects: unknown[], radii: number[]) => void;
+    __tnSphereBounds?: () => number[];
+  };
+  check(
+    typeof hooks.__tnSphereBounds === "function",
+    "Object3D carries the engine's __tnSphereBounds",
   );
+  hooks.__tnSphereBoundsAttach?.call(root, [foot, head], [0.25, 0.5]);
+  const box = hooks.__tnSphereBounds?.call(root);
   const expected = [0.5, 1.75, -0.5, 1.5, 4, 0.5];
   check(
     Array.isArray(box) &&
@@ -2027,13 +2030,16 @@ if (runtime.tsl !== undefined) {
   // every instance into its level's partition; an unchanged second frame keeps the same partitions.
   const geometry = new BoxGeometry(1, 1, 1);
   const material = new MeshBasicNodeMaterial();
-  const mesh = new InstancedMesh(geometry, material, 2);
+  // The facade's InstancedMesh type takes no arguments; the engine class takes three's three.
+  const Instanced = InstancedMesh as unknown as new (
+    geometry: unknown,
+    material: unknown,
+    count: number,
+  ) => THREE.InstancedMesh;
+  const mesh = new Instanced(geometry, material, 2);
   mesh.setMatrixAt(0, new Matrix4().makeTranslation(0, 0, -5));
   mesh.setMatrixAt(1, new Matrix4().makeTranslation(0, 0, -100));
-  const children = [
-    new InstancedMesh(geometry, material, 2),
-    new InstancedMesh(geometry, material, 2),
-  ];
+  const children = [new Instanced(geometry, material, 2), new Instanced(geometry, material, 2)];
   for (const child of children) mesh.add(child);
   const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
   camera.updateMatrixWorld();
@@ -2067,10 +2073,13 @@ if (runtime.tsl !== undefined) {
     camera.updateMatrixWorld();
     return (
       camera as unknown as {
-        __tnModelLodSelect: (meshes: unknown[], height: number, bias: number) => number[];
+        __tnModelLodSelect: (height: number, bias: number) => number[];
       }
-    ).__tnModelLodSelect([target], 1080, 1);
+    ).__tnModelLodSelect(1080, 1);
   };
+  (camera as unknown as { __tnModelLodMeshes: (meshes: unknown[]) => void }).__tnModelLodMeshes([
+    target,
+  ]);
   const picks = [select(100), select(100), select(3), select(100)];
   check(
     JSON.stringify(picks) === JSON.stringify([[0, 1], [], [0, 0], [0, 1]]),

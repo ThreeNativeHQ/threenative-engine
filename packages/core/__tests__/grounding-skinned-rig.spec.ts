@@ -144,14 +144,28 @@ describe("GroundSnap measures once per apply", () => {
     snap.apply(figure, 0, 1 / 30); // the envelope, calibrated on the JavaScript path
     // The engine's answer, computed here the way bindings_scene.cpp computes it.
     let engineCalls = 0;
+    let attaches = 0;
     const walk = figure.updateWorldMatrix.bind(figure);
-    (figure as Object3D & { __tnSphereBounds?: unknown }).__tnSphereBounds = (
-      objects: readonly Object3D[],
-      radii: readonly number[],
-    ) => {
+    let objects: readonly Object3D[] = [];
+    let radii: readonly number[] = [];
+    const carrier = figure as Object3D & Record<string, unknown>;
+    carrier.__tnSphereBoundsAttach = (o: readonly Object3D[], r: readonly number[]) => {
+      attaches += 1;
+      objects = o;
+      radii = r;
+    };
+    carrier.__tnSphereBounds = (...args: unknown[]) => {
+      expect(args).toEqual([]); // the spheres crossed once, at attach
       engineCalls += 1;
       walk(true, true);
-      const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      const box = [
+        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+      ];
       objects.forEach((object, i) => {
         const e = object.matrixWorld.elements;
         for (let axis = 0; axis < 3; axis += 1) {
@@ -175,9 +189,11 @@ describe("GroundSnap measures once per apply", () => {
       expect(engineCalls - calls).toBe(1);
     }
     expect(walks()).toBe(0);
+    expect(attaches).toBe(1);
     // The engine's answer equals the JavaScript path's on the same pose.
     const engineMin = posedBounds(figure).min[1];
     Reflect.deleteProperty(figure, "__tnSphereBounds");
+    Reflect.deleteProperty(figure, "__tnSphereBoundsAttach");
     expect(Math.abs(posedBounds(figure).min[1] - engineMin)).toBeLessThan(1e-9);
   });
 });

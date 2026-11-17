@@ -2708,13 +2708,15 @@ void sphere_bounds() {
     radii.numbers = radiiValues;
     const tn_value_t args[] = {list, radii};
     tn_value_t box{};
-    CHECK(tn_invoke(root, "__tnSphereBounds", args, 2, &box, &d.value) == TN_OK);
+    CHECK(tn_invoke(root, "__tnSphereBounds", nullptr, 0, &box, &d.value) != TN_OK); // nothing attached yet
+    CHECK(tn_invoke(root, "__tnSphereBoundsAttach", args, 2, &out, &d.value) == TN_OK);
+    CHECK(tn_invoke(root, "__tnSphereBounds", nullptr, 0, &box, &d.value) == TN_OK);
     CHECK(box.kind == TN_VALUE_NUMBERS && box.count == 6);
     // foot at (1, 2, 0) r 0.25; head at (1, 3.5, 0) r 0.5.
     const double expected[] = {0.5, 1.75, -0.5, 1.5, 4.0, 0.5};
     for (int i = 0; i < 6; ++i) CHECK(std::abs(box.numbers[i] - expected[i]) < 1e-12);
     const tn_value_t short_args[] = {list, num(1)};
-    CHECK(tn_invoke(root, "__tnSphereBounds", short_args, 2, &box, &d.value) != TN_OK);
+    CHECK(tn_invoke(root, "__tnSphereBoundsAttach", short_args, 2, &out, &d.value) != TN_OK);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -2743,20 +2745,21 @@ void static_watch() {
     list.count = 3;
     list.values = roots;
     tn_value_t changed{};
+    CHECK(tn_invoke(a, "__tnStaticRoots", &list, 1, &out, &d.value) == TN_OK); // the set crosses once
     // Nothing moved: only the root nobody watched is answered.
-    CHECK(tn_invoke(a, "__tnStaticChanged", &list, 1, &changed, &d.value) == TN_OK);
+    CHECK(tn_invoke(a, "__tnStaticChanged", nullptr, 0, &changed, &d.value) == TN_OK);
     CHECK(changed.kind == TN_VALUE_NUMBERS && changed.count == 1 && changed.numbers[0] == 2);
     // A root's own write, unannounced: that root alone.
     const tn_value_t x = num(4);
     CHECK(tn_set(b, "position.x", &x, &d.value) == TN_OK);
-    CHECK(tn_invoke(a, "__tnStaticChanged", &list, 1, &changed, &d.value) == TN_OK);
+    CHECK(tn_invoke(a, "__tnStaticChanged", nullptr, 0, &changed, &d.value) == TN_OK);
     CHECK(changed.count == 2 && changed.numbers[0] == 1 && changed.numbers[1] == 2);
     // The shared parent moved: both its roots, though neither wrote its own transform.
     CHECK(tn_invoke(b, "__tnStaticWatch", nullptr, 0, &out, &d.value) == TN_OK);
     const tn_value_t y = num(3);
     CHECK(tn_set(world, "position.y", &y, &d.value) == TN_OK);
     CHECK(tn_invoke(world, "updateMatrixWorld", nullptr, 0, &out, &d.value) == TN_OK);
-    CHECK(tn_invoke(a, "__tnStaticChanged", &list, 1, &changed, &d.value) == TN_OK);
+    CHECK(tn_invoke(a, "__tnStaticChanged", nullptr, 0, &changed, &d.value) == TN_OK);
     CHECK(changed.count == 3 && changed.numbers[0] == 0 && changed.numbers[1] == 1);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }

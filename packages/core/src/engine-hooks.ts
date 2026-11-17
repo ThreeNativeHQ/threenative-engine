@@ -44,10 +44,23 @@ export function copyMatrixWorld(object: Object3D, target: Matrix4): boolean {
  */
 export const SPHERE_BOUNDS_HOOK = "__tnSphereBounds";
 
-type SphereBounds = (objects: readonly Object3D[], radii: readonly number[]) => readonly number[];
+/** The spheres are handed to the engine once; the per-frame call then takes no arguments. */
+export const SPHERE_BOUNDS_ATTACH_HOOK = "__tnSphereBoundsAttach";
 
-/** The engine's sphere-bounds call on `root`, or undefined on plain three.js. */
-export function sphereBoundsHook(root: Object3D): SphereBounds | undefined {
-  const hook = (root as Object3D & { readonly [SPHERE_BOUNDS_HOOK]?: unknown })[SPHERE_BOUNDS_HOOK];
-  return typeof hook === "function" ? (hook as SphereBounds) : undefined;
+interface ISphereBoundsHooks {
+  readonly attach: (objects: readonly Object3D[], radii: readonly number[]) => void;
+  readonly bounds: () => readonly number[];
+}
+
+/** The engine's sphere-bounds calls on `root`, or undefined on plain three.js. */
+export function sphereBoundsHook(root: Object3D): ISphereBoundsHooks | undefined {
+  const carrier = root as Object3D & Record<string, unknown>;
+  const attach = carrier[SPHERE_BOUNDS_ATTACH_HOOK];
+  const bounds = carrier[SPHERE_BOUNDS_HOOK];
+  return typeof attach === "function" && typeof bounds === "function"
+    ? {
+        attach: attach as ISphereBoundsHooks["attach"],
+        bounds: bounds as ISphereBoundsHooks["bounds"],
+      }
+    : undefined;
 }

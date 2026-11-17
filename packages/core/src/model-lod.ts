@@ -541,11 +541,11 @@ interface IModelLodEngineMesh {
   ): void;
 }
 
-type ModelLodSelect = (
-  meshes: readonly Mesh[],
-  viewportHeight: number,
-  bias: number,
-) => readonly number[];
+type ModelLodSelect = (viewportHeight: number, bias: number) => readonly number[];
+
+interface IModelLodEngineSet {
+  __tnModelLodMeshes(meshes: readonly Mesh[]): void;
+}
 
 /** Resolved runtime policy the loader stamps onto a controller, from the manifest. */
 export interface IModelLodPolicy {
@@ -1462,6 +1462,9 @@ function trackRoot(root: IGraphNode): ITrackedRoot {
  *
  * @returns triangles the managed meshes will submit this frame.
  */
+/** The batched set the engine holds (`__tnModelLodMeshes`), resent only when it changes. */
+let engineBatch: readonly ModelLod[] = [];
+
 /** One engine call selects every batched ModelLod; only the changed levels come back. */
 function selectBatched(
   select: ModelLodSelect,
@@ -1469,12 +1472,15 @@ function selectBatched(
   batched: readonly ModelLod[],
   viewportHeight: number,
 ): void {
-  const changed = select.call(
-    camera,
-    batched.map((entry) => entry.engineMesh()),
-    viewportHeight,
-    lodBias(),
-  );
+  if (
+    batched.length !== engineBatch.length ||
+    batched.some((entry, i) => entry !== engineBatch[i])
+  ) {
+    const meshes = batched.map((entry) => entry.engineMesh());
+    (camera as Camera & IModelLodEngineSet).__tnModelLodMeshes(meshes);
+    engineBatch = batched;
+  }
+  const changed = select.call(camera, viewportHeight, lodBias());
   for (let i = 0; i < changed.length; i += 2)
     (batched[changed[i] as number] as ModelLod).applyLevel(changed[i + 1] as number);
 }

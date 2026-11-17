@@ -279,7 +279,9 @@ let rearmedSinceCensus = 0;
 /** The owned engine's frozen-root calls (abi/bindings_scene.cpp), absent on plain three.js. */
 interface IStaticEngineRoot {
   __tnStaticWatch(): void;
-  __tnStaticChanged(roots: readonly Object3D[]): readonly number[];
+  /** Hands over the frozen set, in map order; sent only when a root is added or removed. */
+  __tnStaticRoots(roots: readonly Object3D[]): void;
+  __tnStaticChanged(): readonly number[];
 }
 
 /** Frozen roots in map order for the engine check, rebuilt only when a root is added or removed. */
@@ -300,9 +302,12 @@ export function refreshStaticTransforms(): void {
   if (typeof changed === "function") {
     // PRD-898 J1: one engine call compares every root with the record it took at freeze; JavaScript
     // visits only the roots that moved.
-    engineRoots ??= [...frozen.keys()];
+    if (engineRoots === undefined) {
+      engineRoots = [...frozen.keys()];
+      (first.__tnStaticRoots as IStaticEngineRoot["__tnStaticRoots"]).call(first, engineRoots);
+    }
     const roots = engineRoots;
-    for (const index of changed.call(first, roots)) {
+    for (const index of changed.call(first)) {
       const root = roots[index] as Object3D;
       freezeRoot(root, frozen.get(root)?.parent !== undefined);
       rearmedSinceCensus += 1;
