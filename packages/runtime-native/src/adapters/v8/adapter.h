@@ -118,6 +118,8 @@ private:
     uint64_t ownershipSeen_ = 0;          // tn::abi::ownershipEpoch() at the last full decision
     unsigned safePointsSinceFull_ = 0;
     std::vector<uint64_t> undecided_;     // wrappers new or held by a call since the last safe point, by key
+    std::vector<tn_handle_t> animHandles_;  // __tnAnimationTick's packed rigs, reused across frames
+    std::vector<double> animValues_;
     std::unique_ptr<Tsl> tsl_;
     v8::Isolate* isolate_;
     tn_context_t* context_;

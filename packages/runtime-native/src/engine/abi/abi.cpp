@@ -916,6 +916,8 @@ tn_status_t invokeMethod(tn_handle_t self, MethodSlot& slot, const std::string& 
 
 uint64_t crossings() { return gCrossings.load(std::memory_order_relaxed); }
 
+void noteCrossing(std::string_view name) { crossed(name); }
+
 uint64_t ownershipEpoch() { return gOwnership.load(std::memory_order_relaxed) + engine::Object3D::hierarchyVersion(); }
 
 void crossingHistogramEnable(bool on) {

@@ -2412,9 +2412,45 @@ void poseHistory() {
     CHECK(result == "ok:16");
 }
 
+// PRD-898 J6: core's __tnAnimationTick contract on the V8 player, as the web back end installs it: one call
+// advances every queued rig through tn_anim_tick and writes 3 doubles of status per rig.
+void animationTick() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string result = run(rt, adapter, R"JS(
+      (() => {
+        const check = (ok, name) => { if (!ok) throw Error(name); };
+        check(typeof __tnAnimationTick === 'function', 'installed');
+        const root = new Group(); const hip = new Bone(); hip.name = 'hip'; root.add(hip);
+        const clip = new AnimationClip('walk', 1, [new VectorKeyframeTrack('hip.position', [0, 1], [0, 0, 0, 1, 2, 3])]);
+        const mixer = new AnimationMixer(root);
+        const action = mixer.clipAction(clip); action.setLoop(LoopOnce, 1); action.clampWhenFinished = true; action.play();
+        const idle = new AnimationMixer(new Group());
+        const rig = (m, a, elapsed) => ({ mixer: m, action: a, strideRoot: null, dt: elapsed, elapsed, step: true,
+          reset: false, lastRate: 0, clipGroundSpeed: 0, strideSync: false });
+        const status = new Float64Array(6);
+        __tnAnimationTick([rig(mixer, action, 0.25), rig(idle, null, 0.25)], status);
+        check(Math.abs(action.time - 0.25) < 1e-9 && Math.abs(hip.position.x - 0.25) < 1e-6, 'advanced ' + action.time);
+        check(status[2] === 2 && status[5] === 2, 'changed, not finished ' + status.join());
+        __tnAnimationTick([rig(mixer, action, 1)], status);
+        check(action.time === 1 && (status[2] & 1) === 1, 'finished ' + status.join());
+        let refused = '';
+        try { __tnAnimationTick([rig({}, null, 0.1)], status); } catch (e) { refused = e instanceof TypeError ? e.message : ''; }
+        check(refused.includes('TN_ANIM_MIXER_INVALID'), 'refuses a non-engine mixer: ' + refused);
+        refused = '';
+        try { __tnAnimationTick([rig(mixer, action, 0.1)], new Float64Array(2)); } catch (e) { refused = e.message; }
+        check(refused.includes('TN_ANIM_ARGUMENT'), 'refuses a short status: ' + refused);
+        return 'ok';
+      })()
+    )JS");
+    if (result != "ok") std::fprintf(stderr, "animation tick: %s\n", result.c_str());
+    CHECK(result == "ok");
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"gc_telemetry", gcTelemetry}, {"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"animation_tick", animationTick}, {"gc_telemetry", gcTelemetry}, {"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn}, {"fog_node", fogNode}, {"node_material_fragment", nodeMaterialFragment},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},
