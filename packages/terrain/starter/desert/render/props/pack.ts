@@ -202,15 +202,18 @@ const DESERT_FLORA: Record<string, readonly (readonly [string, number, string?])
     ["boulder_01/boulder-mid.glb", 0.7],
     ["boulder_01/boulder-mid.glb", 1.3],
   ],
+  // Fallen blocks: the bake's foot and rim generators place these at about their row size, so a
+  // 10 m row drew sand-dusted domes taller than the player's view; real blocks under a butte are
+  // 2-6 m (the debris layer scales them down further for talus).
   volcanic: [
-    ["boulder_01/boulder-near.glb", 10, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 8, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 12, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 9, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 4, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 3, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 5, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 3.5, "boulder_01/boulder-mid.glb"],
   ],
   reveal: [
-    ["boulder_01/boulder-near.glb", 10, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 13, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 5, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 6, "boulder_01/boulder-mid.glb"],
   ],
 };
 for (const [asset, rows] of Object.entries(DESERT_FLORA))

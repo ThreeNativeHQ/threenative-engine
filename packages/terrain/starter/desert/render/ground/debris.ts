@@ -124,11 +124,11 @@ export function desertDebris(ground: IDebrisGround): IPlacement[] {
       for (let k = many(APRON.pebble * w + FLAT.pebble * open); k > 0; k--)
         put("pebble", ...at(), 0.08 + random() * 0.22);
       for (let k = many(APRON.scree * w + FLAT.scree * open); k > 0; k--)
-        put("scree", ...at(), 0.2 + random() * 0.45 * (0.5 + w));
+        put("scree", ...at(), 0.4 + random() * 0.9 * (0.5 + w));
       for (let k = many(APRON.volcanic * w + FLAT.volcanic * open); k > 0; k--)
-        put("volcanic", ...at(), 0.05 + random() * 0.14 * (0.4 + w));
+        put("volcanic", ...at(), 0.12 + random() * 0.35 * (0.4 + w));
       for (let k = many(APRON.reveal * w); k > 0; k--)
-        put("reveal", ...at(), 0.18 + random() * 0.24);
+        put("reveal", ...at(), 0.36 + random() * 0.5);
       for (let k = many(APRON.deadfall * w + FLAT.deadfall * open); k > 0; k--)
         put("deadfall", ...at(), 0.6 + random() * 0.7);
     }
