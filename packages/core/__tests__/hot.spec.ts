@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IGame, defineGame } from "../src/game.js";
-import { acceptHotUpdate } from "../src/hot.js";
+import { acceptHotUpdate, assertPortableState } from "../src/hot.js";
 import { Scene } from "../src/scene.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
 import { subscribeUiState } from "../src/ui-state.js";
@@ -216,6 +216,34 @@ describe("acceptHotUpdate", () => {
     expect(hot.invalidated[0]).toContain("state.player");
     expect(hot.data.threenative).toBeUndefined();
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the class it refused and the plain shape to store instead", () => {
+    class Vector3 {
+      constructor(
+        public x = 1,
+        public y = 2,
+        public z = 3,
+      ) {}
+    }
+    expect(() => assertPortableState({ rankings: [{ position: new Vector3() }] })).toThrow(
+      "Hot reload state state.rankings[0].position must contain only plain objects: it is a Vector3. Store { x, y, z } as a plain object and rebuild the Vector3 where the code needs it.",
+    );
+  });
+
+  it("names a private field by its public name, and a class with no fields by its data", () => {
+    class Quaternion {
+      _x = 0;
+      _y = 0;
+      _z = 0;
+      _w = 1;
+    }
+    expect(() => assertPortableState({ q: new Quaternion() })).toThrow(
+      "it is a Quaternion. Store { x, y, z, w } as a plain object",
+    );
+    expect(() => assertPortableState({ seen: new Set() })).toThrow(
+      "it is a Set. Store its data as plain values and rebuild the Set",
+    );
   });
 
   it("should stop the old game even when capture throws", () => {

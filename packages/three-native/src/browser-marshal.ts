@@ -70,7 +70,9 @@ export function setValues(target: object, className: string, values: object): vo
     if (value === undefined) continue;
     const current = self[key];
     if (current === undefined)
-      throw new TypeError(`TN_BROWSER_PARAMETER_UNSUPPORTED: ${className} has no '${key}'`);
+      throw new TypeError(
+        `TN_BROWSER_PARAMETER_UNSUPPORTED: ${className} has no '${key}'. The engine does not implement this parameter on ${className}: remove the key.`,
+      );
     if (isWrapperOf(current, "Color")) setColor(current, value);
     else if (isWrapperOf(current, "Vector3") && (value as { isVector3?: boolean }).isVector3)
       current.copy?.(value);
