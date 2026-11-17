@@ -421,9 +421,11 @@ const desert: IBiome = {
   distantStoneShare: 0.32,
   stoneScans: 2,
   stoneSinkShare: null,
-  propStoneTint: [1.08, 0.85, 0.64],
+  // Varnished red sandstone blocks, darker than the sand they lie on; the pale dry scan read white.
+  propStoneTint: [0.86, 0.56, 0.38],
   horizon: "mesa",
-  grassTint: [1, 1, 1],
+  // The red_sand scan reads pink at noon; the valley floor's sand is orange-red.
+  grassTint: [1.06, 0.84, 0.66],
   stoneTint: [1.16, 0.82, 0.55],
   distantStone: [0.31, 0.205, 0.12],
   // No snow: the bands sit far above the survey's 270 m of relief.
@@ -520,10 +522,14 @@ export function biomeWeights(
   const stone = smoothstep(0.1, 0.29, steep.add(breakup.mul(0.04)));
   if (biome.mesaGround)
     return {
-      dirt: smoothstep(0.14, 0.65, hollow).mul(0.7),
+      // Gravel pavement in the washes and in patches tens of metres across on the flats.
+      dirt: smoothstep(0.14, 0.65, hollow)
+        .mul(0.7)
+        .max(smoothstep(0.18, 0.42, mx_fractal_noise_float(positionWorld.mul(0.021), 3)).mul(0.62)),
       moss: float(0),
       sand: float(0),
-      rock: stone
+      // Slickrock: the rock edge is ragged, not a contour of the slope.
+      rock: smoothstep(0.08, 0.3, steep.add(breakup.mul(0.12)))
         .max(elevationBand(biome, biome.heightBands.desertRock).mul(0.48))
         .mul(float(1).sub(smoothstep(0.12, 0.5, hollow).mul(0.35))),
       snow: float(0),
@@ -639,7 +645,9 @@ export function desertRockColor(sample: Node<"vec3">): Node<"vec3"> {
   )
     .mul(normalWorldGeometry.y.abs().oneMinus())
     .mul(0.4);
-  return vec3(1.52, 0.9, 0.5)
+  // Cedar Mesa sandstone: red-orange beds with pale cream beds between them.
+  const cream = smoothstep(0.15, 0.45, mx_noise_float(vec3(0, height.mul(0.33), 0)));
+  return mix(vec3(1.62, 0.7, 0.36), vec3(1.5, 1.12, 0.74), cream.mul(0.55))
     .mul(grain)
     .mul(beds.mul(0.24).add(fine).add(1).sub(ledge))
     .mul(mix(vec3(1), vec3(0.55, 0.48, 0.42), varnish));

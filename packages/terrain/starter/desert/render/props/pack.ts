@@ -186,29 +186,31 @@ const DESERT_FLORA: Record<string, readonly (readonly [string, number, string?])
     ["desert_flora/twig.glb", 0.35],
     ["desert_flora/branch-b.glb", 2.2],
   ],
-  // Stone, by its longest side; a second GLB is the scan's own lighter level past `LOD_BANDS.mid`.
+  // Stone, by its longest side: the kit's Poly Haven `boulder_01` scan at every size, as the forest
+  // kit does (the untextured `rocks/` GLBs drew pale grey and black facets under the desert sun).
+  // A second GLB is the scan's own lighter level past `LOD_BANDS.mid`.
   boulder: [
     ["boulder_01/boulder-near.glb", 2.1, "boulder_01/boulder-mid.glb"],
-    ["rocks/boulder-near.glb", 3.4, "rocks/boulder-mid.glb"],
-    ["rocks/rock01-near.glb", 1.6, "rocks/rock01-mid.glb"],
+    ["boulder_01/boulder-near.glb", 3.4, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 1.6, "boulder_01/boulder-mid.glb"],
   ],
-  riverrock: [["rocks/rock04-mid.glb", 0.8]],
-  scree: [["rocks/rock04-near.glb", 1.2, "rocks/rock04-mid.glb"]],
+  riverrock: [["boulder_01/boulder-mid.glb", 0.8]],
+  scree: [["boulder_01/boulder-near.glb", 1.2, "boulder_01/boulder-mid.glb"]],
   // Gravel and pebbles: the lightest scan level, 0.1-0.3 m across at their placed scale.
   pebble: [
-    ["rocks/rock04-mid.glb", 1],
-    ["rocks/rock01-mid.glb", 1],
-    ["rocks/boulder-mid.glb", 1],
+    ["boulder_01/boulder-mid.glb", 1],
+    ["boulder_01/boulder-mid.glb", 0.7],
+    ["boulder_01/boulder-mid.glb", 1.3],
   ],
   volcanic: [
-    ["rocks/rock01-near.glb", 10, "rocks/rock01-mid.glb"],
-    ["rocks/rock04-near.glb", 10, "rocks/rock04-mid.glb"],
     ["boulder_01/boulder-near.glb", 10, "boulder_01/boulder-mid.glb"],
-    ["rocks/boulder-near.glb", 10, "rocks/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 8, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 12, "boulder_01/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 9, "boulder_01/boulder-mid.glb"],
   ],
   reveal: [
     ["boulder_01/boulder-near.glb", 10, "boulder_01/boulder-mid.glb"],
-    ["rocks/boulder-near.glb", 10, "rocks/boulder-mid.glb"],
+    ["boulder_01/boulder-near.glb", 13, "boulder_01/boulder-mid.glb"],
   ],
 };
 for (const [asset, rows] of Object.entries(DESERT_FLORA))

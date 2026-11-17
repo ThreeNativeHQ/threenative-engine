@@ -273,7 +273,9 @@ export function groundTurf(
   const temperate = !biome || biome.lawnGround;
   if (!temperate) {
     const tint = vec3(...biome.grassTint);
-    if (!biome.crestTurf) return sampled.mul(tint);
+    // Broad patches of paler and darker sand, so the flats do not read as one tone.
+    if (!biome.crestTurf)
+      return sampled.mul(tint).mul(biome.mesaGround ? mix(0.84, 1.08, dry) : float(1));
     const cover = vec3(0.075, 0.12, 0.028).mul(mix(0.91, 1.08, dry));
     return mix(sampled.mul(tint), cover, smoothstep(65, 180, distance).mul(0.85));
   }
@@ -1233,9 +1235,19 @@ export async function createGroundMaterial(
           snow,
           cap,
         );
+        // The desert's ring carries its bedded sandstone on every face past the square, not the
+        // square's edge colour stretched over the survey's buttes and benches.
+        // The survey's 10 m cells soften a cliff to 20-35 degrees, so the ring's rock starts lower.
+        const ring = look.mesaRock
+          ? mix(
+              albedo.rgb,
+              desertRockColor(banded),
+              smoothstep(0.04, 0.18, crestSteep.add(strata.mul(0.055))).max(scree.mul(0.6)),
+            )
+          : albedo.rgb;
         material.colorNode = mix(
           albedo.rgb.mul(mix(vec3(1), tone, vegetation)),
-          otherBiome ? albedo.rgb : mountain,
+          otherBiome ? ring : mountain,
           continuation,
         )
           .mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank))
