@@ -1,7 +1,7 @@
 # PRD-897 — A release stays unpublished until npm serves its cohort
 
 **Status:** NOT STARTED
-**Priority:** P2 — the remaining exposure is narrow: PRD-896 runs the upgrade proof before the tag, so only a *resumed* publish (one that never proved in its own invocation) can still prove after the release is public and burn the version.
+**Priority:** P2 — the remaining exposure is narrow: PRD-896 runs the upgrade proof before the tag, so only a publish that never proved in its own invocation can still prove behind a public release — a *resumed* run, or one whose receipt no longer matches a registry `latest` that moved during the release's waits.
 **Complexity:** 6 (MEDIUM)
 **Owner:** CI tooling
 **Depends on:** PRD-896, PRD-630
@@ -21,7 +21,11 @@ from proving a second time. Three shapes survive it:
    `--prerelease`, which is public, before the consumer proofs run; `cleanup-failed-release` deletes
    it when a consumer proof fails, but a cancelled run, or a cleanup job that never runs, leaves the
    public prerelease and no npm cohort.
-3. **Nothing public follows npm.** The repository still treats a public release as the version's
+3. **A registry `latest` that moves mid-release.** The proof is about the `latest` of the moment it
+   ran. A release's waits total up to about 190 minutes, so a run that proves and then waits can find
+   its receipt stale, and the publish proves again — behind the public release (PRD-896's receipt
+   records `latest` for exactly this reason, and a mismatch means prove again).
+4. **Nothing public follows npm.** The repository still treats a public release as the version's
    announcement while npm may be minutes or hours behind it.
 
 Why the obvious flip — create the release as a draft and promote it after the npm upload — is not a

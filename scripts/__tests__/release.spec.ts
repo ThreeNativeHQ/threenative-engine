@@ -20,6 +20,7 @@ import {
   readUpgradeProofReceipt,
   releaseLevels,
   releaseOrder,
+  resolveUpgradeReuse,
   unpublishedReleasePackages,
   upgradeProofApplies,
   validateReleaseCohort,
@@ -375,6 +376,23 @@ describe("pnpm release proof-only run", () => {
     });
     expect(green[0]?.exitCode).toBe(0);
     expect(readUpgradeProofReceipt(root, sha, "0.3.13")?.sha).toBe(sha);
+  });
+
+  it("reuses a proof only for its own commit and registry latest, and only once", async () => {
+    const root = await makeTempDir("threenative-upgrade-proof-");
+    roots.push(root);
+    const sha = "a".repeat(40);
+    writeUpgradeProofReceipt(root, { latest: "0.3.13", provedAt: "2026-11-16T00:00:00.000Z", sha });
+    // The only path that may skip the last gate before npm: no receipt, no skip.
+    expect(
+      resolveUpgradeReuse({ latest: "0.3.13", repo: root, sha: "b".repeat(40) }),
+    ).toBeUndefined();
+    expect(resolveUpgradeReuse({ latest: "0.3.14", repo: root, sha })).toBeUndefined();
+    expect(resolveUpgradeReuse({ latest: "0.3.13", repo: root, sha })?.provedAt).toBe(
+      "2026-11-16T00:00:00.000Z",
+    );
+    // Consumed: a second publish is a claim about a newer registry, and it proves anew.
+    expect(resolveUpgradeReuse({ latest: "0.3.13", repo: root, sha })).toBeUndefined();
   });
 
   it("drops yesterday's proof for a commit before proving it again", async () => {

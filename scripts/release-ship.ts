@@ -282,20 +282,20 @@ export interface IReleaseTarget {
 export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseTarget): void {
   if (census.release === "none" || census.tag.commit === target.sha || census.cohortPublished)
     return;
-  // A draft release carries no tag until it is published, and it is deletable with nothing lost; a
-  // public one is not, and npm has no version either way. Say which move is available.
+  // A draft carries no tag until it is published: deleting it loses nothing, and the same version
+  // can still ship. Every other state leaves the version name spent, so the move is a bump — and
+  // deleting a *public* release is the owner's call, never this command's advice.
+  const kind = census.release === "prerelease" ? "a prerelease" : `a ${census.release} release`;
   const where =
     census.tag.commit === undefined
-      ? `${target.tag} already has a ${census.release} release and no tag yet`
-      : `${target.tag} already has a ${census.release} release at ${census.tag.commit}`;
+      ? `${target.tag} already has ${kind} and no tag yet`
+      : `${target.tag} already has ${kind} at ${census.tag.commit}`;
   const advice =
     census.release === "draft"
-      ? "delete the draft (nothing is public yet) or bump packages/runtime-native/package.json and the cohort that pins it"
-      : census.release === "prerelease"
-        ? "delete that prerelease, then ship"
-        : "bump packages/runtime-native/package.json and the cohort that pins it";
+      ? "delete the draft (nothing is public yet), then ship this version"
+      : "bump packages/runtime-native/package.json and the cohort that pins it, then ship the new version";
   throw new Error(
-    `TN_SHIP_VERSION_BURNED: ${where}, and ${CORE} is not on npm at ${target.version}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move"}, so this version cannot ship: ${advice}, then ship the new version.`,
+    `TN_SHIP_VERSION_BURNED: ${where}, and ${CORE} is not on npm at ${target.version}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move"}: ${advice}.`,
   );
 }
 
@@ -377,7 +377,7 @@ function describeStep(
   state: IShipState,
   sha: string,
   tag: string,
-  proved: boolean,
+  proves: boolean,
 ): string {
   switch (step) {
     case "evidence":
@@ -385,7 +385,7 @@ function describeStep(
     case "candidate":
       return `dispatch release-candidate.yml for ${sha}.`;
     case "tag": {
-      const proof = proved ? ", after the upgrade proof" : "";
+      const proof = proves ? ", after the upgrade proof" : "";
       return state.tag.commit === undefined
         ? `create and push ${tag} at ${sha}${proof}.`
         : `move ${tag} from ${state.tag.commit} to ${sha}${proof}.`;

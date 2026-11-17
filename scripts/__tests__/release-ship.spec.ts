@@ -60,11 +60,14 @@ function world(over: Partial<Record<string, unknown>> = {}) {
   };
   const calls: string[] = [];
   const logs: string[] = [];
+  /** Every run list the plan read, so a test can prove a refusal read none. */
+  const reads: string[] = [];
   const deps: IShipDeps = {
     gh: (args) => {
       const [a, b] = args;
       if (a === "run" && b === "list") {
         const workflow = args[args.indexOf("--workflow") + 1];
+        reads.push(`run list ${workflow}`);
         const table: Record<string, IFakeRun[]> = {
           "ci.yml": state.ci,
           "release-candidate.yml": state.candidate,
@@ -115,7 +118,7 @@ function world(over: Partial<Record<string, unknown>> = {}) {
     sleep: async () => undefined,
     verify: () => calls.push("verify"),
   };
-  return { calls, deps, logs, state };
+  return { calls, deps, logs, reads, state };
 }
 
 describe("pnpm release:ship --dry-run", () => {
@@ -171,7 +174,7 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
     ["a prerelease", { isDraft: false, isPrerelease: true }],
     ["a draft", { isDraft: true, isPrerelease: false }],
   ])("refuses a version whose tag already has %s, before the evidence", async (_label, release) => {
-    const { calls, deps, logs, state } = world({
+    const { calls, deps, logs, reads } = world({
       candidate: [run(10, "workflow_dispatch")],
       core: [],
       release,
@@ -180,9 +183,9 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
     await expect(ship(deps, { dryRun: false, sha: SHA })).rejects.toThrow(
       /TN_SHIP_VERSION_BURNED/u,
     );
-    // Nothing was dispatched, no candidate was read, and the plan never named a step.
+    // Nothing was dispatched, no run was read, and the plan never named a step.
     expect(calls).toEqual([]);
-    expect(state.candidate).toHaveLength(1);
+    expect(reads).toEqual([]);
     expect(logs.some((line) => line.startsWith("next:"))).toBe(false);
   });
 
@@ -499,7 +502,10 @@ describe("pnpm release:check-version", () => {
       release: { isDraft: false, isPrerelease: true },
       tagCommit: OTHER,
     });
-    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/delete that prerelease/u);
+    // A public prerelease's tag belongs to another commit, so the move is a bump; deleting a public
+    // release is the owner's call, and the error does not advise it.
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/has a prerelease at/u);
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/bump packages\/runtime-native/u);
   });
 });
 

@@ -51,7 +51,9 @@ branch's diff, which is the one thing a required check must never do.
 
 ## Decisions
 
-- 2026-11-16 (agent, on the orchestrator's brief): filed rather than built inside PRD-896, because
+- 2026-11-16 (agent): filed as **the follow-up PRD** the orchestrator asked for on 2026-11-16
+  ("If it can run on the develop -> main release PR board ... add it there; otherwise put it in the
+  follow-up PRD"), and not built inside PRD-896, because
   the job is a new lane with a full build, a browser and the native dependencies — minutes of setup
   that no unit test can prove — and because the two failures it would surface today are being fixed
   on the release branch (`scripts/verify-registry-install.ts`, `create-threenative`'s

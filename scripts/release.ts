@@ -625,6 +625,22 @@ export function readUpgradeProofReceipt(
   }
 }
 
+/**
+ * The proof this run may reuse, or `undefined` when it must prove here instead.
+ *
+ * One use per proof: the receipt describes the registry `latest` of the moment it was written, and
+ * the next publish is a claim about a newer one. Consuming it here is what makes that true.
+ */
+export function resolveUpgradeReuse(options: {
+  readonly latest: string;
+  readonly repo: string;
+  readonly sha: string;
+}): IUpgradeProofReceipt | undefined {
+  const receipt = readUpgradeProofReceipt(options.repo, options.sha, options.latest);
+  if (receipt !== undefined) clearUpgradeProofReceipt(options.repo);
+  return receipt;
+}
+
 /** The registry `latest` of the runtime's core package: what an upgrade proof starts from. */
 export function registryLatest(repo: string): string {
   return execFileSync("npm", ["view", `${UPGRADE_PROOF_PACKAGE}@latest`, "version"], {
@@ -753,20 +769,23 @@ async function main(args: readonly string[]): Promise<void> {
   // cannot turn red after the version is already public.
   let reuseProof = false;
   if (upgradeProved) {
-    const latest = registryLatest(REPO);
-    const receipt = readUpgradeProofReceipt(REPO, headSha(), latest);
-    if (receipt === undefined) {
-      process.stdout.write(
-        `\nNo usable upgrade proof for HEAD against ${UPGRADE_PROOF_PACKAGE}@${latest}: proving here.\n`,
-      );
-    } else {
-      // One use per proof: the next publish is a claim about a newer registry, and it proves anew.
-      clearUpgradeProofReceipt(REPO);
-      reuseProof = true;
-      process.stdout.write(
-        `\nReusing the upgrade proof recorded at ${receipt.provedAt} for ${receipt.sha} against ${receipt.latest}.\n`,
-      );
+    // A read that fails is not a proof: fall back to proving here, which is slower and never wrong.
+    let latest: string | undefined;
+    try {
+      latest = registryLatest(REPO);
+    } catch {
+      latest = undefined;
     }
+    const receipt =
+      latest === undefined
+        ? undefined
+        : resolveUpgradeReuse({ latest, repo: REPO, sha: headSha() });
+    reuseProof = receipt !== undefined;
+    process.stdout.write(
+      receipt === undefined
+        ? `\nNo usable upgrade proof for HEAD (${UPGRADE_PROOF_PACKAGE} latest ${latest ?? "unreadable"}): proving here.\n`
+        : `\nReusing the upgrade proof ${receipt.provedAt} recorded for ${receipt.sha} against ${receipt.latest}.\n`,
+    );
   }
   // A `--yes` release produces its prebuilt payload itself, so the preflight may acknowledge its
   // absence and the run finishes the job. A local run that publishes nothing has no payload to
