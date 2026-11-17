@@ -48,6 +48,8 @@ const {
   Color,
   DataTexture,
   Group,
+  InstancedMesh,
+  Matrix4,
   Mesh,
   MeshBasicNodeMaterial,
   MeshStandardMaterial,
@@ -2018,6 +2020,59 @@ if (runtime.tsl !== undefined) {
       box.length === 6 &&
       expected.every((value, i) => Math.abs((box[i] as number) - value) < 1e-9),
     `__tnSphereBounds answers the composed box: ${JSON.stringify(box)}`,
+  );
+}
+{
+  // PRD-898 J3: core's attachInstancedLod hands the partitions over once, then one call a frame sorts
+  // every instance into its level's partition; an unchanged second frame keeps the same partitions.
+  const geometry = new BoxGeometry(1, 1, 1);
+  const material = new MeshBasicNodeMaterial();
+  const mesh = new InstancedMesh(geometry, material, 2);
+  mesh.setMatrixAt(0, new Matrix4().makeTranslation(0, 0, -5));
+  mesh.setMatrixAt(1, new Matrix4().makeTranslation(0, 0, -100));
+  const children = [
+    new InstancedMesh(geometry, material, 2),
+    new InstancedMesh(geometry, material, 2),
+  ];
+  for (const child of children) mesh.add(child);
+  const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.updateMatrixWorld();
+  const lod = mesh as unknown as {
+    __tnInstancedLodAttach?: (...args: unknown[]) => void;
+    __tnInstancedLodUpdate?: (camera: unknown, viewportHeight: number) => number;
+  };
+  check(
+    typeof lod.__tnInstancedLodAttach === "function",
+    "InstancedMesh carries __tnInstancedLodAttach",
+  );
+  lod.__tnInstancedLodAttach?.call(mesh, children, [0, 0], [0, 50], [0, 0, 0, 0.87], null, 4, 0.15);
+  const first = lod.__tnInstancedLodUpdate?.call(mesh, camera, 1080);
+  const second = lod.__tnInstancedLodUpdate?.call(mesh, camera, 1080);
+  check(
+    first === 24 && second === 24 && children[0]?.count === 1 && children[1]?.count === 1,
+    `__tnInstancedLodUpdate sorts near and far: ${first}, ${second}, ${children.map((c) => c.count)}`,
+  );
+}
+{
+  // PRD-898 J2: the chain is handed over once, one camera call selects, and only changed levels return.
+  // Same chain and views as model-lod-runtime.spec.ts: far picks level 1, close refines to 0.
+  const target = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicNodeMaterial());
+  target.updateMatrixWorld();
+  const lod = target as unknown as { __tnModelLodAttach?: (...args: unknown[]) => void };
+  check(typeof lod.__tnModelLodAttach === "function", "Mesh carries __tnModelLodAttach");
+  lod.__tnModelLodAttach?.call(target, [0, 0.05, 5], [1, 0, 0.5, Math.sqrt(1.25)], 1, 0.15, 0);
+  const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+  const select = (z: number) => {
+    camera.position.set(0, 0, z);
+    camera.updateMatrixWorld();
+    return (
+      camera as unknown as { __tnModelLodSelect: (meshes: unknown[], height: number) => number[] }
+    ).__tnModelLodSelect([target], 1080);
+  };
+  const picks = [select(100), select(100), select(3), select(100)];
+  check(
+    JSON.stringify(picks) === JSON.stringify([[0, 1], [], [0, 0], [0, 1]]),
+    `__tnModelLodSelect answers changed levels only: ${JSON.stringify(picks)}`,
   );
 }
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

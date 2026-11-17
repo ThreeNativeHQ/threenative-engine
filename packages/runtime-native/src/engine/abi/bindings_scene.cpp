@@ -15,6 +15,8 @@
 #include "engine/renderer/projection/plan.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/scene/projected_cull.h"
+#include "engine/renderer/lod/instanced_lod.h"
+#include "engine/renderer/lod/model_lod.h"
 #include "engine/abi/bindings.h"
 #include "engine/abi/pooled_shared.h"
 #include "engine/animation/mixer.h"
@@ -231,6 +233,37 @@ struct SourceGuard {
         return true;
     }
 };
+
+// PRD-898 J2: one ModelLod's selection inputs and kept level, as model-lod.ts `ModelLod` holds them.
+struct ModelLodState {
+    std::vector<double> errors;
+    Sphere local;
+    double maxPixelError = 0;
+    double hysteresis = 0;
+    int current = 0;
+};
+
+ModelLodState& modelLodOf(Object3D& mesh) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, ModelLodState>> states;
+    auto& entry = states[&mesh];
+    if (entry.first.expired()) {
+        // Sweep dead meshes only when a new one arrives, so the per-frame lookup stays a hash probe.
+        for (auto it = states.begin(); it != states.end();)
+            it = (it->first != &mesh && it->second.first.expired()) ? states.erase(it) : std::next(it);
+        entry = {mesh.weak_from_this(), ModelLodState{}};
+    }
+    return entry.second;
+}
+
+// PRD-898 J3: an instanced batch's LOD sort state, kept while its mesh lives, as projectedCullOf keeps the cull's.
+lod::InstancedLodState& instancedLodOf(InstancedMesh& mesh) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, lod::InstancedLodState>> states;
+    for (auto it = states.begin(); it != states.end();)
+        it = it->second.first.expired() ? states.erase(it) : std::next(it);
+    auto& entry = states[&mesh];
+    if (entry.first.expired()) entry = {mesh.weak_from_this(), lod::InstancedLodState{}};
+    return entry.second;
+}
 
 // The guard for an AutoBatch root, kept while the root lives, as projectedCullOf keeps the cull's.
 SourceGuard& sourceGuardOf(Object3D& root) {
@@ -1040,6 +1073,54 @@ void registerObject3D(ClassBinding& b) {
             }
         }
         return Value::list(std::move(box));
+    };
+    // PRD-898 J2: core's ModelLod selection in one call a frame. `mesh.__tnModelLodAttach(errors, local,
+    // maxPixelError, hysteresis, current)` keeps a mesh's chain once; `camera.__tnModelLodSelect(meshes,
+    // viewportHeight)` runs model-lod.ts `ModelLod.update` for each and answers [index, level] pairs for
+    // the meshes whose level changed only, so the game's side swaps geometry for those alone.
+    b.methods["__tnModelLodAttach"] = [](void* self, const Args& a, Store&) {
+        ModelLodState state;
+        state.errors = numbersOf(a.at(0));
+        const std::vector<double> local = numbersOf(a.at(1));
+        if (state.errors.empty() || local.size() != 4)
+            throw Unsupported{"__tnModelLodAttach needs the chain errors and the local sphere [x, y, z, radius]"};
+        state.local.center.set(local[0], local[1], local[2]);
+        state.local.radius = local[3];
+        state.maxPixelError = number(a.at(2));
+        state.hysteresis = number(a.at(3));
+        state.current = static_cast<int>(number(a.at(4)));
+        modelLodOf(*as<Object3D>(self)) = std::move(state);
+        return Value::undefined();
+    };
+    b.methods["__tnModelLodSelect"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(as<Object3D>(self));
+        if (camera == nullptr) throw Unsupported{"__tnModelLodSelect runs on a camera"};
+        const std::vector<Value> meshes = refsOf(a.at(0));
+        const double viewportHeight = number(a.at(1));
+        std::vector<double> changed;
+        std::string error;
+        for (std::size_t i = 0; i < meshes.size(); ++i) {
+            Object3D& mesh = objectArg(store, meshes[i]);
+            ModelLodState& state = modelLodOf(mesh);
+            if (state.errors.empty()) throw Unsupported{"__tnModelLodSelect before __tnModelLodAttach"};
+            mesh.joinDeferredWorldTransform();
+            const Sphere world = lod::worldSphere(state.local, mesh.matrixWorld);
+            double depth = 0;
+            bool degenerate = false;
+            lod::conservativeViewDepth(*camera, world.center, world.radius, lod::cameraNear(*camera), depth, degenerate);
+            const lod::LodView view{camera, degenerate, lod::biasedLodDistance(depth), viewportHeight, false};
+            int level = 0;
+            if (!lod::selectLodLevel(state.errors, state.current,
+                                     state.maxPixelError /
+                                         std::max(mesh.matrixWorld.getMaxScaleOnAxis(), std::numeric_limits<double>::epsilon()),
+                                     state.hysteresis, {view}, level, error))
+                throw Unsupported{error};
+            if (level == state.current) continue;
+            state.current = level;
+            changed.push_back(double(i));
+            changed.push_back(double(level));
+        }
+        return Value::list(std::move(changed));
     };
     b.methods["updateMatrix"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->updateMatrix();
@@ -2229,6 +2310,47 @@ void registerInstancedMesh(ClassBinding& b) {
     b.methods["computeBoundingSphere"] = [](void* self, const Args&, Store&) {
         as<InstancedMesh>(self)->computeBoundingSphere();
         return Value::undefined();
+    };
+    // PRD-898 J3: core's attachInstancedLod in one call a frame. `__tnInstancedLodAttach(children,
+    // partitionOf, distances, local, chainErrors, budget, hysteresis)` hands the engine the partitions core
+    // minted (partition * levels + level), the authored switch distances (first 0) or, with `distances`
+    // empty, the baked chain's errors; `__tnInstancedLodUpdate(camera, viewportHeight)` then sorts every
+    // instance into its partition (lod::selectInstancedLods) and answers the triangles the partitions draw.
+    b.methods["__tnInstancedLodAttach"] = [](void* self, const Args& a, Store& store) {
+        InstancedMesh& mesh = *as<InstancedMesh>(self);
+        lod::InstancedLodState state;
+        for (const Value& child : refsOf(a.at(0))) state.children.push_back(store.shared<InstancedMesh>(child, "InstancedMesh"));
+        for (const double partition : numbersOf(a.at(1))) state.partitionOf.push_back(static_cast<uint32_t>(partition));
+        state.distances = numbersOf(a.at(2));
+        const std::vector<double> local = numbersOf(a.at(3));
+        if (local.size() != 4) throw Unsupported{"__tnInstancedLodAttach needs the local sphere as [x, y, z, radius]"};
+        state.local.center.set(local[0], local[1], local[2]);
+        state.local.radius = local[3];
+        if (a.at(4).kind != Value::Kind::Null) state.chainErrors = numbersOf(a.at(4));
+        state.budget = number(a.at(5));
+        state.hysteresis = number(a.at(6));
+        state.levelCount = state.chainErrors ? state.chainErrors->size() : state.distances.size();
+        if (state.levelCount == 0 || state.children.size() % state.levelCount != 0)
+            throw Unsupported{"__tnInstancedLodAttach needs one child per partition and level"};
+        if (state.partitionOf.size() < mesh.count) throw Unsupported{"__tnInstancedLodAttach needs a partition per instance"};
+        for (const uint32_t partition : state.partitionOf)
+            if ((partition + 1) * state.levelCount > state.children.size())
+                throw Unsupported{"__tnInstancedLodAttach partition outside the children"};
+        state.states.assign(state.partitionOf.size(), 0);
+        instancedLodOf(mesh) = std::move(state);
+        return Value::undefined();
+    };
+    b.methods["__tnInstancedLodUpdate"] = [](void* self, const Args& a, Store& store) {
+        InstancedMesh& mesh = *as<InstancedMesh>(self);
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__tnInstancedLodUpdate needs a camera"};
+        lod::InstancedLodState& state = instancedLodOf(mesh);
+        if (state.children.empty()) throw Unsupported{"__tnInstancedLodUpdate before __tnInstancedLodAttach"};
+        if (state.partitionOf.size() < mesh.count) throw Unsupported{"__tnInstancedLodUpdate: more instances than partitions"};
+        double triangles = 0;
+        if (!lod::selectInstancedLods(mesh, state, *camera, number(a.at(1)), triangles))
+            throw Unsupported{"TN_LOD selection refused for an instanced batch"};
+        return Value::of(triangles);
     };
     b.members["boundingSphere"] = [](void* self, const Args&, Store& store) {
         return store.share("Sphere", as<InstancedMesh>(self)->boundingSphere);

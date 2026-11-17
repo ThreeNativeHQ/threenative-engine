@@ -404,6 +404,35 @@ class ModelLod {
     return this.#chain.base;
   }
 
+  /** PRD-898 J2: whether the engine's batched selection can run this one (the join authority cannot). */
+  get batchable(): boolean {
+    return this.#rung === undefined || !this.#authority;
+  }
+
+  #attached = false;
+
+  /** The mesh for `__tnModelLodSelect`, its chain handed to the engine on first use. */
+  engineMesh(): Mesh {
+    if (!this.#attached) {
+      const { center, radius } = this.#chain.sphere;
+      (this.#mesh as Mesh & IModelLodEngineMesh).__tnModelLodAttach(
+        [...this.#chain.errors],
+        [center.x, center.y, center.z, radius],
+        this.#policy.maxPixelError,
+        this.#policy.hysteresis,
+        this.#current,
+      );
+      this.#attached = true;
+    }
+    return this.#mesh;
+  }
+
+  /** The level the engine's batched selection chose. */
+  applyLevel(index: number): void {
+    this.#current = index;
+    this.#mesh.geometry = this.#chain.levels[index] as BufferGeometry;
+  }
+
   get triangles(): number {
     // With a joined rung active, the authored primitives draw nothing and the proxy draws the
     // collapse: the authority reports the rung's triangles, every hidden sibling reports zero.
@@ -500,6 +529,19 @@ class ModelLod {
       this.#rung.deactivate(this.#container);
   }
 }
+
+/** The owned engine's ModelLod calls (abi/bindings_scene.cpp), absent on plain three.js. */
+interface IModelLodEngineMesh {
+  __tnModelLodAttach(
+    errors: readonly number[],
+    local: readonly number[],
+    maxPixelError: number,
+    hysteresis: number,
+    current: number,
+  ): void;
+}
+
+type ModelLodSelect = (meshes: readonly Mesh[], viewportHeight: number) => readonly number[];
 
 /** Resolved runtime policy the loader stamps onto a controller, from the manifest. */
 export interface IModelLodPolicy {
@@ -1416,6 +1458,22 @@ function trackRoot(root: IGraphNode): ITrackedRoot {
  *
  * @returns triangles the managed meshes will submit this frame.
  */
+/** One engine call selects every batched ModelLod; only the changed levels come back. */
+function selectBatched(
+  select: ModelLodSelect,
+  camera: Camera,
+  batched: readonly ModelLod[],
+  viewportHeight: number,
+): void {
+  const changed = select.call(
+    camera,
+    batched.map((entry) => entry.engineMesh()),
+    viewportHeight,
+  );
+  for (let i = 0; i < changed.length; i += 2)
+    (batched[changed[i] as number] as ModelLod).applyLevel(changed[i + 1] as number);
+}
+
 export function updateModelLods(
   root: { traverse(callback: (object: object) => void): void },
   camera: Camera,
@@ -1436,6 +1494,10 @@ export function updateModelLods(
     return triangles;
   }
   const tracking = trackRoot(root);
+  // PRD-898 J2: on the owned engine every plain selection is one call, and only changed levels return.
+  const hook = (camera as Camera & { __tnModelLodSelect?: unknown }).__tnModelLodSelect;
+  const select = typeof hook === "function" ? (hook as ModelLodSelect) : undefined;
+  const batched: ModelLod[] = [];
   for (const mesh of tracking.items) {
     const entry = controllerFor(mesh);
     if (entry === undefined) {
@@ -1443,8 +1505,11 @@ export function updateModelLods(
       if (!streaming.has(mesh.geometry)) tracking.items.delete(mesh);
       continue;
     }
-    entry.update(camera, viewportHeight);
+    if (select !== undefined && entry instanceof ModelLod && entry.batchable) batched.push(entry);
+    else entry.update(camera, viewportHeight);
   }
+  if (select !== undefined && batched.length > 0)
+    selectBatched(select, camera, batched, viewportHeight);
   let triangles = 0;
   for (const mesh of tracking.items) triangles += controllers.get(mesh)?.triangles ?? 0;
   return triangles;

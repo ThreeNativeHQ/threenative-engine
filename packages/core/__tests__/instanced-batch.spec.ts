@@ -399,3 +399,44 @@ describe("InstancedBatch automatic LOD", () => {
     expect(mesh.children).toHaveLength(0);
   });
 });
+
+describe("InstancedBatch LOD on the owned engine (PRD-898 J3)", () => {
+  it("hands the partitions over once and sorts every instance in one engine call a frame", async () => {
+    const proto = InstancedMesh.prototype as InstancedMesh & Record<string, unknown>;
+    const attach = vi.fn();
+    const update = vi.fn(() => 14);
+    proto.__tnInstancedLodAttach = attach;
+    proto.__tnInstancedLodUpdate = update;
+    try {
+      const geometry = await bakedGeometry();
+      const props = new InstancedBatch({ geometry, material: new MeshBasicMaterial() });
+      props.place({ position: [0, 0, -5] });
+      props.place({ position: [0, 0, -100] });
+      const root = new Group();
+      const mesh = props.build({ name: "pines", parent: root });
+      if (mesh === undefined) throw new Error("missing batch");
+      const reads = vi.spyOn(mesh, "getMatrixAt");
+      root.updateMatrixWorld(true);
+      const camera = lodCamera();
+      expect(updateModelLods(root, camera, 1080)).toBe(14);
+      expect(updateModelLods(root, camera, 1080)).toBe(14);
+      expect(attach).toHaveBeenCalledTimes(1);
+      const [children, partitionOf, distances, local, errors, budget, hysteresis] = attach.mock
+        .calls[0] as unknown[];
+      const chain = lodChainOf(geometry);
+      expect((children as InstancedMesh[]).length % (chain?.levels.length ?? 0)).toBe(0);
+      expect((children as InstancedMesh[]).every((child) => child.parent === mesh)).toBe(true);
+      expect((partitionOf as number[]).length).toBe(mesh.instanceMatrix.count);
+      expect(distances).toEqual([]);
+      expect(local).toHaveLength(4);
+      expect(errors).toEqual([...(chain?.errors ?? [])]);
+      expect([budget, hysteresis].every(Number.isFinite)).toBe(true);
+      expect(update).toHaveBeenCalledTimes(2);
+      expect(update.mock.calls[0]).toEqual([camera, 1080]);
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(proto, "__tnInstancedLodAttach");
+      Reflect.deleteProperty(proto, "__tnInstancedLodUpdate");
+    }
+  });
+});

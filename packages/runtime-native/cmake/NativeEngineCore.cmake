@@ -915,11 +915,16 @@ tn_native_engine_test(tn-native-engine-ieee754-test tests/native-engine/ieee754_
 
 # The engine's binding registry for the math and scene classes: one model the fixture driver (and,
 # from slice 3, the C ABI) share.
+# PRD-519 discrete LOD selection, and PRD-898 J3's instanced sort that the bindings call (web and native).
+add_library(tn_engine_lod STATIC src/engine/renderer/lod/model_lod.cpp src/engine/renderer/lod/instanced_lod.cpp)
+tn_native_engine_target(tn_engine_lod)
+target_link_libraries(tn_engine_lod PUBLIC tn_engine_scene)
+target_include_directories(tn_engine_lod PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engine/abi/bindings_mathutils.cpp
     src/engine/abi/bindings_scene.cpp src/engine/abi/bindings_geometry.cpp src/engine/abi/bindings_material.cpp)
 tn_native_engine_target(tn_engine_bindings)
 target_link_libraries(tn_engine_bindings PUBLIC tn_engine_vsm)
-target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene tn_engine_animation)
+target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene tn_engine_animation tn_engine_lod)
 if(EMSCRIPTEN)
     # Bindings and graph lowering report refusals by exception; the ABI/host catches them.
     # Both sides need Wasm exception handling.

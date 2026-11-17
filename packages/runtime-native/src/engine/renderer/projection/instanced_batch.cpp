@@ -4,6 +4,7 @@
 // the call answers a refused Verdict carrying a TN_BATCH_* code instead.
 
 #include "engine/renderer/projection/instanced_batch.h"
+#include "engine/renderer/lod/instanced_lod.h"
 
 #include <algorithm>
 #include <array>
@@ -259,7 +260,6 @@ Verdict InstancedBatch::attachLod(std::vector<std::string>& warnings) {
     partitionOf_.assign(mesh.instanceMatrix->count(), 0);
     for (std::size_t partition = 0; partition < groups_.size(); ++partition)
         for (uint32_t index : groups_[partition]) partitionOf_[index] = static_cast<uint32_t>(partition);
-    states_.assign(mesh.instanceMatrix->count(), 0);
     // Children draw the partitions; they share the game's geometries and never own their disposal.
     const uint32_t spare = static_cast<uint32_t>(mesh.instanceMatrix->count() - mesh.count);
     for (std::size_t partition = 0; partition < groups_.size(); ++partition)
@@ -279,6 +279,17 @@ Verdict InstancedBatch::attachLod(std::vector<std::string>& warnings) {
             mesh.add(*child);
             children_.push_back(child);
         }
+    // The per-frame sort is lod::selectInstancedLods, shared with core's one-call path (PRD-898 J3).
+    lod_ = {};
+    lod_.children = children_;
+    lod_.levelCount = levels_.size();
+    lod_.distances = distances_;
+    if (!options_.lods.has_value() && options_.chain.has_value()) lod_.chainErrors = options_.chain->errors;
+    lod_.budget = options_.maxPixelError;
+    lod_.hysteresis = options_.hysteresis;
+    lod_.partitionOf = partitionOf_;
+    lod_.states.assign(mesh.instanceMatrix->count(), 0);
+    lod_.local = local_;
     registry()[&mesh] = this;
     return {};
 }
@@ -334,72 +345,8 @@ void InstancedBatch::splitPartitions(std::vector<uint32_t>& indices, uint32_t li
 LodUpdate InstancedBatch::selectLods(Camera& camera, double viewportHeight) {
     LodUpdate update;
     if (children_.empty()) return update;
-    InstancedMesh& mesh = *mesh_;
-    mesh.updateWorldMatrix(true, false);
-    Vector3 cameraPosition;
-    camera.getWorldPosition(cameraPosition);
-    for (const std::shared_ptr<InstancedMesh>& child : children_) {
-        child->count = 0;
-        child->material = mesh.material;
-        child->setLayerMask(mesh.layers().mask);
-        child->setCastShadow(mesh.castShadow());
-        child->setReceiveShadow(mesh.receiveShadow());
-        child->matrixWorld.copy(mesh.matrixWorld);
-    }
-    const bool authored = options_.lods.has_value();
-    const LodChain* chain =
-        authored ? nullptr : (options_.chain.has_value() ? &*options_.chain : nullptr);
-    const double budget = options_.maxPixelError;
-    Matrix4 matrix;
-    Matrix4 world;
-    for (uint32_t index = 0; index < mesh.count; ++index) {
-        mesh.getMatrixAt(index, matrix);
-        world.multiplyMatrices(mesh.matrixWorld, matrix);
-        const Sphere sphere = lod::worldSphere(local_, world);
-        double depth = 0;
-        bool degenerate = false;
-        lod::conservativeViewDepth(camera, sphere.center, sphere.radius, lod::cameraNear(camera), depth,
-                                   degenerate);
-        uint32_t level = 0;
-        if (authored) {
-            const double distance = lod::biasedLodDistance(cameraPosition.distanceTo(sphere.center));
-            while (level + 1 < distances_.size() && distance >= distances_[level + 1]) level += 1;
-        } else if (chain != nullptr) {
-            // Project local error at world scale without copying the chain's errors per placement.
-            const double scale = world.getMaxScaleOnAxis();
-            lod::LodView view;
-            view.camera = &camera;
-            view.viewportHeight = viewportHeight;
-            view.depth = lod::biasedLodDistance(depth);
-            view.degenerate = degenerate;
-            int chosen = 0;
-            std::string error;
-            if (!lod::selectLodLevel(chain->errors, states_[index],
-                                     budget / std::max(scale, std::numeric_limits<double>::epsilon()),
-                                     options_.hysteresis, {view}, chosen, error))
-                return update; // a refused selection leaves every count as it was
-            level = static_cast<uint32_t>(chosen < 0 ? 0 : chosen);
-        }
-        states_[index] = static_cast<int>(level);
-        InstancedMesh& child = *children_[partitionOf_[index] * levels_.size() + level];
-        child.setMatrixAt(child.count, matrix);
-        if (mesh.instanceColor) {
-            // A render partition has no colour of its own, so it starts black rather than white.
-            if (!child.instanceColor)
-                child.instanceColor =
-                    BufferAttribute::fromFloats(std::vector<double>(child.instanceMatrix->count() * 3, 0.0), 3);
-            child.instanceColor->setXYZ(child.count, mesh.instanceColor->getX(index),
-                                        mesh.instanceColor->getY(index),
-                                        mesh.instanceColor->getZ(index));
-            child.instanceColor->setNeedsUpdate();
-        }
-        child.count += 1;
-    }
-    for (const std::shared_ptr<InstancedMesh>& child : children_) {
-        child->instanceMatrix->setNeedsUpdate();
-        if (child->count > 0) child->computeBoundingSphere();
-        update.triangles += drawElements(*child->geometry) / 3 * child->count;
-    }
+    double triangles = 0;
+    if (lod::selectInstancedLods(*mesh_, lod_, camera, viewportHeight, triangles)) update.triangles = triangles;
     return update;
 }
 
