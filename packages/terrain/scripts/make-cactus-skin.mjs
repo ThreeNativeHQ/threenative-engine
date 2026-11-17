@@ -125,8 +125,8 @@ const ribTone = Array.from({ length: RIBS }, () => 0.94 + rnd() * 0.12);
 const areoles = [];
 for (let rib = 0; rib < RIBS; rib += 1)
   for (let row = 0; row < AROLE_ROWS; row += 1) {
-    const u = (rib + 0.5 + (rnd() - 0.5) * 0.16) / RIBS;
-    const v = (row + 0.5 + (rnd() - 0.5) * 0.3) / AROLE_ROWS;
+    const u = (rib + 0.5 + (rnd() - 0.5) * 0.34) / RIBS;
+    const v = (row + 0.5 + (rnd() - 0.5) * 0.8) / AROLE_ROWS;
     areoles.push({ u, v, lean: (rnd() - 0.5) * 1.1, size: 0.85 + rnd() * 0.4 });
   }
 
@@ -145,11 +145,13 @@ for (let y = 0; y < HEIGHT; y += 1) {
     const rib = Math.floor(u * RIBS) % RIBS;
     const phase = frac(u * RIBS + ribLean[rib] * Math.sin(v * Math.PI * 2));
     // A saguaro's rib is a lobe, not a groove: the valley is a soft shadow, never a black line.
-    const ridge = smooth(0, 1, 1 - Math.abs(phase - 0.5) * 2) ** (ribWidth[rib] * 0.6);
+    const taper = ribWidth[rib] * (0.55 + 0.12 * Math.sin(v * 3.1 + rib));
+    const ridge = smooth(0, 1, 1 - Math.abs(phase - 0.5) * 2) ** taper;
     // A wax streak runs along a rib, never across it, so the fine noise is stretched in v only.
     const streak = fbm(u * 26, v * 3.2) - 0.5;
     const fleck = mottle(x, y);
-    const tone = lerp(0.9, 1.1, fleck) * (1 + streak * 0.05) * ribTone[rib];
+    const drift = 1 + 0.07 * Math.sin(v * 6.283 * (0.4 + rib * 0.17) + rib * 2.3);
+    const tone = lerp(0.9, 1.1, fleck) * (1 + streak * 0.05) * ribTone[rib] * drift;
     // A saguaro is a dusty blue-green, not a leaf's vivid green: the red channel carries the dust.
     // The cuticle is what a saguaro shows the sun: pale, dusty and a stop lighter than a leaf's
     // flesh, because a dark column disappears against iron-red sand at forty metres.
