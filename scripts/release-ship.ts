@@ -286,7 +286,7 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
   // A first push with nothing on npm is the normal case, and a tag on this very commit is a resume.
   if (census.release === "none" && census.onNpm === 0) return;
   if (census.tag.commit === target.sha) return;
-  // A draft carries no tag until it is published: deleting it loses nothing, and the same version
+  // A draft made by hand may carry no tag at all: deleting it loses nothing, and the same version
   // can still ship — unless npm already serves part of the cohort, which a bump is the only fix for.
   // Every other state leaves the version name spent, and a partial cohort is finished from the commit
   // the tag already points at. Deleting a public release is the owner's call, so this never advises it.
@@ -302,7 +302,7 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
       ? `npm serves nothing of ${target.version}`
       : `${census.onNpm} of ${census.total} cohort packages are on npm at ${target.version} and the rest are not`;
   const lead =
-    census.onNpm > 0 && census.release === "none"
+    census.onNpm > 0 && census.release === "none" && census.tag.commit === undefined
       ? "Those packages hold the version name and a bump is the only fix"
       : census.release === "draft" && census.onNpm === 0
         ? "That draft holds the version name"

@@ -500,6 +500,16 @@ describe("pnpm release:check-version", () => {
 
   // Deleting the draft would only re-enter the same refusal with no release at all: a bump is the
   // move when npm already serves part of the cohort.
+  // No release at all, but the tag exists: the cohort is finished from that commit, and a bump would
+  // strand the packages that are already on npm.
+  it("finishes a tagless release's partial cohort from its tag, not by a bump", () => {
+    const { deps } = world({ core: [VERSION], release: null, tagCommit: OTHER });
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(
+      new RegExp(`pnpm release:ship --sha ${OTHER}`, "u"),
+    );
+    expect(() => checkReleaseVersion(deps, SHA)).not.toThrow(/prepare --bump/u);
+  });
+
   it("does not advise deleting a draft when part of the cohort is on npm", () => {
     const { deps } = world({
       core: [VERSION],

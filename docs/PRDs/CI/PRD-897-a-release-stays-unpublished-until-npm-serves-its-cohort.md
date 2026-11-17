@@ -11,11 +11,12 @@
 PRD-896 moved the upgrade proof in front of the tag, which closes the shape that burned 0.3.14: a
 first-pass release now proves before any release exists. It deliberately did **not** add a way for the
 publish to skip its own proof — a receipt-backed reuse was built and deleted in review, because the
-publish's proof is the only run that sees the real prebuilt release. Four shapes survive it:
+proof here is the publish's own evidence that the tree it is about to upload works, and a reused
+receipt would carry a claim about bytes nobody re-read; the proof is web-only, so its only contact
+with the prebuilt release is the `install-prebuilt` download. Four shapes survive it:
 
 1. **Every publish.** `release:ship` waits for a public release and then publishes
-   (`pnpm release --yes --skip-gates --resume`), and that call proves again — necessarily, since it is
-   the run that sees the real prebuilt release. The proof therefore always runs behind a public
+   (`pnpm release --yes --skip-gates --resume`), and that call proves again. The proof therefore always runs behind a public
    prerelease: a flake, a moved `latest`, or a network blip there burns the version, first push
    included. This is the shape to close.
 2. **A prerelease that outlives its run.** `native-release.yml:690` creates the release
@@ -70,15 +71,16 @@ upgrade regression is red before a merge instead of after it.
   first-pass burn without it. A landable sketch of it is the first thing to write if the owner prefers
   that shape to phase 2.
 
+## Known gaps
+
+- The version comes from `--sha` while the cohort comes from the checkout, so a `--dry-run` plan for an
+  older commit reads the wrong versions; `readShipState` shares the shape. A census keyed on the commit
+  belongs with phase 2.
+
 ## Blocked on
 
 - The owner's call on the draft-first shape (recorded under Decisions) before it replaces anything,
   and one real release to prove both phases. Deleting a public prerelease on a red publish touches
   release state, which the owner decides.
-- The new gate reads the version from `--sha` but the cohort from the checkout, so a plan taken from a
-  bumped tree for an older commit counts the wrong versions (unverified here; `readShipState` shares
-  the flaw). A census keyed on the commit is part of phase 2's work.
-- Phase 2's lane is reported red for two reasons owned by the release branch (`release-0315`), neither
-  of them visible in this repository at the time of filing and both **unverified here**: the clean
-  room's 15 s `--server-timeout` against a ~21 s cold asset cook, and the reinvention lint rows of
-  2026-11-13 rejecting 0.3.13-generated code. That lane's owner decides when both are green.
+- Dropping the publish's re-proof is an option phase 1 should weigh, now that the proof runs before the
+  tag: the residue it would leave is a publish that uploads bytes nothing re-read.
