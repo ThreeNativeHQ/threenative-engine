@@ -69,7 +69,6 @@ export class TouchControls {
     brakePressed: false,
     move: new Vector2(),
   };
-  #wasBoost = false;
   #wasBrake = false;
   #moveAnchor = new Vector2();
   #resting = new Vector2();
@@ -132,9 +131,9 @@ export class TouchControls {
     place(this.#moveKnob, knobPosition);
     this.#boost.material = boost ? this.#activeMaterial : this.#idleMaterial;
     this.#brake.material = brake ? this.#activeMaterial : this.#idleMaterial;
-    this.#input.boostPressed = boost && !this.#wasBoost;
+    // Held, not an edge: nitro burns while the button is down.
+    this.#input.boostPressed = boost;
     this.#input.brakePressed = brake;
-    this.#wasBoost = boost;
     this.#wasBrake = brake;
     this.#layout(size);
     return this.#input;
@@ -142,7 +141,7 @@ export class TouchControls {
 
   debug(): Record<string, unknown> {
     return {
-      boost: this.#wasBoost,
+      boost: this.#input.boostPressed,
       brake: this.#wasBrake,
       move: this.#input.move.toArray(),
     };

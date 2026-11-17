@@ -955,11 +955,11 @@
     {
       "set": "desert_flora",
       "asset": "olive (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/juniper-a.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1362844,
       "sha256": "0683e2ca0958135853b164c93a76238b5ddd794d3151ffafa12914748ddec90b",
       "note": "bakeVegetation({ preset: \"olive\", seed: 1, lods: [1] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as juniper a."
@@ -967,11 +967,11 @@
     {
       "set": "desert_flora",
       "asset": "olive (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/juniper-a-far.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 992036,
       "sha256": "d13a7cbefb63ae735bb16b23d4e6432cf92b4ff3d070971540280c628d1f4ecc",
       "note": "bakeVegetation({ preset: \"olive\", seed: 1, lods: [2] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as juniper a far."
@@ -979,11 +979,11 @@
     {
       "set": "desert_flora",
       "asset": "olive (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/juniper-b.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1362580,
       "sha256": "592b4d72577ea6e8e4eadeae5b38488de4a2b6e714a39c5510ebf5c1e6c13b58",
       "note": "bakeVegetation({ preset: \"olive\", seed: 2, lods: [1] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as juniper b."
@@ -991,11 +991,11 @@
     {
       "set": "desert_flora",
       "asset": "olive (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/juniper-b-far.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 991772,
       "sha256": "7d3ecaed579fd3d880ae08726dbf997367e4a25ddb19be706637150e43fc210d",
       "note": "bakeVegetation({ preset: \"olive\", seed: 2, lods: [2] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as juniper b far."
@@ -1003,11 +1003,11 @@
     {
       "set": "desert_flora",
       "asset": "creosote (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/sage.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 779116,
       "sha256": "9563046c4ef69677b360563044c96e8017662bdbb34161f14c69a0713a948012",
       "note": "bakeVegetation({ preset: \"creosote\", seed: 1, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as sage."
@@ -1015,11 +1015,11 @@
     {
       "set": "desert_flora",
       "asset": "thornbush (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/blackbrush.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1429856,
       "sha256": "4136a47325a2429dd09520afc281031c2d9809ed79045a0e1c3fa8e266a5f1d3",
       "note": "bakeVegetation({ preset: \"thornbush\", seed: 1, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as blackbrush."
@@ -1027,11 +1027,11 @@
     {
       "set": "desert_flora",
       "asset": "agave (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/yucca.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 39164,
       "sha256": "4eeffd9ad2b761f182eeaf49a7afb1e18d91bea29f413a9a580858298a3cd1f2",
       "note": "bakeVegetation({ preset: \"agave\", seed: 1, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as yucca."
@@ -1039,11 +1039,11 @@
     {
       "set": "desert_flora",
       "asset": "bunchgrass (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/bunchgrass-a.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 42336,
       "sha256": "8b15e87c87a690d30851b7c24261de696cd2dbe15158473a33a32e656c270ef0",
       "note": "bakeVegetation({ preset: \"bunchgrass\", seed: 1, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as bunchgrass a."
@@ -1051,11 +1051,11 @@
     {
       "set": "desert_flora",
       "asset": "bunchgrass (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/bunchgrass-b.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 42336,
       "sha256": "7ca1bf841072528faeeb3ecd97a59920355a9b8631505a6fbb6b8a839fd6425a",
       "note": "bakeVegetation({ preset: \"bunchgrass\", seed: 2, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as bunchgrass b."
@@ -1063,11 +1063,11 @@
     {
       "set": "desert_flora",
       "asset": "drygrass (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/drygrass.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 38052,
       "sha256": "d700db642097c6ca219ed0a965a70e1bfdbca61fc08b161a7c61a03b705ec2cc",
       "note": "bakeVegetation({ preset: \"drygrass\", seed: 1, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as drygrass."
@@ -1075,11 +1075,11 @@
     {
       "set": "desert_flora",
       "asset": "marigold (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/marigold.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 486336,
       "sha256": "3c90146d8d22c97891ffac7895cd40cad19b1607fe77c2164312743ddb8e19c5",
       "note": "bakeVegetation({ preset: \"marigold\", seed: 1, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as marigold."
@@ -1087,11 +1087,11 @@
     {
       "set": "desert_flora",
       "asset": "branch (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/branch.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 13208,
       "sha256": "67e80fd66f92b3e16cf99408e7c2a1bd09b77d4dcc82906bac7a08704afb33ce",
       "note": "bakeVegetation({ preset: \"branch\", seed: 1, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as branch."
@@ -1099,11 +1099,11 @@
     {
       "set": "desert_flora",
       "asset": "branch (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/branch-b.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 13208,
       "sha256": "3cd7837b322069865538aebf524427567d9af0649423dbf989f9a29ea0ee081f",
       "note": "bakeVegetation({ preset: \"branch\", seed: 2, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as branch b."
@@ -1111,11 +1111,11 @@
     {
       "set": "desert_flora",
       "asset": "twig (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "desert_flora/twig.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 3272,
       "sha256": "bd366e4888e9ad6f71307a6affb3454e7d0fd3169d64e0ba267007a80dd654c2",
       "note": "bakeVegetation({ preset: \"twig\", seed: 1, lods: [0] }); deterministic, by starter/desert/bake-flora.mjs. The desert kit draws it as twig."
@@ -1123,11 +1123,11 @@
     {
       "set": "alpine_flora",
       "asset": "blackspruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/blackspruce-a-mid.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1178072,
       "sha256": "7205fe473956e4560e8939c34bdc65d4caf55191da6bee5a7da0d1805fddee48",
       "note": "bakeVegetation({ preset: \"blackspruce\", seed: 1, form: BLACKSPRUCE_FORM, lods: [2] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's black spruce stand, mid level."
@@ -1135,11 +1135,11 @@
     {
       "set": "alpine_flora",
       "asset": "blackspruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/blackspruce-a-near.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1334484,
       "sha256": "8a61024d11b24d4f59657e418c712657224f95443048de9218c82dafd8ade4c6",
       "note": "bakeVegetation({ preset: \"blackspruce\", seed: 1, form: BLACKSPRUCE_FORM, lods: [1] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's black spruce stand, near level."
@@ -1147,11 +1147,11 @@
     {
       "set": "alpine_flora",
       "asset": "blackspruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/blackspruce-b-mid.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1178072,
       "sha256": "2dc7b8bfb0db43c92a3feb46647fecead8d62fe93702f14e085b59a80f0f2c6a",
       "note": "bakeVegetation({ preset: \"blackspruce\", seed: 2, form: BLACKSPRUCE_FORM, lods: [2] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's black spruce stand, mid level."
@@ -1159,11 +1159,11 @@
     {
       "set": "alpine_flora",
       "asset": "blackspruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/blackspruce-b-near.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1334224,
       "sha256": "8ce05b87d94be07ec6a875673a83c9a6576eb9b52c1db8b235b8a12f235a1e15",
       "note": "bakeVegetation({ preset: \"blackspruce\", seed: 2, form: BLACKSPRUCE_FORM, lods: [1] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's black spruce stand, near level."
@@ -1171,11 +1171,11 @@
     {
       "set": "alpine_flora",
       "asset": "spruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/spruce-a-mid.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1433196,
       "sha256": "48e171c95e0bfe6ae98c2d9d93c109a5b314668cf8f72a4f50643d672f6d35e1",
       "note": "bakeVegetation({ preset: \"spruce\", seed: 1, form: SPRUCE_FORM, lods: [2] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's Norway spruce stand, mid level."
@@ -1183,11 +1183,11 @@
     {
       "set": "alpine_flora",
       "asset": "spruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/spruce-a-near.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1903484,
       "sha256": "10ff948d0fa6ef2813f1f037b18da3886c7688da89ffcffff402b79ed896d078",
       "note": "bakeVegetation({ preset: \"spruce\", seed: 1, form: SPRUCE_FORM, lods: [1] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's Norway spruce stand, near level."
@@ -1195,11 +1195,11 @@
     {
       "set": "alpine_flora",
       "asset": "spruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/spruce-b-mid.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1433196,
       "sha256": "88991578ee66109f2107b8bea97c88ba42cf4290fdc3739543b47fb8c9742bbb",
       "note": "bakeVegetation({ preset: \"spruce\", seed: 2, form: SPRUCE_FORM, lods: [2] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's Norway spruce stand, mid level."
@@ -1207,11 +1207,11 @@
     {
       "set": "alpine_flora",
       "asset": "spruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/spruce-b-near.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1903484,
       "sha256": "999256864ad6f5bbb44055ac7348d428f6a153672e04400d434bed46babaf06a",
       "note": "bakeVegetation({ preset: \"spruce\", seed: 2, form: SPRUCE_FORM, lods: [1] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's Norway spruce stand, near level."
@@ -1219,11 +1219,11 @@
     {
       "set": "alpine_flora",
       "asset": "spruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/spruce-c-mid.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1433460,
       "sha256": "7b8c65c5cdec081ac8e26d99b19ea71c6448f8b90dcba0468158242282d01c29",
       "note": "bakeVegetation({ preset: \"spruce\", seed: 3, form: SPRUCE_FORM, lods: [2] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's Norway spruce stand, mid level."
@@ -1231,11 +1231,11 @@
     {
       "set": "alpine_flora",
       "asset": "spruce (procedural)",
-      "author": "@threenative/procedural-vegetation (Arbor and forest-kit generators, MIT)",
+      "author": "@threenative/procedural-environment (Arbor and forest-kit generators, MIT)",
       "license": "MIT",
       "map": "model",
       "file": "alpine_flora/spruce-c-near.glb",
-      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-vegetation",
+      "url": "https://github.com/ThreeNativeHQ/threenative-engine/tree/develop/packages/procedural-environment",
       "bytes": 1904012,
       "sha256": "28f7f4d900c621ee7e87e0e3857d4e089dac5035bc5c092b3578d7435378fd47",
       "note": "bakeVegetation({ preset: \"spruce\", seed: 3, form: SPRUCE_FORM, lods: [1] }); deterministic, by starter/alpine/bake-flora.mjs. The alpine kit's Norway spruce stand, near level."

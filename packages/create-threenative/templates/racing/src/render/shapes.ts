@@ -269,6 +269,18 @@ function wheel(materials: Materials, radius: number): Group {
 // flare in `CAR_STATIONS` — 0.86 half-width over the rear axle against 0.72 at the doors — is the
 // arch, and it costs no geometry at all.
 
+/** Where each exhaust ends, in the car's own metres: behind the tail, either side of centre. */
+export const EXHAUST = { x: -2.1, y: 0.33, z: 0.3 } as const;
+
+/** A cone with its base at the origin and its tip `length` down -x: the way a flame leaves a car. */
+function flameCone(radius: number, length: number): BufferGeometry {
+  return new ConeGeometry(radius, length, 12, 1, true)
+    .rotateZ(Math.PI / 2)
+    .translate(-length / 2, 0, 0);
+}
+const FLAME_OUTER = flameCone(0.13, 1.5);
+const FLAME_CORE = flameCone(0.07, 0.85);
+
 export function vehicle(materials: Materials): Group {
   const root = new Group();
   const shell = new RigidAssembly();
@@ -369,6 +381,14 @@ export function vehicle(materials: Materials): Group {
     shell.add(bonnet);
   }
 
+  // Twin exhausts under the tail bar: where the nitro flame comes out, so it has a source.
+  for (const side of [-1, 1] as const) {
+    const pipe = part(new CylinderGeometry(0.075, 0.085, 0.22, 12), materials.alloy);
+    pipe.rotation.z = Math.PI / 2;
+    pipe.position.set(EXHAUST.x + 0.08, EXHAUST.y, side * EXHAUST.z);
+    shell.add(pipe);
+  }
+
   // A tail light bar across the full width. The tail is where the wing, the diffuser and the body
   // all meet, and without one bright horizontal the eye finds nothing to hold there — which
   // matters more than any other detail, because the chase camera looks at this face all game.
@@ -411,6 +431,23 @@ export function vehicle(materials: Materials): Group {
   const body = new Group();
   body.name = "body";
   shell.attachTo(body);
+  // The nitro flame: an outer cone and a hotter core behind each exhaust, hidden until a burn.
+  // It rides on the body, so it leans with it, and `CarBody` stretches it along -x as it flickers.
+  const flame = new Group();
+  flame.name = "nitro-flame";
+  flame.visible = false;
+  for (const side of [-1, 1] as const) {
+    const outer = new Mesh(FLAME_OUTER, materials.flame);
+    outer.position.set(EXHAUST.x, EXHAUST.y, side * EXHAUST.z);
+    const core = new Mesh(FLAME_CORE, materials.flameCore);
+    core.position.copy(outer.position);
+    for (const cone of [outer, core]) {
+      cone.castShadow = false;
+      cone.frustumCulled = false;
+      flame.add(cone);
+    }
+  }
+  body.add(flame);
   root.add(body);
   return root;
 }

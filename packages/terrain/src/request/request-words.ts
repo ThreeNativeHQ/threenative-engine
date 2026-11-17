@@ -55,7 +55,7 @@ export const LANDFORM_BIOME: Readonly<Record<LandformKind, TerrainKit>> = {
 };
 
 /**
- * The tree a request word asks for: an Arbor preset id (`@threenative/procedural-vegetation`) and
+ * The tree a request word asks for: an Arbor preset id (`@threenative/procedural-environment`) and
  * the words that name it. A request that names one cooks that species in place of the kit's own
  * tree, as `arbor:<id>`. A word a biome already answers to ("spruce", "pine", "fir") keeps its
  * meaning, the kit's own conifer, so a starter's request still cooks that starter as shipped.

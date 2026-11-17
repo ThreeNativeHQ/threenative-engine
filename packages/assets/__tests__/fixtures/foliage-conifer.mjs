@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { NodeIO } from "@gltf-transform/core";
-import { bakeVegetation } from "@threenative/procedural-vegetation";
+import { bakeVegetation } from "@threenative/procedural-environment";
 import { PNG } from "pngjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));

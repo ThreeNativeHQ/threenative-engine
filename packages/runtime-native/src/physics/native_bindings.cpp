@@ -777,6 +777,31 @@ js::JSValueHandle makeSimulationObject(
             return engine->newUndefined();
           }));
   engine->setProperty(
+      simulation, "setVehicleWheelFriction",
+      engine->newFunction(
+          "setVehicleWheelFriction",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            if (!parseBodyIdArgument(engine, args, id) || args.size() < 3 ||
+                !engine->isNumber(args[1]) || !engine->isNumber(args[2]))
+              return fail(engine,
+                          "setVehicleWheelFriction requires an id, a wheel and a friction slip");
+            const double wheel = engine->toNumber(args[1]);
+            const double frictionSlip = engine->toNumber(args[2]);
+            if (!(wheel >= 0.0) || wheel > 4294967295.0 ||
+                wheel != static_cast<double>(static_cast<uint32_t>(wheel)))
+              return fail(engine, "TN_VEHICLE_INVALID: the wheel index is not a whole number.");
+            if (!tn_physics_set_vehicle_wheel_friction(owner->simulation, id,
+                                                       static_cast<uint32_t>(wheel),
+                                                       static_cast<float>(frictionSlip)))
+              return fail(engine,
+                          "TN_VEHICLE_UNKNOWN: the vehicle or wheel left the backend, or the "
+                          "friction slip is not finite and non-negative.");
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
       simulation, "readVehicleState",
       engine->newFunction(
           "readVehicleState",

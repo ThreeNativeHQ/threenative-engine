@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { IBiomeSpec } from "../biome/biome.js";
 
-/** The slice of `@threenative/procedural-vegetation` the cook calls; loaded from the game project. */
+/** The slice of `@threenative/procedural-environment` the cook calls; loaded from the game project. */
 interface IVegetation {
   bakeVegetation(options: {
     lods: readonly number[];
@@ -34,7 +34,7 @@ export interface IArborAsset {
   tree?: boolean;
 }
 
-/** Every tree preset `@threenative/procedural-vegetation` bakes, for the tool schemas; a spec checks it. */
+/** Every tree preset `@threenative/procedural-environment` bakes, for the tool schemas; a spec checks it. */
 export const ARBOR_TREE_IDS: readonly string[] = [
   "oak",
   "beech",
@@ -66,7 +66,7 @@ export const ARBOR_TREE_IDS: readonly string[] = [
   "jacaranda",
 ];
 
-const PACKAGE = "@threenative/procedural-vegetation";
+const PACKAGE = "@threenative/procedural-environment";
 const SPECIES = /^arbor:([a-z0-9]+)(?:@(\d{1,9}))?$/u;
 // The streamed LOD1 (about 7k triangles) is what an instanced stand draws; LOD2 is the far level.
 const LODS = [1, 2] as const;
@@ -113,7 +113,7 @@ async function loadVegetation(projectRoot: string, wanted: string): Promise<IVeg
 
 /**
  * Bakes one `arbor:<preset>[@seed]` species into `scratch` as a near and a mid level, with the
- * asset row a cook or a kit bake reads. `@threenative/procedural-vegetation` comes from `projectRoot`.
+ * asset row a cook or a kit bake reads. `@threenative/procedural-environment` comes from `projectRoot`.
  */
 export async function growArborAsset(
   projectRoot: string,

@@ -22,7 +22,7 @@ real heights on the square's own datum. It is game source: once copied, every fi
 
 Valley of the Gods is cold desert on the Colorado Plateau, not the Sonoran or Mojave desert: no
 saguaro, joshua tree or acacia grows there. The kit draws what does, from
-`@threenative/procedural-vegetation` bakes in `starter-assets/desert_flora/`:
+`@threenative/procedural-environment` bakes in `starter-assets/desert_flora/`:
 
 | Plant | Drawn with (preset) | Placed as |
 | --- | --- | --- |

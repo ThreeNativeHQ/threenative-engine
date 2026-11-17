@@ -1,6 +1,5 @@
 import { UiLayer } from "@threenative/ui";
 import { Hud } from "./Hud.js";
-import { Menu } from "./Menu.js";
 
 /**
  * Everything the player sees that is not the scene.
@@ -14,7 +13,6 @@ export function GameUi() {
   return (
     <UiLayer>
       <Hud />
-      <Menu />
     </UiLayer>
   );
 }

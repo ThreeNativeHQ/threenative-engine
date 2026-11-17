@@ -1,11 +1,11 @@
-// Run with <out dir> (the starter art's `desert_flora/`); needs @threenative/procedural-vegetation.
+// Run with <out dir> (the starter art's `desert_flora/`); needs @threenative/procedural-environment.
 // Bakes the desert's plants and dead wood once into GLBs the species pack (`render/props/pack.ts`)
 // draws. Valley of the Gods has no Poly Haven scan for these species, so they are Arbor and
 // forest-kit presets: the same preset, seed and level always write the same bytes.
 import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bakeVegetation } from "@threenative/procedural-vegetation";
+import { bakeVegetation } from "@threenative/procedural-environment";
 
 const out = process.argv[2];
 if (!out) throw new Error("bake-flora: pass the output folder, e.g. starter-assets/desert_flora");

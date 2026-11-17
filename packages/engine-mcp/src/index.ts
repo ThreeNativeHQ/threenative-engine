@@ -1,4 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -388,15 +395,26 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
   return value as unknown as ICapabilityManifest;
 }
 
+/** Every search and detail call reads the manifest, so a parsed copy is kept per file and
+ * reused until the file's mtime or size changes. Callers only read it. */
+const manifestCache = new Map<string, { stamp: string; manifest: ICapabilityManifest }>();
+
 export function loadCapabilityManifest(file = defaultManifestPath()): ICapabilityManifest {
   let raw: string;
+  let stamp: string;
   try {
+    const stat = statSync(file);
+    stamp = `${stat.mtimeMs}:${stat.size}`;
+    const cached = manifestCache.get(file);
+    if (cached?.stamp === stamp) return cached.manifest;
     raw = readFileSync(file, "utf8");
   } catch (error) {
     throw manifestError(file, `cannot read committed manifest: ${String(error)}`);
   }
   try {
-    return validateManifest(JSON.parse(raw) as unknown, file);
+    const manifest = validateManifest(JSON.parse(raw) as unknown, file);
+    manifestCache.set(file, { stamp, manifest });
+    return manifest;
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("TN_ENGINE_CAPABILITIES_MANIFEST:"))
       throw error;
@@ -465,7 +483,21 @@ export function capabilitySituationTokens(value: string): string[] {
     .filter((token) => !STOP_WORD_STEMS.has(token));
 }
 
-const tokens = capabilitySituationTokens;
+/** Search tokenizes every entry's situations on every call; the text repeats, so the result is
+ * kept. Frozen so a caller cannot change a shared array. */
+const tokenCache = new Map<string, readonly string[]>();
+// ponytail: clear-all at 20k strings; an LRU only if a long-lived server ever thrashes it.
+const TOKEN_CACHE_LIMIT = 20_000;
+
+function tokens(value: string): readonly string[] {
+  let cached = tokenCache.get(value);
+  if (cached === undefined) {
+    if (tokenCache.size >= TOKEN_CACHE_LIMIT) tokenCache.clear();
+    cached = Object.freeze(capabilitySituationTokens(value));
+    tokenCache.set(value, cached);
+  }
+  return cached;
+}
 
 /**
  * How much a word narrows the search, measured against this manifest rather than assumed.
@@ -978,6 +1010,22 @@ function withReferenceTools(situation: string, response: ICapabilitySearchRespon
   };
 }
 
+/** The token weights depend only on the entries, and the cached manifest keeps one entries array,
+ * so they are computed once per manifest instead of once per search. */
+const weightCache = new WeakMap<
+  readonly ICapabilityEntry[],
+  { weights: ReadonlyMap<string, number>; nameWeights: ReadonlyMap<string, number> }
+>();
+
+function manifestWeights(entries: readonly ICapabilityEntry[]) {
+  let cached = weightCache.get(entries);
+  if (cached === undefined) {
+    cached = { weights: tokenWeights(entries), nameWeights: nameTokenWeights(entries) };
+    weightCache.set(entries, cached);
+  }
+  return cached;
+}
+
 function searchMechanics(
   situation: string,
   manifest: ICapabilityManifest,
@@ -985,8 +1033,7 @@ function searchMechanics(
 ): ICapabilitySearchResponse {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
-  const weights = tokenWeights(manifest.entries);
-  const nameWeights = nameTokenWeights(manifest.entries);
+  const { weights, nameWeights } = manifestWeights(manifest.entries);
   const notOwned = notOwnedMatch(manifest, query);
   if (notOwned !== undefined && isSpecificNotOwnedMatch(query, notOwned.matchedSituation)) {
     return {
@@ -1467,7 +1514,7 @@ export async function handleLine(line: string, manifestFile: string): Promise<st
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.14" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.15" },
       });
     }
     if (request.method === "tools/list") {

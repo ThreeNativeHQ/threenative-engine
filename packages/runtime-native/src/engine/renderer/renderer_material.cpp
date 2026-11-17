@@ -568,10 +568,10 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
 // rotations and negative 90-degree FOV are CubeCamera's WebGPU branch. Level 0 is enough for
 // Background.js's sharp sky (backgroundBlurriness=0); environment lighting uses PMREM separately.
 Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
-    if (texture.mapping != 303 || !texture.hasImage() || texture.format != kTextureRGBAFormat ||
-        (texture.type != kTextureFloatType && texture.type != kTextureHalfFloatType && texture.type != kTextureUnsignedByteType) ||
-        uint64_t(texture.width) * texture.height * texture.bytesPerTexel() != texture.data.size())
-        throw std::runtime_error("TN_NATIVE_BACKGROUND_INVALID: decoded RGBA equirectangular pixels required");
+    // Any image a material can sample converts, as in three. A host, compressed or GPU-written image has no CPU
+    // texels, so checking them refused such a sky and stopped the renderer; materialTexture validates the upload.
+    if (texture.mapping != 303)
+        throw std::runtime_error("TN_NATIVE_BACKGROUND_INVALID: EquirectangularReflectionMapping required");
     auto& cube = backgroundCubes_[texture.ident.value()];
     if (cube.view && cube.version == texture.version()) return cube;
     if (cube.view) wgpuTextureViewRelease(cube.view);
@@ -861,10 +861,9 @@ uint64_t Renderer::pmremPacketCost(const PmremPacket& packet) {
 void Renderer::beginEnvironment(const Texture& equirect) {
     if (equirect.mapping != 303)
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UNSUPPORTED: requires EquirectangularReflectionMapping");
-    if (equirect.width < 64 || !equirect.hasImage() || equirect.format != kTextureRGBAFormat ||
-        (equirect.type != kTextureFloatType && equirect.type != kTextureHalfFloatType && equirect.type != kTextureUnsignedByteType) ||
-        uint64_t(equirect.width) * equirect.height * equirect.bytesPerTexel() != equirect.data.size())
-        throw std::runtime_error("TN_NATIVE_ENVIRONMENT_INVALID: requires decoded RGBA equirectangular pixels, width >= 64");
+    // PMREMGenerator bakes any texture a material can sample (a host image, a compressed or GPU-written one) and
+    // floors the cube at kPmremMinSize, so a small sky is upsampled (below). Checking CPU texels and a 64 width
+    // refused skies three draws and stopped the whole renderer; materialTexture validates what it uploads.
     abandonEnvironment();  // one active preparation globally: envUniforms_ is shared
     EnvironmentGpu& env = environments_[equirect.ident.value()];
     for (WGPUTextureView view : env.targetViews)

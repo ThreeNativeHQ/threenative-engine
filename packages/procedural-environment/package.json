@@ -1,13 +1,13 @@
 {
-  "name": "@threenative/procedural-vegetation",
-  "version": "0.1.0",
+  "name": "@threenative/procedural-environment",
+  "version": "0.1.1",
   "license": "MIT",
-  "description": "Optional, bake-first procedural tree GLBs for ThreeNative, from the Arbor generator.",
+  "description": "Optional, bake-first procedural nature GLBs for ThreeNative: trees and cover (Arbor), forest floor (forest-kit) and rocks, cliffs and mountains (Outcrop), found by biome.",
   "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ThreeNativeHQ/threenative-engine.git",
-    "directory": "packages/procedural-vegetation"
+    "directory": "packages/procedural-environment"
   },
   "type": "module",
   "files": ["dist", "README.md", "LICENSES"],
@@ -28,15 +28,17 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. procedural-vegetation/__tests__ && publint --strict"
+    "test": "vitest run --root ../.. procedural-environment/__tests__ && publint --strict"
   },
   "dependencies": {
-    "@napi-rs/canvas": "catalog:"
+    "@napi-rs/canvas": "catalog:",
+    "three": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "publint": "0.3.22",
     "tsup": "8.5.1",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@types/three": "catalog:"
   }
 }

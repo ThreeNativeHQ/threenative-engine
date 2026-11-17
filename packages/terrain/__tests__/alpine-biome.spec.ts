@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { vegetationPresets } from "@threenative/procedural-vegetation";
+import { vegetationPresets } from "@threenative/procedural-environment";
 import { describe, expect, it } from "vitest";
 import { validateBiome } from "../src/biome/biome.js";
 

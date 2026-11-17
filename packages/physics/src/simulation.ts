@@ -371,6 +371,11 @@ export interface IPhysicsSimulation {
    */
   createVehicle?(options: IPhysicsVehicleCreateOptions): number;
   setVehicleInput?(id: number, input: IPhysicsVehicleInput): void;
+  /**
+   * Godot's `VehicleWheel3D.wheel_friction_slip` for one wheel, at runtime: the grip cap that a
+   * handbrake drops on the rear pair. Cold path, called on a change of grip, not per frame.
+   */
+  setVehicleWheelFriction?(id: number, wheel: number, frictionSlip: number): void;
   readVehicleState?(id: number): IPhysicsVehicleState | undefined;
   /** Cold-path respawn: move the chassis, drop both velocities, and face the given yaw in radians. */
   resetVehicle?(id: number, position: IPhysicsVector3, yaw: number): void;
@@ -1771,6 +1776,12 @@ export function createWebPhysicsSimulation(
       for (let wheel = 0; wheel < controller.numWheels(); wheel += 1)
         controller.setWheelBrake(wheel, input.brake);
     },
+    setVehicleWheelFriction: (id, wheel, frictionSlip) => {
+      requireLive();
+      const { controller } = requireVehicle(id, "setVehicleWheelFriction");
+      requireWheelFriction(wheel, frictionSlip, controller.numWheels());
+      controller.setWheelFrictionSlip(wheel, frictionSlip);
+    },
     readVehicleState: (id) => {
       requireLive();
       const record = requireVehicle(id, "readVehicleState");
@@ -1880,4 +1891,14 @@ export function requirePhysicsSimulation(
   throw new Error(
     "Physics nodes require an IPhysicsContext. Passing a raw backend world is deprecated and backend-specific.",
   );
+}
+
+/** A wheel index inside the car and a finite, non-negative grip, or a named throw. */
+export function requireWheelFriction(wheel: number, frictionSlip: number, wheels: number): void {
+  if (!Number.isSafeInteger(wheel) || wheel < 0 || wheel >= wheels)
+    throw new Error(
+      `TN_VEHICLE_INVALID: wheel index ${String(wheel)} is outside 0 through ${wheels - 1}.`,
+    );
+  if (typeof frictionSlip !== "number" || !Number.isFinite(frictionSlip) || frictionSlip < 0)
+    throw new Error("TN_PHYSICS_NON_FINITE: wheel friction slip must be a finite number >= 0.");
 }

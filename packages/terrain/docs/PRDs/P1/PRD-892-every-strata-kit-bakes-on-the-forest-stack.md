@@ -77,7 +77,7 @@ flowchart LR
 - **Real ground per biome**: each kit's default survey becomes a real place of that biome, through
   the PRD-887 region rows (one row per kit, plus its far ring).
 - **Vegetation source** (root `AGENTS.md`, owner 2026-11-15): Poly Haven CC0 scans first, then
-  `@threenative/procedural-vegetation` presets. A species with neither becomes a new preset in that
+  `@threenative/procedural-environment` presets. A species with neither becomes a new preset in that
   package.
 
 - **The vegetation package already holds most of the four biomes** (checked 2026-11-15 on
@@ -193,7 +193,7 @@ flowchart LR
   rows — `spruce`, `scotspine` and `blackspruce` stands (slope/height bands, stand shares, far rings at
   1.5–1.9 km) and `tundragrass`, `tussock`, `fireweed` and `blueberry` cover below the treeline, with
   `rock` added to the species list. Every named species is an installed
-  `@threenative/procedural-vegetation` preset (`scotspine`, `blackspruce`, `tundragrass`, `fireweed`,
+  `@threenative/procedural-environment` preset (`scotspine`, `blackspruce`, `tundragrass`, `fireweed`,
   `blueberry`), so the cook grows them instead of filtering them. Proof: new
   `alpine-biome.spec.ts` (3 cases: the box's species list against the installed presets, bands and
   reaches, and a closed-schema refusal on an unknown `krummholz` field), `terrain-mcp.spec.ts` +

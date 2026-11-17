@@ -62,11 +62,11 @@ places anything, and an unknown field fails by name.
 Every plant comes from one of two sources, in this order:
 
 1. A CC0 Poly Haven scan. Search with the asset MCP tool `polyhaven_search_assets`.
-2. A `bakeVegetation` preset from `@threenative/procedural-vegetation`. A dwarf or krummholz tree is a
+2. A `bakeVegetation` preset from `@threenative/procedural-environment`. A dwarf or krummholz tree is a
    `form` change on an existing preset, not a new species.
 
 Name each species and its scan or preset in `render/props/pack.ts`. A species with neither source
-becomes a new `@threenative/procedural-vegetation` preset. Do not model it by hand.
+becomes a new `@threenative/procedural-environment` preset. Do not model it by hand.
 
 ## 4. The look: `render/`
 

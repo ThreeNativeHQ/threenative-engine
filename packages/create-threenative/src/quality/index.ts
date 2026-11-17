@@ -11,6 +11,10 @@ import { reinventionConfigs } from "./reinventions.js";
 export interface IQualityOptions {
   /** The project root: where `tsconfig.json` lives and the typed rules resolve from. */
   readonly root: string;
+  /** The reinvention rows (`reinventions.ts`). A scaffolded config turns them on; a game made
+   * before they existed passes only `root`, and an upgrade never rewrites that file, so its own
+   * code keeps the rules it was made with. */
+  readonly reinventions?: boolean;
 }
 
 type Plugin = NonNullable<Linter.Config["plugins"]>[string];
@@ -32,7 +36,7 @@ function hasReact(root: string): boolean {
 /** The default correctness gate for a generated game: TypeScript-aware async rules, React hook
  * rules when React is installed, scoped suppressions, and the ThreeNative game rules (`threenative/*`: frame-callback cost, UI state use).
  * Formatting is Biome's job, not this config's. */
-export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
+export function qualityConfig({ root, reinventions = false }: IQualityOptions): Linter.Config[] {
   const config: Linter.Config[] = [
     { ignores: ["**/node_modules/**", "**/dist/**", "**/.threenative/**", "**/dist-native/**"] },
     {
@@ -66,7 +70,7 @@ export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
       },
     },
   ];
-  config.push(...reinventionConfigs(SOURCE));
+  if (reinventions) config.push(...reinventionConfigs(SOURCE));
   if (hasReact(root)) {
     config.push({
       files: ["src/**/*.tsx"],

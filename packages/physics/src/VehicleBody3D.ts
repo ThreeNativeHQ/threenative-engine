@@ -79,6 +79,7 @@ export class VehicleBody3D extends RigidBody3D {
   #brake = 0;
   #steering = 0;
   #disposed = false;
+  readonly #friction: number[];
 
   constructor(options: IVehicleBody3DOptions) {
     const forward = FORWARD_AXES[options.forwardAxis ?? "-z"];
@@ -112,6 +113,7 @@ export class VehicleBody3D extends RigidBody3D {
       world: options.world,
     });
     this.wheels = options.wheels;
+    this.#friction = options.wheels.map((wheel) => wheel.wheelFrictionSlip);
     this.#object = options.object;
     this.#simulation = simulation;
     this.#readState = readVehicleState;
@@ -178,6 +180,28 @@ export class VehicleBody3D extends RigidBody3D {
    */
   get speed(): number {
     return this.#state().speed;
+  }
+
+  /**
+   * Godot's `VehicleWheel3D.wheel_friction_slip`, changed while the car drives: the cap on the
+   * tyre's combined grip impulse, as a multiple of the load on it. Dropping the rear pair is a
+   * handbrake slide; restoring it is the catch. Cold path: call it when the grip changes.
+   */
+  setWheelFrictionSlip(index: number, frictionSlip: number): void {
+    this.#requireLive("setWheelFrictionSlip");
+    const set = this.#simulation.setVehicleWheelFriction;
+    if (set === undefined)
+      throw new Error(
+        "TN_VEHICLE_NATIVE_UNAVAILABLE: the active physics backend cannot change wheel grip.",
+      );
+    set.call(this.#simulation, this.#vehicle, index, frictionSlip);
+    this.#friction[index] = frictionSlip;
+  }
+
+  /** The wheel's current grip cap: its construction value until `setWheelFrictionSlip` moves it. */
+  wheelFrictionSlip(index: number): number {
+    this.#wheel(index, 0);
+    return this.#friction[index] as number;
   }
 
   /** Whether this wheel's suspension ray found ground on the last completed step. */

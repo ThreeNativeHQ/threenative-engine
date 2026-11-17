@@ -274,9 +274,11 @@
         "@threenative/core#ScenePicker": "export class ScenePicker { … }",
         "@threenative/core#sceneWarning": "export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, gpuClass?: string, ): ISceneWarning | undefined { … }",
         "@threenative/core#Scheduler": "export class Scheduler { … }",
+        "@threenative/core#ScreenProbeGather": "export class ScreenProbeGather { … }",
         "@threenative/core#setAttitude": "export function setAttitude( state: IFlightState, heading = 0, pitch = 0, roll = 0, ): IFlightQuaternion { … }",
         "@threenative/core#setSpanRecorder": "export function setSpanRecorder(next: SpanRecorder | undefined): void { … }",
         "@threenative/core#ShadowFilterBudget": "export class ShadowFilterBudget { … }",
+        "@threenative/core#ShortRangeAO": "export class ShortRangeAO { … }",
         "@threenative/core#SkeletalMesh3D": "export class SkeletalMesh3D extends AnimationPlayer { … }",
         "@threenative/core#skeletonBones": "export function skeletonBones(root: Object3D): readonly string[] { … }",
         "@threenative/core#SkyCapture": "export class SkyCapture { … }",
@@ -486,11 +488,14 @@
         "@threenative/procedural-animals#parseAnimalBake": "export function parseAnimalBake(buffer: ArrayBuffer): IAnimalBake { … }"
       }
     },
-    "@threenative/procedural-vegetation": {
+    "@threenative/procedural-environment": {
       "exports": [".", "./package.json"],
       "symbols": {
-        "@threenative/procedural-vegetation#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> { … }",
-        "@threenative/procedural-vegetation#vegetationPresets": "export function vegetationPresets(): IVegetationPreset[] { … }"
+        "@threenative/procedural-environment#bakeRock": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
+        "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",
+        "@threenative/procedural-environment#environmentBiomes": "export function environmentBiomes(): IEnvironmentBiome[] { … }",
+        "@threenative/procedural-environment#environmentElements": "export function environmentElements(filter: IEnvironmentFilter = { … }",
+        "@threenative/procedural-environment#vegetationPresets": "export function vegetationPresets(): IVegetationPreset[] { … }"
       }
     },
     "@threenative/raw-unreal": {

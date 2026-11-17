@@ -151,7 +151,7 @@ for (const [asset, heights] of Object.entries({
 }
 // The desert's plants and stones. Valley of the Gods is Colorado Plateau desert: Utah juniper, sage,
 // blackbrush, Utah yucca, desert marigold and bunchgrass between sandstone buttes, with no saguaro,
-// joshua tree or acacia. The plants are `@threenative/procedural-vegetation` bakes
+// joshua tree or acacia. The plants are `@threenative/procedural-environment` bakes
 // (`starter-assets/desert_flora/`): `olive` draws the gnarled grey juniper, `creosote` the sage,
 // `thornbush` the blackbrush, `agave` the yucca. The stones are the kit's Poly Haven boulder scans.
 // Each row is [GLB, metres]; a second GLB is the far level. These rows replace the generator's own

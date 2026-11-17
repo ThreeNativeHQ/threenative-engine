@@ -50,8 +50,8 @@
       {
         "id": "state",
         "path": "place",
-        "equals": 2,
-        "allowTrivial": "The demo driver starts second on the grid and stays there, so the place is a held invariant; the DNF transition below is what proves the finish."
+        "equals": 6,
+        "allowTrivial": "The demo driver starts last on the grid, slower than every rival, and stays there, so the place is a held invariant; the DNF transition below is what proves the finish."
       },
       {
         "id": "state",
@@ -81,8 +81,8 @@
     "hud": [
       {
         "id": "outcome",
-        "equals": "P2",
-        "allowTrivial": "The player finished every lap behind the rival: the panel names the place, not DNF, which reads as did-not-finish."
+        "equals": "P6",
+        "allowTrivial": "The player finished every lap behind the field: the panel names the place, not DNF, which reads as did-not-finish."
       }
     ]
   }

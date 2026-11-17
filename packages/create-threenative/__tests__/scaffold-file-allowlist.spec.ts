@@ -18,6 +18,7 @@ const HOST_CONFIG_FILES = MCP_HOSTS.map((host) => host.file.replaceAll("\\", "/"
 /** Every path a scaffold may hold, with the reason it ships. First match wins. */
 const ALLOWED: ReadonlyArray<readonly [RegExp, string]> = [
   [/^(AGENTS|CLAUDE)\.md$/u, "the agent instruction pair"],
+  [/^CREDITS\.md$/u, "the credits an asset's licence requires, at the root the asset docs name"],
   [
     /^(package\.json|tsconfig\.json|vite\.config\.ts|threenative\.config\.ts|index\.html|main\.html|tailwind\.config\.ts|eslint\.config\.js|biome\.json|\.gitignore)$/u,
     "project and tool configuration",

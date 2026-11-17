@@ -966,6 +966,9 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
       expect(args[args.indexOf("--browser-recipe") + 1]).toBe("webgpu");
       expect(args).toContain("--headed");
       expect(args).toContain("--allow-software");
+      // A clean room's dev server cooks every asset cold before it listens: the starter's
+      // sky.jpg KTX2 pass alone took 20.6 s against the runner's 15 s default (0.3.15 upgrade proof).
+      expect(Number(args[args.indexOf("--server-timeout") + 1])).toBeGreaterThanOrEqual(120_000);
     }
     // npm uses `npx --no-install`, not `npm exec --no-install`, which warns on npm 11.
     expect(playtests.map(([command]) => command).sort()).toEqual(["npx", "pnpm"]);

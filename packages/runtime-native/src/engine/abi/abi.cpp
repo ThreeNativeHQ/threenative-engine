@@ -514,6 +514,12 @@ bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::bi
     return true;
 }
 
+// A call's arguments carry their 1-based place, so a binding's refusal names the argument that was
+// wrong rather than only its type (PRD-894). `tn_set` needs none: the wrapper names its path.
+void numberArguments(tn::binding::Args& in) {
+    for (size_t i = 0; i < in.size(); ++i) in[i].position = uint32_t(i + 1);
+}
+
 void fromBinding(tn_context* context, tn_handle_t self, const tn::binding::Value& in, tn_value_t* out, bool root = true) {
     if (root) { context->scratchValues.clear(); context->scratchStrings.clear(); context->scratchArrays.clear(); }
     using Kind = tn::binding::Value::Kind;
@@ -946,6 +952,7 @@ tn_status_t tn_construct(tn_context_t* context, const char* class_name, const tn
     return guarded(diagnostic, [&]() -> tn_status_t {
         tn::binding::Args in;
         if (!toBinding(context, args, arg_count, in, 0, cls->second.ctorTakesBytes)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
+        numberArguments(in);
         if (!context->hold(class_name, cls->second.ctor(in, *context), *out_object)) {
             return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, (std::string("TN_NATIVE_UNSUPPORTED catalog class ") + class_name).c_str());
         }
@@ -969,6 +976,7 @@ tn_status_t tn_invoke(tn_handle_t self, const char* method, const tn_value_t* ar
     return guarded(diagnostic, [&]() -> tn_status_t {
         tn::binding::Args in;
         if (!toBinding(context, args, arg_count, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
+        numberArguments(in);
         void* target = object->ptr.get();
         fromBinding(context, self, m->second(target, in, *context), result);
         return ok(diagnostic);

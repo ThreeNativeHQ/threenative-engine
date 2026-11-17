@@ -1930,9 +1930,25 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         }
         items_.swap(twoPasses_);
     }
-    if (world && (world->backgroundNode || world->backgroundTexture)) {
-        if (!world->backgroundNode && (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0))
-            throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: sharp EquirectangularReflectionMapping required");
+    // The engine draws a sharp equirectangular sky and nothing else. Two rules, two messages: a
+    // blurred background and an unwrapped one are different fixes, and each names the property, the
+    // value it got and the value it accepts (PRD-894).
+    if (world && !world->backgroundNode && world->backgroundTexture) {
+        if (world->backgroundTexture->mapping != 303)
+            throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: scene.background.mapping is " +
+                std::to_string(world->backgroundTexture->mapping) +
+                "; the engine draws an equirectangular background only, set it to "
+                "EquirectangularReflectionMapping (303)");
+        if (world->backgroundBlurriness != 0) {
+            char blurriness[32];
+            std::snprintf(blurriness, sizeof blurriness, "%g", world->backgroundBlurriness);
+            throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: scene.backgroundBlurriness is " +
+                std::string(blurriness) +
+                "; the engine draws a sharp background only, set it to 0");
+        }
+    }
+    // A background whose image has not arrived draws next frame, as an environment does (above).
+    if (world && (world->backgroundNode || (world->backgroundTexture && world->backgroundTexture->hasImage()))) {
         if (!backgroundGeometry_) backgroundGeometry_ = makeSphereGeometry(1, 32, 32);
         DrawItem sky;
         sky.background = true;

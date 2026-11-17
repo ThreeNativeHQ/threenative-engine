@@ -1,4 +1,4 @@
-// Run with <out dir> (the starter art's `alpine_flora/`); needs @threenative/procedural-vegetation.
+// Run with <out dir> (the starter art's `alpine_flora/`); needs @threenative/procedural-environment.
 // Bakes the alpine stand's conifers once into GLBs the species pack (`render/props/pack.ts`) draws:
 // Norway spruce (Picea abies) is the tree of the Kleine Scheidegg slopes, with black spruce for
 // variety (the conifer bake-off winner, PRD-892). The same preset, seed, form and level always write
@@ -6,7 +6,7 @@
 import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bakeVegetation } from "@threenative/procedural-vegetation";
+import { bakeVegetation } from "@threenative/procedural-environment";
 
 const out = process.argv[2];
 if (!out) throw new Error("bake-flora: pass the output folder, e.g. starter-assets/alpine_flora");
