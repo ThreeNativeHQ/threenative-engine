@@ -556,28 +556,6 @@ function lockArgument(argv: readonly string[]): { lockPath?: string; rest: reado
   };
 }
 
-export interface IUpgradeProofScope {
-  /** An admin `--override` skips every gate it names, the upgrade proof included. */
-  readonly override: boolean;
-  /** The packages this run would publish. */
-  readonly publishable: number;
-  /** Every package of the cohort. */
-  readonly cohort: number;
-}
-
-/**
- * Whether this run proves the previous `latest` upgrades onto the candidate.
- *
- * Two reasons skip it, and each is a state the proof cannot speak about: an `--override` skips the
- * gates it names by definition, and a partially published cohort (a resumed publish) has no single
- * candidate left to prove. Nothing else may skip it — the publish proves again even though
- * `release:ship` proved before the tag, because the publish is the run that sees the real prebuilt
- * release.
- */
-export function upgradeProofApplies(scope: IUpgradeProofScope): boolean {
-  return !scope.override && scope.publishable === scope.cohort;
-}
-
 /**
  * `pnpm release` — dry by default, and `--prove-upgrade` proves the previous `latest` upgrades onto
  * the packed candidate while publishing nothing.
@@ -755,12 +733,10 @@ async function main(args: readonly string[]): Promise<void> {
       );
       return;
     }
-    // A resumed publish proved this before its first upload, and `latest` has moved since then.
-    const proving = upgradeProofApplies({
-      cohort: packages.length,
-      override,
-      publishable: publishPackages.length,
-    });
+    // An override skips the gates it names, and a resumed publish has no whole candidate left to
+    // prove. Every other run proves — twice on tag day, because the publish's proof is the only one
+    // that sees the real prebuilt release.
+    const proving = !override && publishPackages.length === packages.length;
     // Proven here and again at the publish: the second run is the one that sees the real prebuilt
     // release, and no flag lets a caller reach the first npm upload without that one.
     const upgrades = proving ? await proveUpgradeFromLatest(packages, tarballs) : [];

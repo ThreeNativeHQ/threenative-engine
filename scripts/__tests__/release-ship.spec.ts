@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { expectedReleaseReportReference } from "../release-candidate-gate.js";
 import {
   type IShipDeps,
+  PROVE_ARGV,
   assertCandidateDispatchable,
   assertTagMovable,
   assertVersionNotBurned,
@@ -445,7 +446,7 @@ describe("pnpm release:check-version", () => {
     });
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
     // Nothing is on npm: the move is a bump, said in one sentence.
-    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/not on npm at/u);
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/npm serves nothing of/u);
   });
 
   it("refuses a draft that carries no tag yet, and says so instead of naming a tag move", () => {
@@ -518,6 +519,13 @@ describe("pnpm release:check-version", () => {
     // release is the owner's call, and the error does not advise it.
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/has a prerelease at/u);
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/pnpm release:prepare --bump/u);
+  });
+});
+
+describe("the proof-only command", () => {
+  it("is the flags release.ts accepts, so a rename cannot stop a release at the tag step", () => {
+    // release.ts validates its own flags; this is the argv release:ship actually runs.
+    expect([...PROVE_ARGV]).toEqual(["release", "--prove-upgrade", "--skip-gates"]);
   });
 });
 

@@ -18,7 +18,6 @@ import {
   releaseLevels,
   releaseOrder,
   unpublishedReleasePackages,
-  upgradeProofApplies,
   validateReleaseCohort,
   validateTemplatePins,
 } from "../release.js";
@@ -320,18 +319,6 @@ describe("pnpm release publishing", () => {
   });
 });
 
-describe("pnpm release proof-only run", () => {
-  // PRD-896: `release:ship` proves the upgrade before it creates the tag. The publish proves again
-  // regardless — it is the run that sees the real prebuilt release — so only an override or a
-  // resumed cohort may skip it.
-  it("proves the upgrade unless an override or a partial cohort speaks for it", () => {
-    const scope = { cohort: 17, override: false, publishable: 17 };
-    expect(upgradeProofApplies(scope)).toBe(true);
-    expect(upgradeProofApplies({ ...scope, override: true })).toBe(false);
-    expect(upgradeProofApplies({ ...scope, publishable: 3 })).toBe(false);
-  });
-});
-
 describe("pnpm release cohort guards", () => {
   it("keeps the guarded release path aligned with its current-set pin exception", async () => {
     const source = await fs.promises.readFile(
@@ -617,8 +604,8 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
     // A resumed run has a partial cohort, so the proof would silently not run.
     [["--prove-upgrade", "--resume"], /TN_RELEASE_FLAGS_CONFLICT/u],
     [["--prove-upgrade", "--prepare"], /TN_RELEASE_FLAGS_CONFLICT/u],
-    // `release:ship` passes these flag names; a drift between the two files would throw
-    // TN_RELEASE_UNKNOWN_FLAG after the release was already public.
+    // `release:ship` runs exactly these flags (PROVE_ARGV). A drift between the two files would
+    // stop the tag step, so the names are pinned here as well as there.
     [["--prove-upgrade", "--skip-gates", "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
   ])("refuses %j before touching the network", (args, message) => {
     let stderr = "";

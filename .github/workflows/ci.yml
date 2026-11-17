@@ -201,7 +201,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # PRD-896. A version whose `runtime-native-v<version>` tag already carries a release, while npm
-      # serves no `@threenative/core` of it, can never ship: the tag cannot move. Read here, in an
+      # does not serve its whole cohort, cannot ship from this commit: the tag cannot move. Read here, in an
       # early required job, so the develop -> main release pull request goes red in its first
       # minutes instead of after a full board, a merge and the release's own hour (2026-11-16,
       # release PR #676: v0.3.14). A release at the commit being shipped is a resume, not a burn.

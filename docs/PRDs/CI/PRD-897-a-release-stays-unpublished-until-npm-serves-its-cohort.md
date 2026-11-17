@@ -1,7 +1,7 @@
 # PRD-897 — A release stays unpublished until npm serves its cohort
 
 **Status:** NOT STARTED
-**Priority:** P2 — the remaining exposure is narrow: PRD-896 runs the upgrade proof before the tag, so only a publish that never proved in its own invocation can still prove behind a public release — a *resumed* run, or one whose registry `latest` moved during the release's waits. Phase 2 is the other half of the same complaint: today the proof still runs only after the merge.
+**Priority:** P2 — PRD-896 runs the upgrade proof before the tag, but every publish still proves **after** `native-release` has made the version's prerelease public, so a red there (a flake, or a registry `latest` that moved during the release's waits) still burns the version. Phase 2 is the other half of the same complaint: the proof still runs only after the merge.
 **Complexity:** 6 (MEDIUM)
 **Owner:** CI tooling
 **Depends on:** PRD-896, PRD-630
@@ -9,14 +9,15 @@
 ## Context
 
 PRD-896 moved the upgrade proof in front of the tag, which closes the shape that burned 0.3.14: a
-first-pass release now proves before any release exists, and `--upgrade-proved` stops the publish
-from proving a second time. Three shapes survive it:
+first-pass release now proves before any release exists. It deliberately did **not** add a way for the
+publish to skip its own proof — a receipt-backed reuse was built and deleted in review, because the
+publish's proof is the only run that sees the real prebuilt release. Four shapes survive it:
 
-1. **A resumed publish.** `release:ship` resumes at the first step its GitHub state says is not done
-   (`nextStep`, `scripts/release-ship.ts`). A run that finds the release already public goes
-   straight to `publish`, which is `pnpm release --yes --skip-gates --resume` — and that call proves
-   after the release is public, because a resume is not the invocation that proved. A red proof
-   there still burns the version.
+1. **Every publish.** `release:ship` waits for a public release and then publishes
+   (`pnpm release --yes --skip-gates --resume`), and that call proves again — necessarily, since it is
+   the run that sees the real prebuilt release. The proof therefore always runs behind a public
+   prerelease: a flake, a moved `latest`, or a network blip there burns the version, first push
+   included. This is the shape to close.
 2. **A prerelease that outlives its run.** `native-release.yml:690` creates the release
    `--prerelease`, which is public, before the consumer proofs run; `cleanup-failed-release` deletes
    it when a consumer proof fails, but a cancelled run, or a cleanup job that never runs, leaves the
@@ -48,8 +49,8 @@ upgrade regression is red before a merge instead of after it.
 
 ### Phase 1 — a resumed publish refuses to prove after the fact
 
-- [ ] A resume on a **fresh runner** has no receipt to read: the proof PRD-896 records lives in the worktree that proved, and `ship` passes `--upgrade-proved` only from its own memory. Persist the proof where a later invocation can read it (an artifact, or release metadata) or make the resume refuse. proof: `scripts/__tests__/release.spec.ts` — a receipt read in a second checkout, and `scripts/__tests__/release-ship.spec.ts` for the plan that refuses when there is none.
-- [ ] A plan that reaches `publish` with no proof for its commit stops and says which invocation must prove. proof: `scripts/__tests__/release-ship.spec.ts` — a resume case that refuses, beside the existing green resume. This box depends on the one above it: refusing before the receipt can be read would turn every post-wait rerun into a hard stop.
+- [ ] A red publish proof leaves the version shippable: the prerelease `native-release` created is deleted (or stays a draft), so the next ship can prove again on the same version instead of a bump. proof: `scripts/__tests__/release-ship.spec.ts` — a publish that throws leaves nothing public, plus one release whose publish was red and whose version shipped afterwards.
+- [ ] The tag run's own cleanup covers it: `cleanup-failed-release` deletes a release whose consumer proof failed, and it must also run when the *publish* is the red step. proof: `native-release.yml`'s cleanup `if:` gains that case, and one run shows the release gone after a red publish.
 
 ### Phase 2 — the proof runs on the release pull request, before the merge
 
@@ -70,7 +71,8 @@ upgrade regression is red before a merge instead of after it.
 ## Blocked on
 
 - The owner's call on the draft-first shape (recorded under Decisions) before it replaces anything,
-  and one real release to prove both phases.
+  and one real release to prove both phases. Deleting a public prerelease on a red publish touches
+  release state, which the owner decides.
 - Phase 2's lane is currently red for two reasons owned by the release branch, not by this file: the
   clean room's 15 s `--server-timeout` against a ~21 s cold asset cook
   (`scripts/verify-registry-install.ts` is getting `--server-timeout 120000`), and the reinvention

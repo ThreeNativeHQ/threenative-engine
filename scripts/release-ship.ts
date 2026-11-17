@@ -246,8 +246,8 @@ export function buildCandidateRequest(
 /**
  * Some, but not all, of the cohort is on npm: a crash left a release half published.
  *
- * Asked only where it matters — the tag step — so a first push pays nothing for it: `.some`
- * short-circuits on the first package npm already serves.
+ * Asked only where it matters — the tag step, once per plan — because it costs one registry read per
+ * package until the first hit, and a first push (nothing published) reads all of them.
  */
 function cohortPartlyPublished(deps: IShipDeps): boolean {
   return deps.cohort().some(({ name, version }) => deps.npmVersions(name).includes(version));
@@ -270,6 +270,9 @@ export interface IVersionCensus {
   /** The cohort's size. A version is spent only when all of it is on npm. */
   readonly total: number;
 }
+
+/** The one proof-only command. A drift in these names must fail a spec, not a release. */
+export const PROVE_ARGV = ["release", "--prove-upgrade", "--skip-gates"] as const;
 
 /** What is being shipped, for the messages a refusal writes. */
 export interface IReleaseTarget {
@@ -302,7 +305,7 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
       : `${target.tag} already has ${kind} at ${census.tag.commit}`;
   const served =
     census.onNpm === 0
-      ? `${CORE} is not on npm at ${target.version}`
+      ? `npm serves nothing of ${target.version}`
       : `${census.onNpm} of ${census.total} cohort packages are on npm at ${target.version} and the rest are not`;
   const advice =
     census.release === "draft"
@@ -311,7 +314,7 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
         ? `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit ?? "<tag commit>"}\`), or run \`pnpm release:prepare --bump\` and ship the new version`
         : "run `pnpm release:prepare --bump`, then ship the new version";
   throw new Error(
-    `TN_SHIP_VERSION_BURNED: ${where}, and ${served}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move"}: ${advice}.`,
+    `TN_SHIP_VERSION_BURNED: ${where}, and ${served}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move, so this commit cannot ship"}: ${advice}.`,
   );
 }
 
@@ -464,6 +467,9 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
   // same call the release pull request's own board job makes, on the same commit.
   checkReleaseVersion(deps, sha);
   const acted: ShipStep[] = [];
+  // The proof takes minutes, and a release or a tag run created during it would make the tag
+  // unmovable. So the tag step proves first and re-reads the state before it touches the ref.
+  let proved = false;
   for (let guard = 0; guard < 8; guard += 1) {
     const state = readShipState(deps, sha, tag);
     const step = nextStep(state, sha, options.override !== undefined);
@@ -520,10 +526,16 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       // first npm upload. Prove it here: the tag creates a release that is public the moment it
       // exists, so a red proof after the tag has already burned the version (0.3.14, 2026-11-12).
       // A resumed cohort — some of it already on npm — has no whole candidate left to prove, and its
-      // publish (`--resume`) is the run that proves. The first-push path proves here.
-      if (options.override === undefined && !cohortPartlyPublished(deps)) {
+      // publish (`--resume`) is the run that proves. The first-push path proves here, then starts
+      // over so the tag is moved on facts read after the proof, not before it.
+      if (!proved && options.override === undefined && !cohortPartlyPublished(deps)) {
         deps.log("proving the previous latest upgrades before anything is public…");
         deps.prove();
+        proved = true;
+        // This step proved instead of acting: the next pass re-reads the state and moves the tag on
+        // facts read after the proof.
+        acted.pop();
+        continue;
       }
       // Through the API: a push would run this checkout's pre-push hook, which needs a built tree.
       deps.gh(
@@ -629,11 +641,7 @@ function systemDeps(): IShipDeps {
         ["release", "--yes", "--skip-gates", "--resume", ...(override ? ["--override"] : [])],
         { cwd: REPO, stdio: "inherit" },
       ),
-    prove: () =>
-      void execFileSync("pnpm", ["release", "--prove-upgrade", "--skip-gates"], {
-        cwd: REPO,
-        stdio: "inherit",
-      }),
+    prove: () => void execFileSync("pnpm", [...PROVE_ARGV], { cwd: REPO, stdio: "inherit" }),
     repository,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     verify: () =>

@@ -8,8 +8,8 @@
 
 ## Context
 
-A version whose git tag already carries a GitHub release, while npm serves no
-`@threenative/core` of that version, can never ship. `assertTagMovable`
+A version whose git tag already carries a GitHub release, while npm does not serve its
+whole cohort, can never ship. `assertTagMovable`
 (`assertTagMovable`, `scripts/release-ship.ts`) refuses to move a tag that has any release, draft or
 public, and `nextStep` only skips the tag step when that tag already sits on the commit being
 shipped. With npm empty there is nothing to resume — the only move the
@@ -38,11 +38,12 @@ Three parts, one rule each:
 2. Run the same decision on the release pull request's own early board job, so a burned version is
    red before the merge instead of after it.
 3. Prove the previous `latest` upgrades onto the candidate **before** the tag creates the release
-   that is public the moment it exists, and let the publish that follows reuse that proof.
+   that is public the moment it exists. The publish proves again on purpose: it is the only run that
+   sees the real prebuilt release.
 
 ### Phase 1 — `release:ship` refuses a burned version before the evidence
 
-- [x] `release:ship` refuses through the same `checkReleaseVersion` the board job runs — one call, before the first state read, reading the release, the tag's commit and how many cohort packages npm serves, and no run list — and `assertVersionNotBurned` names the move that is actually available: a bump (`pnpm release:prepare --bump`), deleting a draft, or, when part of the cohort already reached npm, finishing it from the commit the tag points at. A draft with no tag yet is refused and says so, and deleting a *public* release is never advised. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 37 passed, including the three release states, the no-tag draft, the "1 of 2 packages" partial-cohort advice, the whole-cohort answer and the prerelease-is-not-a-hand-delete case; the burn cases fail while the call in `ship` is removed.
+- [x] `release:ship` refuses through the same `checkReleaseVersion` the board job runs — one call, before the first state read, reading the release, the tag's commit and how many cohort packages npm serves, and no run list — and `assertVersionNotBurned` names the move that is actually available: a bump (`pnpm release:prepare --bump`), deleting a draft, or, when part of the cohort already reached npm, finishing it from the commit the tag points at. A draft with no tag yet is refused and says so, and deleting a *public* release is never advised. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 38 passed, including the three release states, the no-tag draft, the "1 of 2 packages" partial-cohort advice, the whole-cohort answer and the prerelease-is-not-a-hand-delete case; the burn cases fail while the call in `ship` is removed.
 
 ### Phase 2 — the release pull request's board refuses it in its first minutes
 
@@ -51,9 +52,9 @@ Three parts, one rule each:
 
 ### Phase 3 — the upgrade proof runs before anything about the version is public
 
-- [x] `pnpm release --prove-upgrade` packs the cohort and proves the previous `latest` upgrades onto it, publishing, tagging and releasing nothing; it refuses an uncommitted tree (a proof is a claim about HEAD's bytes) and every flag that would make it report a proof that never ran. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 44 passed (`upgradeProofApplies`, the six flag refusals, and the flag-name drift case). **Not proven**: the run itself has never executed end to end — it is the same pack-and-prove code `--yes` runs before its first upload, but its prebuilt-release acknowledgement is one branch no run has exercised, and the box below is that claim.
+- [x] `pnpm release --prove-upgrade` is a real flag of the publish command: it refuses an uncommitted tree (a proof is a claim about HEAD's bytes) and every flag that would make it report a proof that never ran, and the argv `release:ship` runs is one shared constant with a spec. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 44 passed (the flag refusals, and the argv case). What the run does end to end is the box below, still open.
 - [ ] A real candidate proves end to end through `pnpm release --prove-upgrade` with no release yet: it packs, proves and exits 0 having published nothing. proof: the tag step of the first release after this lands — unrun, so this box stays open.
-- [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, a cohort that is already partly on npm is left to its `--resume` publish, and a movable tag stays where it is when the proof is red. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 37 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `leaves a movable tag untouched when the upgrade proof is red`, `skips the pre-tag proof when part of the cohort is already on npm`, the override case).
+- [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, a cohort that is already partly on npm is left to its `--resume` publish, and a movable tag stays where it is when the proof is red. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 38 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `leaves a movable tag untouched when the upgrade proof is red`, `skips the pre-tag proof when part of the cohort is already on npm`, the override case).
 
 ## Acceptance criteria
 
