@@ -14,7 +14,7 @@
     "directory": "packages/physics"
   },
   "type": "module",
-  "files": ["dist", "README.md"],
+  "files": ["dist", "wasm", "README.md"],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

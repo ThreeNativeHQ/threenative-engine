@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,4 +121,17 @@ for (const [target, linker] of targets) {
   }
   if (!existsSync(artifact)) throw new Error(`Cargo reported success without ${artifact}`);
   console.log(`${target}: ${basename(artifact)} ${statSync(artifact).size} bytes`);
+  if (web) {
+    // @threenative/physics ships the module beside its dist, checksum pinned (the metahuman pattern).
+    const shipped = join(runtimeRoot, '..', 'physics', 'wasm');
+    mkdirSync(shipped, { recursive: true });
+    copyFileSync(artifact, join(shipped, libraryName));
+    const sha256 = createHash('sha256').update(readFileSync(artifact)).digest('hex');
+    const rustc = spawnSync('rustc', ['--version'], { encoding: 'utf8' }).stdout.trim();
+    writeFileSync(
+      join(shipped, 'checksums.json'),
+      `${JSON.stringify({ rustc, files: { [libraryName]: sha256 } }, null, 2)}\n`,
+    );
+    console.log(`copied to ${shipped}`);
+  }
 }
