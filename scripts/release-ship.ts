@@ -286,36 +286,49 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
   // A first push with nothing on npm is the normal case, and a tag on this very commit is a resume.
   if (census.release === "none" && census.onNpm === 0) return;
   if (census.tag.commit === target.sha) return;
-  // A draft made by hand may carry no tag at all: deleting it loses nothing, and the same version
-  // can still ship — unless npm already serves part of the cohort, which a bump is the only fix for.
-  // Every other state leaves the version name spent, and a partial cohort is finished from the commit
-  // the tag already points at. Deleting a public release is the owner's call, so this never advises it.
-  const kind = census.release === "prerelease" ? "a prerelease" : `a ${census.release} release`;
-  const state =
-    census.release === "none"
-      ? `${target.tag} has no release yet`
-      : census.tag.commit === undefined
-        ? `${target.tag} already has ${kind} and no tag yet`
-        : `${target.tag} already has ${kind} at ${census.tag.commit}`;
+  throw new Error(burnSentence(census, target));
+}
+
+/**
+ * The sentence that says why this version cannot ship, and the one move that gets it shipped.
+ *
+ * Each state names its own: a draft is deleted, a partial cohort is finished from the tag, and a
+ * version npm does not serve at all is bumped — unless that commit's publish never ran, in which
+ * case its own release is finished from the tag. Deleting a public release is the owner's call, so
+ * nothing here advises it.
+ */
+function burnSentence(census: IVersionCensus, target: IReleaseTarget): string {
   const served =
     census.onNpm === 0
       ? `npm serves nothing of ${target.version}`
       : `${census.onNpm} of ${census.total} cohort packages are on npm at ${target.version} and the rest are not`;
-  const lead =
-    census.onNpm > 0 && census.release === "none"
-      ? "Those packages hold the version name"
-      : census.release === "draft" && census.onNpm === 0
-        ? "That draft holds the version name"
-        : census.tag.commit === undefined
-          ? "That release still owns the version name"
-          : "The tag cannot move, so this commit cannot ship";
-  const advice =
-    census.onNpm === 0 && census.release === "draft"
-      ? "delete the draft (nothing is public yet), then ship this version"
-      : census.onNpm > 0 && census.tag.commit !== undefined
-        ? `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit}\`)`
-        : "run `pnpm release:prepare --bump`, then ship the new version";
-  throw new Error(`TN_SHIP_VERSION_BURNED: ${state}. ${served}. ${lead}: ${advice}.`);
+  const at = census.tag.commit === undefined ? " and no tag yet" : ` at ${census.tag.commit}`;
+  const finish = `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit}\`)`;
+  const bump = "run `pnpm release:prepare --bump`, then ship the new version";
+  const sentence = (state: string, advice: string): string =>
+    `TN_SHIP_VERSION_BURNED: ${state}. ${served}. ${advice}.`;
+
+  if (census.release === "none")
+    return sentence(
+      `${target.tag} has no release yet`,
+      census.tag.commit === undefined
+        ? `Those packages hold the version name: ${bump}`
+        : `Those packages hold the version name: ${finish}`,
+    );
+  if (census.release === "draft")
+    return sentence(
+      `${target.tag} already has a draft${at}`,
+      census.onNpm === 0
+        ? "That draft holds the version name: delete the draft (nothing is public yet), then ship this version"
+        : `That draft holds the version name, and npm already serves part of it: ${finish}`,
+    );
+  const kind = census.release === "prerelease" ? "prerelease" : "public release";
+  return sentence(
+    `${target.tag} already has a ${kind}${at}`,
+    census.onNpm > 0
+      ? `The tag cannot move, so this commit cannot ship: ${finish}`
+      : `The tag cannot move, so this commit cannot ship: ${bump} — or, if that commit's publish never ran, finish it with \`pnpm release:ship --sha ${census.tag.commit}\``,
+  );
 }
 
 /**

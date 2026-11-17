@@ -12,10 +12,11 @@ PRD-896 moved the upgrade proof in front of the tag, which closes the shape that
 first-pass release now proves before any release exists. It deliberately did **not** add a way for the
 publish to skip its own proof — a receipt-backed reuse was built and deleted in review, because the
 proof here is the publish's own evidence that the tree it is about to upload works, and a reused
-receipt would carry a claim about early bytes nobody re-read. What the second proof actually adds is a
-check against a `latest` that moved, and the rebuilt tarballs themselves — the proof is web-only, and
-the prebuilt release is checked by the post-build `checkPublishState` whether or not it runs. Four
-shapes survive it:
+receipt would carry a claim about early bytes nobody re-read. What the publish's own proof still
+covers, and the pre-tag one cannot, is the real prebuilt download and its checksum: before the tag no
+release exists, so `install-prebuilt` only warns and continues, while on publish night it fetches the
+public release the candidate install was built against. It also reads a registry `latest` that may
+have moved. Four shapes survive it:
 
 1. **Every publish.** `release:ship` waits for a public release and then publishes
    (`pnpm release --yes --skip-gates --resume`), and that call proves again. The proof therefore always runs behind a public

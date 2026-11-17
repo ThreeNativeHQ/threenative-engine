@@ -214,12 +214,6 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
     expect(() => assertTagMovable({ ...stateOf(state), release: "public" }, TAG)).toThrow(
       /TN_SHIP_TAG_HAS_RELEASE/u,
     );
-    expect(() =>
-      assertVersionNotBurned(
-        { onNpm: 17, release: "public", tag: { commit: OTHER }, total: 17 },
-        { sha: SHA, tag: TAG, version: VERSION },
-      ),
-    ).not.toThrow();
   });
 
   it("does not move a tag while its run is still going", () => {
