@@ -322,8 +322,7 @@ describe("pnpm release publishing", () => {
 });
 
 describe("pnpm release prebuilt acknowledgement", () => {
-  // This one line is what lets the first real tag step's proof pass in CI, where no prebuilt release
-  // exists yet. If it regresses, every release stops at the tag step, silently until release day.
+  // The truth table only. That this branch is reached at all is the open Phase 3 box in PRD-896.
   it("acknowledges an absent prebuilt release for a local release and a proof-only run, in CI too", () => {
     expect(prebuiltAcknowledged(true, false)).toBe(true);
     expect(prebuiltAcknowledged(false, true)).toBe(true);

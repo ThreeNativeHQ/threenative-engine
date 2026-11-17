@@ -26,7 +26,13 @@ publish's proof is the only run that sees the real prebuilt release. Four shapes
    publish time. A release's waits total up to about 190 minutes, so an N-1 that moved during them is
    proved against a different starting point than the pre-tag proof — and the publish's red is the
    expensive one, because it lands behind the public release.
-4. **Nothing public follows npm.** The repository still treats a public release as the version's
+4. **A partial cohort that a missed bump left, not a crash.** `release:ship` skips the pre-tag proof
+   when *any* package of the cohort is already on npm, because that is a crash a `--resume` publish
+   finishes. It cannot tell that from a version whose packages were published earlier without a bump;
+   for the second, the publish's `unpublishedReleasePackages` then refuses with
+   `TN_RELEASE_COHORT_PARTIAL` after the release is already public. Telling the two apart needs the
+   same published-before-the-commit-date test `--resume` already applies.
+5. **Nothing public follows npm.** The repository still treats a public release as the version's
    announcement while npm may be minutes or hours behind it.
 
 Why the obvious flip — create the release as a draft and promote it after the npm upload — is not a
@@ -63,6 +69,10 @@ upgrade regression is red before a merge instead of after it.
 
 ## Decisions
 
+- 2026-11-16 (agent, filing): shape 4 is out of scope here because it needs `--resume`'s published-at
+  test moved into the plan, which is the same redesign phase 1 is about. A cheaper cost is also open:
+  `readShipState` and the tag step each read one registry answer per cohort package, so a tag pass
+  pays twice for the same census.
 - 2026-11-16 (agent, filing): the draft-first shape is deliberately deferred rather than half-done —
   it moves the prebuilt census, the consumer lanes and promotion at once, and PRD-896 removes the
   first-pass burn without it. A landable sketch of it is the first thing to write if the owner prefers

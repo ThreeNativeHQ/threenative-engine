@@ -9,6 +9,7 @@ import {
   assertVersionNotBurned,
   checkReleaseVersion,
   nextStep,
+  parseNpmVersions,
   runShip,
   ship,
 } from "../release-ship.js";
@@ -537,6 +538,15 @@ describe("pnpm release:check-version", () => {
     // release is the owner's call, and the error does not advise it.
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/has a prerelease at/u);
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/pnpm release:prepare --bump/u);
+  });
+});
+
+describe("parseNpmVersions", () => {
+  // One version comes back as a bare string, and a substring match would call 0.3.1 present at 0.3.14.
+  it("reads a one-version answer as one version, never as a substring", () => {
+    expect(parseNpmVersions('"0.3.14"')).toEqual(["0.3.14"]);
+    expect(parseNpmVersions('["0.3.13","0.3.14"]')).toEqual(["0.3.13", "0.3.14"]);
+    expect(parseNpmVersions('"0.3.14"').includes("0.3.1")).toBe(false);
   });
 });
 

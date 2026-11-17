@@ -67,8 +67,6 @@ interface IRun {
 
 type ReleaseState = "none" | "draft" | "prerelease" | "public";
 
-/** The package whose registry presence decides whether a version is spent. */
-const CORE = "@threenative/core";
 /** The tag every runtime release hangs on. */
 const TAG_PREFIX = "runtime-native-v";
 
@@ -282,8 +280,8 @@ export interface IReleaseTarget {
 }
 
 /**
- * A version is burned when its tag already carries a release at another commit while npm serves no
- * `@threenative/core` of it. `assertTagMovable` refuses such a tag, and nothing can undo a public
+ * A version is burned when its tag already carries a release at another commit while npm does not
+ * serve its whole cohort. `assertTagMovable` refuses such a tag, and nothing can undo a public
  * release and an npm version by itself, so the version can never ship: the moves are a bump, or
  * deleting a draft, which is the one state where deleting loses nothing.
  *
@@ -352,6 +350,17 @@ export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
       ? "no release exists for it"
       : `its ${release} release sits at the shipped commit`
   }.`;
+}
+
+/**
+ * `npm view <pkg> versions --json` answers a bare string when the package has one version.
+ *
+ * Left as a string, `.includes(version)` is a substring match: `"0.3.14".includes("0.3.1")` is true,
+ * so a different version would read as present.
+ */
+export function parseNpmVersions(stdout: string): readonly string[] {
+  const parsed = JSON.parse(stdout) as string | string[];
+  return Array.isArray(parsed) ? parsed : [parsed];
 }
 
 /** The first step that is not done. A second invocation resumes here. */
@@ -633,11 +642,7 @@ function systemDeps(): IShipDeps {
     log: (line) => process.stdout.write(`${line}\n`),
     npmVersions: (name) => {
       try {
-        const out = run("npm", ["view", name, "versions", "--json"]);
-        // A package with one version answers a bare string, and `"0.3.14".includes("0.3.1")` is
-        // true: a substring match would call a different version present.
-        const versions = JSON.parse(out) as string | string[];
-        return Array.isArray(versions) ? versions : [versions];
+        return parseNpmVersions(run("npm", ["view", name, "versions", "--json"]));
       } catch (error) {
         if (/E404|404 Not Found/u.test(errorText(error))) return [];
         throw error;
