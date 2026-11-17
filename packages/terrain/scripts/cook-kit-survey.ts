@@ -3,12 +3,37 @@
 // 5 km far ring into `starter-assets/survey/<kit>-horizon.{bin,json}`, both on one datum so the
 // ring stands on the square's edge. Run from packages/terrain:
 //   npx tsx scripts/cook-kit-survey.ts <kit> <lat> <lon> "<site name>" "<attribution>"
+// Probe candidate sites first (writes nothing): relief, walkable share and tile zoom per site:
+//   npx tsx scripts/cook-kit-survey.ts --probe '[["name", lat, lon], ...]'
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { surveyHeights } from "../src/ground/survey.js";
 
+if (process.argv[2] === "--probe") {
+  const sites = JSON.parse(process.argv[3] ?? "[]") as [string, number, number][];
+  if (sites.length === 0)
+    throw new Error(`Usage: cook-kit-survey.ts --probe '[["name", lat, lon]]'`);
+  for (const [name, lat, lon] of sites) {
+    const n = 129;
+    const cell = 512 / (n - 1);
+    const square = await surveyHeights({ name, lat, lon, extentMeters: 512, attribution: "" }, n);
+    const ring = await surveyHeights({ name, lat, lon, extentMeters: 5000, attribution: "" }, n);
+    const v = square.values;
+    let walkable = 0;
+    for (let y = 1; y < n - 1; y++)
+      for (let x = 1; x < n - 1; x++) {
+        const dx = ((v[y * n + x + 1] ?? 0) - (v[y * n + x - 1] ?? 0)) / (2 * cell);
+        const dz = ((v[(y + 1) * n + x] ?? 0) - (v[(y - 1) * n + x] ?? 0)) / (2 * cell);
+        if (Math.atan(Math.hypot(dx, dz)) < (25 * Math.PI) / 180) walkable++;
+      }
+    console.log(
+      `${name}: square ${square.min.toFixed(0)}..${square.max.toFixed(0)} m, walkable(<25°) ${((100 * walkable) / (n - 2) ** 2).toFixed(0)}%, ring ${ring.min.toFixed(0)}..${ring.max.toFixed(0)} m, zoom ${square.zoom}/${ring.zoom}`,
+    );
+  }
+  process.exit(0);
+}
 const [kit, latText, lonText, site, attribution] = process.argv.slice(2);
 if (!kit || !latText || !lonText || !site || !attribution)
   throw new Error('Usage: cook-kit-survey.ts <kit> <lat> <lon> "<site>" "<attribution>"');
