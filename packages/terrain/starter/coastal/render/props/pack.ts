@@ -64,7 +64,7 @@ import {
   vec4,
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
-import { BROADLEAF_TREES, GROUND_MAPS, ROCKFACE_MAPS } from "../../world/terrainAssets.js";
+import { GROUND_MAPS, ROCKFACE_MAPS } from "../../world/terrainAssets.js";
 import { biomeSpec } from "../biomeData.js";
 import {
   BIOMES,
@@ -113,16 +113,16 @@ export function canopyComparison(
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
 /**
- * The forest's canopy: Poly Haven's CC0 broadleaf scan (`BROADLEAF_TREES`), two silhouettes at five
- * heights (metres, crown top), so a stand reads as a European broadleaf wood rather than a spruce plantation (owner,
- * 2026-11-14: "replace this trees with scanned trees from poly haven"). Each variant is a near GLB
- * and a mid GLB of leaf cards from `scripts/prep/prep-polyhaven-broadleaf.py`.
+ * The coast's stand: Poly Haven's CC0 `fir_tree_01`, its full-crowned tree b and its wind-thinned tree c,
+ * at five heights (metres, crown top). Red spruce and balsam fir on the Acadia shore stand 12-20 m.
+ * Each variant is a near GLB and a mid GLB of needle cards whose twig keeps its alpha (the alpine kit's
+ * `alpine-fir-*` preparation); the forest's broadleaf scan stays the Forest kit's.
  */
-const BROADLEAF_METRES = [12, 15, 14, 17, 19];
+const FIR_METRES = [15, 18, 12, 19, 14];
 const species: IPackSpecies[] = [];
 for (let i = 0; i < 5; i++) {
-  const tree = BROADLEAF_TREES[i % BROADLEAF_TREES.length];
-  const metres = BROADLEAF_METRES[i] ?? 15;
+  const tree = `fir_tree_01/alpine-fir-${i === 2 || i === 4 ? "c" : "b"}`;
+  const metres = FIR_METRES[i] ?? 15;
   species.push({ asset: "spruce", variant: i, path: `${tree}-near.glb`, metres });
   species.push({ asset: "spruce", variant: i, path: `${tree}-mid.glb`, metres, level: 1 });
 }

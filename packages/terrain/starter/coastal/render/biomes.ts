@@ -460,8 +460,8 @@ const forest: IBiome = {
 
 /**
  * The Maine granite coast (Sand Beach, Acadia): the wood's spruce stands and floor over pink granite
- * ledges, a pale sand beach and a grey-green North Atlantic. The ground keeps its surveyed look past the
- * square, because the ring is the real coast, and the sea is drawn to the horizon (`render/water/ocean.ts`).
+ * ledges, a pale sand beach and a grey-green North Atlantic. The ring is the real coast under the wood's
+ * own closed spruce cover, and the sea is drawn to the horizon (`render/water/ocean.ts`).
  */
 const { groundMist: _valleyMist, ...seaAir } = forest.atmosphere;
 
@@ -477,11 +477,16 @@ const coastal: IBiome = {
   groundDistantStone: [0.2, 0.165, 0.15],
   shoreGround: true,
   sandRipples: true,
-  surveyedBackdrop: true,
+  // Mount Desert Island is spruce to the ridge tops: the ring keeps the wood's closed cover past the
+  // square and turns to bare granite only on its faces and summits, not to the preview's open lawn.
+  openMeadow: false,
   dryStones: true,
   stoneGroundBand: false,
   stoneFrontFace: true,
   stoneMoss: 0.12,
+  // Fir twigs are photographed near-black (linear 0.01); a red spruce crown reads a dark blue-green
+  // in sun, as the alpine kit grades the same scan.
+  canopyTint: [3.5, 6.8, 6],
   // A clear afternoon on the coast: the sun is high in the west-north-west, behind an eye that looks out to sea.
   sun: { ...forest.sun, color: 0xffe6c4, intensity: 6.2, direction: [-180, 150, -120] },
   fill: { ...temperate.fill, intensity: 0.66 },
