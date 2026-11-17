@@ -426,6 +426,17 @@ describe("pnpm release:check-version", () => {
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
   });
 
+  it("refuses a draft that carries no tag yet, and says so instead of naming a tag move", () => {
+    const { deps } = world({
+      core: [],
+      release: { isDraft: true, isPrerelease: false },
+      tagCommit: undefined,
+    });
+    // A draft release has no tag until it is published; the version name is still spent.
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/no tag yet/u);
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/delete the draft/u);
+  });
+
   it("refuses a draft release at another commit too", () => {
     const { deps } = world({
       core: [],

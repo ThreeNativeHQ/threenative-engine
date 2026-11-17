@@ -149,10 +149,6 @@ function errorText(error: unknown): string {
   return `${message ?? ""}\n${stderr ?? ""}`;
 }
 
-function releaseState(deps: IShipDeps, tag: string): ReleaseState {
-  return ghReleaseState(deps.gh, deps.repository, tag);
-}
-
 /**
  * The release a tag carries, read through `gh release view`.
  *
@@ -173,10 +169,6 @@ export function ghReleaseState(
   const release = JSON.parse(out) as { isDraft: boolean; isPrerelease: boolean };
   if (release.isDraft) return "draft";
   return release.isPrerelease ? "prerelease" : "public";
-}
-
-function tagCommit(deps: IShipDeps, tag: string): string | undefined {
-  return remoteTagCommit(deps.git, tag);
 }
 
 /** The commit `origin` carries for a tag, peeled when it points at one. */
@@ -210,7 +202,6 @@ export function readShipState(deps: IShipDeps, sha: string, tag: string): IShipS
         : latestTagRun.conclusion === "success"
           ? "success"
           : "failed";
-  const cohort = deps.cohort();
   return {
     ...(latestTagRun === undefined ? {} : { latestTagRun: latestTagRun.databaseId }),
     candidate: {
@@ -224,9 +215,11 @@ export function readShipState(deps: IShipDeps, sha: string, tag: string): IShipS
     },
     ci: ci?.databaseId ?? describeMissing(ciAll, sha),
     mainHead: deps.gh(["api", `repos/${deps.repository}/commits/main`, "--jq", ".sha"]).trim(),
-    npmPublished: cohort.every(({ name, version }) => deps.npmVersions(name).includes(version)),
-    release: releaseState(deps, tag),
-    tag: { commit: tagCommit(deps, tag) },
+    npmPublished: deps
+      .cohort()
+      .every(({ name, version }) => deps.npmVersions(name).includes(version)),
+    release: ghReleaseState(deps.gh, deps.repository, tag),
+    tag: { commit: remoteTagCommit(deps.git, tag) },
     tagRun,
   };
 }
@@ -286,15 +279,18 @@ export interface IReleaseTarget {
  */
 export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseTarget): void {
   if (census.release === "none" || census.tag.commit === target.sha || census.corePublished) return;
-  const at = census.tag.commit ?? "an unknown commit";
-  // A draft release is deletable by hand with nothing lost; a public one is not, and npm has no
-  // version either way. Say which move is available rather than one that might not be.
+  // A draft release carries no tag until it is published, and it is deletable with nothing lost; a
+  // public one is not, and npm has no version either way. Say which move is available.
+  const where =
+    census.tag.commit === undefined
+      ? `${target.tag} already has a ${census.release} release and no tag yet`
+      : `${target.tag} already has a ${census.release} release at ${census.tag.commit}`;
   const advice =
     census.release === "draft"
       ? "delete the draft (nothing is public yet) or bump packages/runtime-native/package.json and the cohort that pins it"
       : "bump packages/runtime-native/package.json and the cohort that pins it";
   throw new Error(
-    `TN_SHIP_VERSION_BURNED: ${target.tag} already has a ${census.release} release at ${at}, and ${CORE} is not on npm at ${target.version}. The tag cannot move, so this version cannot ship: ${advice}, then ship the new version.`,
+    `TN_SHIP_VERSION_BURNED: ${where}, and ${CORE} is not on npm at ${target.version}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move"}, so this version cannot ship: ${advice}, then ship the new version.`,
   );
 }
 

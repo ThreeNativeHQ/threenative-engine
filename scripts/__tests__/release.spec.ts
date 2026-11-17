@@ -8,6 +8,7 @@ import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
+  clearUpgradeProofReceipt,
   installableOnRegistry,
   packReleaseSet,
   packedTarballName,
@@ -338,6 +339,15 @@ describe("pnpm release proof-only run", () => {
     expect(readUpgradeProofReceipt(root, "b".repeat(40))).toBeUndefined();
   });
 
+  it("drops yesterday's proof for a commit before proving it again", async () => {
+    const root = await makeTempDir("threenative-upgrade-proof-");
+    roots.push(root);
+    writeUpgradeProofReceipt(root, "a".repeat(40), "2026-11-16T00:00:00.000Z");
+    clearUpgradeProofReceipt(root);
+    // A proof that goes red after `latest` moved must leave nothing for `--upgrade-proved` to reuse.
+    expect(readUpgradeProofReceipt(root, "a".repeat(40))).toBeUndefined();
+  });
+
   // PRD-896: `release:ship` proves the upgrade before it creates the tag, so the publish that
   // follows must not spend the browser lanes again — and a run that never proved must not skip them.
   it("proves the upgrade unless an override, a prior proof or a partial cohort speaks for it", () => {
@@ -631,11 +641,11 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
     // A proof-only run reports a proof, so every flag that would make it prove nothing refuses.
     [["--prove-upgrade", "--override"], /TN_RELEASE_FLAGS_CONFLICT/u],
     [["--prove-upgrade", "--dry-run"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    // A resumed run has a partial cohort, so the proof would silently not run.
+    [["--prove-upgrade", "--resume"], /TN_RELEASE_FLAGS_CONFLICT/u],
     // `release:ship` passes these two flag names; a drift between the two files would throw
     // TN_RELEASE_UNKNOWN_FLAG after the release was already public.
     [["--prove-upgrade", "--upgrade-proved", "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
-    // Reusing a proof without one is the skip this receipt exists to refuse.
-    [["--upgrade-proved"], /TN_RELEASE_UPGRADE_PROOF_MISSING/u],
   ])("refuses %j before touching the network", (args, message) => {
     let stderr = "";
     try {
@@ -648,6 +658,23 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
       stderr = String((error as { stderr?: unknown }).stderr);
     }
     expect(stderr).toMatch(message);
+  });
+
+  it("refuses to reuse a proof this checkout never recorded", () => {
+    const repo = path.resolve(import.meta.dirname, "../..");
+    // The receipt is git-ignored run state, so a developer may already hold one for this commit.
+    clearUpgradeProofReceipt(repo);
+    let stderr = "";
+    try {
+      execFileSync("pnpm", ["exec", "tsx", "scripts/release.ts", "--upgrade-proved"], {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      stderr = String((error as { stderr?: unknown }).stderr);
+    }
+    expect(stderr).toMatch(/TN_RELEASE_UPGRADE_PROOF_MISSING/u);
   });
 });
 

@@ -615,6 +615,15 @@ export function readUpgradeProofReceipt(
   }
 }
 
+/**
+ * Drop any older receipt before a proof-only run proves again: only the latest outcome for a commit
+ * may stay on disk, so a proof that goes red after `latest` moved cannot leave yesterday's green
+ * receipt behind for `--upgrade-proved` to reuse.
+ */
+export function clearUpgradeProofReceipt(repo: string): void {
+  fs.rmSync(path.join(repo, UPGRADE_PROOF_RECEIPT), { force: true });
+}
+
 /** Record a green proof for `sha`, and answer the file, so the run can say where it wrote it. */
 export function writeUpgradeProofReceipt(
   repo: string,
@@ -676,14 +685,24 @@ async function main(args: readonly string[]): Promise<void> {
   // A proof-only run reports a proof, so every flag that would make it prove nothing — or publish
   // beside it — refuses instead of printing a green line for work that did not happen.
   if (proveUpgrade) {
-    for (const other of ["--yes", "--dry-run", "--prepare", "--override", "--upgrade-proved"])
+    for (const other of [
+      "--yes",
+      "--dry-run",
+      "--prepare",
+      "--override",
+      "--resume",
+      "--upgrade-proved",
+    ])
       if (argv.includes(other))
         throw new Error(
-          `TN_RELEASE_FLAGS_CONFLICT: --prove-upgrade publishes and prepares nothing, so it cannot be combined with ${other}.`,
+          `TN_RELEASE_FLAGS_CONFLICT: --prove-upgrade proves one whole candidate and publishes nothing, so it cannot be combined with ${other}.`,
         );
   }
   const headSha = (): string =>
     execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
+  // A proof-only run owns the receipt: it clears the old one now and writes the new one only after
+  // the proof comes back green.
+  if (proveUpgrade) clearUpgradeProofReceipt(REPO);
   if (upgradeProved) {
     const receipt = readUpgradeProofReceipt(REPO, headSha());
     if (receipt === undefined)
@@ -840,7 +859,7 @@ async function main(args: readonly string[]): Promise<void> {
       );
     // The receipt is what lets the publish that follows reuse this proof, so it is written here,
     // beside the proof itself, and nowhere else.
-    if (proving)
+    if (proving && proveUpgrade)
       process.stdout.write(
         `\nUpgrade proof receipt: ${writeUpgradeProofReceipt(REPO, headSha())}\n`,
       );

@@ -10,7 +10,7 @@
 
 PRD-896 moved the upgrade proof in front of the tag, which closes the shape that burned 0.3.14: a
 first-pass release now proves before any release exists, and `--upgrade-proved` stops the publish
-from proving a second time. Two shapes survive it:
+from proving a second time. Three shapes survive it:
 
 1. **A resumed publish.** `release:ship` resumes at the first step its GitHub state says is not done
    (`nextStep`, `scripts/release-ship.ts:346`). A run that finds the release already public goes
@@ -42,7 +42,7 @@ Close the resume shape first, because it needs no new release state.
 
 ### Phase 1 — a resumed publish refuses to prove after the fact
 
-- [ ] The proof `release:ship` records before the tag (the receipt PRD-896 added) is readable by a *later* invocation, so a resume can name the proof it relies on instead of proving behind a public release. proof: `scripts/__tests__/release.spec.ts` — the receipt read across invocations, and `scripts/__tests__/release-ship.spec.ts` for the plan that refuses when there is none.
+- [ ] A resume on a **fresh runner** has no receipt to read: the proof PRD-896 records lives in the worktree that proved, and `ship` passes `--upgrade-proved` only from its own memory. Persist the proof where a later invocation can read it (an artifact, or release metadata) or make the resume refuse. proof: `scripts/__tests__/release.spec.ts` — a receipt read in a second checkout, and `scripts/__tests__/release-ship.spec.ts` for the plan that refuses when there is none.
 - [ ] A plan that reaches `publish` with no proof for its commit stops and says which invocation must prove. proof: `scripts/__tests__/release-ship.spec.ts` — a resume case that refuses, beside the existing green resume. This box depends on the one above it: refusing before the receipt can be read would turn every post-wait rerun into a hard stop.
 
 ### Phase 2 — the release becomes an announcement, not a lock
@@ -61,5 +61,5 @@ Close the resume shape first, because it needs no new release state.
 
 ## Blocked on
 
-- The owner's choice between the two shapes above before phase 2 (draft-first versus a release that
+- The owner's choice between the shapes above before phase 2 (draft-first versus a release that
   simply never gates npm), and one real release to prove either.
