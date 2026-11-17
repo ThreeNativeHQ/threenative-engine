@@ -17,6 +17,7 @@ import { skyVisibility } from "./ground/sky-visibility.js";
 import { bakeMesh } from "./package/bake.js";
 import { compilePropBuckets, propPackageFiles } from "./package/prop-package.js";
 import type { IBakedWorldPackage, IWorldPackageAsset } from "./package/world-package.js";
+import { type IKitArborArt, growKitArborArt } from "./population/arbor-species.js";
 
 type Palette = NonNullable<NonNullable<Parameters<typeof bakeMesh>[1]>["palette"]>;
 
@@ -79,6 +80,8 @@ export interface IKitWorldRecipe {
   };
   /** Starter-asset paths copied as named into the bake's output. */
   readonly art: readonly string[];
+  /** Arbor plants baked into the output by stem (`growKitArborArt`), drawn by the pack like scans. */
+  readonly arbor?: Readonly<Record<string, IKitArborArt>>;
 }
 
 interface ISurvey {
@@ -514,7 +517,8 @@ export async function bakeStreamedWorld(options: {
   const buckets = await writeProps(worldDir, row.name, placements, baked.size, look.props);
 
   for (const path of row.art) await cp(join(assetsDir, path), join(out, path), { recursive: true });
+  const grown = await growKitArborArt(row.arbor ?? {}, kitDir, out, assetsDir);
   console.log(
-    `${row.name}: ${placements.length} placements (${buckets}); ${row.art.length} art entries; ${((performance.now() - started) / 1000).toFixed(1)} s -> ${out}`,
+    `${row.name}: ${placements.length} placements (${buckets}); ${row.art.length} art entries; ${grown.length} Arbor files; ${((performance.now() - started) / 1000).toFixed(1)} s -> ${out}`,
   );
 }

@@ -1,4 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { IBiomeSpec } from "../biome/biome.js";
@@ -13,7 +15,11 @@ interface IVegetation {
     form?: Readonly<Record<string, unknown>>;
     leafImage?: string;
   }): Promise<
-    { bounds: { max: [number, number, number]; min: [number, number, number] }; path: string }[]
+    {
+      bounds: { max: [number, number, number]; min: [number, number, number] };
+      path: string;
+      lod?: number;
+    }[]
   >;
   vegetationPresets(): { id: string; kind: string }[];
 }
@@ -134,6 +140,64 @@ export async function growArborAsset(
   });
   const [near, mid] = files as [(typeof files)[number], (typeof files)[number]];
   return { bounds: near.bounds, maxDistance: 600, mid: mid.path, midDistance: 45, near: near.path };
+}
+
+/** One Arbor plant a streamed kit bakes: `lods` maps an Arbor level to the file suffix the pack reads. */
+export interface IKitArborArt {
+  readonly preset: string;
+  readonly seed: number;
+  readonly lods: Readonly<Record<string, string>>;
+  readonly form?: Readonly<Record<string, unknown>>;
+  readonly leafImage?: string;
+}
+
+/**
+ * Bakes a streamed kit's `world.arbor` rows into `out`: each `<stem>` writes `<stem><suffix>.glb`
+ * per level, so the species pack draws an Arbor plant like a scan with no GLB in the starter assets.
+ * The same preset, seed, form and level always write the same bytes. Returns the files written.
+ */
+export async function growKitArborArt(
+  rows: Readonly<Record<string, IKitArborArt>>,
+  projectRoot: string,
+  out: string,
+  assetsDir = projectRoot,
+): Promise<string[]> {
+  const written: string[] = [];
+  if (Object.keys(rows).length === 0) return written;
+  const vegetation = await loadVegetation(projectRoot, "world.arbor");
+  const presets = new Set(vegetation.vegetationPresets().map((one) => one.id));
+  const scratch = await mkdtemp(join(tmpdir(), "tn-kit-arbor-art-"));
+  try {
+    for (const [stem, row] of Object.entries(rows)) {
+      if (!presets.has(row.preset))
+        throw new Error(
+          `bake: world.arbor '${stem}' names no Arbor preset '${row.preset}'. Call vegetationPresets() from ${PACKAGE} for the ids.`,
+        );
+      const lods = Object.keys(row.lods).map(Number);
+      if (lods.length === 0 || lods.some((lod) => !Number.isInteger(lod) || lod < 0))
+        throw new Error(`bake: world.arbor '${stem}' needs lods such as { "1": "-near" }`);
+      const files = await vegetation.bakeVegetation({
+        lods,
+        out: join(scratch, stem),
+        preset: row.preset,
+        seed: row.seed,
+        ...(row.form === undefined ? {} : { form: row.form }),
+        ...(row.leafImage === undefined ? {} : { leafImage: resolve(assetsDir, row.leafImage) }),
+      });
+      for (const [at, lod] of lods.entries()) {
+        const file = files.find((one) => one.lod === lod) ?? files[at];
+        if (file === undefined)
+          throw new Error(`bake: world.arbor '${stem}' baked no level ${lod}`);
+        const target = join(out, `${stem}${row.lods[String(lod)]}.glb`);
+        await mkdir(dirname(target), { recursive: true });
+        await cp(file.path, target);
+        written.push(target);
+      }
+    }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+  return written;
 }
 
 /**
