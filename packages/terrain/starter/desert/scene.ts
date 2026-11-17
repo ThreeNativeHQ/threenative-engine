@@ -42,9 +42,11 @@ import {
 import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/ground/terrain.js";
 import { desertAssets } from "./render/kitAssets.js";
 import { createLoadingScreen } from "./render/loading.js";
+import { addFormations } from "./render/props/formations.js";
 import { loadCanopy, loadPropPackage, loadSky, propCounts } from "./render/props/propWorld.js";
 import { invalidatePropShadows } from "./render/props/propWorld.js";
 import { buildPropVariants } from "./render/props/props.js";
+import { type ISand, createSand } from "./render/sand.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky/sky.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/water/river.js";
 import { WORLD } from "./render/worldNames.js";
@@ -86,6 +88,7 @@ export class DesertScene extends Scene<TerrainState, IPhysicsContext> {
   #mannequin: IMannequin | undefined;
   #swimClips: readonly AnimationClip[] = [];
   #rig: IPlayerRig | undefined;
+  #sand: ISand | undefined;
   #meadow: IMeadow | undefined;
   #assets: ReturnType<typeof desertAssets> | undefined;
   override async load(ctx: TerrainCtx): Promise<void> {
@@ -454,6 +457,28 @@ export class DesertScene extends Scene<TerrainState, IPhysicsContext> {
       ctx.add(lake.mesh);
       ctx.entities.add("lake", { mesh: lake.mesh, dispose: () => lake.dispose() });
     }
+    // The sandstone landmarks and their fallen blocks (`render/props/formations.ts`); the spawn
+    // join waits for them, so the reveal never shows the dunes before their rocks.
+    const landmarks = addFormations(ctx, assets, createWorldHeight(data, world), data).then(
+      (dispose) => {
+        ctx.entities.add("desert-formations", { dispose });
+      },
+    );
+    groundReady =
+      groundReady === undefined
+        ? landmarks
+        : Promise.all([groundReady, landmarks]).then(() => undefined);
+    // Loose sand (`render/sand.ts`): prints under the player's feet, dust off each step and sand
+    // on the wind. It joins after the reveal: the first step is seconds away.
+    void createSand(
+      ctx,
+      assets,
+      createWorldHeight(data, world),
+      this.#biome?.grassTint ?? [1, 1, 1],
+    ).then((sand) => {
+      this.#sand = sand;
+      ctx.entities.add("desert-sand", { debug: () => sand.stats, dispose: () => sand.dispose() });
+    });
     // --- the meadow's props -------------------------------------------------------------------
     //
     // The props build on the first physics step, not here: both ways of asking the world where the
@@ -684,6 +709,14 @@ export class DesertScene extends Scene<TerrainState, IPhysicsContext> {
     if (playable && ctx.input.justPressed("jump") && player.grounded) player.velocity.y = 5;
     player.moveAndSlide(dt);
     this.#rig?.animate(dt);
+    const actor = this.#rig?.actor;
+    if (actor && ctx.state.getState().view === "player")
+      this.#sand?.update(dt, {
+        figure: this.#rig?.figure.root ?? actor,
+        grounded: player.grounded,
+        position: actor.position,
+        velocity: player.velocity,
+      });
   }
 }
 

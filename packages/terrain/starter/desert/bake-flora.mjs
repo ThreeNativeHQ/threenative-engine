@@ -15,7 +15,13 @@ const ROWS = [
   // Utah juniper: the gnarled grey-green `olive` crown is the nearest Arbor form.
   ["juniper-a", "olive", 1, { 1: "", 2: "-far" }],
   ["juniper-b", "olive", 2, { 1: "", 2: "-far" }],
+  // Saguaro: the cactus the request names first; Arbor's columnar form with its arms.
+  ["saguaro-a", "saguaro", 1, { 0: "", 2: "-far" }],
+  ["saguaro-b", "saguaro", 4, { 0: "", 2: "-far" }],
   ["sage", "creosote", 1, { 0: "" }],
+  ["creosote-b", "creosote", 3, { 0: "" }],
+  ["thornbush-b", "thornbush", 4, { 0: "" }],
+  ["agave-b", "agave", 5, { 0: "" }],
   ["blackbrush", "thornbush", 1, { 0: "" }],
   ["yucca", "agave", 1, { 0: "" }],
   ["bunchgrass-a", "bunchgrass", 1, { 0: "" }],

@@ -194,6 +194,9 @@ const MEADOW = vec3(0.47, 0.72, 0.4);
 const FOREST_MEADOW = vec3(0.4, 0.58, 0.27);
 /** How much of the vegetation's sky light the ground receives; the vegetation's own is 1.13. */
 const GROUND_SKY_LIGHT = 0.6;
+/** Normal-map relief of the desert's rippled sand and of its gravel pavement (the meadow turf: 0.38). */
+const SAND_RELIEF = 1.1;
+const GRAVEL_RELIEF = 0.8;
 /** Multiplier that turns meadow turf into shaded needle litter under a stand. */
 const FOREST_FLOOR = vec3(0.4, 0.4, 0.27);
 /**
@@ -930,17 +933,28 @@ export async function createGroundMaterial(
         const key = descriptor.id as LayerKey;
         maps[key] ??= { diffuse, normal: normalMap };
         const surface = albedoOf(key);
+        // The desert's flats are a scan of wind-rippled sand: its normal map is the ripples, so it
+        // takes the full relief a low sun needs to shade each crest.
         const relief = reliefOf(
           key,
-          key === "grass" ? 0.38 : key === "rock" ? 0.52 : key === "snow" ? 0.18 : 0.32,
+          key === "grass"
+            ? look.sandRipples
+              ? SAND_RELIEF
+              : 0.38
+            : key === "rock"
+              ? 0.52
+              : key === "snow"
+                ? 0.18
+                : look.sandRipples
+                  ? GRAVEL_RELIEF
+                  : 0.32,
         );
         samples[key] = { surface, relief };
         if (key !== "grass") return { color: surface.rgb, normal: relief.tilt };
-        let normal = relief.tilt
+        const normal = relief.tilt
           .mul(weights.grass)
           .mul(look.crestTurf ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
           .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
-        if (look.sandRipples) normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
         const turf = groundTurf(surface.rgb, biome, hollow, open);
         // Open turf in the wood takes the row's `turfTint`; under the crowns the needle litter
         // (`FOREST_FLOOR`) already owns the tone, so the tint fades out with the canopy.
@@ -1512,19 +1526,19 @@ export function createTerrain(
           stream.tiles(tile);
         }
         // The ground took no image-based light, so terrain in shadow fell to near-black while every
-        // plant on it read the sky. It reads the same clamped sky the vegetation does.
-        if (biome === undefined || biome.lawnGround)
-          void loadSkyLight(assets).then((sky) => {
-            if (!sky || mesh.material !== ground || !ground.colorNode) return;
-            // An envMap would be the ground's 17th sampler; the diffuse sky it carries is two colours.
-            const { up, down } = skyIrradiance(sky);
-            for (const surface of surfaces) {
-              surface.emissiveNode = (surface.colorNode as Node<"vec3">)
-                .mul(mix(vec3(...down), vec3(...up), normalWorld.y.mul(0.5).add(0.5)))
-                .mul(GROUND_SKY_LIGHT);
-              surface.needsUpdate = true;
-            }
-          });
+        // plant on it read the sky. It reads the same clamped sky the vegetation does: sand and
+        // sandstone too, or a butte's shaded face drew black under a low sun.
+        void loadSkyLight(assets).then((sky) => {
+          if (!sky || mesh.material !== ground || !ground.colorNode) return;
+          // An envMap would be the ground's 17th sampler; the diffuse sky it carries is two colours.
+          const { up, down } = skyIrradiance(sky);
+          for (const surface of surfaces) {
+            surface.emissiveNode = (surface.colorNode as Node<"vec3">)
+              .mul(mix(vec3(...down), vec3(...up), normalWorld.y.mul(0.5).add(0.5)))
+              .mul(GROUND_SKY_LIGHT);
+            surface.needsUpdate = true;
+          }
+        });
       })
       // A map that never arrives, or a set this material cannot bind, leaves the ground on its
       // baked vertex colours. It must still collide and still draw, and the console says why.
