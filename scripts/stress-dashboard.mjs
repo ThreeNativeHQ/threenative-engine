@@ -61,7 +61,9 @@ export const sceneKindOf = (row) => {
   const flags = flagsOf(row.variant);
   // `holdout=<name>` is a real game measured in the same window: it is a keep's proof, never a lane.
   const holdout = flags.find((flag) => flag.startsWith("holdout="));
-  return holdout ?? (["play", "systems"].filter((kind) => flags.includes(kind)).join("+") || "real");
+  return (
+    holdout ?? (["play", "systems"].filter((kind) => flags.includes(kind)).join("+") || "real")
+  );
 };
 /** The non-`real` lanes the Overview adds once they have a row. */
 const EXTRA_SCENES = ["play", "systems", "play+systems"];
@@ -343,7 +345,8 @@ export function laneOf(rows, ctx, shadow, pass, scene = "real") {
   };
 }
 
-const laneName = (lane) => `${lane.scene === "real" ? "" : `${lane.scene} · `}${SHADOW[lane.shadow]}`;
+const laneName = (lane) =>
+  `${lane.scene === "real" ? "" : `${lane.scene} · `}${SHADOW[lane.shadow]}`;
 
 function ladder(lanes) {
   const [W, top, laneH, labelW, max] = [560, 24, 44, 176, 36];

@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-const { breakPoint, familyOf, loadOf, rampCells, rollingMedian, sceneKindOf, trendSeries } = await import(
-  new URL("../stress-dashboard.mjs", import.meta.url).href
-);
+const { breakPoint, familyOf, loadOf, rampCells, rollingMedian, sceneKindOf, trendSeries } =
+  await import(new URL("../stress-dashboard.mjs", import.meta.url).href);
 
 describe("stress dashboard: load ramp", () => {
   it("reads load=N from the variant and defaults to 1", () => {
