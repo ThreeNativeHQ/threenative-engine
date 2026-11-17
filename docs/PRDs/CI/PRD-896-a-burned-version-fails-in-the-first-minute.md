@@ -53,7 +53,7 @@ Three parts, one rule each:
 ### Phase 3 — the upgrade proof runs before anything about the version is public
 
 - [x] `pnpm release --prove-upgrade` packs the cohort and proves the previous `latest` upgrades onto it, publishing, tagging and releasing nothing; `--upgrade-proved` tells the publish that follows to reuse that proof instead of spending the browser lanes twice, and `--prove-upgrade` beside `--yes` refuses. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 39 passed (`upgradeProofApplies`, and the CLI conflict case).
-- [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, and a resumed plan never tells the publish it proved something it did not. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 34 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `a resumed plan that never proved…`, the override case).
+- [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, and a resumed plan never tells the publish it proved something it did not. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 33 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `a resumed plan that never proved…`, the override case).
 
 ## Acceptance criteria
 
@@ -69,8 +69,9 @@ Three parts, one rule each:
   URLs, so that shape reaches further into the release path than the burn does. Its residue — a
   resumed publish still proves after the release is public — is filed as PRD-897.
 - 2026-11-16 (agent): the proof runs twice unless told otherwise. `release:ship` passes
-  `--upgrade-proved` only when the same invocation proved before the tag, so a resumed plan (which
-  never proved) keeps proving at the publish exactly as before. Cost: one proof per release, not two.
+  `--upgrade-proved` only when the same invocation proved before the tag, and that flag refuses
+  without a receipt for the shipped commit, so a resumed plan (which never proved) keeps proving at
+  the publish exactly as before. Cost: one proof per release, not two.
 
 ## Blocked on
 

@@ -15,8 +15,13 @@ from proving a second time. Two shapes survive it:
 1. **A resumed publish.** `release:ship` resumes at the first step its GitHub state says is not done
    (`nextStep`, `scripts/release-ship.ts:346`). A run that finds the release already public goes
    straight to `publish`, which is `pnpm release --yes --skip-gates --resume` — and that call proves
-   after the release is public. A red proof there still burns the version.
-2. **Nothing public follows npm.** The repository still treats a public release as the version's
+   after the release is public, because a resume is not the invocation that proved. A red proof
+   there still burns the version.
+2. **A prerelease that outlives its run.** `native-release.yml:690` creates the release
+   `--prerelease`, which is public, before the consumer proofs run; `cleanup-failed-release` deletes
+   it when a consumer proof fails, but a cancelled run, or a cleanup job that never runs, leaves the
+   public prerelease and no npm cohort.
+3. **Nothing public follows npm.** The repository still treats a public release as the version's
    announcement while npm may be minutes or hours behind it.
 
 Why the obvious flip — create the release as a draft and promote it after the npm upload — is not a
@@ -37,8 +42,8 @@ Close the resume shape first, because it needs no new release state.
 
 ### Phase 1 — a resumed publish refuses to prove after the fact
 
-- [ ] A plan that reaches `publish` without having proved stops and says which invocation must prove, instead of proving behind a public release. proof: `scripts/__tests__/release-ship.spec.ts` — a resume case that refuses, beside the existing green resume.
-- [ ] The tag-day record that a proof passed is readable by the plan that resumes, so a genuine resume names the proof it is relying on (`gh` read of a recorded artifact or the tag run's summary). proof: the same spec, plus the file or run field it reads.
+- [ ] The proof `release:ship` records before the tag (the receipt PRD-896 added) is readable by a *later* invocation, so a resume can name the proof it relies on instead of proving behind a public release. proof: `scripts/__tests__/release.spec.ts` — the receipt read across invocations, and `scripts/__tests__/release-ship.spec.ts` for the plan that refuses when there is none.
+- [ ] A plan that reaches `publish` with no proof for its commit stops and says which invocation must prove. proof: `scripts/__tests__/release-ship.spec.ts` — a resume case that refuses, beside the existing green resume. This box depends on the one above it: refusing before the receipt can be read would turn every post-wait rerun into a hard stop.
 
 ### Phase 2 — the release becomes an announcement, not a lock
 

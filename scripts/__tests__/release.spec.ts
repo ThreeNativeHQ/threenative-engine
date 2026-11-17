@@ -15,12 +15,14 @@ import {
   proveUpgradeFromLatest,
   provisionReleaseArtifacts,
   publishCohort,
+  readUpgradeProofReceipt,
   releaseLevels,
   releaseOrder,
   unpublishedReleasePackages,
   upgradeProofApplies,
   validateReleaseCohort,
   validateTemplatePins,
+  writeUpgradeProofReceipt,
 } from "../release.js";
 
 const roots: string[] = [];
@@ -321,6 +323,21 @@ describe("pnpm release publishing", () => {
 });
 
 describe("pnpm release proof-only run", () => {
+  // The publish that follows the tag reuses the proof through `--upgrade-proved`. A bare flag would
+  // let any caller skip the last gate before the first npm upload, so the skip needs a receipt for
+  // the exact commit that proved it.
+  it("records a proof for the commit that ran it, and refuses to reuse anyone else's", async () => {
+    const root = await makeTempDir("threenative-upgrade-proof-");
+    roots.push(root);
+    expect(readUpgradeProofReceipt(root, "a".repeat(40))).toBeUndefined();
+    writeUpgradeProofReceipt(root, "a".repeat(40), "2026-11-16T00:00:00.000Z");
+    expect(readUpgradeProofReceipt(root, "a".repeat(40))).toEqual({
+      provedAt: "2026-11-16T00:00:00.000Z",
+      sha: "a".repeat(40),
+    });
+    expect(readUpgradeProofReceipt(root, "b".repeat(40))).toBeUndefined();
+  });
+
   // PRD-896: `release:ship` proves the upgrade before it creates the tag, so the publish that
   // follows must not spend the browser lanes again — and a run that never proved must not skip them.
   it("proves the upgrade unless an override, a prior proof or a partial cohort speaks for it", () => {
@@ -329,23 +346,6 @@ describe("pnpm release proof-only run", () => {
     expect(upgradeProofApplies({ ...scope, override: true })).toBe(false);
     expect(upgradeProofApplies({ ...scope, proved: true })).toBe(false);
     expect(upgradeProofApplies({ ...scope, publishable: 3 })).toBe(false);
-  });
-
-  it("refuses `--prove-upgrade` beside `--yes`, which would publish after proving nothing", () => {
-    const root = path.resolve(import.meta.dirname, "../..");
-    let failure: { status: number | null; stderr: string } | undefined;
-    try {
-      execFileSync(
-        path.join(root, "node_modules/.bin/tsx"),
-        ["scripts/release.ts", "--prove-upgrade", "--yes"],
-        { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-      );
-    } catch (error) {
-      const thrown = error as { status?: number | null; stderr?: string };
-      failure = { status: thrown.status ?? null, stderr: thrown.stderr ?? "" };
-    }
-    expect(failure?.status).toBe(1);
-    expect(failure?.stderr).toContain("TN_RELEASE_FLAGS_CONFLICT");
   });
 });
 
@@ -624,8 +624,18 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
 
   it.each([
     [["--dry-run", "--yes"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    // `--prove-upgrade` proves and publishes nothing, so publishing beside it is a contradiction.
+    [["--prove-upgrade", "--yes"], /TN_RELEASE_FLAGS_CONFLICT/u],
     [["--lock"], /TN_RELEASE_LOCK_USAGE/u],
     [["--dry-run", "--nope"], /TN_RELEASE_UNKNOWN_FLAG/u],
+    // A proof-only run reports a proof, so every flag that would make it prove nothing refuses.
+    [["--prove-upgrade", "--override"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    [["--prove-upgrade", "--dry-run"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    // `release:ship` passes these two flag names; a drift between the two files would throw
+    // TN_RELEASE_UNKNOWN_FLAG after the release was already public.
+    [["--prove-upgrade", "--upgrade-proved", "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
+    // Reusing a proof without one is the skip this receipt exists to refuse.
+    [["--upgrade-proved"], /TN_RELEASE_UPGRADE_PROOF_MISSING/u],
   ])("refuses %j before touching the network", (args, message) => {
     let stderr = "";
     try {

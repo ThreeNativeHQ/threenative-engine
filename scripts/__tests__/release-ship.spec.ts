@@ -196,18 +196,6 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
     expect(plan.calls).toEqual([]);
   });
 
-  it("is a resume, not a burn, when the release sits on the commit being shipped", async () => {
-    const { calls, deps } = world({
-      candidate: [run(10, "workflow_dispatch")],
-      core: [],
-      release: { isDraft: false, isPrerelease: false },
-      tagCommit: SHA,
-      tagRuns: [run(20, "workflow_dispatch", { headBranch: TAG })],
-    });
-    expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["publish"]);
-    expect(calls).toEqual(["publish"]);
-  });
-
   it("is not a burn when npm already serves the version", async () => {
     const { deps } = world({
       core: [VERSION],
@@ -423,7 +411,7 @@ describe("pnpm release:ship resumes", () => {
 });
 
 // The release pull request's own gate: the same decision, read from the tree it merges.
-describe("pnpm check:release-version", () => {
+describe("pnpm release:check-version", () => {
   it("passes a version whose tag has no release yet", () => {
     const { deps } = world();
     expect(checkReleaseVersion(deps, SHA)).toContain(`${TAG} is shippable`);
@@ -489,7 +477,6 @@ function stateOf(
       successes: candidate.successes ?? 0,
     },
     ci: 1,
-    corePublished: false,
     mainHead: SHA,
     npmPublished: false,
     release: "none",

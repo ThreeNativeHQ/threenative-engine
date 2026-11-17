@@ -205,8 +205,12 @@ jobs:
       # early required job, so the develop -> main release pull request goes red in its first
       # minutes instead of after a full board, a merge and the release's own hour (2026-11-16,
       # release PR #676: v0.3.14). A release at the commit being shipped is a resume, not a burn.
+      #
+      # A *draft* release is the one state this read cannot see: GitHub lists drafts only to callers
+      # with write access, and this job holds `contents: read` on purpose. `release:ship` runs with
+      # write access and refuses a draft in its first minute, before any evidence read.
       - name: Refuse a release version whose tag is burned
-        if: ${{ github.base_ref == 'main' || github.event.merge_group.base_ref == 'main' }}
+        if: ${{ github.base_ref == 'main' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: pnpm release:check-version

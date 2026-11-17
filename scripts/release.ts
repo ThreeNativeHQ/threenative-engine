@@ -579,6 +579,55 @@ export function upgradeProofApplies(scope: IUpgradeProofScope): boolean {
 }
 
 /**
+ * Where a proof-only run records that this commit's candidate proved green.
+ *
+ * Git-ignored, like every other run artifact, and read back by `--upgrade-proved` from the same
+ * checkout: `release:ship` proves before the tag and publishes from the same worktree minutes later.
+ */
+const UPGRADE_PROOF_RECEIPT = "artifacts/release/upgrade-proof.json";
+
+export interface IUpgradeProofReceipt {
+  readonly provedAt: string;
+  readonly sha: string;
+}
+
+/**
+ * The green proof recorded for this exact commit, or `undefined` when there is none.
+ *
+ * `--upgrade-proved` lets the publish that follows the tag reuse the proof instead of spending the
+ * browser lanes twice. A bare flag would let any caller skip the last gate before the first npm
+ * upload, so the skip needs a receipt naming the commit it proved: no receipt, no skip.
+ */
+export function readUpgradeProofReceipt(
+  repo: string,
+  sha: string,
+): IUpgradeProofReceipt | undefined {
+  try {
+    const receipt = JSON.parse(fs.readFileSync(path.join(repo, UPGRADE_PROOF_RECEIPT), "utf8")) as {
+      provedAt?: unknown;
+      sha?: unknown;
+    };
+    if (receipt.sha !== sha) return undefined;
+    return { provedAt: typeof receipt.provedAt === "string" ? receipt.provedAt : "", sha };
+  } catch {
+    // A missing or unreadable receipt is no receipt. Both answer the same way: prove it here.
+    return undefined;
+  }
+}
+
+/** Record a green proof for `sha`, and answer the file, so the run can say where it wrote it. */
+export function writeUpgradeProofReceipt(
+  repo: string,
+  sha: string,
+  provedAt = new Date().toISOString(),
+): string {
+  const file = path.join(repo, UPGRADE_PROOF_RECEIPT);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify({ provedAt, schemaVersion: 1, sha }, null, 2)}\n`);
+  return file;
+}
+
+/**
  * `pnpm release` — dry by default, and `--prove-upgrade` proves the previous `latest` upgrades onto
  * the packed candidate while publishing nothing.
  */
@@ -605,10 +654,6 @@ async function main(args: readonly string[]): Promise<void> {
   const upgradeProved = argv.includes("--upgrade-proved");
   if (publish && dryRun)
     throw new Error("TN_RELEASE_FLAGS_CONFLICT: --dry-run and --yes cannot be combined.");
-  if (publish && proveUpgrade)
-    throw new Error(
-      "TN_RELEASE_FLAGS_CONFLICT: --prove-upgrade publishes nothing, so it cannot be combined with --yes.",
-    );
   const lockOptions = lockPath === undefined ? {} : prebuiltFromLock(lockPath);
   const prepare = argv.includes("--prepare");
   const skipGates = argv.includes("--skip-gates");
@@ -628,6 +673,27 @@ async function main(args: readonly string[]): Promise<void> {
       ].includes(arg),
   );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
+  // A proof-only run reports a proof, so every flag that would make it prove nothing — or publish
+  // beside it — refuses instead of printing a green line for work that did not happen.
+  if (proveUpgrade) {
+    for (const other of ["--yes", "--dry-run", "--prepare", "--override", "--upgrade-proved"])
+      if (argv.includes(other))
+        throw new Error(
+          `TN_RELEASE_FLAGS_CONFLICT: --prove-upgrade publishes and prepares nothing, so it cannot be combined with ${other}.`,
+        );
+  }
+  const headSha = (): string =>
+    execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
+  if (upgradeProved) {
+    const receipt = readUpgradeProofReceipt(REPO, headSha());
+    if (receipt === undefined)
+      throw new Error(
+        "TN_RELEASE_UPGRADE_PROOF_MISSING: --upgrade-proved reuses this commit's green upgrade proof, and this checkout holds no receipt for HEAD. Run `pnpm release --prove-upgrade` on it first, which is what release:ship does before it tags.",
+      );
+    process.stdout.write(
+      `\nReusing the upgrade proof recorded at ${receipt.provedAt} for ${receipt.sha}.\n`,
+    );
+  }
   // A `--yes` release produces its prebuilt payload itself, so the preflight may acknowledge its
   // absence and the run finishes the job. A local run that publishes nothing has no payload to
   // miss. No flag ships the npm cohort without its binaries (owner, 2026-11-01).
@@ -753,14 +819,13 @@ async function main(args: readonly string[]): Promise<void> {
       return;
     }
     // A resumed publish proved this before its first upload, and `latest` has moved since then.
-    const upgrades = upgradeProofApplies({
+    const proving = upgradeProofApplies({
       cohort: packages.length,
       override,
       proved: upgradeProved,
       publishable: publishPackages.length,
-    })
-      ? await proveUpgradeFromLatest(packages, tarballs)
-      : [];
+    });
+    const upgrades = proving ? await proveUpgradeFromLatest(packages, tarballs) : [];
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;
       process.stdout.write(`\nUpgrade proof — ${template} (registry latest -> candidate):\n`);
@@ -772,6 +837,12 @@ async function main(args: readonly string[]): Promise<void> {
     if (upgrades.some((report) => report.exitCode !== 0))
       throw new Error(
         "TN_RELEASE_UPGRADE_RED: a game on the previous latest does not upgrade onto this candidate. Nothing was published.",
+      );
+    // The receipt is what lets the publish that follows reuse this proof, so it is written here,
+    // beside the proof itself, and nowhere else.
+    if (proving)
+      process.stdout.write(
+        `\nUpgrade proof receipt: ${writeUpgradeProofReceipt(REPO, headSha())}\n`,
       );
   } finally {
     await rm(packed, { force: true, recursive: true });
