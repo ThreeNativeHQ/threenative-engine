@@ -1574,7 +1574,7 @@ export type {
  * @constraint call `update(follow)` once per rendered frame
  * @constraint `place` runs once per candidate per tile build: return false for paths and clearings
  * @constraint rotating or scaling the field is not supported; translating it is
- * @requires npm i -D @threenative/procedural-vegetation for the bake these instances come from
+ * @requires npm i -D @threenative/procedural-environment for the bake these instances come from
  * @example
  * const floor = new ScatterField3D({ parts: [{ lods, material }], getHeight, density: 0.05, place });
  * ctx.add(floor);

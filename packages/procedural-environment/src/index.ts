@@ -2,11 +2,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
+import { Mesh } from "three";
 import Arbor, { type IArborPart, type IArborPreset, type IArborTree } from "../vendor/arbor.js";
 import ForestKit, {
   type IForestKitMesh,
   type IForestKitPreset,
 } from "../vendor/forest-kit/index.js";
+import Outcrop from "../vendor/outcrop.js";
+import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
+
+export type { IEnvironmentBiome } from "./biomes.js";
 
 export interface IVegetationPreset {
   readonly id: string;
@@ -40,7 +45,7 @@ export interface IBakeVegetationOptions {
   readonly leafImage?: string;
 }
 
-export interface IVegetationBake {
+export interface IEnvironmentBake {
   readonly bounds: {
     readonly max: readonly [number, number, number];
     readonly min: readonly [number, number, number];
@@ -61,7 +66,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
  * @situation choose a tree species id for bakeVegetation or a terrain arbor: species
  * @situation what deadwood, leaf litter, boulders, reeds and tussocks can I bake for a forest floor
  * @constraint ids come from the vendored Arbor and forest-kit presets; trees are kind "tree", grass, ferns and flowers are kind "cover", deadwood, litter and stone are kind "debris"
- * @requires npm i -D @threenative/procedural-vegetation
+ * @requires npm i -D @threenative/procedural-environment
  * @example vegetationPresets().filter((p) => p.kind === "debris").map((p) => p.id);
  */
 export function vegetationPresets(): IVegetationPreset[] {
@@ -96,8 +101,12 @@ function distance(a: string, b: string): number {
 }
 
 /** The ids closest to `id`, for an error message. */
-function nearestPresets(id: string, count = 3): string[] {
-  return [...Object.keys(Arbor.PRESETS), ...Object.keys(ForestKit.PRESETS)]
+function nearestPresets(
+  id: string,
+  count = 3,
+  candidates = [...Object.keys(Arbor.PRESETS), ...Object.keys(ForestKit.PRESETS)],
+): string[] {
+  return candidates
     .map((candidate) => ({
       candidate,
       score: candidate.includes(id) || id.includes(candidate) ? 0 : distance(id, candidate),
@@ -224,14 +233,28 @@ function resolveBake(
     throw new Error(
       `bakeVegetation: form and leafImage patch an Arbor preset, and "${preset}" is a forest-kit ${forest.kind} with no leaf card to patch`,
     );
-  if (!Number.isInteger(seed))
-    throw new Error(`bakeVegetation: seed must be an integer, got ${seed}`);
+  checkSeedAndLods("bakeVegetation", seed, lods);
+  return { arbor, forest, lods, seed };
+}
+
+function checkSeedAndLods(caller: string, seed: number, lods: readonly number[]): void {
+  if (!Number.isInteger(seed)) throw new Error(`${caller}: seed must be an integer, got ${seed}`);
   if (lods.length === 0 || lods.some((lod) => !Number.isInteger(lod) || lod < 0 || lod > MAX_LOD))
     throw new Error(
-      `bakeVegetation: lods must be a non-empty list of integers 0 to ${MAX_LOD}, got [${lods}]`,
+      `${caller}: lods must be a non-empty list of integers 0 to ${MAX_LOD}, got [${lods}]`,
     );
-  if (new Set(lods).size !== lods.length) throw new Error(`bakeVegetation: lods repeat: [${lods}]`);
-  return { arbor, forest, lods, seed };
+  if (new Set(lods).size !== lods.length) throw new Error(`${caller}: lods repeat: [${lods}]`);
+}
+
+/** Writes to a temporary name, then renames, so a reader never sees half a file. */
+async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, bytes, { flag: "wx" });
+    await rename(temporary, file);
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 /**
@@ -249,11 +272,11 @@ function resolveBake(
  * @constraint bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped
  * @constraint _WIND is vec4 (trunk sway, branch sway, flutter, phase): forest-kit sway is flutter in z, and debris writes all four zero
  * @constraint form and leafImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given either
- * @requires npm i -D @threenative/procedural-vegetation
+ * @requires npm i -D @threenative/procedural-environment
  * @example await bakeVegetation({ preset: "oak", seed: 7, lods: [0, 1], out: "assets/trees" });
  * @example await bakeVegetation({ preset: "log", seed: 3, out: "assets/debris" });
  */
-export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> {
+export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> {
   const { preset, out } = options;
   const { arbor, forest, lods, seed } = resolveBake(preset, options);
   if (forest !== null) return bakeForestKit(preset, forest, { lods, out, seed });
@@ -271,17 +294,11 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
     leaf,
   };
   await mkdir(out, { recursive: true });
-  const baked: IVegetationBake[] = [];
+  const baked: IEnvironmentBake[] = [];
   for (const lod of lods) {
     const tree = Arbor.generate(source, { seed, lod });
     const file = path.join(out, `${preset}-${seed}${tag}-lod${lod}.glb`);
-    const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporary, Arbor.toGLB(tree, textures), { flag: "wx" });
-      await rename(temporary, file);
-    } finally {
-      await rm(temporary, { force: true });
-    }
+    await writeAtomic(file, Arbor.toGLB(tree, textures));
     baked.push({
       bounds: { max: tree.bounds.max, min: tree.bounds.min },
       lod,
@@ -362,24 +379,226 @@ async function bakeForestKit(
   preset: string,
   source: IForestKitPreset,
   options: { lods: readonly number[]; out: string; seed: number },
-): Promise<IVegetationBake[]> {
+): Promise<IEnvironmentBake[]> {
   await mkdir(options.out, { recursive: true });
-  const baked: IVegetationBake[] = [];
+  const baked: IEnvironmentBake[] = [];
   for (const lod of options.lods) {
     const tree = forestKitTree(preset, source, { lod, seed: options.seed });
     const file = path.join(options.out, `${preset}-${options.seed}-lod${lod}.glb`);
-    const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporary, Arbor.toGLB(tree), { flag: "wx" });
-      await rename(temporary, file);
-    } finally {
-      await rm(temporary, { force: true });
-    }
+    await writeAtomic(file, Arbor.toGLB(tree));
     baked.push({
       bounds: { max: tree.bounds.max, min: tree.bounds.min },
       lod,
       path: file,
       triangles: tree.triangles,
+    });
+  }
+  return baked;
+}
+
+/** What an element is: a tree, ground cover, floor debris or a rock form. */
+export type EnvironmentKind = "tree" | "cover" | "debris" | "rock";
+
+export interface IEnvironmentElement {
+  readonly id: string;
+  readonly name: string;
+  readonly latin?: string;
+  readonly kind: EnvironmentKind;
+  /** Biome ids from `environmentBiomes()` this element belongs in. */
+  readonly biomes: readonly string[];
+  /** The call that bakes it, ready to paste; a rock's names the filter's biome, else its first. */
+  readonly bake: string;
+}
+
+export interface IEnvironmentFilter {
+  /** A biome id or one of its words ("jungle" finds tropical). */
+  readonly biome?: string;
+  readonly kind?: EnvironmentKind;
+  /** Words that must all appear in the id, name, latin name, kind or biomes ("pine", "red rock"). */
+  readonly search?: string;
+}
+
+const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock"];
+
+/**
+ * Every biome: its id, name, the request words that mean it, the rock surface its rocks wear and
+ * the element ids that belong there.
+ * @situation which biomes can I bake nature for: forest, desert, jungle, tundra, coast, volcano
+ * @situation what trees, plants, debris and rocks belong in a desert or an alpine biome
+ * @constraint ids match the Strata terrain kits where they overlap (forest, coastal, alpine, desert, tundra)
+ * @requires npm i -D @threenative/procedural-environment
+ * @example environmentBiomes().map((biome) => biome.id);
+ */
+export function environmentBiomes(): IEnvironmentBiome[] {
+  return BIOMES.map((biome) => ({ ...biome }));
+}
+
+/** A biome id, or the biome one of its words names; throws naming the nearest ids. */
+function biomeOf(caller: string, word: string): IEnvironmentBiome {
+  const key = word.toLowerCase();
+  const hit =
+    BIOMES.find((biome) => biome.id === key) ?? BIOMES.find((biome) => biome.words.includes(key));
+  if (hit !== undefined) return hit;
+  const ids = BIOMES.map((biome) => biome.id);
+  throw new Error(
+    `${caller}: unknown biome "${word}". Nearest ids: ${nearestPresets(key, 3, ids).join(", ")}. Biomes: ${ids.join(", ")}.`,
+  );
+}
+
+/**
+ * Find the nature elements to bake, by biome, kind or words: trees, ground cover, forest-floor
+ * debris and rock forms (boulders, cliffs, sea stacks, mesas, arches, mountains), each with the
+ * exact bake call.
+ * @situation what can I bake for a desert, a jungle, a coast, a tundra or a volcanic island
+ * @situation list the rocks, cliffs and mountains for a biome, or every plant that grows there
+ * @situation find a tree or plant by name or latin name, such as pine, palm, cactus or fern
+ * @constraint fails closed: an unknown biome or kind throws naming the nearest ids
+ * @constraint biome takes an id or one of its words, so "jungle" finds tropical and "swamp" finds wetland
+ * @requires npm i -D @threenative/procedural-environment
+ * @example environmentElements({ biome: "desert", kind: "rock" }).map((element) => element.bake);
+ * @example environmentElements({ search: "palm" });
+ */
+export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironmentElement[] {
+  const biome =
+    filter.biome === undefined ? undefined : biomeOf("environmentElements", filter.biome);
+  if (filter.kind !== undefined && !KINDS.includes(filter.kind))
+    throw new Error(
+      `environmentElements: unknown kind "${filter.kind}". Kinds: ${KINDS.join(", ")}.`,
+    );
+  const words = (filter.search ?? "").toLowerCase().split(/\s+/u).filter(Boolean);
+  const biomesOf = (id: string): string[] =>
+    BIOMES.filter((row) => row.elements.includes(id)).map((row) => row.id);
+  const plants = vegetationPresets().map((preset) => ({
+    ...preset,
+    kind: preset.kind as EnvironmentKind,
+    biomes: biomesOf(preset.id),
+    bake: `bakeVegetation({ preset: "${preset.id}", seed: 1, out: "assets/environment" })`,
+  }));
+  const rocks = Object.entries(Outcrop.FORMS).map(([id, form]) => {
+    const biomes = biomesOf(id);
+    const at = biome?.id ?? biomes[0] ?? "hills";
+    return {
+      id,
+      name: form.label,
+      kind: "rock" as const,
+      biomes,
+      bake: `bakeRock({ form: "${id}", biome: "${at}", seed: 1, out: "assets/environment" })`,
+    };
+  });
+  return [...plants, ...rocks].filter((element) => {
+    if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
+    if (filter.kind !== undefined && element.kind !== filter.kind) return false;
+    const text = [
+      element.id,
+      element.name,
+      "latin" in element ? element.latin : "",
+      element.kind,
+      ...element.biomes.flatMap((id) => [
+        id,
+        ...(BIOMES.find((row) => row.id === id)?.words ?? []),
+      ]),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+}
+
+export interface IBakeRockOptions {
+  /** Directory the GLBs are written to; created when missing. */
+  readonly out: string;
+  /** A rock form: `environmentElements({ kind: "rock" })` lists boulder, slab, cliff, arch, mountain and the rest. */
+  readonly form: string;
+  /** A biome id or word from `environmentBiomes()`; sets the rock's weathering and colour. Default "hills". */
+  readonly biome?: string;
+  /** An integer. The same options always write the same bytes. Default 1. */
+  readonly seed?: number;
+  /** Levels of detail, each 0 (full) to 2 (far); level n keeps `detail` x 1, 0.5, 0.2. Default `[0]`. */
+  readonly lods?: readonly number[];
+  /** Mesh density of level 0, 0 to 1: about 1 500 triangles at 0, 70 000 at 1. Default 0.3. */
+  readonly detail?: number;
+  /** Width, height, depth in metres; default the form's own (a boulder is 2.4 x 1.8 x 2.1 m). */
+  readonly size?: readonly [number, number, number];
+  /** Shape overrides 0 to 1 over the biome's: roughness, chipping, strata, layers, tilt, fracture, columnar, weathering. */
+  readonly traits?: Readonly<Record<string, number>>;
+  /** Colour and cover overrides over the biome's: rockA, rockB, accent, moss, snow, sand, lichen, tide and their colours. */
+  readonly surface?: Readonly<Record<string, string | number>>;
+}
+
+const ROCK_LOD_DETAIL = [1, 0.5, 0.2];
+
+/** Each key of `patch` must be a key of `known`; throws listing the known keys. */
+function checkKeys(name: string, patch: object | undefined, known: object): void {
+  for (const key of Object.keys(patch ?? {}))
+    if (!Object.hasOwn(known, key))
+      throw new Error(
+        `bakeRock: ${name} key "${key}" is unknown: ${Object.keys(known).join(", ")}`,
+      );
+}
+
+/**
+ * Bake a procedural rock (Outcrop) to GLBs, one per level of detail: a boulder, slab, spire,
+ * hoodoo, sea stack, mesa, arch, tileable cliff module or a mountain, weathered and coloured for
+ * its biome (moss in a forest, snow in the tundra, sand in the desert, algae below the tide line).
+ * @situation generate a procedural rock, boulder or cliff as a GLB for a game level
+ * @situation desert mesa, hoodoo or sandstone arch; coastal sea stack; alpine spire; volcanic basalt columns
+ * @situation a procedural mountain mesh for the horizon, with snow at altitude
+ * @constraint fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1
+ * @constraint the same options write identical bytes; files are written atomically (temporary file, then rename)
+ * @constraint each GLB carries POSITION, NORMAL and COLOR_0 (linear RGB, rock and cover already blended) on one `rock` material; units are metres, +Y up, the rock rests on y = 0
+ * @constraint bake-time only, so keep it a dev dependency; the game owns the material and can re-material by the glTF material name `rock`
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeRock({ form: "cliff", biome: "coastal", seed: 7, lods: [0, 1], out: "assets/rocks" });
+ * @example await bakeRock({ form: "boulder", biome: "forest", traits: { weathering: 0.8 }, out: "assets/rocks" });
+ */
+export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> {
+  const { form, out, size, traits, surface } = options;
+  const seed = options.seed ?? 1;
+  const lods = options.lods ?? [0];
+  const detail = options.detail ?? 0.3;
+  if (!Object.hasOwn(Outcrop.FORMS, form)) {
+    const forms = Object.keys(Outcrop.FORMS);
+    throw new Error(
+      `bakeRock: unknown form "${form}". Nearest ids: ${nearestPresets(form, 3, forms).join(", ")}. Forms: ${forms.join(", ")}.`,
+    );
+  }
+  const biome = biomeOf("bakeRock", options.biome ?? "hills");
+  checkSeedAndLods("bakeRock", seed, lods);
+  if (!(detail >= 0 && detail <= 1))
+    throw new Error(`bakeRock: detail must be 0 to 1, got ${detail}`);
+  if (size !== undefined && (size.length !== 3 || !size.every((v) => Number.isFinite(v) && v > 0)))
+    throw new Error(`bakeRock: size must be three positive metres [w, h, d], got [${size}]`);
+  checkKeys("traits", traits, Outcrop.DEFAULT_TRAITS);
+  checkKeys("surface", surface, Outcrop.DEFAULT_SURFACE);
+  const patched = options.detail !== undefined || size || traits || surface;
+  const tag = patched
+    ? `-f${createHash("sha256")
+        .update(JSON.stringify([detail, size ?? null, traits ?? null, surface ?? null]))
+        .digest("hex")
+        .slice(0, 8)}`
+    : "";
+  const generator = new Outcrop.RockGenerator();
+  await mkdir(out, { recursive: true });
+  const baked: IEnvironmentBake[] = [];
+  for (const lod of lods) {
+    const geometry = generator.geometry({
+      form,
+      biome: biome.rock,
+      seed,
+      detail: detail * (ROCK_LOD_DETAIL[lod] as number),
+      ...(size ? { size } : {}),
+      ...(traits ? { traits } : {}),
+      ...(surface ? { surface } : {}),
+    });
+    const file = path.join(out, `${form}-${biome.id}-${seed}${tag}-lod${lod}.glb`);
+    await writeAtomic(file, new Uint8Array(Outcrop.exportGLB(new Mesh(geometry))));
+    const box = geometry.boundingBox;
+    if (box === null) throw new Error(`bakeRock: "${form}" baked no bounds at lod ${lod}`);
+    baked.push({
+      bounds: { max: [box.max.x, box.max.y, box.max.z], min: [box.min.x, box.min.y, box.min.z] },
+      lod,
+      path: file,
+      triangles: (geometry.index?.count ?? geometry.attributes.position?.count ?? 0) / 3,
     });
   }
   return baked;

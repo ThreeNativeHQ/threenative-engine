@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { vegetationPresets } from "@threenative/procedural-vegetation";
+import { vegetationPresets } from "@threenative/procedural-environment";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { cookKit } from "../src/cook/cook.js";
@@ -22,8 +22,8 @@ async function project(options: { vegetation: boolean }) {
   );
   if (options.vegetation)
     await symlink(
-      new URL("../../procedural-vegetation/", import.meta.url).pathname,
-      join(root, "node_modules", "@threenative", "procedural-vegetation"),
+      new URL("../../procedural-environment/", import.meta.url).pathname,
+      join(root, "node_modules", "@threenative", "procedural-environment"),
     );
   await writeFile(
     join(root, "threenative.config.ts"),
@@ -144,7 +144,7 @@ describe("Arbor species in a terrain cook", () => {
           projectRoot: root,
           spec: await grove(["arbor:oak@7"]),
         }),
-      ).rejects.toThrow(/npm i -D @threenative\/procedural-vegetation/u);
+      ).rejects.toThrow(/npm i -D @threenative\/procedural-environment/u);
       await expect(readdir(out)).rejects.toThrow();
     } finally {
       await remove();
@@ -244,7 +244,7 @@ describe("Arbor species in a terrain cook", () => {
     for (const name of ["terrain_generate", "terrain_biome_new"]) {
       const text = JSON.stringify(TERRAIN_TOOLS.find((tool) => tool.name === name));
       for (const id of trees) expect(text).toContain(id);
-      expect(text).toContain("npm i -D @threenative/procedural-vegetation");
+      expect(text).toContain("npm i -D @threenative/procedural-environment");
     }
   });
 });

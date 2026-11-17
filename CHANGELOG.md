@@ -17,7 +17,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sampledRadiance`, the sampling-source check, and the gate that decides which renderer may run the
   material lane (`IMaterialLightingEnvironment`, `materialLightingEnabled`, `isWebGLFallbackRenderer`).
 
+- `@threenative/procedural-environment` bakes rocks, cliffs, arches, mesas, sea stacks and
+  mountains as GLBs (`bakeRock`, from the vendored Outcrop generator), and finds every tree,
+  cover, debris and rock element by biome, kind or word (`environmentElements`,
+  `environmentBiomes`): `environmentElements({ biome: "jungle", kind: "tree" })`.
+
 ### Breaking
+
+- `@threenative/procedural-vegetation` is now `@threenative/procedural-environment`, because it
+  also bakes rocks. Install the new name; `bakeVegetation` and `vegetationPresets` are unchanged.
+  `bakeVegetation` returns `IEnvironmentBake[]`, the renamed `IVegetationBake`, with the same fields.
 
 - `@threenative/core`'s `devGlobal` and `publishDevGlobal` take their `scope` argument explicitly
   rather than defaulting to `globalThis`: a default made an explicit `undefined` read the page's

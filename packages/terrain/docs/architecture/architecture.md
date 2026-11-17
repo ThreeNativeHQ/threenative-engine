@@ -76,7 +76,7 @@ flowchart TD
   game["a generated game<br/>addStarterWorld from /starter"] --> terrain
   terrain --> core["@threenative/core<br/>/world: Heightfield, WorldCells, TerrainTiles"]
   terrain --> physics["@threenative/physics<br/>collider + rigid body in /starter"]
-  terrain --> arbor["@threenative/procedural-vegetation<br/>resolved in the project, never bundled"]
+  terrain --> arbor["@threenative/procedural-environment<br/>resolved in the project, never bundled"]
   terrain --> three["three<br/>geometry and GLB assembly only"]
   preview --> core
 ```
@@ -86,7 +86,7 @@ cook receives `cookTerrainWorld` through `loadCooker`, which resolves the instal
 project root (`packages/terrain/src/cook/cook.ts`), because a cook must run against the consumer's
 installed asset pipeline and never a second copy. A starter's `bake.mjs` is game source, so it imports
 `@threenative/assets` itself and hands `cookTerrainWorld` to `bakeKit`.
-`@threenative/procedural-vegetation` is the same shape: an Arbor species is baked by the installed
+`@threenative/procedural-environment` is the same shape: an Arbor species is baked by the installed
 package, and a project without it fails with a named error.
 
 ## 3. The three producers

@@ -83,7 +83,7 @@ async function cookCached(
     try {
       return [
         createRequire(join(projectRoot, "package.json")).resolve(
-          "@threenative/procedural-vegetation/package.json",
+          "@threenative/procedural-environment/package.json",
         ),
       ];
     } catch {

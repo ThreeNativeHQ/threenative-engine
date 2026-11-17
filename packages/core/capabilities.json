@@ -3424,7 +3424,7 @@
       "overrides": [],
       "package": "@threenative/core",
       "requires": [
-        "npm i -D @threenative/procedural-vegetation for the bake these instances come from"
+        "npm i -D @threenative/procedural-environment for the bake these instances come from"
       ],
       "signature": "export class ScatterField3D extends Group { … }",
       "situations": [
@@ -8423,6 +8423,30 @@
     {
       "aliases": [],
       "constraints": [
+        "fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1",
+        "the same options write identical bytes; files are written atomically (temporary file, then rename)",
+        "each GLB carries POSITION, NORMAL and COLOR_0 (linear RGB, rock and cover already blended) on one `rock` material; units are metres, +Y up, the rock rests on y = 0",
+        "bake-time only, so keep it a dev dependency; the game owns the material and can re-material by the glTF material name `rock`"
+      ],
+      "example": "await bakeRock({ form: \"cliff\", biome: \"coastal\", seed: 7, lods: [0, 1], out: \"assets/rocks\" });\nawait bakeRock({ form: \"boulder\", biome: \"forest\", traits: { weathering: 0.8 }, out: \"assets/rocks\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "generate a procedural rock, boulder or cliff as a GLB for a game level",
+        "desert mesa, hoodoo or sandstone arch; coastal sea stack; alpine spire; volcanic basalt columns",
+        "a procedural mountain mesh for the horizon, with snow at altitude"
+      ],
+      "summary": "Bake a procedural rock (Outcrop) to GLBs, one per level of detail: a boulder, slab, spire, hoodoo, sea stack, mesa, arch, tileable cliff module or a mountain, weathered and coloured for its biome (moss in a forest, snow in the tundra, sand in the desert, algae below the tide line).",
+      "supersedes": [],
+      "symbol": "bakeRock"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "fails closed: an unknown preset throws naming the nearest ids, the seed must be an integer and each lod 0 to 2",
         "the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)",
         "bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped",
@@ -8430,12 +8454,12 @@
         "form and leafImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given either"
       ],
       "example": "await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" });\nawait bakeVegetation({ preset: \"log\", seed: 3, out: \"assets/debris\" });",
-      "importPath": "@threenative/procedural-vegetation",
+      "importPath": "@threenative/procedural-environment",
       "kind": "function",
       "overrides": [],
-      "package": "@threenative/procedural-vegetation",
-      "requires": ["npm i -D @threenative/procedural-vegetation"],
-      "signature": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IVegetationBake[]> { … }",
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",
       "situations": [
         "generate a procedural tree, an oak, pine, spruce, palm or any forest species as a GLB",
         "procedural oak tree GLB with level of detail for a game forest",
@@ -8450,14 +8474,56 @@
     {
       "aliases": [],
       "constraints": [
+        "ids match the Strata terrain kits where they overlap (forest, coastal, alpine, desert, tundra)"
+      ],
+      "example": "environmentBiomes().map((biome) => biome.id);",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export function environmentBiomes(): IEnvironmentBiome[] { … }",
+      "situations": [
+        "which biomes can I bake nature for: forest, desert, jungle, tundra, coast, volcano",
+        "what trees, plants, debris and rocks belong in a desert or an alpine biome"
+      ],
+      "summary": "Every biome: its id, name, the request words that mean it, the rock surface its rocks wear and the element ids that belong there.",
+      "supersedes": [],
+      "symbol": "environmentBiomes"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "fails closed: an unknown biome or kind throws naming the nearest ids",
+        "biome takes an id or one of its words, so \"jungle\" finds tropical and \"swamp\" finds wetland"
+      ],
+      "example": "environmentElements({ biome: \"desert\", kind: \"rock\" }).map((element) => element.bake);\nenvironmentElements({ search: \"palm\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export function environmentElements(filter: IEnvironmentFilter = { … }",
+      "situations": [
+        "what can I bake for a desert, a jungle, a coast, a tundra or a volcanic island",
+        "list the rocks, cliffs and mountains for a biome, or every plant that grows there",
+        "find a tree or plant by name or latin name, such as pine, palm, cactus or fern"
+      ],
+      "summary": "Find the nature elements to bake, by biome, kind or words: trees, ground cover, forest-floor debris and rock forms (boulders, cliffs, sea stacks, mesas, arches, mountains), each with the exact bake call.",
+      "supersedes": [],
+      "symbol": "environmentElements"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "ids come from the vendored Arbor and forest-kit presets; trees are kind \"tree\", grass, ferns and flowers are kind \"cover\", deadwood, litter and stone are kind \"debris\""
       ],
       "example": "vegetationPresets().filter((p) => p.kind === \"debris\").map((p) => p.id);",
-      "importPath": "@threenative/procedural-vegetation",
+      "importPath": "@threenative/procedural-environment",
       "kind": "function",
       "overrides": [],
-      "package": "@threenative/procedural-vegetation",
-      "requires": ["npm i -D @threenative/procedural-vegetation"],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
       "signature": "export function vegetationPresets(): IVegetationPreset[] { … }",
       "situations": [
         "list the oak, pine, spruce, palm and other tree species a bake can grow",
@@ -11163,8 +11229,8 @@
       "situations": ["authoritative replication", "client prediction"]
     },
     {
-      "guidance": "The framework owns no vegetation render system: wind and materials are your look, in your project's src/render/. Trees come from the optional bake package: npm i -D @threenative/procedural-vegetation, then await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" }) writes one GLB per LOD (vegetationPresets() lists the 28 species). Each GLB carries COLOR_0, TEXCOORD_0, embedded bark and leaf textures, alpha-masked leaves and a per-vertex _WIND vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase). Cook them with assets.models.passes.prune: false (prune strips the uv and _WIND your materials read), load with ctx.assets.model and re-material by glTF material name (bark, foliage). Write the sway as TSL in render/wind.ts: attribute(\"_wind\", \"vec4\") scaled by a time uniform and a world wind direction, pushed through modelWorldMatrixInverse so it stays in world metres. A terrain world takes the same trees through the species prefix arbor:<preset>[@seed].",
-      "id": "procedural-vegetation",
+      "guidance": "The framework owns no vegetation render system: wind and materials are your look, in your project's src/render/. Trees come from the optional bake package: npm i -D @threenative/procedural-environment, then await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" }) writes one GLB per LOD (vegetationPresets() lists the 28 species). Each GLB carries COLOR_0, TEXCOORD_0, embedded bark and leaf textures, alpha-masked leaves and a per-vertex _WIND vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase). Cook them with assets.models.passes.prune: false (prune strips the uv and _WIND your materials read), load with ctx.assets.model and re-material by glTF material name (bark, foliage). Write the sway as TSL in render/wind.ts: attribute(\"_wind\", \"vec4\") scaled by a time uniform and a world wind direction, pushed through modelWorldMatrixInverse so it stays in world metres. A terrain world takes the same trees through the species prefix arbor:<preset>[@seed].",
+      "id": "procedural-environment",
       "situations": ["swaying trees", "tree foliage wind sway"]
     },
     {

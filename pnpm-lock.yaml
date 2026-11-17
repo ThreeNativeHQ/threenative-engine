@@ -1184,9 +1184,9 @@ importers:
       '@threenative/blender-bridge':
         specifier: workspace:*
         version: link:../blender-bridge
-      '@threenative/procedural-vegetation':
+      '@threenative/procedural-environment':
         specifier: workspace:*
-        version: link:../procedural-vegetation
+        version: link:../procedural-environment
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
@@ -1508,15 +1508,21 @@ importers:
         specifier: 'catalog:'
         version: '@typescript/typescript6@6.0.2'
 
-  packages/procedural-vegetation:
+  packages/procedural-environment:
     dependencies:
       '@napi-rs/canvas':
         specifier: 'catalog:'
         version: 1.1.1
+      three:
+        specifier: 0.187.0
+        version: 0.187.0(patch_hash=710526ebf1f037057079e79b7a3e956df66eedabb630e2439b78747f4d5873f2)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
+      '@types/three':
+        specifier: 'catalog:'
+        version: 0.187.0
       publint:
         specifier: 0.3.22
         version: 0.3.22
@@ -1607,9 +1613,9 @@ importers:
       '@threenative/physics':
         specifier: workspace:*
         version: link:../physics
-      '@threenative/procedural-vegetation':
+      '@threenative/procedural-environment':
         specifier: workspace:*
-        version: link:../procedural-vegetation
+        version: link:../procedural-environment
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43

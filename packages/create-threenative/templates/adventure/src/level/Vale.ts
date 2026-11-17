@@ -439,7 +439,7 @@ export function isSolid(object: Object3D): boolean {
 }
 
 // ------------------------------------------------------------------------- the woodland floor
-// Baked props, streamed round Wren. The generators live in @threenative/procedural-vegetation and
+// Baked props, streamed round Wren. The generators live in @threenative/procedural-environment and
 // the bytes in ../template-assets/assets (regenerate with `pnpm tsx scripts/bake-floor-assets.ts`);
 // the material is the kit's own, in render/foliage.ts.
 

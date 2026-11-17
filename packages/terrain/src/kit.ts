@@ -106,7 +106,7 @@ export async function bakeKit(
     KitAsset
   >;
   // A row `{ "arbor": "douglasfir@3" }` is an Arbor species baked here, from the game's own
-  // `@threenative/procedural-vegetation`; the row's other fields override the baked ones.
+  // `@threenative/procedural-environment`; the row's other fields override the baked ones.
   const arborScratch = await mkdtemp(join(tmpdir(), "tn-kit-arbor-"));
   await growArborRows(assetTable, here, arborScratch, assetsDir);
   const surface = JSON.parse(await readFile(join(here, "surface.json"), "utf8"));

@@ -77,7 +77,7 @@ flowchart LR
 - **Real ground per biome**: each kit's default survey becomes a real place of that biome, through
   the PRD-887 region rows (one row per kit, plus its far ring).
 - **Vegetation source** (root `AGENTS.md`, owner 2026-11-15): Poly Haven CC0 scans first, then
-  `@threenative/procedural-vegetation` presets. A species with neither becomes a new preset in that
+  `@threenative/procedural-environment` presets. A species with neither becomes a new preset in that
   package.
 
 - **The vegetation package already holds most of the four biomes** (checked 2026-11-15 on

@@ -84,8 +84,8 @@ function kitInTempDir(kitName: string): string {
   );
   // The kit's `arbor` rows grow with this package, the README's third devDependency.
   symlinkSync(
-    join(packageRoot, "..", "procedural-vegetation"),
-    join(dir, "node_modules", "@threenative", "procedural-vegetation"),
+    join(packageRoot, "..", "procedural-environment"),
+    join(dir, "node_modules", "@threenative", "procedural-environment"),
     "dir",
   );
   return dir;

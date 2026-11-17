@@ -29,7 +29,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Packed with the rest, installed by the agent step below rather than by the scaffolder. */
 const TERRAIN = "@threenative/terrain";
-const VEGETATION = "@threenative/procedural-vegetation";
+const VEGETATION = "@threenative/procedural-environment";
 const PORT = 5187;
 const REPO = join(import.meta.dirname, "../../../..");
 const ARM = process.env.KIT_ARM ?? "default";
