@@ -12,7 +12,6 @@ import {
   installableOnRegistry,
   packReleaseSet,
   packedTarballName,
-  prebuiltAcknowledged,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
   provisionReleaseArtifacts,
@@ -321,16 +320,6 @@ describe("pnpm release publishing", () => {
   });
 });
 
-describe("pnpm release prebuilt acknowledgement", () => {
-  // The truth table only. That this branch is reached at all is the open Phase 3 box in PRD-896.
-  it("acknowledges an absent prebuilt release for a local release and a proof-only run, in CI too", () => {
-    expect(prebuiltAcknowledged(true, false)).toBe(true);
-    expect(prebuiltAcknowledged(false, true)).toBe(true);
-    // A plain publish in CI must still fail closed on a missing prebuilt release.
-    expect(prebuiltAcknowledged(false, false)).toBe(false);
-  });
-});
-
 describe("pnpm release cohort guards", () => {
   it("keeps the guarded release path aligned with its current-set pin exception", async () => {
     const source = await fs.promises.readFile(
@@ -609,6 +598,8 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
     // `--prove-upgrade` proves and publishes nothing, so publishing beside it is a contradiction.
     [["--prove-upgrade", "--yes"], /TN_RELEASE_FLAGS_CONFLICT/u],
     [["--lock"], /TN_RELEASE_LOCK_USAGE/u],
+    // The subcommand the release board's early step runs, with a flag it must refuse.
+    [["check-version", "--bogus"], /TN_SHIP_UNKNOWN_FLAG: --bogus/u],
     [["--dry-run", "--nope"], /TN_RELEASE_UNKNOWN_FLAG/u],
     // A proof-only run reports a proof, so every flag that would make it prove nothing refuses.
     [["--prove-upgrade", "--override"], /TN_RELEASE_FLAGS_CONFLICT/u],

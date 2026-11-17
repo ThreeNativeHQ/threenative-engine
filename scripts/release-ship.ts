@@ -312,7 +312,7 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
         ? `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit ?? "<tag commit>"}\`), or run \`pnpm release:prepare --bump\` and ship the new version`
         : "run `pnpm release:prepare --bump`, then ship the new version";
   throw new Error(
-    `TN_SHIP_VERSION_BURNED: ${where}, and ${served}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move, so this commit cannot ship"}: ${advice}.`,
+    `TN_SHIP_VERSION_BURNED: ${where}, and ${served}. ${census.release === "draft" ? "That draft holds the version name" : census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move, so this commit cannot ship"}: ${advice}.`,
   );
 }
 

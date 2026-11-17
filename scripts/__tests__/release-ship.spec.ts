@@ -477,6 +477,7 @@ describe("pnpm release:check-version", () => {
     // A draft release has no tag until it is published; the version name is still spent.
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/no tag yet/u);
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/delete the draft/u);
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/holds the version name/u);
   });
 
   it("refuses a draft release at another commit too", () => {
