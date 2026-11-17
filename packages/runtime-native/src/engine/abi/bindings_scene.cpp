@@ -1018,6 +1018,29 @@ void registerObject3D(ClassBinding& b) {
         target.copy(source.matrixWorld);
         return Value{};
     };
+    // PRD-898 J4: core's posedBounds in one call. `__tnSphereBounds(objects, radii)` updates this root's
+    // world matrices (three's updateWorldMatrix(true, true)), then answers [minX, minY, minZ, maxX, maxY,
+    // maxZ] over a sphere of `radii[i]` at each object's world origin: the walk and the per-bone matrix
+    // reads the JavaScript path pays, without a crossing per bone. An empty set answers infinities.
+    b.methods["__tnSphereBounds"] = [](void* self, const Args& a, Store& store) {
+        const std::vector<Value> objects = refsOf(a.at(0));
+        const std::vector<double> radii = numbersOf(a.at(1));
+        if (radii.size() != objects.size()) throw Unsupported{"__tnSphereBounds needs one radius per object"};
+        as<Object3D>(self)->updateWorldMatrix(true, true, false);
+        constexpr double inf = std::numeric_limits<double>::infinity();
+        std::vector<double> box{inf, inf, inf, -inf, -inf, -inf};
+        for (std::size_t i = 0; i < objects.size(); ++i) {
+            Object3D& object = objectArg(store, objects[i]);
+            object.joinDeferredWorldTransform();
+            const auto& e = object.matrixWorld.elements;
+            const double r = radii[i];
+            for (int axis = 0; axis < 3; ++axis) {
+                box[axis] = std::min(box[axis], double(e[12 + axis]) - r);
+                box[3 + axis] = std::max(box[3 + axis], double(e[12 + axis]) + r);
+            }
+        }
+        return Value::list(std::move(box));
+    };
     b.methods["updateMatrix"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->updateMatrix();
         return chain();

@@ -47,6 +47,7 @@ const {
   BoxGeometry,
   Color,
   DataTexture,
+  Group,
   Mesh,
   MeshBasicNodeMaterial,
   MeshStandardMaterial,
@@ -1991,6 +1992,32 @@ if (runtime.tsl !== undefined) {
   check(
     near(r, 0.25) && near(g, 0.5) && near(b, 0.75) && r !== g && g !== b,
     `a promoted Color(0.25, 0.5, 0.75) keeps distinct AmbientLight channels: (${r}, ${g}, ${b})`,
+  );
+}
+{
+  // PRD-898 J4: core's posedBounds hook crosses once with an object array and a radius array, and the
+  // engine composes the moved transforms itself before it reads them.
+  const root = new Group();
+  const foot = new Group();
+  const head = new Group();
+  root.add(foot);
+  foot.add(head);
+  root.position.y = 2;
+  foot.position.x = 1;
+  head.position.y = 1.5;
+  const hook = (root as unknown as { __tnSphereBounds?: unknown }).__tnSphereBounds;
+  check(typeof hook === "function", "Object3D carries the engine's __tnSphereBounds");
+  const box = (hook as (objects: unknown[], radii: number[]) => number[]).call(
+    root,
+    [foot, head],
+    [0.25, 0.5],
+  );
+  const expected = [0.5, 1.75, -0.5, 1.5, 4, 0.5];
+  check(
+    Array.isArray(box) &&
+      box.length === 6 &&
+      expected.every((value, i) => Math.abs((box[i] as number) - value) < 1e-9),
+    `__tnSphereBounds answers the composed box: ${JSON.stringify(box)}`,
   );
 }
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

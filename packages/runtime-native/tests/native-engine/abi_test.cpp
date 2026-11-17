@@ -2675,6 +2675,49 @@ void world_space_conversions() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-898 J4: core's posedBounds in one call. `__tnSphereBounds(objects, radii)` brings the root's world
+// matrices current (updateWorldMatrix(true, true)) and answers the box over a sphere at each object's world
+// origin; a radius count that does not match the objects is refused.
+void sphere_bounds() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t root{}, foot{}, head{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &root, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &foot, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &head, &d.value) == TN_OK);
+    tn_value_t out{};
+    const tn_value_t footArg = ref(foot), headArg = ref(head);
+    CHECK(tn_invoke(root, "add", &footArg, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_invoke(foot, "add", &headArg, 1, &out, &d.value) == TN_OK);
+    // Moved after the last walk: the call must compose these itself, as the JavaScript path's walk does.
+    const tn_value_t rootY = num(2), footX = num(1), headY = num(1.5);
+    CHECK(tn_set(root, "position.y", &rootY, &d.value) == TN_OK);
+    CHECK(tn_set(foot, "position.x", &footX, &d.value) == TN_OK);
+    CHECK(tn_set(head, "position.y", &headY, &d.value) == TN_OK);
+    const tn_value_t objects[] = {ref(foot), ref(head)};
+    tn_value_t list{};
+    list.kind = TN_VALUE_ARRAY;
+    list.count = 2;
+    list.values = objects;
+    const double radiiValues[] = {0.25, 0.5};
+    tn_value_t radii{};
+    radii.kind = TN_VALUE_NUMBERS;
+    radii.count = 2;
+    radii.numbers = radiiValues;
+    const tn_value_t args[] = {list, radii};
+    tn_value_t box{};
+    CHECK(tn_invoke(root, "__tnSphereBounds", args, 2, &box, &d.value) == TN_OK);
+    CHECK(box.kind == TN_VALUE_NUMBERS && box.count == 6);
+    // foot at (1, 2, 0) r 0.25; head at (1, 3.5, 0) r 0.5.
+    const double expected[] = {0.5, 1.75, -0.5, 1.5, 4.0, 0.5};
+    for (int i = 0; i < 6; ++i) CHECK(std::abs(box.numbers[i] - expected[i]) < 1e-12);
+    const tn_value_t short_args[] = {list, num(1)};
+    CHECK(tn_invoke(root, "__tnSphereBounds", short_args, 2, &box, &d.value) != TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-610: core's per-frame `__tnUpdateMatrixWorld(force, prune)` answers the nodes its own walk visited, so no
 // second walk counts the tree. With `prune` a hidden subtree composes only its root, as core's JS pass does
 // (9,903 nodes a Midway frame against 779): its world matrices catch up, forced, on the first frame it shows.
@@ -4322,7 +4365,7 @@ void binding_fn() {
 TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"argument_position", argument_position}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"frustum_intersects_boxes", frustum_intersects_boxes}, {"material_witness", material_witness}, {"rig_lane_follows_morph_set", rig_lane_follows_morph_set}, {"world_records", world_records}, {"world_stale_entries", world_stale_entries}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_reads", tsl_reads}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"sphere_bounds", sphere_bounds}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
              {"projected_cull_band_animation", projected_cull_band_animation},
              {"projected_cull_multiple_views", projected_cull_multiple_views},

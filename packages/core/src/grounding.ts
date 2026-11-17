@@ -47,23 +47,25 @@ export class GroundSnap {
       throw new Error("GroundSnap dt must be finite and non-negative.");
     validateMaxRate(this.maxRate);
 
-    const before = posedBounds(this.model, this.meshes);
-    if (!Number.isFinite(before.min[1])) {
+    const lowest = posedBounds(this.model, this.meshes).min[1];
+    if (!Number.isFinite(lowest)) {
       this.clearance = null;
       return;
     }
 
-    const desired = surfaceY - before.min[1];
+    const desired = surfaceY - lowest;
     const correction =
       this.maxRate === undefined || desired > 0 ? desired : Math.max(desired, -this.maxRate * dt);
-    if (this.enabled) this.applyWorldCorrection(group, correction);
+    const moved = this.enabled && correction !== 0;
+    if (moved) this.applyWorldCorrection(group, correction);
 
-    // Re-read after the move. The group may be under a scaled or rotated parent, so the local
-    // correction is not always one world metre for one local metre. posedBounds forces its own
-    // whole-subtree matrix pass, so no explicit update here — that was a second full pass per
-    // grounded character per frame buying nothing the measurement below does not redo.
-    const after = posedBounds(this.model, this.meshes);
-    this.clearance = after.min[1] - surfaceY;
+    // PRD-898 J4: the correction is a world-space translation of `group`, so when `group` carries the
+    // model the lowest point moved by exactly `correction` and a second measurement (a whole-subtree
+    // matrix pass per grounded character per frame) would only re-read it. A `group` that does not
+    // carry the model is measured again, as before.
+    if (!moved) this.clearance = lowest - surfaceY;
+    else if (carries(group, this.model)) this.clearance = lowest + correction - surfaceY;
+    else this.clearance = posedBounds(this.model, this.meshes).min[1] - surfaceY;
   }
 
   private applyWorldCorrection(group: Object3D, correction: number): void {
@@ -92,6 +94,13 @@ export class GroundSnap {
     if (precise === null || !Number.isFinite(estimate.min[1])) return null;
     return estimate.min[1] - precise.min[1];
   }
+}
+
+/** Whether `group` is `model` or one of its ancestors, so moving it moves the model. */
+function carries(group: Object3D, model: Object3D): boolean {
+  for (let node: Object3D | null = model; node !== null; node = node.parent)
+    if (node === group) return true;
+  return false;
 }
 
 function validateMaxRate(maxRate: number | undefined): void {

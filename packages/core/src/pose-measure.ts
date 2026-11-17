@@ -1,3 +1,4 @@
+import { sphereBoundsHook } from "./engine-hooks.js";
 import { AttachedBindMode, Box3, type Object3D, Quaternion, Vector3 } from "three";
 import type { Mesh, SkinnedMesh } from "three";
 
@@ -129,6 +130,8 @@ interface IPosedBoundsEnvelope {
   biasY: number;
   readonly raw: IRawBounds;
   readonly result: IPosedBoundsResult;
+  /** The spheres as the engine's `__tnSphereBounds` takes them, built on the first engine call. */
+  engineSpheres?: { readonly objects: readonly Object3D[]; readonly radii: readonly number[] };
 }
 
 interface IRawBounds {
@@ -416,9 +419,25 @@ function getEnvelope(
  */
 export function posedBounds(root: Object3D, meshes?: readonly Object3D[]): IThreePoseBounds {
   const envelope = getEnvelope(root, meshes);
-  root.updateWorldMatrix(true, true);
-  rawBounds(envelope, envelope.raw);
   const raw = envelope.raw;
+  // PRD-898 J4: on the owned engine the matrix pass and every sphere read are one call.
+  const engine = sphereBoundsHook(root);
+  if (engine === undefined) {
+    root.updateWorldMatrix(true, true);
+    rawBounds(envelope, raw);
+  } else {
+    envelope.engineSpheres ??= {
+      objects: [...envelope.bones.map((s) => s.bone), ...envelope.statics.map((s) => s.object)],
+      radii: [...envelope.bones.map((s) => s.radius), ...envelope.statics.map((s) => s.radius)],
+    };
+    const box = engine.call(root, envelope.engineSpheres.objects, envelope.engineSpheres.radii);
+    raw.minX = box[0] ?? Number.POSITIVE_INFINITY;
+    raw.minY = box[1] ?? Number.POSITIVE_INFINITY;
+    raw.minZ = box[2] ?? Number.POSITIVE_INFINITY;
+    raw.maxX = box[3] ?? Number.NEGATIVE_INFINITY;
+    raw.maxY = box[4] ?? Number.NEGATIVE_INFINITY;
+    raw.maxZ = box[5] ?? Number.NEGATIVE_INFINITY;
+  }
   const min = envelope.result.min;
   const max = envelope.result.max;
   const size = envelope.result.size;
