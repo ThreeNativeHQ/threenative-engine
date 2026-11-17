@@ -38,7 +38,8 @@ small change:
 
 ## Solution
 
-Close the resume shape first, because it needs no new release state.
+Close the resume shape first, because it needs no new release state. PRD-898 carries the other
+half of "do not waste an hour": the same proof, run on the release pull request before the merge.
 
 ### Phase 1 — a resumed publish refuses to prove after the fact
 

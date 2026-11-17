@@ -8,12 +8,12 @@ import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
-  assertProofOnlyRunProves,
   clearUpgradeProofReceipt,
   installableOnRegistry,
   packReleaseSet,
   packedTarballName,
   prepareReleaseCohort,
+  proveUpgradeAndRecord,
   proveUpgradeFromLatest,
   provisionReleaseArtifacts,
   publishCohort,
@@ -26,6 +26,7 @@ import {
   validateTemplatePins,
   writeUpgradeProofReceipt,
 } from "../release.js";
+import type { IRegistryInstallReport } from "../verify-registry-install.js";
 
 const roots: string[] = [];
 
@@ -328,35 +329,62 @@ describe("pnpm release proof-only run", () => {
   // The publish that follows the tag reuses the proof through `--upgrade-proved`. A bare flag would
   // let any caller skip the last gate before the first npm upload, so the skip needs a receipt for
   // the exact commit that proved it.
-  it("records a proof for the commit that ran it, and refuses to reuse anyone else's", async () => {
+  it("records a proof for its commit and registry latest, and reuses nothing else", async () => {
     const root = await makeTempDir("threenative-upgrade-proof-");
     roots.push(root);
-    expect(readUpgradeProofReceipt(root, "a".repeat(40))).toBeUndefined();
-    writeUpgradeProofReceipt(root, "a".repeat(40), "2026-11-16T00:00:00.000Z");
-    expect(readUpgradeProofReceipt(root, "a".repeat(40))).toEqual({
+    const sha = "a".repeat(40);
+    expect(readUpgradeProofReceipt(root, sha, "0.3.13")).toBeUndefined();
+    writeUpgradeProofReceipt(root, { latest: "0.3.13", provedAt: "2026-11-16T00:00:00.000Z", sha });
+    expect(readUpgradeProofReceipt(root, sha, "0.3.13")).toEqual({
+      latest: "0.3.13",
       provedAt: "2026-11-16T00:00:00.000Z",
-      sha: "a".repeat(40),
+      sha,
     });
-    expect(readUpgradeProofReceipt(root, "b".repeat(40))).toBeUndefined();
+    // Another commit, and the same commit after `latest` moved: both are no proof at all.
+    expect(readUpgradeProofReceipt(root, "b".repeat(40), "0.3.13")).toBeUndefined();
+    expect(readUpgradeProofReceipt(root, sha, "0.3.14")).toBeUndefined();
   });
 
-  it("refuses a proof-only run that has nothing left to prove", () => {
-    // `release:ship` tags on the strength of this run, so a silent skip would burn the version when
-    // the publish's receipt turns out to be missing.
-    expect(() => assertProofOnlyRunProves({ proveUpgrade: true, proving: true })).not.toThrow();
-    expect(() => assertProofOnlyRunProves({ proveUpgrade: false, proving: false })).not.toThrow();
-    expect(() => assertProofOnlyRunProves({ proveUpgrade: true, proving: false })).toThrow(
-      /TN_RELEASE_UPGRADE_PROOF_SKIPPED/u,
-    );
+  it("records a receipt only after every template proved, and drops the old one first", async () => {
+    const root = await makeTempDir("threenative-upgrade-proof-");
+    roots.push(root);
+    const sha = "a".repeat(40);
+    writeUpgradeProofReceipt(root, { latest: "0.3.12", provedAt: "2026-11-15T00:00:00.000Z", sha });
+    const report = (exitCode: 0 | 1) =>
+      ({
+        consumerTargets: [],
+        exitCode,
+        managers: [],
+        steps: [{ detail: "x", name: "install", ok: exitCode === 0 }],
+      }) satisfies IRegistryInstallReport;
+    // A red proof must leave nothing behind: the receipt it replaced is gone too.
+    const red = await proveUpgradeAndRecord({
+      latest: "0.3.13",
+      prove: async () => [report(1)],
+      repo: root,
+      sha,
+    });
+    expect(red[0]?.exitCode).toBe(1);
+    expect(readUpgradeProofReceipt(root, sha, "0.3.13")).toBeUndefined();
+
+    const green = await proveUpgradeAndRecord({
+      latest: "0.3.13",
+      prove: async () => [report(0)],
+      repo: root,
+      sha,
+    });
+    expect(green[0]?.exitCode).toBe(0);
+    expect(readUpgradeProofReceipt(root, sha, "0.3.13")?.sha).toBe(sha);
   });
 
   it("drops yesterday's proof for a commit before proving it again", async () => {
     const root = await makeTempDir("threenative-upgrade-proof-");
     roots.push(root);
-    writeUpgradeProofReceipt(root, "a".repeat(40), "2026-11-16T00:00:00.000Z");
+    const sha = "a".repeat(40);
+    writeUpgradeProofReceipt(root, { latest: "0.3.13", provedAt: "2026-11-16T00:00:00.000Z", sha });
     clearUpgradeProofReceipt(root);
-    // A proof that goes red after `latest` moved must leave nothing for `--upgrade-proved` to reuse.
-    expect(readUpgradeProofReceipt(root, "a".repeat(40))).toBeUndefined();
+    // A proof that goes red must leave nothing for `--upgrade-proved` to reuse.
+    expect(readUpgradeProofReceipt(root, sha, "0.3.13")).toBeUndefined();
   });
 
   // PRD-896: `release:ship` proves the upgrade before it creates the tag, so the publish that
@@ -671,24 +699,6 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
       stderr = String((error as { stderr?: unknown }).stderr);
     }
     expect(stderr).toMatch(message);
-  });
-
-  it("refuses to reuse a proof this checkout never recorded", () => {
-    const repo = path.resolve(import.meta.dirname, "../..");
-    // The receipt is git-ignored run state, so a developer may already hold one for this commit:
-    // this test owns that one file, and a real proof rewrites it.
-    clearUpgradeProofReceipt(repo);
-    let stderr = "";
-    try {
-      execFileSync("pnpm", ["exec", "tsx", "scripts/release.ts", "--upgrade-proved"], {
-        cwd: repo,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch (error) {
-      stderr = String((error as { stderr?: unknown }).stderr);
-    }
-    expect(stderr).toMatch(/TN_RELEASE_UPGRADE_PROOF_MISSING/u);
   });
 });
 

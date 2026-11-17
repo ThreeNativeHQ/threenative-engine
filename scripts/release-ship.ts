@@ -254,9 +254,10 @@ function manifestVersion(deps: IShipDeps, sha: string): string {
   return manifest.version;
 }
 
-/** The three facts a burn is decided from. A release and one registry answer. */
+/** The three facts a burn is decided from: a release, its tag, and whether npm serves the version. */
 export interface IVersionCensus {
-  readonly corePublished: boolean;
+  /** Every package of the cohort is on npm at this version. One package is not the version. */
+  readonly cohortPublished: boolean;
   readonly release: ReleaseState;
   readonly tag: { readonly commit?: string };
 }
@@ -279,7 +280,7 @@ export interface IReleaseTarget {
  * later. This reads the same facts before the evidence and the candidate, so it costs a minute.
  */
 export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseTarget): void {
-  if (census.release === "none" || census.tag.commit === target.sha || census.corePublished) return;
+  if (census.release === "none" || census.tag.commit === target.sha || census.cohortPublished) return;
   // A draft release carries no tag until it is published, and it is deletable with nothing lost; a
   // public one is not, and npm has no version either way. Say which move is available.
   const where =
@@ -290,7 +291,7 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
     census.release === "draft"
       ? "delete the draft (nothing is public yet) or bump packages/runtime-native/package.json and the cohort that pins it"
       : census.release === "prerelease"
-        ? "delete that prerelease (the tag run deletes its own on a rerun) or bump packages/runtime-native/package.json and the cohort that pins it"
+        ? "delete that prerelease, then ship"
         : "bump packages/runtime-native/package.json and the cohort that pins it";
   throw new Error(
     `TN_SHIP_VERSION_BURNED: ${where}, and ${CORE} is not on npm at ${target.version}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move"}, so this version cannot ship: ${advice}, then ship the new version.`,
@@ -306,17 +307,23 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
 export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
   const version = manifestVersion(deps, sha);
   const tag = `${TAG_PREFIX}${version}`;
-  const census: IVersionCensus = {
-    corePublished: deps.npmVersions(CORE).includes(version),
-    release: ghReleaseState(deps.gh, deps.repository, tag),
-    tag: { commit: remoteTagCommit(deps.git, tag) },
-  };
+  const release = ghReleaseState(deps.gh, deps.repository, tag);
+  const commit = remoteTagCommit(deps.git, tag);
+  // A settled release — none yet, or the one on the commit being shipped, which is a resume — has
+  // nothing to decide about npm, so the registry is not read at all. Everything else asks the whole
+  // cohort: a version whose core landed while four of its packages did not is not a spent version,
+  // and saying "nothing to ship" there is how a partial cohort would slip past the board.
+  const cohortPublished =
+    release !== "none" &&
+    commit !== sha &&
+    deps.cohort().every(({ name, version: at }) => deps.npmVersions(name).includes(at));
+  const census: IVersionCensus = { cohortPublished, release, tag: { commit } };
   assertVersionNotBurned(census, { sha, tag, version });
-  if (census.corePublished) return `${CORE}@${version} is on npm: nothing to ship for ${tag}.`;
+  if (cohortPublished) return `every package of ${version} is on npm: nothing to ship for ${tag}.`;
   const why =
-    census.release === "none"
+    release === "none"
       ? "no release exists for it"
-      : `its ${census.release} release sits at the shipped commit`;
+      : `its ${release} release sits at the shipped commit`;
   return `${tag} is shippable: ${why}.`;
 }
 

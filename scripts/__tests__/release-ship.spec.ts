@@ -213,7 +213,7 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
     );
     expect(() =>
       assertVersionNotBurned(
-        { corePublished: true, release: "public", tag: { commit: OTHER } },
+        { cohortPublished: true, release: "public", tag: { commit: OTHER } },
         { sha: SHA, tag: TAG, version: VERSION },
       ),
     ).not.toThrow();
@@ -363,10 +363,25 @@ describe("pnpm release:ship resumes", () => {
     await expect(runShip(["--override", " "])).rejects.toThrow("TN_SHIP_OVERRIDE");
   });
 
-  it("moves a tag that points at a commit with no release", async () => {
+  it("proves the upgrade before it moves a tag that points at a commit with no release", async () => {
     const { calls, deps } = world({ candidate: [run(10, "workflow_dispatch")], tagCommit: OTHER });
     await ship(deps, { dryRun: false, sha: SHA });
     expect(calls.find((call) => call.includes("--method PATCH"))).toContain(`sha=${SHA}`);
+    expect(calls.indexOf("prove")).toBeLessThan(
+      calls.findIndex((call) => call.includes("--method PATCH")),
+    );
+  });
+
+  it("leaves a movable tag untouched when the upgrade proof is red", async () => {
+    const { calls, deps } = world({ candidate: [run(10, "workflow_dispatch")], tagCommit: OTHER });
+    const red: typeof deps = {
+      ...deps,
+      prove: () => {
+        throw new Error("TN_RELEASE_UPGRADE_RED: a game on the previous latest does not upgrade");
+      },
+    };
+    await expect(ship(red, { dryRun: false, sha: SHA })).rejects.toThrow(/TN_RELEASE_UPGRADE_RED/u);
+    expect(calls.some((call) => call.includes("--method"))).toBe(false);
   });
 
   it("skips what is done: a pushed tag and a public release go straight to the publish", async () => {
@@ -455,13 +470,27 @@ describe("pnpm release:check-version", () => {
     expect(checkReleaseVersion(deps, SHA)).toContain(`${TAG} is shippable`);
   });
 
-  it("says nothing is left to ship when npm already serves the version", () => {
+  it("says nothing is left to ship when npm serves the whole cohort", () => {
+    // A release at another commit is normally unshippable. The exception is a version that already
+    // shipped: then there is nothing to do, which is not the same as being stuck.
+    const { deps } = world({
+      core: [VERSION],
+      npm: [VERSION],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: OTHER,
+    });
+    expect(checkReleaseVersion(deps, SHA)).toContain(`nothing to ship for ${TAG}`);
+  });
+
+  it("refuses a partial cohort at another commit instead of calling it spent", () => {
+    // Core landed, the rest of the cohort did not: the version name is spent and unshippable, so
+    // the board must say so rather than answer "nothing to ship" from one package.
     const { deps } = world({
       core: [VERSION],
       release: { isDraft: false, isPrerelease: false },
       tagCommit: OTHER,
     });
-    expect(checkReleaseVersion(deps, SHA)).toContain(`nothing to ship for ${TAG}`);
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
   });
 
   it("offers deleting a prerelease, which its own tag run deletes on a rerun", () => {
