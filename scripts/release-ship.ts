@@ -154,7 +154,7 @@ function errorText(error: unknown): string {
  *
  * Only a real miss is "none": a failed read here could move the tag of a public release.
  */
-export function ghReleaseState(
+function ghReleaseState(
   gh: (args: readonly string[]) => string,
   repository: string,
   tag: string,
@@ -172,7 +172,7 @@ export function ghReleaseState(
 }
 
 /** The commit `origin` carries for a tag, peeled when it points at one. */
-export function remoteTagCommit(
+function remoteTagCommit(
   git: (args: readonly string[]) => string,
   tag: string,
 ): string | undefined {
@@ -247,7 +247,7 @@ export function buildCandidateRequest(
 }
 
 /** The version this tree ships, read from the commit being shipped rather than the checkout. */
-export function manifestVersion(deps: IShipDeps, sha: string): string {
+function manifestVersion(deps: IShipDeps, sha: string): string {
   const manifest = JSON.parse(
     deps.git(["show", `${sha}:packages/runtime-native/package.json`]),
   ) as { version: string };
@@ -270,8 +270,9 @@ export interface IReleaseTarget {
 
 /**
  * A version is burned when its tag already carries a release at another commit while npm serves no
- * `@threenative/core` of it. `assertTagMovable` refuses such a tag, and nothing can undo a release
- * and an npm version by itself, so the version can never ship: the only move is a bump.
+ * `@threenative/core` of it. `assertTagMovable` refuses such a tag, and nothing can undo a public
+ * release and an npm version by itself, so the version can never ship: the moves are a bump, or
+ * deleting a draft, which is the one state where deleting loses nothing.
  *
  * On 2026-11-12 the 0.3.14 release went public and its npm cohort never landed. The next release
  * PR ran a full board, merged, and only then did the tag step refuse it — an hour and a merge
@@ -288,7 +289,9 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
   const advice =
     census.release === "draft"
       ? "delete the draft (nothing is public yet) or bump packages/runtime-native/package.json and the cohort that pins it"
-      : "bump packages/runtime-native/package.json and the cohort that pins it";
+      : census.release === "prerelease"
+        ? "delete that prerelease (the tag run deletes its own on a rerun) or bump packages/runtime-native/package.json and the cohort that pins it"
+        : "bump packages/runtime-native/package.json and the cohort that pins it";
   throw new Error(
     `TN_SHIP_VERSION_BURNED: ${where}, and ${CORE} is not on npm at ${target.version}. ${census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move"}, so this version cannot ship: ${advice}, then ship the new version.`,
   );
@@ -309,12 +312,11 @@ export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
     tag: { commit: remoteTagCommit(deps.git, tag) },
   };
   assertVersionNotBurned(census, { sha, tag, version });
+  if (census.corePublished) return `${CORE}@${version} is on npm: nothing to ship for ${tag}.`;
   const why =
     census.release === "none"
       ? "no release exists for it"
-      : census.corePublished
-        ? `${CORE}@${version} is on npm, so the version is spent, not burned`
-        : `its ${census.release} release sits at the shipped commit`;
+      : `its ${census.release} release sits at the shipped commit`;
   return `${tag} is shippable: ${why}.`;
 }
 
@@ -362,16 +364,24 @@ export function assertCandidateDispatchable(state: IShipState, sha: string): voi
 const evidenceLabel = (value: number | string): string =>
   typeof value === "number" ? `green (run ${value})` : value;
 
-function describeStep(step: ShipStep, state: IShipState, sha: string, tag: string): string {
+function describeStep(
+  step: ShipStep,
+  state: IShipState,
+  sha: string,
+  tag: string,
+  proved: boolean,
+): string {
   switch (step) {
     case "evidence":
       return `blocked: CI is ${evidenceLabel(state.ci)}.`;
     case "candidate":
       return `dispatch release-candidate.yml for ${sha}.`;
-    case "tag":
+    case "tag": {
+      const proof = proved ? ", after the upgrade proof" : "";
       return state.tag.commit === undefined
-        ? `create and push ${tag} at ${sha}, after the upgrade proof.`
-        : `move ${tag} from ${state.tag.commit} to ${sha}, after the upgrade proof.`;
+        ? `create and push ${tag} at ${sha}${proof}.`
+        : `move ${tag} from ${state.tag.commit} to ${sha}${proof}.`;
+    }
     case "dispatch":
       return `dispatch native-release.yml on ${tag}.`;
     case "wait":
@@ -437,7 +447,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       deps.log(`${version} is already on npm. Nothing to ship.`);
       return acted;
     }
-    deps.log(`next: ${describeStep(step, state, sha, tag)}`);
+    deps.log(`next: ${describeStep(step, state, sha, tag, options.override === undefined)}`);
     if (typeof state.ci === "number") {
       const request = buildCandidateRequest(deps.repository, sha, version, state.ci);
       // The gate's own parser: a request it would reject never reaches a dispatch.
@@ -447,7 +457,9 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
     if (options.override !== undefined) deps.log(`OVERRIDE: ${options.override}`);
     if (options.dryRun || step === "evidence") {
       if (!options.dryRun)
-        throw new Error(`TN_SHIP_EVIDENCE: ${describeStep(step, state, sha, tag)}`);
+        throw new Error(
+          `TN_SHIP_EVIDENCE: ${describeStep(step, state, sha, tag, options.override === undefined)}`,
+        );
       return acted;
     }
     acted.push(step);

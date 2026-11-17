@@ -455,13 +455,22 @@ describe("pnpm release:check-version", () => {
     expect(checkReleaseVersion(deps, SHA)).toContain(`${TAG} is shippable`);
   });
 
-  it("passes a version npm already serves", () => {
+  it("says nothing is left to ship when npm already serves the version", () => {
     const { deps } = world({
       core: [VERSION],
       release: { isDraft: false, isPrerelease: false },
       tagCommit: OTHER,
     });
-    expect(checkReleaseVersion(deps, SHA)).toContain(`${TAG} is shippable`);
+    expect(checkReleaseVersion(deps, SHA)).toContain(`nothing to ship for ${TAG}`);
+  });
+
+  it("offers deleting a prerelease, which its own tag run deletes on a rerun", () => {
+    const { deps } = world({
+      core: [],
+      release: { isDraft: false, isPrerelease: true },
+      tagCommit: OTHER,
+    });
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/delete that prerelease/u);
   });
 });
 

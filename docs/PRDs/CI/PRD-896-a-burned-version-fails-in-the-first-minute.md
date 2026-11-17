@@ -10,9 +10,9 @@
 
 A version whose git tag already carries a GitHub release, while npm serves no
 `@threenative/core` of that version, can never ship. `assertTagMovable`
-(`scripts/release-ship.ts:351`) refuses to move a tag that has any release, draft or public, and
-`nextStep` only skips the tag step when that tag already sits on the commit being shipped
-(`scripts/release-ship.ts:340`). With npm empty there is nothing to resume — the only move the
+(`assertTagMovable`, `scripts/release-ship.ts`) refuses to move a tag that has any release, draft or
+public, and `nextStep` only skips the tag step when that tag already sits on the commit being
+shipped. With npm empty there is nothing to resume — the only move the
 repository has is a version bump, and nothing said so until the last step of a long road.
 
 Two releases burned on this, verified through the Actions API and the repository state:
@@ -42,8 +42,7 @@ Three parts, one rule each:
 
 ### Phase 1 — `release:ship` refuses a burned version before the evidence
 
-- [x] `assertVersionNotBurned` refuses a release at another commit with no `@threenative/core` on npm, and names the move that is available: a version bump, or deleting a draft, which is the one state where deleting is free. A draft that carries no tag yet is refused too, and says so. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 34 passed, including the four burn cases and the no-tag draft; the four burn tests fail while the call in `ship` is removed.
-- [x] `release:ship` refuses through the same `checkReleaseVersion` the board job runs, called once before the first state read: it reads three facts — the release, the tag's commit, and core's npm versions — and no run list, so a burned version dispatches nothing and names no plan step. proof: the same spec's `refuses a version whose tag already has …` and `says what to do about a burned version, and a plan reports it too` cases.
+- [x] `release:ship` refuses through the same `checkReleaseVersion` the board job runs — one call, before the first state read, reading three facts (the release, the tag's commit, core's npm versions) and no run list — and `assertVersionNotBurned` names the move that is actually available: a bump, deleting a draft, or deleting a prerelease the tag run deletes on a rerun. A draft with no tag yet is refused and says so. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 35 passed, including the three release states, the no-tag draft, the prerelease advice and the npm-already-serves case; the burn cases fail while the call in `ship` is removed.
 
 ### Phase 2 — the release pull request's board refuses it in its first minutes
 
@@ -52,12 +51,13 @@ Three parts, one rule each:
 
 ### Phase 3 — the upgrade proof runs before anything about the version is public
 
-- [x] `pnpm release --prove-upgrade` packs the cohort and proves the previous `latest` upgrades onto it, publishing, tagging and releasing nothing. It records a receipt for the commit it proved (git-ignored) and clears any older one first, `--upgrade-proved` refuses without a receipt for HEAD, and every flag that would make a proof-only run report a proof that never ran refuses. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 46 passed (`upgradeProofApplies`, the receipt and its clearing, the five flag refusals, the receipt refusal, and the flag-name drift case). ⚠️ The proof-only path is **unverified end to end**: it is the same pack-and-prove code `--yes` runs before its first upload, but its prebuilt-release acknowledgement is the one branch no run has exercised. The first release after this proves it, and nothing becomes public if it fails.
-- [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, and a resumed plan never tells the publish it proved something it did not. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 34 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `a resumed plan that never proved…`, the override case).
+- [x] `pnpm release --prove-upgrade` packs the cohort and proves the previous `latest` upgrades onto it, publishing, tagging and releasing nothing. It refuses to run on an uncommitted tree, refuses a candidate that has nothing left to prove, records a receipt for the commit it proved (git-ignored) after clearing any older one, and `--upgrade-proved` refuses without a receipt for HEAD and consumes it once. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 49 passed (`upgradeProofApplies`, the refusal, the receipt's lifecycle, the seven flag refusals, the receipt refusal, and the flag-name drift case). **Not proven**: the run itself has never executed end to end — it is the same pack-and-prove code `--yes` runs before its first upload, but its prebuilt-release acknowledgement is one branch no run has exercised. The box below is that claim.
+- [ ] A real candidate proves end to end through `pnpm release --prove-upgrade` with no release yet: it packs, proves and exits 0 having published nothing, and the release that follows reuses the receipt. proof: the tag step of the first release after this lands — unrun, so this box stays open.
+- [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, and a resumed plan never tells the publish it proved something it did not. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 35 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `a resumed plan that never proved…`, the override case).
 
 ## Acceptance criteria
 
-- [x] A burned version stops `release:ship` in its first minute: no evidence read, no release-candidate dispatch, one error naming the bump. proof: the spec above plus the transcript in the pull request — `pnpm release:check-version` on this repository's own state, exit 1, naming `f2741d85` and the missing `@threenative/core@0.3.14`; `pnpm release:ship --dry-run` on the same state refuses with the same error before it reads any run. Combined run of the four specs: 342 passed.
+- [x] A burned version stops `release:ship` in its first minute: no evidence read, no release-candidate dispatch, one error naming the bump. proof: the spec above plus the transcript in the pull request — `pnpm release:check-version` on this repository's own state, exit 1, naming `f2741d85` and the missing `@threenative/core@0.3.14`; `pnpm release:ship --dry-run` on the same state refuses with the same error before it reads any run. Combined run of the four specs: 346 passed.
 - [ ] The develop -> main release pull request is red on its own board before the merge, so a burned version never reaches `main`. proof: the first develop -> main pull request opened after this lands — unrun, so this box stays open.
 
 ## Decisions

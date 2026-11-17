@@ -570,9 +570,9 @@ export interface IUpgradeProofScope {
 /**
  * Whether this run proves the previous `latest` upgrades onto the candidate.
  *
- * Three reasons skip it, and each is a state the proof cannot speak about: an override skips its
- * gates by definition, a resume has already proved before its first upload (and `latest` has moved
- * since), and a partially published cohort has no single candidate to prove.
+ * Three reasons skip it, and each is a state the proof cannot speak about: an `--override` skips the
+ * gates it names by definition, `proved` means this invocation already proved before the tag, and a
+ * partially or wholly published cohort has no single candidate left to prove.
  */
 export function upgradeProofApplies(scope: IUpgradeProofScope): boolean {
   return !scope.override && !scope.proved && scope.publishable === scope.cohort;
@@ -613,6 +613,22 @@ export function readUpgradeProofReceipt(
     // A missing or unreadable receipt is no receipt. Both answer the same way: prove it here.
     return undefined;
   }
+}
+
+/**
+ * A proof-only run that cannot prove must not report a proof.
+ *
+ * `release:ship` creates the tag on the strength of this run, so a silent skip would become a burn
+ * at the publish: the publish's receipt would be missing after the release was already public.
+ */
+export function assertProofOnlyRunProves(input: {
+  readonly proveUpgrade: boolean;
+  readonly proving: boolean;
+}): void {
+  if (!input.proveUpgrade || input.proving) return;
+  throw new Error(
+    "TN_RELEASE_UPGRADE_PROOF_SKIPPED: --prove-upgrade was asked to prove this candidate, and part or all of its cohort is already on npm, so there is nothing left to prove against. Bump the version: release:ship tags only after this proof.",
+  );
 }
 
 /**
@@ -709,6 +725,9 @@ async function main(args: readonly string[]): Promise<void> {
       throw new Error(
         "TN_RELEASE_UPGRADE_PROOF_MISSING: --upgrade-proved reuses this commit's green upgrade proof, and this checkout holds no receipt for HEAD. Run `pnpm release --prove-upgrade` on it first, which is what release:ship does before it tags.",
       );
+    // One use per proof: the receipt describes the `latest` this run proved against, and that name
+    // moves. A second reuse would be a claim about a registry state nobody checked.
+    clearUpgradeProofReceipt(REPO);
     process.stdout.write(
       `\nReusing the upgrade proof recorded at ${receipt.provedAt} for ${receipt.sha}.\n`,
     );
@@ -728,7 +747,9 @@ async function main(args: readonly string[]): Promise<void> {
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
   // `publish:check` then reports the package as needing a bump, because its source "moved"
   // after the publish. There is no way to tell, later, which source a published tarball was.
-  if (publish) assertCleanPackageTree(REPO);
+  // A proof is a claim about HEAD's bytes, and so is the receipt it writes: prove from a committed
+  // tree, exactly as a publish does.
+  if (publish || proveUpgrade) assertCleanPackageTree(REPO);
   await provisionReleaseArtifacts(REPO);
 
   const packages = publishSet(REPO);
@@ -844,6 +865,7 @@ async function main(args: readonly string[]): Promise<void> {
       proved: upgradeProved,
       publishable: publishPackages.length,
     });
+    assertProofOnlyRunProves({ proveUpgrade, proving });
     const upgrades = proving ? await proveUpgradeFromLatest(packages, tarballs) : [];
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;

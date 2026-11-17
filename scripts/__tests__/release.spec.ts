@@ -8,6 +8,7 @@ import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
+  assertProofOnlyRunProves,
   clearUpgradeProofReceipt,
   installableOnRegistry,
   packReleaseSet,
@@ -339,6 +340,16 @@ describe("pnpm release proof-only run", () => {
     expect(readUpgradeProofReceipt(root, "b".repeat(40))).toBeUndefined();
   });
 
+  it("refuses a proof-only run that has nothing left to prove", () => {
+    // `release:ship` tags on the strength of this run, so a silent skip would burn the version when
+    // the publish's receipt turns out to be missing.
+    expect(() => assertProofOnlyRunProves({ proveUpgrade: true, proving: true })).not.toThrow();
+    expect(() => assertProofOnlyRunProves({ proveUpgrade: false, proving: false })).not.toThrow();
+    expect(() => assertProofOnlyRunProves({ proveUpgrade: true, proving: false })).toThrow(
+      /TN_RELEASE_UPGRADE_PROOF_SKIPPED/u,
+    );
+  });
+
   it("drops yesterday's proof for a commit before proving it again", async () => {
     const root = await makeTempDir("threenative-upgrade-proof-");
     roots.push(root);
@@ -643,6 +654,8 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
     [["--prove-upgrade", "--dry-run"], /TN_RELEASE_FLAGS_CONFLICT/u],
     // A resumed run has a partial cohort, so the proof would silently not run.
     [["--prove-upgrade", "--resume"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    [["--prove-upgrade", "--prepare"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    [["--prove-upgrade", "--upgrade-proved"], /TN_RELEASE_FLAGS_CONFLICT/u],
     // `release:ship` passes these two flag names; a drift between the two files would throw
     // TN_RELEASE_UNKNOWN_FLAG after the release was already public.
     [["--prove-upgrade", "--upgrade-proved", "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
@@ -662,7 +675,8 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
 
   it("refuses to reuse a proof this checkout never recorded", () => {
     const repo = path.resolve(import.meta.dirname, "../..");
-    // The receipt is git-ignored run state, so a developer may already hold one for this commit.
+    // The receipt is git-ignored run state, so a developer may already hold one for this commit:
+    // this test owns that one file, and a real proof rewrites it.
     clearUpgradeProofReceipt(repo);
     let stderr = "";
     try {

@@ -13,7 +13,7 @@ first-pass release now proves before any release exists, and `--upgrade-proved` 
 from proving a second time. Three shapes survive it:
 
 1. **A resumed publish.** `release:ship` resumes at the first step its GitHub state says is not done
-   (`nextStep`, `scripts/release-ship.ts:346`). A run that finds the release already public goes
+   (`nextStep`, `scripts/release-ship.ts`). A run that finds the release already public goes
    straight to `publish`, which is `pnpm release --yes --skip-gates --resume` — and that call proves
    after the release is public, because a resume is not the invocation that proved. A red proof
    there still burns the version.
