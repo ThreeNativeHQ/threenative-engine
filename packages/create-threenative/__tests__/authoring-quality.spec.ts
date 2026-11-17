@@ -28,7 +28,7 @@ beforeAll(async () => {
 });
 afterAll(() => rmSync(root, { force: true, recursive: true }));
 
-async function lint(name: string, source: string, withReact = false) {
+async function lint(name: string, source: string, withReact = false, reinventions = true) {
   const file = path.join(root, "src", name);
   writeFileSync(file, source);
   writeFileSync(
@@ -37,7 +37,7 @@ async function lint(name: string, source: string, withReact = false) {
   );
   const eslint = new ESLint({
     cwd: root,
-    overrideConfig: qualityConfig({ root }),
+    overrideConfig: qualityConfig({ root, reinventions }),
     overrideConfigFile: true,
   });
   const [result] = await eslint.lintFiles([file]);
@@ -51,6 +51,19 @@ async function lint(name: string, source: string, withReact = false) {
 const rules = (r: { messages: Array<{ rule: string | null }> }) => r.messages.map((m) => m.rule);
 
 describe("generated-game quality config", () => {
+  it("keeps a game scaffolded before the reinvention rows on the rules it was made with", async () => {
+    // A 0.3.13 game's eslint.config.js passes only `root`, and an upgrade never rewrites it. The
+    // reinvention rows landed after 0.3.13, so they must not turn that game's own code red.
+    const damp = "export const k = (dt: number): number => 1 - Math.exp(-dt);\n";
+    expect(rules(await lint("a.ts", damp))).toContain("no-restricted-syntax");
+    expect((await lint("a.ts", damp, false, false)).messages).toEqual([]);
+    const scaffolded = readFileSync(
+      path.join(import.meta.dirname, "..", "template-assets", "quality", "eslint.config.js"),
+      "utf8",
+    );
+    expect(scaffolded).toContain("reinventions: true");
+  });
+
   it("rejects a floating Promise and passes the repaired file", async () => {
     const bad = await lint(
       "a.ts",

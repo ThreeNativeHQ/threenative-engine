@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { realpathSync, readFileSync, existsSync, mkdirSync, rmSync, writeFileSync, appendFileSync, mkdtempSync, renameSync, readdirSync } from 'fs';
+import { realpathSync, statSync, readFileSync, existsSync, mkdirSync, rmSync, writeFileSync, appendFileSync, mkdtempSync, renameSync, readdirSync } from 'fs';
 import path from 'path';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
@@ -673,15 +673,23 @@ function validateManifest(value, file) {
   }
   return value;
 }
+var manifestCache = /* @__PURE__ */ new Map();
 function loadCapabilityManifest(file = defaultManifestPath()) {
   let raw;
+  let stamp;
   try {
+    const stat = statSync(file);
+    stamp = `${stat.mtimeMs}:${stat.size}`;
+    const cached = manifestCache.get(file);
+    if (cached?.stamp === stamp) return cached.manifest;
     raw = readFileSync(file, "utf8");
   } catch (error) {
     throw manifestError(file, `cannot read committed manifest: ${String(error)}`);
   }
   try {
-    return validateManifest(JSON.parse(raw), file);
+    const manifest = validateManifest(JSON.parse(raw), file);
+    manifestCache.set(file, { stamp, manifest });
+    return manifest;
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("TN_ENGINE_CAPABILITIES_MANIFEST:"))
       throw error;
@@ -710,7 +718,17 @@ function splitSymbolCase(value) {
 function capabilitySituationTokens(value) {
   return splitSymbolCase(value).toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem).filter((token) => !STOP_WORD_STEMS.has(token));
 }
-var tokens = capabilitySituationTokens;
+var tokenCache = /* @__PURE__ */ new Map();
+var TOKEN_CACHE_LIMIT = 2e4;
+function tokens(value) {
+  let cached = tokenCache.get(value);
+  if (cached === void 0) {
+    if (tokenCache.size >= TOKEN_CACHE_LIMIT) tokenCache.clear();
+    cached = Object.freeze(capabilitySituationTokens(value));
+    tokenCache.set(value, cached);
+  }
+  return cached;
+}
 function tokenWeights(entries) {
   const frequency = /* @__PURE__ */ new Map();
   let situations = 0;
@@ -970,11 +988,19 @@ function withReferenceTools(situation, response) {
     guidance: `Reverse engineer the game with engine_search_references, then engine_reference_detail for its pinned cards. ${response.guidance}`
   };
 }
+var weightCache = /* @__PURE__ */ new WeakMap();
+function manifestWeights(entries) {
+  let cached = weightCache.get(entries);
+  if (cached === void 0) {
+    cached = { weights: tokenWeights(entries), nameWeights: nameTokenWeights(entries) };
+    weightCache.set(entries, cached);
+  }
+  return cached;
+}
 function searchMechanics(situation, manifest, scope) {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
-  const weights = tokenWeights(manifest.entries);
-  const nameWeights = nameTokenWeights(manifest.entries);
+  const { weights, nameWeights } = manifestWeights(manifest.entries);
   const notOwned = notOwnedMatch(manifest, query);
   if (notOwned !== void 0 && isSpecificNotOwnedMatch(query, notOwned.matchedSituation)) {
     return {
@@ -1359,7 +1385,7 @@ async function handleLine(line2, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.14" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.15" }
       });
     }
     if (request.method === "tools/list") {

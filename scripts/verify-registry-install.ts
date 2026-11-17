@@ -1542,6 +1542,11 @@ export async function verifyRegistryInstall(
             "--allow-software",
             "--server-command",
             serverCommand,
+            // The dev server cooks every asset cold before it listens in a fresh clean room (the
+            // starter's sky.jpg KTX2 pass alone took 20.6 s), so the runner's 15 s default stopped
+            // a healthy game and burned 0.3.14. A warm start is ready in about 1 s.
+            "--server-timeout",
+            "120000",
           ];
           // `npx --no-install` for npm, matching the doctor step: `npm exec --no-install` warns on
           // npm 11 and is slated to stop working.
