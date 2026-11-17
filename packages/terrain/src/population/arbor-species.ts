@@ -173,29 +173,42 @@ export async function growKitArborArt(
         throw new Error(
           `bake: world.arbor '${stem}' names no Arbor preset '${row.preset}'. Call vegetationPresets() from ${PACKAGE} for the ids.`,
         );
-      const lods = Object.keys(row.lods).map(Number);
-      if (lods.length === 0 || lods.some((lod) => !Number.isInteger(lod) || lod < 0))
-        throw new Error(`bake: world.arbor '${stem}' needs lods such as { "1": "-near" }`);
-      const files = await vegetation.bakeVegetation({
-        lods,
-        out: join(scratch, stem),
-        preset: row.preset,
-        seed: row.seed,
-        ...(row.form === undefined ? {} : { form: row.form }),
-        ...(row.leafImage === undefined ? {} : { leafImage: resolve(assetsDir, row.leafImage) }),
-      });
-      for (const [at, lod] of lods.entries()) {
-        const file = files.find((one) => one.lod === lod) ?? files[at];
-        if (file === undefined)
-          throw new Error(`bake: world.arbor '${stem}' baked no level ${lod}`);
-        const target = join(out, `${stem}${row.lods[String(lod)]}.glb`);
-        await mkdir(dirname(target), { recursive: true });
-        await cp(file.path, target);
-        written.push(target);
-      }
+      written.push(...(await growKitArborRow(vegetation, stem, row, scratch, out, assetsDir)));
     }
   } finally {
     await rm(scratch, { recursive: true, force: true });
+  }
+  return written;
+}
+
+/** One `world.arbor` row: bakes its levels in `scratch`, then copies each to `<stem><suffix>.glb`. */
+async function growKitArborRow(
+  vegetation: Awaited<ReturnType<typeof loadVegetation>>,
+  stem: string,
+  row: IKitArborArt,
+  scratch: string,
+  out: string,
+  assetsDir: string,
+): Promise<string[]> {
+  const lods = Object.keys(row.lods).map(Number);
+  if (lods.length === 0 || lods.some((lod) => !Number.isInteger(lod) || lod < 0))
+    throw new Error(`bake: world.arbor '${stem}' needs lods such as { "1": "-near" }`);
+  const files = await vegetation.bakeVegetation({
+    lods,
+    out: join(scratch, stem),
+    preset: row.preset,
+    seed: row.seed,
+    ...(row.form === undefined ? {} : { form: row.form }),
+    ...(row.leafImage === undefined ? {} : { leafImage: resolve(assetsDir, row.leafImage) }),
+  });
+  const written: string[] = [];
+  for (const [at, lod] of lods.entries()) {
+    const file = files.find((one) => one.lod === lod) ?? files[at];
+    if (file === undefined) throw new Error(`bake: world.arbor '${stem}' baked no level ${lod}`);
+    const target = join(out, `${stem}${row.lods[String(lod)]}.glb`);
+    await mkdir(dirname(target), { recursive: true });
+    await cp(file.path, target);
+    written.push(target);
   }
   return written;
 }

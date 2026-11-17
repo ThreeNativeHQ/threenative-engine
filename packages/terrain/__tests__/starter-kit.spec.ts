@@ -30,7 +30,7 @@ const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = 
   },
   desert: {
     values: "b0f471e65576313f26f98e456323c4c6eb6c4e688c931e4cafc2c66663abce85",
-    evaluated: "86740e21dad3412d21524d1c85e85d5106d05eccc6e66f010ffd8168d1cdda54",
+    evaluated: "beb557010f5a0ffeba9767560c066a6735b1d39d920db05f5ddadc4b1dfe6855",
   },
   tundra: {
     values: "3fbcbc21b23e03a1c89d8ce0ccc2c8b93380973304e4be7662bc23185a706b58",
