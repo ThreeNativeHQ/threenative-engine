@@ -261,7 +261,7 @@ describe("pnpm release:ship resumes", () => {
   });
 
   // 0.3.14 went public and only then failed the upgrade proof (2026-11-12). The tag creates a
-  // release that is public the moment it exists, so the proof runs before the tag does.
+  // release that is visible the moment it exists, so the proof runs before the tag does.
   it("a red upgrade proof leaves nothing tagged, released or dispatched", async () => {
     const { calls, deps } = world({ candidate: [run(10, "workflow_dispatch")] });
     const red: typeof deps = {

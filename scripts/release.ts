@@ -588,9 +588,10 @@ async function main(args: readonly string[]): Promise<void> {
   const publish = argv.includes("--yes");
   const dryRun = argv.includes("--dry-run");
   // Pack the cohort and prove the previous `latest` upgrades onto it, publishing nothing. The tag
-  // and its release come after this, because the release is public the moment it exists, and the
-  // upgrade proof is the last gate before the first upload: the 0.3.14 release (2026-11-12) went
-  // public and only then failed this proof, burning the version.
+  // and its release come after this, because the release exists — visible as a prerelease, public
+  // once finalized — the moment the tag is pushed, and the upgrade proof is the last gate before the
+  // first upload: the 0.3.14 release (2026-11-12) went public and only then failed this proof,
+  // burning the version.
   const proveUpgrade = argv.includes("--prove-upgrade");
   if (publish && dryRun)
     throw new Error("TN_RELEASE_FLAGS_CONFLICT: --dry-run and --yes cannot be combined.");

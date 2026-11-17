@@ -552,9 +552,10 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       );
     } else if (step === "tag") {
       if (state.tag.commit !== undefined) assertTagMovable(state, tag);
-      // Nothing about this version is public yet, and the upgrade proof is the last gate before the
-      // first npm upload. Prove it here: the tag creates a release that is public the moment it
-      // exists, so a red proof after the tag has already burned the version (0.3.14, 2026-11-12).
+      // Nothing about this version is visible yet, and the upgrade proof is the last gate before the
+      // first npm upload. Prove it here: the tag creates a release that is visible (as a prerelease)
+      // the moment it exists and public when `finalize` runs, so a red proof after the tag has already
+      // burned the version (0.3.14, 2026-11-12).
       // Nothing is tagged before the proof, for any cohort: a partial one was refused above, and
       // the publish never proves for one. This step then starts over, so the tag is moved on facts
       // read after the proof and not before it.

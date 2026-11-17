@@ -37,7 +37,8 @@ Three parts, one rule each:
 2. Run the same decision on the release pull request's own early board job, so a burned version is
    red before the merge instead of after it.
 3. Prove the previous `latest` upgrades onto the candidate **before** the tag creates the release
-   that is public the moment it exists. The publish proves again on purpose: its run is the only one that reads the registry `latest` and the rebuilt tarballs at the moment of the upload.
+   that is visible (as a prerelease) the moment it exists. The publish proves again on purpose: its run
+   is the only one that reads the registry `latest` and the rebuilt tarballs at the moment of the upload.
 
 ### Phase 1 — `release:ship` refuses a burned version before the evidence
 
