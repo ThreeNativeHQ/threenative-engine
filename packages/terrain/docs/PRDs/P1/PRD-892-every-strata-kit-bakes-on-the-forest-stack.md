@@ -499,4 +499,17 @@ flowchart LR
   `maxViewGpuMs` on the private-Xvfb software renderer (12 FPS, 13.4 M triangles); the art pack is
   107.05 MB against the 100 MB ceiling, 6.8 MB of which predates this commit.
 
+- 2026-11-17 (agent, same day): the pack is **96.20 MB and the budget test passes**. The cut is
+  `bakeVegetation`'s `leafSize` (Arbor draws a 1024 px card; the desert bakes its juniper far levels
+  at 256 and the cards of metre-tall plants at 512) plus the two fir near levels no kit bakes, moved
+  into `packages/assets/__tests__/fixtures/fir/` where their only readers are. Three survey massifs
+  looked dead and are **not**: the forest recipe names `longs`, `teton` and `maroon` through the
+  cook's `survey()` and the bake fails closed on a missing one. The obvious "drop the 2k HDRI for the
+  1k" swap is **refused with numbers**: the 1k sky's upper-hemisphere irradiance is 16-26% lower
+  (up 1.1356/1.2200/1.4250 against the 2k's 1.5274/1.5920/1.7011), so every kit's sky light would go
+  a fifth dark. The visual judge returned **NEUTRAL twice** on the saguaro: the colour and silhouette
+  criteria pass, the rib/areole field is still visibly regular, and no capture holds a cactus close
+  enough to judge the cuticle — so the desert box stays open on a closer capture pose and a second
+  skin variation, not on more texture resolution. Replacement PR for #692 is #693 (draft).
+
 - 2026-11-16 (agent): **Phase 2's own proof command was red on `develop`.** `KIT=alpine pnpm --filter strata-terrain-preview test:kit` wrote `src/terrain/composition.ts` but injected `import { edits } from "../../composition.js"` into `src/terrain/alpine/world.ts`, which resolves to `src/composition.ts`; the scaffolded game failed with `TS2307: Cannot find module '../../composition.js'` before it drew a frame. One directory off, since PR #677 wrote both lines. Fixed to `"../composition.js"`; `KIT=alpine` now typechecks, bakes, builds and renders to the playtest on this machine. Nothing had been checking the four data kits' proof. `KIT=forest … test:kit` measured `timeToReadyMs` 22.3 s and `maxViewGpuMs` 76.8 ms on a second, warm run (cold: 20.6 s / 71.3 ms; against 15 s / 12 ms expectations), on the private-Xvfb capture display the runner uses, with the same failure set before and after the spawn-gate move. The playtest runner refuses a frame-rate claim from a virtual display by design (`--allow-virtual-display` is the explicit opt-in), so the box-2 FPS and judge lanes need a real, foreground display — the owner's screen — not a warmer cache.
