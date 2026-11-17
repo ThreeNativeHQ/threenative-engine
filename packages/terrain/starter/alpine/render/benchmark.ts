@@ -54,9 +54,9 @@ export const BENCHMARK: Record<WorldName, IBenchmark> = {
       "meadow-close": { at: [165, -95], eye: 1.7, look: [-70, -180], lookUp: 2.2 },
       overview: { at: [190, 170], eye: 65, look: [-70, 25], lookUp: 5 },
       river: { at: [-145, -120], eye: 1.7, look: [-110, -185], lookUp: 0 },
-      // The look goal's frame: from the hillside north-east of the lake, over the lake and the
-      // forest to the high backdrop peaks south-west (bearing 210-240 degrees, 0.5-0.7 km tall).
-      vista: { at: [360, 200], eye: 0, eyeY: 71, look: [-900, -700], lookUp: 0, lookY: 90 },
+      // Kleine Scheidegg's postcard: from the pasture's north-west corner across the pass to the
+      // Eiger's west flank and north face (bearing about 125 degrees, 1.3-1.9 km above the eye).
+      vista: { at: [-200, -200], eye: 0, eyeY: 100, look: [2200, 1400], lookUp: 0, lookY: 500 },
     },
     views: ["player", "meadow-close", "overview", "river", "vista"],
   },

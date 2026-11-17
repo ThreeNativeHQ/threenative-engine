@@ -38,6 +38,7 @@ type HeightBand =
   | "alpine"
   | "rock"
   | "treeline"
+  | "rockline"
   | "cap"
   | "desertRock"
   | "alpineRock"
@@ -133,6 +134,8 @@ export interface IBiome {
   readonly mossGround: boolean;
   /** Rock walls read the crest projection and hold snow in their own bands. */
   readonly crestRock: boolean;
+  /** The far ground above the treeline is pasture up to the `rockline` band, then rock. */
+  readonly alpinePasture: boolean;
   /** Metres a hollow lifts the snowline probe: a sheltered shelf keeps its snow. */
   readonly snowHollowLift: number;
   /** Steepness, 0..1, the snow starts to shed at. */
@@ -197,6 +200,8 @@ export interface IBiome {
   readonly stoneSnowTint: RGB;
   /** The tint this look gives an imported crown. */
   readonly canopyTint: RGB;
+  /** Multiplies `canopyTint` on the spruce's own needle cards, where its art is photographed dark. */
+  readonly needleTint?: RGB;
   /** The tint this look gives an imported blade or frond. */
   readonly bladeTint: RGB;
   /**
@@ -287,6 +292,8 @@ const temperate: IBiome = {
     // 260-400 m (its 70th-80th height percentile) and snow holds only on the peaks' gentle ground
     // above 570-690 m (93rd-97th). At 227-315 m the snow lay across every saddle as a white band.
     treeline: [6.5, 10],
+    // Only an `alpinePasture` look reads it; the others turn to rock at the treeline.
+    rockline: [6.5, 10],
     cap: [14, 17],
     desertRock: [0.18, 0.48],
     alpineRock: [0.06, 0.14],
@@ -339,6 +346,7 @@ const temperate: IBiome = {
   mesaGround: false,
   mossGround: false,
   crestRock: false,
+  alpinePasture: false,
   snowHollowLift: 5,
   snowShedFrom: 0.04,
   localSnow: false,
@@ -458,8 +466,50 @@ const forest: IBiome = {
   },
 };
 
+/**
+ * Kleine Scheidegg under the Eiger on a clear July day: the forest's stack, re-graded for 2000 m.
+ * The square stands at 1970-2157 m (datum 1969 m), so the bands are metres above its floor over the
+ * forest's 41 m span: Norway spruce in the valleys up to about 1900-2030 m, grazed pasture above to
+ * 2550-2750 m, limestone and scree above that and on every face, and lying snow from 3000 m
+ * (swisstopo's summer snowline on the Eiger's west flank).
+ */
+const alpine: IBiome = {
+  ...forest,
+  heightFractions: {
+    ...forest.heightFractions,
+    treeline: [-1.7, 1.5],
+    rockline: [14, 18.5],
+    cap: [25, 28],
+  },
+  snowFractions: [25, 28, 0.22],
+  alpinePasture: true,
+  // Limestone: the ground's rock and the scanned erratics both pulled most of the way to grey.
+  stoneGrey: 0.8,
+  stoneTint: [0.5, 0.49, 0.46],
+  stoneMoss: 0.15,
+  // The fir's twigs are photographed near-black (linear 0.01); a Norway spruce crown reads a dark
+  // blue-green about 0.03, 0.05, 0.02 in sun.
+  needleTint: [4.7, 6.9, 14],
+  // The valley haze is the forest's evening air; at noon on a dry day a pasture 600 m off keeps its green.
+  haze: { ...forest.haze, density: 0.0003 },
+  // A high summer sun from the south-west lights the Eiger's west flank; its north face stays in shade.
+  sun: { ...temperate.sun, direction: [-150, 190, 120] },
+  fill: temperate.fill,
+  // Clear dry air at 2000 m: the Eiger 3 km off keeps its ridges and its snow, a faint blue only.
+  atmosphere: {
+    ...forest.atmosphere,
+    heightFog: {
+      reach: [600, 1000],
+      distanceScale: 1.2,
+      start: 300,
+      terms: [{ density: 0.00005, height: 0, scale: 400 }],
+    },
+    groundMist: undefined,
+  },
+};
+
 export const BIOMES: Record<WorldName, IBiome> = {
-  [WORLD]: forest,
+  [WORLD]: alpine,
 };
 
 export interface IWorldBiome extends IBiome {

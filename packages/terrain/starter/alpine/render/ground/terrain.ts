@@ -210,6 +210,12 @@ const BACKDROP_SPRUCE = vec3(0.019, 0.028, 0.013);
 /** Albedo of the meadow gaps in the backdrop's cover: dull olive turf, not lawn. */
 const BACKDROP_CLEARING = vec3(0.042, 0.052, 0.022);
 /**
+ * Albedo of alpine pasture seen from a kilometre: grazed turf, yellow-green in summer, browner where it
+ * thins toward the scree (Kleine Scheidegg and the Eiger's west flank in July).
+ */
+const ALPINE_PASTURE = vec3(0.075, 0.105, 0.032);
+const ALPINE_PASTURE_HIGH = vec3(0.085, 0.085, 0.045);
+/**
  * The surveyed surroundings carry no stands (the bake plants only the playable square), so past the
  * square's edge the forest hillside is an open sunlit meadow: lawn turf, no needle-soil patches, and
  * the vista's ground cover (`meadowCover`).
@@ -686,7 +692,10 @@ export async function createGroundMaterial(
   let forestFloor: Node<"float"> = float(0);
   let bareSoil: Node<"float"> = float(0);
   // Transport, slope and shelter choose the splat; noise only frays the material's edge.
-  weights.rock = max(weights.rock, scour.mul(0.9)).mul(oneMinus(deposits.mul(0.22)));
+  // Turf holds in a grazed pasture's runnels: only a wood's bare floor scours to rock along them.
+  weights.rock = max(weights.rock, scour.mul(look.alpinePasture ? 0.3 : 0.9)).mul(
+    oneMinus(deposits.mul(0.22)),
+  );
   if (look.crestRock) weights.rock = max(weights.rock, smoothstep(0.08, 0.22, slope));
   weights.dirt = max(weights.dirt.mul(0.45), deposits.mul(0.85))
     .mul(oneMinus(smoothstep(0.22, 0.4, slope)))
@@ -713,8 +722,9 @@ export async function createGroundMaterial(
         .mul(0.85);
       weights.dirt = weights.dirt.max(litter.mul(0.25));
       forestFloor = litter;
-      // The bare patches are the wood's own: a ground drawn with no look keeps its litter only.
-      if (biome?.woodedGround) {
+      // The bare patches are the wood's own: a ground drawn with no look keeps its litter only, and
+      // a grazed alpine pasture is turf between its stands.
+      if (biome?.woodedGround && !look.alpinePasture) {
         // Bare earth breaks the meadow in broad patches, as on a real spruce slope: broad noise
         // picks them, finer noise frays their edge, a hollow keeps its turf. They fade out by 350 m
         // so a far slope does not print the noise as camouflage.
@@ -757,6 +767,8 @@ export async function createGroundMaterial(
   // --- how each surface looks -------------------------------------------------------------
   // Apply observed deposition after biome placement so dry/snow-world rules cannot erase it.
   weights.dirt = weights.dirt.max(sediment.mul(0.5)).max(flow.mul(0.28)).mul(sand.oneMinus());
+  // A grazed pasture's turf closes over its runnels and deposits: gravel shows in the beds only.
+  if (look.alpinePasture) weights.dirt = weights.dirt.mul(smoothstep(0.3, 0.7, weights.dirt));
   // The layers that cover most of a meadow take a second, larger scale faded in with distance: one
   // tile under the player's feet, a coarser one near the horizon, and no single lattice for the eye
   // to find anywhere between.
@@ -1150,6 +1162,8 @@ export async function createGroundMaterial(
                 .mul(LOOK.rock)
         )
           .mul(crestBackdrop ? vec3(0.62) : vec3(0.62, 0.66, 0.67))
+          // Limestone is grey-buff: under blue air the neutral grey drew lilac.
+          .mul(look.alpinePasture ? vec3(1.08, 1.0, 0.86) : vec3(1))
           .mul(strata.mul(crestBackdrop ? 0.15 : 0.35).add(1))
           .mul(crestBackdrop ? mix(0.6, 1.15, smoothstep(-0.4, 0.4, facet)) : float(1))
           // Kilometre-scale warm and cool rock, so whole faces do not read one flat grey.
@@ -1171,7 +1185,9 @@ export async function createGroundMaterial(
         const talus = triplanarAlbedo(layer("rock").diffuse, "rock", 1.2).rgb;
         const rubble = (
           crestBackdrop
-            ? vec3(dot(talus, vec3(0.2126, 0.7152, 0.0722))).mul(vec3(0.66, 0.67, 0.69))
+            ? vec3(dot(talus, vec3(0.2126, 0.7152, 0.0722))).mul(
+                look.alpinePasture ? vec3(0.71, 0.67, 0.6) : vec3(0.66, 0.67, 0.69),
+              )
             : talus.mul(vec3(0.66, 0.65, 0.62))
         ).mul(mix(0.85, 1.1, bakedNoise(positionWorld.mul(0.08)).add(0.5)));
         // A ragged treeline: spurs of forest climb 90 m higher or stop 90 m lower along the slope.
@@ -1187,7 +1203,23 @@ export async function createGroundMaterial(
         const face = look.woodedGround
           ? smoothstep(0.19, 0.31, crestSteep.add(strata.mul(0.055)))
           : smoothstep(0.14, 0.3, crestSteep.add(strata.mul(0.055)));
+        const gully = collar ? smoothstep(0.05, 0.4, collar.hollow).mul(reliefWeight) : float(0);
         const bands = bedded.mul(face);
+        // An alpine look grows pasture between the treeline and its rockline; above that, and on any
+        // face, the mountain is rock. Without it the ground turns to rock at the treeline.
+        const rockline = look.alpinePasture
+          ? elevationBand(
+              measured,
+              measured.heightBands.rockline,
+              positionWorld.y
+                .add(breakUp.mul(28))
+                .add(bakedFractalNoise(positionWorld.mul(0.004), 2).mul(90)),
+            )
+          : treeline;
+        const pasture = mix(ALPINE_PASTURE, ALPINE_PASTURE_HIGH, rockline.mul(1.6).min(1))
+          .mul(mix(0.75, 1.2, smoothstep(-0.4, 0.4, clumps)))
+          .mul(mix(0.8, 1.1, crowns));
+        const upland = look.alpinePasture ? mix(forest, pasture, treeline) : forest;
         const snowline = elevationBand(
           measured,
           measured.heightBands.cap,
@@ -1197,7 +1229,6 @@ export async function createGroundMaterial(
         // that point up, tongues 160 m further down the gullies, broken patches 150 m under the
         // line, and none on wall rock. The facets lift or drop each field's edge, so its rim follows
         // the ribs instead of a contour.
-        const gully = collar ? smoothstep(0.05, 0.4, collar.hollow).mul(reliefWeight) : float(0);
         const lying = oneMinus(
           smoothstep(0.3, 0.48, crestSteep.sub(facet.mul(0.25)).sub(gully.mul(0.1))),
         );
@@ -1229,7 +1260,7 @@ export async function createGroundMaterial(
           .mul(mix(float(1), mix(float(1.08), float(0.8), wall), bands))
           .mul(mix(float(1), mix(float(0.78), float(1.04), streaks), face));
         const mountain = mix(
-          mix(forest, mix(banded, rubble, scree), max(max(treeline, face), scree)),
+          mix(upland, mix(banded, rubble, scree), max(max(rockline, face), scree)),
           snow,
           cap,
         );
@@ -1275,7 +1306,7 @@ export async function createGroundMaterial(
             : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32)
         ).add(
           crestBackdrop
-            ? facetTilt.mul(mix(0.35, 1, max(treeline, face))).mul(oneMinus(cap.mul(0.6)))
+            ? facetTilt.mul(mix(0.35, 1, max(rockline, face))).mul(oneMinus(cap.mul(0.6)))
             : vec3(0),
         );
         // Distant alpine rock previously discarded all normal relief; snow weights stay unchanged.

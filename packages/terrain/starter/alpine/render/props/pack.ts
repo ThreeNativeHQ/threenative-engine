@@ -64,7 +64,7 @@ import {
   vec4,
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
-import { BROADLEAF_TREES, GROUND_MAPS, ROCKFACE_MAPS } from "../../world/terrainAssets.js";
+import { GROUND_MAPS, ROCKFACE_MAPS } from "../../world/terrainAssets.js";
 import { biomeSpec } from "../biomeData.js";
 import {
   BIOMES,
@@ -113,16 +113,16 @@ export function canopyComparison(
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
 /**
- * The forest's canopy: Poly Haven's CC0 broadleaf scan (`BROADLEAF_TREES`), two silhouettes at five
- * heights (metres, crown top), so a stand reads as a European broadleaf wood rather than a spruce plantation (owner,
- * 2026-11-14: "replace this trees with scanned trees from poly haven"). Each variant is a near GLB
- * and a mid GLB of leaf cards from `scripts/prep/prep-polyhaven-broadleaf.py`.
+ * The alpine stand: Poly Haven's CC0 `fir_tree_01`, its full-crowned tree b and its wind-thinned tree c,
+ * at five heights (metres, crown top). Near the treeline at 1900-2000 m a Norway spruce stands 8-17 m.
+ * Each variant is a near GLB and a mid GLB of needle cards whose twig keeps its alpha
+ * (`scripts/prep/prep-fir-alpine.py`); the forest's broadleaf scan stays the Forest kit's.
  */
-const BROADLEAF_METRES = [12, 15, 14, 17, 19];
+const FIR_METRES = [11, 14, 9, 16, 12];
 const species: IPackSpecies[] = [];
 for (let i = 0; i < 5; i++) {
-  const tree = BROADLEAF_TREES[i % BROADLEAF_TREES.length];
-  const metres = BROADLEAF_METRES[i] ?? 15;
+  const tree = `fir_tree_01/alpine-fir-${i === 2 || i === 4 ? "c" : "b"}`;
+  const metres = FIR_METRES[i] ?? 12;
   species.push({ asset: "spruce", variant: i, path: `${tree}-near.glb`, metres });
   species.push({ asset: "spruce", variant: i, path: `${tree}-mid.glb`, metres, level: 1 });
 }
@@ -336,6 +336,12 @@ function stoneSurface(
 ): void {
   const { source, look } = context;
   if (look.stoneFrontFace) material.shadowSide = FrontSide;
+  // An alpine look's erratics are the massif's limestone: the red-brown scan pulled to its grey.
+  if (look.alpinePasture) {
+    const albedo = material.colorNode as Node<"vec3">;
+    const grey = vec3(dot(albedo, vec3(0.2126, 0.7152, 0.0722))).mul(vec3(...look.stoneTint));
+    material.colorNode = mix(albedo, grey.mul(2), look.stoneGrey);
+  }
   const growth = smoothstep(-0.15, 0.3, bakedNoise(positionWorld.mul(2.1)));
   const moss = normalWorldGeometry.y.max(0).mul(growth).mul(look.stoneMoss);
   material.colorNode = mix(material.colorNode as Node<"vec3">, vec3(...look.stoneMossTint), moss);
@@ -481,9 +487,14 @@ function tintedFoliage(
   map.anisotropy = 8;
   const sampled = texture(map, uv());
   // Cooked albedo is already sRGB (KTX2 DFD transfer=2); never apply a second decode or lift.
+  const needles = asset === "spruce" && look.needleTint ? look.needleTint : ([1, 1, 1] as const);
   const tint =
     cutout && canopy
-      ? look.canopyTint
+      ? ([
+          look.canopyTint[0] * needles[0],
+          look.canopyTint[1] * needles[1],
+          look.canopyTint[2] * needles[2],
+        ] as const)
       : cutout && !FLOWERS.has(asset)
         ? look.bladeTint
         : FLOWERS.has(asset)

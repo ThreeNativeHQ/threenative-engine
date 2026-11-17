@@ -1260,6 +1260,13 @@
         "note": "Poly Haven's own authored LOD2 of tree b (fir_tree_01_b_LOD2, 54,927 triangles, full crown), exported by examples/strata-terrain-preview/scripts/prep/prep-polyhaven-fir.py from the 1k .blend; the forest starter kit's fir."
       },
       {
+        "asset": "Fir Tree 01",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/fir_tree_01",
+        "note": "fir_tree_01/alpine-fir-{b,c}-{near,mid}.glb: fir-{b,c}-lod2.glb with the twig colour joined to Poly Haven's fir_tree_01_twig_alpha_1k.png as one RGBA PNG (the LOD2 export had flattened it opaque), the dead twigs dropped, the trunk and branches decimated and, at mid, 70% of the needle cards dropped and the rest grown to keep the crown's area, by examples/strata-terrain-preview/scripts/prep/prep-fir-alpine.py. b near 38,402 / mid 14,444 triangles, c near 20,839 / mid 8,929. The alpine starter kit's spruce stands."
+      },
+      {
         "asset": "Tree Small 02",
         "authors": "Rico Cilliers",
         "license": "CC0",
