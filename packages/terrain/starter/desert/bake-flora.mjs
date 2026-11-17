@@ -18,6 +18,31 @@ if (!out) throw new Error("bake-flora: pass the output folder, e.g. starter-asse
 const assets = process.argv.includes("--assets")
   ? process.argv[process.argv.indexOf("--assets") + 1]
   : out;
+/**
+ * A rosette is judged on its leaves, and Arbor's `agave` row draws sixteen wide cards that widen to
+ * a squared end: at screen size that is a paper star. The desert's two rosettes patch the row —
+ * more leaves, a lance width, and `taper: 1`, which takes the tip row to zero width.
+ *
+ * `fold` stays 0, and that is a measurement, not taste: a fold puts a third, lifted vertex across
+ * the blade (`across === 3` in Arbor), and that ridge holds the tip open into a blunt wedge. With
+ * the fold the leaves end square and read as paper strips; without it they close to a point.
+ */
+const ROSETTE = (count, length, width, fold, droop, angle, extra = {}) => ({
+  leaves: [
+    {
+      count,
+      size: [length, width],
+      fold,
+      droop,
+      angle,
+      taper: 1,
+      segs: 4,
+      sizeVar: 0.28,
+      ...extra,
+    },
+  ],
+});
+
 const CACTUS = {
   barkImage: join(assets, "saguaro-skin.png"),
   barkNormalImage: join(assets, "saguaro-skin-nor.png"),
@@ -41,9 +66,23 @@ const ROWS = [
   ["sage", "creosote", 1, { 0: "" }, { leafSize: 512 }],
   ["creosote-b", "creosote", 3, { 0: "" }, { leafSize: 512 }],
   ["thornbush-b", "thornbush", 4, { 0: "" }, { leafSize: 512 }],
-  ["agave-b", "agave", 5, { 0: "" }, { leafSize: 512 }],
+  // Pale, broad-leaved agave: 26 leaves instead of 16, half the width, a 0.42 midrib fold.
+  [
+    "agave-b",
+    "agave",
+    5,
+    { 0: "" },
+    { leafSize: 512, form: ROSETTE(34, 0.42, 0.045, 0, 0.3, [26, 72]) },
+  ],
   ["blackbrush", "thornbush", 1, { 0: "" }, { leafSize: 512 }],
-  ["yucca", "agave", 1, { 0: "" }, { leafSize: 512 }],
+  // Utah yucca: stiffer and narrower still, held upright, its tips barely drooping.
+  [
+    "yucca",
+    "agave",
+    1,
+    { 0: "" },
+    { leafSize: 512, form: ROSETTE(36, 0.58, 0.03, 0, 0.12, [10, 56]) },
+  ],
   ["bunchgrass-a", "bunchgrass", 1, { 0: "" }, { leafSize: 512 }],
   ["bunchgrass-b", "bunchgrass", 2, { 0: "" }, { leafSize: 512 }],
   ["drygrass", "drygrass", 1, { 0: "" }, { leafSize: 512 }],
