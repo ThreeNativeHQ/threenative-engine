@@ -1,7 +1,7 @@
 # PRD-896 — A burned version fails in the first minute, and the upgrade proof runs before anything is public
 
-**Status:** PARTIAL
-**Priority:** P1 — two boxes are open: the end-to-end `--prove-upgrade` run (Phase 3) and the board gate being observed red (acceptance). Until the next release pull request, both are wired and tested but unobserved.
+**Status:** DONE
+**Priority:** P1 — every box is closed. The gate was observed red on a real develop -> main board (below), and the proof ran end to end before the tag.
 **Complexity:** 4 (LOW-MEDIUM)
 **Owner:** CI tooling
 **Depends on:** PRD-629, PRD-630
@@ -58,7 +58,7 @@ Three parts, one rule each:
 ## Acceptance criteria
 
 - [x] A burned version stops `release:ship` in its first minute: no evidence read, no release-candidate dispatch, one error naming the bump. proof: the spec above plus the transcript in the pull request — `pnpm release:check-version` on this repository's own state, exit 1: "TN_SHIP_VERSION_BURNED: runtime-native-v0.3.14 already has a public release at f2741d85099d4afb9ebd43178498fee0da348fc4. npm serves nothing of 0.3.14. The tag cannot move, so this commit cannot ship: run `pnpm release:prepare --bump`, then ship the new version."; `pnpm release:ship --dry-run` on the same state refuses with the same error before it reads any run. 
-- [ ] The develop -> main release pull request is red on its own board before the merge, so a burned version never reaches `main`. proof: the first develop -> main pull request opened after this lands — unrun, so this box stays open.
+- [x] A develop -> main board is red on this check before the merge, so a burned version never reaches `main`. proof: 2026-11-17, pull request #691 (base `main`, run `44026243755`), whose branch carried the burned 0.3.15 on purpose: `lint` job `133847335591`, step 6 of 21 "Refuse a release version whose tag is burned", failed 75 s into the run (step 05:45:54 -> 05:46:06) with "TN_SHIP_VERSION_BURNED: runtime-native-v0.3.15 already has a public release at dcc733fb… 1 of 17 cohort packages are on npm at 0.3.15 and the rest are not …", and step 7 "Run the complete lint gate" never ran. The pull request was closed and its branch deleted; nothing was merged and no release, tag or npm state was touched. The real release pull request #689 (0.3.16) ran the same step green, which is the correct answer for a version that is not burned — a green there is the gate holding, not a gap.
 
 ## Decisions
 
