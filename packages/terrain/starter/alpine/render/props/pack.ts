@@ -113,19 +113,22 @@ export function canopyComparison(
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
 /**
- * The alpine stand: Poly Haven's CC0 `fir_tree_01`, its full-crowned tree b and its wind-thinned tree c,
- * at five heights (metres, crown top). Near the treeline at 1900-2000 m a Norway spruce stands 8-17 m.
- * Each variant is a near GLB and a mid GLB of needle cards whose twig keeps its alpha
- * (`scripts/prep/prep-fir-alpine.py`); the forest's broadleaf scan stays the Forest kit's.
+ * The alpine stand: Arbor Norway spruce and black spruce, baked once by `bake-flora.mjs` (the conifer
+ * bake-off winner), at five heights (metres, crown top). Near the treeline at 1900-2000 m a Norway
+ * spruce stands 10-17 m. Each variant is a near GLB (lod 1) and a mid GLB (lod 2).
  */
-const FIR_METRES = [11, 14, 9, 16, 12];
+const STAND: readonly (readonly [string, number])[] = [
+  ["alpine_flora/spruce-a", 14],
+  ["alpine_flora/spruce-b", 16],
+  ["alpine_flora/blackspruce-a", 10],
+  ["alpine_flora/spruce-c", 12],
+  ["alpine_flora/blackspruce-b", 11],
+];
 const species: IPackSpecies[] = [];
-for (let i = 0; i < 5; i++) {
-  const tree = `fir_tree_01/alpine-fir-${i === 2 || i === 4 ? "c" : "b"}`;
-  const metres = FIR_METRES[i] ?? 12;
-  species.push({ asset: "spruce", variant: i, path: `${tree}-near.glb`, metres });
-  species.push({ asset: "spruce", variant: i, path: `${tree}-mid.glb`, metres, level: 1 });
-}
+STAND.forEach(([tree, metres], variant) => {
+  species.push({ asset: "spruce", variant, path: `${tree}-near.glb`, metres });
+  species.push({ asset: "spruce", variant, path: `${tree}-mid.glb`, metres, level: 1 });
+});
 for (const [asset, heights] of Object.entries({
   sapling: [1.1, 2.1, 3.0, 1.6],
   grass: [0.3, 0.55, 0.75, 0.45],
@@ -149,19 +152,19 @@ for (const [asset, heights] of Object.entries({
     species.push({ asset, variant, metres, path: `${asset}/${variant}` }),
   );
 }
-// The alpine species the forest pack does not know: fir scans for the two conifers the box names,
+// The alpine species the forest pack does not know: the stand's Arbor conifers for the two the box names,
 // field grass for its tundra cover, shrubs for fireweed and blueberry, and scanned boulders for its
 // erratics. Metres are each scan's own size, as the pack's other rows are.
 for (const row of [
   {
     asset: "scotspine",
     metres: 11,
-    paths: ["fir_tree_01/fir-b-lod1.glb", "fir_tree_01/fir-c-lod1.glb"],
+    paths: ["alpine_flora/spruce-c-near.glb", "alpine_flora/spruce-a-near.glb"],
   },
   {
     asset: "blackspruce",
     metres: 8,
-    paths: ["fir_tree_01/fir-b-lod2.glb", "fir_tree_01/fir-c-lod2.glb"],
+    paths: ["alpine_flora/blackspruce-a-near.glb", "alpine_flora/blackspruce-b-near.glb"],
   },
   { asset: "tundragrass", metres: 0.35, paths: ["grass_medium/tuft.glb", "grass_medium/mat.glb"] },
   { asset: "tussock", metres: 0.5, paths: ["grass_medium/field.glb", "grass_medium/reed.glb"] },
@@ -487,14 +490,9 @@ function tintedFoliage(
   map.anisotropy = 8;
   const sampled = texture(map, uv());
   // Cooked albedo is already sRGB (KTX2 DFD transfer=2); never apply a second decode or lift.
-  const needles = asset === "spruce" && look.needleTint ? look.needleTint : ([1, 1, 1] as const);
   const tint =
     cutout && canopy
-      ? ([
-          look.canopyTint[0] * needles[0],
-          look.canopyTint[1] * needles[1],
-          look.canopyTint[2] * needles[2],
-        ] as const)
+      ? look.canopyTint
       : cutout && !FLOWERS.has(asset)
         ? look.bladeTint
         : FLOWERS.has(asset)
@@ -985,7 +983,8 @@ export async function loadPack(
       // A species with no scan keeps its procedural part (`buildPropVariants`).
       if (!assets || !one.path.endsWith(".glb")) return undefined;
       try {
-        return await assets.model<{ scene?: Group }>(one.path);
+        // The pack copies vertices, so the streamed coarse companion would never upgrade.
+        return await assets.model<{ scene?: Group }>(one.path, { whole: true });
       } catch {
         return undefined;
       }

@@ -95,7 +95,21 @@ const PHASE_1: Record<
     placements: "aeb61fac3fd8fe3a792208d4fd0849dcd9289ef4f1c0b11bdd788993c54ef386",
   },
   alpine: {
-    counts: { boulder: 1655, grass: 100116, sapling: 1000, scree: 2691, scrub: 30101, spruce: 599 },
+    // PRD-892: the alpine pasture's stands lie on the wood's own floor — the understorey row grows
+    // needle litter, deadfall, fern, shrubs and alpine flowers under and around them.
+    counts: {
+      boulder: 724,
+      bush: 9035,
+      deadfall: 780,
+      fern: 12989,
+      grass: 103243,
+      litter: 42529,
+      mountain: 128,
+      poppy: 5337,
+      sapling: 1007,
+      scrub: 31044,
+      spruce: 599,
+    },
     heights: "89e13826c45233315109544acaf302266dbe1c47acfe70b9c1281b4dd2f1fcc2",
     manifest: "927b5daf593923d63bb216968baf66d2a735269801915c6395aa84e60c1b4f86",
     placements: "3352e12dde3a034926b9ca271786a665084264458802f11122179b8d83e68503",
@@ -137,7 +151,7 @@ const PHASE_1: Record<
 const PHASE_1_CANONICAL: Record<World, string> = {
   forest: "f9ec1259f6e14aa51fc24f86d40df980c1e856a3335fa30236dc16ab8d0694c1",
   coastal: "939d66b7e98cb7b76c10824c3507db3979c70597d9d32b9bc67724751cb1b81b",
-  alpine: "238de6aec33cc032dc67392f3ccd676272f25b1ca459a138829e57ddae94db76",
+  alpine: "187ca9120d1697fb358f7bc702690dec77c3f05231002fbdfd115bc2ff14b7fc",
   desert: "9fbc0ac9b10432c407ee2d433643fa5335751ab6b7c5b71caa4fe94a3ad9f76f",
   tundra: "16c97133058d9ab0b9585a62befbf859313c55d6f6d1dc13d55033e5fc76a04f",
 };

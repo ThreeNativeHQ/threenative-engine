@@ -71,7 +71,6 @@ import { MeshStandardNodeMaterial } from "three/webgpu";
 import {
   DRY_STONE_MAPS,
   FERN_MAPS,
-  FIR_MAPS,
   GROUND_MAPS,
   type ISurfaceMaps,
   NEEDLE_ATLAS,
@@ -1056,15 +1055,8 @@ export async function createPropSurfaces(
     tip: [1.4, 1.25, 0.8],
     interior: 0.05,
   });
-  const firMaps = await Promise.all([
-    map(assets, FIR_MAPS.surface, false),
-    map(assets, FIR_MAPS.normal, true),
-    map(assets, FIR_MAPS.arms, true),
-  ]);
-  textures.push(...firMaps.filter((found): found is Texture => found !== undefined));
-  // The prepared fir cuts against its own atlas, so it needs its own instance of the same
-  // surface: two atlases are two textures, and a shared material could only sample one of them.
-  const needlesMaterial = needleMaterial(firMaps[0], firMaps[1], firMaps[2], seconds);
+  // The alpine kit prepares no twig-card fir, so a prepared twig draws on the generated atlas.
+  const needlesMaterial = needleMaterial(undefined, undefined, undefined, seconds);
 
   sway(needlesMaterial, seconds, WIND.amplitude.crown);
 

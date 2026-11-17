@@ -137,7 +137,6 @@
       "lichen_rock",
       "mossy_rock",
       "shrub_02",
-      "fir_tree_01",
       "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
       "mannequin-swim.glb",
       "bark_brown_02",
@@ -154,11 +153,9 @@
       "shrub_04",
       "tree_stump_01",
       "weed_plant_02",
+      "alpine_flora",
       "needle-atlas.png",
       "needle-surface.png",
-      "fir_tree_01/fir_tree_01_twig_arm_1k.jpg",
-      "fir_tree_01/fir_tree_01_twig_diff_1k.jpg",
-      "fir_tree_01/fir_tree_01_twig_nor_gl_1k.jpg",
       "hdri/kloofendal_48d_partly_cloudy_2k.hdr"
     ],
     "farRing": {

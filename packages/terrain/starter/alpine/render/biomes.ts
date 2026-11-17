@@ -200,8 +200,6 @@ export interface IBiome {
   readonly stoneSnowTint: RGB;
   /** The tint this look gives an imported crown. */
   readonly canopyTint: RGB;
-  /** Multiplies `canopyTint` on the spruce's own needle cards, where its art is photographed dark. */
-  readonly needleTint?: RGB;
   /** The tint this look gives an imported blade or frond. */
   readonly bladeTint: RGB;
   /**
@@ -487,9 +485,8 @@ const alpine: IBiome = {
   stoneGrey: 0.8,
   stoneTint: [0.5, 0.49, 0.46],
   stoneMoss: 0.15,
-  // The fir's twigs are photographed near-black (linear 0.01); a Norway spruce crown reads a dark
-  // blue-green about 0.03, 0.05, 0.02 in sun.
-  needleTint: [4.7, 6.9, 14],
+  // Arbor's spruce card is already a dark blue-green; the forest's yellowing tint is for broadleaf.
+  canopyTint: [0.85, 0.95, 1],
   // The valley haze is the forest's evening air; at noon on a dry day a pasture 600 m off keeps its green.
   haze: { ...forest.haze, density: 0.0003 },
   // A high summer sun from the south-west lights the Eiger's west flank; its north face stays in shade.
