@@ -273,6 +273,17 @@ describe("terrain release metadata", () => {
     });
   });
 
+  it("bumps a 0.1 terrain peer's floor and keeps its own ceiling", async () => {
+    const root = await fixture(peerFiles);
+    // `@threenative/procedural-vegetation` ships on 0.1, so its peer reads `>=0.1.x <0.2.0`. The
+    // sync used to hardcode `<0.4.0`, so naming that package in the cohort matched no pattern and
+    // aborted the whole bump with TN_RELEASE_METADATA_MISSING after half the manifests were written.
+    syncPeerRanges(root, new Map([...cohort, ["@threenative/procedural-vegetation", "0.1.1"]]));
+    const synced = JSON.parse(fs.readFileSync(path.join(root, terrainManifest), "utf8"));
+    expect(synced.peerDependencies["@threenative/procedural-vegetation"]).toBe(">=0.1.1 <0.2.0");
+    expect(synced.peerDependencies["@threenative/core"]).toBe(">=0.3.9 <0.4.0");
+  });
+
   it("bumps the terrain generator literal to the terrain cohort version", async () => {
     const root = await fixture(sourceFiles);
     syncSourceVersions(root, cohort);
