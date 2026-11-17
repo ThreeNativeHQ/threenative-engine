@@ -131,6 +131,23 @@ function diagnostics<TState extends Record<string, unknown>, TPhysics>(
     physics: typeof physics?.numBodies === "function" ? physics.numBodies() : null,
   };
 }
+/**
+ * Name the class and the shape to store: an agent told only "plain objects" rewrites the wrong thing
+ * (hosted Studio, 2026-11-17: a Vector3 in state reloaded the page on every edit).
+ */
+function notPlain(value: object, prototype: object, path: string): Error {
+  const named = (prototype as { constructor?: { name?: unknown } }).constructor?.name;
+  const name = typeof named === "string" && named.length > 0 ? named : "class instance";
+  // three keeps some fields private (`Quaternion._x`): the shape to store is the public name.
+  const keys = Object.keys(value).map((key) => key.replace(/^_/u, ""));
+  const shape =
+    keys.length > 0 && keys.length <= 6
+      ? `{ ${keys.join(", ")} } as a plain object`
+      : "its data as plain values";
+  return new Error(
+    `Hot reload state ${path} must contain only plain objects: it is a ${name}. Store ${shape} and rebuild the ${name} where the code needs it.`,
+  );
+}
 function visitPortable(value: unknown, path: string, ancestors: Set<object>): void {
   if (value === null) return;
   if (typeof value === "string" || typeof value === "boolean") return;
@@ -149,8 +166,7 @@ function visitPortable(value: unknown, path: string, ancestors: Set<object>): vo
     return;
   }
   const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null)
-    throw new Error(`Hot reload state ${path} must contain only plain objects.`);
+  if (prototype !== Object.prototype && prototype !== null) throw notPlain(value, prototype, path);
   ancestors.add(value);
   for (const key of Object.keys(value))
     visitPortable((value as Record<string, unknown>)[key], `${path}.${key}`, ancestors);
