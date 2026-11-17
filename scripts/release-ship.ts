@@ -280,7 +280,8 @@ export interface IReleaseTarget {
  * later. This reads the same facts before the evidence and the candidate, so it costs a minute.
  */
 export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseTarget): void {
-  if (census.release === "none" || census.tag.commit === target.sha || census.cohortPublished) return;
+  if (census.release === "none" || census.tag.commit === target.sha || census.cohortPublished)
+    return;
   // A draft release carries no tag until it is published, and it is deletable with nothing lost; a
   // public one is not, and npm has no version either way. Say which move is available.
   const where =
