@@ -782,6 +782,16 @@ describe("CI pipeline structure", () => {
     );
     expect(lint.runs(/pnpm test:browser|native:build/u)).toBe(false);
 
+    // PRD-896: a version whose release tag is already burned can never ship, and the release pull
+    // request must learn that from its own board, in an early job, instead of after a merge.
+    const burned = lint.step("Refuse a release version whose tag is burned");
+    expect(burned.run).toBe("pnpm release:check-version");
+    expect(burned.if).toMatch(/github\.base_ref == 'main'/u);
+    expect(burned.env.GH_TOKEN).toBe("${{ github.token }}");
+    expect(lint.steps.indexOf(burned)).toBeLessThan(
+      lint.steps.indexOf(lint.step("Run the complete lint gate")),
+    );
+
     const native = workflow("native-platforms.yml");
     const nativeScope = native.job("scope");
     expect(nativeScope.stepById("classify").run).toMatch(/node scripts\/ci-change-scope\.mjs/u);

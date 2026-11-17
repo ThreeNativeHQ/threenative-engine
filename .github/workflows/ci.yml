@@ -200,6 +200,23 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # PRD-896. A version whose `runtime-native-v<version>` tag already carries a release, while npm
+      # does not serve its whole cohort, cannot ship from this commit: the tag cannot move. Read here, in an
+      # early required job, so the develop -> main release pull request goes red in its first
+      # minutes instead of after a full board, a merge and the release's own hour (2026-11-16,
+      # release PR #676: v0.3.14). A release at the commit being shipped is a resume, not a burn.
+      #
+      # A *draft* release is the one state this read cannot see: GitHub lists drafts only to callers
+      # with write access, and this job holds `contents: read` on purpose. `release:ship` runs with
+      # write access and refuses a draft in its first minute, before any evidence read.
+      # A skipped step is not a pass: a draft release is invisible to this token, and a `prose`
+      # selection can skip the whole job. `release:ship` reads the same facts again before it tags,
+      # so this is the early warning, never the guarantee.
+      - name: Refuse a release version whose tag is burned
+        if: ${{ github.base_ref == 'main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm release:check-version
       - name: Run the complete lint gate
         if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'review'
         run: pnpm lint

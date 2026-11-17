@@ -5,12 +5,14 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-publish-state.js";
+import { PROVE_ARGV } from "../release-ship.js";
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
   installableOnRegistry,
   packReleaseSet,
   packedTarballName,
+  prebuiltAcknowledged,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
   provisionReleaseArtifacts,
@@ -319,6 +321,20 @@ describe("pnpm release publishing", () => {
   });
 });
 
+describe("pnpm release prebuilt acknowledgement", () => {
+  // Every CI release depends on the proof-only arm: without it the pre-tag proof fails
+  // TN_RELEASE_PREFLIGHT_RED and the release stops at the tag step. A mutant `local` alone passes
+  // every other spec, so this table is the only thing holding it.
+  it.each([
+    [false, true, true],
+    [false, false, false],
+    [true, false, true],
+    [true, true, true],
+  ])("local=%s prove-upgrade=%s acknowledges=%s", (local, prove, expected) => {
+    expect(prebuiltAcknowledged(local, prove)).toBe(expected);
+  });
+});
+
 describe("pnpm release cohort guards", () => {
   it("keeps the guarded release path aligned with its current-set pin exception", async () => {
     const source = await fs.promises.readFile(
@@ -594,8 +610,21 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
 
   it.each([
     [["--dry-run", "--yes"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    // `--prove-upgrade` proves and publishes nothing, so publishing beside it is a contradiction.
+    [["--prove-upgrade", "--yes"], /TN_RELEASE_FLAGS_CONFLICT/u],
     [["--lock"], /TN_RELEASE_LOCK_USAGE/u],
+    // The subcommand the release board's early step runs, with a flag it must refuse.
+    [["check-version", "--bogus"], /TN_SHIP_UNKNOWN_FLAG: --bogus/u],
     [["--dry-run", "--nope"], /TN_RELEASE_UNKNOWN_FLAG/u],
+    // A proof-only run reports a proof, so every flag that would make it prove nothing refuses.
+    [["--prove-upgrade", "--override"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    [["--prove-upgrade", "--dry-run"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    // A resumed run has a partial cohort, so the proof would silently not run.
+    [["--prove-upgrade", "--resume"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    [["--prove-upgrade", "--prepare"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    // `release:ship` runs exactly PROVE_ARGV. A drift between the two files would stop the tag step,
+    // so the argv it will run is spelled here from the constant itself.
+    [[...PROVE_ARGV.slice(1), "--bogus"], /TN_RELEASE_UNKNOWN_FLAG: --bogus/u],
   ])("refuses %j before touching the network", (args, message) => {
     let stderr = "";
     try {

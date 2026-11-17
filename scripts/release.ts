@@ -556,14 +556,43 @@ function lockArgument(argv: readonly string[]): { lockPath?: string; rest: reado
   };
 }
 
+/**
+ * May the publish preflight accept a version whose prebuilt release does not exist yet?
+ *
+ * A local `--yes` release stages that payload itself, so it may. In CI it never may — except for a
+ * proof-only run, which publishes nothing at all and precedes the release it proves for; `--yes`
+ * beside `--prove-upgrade` is refused, so this cannot ship a cohort without its binaries.
+ *
+ * Every release in CI depends on the proof-only branch: without it, the pre-tag proof fails
+ * TN_RELEASE_PREFLIGHT_RED and every release stops at the tag step.
+ */
+export function prebuiltAcknowledged(local: boolean, proveUpgrade: boolean): boolean {
+  return local || proveUpgrade;
+}
+
+/**
+ * `pnpm release` — dry by default, and `--prove-upgrade` proves the previous `latest` upgrades onto
+ * the packed candidate while publishing nothing.
+ */
 async function main(args: readonly string[]): Promise<void> {
   if (args[0] === "ship") {
     const { runShip } = await import("./release-ship.js");
     return runShip(args.slice(1));
   }
+  // The release pull request's early gate (PRD-896): reads only, and refuses a burned version.
+  if (args[0] === "check-version") {
+    const { runVersionCheck } = await import("./release-ship.js");
+    return runVersionCheck(args.slice(1));
+  }
   const { lockPath, rest: argv } = lockArgument(args);
   const publish = argv.includes("--yes");
   const dryRun = argv.includes("--dry-run");
+  // Pack the cohort and prove the previous `latest` upgrades onto it, publishing nothing. The tag
+  // and its release come after this, because the release exists — visible as a prerelease, public
+  // once finalized — the moment the tag is pushed, and the upgrade proof is the last gate before the
+  // first upload: the 0.3.14 release (2026-11-12) went public and only then failed this proof,
+  // burning the version.
+  const proveUpgrade = argv.includes("--prove-upgrade");
   if (publish && dryRun)
     throw new Error("TN_RELEASE_FLAGS_CONFLICT: --dry-run and --yes cannot be combined.");
   const lockOptions = lockPath === undefined ? {} : prebuiltFromLock(lockPath);
@@ -573,23 +602,39 @@ async function main(args: readonly string[]): Promise<void> {
   const override = argv.includes("--override");
   const unknown = argv.filter(
     (arg) =>
-      !["--yes", "--dry-run", "--prepare", "--skip-gates", "--resume", "--override"].includes(arg),
+      ![
+        "--yes",
+        "--dry-run",
+        "--prepare",
+        "--skip-gates",
+        "--resume",
+        "--override",
+        "--prove-upgrade",
+      ].includes(arg),
   );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
-  // A `--yes` release produces its prebuilt payload itself, so the preflight may acknowledge its
-  // absence and the run finishes the job. A local run that publishes nothing has no payload to
-  // miss. No flag ships the npm cohort without its binaries (owner, 2026-11-01).
-  // Never in CI: the npm-release lane runs on a binary-less runner against the release the native
-  // lane already produced, and it holds no GitHub token here, so it must not try to stage one.
+  // A proof-only run reports a proof, so every flag that would make it prove nothing — or publish
+  // beside it — refuses instead of printing a green line for work that did not happen.
+  if (proveUpgrade) {
+    for (const other of ["--yes", "--dry-run", "--prepare", "--override", "--resume"])
+      if (argv.includes(other))
+        throw new Error(
+          `TN_RELEASE_FLAGS_CONFLICT: --prove-upgrade proves one whole candidate and publishes nothing, so it cannot be combined with ${other}.`,
+        );
+  }
+  // No flag ships the npm cohort without its binaries (owner, 2026-11-01). In CI the npm-release
+  // lane runs on a binary-less runner against the release the native lane already produced, and it
+  // holds no GitHub token here, so it never stages one.
   const local = process.env.GITHUB_ACTIONS !== "true";
   const willCreateNativeRelease = publish && local;
-  const prebuiltAcknowledged = local;
+  const acknowledged = prebuiltAcknowledged(local, proveUpgrade);
 
   // Publish from a committed tree, always. The 0.2.x releases went out of a working tree and
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
   // `publish:check` then reports the package as needing a bump, because its source "moved"
   // after the publish. There is no way to tell, later, which source a published tarball was.
-  if (publish) assertCleanPackageTree(REPO);
+  // A proof is a claim about HEAD's bytes: prove from a committed tree, exactly as a publish does.
+  if (publish || proveUpgrade) assertCleanPackageTree(REPO);
   await provisionReleaseArtifacts(REPO);
 
   const packages = publishSet(REPO);
@@ -603,7 +648,7 @@ async function main(args: readonly string[]): Promise<void> {
 
   const report = await checkPublishState({
     allowCurrentPublishSetPins: true,
-    allowMissingPrebuilt: prebuiltAcknowledged,
+    allowMissingPrebuilt: acknowledged,
     repo: REPO,
     ...lockOptions,
   });
@@ -655,7 +700,7 @@ async function main(args: readonly string[]): Promise<void> {
     assertCleanPackageTree(REPO);
     const postBuildReport = await checkPublishState({
       allowCurrentPublishSetPins: true,
-      allowMissingPrebuilt: prebuiltAcknowledged,
+      allowMissingPrebuilt: acknowledged,
       repo: REPO,
       ...lockOptions,
     });
@@ -698,11 +743,18 @@ async function main(args: readonly string[]): Promise<void> {
       );
       return;
     }
-    // A resumed publish proved this before its first upload, and `latest` has moved since then.
-    const upgrades =
-      override || publishPackages.length < packages.length
-        ? []
-        : await proveUpgradeFromLatest(packages, tarballs);
+    // An override skips the gates it names, and a resumed publish has no whole candidate left to
+    // prove. Every other run proves — twice on tag day: the publish's run is the only one that reads
+    // the registry `latest` and the rebuilt tarballs at the moment of the upload, and only
+    // `--override` reaches a first upload without it.
+    const proving = !override && publishPackages.length === packages.length;
+    // A proof-only run must never reach the line below without having proved. Today's flag refusals
+    // guarantee it; this keeps a later edit from printing a proof that did not run.
+    if (proveUpgrade && !proving)
+      throw new Error(
+        "TN_RELEASE_PROOF_SKIPPED: --prove-upgrade was asked for, but this run would not prove. Nothing was published.",
+      );
+    const upgrades = proving ? await proveUpgradeFromLatest(packages, tarballs) : [];
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;
       process.stdout.write(`\nUpgrade proof — ${template} (registry latest -> candidate):\n`);
@@ -721,7 +773,9 @@ async function main(args: readonly string[]): Promise<void> {
 
   if (!publish) {
     process.stdout.write(
-      "\nDry run packed every publishable package. Nothing was published. Re-run with --yes to publish, which cannot be undone.\n",
+      proveUpgrade
+        ? "\nUpgrade proof complete. Nothing was tagged, released or published.\n"
+        : "\nDry run packed every publishable package. Nothing was published. Re-run with --yes to publish, which cannot be undone.\n",
     );
     return;
   }
