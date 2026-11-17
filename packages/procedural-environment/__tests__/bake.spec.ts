@@ -74,6 +74,14 @@ describe("bakeVegetation", () => {
     await expect(readdir(out)).rejects.toThrow();
   });
 
+  it("bakes a leafless preset: every Arbor cactus, with no leaf card to draw", async () => {
+    const out = await makeTempDir("tn-vegetation-");
+    for (const preset of ["saguaro"]) {
+      const [level] = await bakeVegetation({ out, preset, seed: 1 });
+      expect(level?.triangles).toBeGreaterThan(0);
+    }
+  });
+
   it("grows a game's form patch over the preset, deterministically and under its own file name", async () => {
     const out = await makeTempDir("tn-vegetation-");
     const form = { leaves: [{ count: 40, size: [0.6, 0.45] }], levels: [{ from: 0.2 }] };

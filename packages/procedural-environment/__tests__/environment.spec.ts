@@ -113,5 +113,38 @@ describe("bakeRock writes a rock GLB for a biome", () => {
     );
     await expect(bakeRock({ form: "cliff", seed: 1.5, out })).rejects.toThrow(/seed/);
     await expect(bakeRock({ form: "cliff", detail: 2, out })).rejects.toThrow(/detail/);
+    await expect(bakeRock({ form: "cliff", offset: [Number.NaN, 0, 0], out })).rejects.toThrow(
+      /offset/,
+    );
+  });
+
+  it("joins two cliff modules that share a seed and stand one width apart", async () => {
+    const out = await makeTempDir("tn-rock-wall-");
+    /** The y and z of each vertex on the module's cut face at `x`. */
+    const face = async (offset: [number, number, number] | undefined, x: number) => {
+      const [module] = await bakeRock({
+        form: "cliff",
+        biome: "desert",
+        seed: 7,
+        detail: 0.1,
+        out,
+        ...(offset ? { offset } : {}),
+      });
+      const { bin, gltf } = parseGlb(await readFile(module?.path ?? ""));
+      const accessor = gltf.accessors[gltf.meshes[0]?.primitives[0]?.attributes.POSITION ?? -1];
+      const view = gltf.bufferViews[accessor?.bufferView ?? -1];
+      if (!accessor || !view) throw new Error("rock GLB has no POSITION");
+      const at = new Float32Array(bin.buffer, bin.byteOffset + view.byteOffset, accessor.count * 3);
+      const edge = new Set<string>();
+      for (let i = 0; i < at.length; i += 3)
+        if (Math.abs((at[i] as number) - x) < 1e-4)
+          edge.add(`${(at[i + 1] as number).toFixed(2)} ${(at[i + 2] as number).toFixed(2)}`);
+      return [...edge].sort();
+    };
+    const right = await face([0, 0, 0], 5);
+    expect(right.length).toBeGreaterThan(8);
+    expect(await face([10, 0, 0], -5)).toEqual(right);
+    // The same module twice does not join: its two ends are different rock.
+    expect(await face(undefined, -5)).not.toEqual(right);
   });
 });

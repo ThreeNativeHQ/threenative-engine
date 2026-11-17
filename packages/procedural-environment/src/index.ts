@@ -199,6 +199,8 @@ async function leafOf(
     .update(image ?? "");
   const tag = patched ? `-f${hash.digest("hex").slice(0, 8)}` : "";
   if (image !== undefined) return { leaf: image, tag };
+  // A cactus has no leaves and no leaf card: Arbor cannot draw one, and no primitive samples it.
+  if (!source.leaves?.length) return { leaf: rgbaPng(1, 1, new Uint8Array(4)), tag };
   const drawn = Arbor.leafTexture(source, { createCanvas });
   return { leaf: rgbaPng(drawn.width, drawn.height, drawn.data), tag };
 }
@@ -269,6 +271,7 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
  * @situation reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover
  * @constraint fails closed: an unknown preset throws naming the nearest ids, the seed must be an integer and each lod 0 to 2
  * @constraint the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)
+ * @constraint a `cliff` module shows a cut face at each end: bake a run with one seed and `offset: [n * width, 0, 0]`, stand the modules one width apart and bury the two ends of the run
  * @constraint bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped
  * @constraint _WIND is vec4 (trunk sway, branch sway, flutter, phase): forest-kit sway is flutter in z, and debris writes all four zero
  * @constraint form and leafImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given either
@@ -523,6 +526,11 @@ export interface IBakeRockOptions {
   readonly traits?: Readonly<Record<string, number>>;
   /** Colour and cover overrides over the biome's: rockA, rockB, accent, moss, snow, sand, lichen, tide and their colours. */
   readonly surface?: Readonly<Record<string, string | number>>;
+  /**
+   * Where the module stands in its run, in metres. A tileable form (`cliff`) joins its neighbour
+   * only when both share the seed and stand one width apart: module n takes `[n * width, 0, 0]`.
+   */
+  readonly offset?: readonly [number, number, number];
 }
 
 const ROCK_LOD_DETAIL = [1, 0.5, 0.2];
@@ -546,13 +554,15 @@ function checkKeys(name: string, patch: object | undefined, known: object): void
  * @constraint fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1
  * @constraint the same options write identical bytes; files are written atomically (temporary file, then rename)
  * @constraint each GLB carries POSITION, NORMAL and COLOR_0 (linear RGB, rock and cover already blended) on one `rock` material; units are metres, +Y up, the rock rests on y = 0
+ * @constraint a `cliff` module shows a cut face at each end: bake a run with one seed and `offset: [n * width, 0, 0]`, stand the modules one width apart and bury the two ends of the run
  * @constraint bake-time only, so keep it a dev dependency; the game owns the material and can re-material by the glTF material name `rock`
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeRock({ form: "cliff", biome: "coastal", seed: 7, lods: [0, 1], out: "assets/rocks" });
  * @example await bakeRock({ form: "boulder", biome: "forest", traits: { weathering: 0.8 }, out: "assets/rocks" });
+ * @example for (const n of [0, 1, 2]) await bakeRock({ form: "cliff", biome: "desert", seed: 7, offset: [n * 10, 0, 0], out: "assets/rocks" }); // three modules of one wall
  */
 export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> {
-  const { form, out, size, traits, surface } = options;
+  const { form, out, size, traits, surface, offset } = options;
   const seed = options.seed ?? 1;
   const lods = options.lods ?? [0];
   const detail = options.detail ?? 0.3;
@@ -568,12 +578,22 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
     throw new Error(`bakeRock: detail must be 0 to 1, got ${detail}`);
   if (size !== undefined && (size.length !== 3 || !size.every((v) => Number.isFinite(v) && v > 0)))
     throw new Error(`bakeRock: size must be three positive metres [w, h, d], got [${size}]`);
+  if (offset !== undefined && (offset.length !== 3 || !offset.every((v) => Number.isFinite(v))))
+    throw new Error(`bakeRock: offset must be three metres [x, y, z], got [${offset}]`);
   checkKeys("traits", traits, Outcrop.DEFAULT_TRAITS);
   checkKeys("surface", surface, Outcrop.DEFAULT_SURFACE);
-  const patched = options.detail !== undefined || size || traits || surface;
+  const patched = options.detail !== undefined || size || traits || surface || offset;
   const tag = patched
     ? `-f${createHash("sha256")
-        .update(JSON.stringify([detail, size ?? null, traits ?? null, surface ?? null]))
+        .update(
+          JSON.stringify([
+            detail,
+            size ?? null,
+            traits ?? null,
+            surface ?? null,
+            ...(offset ? [offset] : []),
+          ]),
+        )
         .digest("hex")
         .slice(0, 8)}`
     : "";
@@ -589,6 +609,7 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
       ...(size ? { size } : {}),
       ...(traits ? { traits } : {}),
       ...(surface ? { surface } : {}),
+      ...(offset ? { offset } : {}),
     });
     const file = path.join(out, `${form}-${biome.id}-${seed}${tag}-lod${lod}.glb`);
     await writeAtomic(file, new Uint8Array(Outcrop.exportGLB(new Mesh(geometry))));

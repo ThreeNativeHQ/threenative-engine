@@ -35,7 +35,7 @@ saguaro, joshua tree or acacia grows there. The kit draws what does, from
 | Dead juniper wood | `branch` | bush |
 
 The stones are the kit's CC0 Poly Haven boulder scans, drawn with the desert's bedded rock colour.
-Ground art is CC0 Poly Haven (`red_sand`, `cliff_side`, `river_small_rocks`); provenance is in
+Ground art is CC0 Poly Haven (`aerial_beach_01`, `cliff_side`, `rocky_trail_02`); provenance is in
 `@threenative/terrain/starter-credits.json`.
 
 ## Status

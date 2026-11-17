@@ -69,7 +69,9 @@ await bakeRock({ form: "boulder", biome: "forest", traits: { weathering: 0.8 }, 
 ```
 
 - Forms: `boulder`, `slab`, `spire`, `hoodoo`, `stack` (sea stack), `mesa`, `arch`, `cliff`
-  (tiles along X) and `mountain`. The biome sets the strata, fracture and weathering, and the
+  (tiles along X) and `mountain`. A cliff is one module of a wall: bake module n with the same
+  seed and `offset: [n * width, 0, 0]`, stand the modules one width apart and they join with no
+  seam. A module that stands alone shows a cut face at each end. The biome sets the strata, fracture and weathering, and the
   painted cover: moss in a forest, snow in the tundra, sand in the desert, algae under the tide.
 - `traits` and `surface` override the biome's values key by key (`roughness`, `strata`,
   `columnar`; `rockA`, `moss`, `snow`, `tide`), `size` sets metres and `detail` (0 to 1, default

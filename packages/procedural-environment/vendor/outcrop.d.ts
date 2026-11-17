@@ -20,6 +20,7 @@ export interface IOutcropOptions {
   readonly size?: readonly [number, number, number];
   readonly traits?: Readonly<Record<string, number>>;
   readonly surface?: Readonly<Record<string, string | number>>;
+  readonly offset?: readonly [number, number, number];
 }
 declare class RockGenerator {
   geometry(options: IOutcropOptions): BufferGeometry;
