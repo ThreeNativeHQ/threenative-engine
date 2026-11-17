@@ -404,7 +404,9 @@ const desert: IBiome = {
   mesaGround: true,
   mesaRock: true,
   sandRipples: true,
-  terrainCastsShadow: true,
+  // The coarse square mesh shadowed the finer streamed ground under it in hard dark polygons (a
+  // dune drew a black trapezoid at the walk's end), so the ground casts none, as in every kit.
+  terrainCastsShadow: false,
   dryStones: true,
   stoneMoss: 0,
   stoneMossTint: [0.23, 0.16, 0.095],
