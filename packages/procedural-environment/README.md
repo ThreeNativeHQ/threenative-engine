@@ -56,6 +56,9 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
   `_WIND.z`, with debris writing all four zero.
 - `form` and `leafImage` patch an Arbor preset's shape and leaf card. A forest-kit preset throws
   when given either, because it has no leaf card to patch.
+- `leafSize` caps the drawn leaf card's longest side: Arbor draws 1024 px, and a far level or a
+  shrub a metre tall shows a few hundred at most, so a game that cares about bytes bakes those
+  smaller. A game's own `leafImage` is never resized; the two together throw.
 - `barkImage` and `barkNormalImage` paint a photographed surface and its relief on the bark
   instead of Arbor's drawn one. A species whose trunk is the whole silhouette needs it: a
   `saguaro` is a column, and the drawn cactus bark is a flat pinstripe. The relief is a glTF

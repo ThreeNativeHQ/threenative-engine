@@ -44,6 +44,12 @@ export interface IBakeVegetationOptions {
    */
   readonly leafImage?: string;
   /**
+   * The longest side of Arbor's drawn leaf card, in pixels; Arbor draws 1024. A far level is drawn
+   * at a few pixels on screen, so a 1024 px card is bytes the frame never shows. A game's own
+   * `leafImage` is always used as given, and the two together throw.
+   */
+  readonly leafSize?: number;
+  /**
    * A PNG painted on the bark instead of Arbor's drawn one, for a species whose trunk is the whole
    * silhouette (`saguaro`): the drawn bark is a flat pinstripe, and no photograph of a ribbed
    * column is in the preset. The file names carry a hash of its bytes.
@@ -130,18 +136,22 @@ function nearestPresets(
     .map((entry) => entry.candidate);
 }
 
-function rgbaPng(width: number, height: number, bottomUp: Uint8Array): Uint8Array {
+/** Arbor's bottom-up RGBA as a canvas: row 0 at the bottom, PNG row 0 at the top. */
+function toCanvas(width: number, height: number, bottomUp: Uint8Array) {
   const canvas = createCanvas(width, height);
   const context = canvas.getContext("2d");
   const image = context.createImageData(width, height);
-  // Arbor stores row 0 at the bottom; PNG row 0 is the top.
   for (let y = 0; y < height; y++)
     image.data.set(
       bottomUp.subarray((height - 1 - y) * width * 4, (height - y) * width * 4),
       y * width * 4,
     );
   context.putImageData(image, 0, 0);
-  return canvas.encodeSync("png");
+  return canvas;
+}
+
+function rgbaPng(width: number, height: number, bottomUp: Uint8Array): Uint8Array {
+  return toCanvas(width, height, bottomUp).encodeSync("png");
 }
 
 /** The preset with a game's form patch merged in: list rows merge by index, other keys replace. */
@@ -210,13 +220,31 @@ async function imageOf(
   return image;
 }
 
-/** The leaf PNG: the game's image, else Arbor's drawn card (a cactus samples none). */
-function leafOf(source: IArborPreset, image: Uint8Array | undefined): Uint8Array {
+/**
+ * The leaf PNG: the game's image, else Arbor's drawn card (a cactus samples none).
+ *
+ * `size` only ever shrinks Arbor's own card. A game's atlas is used as the game drew it, because a
+ * cell index and a pixel grid only agree at the size the game authored.
+ */
+function leafOf(
+  source: IArborPreset,
+  image: Uint8Array | undefined,
+  size: number | undefined,
+): Uint8Array {
   if (image !== undefined) return image;
   // A cactus has no leaves and no leaf card: Arbor cannot draw one, and no primitive samples it.
   if (!source.leaves?.length) return rgbaPng(1, 1, new Uint8Array(4));
   const drawn = Arbor.leafTexture(source, { createCanvas });
-  return rgbaPng(drawn.width, drawn.height, drawn.data);
+  const longest = Math.max(drawn.width, drawn.height);
+  if (size === undefined || longest <= size) return rgbaPng(drawn.width, drawn.height, drawn.data);
+  const full = toCanvas(drawn.width, drawn.height, drawn.data);
+  const scale = size / longest;
+  const small = createCanvas(Math.round(drawn.width * scale), Math.round(drawn.height * scale));
+  const context = small.getContext("2d");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(full, 0, 0, small.width, small.height);
+  return small.encodeSync("png");
 }
 
 /**
@@ -276,6 +304,16 @@ function resolveBake(
     throw new Error(
       `bakeVegetation: form, leafImage and the bark images patch an Arbor preset, and "${preset}" is a forest-kit ${forest.kind} with no bark or leaf card to patch`,
     );
+  if (options.leafSize !== undefined) {
+    if (!Number.isInteger(options.leafSize) || options.leafSize < 16)
+      throw new Error(
+        `bakeVegetation: leafSize must be an integer of at least 16 pixels, got ${options.leafSize}`,
+      );
+    if (options.leafImage !== undefined)
+      throw new Error(
+        `bakeVegetation: leafSize ${options.leafSize} cannot resize leafImage ${options.leafImage}; a game's atlas is used as drawn`,
+      );
+  }
   if (options.barkNormalImage !== undefined && options.barkImage === undefined)
     throw new Error(
       `bakeVegetation: barkNormalImage ${options.barkNormalImage} has no barkImage to shade; pass the albedo it was drawn for`,
@@ -342,16 +380,20 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
   };
   // A game's own art must never overwrite the stock bake of the same preset and seed, so every
   // image and the form patch carry into the file name.
-  const patch = createHash("sha256").update(JSON.stringify(options.form ?? null));
+  const patch = createHash("sha256")
+    .update(JSON.stringify(options.form ?? null))
+    .update(`leaf${options.leafSize ?? 0}`);
   for (const image of [images.leaf, images.bark, images.barkNormal])
     if (image !== undefined) patch.update(image);
   const tag =
-    options.form === undefined && Object.values(images).every((image) => image === undefined)
+    options.form === undefined &&
+    options.leafSize === undefined &&
+    Object.values(images).every((image) => image === undefined)
       ? ""
       : `-f${patch.digest("hex").slice(0, 8)}`;
   const textures = {
     ...barkOf(source, images.bark, images.barkNormal),
-    leaf: leafOf(source, images.leaf),
+    leaf: leafOf(source, images.leaf, options.leafSize),
   };
   await mkdir(out, { recursive: true });
   const baked: IEnvironmentBake[] = [];

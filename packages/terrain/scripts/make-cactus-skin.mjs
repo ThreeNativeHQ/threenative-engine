@@ -151,13 +151,15 @@ for (let y = 0; y < HEIGHT; y += 1) {
     const fleck = mottle(x, y);
     const tone = lerp(0.9, 1.1, fleck) * (1 + streak * 0.05) * ribTone[rib];
     // A saguaro is a dusty blue-green, not a leaf's vivid green: the red channel carries the dust.
-    let r = lerp(0.25, 0.34, ridge) * tone;
-    let g = lerp(0.31, 0.43, ridge) * tone;
-    let b = lerp(0.21, 0.27, ridge) * tone;
-    const wax = smooth(0.68, 1, ridge) * lerp(0.45, 1, fbm(u * 5, v * 3)) * 0.4;
-    r = lerp(r, 0.45, wax * 0.6);
-    g = lerp(g, 0.53, wax * 0.6);
-    b = lerp(b, 0.41, wax * 0.6);
+    // The cuticle is what a saguaro shows the sun: pale, dusty and a stop lighter than a leaf's
+    // flesh, because a dark column disappears against iron-red sand at forty metres.
+    let r = lerp(0.33, 0.46, ridge) * tone;
+    let g = lerp(0.39, 0.54, ridge) * tone;
+    let b = lerp(0.26, 0.35, ridge) * tone;
+    const wax = smooth(0.6, 1, ridge) * lerp(0.4, 1, fbm(u * 5, v * 3)) * 0.5;
+    r = lerp(r, 0.62, wax);
+    g = lerp(g, 0.68, wax);
+    b = lerp(b, 0.5, wax);
     put(x, y, r, g, b);
     // Only the rib's own relief: the photograph's grain belongs in the albedo, because a height
     // field that repeats it turns each 2 px texel into a ridge and the trunk into corduroy.
@@ -169,7 +171,7 @@ for (let y = 0; y < HEIGHT; y += 1) {
 for (const areole of areoles) {
   const cx = areole.u * WIDTH;
   const cy = areole.v * HEIGHT;
-  const radius = 8.5 * areole.size;
+  const radius = 5.2 * areole.size;
   const left = Math.max(0, Math.floor(cx - 16));
   const right = Math.min(WIDTH - 1, Math.ceil(cx + 16));
   const top = Math.max(0, Math.floor(cy - 18));
@@ -182,30 +184,30 @@ for (const areole of areoles) {
       // Five short needles fan up and out of each areole, as a saguaro's clusters do.
       let needle = 0;
       let along = 0;
-      for (let s = 0; s < 5; s += 1) {
-        const angle = -Math.PI / 2 + (s - 2) * 0.44 + areole.lean;
-        const length = 15 + (s % 2) * 5;
+      for (let s = 0; s < 3; s += 1) {
+        const angle = -Math.PI / 2 + (s - 1) * 0.5 + areole.lean;
+        const length = 8 + (s % 2) * 4;
         const ex = Math.cos(angle);
         const ey = Math.sin(angle);
         const reach = (x - cx) * ex + (y - cy) * ey;
         if (reach < 1 || reach > length) continue;
         const across = Math.abs((x - cx) * ey - (y - cy) * ex);
-        if (across > 1.05) continue;
+        if (across > 0.7) continue;
         needle = Math.max(needle, 1 - reach / length);
         along = Math.max(along, reach);
       }
       if (felt <= 0 && needle <= 0) continue;
       const i = (y * WIDTH + x) * 3;
       const base = [albedo[i] / 255, albedo[i + 1] / 255, albedo[i + 2] / 255];
-      const feltTone = [0.42, 0.38, 0.23];
-      const spineTone = [0.74, 0.69, 0.5];
+      const feltTone = [0.46, 0.4, 0.26];
+      const spineTone = [0.72, 0.68, 0.52];
       const withFelt = base.map((c, k) => lerp(c, feltTone[k], felt));
       put(
         x,
         y,
         lerp(withFelt[0], spineTone[0], needle * 0.85),
         lerp(withFelt[1], spineTone[1], needle * 0.85),
-        lerp(withFelt[2], spineTone[2], needle * 0.85),
+        lerp(withFelt[2], spineTone[2], needle * 0.8),
       );
       // A felted areole sits a little proud of its rib; a spine is thinner than a texel here and
       // only ever appears in the albedo.

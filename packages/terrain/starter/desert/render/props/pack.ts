@@ -643,6 +643,7 @@ function surface(
   comparison?: ICanopyComparison,
   biome?: IWorldBiome,
   canopyCover?: Node<"float">,
+  waxy = false,
 ): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
@@ -678,6 +679,15 @@ function surface(
           : 0.3,
     metalness: 0,
   });
+  // A saguaro's stem is a wax layer over wet flesh, and it is the one plant here that answers the
+  // sun with a highlight instead of the bone-dry matte every other imported prop wears. The wax is
+  // the clearcoat: a broad, low-gloss lobe, not a wet sheen, over a slightly less matte base.
+  if (waxy) {
+    material.roughness = 0.62;
+    material.clearcoat = 0.35;
+    material.clearcoatRoughness = 0.5;
+    material.specularIntensity = 0.45;
+  }
   copyNormalScale(material, source);
   if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
   // Forest needle crowns need their authored interior shading and filtered alpha coverage.
@@ -1108,6 +1118,7 @@ export async function loadPack(
                 comparison,
                 measured,
                 canopyCover,
+                one.path.includes("saguaro"),
               );
         if (stone) rockGround?.apply(material);
         else declareWindReach(material, one.asset, geometry);

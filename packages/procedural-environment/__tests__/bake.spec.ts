@@ -205,6 +205,32 @@ describe("bakeVegetation", () => {
     );
   });
 
+  it("draws a far level's leaf card smaller, and refuses to resize a game's atlas", async () => {
+    const out = await makeTempDir("tn-vegetation-");
+    const [full] = await bakeVegetation({ out, preset: "oak", seed: 7 });
+    const [small] = await bakeVegetation({ out, preset: "oak", seed: 7, leafSize: 256 });
+    const leafWidth = (bytes: Buffer) => {
+      const gltf = parseGlb(bytes) as IGltf & {
+        accessors: unknown[];
+        bufferViews: { byteOffset?: number }[];
+      };
+      const image = (gltf as unknown as { images: { bufferView: number }[] }).images.at(-1);
+      const view = gltf.bufferViews[image?.bufferView ?? 0];
+      const start = 20 + bytes.readUInt32LE(12) + 8 + (view?.byteOffset ?? 0);
+      // A PNG's IHDR width is the 4 bytes after the 8-byte signature and 4-byte length.
+      return bytes.readUInt32BE(start + 16);
+    };
+    const fullBytes = await readFile(full?.path ?? "");
+    const smallBytes = await readFile(small?.path ?? "");
+    expect(small?.path).not.toBe(full?.path);
+    expect(leafWidth(fullBytes)).toBeGreaterThan(leafWidth(smallBytes));
+    expect(leafWidth(smallBytes)).toBe(256);
+    expect(smallBytes.length).toBeLessThan(fullBytes.length);
+    await expect(bakeVegetation({ out, preset: "oak", leafSize: 8 })).rejects.toThrow(
+      /leafSize must be an integer of at least 16/u,
+    );
+  });
+
   it("lists the trees with latin names", () => {
     const presets = vegetationPresets();
     expect(presets.find((preset) => preset.id === "oak")).toMatchObject({

@@ -25,23 +25,29 @@ const CACTUS = {
 
 /** [file, preset, seed, { level: file suffix }, skin?]: the file names `pack.ts` quotes. */
 const ROWS = [
-  // Utah juniper: the gnarled grey-green `olive` crown is the nearest Arbor form.
-  ["juniper-a", "olive", 1, { 1: "", 2: "-far" }],
-  ["juniper-b", "olive", 2, { 1: "", 2: "-far" }],
+  // Utah juniper: the gnarled grey-green `olive` crown is the nearest Arbor form. Its far levels are
+  // their own call so their leaf card is drawn at 256 px: past 190 m a juniper is a few pixels and a
+  // 1024 px card was a megabyte of texels the frame never shows.
+  ["juniper-a", "olive", 1, { 1: "" }],
+  ["juniper-a", "olive", 1, { 2: "-far" }, { leafSize: 256 }],
+  ["juniper-b", "olive", 2, { 1: "" }],
+  ["juniper-b", "olive", 2, { 2: "-far" }, { leafSize: 256 }],
   // Saguaro: the cactus the request names first; Arbor's columnar form with its arms, under the
   // ribbed skin and its relief.
   ["saguaro-a", "saguaro", 1, { 0: "", 2: "-far" }, CACTUS],
   ["saguaro-b", "saguaro", 4, { 0: "", 2: "-far" }, CACTUS],
-  ["sage", "creosote", 1, { 0: "" }],
-  ["creosote-b", "creosote", 3, { 0: "" }],
-  ["thornbush-b", "thornbush", 4, { 0: "" }],
-  ["agave-b", "agave", 5, { 0: "" }],
-  ["blackbrush", "thornbush", 1, { 0: "" }],
-  ["yucca", "agave", 1, { 0: "" }],
-  ["bunchgrass-a", "bunchgrass", 1, { 0: "" }],
-  ["bunchgrass-b", "bunchgrass", 2, { 0: "" }],
-  ["drygrass", "drygrass", 1, { 0: "" }],
-  ["marigold", "marigold", 1, { 0: "" }],
+  // A shrub a metre tall, or a grass tuft a hand wide, is drawn at a few hundred pixels on screen:
+  // Arbor's 1024 px card is a megabyte of texels none of them can show, so these take 512.
+  ["sage", "creosote", 1, { 0: "" }, { leafSize: 512 }],
+  ["creosote-b", "creosote", 3, { 0: "" }, { leafSize: 512 }],
+  ["thornbush-b", "thornbush", 4, { 0: "" }, { leafSize: 512 }],
+  ["agave-b", "agave", 5, { 0: "" }, { leafSize: 512 }],
+  ["blackbrush", "thornbush", 1, { 0: "" }, { leafSize: 512 }],
+  ["yucca", "agave", 1, { 0: "" }, { leafSize: 512 }],
+  ["bunchgrass-a", "bunchgrass", 1, { 0: "" }, { leafSize: 512 }],
+  ["bunchgrass-b", "bunchgrass", 2, { 0: "" }, { leafSize: 512 }],
+  ["drygrass", "drygrass", 1, { 0: "" }, { leafSize: 512 }],
+  ["marigold", "marigold", 1, { 0: "" }, { leafSize: 512 }],
   ["branch", "branch", 1, { 0: "" }],
   ["branch-b", "branch", 2, { 0: "" }],
   ["twig", "twig", 1, { 0: "" }],
