@@ -1045,8 +1045,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture && source->kind != g::Kind::Reflector)
             throw std::runtime_error("sample requires a texture node");
         auto sampled = std::make_shared<g::NodeData>(*source);
-        if (source->kind == g::Kind::RenderTexture) sampled->args[1] = arg(0);
-        else sampled->args[0] = arg(0);
+        const auto uv = arg(0);
+        if (source->kind == g::Kind::RenderTexture) sampled->args[1] = uv;
+        // three's sample(uv) clones the node with its depthNode: a layer depth(layer) set survives the new uv
+        // (PRD-858: the impostor read every atlas view through layer 0, so a crown drew one view lit from behind).
+        else if (source->args[0]->type == Type::vec(3) && uv->type == Type::vec(2) && source->textureBinding &&
+                 static_cast<const engine::Texture*>(source->textureObject().get())->array)
+            sampled->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::swizzle(source->args[0], "z")});
+        else sampled->args[0] = uv;
         return sampled;
     }
     if (name == "float" || name == "int" || name == "uint") {
