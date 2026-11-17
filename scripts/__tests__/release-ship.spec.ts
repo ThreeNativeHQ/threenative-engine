@@ -216,7 +216,7 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
     );
     expect(() =>
       assertVersionNotBurned(
-        { cohortPublished: true, release: "public", tag: { commit: OTHER } },
+        { onNpm: 17, release: "public", tag: { commit: OTHER }, total: 17 },
         { sha: SHA, tag: TAG, version: VERSION },
       ),
     ).not.toThrow();
@@ -442,6 +442,8 @@ describe("pnpm release:check-version", () => {
       tagCommit: OTHER,
     });
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
+    // Nothing is on npm: the move is a bump, said in one sentence.
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/not on npm at/u);
   });
 
   it("refuses a draft that carries no tag yet, and says so instead of naming a tag move", () => {
@@ -494,9 +496,17 @@ describe("pnpm release:check-version", () => {
       tagCommit: OTHER,
     });
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
+    // One package of two is on npm: not "core is missing" (false) and not a bump (which would
+    // strand a half-published version) — finish the cohort from the commit the tag points at.
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(
+      new RegExp(`1 of 2 cohort packages are on npm at ${VERSION}`, "u"),
+    );
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(
+      new RegExp(`pnpm release:ship --sha ${OTHER}`, "u"),
+    );
   });
 
-  it("offers deleting a prerelease, which its own tag run deletes on a rerun", () => {
+  it("never advises deleting a public prerelease: that release state is the owner's call", () => {
     const { deps } = world({
       core: [],
       release: { isDraft: false, isPrerelease: true },

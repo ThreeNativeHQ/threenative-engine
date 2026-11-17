@@ -42,6 +42,7 @@ import {
   stageNativeRelease,
   uploadNativeRelease,
 } from "./release-native-local.js";
+import { CORE } from "./release-ship.js";
 import {
   type IRegistryInstallReport,
   type IVerifyRegistryInstallOptions,
@@ -585,8 +586,6 @@ export function upgradeProofApplies(scope: IUpgradeProofScope): boolean {
  * checkout: `release:ship` proves before the tag and publishes from the same worktree minutes later.
  */
 const UPGRADE_PROOF_RECEIPT = "artifacts/release/upgrade-proof.json";
-/** The package whose `latest` an upgrade proof starts from. */
-const UPGRADE_PROOF_PACKAGE = "@threenative/core";
 
 export interface IUpgradeProofReceipt {
   /** The registry `latest` the proof upgraded from. It moves, and the proof is about that name. */
@@ -632,18 +631,25 @@ export function readUpgradeProofReceipt(
  * the next publish is a claim about a newer one. Consuming it here is what makes that true.
  */
 export function resolveUpgradeReuse(options: {
-  readonly latest: string;
+  /** The registry read. A read that fails is not a proof, and must never fail a publish. */
+  readonly readLatest: () => string;
   readonly repo: string;
   readonly sha: string;
 }): IUpgradeProofReceipt | undefined {
-  const receipt = readUpgradeProofReceipt(options.repo, options.sha, options.latest);
+  let latest: string;
+  try {
+    latest = options.readLatest();
+  } catch {
+    return undefined;
+  }
+  const receipt = readUpgradeProofReceipt(options.repo, options.sha, latest);
   if (receipt !== undefined) clearUpgradeProofReceipt(options.repo);
   return receipt;
 }
 
 /** The registry `latest` of the runtime's core package: what an upgrade proof starts from. */
 export function registryLatest(repo: string): string {
-  return execFileSync("npm", ["view", `${UPGRADE_PROOF_PACKAGE}@latest`, "version"], {
+  return execFileSync("npm", ["view", `${CORE}@latest`, "version"], {
     cwd: repo,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -769,21 +775,17 @@ async function main(args: readonly string[]): Promise<void> {
   // cannot turn red after the version is already public.
   let reuseProof = false;
   if (upgradeProved) {
-    // A read that fails is not a proof: fall back to proving here, which is slower and never wrong.
-    let latest: string | undefined;
-    try {
-      latest = registryLatest(REPO);
-    } catch {
-      latest = undefined;
-    }
-    const receipt =
-      latest === undefined
-        ? undefined
-        : resolveUpgradeReuse({ latest, repo: REPO, sha: headSha() });
+    // No usable receipt — none, another commit, a `latest` that moved, or a registry read that
+    // failed — means proving here: slower, never wrong, and never fatal after a public release.
+    const receipt = resolveUpgradeReuse({
+      readLatest: () => registryLatest(REPO),
+      repo: REPO,
+      sha: headSha(),
+    });
     reuseProof = receipt !== undefined;
     process.stdout.write(
       receipt === undefined
-        ? `\nNo usable upgrade proof for HEAD (${UPGRADE_PROOF_PACKAGE} latest ${latest ?? "unreadable"}): proving here.\n`
+        ? "\nNo usable upgrade proof for HEAD: proving here.\n"
         : `\nReusing the upgrade proof ${receipt.provedAt} recorded for ${receipt.sha} against ${receipt.latest}.\n`,
     );
   }

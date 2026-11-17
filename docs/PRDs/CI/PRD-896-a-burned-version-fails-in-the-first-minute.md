@@ -42,7 +42,7 @@ Three parts, one rule each:
 
 ### Phase 1 — `release:ship` refuses a burned version before the evidence
 
-- [x] `release:ship` refuses through the same `checkReleaseVersion` the board job runs — one call, before the first state read, reading three facts (the release, the tag's commit, core's npm versions) and no run list — and `assertVersionNotBurned` names the move that is actually available: a bump, deleting a draft, or deleting a prerelease the tag run deletes on a rerun. A draft with no tag yet is refused and says so. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 37 passed, including the three release states, the no-tag draft, the prerelease advice, the whole-cohort answer and the partial-cohort refusal; the burn cases fail while the call in `ship` is removed.
+- [x] `release:ship` refuses through the same `checkReleaseVersion` the board job runs — one call, before the first state read, reading the release, the tag's commit and how many cohort packages npm serves, and no run list — and `assertVersionNotBurned` names the move that is actually available: a bump, deleting a draft, or, when part of the cohort already reached npm, finishing it from the commit the tag points at. A draft with no tag yet is refused and says so, and deleting a *public* release is never advised. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 37 passed, including the three release states, the no-tag draft, the "1 of 2 packages" partial-cohort advice, the whole-cohort answer and the prerelease-is-not-a-hand-delete case; the burn cases fail while the call in `ship` is removed.
 
 ### Phase 2 — the release pull request's board refuses it in its first minutes
 
@@ -69,9 +69,20 @@ Three parts, one rule each:
   URLs, so that shape reaches further into the release path than the burn does. Its residue — a
   resumed publish still proves after the release is public — is filed as PRD-897.
 - 2026-11-16 (agent): the proof runs twice unless told otherwise. `release:ship` passes
-  `--upgrade-proved` only when the same invocation proved before the tag, and that flag refuses
-  without a receipt for the shipped commit, so a resumed plan (which never proved) keeps proving at
-  the publish exactly as before. Cost: one proof per release, not two.
+  `--upgrade-proved` only when the same invocation proved before the tag. The flag reuses a receipt
+  only for the same commit **and** the same registry `latest`, once, and proves again otherwise — so a
+  resumed plan keeps proving at the publish exactly as before, and a missing receipt can never fail a
+  publish after the release is public. Cost: one proof per release, not two.
+- 2026-11-16 (agent): the reuse trades one check away, and it is named here. The pre-tag proof installs
+  the candidate while its prebuilt release does not exist yet, so it exercises the *warning* path of
+  `install-prebuilt`; the publish that reuses the receipt no longer proves with the real release
+  present, so a broken prebuilt download now shows up in the clean room after the npm publish rather
+  than before it. The clean room still proves the published cohort installs, which is the gate that
+  catches it.
+- 2026-11-16 (agent): `--upgrade-proved` is deliberately **not** passed on every publish. The receipt
+  already binds a proof to its commit and registry `latest`, so passing it always would let a
+  same-checkout resume reuse a green proof; keeping "same invocation" is the stricter rule, and
+  PRD-897 owns the resume shape.
 
 ## Blocked on
 
