@@ -303,8 +303,10 @@ function burnSentence(census: IVersionCensus, target: IReleaseTarget): string {
       ? `npm serves nothing of ${target.version}`
       : `${census.onNpm} of ${census.total} cohort packages are on npm at ${target.version} and the rest are not`;
   const at = census.tag.commit === undefined ? " and no tag yet" : ` at ${census.tag.commit}`;
-  const finish = `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit}\`)`;
   const bump = "run `pnpm release:prepare --bump`, then ship the new version";
+  const finish = `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit}\`)`;
+  // With no tag there is no commit to finish from, so every state's move is the bump.
+  const move = census.tag.commit === undefined ? bump : finish;
   const sentence = (state: string, advice: string): string =>
     `TN_SHIP_VERSION_BURNED: ${state}. ${served}. ${advice}.`;
 
@@ -320,14 +322,14 @@ function burnSentence(census: IVersionCensus, target: IReleaseTarget): string {
       `${target.tag} already has a draft${at}`,
       census.onNpm === 0
         ? "That draft holds the version name: delete the draft (nothing is public yet), then ship this version"
-        : `That draft holds the version name, and npm already serves part of it: ${finish}`,
+        : `That draft holds the version name, and npm already serves part of it: ${move}`,
     );
   const kind = census.release === "prerelease" ? "prerelease" : "public release";
   return sentence(
     `${target.tag} already has a ${kind}${at}`,
     census.onNpm > 0
-      ? `The tag cannot move, so this commit cannot ship: ${finish}`
-      : `The tag cannot move, so this commit cannot ship: ${bump} — or, if that commit's publish never ran, finish it with \`pnpm release:ship --sha ${census.tag.commit}\``,
+      ? `The tag cannot move, so this commit cannot ship: ${move}`
+      : `The tag cannot move, so this commit cannot ship: ${bump}${census.tag.commit === undefined ? "" : ` — or, if that commit's publish never ran, finish it with \`pnpm release:ship --sha ${census.tag.commit}\``}`,
   );
 }
 
@@ -342,11 +344,6 @@ export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
   const tag = `${TAG_PREFIX}${version}`;
   const release = ghReleaseState(deps, tag);
   const commit = remoteTagCommit(deps, tag);
-  // A settled release — none yet, or the one on the commit being shipped, which is a resume — has
-  // nothing to decide about npm, so the registry is not read at all. Everything else counts the whole
-  // cohort: a version whose core landed while four of its packages did not is not a spent version,
-  // and either answer for it ("nothing to ship", or a bump that strands the half-published version)
-  // would be wrong.
   const cohort = deps.cohort();
   if (cohort.length === 0)
     throw new Error(

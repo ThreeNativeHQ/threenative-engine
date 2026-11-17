@@ -500,6 +500,18 @@ describe("pnpm release:check-version", () => {
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/Those packages hold the version name/u);
   });
 
+  // No tag means no commit to finish from, so every state's move is the bump — and the sentence must
+  // never tell anyone to run `--sha undefined`.
+  it.each([
+    ["none", null],
+    ["draft", { isDraft: true, isPrerelease: false }],
+    ["public", { isDraft: false, isPrerelease: false }],
+  ] as const)("names no --sha move when the %s release has no tag", (_kind, release) => {
+    const { deps } = world({ core: [VERSION], release, tagCommit: undefined });
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
+    expect(() => checkReleaseVersion(deps, SHA)).not.toThrow(/undefined/u);
+  });
+
   it("does not advise deleting a draft when part of the cohort is on npm", () => {
     const { deps } = world({
       core: [VERSION],
