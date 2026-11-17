@@ -1,6 +1,6 @@
 {
   "name": "create-threenative",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "license": "MIT",
   "description": "Scaffold a readable ThreeNative game project.",
   "keywords": [
@@ -108,6 +108,6 @@
     "@types/estree": "1.0.8"
   },
   "peerDependencies": {
-    "@threenative/assets": ">=0.3.16 <0.4.0"
+    "@threenative/assets": ">=0.3.17 <0.4.0"
   }
 }
