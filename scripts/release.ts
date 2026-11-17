@@ -557,6 +557,20 @@ function lockArgument(argv: readonly string[]): { lockPath?: string; rest: reado
 }
 
 /**
+ * May the publish preflight accept a version whose prebuilt release does not exist yet?
+ *
+ * A local `--yes` release stages that payload itself, so it may. In CI it never may — except for a
+ * proof-only run, which publishes nothing at all and precedes the release it proves for; `--yes`
+ * beside `--prove-upgrade` is refused, so this cannot ship a cohort without its binaries.
+ *
+ * Every release in CI depends on the proof-only branch: without it, the pre-tag proof fails
+ * TN_RELEASE_PREFLIGHT_RED and every release stops at the tag step.
+ */
+export function prebuiltAcknowledged(local: boolean, proveUpgrade: boolean): boolean {
+  return local || proveUpgrade;
+}
+
+/**
  * `pnpm release` — dry by default, and `--prove-upgrade` proves the previous `latest` upgrades onto
  * the packed candidate while publishing nothing.
  */
@@ -612,10 +626,7 @@ async function main(args: readonly string[]): Promise<void> {
   // holds no GitHub token here, so it never stages one.
   const local = process.env.GITHUB_ACTIONS !== "true";
   const willCreateNativeRelease = publish && local;
-  // A local `--yes` release stages the payload itself, so it may acknowledge a missing prebuilt
-  // release. In CI it never may — except for a proof-only run, which publishes nothing at all and
-  // precedes the release it proves for; `--yes` beside `--prove-upgrade` already refuses.
-  const acknowledged = local || proveUpgrade;
+  const acknowledged = prebuiltAcknowledged(local, proveUpgrade);
 
   // Publish from a committed tree, always. The 0.2.x releases went out of a working tree and
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
@@ -732,8 +743,9 @@ async function main(args: readonly string[]): Promise<void> {
       return;
     }
     // An override skips the gates it names, and a resumed publish has no whole candidate left to
-    // prove. Every other run proves — twice on tag day, because the publish's proof is the only one
-    // that sees the real prebuilt release, and only `--override` reaches the first upload without it.
+    // prove. Every other run proves — twice on tag day: the publish's run is the only one that reads
+    // the registry `latest` and the rebuilt tarballs at the moment of the upload, and only
+    // `--override` reaches a first upload without it.
     const proving = !override && publishPackages.length === packages.length;
     // A proof-only run must never reach the line below without having proved. Today's flag refusals
     // guarantee it; this keeps a later edit from printing a proof that did not run.

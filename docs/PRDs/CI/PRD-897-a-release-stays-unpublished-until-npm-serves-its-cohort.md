@@ -12,8 +12,10 @@ PRD-896 moved the upgrade proof in front of the tag, which closes the shape that
 first-pass release now proves before any release exists. It deliberately did **not** add a way for the
 publish to skip its own proof — a receipt-backed reuse was built and deleted in review, because the
 proof here is the publish's own evidence that the tree it is about to upload works, and a reused
-receipt would carry a claim about bytes nobody re-read; the proof is web-only, so its only contact
-with the prebuilt release is the `install-prebuilt` download. Four shapes survive it:
+receipt would carry a claim about early bytes nobody re-read. What the second proof actually adds is a
+check against a `latest` that moved, and the rebuilt tarballs themselves — the proof is web-only, and
+the prebuilt release is checked by the post-build `checkPublishState` whether or not it runs. Four
+shapes survive it:
 
 1. **Every publish.** `release:ship` waits for a public release and then publishes
    (`pnpm release --yes --skip-gates --resume`), and that call proves again. The proof therefore always runs behind a public
@@ -83,4 +85,5 @@ upgrade regression is red before a merge instead of after it.
   and one real release to prove both phases. Deleting a public prerelease on a red publish touches
   release state, which the owner decides.
 - Dropping the publish's re-proof is an option phase 1 should weigh, now that the proof runs before the
-  tag: the residue it would leave is a publish that uploads bytes nothing re-read.
+  tag: the residue it would leave is a publish that uploads rebuilt bytes nothing re-read, against a
+  `latest` that may have moved after the tag was cut. That is the owner's call, not this phase's.

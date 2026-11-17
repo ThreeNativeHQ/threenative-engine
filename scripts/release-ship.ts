@@ -302,8 +302,8 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
       ? `npm serves nothing of ${target.version}`
       : `${census.onNpm} of ${census.total} cohort packages are on npm at ${target.version} and the rest are not`;
   const lead =
-    census.onNpm > 0 && census.release === "none" && census.tag.commit === undefined
-      ? "Those packages hold the version name and a bump is the only fix"
+    census.onNpm > 0 && census.release === "none"
+      ? "Those packages hold the version name"
       : census.release === "draft" && census.onNpm === 0
         ? "That draft holds the version name"
         : census.tag.commit === undefined

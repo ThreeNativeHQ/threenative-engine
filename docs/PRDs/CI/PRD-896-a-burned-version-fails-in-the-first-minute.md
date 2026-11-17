@@ -37,8 +37,7 @@ Three parts, one rule each:
 2. Run the same decision on the release pull request's own early board job, so a burned version is
    red before the merge instead of after it.
 3. Prove the previous `latest` upgrades onto the candidate **before** the tag creates the release
-   that is public the moment it exists. The publish proves again on purpose: it is the only run that
-   sees the real prebuilt release.
+   that is public the moment it exists. The publish proves again on purpose: its run is the only one that reads the registry `latest` and the rebuilt tarballs at the moment of the upload.
 
 ### Phase 1 — `release:ship` refuses a burned version before the evidence
 
@@ -51,13 +50,13 @@ Three parts, one rule each:
 
 ### Phase 3 — the upgrade proof runs before anything about the version is public
 
-- [x] `pnpm release --prove-upgrade` is a real flag of the publish command: it refuses an uncommitted tree (a proof is a claim about HEAD's bytes) and every flag that would make it report a proof that never ran, and the argv `release:ship` runs is one shared constant with a spec. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 44 passed (the flag refusals, the argv case, and the `check-version` subcommand). What the run does end to end is the box below, still open.
+- [x] `pnpm release --prove-upgrade` is a real flag of the publish command: it refuses an uncommitted tree (a proof is a claim about HEAD's bytes) and every flag that would make it report a proof that never ran, and the argv `release:ship` runs is one shared constant with a spec. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 48 passed (the flag refusals, the argv case, and the `check-version` subcommand). What the run does end to end is the box below, still open.
 - [ ] A real candidate proves end to end through `pnpm release --prove-upgrade` with no release yet: it packs, proves and exits 0 having published nothing, and its wall time is recorded here (the tag step now pays a second `pnpm build` and one proof inside `npm-release.yml`'s 360-minute `ship` job, whose waits alone can reach 190 minutes). proof: the tag step of the first release after this lands — unrun, so this box stays open.
 - [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, a movable tag stays where it is when the proof is red, and a cohort npm only partly serves is refused before the tag instead of tagged. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 41 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `leaves a movable tag untouched when the upgrade proof is red`, `refuses to tag when part of the cohort is already on npm`, the override case; and `release.spec.ts`’s four `--prove-upgrade` flag refusals keep the proof-skipped guard unreachable).
 
 ## Acceptance criteria
 
-- [x] A burned version stops `release:ship` in its first minute: no evidence read, no release-candidate dispatch, one error naming the bump. proof: the spec above plus the transcript in the pull request — `pnpm release:check-version` on this repository's own state, exit 1: "TN_SHIP_VERSION_BURNED: runtime-native-v0.3.14 already has a public release at f2741d85099d4afb9ebd43178498fee0da348fc4. npm serves nothing of 0.3.14. The tag cannot move, so this commit cannot ship: run `pnpm release:prepare --bump`, then ship the new version.`pnpm release:prepare --bump`"; `pnpm release:ship --dry-run` on the same state refuses with the same error before it reads any run. 
+- [x] A burned version stops `release:ship` in its first minute: no evidence read, no release-candidate dispatch, one error naming the bump. proof: the spec above plus the transcript in the pull request — `pnpm release:check-version` on this repository's own state, exit 1: "TN_SHIP_VERSION_BURNED: runtime-native-v0.3.14 already has a public release at f2741d85099d4afb9ebd43178498fee0da348fc4. npm serves nothing of 0.3.14. The tag cannot move, so this commit cannot ship: run `pnpm release:prepare --bump`, then ship the new version."; `pnpm release:ship --dry-run` on the same state refuses with the same error before it reads any run. 
 - [ ] The develop -> main release pull request is red on its own board before the merge, so a burned version never reaches `main`. proof: the first develop -> main pull request opened after this lands — unrun, so this box stays open.
 
 ## Decisions

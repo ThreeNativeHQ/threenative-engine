@@ -12,6 +12,7 @@ import {
   installableOnRegistry,
   packReleaseSet,
   packedTarballName,
+  prebuiltAcknowledged,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
   provisionReleaseArtifacts,
@@ -317,6 +318,20 @@ describe("pnpm release publishing", () => {
       url: "https://registry.npmjs.org/@threenative%2fcore",
       accept: "application/vnd.npm.install-v1+json",
     });
+  });
+});
+
+describe("pnpm release prebuilt acknowledgement", () => {
+  // Every CI release depends on the proof-only arm: without it the pre-tag proof fails
+  // TN_RELEASE_PREFLIGHT_RED and the release stops at the tag step. A mutant `local` alone passes
+  // every other spec, so this table is the only thing holding it.
+  it.each([
+    [false, true, true],
+    [false, false, false],
+    [true, false, true],
+    [true, true, true],
+  ])("local=%s prove-upgrade=%s acknowledges=%s", (local, prove, expected) => {
+    expect(prebuiltAcknowledged(local, prove)).toBe(expected);
   });
 });
 

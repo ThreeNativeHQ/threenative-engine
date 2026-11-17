@@ -280,8 +280,6 @@ describe("pnpm release:ship resumes", () => {
     expect(calls).toEqual([]);
   });
 
-  // A resumed cohort has no whole candidate left to prove: `unpublishedReleasePackages` refuses a
-  // partial one without `--resume`, so proving at the tag step would block a legitimate resume.
   // The proof takes minutes. If a release appears during it, the tag step must see it — the state is
   // read again before the ref moves, and `assertTagMovable` runs on that read.
   it("refuses to move a tag when a release appears while the proof runs", async () => {
@@ -498,8 +496,6 @@ describe("pnpm release:check-version", () => {
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
   });
 
-  // Deleting the draft would only re-enter the same refusal with no release at all: a bump is the
-  // move when npm already serves part of the cohort.
   // No release at all, but the tag exists: the cohort is finished from that commit, and a bump would
   // strand the packages that are already on npm.
   it("finishes a tagless release's partial cohort from its tag, not by a bump", () => {
@@ -507,7 +503,7 @@ describe("pnpm release:check-version", () => {
     expect(() => checkReleaseVersion(deps, SHA)).toThrow(
       new RegExp(`pnpm release:ship --sha ${OTHER}`, "u"),
     );
-    expect(() => checkReleaseVersion(deps, SHA)).not.toThrow(/prepare --bump/u);
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/Those packages hold the version name/u);
   });
 
   it("does not advise deleting a draft when part of the cohort is on npm", () => {
