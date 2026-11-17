@@ -145,7 +145,7 @@ for (let y = 0; y < HEIGHT; y += 1) {
     const rib = Math.floor(u * RIBS) % RIBS;
     const phase = frac(u * RIBS + ribLean[rib] * Math.sin(v * Math.PI * 2));
     // A saguaro's rib is a lobe, not a groove: the valley is a soft shadow, never a black line.
-    const ridge = Math.pow(smooth(0, 1, 1 - Math.abs(phase - 0.5) * 2), ribWidth[rib] * 0.6);
+    const ridge = smooth(0, 1, 1 - Math.abs(phase - 0.5) * 2) ** (ribWidth[rib] * 0.6);
     // A wax streak runs along a rib, never across it, so the fine noise is stretched in v only.
     const streak = fbm(u * 26, v * 3.2) - 0.5;
     const fleck = mottle(x, y);
