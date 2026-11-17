@@ -764,7 +764,7 @@ Bounds the share of the run in which solid geometry stood between the camera and
 
 Bounds the engine's own work counters, read off each TN_FRAME_BUDGET window's counters.engine (and counters.bridgeCrossings): JS-to-Wasm crossings, children reads, scene-walk visits, hierarchy moves, matrix composes, handle shares, content classification, GPU allocations, physics crossings and any counter an engine module adds to globalThis.__tnEngineCost. Each window must hold every bound; a run with fewer windows than minWindows, or a window missing a bounded counter, fails closed. A failure names the counter, the window and the top caller of the TN_BRIDGE_CENSUS before it. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** browser · **Requires:** browser.console
+- **Supported on:** browser, desktop · **Requires:** browser.console
 
 | Field | Type | Required |
 | --- | --- | --- |

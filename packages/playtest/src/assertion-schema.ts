@@ -614,7 +614,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     observationSource: "bridge",
     requiredCapabilities: ["browser.console"],
     resultIdPrefix: "engineCost.",
-    supportedOn: ["browser"],
+    supportedOn: ["browser", "desktop"],
     triviality: "not-applicable",
     trivialityRationale: "The counters are measured across the run's frames; an initial value has no frames to count.",
   },
