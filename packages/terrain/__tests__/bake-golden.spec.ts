@@ -115,16 +115,18 @@ const PHASE_1: Record<
     placements: "3352e12dde3a034926b9ca271786a665084264458802f11122179b8d83e68503",
   },
   desert: {
-    // PRD-892 Phase 2: the desert grows Utah juniper (the ordered stream's sapling row), a denser
-    // scrub and grass cover, and spawns on the sand flat at [140, 120] south-east of the butte.
+    // PRD-892 Phase 2: the desert grows Utah juniper (the ordered stream's sapling row) and spawns on
+    // the sand flat at [140, 120] south-east of the butte. Its sandstone commit (#692) raised the
+    // scrub it scatters and stood crag outcrops where the 16-24 m boulder domes were, which moved the
+    // counts and every placement below; the heights it bakes from are the same map.
     counts: {
-      boulder: 248,
-      bush: 27,
-      grass: 6559,
-      reveal: 158,
+      boulder: 247,
+      bush: 36,
+      grass: 6539,
+      reveal: 162,
       sapling: 161,
-      scrub: 909,
-      volcanic: 229,
+      scrub: 1290,
+      volcanic: 231,
     },
     heights: "8f8109a1e234e65182c3af496dd7c15b65eb05069a0a5e35af099d17b78927c5",
     manifest: "8d979f26cf4a02dd6c46d2a5c67e7aae7c50cab0920c1c9673039b7d43472872",
@@ -155,7 +157,7 @@ const PHASE_1_CANONICAL: Record<World, string> = {
   forest: "f9ec1259f6e14aa51fc24f86d40df980c1e856a3335fa30236dc16ab8d0694c1",
   coastal: "939d66b7e98cb7b76c10824c3507db3979c70597d9d32b9bc67724751cb1b81b",
   alpine: "187ca9120d1697fb358f7bc702690dec77c3f05231002fbdfd115bc2ff14b7fc",
-  desert: "9fbc0ac9b10432c407ee2d433643fa5335751ab6b7c5b71caa4fe94a3ad9f76f",
+  desert: "e5d2b979264292bb9651c4dbefe7028d2da6ec359067d7676dec0cf6ebfaed62",
   tundra: "5159ea075b0205a0d98415368586572c760957371ed87f1155cedd7e2c1af905",
 };
 

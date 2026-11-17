@@ -56,6 +56,12 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
   `_WIND.z`, with debris writing all four zero.
 - `form` and `leafImage` patch an Arbor preset's shape and leaf card. A forest-kit preset throws
   when given either, because it has no leaf card to patch.
+- `barkImage` and `barkNormalImage` paint a photographed surface and its relief on the bark
+  instead of Arbor's drawn one. A species whose trunk is the whole silhouette needs it: a
+  `saguaro` is a column, and the drawn cactus bark is a flat pinstripe. The relief is a glTF
+  tangent-space normal PNG, drawn against the albedo; without it the bark is left flat, because
+  Arbor's own bark normal belongs to a bark that is no longer sampled. `barkNormalImage` without
+  `barkImage` throws.
 - `@napi-rs/canvas` paints the leaf atlas at bake time (Arbor needs a Canvas 2D).
 
 ## Rocks, cliffs and mountains

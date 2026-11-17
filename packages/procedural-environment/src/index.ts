@@ -43,6 +43,20 @@ export interface IBakeVegetationOptions {
    * The file names carry a hash of its bytes.
    */
   readonly leafImage?: string;
+  /**
+   * A PNG painted on the bark instead of Arbor's drawn one, for a species whose trunk is the whole
+   * silhouette (`saguaro`): the drawn bark is a flat pinstripe, and no photograph of a ribbed
+   * column is in the preset. The file names carry a hash of its bytes.
+   */
+  readonly barkImage?: string;
+  /**
+   * The bark's relief as a glTF tangent-space normal PNG, drawn against `barkImage`.
+   *
+   * Arbor's own bark normal belongs to its drawn bark and is dropped when `barkImage` replaces it,
+   * so without this the trunk keeps a smooth surface and a ribbed column loses its ribs. Throws
+   * without `barkImage`, because a relief with no albedo to show is a caller's mistake.
+   */
+  readonly barkNormalImage?: string;
 }
 
 export interface IEnvironmentBake {
@@ -185,24 +199,45 @@ function topDownCells(source: IArborPreset): IArborPreset {
   };
 }
 
-/** The leaf PNG (the game's image, else Arbor's drawn card) and the file-name tag of a game's patch. */
-async function leafOf(
-  source: IArborPreset,
-  options: IBakeVegetationOptions,
-): Promise<{ leaf: Uint8Array; tag: string }> {
-  const image = options.leafImage === undefined ? undefined : await readFile(options.leafImage);
-  if (image !== undefined && !image.subarray(0, 8).equals(PNG_SIGNATURE))
-    throw new Error(`bakeVegetation: leafImage ${options.leafImage} is not a PNG`);
-  const patched = options.form !== undefined || image !== undefined;
-  const hash = createHash("sha256")
-    .update(JSON.stringify(options.form ?? null))
-    .update(image ?? "");
-  const tag = patched ? `-f${hash.digest("hex").slice(0, 8)}` : "";
-  if (image !== undefined) return { leaf: image, tag };
+/** A game's PNG, read once, or the throw that names the option and the file that is not one. */
+async function imageOf(
+  file: string,
+  option: "leafImage" | "barkImage" | "barkNormalImage",
+): Promise<Uint8Array> {
+  const image = await readFile(file);
+  if (!image.subarray(0, 8).equals(PNG_SIGNATURE))
+    throw new Error(`bakeVegetation: ${option} ${file} is not a PNG`);
+  return image;
+}
+
+/** The leaf PNG: the game's image, else Arbor's drawn card (a cactus samples none). */
+function leafOf(source: IArborPreset, image: Uint8Array | undefined): Uint8Array {
+  if (image !== undefined) return image;
   // A cactus has no leaves and no leaf card: Arbor cannot draw one, and no primitive samples it.
-  if (!source.leaves?.length) return { leaf: rgbaPng(1, 1, new Uint8Array(4)), tag };
+  if (!source.leaves?.length) return rgbaPng(1, 1, new Uint8Array(4));
   const drawn = Arbor.leafTexture(source, { createCanvas });
-  return { leaf: rgbaPng(drawn.width, drawn.height, drawn.data), tag };
+  return rgbaPng(drawn.width, drawn.height, drawn.data);
+}
+
+/**
+ * The bark PNGs: a game's photographed albedo and relief, else Arbor's drawn pair.
+ *
+ * Arbor's normal is drawn against its own bark, so a game's albedo drops it: keeping it would shade
+ * a photographed surface with grooves that are not in the picture.
+ */
+function barkOf(
+  source: IArborPreset,
+  albedo: Uint8Array | undefined,
+  normal: Uint8Array | undefined,
+): { bark?: Uint8Array; barkNormal?: Uint8Array } {
+  if (albedo !== undefined)
+    return normal === undefined ? { bark: albedo } : { bark: albedo, barkNormal: normal };
+  if (source.noBark) return {};
+  const drawn = Arbor.barkTexture(source.bark);
+  return {
+    bark: rgbaPng(drawn.width, drawn.height, drawn.color),
+    barkNormal: rgbaPng(drawn.width, drawn.height, drawn.normal),
+  };
 }
 
 /**
@@ -231,9 +266,19 @@ function resolveBake(
     throw new Error(
       `bakeVegetation: unknown preset "${preset}". Nearest ids: ${nearestPresets(preset).join(", ")}. Call vegetationPresets() for the full list.`,
     );
-  if (forest !== null && (options.form !== undefined || options.leafImage !== undefined))
+  if (
+    forest !== null &&
+    (options.form !== undefined ||
+      options.leafImage !== undefined ||
+      options.barkImage !== undefined ||
+      options.barkNormalImage !== undefined)
+  )
     throw new Error(
-      `bakeVegetation: form and leafImage patch an Arbor preset, and "${preset}" is a forest-kit ${forest.kind} with no leaf card to patch`,
+      `bakeVegetation: form, leafImage and the bark images patch an Arbor preset, and "${preset}" is a forest-kit ${forest.kind} with no bark or leaf card to patch`,
+    );
+  if (options.barkNormalImage !== undefined && options.barkImage === undefined)
+    throw new Error(
+      `bakeVegetation: barkNormalImage ${options.barkNormalImage} has no barkImage to shade; pass the albedo it was drawn for`,
     );
   checkSeedAndLods("bakeVegetation", seed, lods);
   return { arbor, forest, lods, seed };
@@ -274,7 +319,7 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
  * @constraint a `cliff` module shows a cut face at each end: bake a run with one seed and `offset: [n * width, 0, 0]`, stand the modules one width apart and bury the two ends of the run
  * @constraint bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped
  * @constraint _WIND is vec4 (trunk sway, branch sway, flutter, phase): forest-kit sway is flutter in z, and debris writes all four zero
- * @constraint form and leafImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given either
+ * @constraint form, leafImage, barkImage and barkNormalImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given any
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeVegetation({ preset: "oak", seed: 7, lods: [0, 1], out: "assets/trees" });
  * @example await bakeVegetation({ preset: "log", seed: 3, out: "assets/debris" });
@@ -285,16 +330,28 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
   if (forest !== null) return bakeForestKit(preset, forest, { lods, out, seed });
   const formed = withForm(preset, arbor as IArborPreset, options.form);
   const source = options.leafImage === undefined ? formed : topDownCells(formed);
-  const { leaf, tag } = await leafOf(source, options);
-  const bark = source.noBark ? undefined : Arbor.barkTexture(source.bark);
+  const images = {
+    bark:
+      options.barkImage === undefined ? undefined : await imageOf(options.barkImage, "barkImage"),
+    barkNormal:
+      options.barkNormalImage === undefined
+        ? undefined
+        : await imageOf(options.barkNormalImage, "barkNormalImage"),
+    leaf:
+      options.leafImage === undefined ? undefined : await imageOf(options.leafImage, "leafImage"),
+  };
+  // A game's own art must never overwrite the stock bake of the same preset and seed, so every
+  // image and the form patch carry into the file name.
+  const patch = createHash("sha256").update(JSON.stringify(options.form ?? null));
+  for (const image of [images.leaf, images.bark, images.barkNormal])
+    if (image !== undefined) patch.update(image);
+  const tag =
+    options.form === undefined && Object.values(images).every((image) => image === undefined)
+      ? ""
+      : `-f${patch.digest("hex").slice(0, 8)}`;
   const textures = {
-    ...(bark
-      ? {
-          bark: rgbaPng(bark.width, bark.height, bark.color),
-          barkNormal: rgbaPng(bark.width, bark.height, bark.normal),
-        }
-      : {}),
-    leaf,
+    ...barkOf(source, images.bark, images.barkNormal),
+    leaf: leafOf(source, images.leaf),
   };
   await mkdir(out, { recursive: true });
   const baked: IEnvironmentBake[] = [];

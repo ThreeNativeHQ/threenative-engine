@@ -8453,7 +8453,7 @@
         "a `cliff` module shows a cut face at each end: bake a run with one seed and `offset: [n * width, 0, 0]`, stand the modules one width apart and bury the two ends of the run",
         "bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped",
         "_WIND is vec4 (trunk sway, branch sway, flutter, phase): forest-kit sway is flutter in z, and debris writes all four zero",
-        "form and leafImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given either"
+        "form, leafImage, barkImage and barkNormalImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given any"
       ],
       "example": "await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" });\nawait bakeVegetation({ preset: \"log\", seed: 3, out: \"assets/debris\" });",
       "importPath": "@threenative/procedural-environment",

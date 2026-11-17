@@ -34,6 +34,13 @@ saguaro, joshua tree or acacia grows there. The kit draws what does, from
 | Desert marigold | `marigold` | grass |
 | Dead juniper wood | `branch` | bush |
 
+The saguaro is a column, and a column is all surface: Arbor's drawn cactus bark is a flat
+pinstripe, so `bake-flora.mjs` paints `desert_flora/saguaro-skin.png` (photographed succulent
+flesh from Poly Haven's CC0 `crystalline_iceplant`) with `saguaro-skin-nor.png` as its rib relief,
+through `bakeVegetation`'s `barkImage`/`barkNormalImage`. Both PNGs are generated, not downloaded:
+`node packages/terrain/scripts/make-cactus-skin.mjs --source <crystalline_iceplant_diff_1k.jpg>`
+rewrites them byte for byte.
+
 The stones are the kit's CC0 Poly Haven boulder scans, drawn with the desert's bedded rock colour.
 Ground art is CC0 Poly Haven (`aerial_beach_01`, `cliff_side`, `rocky_trail_02`); provenance is in
 `@threenative/terrain/starter-credits.json`.

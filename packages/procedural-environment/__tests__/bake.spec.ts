@@ -7,7 +7,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { bakeVegetation, vegetationPresets } from "../src/index.js";
 
 interface IGltf {
-  materials: { alphaMode?: string; name: string }[];
+  materials: { alphaMode?: string; name: string; normalTexture?: unknown }[];
   meshes: { primitives: { attributes: Record<string, number> }[] }[];
   images?: unknown[];
 }
@@ -157,6 +157,52 @@ describe("bakeVegetation", () => {
     }
     // glTF puts v = 0 at the image's top row, so the top-left quadrant is u and v below a half.
     expect([uMax, vMax].every((value) => value > 0 && value < 0.5)).toBe(true);
+  });
+
+  it("paints a game's bark image on a leafless preset, with its relief and under its own file name", async () => {
+    const out = await makeTempDir("tn-vegetation-");
+    const skin = (fill: string) => {
+      const canvas = createCanvas(8, 16);
+      const context = canvas.getContext("2d");
+      context.fillStyle = fill;
+      context.fillRect(0, 0, 8, 16);
+      return canvas.toBuffer("image/png");
+    };
+    const bark = path.join(out, "skin.png");
+    const relief = path.join(out, "skin-nor.png");
+    await writeFile(bark, skin("#4a6b32"));
+    await writeFile(relief, skin("#8080ff"));
+    const [plain] = await bakeVegetation({ out, preset: "saguaro", seed: 1 });
+    const [painted] = await bakeVegetation({
+      out,
+      preset: "saguaro",
+      seed: 1,
+      barkImage: bark,
+      barkNormalImage: relief,
+    });
+    expect(painted?.path).not.toBe(plain?.path);
+    // The stock bake keeps Arbor's drawn bark normal; a game's albedo drops it, so the trunk is
+    // shaded by the relief the game drew against its own picture.
+    const stock = parseGlb(await readFile(plain?.path ?? ""));
+    const bytes = await readFile(painted?.path ?? "");
+    expect(stock.materials[0]?.normalTexture).toBeDefined();
+    expect(parseGlb(bytes).materials[0]?.normalTexture).toBeDefined();
+    expect(bytes.includes(await readFile(bark))).toBe(true);
+    expect(bytes.includes(await readFile(relief))).toBe(true);
+    // Without a relief the photographed bark is left flat rather than shaded by Arbor's grooves.
+    const [flat] = await bakeVegetation({ out, preset: "saguaro", seed: 1, barkImage: bark });
+    expect(parseGlb(await readFile(flat?.path ?? "")).materials[0]?.normalTexture).toBeUndefined();
+    const text = path.join(out, "bark.png");
+    await writeFile(text, "bark");
+    await expect(bakeVegetation({ out, preset: "saguaro", barkImage: text })).rejects.toThrow(
+      /barkImage .*bark\.png is not a PNG/u,
+    );
+    await expect(
+      bakeVegetation({ out, preset: "saguaro", barkNormalImage: relief }),
+    ).rejects.toThrow(/barkNormalImage .* has no barkImage/u);
+    await expect(bakeVegetation({ out, preset: "twig", barkImage: bark })).rejects.toThrow(
+      /forest-kit/u,
+    );
   });
 
   it("lists the trees with latin names", () => {
