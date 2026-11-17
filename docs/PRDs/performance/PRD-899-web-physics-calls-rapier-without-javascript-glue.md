@@ -1,6 +1,6 @@
 # PRD-899 — Web physics calls Rapier without JavaScript glue
 
-**Status:** PARTIAL — Phase 1 box 1 is green on option B and box 2's stop rule is now **answered: the 3% bar is not met on the forest**, so Phases 2 and 3 stand. Box 2 stays open only because two of its four scenes are not yet profiled.
+**Status:** PARTIAL — Phase 1 box 1 is green on option B and box 2's stop rule is **answered: the 3% bar is not met on the forest**, so Phases 2 and 3 stand. Box 2 stays open only because its fourth scene does not exist as a template (D6).
 **Priority:** P2 — on web, each physics query and each body pose goes through JavaScript wrapper objects (AC-1 and AC-2 open). The largest measured share, 25% of the forest load, also has a two-line game fix, so the tier stays P2 until Phase 1 prices what is left.
 **Complexity:** 6 (HIGH by override) — 6 to 10 implementation files (2), crosses the Rust, Wasm and npm release boundaries (+2), new web binding layer (+2). Risk override: every web game changes its physics implementation.
 **Owner:** João
@@ -99,7 +99,12 @@ Risks: Rust objects without atomics do not link into the shared-memory module (e
 **Files:** `packages/runtime-native/scripts/build-native-physics.mjs`, `packages/runtime-native/cmake/NativeEngineCore.cmake`, `packages/runtime-native/native/physics/Cargo.toml`.
 **Implementation:** Add the Rust target `wasm32-unknown-emscripten` (not installed on the desktop today; `rustc` is 1.96.0). Link the static library into both web modules. Record the module size change against the 2.24 MB file that leaves.
 - [x] The crate builds for web and steps the shared parity scenario in Node, on option A for both modules, or on option B with the linker error recorded. proof: `node packages/runtime-native/scripts/build-native-physics.mjs --web` and a Node test that loads the module and matches the committed transform table. — ✅ 2026-11-16, 3a84bcae2, option B: `build-native-physics.mjs --web` writes a wasm32-unknown-unknown cdylib with 0 imports (1,201,008 B, 438,751 B gzip, against compat's 2,238,719 / 834,345). `pnpm native:physics:web-parity` (node:test) steps the parity scenario and matches the new committed table `physics-parity.native-transforms.json` with a max delta of 5.2e-8 over 7 checkpoints; an edited table value fails at "step 1 body 1 field 2". Option A: the single-thread emscripten link works, the `-pthread` link fails (Decisions).
-- [ ] Clean profiles give the physics JavaScript share on the forest load, `?stress`, `?stress&systems` and the shooter kit. If the share is under 3% of busy main-thread time on every scene, this PRD closes by a Decision. proof: profile paths and `jsincl.py` output written in this PRD. — ⚠️ The stop rule is **answered negative**: the forest load is already above 3%, so this PRD does not close and Phases 2–3 stand. Four clean profiles of the forest walk, one per ABBA arm at host load 1.96–6.10 (`~/.cache/agent-dumps/prd898/raw/forest/{base,head}{1,2}/cpu.cpuprofile`, read with `python3 ~/.cache/tmp-tn/prd898/physshare.py`): Rapier **JavaScript glue self time** 7.44% / 5.99% / 7.40% / 7.84% of busy main-thread time (base mean 7.64%, head mean 6.70%), and 12.73% / 10.31% / 12.54% / 13.35% under Rapier frames. Busy main-thread time 76.15 / 40.60 / 37.44 / 30.90 s. Still open: `?stress`, `?stress&systems` and the shooter kit were not profiled (the GPU was held by another session's playtest when the remaining windows were attempted), so the box's four-scene census is incomplete even though its decision is settled.
+- [ ] Clean profiles give the physics JavaScript share on the forest load, `?stress`, `?stress&systems` and the shooter kit. If the share is under 3% of busy main-thread time on every scene, this PRD closes by a Decision. proof: profile paths and `jsincl.py` output written in this PRD. — ⚠️ **the stop rule is answered negative; three of the four scenes are measured.** Rapier **JavaScript glue self time**, share of busy main-thread time, one clean profile per arm (`raw/prof/*.cpuprofile`, host load 4.2–6.9, read with `python3 ~/.cache/tmp-tn/prd898/physshare.py`):
+  - **Forest walk** (four profiles, two per arm, quiet host): **7.44% / 5.99% / 7.40% / 7.84%** — base mean 7.64%, head mean 6.70% — with 10.3–13.4% under Rapier frames. This is the scene that breaks the 3% bar.
+  - **`?stress`**: 0.05% / 0.06% (time under Rapier frames 6.95% / 6.77%).
+  - **`?stress&systems`**: 0.47% / 0.72% (under Rapier frames 3.08% / 4.69%).
+  - **`?stress&noCrowd`** (a bonus control, not in the box): 0.17% / 0.07% (under Rapier frames 11.17% / 10.72%).
+  So the glue is negligible on the stress scenes and **6–8% on the forest**, where one ray per prop placement runs under physics frames. The bar is "under 3% on every scene", so one scene settles it: Phases 2–3 stand and this PRD does not close by a Decision. The **fourth scene is not measured**: no `shooter` template ships (`create-threenative --help` lists action-rpg, adventure, collectathon, kart, minimal, platformer, puzzle, racing, rain, rts, runner, sailing); the nearest physics-heavy kit is `puzzle` (45 dynamic bodies), and installing it against the head engine is a separate 20-minute detour that cannot change the answered rule (D6).
 
 #### Phase 2: The web back end calls the crate directly
 **Status:** NOT STARTED
@@ -123,3 +128,18 @@ Risks: Rust objects without atomics do not link into the shared-memory module (e
 - 2026-11-16 (Claude): PRD-762 and PRD-763 stay open. When Phase 2 lands, check each again: one pose call for all bodies can make PRD-763 moot on web.
 - 2026-11-16 (Claude, Phase 1 result): option B. The threads link of option A fails with `wasm-ld: error: --shared-memory is disallowed by compiler_builtins-…rcgu.o because it was not compiled with 'atomics' or 'bulk-memory' features.`, with or without `-C target-feature=+atomics,+bulk-memory`. The fix needs nightly `-Zbuild-std`, which this PRD rules out. The standalone module needs no imports, so one module serves both engine builds.
 - 2026-11-16 (Claude, Phase 1 box 2 measurement): the 3% stop rule is answered **negative**. Rapier's JavaScript glue is 6.0–7.8% of the forest's busy main-thread time in four clean profiles (two per arm), and 10.3–13.4% of it runs under Rapier frames. One scene above the bar settles the rule ("under 3% ... on every scene" is already false), so Phases 2 and 3 stand and this PRD does not close by a Decision. Note the share is the *engine* glue only: the forest's `groundAt` ray per prop placement (the 24.9% caller in the 2026-11-11 load profile) is game code in PR #681's lane and is excluded here, as the Decisions above require.
+
+### D6: the fourth physics scene is not measurable, and it cannot change the rule
+**Chose:** record three scenes (`forest`, `?stress`, `?stress&systems`) plus `?stress&noCrowd` as a control, and
+leave box 2 open on the missing fourth rather than substitute a kit quietly.
+**Because:** `create-threenative --help` ships no `shooter` template; the closest physics-heavy kit is `puzzle`
+(45 dynamic bodies). The rule is "under 3% on every scene" and the forest is 6–8%, so no fourth scene can flip
+it. Installing a kit against the head engine is a ~20-minute detour with a build to debug.
+**Rejected:** profiling a kit against published npm packages instead of the head engine (not the artifact
+under test, so the number would not belong to this PR).
+**Reversible:** yes — `puzzle` or `action-rpg` on head tarballs closes the box whenever someone wants it.
+
+## Blocked on
+
+- The fourth physics scene (D6): no `shooter` template ships. Unblocks on profiling `puzzle` against the head
+  tarballs, or on an owner call that three scenes are enough.
