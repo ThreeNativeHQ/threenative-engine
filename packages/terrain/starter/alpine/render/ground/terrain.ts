@@ -768,7 +768,8 @@ export async function createGroundMaterial(
   // Apply observed deposition after biome placement so dry/snow-world rules cannot erase it.
   weights.dirt = weights.dirt.max(sediment.mul(0.5)).max(flow.mul(0.28)).mul(sand.oneMinus());
   // A grazed pasture's turf closes over its runnels and deposits: gravel shows in the beds only.
-  if (look.alpinePasture) weights.dirt = weights.dirt.mul(smoothstep(0.3, 0.7, weights.dirt));
+  if (look.alpinePasture)
+    weights.dirt = weights.dirt.mul(smoothstep(0.5, 0.9, weights.dirt)).mul(0.7);
   // The layers that cover most of a meadow take a second, larger scale faded in with distance: one
   // tile under the player's feet, a coarser one near the horizon, and no single lattice for the eye
   // to find anywhere between.

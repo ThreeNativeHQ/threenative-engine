@@ -476,7 +476,9 @@ const alpine: IBiome = {
   heightFractions: {
     ...forest.heightFractions,
     treeline: [-1.7, 1.5],
-    rockline: [14, 18.5],
+    // The crests round the pasture (Lauberhorn, Tschuggen, 2440-2520 m) break to scree and
+    // limestone at their tops, so the band starts at about 2440 m.
+    rockline: [11.5, 16],
     cap: [25, 28],
   },
   snowFractions: [25, 28, 0.22],
@@ -485,8 +487,9 @@ const alpine: IBiome = {
   stoneGrey: 0.8,
   stoneTint: [0.5, 0.49, 0.46],
   stoneMoss: 0.15,
-  // Arbor's spruce card is already a dark blue-green; the forest's yellowing tint is for broadleaf.
-  canopyTint: [0.85, 0.95, 1],
+  // Arbor's spruce card is a dark blue-green whose inner crown goes black under its own shade: a
+  // mild green lift keeps the needles lit (a 5x lift turned them lime in the conifer bake-off).
+  canopyTint: [1.15, 1.25, 1.05],
   // The valley haze is the forest's evening air; at noon on a dry day a pasture 600 m off keeps its green.
   haze: { ...forest.haze, density: 0.0003 },
   // A high summer sun from the south-west lights the Eiger's west flank; its north face stays in shade.

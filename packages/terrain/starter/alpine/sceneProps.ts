@@ -426,7 +426,9 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
           const solid = propParts
             .get(`${placement.asset}:${variantFor(placement, placement.asset)}`)
             ?.find((part) => part.role === "bark" || part.role === "stone");
-          return solid ? [{ geometry: solid.geometry, matrix: pose }] : [];
+          // Dry branches in the needle litter are knee-high at most: a walker steps through them.
+          const collision = placement.asset === "litter" ? "none" : "auto";
+          return solid ? [{ geometry: solid.geometry, matrix: pose, collision }] : [];
         }),
       });
       // Prewarm borrows actual world draws only after registration. Grounding and package preparation
