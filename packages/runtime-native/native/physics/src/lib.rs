@@ -1655,6 +1655,30 @@ impl Simulation {
     }
 }
 
+/// Web (PRD-899): the standalone `wasm32-unknown-unknown` module has no libc `malloc`, so
+/// JavaScript gets the buffers and option records it passes to the calls below from here.
+/// Alignment 8 covers every record (`f32`, `u32`, `usize` fields).
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_alloc(bytes: usize) -> *mut u8 {
+    match std::alloc::Layout::from_size_align(bytes.max(1), 8) {
+        Ok(layout) => unsafe { std::alloc::alloc_zeroed(layout) },
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Frees a buffer from `tn_physics_alloc`; `bytes` is the size passed to that call.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_free(buffer: *mut u8, bytes: usize) {
+    if buffer.is_null() {
+        return;
+    }
+    if let Ok(layout) = std::alloc::Layout::from_size_align(bytes.max(1), 8) {
+        unsafe { std::alloc::dealloc(buffer, layout) };
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_version() -> *const std::ffi::c_char {
     c"0.30.0".as_ptr()
