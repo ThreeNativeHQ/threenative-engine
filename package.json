@@ -65,6 +65,7 @@
     "regen": "bash scripts/regen.sh",
     "release": "tsx scripts/release.ts",
     "release:ship": "tsx scripts/release.ts ship",
+    "release:check-version": "tsx scripts/release.ts check-version",
     "release:native": "tsx scripts/release-native-local.ts",
     "release:prepare": "tsx scripts/prepare-release.ts",
     "round:deletions": "tsx scripts/round-deletions.ts",

@@ -47,8 +47,13 @@ export interface IShipDeps {
   readonly npmVersions: (name: string) => readonly string[];
   /** Every package of the npm cohort. A crash between levels leaves only part of it published. */
   readonly cohort: () => readonly { readonly name: string; readonly version: string }[];
-  /** `pnpm release --yes --skip-gates --resume`, then the clean-room verification. */
-  readonly publish: (override: boolean) => void;
+  /**
+   * `pnpm release --yes --skip-gates --resume`, then the clean-room verification. `proved` says this
+   * invocation already ran the upgrade proof before it created anything public.
+   */
+  readonly publish: (options: { readonly override: boolean; readonly proved: boolean }) => void;
+  /** `pnpm release --prove-upgrade --skip-gates`: pack, prove, publish nothing. */
+  readonly prove: () => void;
   readonly repository: string;
   readonly sleep: (ms: number) => Promise<void>;
   readonly verify: () => void;
@@ -65,6 +70,11 @@ interface IRun {
 
 type ReleaseState = "none" | "draft" | "prerelease" | "public";
 
+/** The package whose registry presence decides whether a version is spent. */
+const CORE = "@threenative/core";
+/** The tag every runtime release hangs on. */
+const TAG_PREFIX = "runtime-native-v";
+
 export interface IShipState {
   readonly candidate: {
     readonly failed: readonly number[];
@@ -72,6 +82,11 @@ export interface IShipState {
     readonly successes: number;
   };
   readonly ci: number | string;
+  /**
+   * `@threenative/core` is on npm at this tree's version. `npmPublished` answers the whole cohort;
+   * a burned version turns on this one package alone.
+   */
+  readonly corePublished: boolean;
   readonly mainHead: string;
   readonly latestTagRun?: number;
   readonly npmPublished: boolean;
@@ -140,19 +155,23 @@ function errorText(error: unknown): string {
 }
 
 function releaseState(deps: IShipDeps, tag: string): ReleaseState {
+  return ghReleaseState(deps.gh, deps.repository, tag);
+}
+
+/**
+ * The release a tag carries, read through `gh release view`.
+ *
+ * Only a real miss is "none": a failed read here could move the tag of a public release.
+ */
+export function ghReleaseState(
+  gh: (args: readonly string[]) => string,
+  repository: string,
+  tag: string,
+): ReleaseState {
   let out: string;
   try {
-    out = deps.gh([
-      "release",
-      "view",
-      tag,
-      "--repo",
-      deps.repository,
-      "--json",
-      "isDraft,isPrerelease",
-    ]);
+    out = gh(["release", "view", tag, "--repo", repository, "--json", "isDraft,isPrerelease"]);
   } catch (error) {
-    // Only a real miss is "none": a failed read here could move the tag of a public release.
     if (/release not found/iu.test(errorText(error))) return "none";
     throw error;
   }
@@ -162,8 +181,16 @@ function releaseState(deps: IShipDeps, tag: string): ReleaseState {
 }
 
 function tagCommit(deps: IShipDeps, tag: string): string | undefined {
+  return remoteTagCommit(deps.git, tag);
+}
+
+/** The commit `origin` carries for a tag, peeled when it points at one. */
+export function remoteTagCommit(
+  git: (args: readonly string[]) => string,
+  tag: string,
+): string | undefined {
   for (const ref of [`refs/tags/${tag}^{}`, `refs/tags/${tag}`]) {
-    const commit = deps.git(["ls-remote", "origin", ref]).trim().split(/\s+/u)[0];
+    const commit = git(["ls-remote", "origin", ref]).trim().split(/\s+/u)[0];
     if (commit) return commit;
   }
   return undefined;
@@ -188,6 +215,17 @@ export function readShipState(deps: IShipDeps, sha: string, tag: string): IShipS
         : latestTagRun.conclusion === "success"
           ? "success"
           : "failed";
+  const cohort = deps.cohort();
+  // One registry read per package, shared by both answers below: a real invocation asks about
+  // `@threenative/core` twice, and it must not pay for a second `npm view`.
+  const published = new Map<string, readonly string[]>();
+  const versionsOf = (name: string): readonly string[] => {
+    const cached = published.get(name);
+    if (cached !== undefined) return cached;
+    const versions = deps.npmVersions(name);
+    published.set(name, versions);
+    return versions;
+  };
   return {
     ...(latestTagRun === undefined ? {} : { latestTagRun: latestTagRun.databaseId }),
     candidate: {
@@ -200,10 +238,11 @@ export function readShipState(deps: IShipDeps, sha: string, tag: string): IShipS
       ).length,
     },
     ci: ci?.databaseId ?? describeMissing(ciAll, sha),
+    corePublished: cohort.some(
+      ({ name, version }) => name === CORE && versionsOf(name).includes(version),
+    ),
     mainHead: deps.gh(["api", `repos/${deps.repository}/commits/main`, "--jq", ".sha"]).trim(),
-    npmPublished: deps
-      .cohort()
-      .every(({ name, version }) => deps.npmVersions(name).includes(version)),
+    npmPublished: cohort.every(({ name, version }) => versionsOf(name).includes(version)),
     release: releaseState(deps, tag),
     tag: { commit: tagCommit(deps, tag) },
     tagRun,
@@ -230,6 +269,69 @@ export function buildCandidateRequest(
     },
     releaseScope: SHIP_SCOPE,
   };
+}
+
+/** The version this tree ships, read from the commit being shipped rather than the checkout. */
+export function manifestVersion(deps: IShipDeps, sha: string): string {
+  const manifest = JSON.parse(
+    deps.git(["show", `${sha}:packages/runtime-native/package.json`]),
+  ) as { version: string };
+  return manifest.version;
+}
+
+/** The three facts a burn is decided from. A release and one registry answer. */
+export interface IVersionCensus {
+  readonly corePublished: boolean;
+  readonly release: ReleaseState;
+  readonly tag: { readonly commit?: string };
+}
+
+/** What is being shipped, for the messages a refusal writes. */
+export interface IReleaseTarget {
+  readonly sha: string;
+  readonly tag: string;
+  readonly version: string;
+}
+
+/**
+ * A version is burned when its tag already carries a release at another commit while npm serves no
+ * `@threenative/core` of it. `assertTagMovable` refuses such a tag, and nothing can undo a release
+ * and an npm version by itself, so the version can never ship: the only move is a bump.
+ *
+ * On 2026-11-12 the 0.3.14 release went public and its npm cohort never landed. The next release
+ * PR ran a full board, merged, and only then did the tag step refuse it — an hour and a merge
+ * later. This reads the same facts before the evidence and the candidate, so it costs a minute.
+ */
+export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseTarget): void {
+  if (census.release === "none" || census.tag.commit === target.sha || census.corePublished) return;
+  const at = census.tag.commit ?? "an unknown commit";
+  throw new Error(
+    `TN_SHIP_VERSION_BURNED: ${target.tag} already has a ${census.release} release at ${at}, and ${CORE} is not on npm at ${target.version}. The tag cannot move, so this version cannot ship: bump packages/runtime-native/package.json and the cohort that pins it, then ship the new version.`,
+  );
+}
+
+/**
+ * `pnpm check:release-version` — the release pull request's early gate.
+ *
+ * The same decision as `assertVersionNotBurned`, read from the tree the pull request would merge,
+ * so a burned version goes red in the board's first minutes instead of after the merge.
+ */
+export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
+  const version = manifestVersion(deps, sha);
+  const tag = `${TAG_PREFIX}${version}`;
+  const census: IVersionCensus = {
+    corePublished: deps.npmVersions(CORE).includes(version),
+    release: ghReleaseState(deps.gh, deps.repository, tag),
+    tag: { commit: remoteTagCommit(deps.git, tag) },
+  };
+  assertVersionNotBurned(census, { sha, tag, version });
+  const why =
+    census.release === "none"
+      ? "no release exists for it"
+      : census.corePublished
+        ? `${CORE}@${version} is on npm, so the version is spent, not burned`
+        : `its ${census.release} release sits at the shipped commit`;
+  return `${tag} is shippable: ${why}.`;
 }
 
 /** The first step that is not done. A second invocation resumes here. */
@@ -334,14 +436,17 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
     if (!options.dryRun) throw new Error(message);
     deps.log(`note: ${message}`);
   }
-  const manifest = JSON.parse(
-    deps.git(["show", `${sha}:packages/runtime-native/package.json`]),
-  ) as { version: string };
-  const version = manifest.version;
-  const tag = `runtime-native-v${version}`;
+  const version = manifestVersion(deps, sha);
+  const tag = `${TAG_PREFIX}${version}`;
   const acted: ShipStep[] = [];
+  // Only a proof this invocation ran before the tag may let the publish skip its own: a resumed run
+  // lands on `publish` without one, so it proves there as it always has.
+  let proved = false;
   for (let guard = 0; guard < 8; guard += 1) {
     const state = readShipState(deps, sha, tag);
+    // Before the plan spends an evidence read or a 20-minute candidate: a tag that already carries
+    // a release at another commit can never be moved, and npm has nothing to resume.
+    assertVersionNotBurned(state, { sha, tag, version });
     const step = nextStep(state, sha, options.override !== undefined);
     if (options.auto && step === "verify") {
       deps.log(`${version} is already on npm. Nothing to ship.`);
@@ -390,6 +495,14 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       );
     } else if (step === "tag") {
       if (state.tag.commit !== undefined) assertTagMovable(state, tag);
+      // Nothing about this version is public yet, and the upgrade proof is the last gate before the
+      // first npm upload. Prove it here: the tag creates a release that is public the moment it
+      // exists, so a red proof after the tag has already burned the version (0.3.14, 2026-11-12).
+      if (options.override === undefined) {
+        deps.log("proving the previous latest upgrades before anything is public…");
+        deps.prove();
+        proved = true;
+      }
       // Through the API: a push would run this checkout's pre-push hook, which needs a built tree.
       deps.gh(
         state.tag.commit === undefined
@@ -449,7 +562,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       );
     } else if (step === "publish") {
       // `pnpm release --yes` ends with the clean-room registry install, so nothing follows it.
-      deps.publish(options.override !== undefined);
+      deps.publish({ override: options.override !== undefined, proved });
       return acted;
     } else {
       deps.verify();
@@ -488,12 +601,24 @@ function systemDeps(): IShipDeps {
         throw error;
       }
     },
-    publish: (override) =>
+    publish: ({ override, proved }) =>
       void execFileSync(
         "pnpm",
-        ["release", "--yes", "--skip-gates", "--resume", ...(override ? ["--override"] : [])],
+        [
+          "release",
+          "--yes",
+          "--skip-gates",
+          "--resume",
+          ...(override ? ["--override"] : []),
+          ...(proved ? ["--upgrade-proved"] : []),
+        ],
         { cwd: REPO, stdio: "inherit" },
       ),
+    prove: () =>
+      void execFileSync("pnpm", ["release", "--prove-upgrade", "--skip-gates"], {
+        cwd: REPO,
+        stdio: "inherit",
+      }),
     repository,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     verify: () =>
@@ -502,6 +627,16 @@ function systemDeps(): IShipDeps {
         stdio: "inherit",
       }),
   };
+}
+
+/**
+ * `pnpm check:release-version` — the early gate the release pull request runs in its first minutes.
+ * Reads the tree at HEAD and refuses a burned version; nothing is dispatched, tagged or published.
+ */
+export function runVersionCheck(argv: readonly string[]): void {
+  if (argv.length > 0) throw new Error(`TN_SHIP_UNKNOWN_FLAG: ${argv.join(", ")}`);
+  const deps = systemDeps();
+  deps.log(checkReleaseVersion(deps, deps.git(["rev-parse", "HEAD"]).trim()));
 }
 
 export async function runShip(argv: readonly string[]): Promise<void> {

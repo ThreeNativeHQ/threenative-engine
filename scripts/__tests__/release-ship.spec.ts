@@ -6,6 +6,8 @@ import {
   type IShipDeps,
   assertCandidateDispatchable,
   assertTagMovable,
+  assertVersionNotBurned,
+  checkReleaseVersion,
   nextStep,
   runShip,
   ship,
@@ -106,7 +108,9 @@ function world(over: Partial<Record<string, unknown>> = {}) {
       { name: "@threenative/runtime-native", version: VERSION },
     ],
     npmVersions: (name) => (name === "@threenative/core" ? (state.core ?? state.npm) : state.npm),
-    publish: (override) => calls.push(override ? "publish --override" : "publish"),
+    publish: ({ override, proved }) =>
+      calls.push(`publish${override ? " --override" : ""}${proved ? " --upgrade-proved" : ""}`),
+    prove: () => calls.push("prove"),
     repository: REPOSITORY,
     sleep: async () => undefined,
     verify: () => calls.push("verify"),
@@ -159,20 +163,72 @@ describe("pnpm release:ship --dry-run", () => {
 });
 
 describe("pnpm release:ship refuses what cannot be undone", () => {
+  // 2026-11-12 shipped 0.3.14's release and never its npm cohort; on 2026-11-16 the next release
+  // PR ran a full board, merged, and only then did `assertTagMovable` refuse the tag — an hour and
+  // a merge after the fact. A burned version now fails before the evidence and the candidate read.
   it.each([
     ["a public release", { isDraft: false, isPrerelease: false }],
     ["a prerelease", { isDraft: false, isPrerelease: true }],
     ["a draft", { isDraft: true, isPrerelease: false }],
-  ])("does not move a tag that has %s", async (_label, release) => {
-    const { calls, deps } = world({
+  ])("refuses a version whose tag already has %s, before the evidence", async (_label, release) => {
+    const { calls, deps, logs, state } = world({
       candidate: [run(10, "workflow_dispatch")],
+      core: [],
       release,
       tagCommit: OTHER,
     });
     await expect(ship(deps, { dryRun: false, sha: SHA })).rejects.toThrow(
+      /TN_SHIP_VERSION_BURNED/u,
+    );
+    // Nothing was dispatched, no candidate was read, and the plan never named a step.
+    expect(calls).toEqual([]);
+    expect(state.candidate).toHaveLength(1);
+    expect(logs.some((line) => line.startsWith("next:"))).toBe(false);
+  });
+
+  it("says what to do about a burned version, and a plan reports it too", async () => {
+    const burned = () =>
+      world({ core: [], release: { isDraft: false, isPrerelease: false }, tagCommit: OTHER });
+    const plan = burned();
+    await expect(ship(plan.deps, { dryRun: true, sha: SHA })).rejects.toThrow(
+      new RegExp(`${TAG}.*has a public release at ${OTHER}.*bump`, "u"),
+    );
+    expect(plan.calls).toEqual([]);
+  });
+
+  it("is a resume, not a burn, when the release sits on the commit being shipped", async () => {
+    const { calls, deps } = world({
+      candidate: [run(10, "workflow_dispatch")],
+      core: [],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: SHA,
+      tagRuns: [run(20, "workflow_dispatch", { headBranch: TAG })],
+    });
+    expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["publish"]);
+    expect(calls).toEqual(["publish"]);
+  });
+
+  it("is not a burn when npm already serves the version", async () => {
+    const { deps } = world({
+      core: [VERSION],
+      npm: [VERSION],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: OTHER,
+    });
+    expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["verify"]);
+  });
+
+  it("does not move a tag that already has a release", () => {
+    const { state } = world();
+    expect(() => assertTagMovable({ ...stateOf(state), release: "public" }, TAG)).toThrow(
       /TN_SHIP_TAG_HAS_RELEASE/u,
     );
-    expect(calls).toEqual([]);
+    expect(() =>
+      assertVersionNotBurned(
+        { corePublished: true, release: "public", tag: { commit: OTHER } },
+        { sha: SHA, tag: TAG, version: VERSION },
+      ),
+    ).not.toThrow();
   });
 
   it("does not move a tag while its run is still going", () => {
@@ -206,16 +262,42 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
 });
 
 describe("pnpm release:ship resumes", () => {
-  it("runs every step from a green commit, in order", async () => {
+  it("runs every step from a green commit, in order, and proves the upgrade before the tag", async () => {
     const { calls, deps } = world();
     const acted = await ship(deps, { dryRun: false, sha: SHA });
     expect(acted).toEqual(["candidate", "tag", "dispatch", "publish"]);
     expect(calls.map((call) => call.split(" ").slice(0, 4).join(" "))).toEqual([
       "gh workflow run release-candidate.yml",
+      "prove",
       "gh api --method POST",
       "gh workflow run native-release.yml",
-      "publish",
+      "publish --upgrade-proved",
     ]);
+  });
+
+  // 0.3.14 went public and only then failed the upgrade proof (2026-11-12). The tag creates a
+  // release that is public the moment it exists, so the proof runs before the tag does.
+  it("a red upgrade proof leaves nothing tagged, released or dispatched", async () => {
+    const { calls, deps } = world({ candidate: [run(10, "workflow_dispatch")] });
+    const red: typeof deps = {
+      ...deps,
+      prove: () => {
+        throw new Error("TN_RELEASE_UPGRADE_RED: a game on the previous latest does not upgrade");
+      },
+    };
+    await expect(ship(red, { dryRun: false, sha: SHA })).rejects.toThrow(/TN_RELEASE_UPGRADE_RED/u);
+    expect(calls).toEqual([]);
+  });
+
+  it("a resumed plan that never proved does not tell the publish it did", async () => {
+    const { calls, deps } = world({
+      candidate: [run(10, "workflow_dispatch")],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: SHA,
+      tagRuns: [run(20, "workflow_dispatch", { headBranch: TAG })],
+    });
+    expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["publish"]);
+    expect(calls).toEqual(["publish"]);
   });
 
   it("dispatches a tag run once, while the run list lags", async () => {
@@ -253,11 +335,13 @@ describe("pnpm release:ship resumes", () => {
     expect(calls).toEqual([]);
   });
 
-  it("an override goes straight to the tag run and names its reason there", async () => {
+  it("an override goes straight to the tag run, names its reason there, and proves nothing", async () => {
     const { calls, deps } = world({ ci: [] });
     const acted = await ship(deps, { dryRun: false, override: "hotfix", sha: SHA });
     expect(acted).toEqual(["tag", "dispatch", "publish"]);
     expect(calls).not.toContain(expect.stringContaining("release-candidate.yml"));
+    // An admin override skips the gates it names, the upgrade proof included.
+    expect(calls).not.toContain("prove");
     expect(calls.find((call) => call.includes("native-release.yml"))).toContain("override=hotfix");
     expect(calls).toContain("publish --override");
   });
@@ -338,6 +422,50 @@ describe("pnpm release:ship resumes", () => {
   });
 });
 
+// The release pull request's own gate: the same decision, read from the tree it merges.
+describe("pnpm check:release-version", () => {
+  it("passes a version whose tag has no release yet", () => {
+    const { deps } = world();
+    expect(checkReleaseVersion(deps, SHA)).toContain(`${TAG} is shippable`);
+  });
+
+  it("refuses a version whose tag carries a release the registry never got", () => {
+    const { deps } = world({
+      core: [],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: OTHER,
+    });
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
+  });
+
+  it("refuses a draft release at another commit too", () => {
+    const { deps } = world({
+      core: [],
+      release: { isDraft: true, isPrerelease: false },
+      tagCommit: OTHER,
+    });
+    expect(() => checkReleaseVersion(deps, SHA)).toThrow(/TN_SHIP_VERSION_BURNED/u);
+  });
+
+  it("passes a release that sits on this very commit: that is a resume, not a burn", () => {
+    const { deps } = world({
+      core: [],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: SHA,
+    });
+    expect(checkReleaseVersion(deps, SHA)).toContain(`${TAG} is shippable`);
+  });
+
+  it("passes a version npm already serves", () => {
+    const { deps } = world({
+      core: [VERSION],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: OTHER,
+    });
+    expect(checkReleaseVersion(deps, SHA)).toContain(`${TAG} is shippable`);
+  });
+});
+
 describe("nextStep", () => {
   it("names the first step that is not done", () => {
     const { state } = world();
@@ -361,6 +489,7 @@ function stateOf(
       successes: candidate.successes ?? 0,
     },
     ci: 1,
+    corePublished: false,
     mainHead: SHA,
     npmPublished: false,
     release: "none",

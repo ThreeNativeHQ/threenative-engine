@@ -18,6 +18,7 @@ import {
   releaseLevels,
   releaseOrder,
   unpublishedReleasePackages,
+  upgradeProofApplies,
   validateReleaseCohort,
   validateTemplatePins,
 } from "../release.js";
@@ -316,6 +317,35 @@ describe("pnpm release publishing", () => {
       url: "https://registry.npmjs.org/@threenative%2fcore",
       accept: "application/vnd.npm.install-v1+json",
     });
+  });
+});
+
+describe("pnpm release proof-only run", () => {
+  // PRD-896: `release:ship` proves the upgrade before it creates the tag, so the publish that
+  // follows must not spend the browser lanes again — and a run that never proved must not skip them.
+  it("proves the upgrade unless an override, a prior proof or a partial cohort speaks for it", () => {
+    const scope = { cohort: 17, override: false, proved: false, publishable: 17 };
+    expect(upgradeProofApplies(scope)).toBe(true);
+    expect(upgradeProofApplies({ ...scope, override: true })).toBe(false);
+    expect(upgradeProofApplies({ ...scope, proved: true })).toBe(false);
+    expect(upgradeProofApplies({ ...scope, publishable: 3 })).toBe(false);
+  });
+
+  it("refuses `--prove-upgrade` beside `--yes`, which would publish after proving nothing", () => {
+    const root = path.resolve(import.meta.dirname, "../..");
+    let failure: { status: number | null; stderr: string } | undefined;
+    try {
+      execFileSync(
+        path.join(root, "node_modules/.bin/tsx"),
+        ["scripts/release.ts", "--prove-upgrade", "--yes"],
+        { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+    } catch (error) {
+      const thrown = error as { status?: number | null; stderr?: string };
+      failure = { status: thrown.status ?? null, stderr: thrown.stderr ?? "" };
+    }
+    expect(failure?.status).toBe(1);
+    expect(failure?.stderr).toContain("TN_RELEASE_FLAGS_CONFLICT");
   });
 });
 
