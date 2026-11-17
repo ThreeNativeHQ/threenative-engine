@@ -301,16 +301,20 @@ describe("pnpm release:ship resumes", () => {
     expect(calls.some((call) => call.includes("--method"))).toBe(false);
   });
 
-  it("skips the pre-tag proof when part of the cohort is already on npm", async () => {
+  // A cohort npm partly serves cannot come from a crash of this flow at the tag step: `ship` publishes
+  // only after the tag sits on this commit. So it is a missed bump, and tagging would make a release
+  // public that the publish then refuses — the burn this PR exists to prevent.
+  it("refuses to tag when part of the cohort is already on npm", async () => {
     const { calls, deps } = world({
       candidate: [run(10, "workflow_dispatch")],
       core: [VERSION],
       release: null,
       tagCommit: undefined,
     });
-    const acted = await ship(deps, { dryRun: false, sha: SHA });
-    expect(acted).toContain("tag");
-    expect(calls).not.toContain("prove");
+    await expect(ship(deps, { dryRun: false, sha: SHA })).rejects.toThrow(
+      /TN_SHIP_VERSION_BURNED/u,
+    );
+    expect(calls).toEqual([]);
   });
 
   it("dispatches a tag run once, while the run list lags", async () => {

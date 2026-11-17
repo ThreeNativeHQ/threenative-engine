@@ -241,16 +241,6 @@ export function buildCandidateRequest(
   };
 }
 
-/**
- * Some, but not all, of the cohort is on npm: a crash left a release half published.
- *
- * Asked only where it matters — the tag step — because it costs one registry read per package until
- * the first hit, and a first push (nothing published) reads all of them.
- */
-function cohortPartlyPublished(deps: IShipDeps): boolean {
-  return deps.cohort().some(({ name, version }) => deps.npmVersions(name).includes(version));
-}
-
 /** The version this tree ships, read from the commit being shipped rather than the checkout. */
 function manifestVersion(deps: IShipDeps, sha: string): string {
   const manifest = JSON.parse(
@@ -290,8 +280,11 @@ export interface IReleaseTarget {
  * later. This reads the same facts before the evidence and the candidate, so it costs a minute.
  */
 export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseTarget): void {
-  if (census.release === "none" || census.tag.commit === target.sha || census.onNpm >= census.total)
-    return;
+  // Spent: npm serves the whole version, so there is nothing left to ship.
+  if (census.onNpm >= census.total) return;
+  // A first push with nothing on npm is the normal case, and a tag on this very commit is a resume.
+  if (census.release === "none" && census.onNpm === 0) return;
+  if (census.tag.commit === target.sha) return;
   // A draft carries no tag until it is published: deleting it loses nothing, and the same version
   // can still ship. Every other state leaves the version name spent — and a *partial* cohort is not
   // even that, so the advice there is to finish it from the commit the tag already points at.
@@ -308,8 +301,8 @@ export function assertVersionNotBurned(census: IVersionCensus, target: IReleaseT
   const advice =
     census.release === "draft"
       ? "delete the draft (nothing is public yet), then ship this version"
-      : census.onNpm > 0
-        ? `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit ?? "<tag commit>"}\`), or run \`pnpm release:prepare --bump\` and ship the new version`
+      : census.onNpm > 0 && census.tag.commit !== undefined
+        ? `finish that cohort from the commit the tag points at (\`pnpm release:ship --sha ${census.tag.commit}\`)`
         : "run `pnpm release:prepare --bump`, then ship the new version";
   throw new Error(
     `TN_SHIP_VERSION_BURNED: ${where}, and ${served}. ${census.release === "draft" ? "That draft holds the version name" : census.tag.commit === undefined ? "That release still owns the version name" : "The tag cannot move, so this commit cannot ship"}: ${advice}.`,
@@ -337,7 +330,9 @@ export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
     throw new Error(
       `TN_SHIP_EMPTY_COHORT: the publish set is empty, so ${tag} has no cohort to decide about. Fail closed rather than read an empty list as a served version.`,
     );
-  const settled = release === "none" || commit === sha;
+  // Only a tag already on this commit is settled: any other state has to answer what npm serves,
+  // because a version whose cohort npm partly serves can never ship from here (a missed bump).
+  const settled = commit === sha;
   const onNpm = settled
     ? 0
     : cohort.filter(({ name, version: at }) => deps.npmVersions(name).includes(at)).length;
@@ -491,8 +486,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       return acted;
     }
     // The plan line says "after the upgrade proof" only when this pass will actually prove.
-    const proves =
-      step === "tag" && !proved && options.override === undefined && !cohortPartlyPublished(deps);
+    const proves = step === "tag" && !proved && options.override === undefined;
     deps.log(`next: ${describeStep(step, state, sha, tag, proves)}`);
     if (typeof state.ci === "number") {
       const request = buildCandidateRequest(deps.repository, sha, version, state.ci);
@@ -539,9 +533,9 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       // Nothing about this version is public yet, and the upgrade proof is the last gate before the
       // first npm upload. Prove it here: the tag creates a release that is public the moment it
       // exists, so a red proof after the tag has already burned the version (0.3.14, 2026-11-12).
-      // A resumed cohort — some of it already on npm — has no whole candidate left to prove, and its
-      // publish (`--resume`) is the run that proves. The first-push path proves here, then starts
-      // over so the tag is moved on facts read after the proof, not before it.
+      // Nothing is tagged before the proof, for any cohort: a partial one was refused above, and
+      // the publish never proves for one. This step then starts over, so the tag is moved on facts
+      // read after the proof and not before it.
       if (proves) {
         deps.log("proving the previous latest upgrades before anything is public…");
         deps.prove();
