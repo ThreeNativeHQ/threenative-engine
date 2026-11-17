@@ -246,8 +246,8 @@ export function buildCandidateRequest(
 /**
  * Some, but not all, of the cohort is on npm: a crash left a release half published.
  *
- * Asked only where it matters — the tag step, once per plan — because it costs one registry read per
- * package until the first hit, and a first push (nothing published) reads all of them.
+ * Asked only where it matters — the tag step — because it costs one registry read per package until
+ * the first hit, and a first push (nothing published) reads all of them.
  */
 function cohortPartlyPublished(deps: IShipDeps): boolean {
   return deps.cohort().some(({ name, version }) => deps.npmVersions(name).includes(version));
@@ -335,6 +335,10 @@ export function checkReleaseVersion(deps: IShipDeps, sha: string): string {
   // and either answer for it ("nothing to ship", or a bump that strands the half-published version)
   // would be wrong.
   const cohort = deps.cohort();
+  if (cohort.length === 0)
+    throw new Error(
+      `TN_SHIP_EMPTY_COHORT: the publish set is empty, so ${tag} has no cohort to decide about. Fail closed rather than read an empty list as a served version.`,
+    );
   const settled = release === "none" || commit === sha;
   const onNpm = settled
     ? 0
@@ -529,7 +533,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       // A resumed cohort — some of it already on npm — has no whole candidate left to prove, and its
       // publish (`--resume`) is the run that proves. The first-push path proves here, then starts
       // over so the tag is moved on facts read after the proof, not before it.
-      if (!proved && options.override === undefined && !cohortPartlyPublished(deps)) {
+      if (proves) {
         deps.log("proving the previous latest upgrades before anything is public…");
         deps.prove();
         proved = true;
@@ -630,7 +634,10 @@ function systemDeps(): IShipDeps {
     npmVersions: (name) => {
       try {
         const out = run("npm", ["view", name, "versions", "--json"]);
-        return JSON.parse(out) as string[];
+        // A package with one version answers a bare string, and `"0.3.14".includes("0.3.1")` is
+        // true: a substring match would call a different version present.
+        const versions = JSON.parse(out) as string | string[];
+        return Array.isArray(versions) ? versions : [versions];
       } catch (error) {
         if (/E404|404 Not Found/u.test(errorText(error))) return [];
         throw error;

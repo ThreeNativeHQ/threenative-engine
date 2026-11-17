@@ -557,6 +557,17 @@ function lockArgument(argv: readonly string[]): { lockPath?: string; rest: reado
 }
 
 /**
+ * May the publish preflight accept a version whose prebuilt release does not exist yet?
+ *
+ * A local `--yes` release stages that payload itself, and a proof-only run publishes nothing and
+ * precedes the release it proves for: in both, an absent prebuilt release is the state being checked
+ * rather than a broken one. In CI a plain publish must still fail closed.
+ */
+export function prebuiltAcknowledged(local: boolean, proveUpgrade: boolean): boolean {
+  return local || proveUpgrade;
+}
+
+/**
  * `pnpm release` — dry by default, and `--prove-upgrade` proves the previous `latest` upgrades onto
  * the packed candidate while publishing nothing.
  */
@@ -614,9 +625,7 @@ async function main(args: readonly string[]): Promise<void> {
   // lane already produced, and it holds no GitHub token here, so it must not try to stage one.
   const local = process.env.GITHUB_ACTIONS !== "true";
   const willCreateNativeRelease = publish && local;
-  // A proof run publishes nothing and precedes the release it proves for, so an absent prebuilt
-  // release is the state it is checking against rather than a broken one: acknowledged, not skipped.
-  const prebuiltAcknowledged = local || proveUpgrade;
+  const acknowledged = prebuiltAcknowledged(local, proveUpgrade);
 
   // Publish from a committed tree, always. The 0.2.x releases went out of a working tree and
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
@@ -637,7 +646,7 @@ async function main(args: readonly string[]): Promise<void> {
 
   const report = await checkPublishState({
     allowCurrentPublishSetPins: true,
-    allowMissingPrebuilt: prebuiltAcknowledged,
+    allowMissingPrebuilt: acknowledged,
     repo: REPO,
     ...lockOptions,
   });
@@ -689,7 +698,7 @@ async function main(args: readonly string[]): Promise<void> {
     assertCleanPackageTree(REPO);
     const postBuildReport = await checkPublishState({
       allowCurrentPublishSetPins: true,
-      allowMissingPrebuilt: prebuiltAcknowledged,
+      allowMissingPrebuilt: acknowledged,
       repo: REPO,
       ...lockOptions,
     });

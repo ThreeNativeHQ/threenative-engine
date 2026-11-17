@@ -73,8 +73,7 @@ upgrade regression is red before a merge instead of after it.
 - The owner's call on the draft-first shape (recorded under Decisions) before it replaces anything,
   and one real release to prove both phases. Deleting a public prerelease on a red publish touches
   release state, which the owner decides.
-- Phase 2's lane is currently red for two reasons owned by the release branch, not by this file: the
-  clean room's 15 s `--server-timeout` against a ~21 s cold asset cook
-  (`scripts/verify-registry-install.ts` is getting `--server-timeout 120000`), and the reinvention
-  lint rows of 2026-11-13 rejecting 0.3.13-generated code (`create-threenative`'s `qualityConfig` is
-  getting an opt-in `reinventions` flag).
+- Phase 2's lane is reported red for two reasons owned by the release branch (`release-0315`), neither
+  of them visible in this repository at the time of filing and both **unverified here**: the clean
+  room's 15 s `--server-timeout` against a ~21 s cold asset cook, and the reinvention lint rows of
+  2026-11-13 rejecting 0.3.13-generated code. That lane's owner decides when both are green.

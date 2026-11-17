@@ -12,6 +12,7 @@ import {
   installableOnRegistry,
   packReleaseSet,
   packedTarballName,
+  prebuiltAcknowledged,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
   provisionReleaseArtifacts,
@@ -317,6 +318,17 @@ describe("pnpm release publishing", () => {
       url: "https://registry.npmjs.org/@threenative%2fcore",
       accept: "application/vnd.npm.install-v1+json",
     });
+  });
+});
+
+describe("pnpm release prebuilt acknowledgement", () => {
+  // This one line is what lets the first real tag step's proof pass in CI, where no prebuilt release
+  // exists yet. If it regresses, every release stops at the tag step, silently until release day.
+  it("acknowledges an absent prebuilt release for a local release and a proof-only run, in CI too", () => {
+    expect(prebuiltAcknowledged(true, false)).toBe(true);
+    expect(prebuiltAcknowledged(false, true)).toBe(true);
+    // A plain publish in CI must still fail closed on a missing prebuilt release.
+    expect(prebuiltAcknowledged(false, false)).toBe(false);
   });
 });
 
