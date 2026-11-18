@@ -777,7 +777,7 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
         if (shape.kind !== "heightfield")
           throw new Error("setColliderShape supports heightfield shapes");
         try {
-          const value = shape as Fields;
+          const value = fields(shape);
           const heights = value.heights;
           if (!(heights instanceof Float32Array)) throw INVALID;
           const rows = gridCount(value, "rows");
