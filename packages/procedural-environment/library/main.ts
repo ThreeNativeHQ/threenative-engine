@@ -73,7 +73,8 @@ scene.background = new THREE.Color(0xb9c6d2);
 // on top, Outcrop's page light: one shadowed sun tinted by the biome's environment row, and a low
 // hemisphere fill so it does not double the environment.
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const roomEnvironment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environment = roomEnvironment;
 pmrem.dispose();
 scene.fog = new THREE.Fog(0xffffff, 10, 100);
 const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 0.35);
@@ -156,6 +157,13 @@ const sky = { elevation: 42, azimuth: 35 };
 
 /** The light of an Outcrop biome's `environment` row: sky, ground, sun colour and angle. */
 function lightFor(outcropBiome?: string): void {
+  // A rock story takes the page's own light (hemisphere 1.1, sun 3.2, exposure 1.05, no environment
+  // map): the room environment on top of it washed every rock to near white beside the page.
+  const rock = outcropBiome !== undefined;
+  scene.environment = rock ? null : roomEnvironment;
+  hemi.intensity = rock ? 1.1 : 0.35;
+  sun.intensity = rock ? 3.2 : 3;
+  renderer.toneMappingExposure = rock ? 1.05 : 1.1;
   const env = (Outcrop.BIOMES[outcropBiome ?? ""] ?? Outcrop.BIOMES.hills)?.environment as
     | Record<string, string | number>
     | undefined;
