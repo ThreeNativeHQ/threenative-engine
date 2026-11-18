@@ -151,6 +151,14 @@ describe("bakeVegetation", () => {
     expect([uMax, vMax].every((value) => value > 0 && value < 0.5)).toBe(true);
   });
 
+  it("bakes every preset, a leafless cactus included", async () => {
+    const out = await makeTempDir("tn-vegetation-");
+    const failed: string[] = [];
+    for (const { id } of vegetationPresets())
+      await bakeVegetation({ out, preset: id, lods: [2] }).catch(() => failed.push(id));
+    expect(failed).toEqual([]);
+  }, 120_000);
+
   it("lists the trees with latin names", () => {
     const presets = vegetationPresets();
     expect(presets.find((preset) => preset.id === "oak")).toMatchObject({

@@ -185,11 +185,14 @@ function topDownCells(source: IArborPreset): IArborPreset {
   };
 }
 
-/** The leaf PNG (the game's image, else Arbor's drawn card) and the file-name tag of a game's patch. */
+/**
+ * The leaf PNG (the game's image, else Arbor's drawn card, else none for a leafless preset such as
+ * `saguaro`) and the file-name tag of a game's patch.
+ */
 async function leafOf(
   source: IArborPreset,
   options: IBakeVegetationOptions,
-): Promise<{ leaf: Uint8Array; tag: string }> {
+): Promise<{ leaf?: Uint8Array; tag: string }> {
   const image = options.leafImage === undefined ? undefined : await readFile(options.leafImage);
   if (image !== undefined && !image.subarray(0, 8).equals(PNG_SIGNATURE))
     throw new Error(`bakeVegetation: leafImage ${options.leafImage} is not a PNG`);
@@ -199,6 +202,7 @@ async function leafOf(
     .update(image ?? "");
   const tag = patched ? `-f${hash.digest("hex").slice(0, 8)}` : "";
   if (image !== undefined) return { leaf: image, tag };
+  if (!source.leaves?.length) return { tag };
   const drawn = Arbor.leafTexture(source, { createCanvas });
   return { leaf: rgbaPng(drawn.width, drawn.height, drawn.data), tag };
 }
@@ -302,7 +306,7 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
           barkNormal: rgbaPng(bark.width, bark.height, bark.normal),
         }
       : {}),
-    leaf,
+    ...(leaf ? { leaf } : {}),
   };
   await mkdir(out, { recursive: true });
   const baked: IEnvironmentBake[] = [];
