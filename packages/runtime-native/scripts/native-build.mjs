@@ -76,6 +76,7 @@ if (process.platform === 'linux' || process.platform === 'darwin' || process.pla
       '-DTN_ENABLE_UI_OVERLAY=ON',
       `-DTHREENATIVE_UI_OVERLAY_LIBRARY=${uiOverlayLibrary}`,
     );
+    if (windows) configureArgs.push(`-DTN_WEBVIEW2LOADER_DIR=${dirname(uiOverlayLibrary)}`);
   }
 }
 // The CSS UI backend, opted into with TN_ENABLE_CSS_UI=1: the same `src/ui/` rasterised on the CPU

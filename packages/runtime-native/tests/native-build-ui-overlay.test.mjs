@@ -48,6 +48,8 @@ test('the Windows loader follows the Cargo build-script output directory', () =>
   stageWebView2Loader(messages, release);
   assert.equal(readFileSync(join(release, 'WebView2LoaderStatic.lib'), 'utf8'), 'x64 loader');
   assert.throws(() => stageWebView2Loader('', release), /webview2-com-sys/u);
+  const nativeBuild = readFileSync(new URL('../scripts/native-build.mjs', import.meta.url), 'utf8');
+  assert.match(nativeBuild, /if \(windows\) configureArgs\.push\(`-DTN_WEBVIEW2LOADER_DIR=\$\{dirname\(uiOverlayLibrary\)\}`\)/u);
 });
 
 // Runs on every desktop host that can execute the plan with shell stubs. The Windows host's
