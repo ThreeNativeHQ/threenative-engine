@@ -1319,9 +1319,10 @@ it.each(["missing", "malformed", "wrong path", "wrong kit", "valid"])(
       expect(result.error).toBeUndefined();
       expect(result.status).not.toBe(0);
       if (marker === "valid") {
-        // Source replacement finishes before typecheck reaches the intentionally absent manifest.
+        // Acceptance reaches the game it writes — the arena removed, the source game copied — and
+        // stops at the typecheck a bare temporary directory cannot run. Since PRD-892 every kit is a
+        // source kit (`<kit>-game.ts`), so no arm generates a `world.ts` to stop at.
         expect(result.stderr).toContain("pnpm typecheck exited");
-        expect(result.stderr).toContain("ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND");
         expect(result.stderr).not.toContain("KIT_GAME ownership refused");
         expect(existsSync(join(directory, "src/entities"))).toBe(false);
         expect(readFileSync(join(directory, "src/game.ts"), "utf8")).not.toBe(
@@ -1404,7 +1405,6 @@ it("composition far scenario appends Digit5 and Digit6 with all view metrics whi
       "utf8",
     ),
   );
-  original.assert.performance = { maxPhaseMsP95: { render: 40 } };
   const scenario = structuredClone(original);
   appendCompositionFarScenario(scenario);
   expect(scenario.steps.slice(0, original.steps.length)).toEqual(original.steps);
