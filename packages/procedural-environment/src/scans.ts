@@ -29,10 +29,8 @@ const BARK: Readonly<Record<string, string>> = {
   oak: "jolcham_oak_bark_01",
   olive: "bark_willow_02",
   palm: "palm_bark",
-  pine: "pine_bark",
   smoothgray: "chinese_hackberry_bark",
   spruce: "knotted_pine_bark",
-  stonepine: "pine_bark",
 };
 const DETAIL: Readonly<Record<string, string>> = {
   branch: "bark_brown_02",

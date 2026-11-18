@@ -63,7 +63,7 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
   `_WIND` vec4 per vertex: x trunk sway (m), y branch sway (m), z leaf flutter (m), w phase.
   Units are metres, +Y is up, the plant stands on the origin.
 - Textures are CC0 scans by default (`scans/credits.json`). Bark: species bark from Poly Haven on
-  the Arbor trees whose bark has a scan (oak, pine, cedar, palm, sakura ...). Wood and stone: a grey
+  the Arbor trees whose bark has a scan (oak, cedar, palm, sakura ...; the pines keep Arbor's drawn orange bark, because the scan read pale and smooth). Wood and stone: a grey
   detail scan on forest-kit `log`, `stump`, `branch`, `twig` and `rock`, whose `COLOR_0` takes twice
   Arbor's untextured colour factor, so the kit's palette stays. The bake's `scan` names the bark or detail scan.
 - Foliage: real scanned leaves, cut from the alpha atlases of Poly Haven plant models, and from
@@ -84,7 +84,7 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
   is WebP (`EXT_texture_webp`, required): bark scans 512 px at q75 (normals q80), leaf sprites q75
   and leaf atlases q80, both with lossless alpha, so a cutout edge stays exact. A leaf card also carries a
   normal map at half resolution, cooked from its own outline and veins.
-- One scan serves every species that shares it (21 bark profiles, 12 scans). Each GLB embeds its
+- One scan serves every species that shares it (19 bark profiles, 11 scans). Each GLB embeds its
   copy, and the cook's shared-images pass (`@threenative/assets`, on by default) writes each
   distinct image once under `shared/images/`, so a game ships the bark once.
 - The Arbor presets also carry their bark and leaf atlas and alpha-masked leaves. A forest-kit

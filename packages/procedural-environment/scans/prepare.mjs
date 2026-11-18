@@ -13,7 +13,6 @@ const BARK = [
   "jolcham_oak_bark_01",
   "chinese_hackberry_bark",
   "knotted_pine_bark",
-  "pine_bark",
   "metasequoia_bark",
   "japanese_cedar_bark",
   "tree_bark_03",
