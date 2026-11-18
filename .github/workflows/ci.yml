@@ -1050,15 +1050,18 @@ jobs:
           echo "${{ matrix.template }}: ${#scenarios[@]} nonvisual scenarios"
           scenario_args=()
           for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
-          # `--server-timeout` is the offline asset cook, not the game: a fresh scaffold's `pnpm dev`
-          # now holds its port until the first cook settles (the templates await `handle.ready`), and
-          # that cook is 19 s of KTX2 on a cold 4096x2048 equirect here. The runner's 15 s default is
-          # sized for a server that is listening, so it is raised for this lane only — every scenario
-          # assertion, frame bound and budget is unchanged, and an ordinary CLI run keeps 15 s.
+          server_command='pnpm dev --host 127.0.0.1 --port $PORT --strictPort'
+          if [ "${{ matrix.template }}" = racing ]; then
+            # The cold racing asset build exceeded the server startup deadline in run 44355849518.
+            # Build first and use the same preview server as the kit's own test command.
+            pnpm --dir "$target" build:web
+            server_command='pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort'
+          fi
+          # For dev servers, this allowance includes the initial watchAssets cook.
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
             --artifacts "$GITHUB_WORKSPACE/artifacts/template-nonvisual/${{ matrix.template }}" \
-            --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+            --server-command "$server_command"
       - name: Retain failed template observations
         if: failure()
         uses: actions/upload-artifact@v7

@@ -3646,6 +3646,15 @@ describe("CI pipeline structure", () => {
     expect(action).not.toContain("--with-deps");
   });
 
+  it("builds the racing kit before timing the playtest server startup", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+    const build = 'pnpm --dir "$target" build:web';
+    expect(job).toContain(build);
+    expect(job.indexOf(build)).toBeLessThan(job.indexOf("exec threenative-playtest"));
+    expect(job).toContain("pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort");
+  });
+
   it("the review unit leg prepares what `vitest related` may select (PRD-731)", async () => {
     // #560's first review run: `vitest related` picked the browser e2e specs for a playtest change
     // and every one died on a missing Chromium, because the install step ran for `full` only.
