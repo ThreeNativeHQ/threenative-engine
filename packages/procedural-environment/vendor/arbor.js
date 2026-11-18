@@ -4,7 +4,9 @@
  * arrays). Vendored from the owner's arbor.js 1.0.0 (MIT): the Arbor.three
  * adapter and the browser-only encodePNG are cut, because the engine bakes a
  * GLB and the game owns the look and the wind; toGLB also writes WebP images
- * through EXT_texture_webp, and a `leafNormal` image as the foliage normal map.
+ * through EXT_texture_webp, and a `leafNormal` image as the foliage normal map. The foliage
+ * material is matte (roughness 0.85, was 0.6) and its normal scale is 0.5: a glossy leaf with a
+ * full dome normal reflected the sky as grey-white patches (PRD-900 visual judge).
  *
  *   const t = Arbor.generate('oak', { seed: 7, lod: 0 });
  *   // t.bark / t.leaves = { position, normal, uv, color, wind, index }
@@ -1627,7 +1629,7 @@ function toGLB(tree, png = {}) {
   };
   const bt = texOf(png.bark), bn = texOf(png.barkNormal), lt = texOf(png.leaf), ln = texOf(png.leafNormal);
   part(tree.bark, Object.assign({ name: 'bark', pbrMetallicRoughness: Object.assign({ metallicFactor: 0, roughnessFactor: 0.92 }, bt ? { baseColorTexture: bt } : { baseColorFactor: [0.35, 0.28, 0.22, 1] }) }, bn ? { normalTexture: bn } : null));
-  part(tree.leaves, Object.assign({ name: 'foliage', alphaMode: 'MASK', alphaCutoff: 0.5, doubleSided: true, pbrMetallicRoughness: Object.assign({ metallicFactor: 0, roughnessFactor: 0.6 }, lt ? { baseColorTexture: lt } : { baseColorFactor: [0.25, 0.4, 0.12, 1] }) }, ln ? { normalTexture: ln } : null));
+  part(tree.leaves, Object.assign({ name: 'foliage', alphaMode: 'MASK', alphaCutoff: 0.5, doubleSided: true, pbrMetallicRoughness: Object.assign({ metallicFactor: 0, roughnessFactor: 0.85 }, lt ? { baseColorTexture: lt } : { baseColorFactor: [0.25, 0.4, 0.12, 1] }) }, ln ? { normalTexture: Object.assign({}, ln, { scale: 0.5 }) } : null));
   const json = {
     asset: { version: '2.0', generator: 'Arbor' }, scene: 0, scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0, name: tree.preset.id }], meshes: [{ name: tree.preset.name, primitives: prims }],

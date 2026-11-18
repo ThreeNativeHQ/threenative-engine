@@ -20,6 +20,12 @@ const DRAWN: Readonly<Record<string, string>> = {
   poppy: "no flower-head scan",
   marigold: "no flower-head scan",
   elephantear: "no arrowhead leaf scan",
+  redcedar:
+    "no fine scale-foliage scan; the coarse LeafSet019 spray read as broadleaf (visual judge)",
+  cypress:
+    "no fine scale-foliage scan; the coarse LeafSet019 spray read as broadleaf (visual judge)",
+  araucaria:
+    "no fine scale-foliage scan; the coarse LeafSet019 spray read as broadleaf (visual judge)",
 };
 
 interface IGltf {

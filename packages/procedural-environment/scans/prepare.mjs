@@ -174,15 +174,6 @@ const FOLIAGE = {
     ],
   },
   "LeafSet027-leaves": { src: acg("LeafSet027"), cell: [192, 224], cuts: [[400, 367, 227, 299]] },
-  "LeafSet019-spray": {
-    src: acg("LeafSet019"),
-    cell: [112, 304],
-    turn: 90,
-    cuts: [
-      [79, 320, 841, 304],
-      [42, 657, 911, 341],
-    ],
-  },
   "LeafSet012-leaves": {
     src: acg("LeafSet012"),
     cell: [128, 224],

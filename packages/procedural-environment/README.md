@@ -72,10 +72,12 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
   species palette. The families: oak (ambientCG `LeafSet016`), maple (`LeafSet027`), ovate and birch
   leaves (`shrub_01`), elliptic (`island_tree_01`), lance (`shrub_02`), feathery acacia and jacaranda
   (`jacaranda_tree`), grass blades (`grass_medium_02`), fern fronds (`fern_02`), pine tufts and spruce
-  sprigs (`pine_tree_01`), cedar and cypress sprays (`LeafSet019`). forest-kit cover and leaf litter
+  sprigs (`pine_tree_01`). Foliage is matte (roughness 0.85) with a gentle leaf normal (scale 0.5), so
+  it does not reflect the sky as grey-white patches. forest-kit cover and leaf litter
   wear a grey blade or leaf scan with the same `COLOR_0` rule. Leaf litter then rides the alpha-masked
   `foliage` primitive, so each leaf keeps its scanned outline. The bake's `leafScan` names the
-  sprites. Ginkgo, palm fronds, yucca, flower heads and the elephant ear have no fitting scan and
+  sprites. Ginkgo, palm fronds, yucca, flower heads, the elephant ear and the fine-scale cedar,
+  cypress and araucaria cards have no fitting scan and
   keep Arbor's drawing (`__tests__/texture-health.spec.ts` fails on any other foliage without a scan
   or a texture).
 - `textures: "generated"` keeps the generators' own textures pixel for pixel. Every embedded image

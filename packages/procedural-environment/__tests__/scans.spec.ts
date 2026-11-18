@@ -66,9 +66,14 @@ describe("Poly Haven scans by default, the generator's texture on request", () =
     const [oak] = await bakeVegetation({ preset: "oak", out, textures: "generated" });
     const { gltf, image } = await glb(oak?.path ?? "");
     const foliage = gltf.materials.find((m) => m.name === "foliage") as unknown as {
-      normalTexture?: { index: number };
+      normalTexture?: { index: number; scale?: number };
+      pbrMetallicRoughness: { roughnessFactor: number };
     };
     expect(foliage.normalTexture?.index).toBe(3);
+    // A glossy leaf with a full-strength dome normal reflects the sky as grey-white patches
+    // (visual judge, PRD-900): leaves are matte and their relief is gentle.
+    expect(foliage.pbrMetallicRoughness.roughnessFactor).toBeGreaterThanOrEqual(0.8);
+    expect(foliage.normalTexture?.scale).toBeLessThanOrEqual(0.5);
     const normal = await sharp(image(3)).raw().toBuffer({ resolveWithObject: true });
     let tilted = 0;
     for (let i = 0; i < normal.data.length; i += normal.info.channels)
