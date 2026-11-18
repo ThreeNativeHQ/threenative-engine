@@ -214,7 +214,7 @@
     },
     {
       "name": "WebAssembly",
-      "reason": "The owned browser physics entry instantiates the Rapier Wasm module and validates its exported memory. Desktop and mobile use the native physics host and do not load the browser entry."
+      "reason": "The web bundle instantiates the standalone Rapier Wasm crate with the browser's WebAssembly API (physics/src/web.ts and its ABI port, src/native/wasm-host.ts, PRD-899). The native player resolves @threenative/physics through the threenative-native condition to src/native/index.ts and calls runtime-native/src/physics/native_bindings.cpp against the same crate, so neither module loads there."
     },
     {
       "name": "queueMicrotask",
