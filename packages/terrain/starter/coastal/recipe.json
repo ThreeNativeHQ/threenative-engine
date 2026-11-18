@@ -102,6 +102,23 @@
       {
         "enabled": true,
         "opacity": 1,
+        "id": "shore-stones",
+        "type": "scatter",
+        "params": {
+          "asset": "boulder",
+          "count": 90,
+          "minDistance": 6,
+          "minSlope": 15,
+          "maxSlope": 45,
+          "scale": [
+            0.6,
+            1.6
+          ]
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
         "id": "lagoon-bed",
         "type": "flatten",
         "params": {

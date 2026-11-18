@@ -9,10 +9,10 @@ file is yours to edit.
 
 | File | What it decides |
 | --- | --- |
-| `recipe.json` | The terrain: the survey heightmap, erosion, the rock and sand surfaces, the lagoon's lake and bed, and the sea at 0 m. Its `world` row names the far ring. |
+| `recipe.json` | The terrain: the survey heightmap, erosion, the rock and sand surfaces, the granite stones its slopes scatter, the lagoon's lake and bed, and the sea at 0 m. Its `world` row names the far ring. |
 | `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. `scripts/cook-kit-survey.ts` in `@threenative/terrain` cuts it and the far ring from any lat/lon. |
 | `biome.data.json` | The biome record: spruce stands, understorey, ground and beach cover and their bands. The streamed bake places from it. |
-| `assets.json` | The legacy cell package's fir model, LOD distance, draw distance and bounds. |
+| `assets.json` | The legacy cell package's fir and granite boulder models, their LOD distances, draw distances and bounds. |
 | `surface.json` | The legacy cell package's ground table: sand base, rock layer, tiles, tints and thresholds. |
 | `bake.mjs` | Runs `bakeKit` with this kit's look and writes the streamed world: the baked grid, its splat, the canopy and sky bytes, `horizon.json`, the prop package and the art. |
 | `scene.ts` | The scene, `CoastalScene`, and `COASTAL_GAME`: the streamed ground, the far ring, the props, the sky, the sea, the lagoon and the player rig. |
