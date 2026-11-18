@@ -88,6 +88,8 @@ dependencies are readable.
    the present upload limit of 4. Wave 2 is `create-threenative`. Each wave waits one time for all its
    packages. The scaffolder stays last, so a new project still pins only readable versions. Measured
    ceiling from the 0.3.15 run: two waits of at most 5.6 minutes, about 11 minutes in place of 28.1.
+   Uploads keep their dependency levels inside a wave, so a failed upload still stops the packages
+   behind it and npm never stores a dependent whose dependency it will not get.
 3. **The ledger carries the two numbers.** `ci-board-kpis.mjs` adds promotion boards per release and
    merge-to-`ship`-end minutes, so `pnpm ci:speed record` re-measures them on each release.
 
@@ -95,6 +97,8 @@ Risk of wave 1: for one packument roll (at most 5.6 minutes measured) `latest` o
 example `@threenative/ui`, can name a version whose `@threenative/core` peer is not readable yet. A
 direct `npm install @threenative/ui` in that window fails with `ETARGET` and passes on retry.
 `npm create threenative` is not affected. The clean room still runs after every package is readable.
+Only readability moves: a failed upload of `@threenative/core` stops `@threenative/ui` before it is
+uploaded, because a wave's levels upload in order.
 
 ## Non-Goals
 
@@ -111,8 +115,8 @@ direct `npm install @threenative/ui` in that window fails with `ETARGET` and pas
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: On a pull request into `main`, `queue-watch` comments each red job and does not cancel the run. On a merge group it still cancels at the first red. proof: `pnpm exec vitest run scripts/__tests__/ci-queue-watch.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` — Evidence 2026-11-18: 292/292 pass. Red on the old rule first: reverting `scripts/ci-queue-watch.mjs` to `origin/develop` fails 5 of the promotion tests, including "names every red leg and cancels nothing".
-- [x] AC-2 [local]: `releaseLevels` returns two waves, `create-threenative` alone in the last, and `publishCohort` starts wave 2 only after every wave 1 package is readable. proof: `pnpm exec vitest run scripts/__tests__/release.spec.ts scripts/__tests__/release-ship.spec.ts` — Evidence 2026-11-18: 93/93 pass. Red on the old levels first: reverting `scripts/release.ts` to `origin/develop` fails 4 of them. The real cohort reads `[[core, ui, physics, …], [create-threenative]]`.
-- [x] AC-3 [local]: `ci-board-kpis.mjs` reports promotion boards per release and merge-to-`ship`-end minutes, and the replay of 0.3.15 and 0.3.16 gives 3 and 22 boards and 59.5 minutes for 0.3.15. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts` and `pnpm ci:speed record` — Evidence 2026-11-18: 34/34 with `ci-speed-loop.spec.ts`, and 5 red on the old `ci-board-kpis.mjs`. Replay, ledger iteration #41: 0.3.15 = 3 boards, 1331 machine minutes, merge→`ship` end 59.5 min; 0.3.16 = 22 boards, 5962 machine minutes, merge→`ship` end 79.7 (its `npm-release.yml` run never finished). `promotionBoardsLatest` = 22, `mergeToShipEndMin` = 79.7.
+- [x] AC-2 [local]: `releaseWaves` returns two waves, `create-threenative` alone in the last, and `publishCohort` starts wave 2 only after every wave 1 package is readable. proof: `pnpm exec vitest run scripts/__tests__/release.spec.ts scripts/__tests__/release-ship.spec.ts` — Evidence 2026-11-18: 52/52 and 42/42. Red first: reverting `scripts/release.ts` to `origin/develop` fails the wave specs. The real cohort reads 2 waves over 6 + 1 upload levels, so the upload order is unchanged and only the waits collapse.
+- [x] AC-3 [local]: `ci-board-kpis.mjs` reports promotion boards per release and merge-to-`ship`-end minutes, and the replay of 0.3.15 and 0.3.16 gives 3 and 22 boards and 59.5 minutes for 0.3.15. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts` and `pnpm ci:speed record` — Evidence 2026-11-18: 35/35 with `ci-speed-loop.spec.ts`, and 5 red on the old `ci-board-kpis.mjs`. Replay, ledger iteration #42: 0.3.15 = 3 boards, 1,331 machine minutes, merge→`ship` end 59.5 min; 0.3.16 = 22 boards, 5,962 machine minutes, merge→`ship` end 79.7 min. `promotionBoardsLatest` = 22, `mergeToShipEndMin` = 79.7. Both `ship` jobs concluded red after their publish (0.3.15 in the clean-room `npm:native` step PRD-897 owns), so the measure is the job's end whatever its conclusion, and a `ship` with no completion reads n/a.
 - [ ] AC-4 [shared]: On the next release, a red promotion board ends with every leg concluded and one comment that names all its red legs. proof: the run id and the comment link of that board — Evidence: pending.
 - [ ] AC-5 [shared]: On the next release, first npm upload to last package readable is 12 minutes or less (0.3.15: 28.1). proof: the `ship` log of that release — Evidence: pending.
 - [ ] AC-6 [shared]: On the next release, the promotion PR merges in 4 boards or fewer (0.3.16: 22) and merge to `ship` end is 45 minutes or less (0.3.15: 59.5). proof: a ledger iteration in `pnpm ci:speed show` — Evidence: pending.
@@ -133,7 +137,8 @@ direct `npm install @threenative/ui` in that window fails with `ETARGET` and pas
 
 - 2026-11-18 (agent, open to the owner's veto): a pull request into `main` leaves the first-red cancel of PRD-782. One round that shows every red costs at most 600 machine minutes. Release 0.3.16 spent 5,419 on rounds that showed one red each.
 - 2026-11-18 (agent, open to the owner's veto): two publish waves accept the `ETARGET` window in the Solution. The option without a window is a staging dist-tag that moves to `latest` after all packages are readable. It needs `npm dist-tag` under Trusted Publishing, which is unverified.
-- 2026-11-18 (agent, open to the owner's veto): a promotion board a newer head superseded comments nothing. `ci.yml` runs `fail-fast: false`, so a leg with no conclusion means the run was superseded, not that it failed; commenting would post up to 18 "every failure of the round" comments on a 22-board release, each missing the legs that never ran.
+- 2026-11-18 (agent, open to the owner's veto): a wave uploads its levels in order and waits once, rather than uploading all of wave 1 at once. Four-wide uploads in `releaseOrder` let a failed `@threenative/core` upload leave `@threenative/ui` published against a version npm will never serve, and npm versions cannot be deleted. Uploads cost seconds, so the two waits stay two.
+- 2026-11-18 (agent): the supersede guard is removed. A leg killed by `timeout-minutes` also concludes `cancelled` (`ci.yml` run 43858835585), so the guard silenced red boards; and a superseding push cancels `queue-watch` itself, so it never reached the comment.
 - 2026-11-18 (agent): no frozen release branch in this PRD. See Non-Goals for the trigger.
 
 ## Execution Phases
@@ -147,9 +152,9 @@ direct `npm install @threenative/ui` in that window fails with `ETARGET` and pas
 
 #### Phase 2: the publish waits once per wave
 **Status:** PARTIAL — every box that does not need a release is ticked
-**Files:** `scripts/release.ts` (`releaseLevels` returns two waves), `scripts/__tests__/release.spec.ts`.
-**Implementation:** Keep `releaseOrder` for the cycle check. Wave 1 is every publishable package but `create-threenative`, wave 2 is `create-threenative`. `publishCohort`, the upload limit and the 15-minute deadline per package do not change. A red upload in wave 1 still stops wave 2.
-- [x] The release spec is red on 7 levels and green on two waves, and a wave 1 failure publishes no scaffolder. proof: `pnpm exec vitest run scripts/__tests__/release.spec.ts scripts/__tests__/release-ship.spec.ts` — covers AC-2. Result 2026-11-18: 93/93, 4 red before the change; "publishes no scaffolder when a wave 1 upload fails" covers the stop.
+**Files:** `scripts/release.ts` (`releaseWaves` splits the levels into waves; `publishCohort` uploads a wave level by level and waits for the whole wave once), `scripts/__tests__/release.spec.ts`.
+**Implementation:** Keep `releaseOrder` for the cycle check and `releaseLevels` for the upload order. `releaseWaves` cuts the levels at the scaffolder: wave 1 is every level before it, wave 2 is the scaffolder, and a package that depends on the scaffolder would keep a third. The upload limit of 4 and the 15-minute deadline per package do not change. A red upload in a wave stops the rest of that wave and every later one.
+- [x] The release spec is red on 7 levels and green on two waves, and a wave 1 failure publishes no scaffolder. proof: `pnpm exec vitest run scripts/__tests__/release.spec.ts scripts/__tests__/release-ship.spec.ts` — covers AC-2. Result 2026-11-18: 52/52 and 42/42; "publishes no scaffolder when a wave 1 upload fails" and "publishes no dependent when its dependency's upload fails" cover both stops.
 - [x] `pnpm release --dry-run` packs the cohort and prints the two waves. proof: the command, exit 0 — covers the real entry point of AC-2. Result 2026-11-18: `pnpm release --dry-run --skip-gates` exit 0, "Dry run packed 17 package(s) in 2 publish wave(s)", wave 1 = the 16 other packages, wave 2 = `create-threenative`. Without `--skip-gates` the run stops at `pnpm test`, red on develop in `packages/terrain/__tests__/editor-document.spec.ts` before this change.
 - [ ] The next release reads 12 minutes or less from first upload to last package readable. proof: the `ship` log — covers AC-5.
 
@@ -157,5 +162,5 @@ direct `npm install @threenative/ui` in that window fails with `ETARGET` and pas
 **Status:** PARTIAL — every box that does not need a release is ticked
 **Files:** `scripts/ci-board-kpis.mjs`, `scripts/__tests__/ci-board-kpis.spec.ts`, `.claude/skills/ci-speed-loop/SKILL.md` (two KPI rows; `.agents/skills` carries no `ci-speed-loop`, so that file is the only copy).
 **Implementation:** Count `ci.yml` `pull_request` runs with base `main` between the open and the merge of each promotion PR. Read merge time and the end of the `ship` job of the `npm-release.yml` run on the merge commit. A release with no `ship` run is `n/a`, not 0.
-- [ ] The KPI spec passes and the replay matches the hand count. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts scripts/__tests__/ci-speed-loop.spec.ts`, then `pnpm ci:speed record --since 2026-11-17 --label "PRD-901 baseline"` — covers AC-3.
+- [x] The KPI spec passes and the replay matches the hand count. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts scripts/__tests__/ci-speed-loop.spec.ts`, then `pnpm ci:speed record --since 2026-11-17 --label "PRD-901 baseline"` — covers AC-3. Result 2026-11-18: 35/35; ledger iteration #42 replays 3 and 22 boards and 59.5 minutes for 0.3.15, matching the hand count in the Context. Iterations #40 and #41 are superseded: #40 read a promotion closed in September against the window's end, #41 read whichever `ship` run the API listed last.
 - [ ] The next release is a ledger iteration with 4 boards or fewer and 45 minutes or less. proof: `pnpm ci:speed show` — covers AC-6.

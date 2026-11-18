@@ -6352,6 +6352,137 @@
           "firstFailingJob": null
         }
       ],
+      "firstFailingJobs": [],
+      "superseded": {
+        "reason": "superseded: mergeToShipEndMin read whichever ship run the API listed last, and the run fetch started at --since",
+        "at": "2026-11-18T22:03:47.992Z"
+      }
+    },
+    {
+      "id": 42,
+      "at": "2026-11-18T22:04:49.131Z",
+      "commit": "5951c1351",
+      "label": "PRD-901 baseline: the release road before one board round per fix set",
+      "notes": "0.3.15 (PR #687) and 0.3.16 (PR #689): promotion boards, and merge to the end of the ship job.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-11-17",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 36.7,
+        "lastPushToMergeP90Min": 86.7,
+        "firstAttemptSuccessPct": 0,
+        "boardWallMedianMin": null,
+        "queueWaitP90Min": 8.4,
+        "fullBoardWallMedianMin": 55.3,
+        "longestLegMedianMin": 45.3,
+        "fullBoardMachineMedianMin": 586.1,
+        "machineMinPerWeek": 46581,
+        "boardQueueP90Min": 7.6,
+        "boardGreenFirstPct": 50,
+        "flakeRatePct": 84.2,
+        "greenMinutesPct": 13.8,
+        "minutesAfterFirstRedPct": 16.6,
+        "setupSharePct": 27,
+        "releaseLeadMin": 2493,
+        "promotionBoardsLatest": 22,
+        "mergeToShipEndMin": 79.7
+      },
+      "extra": {
+        "prCount": 7,
+        "mergeGroupRuns": 6,
+        "mergeGroupRunSuccessPct": null,
+        "enqueueToMergeMedianMin": 160.5,
+        "queueWaitJobs": 377,
+        "fullBoardQueueSumMedianMin": 344,
+        "releaseRoad": [
+          {
+            "version": "0.3.15",
+            "pr": 687,
+            "opened": "2026-11-17T00:54:26Z",
+            "merged": "2026-11-17T02:43:04Z",
+            "boards": 3,
+            "machineMinutes": 1331,
+            "mergeToShipEndMin": 59.5
+          },
+          {
+            "version": "0.3.16",
+            "pr": 689,
+            "opened": "2026-11-17T03:43:03Z",
+            "merged": "2026-11-18T20:25:49Z",
+            "boards": 22,
+            "machineMinutes": 5962,
+            "mergeToShipEndMin": 79.7
+          }
+        ]
+      },
+      "prs": [
+        {
+          "number": 696,
+          "title": "Racing kit: hot reload no longer reloads the page (rankings held a Vector3)",
+          "lastPushToMergeMin": 1,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 695,
+          "title": "Every procedural asset is browsable, absorbed whole and found by the asset MCP (PRD-900)",
+          "lastPushToMergeMin": 2,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 694,
+          "title": "Agents find the nature package when a brief asks for trees, plants or rocks",
+          "lastPushToMergeMin": 36.7,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 690,
+          "title": "Engine frame work and web physics leave JavaScript (PRD-898, PRD-899)",
+          "lastPushToMergeMin": 7.2,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 688,
+          "title": "Far impostors read each atlas view on the default engine (PRD-858)",
+          "lastPushToMergeMin": 74.5,
+          "enqueueToMergeMin": 320.5,
+          "attempts": 5,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 686,
+          "title": "fix(release): a burned version fails in the first minute, and the upgrade proof runs before anything is public (PRD-896)",
+          "lastPushToMergeMin": 105,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 681,
+          "title": "Every Strata kit bakes and runs on the forest's world-building stack (PRD-892)",
+          "lastPushToMergeMin": 54.8,
+          "enqueueToMergeMin": 0.5,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        }
+      ],
       "firstFailingJobs": []
     }
   ]
