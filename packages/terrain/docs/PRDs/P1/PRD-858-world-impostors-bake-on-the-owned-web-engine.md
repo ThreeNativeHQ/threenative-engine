@@ -54,7 +54,8 @@ The native gpu scene already has the terminal impostor level and `DataArrayTextu
 
 - [ ] The impostor reads each atlas view from its own layer on the default engine. proof: conformance row `world-impostor-draw` (core's baker and surface, a red lit sphere and a world-normal sphere) matches the threejs reference within 0.01 mismatch, then the forest vista judge.
   - 2026-11-16, cause found: `tsl_call.cpp` `sample(uv)` replaced the `vec3(uv, layer)` that `depth(layer)` built with the bare uv, so `texture(atlas).depth(layer).sample(uv)` read layer 0 for every view. On the atlas, every layer of both attachments then showed one view, and the crowns drew dark (red impostor 127,17,17 against threejs 201,44,44). Red: mismatch 0.032 on the old Wasm.
-  - Unfinished: the fix in `sample` keeps the layer, and the Wasm rebuilt (exit 0). The first rerun still read 0.032, the same number, so that run probably loaded a stale engine copy, not the rebuilt one. Next: confirm which Wasm the conformance web lane serves, rerun, then build and run `tn-native-engine-abi-test` (the new depth-then-sample case has not run).
+  - 2026-11-17, a fresh stamped Wasm build reproduced the 3.24% mismatch. The UV expression has no type until lowering, so the original fix missed it. Extracting the layer by swizzling the old coordinate also read the discarded mesh UV on the billboard. Reuse the layer operand with the new UV. The native ABI regression failed before the fix and all 76 ABI cases passed after it.
+  - Browser conformance on NVIDIA Turing passed at 0.036% mismatch and mean Delta E 0.017. Exact channel comparison differed on 1.248% of pixels, mainly by one 8-bit level. The row allows one channel level while keeping the 1% pixel limit. The old capture differs on 3.24% of pixels with the same allowance. The forest vista judge is still open.
 
 ## Found on the way (not this PRD)
 

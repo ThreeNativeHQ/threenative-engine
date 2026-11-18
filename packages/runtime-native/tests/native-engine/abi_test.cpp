@@ -4054,12 +4054,19 @@ void starter_post_bindings() {
             CHECK(stage.wgsl.code.find("i32(floor(") != std::string::npos);
             // three's depth(layer).sample(uv) keeps the layer (PRD-858: the impostor surface reads its views so).
             const auto layeredReceiver = TslArg::of(layered);
-            const auto resampled = tn::abi::tslCall("sample", &layeredReceiver, {TslArg::of(g::uv())}, serial);
-            CHECK(resampled != nullptr && resampled->args[0]->type == Type::vec(3));
-            if (resampled)
-                CHECK(compile(g::vec4({g::swizzle(resampled, "xyz"), g::float_(1)})).wgsl.code.find("i32(floor(") != std::string::npos);
+            const auto planarUv = g::attribute("planarUv", tn::engine::shader::Type::vec(2));
+            const auto projectedUv = g::add(g::mul(planarUv, g::float_(0.5)), g::float_(0.25));
+            const auto resampled = tn::abi::tslCall("sample", &layeredReceiver, {TslArg::of(projectedUv)}, serial);
+            CHECK(resampled != nullptr && resampled->args[0]->type == tn::engine::shader::Type::vec(3));
+            if (resampled) {
+                const auto code = compile(g::vec4({g::swizzle(resampled, "xyz"), g::float_(1)})).wgsl.code;
+                CHECK(code.find("i32(floor(") != std::string::npos);
+                CHECK(code.find("planarUv") != std::string::npos);
+                CHECK(resampled->args[0]->args.size() == 2 && layered->args[0]->args.size() == 2 &&
+                      resampled->args[0]->args[1] == layered->args[0]->args[1]);
+            }
             const auto flat = compile(g::vec4({g::swizzle(sampled, "xyz"), g::float_(1)}));
-            CHECK(flat.wgsl.code.find("i32(floor(") == std::string::npos);
+            CHECK(sampled->args[0]->type == tn::engine::shader::Type::vec(2));
             CHECK(flat.wgsl.code.find("texture_2d_array<f32>") != std::string::npos);
             const auto leveledLayer = tn::abi::tslCall("level", &sampledReceiver, {TslArg::of(g::float_(1))}, serial);
             CHECK(leveledLayer != nullptr);

@@ -1259,8 +1259,10 @@
       "browserRecipe": "webgpu",
       "tolerance": {
         "pixelMismatchRatio": 0.01,
+        "channelRounding": 1,
         "perceptualDeltaE": 3.0
       },
+      "reason": "Ignore one 8-bit channel level of renderer rounding. At the same cutoff, sampling only layer 0 differs on 3.24% of pixels.",
       "desktopGate": false,
       "required": false
     },
