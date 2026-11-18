@@ -321,6 +321,30 @@ describe("PRD-901 a promotion board shows every red in one round", () => {
     expect(result.calls).not.toContain("run cancel");
   });
 
+  it("names a receipt aggregate only when it is the only red of its workflow", () => {
+    // `integration / Verify required integration receipts` repeats a leg of `integration`. A board
+    // that lists every red would name both; a missing receipt on its own is the failure.
+    const both = runWatcher(
+      [
+        job("integration / Linux native decal correctness", "failure"),
+        job("integration / Verify required integration receipts", "failure"),
+      ],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    ).calls;
+    expect(both).toContain("`integration / Linux native decal correctness`");
+    expect(both).not.toContain("Verify required integration receipts");
+
+    const alone = runWatcher(
+      [job("native-platforms / Native required coverage receipt", "failure")],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    ).calls;
+    expect(alone).toContain("Native required coverage receipt");
+  });
+
   it("comments when the only leg that did not pass timed out", () => {
     // A board whose single red leg hit its `timeout-minutes` concludes `failure` with one
     // `cancelled` leg. Reporting "none red" there is the outcome AC-4 forbids.

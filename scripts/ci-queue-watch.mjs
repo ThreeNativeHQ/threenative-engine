@@ -17,6 +17,10 @@ const QUEUE_REF = /^(?:refs\/heads\/)?gh-readonly-queue\/[^/]+\/pr-(\d+)-[0-9a-f
 const RED = new Set(["failure", "timed_out", "startup_failure"]);
 // `continue-on-error` in native-platforms.yml: its red does not fail the board, so it stops nothing.
 const NON_BLOCKING = /^native-platforms \/ iOS simulator/u;
+// A called workflow reports its own verdict as a receipt job that only repeats a leg of that
+// workflow. On a board that lists every red it would double every failure; it stays when it is the
+// only red of its workflow, because then a missing or stale receipt is the failure.
+const RECEIPT = /(?:Verify required integration receipts|Native required coverage receipt)$/u;
 
 /** The pull request a queue ref names, or null. */
 export function queuePullNumber(queueRef) {
@@ -69,8 +73,18 @@ export function redJobs(jobs, includeCancelled = false) {
       !ECHOES.has(job?.name) &&
       !NON_BLOCKING.test(job?.name ?? ""),
   );
-  red.sort((a, b) => String(a.completed_at).localeCompare(String(b.completed_at)));
-  return red;
+  // Only a board that lists every red needs this; a first-red cancel stops before the echo matters.
+  const kept = includeCancelled
+    ? red.filter(
+        (job) =>
+          !RECEIPT.test(job.name) ||
+          !red.some(
+            (other) => other !== job && other.name.startsWith(`${job.name.split(" / ")[0]} / `),
+          ),
+      )
+    : red;
+  kept.sort((a, b) => String(a.completed_at).localeCompare(String(b.completed_at)));
+  return kept;
 }
 
 /** The earliest-completed red job that is not an aggregate, or null while nothing is red. */
