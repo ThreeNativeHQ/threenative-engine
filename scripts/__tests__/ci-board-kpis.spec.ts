@@ -257,11 +257,18 @@ const run = (
     jobs: [job("leg", options.red === true ? "failure" : "success", 0, 0, minutes)],
   };
 };
-const promotion = (number: number, title: string, opened: number, merged: number | null) => ({
+const promotion = (
+  number: number,
+  title: string,
+  opened: number,
+  merged: number | null,
+  closed: number | null = null,
+) => ({
   number,
   title,
   createdAt: T(opened),
   mergedAt: merged === null ? null : T(merged),
+  closedAt: closed === null ? null : T(closed),
   mergeSha: `sha-${String(number)}`,
 });
 
@@ -335,6 +342,19 @@ describe("releaseRoad (PRD-901)", () => {
 
     expect(road.promotionBoardsLatest).toBe(1);
     expect(road.releaseRoad.map((row: RoadRow) => row.boards)).toEqual([3, 1]);
+  });
+
+  it("ends a promotion closed without merging at its close, not at now", () => {
+    // A superseded promotion spent the boards up to its close. Counting from September to now
+    // read 25 boards and 7,293 machine minutes for each of three closed promotion PRs.
+    const road = releaseRoad({
+      promotions: [promotion(400, "Release 0.2.8", 0, null, 40)],
+      runs: [run(10), run(30), run(60)],
+      since: T(0),
+      until: T(1000),
+    });
+    expect(road.releaseRoad[0]?.boards).toBe(2);
+    expect(road.releaseRoad[0]?.merged).toBe(null);
   });
 
   it("names a release by its PR when the title carries no version", () => {

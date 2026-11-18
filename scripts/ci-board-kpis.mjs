@@ -191,10 +191,8 @@ export function releaseRoad({ promotions, runs, ships = [], since, until }) {
     ships.filter((ship) => ship.completedAt).map((ship) => [ship.sha, ship.completedAt]),
   );
   const rows = promotions
-    .map((promotion) => roadRow({ promotion, runs, shippedAt, until }))
+    .map((promotion) => roadRow({ promotion, runs, shippedAt, since, until }))
     .filter((row) => row !== null)
-    // `since` selects the releases reported; a promotion still open counts against now.
-    .filter((row) => ms(row.merged ?? until) >= ms(since))
     .sort((a, b) => String(a.opened).localeCompare(String(b.opened)));
   const newest = rows.at(-1);
   return {
@@ -204,11 +202,17 @@ export function releaseRoad({ promotions, runs, ships = [], since, until }) {
   };
 }
 
-/** One promotion PR's row, or null when it never had a board: a release nobody measured. */
-function roadRow({ promotion, runs, shippedAt, until }) {
+/**
+ * One promotion PR's row. Null when it had no board, or when it ended before the window: `since`
+ * selects the releases reported, while a promotion still open counts its boards against now.
+ */
+function roadRow({ promotion, runs, shippedAt, since, until }) {
   const opened = ms(promotion.createdAt);
   if (!Number.isFinite(opened)) return null;
-  const closed = promotion.mergedAt === null ? ms(until) : ms(promotion.mergedAt);
+  // A promotion closed without merging still spent its boards; its window ends at the close.
+  const end = promotion.mergedAt ?? promotion.closedAt ?? until;
+  const closed = ms(end);
+  if (!(closed >= ms(since))) return null;
   const boards = runs.filter(
     (run) => isPromotionBoard(run) && ms(run.createdAt) >= opened && ms(run.createdAt) <= closed,
   );
@@ -299,13 +303,14 @@ export function measureBoards({
       "--limit",
       "200",
       "--json",
-      "number,title,createdAt,mergedAt,mergeCommit",
+      "number,title,createdAt,mergedAt,closedAt,mergeCommit",
     ]),
   ).map((promotion) => ({
     number: promotion.number,
     title: promotion.title,
     createdAt: promotion.createdAt,
     mergedAt: promotion.mergedAt === "" ? null : promotion.mergedAt,
+    closedAt: promotion.closedAt === "" ? null : promotion.closedAt,
     mergeSha: promotion.mergeCommit?.oid ?? null,
   }));
   const until = new Date().toISOString();
