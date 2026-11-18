@@ -7,7 +7,6 @@ import { makeTempDirSync } from "../../test-support/temp-dir.js";
 const {
   allFinished,
   commentBody,
-  cutShort,
   firstRedJob,
   isInfraFailure,
   janitorSignatures,
@@ -303,17 +302,23 @@ describe("PRD-901 a promotion board shows every red in one round", () => {
     expect(calls).not.toContain("- [typecheck]");
   });
 
-  it("comments nothing when a newer head superseded the board", () => {
-    // `ci.yml` runs `fail-fast: false`, so a cancelled leg means the board never got its round.
-    // One comment per superseded board would be 18 comments on a 22-board release.
-    const calls = runWatcher(
+  it("still comments when one leg timed out and another failed", () => {
+    // A leg killed by `timeout-minutes` concludes `cancelled` inside a run that concluded
+    // `failure` (ci.yml run 43858835585: `template-engine-cost (rain)`). Reading that as a
+    // supersede would silence a red board, which is the one thing AC-4 forbids.
+    const result = runWatcher(
       [job("budgets", "failure"), job("test", "cancelled"), job("scope", "success")],
       "AssertionError",
       "",
       { baseRef: "main" },
-    ).calls;
-    expect(calls).not.toContain("/comments");
-    expect(calls).not.toContain("run cancel");
+    );
+    expect(result.status).toBe(0);
+    expect(result.calls).toContain("issues/689/comments");
+    expect(result.calls).toContain("`budgets`");
+    // A cancelled leg is not a red one: the board's own checks list names it, and counting it here
+    // would cancel the run at a leg that failed nothing.
+    expect(result.calls).not.toContain("`test`");
+    expect(result.calls).not.toContain("run cancel");
   });
 
   it("comments nothing when every leg concluded green", () => {
@@ -367,12 +372,6 @@ describe("PRD-901 a promotion board shows every red in one round", () => {
     expect(showsEveryRed("develop")).toBe(false);
     expect(showsEveryRed("")).toBe(false);
     expect(showsEveryRed(undefined)).toBe(false);
-  });
-
-  it("reads a run cut short only from a leg that never concluded", () => {
-    expect(cutShort([job("test", "cancelled"), job("queue-watch", null)])).toBe(true);
-    expect(cutShort([job("budgets", "failure"), job("test", "skipped")])).toBe(false);
-    expect(cutShort([job("queue-watch", null)])).toBe(false);
   });
 
   it("states the round, every leg and the run in the comment", () => {

@@ -19,6 +19,7 @@ import {
   publishCohort,
   releaseLevels,
   releaseOrder,
+  releaseWaves,
   unpublishedReleasePackages,
   validateReleaseCohort,
   validateTemplatePins,
@@ -126,7 +127,7 @@ describe("pnpm release ordering", () => {
   });
 
   it("publishes in two waves: the cohort, then the scaffolder", async () => {
-    const levels = releaseLevels(
+    const waves = releaseWaves(
       await manifests([
         { deps: ["@threenative/ui"], name: "create-threenative" },
         { deps: ["@threenative/core"], name: "@threenative/ui" },
@@ -135,22 +136,24 @@ describe("pnpm release ordering", () => {
       ]),
     );
 
-    // PRD-901: an upload reads nothing, so a dependency edge is not a wait. Wave 1 keeps
-    // `releaseOrder` inside it; the scaffolder is alone in wave 2.
-    expect(levels).toEqual([
-      ["@threenative/core", "@threenative/ui", "@threenative/physics"],
-      ["create-threenative"],
+    // PRD-901: an upload reads nothing, so a dependency edge is not a wait. Wave 1 keeps the levels
+    // that order its uploads; the scaffolder is alone in wave 2.
+    expect(waves).toEqual([
+      [["@threenative/core"], ["@threenative/ui", "@threenative/physics"]],
+      [["create-threenative"]],
     ]);
   });
 
   it("puts every real workspace package in exactly one wave, never before its dependency's", () => {
     const repo = path.resolve(import.meta.dirname, "../..");
     const packages = publishSet(repo);
-    const levels = releaseLevels(packages);
-    const waveOf = new Map(levels.flatMap((wave, index) => wave.map((n) => [n, index] as const)));
+    const waves = releaseWaves(packages);
+    const waveOf = new Map(
+      waves.flatMap((wave, index) => wave.flat().map((n) => [n, index] as const)),
+    );
 
     expect([...waveOf.keys()].sort()).toEqual(packages.map((item) => item.name).sort());
-    expect(levels.flat()).toHaveLength(packages.length);
+    expect(waves.flat(2)).toHaveLength(packages.length);
     const declared = (item: IPublishPackage): readonly string[] => {
       const manifest = JSON.parse(fs.readFileSync(item.manifest, "utf8")) as Record<
         string,
@@ -165,7 +168,7 @@ describe("pnpm release ordering", () => {
         if (dependency !== item.name)
           expect(waveOf.get(dependency)).toBeLessThanOrEqual(waveOf.get(item.name) ?? -1);
     // Two waves, not seven: the cost this removes is a registry wait per wave.
-    expect(levels).toHaveLength(2);
+    expect(waves).toHaveLength(2);
   });
 
   it("puts the scaffolder after every package its templates may pin", async () => {
@@ -173,16 +176,16 @@ describe("pnpm release ordering", () => {
     // core, before `@threenative/ui`, and a new project could pin a version npm did not serve yet.
     const repo = path.resolve(import.meta.dirname, "../..");
     const packages = publishSet(repo);
-    const levels = releaseLevels(packages);
-    expect(levels.at(-1)).toEqual(["create-threenative"]);
-    // Wave 2 is only the scaffolder, so wave 1 is the whole rest of the cohort.
-    expect(levels[0]).toHaveLength(packages.length - 1);
+    const waves = releaseWaves(packages);
+    expect(waves.at(-1)).toEqual([["create-threenative"]]);
+    // Wave 2 is only the scaffolder, so wave 1 carries the whole rest of the cohort.
+    expect(waves[0]?.flat()).toHaveLength(packages.length - 1);
   });
 
-  it("puts a package that depends on the scaffolder in wave 1, never after it", async () => {
-    // Studio was that package until it moved to its own repository. Its upload reads nothing, so it
-    // shares wave 1; the scaffolder still waits for the whole cohort to be readable.
-    const levels = releaseLevels(
+  it("keeps a package that depends on the scaffolder in a wave after it", async () => {
+    // Studio was that package until it moved to its own repository. Its upload reads nothing, but a
+    // project that pins it must still find the scaffolder readable, so it keeps its own wave.
+    const waves = releaseWaves(
       await manifests([
         { deps: ["create-threenative"], name: "@threenative/scaffolder-consumer" },
         { name: "create-threenative" },
@@ -190,15 +193,16 @@ describe("pnpm release ordering", () => {
       ]),
     );
 
-    expect(levels.at(-1)).toEqual(["create-threenative"]);
-    expect(levels[0]).toEqual(
-      expect.arrayContaining(["@threenative/core", "@threenative/scaffolder-consumer"]),
-    );
+    expect(waves.map((wave) => wave.flat())).toEqual([
+      ["@threenative/core"],
+      ["create-threenative"],
+      ["@threenative/scaffolder-consumer"],
+    ]);
   });
 
   it("publishes no scaffolder when a wave 1 upload fails", async () => {
     const published: string[] = [];
-    const waves = releaseLevels(
+    const waves = releaseWaves(
       await manifests([
         { name: "create-threenative" },
         { name: "@threenative/core" },
@@ -218,6 +222,31 @@ describe("pnpm release ordering", () => {
     expect(published).not.toContain("create-threenative");
   });
 
+  it("publishes no dependent when its dependency's upload fails", async () => {
+    // npm versions are immutable: a published `ui@X` whose `core@X` never uploaded cannot be undone.
+    // The levels order the uploads inside a wave for exactly this.
+    const published: string[] = [];
+    const waves = releaseWaves(
+      await manifests([
+        { name: "create-threenative" },
+        { deps: ["@threenative/core"], name: "@threenative/ui" },
+        { name: "@threenative/core" },
+      ]),
+    );
+
+    await expect(
+      publishCohort(waves, {
+        publish: async (name) => {
+          published.push(name);
+          if (name === "@threenative/core") throw new Error("registry said no");
+        },
+        visible: async () => undefined,
+      }),
+    ).rejects.toThrow(/TN_RELEASE_STEP_FAILED/u);
+    expect(published).not.toContain("@threenative/ui");
+    expect(published).not.toContain("create-threenative");
+  });
+
   it("refuses a dependency cycle when it builds levels", async () => {
     await expect(
       manifests([
@@ -231,9 +260,9 @@ describe("pnpm release ordering", () => {
 describe("pnpm release publishing", () => {
   const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
 
-  it("starts a level only after the level before it is readable on the registry", async () => {
+  it("starts a wave only after the wave before it is readable on the registry", async () => {
     const trace: string[] = [];
-    await publishCohort([["a", "b"], ["c"]], {
+    await publishCohort([[["a", "b"]], [["c"]]], {
       publish: async (name) => {
         trace.push(`publish ${name}`);
         await tick();
@@ -253,7 +282,7 @@ describe("pnpm release publishing", () => {
     let active = 0;
     let peak = 0;
     await publishCohort(
-      [["a", "b", "c", "d", "e", "f"]],
+      [[["a", "b", "c", "d", "e", "f"]]],
       {
         publish: async () => {
           active += 1;
@@ -275,7 +304,7 @@ describe("pnpm release publishing", () => {
     let waiting = 0;
     let peak = 0;
     await publishCohort(
-      [["a", "b", "c", "d", "e", "f"]],
+      [[["a", "b", "c", "d", "e", "f"]]],
       {
         publish: async () => undefined,
         visible: async () => {
@@ -291,11 +320,38 @@ describe("pnpm release publishing", () => {
     expect(peak).toBe(6);
   });
 
-  it("names the failed package, publishes nothing after it and no later level", async () => {
+  it("uploads a wave's levels in order and waits for the whole wave once", async () => {
+    // PRD-901: 7 dependency levels cost 7 packument rolls, 28.1 of the 0.3.15 ship job's 57.8
+    // minutes. The uploads still run level by level; only the waits collapse to one per wave.
+    const trace: string[] = [];
+    await publishCohort([[["core"], ["ui"], ["physics"]], [["create-threenative"]]], {
+      publish: async (name) => {
+        trace.push(`publish ${name}`);
+        await tick();
+      },
+      visible: async (name) => {
+        trace.push(`visible ${name}`);
+        await tick();
+      },
+    });
+
+    expect(trace).toEqual([
+      "publish core",
+      "publish ui",
+      "publish physics",
+      "visible core",
+      "visible ui",
+      "visible physics",
+      "publish create-threenative",
+      "visible create-threenative",
+    ]);
+  });
+
+  it("names the failed package, publishes nothing after it and no later wave", async () => {
     const published: string[] = [];
     await expect(
       publishCohort(
-        [["a", "b", "c"], ["d"]],
+        [[["a", "b", "c"]], [["d"]]],
         {
           publish: async (name) => {
             published.push(name);
@@ -310,10 +366,10 @@ describe("pnpm release publishing", () => {
     expect(published).toEqual(["a"]);
   });
 
-  it("does not start the next level when a published package never becomes readable", async () => {
+  it("does not start the next wave when a published package never becomes readable", async () => {
     const published: string[] = [];
     await expect(
-      publishCohort([["a"], ["b"]], {
+      publishCohort([[["a"]], [["b"]]], {
         publish: async (name) => {
           published.push(name);
         },
@@ -324,6 +380,25 @@ describe("pnpm release publishing", () => {
     ).rejects.toThrow(/TN_RELEASE_NOT_VISIBLE: a/u);
 
     expect(published).toEqual(["a"]);
+  });
+
+  it("stops the rest of a wave when one of its levels fails", async () => {
+    const published: string[] = [];
+    await expect(
+      publishCohort(
+        [[["core", "ui"], ["physics"]], [["create-threenative"]]],
+        {
+          publish: async (name) => {
+            published.push(name);
+            if (name === "core") throw new Error("registry said no");
+          },
+          visible: async () => undefined,
+        },
+        1,
+      ),
+    ).rejects.toThrow(/TN_RELEASE_STEP_FAILED: core: registry said no/u);
+
+    expect(published).toEqual(["core"]);
   });
 
   it("waits for the install packument, not the per-version endpoint", async () => {

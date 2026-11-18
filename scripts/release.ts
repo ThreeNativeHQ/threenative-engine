@@ -168,10 +168,11 @@ export async function prepareReleaseCohort(
 /**
  * Dependency order: a package goes out after everything it depends on.
  *
- * The instinct was "publish the scaffolder last, because its templates pin everything else". That
- * is not available in general — a package that depends on `create-threenative` gives the scaffolder
- * a dependent, so it cannot be last. Studio was that package until it moved to its own repository;
- * the ordering test keeps the case covered so the instinct cannot come back.
+ * The instinct was "publish the scaffolder last, because its templates pin everything else". In the
+ * ordering it cannot be last in general — a package that depends on `create-threenative` gives the
+ * scaffolder a dependent. Studio was that package until it moved to its own repository. PRD-901
+ * states the instinct where it belongs: `releaseWaves` makes the scaffolder its own wave, and a
+ * package that depends on it keeps a wave after that.
  *
  * What actually prevents the 0.2.0 mistake is not the order but publishing **one consistent
  * tree in one run**: the pins in `create-threenative`'s templates and the versions of the
@@ -217,30 +218,77 @@ function internalDependencies(
 }
 
 /**
- * The cohort as publish **waves**: everything but the scaffolder, then the scaffolder alone.
+ * `releaseOrder` as levels: a package depends only on packages in earlier levels, so everything in
+ * one level can go out together and the dependency rule above still holds.
  *
- * PRD-901: an upload does not read its dependencies — npm stores the version and resolves nothing —
- * so the only reader-sensitive boundary is `create-threenative`, whose templates pin the other
- * packages at versions a new project installs immediately. Splitting the cohort at every
- * dependency edge bought nothing and cost 28.1 of the 57.8 minutes of the 0.3.15 `ship` job: 7
- * dependency levels, 7 rolls of the packument cache (2.4 to 5.6 minutes each). Two waves wait
- * twice. `releaseOrder` still refuses a cycle, and it orders wave 1, so an upload never reaches the
- * registry before the package it names — only its `latest` can, for one cache roll.
- *
- * ponytail: accepted ceiling — for one packument roll, `latest` of a wave-1 package can name a
- * version whose internal dependency is not readable yet, so a direct install in that window fails
- * `ETARGET` and passes on retry. `npm create threenative` is not affected: the scaffolder is wave 2
- * and starts only when every wave-1 package is readable. Add a staging dist-tag moved to `latest`
- * here if that window ever costs a real user.
+ * The scaffolder's templates pin the other packages and no manifest says so. Its level therefore
+ * comes after every package that does not depend on it, or a new project could pin a version the
+ * registry cannot serve yet. A serial loop got this from the list order; a level has to state it.
  */
 export function releaseLevels(
   packages: readonly { name: string; manifest: string }[],
 ): readonly (readonly string[])[] {
-  // Refuses a cycle before the split below relies on there being none.
-  const ordered = releaseOrder(packages);
-  const scaffolder = "create-threenative";
-  if (!packages.some((item) => item.name === scaffolder)) return [ordered];
-  return [ordered.filter((name) => name !== scaffolder), [scaffolder]];
+  releaseOrder(packages); // Refuses a cycle before the walks below rely on there being none.
+  const dependencies = internalDependencies(packages);
+  const reaches = (from: string, target: string): boolean =>
+    [...(dependencies.get(from) ?? [])].some((dep) => dep === target || reaches(dep, target));
+  const scaffolder = dependencies.get("create-threenative");
+  if (scaffolder !== undefined)
+    for (const name of [...dependencies.keys()])
+      if (name !== "create-threenative" && !reaches(name, "create-threenative"))
+        scaffolder.add(name);
+  const levelOf = new Map<string, number>();
+  const level = (name: string): number => {
+    const known = levelOf.get(name);
+    if (known !== undefined) return known;
+    const value = Math.max(-1, ...[...(dependencies.get(name) ?? [])].map(level)) + 1;
+    levelOf.set(name, value);
+    return value;
+  };
+  const levels: string[][] = [];
+  for (const item of packages) {
+    const index = level(item.name);
+    levels[index] = [...(levels[index] ?? []), item.name];
+  }
+  return levels;
+}
+
+const SCAFFOLDER = "create-threenative";
+
+/**
+ * The cohort as publish **waves**, each wave a list of `releaseLevels` to upload in order.
+ *
+ * PRD-901: an upload does not read its dependencies — npm stores the version and resolves nothing —
+ * so the readability wait is needed only where a reader appears. The only such reader is
+ * `create-threenative`, whose templates pin the other packages at versions a new project installs
+ * immediately. Waiting at every dependency edge bought nothing and cost 28.1 of the 57.8 minutes of
+ * the 0.3.15 `ship` job: 7 levels, 7 rolls of the packument cache (2.36 to 5.58 minutes each).
+ *
+ * Uploads still run level by level inside a wave at `PUBLISH_CONCURRENCY`, so a failed upload of a
+ * dependency stops the dependents behind it and a published package never names a version that will
+ * not exist. Only the *waits* collapse: one per wave.
+ *
+ * ponytail: accepted ceiling — for one packument roll, `latest` of a wave-1 package can name a
+ * version whose internal dependency is not readable yet, so a direct install in that window fails
+ * `ETARGET` and passes on retry. `npm create threenative` is not affected: the scaffolder is its own
+ * wave and starts only when every earlier wave is readable. Add a staging dist-tag moved to `latest`
+ * here if that window ever costs a real user.
+ */
+export function releaseWaves(
+  packages: readonly { name: string; manifest: string }[],
+): readonly (readonly (readonly string[])[])[] {
+  const levels = releaseLevels(packages);
+  const without = (slice: readonly (readonly string[])[]): (readonly string[])[] =>
+    slice
+      .map((level) => level.filter((name) => name !== SCAFFOLDER))
+      .filter((level) => level.length > 0);
+  const at = levels.findIndex((level) => level.includes(SCAFFOLDER));
+  // No scaffolder in the cohort: one wave, and the scaffolder-last rule has nothing to hold.
+  if (at === -1) return [without(levels)];
+  const after = without(levels.slice(at + 1));
+  // Nothing may depend on the scaffolder in this repository. If one ever did, it keeps its own wave
+  // after it, so the rule that a project never pins a version npm cannot serve still holds.
+  return [without(levels.slice(0, at)), [[SCAFFOLDER]], ...(after.length > 0 ? [after] : [])];
 }
 
 /** A guess at a polite limit: npm documents none for publishes, and the waits below need no slot. */
@@ -248,13 +296,13 @@ const PUBLISH_CONCURRENCY = 4;
 
 /**
  * Publish wave by wave. A serial loop spent 43 minutes on 16 packages in 0.3.6, nearly all of it
- * waiting for each package to become readable (a 31 KB package took 7). A wave's uploads share a
- * small limit and its readability waits all run at once, so a wave costs its slowest package. A
- * later wave starts only after everything in this one is readable, and a failure stops the uploads
- * that have not started and every later wave.
+ * waiting for each package to become readable (a 31 KB package took 7). Inside a wave the levels are
+ * uploaded in order, each at `concurrency`, so a failure stops the packages that depend on it; then
+ * the whole wave's readability waits run at once, so a wave costs its slowest package. A later wave
+ * starts only after everything in this one is readable.
  */
 export async function publishCohort(
-  waves: readonly (readonly string[])[],
+  waves: readonly (readonly (readonly string[])[])[],
   steps: {
     readonly publish: (name: string) => Promise<void>;
     readonly visible: (name: string) => Promise<void>;
@@ -263,23 +311,31 @@ export async function publishCohort(
 ): Promise<void> {
   const describe = (name: string, error: unknown): string =>
     `${name}: ${error instanceof Error ? error.message : String(error)}`;
+  const stop = (failures: readonly string[]): never => {
+    throw new Error(
+      `TN_RELEASE_STEP_FAILED: ${failures.join("; ")}. Nothing further was published.`,
+    );
+  };
   for (const wave of waves) {
-    const queue = [...wave];
     const published: string[] = [];
     const failures: string[] = [];
-    const worker = async (): Promise<void> => {
-      while (failures.length === 0) {
-        const name = queue.shift();
-        if (name === undefined) return;
-        try {
-          await steps.publish(name);
-          published.push(name);
-        } catch (error) {
-          failures.push(describe(name, error));
+    for (const level of wave) {
+      const queue = [...level];
+      const worker = async (): Promise<void> => {
+        while (failures.length === 0) {
+          const name = queue.shift();
+          if (name === undefined) return;
+          try {
+            await steps.publish(name);
+            published.push(name);
+          } catch (error) {
+            failures.push(describe(name, error));
+          }
         }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(concurrency, wave.length) }, worker));
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, level.length) }, worker));
+      if (failures.length > 0) stop(failures);
+    }
     await Promise.all(
       published.map((name) =>
         steps.visible(name).catch((error: unknown) => {
@@ -287,10 +343,7 @@ export async function publishCohort(
         }),
       ),
     );
-    if (failures.length > 0)
-      throw new Error(
-        `TN_RELEASE_STEP_FAILED: ${failures.join("; ")}. Nothing further was published.`,
-      );
+    if (failures.length > 0) stop(failures);
   }
 }
 
@@ -730,10 +783,13 @@ async function main(args: readonly string[]): Promise<void> {
     // lane, which the real release carries.
     if (dryRun) {
       // PRD-901: name the waves, because their count is the number of registry waits the publish pays.
-      const waves = releaseLevels(packages);
+      const waves = releaseWaves(packages);
       process.stdout.write(
         `\nDry run packed ${Object.keys(tarballs).length} package(s) in ${String(waves.length)} publish wave(s). Nothing was published.\n${waves
-          .map((wave, index) => `  wave ${String(index + 1)}: ${wave.join(", ")}\n`)
+          .map(
+            (wave, index) =>
+              `  wave ${String(index + 1)}: ${wave.flat().join(", ")} (${String(wave.length)} upload level(s))\n`,
+          )
           .join("")}`,
       );
       return;
@@ -792,7 +848,11 @@ async function main(args: readonly string[]): Promise<void> {
     return version;
   };
   await publishCohort(
-    releaseLevels(packages).map((level) => level.filter((name) => publishNames.has(name))),
+    releaseWaves(packages).map((wave) =>
+      wave
+        .map((level) => level.filter((name) => publishNames.has(name)))
+        .filter((level) => level.length > 0),
+    ),
     {
       publish: (name) =>
         runConcurrently(

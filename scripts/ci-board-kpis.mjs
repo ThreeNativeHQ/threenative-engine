@@ -187,9 +187,16 @@ const releaseName = (promotion) =>
  * before the window still counts the boards it needed.
  */
 export function releaseRoad({ promotions, runs, ships = [], since, until }) {
-  const shippedAt = new Map(
-    ships.filter((ship) => ship.completedAt).map((ship) => [ship.sha, ship.completedAt]),
-  );
+  // A release can have more than one `npm-release.yml` run for its merge commit. The road ends at
+  // the earliest one that finished a `ship` job: 0.3.15's `ship` concluded `failure` after its
+  // publish, in the clean-room `npm:native` step PRD-897 owns, and AC-3 still counts its end.
+  const shippedAt = new Map();
+  for (const ship of ships) {
+    if (ship.completedAt === null || ship.completedAt === undefined) continue;
+    const known = shippedAt.get(ship.sha);
+    if (known === undefined || ms(ship.completedAt) < ms(known))
+      shippedAt.set(ship.sha, ship.completedAt);
+  }
   const rows = promotions
     .map((promotion) => roadRow({ promotion, runs, shippedAt, since, until }))
     .filter((row) => row !== null)
@@ -231,6 +238,35 @@ function roadRow({ promotion, runs, shippedAt, since, until }) {
   };
 }
 
+/** Every promotion pull request: `develop` into `main`, open or closed, newest first. */
+export function promotionsIn({ repo, limit = 200 }) {
+  return JSON.parse(
+    gh([
+      "pr",
+      "list",
+      "--repo",
+      repo,
+      "--base",
+      "main",
+      "--head",
+      "develop",
+      "--state",
+      "all",
+      "--limit",
+      String(limit),
+      "--json",
+      "number,title,createdAt,mergedAt,closedAt,mergeCommit",
+    ]),
+  ).map((promotion) => ({
+    number: promotion.number,
+    title: promotion.title,
+    createdAt: promotion.createdAt,
+    mergedAt: promotion.mergedAt === "" ? null : promotion.mergedAt,
+    closedAt: promotion.closedAt === "" ? null : promotion.closedAt,
+    mergeSha: promotion.mergeCommit?.oid ?? null,
+  }));
+}
+
 const ndjson = (text) =>
   text
     .split("\n")
@@ -245,13 +281,26 @@ export function measureBoards({
     gh(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]).trim(),
   npmPackage = "@threenative/core",
 }) {
+  // A promotion that opened before `since` still spent the boards it needed, so the runs are read
+  // from the earliest promotion this window reports. Promotions that ended before the window cannot
+  // widen the fetch: their boards are not reported, and the list reaches back months.
+  const until = new Date().toISOString();
+  const promotions = promotionsIn({ repo });
+  const ended = (promotion) => promotion.mergedAt ?? promotion.closedAt ?? until;
+  const boardSince = promotions
+    .filter((promotion) => ms(ended(promotion)) >= ms(since))
+    .reduce(
+      (earliest, promotion) =>
+        ms(promotion.createdAt) < ms(earliest) ? promotion.createdAt : earliest,
+      since,
+    );
   const runs = ndjson(
     gh([
       "api",
       "--paginate",
       "--jq",
       ".workflow_runs[]",
-      `repos/${repo}/actions/workflows/ci.yml/runs?created=%3E%3D${since}&per_page=100`,
+      `repos/${repo}/actions/workflows/ci.yml/runs?created=%3E%3D${boardSince}&per_page=100`,
     ]),
   ).map((run) => ({
     id: run.id,
@@ -288,32 +337,6 @@ export function measureBoards({
   const publishes = Object.entries(times)
     .filter(([version]) => /^\d+\.\d+\.\d+$/u.test(version))
     .map(([version, at]) => ({ version, at }));
-  const promotions = JSON.parse(
-    gh([
-      "pr",
-      "list",
-      "--repo",
-      repo,
-      "--base",
-      "main",
-      "--head",
-      "develop",
-      "--state",
-      "all",
-      "--limit",
-      "200",
-      "--json",
-      "number,title,createdAt,mergedAt,closedAt,mergeCommit",
-    ]),
-  ).map((promotion) => ({
-    number: promotion.number,
-    title: promotion.title,
-    createdAt: promotion.createdAt,
-    mergedAt: promotion.mergedAt === "" ? null : promotion.mergedAt,
-    closedAt: promotion.closedAt === "" ? null : promotion.closedAt,
-    mergeSha: promotion.mergeCommit?.oid ?? null,
-  }));
-  const until = new Date().toISOString();
   return {
     ...summarizeBoards({ runs, since, until }),
     ...releaseLead({ publishes, promotions, since, until }),
@@ -347,13 +370,14 @@ export function shippedReleases({ repo, since, shas }) {
     ]),
   ).filter((run) => shas.has(run.head_sha));
   return runs.flatMap((run) => {
+    // The latest attempt, not attempt 1: a re-run is where an interrupted publish finishes.
     const jobs = ndjson(
       gh([
         "api",
         "--paginate",
         "--jq",
         ".jobs[]",
-        `repos/${repo}/actions/runs/${run.id}/attempts/1/jobs?per_page=100`,
+        `repos/${repo}/actions/runs/${run.id}/jobs?per_page=100`,
       ]),
     );
     const ship = jobs.find((job) => job.name === "ship");

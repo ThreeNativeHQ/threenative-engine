@@ -328,6 +328,36 @@ describe("releaseRoad (PRD-901)", () => {
     ]);
   });
 
+  it("counts a ship job that concluded red: 0.3.15's ship failed after its publish", () => {
+    // Its `ship` ended `failure` in the clean-room `npm:native` step (PRD-897) after publishing,
+    // and AC-3 still measures 59.5 minutes to that end. A successful-only rule would read n/a.
+    const road = releaseRoad({
+      promotions: [promotion(687, "Release 0.3.15", 0, 100)],
+      runs: [run(10)],
+      ships: [{ sha: "sha-687", completedAt: T(159), conclusion: "failure" }],
+      since: T(0),
+      until: T(2000),
+    });
+    expect(road.mergeToShipEndMin).toBe(59);
+  });
+
+  it("keeps the earliest finished ship when a release has more than one run", () => {
+    // The API lists runs newest first, and a re-dispatched clean room runs a second time on the
+    // same merge commit. The road ends at the first one that finished.
+    const road = releaseRoad({
+      promotions: [promotion(689, "Release 0.3.16", 0, 100)],
+      runs: [run(10)],
+      ships: [
+        { sha: "sha-689", completedAt: T(400) },
+        { sha: "sha-689", completedAt: T(159) },
+        { sha: "sha-689", completedAt: null },
+      ],
+      since: T(0),
+      until: T(2000),
+    });
+    expect(road.mergeToShipEndMin).toBe(59);
+  });
+
   it("reports the newest release in the window, not the one that moved most", () => {
     const road = releaseRoad({
       promotions: [

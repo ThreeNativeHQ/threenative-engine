@@ -74,16 +74,6 @@ export function allFinished(jobs) {
   return jobs.every((job) => job?.name === "queue-watch" || job?.status === "completed");
 }
 
-/**
- * PRD-901: `ci.yml` runs `fail-fast: false`, so a leg that never concluded was cut short — a newer
- * head superseded the board. Such a board is no round: most of its legs never ran, and the board
- * that replaced it reports instead. Without this, a release that pushed 22 times would collect
- * one comment per superseded board, each claiming a completeness it does not have.
- */
-export function cutShort(jobs) {
-  return jobs.some((job) => job?.name !== "queue-watch" && job?.conclusion === "cancelled");
-}
-
 export function commentBody({ job, runId, repository }) {
   const run = `https://github.com/${repository}/actions/runs/${runId}`;
   return [
@@ -177,12 +167,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (;;) {
       const jobs = runJobs(repository, runId);
       if (allFinished(jobs)) {
-        if (cutShort(jobs)) {
-          console.log(
-            `promotion board ${runId}: superseded before every leg concluded, no comment`,
-          );
-          break;
-        }
         const red = redJobs(jobs);
         if (red.length === 0) {
           console.log(`promotion board ${runId}: every leg concluded, none red`);
