@@ -356,15 +356,18 @@ describe("pnpm release publishing", () => {
       publish: async (name) => {
         // A resumed publish: `core` is on the registry already, so the ship call site turns its
         // upload into a no-op while keeping it in the wave.
-        if (name !== "core") trace.push(`publish ${name}`);
+        if (name === "create-threenative") trace.push(`publish ${name}`);
       },
       visible: async (name) => {
         trace.push(`visible ${name}`);
       },
     });
-    expect(trace.indexOf("publish create-threenative")).toBeGreaterThan(
-      trace.indexOf("visible core"),
-    );
+    expect(trace).toEqual([
+      "visible core",
+      "visible ui",
+      "publish create-threenative",
+      "visible create-threenative",
+    ]);
   });
 
   it("names the failed package, publishes nothing after it and no later wave", async () => {

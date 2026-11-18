@@ -381,29 +381,25 @@ export function shippedReleases({ repo, since, shas }) {
       `repos/${repo}/actions/workflows/npm-release.yml/runs?created=%3E%3D${since}&per_page=100`,
     ]),
   ).filter((run) => shas.has(run.head_sha));
-  return runs.flatMap((run) => {
-    // The latest attempt is where an interrupted publish finishes, but it is also `n/a` while a
-    // retry runs. Read attempt 1 as the fallback so a finished `ship` is never lost to a retry.
-    const shipIn = (attempt) =>
-      ndjson(
-        gh([
-          "api",
-          "--paginate",
-          "--jq",
-          ".jobs[]",
-          `repos/${repo}/actions/runs/${run.id}/${attempt === 1 ? "attempts/1/" : ""}jobs?per_page=100`,
-        ]),
-      ).find((job) => job.name === "ship");
-    const latest = shipIn(run.run_attempt ?? 1);
-    const first = latest?.completed_at === null && run.run_attempt > 1 ? shipIn(1) : undefined;
-    return [latest, first]
-      .filter((ship) => ship !== undefined)
+  return runs.flatMap((run) =>
+    // Every attempt: a finished `ship` on attempt 1 must not be lost while attempt 2 runs, and
+    // `releaseRoad` keeps the earliest completion that is neither skipped nor cancelled.
+    ndjson(
+      gh([
+        "api",
+        "--paginate",
+        "--jq",
+        ".jobs[]",
+        `repos/${repo}/actions/runs/${run.id}/jobs?filter=all&per_page=100`,
+      ]),
+    )
+      .filter((job) => job.name === "ship")
       .map((ship) => ({
         sha: run.head_sha,
         completedAt: ship.completed_at,
         conclusion: ship.conclusion,
-      }));
-  });
+      })),
+  );
 }
 
 /** A promotion with no publish yet counts as a release that lands now: a lower bound, never a pass. */
