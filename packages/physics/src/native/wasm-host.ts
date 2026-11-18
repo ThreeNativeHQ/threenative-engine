@@ -150,7 +150,7 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
     EXPORTS.some((name) => typeof exports[name] !== "function")
   )
     throw new Error("TN_NATIVE_PHYSICS_MISSING: Wasm module does not export the physics ABI");
-  const wasm = exports as unknown as PhysicsWasm;
+  const wasm = exports as PhysicsWasm;
   // Any export that allocates can grow memory and detach the old buffer, so every read or write
   // of memory goes through these views after `views()` has checked the buffer's identity.
   let buffer: ArrayBuffer | undefined;
@@ -777,7 +777,7 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
         if (shape.kind !== "heightfield")
           throw new Error("setColliderShape supports heightfield shapes");
         try {
-          const value = shape as unknown as Fields;
+          const value = shape as Fields;
           const heights = value.heights;
           if (!(heights instanceof Float32Array)) throw INVALID;
           const rows = gridCount(value, "rows");
