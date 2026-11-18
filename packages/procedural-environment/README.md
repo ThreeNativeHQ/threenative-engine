@@ -35,10 +35,13 @@ kits (forest, coastal, alpine, desert, tundra) where they overlap.
 
 From the repository root, `pnpm asset-library` builds this package and opens a Storybook-shaped
 viewer: a sidebar of every element by kind with search and a biome filter, one story per element
-with controls (seed, level of detail, rock biome, wind, wireframe, a 1.8 m figure for scale), a docs
-tab with the paste-ready bake call, size, triangles and GLB attributes, and an overview story per kind
-at true scale. Each story calls this package's own bake, so the viewer shows what a game gets. The
-URL holds the story (`#/rock/arch?seed=3&lod=0&biome=desert`), so a link shows the same bake.
+with every option its bake takes as a control (seed, level of detail, textures, a rock's biome,
+size, shape traits, surface cover and cliff module, a city module's floors, wetness and sign), a
+docs tab with the paste-ready bake call, size, triangles and GLB attributes, and an overview story
+per kind at true scale. Each story calls this package's own bake, so the viewer shows what a game
+gets. The URL holds the story (`#/rock/cliff?biome=coastal&module=1`), so a link shows the same
+bake. While it runs, an edit under `src/`, `vendor/` or `scans/` rebuilds the package and reloads
+the page.
 
 ## Trees, cover and the forest floor
 
@@ -59,13 +62,21 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
 - Each GLB holds two primitives, `bark` and `foliage`, with `COLOR_0`, `TEXCOORD_0` and a
   `_WIND` vec4 per vertex: x trunk sway (m), y branch sway (m), z leaf flutter (m), w phase.
   Units are metres, +Y is up, the plant stands on the origin.
+- Textures are Poly Haven CC0 scans by default (`scans/credits.json`): species bark on the Arbor
+  trees whose bark has a scan (oak, pine, cedar, palm, sakura ...), and a grey wood or stone detail
+  scan on forest-kit `log`, `stump`, `branch`, `twig` and `rock`, whose `COLOR_0` is doubled so the
+  kit's palette stays. The bake's `scan` names the scan it used. `textures: "generated"` keeps the
+  generator's own texture pixel for pixel. Birch, aspen, bamboo, banana, cactus, flower stems, shrub
+  twigs, cover and leaf litter have no fitting scan and keep theirs. Every embedded image is WebP
+  (`EXT_texture_webp`, required): scans lossy q85, generated images lossless.
 - The Arbor presets also carry their bark and leaf atlas and alpha-masked leaves. A forest-kit
   preset shades from `COLOR_0` alone: debris (opaque wood and stone) rides `bark`, cover (a thin
   blade or frond) rides the double-sided, alpha-masked `foliage` primitive, and its float sway is
   `_WIND.z`, with debris writing all four zero.
 - `form` and `leafImage` patch an Arbor preset's shape and leaf card. A forest-kit preset throws
   when given either, because it has no leaf card to patch.
-- `@napi-rs/canvas` paints the leaf atlas at bake time (Arbor needs a Canvas 2D).
+- `@napi-rs/canvas` paints the leaf atlas at bake time (Arbor needs a Canvas 2D), and `sharp`
+  encodes the WebPs.
 
 ## Rocks, cliffs and mountains
 
@@ -78,14 +89,17 @@ await bakeRock({ form: "boulder", biome: "forest", traits: { weathering: 0.8 }, 
 ```
 
 - Forms: `boulder`, `slab`, `spire`, `hoodoo`, `stack` (sea stack), `mesa`, `arch`, `cliff`
-  (tiles along X) and `mountain`. The biome sets the strata, fracture and weathering, and the
+  (tiles along X) and `mountain`. `module: n` bakes cliff module n, which sits at x = n x width and
+  meets modules n - 1 and n + 1 without a seam, as Outcrop's `tile()` lays them. The biome sets the strata, fracture and weathering, and the
   painted cover: moss in a forest, snow in the tundra, sand in the desert, algae under the tide.
 - `traits` and `surface` override the biome's values key by key (`roughness`, `strata`,
   `columnar`; `rockA`, `moss`, `snow`, `tide`), `size` sets metres and `detail` (0 to 1, default
   0.3) the level-0 density. An unknown key throws. Any override puts a hash in the file name.
 - Each GLB holds one primitive on a `rock` material: `POSITION`, `NORMAL` and `COLOR_0` (linear
-  RGB, rock and cover already blended). No UVs: a game material that wants texture detail
-  projects it triplanar. Metres, +Y up, the rock rests on y = 0.
+  RGB, rock and cover already blended), plus `_ROCK`, `_COVER` and `_WET`, the inputs of Outcrop's
+  triplanar `createRockMaterial`. Beside it the bake writes that material's two maps as lossless
+  WebPs (`rock` in the result: detail rgb albedo and a roughness, normal rgb and a height). No UVs:
+  the material projects them triplanar. Metres, +Y up, the rock rests on y = 0.
 - The same options write the same bytes. `three` builds the geometry at bake time only.
 
 ## City modules: roads, buildings, props, vehicles

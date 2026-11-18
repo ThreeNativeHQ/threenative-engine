@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { inflateSync } from "node:zlib";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -100,43 +100,34 @@ describe("bakeRock writes a rock GLB for a biome", () => {
     expect(lod0?.bounds.max[1]).toBeGreaterThan(1);
   });
 
-  it("writes Outcrop's own detail and normal maps beside the GLB, the inputs of its triplanar material", async () => {
+  it("writes Outcrop's own detail and normal maps beside the GLB as 512-px lossless WebPs", async () => {
     const out = await makeTempDir("tn-rock-maps-");
     const [arch] = await bakeRock({ form: "arch", biome: "desert", seed: 3, out });
     expect(arch?.rock?.texture).toBe("sandstone");
     for (const map of [arch?.rock?.detail, arch?.rock?.normal]) {
-      const png = await readFile(map ?? "");
-      expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
-      expect(png.readUInt32BE(16)).toBe(512);
+      const meta = await sharp(await readFile(map ?? "")).metadata();
+      expect([meta.format, meta.width, meta.height, meta.channels]).toEqual(["webp", 512, 512, 4]);
     }
   });
 
   it("keeps Outcrop's map bytes exactly, alpha (height, roughness) included", async () => {
-    const out = await makeTempDir("tn-rock-png-");
+    const out = await makeTempDir("tn-rock-webp-");
     const [rock] = await bakeRock({ form: "boulder", biome: "volcanic", out });
-    const png = await readFile(rock?.rock?.normal ?? "");
-    const size = png.readUInt32BE(16);
-    expect(png[25]).toBe(6); // RGBA
-    const idat: Buffer[] = [];
-    for (let at = 8; at < png.length; ) {
-      const length = png.readUInt32BE(at);
-      if (png.toString("latin1", at + 4, at + 8) === "IDAT")
-        idat.push(png.subarray(at + 8, at + 8 + length));
-      at += 12 + length;
-    }
-    const rows = inflateSync(Buffer.concat(idat));
+    const got = await sharp(await readFile(rock?.rock?.normal ?? ""))
+      .raw()
+      .toBuffer();
     const want = new Outcrop.RockGenerator().materialFor({
       form: "boulder",
       size: [2.4, 1.8, 2.1],
       surface: { texture: "basalt" },
     }).userData.uniforms.tRockNormal.value.image.data;
+    const size = 512 * 4;
     let differ = 0;
-    for (let y = 0; y < size; y++) {
-      expect(rows[y * (size * 4 + 1)]).toBe(0); // filter 0: the bytes are the pixels
-      const got = rows.subarray(y * (size * 4 + 1) + 1, (y + 1) * (size * 4 + 1));
-      const row = want.subarray((size - 1 - y) * size * 4, (size - y) * size * 4);
-      for (let i = 0; i < got.length; i++) if (got[i] !== row[i]) differ++;
+    for (let y = 0; y < 512; y++) {
+      const row = want.subarray((511 - y) * size, (512 - y) * size); // the image's top row is the data's last
+      for (let i = 0; i < size; i++) if (got[y * size + i] !== row[i]) differ++;
     }
+    expect(got.length).toBe(want.length);
     expect(differ).toBe(0);
   });
 

@@ -11,7 +11,8 @@ import ForestKit, {
 import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
 import { type IBakeCityOptions, buildCity, cityModules } from "./city.js";
-import { rgbaPng } from "./png.js";
+import { type IScan, barkScan, detailScan } from "./scans.js";
+import { leafNormal, rgbaWebp } from "./webp.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
@@ -46,6 +47,12 @@ export interface IBakeVegetationOptions {
    * The file names carry a hash of its bytes.
    */
   readonly leafImage?: string;
+  /**
+   * `"scans"` (the default) wraps bark and forest-kit wood and stone in a Poly Haven CC0 scan where
+   * one fits (the bake's `scan` names it); `"generated"` keeps the generator's own texture, byte for
+   * byte, as the raw Arbor and forest-kit pages draw it.
+   */
+  readonly textures?: "scans" | "generated";
 }
 
 export interface IEnvironmentBake {
@@ -56,8 +63,10 @@ export interface IEnvironmentBake {
   readonly lod: number;
   readonly path: string;
   readonly triangles: number;
+  /** The Poly Haven scan the bark or wood wears, absent when the texture is generated. */
+  readonly scan?: string;
   /**
-   * A rock's material inputs: Outcrop's ROCK_TEXTURES profile, metres per repeat, and the two PNGs
+   * A rock's material inputs: Outcrop's ROCK_TEXTURES profile, metres per repeat, and the two lossless WebPs
    * its triplanar material samples (detail: rgb albedo multiplier, a roughness; normal: rgb
    * tangent normal, a height). The GLB's `_ROCK`, `_COVER` and `_WET` attributes are the rest.
    */
@@ -186,13 +195,14 @@ function topDownCells(source: IArborPreset): IArborPreset {
 }
 
 /**
- * The leaf PNG (the game's image, else Arbor's drawn card, else none for a leafless preset such as
- * `saguaro`) and the file-name tag of a game's patch.
+ * The leaf image (the game's PNG, else Arbor's drawn card as WebP with a normal map cooked from its
+ * own leaves and veins, else none for a leafless preset such as `saguaro`) and the file-name tag of
+ * a game's patch.
  */
 async function leafOf(
   source: IArborPreset,
   options: IBakeVegetationOptions,
-): Promise<{ leaf?: Uint8Array; tag: string }> {
+): Promise<{ leaf?: Uint8Array; leafNormal?: Uint8Array; tag: string }> {
   const image = options.leafImage === undefined ? undefined : await readFile(options.leafImage);
   if (image !== undefined && !image.subarray(0, 8).equals(PNG_SIGNATURE))
     throw new Error(`bakeVegetation: leafImage ${options.leafImage} is not a PNG`);
@@ -204,7 +214,12 @@ async function leafOf(
   if (image !== undefined) return { leaf: image, tag };
   if (!source.leaves?.length) return { tag };
   const drawn = Arbor.leafTexture(source, { createCanvas });
-  return { leaf: rgbaPng(drawn.width, drawn.height, drawn.data), tag };
+  const { width, height, data } = drawn;
+  return {
+    leaf: await rgbaWebp(width, height, data),
+    leafNormal: await rgbaWebp(width, height, leafNormal(width, height, data)),
+    tag,
+  };
 }
 
 /**
@@ -294,19 +309,29 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
 export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> {
   const { preset, out } = options;
   const { arbor, forest, lods, seed } = resolveBake(preset, options);
-  if (forest !== null) return bakeForestKit(preset, forest, { lods, out, seed });
+  const scans = options.textures !== "generated";
+  if (forest !== null)
+    return bakeForestKit(preset, forest, {
+      lods,
+      out,
+      scan: scans ? await detailScan(preset) : undefined,
+      seed,
+    });
   const formed = withForm(preset, arbor as IArborPreset, options.form);
   const source = options.leafImage === undefined ? formed : topDownCells(formed);
-  const { leaf, tag } = await leafOf(source, options);
-  const bark = source.noBark ? undefined : Arbor.barkTexture(source.bark);
+  const { leaf, leafNormal: leafRelief, tag } = await leafOf(source, options);
+  const scan = !source.noBark && scans ? await barkScan(source.bark) : undefined;
+  const bark = source.noBark || scan ? undefined : Arbor.barkTexture(source.bark);
   const textures = {
+    ...(scan ? { bark: scan.color, barkNormal: scan.normal } : {}),
     ...(bark
       ? {
-          bark: rgbaPng(bark.width, bark.height, bark.color),
-          barkNormal: rgbaPng(bark.width, bark.height, bark.normal),
+          bark: await rgbaWebp(bark.width, bark.height, bark.color),
+          barkNormal: await rgbaWebp(bark.width, bark.height, bark.normal),
         }
       : {}),
     ...(leaf ? { leaf } : {}),
+    ...(leafRelief ? { leafNormal: leafRelief } : {}),
   };
   await mkdir(out, { recursive: true });
   const baked: IEnvironmentBake[] = [];
@@ -319,6 +344,7 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
       lod,
       path: file,
       triangles: tree.triangles,
+      ...(scan ? { scan: scan.id } : {}),
     });
   }
   return baked;
@@ -389,23 +415,34 @@ function forestKitTree(
   };
 }
 
-/** A forest-kit preset's GLBs: no bark or leaf atlas, all colour in COLOR_0. */
+/**
+ * A forest-kit preset's GLBs: all colour in COLOR_0, or, with a detail scan, COLOR_0 doubled times
+ * the scan's grey multiplier (mean 0.5) plus its normal map, so the palette stays the kit's.
+ */
 async function bakeForestKit(
   preset: string,
   source: IForestKitPreset,
-  options: { lods: readonly number[]; out: string; seed: number },
+  options: { lods: readonly number[]; out: string; scan: IScan | undefined; seed: number },
 ): Promise<IEnvironmentBake[]> {
+  const { scan } = options;
   await mkdir(options.out, { recursive: true });
   const baked: IEnvironmentBake[] = [];
   for (const lod of options.lods) {
     const tree = forestKitTree(preset, source, { lod, seed: options.seed });
     const file = path.join(options.out, `${preset}-${options.seed}-lod${lod}.glb`);
-    await writeAtomic(file, Arbor.toGLB(tree));
+    if (scan)
+      for (let i = 0; i < tree.bark.color.length; i++)
+        tree.bark.color[i] = Math.min(1, (tree.bark.color[i] as number) * 2);
+    await writeAtomic(
+      file,
+      Arbor.toGLB(tree, scan ? { bark: scan.color, barkNormal: scan.normal } : {}),
+    );
     baked.push({
       bounds: { max: tree.bounds.max, min: tree.bounds.min },
       lod,
       path: file,
       triangles: tree.triangles,
+      ...(scan ? { scan: scan.id } : {}),
     });
   }
   return baked;
@@ -553,6 +590,11 @@ export interface IBakeRockOptions {
   readonly traits?: Readonly<Record<string, number>>;
   /** Colour and cover overrides over the biome's: rockA, rockB, accent, moss, snow, sand, lichen, tide and their colours. */
   readonly surface?: Readonly<Record<string, string | number>>;
+  /**
+   * A tileable form's (cliff) module along +X: module n sits n widths over and meets n - 1 and
+   * n + 1 without a seam, as Outcrop's `tile()` lays them. Place it at x = n x width. Default 0.
+   */
+  readonly module?: number;
 }
 
 const ROCK_LOD_DETAIL = [1, 0.5, 0.2];
@@ -678,8 +720,11 @@ async function rockMaps(
     map: { image: { data: Uint8Array; width: number; height: number } },
     kind: string,
   ) => {
-    const file = path.join(out, `rock-${texture}-${kind}.png`);
-    await writeAtomic(file, rgbaPng(map.image.width, map.image.height, map.image.data));
+    const file = path.join(out, `rock-${texture}-${kind}.webp`);
+    await writeAtomic(
+      file,
+      await rgbaWebp(map.image.width, map.image.height, map.image.data, true),
+    );
     return file;
   };
   return {
@@ -688,6 +733,29 @@ async function rockMaps(
     detail: await write(uniforms.tRockDetail.value, "detail"),
     normal: await write(uniforms.tRockNormal.value, "normal"),
   };
+}
+
+/** The throw that names what is wrong with a bakeRock call's form, detail, size, module or keys. */
+function checkRockOptions(options: IBakeRockOptions, detail: number, module: number): void {
+  const { form, size, traits, surface } = options;
+  if (!Object.hasOwn(Outcrop.FORMS, form)) {
+    const forms = Object.keys(Outcrop.FORMS);
+    throw new Error(
+      `bakeRock: unknown form "${form}". Nearest ids: ${nearestPresets(form, 3, forms).join(", ")}. Forms: ${forms.join(", ")}.`,
+    );
+  }
+  if (!(detail >= 0 && detail <= 1))
+    throw new Error(`bakeRock: detail must be 0 to 1, got ${detail}`);
+  if (size !== undefined && (size.length !== 3 || !size.every((v) => Number.isFinite(v) && v > 0)))
+    throw new Error(`bakeRock: size must be three positive metres [w, h, d], got [${size}]`);
+  if (module !== 0 && !(Number.isInteger(module) && Outcrop.FORMS[form]?.tileable))
+    throw new Error(
+      `bakeRock: module must be an integer on a tileable form (${Object.keys(Outcrop.FORMS)
+        .filter((id) => Outcrop.FORMS[id]?.tileable)
+        .join(", ")}), got ${module} on "${form}"`,
+    );
+  checkKeys("traits", traits, Outcrop.DEFAULT_TRAITS);
+  checkKeys("surface", surface, Outcrop.DEFAULT_SURFACE);
 }
 
 /**
@@ -709,27 +777,19 @@ async function rockMaps(
  */
 export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> {
   const { form, out, size, traits, surface } = options;
+  const module = options.module ?? 0;
   const seed = options.seed ?? 1;
   const lods = options.lods ?? [0];
   const detail = options.detail ?? 0.3;
-  if (!Object.hasOwn(Outcrop.FORMS, form)) {
-    const forms = Object.keys(Outcrop.FORMS);
-    throw new Error(
-      `bakeRock: unknown form "${form}". Nearest ids: ${nearestPresets(form, 3, forms).join(", ")}. Forms: ${forms.join(", ")}.`,
-    );
-  }
+  checkRockOptions(options, detail, module);
   const biome = biomeOf("bakeRock", options.biome ?? "hills");
   checkSeedAndLods("bakeRock", seed, lods);
-  if (!(detail >= 0 && detail <= 1))
-    throw new Error(`bakeRock: detail must be 0 to 1, got ${detail}`);
-  if (size !== undefined && (size.length !== 3 || !size.every((v) => Number.isFinite(v) && v > 0)))
-    throw new Error(`bakeRock: size must be three positive metres [w, h, d], got [${size}]`);
-  checkKeys("traits", traits, Outcrop.DEFAULT_TRAITS);
-  checkKeys("surface", surface, Outcrop.DEFAULT_SURFACE);
-  const patched = options.detail !== undefined || size || traits || surface;
+  const patched = options.detail !== undefined || size || traits || surface || module !== 0;
   const tag = patched
     ? `-f${createHash("sha256")
-        .update(JSON.stringify([detail, size ?? null, traits ?? null, surface ?? null]))
+        .update(
+          JSON.stringify([detail, size ?? null, traits ?? null, surface ?? null, module || null]),
+        )
         .digest("hex")
         .slice(0, 8)}`
     : "";
@@ -745,6 +805,7 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
       ...(size ? { size } : {}),
       ...(traits ? { traits } : {}),
       ...(surface ? { surface } : {}),
+      ...(module ? { offset: [module * (size ?? Outcrop.FORMS[form]?.size ?? [0])[0], 0, 0] } : {}),
     });
     const file = path.join(out, `${form}-${biome.id}-${seed}${tag}-lod${lod}.glb`);
     const box = geometry.boundingBox;

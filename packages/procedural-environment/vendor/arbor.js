@@ -3,7 +3,8 @@
  * One file, no dependencies. The generator is engine-agnostic (plain typed
  * arrays). Vendored from the owner's arbor.js 1.0.0 (MIT): the Arbor.three
  * adapter and the browser-only encodePNG are cut, because the engine bakes a
- * GLB and the game owns the look and the wind.
+ * GLB and the game owns the look and the wind; toGLB also writes WebP images
+ * through EXT_texture_webp, and a `leafNormal` image as the foliage normal map.
  *
  *   const t = Arbor.generate('oak', { seed: 7, lod: 0 });
  *   // t.bark / t.leaves = { position, normal, uv, color, wind, index }
@@ -1594,10 +1595,14 @@ function toGLB(tree, png = {}) {
     return accessors.length - 1;
   };
   const images = [], textures = [], materials = [], prims = [];
+  // ThreeNative: a WebP image (RIFF....WEBP) rides EXT_texture_webp, a PNG stays core glTF.
+  let webp = false;
   const texOf = (bytes) => {
     if (!bytes) return null;
-    images.push({ bufferView: pushBytes(bytes), mimeType: 'image/png' });
-    textures.push({ source: images.length - 1, sampler: 0 });
+    const isWebp = bytes[0] === 0x52 && bytes[8] === 0x57;
+    webp ||= isWebp;
+    images.push({ bufferView: pushBytes(bytes), mimeType: isWebp ? 'image/webp' : 'image/png' });
+    textures.push(isWebp ? { sampler: 0, extensions: { EXT_texture_webp: { source: images.length - 1 } } } : { source: images.length - 1, sampler: 0 });
     return { index: textures.length - 1 };
   };
   const part = (p, material) => {
@@ -1613,15 +1618,16 @@ function toGLB(tree, png = {}) {
       indices: acc(idx, 'SCALAR', 5125), material: materials.length - 1,
     });
   };
-  const bt = texOf(png.bark), bn = texOf(png.barkNormal), lt = texOf(png.leaf);
+  const bt = texOf(png.bark), bn = texOf(png.barkNormal), lt = texOf(png.leaf), ln = texOf(png.leafNormal);
   part(tree.bark, Object.assign({ name: 'bark', pbrMetallicRoughness: Object.assign({ metallicFactor: 0, roughnessFactor: 0.92 }, bt ? { baseColorTexture: bt } : { baseColorFactor: [0.35, 0.28, 0.22, 1] }) }, bn ? { normalTexture: bn } : null));
-  part(tree.leaves, { name: 'foliage', alphaMode: 'MASK', alphaCutoff: 0.5, doubleSided: true, pbrMetallicRoughness: Object.assign({ metallicFactor: 0, roughnessFactor: 0.6 }, lt ? { baseColorTexture: lt } : { baseColorFactor: [0.25, 0.4, 0.12, 1] }) });
+  part(tree.leaves, Object.assign({ name: 'foliage', alphaMode: 'MASK', alphaCutoff: 0.5, doubleSided: true, pbrMetallicRoughness: Object.assign({ metallicFactor: 0, roughnessFactor: 0.6 }, lt ? { baseColorTexture: lt } : { baseColorFactor: [0.25, 0.4, 0.12, 1] }) }, ln ? { normalTexture: ln } : null));
   const json = {
     asset: { version: '2.0', generator: 'Arbor' }, scene: 0, scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0, name: tree.preset.id }], meshes: [{ name: tree.preset.name, primitives: prims }],
     materials, accessors, bufferViews: views, buffers: [{ byteLength: offset }],
   };
   if (images.length) { json.images = images; json.textures = textures; json.samplers = [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }]; }
+  if (webp) json.extensionsUsed = json.extensionsRequired = ['EXT_texture_webp'];
   let jb = new TextEncoder().encode(JSON.stringify(json));
   if (jb.length % 4) { const padded = new Uint8Array(jb.length + 4 - (jb.length % 4)).fill(32); padded.set(jb); jb = padded; }
   const out = new Uint8Array(12 + 8 + jb.length + 8 + offset), dv = new DataView(out.buffer);

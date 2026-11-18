@@ -1,0 +1,24 @@
+{
+  "source": "Poly Haven",
+  "sourceUrl": "https://polyhaven.com",
+  "license": "CC0 1.0 Universal (public domain dedication)",
+  "licenseUrl": "https://polyhaven.com/license",
+  "downloaded": "2026-11-17",
+  "preprocessing": "scans/prepare.mjs: the upstream 1K JPG diffuse and nor_gl, 512 px wide, tiled to 1:2 for bark, WebP q85; detail scans are luminance scaled to a linear mean of 0.5",
+  "scans": [
+    "bark_brown_01",
+    "bark_brown_02",
+    "bark_willow_02",
+    "chinese_hackberry_bark",
+    "japanese_camphor_bark",
+    "japanese_cedar_bark",
+    "jolcham_oak_bark_01",
+    "knotted_pine_bark",
+    "metasequoia_bark",
+    "palm_bark",
+    "pine_bark",
+    "rock_boulder_dry",
+    "sakura_bark",
+    "tree_bark_03"
+  ]
+}

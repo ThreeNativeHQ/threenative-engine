@@ -45,7 +45,7 @@ describe("bakeVegetation", () => {
         expect.arrayContaining(["POSITION", "NORMAL", "TEXCOORD_0", "COLOR_0", "_WIND"]),
       );
     expect(gltf.materials.find((material) => material.name === "foliage")?.alphaMode).toBe("MASK");
-    expect(gltf.images?.length).toBe(3);
+    expect(gltf.images?.length).toBe(4);
     expect(await readdir(first.out)).toEqual(["oak-7-lod0.glb", "oak-7-lod2.glb"]);
   });
 
