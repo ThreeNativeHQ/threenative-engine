@@ -193,6 +193,10 @@ export function releaseRoad({ promotions, runs, ships = [], since, until }) {
   const shippedAt = new Map();
   for (const ship of ships) {
     if (ship.completedAt === null || ship.completedAt === undefined) continue;
+    // `ship` is gated on a successful main push, so a scheduled or a re-run main run on the same
+    // commit has a `ship` that is skipped — and a skipped job still carries a completion. Counting
+    // it would read minutes for a release that took an hour. A cancelled `ship` did not finish.
+    if (ship.conclusion === "skipped" || ship.conclusion === "cancelled") continue;
     const known = shippedAt.get(ship.sha);
     if (known === undefined || ms(ship.completedAt) < ms(known))
       shippedAt.set(ship.sha, ship.completedAt);

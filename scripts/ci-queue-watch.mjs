@@ -54,11 +54,20 @@ export function isInfraFailure(job, log, signatures) {
   return signatures !== "" && new RegExp(signatures, "u").test(log);
 }
 
-/** Every red job that is not an aggregate, in the order they concluded. */
-export function redJobs(jobs) {
+/**
+ * Every red job that is not an aggregate, in the order they concluded.
+ *
+ * `cancelled` counts on a promotion board only. A leg killed by `timeout-minutes` concludes
+ * `cancelled` inside a run that concluded `failure` (ci.yml run 43858835585), so leaving it out
+ * would let a board whose only red leg timed out report "none red". It cannot be counted on the
+ * cancelling paths: a superseded run has cancelled legs and is not red.
+ */
+export function redJobs(jobs, includeCancelled = false) {
   const red = jobs.filter(
     (job) =>
-      RED.has(job?.conclusion) && !ECHOES.has(job?.name) && !NON_BLOCKING.test(job?.name ?? ""),
+      (RED.has(job?.conclusion) || (includeCancelled && job?.conclusion === "cancelled")) &&
+      !ECHOES.has(job?.name) &&
+      !NON_BLOCKING.test(job?.name ?? ""),
   );
   red.sort((a, b) => String(a.completed_at).localeCompare(String(b.completed_at)));
   return red;
@@ -91,7 +100,7 @@ export function promotionCommentBody({ jobs, runId, repository }) {
   const run = `https://github.com/${repository}/actions/runs/${runId}`;
   return [
     `This promotion board ended with ${String(jobs.length)} red ${jobs.length === 1 ? "leg" : "legs"}.`,
-    "The board ran to its end, so this list is every failure of the round.",
+    "The board ran to its end, so this list is every leg of the round that did not pass.",
     "",
     ...jobs.map((job) => `- [\`${job.name}\`](${job.html_url ?? run}) (${job.conclusion})`),
     "",
@@ -167,7 +176,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (;;) {
       const jobs = runJobs(repository, runId);
       if (allFinished(jobs)) {
-        const red = redJobs(jobs);
+        const red = redJobs(jobs, true);
         if (red.length === 0) {
           console.log(`promotion board ${runId}: every leg concluded, none red`);
           break;

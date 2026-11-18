@@ -341,6 +341,22 @@ describe("releaseRoad (PRD-901)", () => {
     expect(road.mergeToShipEndMin).toBe(59);
   });
 
+  it("ignores a skipped ship: a scheduled main run carries one on the same commit", () => {
+    // `ship` is gated on a successful main push, so a nightly run on main has a `ship` job that is
+    // skipped and still carries a completion. Taking it would read minutes for a one-hour release.
+    const road = releaseRoad({
+      promotions: [promotion(689, "Release 0.3.16", 0, 100)],
+      runs: [run(10)],
+      ships: [
+        { sha: "sha-689", completedAt: T(105), conclusion: "skipped" },
+        { sha: "sha-689", completedAt: T(159), conclusion: "failure" },
+      ],
+      since: T(0),
+      until: T(2000),
+    });
+    expect(road.mergeToShipEndMin).toBe(59);
+  });
+
   it("keeps the earliest finished ship when a release has more than one run", () => {
     // The API lists runs newest first, and a re-dispatched clean room runs a second time on the
     // same merge commit. The road ends at the first one that finished.

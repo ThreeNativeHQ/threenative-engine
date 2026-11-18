@@ -315,10 +315,24 @@ describe("PRD-901 a promotion board shows every red in one round", () => {
     expect(result.status).toBe(0);
     expect(result.calls).toContain("issues/689/comments");
     expect(result.calls).toContain("`budgets`");
-    // A cancelled leg is not a red one: the board's own checks list names it, and counting it here
-    // would cancel the run at a leg that failed nothing.
-    expect(result.calls).not.toContain("`test`");
+    // A timed-out leg did not pass, so the round's list carries it too. It is not counted on the
+    // cancelling paths: a superseded run has cancelled legs and is not red.
+    expect(result.calls).toContain("`test`");
     expect(result.calls).not.toContain("run cancel");
+  });
+
+  it("comments when the only leg that did not pass timed out", () => {
+    // A board whose single red leg hit its `timeout-minutes` concludes `failure` with one
+    // `cancelled` leg. Reporting "none red" there is the outcome AC-4 forbids.
+    const result = runWatcher(
+      [job("scope", "success"), job("test-native", "cancelled"), job("lint", "success")],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    );
+    expect(result.status).toBe(0);
+    expect(result.calls).toContain("issues/689/comments");
+    expect(result.calls).toContain("`test-native`");
   });
 
   it("comments nothing when every leg concluded green", () => {
