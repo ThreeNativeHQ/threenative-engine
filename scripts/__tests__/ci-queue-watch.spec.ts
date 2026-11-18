@@ -359,6 +359,24 @@ describe("PRD-901 a promotion board shows every red in one round", () => {
     expect(result.calls).toContain("`test-native`");
   });
 
+  it("names a standalone verdict failure, and only then an aggregate", () => {
+    // `ci-required` echoes another job's failure, so it is dropped while a leg is red. On its own
+    // it is the cause — a missing or stale receipt no leg names.
+    const withLeg = runWatcher(
+      [job("budgets", "failure"), job("ci-required", "failure")],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    ).calls;
+    expect(withLeg).toContain("`budgets`");
+    expect(withLeg).not.toContain("`ci-required`");
+
+    const alone = runWatcher([job("ci-required", "failure")], "AssertionError", "", {
+      baseRef: "main",
+    }).calls;
+    expect(alone).toContain("`ci-required`");
+  });
+
   it("comments nothing when every leg concluded green", () => {
     const calls = runWatcher([job("scope", "success"), job("budgets", "success")], "", "", {
       baseRef: "main",

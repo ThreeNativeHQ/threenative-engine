@@ -67,13 +67,13 @@ export function isInfraFailure(job, log, signatures) {
  * cancelling paths: a superseded run has cancelled legs and is not red.
  */
 export function redJobs(jobs, includeCancelled = false) {
-  const red = jobs.filter(
-    (job) =>
-      (RED.has(job?.conclusion) || (includeCancelled && job?.conclusion === "cancelled")) &&
-      // A standalone verdict failure — a missing or stale receipt — names itself when no leg did.
-      (includeCancelled ? true : !ECHOES.has(job?.name)) &&
-      !NON_BLOCKING.test(job?.name ?? ""),
-  );
+  const failed = (job) =>
+    RED.has(job?.conclusion) || (includeCancelled && job?.conclusion === "cancelled");
+  const candidates = jobs.filter((job) => failed(job) && !NON_BLOCKING.test(job?.name ?? ""));
+  const legs = candidates.filter((job) => !ECHOES.has(job.name));
+  // A promotion board lists every leg. When it has none, an aggregate is the cause — a standalone
+  // `ci-required` failure is a missing or stale receipt, which no leg names.
+  const red = includeCancelled && legs.length === 0 ? candidates : legs;
   // Only a board that lists every red needs this; a first-red cancel stops before the echo matters.
   const kept = includeCancelled
     ? red.filter(
