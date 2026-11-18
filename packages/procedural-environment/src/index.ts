@@ -12,7 +12,7 @@ import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
 import { type IBakeCityOptions, buildCity, cityModules } from "./city.js";
 import { type IScan, barkScan, detailScan } from "./scans.js";
-import { leafNormal, rgbaWebp } from "./webp.js";
+import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
@@ -217,7 +217,9 @@ async function leafOf(
   const { width, height, data } = drawn;
   return {
     leaf: await rgbaWebp(width, height, data),
-    leafNormal: await rgbaWebp(width, height, leafNormal(width, height, data)),
+    // Half resolution: a normal cooked from a blurred height loses nothing visible at 512 px, and
+    // it was the largest map a tree carried (PRD-900 compression study).
+    leafNormal: await rgbaWebp(width, height, leafNormal(width, height, data), false, width >> 1),
     tag,
   };
 }
@@ -854,6 +856,6 @@ export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentB
   const city = await buildCity(options);
   await mkdir(options.out, { recursive: true });
   const file = path.join(options.out, city.file);
-  await writeAtomic(file, city.glb);
+  await writeAtomic(file, await webpImages(city.glb));
   return [{ bounds: city.bounds, lod: 0, path: file, triangles: city.triangles }];
 }

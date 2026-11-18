@@ -14,7 +14,7 @@ npm i -D @threenative/procedural-environment
 
 ## Find what to bake
 
-One catalog holds every element (`tree`, `cover`, `debris`, `rock`) with its biomes and the exact
+One catalog holds every element (`tree`, `cover`, `debris`, `rock`, `city`) with its biomes and the exact
 bake call. A biome takes its id or a request word: `jungle` is `tropical`, `swamp` is `wetland`,
 `canyon` is `desert`.
 
@@ -68,7 +68,12 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
   kit's palette stays. The bake's `scan` names the scan it used. `textures: "generated"` keeps the
   generator's own texture pixel for pixel. Birch, aspen, bamboo, banana, cactus, flower stems, shrub
   twigs, cover and leaf litter have no fitting scan and keep theirs. Every embedded image is WebP
-  (`EXT_texture_webp`, required): scans lossy q85, generated images lossless.
+  (`EXT_texture_webp`, required): scans 512 px at q75 (normals q80), generated images q80 with
+  lossless alpha, so a cutout edge stays exact. An Arbor leaf card also carries a normal map at half
+  resolution, cooked from its own outline and veins.
+- One scan serves every species that shares it (21 bark profiles, 12 scans). Each GLB embeds its
+  copy, and the cook's shared-images pass (`@threenative/assets`, on by default) writes each
+  distinct image once under `shared/images/`, so a game ships the bark once.
 - The Arbor presets also carry their bark and leaf atlas and alpha-masked leaves. A forest-kit
   preset shades from `COLOR_0` alone: debris (opaque wood and stone) rides `bark`, cover (a thin
   blade or frond) rides the double-sided, alpha-masked `foliage` primitive, and its float sway is
@@ -127,6 +132,8 @@ await bakeCity({ module: "apartments", seed: 7, floors: 8, out: "assets/city" })
   tiles, shutter, formwork; JPEG colour, PNG normal and ARM) and the canvas-drawn signs, liveries
   and markings. The root node's extras hold `module`, `seed`, `parameters`, `units` and the road
   `sockets`. Metres, +Y up, road tiles on a 24 m grid.
+- The page's PNG and JPEG maps are re-encoded as WebP q80 at bake (`EXT_texture_webp`): the 95
+  distinct city images drop from 5.6 MB to 1.2 MB.
 - The same options write the same bytes on one machine and Node major: sign text draws with the
   machine's `sans-serif` and `monospace` fonts, and Node 20 and 22 round some colour factors one
   bit differently from Node 24 and the browser.
@@ -159,4 +166,4 @@ agent asked for "a realistic forest" should not have to find nine places by itse
 | Sky and sun | `Daylight` | `@threenative/core` |
 | Water | `WaterSurface3D`, `WaterBodies` | `@threenative/core` |
 | Terrain, biomes and a cooked world | `@threenative/terrain` (`terrain_generate`, `arbor:<preset>[@seed]` species) | `@threenative/terrain` |
-| Textures | Arbor's bark and leaf atlases at bake; scanned CC0 maps through the asset MCP (Poly Haven, ambientCG) | — |
+| Textures | Poly Haven CC0 bark and detail scans vendored in `scans/` (WebP), Arbor's leaf atlases at bake; other scanned CC0 maps through the asset MCP (Poly Haven, ambientCG) | `@threenative/procedural-environment` |

@@ -192,10 +192,24 @@ function bakeOnce(q: URLSearchParams): Promise<unknown> {
   const known = baked.get(key);
   if (known) return known;
   const started = performance.now();
+  let call = "";
+  // The exact call the bake made, for the docs panel: the viewer's flat controls are nested here.
+  const record = (pkg: Package): Package =>
+    new Proxy(pkg, {
+      get: (target, name: string) => {
+        const value = target[name as keyof Package];
+        if (typeof value !== "function" || !name.startsWith("bake")) return value;
+        return (options: { out: string }) => {
+          call = `await ${name}(${JSON.stringify({ ...options, out: `assets/${q.get("kind")}` })});`;
+          return (value as (o: unknown) => unknown)(options);
+        };
+      },
+    });
   const job = load()
-    .then((pkg) => bake(pkg, q))
+    .then((pkg) => bake(record(pkg), q))
     .then(([entry]) => ({
       ...entry,
+      call,
       ms: Math.round(performance.now() - started),
       url: fileUrl(entry?.path),
       ...(entry?.rock

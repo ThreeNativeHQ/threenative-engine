@@ -3,7 +3,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { bakeRock, bakeVegetation } from "../src/index.js";
+import { bakeCity, bakeRock, bakeVegetation } from "../src/index.js";
 import Arbor from "../vendor/arbor.js";
 
 interface IGltf {
@@ -109,6 +109,18 @@ describe("Poly Haven scans by default, the generator's texture on request", () =
     const [a, b] = [await color(scanned?.path ?? ""), await color(plain?.path ?? "")];
     expect(a.length).toBe(b.length);
     expect(a.every((v, i) => Math.abs(v - Math.min(1, (b[i] as number) * 2)) < 1e-6)).toBe(true);
+  });
+
+  it("re-encodes an Apex module's PNG and JPEG maps as WebP, and every image still decodes", async () => {
+    const out = await makeTempDir("tn-city-webp-");
+    const [sidewalk] = await bakeCity({ module: "civic-sidewalk", out });
+    const { gltf, image } = await glb(sidewalk?.path ?? "");
+    expect(gltf.extensionsRequired).toContain("EXT_texture_webp");
+    expect(gltf.images?.length).toBeGreaterThan(0);
+    for (const [i, entry] of (gltf.images ?? []).entries()) {
+      expect(entry.mimeType).toBe("image/webp");
+      expect((await sharp(image(i)).metadata()).format).toBe("webp");
+    }
   });
 
   it("bakes a cliff's next module so the two meet without a seam, and refuses a module on a boulder", async () => {
