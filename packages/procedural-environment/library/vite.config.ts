@@ -22,7 +22,14 @@ async function bake(pkg: Package, q: URLSearchParams) {
   const lods = [Number(q.get("lod") ?? 0)];
   const out = path.join(cache, kind);
   if (kind === "rock")
-    return pkg.bakeRock({ form: id, biome: q.get("biome") ?? "hills", seed, lods, out });
+    return pkg.bakeRock({
+      form: id,
+      biome: q.get("biome") ?? "hills",
+      seed,
+      lods,
+      out,
+      ...(q.has("detail") ? { detail: Number(q.get("detail")) } : {}),
+    });
   if (kind === "tree" || kind === "cover" || kind === "debris")
     return pkg.bakeVegetation({ preset: id, seed, lods, out });
   throw new Error(`asset-library: unknown kind "${kind}"`);
@@ -36,6 +43,8 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 
 const baked = new Map<string, Promise<unknown>>();
 
+const fileUrl = (file = ""): string => `/api/file/${path.relative(cache, file)}`;
+
 /** One bake per distinct query, shared by every request that asks for it while it runs. */
 function bakeOnce(q: URLSearchParams): Promise<unknown> {
   const key = q.toString();
@@ -47,7 +56,10 @@ function bakeOnce(q: URLSearchParams): Promise<unknown> {
     .then(([entry]) => ({
       ...entry,
       ms: Math.round(performance.now() - started),
-      url: `/api/file/${path.relative(cache, entry?.path ?? "")}`,
+      url: fileUrl(entry?.path),
+      ...(entry?.rock
+        ? { rockMaps: { detail: fileUrl(entry.rock.detail), normal: fileUrl(entry.rock.normal) } }
+        : {}),
     }));
   baked.set(key, job);
   job.catch(() => baked.delete(key));
@@ -57,7 +69,7 @@ function bakeOnce(q: URLSearchParams): Promise<unknown> {
 async function file(res: ServerResponse, name: string): Promise<void> {
   const target = path.resolve(cache, decodeURIComponent(name));
   if (!target.startsWith(cache + path.sep)) return send(res, 403, { error: "outside cache" });
-  res.setHeader("content-type", "model/gltf-binary");
+  res.setHeader("content-type", target.endsWith(".png") ? "image/png" : "model/gltf-binary");
   res.end(await readFile(target));
 }
 

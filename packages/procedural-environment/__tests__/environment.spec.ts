@@ -11,7 +11,7 @@ import {
 interface IGltf {
   accessors: { bufferView: number; componentType: number; count: number; type: string }[];
   bufferViews: { byteLength: number; byteOffset: number }[];
-  materials: { name: string }[];
+  materials: { extras?: Record<string, unknown>; name: string }[];
   meshes: { primitives: { attributes: Record<string, number> }[] }[];
 }
 
@@ -86,10 +86,26 @@ describe("bakeRock writes a rock GLB for a biome", () => {
       "COLOR_0",
       "NORMAL",
       "POSITION",
+      "_COVER",
+      "_ROCK",
+      "_WET",
     ]);
     expect(gltf.materials[0]?.name).toBe("rock");
+    expect(gltf.materials[0]?.extras).toMatchObject({ rockTexture: "granite" });
+    expect(lod0?.rock?.tile).toBeGreaterThan(0);
     expect(lod0?.bounds.min[1]).toBeLessThanOrEqual(0);
     expect(lod0?.bounds.max[1]).toBeGreaterThan(1);
+  });
+
+  it("writes Outcrop's own detail and normal maps beside the GLB, the inputs of its triplanar material", async () => {
+    const out = await makeTempDir("tn-rock-maps-");
+    const [arch] = await bakeRock({ form: "arch", biome: "desert", seed: 3, out });
+    expect(arch?.rock?.texture).toBe("sandstone");
+    for (const map of [arch?.rock?.detail, arch?.rock?.normal]) {
+      const png = await readFile(map ?? "");
+      expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
+      expect(png.readUInt32BE(16)).toBe(512);
+    }
   });
 
   it("colours the rock by biome: desert sandstone is redder than tundra granite", async () => {

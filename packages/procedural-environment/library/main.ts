@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import Outcrop from "../vendor/outcrop.js";
 
 interface IElement {
   id: string;
@@ -15,6 +15,7 @@ interface IElement {
 interface IBiome {
   id: string;
   name: string;
+  rock: string;
 }
 interface IBake {
   lod: number;
@@ -23,6 +24,8 @@ interface IBake {
   ms: number;
   url: string;
   path: string;
+  rock?: { tile: number };
+  rockMaps?: { detail: string; normal: string };
   error?: string;
 }
 
@@ -39,6 +42,7 @@ const canvas = $<HTMLCanvasElement>("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 const labels = new CSS2DRenderer();
@@ -47,12 +51,14 @@ canvas.parentElement?.append(labels.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xb9c6d2);
-scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment()).texture;
-scene.environmentIntensity = 0.55;
-const sun = new THREE.DirectionalLight(0xfff2dc, 2.6);
+// Outcrop's page light: a hemisphere and one sun tinted by the biome's environment row, no IBL.
+scene.fog = new THREE.Fog(0xffffff, 10, 100);
+const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 1.1);
+const sun = new THREE.DirectionalLight(0xffffff, 3.2);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-scene.add(sun, sun.target, new THREE.HemisphereLight(0xcfe3ff, 0x5b5040, 0.6));
+sun.shadow.bias = -0.0003;
+scene.add(sun, sun.target, hemi);
 const ground = new THREE.Mesh(
   new THREE.CircleGeometry(400, 64).rotateX(-Math.PI / 2),
   new THREE.MeshStandardMaterial({ color: 0x8a8a7c, roughness: 1 }),
@@ -109,7 +115,24 @@ vec3 sway(vec3 p, vec3 n) {
 }
 
 // ── state ──
-const state = { seed: 1, lod: 0, rockBiome: "hills", wind: true, wire: false };
+const state = { seed: 1, lod: 0, rockBiome: "hills", rockDetail: 0.3, wind: true, wire: false };
+const sky = { elevation: 42, azimuth: 35 };
+
+/** The light of an Outcrop biome's `environment` row: sky, ground, sun colour and angle. */
+function lightFor(outcropBiome: string): void {
+  const env = (Outcrop.BIOMES[outcropBiome] ?? Outcrop.BIOMES.hills)?.environment as
+    | Record<string, string | number>
+    | undefined;
+  if (!env) return;
+  (scene.background as THREE.Color).set(env.skyHorizon as string);
+  (scene.fog as THREE.Fog).color.set(env.skyHorizon as string);
+  hemi.color.set(env.skyTop as string).lerp(new THREE.Color("#ffffff"), 0.55);
+  hemi.groundColor.set(env.ground as string).multiplyScalar(0.7);
+  sun.color.set(env.sun as string);
+  (ground.material as THREE.MeshStandardMaterial).color.set(env.ground as string);
+  sky.elevation = env.elevation as number;
+  sky.azimuth = env.azimuth as number;
+}
 let catalog: { elements: IElement[]; biomes: IBiome[] } = { elements: [], biomes: [] };
 let route: { kind: string; id?: string } = { kind: "tree" };
 let token = 0;
@@ -126,24 +149,75 @@ async function bakeOf(element: IElement, lod = state.lod): Promise<IBake> {
     kind: element.kind,
     seed: String(state.seed),
     lod: String(lod),
-    ...(element.kind === "rock" ? { biome: state.rockBiome } : {}),
+    ...(element.kind === "rock"
+      ? { biome: state.rockBiome, detail: String(state.rockDetail) }
+      : {}),
   });
   const baked = (await (await fetch(`/api/bake?${q}`)).json()) as IBake;
   if (baked.error) throw new Error(baked.error);
   return baked;
 }
 
+// ── rocks: Outcrop's own triplanar material over the maps the bake wrote ──
+const bitmaps = new THREE.ImageBitmapLoader().setOptions({
+  imageOrientation: "flipY",
+  premultiplyAlpha: "none",
+});
+const maps = new Map<string, Promise<THREE.Texture>>();
+function mapOf(url: string): Promise<THREE.Texture> {
+  if (!maps.has(url))
+    maps.set(
+      url,
+      bitmaps.loadAsync(url).then((image) => {
+        const texture = new THREE.Texture(image as ImageBitmap);
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.flipY = false;
+        texture.anisotropy = 8;
+        texture.needsUpdate = true;
+        return texture;
+      }),
+    );
+  return maps.get(url) as Promise<THREE.Texture>;
+}
+
+/** The look of Outcrop's page: `createRockMaterial`, reading the GLB's `_ROCK`, `_COVER` and `_WET`. */
+async function rockMaterial(mesh: THREE.Mesh, baked: IBake): Promise<void> {
+  if (!baked.rock || !baked.rockMaps) return;
+  const [detail, normal] = await Promise.all([
+    mapOf(baked.rockMaps.detail),
+    mapOf(baked.rockMaps.normal),
+  ]);
+  const geometry = mesh.geometry;
+  for (const [from, to] of [
+    ["_rock", "aRock"],
+    ["_cover", "aCover"],
+    ["_wet", "aWet"],
+  ] as const) {
+    const attribute = geometry.getAttribute(from);
+    if (attribute) geometry.setAttribute(to, attribute);
+  }
+  (mesh.material as THREE.Material).dispose();
+  mesh.material = Outcrop.createRockMaterial({
+    textures: { detail, normal },
+    tile: baked.rock.tile,
+  });
+  (mesh.material as THREE.MeshStandardMaterial).wireframe = state.wire;
+}
+
 /** The baked GLB as a scene, with shadows, the wind patch and the wireframe toggle applied. */
 async function modelOf(baked: IBake): Promise<THREE.Object3D> {
   const gltf = await loader.loadAsync(baked.url);
+  const meshes: THREE.Mesh[] = [];
   gltf.scene.traverse((node) => {
     const mesh = node as THREE.Mesh;
     if (!mesh.isMesh) return;
+    meshes.push(mesh);
     mesh.castShadow = mesh.receiveShadow = true;
     const material = mesh.material as THREE.MeshStandardMaterial;
     material.wireframe = state.wire;
     if (mesh.geometry.getAttribute("_wind")) addWind(material);
   });
+  await Promise.all(meshes.map((mesh) => rockMaterial(mesh, baked)));
   return gltf.scene;
 }
 
@@ -175,9 +249,20 @@ function frame(): void {
   camera.near = fit / 200;
   camera.far = fit * 20;
   camera.updateProjectionMatrix();
+  const el = THREE.MathUtils.degToRad(sky.elevation);
+  const az = THREE.MathUtils.degToRad(sky.azimuth);
+  const d = sphere.radius * 3 + 4;
   sun.position
     .copy(sphere.center)
-    .add(new THREE.Vector3(1, 1.6, 0.8).multiplyScalar(sphere.radius * 2 + 4));
+    .add(
+      new THREE.Vector3(
+        Math.sin(az) * Math.cos(el),
+        Math.sin(el),
+        Math.cos(az) * Math.cos(el),
+      ).multiplyScalar(d),
+    );
+  (scene.fog as THREE.Fog).near = fit * 1.5;
+  (scene.fog as THREE.Fog).far = fit * 6;
   sun.target.position.copy(sphere.center);
   const s = sun.shadow.camera as THREE.OrthographicCamera;
   s.left = s.bottom = -sphere.radius * 1.4;
@@ -250,6 +335,12 @@ async function show(): Promise<void> {
   const kindRows = catalog.elements.filter((e) => e.kind === route.kind);
   const element = kindRows.find((e) => e.id === route.id);
   $("rock-biome-row").hidden = route.kind !== "rock";
+  $("rock-detail-row").hidden = route.kind !== "rock";
+  lightFor(
+    route.kind === "rock"
+      ? (catalog.biomes.find((b) => b.id === state.rockBiome)?.rock ?? "hills")
+      : "hills",
+  );
   try {
     if (element) {
       say(`Baking ${element.name}`);
@@ -312,7 +403,10 @@ function visible(e: IElement): boolean {
 
 function hashOf(kind: string, id?: string): string {
   const q = new URLSearchParams({ seed: String(state.seed), lod: String(state.lod) });
-  if (kind === "rock") q.set("biome", state.rockBiome);
+  if (kind === "rock") {
+    q.set("biome", state.rockBiome);
+    q.set("detail", String(state.rockDetail));
+  }
   return `#/${kind}${id ? `/${id}` : ""}?${q}`;
 }
 
@@ -358,6 +452,8 @@ function readHash(): void {
   state.seed = Number.parseInt(q.get("seed") ?? "1", 10) || 1;
   state.lod = Math.min(2, Math.max(0, Number(q.get("lod") ?? 0)));
   state.rockBiome = q.get("biome") ?? state.rockBiome;
+  state.rockDetail = Math.min(1, Math.max(0, Number(q.get("detail") ?? 0.3)));
+  $<HTMLInputElement>("rock-detail").value = String(state.rockDetail);
   $<HTMLInputElement>("seed").value = String(state.seed);
   $<HTMLSelectElement>("rock-biome").value = state.rockBiome;
   for (const b of document.querySelectorAll<HTMLButtonElement>("#lods button"))
@@ -380,6 +476,10 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("#lods button"))
     state.lod = Number(b.dataset.lod);
     go();
   };
+$("rock-detail").addEventListener("change", (e) => {
+  state.rockDetail = Number((e.target as HTMLInputElement).value);
+  go();
+});
 $("rock-biome").addEventListener("change", (e) => {
   state.rockBiome = (e.target as HTMLSelectElement).value;
   go();

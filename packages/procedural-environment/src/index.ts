@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
-import { Mesh } from "three";
+import type { BufferGeometry } from "three";
 import Arbor, { type IArborPart, type IArborPreset, type IArborTree } from "../vendor/arbor.js";
 import ForestKit, {
   type IForestKitMesh,
@@ -53,6 +53,17 @@ export interface IEnvironmentBake {
   readonly lod: number;
   readonly path: string;
   readonly triangles: number;
+  /**
+   * A rock's material inputs: Outcrop's ROCK_TEXTURES profile, metres per repeat, and the two PNGs
+   * its triplanar material samples (detail: rgb albedo multiplier, a roughness; normal: rgb
+   * tangent normal, a height). The GLB's `_ROCK`, `_COVER` and `_WET` attributes are the rest.
+   */
+  readonly rock?: {
+    readonly texture: string;
+    readonly tile: number;
+    readonly detail: string;
+    readonly normal: string;
+  };
 }
 
 const MAX_LOD = 2;
@@ -546,6 +557,102 @@ export interface IBakeRockOptions {
 
 const ROCK_LOD_DETAIL = [1, 0.5, 0.2];
 
+/** glTF name, three name and components of every attribute a rock GLB keeps. */
+const ROCK_ATTRIBUTES = [
+  ["POSITION", "position", "VEC3"],
+  ["NORMAL", "normal", "VEC3"],
+  ["COLOR_0", "color", "VEC3"],
+  ["_ROCK", "aRock", "VEC3"],
+  ["_COVER", "aCover", "VEC4"],
+  ["_WET", "aWet", "SCALAR"],
+] as const;
+
+/**
+ * A rock as binary glTF with every input of Outcrop's triplanar material: COLOR_0 (rock and cover
+ * blended, for a plain viewer) and `_ROCK` (bare rock rgb), `_COVER` (cover rgb and amount) and
+ * `_WET` (1 below the tide line). Outcrop's own exportGLB keeps only COLOR_0, which loses the look.
+ */
+function rockGlb(geometry: BufferGeometry, extras: Record<string, unknown>): Uint8Array {
+  const accessors: Record<string, unknown>[] = [];
+  const views: Record<string, unknown>[] = [];
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  const attributes: Record<string, number> = {};
+  for (const [gltf, name, type] of ROCK_ATTRIBUTES) {
+    const attribute = geometry.getAttribute(name);
+    if (attribute === undefined) throw new Error(`bakeRock: the rock has no ${name} attribute`);
+    const array = new Float32Array(attribute.array);
+    const bytes = new Uint8Array(array.buffer);
+    views.push({ buffer: 0, byteOffset: offset, byteLength: bytes.byteLength, target: 34962 });
+    chunks.push(bytes);
+    offset += bytes.byteLength;
+    const bounds: Record<string, number[]> = {};
+    if (gltf === "POSITION" && geometry.boundingBox) {
+      bounds.min = geometry.boundingBox.min.toArray();
+      bounds.max = geometry.boundingBox.max.toArray();
+    }
+    accessors.push({
+      bufferView: views.length - 1,
+      componentType: 5126,
+      count: attribute.count,
+      type,
+      ...bounds,
+    });
+    attributes[gltf] = accessors.length - 1;
+  }
+  const primitive: Record<string, unknown> = { attributes, material: 0 };
+  if (geometry.index) {
+    const index = new Uint32Array(geometry.index.array);
+    views.push({ buffer: 0, byteOffset: offset, byteLength: index.byteLength, target: 34963 });
+    chunks.push(new Uint8Array(index.buffer));
+    offset += index.byteLength;
+    accessors.push({
+      bufferView: views.length - 1,
+      componentType: 5125,
+      count: index.length,
+      type: "SCALAR",
+    });
+    primitive.indices = accessors.length - 1;
+  }
+  const json = new TextEncoder().encode(
+    JSON.stringify({
+      asset: { version: "2.0", generator: "rockgen.js via @threenative/procedural-environment" },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0, name: "rock" }],
+      meshes: [{ name: "rock", primitives: [primitive] }],
+      materials: [
+        {
+          name: "rock",
+          extras,
+          pbrMetallicRoughness: { metallicFactor: 0, roughnessFactor: 0.94 },
+        },
+      ],
+      accessors,
+      bufferViews: views,
+      buffers: [{ byteLength: offset }],
+    }),
+  );
+  const jsonLength = Math.ceil(json.length / 4) * 4;
+  const out = new Uint8Array(28 + jsonLength + offset);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 0x46546c67, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, out.length, true);
+  view.setUint32(12, jsonLength, true);
+  view.setUint32(16, 0x4e4f534a, true);
+  out.fill(0x20, 20, 20 + jsonLength);
+  out.set(json, 20);
+  view.setUint32(20 + jsonLength, offset, true);
+  view.setUint32(24 + jsonLength, 0x004e4942, true);
+  let at = 28 + jsonLength;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out;
+}
+
 /** Each key of `patch` must be a key of `known`; throws listing the known keys. */
 function checkKeys(name: string, patch: object | undefined, known: object): void {
   for (const key of Object.keys(patch ?? {}))
@@ -553,6 +660,34 @@ function checkKeys(name: string, patch: object | undefined, known: object): void
       throw new Error(
         `bakeRock: ${name} key "${key}" is unknown: ${Object.keys(known).join(", ")}`,
       );
+}
+
+/**
+ * Outcrop's own detail and normal maps for this rock's texture profile and its tile, written once
+ * per profile beside the GLBs. `materialFor` is the generator's own choice, so nothing is re-derived.
+ */
+async function rockMaps(
+  generator: InstanceType<typeof Outcrop.RockGenerator>,
+  geometry: BufferGeometry,
+  out: string,
+): Promise<NonNullable<IEnvironmentBake["rock"]>> {
+  const recipe = geometry.userData.recipe as { surface: { texture: string } };
+  const { uniforms } = generator.materialFor(recipe).userData;
+  const texture = recipe.surface.texture;
+  const write = async (
+    map: { image: { data: Uint8Array; width: number; height: number } },
+    kind: string,
+  ) => {
+    const file = path.join(out, `rock-${texture}-${kind}.png`);
+    await writeAtomic(file, rgbaPng(map.image.width, map.image.height, map.image.data));
+    return file;
+  };
+  return {
+    texture,
+    tile: 1 / uniforms.uTile.value,
+    detail: await write(uniforms.tRockDetail.value, "detail"),
+    normal: await write(uniforms.tRockNormal.value, "normal"),
+  };
 }
 
 /**
@@ -612,10 +747,12 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
       ...(surface ? { surface } : {}),
     });
     const file = path.join(out, `${form}-${biome.id}-${seed}${tag}-lod${lod}.glb`);
-    await writeAtomic(file, new Uint8Array(Outcrop.exportGLB(new Mesh(geometry))));
     const box = geometry.boundingBox;
     if (box === null) throw new Error(`bakeRock: "${form}" baked no bounds at lod ${lod}`);
+    const rock = await rockMaps(generator, geometry, out);
+    await writeAtomic(file, rockGlb(geometry, { rockTexture: rock.texture, tile: rock.tile }));
     baked.push({
+      rock,
       bounds: { max: [box.max.x, box.max.y, box.max.z], min: [box.min.x, box.min.y, box.min.z] },
       lod,
       path: file,
