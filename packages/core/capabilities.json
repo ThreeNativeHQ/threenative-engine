@@ -3412,7 +3412,7 @@
       "symbol": "RippleField"
     },
     {
-      "aliases": [],
+      "aliases": ["scatter rocks, debris and plants over terrain"],
       "constraints": [
         "call `update(follow)` once per rendered frame",
         "`place` runs once per candidate per tile build: return false for paths and clearings",
@@ -8421,7 +8421,7 @@
       "symbol": "bakeWolfToFile"
     },
     {
-      "aliases": [],
+      "aliases": ["rocks and boulders", "cliffs and mountains"],
       "constraints": [
         "fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1",
         "the same options write identical bytes; files are written atomically (temporary file, then rename)",
@@ -8445,7 +8445,19 @@
       "symbol": "bakeRock"
     },
     {
-      "aliases": [],
+      "aliases": [
+        "trees",
+        "palm trees",
+        "street trees along a road",
+        "bushes and shrubs",
+        "grass, flowers and ferns as ground cover",
+        "dead trees, fallen logs and stumps",
+        "low poly tree with level of detail",
+        "realistic textured tree model",
+        "foliage and vegetation models",
+        "pine, oak or spruce forest trees",
+        "grass tufts and clumps"
+      ],
       "constraints": [
         "fails closed: an unknown preset throws naming the nearest ids, the seed must be an integer and each lod 0 to 2",
         "the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)",
@@ -8492,7 +8504,12 @@
       "symbol": "environmentBiomes"
     },
     {
-      "aliases": [],
+      "aliases": [
+        "nature props for a level",
+        "jungle and tropical plants",
+        "desert cactus",
+        "vegetation for a biome"
+      ],
       "constraints": [
         "fails closed: an unknown biome or kind throws naming the nearest ids",
         "biome takes an id or one of its words, so \"jungle\" finds tropical and \"swamp\" finds wetland"
@@ -10465,7 +10482,7 @@
       "constraints": [
         "the game supplies the actor, the player body and the probe fixture; it owns no look"
       ],
-      "example": "const measure = createMeasure({ world, physics: ctx.physics, raycast, actor, player, ... });",
+      "example": "const measure = createMeasure({ world, physics: ctx.physics, raycast, actor, player, ...options });",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10497,7 +10514,7 @@
       "constraints": [
         "the game builds the camera and the wall probe; the package owns only their wiring"
       ],
-      "example": "const rig = createPlayerRig(ctx, { at, field, mannequin, clips, gait, camera, probe, ... });",
+      "example": "const rig = createPlayerRig({ at, field, mannequin, clips, gait, camera, probe, ...options });",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10512,7 +10529,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "const reveal = createRevealProbe({ camera, covered, phase, released, ... });",
+      "example": "const reveal = createRevealProbe({ camera, covered, phase, released, ...options });",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10747,7 +10764,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "const key = propKey(placement, 2);\n`WorldCells` names the model through the run the record sits in, so this key is what the container\nstores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement\nthe editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays\none uniform scale and the picture keeps the edit.",
+      "example": "const key = propKey(placement, 2);",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10755,7 +10772,7 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function propKey(placement: IPlacement, variant: number): string { … }",
       "situations": ["name the model a baked or live placement record draws"],
-      "summary": "The model a record draws: its asset, its variant, and the shape a non-uniform edit gave it.",
+      "summary": "The model a record draws: its asset, its variant, and the shape a non-uniform edit gave it. `WorldCells` names the model through the run the record sits in, so this key is what the container stores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement the editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays one uniform scale and the picture keeps the edit.",
       "supersedes": [],
       "symbol": "propKey"
     },
@@ -10809,7 +10826,7 @@
       "constraints": [
         "the variant, reach, bucket, LOD and gate rows are the game's; the package only applies"
       ],
-      "example": "const props = await streamProps({ package, groundAt, parts, materials, surface,\n  follow, size, whileCurrent, variantOf, reachOf, bucketOf, lodOf, ... });",
+      "example": "const props = await streamProps({ package: propPackage, groundAt, parts, materials, surface,\n  follow, size, whileCurrent, variantOf, reachOf, bucketOf, lodOf, ...options });",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10826,7 +10843,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "const record = withAuthoredPose(placement);\nA record holds position, quaternion and one uniform scale, so an edited placement's own transform\nis folded down to the scale its record carries. The shape that scale removed is `propKey`'s ratio,\nand the drawable model that ratio names carries it instead.",
+      "example": "const record = withAuthoredPose(placement);",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10834,7 +10851,7 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function withAuthoredPose(placement: IPlacement): IPlacement { … }",
       "situations": ["fold an authored placement into the record transform the bake stores"],
-      "summary": "A placement as a package record stores it: the authored pose becomes its transform, at one scale.",
+      "summary": "A placement as a package record stores it: the authored pose becomes its transform, at one scale. A record holds position, quaternion and one uniform scale, so an edited placement's own transform is folded down to the scale its record carries. The shape that scale removed is `propKey`'s ratio, and the drawable model that ratio names carries it instead.",
       "supersedes": [],
       "symbol": "withAuthoredPose"
     },
@@ -11756,7 +11773,7 @@
     {
       "guidance": "The framework owns no vegetation render system: wind and materials are your look, in your project's src/render/. Trees come from the optional bake package: npm i -D @threenative/procedural-environment, then await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" }) writes one GLB per LOD (vegetationPresets() lists the 28 species). Each GLB carries COLOR_0, TEXCOORD_0, embedded bark and leaf textures, alpha-masked leaves and a per-vertex _WIND vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase). Cook them with assets.models.passes.prune: false (prune strips the uv and _WIND your materials read), load with ctx.assets.model and re-material by glTF material name (bark, foliage). Write the sway as TSL in render/wind.ts: attribute(\"_wind\", \"vec4\") scaled by a time uniform and a world wind direction, pushed through modelWorldMatrixInverse so it stays in world metres. A terrain world takes the same trees through the species prefix arbor:<preset>[@seed].",
       "id": "procedural-environment",
-      "situations": ["swaying trees", "tree foliage wind sway"]
+      "situations": ["foliage wind sway shader", "wind animation render system for leaves"]
     },
     {
       "guidance": "The framework owns no IK system. Copy the MIT source in examples/integrations/ik/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/ik) into your src/ and follow its README: it needs the closed-chain-ik/core dependency its own package.json pins, three keeps the only rendered pose, and new ConstrainedIK({root, joints: [{bone, axes, min, max}], effectors: [{bone, orientation?}], iterations, positionTolerance, rotationTolerance}) admits direct Bone hierarchies under rigid or positive-uniform-scale parents (shear, reflection, non-uniform or singular scale throws before the pose is touched). Call ik.update(targets) once per frame after AnimationPlayer/mixer and before render, with one world-space metre position per effector in order plus an optional quaternion only where the effector declared orientation: true; it never starts a loop, never moves the root and installs no bone translation or root-motion controller. Joint limits are X/Y/Z offsets relative to the animation pose supplied that call, so reapply the animation pose before solving to avoid accumulation, and the solver only rotates: bone lengths hold to under 1e-15 m. Iterations are 1-128; an unreachable goal returns converged false with finite residuals and never throws, a solver failure restores the original pose, and dispose() at scene teardown. Worked demo: the rifle grip game in examples/constrained-ik/, which plays on web, desktop native and Android.",

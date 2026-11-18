@@ -1035,18 +1035,29 @@ function searchMechanics(
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const { weights, nameWeights } = manifestWeights(manifest.entries);
   const notOwned = notOwnedMatch(manifest, query);
-  if (notOwned !== undefined && isSpecificNotOwnedMatch(query, notOwned.matchedSituation)) {
-    return {
-      guidance: notOwned.entry.guidance,
-      results: [],
-      verdict: "none",
-    };
+  const specific =
+    notOwned !== undefined && isSpecificNotOwnedMatch(query, notOwned.matchedSituation);
+  // A not-owned entry can name an optional engine package (`procedural-environment`): the framework
+  // has no such system, but that package is indexed here. Its own exports answer the query, beside
+  // the install line; only a package the manifest does not index ends the search at `none`.
+  const optionalPackage = specific ? `@threenative/${notOwned.entry.id}` : undefined;
+  const candidates =
+    optionalPackage === undefined
+      ? manifest.entries
+      : manifest.entries.filter(
+          (entry) =>
+            entry.importPath === optionalPackage ||
+            entry.importPath.startsWith(`${optionalPackage}/`),
+        );
+  if (specific && candidates.length === 0) {
+    return { guidance: notOwned.entry.guidance, results: [], verdict: "none" };
   }
-  const results = manifest.entries
+  // The not-owned match already tied the query to the package, so any export of it that matches at
+  // all is relevant: "swaying trees" shares only "tree" with bakeVegetation, under the general floor.
+  const floor = optionalPackage === undefined ? RELEVANCE_FLOOR : Number.MIN_VALUE;
+  const results = candidates
     .map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) }))
-    .filter(
-      ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR,
-    )
+    .filter(({ matchedSituation, score }) => matchedSituation.length > 0 && score >= floor)
     .sort(
       (left, right) =>
         right.score - left.score ||
@@ -1075,7 +1086,8 @@ function searchMechanics(
       summary: entry.summary,
       symbol: entry.symbol,
     }));
-  if (results.length > 0) return { guidance: "", results, verdict: "matched" };
+  if (results.length > 0)
+    return { guidance: specific ? notOwned.entry.guidance : "", results, verdict: "matched" };
   return {
     guidance: notOwned?.entry.guidance ?? GENERIC_GUIDANCE,
     results: [],

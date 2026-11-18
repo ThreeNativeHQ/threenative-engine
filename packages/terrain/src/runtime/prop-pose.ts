@@ -79,13 +79,13 @@ export function authoredQuaternion(
 /**
  * A placement as a package record stores it: the authored pose becomes its transform, at one scale.
  *
- * @requires npm i -D @threenative/terrain
- * @situation fold an authored placement into the record transform the bake stores
- * @example const record = withAuthoredPose(placement);
- *
  * A record holds position, quaternion and one uniform scale, so an edited placement's own transform
  * is folded down to the scale its record carries. The shape that scale removed is `propKey`'s ratio,
  * and the drawable model that ratio names carries it instead.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation fold an authored placement into the record transform the bake stores
+ * @example const record = withAuthoredPose(placement);
  */
 export function withAuthoredPose(placement: IPlacement): IPlacement {
   const scale = placement.transform?.scale ?? [placement.scale, placement.scale, placement.scale];
@@ -109,14 +109,14 @@ export function withAuthoredPose(placement: IPlacement): IPlacement {
 /**
  * The model a record draws: its asset, its variant, and the shape a non-uniform edit gave it.
  *
- * @requires npm i -D @threenative/terrain
- * @situation name the model a baked or live placement record draws
- * @example const key = propKey(placement, 2);
- *
  * `WorldCells` names the model through the run the record sits in, so this key is what the container
  * stores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement
  * the editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays
  * one uniform scale and the picture keeps the edit.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation name the model a baked or live placement record draws
+ * @example const key = propKey(placement, 2);
  */
 export function propKey(placement: IPlacement, variant: number): string {
   const key = `${placement.asset}:${variant}`;

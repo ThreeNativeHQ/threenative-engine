@@ -712,7 +712,7 @@ export function witnessAsymmetricContact(options: IContactProbeOptions): IContac
  * @requires npm i -D @threenative/terrain @threenative/physics
  * @situation measure one played starter world every fixed step
  * @constraint the game supplies the actor, the player body and the probe fixture; it owns no look
- * @example const measure = createMeasure({ world, physics: ctx.physics, raycast, actor, player, ... });
+ * @example const measure = createMeasure({ world, physics: ctx.physics, raycast, actor, player, ...options });
  */
 export function createMeasure(options: IMeasureOptions): IMeasure {
   const { actor, physics, player } = options;
@@ -991,7 +991,7 @@ export interface IRevealProbe {
  *
  * @requires npm i -D @threenative/terrain
  * @situation measure whether the spawn drew before the curtain released it
- * @example const reveal = createRevealProbe({ camera, covered, phase, released, ... });
+ * @example const reveal = createRevealProbe({ camera, covered, phase, released, ...options });
  */
 export function createRevealProbe(options: IRevealProbeOptions): IRevealProbe {
   const reveal = {
