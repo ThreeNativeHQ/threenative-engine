@@ -87,10 +87,13 @@ const ground = new THREE.Mesh(
   new THREE.MeshStandardMaterial({ color: 0x8a8a7c, roughness: 1 }),
 );
 ground.receiveShadow = true;
+// Ground and grid sit below grade, as the Apex page puts its ground at -0.365: a module face at
+// y = 0 (the rail module's paving) would z-fight a ground at y = 0 and flash while orbiting.
+ground.position.y = -0.01;
 const grid = new THREE.GridHelper(200, 200, 0x55606a, 0x77818a);
 (grid.material as THREE.Material).transparent = true;
 (grid.material as THREE.Material).opacity = 0.35;
-grid.position.y = 0.002;
+grid.position.y = -0.006;
 const figure = new THREE.Mesh(
   new THREE.CapsuleGeometry(0.22, 1.36, 6, 16).translate(0, 0.9, 0),
   new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.8 }),
