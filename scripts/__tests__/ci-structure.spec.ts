@@ -3628,20 +3628,18 @@ describe("CI pipeline structure", () => {
     expect(download).toBeLessThan(job.indexOf("scripts/kit-contract-row.ts"));
   });
 
-  it("a stalled apt mirror fails the Chromium dependency install and retries it", async () => {
-    // Run 41249368283: `playwright install-deps` trickled from archive.ubuntu.com for 29 minutes and
-    // the tower-defense and animation jobs hit their 30-minute limit. A hang is not a failure, so
-    // retry-download.sh never retried it. Root runs the timeout, so it can kill apt's fetchers.
+  it("retries Chromium dependency downloads without timing out dpkg", async () => {
     const action = await readFile(
       path.join(repo, ".github/actions/playwright-chromium/action.yml"),
       "utf8",
     );
-    expect(action).toContain(
-      'sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH"',
-    );
-    expect(action).toContain(
-      `bash -c 'dpkg --configure -a && exec "$@"' _ node_modules/.bin/playwright install-deps chromium`,
-    );
+    const download = "sh scripts/retry-download.sh sudo timeout --kill-after=15 300 \\";
+    const install = 'sudo env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium';
+    expect(action).toContain('APT::Get::Download-Only "true";');
+    expect(action).toContain(download);
+    expect(action).toContain('env "PATH=$PATH" "APT_CONFIG=$apt_download_config"');
+    expect(action).toContain(install);
+    expect(action.indexOf(download)).toBeLessThan(action.indexOf(install));
     expect(action).not.toContain("pnpm exec playwright install-deps");
     expect(action).not.toContain("--with-deps");
   });
