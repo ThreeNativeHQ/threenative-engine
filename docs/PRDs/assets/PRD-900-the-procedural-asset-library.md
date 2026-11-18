@@ -60,13 +60,12 @@ flowchart LR
 - [x] The city categories show in the library next to Apex's own page, side by side. proof: 4 Apex pairs (cross, apartments, sedan, civic-rail) and 4 Outcrop pairs in `~/Downloads/asset-library/side-by-side/`; geometry matches on all (Outcrop triangle counts identical; the page's counter is `renderer.info.render.triangles`, the whole frame with its own ground and pedestal, so it reads 2 to 258 above a module's own count: 2 on flat modules, 258 on the sedan; geometry hash 75/75 against the page's generator). Two real differences found and fixed: rocks washed out under the viewer's environment light (`ac384c0da`, the page's own light now) and the rail z-fighting the viewer ground (`10b9fa33d`). Not a bake gap: the page's water plane and staged floor. No separate judge run for the city pairs
 
 #### Phase 3: the asset MCP finds it
-- [ ] `asset_search` for "oak tree", "mossy boulder" and "traffic light" returns the procedural element with its bake call. proof: asset MCP spec
+- [x] `asset_search` for "oak tree", "mossy boulder" and "traffic light" returns the procedural element with its bake call. proof: asset MCP spec: `tests/procedural-adapter.test.ts` on threenative-asset-mcp PR #77 (branch `feat/procedural-source`), 5/5 pass; oak tree returns `tree-oak` with `bakeVegetation({ preset: "oak"`, mossy boulder `debris-rock`, traffic light `city-signal` with `bakeCity({ module: "signal"`. Not yet in a published release
 - [ ] The engine pins the asset MCP release that carries the source. proof: `packages/core/package.json` and `pnpm exec vitest run packages/engine-mcp/__tests__`
 
 ## Blocked on
 
-- Phase 3 box 1 (asset MCP): PR threenative-asset-mcp#77 holds the `procedural` source with its specs green. Publishing 0.17.0 to npm waits for the owner's approval.
-- Phase 3 box 2 (engine pin): waits on that release. The engine pins 0.16.1 until then.
+- Phase 3 box 2 (engine pin): waits on the owner's approval to publish asset MCP 0.17.0 (PR threenative-asset-mcp#77) to npm. The engine pins 0.16.1 until then.
 - Package name: keep `procedural-environment` or rename to `procedural-assets` before 0.3.16 publishes. Waits for the owner.
 
 ## Compression and sharing (measured)
