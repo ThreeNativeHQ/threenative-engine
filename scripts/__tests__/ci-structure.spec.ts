@@ -3637,7 +3637,10 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     expect(action).toContain(
-      'sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium',
+      'sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH"',
+    );
+    expect(action).toContain(
+      `bash -c 'dpkg --configure -a && exec "$@"' _ node_modules/.bin/playwright install-deps chromium`,
     );
     expect(action).not.toContain("pnpm exec playwright install-deps");
     expect(action).not.toContain("--with-deps");

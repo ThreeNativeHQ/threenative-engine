@@ -49,7 +49,9 @@ runs:
         if [ "${{ steps.cache.outputs.cache-hit }}" != "true" ]; then
           pnpm exec playwright install chromium
         fi
-        sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium
+        # A timeout during package configuration leaves dpkg interrupted for the next attempt.
+        sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" \
+          bash -c 'dpkg --configure -a && exec "$@"' _ node_modules/.bin/playwright install-deps chromium
     - name: Keep the packages apt fetched
       if: github.event_name == 'push' && steps.debs-restore.outputs.cache-hit != 'true'
       shell: bash
