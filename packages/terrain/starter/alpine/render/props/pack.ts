@@ -113,7 +113,7 @@ export function canopyComparison(
   return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
 /**
- * The alpine stand: Arbor Norway spruce and black spruce, baked once by `bake-flora.mjs` (the conifer
+ * The alpine stand: Arbor Norway spruce and black spruce, grown by the bake's `world.arbor` rows in `recipe.json` (the conifer
  * bake-off winner), at five heights (metres, crown top). Near the treeline at 1900-2000 m a Norway
  * spruce stands 10-17 m. Each variant is a near GLB (lod 1) and a mid GLB (lod 2).
  */

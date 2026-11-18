@@ -17,7 +17,10 @@ vi.mock("../src/lod/generate.js", async (importOriginal) => {
   };
 });
 
-const fir = path.resolve("packages/terrain/starter-assets/fir_tree_01");
+// The near level lives with the tests, because no kit bakes it and the shipped pack is size-capped;
+// the authored mid level is the pack's.
+const firNear = path.resolve("packages/assets/__tests__/fixtures/fir");
+const firMid = path.resolve("packages/terrain/starter-assets/fir_tree_01");
 function cook(out: string) {
   const state = new Terrain({ resolution: 33, seed: 73, size: 256 })
     .scatter({ id: "firs", asset: "fir", count: 40, minDistance: 3 })
@@ -26,8 +29,8 @@ function cook(out: string) {
     state,
     species: {
       fir: {
-        glb: path.join(fir, "fir-b-lod1.glb"),
-        lods: [{ distance: 45, glb: path.join(fir, "fir-b-lod2.glb") }],
+        glb: path.join(firNear, "fir-b-lod1.glb"),
+        lods: [{ distance: 45, glb: path.join(firMid, "fir-b-lod2.glb") }],
         maxDistance: 600,
       },
     },

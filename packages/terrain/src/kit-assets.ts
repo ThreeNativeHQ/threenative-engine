@@ -84,6 +84,12 @@ async function extract(archive: Buffer, target: string) {
 }
 
 /**
+ * The sky HDRI a cook copies into a world's `sky.hdr`, and the file a kit's credits must record.
+ * One name, so the cook and the scaffolder cannot credit two different skies.
+ */
+export const DEFAULT_SKY_HDRI = "hdri/kloofendal_48d_partly_cloudy_1k.hdr";
+
+/**
  * Resolve shared starter assets locally, or download the package's pinned archive on demand.
  * @situation resolve terrain kit models and textures for offline baking
  * @constraint Node authoring only; verifies archive size and SHA256 before atomic extraction

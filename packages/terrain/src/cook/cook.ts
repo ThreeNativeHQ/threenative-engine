@@ -14,7 +14,7 @@ import { RING_SCALE, applyGround, farRing, forestFloor } from "../ground/ground.
 import { landform } from "../ground/presets.js";
 import type { LandformKind } from "../ground/presets.js";
 import type { IGroundRequest } from "../ground/surveys.js";
-import { starterAssetsDir } from "../kit-assets.js";
+import { DEFAULT_SKY_HDRI, starterAssetsDir } from "../kit-assets.js";
 import { TERRAIN_KITS, newBiomeSpec, resolveAssetSource } from "../mcp/tools.js";
 import { growArborRows, growArborSpecies, parseArborSpecies } from "../population/arbor-species.js";
 import { type IAssetSpec, parseBounds, scatterFoliage } from "../population/foliage.js";
@@ -374,10 +374,7 @@ async function cookInto(
     join(request.out, "terrain-table.json"),
     `${JSON.stringify({ ...surface, splat, textures: "textures" }, null, 2)}\n`,
   );
-  await copyFile(
-    join(assetsDir, "hdri", "kloofendal_48d_partly_cloudy_1k.hdr"),
-    join(request.out, "sky.hdr"),
-  );
+  await copyFile(join(assetsDir, DEFAULT_SKY_HDRI), join(request.out, "sky.hdr"));
 
   // The editable recipe, with the heightmap inlined, is what `terrain_patch` takes back.
   await writeFile(join(request.out, "recipe.json"), JSON.stringify(recipe.recipe));

@@ -613,6 +613,9 @@ export const BIOMES: Record<WorldName, IBiome> = {
     canopyTint: [0.3, 0.42, 0.32],
     bladeTint: [0.55, 0.82, 0.42],
     strawBlades: true,
+    // The kit's desert grows scrub since PRD-892 put every kit on the forest's stack; the ground
+    // has to draw the bushes its scatter plants.
+    scrubBush: true,
     propGrassTint: [1.65, 0.92, 0.42],
     stoneGrey: 0.25,
     distantStoneShare: 0.32,

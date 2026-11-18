@@ -147,6 +147,11 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "performance": {
+      "maxPhaseMsP95": {
+        "render": 40
+      }
+    },
     "resources": [
       {
         "id": "GameState",

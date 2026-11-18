@@ -93,6 +93,15 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
   is `_WIND.z`, with debris writing all four zero.
 - `form` and `leafImage` patch an Arbor preset's shape and leaf card. A forest-kit preset throws
   when given either, because it has no leaf card to patch.
+- `leafSize` caps the drawn leaf card's longest side: Arbor draws 1024 px, and a far level or a
+  shrub a metre tall shows a few hundred at most, so a game that cares about bytes bakes those
+  smaller. A game's own `leafImage` is never resized; the two together throw.
+- `barkImage` and `barkNormalImage` paint a photographed surface and its relief on the bark
+  instead of Arbor's drawn one. A species whose trunk is the whole silhouette needs it: a
+  `saguaro` is a column, and the drawn cactus bark is a flat pinstripe. The relief is a glTF
+  tangent-space normal PNG, drawn against the albedo; without it the bark is left flat, because
+  Arbor's own bark normal belongs to a bark that is no longer sampled. `barkNormalImage` without
+  `barkImage` throws.
 - `@napi-rs/canvas` paints the leaf atlas at bake time (Arbor needs a Canvas 2D), and `sharp`
   encodes the WebPs.
 
@@ -107,8 +116,9 @@ await bakeRock({ form: "boulder", biome: "forest", traits: { weathering: 0.8 }, 
 ```
 
 - Forms: `boulder`, `slab`, `spire`, `hoodoo`, `stack` (sea stack), `mesa`, `arch`, `cliff`
-  (tiles along X) and `mountain`. `module: n` bakes cliff module n, which sits at x = n x width and
-  meets modules n - 1 and n + 1 without a seam, as Outcrop's `tile()` lays them. The biome sets the strata, fracture and weathering, and the
+  (tiles along X) and `mountain`. A cliff is one module of a wall: bake module n with the same
+  seed and `module: n` (or `offset: [n * width, 0, 0]`), stand the modules one width apart and they join with no
+  seam. A module that stands alone shows a cut face at each end. The biome sets the strata, fracture and weathering, and the
   painted cover: moss in a forest, snow in the tundra, sand in the desert, algae under the tide.
 - `traits` and `surface` override the biome's values key by key (`roughness`, `strata`,
   `columnar`; `rockA`, `moss`, `snow`, `tide`), `size` sets metres and `detail` (0 to 1, default

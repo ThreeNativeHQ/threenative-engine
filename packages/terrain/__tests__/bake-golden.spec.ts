@@ -116,17 +116,19 @@ const PHASE_1: Record<
   },
   desert: {
     // PRD-892 Phase 2: the desert grows Utah juniper (the ordered stream's sapling row), a denser
-    // scrub and grass cover, and spawns on the sand flat at [140, 120] south-east of the butte.
+    // scrub and grass cover, trades the large boulders for crags, and spawns on the sand flat at [140, 120] south-east of the butte. Its
+    // height digest is the survey's own seed again (97, which the biome file and the example share):
+    // #681 had copied alpine's 41 into the desert recipe, and restoring it re-cuts the same relief.
     counts: {
-      boulder: 248,
-      bush: 27,
-      grass: 6559,
-      reveal: 158,
+      boulder: 247,
+      bush: 40,
+      grass: 6623,
+      reveal: 162,
       sapling: 161,
-      scrub: 909,
-      volcanic: 229,
+      scrub: 1305,
+      volcanic: 231,
     },
-    heights: "8f8109a1e234e65182c3af496dd7c15b65eb05069a0a5e35af099d17b78927c5",
+    heights: "7fb2de8bd965d3afab7b22ac80af4a483aaf1190662f41b50849e9448d3d3f6e",
     manifest: "8d979f26cf4a02dd6c46d2a5c67e7aae7c50cab0920c1c9673039b7d43472872",
     placements: "64ce8648b98a1f8248b60dd9b90d841b979fa10a7492657838a2fb3185793201",
   },
@@ -155,7 +157,8 @@ const PHASE_1_CANONICAL: Record<World, string> = {
   forest: "f9ec1259f6e14aa51fc24f86d40df980c1e856a3335fa30236dc16ab8d0694c1",
   coastal: "939d66b7e98cb7b76c10824c3507db3979c70597d9d32b9bc67724751cb1b81b",
   alpine: "187ca9120d1697fb358f7bc702690dec77c3f05231002fbdfd115bc2ff14b7fc",
-  desert: "9fbc0ac9b10432c407ee2d433643fa5335751ab6b7c5b71caa4fe94a3ad9f76f",
+  // Re-measured with the desert's own seed (97) restored: the ground it scatters on re-cut the poses.
+  desert: "4830f693f09610f04d609af3efcbf4e2bab30a8489da25635cedb054a9586a28",
   tundra: "5159ea075b0205a0d98415368586572c760957371ed87f1155cedd7e2c1af905",
 };
 

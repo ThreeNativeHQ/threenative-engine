@@ -8,7 +8,7 @@ import { assertDistFresh } from "./dist-fresh.js";
 import { starterAssetsDir } from "./kit-assets.js";
 import type { IKitWorldLook } from "./kit-world.js";
 import { growArborRows } from "./population/arbor-species.js";
-export { starterAssetsDir } from "./kit-assets.js";
+export { DEFAULT_SKY_HDRI, starterAssetsDir } from "./kit-assets.js";
 export type { IKitWorldLook, IKitWorldRecipe } from "./kit-world.js";
 import type { ITerrainState } from "./core/types.js";
 import {

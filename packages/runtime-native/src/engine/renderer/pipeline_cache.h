@@ -78,6 +78,7 @@ struct PipelineTarget {
      *  named-target mask, which must not silence that draw's own MRT slot. */
     bool materialColorWrite = true;
     uint32_t blendState = 0;  // blend 5: a material's resolved blend state (materialBlend)
+    bool alphaToCoverage = false;
 };
 
 // The device's eight colour attachments are `color` and the seven that follow it, and the aux pass's budget is that

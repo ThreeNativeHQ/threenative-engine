@@ -84,7 +84,7 @@ index f23dc1ee0ac72e328e9360ccd1ba2c9f6d9b2d56..b87cf38629b2c52804888a10bda3b814
  
  			}
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index b72762aeb47f25485ce9b7f6beab3cf5d4d882ed..25db376c0930d86abd7e6fe7132869ee66b31118 100644
+index b72762aeb47f25485ce9b7f6beab3cf5d4d882ed..e6d9e39318189f6e555be86f2a57d9467fc1188d 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -6495,6 +6495,7 @@ class RenderObjects {
@@ -692,8 +692,37 @@ index b72762aeb47f25485ce9b7f6beab3cf5d4d882ed..25db376c0930d86abd7e6fe7132869ee
  
  					if ( this.isSampleCompare( texture ) && textureNode.isSampleCompare() ) {
  
+@@ -49948,28 +50100,24 @@
+ 							_viewDescriptor.dimension = GPUTextureViewDimension.TwoD;
+ 
+ 							const textureView = textureData.texture.createView( _viewDescriptor );
+ 							const msaaTexture = textureData.msaaTextures?.[ layer ];
+ 							textureViews.push( {
+ 								view: msaaTexture !== undefined ? msaaTexture.createView() : textureView,
+ 								resolveTarget: msaaTexture !== undefined && renderTarget.resolveColorBuffer === true ? textureView : undefined,
+ 								depthSlice: undefined
+ 							} );
+ 
+ 						}
+ 
+-					} else {
+-
+-						_viewDescriptor.dimension = GPUTextureViewDimension.TwoDArray;
+-
+ 					}
+ 
+ 				}
+ 
+ 				if ( isRenderCameraDepthArray !== true ) {
+ 
+ 					const textureView = textureData.texture.createView( _viewDescriptor );
+ 
+ 					let view, resolveTarget;
+ 
+ 					if ( textureData.msaaTexture !== undefined ) {
+ 
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 5d1c3e9b32d4347ac6605fdf59438fd634d40cd7..790d97c1247564c7fd3aea2ee54ea0a6ffa50c62 100644
+index 5d1c3e9b32d4347ac6605fdf59438fd634d40cd7..40a12e5262477dca5218c1e3396d07223adb673a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -413,7 +413,8 @@ class NodeMaterialObserver {
@@ -1382,6 +1411,35 @@ index 5d1c3e9b32d4347ac6605fdf59438fd634d40cd7..790d97c1247564c7fd3aea2ee54ea0a6
  
  					if ( this.isSampleCompare( texture ) && textureNode.isSampleCompare() ) {
  
+@@ -91792,28 +91961,24 @@
+ 							_viewDescriptor.arrayLayerCount = 1;
+ 							_viewDescriptor.dimension = GPUTextureViewDimension.TwoD;
+ 
+ 							const textureView = textureData.texture.createView( _viewDescriptor );
+ 							const msaaTexture = textureData.msaaTextures?.[ layer ];
+ 							textureViews.push( {
+ 								view: msaaTexture !== undefined ? msaaTexture.createView() : textureView,
+ 								resolveTarget: msaaTexture !== undefined && renderTarget.resolveColorBuffer === true ? textureView : undefined,
+ 								depthSlice: undefined
+ 							} );
+ 
+ 						}
+-
+-					} else {
+-
+-						_viewDescriptor.dimension = GPUTextureViewDimension.TwoDArray;
+ 
+ 					}
+ 
+ 				}
+ 
+ 				if ( isRenderCameraDepthArray !== true ) {
+ 
+ 					const textureView = textureData.texture.createView( _viewDescriptor );
+ 
+ 					let view, resolveTarget;
+ 
+ 					if ( textureData.msaaTexture !== undefined ) {
 diff --git a/src/materials/nodes/manager/NodeMaterialObserver.js b/src/materials/nodes/manager/NodeMaterialObserver.js
 index bd94730965dcc321ecb12083980f7da5f1cfbf9b..239556dc65ed767755f10a57d82dbfee0b79bce3 100644
 --- a/src/materials/nodes/manager/NodeMaterialObserver.js
@@ -2099,4 +2157,70 @@ index c662dfaa40d14a04d38e886a0730c314a85a8bd5..48c5779133deee480709402615417c3f
 +				if ( needsSampler && nodeData.sharedSampler !== true ) {
  
  					if ( this.isSampleCompare( texture ) && textureNode.isSampleCompare() ) {
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 25db376c0930d86abd7e6fe7132869ee66b31118..e6d9e39318189f6e555be86f2a57d9467fc1188d 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -50100,28 +50100,24 @@ class WebGPUBackend extends Backend {
+ 							_viewDescriptor.dimension = GPUTextureViewDimension.TwoD;
+ 
+ 							const textureView = textureData.texture.createView( _viewDescriptor );
+ 							const msaaTexture = textureData.msaaTextures?.[ layer ];
+ 							textureViews.push( {
+ 								view: msaaTexture !== undefined ? msaaTexture.createView() : textureView,
+ 								resolveTarget: msaaTexture !== undefined && renderTarget.resolveColorBuffer === true ? textureView : undefined,
+ 								depthSlice: undefined
+ 							} );
+ 
+ 						}
+ 
+-					} else {
+-
+-						_viewDescriptor.dimension = GPUTextureViewDimension.TwoDArray;
+-
+ 					}
+ 
+ 				}
+ 
+ 				if ( isRenderCameraDepthArray !== true ) {
+ 
+ 					const textureView = textureData.texture.createView( _viewDescriptor );
+ 
+ 					let view, resolveTarget;
+ 
+ 					if ( textureData.msaaTexture !== undefined ) {
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 790d97c1247564c7fd3aea2ee54ea0a6ffa50c62..40a12e5262477dca5218c1e3396d07223adb673a 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -91962,28 +91962,24 @@ class WebGPUBackend extends Backend {
+ 							_viewDescriptor.dimension = GPUTextureViewDimension.TwoD;
+ 
+ 							const textureView = textureData.texture.createView( _viewDescriptor );
+ 							const msaaTexture = textureData.msaaTextures?.[ layer ];
+ 							textureViews.push( {
+ 								view: msaaTexture !== undefined ? msaaTexture.createView() : textureView,
+ 								resolveTarget: msaaTexture !== undefined && renderTarget.resolveColorBuffer === true ? textureView : undefined,
+ 								depthSlice: undefined
+ 							} );
+ 
+ 						}
+ 
+-					} else {
+-
+-						_viewDescriptor.dimension = GPUTextureViewDimension.TwoDArray;
+-
+ 					}
+ 
+ 				}
+ 
+ 				if ( isRenderCameraDepthArray !== true ) {
+ 
+ 					const textureView = textureData.texture.createView( _viewDescriptor );
+ 
+ 					let view, resolveTarget;
+ 
+ 					if ( textureData.msaaTexture !== undefined ) {
  

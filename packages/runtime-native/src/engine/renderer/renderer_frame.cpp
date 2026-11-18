@@ -744,6 +744,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         target.blendState = blendState;
         target.colorWrite = item.colorWrite;
         target.sampleCount = sampleCount_;
+        // WebGPU coverage needs a blendable colour target with alpha. RG targets have none.
+        target.alphaToCoverage = sampleCount_ > 1 && target.color == WGPUTextureFormat_RGBA16Float &&
+                                 item.material && item.material->alphaToCoverage;
         target.layout = program.pipelineLayout;
         if (item.background || !item.depthTest) target.depthCompare = WGPUCompareFunction_Always;
         target.depthBias = item.depthBias;
@@ -909,7 +912,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // rejects the hidden fragments, and a fragment without them, or an @invariant position the shipped draw lacks,
         // changed up to 41 k pixels of the forest's overview where this pair changed none. Both pipelines run the one
         // vertex stage, so the Equal test meets the depth the prepass wrote.
-        const bool equalDraw = prepass && prepassEligible(item) && prepassFragment(program) != nullptr;
+        const bool equalDraw = prepass && !target.alphaToCoverage && prepassEligible(item) && prepassFragment(program) != nullptr;
         const PipelineTarget depthOnly = equalDraw ? prepassTargets(target) : PipelineTarget{};
         if (compilation) {
             compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));
@@ -974,8 +977,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, f, fs[kModelNormalMatrix], modelNormalMatrix);
         }
         put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
-        // NodeMaterial forces alpha to 1 only on an opaque NormalBlending material.
-        put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{!item.transparent && item.blending == 1 ? 1.0 : 0.0});
+        // Three.js leaves coverage alpha available to the multisample state.
+        put(frameUniforms_, f, fs[kOpaque],
+            std::array<double, 1>{!item.transparent && item.blending == 1 && !m.alphaToCoverage ? 1.0 : 0.0});
         put(frameUniforms_, f, fs[kRoughness], std::array<double, 1>{m.roughness});
         put(frameUniforms_, f, fs[kMetalness], std::array<double, 1>{m.metalness});
         put(frameUniforms_, f, fs[kEmissive],

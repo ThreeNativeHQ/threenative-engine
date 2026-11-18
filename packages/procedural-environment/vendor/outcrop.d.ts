@@ -22,6 +22,7 @@ export interface IOutcropOptions {
   readonly size?: readonly [number, number, number];
   readonly traits?: Readonly<Record<string, number>>;
   readonly surface?: Readonly<Record<string, string | number>>;
+  readonly offset?: readonly [number, number, number];
 }
 /** A generated map: RGBA8, row 0 at the bottom (a three DataTexture). */
 export interface IOutcropMap {

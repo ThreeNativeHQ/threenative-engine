@@ -1319,8 +1319,10 @@ it.each(["missing", "malformed", "wrong path", "wrong kit", "valid"])(
       expect(result.error).toBeUndefined();
       expect(result.status).not.toBe(0);
       if (marker === "valid") {
-        // Acceptance reaches source replacement, then stops at the intentionally absent world source.
-        expect(result.stderr).toContain("world.ts");
+        // Acceptance reaches the game it writes — the arena removed, the source game copied — and
+        // stops at the typecheck a bare temporary directory cannot run. Since PRD-892 every kit is a
+        // source kit (`<kit>-game.ts`), so no arm generates a `world.ts` to stop at.
+        expect(result.stderr).toContain("pnpm typecheck exited");
         expect(result.stderr).not.toContain("KIT_GAME ownership refused");
         expect(existsSync(join(directory, "src/entities"))).toBe(false);
         expect(readFileSync(join(directory, "src/game.ts"), "utf8")).not.toBe(
