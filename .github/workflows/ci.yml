@@ -1229,6 +1229,10 @@ jobs:
           pack-archives: "false"
       - run: pnpm tsx scripts/count-loc.ts --check
       # Owner cut (2026-11-01): a board keeps `count-loc --check`; the rest runs on the nightly.
+      # An external threenative-* pin (the asset and sculpt MCP servers) behind npm latest fails the
+      # nightly and `release:prepare`, never a pull request.
+      - if: github.event_name == 'schedule'
+        run: pnpm tsx scripts/check-external-pins.ts
       - if: github.event_name == 'schedule'
         run: pnpm --filter abyss-vanilla build
       - if: github.event_name == 'schedule'

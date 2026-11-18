@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { externalPinFindings } from "./check-external-pins.js";
 import {
   type IPublishPackage,
   type RegistryLookup,
@@ -339,6 +340,9 @@ async function main(): Promise<void> {
   // so the version bump nobody wants to walk back never lands in the first place.
   if ([...selected.values()].some((state) => state.next === "1.0.0"))
     assertOneZeroGatesClosed(REPO);
+  const stalePins = externalPinFindings(REPO, npmLookup(REPO));
+  if (stalePins.length > 0)
+    throw new Error(`TN_RELEASE_EXTERNAL_PIN_STALE:\n${stalePins.join("\n")}`);
   const changed = syncReleaseMetadata(REPO, packages, selected);
   process.stdout.write(
     `Prepared ${packages.length} package(s); synchronized ${changed} file(s).\nRelease cohort:\n${packages
