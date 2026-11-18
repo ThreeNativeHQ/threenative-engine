@@ -143,6 +143,7 @@ describe("Poly Haven scans by default, the generator's texture on request", () =
     const [oak] = await bakeVegetation({ preset: "oak", out, lods: [2] });
     expect(oak?.scan).toBe("jolcham_oak_bark_01");
   });
+
   it("bakes a cliff's next module so the two meet without a seam, and refuses a module on a boulder", async () => {
     const out = await makeTempDir("tn-cliff-module-");
     const [zero] = await bakeRock({ form: "cliff", biome: "coastal", out });
