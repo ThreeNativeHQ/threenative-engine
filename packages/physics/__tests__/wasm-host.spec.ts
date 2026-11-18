@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import * as RAPIER from "@dimforge/rapier3d-compat";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/native.js";
 import type { INativePhysicsHost } from "../src/native/host.js";
@@ -7,6 +8,7 @@ import {
   type IPhysicsBodyCreateOptions,
   type IPhysicsRuntimeSimulation,
   PHYSICS_TRANSFORM_STRIDE,
+  createWebPhysicsSimulation,
   physicsSimulationBackend,
 } from "../src/simulation.js";
 
@@ -105,6 +107,52 @@ function body(
 function simulation(): IPhysicsRuntimeSimulation {
   const [x, y, z] = scenario.gravity;
   return physicsSimulationBackend().createSimulation({ gravity: { x, y, z } });
+}
+
+/** A character crossing a bumpy trimesh, with the ground normal it reads after each step. */
+function trimeshWalkNormals(world: IPhysicsRuntimeSimulation): number[][] {
+  const n = 40;
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  for (let i = 0; i <= n; i += 1)
+    for (let j = 0; j <= n; j += 1) {
+      const x = (i / n - 0.5) * 20;
+      const z = (j / n - 0.5) * 20;
+      vertices.push(x, 0.3 * Math.sin(x * 0.7) * Math.cos(z * 0.5), z);
+    }
+  for (let i = 0; i < n; i += 1)
+    for (let j = 0; j < n; j += 1) {
+      const a = i * (n + 1) + j;
+      indices.push(a, a + 1, a + n + 1, a + 1, a + n + 2, a + n + 1);
+    }
+  const ground = {
+    ...box(0, 0, 0),
+    indices: new Uint32Array(indices),
+    kind: "trimesh" as const,
+    vertices: new Float32Array(vertices),
+  };
+  world.createBody(body("fixed", { x: 0, y: 0, z: 0 }, ground));
+  const capsule = { ...box(0.4, 0.5, 0, 2), kind: "capsule" as const, z: 0 };
+  const id = world.createBody(body("character", { x: -8, y: 1.5, z: -6 }, capsule)).body.id;
+  world.configureCharacter(id, {
+    maxSlopeClimbAngle: Math.PI / 4,
+    offset: 0.01,
+    oneWayLayers: 0,
+    snapToGround: 0.15,
+  });
+  const input = new Float32Array(PHYSICS_TRANSFORM_STRIDE);
+  const normals: number[][] = [];
+  for (let step = 0; step < 300; step += 1) {
+    const p = world.readBodyTransform?.(id)?.position;
+    if (p === undefined) throw new Error("missing character");
+    input.set([id, p.x + 0.05, p.y - 0.03, p.z + 0.04, 0, 0, 0, 1]);
+    world.step(1 / 60, { kinematicCount: 1, kinematicTransforms: input });
+    const state = world.readCharacterState?.(id);
+    const normal = state?.groundNormal ?? { x: 0, y: 1, z: 0 };
+    normals.push([normal.x, normal.y, normal.z]);
+  }
+  world.dispose();
+  return normals;
 }
 
 describe("Wasm physics host (PRD-899)", () => {
@@ -308,5 +356,23 @@ describe("Wasm physics host (PRD-899)", () => {
     expect(() => host.createSimulation({ gravity: "down" })).toThrow(
       "physics options contain invalid gravity",
     );
+  });
+
+  it("reports the first walkable contact as ground, as the web backend does", async () => {
+    // A character crossing a bumpy trimesh touches two faces in one move; the adventure kit's boss
+    // fight drifted when the crate kept the last face's normal and compat the first.
+    await RAPIER.init();
+    const compat = trimeshWalkNormals(
+      createWebPhysicsSimulation({
+        eventQueue: new RAPIER.EventQueue(true),
+        rapier: RAPIER,
+        version: RAPIER.version(),
+        world: new RAPIER.World({ x: 0, y: -9.81, z: 0 }),
+      }),
+    );
+    const crate = trimeshWalkNormals(simulation());
+    for (const [step, normal] of compat.entries())
+      for (const [axis, value] of normal.entries())
+        expect(crate[step]?.[axis], `step ${step} axis ${axis}`).toBeCloseTo(value, 4);
   });
 });

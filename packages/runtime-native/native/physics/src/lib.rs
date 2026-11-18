@@ -538,7 +538,11 @@ impl Simulation {
         if options.mass > 0.0 {
             collider = collider.mass(options.mass);
         }
-        collider = collider.active_events(ActiveEvents::COLLISION_EVENTS);
+        // The body id rides on the collider, so a query maps a hit collider to its body with one
+        // map lookup instead of a scan of every entry (`entry_for`).
+        collider = collider
+            .active_events(ActiveEvents::COLLISION_EVENTS)
+            .user_data(u128::from(options.id));
         let shape = collider.shape.clone();
         let collider = self
             .colliders
@@ -1107,11 +1111,6 @@ impl Simulation {
                     &self.colliders,
                     filter,
                 );
-                let collider_ids: HashMap<ColliderHandle, u32> = self
-                    .entries
-                    .iter()
-                    .map(|(body_id, body_entry)| (body_entry.collider, *body_id))
-                    .collect();
                 let mut ground_collider = None;
                 let mut ground_normal = None;
                 // Rapier flags ground at any positive up component. Contacts that are all steeper
@@ -1130,12 +1129,19 @@ impl Simulation {
                         contacts += 1;
                         if collision.hit.normal1.y >= 0.5 {
                             walkable = true;
-                            ground_collider = collider_ids.get(&collision.handle).copied();
-                            ground_normal = Some([
-                                collision.hit.normal1.x,
-                                collision.hit.normal1.y,
-                                collision.hit.normal1.z,
-                            ]);
+                            // The first walkable contact with a body is the ground, as on the web
+                            // backend; a later one (a trimesh's next face) does not replace it.
+                            if ground_collider.is_none() {
+                                let collider = &self.colliders[collision.handle];
+                                if let Some((body_id, _)) = self.entry_for(collision.handle, collider) {
+                                    ground_collider = Some(body_id);
+                                    ground_normal = Some([
+                                        collision.hit.normal1.x,
+                                        collision.hit.normal1.y,
+                                        collision.hit.normal1.z,
+                                    ]);
+                                }
+                            }
                         }
                         if character.pushes_dynamic_bodies {
                             collisions.push(collision);
@@ -1312,6 +1318,15 @@ impl Simulation {
         }
     }
 
+    /// The body entry that owns `handle`, read through the id `insert_body` stores on the collider.
+    fn entry_for(&self, handle: ColliderHandle, collider: &Collider) -> Option<(u32, &BodyEntry)> {
+        let id = u32::try_from(collider.user_data).ok()?;
+        self.entries
+            .get(&id)
+            .filter(|entry| entry.collider == handle)
+            .map(|entry| (id, entry))
+    }
+
     fn refresh_query_pipeline(&mut self) {
         if !self.query_dirty {
             return;
@@ -1422,7 +1437,7 @@ impl Simulation {
         let (collider, intersection) = loop {
             let predicate = |handle: ColliderHandle, collider: &Collider| {
                 !skipped.contains(&handle)
-                    && self.entries.values().any(|entry| entry.collider == handle)
+                    && self.entry_for(handle, collider).is_some()
                     && !collider.is_sensor()
                     && (collider.collision_groups().memberships.bits() & query.collision_mask) != 0
             };
@@ -1448,11 +1463,7 @@ impl Simulation {
             }
             break (collider, intersection);
         };
-        let Some(body_id) = self
-            .entries
-            .iter()
-            .find_map(|(id, entry)| (entry.collider == collider).then_some(*id))
-        else {
+        let Some((body_id, _)) = self.entry_for(collider, &self.colliders[collider]) else {
             return Ok(None);
         };
         let position = ray.point_at(intersection.time_of_impact);
@@ -1560,7 +1571,7 @@ impl Simulation {
         let shape = Self::query_shape(&options)?;
         let pose = Self::query_pose(&options)?;
         let predicate = |handle: ColliderHandle, collider: &Collider| {
-            self.entries.values().any(|entry| entry.collider == handle)
+            self.entry_for(handle, collider).is_some()
                 && !collider.is_sensor()
                 && (collider.collision_groups().memberships.bits() & options.collision_mask) != 0
         };
@@ -1577,16 +1588,12 @@ impl Simulation {
         );
         let mut hits = Vec::with_capacity(options.max_results as usize);
         for (collider, _) in pipeline.intersect_shape(pose, shape.as_ref()) {
-            let Some((body_id, entry)) = self
-                .entries
-                .iter()
-                .find(|(_, entry)| entry.collider == collider)
-            else {
+            let Some((body_id, entry)) = self.entry_for(collider, &self.colliders[collider]) else {
                 continue;
             };
             let position = self.bodies[entry.body].translation();
             hits.push(TnPhysicsQueryHit {
-                body_id: *body_id,
+                body_id,
                 position_x: position.x,
                 position_y: position.y,
                 position_z: position.z,
@@ -1616,7 +1623,7 @@ impl Simulation {
         }
         let point = point![position_x, position_y, position_z];
         let predicate = |handle: ColliderHandle, collider: &Collider| {
-            self.entries.values().any(|entry| entry.collider == handle)
+            self.entry_for(handle, collider).is_some()
                 && !collider.is_sensor()
                 && (collider.collision_groups().memberships.bits() & collision_mask) != 0
         };
@@ -1633,16 +1640,12 @@ impl Simulation {
         );
         let mut hits = Vec::with_capacity(max_results as usize);
         for (collider, _) in pipeline.intersect_point(point) {
-            let Some((body_id, entry)) = self
-                .entries
-                .iter()
-                .find(|(_, entry)| entry.collider == collider)
-            else {
+            let Some((body_id, entry)) = self.entry_for(collider, &self.colliders[collider]) else {
                 continue;
             };
             let position = self.bodies[entry.body].translation();
             hits.push(TnPhysicsQueryHit {
-                body_id: *body_id,
+                body_id,
                 position_x: position.x,
                 position_y: position.y,
                 position_z: position.z,

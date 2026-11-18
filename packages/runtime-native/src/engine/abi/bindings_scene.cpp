@@ -242,7 +242,14 @@ struct StaticWatch {
     bool watched = false;
 };
 
-void writeStaticSnapshot(Object3D& root, std::array<double, kStaticSnapshot>& into) {
+// The parent's world matrix part of a record (16 numbers); a root with no parent records the identity.
+void writeStaticParent(Object3D* parent, double* into) {
+    if (parent != nullptr) parent->joinDeferredWorldTransform();
+    for (int i = 0; i < 16; ++i) into[i] = parent != nullptr ? double(parent->matrixWorld.elements[i]) : (i % 5 == 0 ? 1.0 : 0.0);
+}
+
+// The root's own part of a record (26 numbers): position, quaternion, scale and local matrix.
+void writeStaticOwn(Object3D& root, std::array<double, kStaticSnapshot>& into) {
     into[0] = root.position.x;
     into[1] = root.position.y;
     into[2] = root.position.z;
@@ -254,14 +261,23 @@ void writeStaticSnapshot(Object3D& root, std::array<double, kStaticSnapshot>& in
     into[8] = root.scale.y;
     into[9] = root.scale.z;
     for (int i = 0; i < 16; ++i) into[10 + i] = root.matrix.elements[i];
-    Object3D* parent = root.parent;
-    if (parent != nullptr) parent->joinDeferredWorldTransform();
-    for (int i = 0; i < 16; ++i) into[26 + i] = parent != nullptr ? double(parent->matrixWorld.elements[i]) : (i % 5 == 0 ? 1.0 : 0.0);
 }
 
+void writeStaticSnapshot(Object3D& root, std::array<double, kStaticSnapshot>& into) {
+    writeStaticOwn(root, into);
+    writeStaticParent(root.parent, into.data() + 26);
+}
+
+// A frozen root and its record. The record lives in `staticWatchOf`'s map, whose nodes stay put on a rehash
+// and are erased only once their root is gone, so the pointer is read only after `object` locks.
+struct StaticRoot {
+    std::weak_ptr<Object3D> object;
+    StaticWatch* watch;
+};
+
 // The frozen set core handed over last (`__tnStaticRoots`), in its order.
-std::vector<std::weak_ptr<Object3D>>& staticRoots() {
-    static std::vector<std::weak_ptr<Object3D>> roots;
+std::vector<StaticRoot>& staticRoots() {
+    static std::vector<StaticRoot> roots;
     return roots;
 }
 
@@ -1223,24 +1239,35 @@ void registerObject3D(ClassBinding& b) {
         return Value::undefined();
     };
     b.methods["__tnStaticRoots"] = [](void*, const Args& a, Store& store) {
-        std::vector<std::weak_ptr<Object3D>>& roots = staticRoots();
+        std::vector<StaticRoot>& roots = staticRoots();
         roots.clear();
-        for (const Value& root : refsOf(a.at(0))) roots.push_back(objectArg(store, root).weak_from_this());
+        for (const Value& value : refsOf(a.at(0))) {
+            Object3D& root = objectArg(store, value);
+            roots.push_back({root.weak_from_this(), &staticWatchOf(root)});
+        }
         return Value::undefined();
     };
     b.methods["__tnStaticChanged"] = [](void*, const Args&, Store&) {
-        const std::vector<std::weak_ptr<Object3D>>& roots = staticRoots();
+        const std::vector<StaticRoot>& roots = staticRoots();
         std::vector<double> changed;
         std::array<double, kStaticSnapshot> now{};
+        // Consecutive roots that share a parent read its world matrix once (a forest freezes thousands under one).
+        const Object3D* readParent = nullptr;
+        bool parentRead = false;
         for (std::size_t i = 0; i < roots.size(); ++i) {
-            const std::shared_ptr<Object3D> held = roots[i].lock();
+            const std::shared_ptr<Object3D> held = roots[i].object.lock();
             if (!held) {
                 changed.push_back(double(i)); // gone: JavaScript re-arms or drops it
                 continue;
             }
             Object3D& root = *held;
-            StaticWatch& watch = staticWatchOf(root);
-            writeStaticSnapshot(root, now);
+            StaticWatch& watch = *roots[i].watch;
+            writeStaticOwn(root, now);
+            if (!parentRead || root.parent != readParent) {
+                writeStaticParent(root.parent, now.data() + 26);
+                readParent = root.parent;
+                parentRead = true;
+            }
             // A draw re-parented at the pose its new parent still has stays frozen, as the JavaScript check keeps it.
             if (now != watch.snapshot || !watch.watched) changed.push_back(double(i));
         }
