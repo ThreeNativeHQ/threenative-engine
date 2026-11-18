@@ -23,18 +23,44 @@ describe("nature discovery", () => {
     );
   });
 
-  it("keeps the install line beside the exports", () => {
+  it("carries the install line on the export it answers with", () => {
     const response = searchCapabilities("swaying trees", manifest, "mechanic");
-    expect(response.guidance).toContain("npm i -D @threenative/procedural-environment");
-    expect(
-      response.results.every((result) =>
-        result.importPath.startsWith("@threenative/procedural-environment"),
-      ),
-    ).toBe(true);
+    const bake = response.results.find((result) => result.symbol === "bakeVegetation");
+    expect(bake?.requires).toContain("npm i -D @threenative/procedural-environment");
   });
 
   it("answers rocks and cliffs with the rock bake", () => {
     expect(symbols("rocks and cliffs beside the road")).toContain("bakeRock");
+  });
+
+  // The words a game brief uses, from the trial's own lane prompts and plans. Each one must reach the
+  // nature package within the first three answers: a model reads the top of the list, not the tail.
+  it.each([
+    "palm trees",
+    "palms along the road",
+    "street trees",
+    "pine forest",
+    "foliage",
+    "bushes",
+    "shrubs",
+    "grass tufts",
+    "flowers",
+    "jungle plants",
+    "desert cactus",
+    "boulders",
+    "cliffs",
+    "realistic trees",
+    "low poly trees",
+    "dead trees and logs",
+    "nature props for a level",
+    "tropical island vegetation",
+  ])("reaches the nature package for '%s' in the top 3", (query) => {
+    const response = searchCapabilities(query, manifest, "mechanic");
+    const top = response.results.slice(0, 3);
+    expect(
+      top.some((result) => result.importPath.startsWith("@threenative/procedural-environment")),
+      `${query} -> ${response.verdict}: ${top.map((result) => result.symbol).join(", ")}`,
+    ).toBe(true);
   });
 
   it("still answers 'none' for what the engine does not own", () => {
