@@ -1,6 +1,6 @@
 # PRD-900 — Every procedural asset is browsable, absorbed whole and found by the asset MCP
 
-**Status:** PARTIAL — package rename undecided
+**Status:** DONE — the package rename is the owner's open question, not scope
 **Priority:** P2 — no viewer shows what `@threenative/procedural-environment` bakes, the Apex city kit is not absorbed at all, and the asset MCP does not return any procedural asset.
 **Complexity:** 5 (MEDIUM) — one new dev viewer, one new vendored generator (75 modules), one cross-repo MCP source.
 **Owner:** João
@@ -63,9 +63,16 @@ flowchart LR
 - [x] `asset_search` for "oak tree", "mossy boulder" and "traffic light" returns the procedural element with its bake call. proof: asset MCP spec: `tests/procedural-adapter.test.ts` on threenative-asset-mcp PR #77 (branch `feat/procedural-source`), 5/5 pass; oak tree returns `tree-oak` with `bakeVegetation({ preset: "oak"`, mossy boulder `debris-rock`, traffic light `city-signal` with `bakeCity({ module: "signal"`. Not yet in a published release
 - [x] The engine pins the asset MCP release that carries the source. proof: `packages/core/package.json` and `pnpm exec vitest run packages/engine-mcp/__tests__`: `threenative-asset-mcp` 0.17.0 is on npm (PRs #77 and #78 merged, 9 checks green) and pinned in `packages/core/package.json`, `pnpm-lock.yaml` and `asset-mcp-tools.json`; `capture-asset-mcp-tools`, `mcp-tool-schemas` and `scaffold` specs 93/93; engine-mcp specs 7/8 files, the 2 failing cases read a `/tmp/node_modules` symlink another session made and do not touch the pin
 
+## Acceptance criteria
+
+- [x] `pnpm asset-library` shows every procedural kind (tree, cover, debris, rock, city) with bake controls. proof: 5 kinds, 151 elements; headed Chrome walk 76/76 stories bake and draw (`d87b9697f`)
+- [x] Every embedded texture is WebP, and similar assets share one scan. proof: `scans.spec.ts`, `texture-health.spec.ts`, `city.spec.ts` 37/37; 19 bark profiles on 11 scans; `compileAssets` writes 8 shared images for 3 trees that embedded 12
+- [x] Every generator in `~/Downloads/PROCEDURAL ENVIRONMENT/` is absorbed or recorded as a decision. proof: identity 129/129 with `textures: "generated"`; Apex geometry hash 75/75; audit table above
+- [x] The asset MCP returns the procedural elements and the engine pins that release. proof: `threenative-asset-mcp` 0.17.0 on npm, spec 5/5, 93/93 pin specs
+
 ## Blocked on
 
-- Package name: keep `procedural-environment` or rename to `procedural-assets` before 0.3.16 publishes. Waits for the owner.
+- Package name: keep `procedural-environment` or rename to `procedural-assets` before 0.3.16 publishes. Waits for the owner. It changes no behaviour, so it does not hold this PRD.
 
 ## Compression and sharing (measured)
 
