@@ -92,7 +92,7 @@ function box(x: number, y: number, z: number, layer = 1, sensor = false) {
 function body(
   type: IPhysicsBodyCreateOptions["type"],
   position: { x: number; y: number; z: number },
-  shape = box(0.5, 0.5, 0.5),
+  shape: IPhysicsBodyCreateOptions["shape"] = box(0.5, 0.5, 0.5),
 ): IPhysicsBodyCreateOptions {
   return {
     mass: type === "dynamic" ? 1 : 0,
