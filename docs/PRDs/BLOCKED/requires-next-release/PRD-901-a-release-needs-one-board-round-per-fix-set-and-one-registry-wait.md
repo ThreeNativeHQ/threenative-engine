@@ -1,6 +1,6 @@
 # PRD-901 — A release needs one board round per fix set and one registry wait
 
-**Status:** PARTIAL
+**Status:** BLOCKED — phases 1 to 3 are delivered; AC-4 to AC-6 need the next release
 **Priority:** P1 — Release 0.3.16 took 40.7 hours from promotion PR to merge, and AC-4 to AC-6 below are the open proof that the next release does not.
 **Complexity:** 3 (LOW); risk override: MEDIUM, because phase 2 changes the order of an npm publish, which cannot be undone.
 **Owner:** CI tooling
@@ -125,6 +125,7 @@ uploaded, because a wave's levels upload in order.
 ## Blocked on
 
 - AC-4 to AC-6 need a real release. Unblocked by the owner's next `Release 0.3.x` promotion PR.
+  The code for them is in this repository (PR #697); what is missing is one release that runs it.
 
 ## Integration Ledger
 
