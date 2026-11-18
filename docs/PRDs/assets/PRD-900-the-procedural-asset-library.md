@@ -1,6 +1,6 @@
 # PRD-900 — Every procedural asset is browsable, absorbed whole and found by the asset MCP
 
-**Status:** PARTIAL — Phase 1 in progress
+**Status:** PARTIAL — package rename undecided
 **Priority:** P2 — no viewer shows what `@threenative/procedural-environment` bakes, the Apex city kit is not absorbed at all, and the asset MCP does not return any procedural asset.
 **Complexity:** 5 (MEDIUM) — one new dev viewer, one new vendored generator (75 modules), one cross-repo MCP source.
 **Owner:** João
@@ -61,11 +61,10 @@ flowchart LR
 
 #### Phase 3: the asset MCP finds it
 - [x] `asset_search` for "oak tree", "mossy boulder" and "traffic light" returns the procedural element with its bake call. proof: asset MCP spec: `tests/procedural-adapter.test.ts` on threenative-asset-mcp PR #77 (branch `feat/procedural-source`), 5/5 pass; oak tree returns `tree-oak` with `bakeVegetation({ preset: "oak"`, mossy boulder `debris-rock`, traffic light `city-signal` with `bakeCity({ module: "signal"`. Not yet in a published release
-- [ ] The engine pins the asset MCP release that carries the source. proof: `packages/core/package.json` and `pnpm exec vitest run packages/engine-mcp/__tests__`
+- [x] The engine pins the asset MCP release that carries the source. proof: `packages/core/package.json` and `pnpm exec vitest run packages/engine-mcp/__tests__`: `threenative-asset-mcp` 0.17.0 is on npm (PRs #77 and #78 merged, 9 checks green) and pinned in `packages/core/package.json`, `pnpm-lock.yaml` and `asset-mcp-tools.json`; `capture-asset-mcp-tools`, `mcp-tool-schemas` and `scaffold` specs 93/93; engine-mcp specs 7/8 files, the 2 failing cases read a `/tmp/node_modules` symlink another session made and do not touch the pin
 
 ## Blocked on
 
-- Phase 3 box 2 (engine pin): waits on the owner's approval to publish asset MCP 0.17.0 (PR threenative-asset-mcp#77) to npm. The engine pins 0.16.1 until then.
 - Package name: keep `procedural-environment` or rename to `procedural-assets` before 0.3.16 publishes. Waits for the owner.
 
 ## Compression and sharing (measured)
