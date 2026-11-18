@@ -53,14 +53,20 @@ const passOf = (row) => row.pass ?? (flagsOf(row.variant).includes("uncapped") ?
 
 /**
  * `play` in a variant is the gameplay preset (`?stress&play`): textured materials, several meshes per layer, a street
- * camera and object churn. It is another workload, so it never shares a lane or a trend line with `real`.
+ * camera and object churn. `systems` (PRD-898) adds the engine-system layers: frozen roots, LOD chains, grounded
+ * walkers and ground rays. Each is another workload, so it never shares a lane or a trend line with `real`; the two
+ * together are their own lane, `play+systems`.
  */
 export const sceneKindOf = (row) => {
   const flags = flagsOf(row.variant);
   // `holdout=<name>` is a real game measured in the same window: it is a keep's proof, never a lane.
   const holdout = flags.find((flag) => flag.startsWith("holdout="));
-  return holdout ?? (flags.includes("play") ? "play" : "real");
+  return (
+    holdout ?? (["play", "systems"].filter((kind) => flags.includes(kind)).join("+") || "real")
+  );
 };
+/** The non-`real` lanes the Overview adds once they have a row. */
+const EXTRA_SCENES = ["play", "systems", "play+systems"];
 
 /** A run is void above the host-load limit, or when its scene tag names a contaminated run. */
 export const isVoid = (row, loadVoid) =>
@@ -339,7 +345,8 @@ export function laneOf(rows, ctx, shadow, pass, scene = "real") {
   };
 }
 
-const laneName = (lane) => `${lane.scene === "play" ? "play · " : ""}${SHADOW[lane.shadow]}`;
+const laneName = (lane) =>
+  `${lane.scene === "real" ? "" : `${lane.scene} · `}${SHADOW[lane.shadow]}`;
 
 function ladder(lanes) {
   const [W, top, laneH, labelW, max] = [560, 24, 44, 176, 36];
@@ -679,12 +686,13 @@ function overviewTab(rows, ctx, extra, goals) {
   const lanes = [];
   for (const shadow of ["virtual", "plain"])
     for (const pass of PASSES) lanes.push(laneOf(rows, ctx, shadow, pass));
-  // The gameplay preset gets a lane once it has a row; an unmeasured pass adds no empty line.
-  for (const shadow of ["virtual", "plain"])
-    for (const pass of PASSES) {
-      const lane = laneOf(rows, ctx, shadow, pass, "play");
-      if (lane.baseline !== undefined || lane.kept !== undefined) lanes.push(lane);
-    }
+  // The gameplay and systems presets get a lane once they have a row; an unmeasured pass adds no empty line.
+  for (const scene of EXTRA_SCENES)
+    for (const shadow of ["virtual", "plain"])
+      for (const pass of PASSES) {
+        const lane = laneOf(rows, ctx, shadow, pass, scene);
+        if (lane.baseline !== undefined || lane.kept !== undefined) lanes.push(lane);
+      }
   const cell = (row) => {
     if (row === undefined) return `<td class="dim">no valid run</td>`;
     const v = row.metrics.presentedP95Ms;

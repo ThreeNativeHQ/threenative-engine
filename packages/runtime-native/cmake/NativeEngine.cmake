@@ -607,10 +607,7 @@ endif()
 # PRD-519: discrete LOD selection and its per-frame decision as pure CPU functions. It links the
 # scene classes for Camera and Object3D but owns no GPU resource; `native_engine_model_lod_reference_current`
 # keeps the committed table equal to what model-lod.ts produces today.
-add_library(tn_engine_lod STATIC src/engine/renderer/lod/model_lod.cpp)
-tn_native_engine_target(tn_engine_lod)
-target_link_libraries(tn_engine_lod PUBLIC tn_engine_scene)
-target_include_directories(tn_engine_lod PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# tn_engine_lod is defined in NativeEngineCore.cmake (PRD-898 J3: the web bindings link it).
 tn_native_engine_test(tn-native-engine-model-lod-test tests/native-engine/lod/model_lod_test.cpp
     native_engine_model_lod=model_lod)
 target_link_libraries(tn-native-engine-model-lod-test PRIVATE tn_engine_lod)

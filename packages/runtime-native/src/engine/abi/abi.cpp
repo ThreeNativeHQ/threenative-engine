@@ -390,6 +390,8 @@ static bool releasesNoOwnership(tn_context& context, tn_handle_t handle) {
            primary->second.generation == handle.generation && primary->second.type == handle.type;
 }
 
+uint32_t tn_ownership_epoch(void) { return static_cast<uint32_t>(tn::abi::ownershipEpoch()); }
+
 void tn_object_engine_references(const tn_handle_t* objects, uint32_t count, uint32_t* out_counts) {
     if (!objects || !out_counts) return;
     for (uint32_t i = 0; i < count; ++i) out_counts[i] = tn::abi::engineReferences(objects[i]);
@@ -915,6 +917,8 @@ tn_status_t invokeMethod(tn_handle_t self, MethodSlot& slot, const std::string& 
 }
 
 uint64_t crossings() { return gCrossings.load(std::memory_order_relaxed); }
+
+void noteCrossing(std::string_view name) { crossed(name); }
 
 uint64_t ownershipEpoch() { return gOwnership.load(std::memory_order_relaxed) + engine::Object3D::hierarchyVersion(); }
 

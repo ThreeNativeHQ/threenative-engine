@@ -44,6 +44,8 @@ const BRAVE_FLAGS = [
   "--no-default-browser-check",
   "--disable-features=Translate,AcceptCHFrame,MediaRouter",
   "--force-device-scale-factor=1",
+  // Under a Wayland session headed Chromium and Brave never open the DevTools port; X11 (XWayland) does.
+  "--ozone-platform=x11",
 ];
 const UNCAPPED_FLAGS = ["--disable-frame-rate-limit", "--disable-gpu-vsync"];
 const PASSES = { vsync: [], uncapped: UNCAPPED_FLAGS };

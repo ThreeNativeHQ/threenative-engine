@@ -238,6 +238,16 @@ describe("createWebEnginePlugin", () => {
         expect(plugin.resolveId(id)).toBeNull();
   });
 
+  it("keeps rapier3d-compat out of an owned-engine build and leaves it to engine threejs", async () => {
+    const owned = createWebEnginePlugin({ root: "/game", engine: "threenative" });
+    const id = owned.resolveId("@dimforge/rapier3d-compat");
+    expect(id).not.toBeNull();
+    expect(await owned.load(String(id))).toContain("TN_PHYSICS_COMPAT_EXCLUDED");
+    expect(
+      createWebEnginePlugin({ engine: "threejs" }).resolveId("@dimforge/rapier3d-compat"),
+    ).toBeNull();
+  });
+
   it("takes its root from Vite when the dev config names none", async () => {
     const root = await project(true);
     const plugin = createWebEnginePlugin({ engine: "threenative" });

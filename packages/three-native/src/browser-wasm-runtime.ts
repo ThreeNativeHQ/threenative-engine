@@ -392,6 +392,9 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         );
         return readValue(out);
       }),
+    ...(abi._tn_ownership_epoch === undefined
+      ? {}
+      : { ownershipEpoch: () => (abi._tn_ownership_epoch as () => number)() }),
     engineReferences: (refs) =>
       scoped(() => {
         const handles = alloc(Math.max(1, refs.length) * HANDLE);

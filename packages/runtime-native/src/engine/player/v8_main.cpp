@@ -1464,6 +1464,10 @@ bool V8Game::start(const std::string& path, std::string& error) {
         frameSpans != nullptr && frameSpans[0] != '\0' && std::strcmp(frameSpans, "0") != 0 &&
         std::strcmp(frameSpans, "false") != 0)
         ctx->Global()->Set(ctx, v8str(isolate_, "__tnFrameSpans"), v8::True(isolate_)).Check();
+    // TN_ENGINE_COST=1 (the desktop playtest driver sets it): core's engine work counters are on for the run, as the
+    // browser runner's __THREENATIVE_ENGINE_COST__ turns them on, so an engineCost bound reads the same counters here.
+    if (const char* cost = flags::read<flags::EngineCost>(); cost != nullptr && std::strcmp(cost, "1") == 0)
+        ctx->Global()->Set(ctx, v8str(isolate_, "__THREENATIVE_ENGINE_COST__"), v8::True(isolate_)).Check();
     if (player::gameSpan(-1, 0) == 1) {
         ctx->Global()->Set(ctx, v8str(isolate_, "__tnGameSpan"), v8::Function::New(ctx,
             [](const v8::FunctionCallbackInfo<v8::Value>& info) {

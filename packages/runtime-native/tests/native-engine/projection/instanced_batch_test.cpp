@@ -380,6 +380,16 @@ void partitions() {
                 {"t=" + trianglesText(triangles), "d=" + partitionsOf(*root),
                  "ac=" + std::to_string(built.mesh->children.size())});
     }
+    // PRD-898 J3: a settled frame (same levels, matrices and transform) rewrites and uploads nothing.
+    {
+        std::vector<uint32_t> versions;
+        for (const Object3D* child : built.mesh->children)
+            versions.push_back(static_cast<const InstancedMesh*>(child)->instanceMatrix->version());
+        const auto camera = lodCamera();
+        updateInstancedLods(*root, *camera, 1080);
+        for (std::size_t i = 0; i < versions.size(); ++i)
+            CHECK(static_cast<const InstancedMesh*>(built.mesh->children[i])->instanceMatrix->version() == versions[i]);
+    }
     // Public matrices retain placement order: a far slot moved near joins the near partition.
     built.mesh->setMatrixAt(1, translation(0, 0, -5));
     {

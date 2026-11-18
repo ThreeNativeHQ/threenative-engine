@@ -505,3 +505,44 @@ describe("streamedTextureUpgrade (PRD-860 Phase 2)", () => {
     expect(fullMap.dispose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ModelLod on the owned engine (PRD-898 J2)", () => {
+  it("hands each chain over once and selects every mesh in one engine call a frame", async () => {
+    const target = mesh();
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser(parserFor(target, definition()) as never);
+    await plugin.afterRoot({ scene: target });
+    plugin.attach(target, { hysteresis: 0.15, maxPixelError: 1 });
+    const scene = new Scene();
+    scene.add(target);
+    const attach = vi.fn();
+    (target as Mesh & Record<string, unknown>).__tnModelLodAttach = attach;
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    const select = vi.fn().mockReturnValue([]).mockReturnValueOnce([0, 1]);
+    (camera as PerspectiveCamera & Record<string, unknown>).__tnModelLodSelect = select;
+    const sets = vi.fn();
+    (camera as PerspectiveCamera & Record<string, unknown>).__tnModelLodMeshes = sets;
+    const reads = vi.spyOn(target.matrixWorld, "getMaxScaleOnAxis");
+
+    expect(updateModelLods(scene, camera, 1080)).toBe(4);
+    const chosen = (target as Mesh & { geometry: BufferGeometry }).geometry;
+    expect(chosen.index?.count).toBe(12);
+    expect(updateModelLods(scene, camera, 1080)).toBe(4);
+    expect((target as Mesh & { geometry: BufferGeometry }).geometry).toBe(chosen);
+
+    expect(attach).toHaveBeenCalledTimes(1);
+    const [errors, local, maxPixelError, hysteresis, current] = attach.mock.calls[0] as unknown[];
+    expect(errors).toEqual([0, 0.05, 5]);
+    expect(local).toHaveLength(4);
+    expect([maxPixelError, hysteresis, current]).toEqual([1, 0.15, 0]);
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select.mock.calls[0]).toEqual([1080, 1]);
+    expect(sets).toHaveBeenCalledTimes(1); // the mesh set crossed once, not every frame
+    expect(sets.mock.calls[0]).toEqual([[target]]);
+    // Core's adaptive bias reaches the engine, which keeps no copy of it.
+    setLodBias(2);
+    updateModelLods(scene, camera, 1080);
+    expect(select.mock.calls[2]?.[1]).toBe(2);
+    expect(reads).not.toHaveBeenCalled();
+  });
+});

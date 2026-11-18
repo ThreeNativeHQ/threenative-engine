@@ -53,6 +53,8 @@ export class Warden implements ITarget {
   #flash = 0;
   #heading = new Vector3();
   #last = new Vector3();
+  /** Charge steps in a row that covered under a third of what they asked for. */
+  #blocked = 0;
 
   constructor(
     readonly id: string,
@@ -116,15 +118,19 @@ export class Warden implements ITarget {
           this.#heading.copy(to).normalize();
           this.#face(Math.atan2(to.x, to.z), 1);
           this.#last.copy(this.mesh.position);
+          this.#blocked = 0;
           this.#set("charge");
         }
         break;
       case "charge": {
         speed = feel.chargeSpeed;
-        // Met a wall: it covered under a third of what it asked for in the last step.
+        // Met a wall: it covered under a third of what it asked for in two steps running. A wall
+        // stops every step; a lone short step is the character controller catching a floor
+        // triangle's edge, and the charge goes on.
         const moved = this.#last.distanceTo(this.mesh.position);
         this.#last.copy(this.mesh.position);
-        if (this.#timer > 0.15 && moved < feel.chargeSpeed * dt * 0.3) {
+        this.#blocked = moved < feel.chargeSpeed * dt * 0.3 ? this.#blocked + 1 : 0;
+        if (this.#timer > 0.15 && this.#blocked >= 2) {
           this.stuns += 1;
           this.#set("stunned");
           speed = 0;

@@ -142,6 +142,25 @@ struct Observation {
     quadratic_buffer_bytes: BufferBytes,
     scenario_coverage: ScenarioCoverage,
     feet_on_floor: FeetOnFloor,
+    /// Every visible transform record after each checkpoint step and after the last step; the
+    /// committed native table that the web Wasm build is checked against (PRD-899).
+    #[serde(skip)]
+    checkpoint_transforms: Vec<TransformCheckpoint>,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+struct TransformCheckpoint {
+    step: usize,
+    transforms: Vec<[f32; TRANSFORM_WIDTH]>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransformTable {
+    scenario_sha256: String,
+    rapier_version: String,
+    tolerance: f32,
+    checkpoints: Vec<TransformCheckpoint>,
 }
 
 #[derive(Serialize)]
@@ -214,6 +233,22 @@ fn positions(simulation: *const Simulation, capacity: usize) -> BTreeMap<u32, [f
                 [output[offset + 1], output[offset + 2], output[offset + 3]],
             )
         })
+        .collect()
+}
+
+fn transform_records(
+    simulation: *const Simulation,
+    capacity: usize,
+) -> Vec<[f32; TRANSFORM_WIDTH]> {
+    let mut output = vec![0.0; capacity * TRANSFORM_WIDTH];
+    let count = tn_physics_read_visible_transforms(simulation, output.as_mut_ptr(), output.len());
+    assert!(
+        count >= 0,
+        "shipping Simulation rejected its parity transform buffer"
+    );
+    output[..count as usize * TRANSFORM_WIDTH]
+        .chunks_exact(TRANSFORM_WIDTH)
+        .map(|record| record.try_into().expect("chunks_exact yields full records"))
         .collect()
 }
 
@@ -597,6 +632,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
     let mut elapsed_nanos = 0_u128;
     let mut character_max_y = initial_character[1];
     let mut platform_grounded_observed = false;
+    let mut checkpoint_transforms = Vec::new();
 
     for step in 0..scenario.steps {
         if step == scenario.remove_at_step {
@@ -680,6 +716,10 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
         all_event_sequence.extend(step_events.iter().cloned());
         all_events.extend(step_events);
         if scenario.checkpoints.contains(&step) {
+            checkpoint_transforms.push(TransformCheckpoint {
+                step,
+                transforms: transform_records(simulation, scenario.bodies.len()),
+            });
             area_snapshots.push(
                 area_membership(simulation, 5)
                     .iter()
@@ -690,6 +730,10 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
         }
     }
 
+    checkpoint_transforms.push(TransformCheckpoint {
+        step: scenario.steps,
+        transforms: transform_records(simulation, scenario.bodies.len()),
+    });
     let final_positions = positions(simulation, scenario.bodies.len());
     let resting_position = final_positions[&1];
     let final_character = final_positions[&character.body_id];
@@ -728,6 +772,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
             area_excluded_character: !area_membership.contains(&character.body_id),
         },
         feet_on_floor: feet_on_floor_subject(),
+        checkpoint_transforms,
     };
     tn_physics_destroy(simulation);
     observation
@@ -752,6 +797,71 @@ fn symmetric_difference(left: &[String], right: &[String]) -> usize {
     let left = left.iter().collect::<BTreeSet<_>>();
     let right = right.iter().collect::<BTreeSet<_>>();
     left.symmetric_difference(&right).count()
+}
+
+fn transform_table_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../physics/__tests__/fixtures/physics-parity.native-transforms.json")
+}
+
+/// The committed native transform table (PRD-899): the web Wasm build of this crate must step the
+/// shared scenario to these records (`tests/physics-web-parity.test.mjs`). This test keeps the
+/// table equal to the native build; `TN_PHYSICS_WRITE_TRANSFORM_TABLE=1` rewrites it.
+#[test]
+fn matches_the_committed_native_transform_table() {
+    let fixture_bytes = fs::read(fixture_path()).expect("shared parity scenario must exist");
+    let scenario: Scenario =
+        serde_json::from_slice(&fixture_bytes).expect("shared parity scenario must be valid JSON");
+    let sha = format!("{:x}", Sha256::digest(&fixture_bytes));
+    let version = unsafe { CStr::from_ptr(tn_physics_version()) }
+        .to_str()
+        .expect("native Rapier version must be UTF-8");
+    let observed = run_scenario(&scenario, &sha, version).checkpoint_transforms;
+    assert_eq!(observed.len(), scenario.checkpoints.len() + 1);
+    if std::env::var_os("TN_PHYSICS_WRITE_TRANSFORM_TABLE").is_some() {
+        let table = TransformTable {
+            scenario_sha256: sha.clone(),
+            rapier_version: version.into(),
+            tolerance: 0.02,
+            checkpoints: observed.clone(),
+        };
+        let mut rendered = serde_json::to_string_pretty(&table).expect("table must serialize");
+        rendered.push('\n');
+        fs::write(transform_table_path(), rendered).expect("transform table must be writable");
+    }
+    let table: TransformTable = serde_json::from_slice(
+        &fs::read(transform_table_path()).expect("committed native transform table must exist"),
+    )
+    .expect("native transform table must be valid JSON");
+    assert_eq!(
+        table.scenario_sha256, sha,
+        "the scenario changed: rewrite the transform table"
+    );
+    assert_eq!(table.rapier_version, version);
+    assert_eq!(table.checkpoints.len(), observed.len());
+    for (expected, actual) in table.checkpoints.iter().zip(&observed) {
+        assert_eq!(expected.step, actual.step);
+        assert_eq!(
+            expected.transforms.len(),
+            actual.transforms.len(),
+            "step {}",
+            actual.step
+        );
+        for (left, right) in expected.transforms.iter().zip(&actual.transforms) {
+            assert_eq!(left[0], right[0], "step {} body order", actual.step);
+            let delta = left[1..]
+                .iter()
+                .zip(&right[1..])
+                .map(|(l, r)| (l - r).abs())
+                .fold(0.0, f32::max);
+            assert!(
+                delta <= table.tolerance,
+                "step {} body {}: {delta}",
+                actual.step,
+                left[0]
+            );
+        }
+    }
 }
 
 #[test]
