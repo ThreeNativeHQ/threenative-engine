@@ -1888,17 +1888,12 @@ if(TN_ENABLE_UI_OVERLAY)
             "-framework CoreFoundation"
         )
     elseif(WIN32)
-        # WebView2 is reached through `WebView2Loader`, whose import library `webview2-com-sys`
-        # copies into its OUT_DIR rather than publishing. Find it in the crate's build output and
-        # name it, plus the Win32 libraries a wry/WebView2 staticlib leaves unresolved.
-        file(GLOB TN_WEBVIEW2LOADER_DIRS
-            "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/build/webview2-com-sys-*/out/x64"
-        )
-        find_path(TN_WEBVIEW2LOADER_DIR NAMES WebView2LoaderStatic.lib
-            PATHS ${TN_WEBVIEW2LOADER_DIRS})
-        if(NOT TN_WEBVIEW2LOADER_DIR)
+        # The overlay builder stages the loader beside the Rust static library from Cargo's output.
+        get_filename_component(_tn_ui_overlay_dir "${THREENATIVE_UI_OVERLAY_LIBRARY}" DIRECTORY)
+        set(_tn_webview2_loader "${_tn_ui_overlay_dir}/WebView2LoaderStatic.lib")
+        if(NOT EXISTS "${_tn_webview2_loader}")
             message(FATAL_ERROR
-                "WebView2LoaderStatic.lib was not found under native/ui-overlay/target. "
+                "WebView2 loader is missing: ${_tn_webview2_loader}. "
                 "Build the overlay with scripts/build-native-ui-overlay.mjs before configuring."
             )
         endif()
@@ -1906,7 +1901,7 @@ if(TN_ENABLE_UI_OVERLAY)
         # on a static library never propagates, and the exe is where the import library is
         # actually consumed.
         target_link_libraries(mystral-runtime PUBLIC
-            "${TN_WEBVIEW2LOADER_DIR}/WebView2LoaderStatic.lib"
+            "${_tn_webview2_loader}"
             user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll
         )
     else()

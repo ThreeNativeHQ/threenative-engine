@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, test } from 'vitest';
 
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
-import { uiOverlayLibraryName } from '../scripts/build-native-ui-overlay.mjs';
+import { stageWebView2Loader, uiOverlayLibraryName } from '../scripts/build-native-ui-overlay.mjs';
 
 const roots = [];
 afterEach(() => {
@@ -30,6 +30,24 @@ test('the overlay library is named for the host toolchain', () => {
   assert.equal(uiOverlayLibraryName('linux'), 'libthreenative_ui_overlay.a');
   assert.equal(uiOverlayLibraryName('darwin'), 'libthreenative_ui_overlay.a');
   assert.equal(uiOverlayLibraryName('win32'), 'threenative_ui_overlay.lib');
+});
+
+test('the Windows loader follows the Cargo build-script output directory', () => {
+  const root = makeTempDirSync('threenative-webview2-#% ');
+  roots.push(root);
+  const outDir = join(root, 'intermediate', 'build', 'webview2-com-sys', 'out');
+  const release = join(root, 'release');
+  mkdirSync(join(outDir, 'x64'), { recursive: true });
+  mkdirSync(release);
+  writeFileSync(join(outDir, 'x64', 'WebView2LoaderStatic.lib'), 'x64 loader');
+  const messages = JSON.stringify({
+    reason: 'build-script-executed',
+    package_id: 'registry+https://github.com/rust-lang/crates.io-index#webview2-com-sys@0.34.0',
+    out_dir: outDir,
+  });
+  stageWebView2Loader(messages, release);
+  assert.equal(readFileSync(join(release, 'WebView2LoaderStatic.lib'), 'utf8'), 'x64 loader');
+  assert.throws(() => stageWebView2Loader('', release), /webview2-com-sys/u);
 });
 
 // Runs on every desktop host that can execute the plan with shell stubs. The Windows host's
