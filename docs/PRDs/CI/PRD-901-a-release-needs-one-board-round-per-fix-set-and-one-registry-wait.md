@@ -19,7 +19,7 @@ flowchart LR
   A["Promotion PR opened"] -->|"0.3.15: 109 min, 3 boards<br/>0.3.16: 2,443 min, 22 boards"| B["Merge to main"]
   B -->|"main CI: 1.5 min, reused"| C["ship job starts"]
   C -->|"setup, candidate, tag, upgrade proof: 20.6 min"| D["First npm upload"]
-  D -->|"7 registry waits: 28.1 min"| E["Cohort readable"]
+  D -->|"7 registry waits: 27.7 min; 28.5 to the last package"| E["Cohort readable"]
   E -->|"clean room: 8.8 min"| F["ship job ends"]
 ```
 
@@ -64,7 +64,7 @@ Release 0.3.15, `npm-release.yml` run 44005207314, `ship` step 02:44:45 to 03:42
 | Wait for `release-candidate.yml` | 5.3 |
 | Tag run | 2.3 |
 | Pack and upgrade proof, two templates | 8.6 |
-| Registry waits, 7 dependency levels (5.0, 5.4, 3.4, 3.3, 2.8, 2.4, 5.6) | 28.1 |
+| Registry waits, 7 dependency levels (4.96, 5.39, 3.37, 3.28, 2.78, 2.36, 5.58) | 27.7 |
 | Clean room from the registry, `npm` lane then `pnpm` lane | 8.8 |
 
 Cause: `publishCohort` uploads one dependency level and then waits until the abbreviated packument
@@ -87,7 +87,8 @@ dependencies are readable.
 2. **The cohort publishes in two waves.** Wave 1 is every package except `create-threenative`, with
    the present upload limit of 4. Wave 2 is `create-threenative`. Each wave waits one time for all its
    packages. The scaffolder stays last, so a new project still pins only readable versions. Measured
-   ceiling from the 0.3.15 run: two waits of at most 5.6 minutes, about 11 minutes in place of 28.1.
+   ceiling from the 0.3.15 run: two waits in place of 27.7, which takes first upload to last package
+   readable from 28.5 minutes to about 11.2.
    Uploads keep their dependency levels inside a wave, so a failed upload still stops the packages
    behind it and npm never stores a dependent whose dependency it will not get.
 3. **The ledger carries the two numbers.** `ci-board-kpis.mjs` adds promotion boards per release and
@@ -118,7 +119,7 @@ uploaded, because a wave's levels upload in order.
 - [x] AC-2 [local]: `releaseWaves` returns two waves, `create-threenative` alone in the last, and `publishCohort` starts wave 2 only after every wave 1 package is readable. proof: `pnpm exec vitest run scripts/__tests__/release.spec.ts scripts/__tests__/release-ship.spec.ts` — Evidence 2026-11-18: 52/52 and 42/42. Red first: reverting `scripts/release.ts` to `origin/develop` fails the wave specs. The real cohort reads 2 waves over 6 + 1 upload levels, so the upload order is unchanged and only the waits collapse.
 - [x] AC-3 [local]: `ci-board-kpis.mjs` reports promotion boards per release and merge-to-`ship`-end minutes, and the replay of 0.3.15 and 0.3.16 gives 3 and 22 boards and 59.5 minutes for 0.3.15. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts` and `pnpm ci:speed record` — Evidence 2026-11-18: 35/35 with `ci-speed-loop.spec.ts`, and 5 red on the old `ci-board-kpis.mjs`. Replay, ledger iteration #42: 0.3.15 = 3 boards, 1,331 machine minutes, merge→`ship` end 59.5 min; 0.3.16 = 22 boards, 5,962 machine minutes, merge→`ship` end 79.7 min. `promotionBoardsLatest` = 22, `mergeToShipEndMin` = 79.7. Both `ship` jobs concluded red after their publish (0.3.15 in the clean-room `npm:native` step PRD-897 owns), so the measure is the job's end whatever its conclusion, and a `ship` with no completion reads n/a.
 - [ ] AC-4 [shared]: On the next release, a red promotion board ends with every leg concluded and one comment that names all its red legs. proof: the run id and the comment link of that board — Evidence: pending.
-- [ ] AC-5 [shared]: On the next release, first npm upload to last package readable is 12 minutes or less (0.3.15: 28.1). proof: the `ship` log of that release — Evidence: pending.
+- [ ] AC-5 [shared]: On the next release, first npm upload to last package readable is 12 minutes or less (0.3.15: 28.5 — first upload 03:05:26.49 UTC to `create-threenative` readable 03:33:54.09). proof: the `ship` log of that release — Evidence: pending. Replay of the same log under two waves: ~11.2 minutes, unverified until a release runs it.
 - [ ] AC-6 [shared]: On the next release, the promotion PR merges in 4 boards or fewer (0.3.16: 22) and merge to `ship` end is 45 minutes or less (0.3.15: 59.5). proof: a ledger iteration in `pnpm ci:speed show` — Evidence: pending.
 
 ## Blocked on
