@@ -8421,6 +8421,31 @@
       "symbol": "bakeWolfToFile"
     },
     {
+      "aliases": ["city kit", "modular road tiles", "low poly city buildings", "cars and vehicles"],
+      "constraints": [
+        "fails closed: an unknown module throws naming the nearest ids; seed is an integer 0 to 4294967295, detail 0 to 2, wet 0 to 100, floors an integer 2 to 12, text at most 24 characters, dressing a boolean",
+        "the same options write identical bytes on one Node major and machine (fonts draw the sign text); files are written atomically (temporary file, then rename)",
+        "units are metres, +Y up; road tiles are 24 m on a 24 m grid and their sockets (side, position, direction, lanes) are in the root node's extras",
+        "bake-time only, so keep it a dev dependency; textures are capped at 1024 px like the page's export"
+      ],
+      "example": "await bakeCity({ module: \"cross\", out: \"assets/city\" });\nawait bakeCity({ module: \"apartments\", seed: 7, floors: 8, out: \"assets/city\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "generate a modular city street, intersection, roundabout or highway tile as a GLB",
+        "a procedural building, storefront, office tower, apartment block, house or warehouse for a city level",
+        "street props for a city: traffic signal, streetlight, bus shelter, hydrant, bench, mailbox, dumpster",
+        "a race track kit: starting grid, timing gantry, barriers, tire wall, kerbs, pit lane; or a car, van, kart or formula car"
+      ],
+      "summary": "Bake an Apex City Kit module to one GLB: a road tile, a building, a street prop, a vehicle, a race kit piece, a block or lot, a sidewalk, transit, a public space, a utility or a decal. The page's own generator and GLTFExporter run headless, so the GLB carries its merged meshes, its materials and textures (Poly Haven CC0 PBR maps and the canvas-drawn signs, liveries and markings) and its road sockets in the root node's extras.",
+      "supersedes": [],
+      "symbol": "bakeCity"
+    },
+    {
       "aliases": ["rocks and boulders", "cliffs and mountains"],
       "constraints": [
         "fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1",

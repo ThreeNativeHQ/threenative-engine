@@ -2,8 +2,8 @@
 
 Optional bake-first procedural nature: trees, cover, the forest floor and rocks, found by
 biome. An agent asks for `oak`, `reeds`, `log` or a coastal `cliff` and gets a GLB it owns. The
-generators are [Arbor](LICENSES/Arbor-MIT.txt), [forest-kit](LICENSES/forest-kit-MIT.txt) and
-[Outcrop](LICENSES/Outcrop-MIT.txt), all written by João Paulo Furtado and vendored under the
+generators are [Arbor](LICENSES/Arbor-MIT.txt), [forest-kit](LICENSES/forest-kit-MIT.txt),
+[Outcrop](LICENSES/Outcrop-MIT.txt) and the [Apex City Kit](LICENSES/Apex-MIT.txt), all written by João Paulo Furtado and vendored under the
 MIT licence. `Arbor.three`, forest-kit's `build()`,
 its three shapes and the browser PNG encoder are cut: the game owns the look and the sway, so no
 game ships the generator.
@@ -88,6 +88,35 @@ await bakeRock({ form: "boulder", biome: "forest", traits: { weathering: 0.8 }, 
   projects it triplanar. Metres, +Y up, the rock rests on y = 0.
 - The same options write the same bytes. `three` builds the geometry at bake time only.
 
+## City modules: roads, buildings, props, vehicles
+
+```ts
+import { bakeCity, environmentElements } from "@threenative/procedural-environment";
+
+environmentElements({ kind: "city" }).map((element) => `${element.category}: ${element.id}`);
+// 75 modules: Roads: cross, ... Buildings: office, ... Vehicles: sedan, ... Decals & Works: road-grime
+await bakeCity({ module: "cross", out: "assets/city" });
+// assets/city/cross-31082.glb, one { lod: 0, path, triangles, bounds } entry
+await bakeCity({ module: "apartments", seed: 7, floors: 8, out: "assets/city" });
+```
+
+- The generator is the [Apex City Kit](LICENSES/Apex-MIT.txt) page, vendored verbatim with its
+  own three.js r183 in `vendor/apex/`. The bake runs the page's generator and its GLTFExporter in a
+  `node:vm` context, with `@napi-rs/canvas` for the canvas and image decode, and exports the way
+  the page's GLB button does (binary, `trs`, textures capped at 1024 px).
+- Options and limits are the page's: `seed` 0 to 4294967295 (default 31082), `detail` 0 to 2
+  (default 2), `wet` 0 to 100 (default 30), `floors` 2 to 12 (default 4), `text` at most 24
+  characters, `dressing` true or false. An unknown module names the nearest ids. Options other
+  than the seed put a hash in the file name.
+- Each GLB holds one merged mesh per material with the page's PBR materials and embedded
+  textures: the CC0 Poly Haven maps (asphalt, concrete, brick, paving, metal, rubber, oak, roof
+  tiles, shutter, formwork; JPEG colour, PNG normal and ARM) and the canvas-drawn signs, liveries
+  and markings. The root node's extras hold `module`, `seed`, `parameters`, `units` and the road
+  `sockets`. Metres, +Y up, road tiles on a 24 m grid.
+- The same options write the same bytes on one machine and Node major: sign text draws with the
+  machine's `sans-serif` and `monospace` fonts, and Node 20 and 22 round some colour factors one
+  bit differently from Node 24 and the browser.
+
 ## In a game
 
 Cook the GLBs with `assets.models.passes.prune: false` (prune strips the uv and
@@ -108,6 +137,7 @@ agent asked for "a realistic forest" should not have to find nine places by itse
 | Cover (grasses, ferns, flowers, shrubs) | `bakeVegetation`, Arbor presets plus forest-kit `reeds`, `tussock`, `seedgrass`, `clover`, `dock`, `plume`, kind `cover` | `@threenative/procedural-environment` |
 | Debris (`log`, `stump`, `twig`, `branch`, `leaflitter`, `rock`) | `bakeVegetation`, forest-kit presets, kind `debris` | `@threenative/procedural-environment` |
 | Rocks, cliffs, arches, mesas, sea stacks, mountains | `bakeRock`, Outcrop forms, kind `rock` | `@threenative/procedural-environment` |
+| City roads, buildings, street props, vehicles, race kit (75 modules) | `bakeCity`, Apex City Kit modules, kind `city` | `@threenative/procedural-environment` |
 | Which of these belong in a biome | `environmentElements({ biome, kind, search })`, `environmentBiomes()` | `@threenative/procedural-environment` |
 | Grass that sways and parts around the player | `GrassField3D`, streamed in chunks under a frame budget | `@threenative/core` |
 | Any other baked mesh scattered round the player | `ScatterField3D`, the same tile ring as grass, one `InstancedMesh` per level per part | `@threenative/core` |

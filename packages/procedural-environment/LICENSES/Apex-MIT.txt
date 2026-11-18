@@ -1,0 +1,35 @@
+MIT License
+
+Copyright (c) 2026 João Paulo Furtado
+
+Apex City Kit (apex-city-kit.html) is written by João Paulo Furtado, who holds its copyright and
+licenses it to this package under the MIT licence. The vendored copy
+(vendor/apex/apex-city-kit.js) keeps the page's script verbatim, with one line added that hands
+the generator and its GLTFExporter to the bake and stops before the page UI boots; the page's
+HTML and CSS stay upstream.
+
+The script inlines three.js r183 and its add-ons, Copyright 2010-2026 Three.js Authors, under the
+MIT licence; its own licence header is kept in the vendored file.
+
+Its 26 embedded PBR maps (diffuse, normal and ARM, as WebP) are CC0 1.0 scans from Poly Haven
+(https://polyhaven.com), no attribution required, credited here with thanks: asphalt_02,
+concrete, red_brick, rectangular_paving, rusty_metal_02, rubberized_track, oak_wood_planks,
+grey_roof_tiles_02, painted_metal_shutter and concrete_wall_007.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

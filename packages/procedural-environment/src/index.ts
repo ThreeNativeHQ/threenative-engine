@@ -10,9 +10,11 @@ import ForestKit, {
 } from "../vendor/forest-kit/index.js";
 import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
+import { type IBakeCityOptions, buildCity, cityModules } from "./city.js";
 import { rgbaPng } from "./png.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
+export type { IBakeCityOptions } from "./city.js";
 
 export interface IVegetationPreset {
   readonly id: string;
@@ -409,8 +411,8 @@ async function bakeForestKit(
   return baked;
 }
 
-/** What an element is: a tree, ground cover, floor debris or a rock form. */
-export type EnvironmentKind = "tree" | "cover" | "debris" | "rock";
+/** What an element is: a tree, ground cover, floor debris, a rock form or an Apex city module. */
+export type EnvironmentKind = "tree" | "cover" | "debris" | "rock" | "city";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -419,6 +421,8 @@ export interface IEnvironmentElement {
   readonly kind: EnvironmentKind;
   /** Biome ids from `environmentBiomes()` this element belongs in. */
   readonly biomes: readonly string[];
+  /** A city module's Apex category: Roads, Buildings, Street Props, Vehicles, Race Kit ... */
+  readonly category?: string;
   /** The call that bakes it, ready to paste; a rock's names the filter's biome, else its first. */
   readonly bake: string;
 }
@@ -431,7 +435,7 @@ export interface IEnvironmentFilter {
   readonly search?: string;
 }
 
-const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock"];
+const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock", "city"];
 
 /**
  * Every biome: its id, name, the request words that mean it, the rock surface its rocks wear and
@@ -502,13 +506,22 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
       bake: `bakeRock({ form: "${id}", biome: "${at}", seed: 1, out: "assets/environment" })`,
     };
   });
-  return [...plants, ...rocks].filter((element) => {
+  const city = cityModules().map(({ id, name, category }) => ({
+    id,
+    name,
+    kind: "city" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeCity({ module: "${id}", out: "assets/environment" })`,
+  }));
+  return [...plants, ...rocks, ...city].filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
     if (filter.kind !== undefined && element.kind !== filter.kind) return false;
     const text = [
       element.id,
       element.name,
       "latin" in element ? element.latin : "",
+      "category" in element ? element.category : "",
       element.kind,
       ...element.biomes.flatMap((id) => [
         id,
@@ -747,4 +760,39 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
     });
   }
   return baked;
+}
+
+/**
+ * Bake an Apex City Kit module to one GLB: a road tile, a building, a street prop, a vehicle, a race
+ * kit piece, a block or lot, a sidewalk, transit, a public space, a utility or a decal. The page's
+ * own generator and GLTFExporter run headless, so the GLB carries its merged meshes, its materials
+ * and textures (Poly Haven CC0 PBR maps and the canvas-drawn signs, liveries and markings) and its
+ * road sockets in the root node's extras.
+ * @situation generate a modular city street, intersection, roundabout or highway tile as a GLB
+ * @situation a procedural building, storefront, office tower, apartment block, house or warehouse for a city level
+ * @situation street props for a city: traffic signal, streetlight, bus shelter, hydrant, bench, mailbox, dumpster
+ * @situation a race track kit: starting grid, timing gantry, barriers, tire wall, kerbs, pit lane; or a car, van, kart or formula car
+ * @alias city kit
+ * @alias modular road tiles
+ * @alias low poly city buildings
+ * @alias cars and vehicles
+ * @constraint fails closed: an unknown module throws naming the nearest ids; seed is an integer 0 to 4294967295, detail 0 to 2, wet 0 to 100, floors an integer 2 to 12, text at most 24 characters, dressing a boolean
+ * @constraint the same options write identical bytes on one Node major and machine (fonts draw the sign text); files are written atomically (temporary file, then rename)
+ * @constraint units are metres, +Y up; road tiles are 24 m on a 24 m grid and their sockets (side, position, direction, lanes) are in the root node's extras
+ * @constraint bake-time only, so keep it a dev dependency; textures are capped at 1024 px like the page's export
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeCity({ module: "cross", out: "assets/city" });
+ * @example await bakeCity({ module: "apartments", seed: 7, floors: 8, out: "assets/city" });
+ */
+export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> {
+  const ids = cityModules().map((module) => module.id);
+  if (!ids.includes(options.module))
+    throw new Error(
+      `bakeCity: unknown module "${options.module}". Nearest ids: ${nearestPresets(options.module, 3, ids).join(", ")}. Call environmentElements({ kind: "city" }) for all ${ids.length}.`,
+    );
+  const city = await buildCity(options);
+  await mkdir(options.out, { recursive: true });
+  const file = path.join(options.out, city.file);
+  await writeAtomic(file, city.glb);
+  return [{ bounds: city.bounds, lod: 0, path: file, triangles: city.triangles }];
 }
