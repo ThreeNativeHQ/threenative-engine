@@ -336,8 +336,11 @@ export async function publishCohort(
       await Promise.all(Array.from({ length: Math.min(concurrency, level.length) }, worker));
       if (failures.length > 0) stop(failures);
     }
+    // Every package of the wave, not only the ones this run uploaded: a resumed publish finds its
+    // earlier packages already on the registry while the installer's metadata may still lag, and
+    // the scaffolder must not upload until they are all readable.
     await Promise.all(
-      published.map((name) =>
+      wave.flat().map((name) =>
         steps.visible(name).catch((error: unknown) => {
           failures.push(describe(name, error));
         }),
@@ -848,26 +851,27 @@ async function main(args: readonly string[]): Promise<void> {
     return version;
   };
   await publishCohort(
-    releaseWaves(packages).map((wave) =>
-      wave
-        .map((level) => level.filter((name) => publishNames.has(name)))
-        .filter((level) => level.length > 0),
-    ),
+    // The waves stay whole: a version the registry already serves is not uploaded again, but it is
+    // still waited for. `--resume` used to drop it from both, so the scaffolder could go up while
+    // an earlier wave's metadata had not caught up.
+    releaseWaves(packages),
     {
       publish: (name) =>
-        runConcurrently(
-          "pnpm",
-          [
-            "--filter",
-            name,
-            "publish",
-            "--no-git-checks",
-            "--access",
-            "public",
-            ...(attestable ? ["--provenance"] : []),
-          ],
-          `publish ${name}@${versionOf(name)}`,
-        ),
+        publishNames.has(name)
+          ? runConcurrently(
+              "pnpm",
+              [
+                "--filter",
+                name,
+                "publish",
+                "--no-git-checks",
+                "--access",
+                "public",
+                ...(attestable ? ["--provenance"] : []),
+              ],
+              `publish ${name}@${versionOf(name)}`,
+            )
+          : Promise.resolve(),
       visible: async (name) => {
         process.stdout.write(`  waiting for ${name}@${versionOf(name)} to be readable…\n`);
         await waitForRegistry(name, versionOf(name));

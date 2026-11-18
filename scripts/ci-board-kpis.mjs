@@ -170,8 +170,13 @@ export function releaseLeadTimes({ publishes, promotions }) {
   return leads;
 }
 
-/** A promotion board is a pull request whose head is `develop`: nothing else in this repo does. */
-const isPromotionBoard = (run) => run.event === "pull_request" && run.headBranch === "develop";
+/**
+ * A promotion board is a pull request whose head is `develop`: nothing else in this repo does.
+ * A skipped run is not a board — a draft pull request runs nothing, and counting it would inflate
+ * the rounds a release needed.
+ */
+const isPromotionBoard = (run) =>
+  run.event === "pull_request" && run.headBranch === "develop" && run.conclusion !== "skipped";
 
 /** The version a promotion PR names, or its number when the title carries none. */
 const releaseName = (promotion) =>
@@ -341,8 +346,11 @@ export function measureBoards({
   const publishes = Object.entries(times)
     .filter(([version]) => /^\d+\.\d+\.\d+$/u.test(version))
     .map(([version, at]) => ({ version, at }));
+  // The wider fetch feeds `releaseRoad` only: a promotion that opened before `since` must not pull
+  // pre-window jobs into the machine-minute numerator of a fixed-length window.
+  const windowed = runs.filter((run) => ms(run.createdAt) >= ms(since));
   return {
-    ...summarizeBoards({ runs, since, until }),
+    ...summarizeBoards({ runs: windowed, since, until }),
     ...releaseLead({ publishes, promotions, since, until }),
     ...releaseRoad({
       promotions,
@@ -374,20 +382,27 @@ export function shippedReleases({ repo, since, shas }) {
     ]),
   ).filter((run) => shas.has(run.head_sha));
   return runs.flatMap((run) => {
-    // The latest attempt, not attempt 1: a re-run is where an interrupted publish finishes.
-    const jobs = ndjson(
-      gh([
-        "api",
-        "--paginate",
-        "--jq",
-        ".jobs[]",
-        `repos/${repo}/actions/runs/${run.id}/jobs?per_page=100`,
-      ]),
-    );
-    const ship = jobs.find((job) => job.name === "ship");
-    return ship === undefined
-      ? []
-      : [{ sha: run.head_sha, completedAt: ship.completed_at, conclusion: ship.conclusion }];
+    // The latest attempt is where an interrupted publish finishes, but it is also `n/a` while a
+    // retry runs. Read attempt 1 as the fallback so a finished `ship` is never lost to a retry.
+    const shipIn = (attempt) =>
+      ndjson(
+        gh([
+          "api",
+          "--paginate",
+          "--jq",
+          ".jobs[]",
+          `repos/${repo}/actions/runs/${run.id}/${attempt === 1 ? "attempts/1/" : ""}jobs?per_page=100`,
+        ]),
+      ).find((job) => job.name === "ship");
+    const latest = shipIn(run.run_attempt ?? 1);
+    const first = latest?.completed_at === null && run.run_attempt > 1 ? shipIn(1) : undefined;
+    return [latest, first]
+      .filter((ship) => ship !== undefined)
+      .map((ship) => ({
+        sha: run.head_sha,
+        completedAt: ship.completed_at,
+        conclusion: ship.conclusion,
+      }));
   });
 }
 

@@ -70,7 +70,8 @@ export function redJobs(jobs, includeCancelled = false) {
   const red = jobs.filter(
     (job) =>
       (RED.has(job?.conclusion) || (includeCancelled && job?.conclusion === "cancelled")) &&
-      !ECHOES.has(job?.name) &&
+      // A standalone verdict failure — a missing or stale receipt — names itself when no leg did.
+      (includeCancelled ? true : !ECHOES.has(job?.name)) &&
       !NON_BLOCKING.test(job?.name ?? ""),
   );
   // Only a board that lists every red needs this; a first-red cancel stops before the echo matters.

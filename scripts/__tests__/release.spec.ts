@@ -347,6 +347,26 @@ describe("pnpm release publishing", () => {
     ]);
   });
 
+  it("waits for a wave it uploaded nothing of, so a resumed publish still gates the scaffolder", async () => {
+    // `--resume` filters the wave to what is still unpublished. Finding the packages on the
+    // registry is not the same as them being readable by an installer, so the wait covers the
+    // whole wave, not only this run's uploads.
+    const trace: string[] = [];
+    await publishCohort([[["core"], ["ui"]], [["create-threenative"]]], {
+      publish: async (name) => {
+        // A resumed publish: `core` is on the registry already, so the ship call site turns its
+        // upload into a no-op while keeping it in the wave.
+        if (name !== "core") trace.push(`publish ${name}`);
+      },
+      visible: async (name) => {
+        trace.push(`visible ${name}`);
+      },
+    });
+    expect(trace.indexOf("publish create-threenative")).toBeGreaterThan(
+      trace.indexOf("visible core"),
+    );
+  });
+
   it("names the failed package, publishes nothing after it and no later wave", async () => {
     const published: string[] = [];
     await expect(
