@@ -13,6 +13,7 @@
 
 #include "engine/abi/bindings.h"
 #include "engine/abi/abi_internal.h"
+#include "threenative/abi/tn_anim.h"
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/scene/material.h"
@@ -1613,6 +1614,71 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         if (!raycastFactory.As<v8::Function>()->Call(context, target, 1, &prototype).ToLocal(&installed))
             throw std::runtime_error("TN_NATIVE_RAYCAST: cannot bind Object3D.raycast");
     }
+    // PRD-898 J6: the web back end's __tnAnimationTick (three-native/src/browser-backend.ts), same JS contract:
+    // core hands it a frame's rigs and a Float64Array of 3 doubles a rig, and it runs them in one tn_anim_tick.
+    // Without it, core keeps one JS loop per rig, which is the per-rig crossing cost the batch removes.
+    target->Set(context, str(isolate_, "__tnAnimationTick"), v8::Function::New(context,
+        [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            v8::Isolate* isolate = info.GetIsolate();
+            Adapter& a = *static_cast<Adapter*>(info.Data().As<v8::External>()->Value());
+            const auto fail = [isolate](const char* message) {
+                isolate->ThrowException(v8::Exception::TypeError(str(isolate, message)));
+            };
+            if (info.Length() < 2 || !info[0]->IsArray() || !info[1]->IsFloat64Array())
+                return fail("TN_ANIM_ARGUMENT: __tnAnimationTick(rigs: array, status: Float64Array)");
+            const auto rigs = info[0].As<v8::Array>();
+            const uint32_t count = rigs->Length();
+            if (count == 0) return;
+            const auto out = info[1].As<v8::Float64Array>();
+            if (out->Length() < size_t{count} * 3) return fail("TN_ANIM_ARGUMENT: status holds fewer than 3 doubles a rig");
+            const auto ctx = isolate->GetCurrentContext();
+            const auto key = [isolate](const char* name) {
+                return v8::String::NewFromUtf8(isolate, name, v8::NewStringType::kInternalized).ToLocalChecked();
+            };
+            const v8::Local<v8::String> kMixer = key("mixer"), kAction = key("action"), kRoot = key("strideRoot"),
+                                        kDt = key("dt"), kElapsed = key("elapsed"), kSpeed = key("clipGroundSpeed"),
+                                        kRate = key("lastRate"), kSync = key("strideSync"), kStep = key("step"),
+                                        kReset = key("reset");
+            a.animHandles_.resize(size_t{count} * 3);
+            a.animValues_.resize(size_t{count} * TN_ANIM_RIG_VALUES);
+            for (uint32_t i = 0; i < count; ++i) {
+                v8::Local<v8::Value> entry, mixer, action, root, dt, elapsed, speed, rate, sync, step, reset;
+                if (!rigs->Get(ctx, i).ToLocal(&entry)) return;
+                if (!entry->IsObject()) return fail("TN_ANIM_ARGUMENT: a rig is not an object");
+                const auto rig = entry.As<v8::Object>();
+                if (!rig->Get(ctx, kMixer).ToLocal(&mixer) || !rig->Get(ctx, kAction).ToLocal(&action) ||
+                    !rig->Get(ctx, kRoot).ToLocal(&root) || !rig->Get(ctx, kDt).ToLocal(&dt) ||
+                    !rig->Get(ctx, kElapsed).ToLocal(&elapsed) || !rig->Get(ctx, kSpeed).ToLocal(&speed) ||
+                    !rig->Get(ctx, kRate).ToLocal(&rate) || !rig->Get(ctx, kSync).ToLocal(&sync) ||
+                    !rig->Get(ctx, kStep).ToLocal(&step) || !rig->Get(ctx, kReset).ToLocal(&reset))
+                    return;
+                tn_handle_t* trio = a.animHandles_.data() + size_t{i} * 3;
+                if (!a.unwrap(mixer, trio[TN_ANIM_MIXER])) return fail("TN_ANIM_MIXER_INVALID: rig.mixer is not an engine object");
+                // A missing action or body repeats the mixer's handle; the flags say which slots are real.
+                const bool hasAction = !action->IsNullOrUndefined(), hasRoot = !root->IsNullOrUndefined();
+                trio[TN_ANIM_ACTION] = trio[TN_ANIM_MIXER];
+                trio[TN_ANIM_STRIDE_ROOT] = trio[TN_ANIM_MIXER];
+                if (hasAction && !a.unwrap(action, trio[TN_ANIM_ACTION]))
+                    return fail("TN_ANIM_ACTION_INVALID: rig.action is not an engine object");
+                if (hasRoot && !a.unwrap(root, trio[TN_ANIM_STRIDE_ROOT]))
+                    return fail("TN_ANIM_STRIDE_ROOT_INVALID: rig.strideRoot is not an engine object");
+                double* values = a.animValues_.data() + size_t{i} * TN_ANIM_RIG_VALUES;
+                values[0] = dt->NumberValue(ctx).FromMaybe(0.0);
+                values[1] = elapsed->NumberValue(ctx).FromMaybe(0.0);
+                values[2] = speed->NumberValue(ctx).FromMaybe(0.0);
+                values[3] = rate->NumberValue(ctx).FromMaybe(0.0);
+                values[4] = double((sync->BooleanValue(isolate) ? TN_ANIM_RIG_STRIDE_SYNC : 0u) |
+                                   (hasAction ? TN_ANIM_RIG_ACTION : 0u) | (hasRoot ? TN_ANIM_RIG_BODY : 0u) |
+                                   (step->BooleanValue(isolate) ? TN_ANIM_RIG_STEP : 0u) |
+                                   (reset->BooleanValue(isolate) ? TN_ANIM_RIG_RESET : 0u));
+            }
+            auto* status = reinterpret_cast<double*>(static_cast<char*>(out->Buffer()->Data()) + out->ByteOffset());
+            tn::abi::noteCrossing("tn_anim_tick");
+            tn_diagnostic_t diagnostic{nullptr, 0};
+            if (tn_anim_tick(a.context(), a.animHandles_.data(), a.animValues_.data(), count, status, &diagnostic) != TN_OK)
+                throwStatus(isolate, diagnostic);
+        },
+        v8::External::New(isolate_, this)).ToLocalChecked()).Check();
     // Last, so the math classes replace the native ones as globals.
     if (jsMath_) {
         if (!math_) math_ = std::make_unique<MathBridge>(isolate_, context_);

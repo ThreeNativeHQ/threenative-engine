@@ -11,6 +11,7 @@ import {
   DISCRETE_LOD_DEFAULT_HYSTERESIS,
   type IModelLodController,
   biasedLodDistance,
+  lodBias,
   lodChainOf,
   registerModelLodController,
   selectLodFor,
@@ -155,6 +156,24 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
   const sphere = new Sphere();
   let children: InstancedMesh[] = [];
   let triangles = 0;
+  // PRD-898 J3: on the owned engine the per-instance sort below is one call a frame
+  // (`lod::selectInstancedLods`), handed the partitions once, instead of three crossings per instance.
+  const engine = instancedLodHooks(mesh);
+  let attached = false;
+  function attachEngine(hooks: IInstancedLodHooks): void {
+    const authored = options.lods !== undefined;
+    hooks.attach.call(
+      mesh,
+      children,
+      Array.from(partitionOf),
+      authored ? distances : [],
+      [local.center.x, local.center.y, local.center.z, local.radius],
+      authored ? null : [...(chain?.errors ?? [])],
+      budget,
+      hysteresis,
+    );
+    attached = true;
+  }
   function ensureChildren(): void {
     if (children.length > 0) return;
     children = groups.flatMap((indices, partition) =>
@@ -186,6 +205,11 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
     },
     update(camera: Camera, viewportHeight: number): void {
       ensureChildren();
+      if (engine !== undefined) {
+        if (!attached) attachEngine(engine);
+        triangles = engine.update.call(mesh, camera, viewportHeight, lodBias());
+        return;
+      }
       triangles = 0;
       mesh.updateWorldMatrix(true, false);
       camera.getWorldPosition(cameraPosition);
@@ -258,6 +282,7 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
         child.dispose();
       }
       children = [];
+      attached = false;
       mesh.geometry = base;
       triangles = 0;
     },
@@ -275,4 +300,33 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
   registerModelLodController(mesh, controller);
   ensureChildren();
   mesh.addEventListener("dispose", () => controller.release());
+}
+
+interface IInstancedLodHooks {
+  readonly attach: (
+    children: readonly InstancedMesh[],
+    partitionOf: readonly number[],
+    distances: readonly number[],
+    local: readonly number[],
+    chainErrors: readonly number[] | null,
+    budget: number,
+    hysteresis: number,
+  ) => void;
+  readonly update: (camera: Camera, viewportHeight: number, bias: number) => number;
+}
+
+/** The owned engine's instanced LOD calls (abi/bindings_scene.cpp), or undefined on plain three.js. */
+function instancedLodHooks(mesh: InstancedMesh): IInstancedLodHooks | undefined {
+  const carrier = mesh as InstancedMesh & {
+    readonly __tnInstancedLodAttach?: unknown;
+    readonly __tnInstancedLodUpdate?: unknown;
+  };
+  const attach = carrier.__tnInstancedLodAttach;
+  const update = carrier.__tnInstancedLodUpdate;
+  return typeof attach === "function" && typeof update === "function"
+    ? {
+        attach: attach as IInstancedLodHooks["attach"],
+        update: update as IInstancedLodHooks["update"],
+      }
+    : undefined;
 }

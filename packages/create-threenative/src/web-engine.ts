@@ -53,6 +53,8 @@ const ENGINE_ADDON_CLASSES: Readonly<Record<string, string>> = {
 const ENGINE_ADDON_PREFIX = "\0threenative:web-engine-addon:";
 /** three's SkeletonUtils addon over the engine's SkeletonUtils namespace (shared with the V8 player). */
 const SKELETON_UTILS_ID = "\0threenative:web-engine-skeleton-utils";
+// PRD-899: on the owned engine physics runs the Rust crate, so Rapier's compat build stays out.
+const RAPIER_COMPAT_ID = "\0threenative:web-engine-rapier-compat";
 /** The product Wasm entry inside the installed `@threenative/runtime-native` (PRD-540 phase 2). */
 export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
 /**
@@ -285,6 +287,7 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       const engineClass = ENGINE_ADDON_CLASSES[source];
       if (engineClass !== undefined) return ENGINE_ADDON_PREFIX + engineClass;
       if (source === "three/addons/utils/SkeletonUtils.js") return SKELETON_UTILS_ID;
+      if (source === "@dimforge/rapier3d-compat") return RAPIER_COMPAT_ID;
       // The engine's MeshBVH answers picking with its own raycast; the upstream package extends
       // three's math classes and cannot load over the engine.
       if (source === "three-mesh-bvh")
@@ -328,6 +331,8 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
     async load(id) {
       if (native && id.startsWith(ENGINE_ADDON_PREFIX))
         return `export { ${id.slice(ENGINE_ADDON_PREFIX.length)} } from "three";\n`;
+      if (native && id === RAPIER_COMPAT_ID)
+        return 'throw new Error("TN_PHYSICS_COMPAT_EXCLUDED: engine \\"threenative\\" runs physics on the Rapier crate; rapier3d-compat loads only under engine \\"threejs\\".");\n';
       if (native && id === SKELETON_UTILS_ID)
         return 'import { SkeletonUtils } from "three";\nexport const clone = (source) => SkeletonUtils.clone(source);\n';
       if (!native || id !== WEB_ENGINE_ID) return null;

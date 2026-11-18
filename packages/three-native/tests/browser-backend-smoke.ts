@@ -47,6 +47,9 @@ const {
   BoxGeometry,
   Color,
   DataTexture,
+  Group,
+  InstancedMesh,
+  Matrix4,
   Mesh,
   MeshBasicNodeMaterial,
   MeshStandardMaterial,
@@ -1991,6 +1994,96 @@ if (runtime.tsl !== undefined) {
   check(
     near(r, 0.25) && near(g, 0.5) && near(b, 0.75) && r !== g && g !== b,
     `a promoted Color(0.25, 0.5, 0.75) keeps distinct AmbientLight channels: (${r}, ${g}, ${b})`,
+  );
+}
+{
+  // PRD-898 J4: core's posedBounds hook crosses once with an object array and a radius array, and the
+  // engine composes the moved transforms itself before it reads them.
+  const root = new Group();
+  const foot = new Group();
+  const head = new Group();
+  root.add(foot);
+  foot.add(head);
+  root.position.y = 2;
+  foot.position.x = 1;
+  head.position.y = 1.5;
+  const hooks = root as unknown as {
+    __tnSphereBoundsAttach?: (objects: unknown[], radii: number[]) => void;
+    __tnSphereBounds?: () => number[];
+  };
+  check(
+    typeof hooks.__tnSphereBounds === "function",
+    "Object3D carries the engine's __tnSphereBounds",
+  );
+  hooks.__tnSphereBoundsAttach?.call(root, [foot, head], [0.25, 0.5]);
+  const box = hooks.__tnSphereBounds?.call(root);
+  const expected = [0.5, 1.75, -0.5, 1.5, 4, 0.5];
+  check(
+    Array.isArray(box) &&
+      box.length === 6 &&
+      expected.every((value, i) => Math.abs((box[i] as number) - value) < 1e-9),
+    `__tnSphereBounds answers the composed box: ${JSON.stringify(box)}`,
+  );
+}
+{
+  // PRD-898 J3: core's attachInstancedLod hands the partitions over once, then one call a frame sorts
+  // every instance into its level's partition; an unchanged second frame keeps the same partitions.
+  const geometry = new BoxGeometry(1, 1, 1);
+  const material = new MeshBasicNodeMaterial();
+  // The facade's InstancedMesh type takes no arguments; the engine class takes three's three.
+  const Instanced = InstancedMesh as unknown as new (
+    geometry: unknown,
+    material: unknown,
+    count: number,
+  ) => THREE.InstancedMesh;
+  const mesh = new Instanced(geometry, material, 2);
+  mesh.setMatrixAt(0, new Matrix4().makeTranslation(0, 0, -5));
+  mesh.setMatrixAt(1, new Matrix4().makeTranslation(0, 0, -100));
+  const children = [new Instanced(geometry, material, 2), new Instanced(geometry, material, 2)];
+  for (const child of children) mesh.add(child);
+  const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.updateMatrixWorld();
+  const lod = mesh as unknown as {
+    __tnInstancedLodAttach?: (...args: unknown[]) => void;
+    __tnInstancedLodUpdate?: (camera: unknown, viewportHeight: number, bias: number) => number;
+  };
+  check(
+    typeof lod.__tnInstancedLodAttach === "function",
+    "InstancedMesh carries __tnInstancedLodAttach",
+  );
+  lod.__tnInstancedLodAttach?.call(mesh, children, [0, 0], [0, 50], [0, 0, 0, 0.87], null, 4, 0.15);
+  const first = lod.__tnInstancedLodUpdate?.call(mesh, camera, 1080, 1);
+  const second = lod.__tnInstancedLodUpdate?.call(mesh, camera, 1080, 1);
+  check(
+    first === 24 && second === 24 && children[0]?.count === 1 && children[1]?.count === 1,
+    `__tnInstancedLodUpdate sorts near and far: ${first}, ${second}, ${children.map((c) => c.count)}`,
+  );
+}
+{
+  // PRD-898 J2: the chain is handed over once, one camera call selects, and only changed levels return.
+  // Same chain and views as model-lod-runtime.spec.ts: far picks level 1, close refines to 0.
+  const target = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicNodeMaterial());
+  target.updateMatrixWorld();
+  const lod = target as unknown as { __tnModelLodAttach?: (...args: unknown[]) => void };
+  check(typeof lod.__tnModelLodAttach === "function", "Mesh carries __tnModelLodAttach");
+  lod.__tnModelLodAttach?.call(target, [0, 0.05, 5], [1, 0, 0.5, Math.sqrt(1.25)], 1, 0.15, 0);
+  const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+  const select = (z: number) => {
+    camera.position.set(0, 0, z);
+    camera.updateMatrixWorld();
+    return (
+      camera as unknown as {
+        __tnModelLodSelect: (height: number, bias: number) => number[];
+      }
+    ).__tnModelLodSelect(1080, 1);
+  };
+  (camera as unknown as { __tnModelLodMeshes: (meshes: unknown[]) => void }).__tnModelLodMeshes([
+    target,
+  ]);
+  const picks = [select(100), select(100), select(3), select(100)];
+  check(
+    JSON.stringify(picks) === JSON.stringify([[0, 1], [], [0, 0], [0, 1]]),
+    `__tnModelLodSelect answers changed levels only: ${JSON.stringify(picks)}`,
   );
 }
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

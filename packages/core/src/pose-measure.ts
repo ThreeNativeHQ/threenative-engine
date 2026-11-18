@@ -1,5 +1,6 @@
 import { AttachedBindMode, Box3, type Object3D, Quaternion, Vector3 } from "three";
 import type { Mesh, SkinnedMesh } from "three";
+import { sphereBoundsHook } from "./engine-hooks.js";
 
 /**
  * Brings every attached-mode skinned mesh under `root` to the bind state the renderer would give it.
@@ -414,11 +415,35 @@ function getEnvelope(
  * read one world-matrix translation per contributing bone and allocate nothing. The returned
  * object is cached for the root and updated in place; copy it if it must outlive the next call.
  */
+/** PRD-898 J4: which envelope's spheres the engine holds for each root. */
+const engineEnvelope = new WeakMap<Object3D, IPosedBoundsEnvelope>();
+
 export function posedBounds(root: Object3D, meshes?: readonly Object3D[]): IThreePoseBounds {
   const envelope = getEnvelope(root, meshes);
-  root.updateWorldMatrix(true, true);
-  rawBounds(envelope, envelope.raw);
   const raw = envelope.raw;
+  // PRD-898 J4: on the owned engine the matrix pass and every sphere read are one call.
+  const engine = sphereBoundsHook(root);
+  if (engine === undefined) {
+    root.updateWorldMatrix(true, true);
+    rawBounds(envelope, raw);
+  } else {
+    // The engine keeps one sphere set per root: hand this envelope's over when it is not the one held.
+    if (engineEnvelope.get(root) !== envelope) {
+      engine.attach.call(
+        root,
+        [...envelope.bones.map((s) => s.bone), ...envelope.statics.map((s) => s.object)],
+        [...envelope.bones.map((s) => s.radius), ...envelope.statics.map((s) => s.radius)],
+      );
+      engineEnvelope.set(root, envelope);
+    }
+    const box = engine.bounds.call(root);
+    raw.minX = box[0] ?? Number.POSITIVE_INFINITY;
+    raw.minY = box[1] ?? Number.POSITIVE_INFINITY;
+    raw.minZ = box[2] ?? Number.POSITIVE_INFINITY;
+    raw.maxX = box[3] ?? Number.NEGATIVE_INFINITY;
+    raw.maxY = box[4] ?? Number.NEGATIVE_INFINITY;
+    raw.maxZ = box[5] ?? Number.NEGATIVE_INFINITY;
+  }
   const min = envelope.result.min;
   const max = envelope.result.max;
   const size = envelope.result.size;

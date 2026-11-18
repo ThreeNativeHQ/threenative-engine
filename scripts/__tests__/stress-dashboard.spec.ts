@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-const { breakPoint, familyOf, loadOf, rampCells, rollingMedian, trendSeries } = await import(
-  new URL("../stress-dashboard.mjs", import.meta.url).href
-);
+const { breakPoint, familyOf, loadOf, rampCells, rollingMedian, sceneKindOf, trendSeries } =
+  await import(new URL("../stress-dashboard.mjs", import.meta.url).href);
 
 describe("stress dashboard: load ramp", () => {
   it("reads load=N from the variant and defaults to 1", () => {
@@ -149,5 +148,16 @@ describe("stress dashboard: trend series", () => {
   it("takes a centered rolling median of 5, clipped at the ends", () => {
     expect(rollingMedian([1, 100, 3, 4, 5, 6], 5)).toEqual([3, 3.5, 4, 5, 4.5, 5]);
     expect(rollingMedian([], 5)).toEqual([]);
+  });
+});
+
+describe("stress dashboard: scene kinds", () => {
+  it("gives the PRD-898 systems layers their own lane, apart from real and play", () => {
+    const kind = (variant: string) => sceneKindOf({ variant });
+    expect(kind("stress")).toBe("real");
+    expect(kind("stress&play")).toBe("play");
+    expect(kind("stress&systems")).toBe("systems");
+    expect(kind("stress&play&systems&uncapped")).toBe("play+systems");
+    expect(kind("stress&systems&holdout=forest")).toBe("holdout=forest");
   });
 });

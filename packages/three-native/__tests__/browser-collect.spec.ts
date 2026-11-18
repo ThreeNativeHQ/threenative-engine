@@ -123,3 +123,63 @@ function refSymbol(wrapper: object): symbol {
   if (found === undefined) throw new Error("wrapper carries no engine ref");
   return found;
 }
+
+// PRD-898 J5: the settled set is asked only when the engine ownership epoch moved, as the V8 adapter does.
+/** A runtime whose engine references every wrapper, with an ownership epoch the test moves. */
+function settledRuntime() {
+  const types = new Map<string, number>();
+  const typeId = (name: string) =>
+    types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0;
+  const asked: number[] = [];
+  const state = { epoch: 0 };
+  const runtime: IBrowserRuntime = {
+    typeId,
+    construct: (name) => ({ key: `${name}:${types.size}`, type: typeId(name) }),
+    invoke: () => null,
+    get: () => null,
+    set: () => undefined,
+    release: () => undefined,
+    setCallback: () => undefined,
+    engineReferences: (refs) => {
+      asked.push(refs.length);
+      return refs.map(() => 1);
+    },
+    ownershipEpoch: () => state.epoch,
+  };
+  return { runtime, asked, state, typeId };
+}
+
+describe("the web safe point (PRD-898 J5)", () => {
+  it("asks nothing about settled wrappers while the ownership epoch stands still", () => {
+    const { runtime, asked, state, typeId } = settledRuntime();
+    const engine = defineBrowserClasses(registry, runtime);
+    const kept = Array.from({ length: 200 }, (_, i) =>
+      engine.wrap({ key: `Group:${i}`, type: typeId("Group") }),
+    );
+    engine.collect();
+    expect(asked).toEqual([200]); // every new wrapper is asked once, and settles
+    // Two whole passes with the epoch unmoved retire the pass that was due at start.
+    for (let frame = 0; frame < 2 * 64 + 2; frame += 1) engine.collect();
+    asked.length = 0;
+    for (let frame = 0; frame < 100; frame += 1) engine.collect();
+    expect(asked).toEqual([]);
+
+    // The engine may have let one go: the settled set is asked again, a pass at a time.
+    state.epoch += 1;
+    engine.collect();
+    expect(asked).toEqual([Math.ceil(200 / 64)]);
+    expect(kept).toHaveLength(200);
+  });
+
+  it("still asks a wrapper handed out since the last safe point, epoch or not", () => {
+    const { runtime, asked, typeId } = settledRuntime();
+    const engine = defineBrowserClasses(registry, runtime);
+    engine.collect();
+    for (let frame = 0; frame < 4; frame += 1) engine.collect();
+    asked.length = 0;
+    const fresh = engine.wrap({ key: "Group:fresh", type: typeId("Group") });
+    engine.collect();
+    expect(asked).toEqual([1]);
+    expect(fresh).toBeDefined();
+  });
+});

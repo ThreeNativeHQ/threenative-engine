@@ -35,3 +35,32 @@ export function copyMatrixWorld(object: Object3D, target: Matrix4): boolean {
   hook.call(object, target);
   return true;
 }
+
+/**
+ * PRD-898 J4: the owned engine's posed-bounds call. `root.__tnSphereBounds(objects, radii)` runs
+ * `root.updateWorldMatrix(true, true)` and answers `[minX, minY, minZ, maxX, maxY, maxZ]` over a sphere
+ * of `radii[i]` at each object's world origin, in one crossing instead of one per bone. The engine
+ * defines it in `runtime-native/src/engine/abi/bindings_scene.cpp`; plain three.js has none.
+ */
+export const SPHERE_BOUNDS_HOOK = "__tnSphereBounds";
+
+/** The spheres are handed to the engine once; the per-frame call then takes no arguments. */
+export const SPHERE_BOUNDS_ATTACH_HOOK = "__tnSphereBoundsAttach";
+
+interface ISphereBoundsHooks {
+  readonly attach: (objects: readonly Object3D[], radii: readonly number[]) => void;
+  readonly bounds: () => readonly number[];
+}
+
+/** The engine's sphere-bounds calls on `root`, or undefined on plain three.js. */
+export function sphereBoundsHook(root: Object3D): ISphereBoundsHooks | undefined {
+  const carrier = root as Object3D & Record<string, unknown>;
+  const attach = carrier[SPHERE_BOUNDS_ATTACH_HOOK];
+  const bounds = carrier[SPHERE_BOUNDS_HOOK];
+  return typeof attach === "function" && typeof bounds === "function"
+    ? {
+        attach: attach as ISphereBoundsHooks["attach"],
+        bounds: bounds as ISphereBoundsHooks["bounds"],
+      }
+    : undefined;
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +12,7 @@ const manifest = join(runtimeRoot, 'native', 'physics', 'Cargo.toml');
 const targetDir = join(runtimeRoot, '.runtime', 'physics-target');
 const requested = new Set(process.argv.slice(2));
 const checkOnly = requested.delete('--check');
-const supported = new Set(['--android', '--desktop', '--ios', '--ios-device', '--ios-simulator', '--ps4']);
+const supported = new Set(['--android', '--desktop', '--ios', '--ios-device', '--ios-simulator', '--ps4', '--web']);
 for (const argument of requested) {
   if (!supported.has(argument)) {
     throw new Error(`Unknown native physics target option: ${argument}`);
@@ -63,6 +64,9 @@ if (requested.has('--ios-device')) targets.push(['aarch64-apple-ios']);
 // PS4 (PRD-784): OpenOrbis links against its own musl, so the Linux musl staticlib's libc references
 // resolve there; nothing is linked here, so no linker is named.
 if (requested.has('--ps4')) targets.push(['x86_64-unknown-linux-musl']);
+// Web (PRD-899): a standalone module with direct `tn_physics_*` exports. Option A (link into the
+// Emscripten engine modules) fails on the -pthread module with stable Rust: the prebuilt std has no atomics.
+if (requested.has('--web')) targets.push(['wasm32-unknown-unknown']);
 
 if (
   !checkOnly
@@ -75,15 +79,16 @@ if (
 }
 
 for (const [target, linker] of targets) {
-  const libraryName = target.includes('windows')
-    ? 'threenative_native_physics.lib'
-    : 'libthreenative_native_physics.a';
+  const web = target === 'wasm32-unknown-unknown';
+  const libraryName = web ? 'threenative_native_physics.wasm'
+    : target.includes('windows') ? 'threenative_native_physics.lib'
+      : 'libthreenative_native_physics.a';
   const artifact = join(targetDir, target, 'release', libraryName);
   if (checkOnly) {
     console.log(`${target}: ${artifact}`);
     continue;
   }
-  if (target.includes('apple') || target.includes('musl')) {
+  if (target.includes('apple') || target.includes('musl') || web) {
     const rustTarget = spawnSync('rustup', ['target', 'add', target], {
       cwd: runtimeRoot,
       encoding: 'utf8',
@@ -98,7 +103,10 @@ for (const [target, linker] of targets) {
   const envName = `CARGO_TARGET_${target.toUpperCase().replaceAll('-', '_')}_LINKER`;
   const result = spawnSync(
     'cargo',
-    ['build', '--release', '--manifest-path', manifest, '--target', target, '--target-dir', targetDir],
+    [
+      ...(web ? ['rustc', '--lib', '--crate-type', 'cdylib'] : ['build']),
+      '--release', '--manifest-path', manifest, '--target', target, '--target-dir', targetDir,
+    ],
     {
       cwd: runtimeRoot,
       encoding: 'utf8',
@@ -113,4 +121,17 @@ for (const [target, linker] of targets) {
   }
   if (!existsSync(artifact)) throw new Error(`Cargo reported success without ${artifact}`);
   console.log(`${target}: ${basename(artifact)} ${statSync(artifact).size} bytes`);
+  if (web) {
+    // @threenative/physics ships the module beside its dist, checksum pinned (the metahuman pattern).
+    const shipped = join(runtimeRoot, '..', 'physics', 'wasm');
+    mkdirSync(shipped, { recursive: true });
+    copyFileSync(artifact, join(shipped, libraryName));
+    const sha256 = createHash('sha256').update(readFileSync(artifact)).digest('hex');
+    const rustc = spawnSync('rustc', ['--version'], { encoding: 'utf8' }).stdout.trim();
+    writeFileSync(
+      join(shipped, 'checksums.json'),
+      `${JSON.stringify({ rustc, files: { [libraryName]: sha256 } }, null, 2)}\n`,
+    );
+    console.log(`copied to ${shipped}`);
+  }
 }

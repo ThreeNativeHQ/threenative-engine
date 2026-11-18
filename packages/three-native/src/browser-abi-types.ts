@@ -73,6 +73,8 @@ export interface IBrowserRuntime {
   release(self: IEngineRef): void;
   /** For each ref, how many references other engine objects hold to its object; one call a batch. */
   engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
+  /** PRD-898 J5: moves whenever an `engineReferences` count may have changed (`tn_ownership_epoch`). */
+  ownershipEpoch?(): number;
   /**
    * PRD-828: advances a batch of animation rigs in one crossing — the weight ramp, the stride rate and
    * one mixer step each. A backend that cannot batch leaves it out and the JS loop keeps running.
@@ -156,7 +158,10 @@ type AbiCall =
   | "_tn_anim_tick";
 export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
   Partial<
-    Record<"_tnw_attribute_view" | "_tnw_attribute_view_release", (...args: number[]) => number>
+    Record<
+      "_tnw_attribute_view" | "_tnw_attribute_view_release" | "_tn_ownership_epoch",
+      (...args: number[]) => number
+    >
   > &
   Record<"HEAPU8", Uint8Array> &
   Record<"HEAPF64", Float64Array> &
