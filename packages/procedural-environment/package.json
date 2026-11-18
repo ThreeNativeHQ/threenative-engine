@@ -28,7 +28,8 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. procedural-environment/__tests__ && publint --strict"
+    "test": "vitest run --root ../.. procedural-environment/__tests__ && publint --strict",
+    "library": "tsup --config tsup.config.ts && vite --config library/vite.config.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "catalog:",
@@ -39,6 +40,7 @@
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:",
-    "@types/three": "catalog:"
+    "@types/three": "catalog:",
+    "vite": "catalog:"
   }
 }

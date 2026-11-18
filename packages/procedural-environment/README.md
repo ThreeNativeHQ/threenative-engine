@@ -31,6 +31,15 @@ environmentElements({ search: "palm" }); // coconut, fanpalm, with their biomes
 An unknown biome or kind throws and names the nearest ids. Biome ids match the Strata terrain
 kits (forest, coastal, alpine, desert, tundra) where they overlap.
 
+## Browse everything: `pnpm asset-library`
+
+From the repository root, `pnpm asset-library` builds this package and opens a Storybook-shaped
+viewer: a sidebar of every element by kind with search and a biome filter, one story per element
+with controls (seed, level of detail, rock biome, wind, wireframe, a 1.8 m figure for scale), a docs
+tab with the paste-ready bake call, size, triangles and GLB attributes, and an overview story per kind
+at true scale. Each story calls this package's own bake, so the viewer shows what a game gets. The
+URL holds the story (`#/rock/arch?seed=3&lod=0&biome=desert`), so a link shows the same bake.
+
 ## Trees, cover and the forest floor
 
 ```ts
