@@ -4,9 +4,9 @@
 **Priority:** P1 — engine-owned JavaScript still ran on every frame of the default engine (AC-1 is now green): about 1.6 ms of a 5.2 ms stress-lab frame with no crowd. The native player runs the JavaScript animation loop for every rig (AC-2 open).
 **Complexity:** 7 (HIGH) — 11+ implementation files (3), crosses the C++/Wasm ABI and the JS package release boundary (+2), wrapper lifetime and frozen-root invalidation state (+2). Risk override: none.
 **Owner:** João
-**Depends on:** None for Phase 1. Phase 2 and Phase 3 branch after [PR #681](https://github.com/ThreeNativeHQ/threenative-engine/pull/681) merges (PRD-892, it edits the same ABI files). Coordinates with [PRD-881](./PRD-881-the-crowds-engine-stages-fit-2-5-ms.md) (post-pass sequence, `AnimationPlayer` batch), [PRD-882](./PRD-882-the-world-drain-and-the-desktop-forest-run-in-the-engine.md) (world drain) and [PRD-899](./PRD-899-web-physics-calls-rapier-without-javascript-glue.md) (web physics). None of their scope moves here.
+**Depends on:** None for Phase 1. Phase 2 and Phase 3 branch after [PR #681](https://github.com/ThreeNativeHQ/threenative-engine/pull/681) merges (PRD-892, it edits the same ABI files). Coordinates with [PRD-881](../performance/PRD-881-the-crowds-engine-stages-fit-2-5-ms.md) (post-pass sequence, `AnimationPlayer` batch), [PRD-882](../performance/PRD-882-the-world-drain-and-the-desktop-forest-run-in-the-engine.md) (world drain) and [PRD-899](./PRD-899-web-physics-calls-rapier-without-javascript-glue.md) (web physics). None of their scope moves here.
 
-Executor: read [EXECUTION-ORDER.md](./EXECUTION-ORDER.md) and `PERFORMANCE-LEARNINGS.md` first.
+Executor: read [EXECUTION-ORDER.md](../performance/EXECUTION-ORDER.md) and `PERFORMANCE-LEARNINGS.md` first.
 C++ paths are under `packages/runtime-native/src/engine/`; JS paths under `packages/`.
 
 ## Context
@@ -58,12 +58,12 @@ The lead read the frame loop, the profile and the related PRDs. Eight DeepSeek v
 
 | Row (checked) | Owner |
 | --- | --- |
-| `world-tiles.ts:926-935`: a new `Map` and a LOD target per resident tile on each update. `world-cell-render-main-cull.ts:234`: the shared-batch map copied to an array each frame | [PRD-882](./PRD-882-the-world-drain-and-the-desktop-forest-run-in-the-engine.md) |
+| `world-tiles.ts:926-935`: a new `Map` and a LOD target per resident tile on each update. `world-cell-render-main-cull.ts:234`: the shared-batch map copied to an array each frame | [PRD-882](../performance/PRD-882-the-world-drain-and-the-desktop-forest-run-in-the-engine.md) |
 | `browser-backend.ts:1222-1225`: an indexed array property (`morphTargetInfluences`) crosses one time per element. Its caller is the tile LOD blend (`world-tile-lod.ts:211`) | PRD-882 |
 | `physics/src/simulation.ts:969-970`: two Rapier wrapper records per body per step. `:1457-1462`: two calls per dynamic body per step | [PRD-763](../engine-performance-architecture-2026-10-28/PRD-763-physics-publishes-only-changed-poses.md), [PRD-762](../engine-performance-architecture-2026-10-28/PRD-762-only-actuated-bodies-clear-forces.md) |
 | `pointer-events.ts:236`: a JavaScript scene raycast per tick for each hovering pointer, when the game has pointer targets | [PRD-764](../engine-performance-architecture-2026-10-28/PRD-764-scene-ray-queries-skip-irrelevant-objects.md) |
 | `interpolation.ts:214`: `JSON.stringify` on every rendered frame for a report that prints on change. `physics/src/plugin.ts:329-331`: a string key per contact event, read only by the debug snapshot. `bridge-meter.ts:246-252`: a census frame one frame in 120 with no debug flag | [PRD-769](../PRD-769-bounded-telemetry-and-debug-overhead.md) |
-| Post-pass sequence and the `AnimationPlayer` batch | [PRD-881](./PRD-881-the-crowds-engine-stages-fit-2-5-ms.md) |
+| Post-pass sequence and the `AnimationPlayer` batch | [PRD-881](../performance/PRD-881-the-crowds-engine-stages-fit-2-5-ms.md) |
 | Single-value math (`Vector3`, `Color`, `Matrix4`) | [PRD-742](../native-engine/PRD-742-web-value-math-stays-in-js.md): it stays in JavaScript on purpose |
 
 ### Follow-up PRD candidates (ranked by measured or counted cost)
