@@ -4,10 +4,15 @@
  * The pin is the committed table below: per world, a digest of the prop package's containers, the
  * placement count per species, a digest of the baked heights and a digest of the world manifest,
  * plus the continuation ring. The containers replaced the single placement table when the bake
- * stopped writing one (PRD-792 AC-2). PRD-892's scatter recipes changed four placement digests and
- * counts. Two forced bakes must reproduce the table, so changes to scatter, erosion, palette or
- * height crop fail by world. The continuation digest moved when PRD-806 E19 removed the debug
- * `forest-before` survey.
+ * stopped writing one (PRD-792 AC-2); the counts and the heights are the Phase 1 numbers, byte for
+ * byte, so only the container's own bytes moved here. Two forced bakes must produce the same numbers, so the table is a statement
+ * about the recipe and not about one run's luck; a changed scatter rule, erosion pass, palette or
+ * height crop fails here, named. The continuation digest moved once, for PRD-806 E19's removal of
+ * the debug `forest-before` survey the `?massif=before` knob swapped in. Four worlds' counts and
+ * containers moved once more: alpine, desert and tundra for PRD-892, which puts every kit on the
+ * forest's world-building stack, so they scatter the forest's species; coastal for its shore
+ * stones, which is the coast scattering the granite it surveys. Heights and manifests are unchanged
+ * in all five, which is what makes the move the scatter's and not the ground's; forest is untouched.
  *
  * `--force` because the bake's stamp would otherwise skip the work under a warm `pnpm test`; the
  * recipe is seeded and the outputs are byte-identical, so the run rewrites the tracked files with
@@ -50,18 +55,18 @@ const GOLDEN = {
     manifest: "df9936f9e3a31532426972a19c47c168262efc6117040d5a577863500307dd2c",
   },
   coastal: {
-    placements: "de5d608d5f2ee00fcf1e3e68e36cdbb7cb9b241438fd469c6f8bb28f3ea57104",
+    placements: "2cf9bfa060b249f24514efcd02b3b05914cb255fd332c5e0df8bb26b25542610",
     counts: {
-      boulder: 277,
-      bush: 1208,
-      fern: 7460,
-      grass: 130753,
-      litter: 2095,
-      mountain: 75,
-      poppy: 1437,
-      riverrock: 150,
-      sapling: 5543,
-      scrub: 39186,
+      boulder: 256,
+      bush: 1298,
+      fern: 7584,
+      grass: 154549,
+      litter: 2304,
+      mountain: 60,
+      poppy: 1856,
+      riverrock: 147,
+      sapling: 5549,
+      scrub: 46211,
       spruce: 3200,
     },
     heights: "0c374becf41357b1db5526209ff7acbeb44a3a047e67cb88a0515a7c0660688c",

@@ -11,7 +11,7 @@ import { BENCHMARK, posesFor } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";
 import { BIOMES, type IVistaAim, type WorldName, measureBiome } from "../src/render/biomes.js";
 import type { IBakedWorld } from "../src/render/ground/terrain.js";
-import { FAR_FOREST_IMPOSTOR, FAR_FOREST_WORLDS } from "../src/render/props/farForest.js";
+import { FAR_FOREST_WORLDS } from "../src/render/props/farForest.js";
 import { speciesFor } from "../src/render/props/pack.js";
 import { buildPropVariants } from "../src/render/props/props.js";
 
@@ -165,7 +165,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
           reach: 2300,
           treelineJitter: 30,
           stand: [0.26, 0.4],
-          seed: 466_559,
+          seed: 466559,
           impostor: 110,
         },
       },
@@ -182,13 +182,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         heightFalloff: 28,
         waterMargin: 7.5,
         beach: null,
-        drift: {
-          field: "stand",
-          frequency: [3.1, 2.7],
-          offset: 0.8,
-          amplitude: 0.2,
-          band: [0, 1],
-        },
+        drift: { field: "stand", frequency: [3.1, 2.7], offset: 0.8, amplitude: 0.2, band: [0, 1] },
         bladeScale: 1,
         bladeJitter: 0.65,
         scrubChance: 0.3,
@@ -219,6 +213,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
       "grove",
     ],
     species: {
+      bloom: 4,
       boulder: 3,
       bush: 2,
       cliff: 1,
@@ -229,7 +224,6 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
       meadow: 2,
       mountain: 2,
       poppy: 4,
-      bloom: 4,
       riverrock: 1,
       sapling: 4,
       scree: 1,
@@ -264,7 +258,18 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         stands: true,
         grassThreshold: 0.3,
         standThreshold: 0.3,
-        far: null,
+        far: {
+          cell: 6,
+          spacing: [6.5, 13],
+          spacingAt: [150, 1500],
+          slope: [36, 46],
+          meadowSlope: [12, 24],
+          reach: 2300,
+          treelineJitter: 30,
+          stand: [0.26, 0.4],
+          seed: 466559,
+          impostor: 110,
+        },
       },
     ],
     grass: [
@@ -297,7 +302,10 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         detailSpacing: 0.34,
       },
     ],
-    water: [{ kind: "ocean", level: 1.5 }],
+    water: [
+      { kind: "ocean", level: 0 },
+      { kind: "lake", radius: 150 },
+    ],
     spawn: { at: [180, 65], cameraOffset: [28, 18, 34], focus: [80, 5] },
     aliases: [
       "coastal",
@@ -312,6 +320,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
       "fjords",
     ],
     species: {
+      bloom: 4,
       boulder: 3,
       bush: 2,
       cliff: 1,
@@ -321,7 +330,6 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
       meadow: 2,
       mountain: 2,
       poppy: 4,
-      bloom: 4,
       riverrock: 1,
       sapling: 4,
       scree: 1,
@@ -356,7 +364,64 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         stands: true,
         grassThreshold: 0.3,
         standThreshold: 0.18,
-        far: null,
+        far: {
+          cell: 6,
+          spacing: [7, 14],
+          spacingAt: [150, 1200],
+          slope: [30, 44],
+          meadowSlope: [10, 22],
+          reach: 1800,
+          treelineJitter: 25,
+          stand: [0.18, 0.32],
+          seed: 466561,
+          impostor: 95,
+        },
+      },
+      {
+        species: "scotspine",
+        density: 1400,
+        slope: [0, 40],
+        height: [0, 30],
+        spacing: [3.4, 6.4],
+        collision: "trunk",
+        stands: true,
+        grassThreshold: 0.26,
+        standThreshold: 0.2,
+        far: {
+          cell: 6,
+          spacing: [7, 14],
+          spacingAt: [150, 1200],
+          slope: [30, 44],
+          meadowSlope: [10, 22],
+          reach: 1900,
+          treelineJitter: 25,
+          stand: [0.18, 0.32],
+          seed: 466563,
+          impostor: 105,
+        },
+      },
+      {
+        species: "blackspruce",
+        density: 900,
+        slope: [0, 30],
+        height: [0, 26],
+        spacing: [4.2, 8.2],
+        collision: "trunk",
+        stands: true,
+        grassThreshold: 0.24,
+        standThreshold: 0.22,
+        far: {
+          cell: 6,
+          spacing: [7, 14],
+          spacingAt: [150, 1200],
+          slope: [30, 44],
+          meadowSlope: [10, 22],
+          reach: 1500,
+          treelineJitter: 25,
+          stand: [0.18, 0.32],
+          seed: 466567,
+          impostor: 85,
+        },
       },
     ],
     grass: [
@@ -366,12 +431,11 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         slope: [0, 42],
         height: null,
         spacing: 0.9,
+        mats: null,
         slopeFalloff: 0,
         heightFalloff: 28,
-        mats: null,
         waterMargin: 7.5,
         beach: null,
-        detailSpacing: 0.5,
         drift: {
           field: "stand",
           frequency: [2.1, 2.4],
@@ -387,6 +451,79 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         scrubBush: false,
         shoreGround: false,
         cobbledBed: false,
+        detailSpacing: 0.5,
+      },
+      {
+        species: "tussock",
+        density: 0.6,
+        slope: [0, 42],
+        height: null,
+        spacing: 1.3,
+        mats: null,
+        slopeFalloff: 0,
+        heightFalloff: 28,
+        waterMargin: 7.5,
+        beach: null,
+        drift: { field: "stand", frequency: [2.1, 2.4], offset: 0, amplitude: 1, band: [0.2, 0.5] },
+        bladeScale: 0.7,
+        bladeJitter: 0.5,
+        scrubChance: 0.3,
+        scrubScale: 0.9,
+        scrubJitter: 0.6,
+        scrubBush: false,
+        shoreGround: false,
+        cobbledBed: false,
+        detailSpacing: 0.5,
+      },
+      {
+        species: "fireweed",
+        density: 0.22,
+        slope: [0, 42],
+        height: null,
+        spacing: 1.6,
+        mats: null,
+        slopeFalloff: 0,
+        heightFalloff: 28,
+        waterMargin: 7.5,
+        beach: null,
+        drift: { field: "stand", frequency: [2.1, 2.4], offset: 0, amplitude: 1, band: [0.3, 0.6] },
+        bladeScale: 0.8,
+        bladeJitter: 0.5,
+        scrubChance: 0.3,
+        scrubScale: 0.9,
+        scrubJitter: 0.6,
+        scrubBush: false,
+        shoreGround: false,
+        cobbledBed: false,
+        detailSpacing: 0.5,
+      },
+      {
+        species: "blueberry",
+        density: 0.3,
+        slope: [0, 42],
+        height: null,
+        spacing: 1.2,
+        mats: null,
+        slopeFalloff: 0,
+        heightFalloff: 28,
+        waterMargin: 7.5,
+        beach: null,
+        drift: {
+          field: "stand",
+          frequency: [2.1, 2.4],
+          offset: 0,
+          amplitude: 1,
+          band: [0.35, 0.65],
+        },
+        bladeScale: 0.6,
+        bladeJitter: 0.5,
+        scrubChance: 0.3,
+        scrubScale: 0.9,
+        scrubJitter: 0.6,
+        scrubBush: false,
+        shoreGround: false,
+        cobbledBed: false,
+        detailSpacing: 0.5,
       },
     ],
     water: [],
@@ -403,19 +540,26 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
       "snow",
     ],
     species: {
+      blackspruce: 0,
+      blueberry: 0,
       boulder: 3,
       bush: 2,
       deadfall: 4,
       fern: 3,
+      fireweed: 0,
       grass: 4,
       litter: 2,
       mountain: 2,
       poppy: 4,
       riverrock: 1,
+      rock: 0,
       sapling: 4,
+      scotspine: 0,
       scree: 1,
       scrub: 3,
       spruce: 10,
+      tundragrass: 0,
+      tussock: 0,
     },
   },
   desert: {
@@ -423,7 +567,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
     bake: { file: "desert", key: null },
     landform: "desertMesa",
     sizeMeters: 512,
-    seed: 41,
+    seed: 97,
     layers: [
       { layer: "alpine", from: 0.28, to: 0.49 },
       { layer: "rock", from: 0.08, to: 0.52 },
@@ -455,12 +599,11 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         slope: [0, 24],
         height: null,
         spacing: 4,
+        mats: null,
         slopeFalloff: 20,
         heightFalloff: 28,
-        mats: null,
         waterMargin: 7.5,
         beach: null,
-        detailSpacing: 1.8,
         drift: {
           field: "stand",
           frequency: [6.3, 5.7],
@@ -476,16 +619,18 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         scrubBush: true,
         shoreGround: false,
         cobbledBed: false,
+        detailSpacing: 1.8,
       },
     ],
     water: [],
-    spawn: { at: [140, 120], cameraOffset: [28, 24, 42], focus: [170, 180] },
+    spawn: { at: [140, 120], cameraOffset: [28, 24, 42], focus: [120, 110] },
     aliases: ["desert", "dune", "dunes", "sand", "canyon", "canyons", "arid", "badlands", "mesa"],
     species: {
       boulder: 3,
-      bush: 2,
+      bush: 1,
       deadfall: 4,
       grass: 4,
+      pebble: 0,
       reveal: 2,
       riverrock: 1,
       sapling: 4,
@@ -531,12 +676,11 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         slope: [0, 30],
         height: null,
         spacing: 1.1,
+        mats: [0.47, 0.3],
         slopeFalloff: 22,
         heightFalloff: 28,
-        mats: [0.47, 0.3],
         waterMargin: 7.5,
         beach: null,
-        detailSpacing: 0.5,
         drift: { field: "mats", frequency: [1, 1], offset: 0, amplitude: 1, band: [0.45, 0.3] },
         bladeScale: 0.45,
         bladeJitter: 0.3,
@@ -546,6 +690,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         scrubBush: true,
         shoreGround: false,
         cobbledBed: false,
+        detailSpacing: 0.5,
       },
     ],
     water: [
@@ -554,9 +699,17 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
       { kind: "lake", radius: 34 },
       { kind: "lake", radius: 46 },
     ],
-    spawn: { at: [150, 205], cameraOffset: [28, 24, 42], focus: [150, 160] },
+    spawn: { at: [150, 205], cameraOffset: [28, 24, 42], focus: [150, 205] },
     aliases: ["tundra", "arctic", "ice", "frozen", "permafrost", "glacial"],
-    species: { boulder: 3, bush: 1, grass: 4, riverrock: 1, sapling: 4, scree: 1, scrub: 3 },
+    species: {
+      boulder: 3,
+      bush: 1,
+      grass: 4,
+      riverrock: 1,
+      sapling: 4,
+      scree: 1,
+      scrub: 3,
+    },
   },
 };
 
@@ -641,7 +794,11 @@ function collisionClasses(): Readonly<Record<string, CollisionClass>> {
 
 /** The species one world draws, as asset id to how many variants of it the pack holds. */
 function speciesCounts(world: WorldName): Readonly<Record<string, number>> {
-  const counts: Record<string, number> = {};
+  // Every species the file declares, then what the pack actually builds: a declared species that
+  // stays at zero is one this game has no art for (alpine's PRD-892 rows), named rather than absent.
+  const counts: Record<string, number> = Object.fromEntries(
+    biomeSpec(world).species.map((asset) => [asset, 0]),
+  );
   for (const one of speciesFor(world)) counts[one.asset] = (counts[one.asset] ?? 0) + 1;
   return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
 }
@@ -670,16 +827,22 @@ function foliageOf(
   spec: IBiomeSpec,
   collisions: Readonly<Record<string, CollisionClass>>,
 ): readonly IFoliageRow[] {
-  const row = spec.foliage[0];
-  if (row === undefined) throw new Error(`${spec.look}: the file carries no tree row`);
-  const collision = collisions[row.species];
-  if (collision === undefined) throw new Error(`Species ${row.species} has no prop parts`);
-  // A world that plants a collar carries the rule's row; the streaming gate is the game's constant.
-  const far = FAR_FOREST_WORLDS.includes(world) ? row.far : null;
-  if (far !== null)
-    expect({ world, impostor: far.impostor }).toEqual({ world, impostor: FAR_FOREST_IMPOSTOR });
-  return [
-    {
+  void world;
+  if (spec.foliage.length === 0) throw new Error(`${spec.look}: the file carries no tree row`);
+  // Every row the file carries: PRD-892 gave alpine three stands, and the game grows what it says.
+  // The row's far field is pinned as data; whether the game streams a far field is its own gate
+  // (`FAR_FOREST_WORLDS`, pinned in the test below), so a row is a statement about the kit.
+  return spec.foliage.map((row) => {
+    // The parts the pack builds decide the class, so the file cannot claim a collision its art does
+    // not have; a species this game builds no parts for (alpine's PRD-892 Arbor rows) keeps the
+    // file's own declaration and draws nothing.
+    const parts = collisions[row.species];
+    if (parts !== undefined && parts !== row.collision)
+      throw new Error(
+        `Species ${row.species} declares a ${row.collision} collision; its parts make a ${parts}`,
+      );
+    const collision = parts ?? row.collision;
+    return {
       species: row.species,
       density: row.density,
       slope: row.slope,
@@ -689,13 +852,14 @@ function foliageOf(
       stands: row.stands,
       grassThreshold: row.grassThreshold,
       standThreshold: row.standThreshold,
-      far,
-    },
-  ];
+      far: row.far,
+    };
+  });
 }
 
 function grassOf(spec: IBiomeSpec): readonly IGrassRow[] {
-  return [spec.grass[0] as IGrassRow];
+  // Every row the file carries: alpine's four understorey covers came with PRD-892.
+  return spec.grass as readonly IGrassRow[];
 }
 
 function waterOf(world: WorldName, data: IBakedWorld): readonly IWaterRow[] {
@@ -703,15 +867,24 @@ function waterOf(world: WorldName, data: IBakedWorld): readonly IWaterRow[] {
     kind: "river" as const,
     width: river.width,
   }));
-  if (data.waterLevel !== null) return [...rivers, { kind: "ocean", level: data.waterLevel }];
+  // A coast floods its sea and its lagoon: an ocean level is not a reason to drop the lakes.
+  const ocean =
+    data.waterLevel === null ? [] : [{ kind: "ocean" as const, level: data.waterLevel }];
   return [
     ...rivers,
+    ...ocean,
     ...(data.lakes ?? []).map((lake) => ({ kind: "lake" as const, radius: lake.radius })),
   ];
 }
 
 describe("a biome's values", () => {
   const collisions = collisionClasses();
+
+  // The fence between a kit's row and the game's look: the forest streams a far field, the other
+  // four draw their trees inside the square.
+  it("streams the far field where the game says, whatever rows the kits carry", () => {
+    expect(FAR_FOREST_WORLDS).toEqual(["forest"]);
+  });
 
   it("are the table's, for every world", () => {
     for (const world of WORLDS) {
@@ -769,7 +942,8 @@ describe("a biome's values", () => {
         ground: expect.any(String),
         clearings: expect.any(Array),
       });
-    // Both views agree on shore cover. The desert kit has its own scrub art while the preview retains its bush pack.
+    // Two cover switches the ground material also draws by: the file's row and the look must agree,
+    // or the blades and the shader would disagree about the same shore and the same bush.
     for (const world of WORLDS) {
       const row = biomeSpec(world).grass[0];
       expect({ world, shoreGround: row?.shoreGround }).toEqual({
@@ -778,7 +952,7 @@ describe("a biome's values", () => {
       });
       expect({ world, scrubBush: row?.scrubBush }).toEqual({
         world,
-        scrubBush: world === "desert" ? true : BIOMES[world].scrubBush,
+        scrubBush: BIOMES[world].scrubBush,
       });
     }
   });
@@ -797,118 +971,11 @@ function biomeFile(world: WorldName) {
   );
 }
 
-// Copy-out kits carry their own surveyed sea, plant art and camera framing.
-const ALPINE_FAR: IFarRule = {
-  cell: 6,
-  spacing: [7, 14],
-  spacingAt: [150, 1200],
-  slope: [30, 44],
-  meadowSlope: [10, 22],
-  reach: 1800,
-  treelineJitter: 25,
-  stand: [0.18, 0.32],
-  seed: 466561,
-  impostor: 95,
-};
-const [coastalFoliage] = TABLE.coastal.foliage;
-const [alpineFoliage] = TABLE.alpine.foliage;
-const [alpineGrass] = TABLE.alpine.grass;
-if (!coastalFoliage || !alpineFoliage || !alpineGrass)
-  throw new Error("The copy-out pins need their shared foliage and grass rows.");
-
-const COPY_OUT: Partial<
-  Record<WorldName, Partial<Pick<IWorldRows, "seed" | "foliage" | "grass" | "water" | "spawn">>>
-> = {
-  coastal: {
-    foliage: [
-      {
-        ...coastalFoliage,
-        far: {
-          cell: 6,
-          spacing: [6.5, 13],
-          spacingAt: [150, 1500],
-          slope: [36, 46],
-          meadowSlope: [12, 24],
-          reach: 2300,
-          treelineJitter: 30,
-          stand: [0.26, 0.4],
-          seed: 466559,
-          impostor: 110,
-        },
-      },
-    ],
-    water: [
-      { kind: "ocean", level: 0 },
-      { kind: "lake", radius: 150 },
-    ],
-  },
-  alpine: {
-    foliage: [
-      { ...alpineFoliage, far: ALPINE_FAR },
-      {
-        ...alpineFoliage,
-        species: "scotspine",
-        density: 1400,
-        height: [0, 30],
-        slope: [0, 40],
-        spacing: [3.4, 6.4],
-        grassThreshold: 0.26,
-        standThreshold: 0.2,
-        far: { ...ALPINE_FAR, reach: 1900, seed: 466563, impostor: 105 },
-      },
-      {
-        ...alpineFoliage,
-        species: "blackspruce",
-        density: 900,
-        height: [0, 26],
-        slope: [0, 30],
-        spacing: [4.2, 8.2],
-        grassThreshold: 0.24,
-        standThreshold: 0.22,
-        far: { ...ALPINE_FAR, reach: 1500, seed: 466567, impostor: 85 },
-      },
-    ],
-    grass: [
-      alpineGrass,
-      {
-        ...alpineGrass,
-        species: "tussock",
-        density: 0.6,
-        spacing: 1.3,
-        bladeScale: 0.7,
-        drift: { ...alpineGrass.drift, band: [0.2, 0.5] },
-      },
-      {
-        ...alpineGrass,
-        species: "fireweed",
-        density: 0.22,
-        spacing: 1.6,
-        bladeScale: 0.8,
-        drift: { ...alpineGrass.drift, band: [0.3, 0.6] },
-      },
-      {
-        ...alpineGrass,
-        species: "blueberry",
-        density: 0.3,
-        spacing: 1.2,
-        bladeScale: 0.6,
-        drift: { ...alpineGrass.drift, band: [0.35, 0.65] },
-      },
-    ],
-  },
-  desert: { seed: 97, spawn: { ...TABLE.desert.spawn, focus: [120, 110] } },
-  tundra: { spawn: { ...TABLE.tundra.spawn, focus: [150, 205] } },
-};
-const COPY_OUT_EXTRA_SPECIES: Partial<Record<WorldName, readonly string[]>> = {
-  alpine: ["blackspruce", "blueberry", "fireweed", "rock", "scotspine", "tundragrass", "tussock"],
-  desert: ["pebble"],
-};
-
 describe("a biome's file", () => {
-  it("carries the pinned copy-out values", () => {
+  it("carries the same table", () => {
     for (const world of WORLDS) {
       const spec = biomeFile(world);
-      const expected = { ...TABLE[world], ...COPY_OUT[world] };
+      const expected = TABLE[world];
       expect({ world, bake: spec.bake }).toEqual({ world, bake: expected.bake });
       expect({
         world,
@@ -930,10 +997,7 @@ describe("a biome's file", () => {
       expect({ world, spawn: spec.spawn }).toEqual({ world, spawn: expected.spawn });
       expect({ world, species: [...spec.species].sort() }).toEqual({
         world,
-        species: [
-          ...Object.keys(expected.species),
-          ...(COPY_OUT_EXTRA_SPECIES[world] ?? []),
-        ].sort(),
+        species: Object.keys(expected.species).sort(),
       });
       expect({ world, aliases: spec.aliases }).toEqual({ world, aliases: expected.aliases });
     }

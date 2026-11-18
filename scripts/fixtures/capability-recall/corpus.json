@@ -979,6 +979,150 @@
       "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ (Lantern Vale, the adventure kit)",
       "expect": ["GrassField3D"],
       "reject": []
+    },
+    {
+      "id": "request.bushes-and-shrubs",
+      "query": "bushes and shrubs",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.cliffs-and-mountains",
+      "query": "cliffs and mountains",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeRock"],
+      "reject": []
+    },
+    {
+      "id": "request.dead-trees-fallen-logs-and-stumps",
+      "query": "dead trees, fallen logs and stumps",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.desert-cactus",
+      "query": "desert cactus",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["environmentElements"],
+      "reject": []
+    },
+    {
+      "id": "request.foliage-and-vegetation-models",
+      "query": "foliage and vegetation models",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.grass-tufts-and-clumps",
+      "query": "grass tufts and clumps",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.grass-flowers-and-ferns-as-ground-cover",
+      "query": "grass, flowers and ferns as ground cover",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.jungle-and-tropical-plants",
+      "query": "jungle and tropical plants",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["environmentElements"],
+      "reject": []
+    },
+    {
+      "id": "request.low-poly-tree-with-level-of-detail",
+      "query": "low poly tree with level of detail",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.nature-props-for-a-level",
+      "query": "nature props for a level",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["environmentElements"],
+      "reject": []
+    },
+    {
+      "id": "request.palm-trees",
+      "query": "palm trees",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.pine-oak-or-spruce-forest-trees",
+      "query": "pine, oak or spruce forest trees",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.realistic-textured-tree-model",
+      "query": "realistic textured tree model",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.rocks-and-boulders",
+      "query": "rocks and boulders",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeRock"],
+      "reject": []
+    },
+    {
+      "id": "request.scatter-rocks-debris-and-plants-over-terrain",
+      "query": "scatter rocks, debris and plants over terrain",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["ScatterField3D"],
+      "reject": []
+    },
+    {
+      "id": "request.street-trees-along-a-road",
+      "query": "street trees along a road",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.trees",
+      "query": "trees",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeVegetation"],
+      "reject": []
+    },
+    {
+      "id": "request.vegetation-for-a-biome",
+      "query": "vegetation for a biome",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["environmentElements"],
+      "reject": []
     }
   ]
 }

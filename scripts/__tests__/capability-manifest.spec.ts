@@ -917,6 +917,74 @@ describe("capability manifest generator", () => {
         ids: ["request.swim-water-volume"],
         owners: ["CharacterBody3D"],
       },
+      // The nature vocabulary an asset-store brief uses, authored on the bake package's own
+      // situations (PRD-892 nature discovery): each row is the request that vocabulary serves.
+      "bushes and shrubs": { ids: ["request.bushes-and-shrubs"], owners: ["bakeVegetation"] },
+      "cliffs and mountains": { ids: ["request.cliffs-and-mountains"], owners: ["bakeRock"] },
+      "dead trees, fallen logs and stumps": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.dead-trees-fallen-logs-and-stumps"],
+        owners: ["bakeVegetation"],
+      },
+      "desert cactus": { ids: ["request.desert-cactus"], owners: ["environmentElements"] },
+      "foliage and vegetation models": {
+        ids: ["request.foliage-and-vegetation-models"],
+        owners: ["bakeVegetation"],
+      },
+      "grass tufts and clumps": {
+        ids: ["request.grass-tufts-and-clumps"],
+        owners: ["bakeVegetation"],
+      },
+      "grass, flowers and ferns as ground cover": {
+        ids: ["request.grass-flowers-and-ferns-as-ground-cover"],
+        owners: ["bakeVegetation"],
+      },
+      "jungle and tropical plants": {
+        ids: ["request.jungle-and-tropical-plants"],
+        owners: ["environmentElements"],
+      },
+      "low poly tree with level of detail": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.low-poly-tree-with-level-of-detail"],
+        owners: ["bakeVegetation"],
+      },
+      "nature props for a level": {
+        ids: ["request.nature-props-for-a-level"],
+        owners: ["environmentElements"],
+      },
+      "palm trees": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.palm-trees"],
+        owners: ["bakeVegetation"],
+      },
+      "pine, oak or spruce forest trees": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.pine-oak-or-spruce-forest-trees"],
+        owners: ["bakeVegetation"],
+      },
+      "realistic textured tree model": {
+        ids: ["request.realistic-textured-tree-model"],
+        owners: ["bakeVegetation"],
+      },
+      "rocks and boulders": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.rocks-and-boulders"],
+        owners: ["bakeRock"],
+      },
+      "scatter rocks, debris and plants over terrain": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.scatter-rocks-debris-and-plants-over-terrain"],
+        owners: ["ScatterField3D"],
+      },
+      "street trees along a road": {
+        ids: ["request.street-trees-along-a-road"],
+        owners: ["bakeVegetation"],
+      },
+      trees: { baselineAlreadyRecalled: true, ids: ["request.trees"], owners: ["bakeVegetation"] },
+      "vegetation for a biome": {
+        ids: ["request.vegetation-for-a-biome"],
+        owners: ["environmentElements"],
+      },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());

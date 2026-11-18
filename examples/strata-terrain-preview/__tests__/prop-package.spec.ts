@@ -12,7 +12,10 @@
  *   - the sum of the drawn positions (x, y, z, each rounded to a millimetre),
  *   - the placement count per streamed bucket.
  *
- * The table pins the shipped bakes by species, position to a millimetre and streamed bucket.
+ * The table is byte for byte the one the deleted compile was held to: equal numbers mean every prop
+ * keeps its species, its spot to a millimetre and its bucket. It was re-measured once, for
+ * PRD-892's shared stack (alpine, desert and tundra) and the coast's shore stones (coastal); the
+ * forest's numbers are the ones the deleted compile produced.
  */
 import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
@@ -158,20 +161,20 @@ const GOLDEN: Readonly<Record<WorldName, IWorldPin>> = {
     },
   },
   coastal: {
-    buckets: { "horizon:true": 3200, "local:false": 186474, "local:true": 1710 },
-    placements: 191384,
+    buckets: { "horizon:true": 3200, "local:false": 218053, "local:true": 1761 },
+    placements: 223014,
     species: {
-      boulder: { count: 277, x: -10410.578, y: 6751.208, z: -1911.664 },
-      bush: { count: 1208, x: -95253.338, y: 38712.639, z: -18049.278 },
-      fern: { count: 7460, x: -567043.107, y: 232386.061, z: -95524.884 },
-      grass: { count: 130753, x: -1271056.661, y: 2681223.049, z: 2774327.694 },
-      litter: { count: 2095, x: -103728.358, y: 55852.834, z: -54797.257 },
-      mountain: { count: 75, x: 2787.134, y: 975.457, z: -3652.819 },
-      poppy: { count: 1437, x: 24170.299, y: 21339.843, z: 99970.323 },
-      riverrock: { count: 150, x: 17687.249, y: 690.025, z: -1477.598 },
-      sapling: { count: 5543, x: -411668.08, y: 178323.983, z: -70128.814 },
-      scrub: { count: 39186, x: -389514.98, y: 805355.841, z: 863911.575 },
-      spruce: { count: 3200, x: -231785.166, y: 100306.165, z: -46249.95 },
+      boulder: { count: 256, x: -12816.993, y: 6874.608, z: -3797.703 },
+      bush: { count: 1298, x: -88142.013, y: 39173.522, z: -20844.604 },
+      fern: { count: 7584, x: -520105.795, y: 226447.443, z: -122560.718 },
+      grass: { count: 154549, x: 931292.232, y: 2768297.52, z: 3745775.44 },
+      litter: { count: 2304, x: -84540.865, y: 56292.314, z: -60782.805 },
+      mountain: { count: 60, x: 716.67, y: 829.065, z: -1178.71 },
+      poppy: { count: 1856, x: 49591.745, y: 24377.571, z: 100783.89 },
+      riverrock: { count: 147, x: 18084.761, y: 611.855, z: -985.658 },
+      sapling: { count: 5549, x: -367919.529, y: 172142.434, z: -87177.815 },
+      scrub: { count: 46211, x: 237944.791, y: 830869.3, z: 1124792.03 },
+      spruce: { count: 3200, x: -210069.927, y: 96944.195, z: -56852.432 },
     },
   },
   alpine: {

@@ -11,6 +11,44 @@ const script = fileURLToPath(new URL("../scripts/stage-terrain-kits.mjs", import
 
 const terrain = fileURLToPath(new URL("../../terrain", import.meta.url));
 const KITS = ["alpine", "coastal", "desert", "tundra"];
+/** The file the cook copies into a world's `sky.hdr`, as the kit names it. */
+const SKY = "hdri/kloofendal_48d_partly_cloudy_1k.hdr";
+
+/**
+ * A tree holding this script beside real kit sources: the terrain package is a fake `kit.js` whose
+ * only exports are the ones the script reads, and the asset table is a copy the test may edit.
+ */
+async function fixture(prefix: string, sky: string): Promise<string> {
+  const root = await makeTempDir(prefix);
+  const copy = path.join(root, "create-threenative", "scripts", "stage-terrain-kits.mjs");
+  await mkdir(path.dirname(copy), { recursive: true });
+  await mkdir(path.join(root, "terrain", "dist"), { recursive: true });
+  await mkdir(path.join(root, "terrain", "starter-assets"), { recursive: true });
+  await copyFile(script, copy);
+  await writeFile(
+    path.join(root, "terrain", "dist", "kit.js"),
+    `export const DEFAULT_SKY_HDRI = ${JSON.stringify(sky)};\n` +
+      `export const starterAssetsDir = async () => ${JSON.stringify(path.join(root, "terrain", "starter-assets"))};\n`,
+  );
+  for (const kit of KITS) {
+    const dir = path.join(root, "terrain", "starter", kit);
+    const real = path.join(terrain, "starter", kit);
+    await mkdir(dir, { recursive: true });
+    for (const file of await readdir(real))
+      await symlink(path.join(real, file), path.join(dir, file));
+  }
+  await copyFile(
+    path.join(terrain, "starter-assets", "credits.json"),
+    path.join(root, "terrain", "starter-assets", "credits.json"),
+  );
+  return root;
+}
+
+const stagedCredits = (root: string): Promise<string> =>
+  readFile(
+    path.join(root, "create-threenative", "template-assets", "terrain", "alpine", "credits.json"),
+    "utf8",
+  );
 
 describe("stage-terrain-kits", () => {
   it("names the missing terrain build instead of a module resolution error (audit STRATA-08)", async () => {
@@ -28,46 +66,41 @@ describe("stage-terrain-kits", () => {
     expect(failure?.stderr).toContain("pnpm --filter @threenative/terrain build");
   });
 
-  it("reads the sky HDRI from a bake call in any layout (audit STRATA-09)", async () => {
-    const root = await makeTempDir("stage-kits-format-");
-    const copy = path.join(root, "create-threenative", "scripts", "stage-terrain-kits.mjs");
-    await mkdir(path.dirname(copy), { recursive: true });
-    await mkdir(path.join(root, "terrain", "dist"), { recursive: true });
-    await copyFile(script, copy);
+  it("credits the sky the cook copies, under the cook's own name (audit STRATA-09)", async () => {
+    // The kits' bakes name no sky: the cook copies `DEFAULT_SKY_HDRI` into `sky.hdr` (PRD-892), so
+    // the credits follow that constant instead of parsing a call the kits no longer make.
+    const root = await fixture("stage-kits-sky-", SKY);
+    await run(process.execPath, [
+      path.join(root, "create-threenative", "scripts", "stage-terrain-kits.mjs"),
+    ]);
+    const credits = JSON.parse(await stagedCredits(root)) as {
+      files: { file: string; license?: string; sha256?: string }[];
+    };
+    const record = credits.files.find((entry) => entry.file === SKY);
+    // The sky record carries its own provenance; no set is copied with it.
+    expect(record).toMatchObject({
+      asset: expect.any(String),
+      license: "CC0",
+      sha256: expect.any(String),
+    });
+  });
+
+  it("fails closed when the asset table does not record that sky (audit STRATA-09)", async () => {
+    const root = await fixture("stage-kits-nosky-", SKY);
+    const table = JSON.parse(
+      await readFile(path.join(root, "terrain", "starter-assets", "credits.json"), "utf8"),
+    ) as { files: { file: string }[] };
     await writeFile(
-      path.join(root, "terrain", "dist", "kit.js"),
-      `export const starterAssetsDir = async () => ${JSON.stringify(path.join(terrain, "starter-assets"))};\n`,
+      path.join(root, "terrain", "starter-assets", "credits.json"),
+      JSON.stringify({ ...table, files: table.files.filter((entry) => entry.file !== SKY) }),
     );
-    for (const kit of KITS) {
-      const dir = path.join(root, "terrain", "starter", kit);
-      const real = path.join(terrain, "starter", kit);
-      await mkdir(dir, { recursive: true });
-      for (const file of (await readdir(real)).filter((name) => name !== "bake.mjs"))
-        await symlink(path.join(real, file), path.join(dir, file));
-      // The same call as the real bake, with the sky on the call line and no trailing comma.
-      const bake = (await readFile(path.join(real, "bake.mjs"), "utf8")).replace(
-        /\{\n\s*(sky: "[^"]+"),\n/u,
-        "{ $1 ",
-      );
-      expect(bake).toMatch(/\{ sky: "[^"]+" /u);
-      await writeFile(path.join(dir, "bake.mjs"), bake);
-    }
-    await run(process.execPath, [copy]);
-    const credits = JSON.parse(
-      await readFile(
-        path.join(
-          root,
-          "create-threenative",
-          "template-assets",
-          "terrain",
-          "alpine",
-          "credits.json",
-        ),
-        "utf8",
-      ),
+    const failure = await run(process.execPath, [
+      path.join(root, "create-threenative", "scripts", "stage-terrain-kits.mjs"),
+    ]).then(
+      () => undefined,
+      (error: { stderr: string }) => error,
     );
-    expect(credits.files.some((entry: { file: string }) => entry.file.startsWith("hdri/"))).toBe(
-      true,
-    );
+    expect(failure?.stderr).toContain("TN_TERRAIN_STAGE_METADATA");
+    expect(failure?.stderr).toContain(SKY);
   });
 });
