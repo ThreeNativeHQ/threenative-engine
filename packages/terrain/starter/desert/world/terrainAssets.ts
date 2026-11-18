@@ -29,15 +29,18 @@ export interface IGroundMaps {
 
 /** The ground's layers, and the file each one draws with. */
 export const GROUND_MAPS: Record<LayerKey, IGroundMaps> = {
-  // The mesa look draws its flats with the `grass` slot: Poly Haven's red sand, the Colorado
-  // Plateau's iron-red ground. Gravel pavement is the dirt, the orange bedded cliff the rock.
+  // The mesa look draws its flats with the `grass` slot: Poly Haven's aerial beach, 30 m of sand
+  // the wind has rippled. Its colour is a plain grey-tan the biome's `grassTint` turns red; its
+  // normal map is the ripples. The red_sand scan it replaces was one flat tone with no relief, so
+  // the dunes drew as blurred paint at every resolution.
+  // Gravel pavement is the dirt: Poly Haven's rocky trail, red-brown grit strewn with pebbles.
   dirt: {
-    diffuse: "river_small_rocks/river_small_rocks_diff_512.jpg",
-    normal: "river_small_rocks/river_small_rocks_nor_gl_512.jpg",
+    diffuse: "rocky_trail_02/rocky_trail_02_diff_1k.jpg",
+    normal: "rocky_trail_02/rocky_trail_02_nor_gl_1k.jpg",
   },
   grass: {
-    diffuse: "red_sand/red_sand_diff_1k.jpg",
-    normal: "red_sand/red_sand_nor_gl_1k.jpg",
+    diffuse: "aerial_beach_01/aerial_beach_01_diff_2k.jpg",
+    normal: "aerial_beach_01/aerial_beach_01_nor_gl_2k.jpg",
   },
   moss: {
     diffuse: "cliff_side/cliff_side_diff_1k.jpg",
@@ -47,17 +50,18 @@ export const GROUND_MAPS: Record<LayerKey, IGroundMaps> = {
     diffuse: "cliff_side/cliff_side_diff_1k.jpg",
     normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
   },
-  sand: { diffuse: "red_sand/red_sand_diff_1k.jpg" },
+  sand: { diffuse: "aerial_beach_01/aerial_beach_01_diff_2k.jpg" },
   snow: { diffuse: "snow_02/snow_02_diff_1k.jpg" },
 };
 
 /** Metres one ground tile spans, per layer. The size of a pattern, not of the file. */
 export const GROUND_TILE: Record<LayerKey, number> = {
-  dirt: 3.4,
-  grass: 2.6,
+  dirt: 2.4,
+  // The scan spans 30 m; at 7 m its ripples stand 12-25 cm apart, as wind ripples do.
+  grass: 7,
   moss: 3.6,
   rock: 3.8,
-  sand: 3.2,
+  sand: 7,
   snow: 12,
 };
 

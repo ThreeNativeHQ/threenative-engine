@@ -498,7 +498,14 @@ export async function createRockGround(
     look.crestRock ? map(assets, paths.snow.diffuse, false) : undefined,
   ]);
   return {
-    apply(material: MeshStandardNodeMaterial): void {
+    /**
+     * `vertexMean` is the mean linear vertex colour of a material drawn with `vertexColors`: the
+     * renderer multiplies the colour by it after this blend, so the ground divides it back out.
+     */
+    apply(
+      material: MeshStandardNodeMaterial,
+      vertexMean?: readonly [number, number, number],
+    ): void {
       if (!grass || !material.colorNode) return;
       // World-space distance across the side gives a half-metre, noise-broken contact falloff.
       const radial = positionWorld.y.sub(under.node).div(length(normalWorldGeometry.xz).max(0.25));
@@ -521,6 +528,7 @@ export async function createRockGround(
           ).snow ?? float(0);
         contact = mix(contact, groundLayer(snow, "snow").rgb.mul(vec3(...biome.snowTint)), cover);
       }
+      if (vertexMean) contact = contact.div(vec3(...vertexMean));
       material.colorNode = mix(material.colorNode as Node<"vec3">, contact, soil);
       material.aoNode = ((material.aoNode as Node<"float"> | null) ?? float(1)).mul(
         mix(1, 0.86, share),

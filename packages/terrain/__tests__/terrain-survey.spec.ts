@@ -172,6 +172,44 @@ describe("mapterhorn tiles", () => {
     );
   });
 
+  it("waits for the remaining tile reads before returning a survey failure", async () => {
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", await makeTempDir("tn-terrain-pending-"));
+    let releaseTile = () => {};
+    const pendingTile = new Promise<Response>((resolve) => {
+      releaseTile = () => resolve(new Response(null, { status: 404 }));
+    });
+    let notifyFetch = () => {};
+    const siblingStarted = new Promise<void>((resolve) => {
+      notifyFetch = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValueOnce(new Error("fixture tile failure"))
+        .mockImplementation(() => {
+          notifyFetch();
+          return pendingTile;
+        }),
+    );
+    const failed = vi.fn();
+    const survey = surveyHeights(
+      { ...credit, name: "Tile seam", lat: 0, lon: 0, extentMeters: 90 },
+      129,
+    ).catch(failed);
+    try {
+      await siblingStarted;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(failed).not.toHaveBeenCalled();
+    } finally {
+      releaseTile();
+      await survey;
+    }
+    expect(failed).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("fixture tile failure") }),
+    );
+  });
+
   it("fails closed naming the tile when a cached file is not a tile", async () => {
     const cache = await makeTempDir("tn-terrain-bad-");
     await mkdir(join(cache, "16", "13542"), { recursive: true });

@@ -1,6 +1,6 @@
 {
   "fir": {
-    "near": "fir_tree_01/fir-b-lod1.glb",
+    "near": "../../assets/__tests__/fixtures/fir/fir-b-lod1.glb",
     "maxDistance": 600,
     "bounds": {
       "min": [-2.869, 0, -3.619],
@@ -21,7 +21,7 @@
     }
   },
   "fir-c": {
-    "near": "fir_tree_01/fir-c-lod1.glb",
+    "near": "../../assets/__tests__/fixtures/fir/fir-c-lod1.glb",
     "maxDistance": 600,
     "bounds": {
       "min": [-2.727, 0, -3.498],

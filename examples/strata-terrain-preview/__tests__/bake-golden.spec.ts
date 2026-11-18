@@ -32,7 +32,7 @@ const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
 /** The two worlds that share `baked.json`; the other three have their own module-sized file. */
 const DRAWN = new Set<string>(["forest", "coastal"]);
 
-/** The recipe's own output: the Phase 1 numbers, with the container digest re-measured at AC-2. */
+/** The baked output for the committed recipes. */
 const GOLDEN = {
   forest: {
     placements: "c8f5d0439e240c693f1f5d47f0b20923d5891031d5589e2ec7da3093e745296e",
@@ -92,15 +92,15 @@ const GOLDEN = {
     manifest: "927b5daf593923d63bb216968baf66d2a735269801915c6395aa84e60c1b4f86",
   },
   desert: {
-    placements: "8c66d03b8aa1bd5e90a3fb8884d15a0a65c8356ae00f15042ce8ac3f040d45b8",
+    placements: "7c6b238f08bb857b1ac1fdd5dd0875fe1cc65b806d398e5ee0837849822b63ab",
     counts: {
-      boulder: 248,
-      bush: 27,
-      grass: 6559,
-      reveal: 158,
+      boulder: 247,
+      bush: 40,
+      grass: 6623,
+      reveal: 162,
       sapling: 161,
-      scrub: 909,
-      volcanic: 229,
+      scrub: 1305,
+      volcanic: 232,
     },
     heights: "aa401a0bd80952f20f20e3f2fe5f7b81820d4b2ce2b1b6bc4116620b28188f02",
     manifest: "8d979f26cf4a02dd6c46d2a5c67e7aae7c50cab0920c1c9673039b7d43472872",

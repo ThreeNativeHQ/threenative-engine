@@ -181,7 +181,13 @@ async function stitch(survey: ISurveyRow, z: number) {
       );
     }
   }
-  await Promise.all(tiles);
+  try {
+    await Promise.all(tiles);
+  } catch (error) {
+    // A sibling can still be writing the tile cache when the first tile fails.
+    await Promise.allSettled(tiles);
+    throw error;
+  }
   if (missing) return undefined;
   // The footprint inside the stitched raster, in pixels, so the crop is the row's own square.
   return {

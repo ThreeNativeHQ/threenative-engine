@@ -153,7 +153,6 @@
       "shrub_04",
       "tree_stump_01",
       "weed_plant_02",
-      "alpine_flora",
       "needle-atlas.png",
       "needle-surface.png",
       "hdri/kloofendal_48d_partly_cloudy_2k.hdr"
@@ -163,6 +162,112 @@
       "datum": 1969,
       "seed": 1,
       "layers": []
+    },
+    "arbor": {
+      "alpine_flora/spruce-a": {
+        "preset": "spruce",
+        "seed": 1,
+        "lods": {
+          "1": "-near",
+          "2": "-mid"
+        },
+        "form": {
+          "levels": [
+            {
+              "kids": 104
+            },
+            {
+              "len": 0.25
+            }
+          ],
+          "leaves": [
+            {
+              "count": 56,
+              "size": [0.62, 0.38]
+            }
+          ]
+        }
+      },
+      "alpine_flora/spruce-b": {
+        "preset": "spruce",
+        "seed": 2,
+        "lods": {
+          "1": "-near",
+          "2": "-mid"
+        },
+        "form": {
+          "levels": [
+            {
+              "kids": 104
+            },
+            {
+              "len": 0.25
+            }
+          ],
+          "leaves": [
+            {
+              "count": 56,
+              "size": [0.62, 0.38]
+            }
+          ]
+        }
+      },
+      "alpine_flora/spruce-c": {
+        "preset": "spruce",
+        "seed": 3,
+        "lods": {
+          "1": "-near",
+          "2": "-mid"
+        },
+        "form": {
+          "levels": [
+            {
+              "kids": 104
+            },
+            {
+              "len": 0.25
+            }
+          ],
+          "leaves": [
+            {
+              "count": 56,
+              "size": [0.62, 0.38]
+            }
+          ]
+        }
+      },
+      "alpine_flora/blackspruce-a": {
+        "preset": "blackspruce",
+        "seed": 1,
+        "lods": {
+          "1": "-near",
+          "2": "-mid"
+        },
+        "form": {
+          "leaves": [
+            {
+              "count": 22,
+              "size": [0.46, 0.33]
+            }
+          ]
+        }
+      },
+      "alpine_flora/blackspruce-b": {
+        "preset": "blackspruce",
+        "seed": 2,
+        "lods": {
+          "1": "-near",
+          "2": "-mid"
+        },
+        "form": {
+          "leaves": [
+            {
+              "count": 22,
+              "size": [0.46, 0.33]
+            }
+          ]
+        }
+      }
     }
   }
 }

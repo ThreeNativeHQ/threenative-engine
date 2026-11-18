@@ -247,6 +247,10 @@ export function validateRegistry(registry) {
         errors.push(`${label}: tolerance.${metric} must be a non-negative finite number`);
       }
     }
+    const channelRounding = entry?.tolerance?.channelRounding;
+    if (channelRounding !== undefined && channelRounding !== 0 && channelRounding !== 1) {
+      errors.push(`${label}: tolerance.channelRounding must be 0 or 1`);
+    }
     if (
       entry?.temporal !== undefined
       && !NATIVE_TEMPORAL_LABELS.includes(entry.temporal?.capture ?? "next")
@@ -2698,7 +2702,11 @@ function applyUpstreamReference(test, result, referenceArg) {
     return;
   }
   result.browser.engine = "threenative";
-  result.metrics = compareCaptures(readFileSync(reference), readFileSync(result.browser.screenshot));
+  result.metrics = compareCaptures(
+    readFileSync(reference),
+    readFileSync(result.browser.screenshot),
+    test.tolerance.channelRounding,
+  );
   if (
     result.metrics.pixelMismatchRatio > test.tolerance.pixelMismatchRatio ||
     result.metrics.perceptualDeltaE > test.tolerance.perceptualDeltaE
@@ -2727,6 +2735,7 @@ function applyReferenceAndMetrics(test, result, reference) {
     result.metrics = compareCaptures(
       readFileSync(reference),
       readFileSync(result.native.screenshot),
+      test.tolerance.channelRounding,
     );
     if (test.id === "30-screen-space-text") {
       result.glyphRaster = compareScreenSpaceGlyphs(

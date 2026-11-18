@@ -613,7 +613,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         },
         bladeScale: 0.95,
         bladeJitter: 0.5,
-        scrubChance: 0.55,
+        scrubChance: 0.8,
         scrubScale: 0.8,
         scrubJitter: 0.6,
         scrubBush: true,

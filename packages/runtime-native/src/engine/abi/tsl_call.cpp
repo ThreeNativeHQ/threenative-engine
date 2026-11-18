@@ -849,7 +849,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             throw std::runtime_error("TN_NATIVE_TEXTURE_DEPTH_TYPE: depth(layer) needs a texture node over a DataArrayTexture");
         auto node = std::make_shared<g::NodeData>(*source);
         const auto uv = source->args[0];
-        node->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::float_(arg(0))});
+        node->args[0] = g::vec3({g::swizzle(uv, "xy"), g::float_(arg(0))});
         return node;
     }
     // TextureNode.level(n): the same texture read at an explicit mip level.
@@ -1045,8 +1045,17 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture && source->kind != g::Kind::Reflector)
             throw std::runtime_error("sample requires a texture node");
         auto sampled = std::make_shared<g::NodeData>(*source);
-        if (source->kind == g::Kind::RenderTexture) sampled->args[1] = arg(0);
-        else sampled->args[0] = arg(0);
+        const auto uv = arg(0);
+        const auto& coordinate = source->args[0];
+        if (source->kind == g::Kind::RenderTexture) sampled->args[1] = uv;
+        // depth(layer) joins UV and layer. Reuse only the layer so the discarded UV never lowers.
+        else if (const auto texture = source->textureBinding ? source->textureObject() : nullptr;
+                 texture && static_cast<const engine::Texture*>(texture.get())->array &&
+                 coordinate->kind == g::Kind::Join && coordinate->type == Type::vec(3) &&
+                 coordinate->args.size() == 2 && coordinate->args[1]->type == Type::f32() &&
+                 uv->type != Type::vec(3))
+            sampled->args[0] = g::vec3({g::swizzle(uv, "xy"), coordinate->args[1]});
+        else sampled->args[0] = uv;
         return sampled;
     }
     if (name == "float" || name == "int" || name == "uint") {

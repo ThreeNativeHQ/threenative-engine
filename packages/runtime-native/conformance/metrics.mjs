@@ -182,7 +182,11 @@ export function compareDirectories({ reference, candidate, registry }) {
       continue;
     }
     try {
-      const metrics = compareCaptures(readFileSync(referencePath), readFileSync(candidatePath));
+      const metrics = compareCaptures(
+        readFileSync(referencePath),
+        readFileSync(candidatePath),
+        test.tolerance.channelRounding,
+      );
       const pass =
         metrics.pixelMismatchRatio <= test.tolerance.pixelMismatchRatio &&
         metrics.perceptualDeltaE <= test.tolerance.perceptualDeltaE;

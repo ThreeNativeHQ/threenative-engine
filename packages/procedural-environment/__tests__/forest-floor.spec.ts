@@ -123,7 +123,7 @@ describe("the forest floor bakes from one nature package", () => {
     );
     await expect(bakeVegetation({ out, preset: "twiggs" })).rejects.toThrow(/nearest|Nearest/u);
     await expect(bakeVegetation({ out, preset: "log", form: { height: [1, 2] } })).rejects.toThrow(
-      /form and leafImage patch an Arbor preset/u,
+      /form, leafImage and the bark images patch an Arbor preset/u,
     );
     await expect(bakeVegetation({ out, preset: "reeds", seed: 1.5 })).rejects.toThrow(
       /seed must be an integer/u,

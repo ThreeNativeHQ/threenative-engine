@@ -1381,13 +1381,16 @@ describe("cookTerrainWorld", () => {
   it("derives far levels past the kit fir's 55k-triangle mid, each inside maxDistance (PRD-762)", async () => {
     // The forest kit's fir stops at a 55k mid held to 600 m: 62.6M triangles a frame, 122 ms GPU on
     // an Iris Xe. The cook must keep descending past the coarsest authored level.
-    const assets = path.resolve("packages/terrain/starter-assets/fir_tree_01");
+    // The near level lives with the tests, because no kit bakes it and the shipped pack is
+    // size-capped; the authored mid level is the pack's.
+    const firNear = path.resolve("packages/assets/__tests__/fixtures/fir");
+    const firMid = path.resolve("packages/terrain/starter-assets/fir_tree_01");
     const result = await cookTerrainWorld({
       state: evaluatedTerrain(),
       species: {
         fir: {
-          glb: path.join(assets, "fir-b-lod1.glb"),
-          lods: [{ distance: 45, glb: path.join(assets, "fir-b-lod2.glb") }],
+          glb: path.join(firNear, "fir-b-lod1.glb"),
+          lods: [{ distance: 45, glb: path.join(firMid, "fir-b-lod2.glb") }],
           maxDistance: 600,
         },
       },
@@ -1433,13 +1436,16 @@ describe("cookTerrainWorld", () => {
   it("derives no far level past the species' impostor distance", async () => {
     // A level past the impostor never draws, and the world package refuses an impostor that a
     // level still follows (an Arbor oak's ladder ran to 579 m against a 400 m impostor).
-    const assets = path.resolve("packages/terrain/starter-assets/fir_tree_01");
+    // The near level lives with the tests, because no kit bakes it and the shipped pack is
+    // size-capped; the authored mid level is the pack's.
+    const firNear = path.resolve("packages/assets/__tests__/fixtures/fir");
+    const firMid = path.resolve("packages/terrain/starter-assets/fir_tree_01");
     const result = await cookTerrainWorld({
       state: evaluatedTerrain(),
       species: {
         fir: {
-          glb: path.join(assets, "fir-b-lod1.glb"),
-          lods: [{ distance: 45, glb: path.join(assets, "fir-b-lod2.glb") }],
+          glb: path.join(firNear, "fir-b-lod1.glb"),
+          lods: [{ distance: 45, glb: path.join(firMid, "fir-b-lod2.glb") }],
           maxDistance: 600,
           impostorDistance: 100,
         },

@@ -2909,6 +2909,45 @@ void alphaTest() {
     CHECK(worst <= 2 && off < 0.001);
 }
 
+void alphaToCoverageMsaa() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    const auto geometry = plane(4, 2);
+    shader::StandardMaterial material;
+    material.color = {0, 1, 0};
+    material.opacity = 0.5f;
+    DrawItem item;
+    item.key = item.id = 1;
+    item.kind = MaterialKind::Basic;
+    item.positions = &geometry->positions;
+    item.indices = &geometry->indices;
+    item.material = &material;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const auto draw = [&](uint32_t samples, bool coverage) {
+        renderer.setSampleCount(samples);
+        material.alphaToCoverage = coverage;
+        renderer.render(std::span<const DrawItem>(&item, 1), wideOrtho(), LightState{}, {1, 0, 0, 1});
+        return read(renderer, events);
+    };
+    const auto full = draw(4, false);
+    const auto covered = draw(4, true);
+    const auto single = draw(1, true);
+    CHECK(full.size() == 16 * 16 * 4 && covered.size() == full.size() && single.size() == full.size());
+    if (full.size() != 16 * 16 * 4 || covered.size() != full.size() || single.size() != full.size()) return;
+    const size_t centre = (8 * 16 + 8) * 4;
+    CHECK(full[centre] < 3 && full[centre + 1] > 250);
+    CHECK(covered[centre] > 30 && covered[centre] < 240);
+    CHECK(covered[centre + 1] > 30 && covered[centre + 1] < 240);
+    // The single-sampled tile still writes every pixel, with the authored alpha.
+    CHECK(single[centre] < 3 && single[centre + 1] > 30);
+    CHECK(single[centre + 3] >= 127 && single[centre + 3] <= 128);
+}
+
 void alphaHashCoverage() {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
@@ -3916,6 +3955,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"physical_reference", physicalReference},
              {"alpha_transparency", alphaTransparency},
              {"alpha_test", alphaTest},
+             {"alpha_to_coverage_msaa", alphaToCoverageMsaa},
              {"alpha_hash_coverage", alphaHashCoverage},
              {"alpha_hash_shadow_coverage", alphaHashShadowCoverage},
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit},

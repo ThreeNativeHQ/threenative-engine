@@ -153,14 +153,16 @@ for (const [asset, heights] of Object.entries({
 // blackbrush, Utah yucca, desert marigold and bunchgrass between sandstone buttes, with no saguaro,
 // joshua tree or acacia. The plants are `@threenative/procedural-environment` bakes
 // (`starter-assets/desert_flora/`): `olive` draws the gnarled grey juniper, `creosote` the sage,
-// `thornbush` the blackbrush, `agave` the yucca. The stones are the kit's Poly Haven boulder scans.
+// `thornbush` the blackbrush, `agave` the yucca. The stones are Outcrop sandstone bakes.
 // Each row is [GLB, metres]; a second GLB is the far level. These rows replace the generator's own
 // procedural parts for the same ids, so the ordered stream's placements keep their positions.
 const DESERT_FLORA: Record<string, readonly (readonly [string, number, string?])[]> = {
+  // Juniper and saguaro share the tree slot, so cacti stand among the juniper on the flats.
   sapling: [
     ["desert_flora/juniper-a.glb", 3.6, "desert_flora/juniper-a-far.glb"],
+    ["desert_flora/saguaro-a.glb", 5.5, "desert_flora/saguaro-a-far.glb"],
     ["desert_flora/juniper-b.glb", 4.6, "desert_flora/juniper-b-far.glb"],
-    ["desert_flora/juniper-a.glb", 2.6, "desert_flora/juniper-a-far.glb"],
+    ["desert_flora/saguaro-b.glb", 3.8, "desert_flora/saguaro-b-far.glb"],
   ],
   // The ordered stream's cover is mostly `grass` and `scrub`, with a `bush` only every fiftieth
   // cell, so the shrubs that cover the plateau ride `scrub` as well as `bush`.
@@ -174,10 +176,14 @@ const DESERT_FLORA: Record<string, readonly (readonly [string, number, string?])
     ["desert_flora/sage.glb", 0.9],
     ["desert_flora/blackbrush.glb", 0.8],
     ["desert_flora/yucca.glb", 0.55],
+    ["desert_flora/creosote-b.glb", 1.1],
+    ["desert_flora/thornbush-b.glb", 0.7],
+    ["desert_flora/agave-b.glb", 0.6],
   ],
   bush: [
     ["desert_flora/sage.glb", 1.3],
     ["desert_flora/blackbrush.glb", 1.1],
+    ["desert_flora/creosote-b.glb", 1.6],
   ],
   // Dead juniper wood and twigs on the sand (`render/ground/debris.ts`), by their longest side.
   deadfall: [
@@ -186,34 +192,42 @@ const DESERT_FLORA: Record<string, readonly (readonly [string, number, string?])
     ["desert_flora/twig.glb", 0.35],
     ["desert_flora/branch-b.glb", 2.2],
   ],
-  // Stone, by its longest side: the kit's Poly Haven `boulder_01` scan at every size, as the forest
-  // kit does (the untextured `rocks/` GLBs drew pale grey and black facets under the desert sun).
-  // A second GLB is the scan's own lighter level past `LOD_BANDS.mid`.
+  // Stone, by its longest side: weathered red-brown sandstone from Outcrop (`bake-rocks.mjs`,
+  // `starter-assets/desert_rocks/`): chipped, jointed blocks darker than the sand they lie on. A
+  // second GLB is the half-density level past `LOD_BANDS.mid`.
   boulder: [
-    ["boulder_01/boulder-near.glb", 2.1, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 3.4, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 1.6, "boulder_01/boulder-mid.glb"],
+    ["desert_rocks/boulder-a.glb", 1.5, "desert_rocks/boulder-a-far.glb"],
+    ["desert_rocks/block-a.glb", 2.2, "desert_rocks/block-a-far.glb"],
+    ["desert_rocks/boulder-b.glb", 1.1, "desert_rocks/boulder-b-far.glb"],
   ],
-  riverrock: [["boulder_01/boulder-mid.glb", 0.8]],
-  scree: [["boulder_01/boulder-near.glb", 1.2, "boulder_01/boulder-mid.glb"]],
-  // Gravel and pebbles: the lightest scan level, 0.1-0.3 m across at their placed scale.
+  riverrock: [["desert_rocks/cobble.glb", 0.8]],
+  scree: [["desert_rocks/boulder-c.glb", 1.2, "desert_rocks/boulder-c-far.glb"]],
+  // Gravel and pebbles, 0.1-0.3 m across at their placed scale: a few hundred triangles each.
   pebble: [
-    ["boulder_01/boulder-mid.glb", 1],
-    ["boulder_01/boulder-mid.glb", 0.7],
-    ["boulder_01/boulder-mid.glb", 1.3],
+    ["desert_rocks/pebble.glb", 1],
+    ["desert_rocks/pebble-b.glb", 0.7],
+    ["desert_rocks/cobble.glb", 1.3],
   ],
   // Fallen blocks: the bake's foot and rim generators place these at about their row size, so a
-  // 10 m row drew sand-dusted domes taller than the player's view; real blocks under a butte are
-  // 2-6 m (the debris layer scales them down further for talus).
+  // 10 m row drew domes taller than the player's view; real blocks under a butte are 2-4 m (the
+  // debris layer scales them down further for talus).
   volcanic: [
-    ["boulder_01/boulder-near.glb", 4, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 3, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 5, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 3.5, "boulder_01/boulder-mid.glb"],
+    ["desert_rocks/block-a.glb", 2.6, "desert_rocks/block-a-far.glb"],
+    ["desert_rocks/boulder-c.glb", 2.2, "desert_rocks/boulder-c-far.glb"],
+    ["desert_rocks/crag-b.glb", 2.2, "desert_rocks/crag-b-far.glb"],
+    ["desert_rocks/boulder-a.glb", 2.4, "desert_rocks/boulder-a-far.glb"],
   ],
+  // The larger outcrops a slope reveals: two jointed crags standing out of the sand.
+  // The bake stands them at about four times their row, so these are 6 m crags, not 20 m domes.
   reveal: [
-    ["boulder_01/boulder-near.glb", 5, "boulder_01/boulder-mid.glb"],
-    ["boulder_01/boulder-near.glb", 6, "boulder_01/boulder-mid.glb"],
+    ["desert_rocks/crag-b.glb", 1.6, "desert_rocks/crag-b-far.glb"],
+    ["desert_rocks/crag-a.glb", 1.4, "desert_rocks/crag-a-far.glb"],
+  ],
+  // The bake's exposed-rock rows (a 2-20 m wall at row size 24 m) drew the temperate kit's boulder
+  // scan as smooth domes 20 m across. A desert outcrop is a jointed crag a few metres high.
+  mountain: [
+    ["desert_rocks/crag-a.glb", 7, "desert_rocks/crag-a-far.glb"],
+    ["desert_rocks/crag-b.glb", 6, "desert_rocks/crag-b-far.glb"],
   ],
 };
 for (const [asset, rows] of Object.entries(DESERT_FLORA))
@@ -629,6 +643,7 @@ function surface(
   comparison?: ICanopyComparison,
   biome?: IWorldBiome,
   canopyCover?: Node<"float">,
+  waxy = false,
 ): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
@@ -664,6 +679,15 @@ function surface(
           : 0.3,
     metalness: 0,
   });
+  // A saguaro's stem is a wax layer over wet flesh, and it is the one plant here that answers the
+  // sun with a highlight instead of the bone-dry matte every other imported prop wears. The wax is
+  // the clearcoat: a broad, low-gloss lobe, not a wet sheen, over a slightly less matte base.
+  if (waxy) {
+    material.roughness = 0.62;
+    material.clearcoat = 0.35;
+    material.clearcoatRoughness = 0.5;
+    material.specularIntensity = 0.45;
+  }
   copyNormalScale(material, source);
   if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
   // Forest needle crowns need their authored interior shading and filtered alpha coverage.
@@ -740,6 +764,11 @@ function surface(
       material.emissiveNode = null;
     }
   } else if (source.map) tintedFoliage(material, context, snowMap);
+  // An Outcrop rock carries no map: its bedding, varnish and drifted sand are vertex colours.
+  else if (stone && source.vertexColors) {
+    material.vertexColors = true;
+    material.color.setRGB(...(look.propStoneTint ?? ([1, 1, 1] as const)));
+  }
   // River rock lies on the waterline, and wet stone is darker and glossier: water fills the pores
   // (albedo about halves) and films the surface (roughness falls). `?riverbed=off`: dry, as before.
   if (asset === "riverrock" && RIVER_BED && material.colorNode) {
@@ -1066,7 +1095,14 @@ export async function loadPack(
           one.asset === "spruce" && one.level
             ? entry.find((part) => (part.level ?? 0) === 0 && part.role === role)?.material
             : undefined;
-        if (!source.map && one.level && !(inherited instanceof MeshPhysicalNodeMaterial)) continue;
+        // A far level with no texture and no vertex colour has nothing to draw with.
+        if (
+          !source.map &&
+          !source.vertexColors &&
+          one.level &&
+          !(inherited instanceof MeshPhysicalNodeMaterial)
+        )
+          continue;
         const geometry = prepareGeometry(mesh, one, world, stone, box, size, section);
         if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling"))
           addRadialCoverage(geometry, one.metres, world, comparison);
@@ -1082,6 +1118,7 @@ export async function loadPack(
                 comparison,
                 measured,
                 canopyCover,
+                one.path.includes("saguaro"),
               );
         if (stone) rockGround?.apply(material);
         else declareWindReach(material, one.asset, geometry);
