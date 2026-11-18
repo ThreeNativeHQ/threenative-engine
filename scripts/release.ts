@@ -217,53 +217,44 @@ function internalDependencies(
 }
 
 /**
- * `releaseOrder` as levels: a package depends only on packages in earlier levels, so everything in
- * one level can go out together and the dependency rule above still holds.
+ * The cohort as publish **waves**: everything but the scaffolder, then the scaffolder alone.
  *
- * The scaffolder's templates pin the other packages and no manifest says so. Its level therefore
- * comes after every package that does not depend on it, or a new project could pin a version the
- * registry cannot serve yet. A serial loop got this from the list order; a level has to state it.
+ * PRD-901: an upload does not read its dependencies — npm stores the version and resolves nothing —
+ * so the only reader-sensitive boundary is `create-threenative`, whose templates pin the other
+ * packages at versions a new project installs immediately. Splitting the cohort at every
+ * dependency edge bought nothing and cost 28.1 of the 57.8 minutes of the 0.3.15 `ship` job: 7
+ * dependency levels, 7 rolls of the packument cache (2.4 to 5.6 minutes each). Two waves wait
+ * twice. `releaseOrder` still refuses a cycle, and it orders wave 1, so an upload never reaches the
+ * registry before the package it names — only its `latest` can, for one cache roll.
+ *
+ * ponytail: accepted ceiling — for one packument roll, `latest` of a wave-1 package can name a
+ * version whose internal dependency is not readable yet, so a direct install in that window fails
+ * `ETARGET` and passes on retry. `npm create threenative` is not affected: the scaffolder is wave 2
+ * and starts only when every wave-1 package is readable. Add a staging dist-tag moved to `latest`
+ * here if that window ever costs a real user.
  */
 export function releaseLevels(
   packages: readonly { name: string; manifest: string }[],
 ): readonly (readonly string[])[] {
-  releaseOrder(packages); // Refuses a cycle before the walks below rely on there being none.
-  const dependencies = internalDependencies(packages);
-  const reaches = (from: string, target: string): boolean =>
-    [...(dependencies.get(from) ?? [])].some((dep) => dep === target || reaches(dep, target));
-  const scaffolder = dependencies.get("create-threenative");
-  if (scaffolder !== undefined)
-    for (const name of [...dependencies.keys()])
-      if (name !== "create-threenative" && !reaches(name, "create-threenative"))
-        scaffolder.add(name);
-  const levelOf = new Map<string, number>();
-  const level = (name: string): number => {
-    const known = levelOf.get(name);
-    if (known !== undefined) return known;
-    const value = Math.max(-1, ...[...(dependencies.get(name) ?? [])].map(level)) + 1;
-    levelOf.set(name, value);
-    return value;
-  };
-  const levels: string[][] = [];
-  for (const item of packages) {
-    const index = level(item.name);
-    levels[index] = [...(levels[index] ?? []), item.name];
-  }
-  return levels;
+  // Refuses a cycle before the split below relies on there being none.
+  const ordered = releaseOrder(packages);
+  const scaffolder = "create-threenative";
+  if (!packages.some((item) => item.name === scaffolder)) return [ordered];
+  return [ordered.filter((name) => name !== scaffolder), [scaffolder]];
 }
 
 /** A guess at a polite limit: npm documents none for publishes, and the waits below need no slot. */
 const PUBLISH_CONCURRENCY = 4;
 
 /**
- * Publish level by level. A serial loop spent 43 minutes on 16 packages in 0.3.6, nearly all of it
- * waiting for each package to become readable (a 31 KB package took 7). A level's uploads share a
- * small limit and its readability waits all run at once, so a level costs its slowest package. A
- * dependent still starts only after everything it depends on is readable, and a failure stops the
- * uploads that have not started and every later level.
+ * Publish wave by wave. A serial loop spent 43 minutes on 16 packages in 0.3.6, nearly all of it
+ * waiting for each package to become readable (a 31 KB package took 7). A wave's uploads share a
+ * small limit and its readability waits all run at once, so a wave costs its slowest package. A
+ * later wave starts only after everything in this one is readable, and a failure stops the uploads
+ * that have not started and every later wave.
  */
 export async function publishCohort(
-  levels: readonly (readonly string[])[],
+  waves: readonly (readonly string[])[],
   steps: {
     readonly publish: (name: string) => Promise<void>;
     readonly visible: (name: string) => Promise<void>;
@@ -272,8 +263,8 @@ export async function publishCohort(
 ): Promise<void> {
   const describe = (name: string, error: unknown): string =>
     `${name}: ${error instanceof Error ? error.message : String(error)}`;
-  for (const level of levels) {
-    const queue = [...level];
+  for (const wave of waves) {
+    const queue = [...wave];
     const published: string[] = [];
     const failures: string[] = [];
     const worker = async (): Promise<void> => {
@@ -288,7 +279,7 @@ export async function publishCohort(
         }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(concurrency, level.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(concurrency, wave.length) }, worker));
     await Promise.all(
       published.map((name) =>
         steps.visible(name).catch((error: unknown) => {
@@ -738,8 +729,12 @@ async function main(args: readonly string[]): Promise<void> {
     // `--dry-run` stops at the pack: the upgrade proof needs the registry `latest` and a browser
     // lane, which the real release carries.
     if (dryRun) {
+      // PRD-901: name the waves, because their count is the number of registry waits the publish pays.
+      const waves = releaseLevels(packages);
       process.stdout.write(
-        `\nDry run packed ${Object.keys(tarballs).length} package(s). Nothing was published.\n`,
+        `\nDry run packed ${Object.keys(tarballs).length} package(s) in ${String(waves.length)} publish wave(s). Nothing was published.\n${waves
+          .map((wave, index) => `  wave ${String(index + 1)}: ${wave.join(", ")}\n`)
+          .join("")}`,
       );
       return;
     }

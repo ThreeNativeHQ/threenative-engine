@@ -125,7 +125,7 @@ describe("pnpm release ordering", () => {
     );
   });
 
-  it("groups packages into levels that depend only on earlier levels", async () => {
+  it("publishes in two waves: the cohort, then the scaffolder", async () => {
     const levels = releaseLevels(
       await manifests([
         { deps: ["@threenative/ui"], name: "create-threenative" },
@@ -135,22 +135,21 @@ describe("pnpm release ordering", () => {
       ]),
     );
 
-    expect(levels.map((level) => [...level].sort())).toEqual([
-      ["@threenative/core"],
-      ["@threenative/physics", "@threenative/ui"],
+    // PRD-901: an upload reads nothing, so a dependency edge is not a wait. Wave 1 keeps
+    // `releaseOrder` inside it; the scaffolder is alone in wave 2.
+    expect(levels).toEqual([
+      ["@threenative/core", "@threenative/ui", "@threenative/physics"],
       ["create-threenative"],
     ]);
   });
 
-  it("puts every real workspace package in exactly one level, after its dependencies", () => {
+  it("puts every real workspace package in exactly one wave, never before its dependency's", () => {
     const repo = path.resolve(import.meta.dirname, "../..");
     const packages = publishSet(repo);
     const levels = releaseLevels(packages);
-    const levelOf = new Map(
-      levels.flatMap((level, index) => level.map((n) => [n, index] as const)),
-    );
+    const waveOf = new Map(levels.flatMap((wave, index) => wave.map((n) => [n, index] as const)));
 
-    expect([...levelOf.keys()].sort()).toEqual(packages.map((item) => item.name).sort());
+    expect([...waveOf.keys()].sort()).toEqual(packages.map((item) => item.name).sort());
     expect(levels.flat()).toHaveLength(packages.length);
     const declared = (item: IPublishPackage): readonly string[] => {
       const manifest = JSON.parse(fs.readFileSync(item.manifest, "utf8")) as Record<
@@ -162,19 +161,27 @@ describe("pnpm release ordering", () => {
       );
     };
     for (const item of packages)
-      for (const dependency of declared(item).filter((name) => levelOf.has(name)))
+      for (const dependency of declared(item).filter((name) => waveOf.has(name)))
         if (dependency !== item.name)
-          expect(levelOf.get(dependency)).toBeLessThan(levelOf.get(item.name) ?? -1);
+          expect(waveOf.get(dependency)).toBeLessThanOrEqual(waveOf.get(item.name) ?? -1);
+    // Two waves, not seven: the cost this removes is a registry wait per wave.
+    expect(levels).toHaveLength(2);
   });
 
   it("puts the scaffolder after every package its templates may pin", async () => {
     // No manifest declares those pins. With manifest dependencies alone the scaffolder went out with
     // core, before `@threenative/ui`, and a new project could pin a version npm did not serve yet.
     const repo = path.resolve(import.meta.dirname, "../..");
-    expect(releaseLevels(publishSet(repo)).at(-1)).toEqual(["create-threenative"]);
+    const packages = publishSet(repo);
+    const levels = releaseLevels(packages);
+    expect(levels.at(-1)).toEqual(["create-threenative"]);
+    // Wave 2 is only the scaffolder, so wave 1 is the whole rest of the cohort.
+    expect(levels[0]).toHaveLength(packages.length - 1);
   });
 
-  it("still publishes a package that depends on the scaffolder after it", async () => {
+  it("puts a package that depends on the scaffolder in wave 1, never after it", async () => {
+    // Studio was that package until it moved to its own repository. Its upload reads nothing, so it
+    // shares wave 1; the scaffolder still waits for the whole cohort to be readable.
     const levels = releaseLevels(
       await manifests([
         { deps: ["create-threenative"], name: "@threenative/scaffolder-consumer" },
@@ -183,11 +190,32 @@ describe("pnpm release ordering", () => {
       ]),
     );
 
-    expect(levels).toEqual([
-      ["@threenative/core"],
-      ["create-threenative"],
-      ["@threenative/scaffolder-consumer"],
-    ]);
+    expect(levels.at(-1)).toEqual(["create-threenative"]);
+    expect(levels[0]).toEqual(
+      expect.arrayContaining(["@threenative/core", "@threenative/scaffolder-consumer"]),
+    );
+  });
+
+  it("publishes no scaffolder when a wave 1 upload fails", async () => {
+    const published: string[] = [];
+    const waves = releaseLevels(
+      await manifests([
+        { name: "create-threenative" },
+        { name: "@threenative/core" },
+        { name: "@threenative/ui" },
+      ]),
+    );
+
+    await expect(
+      publishCohort(waves, {
+        publish: async (name) => {
+          published.push(name);
+          if (name === "@threenative/ui") throw new Error("registry said no");
+        },
+        visible: async () => undefined,
+      }),
+    ).rejects.toThrow(/TN_RELEASE_STEP_FAILED/u);
+    expect(published).not.toContain("create-threenative");
   });
 
   it("refuses a dependency cycle when it builds levels", async () => {

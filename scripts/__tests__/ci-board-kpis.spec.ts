@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-const { releaseLead, releaseLeadTimes, summarizeBoards } = await import(
+const { releaseLead, releaseLeadTimes, releaseRoad, summarizeBoards } = await import(
   new URL("../ci-board-kpis.mjs", import.meta.url).href
 );
 
@@ -240,5 +240,126 @@ describe("releaseLeadTimes", () => {
       promotions: [{ createdAt: T(200) }],
     });
     expect(leads).toEqual([]);
+  });
+});
+
+/** A ci.yml run. `head`/`event` are what make it a promotion board (PRD-901). */
+const run = (
+  createdAt: number,
+  options: { event?: string; head?: string; red?: boolean; minutes?: number } = {},
+) => {
+  const minutes = options.minutes ?? 10;
+  return {
+    event: options.event ?? "pull_request",
+    headBranch: options.head ?? "develop",
+    conclusion: options.red === true ? "failure" : "success",
+    createdAt: T(createdAt),
+    jobs: [job("leg", options.red === true ? "failure" : "success", 0, 0, minutes)],
+  };
+};
+const promotion = (number: number, title: string, opened: number, merged: number | null) => ({
+  number,
+  title,
+  createdAt: T(opened),
+  mergedAt: merged === null ? null : T(merged),
+  mergeSha: `sha-${String(number)}`,
+});
+
+/** The module is JS, so the row shape is spelled once for the callbacks below. */
+type RoadRow = { version: string; boards: number; mergeToShipEndMin: number | null };
+
+describe("releaseRoad (PRD-901)", () => {
+  it("counts the promotion boards between the open and the merge of each release", () => {
+    const road = releaseRoad({
+      promotions: [promotion(687, "Release 0.3.15", 0, 109)],
+      runs: [
+        run(10, { minutes: 38 }),
+        run(40, { red: true, minutes: 43 }),
+        run(70, { minutes: 51 }),
+        // Outside the promotion window: a feature PR and a develop push are not releases.
+        run(5, { head: "feat/x" }),
+        run(20, { event: "push" }),
+        run(200),
+      ],
+      since: T(0),
+      until: T(2000),
+    });
+
+    expect(road.promotionBoardsLatest).toBe(3);
+    expect(road.releaseRoad).toEqual([
+      {
+        version: "0.3.15",
+        pr: 687,
+        opened: T(0),
+        merged: T(109),
+        boards: 3,
+        machineMinutes: 132,
+        mergeToShipEndMin: null,
+      },
+    ]);
+  });
+
+  it("reads merge to the end of the ship job, and n/a when that job did not finish", () => {
+    const road = releaseRoad({
+      promotions: [
+        promotion(687, "Release 0.3.15", 0, 100),
+        promotion(689, "Release 0.3.16", 120, 900),
+      ],
+      runs: [run(10), run(130)],
+      ships: [
+        { sha: "sha-687", completedAt: T(159) },
+        { sha: "sha-689", completedAt: null },
+      ],
+      since: T(0),
+      until: T(2000),
+    });
+
+    expect(road.mergeToShipEndMin).toBe(null);
+    expect(road.releaseRoad.map((row: RoadRow) => [row.version, row.mergeToShipEndMin])).toEqual([
+      ["0.3.15", 59],
+      ["0.3.16", null],
+    ]);
+  });
+
+  it("reports the newest release in the window, not the one that moved most", () => {
+    const road = releaseRoad({
+      promotions: [
+        promotion(687, "Release 0.3.15", 0, 100),
+        promotion(689, "Release 0.3.16", 300, 600),
+      ],
+      runs: [run(10), run(20), run(30), run(310)],
+      ships: [{ sha: "sha-687", completedAt: T(159) }],
+      since: T(0),
+      until: T(2000),
+    });
+
+    expect(road.promotionBoardsLatest).toBe(1);
+    expect(road.releaseRoad.map((row: RoadRow) => row.boards)).toEqual([3, 1]);
+  });
+
+  it("names a release by its PR when the title carries no version", () => {
+    const road = releaseRoad({
+      promotions: [
+        promotion(671, "Promote develop to main: new games install the newest engine", 0, 10),
+      ],
+      runs: [run(5)],
+      since: T(0),
+      until: T(2000),
+    });
+    expect(road.releaseRoad[0]?.version).toBe("pr-671");
+  });
+
+  it("leaves a release the window did not reach out, and is n/a when nothing did", () => {
+    const road = releaseRoad({
+      promotions: [promotion(687, "Release 0.3.15", 0, 100)],
+      runs: [run(10)],
+      since: T(500),
+      until: T(2000),
+    });
+    expect(road).toEqual({
+      promotionBoardsLatest: null,
+      mergeToShipEndMin: null,
+      releaseRoad: [],
+    });
   });
 });

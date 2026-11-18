@@ -170,6 +170,63 @@ export function releaseLeadTimes({ publishes, promotions }) {
   return leads;
 }
 
+/** A promotion board is a pull request whose head is `develop`: nothing else in this repo does. */
+const isPromotionBoard = (run) => run.event === "pull_request" && run.headBranch === "develop";
+
+/** The version a promotion PR names, or its number when the title carries none. */
+const releaseName = (promotion) =>
+  /\b(\d+\.\d+\.\d+)\b/u.exec(promotion.title ?? "")?.[1] ?? `pr-${String(promotion.number)}`;
+
+/**
+ * PRD-901: the release road, per promotion PR. `boards` is every `ci.yml` promotion board between
+ * the open and the merge of that PR — the rounds the owner waited through, whether or not they ended
+ * green. `mergeToShipEndMin` is its merge to the end of the `ship` job that publishes it; a release
+ * with no finished `ship` run is null (n/a), never 0.
+ *
+ * Pure. `since` selects which releases are reported, not which boards: a promotion that opened
+ * before the window still counts the boards it needed.
+ */
+export function releaseRoad({ promotions, runs, ships = [], since, until }) {
+  const shippedAt = new Map(
+    ships.filter((ship) => ship.completedAt).map((ship) => [ship.sha, ship.completedAt]),
+  );
+  const rows = promotions
+    .map((promotion) => roadRow({ promotion, runs, shippedAt, until }))
+    .filter((row) => row !== null)
+    // `since` selects the releases reported; a promotion still open counts against now.
+    .filter((row) => ms(row.merged ?? until) >= ms(since))
+    .sort((a, b) => String(a.opened).localeCompare(String(b.opened)));
+  const newest = rows.at(-1);
+  return {
+    promotionBoardsLatest: newest?.boards ?? null,
+    mergeToShipEndMin: newest?.mergeToShipEndMin ?? null,
+    releaseRoad: rows,
+  };
+}
+
+/** One promotion PR's row, or null when it never had a board: a release nobody measured. */
+function roadRow({ promotion, runs, shippedAt, until }) {
+  const opened = ms(promotion.createdAt);
+  if (!Number.isFinite(opened)) return null;
+  const closed = promotion.mergedAt === null ? ms(until) : ms(promotion.mergedAt);
+  const boards = runs.filter(
+    (run) => isPromotionBoard(run) && ms(run.createdAt) >= opened && ms(run.createdAt) <= closed,
+  );
+  if (boards.length === 0) return null;
+  const shipEnd = promotion.mergedAt === null ? undefined : shippedAt.get(promotion.mergeSha);
+  return {
+    version: releaseName(promotion),
+    pr: promotion.number,
+    opened: promotion.createdAt,
+    merged: promotion.mergedAt ?? null,
+    boards: boards.length,
+    machineMinutes: Math.round(
+      boards.reduce((total, run) => total + machineMinutes(ranJobs(run)), 0),
+    ),
+    mergeToShipEndMin: shipEnd === undefined ? null : round(minutes(promotion.mergedAt, shipEnd)),
+  };
+}
+
 const ndjson = (text) =>
   text
     .split("\n")
@@ -197,6 +254,9 @@ export function measureBoards({
     sha: run.head_sha,
     conclusion: run.conclusion,
     createdAt: run.created_at,
+    // PRD-901: a promotion board is the only `pull_request` run whose head is `develop`.
+    event: run.event,
+    headBranch: run.head_branch,
     jobs: ndjson(
       gh([
         "api",
@@ -239,14 +299,63 @@ export function measureBoards({
       "--limit",
       "200",
       "--json",
-      "createdAt",
+      "number,title,createdAt,mergedAt,mergeCommit",
     ]),
-  );
+  ).map((promotion) => ({
+    number: promotion.number,
+    title: promotion.title,
+    createdAt: promotion.createdAt,
+    mergedAt: promotion.mergedAt === "" ? null : promotion.mergedAt,
+    mergeSha: promotion.mergeCommit?.oid ?? null,
+  }));
   const until = new Date().toISOString();
   return {
     ...summarizeBoards({ runs, since, until }),
     ...releaseLead({ publishes, promotions, since, until }),
+    ...releaseRoad({
+      promotions,
+      runs,
+      ships: shippedReleases({
+        repo,
+        since,
+        shas: new Set(promotions.map((promotion) => promotion.mergeSha).filter(Boolean)),
+      }),
+      since,
+      until,
+    }),
   };
+}
+
+/**
+ * PRD-901: the end of the `ship` job of each `npm-release.yml` run whose head is a promotion's merge
+ * commit. A release with no run, or one still running, contributes nothing and reads `n/a`.
+ */
+export function shippedReleases({ repo, since, shas }) {
+  if (shas.size === 0) return [];
+  const runs = ndjson(
+    gh([
+      "api",
+      "--paginate",
+      "--jq",
+      ".workflow_runs[]",
+      `repos/${repo}/actions/workflows/npm-release.yml/runs?created=%3E%3D${since}&per_page=100`,
+    ]),
+  ).filter((run) => shas.has(run.head_sha));
+  return runs.flatMap((run) => {
+    const jobs = ndjson(
+      gh([
+        "api",
+        "--paginate",
+        "--jq",
+        ".jobs[]",
+        `repos/${repo}/actions/runs/${run.id}/attempts/1/jobs?per_page=100`,
+      ]),
+    );
+    const ship = jobs.find((job) => job.name === "ship");
+    return ship === undefined
+      ? []
+      : [{ sha: run.head_sha, completedAt: ship.completed_at, conclusion: ship.conclusion }];
+  });
 }
 
 /** A promotion with no publish yet counts as a release that lands now: a lower bound, never a pass. */
