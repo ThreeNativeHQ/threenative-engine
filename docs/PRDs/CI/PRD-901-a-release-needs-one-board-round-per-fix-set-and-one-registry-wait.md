@@ -112,7 +112,7 @@ direct `npm install @threenative/ui` in that window fails with `ETARGET` and pas
 
 - [x] AC-1 [local]: On a pull request into `main`, `queue-watch` comments each red job and does not cancel the run. On a merge group it still cancels at the first red. proof: `pnpm exec vitest run scripts/__tests__/ci-queue-watch.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` — Evidence 2026-11-18: 292/292 pass. Red on the old rule first: reverting `scripts/ci-queue-watch.mjs` to `origin/develop` fails 5 of the promotion tests, including "names every red leg and cancels nothing".
 - [x] AC-2 [local]: `releaseLevels` returns two waves, `create-threenative` alone in the last, and `publishCohort` starts wave 2 only after every wave 1 package is readable. proof: `pnpm exec vitest run scripts/__tests__/release.spec.ts scripts/__tests__/release-ship.spec.ts` — Evidence 2026-11-18: 93/93 pass. Red on the old levels first: reverting `scripts/release.ts` to `origin/develop` fails 4 of them. The real cohort reads `[[core, ui, physics, …], [create-threenative]]`.
-- [ ] AC-3 [local]: `ci-board-kpis.mjs` reports promotion boards per release and merge-to-`ship`-end minutes, and the replay of 0.3.15 and 0.3.16 gives 3 and 22 boards and 59.5 minutes for 0.3.15. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts` and `pnpm ci:speed record` — Evidence: spec 34/34 on 2026-11-18, and 5 red on the old `ci-board-kpis.mjs`. Replay pending.
+- [x] AC-3 [local]: `ci-board-kpis.mjs` reports promotion boards per release and merge-to-`ship`-end minutes, and the replay of 0.3.15 and 0.3.16 gives 3 and 22 boards and 59.5 minutes for 0.3.15. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts` and `pnpm ci:speed record` — Evidence 2026-11-18: 34/34 with `ci-speed-loop.spec.ts`, and 5 red on the old `ci-board-kpis.mjs`. Replay, ledger iteration #41: 0.3.15 = 3 boards, 1331 machine minutes, merge→`ship` end 59.5 min; 0.3.16 = 22 boards, 5962 machine minutes, merge→`ship` end 79.7 (its `npm-release.yml` run never finished). `promotionBoardsLatest` = 22, `mergeToShipEndMin` = 79.7.
 - [ ] AC-4 [shared]: On the next release, a red promotion board ends with every leg concluded and one comment that names all its red legs. proof: the run id and the comment link of that board — Evidence: pending.
 - [ ] AC-5 [shared]: On the next release, first npm upload to last package readable is 12 minutes or less (0.3.15: 28.1). proof: the `ship` log of that release — Evidence: pending.
 - [ ] AC-6 [shared]: On the next release, the promotion PR merges in 4 boards or fewer (0.3.16: 22) and merge to `ship` end is 45 minutes or less (0.3.15: 59.5). proof: a ledger iteration in `pnpm ci:speed show` — Evidence: pending.
@@ -133,28 +133,29 @@ direct `npm install @threenative/ui` in that window fails with `ETARGET` and pas
 
 - 2026-11-18 (agent, open to the owner's veto): a pull request into `main` leaves the first-red cancel of PRD-782. One round that shows every red costs at most 600 machine minutes. Release 0.3.16 spent 5,419 on rounds that showed one red each.
 - 2026-11-18 (agent, open to the owner's veto): two publish waves accept the `ETARGET` window in the Solution. The option without a window is a staging dist-tag that moves to `latest` after all packages are readable. It needs `npm dist-tag` under Trusted Publishing, which is unverified.
+- 2026-11-18 (agent, open to the owner's veto): a promotion board a newer head superseded comments nothing. `ci.yml` runs `fail-fast: false`, so a leg with no conclusion means the run was superseded, not that it failed; commenting would post up to 18 "every failure of the round" comments on a 22-board release, each missing the legs that never ran.
 - 2026-11-18 (agent): no frozen release branch in this PRD. See Non-Goals for the trigger.
 
 ## Execution Phases
 
 #### Phase 1: a promotion board shows every red in one round
-**Status:** NOT STARTED
+**Status:** PARTIAL — every box that does not need a release is ticked
 **Files:** `scripts/ci-queue-watch.mjs` (skip the cancel for base `main`, list every red in the comment), `scripts/__tests__/ci-queue-watch.spec.ts`, `.github/workflows/ci.yml` (pass the base ref to the watcher, rename the step).
 **Implementation:** The watcher already reads the run and its jobs. Add the base ref to its inputs. For base `main`, keep the poll until every job concludes, then write one comment with all red jobs. A failed comment must still exit non-zero.
 - [x] The watcher spec is red on the current rule and green after the change. proof: `pnpm exec vitest run scripts/__tests__/ci-queue-watch.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` — covers AC-1. Result 2026-11-18: 292/292, 5 red before the change.
 - [ ] A red promotion board of the next release names all its red legs. proof: run id and comment link — covers AC-4.
 
 #### Phase 2: the publish waits once per wave
-**Status:** NOT STARTED
+**Status:** PARTIAL — every box that does not need a release is ticked
 **Files:** `scripts/release.ts` (`releaseLevels` returns two waves), `scripts/__tests__/release.spec.ts`.
 **Implementation:** Keep `releaseOrder` for the cycle check. Wave 1 is every publishable package but `create-threenative`, wave 2 is `create-threenative`. `publishCohort`, the upload limit and the 15-minute deadline per package do not change. A red upload in wave 1 still stops wave 2.
 - [x] The release spec is red on 7 levels and green on two waves, and a wave 1 failure publishes no scaffolder. proof: `pnpm exec vitest run scripts/__tests__/release.spec.ts scripts/__tests__/release-ship.spec.ts` — covers AC-2. Result 2026-11-18: 93/93, 4 red before the change; "publishes no scaffolder when a wave 1 upload fails" covers the stop.
-- [ ] `pnpm release --dry-run` packs the cohort and prints the two waves. proof: the command, exit 0 — covers the real entry point of AC-2.
+- [x] `pnpm release --dry-run` packs the cohort and prints the two waves. proof: the command, exit 0 — covers the real entry point of AC-2. Result 2026-11-18: `pnpm release --dry-run --skip-gates` exit 0, "Dry run packed 17 package(s) in 2 publish wave(s)", wave 1 = the 16 other packages, wave 2 = `create-threenative`. Without `--skip-gates` the run stops at `pnpm test`, red on develop in `packages/terrain/__tests__/editor-document.spec.ts` before this change.
 - [ ] The next release reads 12 minutes or less from first upload to last package readable. proof: the `ship` log — covers AC-5.
 
 #### Phase 3: the ledger measures the release road
-**Status:** NOT STARTED
-**Files:** `scripts/ci-board-kpis.mjs`, `scripts/__tests__/ci-board-kpis.spec.ts`, `.claude/skills/ci-speed-loop/SKILL.md` and its `.agents` source (two KPI rows).
+**Status:** PARTIAL — every box that does not need a release is ticked
+**Files:** `scripts/ci-board-kpis.mjs`, `scripts/__tests__/ci-board-kpis.spec.ts`, `.claude/skills/ci-speed-loop/SKILL.md` (two KPI rows; `.agents/skills` carries no `ci-speed-loop`, so that file is the only copy).
 **Implementation:** Count `ci.yml` `pull_request` runs with base `main` between the open and the merge of each promotion PR. Read merge time and the end of the `ship` job of the `npm-release.yml` run on the merge commit. A release with no `ship` run is `n/a`, not 0.
 - [ ] The KPI spec passes and the replay matches the hand count. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts scripts/__tests__/ci-speed-loop.spec.ts`, then `pnpm ci:speed record --since 2026-11-17 --label "PRD-901 baseline"` — covers AC-3.
 - [ ] The next release is a ledger iteration with 4 boards or fewer and 45 minutes or less. proof: `pnpm ci:speed show` — covers AC-6.
