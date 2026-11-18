@@ -8,8 +8,6 @@ import { fileURLToPath } from "node:url";
 
 const KITS = ["alpine", "coastal", "desert", "tundra"];
 const INPUTS = ["assets.json", "bake.mjs", "heightmap.r16", "recipe.json", "surface.json"];
-// Each bakeKit call supplies the sky HDRI copied to sky.hdr. Any layout of the call matches.
-const SKY_SOURCE = /\bsky:\s*"(hdri\/[^"]+\.hdr)"/gu;
 // The sky record names no set. These fields hold its own provenance.
 const SKY_FIELDS = ["asset", "author", "bytes", "license", "sha256", "url"];
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -29,16 +27,8 @@ function missingRecord(kit, what, ref) {
   );
 }
 
-// Reads the one sky HDRI that a bake copies. Its record must carry its own provenance.
-async function skyRecord(kit, dir, credits) {
-  const bake = await readFile(path.join(dir, "bake.mjs"), "utf8");
-  const found = [...bake.matchAll(SKY_SOURCE)];
-  if (found.length !== 1) {
-    throw new Error(
-      `TN_TERRAIN_STAGE_METADATA: ${kit} bake.mjs must supply one sky HDRI to bakeKit. Found ${found.length}.`,
-    );
-  }
-  const file = found[0][1];
+// Reads the credit record of the sky the cook copies into sky.hdr; the cook names the file.
+function skyRecord(kit, credits, file) {
   const record = credits.files.find((entry) => entry.file === file);
   if (!record) throw missingRecord(kit, "sky HDRI", file);
   for (const field of SKY_FIELDS) {
@@ -71,7 +61,7 @@ async function planKit(kit, credits) {
   }
 
   // The sky record names no set, so it joins the files after the set lookup.
-  const sky = await skyRecord(kit, dir, credits);
+  const sky = skyRecord(kit, credits, DEFAULT_SKY_HDRI);
   files.set(sky.file, sky);
 
   // A prop folder matches a prepared asset by its URL slug, such as fir_tree_01.
@@ -111,14 +101,22 @@ async function writeKit(kit, credit) {
 }
 
 // The terrain package builds first. A cold tree has no dist/, so name the cause.
-const { starterAssetsDir } = await import("../../terrain/dist/kit.js").catch((error) => {
-  if (error?.code !== "ERR_MODULE_NOT_FOUND" || !error.message.includes("terrain/dist/kit.js"))
-    throw error;
+const { DEFAULT_SKY_HDRI, starterAssetsDir } = await import("../../terrain/dist/kit.js").catch(
+  (error) => {
+    if (error?.code !== "ERR_MODULE_NOT_FOUND" || !error.message.includes("terrain/dist/kit.js"))
+      throw error;
+    throw new Error(
+      "TN_TERRAIN_STAGE_MISSING_BUILD: packages/terrain/dist/kit.js is missing. Run pnpm --filter @threenative/terrain build.",
+      { cause: error },
+    );
+  },
+);
+// A dist older than this script still answers `starterAssetsDir`; name the symbol it lacks.
+if (typeof DEFAULT_SKY_HDRI !== "string") {
   throw new Error(
-    "TN_TERRAIN_STAGE_MISSING_BUILD: packages/terrain/dist/kit.js is missing. Run pnpm --filter @threenative/terrain build.",
-    { cause: error },
+    "TN_TERRAIN_STAGE_MISSING_BUILD: packages/terrain/dist/kit.js exports no DEFAULT_SKY_HDRI. Run pnpm --filter @threenative/terrain build.",
   );
-});
+}
 const credits = JSON.parse(
   await readFile(path.join(await starterAssetsDir(), "credits.json"), "utf8"),
 );

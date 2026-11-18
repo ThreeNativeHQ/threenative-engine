@@ -5,7 +5,7 @@
     "config": {
       "size": 512,
       "resolution": 257,
-      "seed": 41
+      "seed": 97
     },
     "layers": [
       {

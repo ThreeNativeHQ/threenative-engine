@@ -28,9 +28,10 @@ const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = 
     values: "726595506d7dda30da88401b74c878375bcb40d88cef0debb4a10f27f47a2d17",
     evaluated: "aedaf0355dd0d767bf370db44d704ba0b04378a86f039abae037de905be3f942",
   },
+  // Evaluated with the survey's own seed (97): #681 had copied alpine's 41 into the recipe.
   desert: {
     values: "b0f471e65576313f26f98e456323c4c6eb6c4e688c931e4cafc2c66663abce85",
-    evaluated: "beb557010f5a0ffeba9767560c066a6735b1d39d920db05f5ddadc4b1dfe6855",
+    evaluated: "3aed3eae6fac15a487ff950962b2db06500fafca2228e709670b7fe263f163a4",
   },
   tundra: {
     values: "3fbcbc21b23e03a1c89d8ce0ccc2c8b93380973304e4be7662bc23185a706b58",

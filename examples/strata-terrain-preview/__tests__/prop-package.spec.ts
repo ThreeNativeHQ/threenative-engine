@@ -13,7 +13,9 @@
  *   - the placement count per streamed bucket.
  *
  * The table is byte for byte the one the deleted compile was held to: equal numbers mean every prop
- * keeps its species, its spot to a millimetre and its bucket.
+ * keeps its species, its spot to a millimetre and its bucket. It was re-measured once, for
+ * PRD-892's shared stack (alpine, desert and tundra) and the coast's shore stones (coastal); the
+ * forest's numbers are the ones the deleted compile produced.
  */
 import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
@@ -140,12 +142,8 @@ async function measure(world: WorldName): Promise<IWorldPin> {
 /** The picture of every world, measured on the compile this box deleted (`8d118a9bb`). */
 const GOLDEN: Readonly<Record<WorldName, IWorldPin>> = {
   forest: {
+    buckets: { "horizon:true": 5648, "local:false": 420758, "local:true": 5543 },
     placements: 431949,
-    buckets: {
-      "horizon:true": 5648,
-      "local:false": 420758,
-      "local:true": 5543,
-    },
     species: {
       boulder: { count: 112, x: 1516.067, y: 2139.572, z: 8450.214 },
       bush: { count: 4260, x: 25916.641, y: 63600.403, z: 60233.161 },
@@ -163,64 +161,63 @@ const GOLDEN: Readonly<Record<WorldName, IWorldPin>> = {
     },
   },
   coastal: {
-    placements: 144192,
-    buckets: {
-      "horizon:true": 3200,
-      "local:false": 139287,
-      "local:true": 1705,
-    },
+    buckets: { "horizon:true": 3200, "local:false": 218053, "local:true": 1761 },
+    placements: 223014,
     species: {
-      boulder: { count: 235, x: -11647.513, y: 6294.29, z: -3213.757 },
-      bush: { count: 1225, x: -95186.366, y: 38893.044, z: -17966.056 },
-      fern: { count: 7466, x: -562782.305, y: 231811.614, z: -96325.087 },
-      grass: { count: 95231, x: -1710645.477, y: 2213909.404, z: -748631.887 },
-      litter: { count: 2097, x: -102353.588, y: 55735.077, z: -50139.13 },
-      mountain: { count: 75, x: 2787.134, y: 976.3, z: -3652.819 },
-      poppy: { count: 440, x: -12308.425, y: 9836.909, z: -2287.661 },
-      riverrock: { count: 170, x: 21397.476, y: 764.38, z: -2941.734 },
-      sapling: { count: 5536, x: -400937.724, y: 176810.448, z: -75675.525 },
-      scrub: { count: 28517, x: -530936.478, y: 663622.667, z: -210143.761 },
-      spruce: { count: 3200, x: -230403.81, y: 99952.996, z: -47077.414 },
+      boulder: { count: 256, x: -12816.993, y: 6874.608, z: -3797.703 },
+      bush: { count: 1298, x: -88142.013, y: 39173.522, z: -20844.604 },
+      fern: { count: 7584, x: -520105.795, y: 226447.443, z: -122560.718 },
+      grass: { count: 154549, x: 931292.232, y: 2768297.52, z: 3745775.44 },
+      litter: { count: 2304, x: -84540.865, y: 56292.314, z: -60782.805 },
+      mountain: { count: 60, x: 716.67, y: 829.065, z: -1178.71 },
+      poppy: { count: 1856, x: 49591.745, y: 24377.571, z: 100783.89 },
+      riverrock: { count: 147, x: 18084.761, y: 611.855, z: -985.658 },
+      sapling: { count: 5549, x: -367919.529, y: 172142.434, z: -87177.815 },
+      scrub: { count: 46211, x: 237944.791, y: 830869.3, z: 1124792.03 },
+      spruce: { count: 3200, x: -210069.927, y: 96944.195, z: -56852.432 },
     },
   },
   alpine: {
-    placements: 3598,
-    buckets: {
-      "local:true": 3598,
-    },
+    buckets: { "horizon:true": 382, "local:false": 74705, "local:true": 3740 },
+    placements: 78827,
     species: {
-      boulder: { count: 1082, x: 15469.86, y: 341380.178, z: -21751.522 },
-      mountain: { count: 231, x: -2046.926, y: 87350.94, z: 1355.524 },
-      scree: { count: 2285, x: 84389.842, y: 606905.11, z: -51301.608 },
+      boulder: { count: 492, x: 9324.267, y: 154541.21, z: -1906.757 },
+      bush: { count: 2422, x: 177005.787, y: 538021.459, z: -140017.853 },
+      cliff: { count: 29, x: 1878.973, y: 9699.736, z: 691.18 },
+      deadfall: { count: 231, x: 13573.829, y: 46326.913, z: -17482.054 },
+      fern: { count: 5592, x: 515237.453, y: 945194.39, z: -443741.425 },
+      grass: { count: 40492, x: 3342305.752, y: 7904776.413, z: -3373959.288 },
+      litter: { count: 13348, x: 924409.766, y: 2636765.586, z: -969290.381 },
+      mountain: { count: 566, x: -16645.671, y: 233472.34, z: 15572.709 },
+      poppy: { count: 2348, x: 322773.74, y: 236425.156, z: -302503.379 },
+      sapling: { count: 698, x: 129001.506, y: 15434.388, z: -125903.768 },
+      scrub: { count: 12227, x: 1030331.966, y: 2348235.595, z: -1030006.876 },
+      spruce: { count: 382, x: 70334.378, y: 8502.677, z: -68866.336 },
     },
   },
   desert: {
-    placements: 3554,
-    buckets: {
-      "local:false": 2899,
-      "local:true": 655,
-    },
+    buckets: { "local:false": 7629, "local:true": 662 },
+    placements: 8291,
     species: {
-      boulder: { count: 248, x: 3711.365, y: 11876.037, z: 4825.502 },
-      grass: { count: 2506, x: 134447.302, y: 56642.803, z: 53726.062 },
-      reveal: { count: 170, x: 2834.529, y: 7991.44, z: 4860.708 },
-      scrub: { count: 393, x: 25501.005, y: 8728.323, z: 11765.392 },
-      volcanic: { count: 237, x: 3181.89, y: 12147.806, z: 6603.861 },
+      boulder: { count: 248, x: 4107.557, y: 12089.119, z: 4959.736 },
+      bush: { count: 27, x: 2127.013, y: 639.87, z: 768.274 },
+      grass: { count: 6559, x: 192863.725, y: 161593.7, z: 53050.165 },
+      reveal: { count: 158, x: 1600.085, y: 8290.076, z: 2593.697 },
+      sapling: { count: 161, x: -2151.688, y: 4055.906, z: 1162.725 },
+      scrub: { count: 909, x: 31888.416, y: 22631.27, z: 741.856 },
+      volcanic: { count: 229, x: 1643.452, y: 11916.493, z: 2744.983 },
     },
   },
   tundra: {
-    placements: 40453,
-    buckets: {
-      "local:false": 37225,
-      "local:true": 3228,
-    },
+    buckets: { "local:false": 74715, "local:true": 3957 },
+    placements: 78672,
     species: {
-      boulder: { count: 2028, x: -27083.489, y: 69635.938, z: 9805.011 },
-      bush: { count: 588, x: 25683.922, y: 19086.168, z: 23197.256 },
-      grass: { count: 30490, x: 1494682.385, y: 999384.219, z: 1625718.106 },
-      riverrock: { count: 612, x: 1478.68, y: 17797.25, z: 17228.411 },
-      sapling: { count: 55, x: 142.766, y: 1706.777, z: 1107.647 },
-      scrub: { count: 6680, x: 337177.558, y: 218660.357, z: 364619.267 },
+      boulder: { count: 2098, x: -24665.443, y: 72184.003, z: 20546.474 },
+      bush: { count: 1247, x: 41489.406, y: 41126.256, z: 36452.228 },
+      grass: { count: 61160, x: 1669795.256, y: 2037150.266, z: 2043429.591 },
+      riverrock: { count: 612, x: 1418.608, y: 17794.069, z: 17302.698 },
+      sapling: { count: 140, x: 2361.955, y: 4503.194, z: 4052.771 },
+      scrub: { count: 13415, x: 372584.211, y: 447093.368, z: 484807.419 },
     },
   },
 };
