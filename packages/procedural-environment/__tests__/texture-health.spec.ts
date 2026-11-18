@@ -20,6 +20,10 @@ const DRAWN: Readonly<Record<string, string>> = {
   poppy: "no flower-head scan",
   marigold: "no flower-head scan",
   elephantear: "no arrowhead leaf scan",
+  scotspine:
+    "the pine_tree_01 tuft read as broadleaf cards; Arbor's drawn needle clumps read as pine (visual judge)",
+  stonepine:
+    "the pine_tree_01 tuft read as broadleaf cards; Arbor's drawn needle clumps read as pine (visual judge)",
   redcedar:
     "no fine scale-foliage scan; the coarse LeafSet019 spray read as broadleaf (visual judge)",
   cypress:

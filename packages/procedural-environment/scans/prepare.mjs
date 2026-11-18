@@ -152,11 +152,6 @@ const FOLIAGE = {
       [731, 112, 126, 805],
     ],
   },
-  "pine_tree_01-tuft": {
-    src: ph("pine_tree_01", "twig_"),
-    cell: [192, 416],
-    cuts: [[36, 45, 189, 408]],
-  },
   "pine_tree_01-sprig": {
     src: ph("pine_tree_01", "twig_"),
     cell: [176, 288],

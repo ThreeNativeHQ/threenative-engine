@@ -83,7 +83,6 @@ const SPRITE_CELL: Readonly<Record<string, readonly [number, number]>> = {
   "jacaranda_tree-leaves": [144, 272],
   "grass_medium_02-blade": [48, 512],
   "fern_02-frond": [96, 512],
-  "pine_tree_01-tuft": [192, 416],
   "pine_tree_01-sprig": [176, 288],
   "LeafSet016-leaves": [128, 192],
   "LeafSet027-leaves": [192, 224],
@@ -105,7 +104,6 @@ const LEAF: Readonly<Record<string, string>> = {
 const CELL: Readonly<Record<string, string>> = {
   blade: "grass_medium_02-blade",
   fern: "fern_02-frond",
-  pine: "pine_tree_01-tuft",
   spray: "pine_tree_01-sprig",
 };
 /** forest-kit cover and leaf litter to the sprite its grey detail is cooked from. */
