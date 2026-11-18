@@ -11,7 +11,7 @@ import ForestKit, {
 import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
 import { type IBakeCityOptions, buildCity, cityModules } from "./city.js";
-import { type IScan, barkScan, detailScan } from "./scans.js";
+import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
 import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
@@ -48,9 +48,10 @@ export interface IBakeVegetationOptions {
    */
   readonly leafImage?: string;
   /**
-   * `"scans"` (the default) wraps bark and forest-kit wood and stone in a Poly Haven CC0 scan where
-   * one fits (the bake's `scan` names it); `"generated"` keeps the generator's own texture, byte for
-   * byte, as the raw Arbor and forest-kit pages draw it.
+   * `"scans"` (the default) wraps bark and forest-kit wood and stone in a Poly Haven CC0 scan, and
+   * draws leaves, blades, fronds and needles from CC0 leaf scans, where one fits (the bake's `scan`
+   * and `leafScan` name them); `"generated"` keeps the generator's own texture, byte for byte, as the
+   * raw Arbor and forest-kit pages draw it.
    */
   readonly textures?: "scans" | "generated";
 }
@@ -65,6 +66,11 @@ export interface IEnvironmentBake {
   readonly triangles: number;
   /** The Poly Haven scan the bark or wood wears, absent when the texture is generated. */
   readonly scan?: string;
+  /**
+   * The scanned foliage sprites the leaves, blades or fronds wear (`+` between several), absent when
+   * the leaf card is Arbor's drawing or a game's leafImage.
+   */
+  readonly leafScan?: string;
   /**
    * A rock's material inputs: Outcrop's ROCK_TEXTURES profile, metres per repeat, and the two lossless WebPs
    * its triplanar material samples (detail: rgb albedo multiplier, a roughness; normal: rgb
@@ -195,14 +201,14 @@ function topDownCells(source: IArborPreset): IArborPreset {
 }
 
 /**
- * The leaf image (the game's PNG, else Arbor's drawn card as WebP with a normal map cooked from its
- * own leaves and veins, else none for a leafless preset such as `saguaro`) and the file-name tag of
- * a game's patch.
+ * The leaf image (the game's PNG, else Arbor's card as WebP with a normal map cooked from its own
+ * leaves and veins, else none for a leafless preset such as `saguaro`), the scans its leaves were
+ * drawn from, and the file-name tag of a game's patch.
  */
 async function leafOf(
   source: IArborPreset,
   options: IBakeVegetationOptions,
-): Promise<{ leaf?: Uint8Array; leafNormal?: Uint8Array; tag: string }> {
+): Promise<{ leaf?: Uint8Array; leafNormal?: Uint8Array; leafScan?: string; tag: string }> {
   const image = options.leafImage === undefined ? undefined : await readFile(options.leafImage);
   if (image !== undefined && !image.subarray(0, 8).equals(PNG_SIGNATURE))
     throw new Error(`bakeVegetation: leafImage ${options.leafImage} is not a PNG`);
@@ -213,9 +219,15 @@ async function leafOf(
   const tag = patched ? `-f${hash.digest("hex").slice(0, 8)}` : "";
   if (image !== undefined) return { leaf: image, tag };
   if (!source.leaves?.length) return { tag };
-  const drawn = Arbor.leafTexture(source, { createCanvas });
+  const scanned = options.textures === "generated" ? undefined : await foliageHook(source);
+  const drawn = Arbor.leafTexture(source, {
+    createCanvas,
+    ...(scanned ? { hook: scanned.hook } : {}),
+  });
   const { width, height, data } = drawn;
+  const leafScan = [...(scanned?.used ?? [])].sort().join("+");
   return {
+    ...(leafScan ? { leafScan } : {}),
     leaf: await rgbaWebp(width, height, data),
     // Half resolution: a normal cooked from a blurred height loses nothing visible at 512 px, and
     // it was the largest map a tree carried (PRD-900 compression study).
@@ -281,8 +293,8 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
 /**
  * Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model.
  * Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0; the Arbor presets also embed
- * their bark and leaf textures with alpha-masked leaves, while forest-kit debris and cover shade
- * from COLOR_0 alone.
+ * their bark and leaf textures with alpha-masked leaves, and forest-kit debris and cover shade from
+ * COLOR_0 over a grey CC0 scan.
  * @situation generate a procedural tree, an oak, pine, spruce, palm or any forest species as a GLB
  * @situation procedural oak tree GLB with level of detail for a game forest
  * @situation tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute
@@ -312,16 +324,13 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
   const { preset, out } = options;
   const { arbor, forest, lods, seed } = resolveBake(preset, options);
   const scans = options.textures !== "generated";
-  if (forest !== null)
-    return bakeForestKit(preset, forest, {
-      lods,
-      out,
-      scan: scans ? await detailScan(preset) : undefined,
-      seed,
-    });
+  if (forest !== null) {
+    const [scan, cover] = scans ? [await detailScan(preset), await coverScan(preset)] : [];
+    return bakeForestKit(preset, forest, { cover, lods, out, scan, seed });
+  }
   const formed = withForm(preset, arbor as IArborPreset, options.form);
   const source = options.leafImage === undefined ? formed : topDownCells(formed);
-  const { leaf, leafNormal: leafRelief, tag } = await leafOf(source, options);
+  const { leaf, leafNormal: leafRelief, leafScan, tag } = await leafOf(source, options);
   const scan = !source.noBark && scans ? await barkScan(source.bark) : undefined;
   const bark = source.noBark || scan ? undefined : Arbor.barkTexture(source.bark);
   const textures = {
@@ -335,6 +344,7 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
     ...(leaf ? { leaf } : {}),
     ...(leafRelief ? { leafNormal: leafRelief } : {}),
   };
+  const named = { ...(scan ? { scan: scan.id } : {}), ...(leafScan ? { leafScan } : {}) };
   await mkdir(out, { recursive: true });
   const baked: IEnvironmentBake[] = [];
   for (const lod of lods) {
@@ -346,7 +356,7 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
       lod,
       path: file,
       triangles: tree.triangles,
-      ...(scan ? { scan: scan.id } : {}),
+      ...named,
     });
   }
   return baked;
@@ -383,7 +393,7 @@ function toPart(mesh: IForestKitMesh): IArborPart {
 function forestKitTree(
   id: string,
   preset: IForestKitPreset,
-  options: { lod: number; seed: number },
+  options: { lod: number; seed: number; onBark: boolean },
 ): IArborTree {
   const mesh = preset.generate(options);
   if (mesh.idx.length === 0)
@@ -405,9 +415,7 @@ function forestKitTree(
       if (value < (min[k] as number)) min[k] = value;
       if (value > (max[k] as number)) max[k] = value;
     }
-  // Debris is opaque wood and stone on the bark primitive; cover is a thin strip that must show
-  // from both sides and is alpha-masked like a leaf card, so it rides the foliage primitive.
-  const onBark = preset.part === "bark";
+  const { onBark } = options;
   return {
     bark: onBark ? part : EMPTY_PART,
     bounds: { max, min },
@@ -418,33 +426,50 @@ function forestKitTree(
 }
 
 /**
- * A forest-kit preset's GLBs: all colour in COLOR_0, or, with a detail scan, COLOR_0 doubled times
- * the scan's grey multiplier (mean 0.5) plus its normal map, so the palette stays the kit's.
+ * A forest-kit preset's GLBs: COLOR_0 times Arbor's untextured factor, or, with a grey scan, that
+ * product doubled in COLOR_0 times the scan's multiplier (mean 0.5) plus its normal map, so the
+ * palette stays the kit's. Debris wears a
+ * wood or stone `scan` on the opaque bark primitive; cover and leaf litter wear a blade or leaf
+ * `cover` scan on the double-sided, alpha-masked foliage primitive, so a leaf keeps its cutout.
  */
 async function bakeForestKit(
   preset: string,
   source: IForestKitPreset,
-  options: { lods: readonly number[]; out: string; scan: IScan | undefined; seed: number },
+  options: {
+    lods: readonly number[];
+    out: string;
+    scan: IScan | undefined;
+    cover: IScan | undefined;
+    seed: number;
+  },
 ): Promise<IEnvironmentBake[]> {
-  const { scan } = options;
+  const grey = options.scan ?? options.cover;
+  const onBark = source.part === "bark" && options.cover === undefined;
+  const textures =
+    grey === undefined
+      ? {}
+      : onBark
+        ? { bark: grey.color, barkNormal: grey.normal }
+        : { leaf: grey.color, leafNormal: grey.normal };
+  const named = grey === undefined ? {} : { [onBark ? "scan" : "leafScan"]: grey.id };
+  // Arbor's toGLB multiplies an untextured part by this factor; a textured part gets none, so it
+  // moves into COLOR_0 and the scanned bake keeps the generated look.
+  const look = source.part === "bark" ? [0.35, 0.28, 0.22] : [0.25, 0.4, 0.12];
   await mkdir(options.out, { recursive: true });
   const baked: IEnvironmentBake[] = [];
   for (const lod of options.lods) {
-    const tree = forestKitTree(preset, source, { lod, seed: options.seed });
+    const tree = forestKitTree(preset, source, { lod, onBark, seed: options.seed });
     const file = path.join(options.out, `${preset}-${options.seed}-lod${lod}.glb`);
-    if (scan)
-      for (let i = 0; i < tree.bark.color.length; i++)
-        tree.bark.color[i] = Math.min(1, (tree.bark.color[i] as number) * 2);
-    await writeAtomic(
-      file,
-      Arbor.toGLB(tree, scan ? { bark: scan.color, barkNormal: scan.normal } : {}),
-    );
+    const part = onBark ? tree.bark : tree.leaves;
+    if (grey)
+      part.color.set(part.color.map((v, i) => Math.min(1, v * 2 * (look[i % 3] as number))));
+    await writeAtomic(file, Arbor.toGLB(tree, textures));
     baked.push({
       bounds: { max: tree.bounds.max, min: tree.bounds.min },
       lod,
       path: file,
       triangles: tree.triangles,
-      ...(scan ? { scan: scan.id } : {}),
+      ...named,
     });
   }
   return baked;

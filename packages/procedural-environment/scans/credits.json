@@ -20,5 +20,95 @@
     "rock_boulder_dry",
     "sakura_bark",
     "tree_bark_03"
-  ]
+  ],
+  "foliage": {
+    "downloaded": "2026-11-17",
+    "preprocessing": "scans/prepare.mjs foliage: the 1K diffuse and alpha (Poly Haven model maps) or Color and Opacity (ambientCG 1K-PNG), one alpha island per cut, turned base-down, fitted to a cell, WebP q75 with lossless alpha. ambientCG only where Poly Haven has no such leaf (oak, maple, scale-leaf conifer, dry oak).",
+    "sprites": {
+      "shrub_01-leaves": {
+        "provider": "Poly Haven",
+        "asset": "shrub_01",
+        "url": "https://polyhaven.com/a/shrub_01",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license"
+      },
+      "island_tree_01-leaves": {
+        "provider": "Poly Haven",
+        "asset": "island_tree_01",
+        "url": "https://polyhaven.com/a/island_tree_01",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license"
+      },
+      "shrub_02-leaves": {
+        "provider": "Poly Haven",
+        "asset": "shrub_02",
+        "url": "https://polyhaven.com/a/shrub_02",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license"
+      },
+      "jacaranda_tree-leaves": {
+        "provider": "Poly Haven",
+        "asset": "jacaranda_tree",
+        "url": "https://polyhaven.com/a/jacaranda_tree",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license"
+      },
+      "grass_medium_02-blade": {
+        "provider": "Poly Haven",
+        "asset": "grass_medium_02",
+        "url": "https://polyhaven.com/a/grass_medium_02",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license"
+      },
+      "fern_02-frond": {
+        "provider": "Poly Haven",
+        "asset": "fern_02",
+        "url": "https://polyhaven.com/a/fern_02",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license"
+      },
+      "pine_tree_01-tuft": {
+        "provider": "Poly Haven",
+        "asset": "pine_tree_01",
+        "url": "https://polyhaven.com/a/pine_tree_01",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license"
+      },
+      "pine_tree_01-sprig": {
+        "provider": "Poly Haven",
+        "asset": "pine_tree_01",
+        "url": "https://polyhaven.com/a/pine_tree_01",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license"
+      },
+      "LeafSet016-leaves": {
+        "provider": "ambientCG",
+        "asset": "LeafSet016",
+        "url": "https://ambientcg.com/a/LeafSet016",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://docs.ambientcg.com/license/"
+      },
+      "LeafSet027-leaves": {
+        "provider": "ambientCG",
+        "asset": "LeafSet027",
+        "url": "https://ambientcg.com/a/LeafSet027",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://docs.ambientcg.com/license/"
+      },
+      "LeafSet019-spray": {
+        "provider": "ambientCG",
+        "asset": "LeafSet019",
+        "url": "https://ambientcg.com/a/LeafSet019",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://docs.ambientcg.com/license/"
+      },
+      "LeafSet012-leaves": {
+        "provider": "ambientCG",
+        "asset": "LeafSet012",
+        "url": "https://ambientcg.com/a/LeafSet012",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://docs.ambientcg.com/license/"
+      }
+    }
+  }
 }

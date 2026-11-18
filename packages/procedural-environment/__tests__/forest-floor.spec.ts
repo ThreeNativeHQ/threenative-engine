@@ -62,7 +62,7 @@ describe("the forest floor bakes from one nature package", () => {
     expect(presets.map((preset) => preset.id)).toHaveLength(new Set(presets.map((p) => p.id)).size);
   });
 
-  it("bakes every debris preset with a zero _WIND and an opaque single bark primitive", async () => {
+  it("bakes every debris preset with a zero _WIND and a single primitive: wood and stone opaque bark, litter masked leaves", async () => {
     for (const preset of DEBRIS) {
       const { bytes, gltf, bin } = await bake(preset);
       const primitives = gltf.meshes[0]?.primitives ?? [];
@@ -74,9 +74,46 @@ describe("the forest floor bakes from one nature package", () => {
       });
       for (const attribute of ["POSITION", "NORMAL", "TEXCOORD_0", "COLOR_0", "_WIND"])
         expect(primitives[0]?.attributes).toHaveProperty(attribute);
-      const material = gltf.materials.find((entry) => entry.name === "bark");
-      expect(material?.alphaMode).toBeUndefined();
+      // A scanned litter leaf keeps its cutout, so leaf litter rides the masked foliage primitive.
+      const material = gltf.materials[0];
+      expect({ preset, name: material?.name, alphaMode: material?.alphaMode }).toEqual(
+        preset === "leaflitter"
+          ? { preset, name: "foliage", alphaMode: "MASK" }
+          : { preset, name: "bark", alphaMode: undefined },
+      );
       expect(bytes.length).toBeGreaterThan(1000);
+    }
+  });
+
+  it("keeps the kit's colour under a grey scan: COLOR_0 x mean 0.5 equals the untextured COLOR_0 x Arbor's factor", async () => {
+    // Arbor's toGLB multiplies an untextured part by this factor (vendor/arbor.js, toGLB).
+    const factor = { bark: [0.35, 0.28, 0.22], foliage: [0.25, 0.4, 0.12] } as const;
+    for (const preset of ["log", "leaflitter", "reeds", "tussock"] as const) {
+      const out = await makeTempDir("tn-forest-floor-colour-");
+      const [plain] = await bakeVegetation({ out, preset, textures: "generated" });
+      const [scanned] = await bakeVegetation({ out: `${out}/scans`, preset });
+      const a = parseGlb(await readFile(plain?.path ?? ""));
+      const b = parseGlb(await readFile(scanned?.path ?? ""));
+      const name = a.gltf.materials[0]?.name as keyof typeof factor;
+      const before = floats(
+        a.gltf,
+        a.bin,
+        a.gltf.meshes[0]?.primitives[0]?.attributes.COLOR_0 as number,
+      );
+      const after = floats(
+        b.gltf,
+        b.bin,
+        b.gltf.meshes[0]?.primitives[0]?.attributes.COLOR_0 as number,
+      );
+      let worst = 0;
+      for (let i = 0; i < before.length; i++)
+        worst = Math.max(
+          worst,
+          Math.abs(
+            (after[i] as number) * 0.5 - (before[i] as number) * (factor[name][i % 3] as number),
+          ),
+        );
+      expect({ preset, worst: worst < 1e-3 }).toEqual({ preset, worst: true });
     }
   });
 

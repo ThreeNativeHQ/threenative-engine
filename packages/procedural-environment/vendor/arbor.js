@@ -1181,7 +1181,12 @@ function leafOutline(ctx, hw, L, steps) {
   ctx.closePath();
 }
 
+// ThreeNative: bakeVegetation's scanned foliage. While leafTexture runs with opts.hook, hook.leaf may
+// draw one leaf and hook.cell one atlas cell from a CC0 scan; each returns false to keep Arbor's own.
+let HOOK = null;
+
 function drawLeaf(ctx, S, R, x, y, ang, L) {
+  if (HOOK && HOOK.leaf && HOOK.leaf(ctx, S, R, x, y, ang, L)) return;
   const sh = LEAF_SHAPES[S.leaf] || LEAF_SHAPES.ovate;
   const col = mix3(S.colA, S.colB, R()), k = R.range(0.9, 1.1), stem = S.stem || TWIG;
   ctx.save();
@@ -1544,14 +1549,16 @@ function leafTexture(preset, opts = {}) {
   const canvas = makeCanvas(size, size, opts.createCanvas), ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.clearRect(0, 0, size, size);
   const R = makeRng(hashString(P.id) + 99);
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+  HOOK = opts.hook || null;
+  try { for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const S = spec.cells[(r * cols + c) % spec.cells.length], A = S.aspect || 1, pad = S.type === 'blade' ? 0 : Math.max(2, size / 256);
     ctx.save();
     ctx.beginPath(); ctx.rect(c * cw + pad, size - (r + 1) * ch + pad, cw - pad * 2, ch - pad * 2); ctx.clip();
     ctx.transform(cw, 0, 0, -ch / A, c * cw, size - r * ch);
-    PAINT[S.type](ctx, S, R.fork(), A);
+    const RC = R.fork();
+    if (!(HOOK && HOOK.cell && HOOK.cell(ctx, S, RC, A))) PAINT[S.type](ctx, S, RC, A);
     ctx.restore();
-  }
+  } } finally { HOOK = null; }
   const img = ctx.getImageData(0, 0, size, size).data, data = new Uint8Array(size * size * 4);
   let sr = 0, sg = 0, sb = 0, sn = 0;
   for (let i = 0; i < img.length; i += 4) if (img[i + 3] > 200) { sr += img[i]; sg += img[i + 1]; sb += img[i + 2]; sn++; }

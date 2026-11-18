@@ -63,7 +63,7 @@ describe("Poly Haven scans by default, the generator's texture on request", () =
 
   it("gives Arbor's leaf cards a normal map cooked from their own leaves, and keeps the cutout exact", async () => {
     const out = await makeTempDir("tn-leaf-normal-");
-    const [oak] = await bakeVegetation({ preset: "oak", out });
+    const [oak] = await bakeVegetation({ preset: "oak", out, textures: "generated" });
     const { gltf, image } = await glb(oak?.path ?? "");
     const foliage = gltf.materials.find((m) => m.name === "foliage") as unknown as {
       normalTexture?: { index: number };
@@ -86,7 +86,7 @@ describe("Poly Haven scans by default, the generator's texture on request", () =
     expect(alpha.equals(want)).toBe(true);
   });
 
-  it("gives a forest-kit log the wood detail scan and keeps its palette (COLOR_0 doubled)", async () => {
+  it("gives a forest-kit log the wood detail scan and keeps its palette (COLOR_0 doubled times Arbor's untextured bark factor)", async () => {
     const out = await makeTempDir("tn-scan-log-");
     const [scanned] = await bakeVegetation({ preset: "log", out });
     const [plain] = await bakeVegetation({
@@ -108,7 +108,13 @@ describe("Poly Haven scans by default, the generator's texture on request", () =
     };
     const [a, b] = [await color(scanned?.path ?? ""), await color(plain?.path ?? "")];
     expect(a.length).toBe(b.length);
-    expect(a.every((v, i) => Math.abs(v - Math.min(1, (b[i] as number) * 2)) < 1e-6)).toBe(true);
+    // The generated log multiplies COLOR_0 by Arbor's bark baseColorFactor; the scanned one has none.
+    const bark = [0.35, 0.28, 0.22];
+    expect(
+      a.every(
+        (v, i) => Math.abs(v - Math.min(1, (b[i] as number) * 2 * (bark[i % 3] as number))) < 1e-6,
+      ),
+    ).toBe(true);
   });
 
   it("re-encodes an Apex module's PNG and JPEG maps as WebP, and every image still decodes", async () => {

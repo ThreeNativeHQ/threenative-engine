@@ -8504,7 +8504,7 @@
         "a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders",
         "reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover"
       ],
-      "summary": "Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model. Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0; the Arbor presets also embed their bark and leaf textures with alpha-masked leaves, while forest-kit debris and cover shade from COLOR_0 alone.",
+      "summary": "Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model. Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0; the Arbor presets also embed their bark and leaf textures with alpha-masked leaves, and forest-kit debris and cover shade from COLOR_0 over a grey CC0 scan.",
       "supersedes": [],
       "symbol": "bakeVegetation"
     },

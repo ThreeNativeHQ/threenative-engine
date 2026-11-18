@@ -62,22 +62,33 @@ await bakeVegetation({ preset: "reeds", seed: 4, out: "assets/cover" });
 - Each GLB holds two primitives, `bark` and `foliage`, with `COLOR_0`, `TEXCOORD_0` and a
   `_WIND` vec4 per vertex: x trunk sway (m), y branch sway (m), z leaf flutter (m), w phase.
   Units are metres, +Y is up, the plant stands on the origin.
-- Textures are Poly Haven CC0 scans by default (`scans/credits.json`): species bark on the Arbor
-  trees whose bark has a scan (oak, pine, cedar, palm, sakura ...), and a grey wood or stone detail
-  scan on forest-kit `log`, `stump`, `branch`, `twig` and `rock`, whose `COLOR_0` is doubled so the
-  kit's palette stays. The bake's `scan` names the scan it used. `textures: "generated"` keeps the
-  generator's own texture pixel for pixel. Birch, aspen, bamboo, banana, cactus, flower stems, shrub
-  twigs, cover and leaf litter have no fitting scan and keep theirs. Every embedded image is WebP
-  (`EXT_texture_webp`, required): scans 512 px at q75 (normals q80), generated images q80 with
-  lossless alpha, so a cutout edge stays exact. An Arbor leaf card also carries a normal map at half
-  resolution, cooked from its own outline and veins.
+- Textures are CC0 scans by default (`scans/credits.json`). Bark: species bark from Poly Haven on
+  the Arbor trees whose bark has a scan (oak, pine, cedar, palm, sakura ...). Wood and stone: a grey
+  detail scan on forest-kit `log`, `stump`, `branch`, `twig` and `rock`, whose `COLOR_0` takes twice
+  Arbor's untextured colour factor, so the kit's palette stays. The bake's `scan` names the bark or detail scan.
+- Foliage: real scanned leaves, cut from the alpha atlases of Poly Haven plant models, and from
+  ambientCG leaf sets where Poly Haven has no such leaf. Arbor still lays out each leaf card (its
+  twigs, fronds and blossoms), but each leaf, blade, frond or needle sprig is a scan, tinted to the
+  species palette. The families: oak (ambientCG `LeafSet016`), maple (`LeafSet027`), ovate and birch
+  leaves (`shrub_01`), elliptic (`island_tree_01`), lance (`shrub_02`), feathery acacia and jacaranda
+  (`jacaranda_tree`), grass blades (`grass_medium_02`), fern fronds (`fern_02`), pine tufts and spruce
+  sprigs (`pine_tree_01`), cedar and cypress sprays (`LeafSet019`). forest-kit cover and leaf litter
+  wear a grey blade or leaf scan with the same `COLOR_0` rule. Leaf litter then rides the alpha-masked
+  `foliage` primitive, so each leaf keeps its scanned outline. The bake's `leafScan` names the
+  sprites. Ginkgo, palm fronds, yucca, flower heads and the elephant ear have no fitting scan and
+  keep Arbor's drawing (`__tests__/texture-health.spec.ts` fails on any other foliage without a scan
+  or a texture).
+- `textures: "generated"` keeps the generators' own textures pixel for pixel. Every embedded image
+  is WebP (`EXT_texture_webp`, required): bark scans 512 px at q75 (normals q80), leaf sprites q75
+  and leaf atlases q80, both with lossless alpha, so a cutout edge stays exact. A leaf card also carries a
+  normal map at half resolution, cooked from its own outline and veins.
 - One scan serves every species that shares it (21 bark profiles, 12 scans). Each GLB embeds its
   copy, and the cook's shared-images pass (`@threenative/assets`, on by default) writes each
   distinct image once under `shared/images/`, so a game ships the bark once.
 - The Arbor presets also carry their bark and leaf atlas and alpha-masked leaves. A forest-kit
-  preset shades from `COLOR_0` alone: debris (opaque wood and stone) rides `bark`, cover (a thin
-  blade or frond) rides the double-sided, alpha-masked `foliage` primitive, and its float sway is
-  `_WIND.z`, with debris writing all four zero.
+  preset shades from `COLOR_0` and its grey scan: wood and stone ride `bark`, cover (a thin blade or
+  frond) and leaf litter ride the double-sided, alpha-masked `foliage` primitive, and its float sway
+  is `_WIND.z`, with debris writing all four zero.
 - `form` and `leafImage` patch an Arbor preset's shape and leaf card. A forest-kit preset throws
   when given either, because it has no leaf card to patch.
 - `@napi-rs/canvas` paints the leaf atlas at bake time (Arbor needs a Canvas 2D), and `sharp`
@@ -166,4 +177,4 @@ agent asked for "a realistic forest" should not have to find nine places by itse
 | Sky and sun | `Daylight` | `@threenative/core` |
 | Water | `WaterSurface3D`, `WaterBodies` | `@threenative/core` |
 | Terrain, biomes and a cooked world | `@threenative/terrain` (`terrain_generate`, `arbor:<preset>[@seed]` species) | `@threenative/terrain` |
-| Textures | Poly Haven CC0 bark and detail scans vendored in `scans/` (WebP), Arbor's leaf atlases at bake; other scanned CC0 maps through the asset MCP (Poly Haven, ambientCG) | `@threenative/procedural-environment` |
+| Textures | Poly Haven CC0 bark and detail scans and CC0 leaf, blade and frond sprites (Poly Haven, ambientCG) vendored in `scans/` (WebP); other scanned CC0 maps through the asset MCP | `@threenative/procedural-environment` |
