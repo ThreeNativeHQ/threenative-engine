@@ -8488,6 +8488,7 @@
         "the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)",
         "bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped",
         "_WIND is vec4 (trunk sway, branch sway, flutter, phase): forest-kit sway is flutter in z, and debris writes all four zero",
+        "textures default to \"scans\" (the bake's `scan` and `leafScan` name them); nine presets with no fitting CC0 leaf scan (ginkgo, palms, banana, joshua, flowers, elephantear) keep Arbor's drawn leaf card; textures: \"generated\" keeps every generator texture byte for byte",
         "form and leafImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given either"
       ],
       "example": "await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" });\nawait bakeVegetation({ preset: \"log\", seed: 3, out: \"assets/debris\" });",
@@ -8504,7 +8505,7 @@
         "a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders",
         "reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover"
       ],
-      "summary": "Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model. Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0; the Arbor presets also embed their bark and leaf textures with alpha-masked leaves, and forest-kit debris and cover shade from COLOR_0 over a grey CC0 scan.",
+      "summary": "Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model. Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0 and embeds WebP textures: Arbor trees and cover wear a CC0 bark scan and alpha-masked leaves, blades, fronds and needles painted from CC0 leaf scans; forest-kit wood and stone wear a grey CC0 detail scan, and forest-kit cover and leaf litter a grey CC0 blade or leaf scan, each over the kit's COLOR_0 palette.",
       "supersedes": [],
       "symbol": "bakeVegetation"
     },

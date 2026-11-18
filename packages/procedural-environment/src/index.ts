@@ -292,9 +292,10 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
 
 /**
  * Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model.
- * Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0; the Arbor presets also embed
- * their bark and leaf textures with alpha-masked leaves, and forest-kit debris and cover shade from
- * COLOR_0 over a grey CC0 scan.
+ * Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0 and embeds WebP textures:
+ * Arbor trees and cover wear a CC0 bark scan and alpha-masked leaves, blades, fronds and needles
+ * painted from CC0 leaf scans; forest-kit wood and stone wear a grey CC0 detail scan, and forest-kit
+ * cover and leaf litter a grey CC0 blade or leaf scan, each over the kit's COLOR_0 palette.
  * @situation generate a procedural tree, an oak, pine, spruce, palm or any forest species as a GLB
  * @situation procedural oak tree GLB with level of detail for a game forest
  * @situation tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute
@@ -315,6 +316,7 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
  * @constraint the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)
  * @constraint bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped
  * @constraint _WIND is vec4 (trunk sway, branch sway, flutter, phase): forest-kit sway is flutter in z, and debris writes all four zero
+ * @constraint textures default to "scans" (the bake's `scan` and `leafScan` name them); nine presets with no fitting CC0 leaf scan (ginkgo, palms, banana, joshua, flowers, elephantear) keep Arbor's drawn leaf card; textures: "generated" keeps every generator texture byte for byte
  * @constraint form and leafImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given either
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeVegetation({ preset: "oak", seed: 7, lods: [0, 1], out: "assets/trees" });
