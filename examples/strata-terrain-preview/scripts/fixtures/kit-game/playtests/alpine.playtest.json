@@ -147,6 +147,11 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "performance": {
+      "maxPhaseMsP95": {
+        "render": 40
+      }
+    },
     "resources": [
       {
         "id": "GameState",
@@ -339,10 +344,16 @@
     ],
     "renderChain": {
       "stages": {
-        "includes": ["ambientOcclusion", "grade"]
+        "includes": [
+          "ambientOcclusion",
+          "grade"
+        ]
       },
       "contributions": {
-        "graphOutputChanged": ["ambientOcclusion", "grade"]
+        "graphOutputChanged": [
+          "ambientOcclusion",
+          "grade"
+        ]
       }
     },
     "components": [
