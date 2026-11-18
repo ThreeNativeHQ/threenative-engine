@@ -29,13 +29,14 @@ export const LANDFORM_WORD_ROWS: readonly (readonly [LandformKind, readonly stri
 /**
  * The water body a word asks for. Each row carries the measurement the cooked world needs, and the
  * numbers are the shipped starters' own: the forest's river ribbon and lake radius, the coastal
- * starter's sea level (`starter/<kit>/biome.data.json`), so a word floods what a starter does.
+ * starter's sea level (`starter/<kit>/biome.data.json`, NAVD88 0 m on its Sand Beach survey), so a
+ * word floods what a starter does.
  */
 export const WATER_WORD_ROWS: readonly (readonly [IBiomeWaterBody, readonly string[]])[] = [
   [{ kind: "river", width: 5.32 }, ["creek", "creeks", "river", "rivers", "stream", "streams"]],
   [{ kind: "lake", radius: 105 }, ["lake", "lakes", "pond", "ponds"]],
   [
-    { kind: "ocean", level: 1.5 },
+    { kind: "ocean", level: 0 },
     ["fjord", "fjords", "island", "islands", "ocean", "oceans", "sea", "seas"],
   ],
 ];
@@ -123,7 +124,16 @@ export interface IBiomeOwn {
  */
 export const BIOME_OWN: Readonly<Record<TerrainKit, IBiomeOwn>> = {
   alpine: { landform: "alpine", sizeMeters: 512, water: [] },
-  coastal: { landform: "coastalCliffs", sizeMeters: 512, water: [{ kind: "ocean", level: 1.5 }] },
+  // The coast stands at its real sea level (0 m, Sand Beach, Acadia) and the survey's flattened
+  // lagoon behind the beach is a lake over a lowered bed, as `starter/coastal/biome.data.json` says.
+  coastal: {
+    landform: "coastalCliffs",
+    sizeMeters: 512,
+    water: [
+      { kind: "ocean", level: 0 },
+      { kind: "lake", radius: 150 },
+    ],
+  },
   desert: { landform: "desertMesa", sizeMeters: 512, water: [] },
   forest: {
     landform: "temperateMountains",

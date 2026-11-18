@@ -352,6 +352,17 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
  * @situation tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute
  * @situation a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders
  * @situation reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover
+ * @alias trees
+ * @alias palm trees
+ * @alias street trees along a road
+ * @alias bushes and shrubs
+ * @alias grass, flowers and ferns as ground cover
+ * @alias dead trees, fallen logs and stumps
+ * @alias low poly tree with level of detail
+ * @alias realistic textured tree model
+ * @alias foliage and vegetation models
+ * @alias pine, oak or spruce forest trees
+ * @alias grass tufts and clumps
  * @constraint fails closed: an unknown preset throws naming the nearest ids, the seed must be an integer and each lod 0 to 2
  * @constraint the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)
  * @constraint a `cliff` module shows a cut face at each end: bake a run with one seed and `offset: [n * width, 0, 0]`, stand the modules one width apart and bury the two ends of the run
@@ -554,6 +565,10 @@ function biomeOf(caller: string, word: string): IEnvironmentBiome {
  * @situation what can I bake for a desert, a jungle, a coast, a tundra or a volcanic island
  * @situation list the rocks, cliffs and mountains for a biome, or every plant that grows there
  * @situation find a tree or plant by name or latin name, such as pine, palm, cactus or fern
+ * @alias nature props for a level
+ * @alias jungle and tropical plants
+ * @alias desert cactus
+ * @alias vegetation for a biome
  * @constraint fails closed: an unknown biome or kind throws naming the nearest ids
  * @constraint biome takes an id or one of its words, so "jungle" finds tropical and "swamp" finds wetland
  * @requires npm i -D @threenative/procedural-environment
@@ -650,6 +665,8 @@ function checkKeys(name: string, patch: object | undefined, known: object): void
  * @situation generate a procedural rock, boulder or cliff as a GLB for a game level
  * @situation desert mesa, hoodoo or sandstone arch; coastal sea stack; alpine spire; volcanic basalt columns
  * @situation a procedural mountain mesh for the horizon, with snow at altitude
+ * @alias rocks and boulders
+ * @alias cliffs and mountains
  * @constraint fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1
  * @constraint the same options write identical bytes; files are written atomically (temporary file, then rename)
  * @constraint each GLB carries POSITION, NORMAL and COLOR_0 (linear RGB, rock and cover already blended) on one `rock` material; units are metres, +Y up, the rock rests on y = 0

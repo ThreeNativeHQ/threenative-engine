@@ -483,8 +483,8 @@ function gateScales(
  * @requires npm i -D @threenative/terrain
  * @situation stream a world's baked prop containers and its live placements through WorldCells
  * @constraint the variant, reach, bucket, LOD and gate rows are the game's; the package only applies
- * @example const props = await streamProps({ package, groundAt, parts, materials, surface,
- *   follow, size, whileCurrent, variantOf, reachOf, bucketOf, lodOf, ... });
+ * @example const props = await streamProps({ package: propPackage, groundAt, parts, materials, surface,
+ *   follow, size, whileCurrent, variantOf, reachOf, bucketOf, lodOf, ...options });
  */
 export async function streamProps(options: IPropWorldOptions) {
   if (!options.whileCurrent()) return undefined;

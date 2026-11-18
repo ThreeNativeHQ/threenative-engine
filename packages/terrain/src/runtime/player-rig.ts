@@ -128,7 +128,7 @@ const SINK = 0.01;
  * @requires npm i -D @threenative/terrain @threenative/physics
  * @situation give a copied starter kit its player capsule, mannequin and follow camera
  * @constraint the game builds the camera and the wall probe; the package owns only their wiring
- * @example const rig = createPlayerRig(ctx, { at, field, mannequin, clips, gait, camera, probe, ... });
+ * @example const rig = createPlayerRig({ at, field, mannequin, clips, gait, camera, probe, ...options });
  */
 export function createPlayerRig(options: IPlayerRigOptions): IPlayerRig {
   const { at, camera, field, mannequin, probe } = options;

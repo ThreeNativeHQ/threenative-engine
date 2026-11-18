@@ -140,6 +140,7 @@ const normal = new Vector3();
  * @situation scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor
  * @situation stream instanced props of any baked mesh round the player without one draw per prop
  * @situation place rocks, debris or plants on a heightfield with distance thinning and level of detail
+ * @alias scatter rocks, debris and plants over terrain
  * @constraint call `update(follow)` once per rendered frame
  * @constraint `place` runs once per candidate per tile build: return false for paths and clearings
  * @constraint rotating or scaling the field is not supported; translating it is
