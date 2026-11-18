@@ -213,6 +213,10 @@
       "reason": "The renderer probes this optional browser API and falls back to the native window resize event when the host does not install it."
     },
     {
+      "name": "WebAssembly",
+      "reason": "The web bundle instantiates the standalone Rapier Wasm crate with the browser's WebAssembly API (physics/src/web.ts and its ABI port, src/native/wasm-host.ts, PRD-899). The native player resolves @threenative/physics through the threenative-native condition to src/native/index.ts and calls runtime-native/src/physics/native_bindings.cpp against the same crate, so neither module loads there."
+    },
+    {
       "name": "queueMicrotask",
       "reason": "The worker audio proxy (core/src/worker-audio.ts, PRD-752) batches page messages with queueMicrotask inside a browser DedicatedWorker only; the native host plays audio directly."
     }
