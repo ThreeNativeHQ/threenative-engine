@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { bakeVegetation, vegetationPresets } from "../src/index.js";
@@ -45,7 +46,7 @@ describe("bakeVegetation", () => {
         expect.arrayContaining(["POSITION", "NORMAL", "TEXCOORD_0", "COLOR_0", "_WIND"]),
       );
     expect(gltf.materials.find((material) => material.name === "foliage")?.alphaMode).toBe("MASK");
-    expect(gltf.images?.length).toBe(3);
+    expect(gltf.images?.length).toBe(4);
     expect(await readdir(first.out)).toEqual(["oak-7-lod0.glb", "oak-7-lod2.glb"]);
   });
 
@@ -159,6 +160,14 @@ describe("bakeVegetation", () => {
     expect([uMax, vMax].every((value) => value > 0 && value < 0.5)).toBe(true);
   });
 
+  it("bakes every preset, a leafless cactus included", async () => {
+    const out = await makeTempDir("tn-vegetation-");
+    const failed: string[] = [];
+    for (const { id } of vegetationPresets())
+      await bakeVegetation({ out, preset: id, lods: [2] }).catch(() => failed.push(id));
+    expect(failed).toEqual([]);
+  }, 120_000);
+
   it("paints a game's bark image on a leafless preset, with its relief and under its own file name", async () => {
     const out = await makeTempDir("tn-vegetation-");
     const skin = (fill: string) => {
@@ -209,22 +218,21 @@ describe("bakeVegetation", () => {
     const out = await makeTempDir("tn-vegetation-");
     const [full] = await bakeVegetation({ out, preset: "oak", seed: 7 });
     const [small] = await bakeVegetation({ out, preset: "oak", seed: 7, leafSize: 256 });
-    const leafWidth = (bytes: Buffer) => {
+    // The leaf card is image 2 (bark, bark normal, leaf, leaf normal); it is WebP.
+    const leafWidth = async (bytes: Buffer) => {
       const gltf = parseGlb(bytes) as IGltf & {
-        accessors: unknown[];
-        bufferViews: { byteOffset?: number }[];
+        bufferViews: { byteOffset?: number; byteLength: number }[];
       };
-      const image = (gltf as unknown as { images: { bufferView: number }[] }).images.at(-1);
+      const image = (gltf as unknown as { images: { bufferView: number }[] }).images[2];
       const view = gltf.bufferViews[image?.bufferView ?? 0];
       const start = 20 + bytes.readUInt32LE(12) + 8 + (view?.byteOffset ?? 0);
-      // A PNG's IHDR width is the 4 bytes after the 8-byte signature and 4-byte length.
-      return bytes.readUInt32BE(start + 16);
+      return (await sharp(bytes.subarray(start, start + (view?.byteLength ?? 0))).metadata()).width;
     };
     const fullBytes = await readFile(full?.path ?? "");
     const smallBytes = await readFile(small?.path ?? "");
     expect(small?.path).not.toBe(full?.path);
-    expect(leafWidth(fullBytes)).toBeGreaterThan(leafWidth(smallBytes));
-    expect(leafWidth(smallBytes)).toBe(256);
+    expect(await leafWidth(fullBytes)).toBeGreaterThan((await leafWidth(smallBytes)) ?? 0);
+    expect(await leafWidth(smallBytes)).toBe(256);
     expect(smallBytes.length).toBeLessThan(fullBytes.length);
     await expect(bakeVegetation({ out, preset: "oak", leafSize: 8 })).rejects.toThrow(
       /leafSize must be an integer of at least 16/u,

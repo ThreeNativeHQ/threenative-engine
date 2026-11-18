@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
-import { Mesh } from "three";
+import type { BufferGeometry } from "three";
 import Arbor, { type IArborPart, type IArborPreset, type IArborTree } from "../vendor/arbor.js";
 import ForestKit, {
   type IForestKitMesh,
@@ -10,8 +10,12 @@ import ForestKit, {
 } from "../vendor/forest-kit/index.js";
 import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
+import { type IBakeCityOptions, buildCity, cityModules } from "./city.js";
+import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
+import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
+export type { IBakeCityOptions } from "./city.js";
 
 export interface IVegetationPreset {
   readonly id: string;
@@ -63,6 +67,13 @@ export interface IBakeVegetationOptions {
    * without `barkImage`, because a relief with no albedo to show is a caller's mistake.
    */
   readonly barkNormalImage?: string;
+  /**
+   * `"scans"` (the default) wraps bark and forest-kit wood and stone in a Poly Haven CC0 scan, and
+   * draws leaves, blades, fronds and needles from CC0 leaf scans, where one fits (the bake's `scan`
+   * and `leafScan` name them); `"generated"` keeps the generator's own texture, byte for byte, as the
+   * raw Arbor and forest-kit pages draw it.
+   */
+  readonly textures?: "scans" | "generated";
 }
 
 export interface IEnvironmentBake {
@@ -73,6 +84,24 @@ export interface IEnvironmentBake {
   readonly lod: number;
   readonly path: string;
   readonly triangles: number;
+  /** The Poly Haven scan the bark or wood wears, absent when the texture is generated. */
+  readonly scan?: string;
+  /**
+   * The scanned foliage sprites the leaves, blades or fronds wear (`+` between several), absent when
+   * the leaf card is Arbor's drawing or a game's leafImage.
+   */
+  readonly leafScan?: string;
+  /**
+   * A rock's material inputs: Outcrop's ROCK_TEXTURES profile, metres per repeat, and the two lossless WebPs
+   * its triplanar material samples (detail: rgb albedo multiplier, a roughness; normal: rgb
+   * tangent normal, a height). The GLB's `_ROCK`, `_COVER` and `_WET` attributes are the rest.
+   */
+  readonly rock?: {
+    readonly texture: string;
+    readonly tile: number;
+    readonly detail: string;
+    readonly normal: string;
+  };
 }
 
 const MAX_LOD = 2;
@@ -134,24 +163,6 @@ function nearestPresets(
     .sort((a, b) => a.score - b.score || a.candidate.localeCompare(b.candidate))
     .slice(0, count)
     .map((entry) => entry.candidate);
-}
-
-/** Arbor's bottom-up RGBA as a canvas: row 0 at the bottom, PNG row 0 at the top. */
-function toCanvas(width: number, height: number, bottomUp: Uint8Array) {
-  const canvas = createCanvas(width, height);
-  const context = canvas.getContext("2d");
-  const image = context.createImageData(width, height);
-  for (let y = 0; y < height; y++)
-    image.data.set(
-      bottomUp.subarray((height - 1 - y) * width * 4, (height - y) * width * 4),
-      y * width * 4,
-    );
-  context.putImageData(image, 0, 0);
-  return canvas;
-}
-
-function rgbaPng(width: number, height: number, bottomUp: Uint8Array): Uint8Array {
-  return toCanvas(width, height, bottomUp).encodeSync("png");
 }
 
 /** The preset with a game's form patch merged in: list rows merge by index, other keys replace. */
@@ -221,50 +232,68 @@ async function imageOf(
 }
 
 /**
- * The leaf PNG: the game's image, else Arbor's drawn card (a cactus samples none).
+ * The leaf image (the game's PNG, else Arbor's card as WebP with a normal map cooked from its own
+ * leaves and veins, else none for a leafless preset such as `saguaro`) and the scans its leaves
+ * were drawn from.
  *
  * `size` only ever shrinks Arbor's own card. A game's atlas is used as the game drew it, because a
  * cell index and a pixel grid only agree at the size the game authored.
  */
-function leafOf(
+async function leafOf(
   source: IArborPreset,
   image: Uint8Array | undefined,
   size: number | undefined,
-): Uint8Array {
-  if (image !== undefined) return image;
-  // A cactus has no leaves and no leaf card: Arbor cannot draw one, and no primitive samples it.
-  if (!source.leaves?.length) return rgbaPng(1, 1, new Uint8Array(4));
-  const drawn = Arbor.leafTexture(source, { createCanvas });
-  const longest = Math.max(drawn.width, drawn.height);
-  if (size === undefined || longest <= size) return rgbaPng(drawn.width, drawn.height, drawn.data);
-  const full = toCanvas(drawn.width, drawn.height, drawn.data);
-  const scale = size / longest;
-  const small = createCanvas(Math.round(drawn.width * scale), Math.round(drawn.height * scale));
-  const context = small.getContext("2d");
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(full, 0, 0, small.width, small.height);
-  return small.encodeSync("png");
+  scans: boolean,
+): Promise<{ leaf?: Uint8Array; leafNormal?: Uint8Array; leafScan?: string }> {
+  if (image !== undefined) return { leaf: image };
+  if (!source.leaves?.length) return {};
+  const scanned = scans ? await foliageHook(source) : undefined;
+  const drawn = Arbor.leafTexture(source, {
+    createCanvas,
+    ...(scanned ? { hook: scanned.hook } : {}),
+  });
+  const { width, height, data } = drawn;
+  const longest = Math.max(width, height);
+  const outWidth =
+    size === undefined || longest <= size ? width : Math.round((width * size) / longest);
+  const leafScan = [...(scanned?.used ?? [])].sort().join("+");
+  return {
+    ...(leafScan ? { leafScan } : {}),
+    leaf: await rgbaWebp(width, height, data, false, outWidth),
+    // Half resolution: a normal cooked from a blurred height loses nothing visible at 512 px, and
+    // it was the largest map a tree carried (PRD-900 compression study).
+    leafNormal: await rgbaWebp(
+      width,
+      height,
+      leafNormal(width, height, data),
+      false,
+      outWidth >> 1,
+    ),
+  };
 }
 
 /**
- * The bark PNGs: a game's photographed albedo and relief, else Arbor's drawn pair.
+ * The bark images: a game's photographed albedo and relief, else a Poly Haven scan, else Arbor's
+ * drawn pair as WebP.
  *
  * Arbor's normal is drawn against its own bark, so a game's albedo drops it: keeping it would shade
  * a photographed surface with grooves that are not in the picture.
  */
-function barkOf(
+async function barkOf(
   source: IArborPreset,
   albedo: Uint8Array | undefined,
   normal: Uint8Array | undefined,
-): { bark?: Uint8Array; barkNormal?: Uint8Array } {
+  scans: boolean,
+): Promise<{ bark?: Uint8Array; barkNormal?: Uint8Array; scan?: string }> {
   if (albedo !== undefined)
     return normal === undefined ? { bark: albedo } : { bark: albedo, barkNormal: normal };
   if (source.noBark) return {};
+  const scan = scans ? await barkScan(source.bark) : undefined;
+  if (scan) return { bark: scan.color, barkNormal: scan.normal, scan: scan.id };
   const drawn = Arbor.barkTexture(source.bark);
   return {
-    bark: rgbaPng(drawn.width, drawn.height, drawn.color),
-    barkNormal: rgbaPng(drawn.width, drawn.height, drawn.normal),
+    bark: await rgbaWebp(drawn.width, drawn.height, drawn.color),
+    barkNormal: await rgbaWebp(drawn.width, drawn.height, drawn.normal),
   };
 }
 
@@ -344,9 +373,10 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
 
 /**
  * Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model.
- * Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0; the Arbor presets also embed
- * their bark and leaf textures with alpha-masked leaves, while forest-kit debris and cover shade
- * from COLOR_0 alone.
+ * Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0 and embeds WebP textures:
+ * Arbor trees and cover wear a CC0 bark scan and alpha-masked leaves, blades, fronds and needles
+ * painted from CC0 leaf scans; forest-kit wood and stone wear a grey CC0 detail scan, and forest-kit
+ * cover and leaf litter a grey CC0 blade or leaf scan, each over the kit's COLOR_0 palette.
  * @situation generate a procedural tree, an oak, pine, spruce, palm or any forest species as a GLB
  * @situation procedural oak tree GLB with level of detail for a game forest
  * @situation tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute
@@ -367,6 +397,7 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
  * @constraint the same preset, seed and lods write identical bytes; files are written atomically (temporary file, then rename)
  * @constraint bake-time only, so keep it a dev dependency; the game owns the look and the sway (a TSL render/wind.ts reading _WIND), because Arbor.three is not shipped
  * @constraint _WIND is vec4 (trunk sway, branch sway, flutter, phase): forest-kit sway is flutter in z, and debris writes all four zero
+ * @constraint textures default to "scans" (the bake's `scan` and `leafScan` name them); nine presets with no fitting CC0 leaf scan (ginkgo, palms, banana, joshua, flowers, elephantear) keep Arbor's drawn leaf card; textures: "generated" keeps every generator texture byte for byte
  * @constraint form, leafImage, barkImage and barkNormalImage patch an Arbor preset only; a forest-kit debris or cover preset throws when given any
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeVegetation({ preset: "oak", seed: 7, lods: [0, 1], out: "assets/trees" });
@@ -375,7 +406,11 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
 export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> {
   const { preset, out } = options;
   const { arbor, forest, lods, seed } = resolveBake(preset, options);
-  if (forest !== null) return bakeForestKit(preset, forest, { lods, out, seed });
+  const scans = options.textures !== "generated";
+  if (forest !== null) {
+    const [scan, cover] = scans ? [await detailScan(preset), await coverScan(preset)] : [];
+    return bakeForestKit(preset, forest, { cover, lods, out, scan, seed });
+  }
   const formed = withForm(preset, arbor as IArborPreset, options.form);
   const source = options.leafImage === undefined ? formed : topDownCells(formed);
   const images = {
@@ -401,10 +436,18 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
     Object.values(images).every((image) => image === undefined)
       ? ""
       : `-f${patch.digest("hex").slice(0, 8)}`;
+  const {
+    leaf,
+    leafNormal: leafRelief,
+    leafScan,
+  } = await leafOf(source, images.leaf, options.leafSize, scans);
+  const { scan, ...barkImages } = await barkOf(source, images.bark, images.barkNormal, scans);
   const textures = {
-    ...barkOf(source, images.bark, images.barkNormal),
-    leaf: leafOf(source, images.leaf, options.leafSize),
+    ...barkImages,
+    ...(leaf ? { leaf } : {}),
+    ...(leafRelief ? { leafNormal: leafRelief } : {}),
   };
+  const named = { ...(scan ? { scan } : {}), ...(leafScan ? { leafScan } : {}) };
   await mkdir(out, { recursive: true });
   const baked: IEnvironmentBake[] = [];
   for (const lod of lods) {
@@ -416,6 +459,7 @@ export async function bakeVegetation(options: IBakeVegetationOptions): Promise<I
       lod,
       path: file,
       triangles: tree.triangles,
+      ...named,
     });
   }
   return baked;
@@ -452,7 +496,7 @@ function toPart(mesh: IForestKitMesh): IArborPart {
 function forestKitTree(
   id: string,
   preset: IForestKitPreset,
-  options: { lod: number; seed: number },
+  options: { lod: number; seed: number; onBark: boolean },
 ): IArborTree {
   const mesh = preset.generate(options);
   if (mesh.idx.length === 0)
@@ -474,9 +518,7 @@ function forestKitTree(
       if (value < (min[k] as number)) min[k] = value;
       if (value > (max[k] as number)) max[k] = value;
     }
-  // Debris is opaque wood and stone on the bark primitive; cover is a thin strip that must show
-  // from both sides and is alpha-masked like a leaf card, so it rides the foliage primitive.
-  const onBark = preset.part === "bark";
+  const { onBark } = options;
   return {
     bark: onBark ? part : EMPTY_PART,
     bounds: { max, min },
@@ -486,30 +528,58 @@ function forestKitTree(
   };
 }
 
-/** A forest-kit preset's GLBs: no bark or leaf atlas, all colour in COLOR_0. */
+/**
+ * A forest-kit preset's GLBs: COLOR_0 times Arbor's untextured factor, or, with a grey scan, that
+ * product doubled in COLOR_0 times the scan's multiplier (mean 0.5) plus its normal map, so the
+ * palette stays the kit's. Debris wears a
+ * wood or stone `scan` on the opaque bark primitive; cover and leaf litter wear a blade or leaf
+ * `cover` scan on the double-sided, alpha-masked foliage primitive, so a leaf keeps its cutout.
+ */
 async function bakeForestKit(
   preset: string,
   source: IForestKitPreset,
-  options: { lods: readonly number[]; out: string; seed: number },
+  options: {
+    lods: readonly number[];
+    out: string;
+    scan: IScan | undefined;
+    cover: IScan | undefined;
+    seed: number;
+  },
 ): Promise<IEnvironmentBake[]> {
+  const grey = options.scan ?? options.cover;
+  const onBark = source.part === "bark" && options.cover === undefined;
+  const textures =
+    grey === undefined
+      ? {}
+      : onBark
+        ? { bark: grey.color, barkNormal: grey.normal }
+        : { leaf: grey.color, leafNormal: grey.normal };
+  const named = grey === undefined ? {} : { [onBark ? "scan" : "leafScan"]: grey.id };
+  // Arbor's toGLB multiplies an untextured part by this factor; a textured part gets none, so it
+  // moves into COLOR_0 and the scanned bake keeps the generated look.
+  const look = source.part === "bark" ? [0.35, 0.28, 0.22] : [0.25, 0.4, 0.12];
   await mkdir(options.out, { recursive: true });
   const baked: IEnvironmentBake[] = [];
   for (const lod of options.lods) {
-    const tree = forestKitTree(preset, source, { lod, seed: options.seed });
+    const tree = forestKitTree(preset, source, { lod, onBark, seed: options.seed });
     const file = path.join(options.out, `${preset}-${options.seed}-lod${lod}.glb`);
-    await writeAtomic(file, Arbor.toGLB(tree));
+    const part = onBark ? tree.bark : tree.leaves;
+    if (grey)
+      part.color.set(part.color.map((v, i) => Math.min(1, v * 2 * (look[i % 3] as number))));
+    await writeAtomic(file, Arbor.toGLB(tree, textures));
     baked.push({
       bounds: { max: tree.bounds.max, min: tree.bounds.min },
       lod,
       path: file,
       triangles: tree.triangles,
+      ...named,
     });
   }
   return baked;
 }
 
-/** What an element is: a tree, ground cover, floor debris or a rock form. */
-export type EnvironmentKind = "tree" | "cover" | "debris" | "rock";
+/** What an element is: a tree, ground cover, floor debris, a rock form or an Apex city module. */
+export type EnvironmentKind = "tree" | "cover" | "debris" | "rock" | "city";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -518,6 +588,8 @@ export interface IEnvironmentElement {
   readonly kind: EnvironmentKind;
   /** Biome ids from `environmentBiomes()` this element belongs in. */
   readonly biomes: readonly string[];
+  /** A city module's Apex category: Roads, Buildings, Street Props, Vehicles, Race Kit ... */
+  readonly category?: string;
   /** The call that bakes it, ready to paste; a rock's names the filter's biome, else its first. */
   readonly bake: string;
 }
@@ -530,7 +602,7 @@ export interface IEnvironmentFilter {
   readonly search?: string;
 }
 
-const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock"];
+const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock", "city"];
 
 /**
  * Every biome: its id, name, the request words that mean it, the rock surface its rocks wear and
@@ -601,13 +673,22 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
       bake: `bakeRock({ form: "${id}", biome: "${at}", seed: 1, out: "assets/environment" })`,
     };
   });
-  return [...plants, ...rocks].filter((element) => {
+  const city = cityModules().map(({ id, name, category }) => ({
+    id,
+    name,
+    kind: "city" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeCity({ module: "${id}", out: "assets/environment" })`,
+  }));
+  return [...plants, ...rocks, ...city].filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
     if (filter.kind !== undefined && element.kind !== filter.kind) return false;
     const text = [
       element.id,
       element.name,
       "latin" in element ? element.latin : "",
+      "category" in element ? element.category : "",
       element.kind,
       ...element.biomes.flatMap((id) => [
         id,
@@ -640,6 +721,11 @@ export interface IBakeRockOptions {
   /** Colour and cover overrides over the biome's: rockA, rockB, accent, moss, snow, sand, lichen, tide and their colours. */
   readonly surface?: Readonly<Record<string, string | number>>;
   /**
+   * A tileable form's (cliff) module along +X: module n sits n widths over and meets n - 1 and
+   * n + 1 without a seam, as Outcrop's `tile()` lays them. Place it at x = n x width. Default 0.
+   */
+  readonly module?: number;
+  /**
    * Where the module stands in its run, in metres. A tileable form (`cliff`) joins its neighbour
    * only when both share the seed and stand one width apart: module n takes `[n * width, 0, 0]`.
    */
@@ -648,6 +734,102 @@ export interface IBakeRockOptions {
 
 const ROCK_LOD_DETAIL = [1, 0.5, 0.2];
 
+/** glTF name, three name and components of every attribute a rock GLB keeps. */
+const ROCK_ATTRIBUTES = [
+  ["POSITION", "position", "VEC3"],
+  ["NORMAL", "normal", "VEC3"],
+  ["COLOR_0", "color", "VEC3"],
+  ["_ROCK", "aRock", "VEC3"],
+  ["_COVER", "aCover", "VEC4"],
+  ["_WET", "aWet", "SCALAR"],
+] as const;
+
+/**
+ * A rock as binary glTF with every input of Outcrop's triplanar material: COLOR_0 (rock and cover
+ * blended, for a plain viewer) and `_ROCK` (bare rock rgb), `_COVER` (cover rgb and amount) and
+ * `_WET` (1 below the tide line). Outcrop's own exportGLB keeps only COLOR_0, which loses the look.
+ */
+function rockGlb(geometry: BufferGeometry, extras: Record<string, unknown>): Uint8Array {
+  const accessors: Record<string, unknown>[] = [];
+  const views: Record<string, unknown>[] = [];
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  const attributes: Record<string, number> = {};
+  for (const [gltf, name, type] of ROCK_ATTRIBUTES) {
+    const attribute = geometry.getAttribute(name);
+    if (attribute === undefined) throw new Error(`bakeRock: the rock has no ${name} attribute`);
+    const array = new Float32Array(attribute.array);
+    const bytes = new Uint8Array(array.buffer);
+    views.push({ buffer: 0, byteOffset: offset, byteLength: bytes.byteLength, target: 34962 });
+    chunks.push(bytes);
+    offset += bytes.byteLength;
+    const bounds: Record<string, number[]> = {};
+    if (gltf === "POSITION" && geometry.boundingBox) {
+      bounds.min = geometry.boundingBox.min.toArray();
+      bounds.max = geometry.boundingBox.max.toArray();
+    }
+    accessors.push({
+      bufferView: views.length - 1,
+      componentType: 5126,
+      count: attribute.count,
+      type,
+      ...bounds,
+    });
+    attributes[gltf] = accessors.length - 1;
+  }
+  const primitive: Record<string, unknown> = { attributes, material: 0 };
+  if (geometry.index) {
+    const index = new Uint32Array(geometry.index.array);
+    views.push({ buffer: 0, byteOffset: offset, byteLength: index.byteLength, target: 34963 });
+    chunks.push(new Uint8Array(index.buffer));
+    offset += index.byteLength;
+    accessors.push({
+      bufferView: views.length - 1,
+      componentType: 5125,
+      count: index.length,
+      type: "SCALAR",
+    });
+    primitive.indices = accessors.length - 1;
+  }
+  const json = new TextEncoder().encode(
+    JSON.stringify({
+      asset: { version: "2.0", generator: "rockgen.js via @threenative/procedural-environment" },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0, name: "rock" }],
+      meshes: [{ name: "rock", primitives: [primitive] }],
+      materials: [
+        {
+          name: "rock",
+          extras,
+          pbrMetallicRoughness: { metallicFactor: 0, roughnessFactor: 0.94 },
+        },
+      ],
+      accessors,
+      bufferViews: views,
+      buffers: [{ byteLength: offset }],
+    }),
+  );
+  const jsonLength = Math.ceil(json.length / 4) * 4;
+  const out = new Uint8Array(28 + jsonLength + offset);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 0x46546c67, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, out.length, true);
+  view.setUint32(12, jsonLength, true);
+  view.setUint32(16, 0x4e4f534a, true);
+  out.fill(0x20, 20, 20 + jsonLength);
+  out.set(json, 20);
+  view.setUint32(20 + jsonLength, offset, true);
+  view.setUint32(24 + jsonLength, 0x004e4942, true);
+  let at = 28 + jsonLength;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out;
+}
+
 /** Each key of `patch` must be a key of `known`; throws listing the known keys. */
 function checkKeys(name: string, patch: object | undefined, known: object): void {
   for (const key of Object.keys(patch ?? {}))
@@ -655,6 +837,65 @@ function checkKeys(name: string, patch: object | undefined, known: object): void
       throw new Error(
         `bakeRock: ${name} key "${key}" is unknown: ${Object.keys(known).join(", ")}`,
       );
+}
+
+/**
+ * Outcrop's own detail and normal maps for this rock's texture profile and its tile, written once
+ * per profile beside the GLBs. `materialFor` is the generator's own choice, so nothing is re-derived.
+ */
+async function rockMaps(
+  generator: InstanceType<typeof Outcrop.RockGenerator>,
+  geometry: BufferGeometry,
+  out: string,
+): Promise<NonNullable<IEnvironmentBake["rock"]>> {
+  const recipe = geometry.userData.recipe as { surface: { texture: string } };
+  const { uniforms } = generator.materialFor(recipe).userData;
+  const texture = recipe.surface.texture;
+  const write = async (
+    map: { image: { data: Uint8Array; width: number; height: number } },
+    kind: string,
+  ) => {
+    const file = path.join(out, `rock-${texture}-${kind}.webp`);
+    await writeAtomic(
+      file,
+      await rgbaWebp(map.image.width, map.image.height, map.image.data, true),
+    );
+    return file;
+  };
+  return {
+    texture,
+    tile: 1 / uniforms.uTile.value,
+    detail: await write(uniforms.tRockDetail.value, "detail"),
+    normal: await write(uniforms.tRockNormal.value, "normal"),
+  };
+}
+
+/** The throw that names what is wrong with a bakeRock call's form, detail, size, module or keys. */
+function checkRockOptions(options: IBakeRockOptions, detail: number, module: number): void {
+  const { form, size, traits, surface } = options;
+  if (!Object.hasOwn(Outcrop.FORMS, form)) {
+    const forms = Object.keys(Outcrop.FORMS);
+    throw new Error(
+      `bakeRock: unknown form "${form}". Nearest ids: ${nearestPresets(form, 3, forms).join(", ")}. Forms: ${forms.join(", ")}.`,
+    );
+  }
+  if (!(detail >= 0 && detail <= 1))
+    throw new Error(`bakeRock: detail must be 0 to 1, got ${detail}`);
+  if (size !== undefined && (size.length !== 3 || !size.every((v) => Number.isFinite(v) && v > 0)))
+    throw new Error(`bakeRock: size must be three positive metres [w, h, d], got [${size}]`);
+  if (
+    options.offset !== undefined &&
+    (options.offset.length !== 3 || !options.offset.every((v) => Number.isFinite(v)))
+  )
+    throw new Error(`bakeRock: offset must be three metres [x, y, z], got [${options.offset}]`);
+  if (module !== 0 && !(Number.isInteger(module) && Outcrop.FORMS[form]?.tileable))
+    throw new Error(
+      `bakeRock: module must be an integer on a tileable form (${Object.keys(Outcrop.FORMS)
+        .filter((id) => Outcrop.FORMS[id]?.tileable)
+        .join(", ")}), got ${module} on "${form}"`,
+    );
+  checkKeys("traits", traits, Outcrop.DEFAULT_TRAITS);
+  checkKeys("surface", surface, Outcrop.DEFAULT_SURFACE);
 }
 
 /**
@@ -677,26 +918,18 @@ function checkKeys(name: string, patch: object | undefined, known: object): void
  * @example for (const n of [0, 1, 2]) await bakeRock({ form: "cliff", biome: "desert", seed: 7, offset: [n * 10, 0, 0], out: "assets/rocks" }); // three modules of one wall
  */
 export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> {
-  const { form, out, size, traits, surface, offset } = options;
+  const { form, out, size, traits, surface } = options;
+  const module = options.module ?? 0;
   const seed = options.seed ?? 1;
   const lods = options.lods ?? [0];
   const detail = options.detail ?? 0.3;
-  if (!Object.hasOwn(Outcrop.FORMS, form)) {
-    const forms = Object.keys(Outcrop.FORMS);
-    throw new Error(
-      `bakeRock: unknown form "${form}". Nearest ids: ${nearestPresets(form, 3, forms).join(", ")}. Forms: ${forms.join(", ")}.`,
-    );
-  }
+  checkRockOptions(options, detail, module);
   const biome = biomeOf("bakeRock", options.biome ?? "hills");
   checkSeedAndLods("bakeRock", seed, lods);
-  if (!(detail >= 0 && detail <= 1))
-    throw new Error(`bakeRock: detail must be 0 to 1, got ${detail}`);
-  if (size !== undefined && (size.length !== 3 || !size.every((v) => Number.isFinite(v) && v > 0)))
-    throw new Error(`bakeRock: size must be three positive metres [w, h, d], got [${size}]`);
-  if (offset !== undefined && (offset.length !== 3 || !offset.every((v) => Number.isFinite(v))))
-    throw new Error(`bakeRock: offset must be three metres [x, y, z], got [${offset}]`);
-  checkKeys("traits", traits, Outcrop.DEFAULT_TRAITS);
-  checkKeys("surface", surface, Outcrop.DEFAULT_SURFACE);
+  // A module is a placement along the run: `module` computes the offset, and an explicit one wins.
+  const offset: readonly [number, number, number] | undefined =
+    options.offset ??
+    (module ? [module * (size ?? Outcrop.FORMS[form]?.size ?? [0])[0], 0, 0] : undefined);
   const patched = options.detail !== undefined || size || traits || surface || offset;
   const tag = patched
     ? `-f${createHash("sha256")
@@ -727,10 +960,12 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
       ...(offset ? { offset } : {}),
     });
     const file = path.join(out, `${form}-${biome.id}-${seed}${tag}-lod${lod}.glb`);
-    await writeAtomic(file, new Uint8Array(Outcrop.exportGLB(new Mesh(geometry))));
     const box = geometry.boundingBox;
     if (box === null) throw new Error(`bakeRock: "${form}" baked no bounds at lod ${lod}`);
+    const rock = await rockMaps(generator, geometry, out);
+    await writeAtomic(file, rockGlb(geometry, { rockTexture: rock.texture, tile: rock.tile }));
     baked.push({
+      rock,
       bounds: { max: [box.max.x, box.max.y, box.max.z], min: [box.min.x, box.min.y, box.min.z] },
       lod,
       path: file,
@@ -738,4 +973,39 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
     });
   }
   return baked;
+}
+
+/**
+ * Bake an Apex City Kit module to one GLB: a road tile, a building, a street prop, a vehicle, a race
+ * kit piece, a block or lot, a sidewalk, transit, a public space, a utility or a decal. The page's
+ * own generator and GLTFExporter run headless, so the GLB carries its merged meshes, its materials
+ * and textures (Poly Haven CC0 PBR maps and the canvas-drawn signs, liveries and markings) and its
+ * road sockets in the root node's extras.
+ * @situation generate a modular city street, intersection, roundabout or highway tile as a GLB
+ * @situation a procedural building, storefront, office tower, apartment block, house or warehouse for a city level
+ * @situation street props for a city: traffic signal, streetlight, bus shelter, hydrant, bench, mailbox, dumpster
+ * @situation a race track kit: starting grid, timing gantry, barriers, tire wall, kerbs, pit lane; or a car, van, kart or formula car
+ * @alias city kit
+ * @alias modular road tiles
+ * @alias low poly city buildings
+ * @alias cars and vehicles
+ * @constraint fails closed: an unknown module throws naming the nearest ids; seed is an integer 0 to 4294967295, detail 0 to 2, wet 0 to 100, floors an integer 2 to 12, text at most 24 characters, dressing a boolean
+ * @constraint the same options write identical bytes on one Node major and machine (fonts draw the sign text); files are written atomically (temporary file, then rename)
+ * @constraint units are metres, +Y up; road tiles are 24 m on a 24 m grid and their sockets (side, position, direction, lanes) are in the root node's extras
+ * @constraint bake-time only, so keep it a dev dependency; textures are capped at 1024 px like the page's export
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeCity({ module: "cross", out: "assets/city" });
+ * @example await bakeCity({ module: "apartments", seed: 7, floors: 8, out: "assets/city" });
+ */
+export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> {
+  const ids = cityModules().map((module) => module.id);
+  if (!ids.includes(options.module))
+    throw new Error(
+      `bakeCity: unknown module "${options.module}". Nearest ids: ${nearestPresets(options.module, 3, ids).join(", ")}. Call environmentElements({ kind: "city" }) for all ${ids.length}.`,
+    );
+  const city = await buildCity(options);
+  await mkdir(options.out, { recursive: true });
+  const file = path.join(options.out, city.file);
+  await writeAtomic(file, await webpImages(city.glb));
+  return [{ bounds: city.bounds, lod: 0, path: file, triangles: city.triangles }];
 }

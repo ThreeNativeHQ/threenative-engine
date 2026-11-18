@@ -10,7 +10,7 @@
     "directory": "packages/procedural-environment"
   },
   "type": "module",
-  "files": ["dist", "README.md", "LICENSES"],
+  "files": ["dist", "vendor/apex", "README.md", "LICENSES", "scans/*.webp", "scans/credits.json"],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,17 +28,22 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. procedural-environment/__tests__ && publint --strict"
+    "test": "vitest run --root ../.. procedural-environment/__tests__ && publint --strict",
+    "library": "tsup --config tsup.config.ts && (tsup --config tsup.config.ts --watch src --watch vendor --watch scans & vite --config library/vite.config.ts)"
   },
   "dependencies": {
     "@napi-rs/canvas": "catalog:",
+    "sharp": "catalog:",
     "three": "catalog:"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
+    "@types/three": "catalog:",
     "publint": "0.3.22",
+    "tailwindcss": "catalog:",
     "tsup": "8.5.1",
     "typescript": "catalog:",
-    "@types/three": "catalog:"
+    "vite": "catalog:"
   }
 }

@@ -919,6 +919,18 @@ describe("capability manifest generator", () => {
       },
       // The nature vocabulary an asset-store brief uses, authored on the bake package's own
       // situations (PRD-892 nature discovery): each row is the request that vocabulary serves.
+      "cars and vehicles": { ids: ["request.cars-and-vehicles"], owners: ["bakeCity"] },
+      "city kit": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.city-kit"],
+        owners: ["bakeCity"],
+      },
+      "low poly city buildings": { ids: ["request.low-poly-city-buildings"], owners: ["bakeCity"] },
+      "modular road tiles": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.modular-road-tiles"],
+        owners: ["bakeCity"],
+      },
       "bushes and shrubs": { ids: ["request.bushes-and-shrubs"], owners: ["bakeVegetation"] },
       "cliffs and mountains": { ids: ["request.cliffs-and-mountains"], owners: ["bakeRock"] },
       "dead trees, fallen logs and stumps": {

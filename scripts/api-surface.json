@@ -491,6 +491,7 @@
     "@threenative/procedural-environment": {
       "exports": [".", "./package.json"],
       "symbols": {
+        "@threenative/procedural-environment#bakeCity": "export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeRock": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#environmentBiomes": "export function environmentBiomes(): IEnvironmentBiome[] { … }",

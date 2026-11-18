@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9477611940298507,
+  "recallAtK": 0.9492753623188406,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -123,6 +123,10 @@
     "request.palm-trees",
     "request.pine-oak-or-spruce-forest-trees",
     "request.realistic-textured-tree-model",
+    "request.cars-and-vehicles",
+    "request.city-kit",
+    "request.low-poly-city-buildings",
+    "request.modular-road-tiles",
     "request.rocks-and-boulders",
     "request.scatter-rocks-debris-and-plants-over-terrain",
     "request.street-trees-along-a-road",
@@ -130,7 +134,7 @@
     "request.vegetation-for-a-biome"
   ],
   "rejectHits": 15,
-  "rowCount": 134,
+  "rowCount": 138,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -261,6 +265,10 @@
     "request.palm-trees",
     "request.pine-oak-or-spruce-forest-trees",
     "request.realistic-textured-tree-model",
+    "request.cars-and-vehicles",
+    "request.city-kit",
+    "request.low-poly-city-buildings",
+    "request.modular-road-tiles",
     "request.rocks-and-boulders",
     "request.scatter-rocks-debris-and-plants-over-terrain",
     "request.street-trees-along-a-road",
@@ -268,7 +276,7 @@
     "request.vegetation-for-a-biome"
   ],
   "version": 1,
-  "zeroResultRate": 0.03731343283582089,
+  "zeroResultRate": 0.036231884057971016,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",
