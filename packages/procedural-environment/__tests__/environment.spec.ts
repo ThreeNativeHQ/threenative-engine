@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -7,6 +8,7 @@ import {
   environmentElements,
   vegetationPresets,
 } from "../src/index.js";
+import Outcrop from "../vendor/outcrop.js";
 
 interface IGltf {
   accessors: { bufferView: number; componentType: number; count: number; type: string }[];
@@ -106,6 +108,35 @@ describe("bakeRock writes a rock GLB for a biome", () => {
       expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
       expect(png.readUInt32BE(16)).toBe(512);
     }
+  });
+
+  it("keeps Outcrop's map bytes exactly, alpha (height, roughness) included", async () => {
+    const out = await makeTempDir("tn-rock-png-");
+    const [rock] = await bakeRock({ form: "boulder", biome: "volcanic", out });
+    const png = await readFile(rock?.rock?.normal ?? "");
+    const size = png.readUInt32BE(16);
+    expect(png[25]).toBe(6); // RGBA
+    const idat: Buffer[] = [];
+    for (let at = 8; at < png.length; ) {
+      const length = png.readUInt32BE(at);
+      if (png.toString("latin1", at + 4, at + 8) === "IDAT")
+        idat.push(png.subarray(at + 8, at + 8 + length));
+      at += 12 + length;
+    }
+    const rows = inflateSync(Buffer.concat(idat));
+    const want = new Outcrop.RockGenerator().materialFor({
+      form: "boulder",
+      size: [2.4, 1.8, 2.1],
+      surface: { texture: "basalt" },
+    }).userData.uniforms.tRockNormal.value.image.data;
+    let differ = 0;
+    for (let y = 0; y < size; y++) {
+      expect(rows[y * (size * 4 + 1)]).toBe(0); // filter 0: the bytes are the pixels
+      const got = rows.subarray(y * (size * 4 + 1) + 1, (y + 1) * (size * 4 + 1));
+      const row = want.subarray((size - 1 - y) * size * 4, (size - y) * size * 4);
+      for (let i = 0; i < got.length; i++) if (got[i] !== row[i]) differ++;
+    }
+    expect(differ).toBe(0);
   });
 
   it("colours the rock by biome: desert sandstone is redder than tundra granite", async () => {

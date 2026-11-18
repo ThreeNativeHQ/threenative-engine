@@ -10,6 +10,7 @@ import ForestKit, {
 } from "../vendor/forest-kit/index.js";
 import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
+import { rgbaPng } from "./png.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
 
@@ -125,20 +126,6 @@ function nearestPresets(
     .sort((a, b) => a.score - b.score || a.candidate.localeCompare(b.candidate))
     .slice(0, count)
     .map((entry) => entry.candidate);
-}
-
-function rgbaPng(width: number, height: number, bottomUp: Uint8Array): Uint8Array {
-  const canvas = createCanvas(width, height);
-  const context = canvas.getContext("2d");
-  const image = context.createImageData(width, height);
-  // Arbor stores row 0 at the bottom; PNG row 0 is the top.
-  for (let y = 0; y < height; y++)
-    image.data.set(
-      bottomUp.subarray((height - 1 - y) * width * 4, (height - y) * width * 4),
-      y * width * 4,
-    );
-  context.putImageData(image, 0, 0);
-  return canvas.encodeSync("png");
 }
 
 /** The preset with a game's form patch merged in: list rows merge by index, other keys replace. */

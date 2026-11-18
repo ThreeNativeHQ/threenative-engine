@@ -1,7 +1,8 @@
 // forest-kit — the forest-floor generators: deadwood, leaf litter, stone and the cover Arbor lacks.
-// Vendored from the owner-authored MIT forest-kit (see ../../../LICENSES/forest-kit-MIT.txt) with
-// three removed: GeoBuilder keeps its arrays and drops `build()`, and `rock` uses the local
-// icosphere instead of THREE.IcosahedronGeometry. The kits' Terrain, Sky, Water, ScatterSystem and
+// Vendored from the owner-authored MIT forest-kit (see ../../../LICENSES/forest-kit-MIT.txt):
+// GeoBuilder keeps its arrays and drops `build()`; debris.js is the zip's file with only its import
+// paths changed (`rock` keeps THREE.IcosahedronGeometry, so it bakes the zip's exact stone). The
+// kits' Terrain, Sky, Water, ScatterSystem and
 // foliage material stay out; see PRD-889's Decisions.
 
 import { branch, leafLitter, log, rock, stump, twig } from "./debris.js";

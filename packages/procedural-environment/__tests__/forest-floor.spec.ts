@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { IcosahedronGeometry } from "three";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { bakeVegetation, vegetationPresets } from "../src/index.js";
@@ -137,5 +138,14 @@ describe("the forest floor bakes from one nature package", () => {
     expect(baked.map((entry) => entry.lod)).toEqual([0, 1]);
     expect(await readdir(out)).toEqual(["twig-5-lod0.glb", "twig-5-lod1.glb"]);
     expect(baked[0]?.triangles).toBeGreaterThan(baked[1]?.triangles ?? Number.POSITIVE_INFINITY);
+  });
+});
+
+describe("forest-kit rock", () => {
+  it("is forest-kit's own THREE.IcosahedronGeometry stone: 180 triangles at lod 0 (detail 2), 20 at lod 2", async () => {
+    const out = await makeTempDir("tn-kit-rock-");
+    const [near, far] = await bakeVegetation({ preset: "rock", seed: 1, lods: [0, 2], out });
+    expect(near?.triangles).toBe(new IcosahedronGeometry(1, 2).getAttribute("position").count / 3);
+    expect(far?.triangles).toBe(20);
   });
 });
