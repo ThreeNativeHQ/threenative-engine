@@ -7282,13 +7282,130 @@ function apexCompleteMaterialMaps(builder,id) {
   }
 }
 
-function gr(i,e){let t=Ft[i],n={...So,...e},s=Yv(n.seed),r=new ru,o=au();
-if(i==="civic-signs")apexFixedSigns(r,n,o);
+// ThreeNative road profiles use one sampled centreline for the deck, edge layers and sockets.
+function apexRoadProfile(builder, id, options, road, materials) {
+  const curved = id === "curve";
+  const sign = road.bendSide === "left" ? -1 : 1;
+  const sweep = curved ? sign * road.bendAngle * Math.PI / 180 : 0;
+  const radius = road.bendRadius;
+  const start = curved ? -12 : -road.roadLength / 2;
+  const halfWidth = road.roadWidth / 2;
+  const steps = curved ? Math.ceil(road.bendAngle / (options.detail === 0 ? 5 : 2.5)) : 1;
+  const point = (t, offset, y) => {
+    if (!curved) return [offset, y, start + t * road.roadLength];
+    const angle = t * sweep;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    return [sign * radius * (1 - cos) + offset * cos, y,
+      start + (sign * radius - offset) * sin];
+  };
+  const strip = (left, right, yLeft, yRight, material, repeat) => {
+    const positions = [], uvs = [], indices = [];
+    const leftLength = curved ? Math.abs(sweep) * (radius - sign * left) : road.roadLength;
+    const rightLength = curved ? Math.abs(sweep) * (radius - sign * right) : road.roadLength;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = point(t, left, yLeft), b = point(t, right, yRight);
+      positions.push(...a, ...b);
+      if (yLeft === yRight) {
+        // A world-space projection keeps the grain the same size across the whole bend.
+        uvs.push(a[0] / repeat, a[2] / repeat, b[0] / repeat, b[2] / repeat);
+      } else {
+        uvs.push(yLeft / repeat, t * leftLength / repeat, yRight / repeat, t * rightLength / repeat);
+      }
+      if (i < steps) {
+        const a = i * 2;
+        indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
+    }
+    apexUrbanMesh(builder, positions, uvs, indices, material);
+  };
+  const slab = (left, right, bottom, top, material, repeat) => {
+    strip(left, right, top, top, material, repeat);
+    strip(left, left, bottom, top, material, repeat);
+    strip(right, right, top, bottom, material, repeat);
+    strip(right, left, bottom, bottom, material, repeat);
+    for (const end of [0, 1]) {
+      const vertices = [
+        ...point(end, left, bottom), ...point(end, right, bottom),
+        ...point(end, left, top), ...point(end, right, top),
+      ];
+      const indices = end ? [0, 1, 2, 1, 3, 2] : [0, 2, 1, 1, 2, 3];
+      const w = (right - left) / repeat, h = (top - bottom) / repeat;
+      apexUrbanMesh(builder, vertices, [0, 0, w, 0, 0, h, w, h], indices, material);
+    }
+  };
+  const asphalt = apexUrbanSurface("Asphalt", "asphalt",
+    new Ce(0x8b9096).lerp(new Ce(0x4d5967), options.wet / 135),
+    .99 - options.wet * .0063, .8 - options.wet * .004);
+  asphalt.userData.noCast = true;
+  slab(-halfWidth, halfWidth, -.24, .003, asphalt, 3);
+  if (road.sidewalk) {
+    slab(-halfWidth - 2.5, -halfWidth, -.24, .145, materials.paving, 2.5);
+    slab(halfWidth, halfWidth + 2.5, -.24, .145, materials.paving, 2.5);
+  }
+  if (road.curb) {
+    slab(-halfWidth - .17, -halfWidth + .05, .003, .18, materials.curb, 1.6);
+    slab(halfWidth - .05, halfWidth + .17, .003, .18, materials.curb, 1.6);
+  }
+  if (road.markings) {
+    for (const offset of [-halfWidth + .43, halfWidth - .43, -.14, .14]) {
+      strip(offset - .055, offset + .055, .014, .014,
+        Math.abs(offset) > 1 ? U.white : U.yellow, 1);
+    }
+  }
+  if (options.dressing && !curved) {
+    for (const side of [-1, 1]) {
+      const [x, , z] = point(.5 + side * .3, side * (halfWidth + 1.3), 0);
+      if (!road.sidewalk) builder.cylinder(x, 0, z, .24, .26, .10, materials.concrete, 20);
+      Qc(builder, x, z);
+    }
+  }
+  const socket = (side, t, direction) => ({
+    side, position: point(t, 0, 0), direction, width: road.roadWidth,
+    lanes: 2, laneCenters: [-road.roadWidth / 4, road.roadWidth / 4],
+  });
+  const outlet = !curved ? "S" : road.bendAngle === 90 ? (sign > 0 ? "E" : "W") : "end";
+  const direction = curved && road.bendAngle !== 90
+    ? [Math.sin(sweep), 0, Math.cos(sweep)] : curved ? [sign, 0, 0] : [0, 0, 1];
+  return [
+    socket("N", 0, [0, 0, -1]),
+    socket(outlet, 1, direction),
+  ];
+}
+
+function apexRoadFinish(builder, road, materials, wet, hasProfile) {
+  if (!hasProfile) {
+    if (!road.sidewalk) builder.batches.delete(materials.paving);
+    if (!road.curb) builder.batches.delete(materials.curb);
+    if (!road.markings) {
+      builder.batches.delete(U.white);
+      builder.batches.delete(U.yellow);
+    }
+  }
+  if (road.roadSurface === "asphalt") return;
+  const concrete = road.roadSurface === "concrete";
+  const tint = new Ce(concrete ? 0xddddda : 0xf3f0e8).lerp(new Ce(0xa9a8a3), wet / 135);
+  const surface = apexUrbanSurface("Road " + road.roadSurface, concrete ? "formwork" : "paving",
+    tint, .95 - wet * .0035, concrete ? .26 : .45);
+  surface.userData.noCast = true;
+  for (const [material, geometries] of builder.batches) {
+    if (material.name !== "Asphalt" && material.name !== "Road asphalt") continue;
+    builder.batches.delete(material);
+    builder.batches.set(surface, geometries);
+  }
+}
+
+function gr(i,e,road,profile){let t=Ft[i],n={...So,...e},s=Yv(n.seed),r=new ru,o=au();
+let sockets;
+if(profile) sockets = apexRoadProfile(r,i,n,road,o);
+else if(i==="civic-signs")apexFixedSigns(r,n,o);
 else if(i==="civic-ad")apexFixedBillboard(r,n,o);
 else if(i==="civic-garage")apexParkingFinish(r,n);
 else if(!apexGlassOffice(r,i,n,s,o)&&!apexNeighborhoodModule(r,i,n,s,{...o,concrete:apexCivicPouredConcrete()})
   &&!apexUtilities(r,i,n,s,o)&&!apexPublicSpaces(r,i,n,s,o))
-  apexFinishCity(r,i,n,s,o)?void 0:apexUrbanModule(r,i,n,s,o)?void 0:apexCivicModule(r,i,n,s,o)?void 0:t.edges?Kv(r,i,n,s,o):t.category===1?_v(r,i,n,s,o):t.category===3?$v(r,i,n):eM(r,i,n,s,o);apexCompleteMaterialMaps(r,i);let a=r.finish();return a.name=t.name,a.userData={module:i,seed:n.seed,parameters:n,units:"meters",sockets:tM(t)},a.traverse(c=>{c.material?.userData.sign&&(c.material.userData.refs=(c.material.userData.refs||0)+1)}),kf(),a}function lu(i,e){let t={red:"offRed",offRed:"red",green:"offGreen",offGreen:"green"};for(let n of i.children)t[n.name]&&(n.material=U[e?n.name:t[n.name]])}function zi(i){i?.traverse(e=>{e.geometry?.dispose(),e.material?.userData.owned&&e.material.dispose(),e.material?.userData.sign&&e.material.userData.refs--}),kf()}/* ThreeNative patch */ return {build:gr,loadMaps:Gf,modules:mr,categories:fs,defaults:So,GLTFExporter:Bi};
+  apexFinishCity(r,i,n,s,o)?void 0:apexUrbanModule(r,i,n,s,o)?void 0:apexCivicModule(r,i,n,s,o)?void 0:t.edges?Kv(r,i,n,s,o):t.category===1?_v(r,i,n,s,o):t.category===3?$v(r,i,n):eM(r,i,n,s,o);
+if(road) apexRoadFinish(r,road,o,n.wet,profile);
+apexCompleteMaterialMaps(r,i);let a=r.finish();return a.name=t.name,a.userData={module:i,seed:n.seed,parameters:road ? {...n,...road} : n,units:"meters",sockets:sockets ?? tM(t)},a.traverse(c=>{c.material?.userData.sign&&(c.material.userData.refs=(c.material.userData.refs||0)+1)}),kf(),a}function lu(i,e){let t={red:"offRed",offRed:"red",green:"offGreen",offGreen:"green"};for(let n of i.children)t[n.name]&&(n.material=U[e?n.name:t[n.name]])}function zi(i){i?.traverse(e=>{e.geometry?.dispose(),e.material?.userData.owned&&e.material.dispose(),e.material?.userData.sign&&e.material.userData.refs--}),kf()}/* ThreeNative patch */ return {build:gr,loadMaps:Gf,modules:mr,categories:fs,defaults:So,GLTFExporter:Bi};
 var nM=i=>document.getElementById(i),iM=["viewport","loading","assetMode","layoutMode","layoutCount","traffic","lighting","frame","assetCode","title","description","hint","stats","inspectorTitle","inspectorTag","assetFields","layoutFields","moduleInfo","footprint","sockets","wetField","detailField","floorsField","textField","dressingField","seed","shuffle","detail","wet","wetValue","floors","floorValue","label","dressing","snap","selectionLabel","transforms","posX","posY","posZ","rotate","duplicate","remove","placements","place","exportGLB","layoutIo","exportJSON","importJSON","file","status","count","search","categories","list","shelfTitle","shelfCount","cards","guide","help"],K=Object.fromEntries(iM.map(i=>[i,nM(i)])),sM=new Set(["store","garage","shelter","gantry","checkpoint"]),rM=new Set([...mr.filter(i=>i.edges).map(i=>i.id),"store","apartments","office","garage","warehouse","barrier"]),il=80,ii=240,du=(i,e=2)=>Number(i.toFixed(e)),mu=(i,e,t)=>Math.max(e,Math.min(t,i)),Wn=(i,e,t)=>Number.isFinite(i)&&i>=e&&i<=t,Kf=i=>i.toLocaleString(),hn=(i,e,t)=>new P(i,e,t),zt="cross",yr=0,en="asset",ms={...So},In,yt=null,st=null,oM=0,Hn=!1,Gi=!0,$c=!0,sl=!1,hu=!1,el=!1,Bt=[],To=new mn,Vn=new mn,Eo=new mn,Gt=new On;Gt.background=new Ce(2700087);Gt.fog=new Fr(2700087,.013);Gt.add(To,Vn,Eo);var tl=new er(12703978,9337183,1.28),tn=new ns(16768948,2.85);tn.position.set(-22,36,18);tn.castShadow=!0;Object.assign(tn.shadow.camera,{left:-27,right:27,top:27,bottom:-27,near:.5,far:135});tn.shadow.mapSize.set(2048,2048);tn.shadow.normalBias=.075;tn.shadow.bias=-16e-5;tn.shadow.radius=3;var gu=new ns(9551065,.7);gu.position.set(3,8,-14);Gt.add(tl,tn,tn.target,gu);var Io=new ht(new Jn(1100,1100),new En({color:1318177,roughness:.98,metalness:.015}));Io.rotation.x=-Math.PI/2;Io.position.y=-.365;Io.receiveShadow=!0;Gt.add(Io);var Co=new ir(528,22,10201502,5792606);Co.position.y=-.352;Co.material.transparent=!0;Co.material.opacity=.3;Gt.add(Co);var Po=new ir(144,72,7636092,6582635);Po.position.y=-.35;Po.material.transparent=!0;Po.material.opacity=.16;Gt.add(Po);var Mr=new ht(new Qn(1,1.035,.18,64),new En({color:2634293,roughness:.83,metalness:.12}));Mr.position.y=-.096;Mr.castShadow=!0;Mr.receiveShadow=!0;Gt.add(Mr);var rl=new oo(new $t,16756338);Gt.add(rl);rl.visible=!1;var ni=new Ot(39,1,.08,650),Jc=hn(0,0,0),Kt,ln,Vf,Ao=0,vr=[],aM=matchMedia("(prefers-reduced-motion: reduce)").matches;aM&&(Gi=!1,K.traffic.setAttribute("aria-pressed","false"));try{Kt=new xo({antialias:!0,powerPreference:"high-performance"}),Kt.shadowMap.enabled=!0,Kt.shadowMap.type=is,Kt.setPixelRatio(Math.min(devicePixelRatio,1.75)),Kt.toneMapping=rr,Kt.toneMappingExposure=1.12,Kt.domElement.setAttribute("aria-label","Interactive 3D module. Drag to orbit, scroll to zoom."),Kt.domElement.addEventListener("webglcontextlost",t=>{t.preventDefault(),K.loading.textContent="WebGL context lost. Reload the page to restart the workbench.",K.loading.hidden=!1}),K.viewport.appendChild(Kt.domElement);let i=new qc,e=new ur(Kt);Vf=e.fromScene(i,.038),Gt.environment=Vf.texture,Gt.environmentIntensity=.82,i.dispose(),e.dispose(),ln=new Xc(ni,Kt.domElement),ln.enableDamping=!0,ln.dampingFactor=.12,ln.maxPolarAngle=Math.PI*.485,ln.addEventListener("change",un),ln.addEventListener("start",un),new ResizeObserver(()=>{let{clientWidth:t,clientHeight:n}=K.viewport;if(!t||!n)return;let s=ni.aspect;ni.aspect=t/n,ni.updateProjectionMatrix(),Kt.setSize(t,n,!1),sl&&Math.abs(s-ni.aspect)>.2&&No(),un()}).observe(K.viewport),Gf().then(()=>{sl=!0;K.loading.hidden=!0;const openingModule=location.hash.slice(1);if(Object.hasOwn(Ft,openingModule)){zt=openingModule;yr=Ft[zt].category}cl();wo(!0);ep();SM()}).catch(t=>{console.error(t),K.loading.textContent="The embedded material maps could not be decoded."})}catch(i){console.error(i),K.loading.textContent="WebGL 2 is required. Open the file in a browser with hardware acceleration enabled."}function ol(i,e,t,n,s=""){let r=document.createElement("button");if(r.type="button",n!==void 0&&r.setAttribute("aria-pressed",String(n)),s){let o=document.createElement("span");o.className="asset-code",o.textContent=s,r.append(o)}return r.append(document.createTextNode(e)),r.addEventListener("click",t),i.append(r),r}function cM(){K.categories.replaceChildren(),fs.forEach((i,e)=>ol(K.categories,i,()=>{yr=e,K.search.value="",Ft[zt].category!==e?fu(mr.find(t=>t.category===e).id):cl()},e===yr))}var ps,xr,Kc,Xf=0,_c=new Map;function lM(i){if(!ps){ps=new xo({antialias:!0,preserveDrawingBuffer:!0}),ps.setSize(360,158,!1),ps.toneMapping=rr,ps.toneMappingExposure=1.19,xr=new On,xr.background=new Ce(3160635);let a=new ns(16769203,3);a.position.set(-7,12,5),xr.add(a,new er(12703462,10722176,2.5)),Kc=new Ot(32,360/158,.05,200)}let e=gr(i,{...So,detail:1});xr.add(e);let t=new $t().setFromObject(e),n=t.getCenter(hn(0,0,0)),s=t.getSize(hn(0,0,0));
 const view=hn(.72,.62,.96).normalize(),right=hn(0,1,0).cross(view).normalize(),up=view.clone().cross(right);
 const angle=Math.tan(Kc.fov*Math.PI/360),h=angle*Kc.aspect*.9,v=angle*.86;

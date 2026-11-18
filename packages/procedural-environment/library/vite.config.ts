@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { type Plugin, defineConfig } from "vite";
+import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "../src/city.js";
 import Outcrop from "../vendor/outcrop.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -14,10 +15,13 @@ const cache = path.join(here, ".cache");
 
 type Package = typeof import("../src/index.js");
 const dist = path.join(here, "../dist/index.js");
-/** Bumped on every rebuild of dist, so an edit to the package shows on the next bake. */
-let version = 0;
+/** Config reloads share Node's module cache, so each config needs a fresh starting version. */
+let version = Date.now();
 const load = (): Promise<Package> =>
   import(`${pathToFileURL(dist).href}?v=${version}`) as Promise<Package>;
+const roadsWithSockets = cityModules()
+  .filter(({ edges }) => edges.length > 0)
+  .map(({ id }) => id);
 
 /** One control in the viewer's panel; `only` limits it to those element ids. Unset = the bake's default. */
 interface IControl {
@@ -104,6 +108,92 @@ function controls(biomes: string[]): Record<string, IControl[]> {
       ...ROCK_SURFACE,
     ],
     city: [
+      {
+        key: "roadWidth",
+        label: "Road width (m)",
+        type: "range",
+        min: 6,
+        max: 16,
+        step: 0.25,
+        default: cityRoadDefaults.roadWidth,
+        only: ["straight", "curve"],
+        group: "Road geometry",
+      },
+      {
+        key: "roadLength",
+        label: "Road length (m)",
+        type: "range",
+        min: 8,
+        max: 200,
+        step: 1,
+        default: cityRoadDefaults.roadLength,
+        only: ["straight"],
+        group: "Road geometry",
+      },
+      {
+        key: "bendAngle",
+        label: "Bend angle (°)",
+        type: "range",
+        min: 5,
+        max: 180,
+        step: 1,
+        default: cityRoadDefaults.bendAngle,
+        only: ["curve"],
+        group: "Road geometry",
+      },
+      {
+        key: "bendRadius",
+        label: "Bend radius (m)",
+        type: "range",
+        min: 12,
+        max: 120,
+        step: 1,
+        default: cityRoadDefaults.bendRadius,
+        only: ["curve"],
+        group: "Road geometry",
+      },
+      {
+        key: "bendSide",
+        label: "Bend direction",
+        type: "select",
+        options: ["left", "right"],
+        default: cityRoadDefaults.bendSide,
+        only: ["curve"],
+        group: "Road geometry",
+      },
+      {
+        key: "roadSurface",
+        label: "Road surface",
+        type: "select",
+        options: ["asphalt", "concrete", "paving"],
+        default: cityRoadDefaults.roadSurface,
+        only: roadsWithSockets,
+        group: "Road finish",
+      },
+      {
+        key: "sidewalk",
+        label: "Sidewalks",
+        type: "toggle",
+        default: true,
+        only: cityRoadEdgeModules,
+        group: "Road finish",
+      },
+      {
+        key: "curb",
+        label: "Curbs",
+        type: "toggle",
+        default: true,
+        only: cityRoadEdgeModules,
+        group: "Road finish",
+      },
+      {
+        key: "markings",
+        label: "Lane markings",
+        type: "toggle",
+        default: true,
+        only: ["straight", "curve"],
+        group: "Road finish",
+      },
       { key: "detail", label: "Detail", type: "range", min: 0, max: 2, step: 1, default: 2 },
       { key: "wet", label: "Wetness", type: "range", min: 0, max: 100, step: 1, default: 30 },
       { key: "floors", label: "Floors", type: "range", min: 2, max: 12, step: 1, default: 4 },
@@ -146,6 +236,12 @@ function rockBake(
 }
 
 function cityBake(pkg: Package, q: URLSearchParams, base: { seed: number; out: string }) {
+  const toggle = (key: string) => {
+    const value = q.get(key);
+    if (value === null) return undefined;
+    if (value !== "true" && value !== "false") throw new Error(`Invalid toggle: ${key}`);
+    return value === "true";
+  };
   return pkg.bakeCity({
     module: q.get("id") ?? "",
     ...base,
@@ -153,7 +249,16 @@ function cityBake(pkg: Package, q: URLSearchParams, base: { seed: number; out: s
     ...opt("wet", num(q, "wet")),
     ...opt("floors", num(q, "floors")),
     ...opt("text", q.get("text") ?? undefined),
-    ...opt("dressing", q.has("dressing") ? q.get("dressing") === "true" : undefined),
+    ...opt("dressing", toggle("dressing")),
+    ...opt("roadWidth", num(q, "roadWidth")),
+    ...opt("roadLength", num(q, "roadLength")),
+    ...opt("bendAngle", num(q, "bendAngle")),
+    ...opt("bendRadius", num(q, "bendRadius")),
+    ...opt("bendSide", q.get("bendSide") ?? undefined),
+    ...opt("roadSurface", q.get("roadSurface") ?? undefined),
+    ...opt("sidewalk", toggle("sidewalk")),
+    ...opt("curb", toggle("curb")),
+    ...opt("markings", toggle("markings")),
   });
 }
 

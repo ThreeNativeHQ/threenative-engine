@@ -8,6 +8,7 @@ interface IGltf {
   accessors: { count: number }[];
   images?: { mimeType: string }[];
   meshes: { primitives: { attributes: Record<string, number>; indices?: number }[] }[];
+  materials?: { name: string; pbrMetallicRoughness?: { baseColorTexture?: unknown } }[];
   nodes: { extras?: Record<string, unknown> }[];
   textures?: unknown[];
 }
@@ -85,6 +86,90 @@ describe("bakeCity bakes the Apex City Kit headless", () => {
     expect(path.basename(stock?.path ?? "")).toBe("apartments-7.glb");
     expect(tall?.bounds.max[1]).toBeGreaterThan(stock?.bounds.max[1] ?? Number.POSITIVE_INFINITY);
   }, 120_000);
+
+  it("bakes a wide left bend with matching outlets and independent street layers", async () => {
+    const out = await makeTempDir("city-bend-");
+    const options = {
+      module: "curve",
+      out,
+      bendAngle: 60,
+      bendRadius: 20,
+      bendSide: "left" as const,
+      roadWidth: 12,
+      roadSurface: "concrete" as const,
+      sidewalk: false,
+      markings: false,
+    };
+    const [entry] = await bakeCity(options);
+    if (!entry) throw new Error("Expected a city GLB");
+    const gltf = parseGlb(await readFile(entry.path));
+    const names = gltf.materials?.map(({ name }) => name);
+    expect(gltf.materials?.find(({ name }) => name === "Road concrete")).toMatchObject({
+      pbrMetallicRoughness: { baseColorTexture: expect.any(Object) },
+    });
+    expect(names).toContain("curb");
+    expect(names).not.toContain("paving");
+    expect(names).not.toContain("white");
+    const sockets = gltf.nodes[0]?.extras?.sockets as {
+      position: number[];
+      direction: number[];
+      width: number;
+      laneCenters: number[];
+    }[];
+    expect(sockets[0]).toMatchObject({
+      position: [0, 0, -12],
+      direction: [0, 0, -1],
+      width: 12,
+      laneCenters: [-3, 3],
+    });
+    expect(sockets[1]?.position[0]).toBeCloseTo(-10);
+    expect(sockets[1]?.position[2]).toBeCloseTo(20 * Math.sin(Math.PI / 3) - 12);
+    expect(sockets[1]?.direction[0]).toBeCloseTo(-Math.sin(Math.PI / 3));
+    expect(sockets[1]?.direction[2]).toBeCloseTo(0.5);
+    const [bare] = await bakeCity({ ...options, curb: false });
+    if (!bare) throw new Error("Expected a city GLB");
+    expect(bare.path).not.toBe(entry.path);
+    expect(parseGlb(await readFile(bare.path)).materials?.map(({ name }) => name)).not.toContain(
+      "curb",
+    );
+  }, 30_000);
+
+  it("changes straight length and validates road-only settings", async () => {
+    const out = await makeTempDir("city-straight-");
+    const [entry] = await bakeCity({ module: "straight", out, roadLength: 48, curb: false });
+    expect(entry?.bounds.min[2]).toBeCloseTo(-24);
+    expect(entry?.bounds.max[2]).toBeCloseTo(24);
+    if (!entry) throw new Error("Expected a city GLB");
+    const gltf = parseGlb(await readFile(entry.path));
+    expect(gltf.materials?.map(({ name }) => name)).toContain("paving");
+    expect(gltf.materials?.map(({ name }) => name)).not.toContain("curb");
+    expect(gltf.nodes[0]?.extras?.sockets).toMatchObject([
+      { position: [0, 0, -24] },
+      { position: [0, 0, 24] },
+    ]);
+    await expect(bakeCity({ module: "curve", out, bendAngle: 0 })).rejects.toThrow(/bendAngle/u);
+    await expect(bakeCity({ module: "tee", out, roadWidth: 12 })).rejects.toThrow(/roadWidth/u);
+  }, 30_000);
+
+  it("changes the finish of a stock intersection while preserving its footprint and sockets", async () => {
+    const out = await makeTempDir("city-intersection-");
+    const [stock] = await bakeCity({ module: "cross", out });
+    const [custom] = await bakeCity({
+      module: "cross",
+      out,
+      sidewalk: false,
+      roadSurface: "paving",
+    });
+    if (!stock || !custom) throw new Error("Expected both city GLBs");
+    const original = parseGlb(await readFile(stock.path));
+    const gltf = parseGlb(await readFile(custom.path));
+    expect(custom.bounds).toEqual(stock.bounds);
+    expect(gltf.nodes[0]?.extras?.sockets).toEqual(original.nodes[0]?.extras?.sockets);
+    const names = gltf.materials?.map(({ name }) => name);
+    expect(names).toContain("Road paving");
+    expect(names).toContain("curb");
+    expect(names).not.toContain("paving");
+  }, 30_000);
 
   it("fails closed on an unknown module or an option outside the page's limits", async () => {
     const out = await makeTempDir("city-bad-");

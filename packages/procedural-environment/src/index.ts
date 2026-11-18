@@ -991,10 +991,12 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
  * @alias cars and vehicles
  * @constraint fails closed: an unknown module throws naming the nearest ids; seed is an integer 0 to 4294967295, detail 0 to 2, wet 0 to 100, floors an integer 2 to 12, text at most 24 characters, dressing a boolean
  * @constraint the same options write identical bytes on one Node major and machine (fonts draw the sign text); files are written atomically (temporary file, then rename)
- * @constraint units are metres, +Y up; road tiles are 24 m on a 24 m grid and their sockets (side, position, direction, lanes) are in the root node's extras
+ * @constraint units are metres, +Y up; stock roads fit a 24 m grid, and custom straights and bends export updated socket positions, directions, widths and lane centres in the root node's extras
+ * @constraint roadWidth and markings apply to straight and curve; roadLength applies to straight; bendAngle, bendRadius and bendSide apply to curve; roadSurface applies to socketed road modules
  * @constraint bake-time only, so keep it a dev dependency; textures are capped at 1024 px like the page's export
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeCity({ module: "cross", out: "assets/city" });
+ * @example await bakeCity({ module: "curve", bendAngle: 55, bendRadius: 24, bendSide: "left", roadWidth: 12, sidewalk: false, curb: false, out: "assets/city" });
  * @example await bakeCity({ module: "apartments", seed: 7, floors: 8, out: "assets/city" });
  */
 export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> {

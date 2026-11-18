@@ -31,12 +31,59 @@ export interface IBakeCityOptions {
   readonly text?: string;
   /** Include street fixtures. Default true. */
   readonly dressing?: boolean;
+  /** Straight and curve carriageway width in metres (6–16). Default 10. */
+  readonly roadWidth?: number;
+  /** Straight length in metres (8–200). Default 24. */
+  readonly roadLength?: number;
+  /** Curve sweep in degrees (5–180). Default 90. */
+  readonly bendAngle?: number;
+  /** Curve centreline radius in metres (12–120). Default 12. */
+  readonly bendRadius?: number;
+  /** Curve direction from its north inlet. Default "right". */
+  readonly bendSide?: "left" | "right";
+  /** Roadway material for modules with road sockets. Default "asphalt". */
+  readonly roadSurface?: "asphalt" | "concrete" | "paving";
+  /** Include pedestrian paving on supported road modules. Default true. */
+  readonly sidewalk?: boolean;
+  /** Include curbs on supported road modules. Default true. */
+  readonly curb?: boolean;
+  /** Include lane paint on straight and curve modules. Default true. */
+  readonly markings?: boolean;
 }
 
-type CityParameters = Required<Omit<IBakeCityOptions, "out" | "module">>;
+export const cityRoadDefaults = {
+  roadWidth: 10,
+  roadLength: 24,
+  bendAngle: 90,
+  bendRadius: 12,
+  bendSide: "right",
+  roadSurface: "asphalt",
+  sidewalk: true,
+  curb: true,
+  markings: true,
+} satisfies Partial<IBakeCityOptions>;
+
+export const cityRoadEdgeModules = [
+  "straight",
+  "curve",
+  "cross",
+  "tee",
+  "alley",
+  "grid",
+  "pit",
+  "cul-de-sac",
+];
+
+type CityRoadSettings = Required<Pick<IBakeCityOptions, keyof typeof cityRoadDefaults>>;
+type CityParameters = Required<Omit<IBakeCityOptions, "out" | "module" | keyof CityRoadSettings>>;
 
 interface IApex {
-  build(id: string, parameters: CityParameters): Object3D;
+  build(
+    id: string,
+    parameters: CityParameters,
+    road?: CityRoadSettings,
+    profile?: boolean,
+  ): Object3D;
   loadMaps(): Promise<void>;
   readonly modules: readonly {
     id: string;
@@ -162,9 +209,10 @@ export function cityModules(): ICityModule[] {
     const kit = apex();
     catalog = kit.modules.map(({ id, name, category, description, edges }) => ({
       id,
-      name,
+      name: id === "curve" ? "Two-lane road bend" : name,
       category: kit.categories[category] as string,
-      description,
+      description:
+        id === "curve" ? "Two-lane bend with adjustable angle, radius and direction." : description,
       edges,
     }));
   }
@@ -189,6 +237,38 @@ function checkParameters(parameters: CityParameters): void {
   if (typeof dressing !== "boolean") fail("dressing must be true or false", dressing);
 }
 
+function roadSettings(options: IBakeCityOptions, hasSockets: boolean) {
+  const { module } = options;
+  const road: CityRoadSettings = { ...cityRoadDefaults };
+  const profile = module === "straight" || module === "curve";
+  const edges = cityRoadEdgeModules.includes(module);
+  const rules = {
+    roadWidth: [profile, 6, 16],
+    roadLength: [module === "straight", 8, 200],
+    bendAngle: [module === "curve", 5, 180],
+    bendRadius: [module === "curve", 12, 120],
+    bendSide: [module === "curve", "left", "right"],
+    roadSurface: [hasSockets, "asphalt", "concrete", "paving"],
+    sidewalk: [edges, true, false],
+    curb: [edges, true, false],
+    markings: [profile, true, false],
+  } as const;
+  for (const key of Object.keys(road) as (keyof CityRoadSettings)[]) {
+    const value = options[key];
+    if (value === undefined) continue;
+    const [supported, ...values] = rules[key];
+    if (!supported) throw new Error(`bakeCity: ${key} is unavailable for "${module}"`);
+    const [min, max] = values;
+    const valid =
+      typeof min === "number" && typeof max === "number"
+        ? typeof value === "number" && Number.isFinite(value) && value >= min && value <= max
+        : values.some((allowed) => allowed === value);
+    if (!valid) throw new Error(`bakeCity: invalid ${key}: ${JSON.stringify(value)}`);
+    Object.assign(road, { [key]: value });
+  }
+  return road;
+}
+
 interface ICityBake {
   readonly glb: Uint8Array;
   readonly triangles: number;
@@ -208,14 +288,21 @@ export async function buildCity(options: IBakeCityOptions): Promise<ICityBake> {
   const errors: string[] = [];
   const kit = apex(errors);
   const { module } = options;
-  if (!kit.modules.some((row) => row.id === module))
-    throw new Error(`bakeCity: unknown module "${module}"`);
+  const entry = kit.modules.find((row) => row.id === module);
+  if (entry === undefined) throw new Error(`bakeCity: unknown module "${module}"`);
   const parameters: CityParameters = { ...kit.defaults };
   for (const key of Object.keys(parameters) as (keyof CityParameters)[])
     if (options[key] !== undefined) Object.assign(parameters, { [key]: options[key] });
   checkParameters(parameters);
+  const road = roadSettings(options, entry.edges.length > 0);
+  const roadChanges = Object.entries(road).filter(
+    ([key, value]) => cityRoadDefaults[key as keyof CityRoadSettings] !== value,
+  );
   await kit.loadMaps();
-  const group = kit.build(module, parameters);
+  const profile = roadChanges.some(([key]) =>
+    ["roadWidth", "roadLength", "bendAngle", "bendRadius", "bendSide"].includes(key),
+  );
+  const group = kit.build(module, parameters, roadChanges.length > 0 ? road : undefined, profile);
   const glb = new Uint8Array(
     await new kit.GLTFExporter().parseAsync(group, {
       binary: true,
@@ -241,6 +328,7 @@ export async function buildCity(options: IBakeCityOptions): Promise<ICityBake> {
   const changed = Object.entries(parameters).filter(
     ([key, value]) => key !== "seed" && kit.defaults[key as keyof CityParameters] !== value,
   );
+  changed.push(...roadChanges);
   const tag =
     changed.length === 0
       ? ""

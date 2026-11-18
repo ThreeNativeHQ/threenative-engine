@@ -140,9 +140,19 @@ environmentElements({ kind: "city" }).map((element) => `${element.category}: ${e
 await bakeCity({ module: "cross", out: "assets/city" });
 // assets/city/cross-31082.glb, one { lod: 0, path, triangles, bounds } entry
 await bakeCity({ module: "apartments", seed: 7, floors: 8, out: "assets/city" });
+await bakeCity({
+  module: "curve",
+  bendAngle: 55,
+  bendRadius: 24,
+  bendSide: "left",
+  roadWidth: 12,
+  sidewalk: false,
+  curb: false,
+  out: "assets/city",
+});
 ```
 
-- The generator is the [Apex City Kit](LICENSES/Apex-MIT.txt) page, vendored verbatim with its
+- The generator is the vendored [Apex City Kit](LICENSES/Apex-MIT.txt) page with its
   own three.js r183 in `vendor/apex/`. The bake runs the page's generator and its GLTFExporter in a
   `node:vm` context, with `@napi-rs/canvas` for the canvas and image decode, and exports the way
   the page's GLB button does (binary, `trs`, textures capped at 1024 px).
@@ -154,7 +164,15 @@ await bakeCity({ module: "apartments", seed: 7, floors: 8, out: "assets/city" })
   textures: the CC0 Poly Haven maps (asphalt, concrete, brick, paving, metal, rubber, oak, roof
   tiles, shutter, formwork; JPEG colour, PNG normal and ARM) and the canvas-drawn signs, liveries
   and markings. The root node's extras hold `module`, `seed`, `parameters`, `units` and the road
-  `sockets`. Metres, +Y up, road tiles on a 24 m grid.
+  `sockets`. Units are metres with +Y up. Stock tiles use a 24 m grid.
+- Set `roadWidth` (6–16 m) on straight and curve modules, and `roadLength` (8–200 m)
+  on straights. Curves expose `bendAngle` (5–180°), `bendRadius` (12–120 m), and
+  `bendSide` (`left` or `right` from the north inlet). These pieces still carry two lanes.
+  To join them, align the socket positions and point their outward directions opposite each
+  other. Match socket widths for a flush join. The outlet of a non-90° bend has side `end`.
+- Use `roadSurface` (`asphalt`, `concrete`, or `paving`) on socketed roads. Toggle
+  `sidewalk` and `curb` independently on straight, curve, cross, tee, alley, grid, pit,
+  and cul-de-sac modules. On straight and curve modules, `markings: false` removes lane paint.
 - The page's PNG and JPEG maps are re-encoded as WebP q80 at bake (`EXT_texture_webp`): the 95
   distinct city images drop from 5.6 MB to 1.2 MB.
 - The same options write the same bytes on one machine and Node major: sign text draws with the

@@ -402,7 +402,7 @@ function callFor(e: IElement): string {
   const out = args.get("out");
   args.delete("out");
   if (state.seed !== undefined) args.set("seed", String(state.seed));
-  args.set("lods", `[${state.lod}]`);
+  if (e.kind !== "city") args.set("lods", `[${state.lod}]`);
   for (const c of controlsFor(e.kind, e.id)) {
     const value = touched.get(c.key);
     if (value !== undefined)
@@ -453,12 +453,12 @@ function renderDocs(element: IElement, baked: IBake, model: THREE.Object3D): voi
     ["Biomes", element.biomes.join(", ") || "none listed"],
     ["File", file],
   ]);
-  const call = baked.call ?? callFor(element);
+  const call = baked.call ?? `await ${callFor(element)};`;
   const copy = el("button", "tool w-auto justify-self-start px-2 text-ink", "Copy bake call");
   copy.onclick = () => navigator.clipboard?.writeText(call).then(() => say("Bake call copied"));
   const parts = el("label", "grid gap-1 font-bold text-muted", "GLB primitives and attributes");
   parts.append(el("pre", PRE, attributesOf(model)));
-  $("docs").replaceChildren(head, dl, el("pre", PRE, `await ${call};`), copy, parts);
+  $("docs").replaceChildren(head, dl, el("pre", PRE, call), copy, parts);
 }
 
 // ── background: the biome sky, or a flat dark or light backdrop ──
@@ -951,7 +951,7 @@ function renderControls(): void {
         };
   body.replaceChildren(
     controlRow("seed", seed, unseed, unseed ? "" : "auto"),
-    controlRow("lod", lod),
+    ...(route.kind === "city" ? [] : [controlRow("lod", lod)]),
   );
   for (const group of [...new Set(list.map((c) => c.group ?? ""))]) {
     const rows = list
@@ -992,7 +992,7 @@ function renderControls(): void {
     }
     body.append(...rows);
   }
-  $("control-count").textContent = String(list.length + 2);
+  $("control-count").textContent = String(list.length + (route.kind === "city" ? 1 : 2));
 }
 
 function readHash(): void {
